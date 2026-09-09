@@ -124,7 +124,9 @@ fn zero_trip_guard_repro() {
 /// also opt-level-dependent in the other direction from the documented rungs —
 /// they panic at the DEFAULT guest opt-level and compile at
 /// `--optimize=size-min`. The passing compositions of those shapes are
-/// `interact::dispatch_spill` (ten bands) and `interact::sink_spill`.
+/// `interact::dispatch_spill` (ten bands) and `interact::sink_spill`. Both
+/// shapes are now kept as runnable minimal reproducers of their own,
+/// `frontier_dispatch` and `frontier_seq` below (campaign 21).
 #[test]
 #[ignore = "compiler panic: 'called Option::unwrap() on a None value' at \
             hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
@@ -198,4 +200,58 @@ fn while_results() {
 #[test]
 fn select_chain() {
     run_case("select_chain", include_str!("../cases/case_select_chain.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC (safe Rust, campaign 21, 2026-09-09): the
+/// minimal `frontier.rs:123` reproducer with NO zero-trip-capable loop — a
+/// sixteen-arm `match` inside a bottom-tested `(input1 % 13) + 2` loop, three
+/// of whose arms carry a dynamically impossible `panic!()` guard (the
+/// `SimplifyCondBrLikeSwitch` producer from `canon::trap_dispatch`), with NINE
+/// masked rotate count bands used before the loop, on the loop-carried
+/// accumulator inside it, and after it. Building it panics with `called
+/// Option::unwrap() on a None value` at hir/src/ir/dominance/frontier.rs:123
+/// (`DominanceFrontier::new` from `spill::rewrite_cfg_spills`), the same
+/// defect `zero_trip_frontier` documents: the transform rebuilds SSA form from
+/// the dominator tree the spill ANALYSIS cached before the transform's own
+/// edge splits, and the many-predecessor join of the dispatch is reached
+/// through one of those split blocks. It is a DEFAULT-level-only failure —
+/// `--optimize=size-min` compiles the same source.
+/// Minimality (campaign 21, one probe per axis, all at the default level):
+/// removing the three impossible arms compiles, keeping only ONE of them
+/// compiles, eight arms with one impossible arm compiles, four arms compiles,
+/// eight bands instead of nine compiles, dropping the post-loop uses of the
+/// bands compiles, and dropping the in-loop uses compiles — so every
+/// ingredient is necessary at this size. Compile-time — no inputs involved.
+/// Un-ignore when the transform recomputes dominance after splitting edges.
+#[test]
+#[ignore = "compiler panic: 'called `Option::unwrap()` on a `None` value' at \
+            hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
+            spill::rewrite_cfg_spills) — a 16-arm dispatch with three impossible arms and nine \
+            crossing count bands in a bottom-tested loop, no zero-trip loop involved; \
+            DEFAULT-level only (compiles at --optimize=size-min), compile-time, no inputs"]
+fn frontier_dispatch() {
+    run_case("frontier_dispatch", include_str!("../cases/case_frontier_dispatch.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC (safe Rust, campaign 21, 2026-09-09): the
+/// second minimal `frontier.rs:123` reproducer without a zero-trip-capable
+/// loop, and the smallest freight in the corpus that reaches the unwrap — two
+/// sequential bottom-tested loops (`(input1 % 7) + 2` and `(input2 % 7) + 2`)
+/// where FOUR masked rotate count bands are used before the first loop and
+/// again only inside the second one. Same panic and same mechanism as
+/// `frontier_dispatch`, and likewise DEFAULT-level only (`--optimize=size-min`
+/// compiles it). Band ladder at the default level (campaign 21): two and three
+/// bands compile, four through eight panic; campaign 20 had only measured
+/// eight. Bounded by the same shape with the FIRST loop removed, which
+/// compiles at every band count tried — one loop is not enough, the bands must
+/// cross a loop before reaching the region that uses them. Compile-time — no
+/// inputs involved.
+#[test]
+#[ignore = "compiler panic: 'called `Option::unwrap()` on a `None` value' at \
+            hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
+            spill::rewrite_cfg_spills) — two sequential bottom-tested loops with four count bands \
+            used before the first and only inside the second; DEFAULT-level only (compiles at \
+            --optimize=size-min), compile-time, no inputs"]
+fn frontier_seq() {
+    run_case("frontier_seq", include_str!("../cases/case_frontier_seq.rs"));
 }

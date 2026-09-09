@@ -4,6 +4,18 @@
 //! (spills x lifting x memory x arithmetic over hundreds of ops) run
 //! differentially. Every program has a pinned `_edges` twin and was
 //! deep-fuzzed with `FUZZA_INPUT_PAIRS=512` before being kept.
+//!
+//! Campaign 21 (2026-09-09) adds a second family, written the same way but
+//! aimed at the structured-control-flow shapes campaign 20 measured the spill
+//! freight cliff on (`interact.rs`): return-heavy search loops nested in an
+//! outer loop, in-loop wide dispatch over u64 bookkeeping words, asymmetric
+//! diamonds in hot loops, two-pass algorithms sharing their shift constants,
+//! three-level nests whose deepest arm is the only consumer of the
+//! accumulated words, and a chain of early-`break` scans as the control. Each
+//! carries the state and the constants an algorithm of its kind really has —
+//! and seven of the twelve fail to COMPILE at the default configuration, so
+//! they are kept as `#[ignore]`d user-impact evidence next to the largest
+//! variant of the same program that does compile (`prog_*_guard`).
 
 use super::super::harness::{run_case, run_case_with_flags, run_case_with_inputs};
 
@@ -600,5 +612,634 @@ fn fir_cordic_guard_o3() {
         "fir_cordic_guard_o3",
         include_str!("../cases/case_fir_cordic_guard.rs"),
         &["--optimize=max"],
+    );
+}
+
+// --------------------------------------------------------------------------
+// Campaign 21 (2026-09-09): realistic programs written for the freight-cliff
+// shapes. Per program: the cliff shape, the u64 state count, the number of
+// shared rotate/shift constants, and the outcome at the default level,
+// `--optimize=size-min`, `--optimize=max` and `--optimize=basic`.
+// --------------------------------------------------------------------------
+
+/// UTF-8 validator (cliff shape: return-heavy inner loop nested in an outer
+/// loop; 5 u64 statistics, 4 shared rotate constants): two 40-byte buffers of
+/// encoded code points are validated in an outer pass loop, and the
+/// per-code-point inner loop returns a distinct error class for a bad leading
+/// byte, a truncated sequence, a bad continuation byte and a surrogate /
+/// out-of-range code point, each of which combines all five statistics — a
+/// code-point checksum, a width fold, a running FNV hash, a maximum and a
+/// class mask — in one expression. Passes at the default level, at
+/// `--optimize=size-min`, `max` and `basic`.
+#[test]
+fn prog_utf8() {
+    run_case("prog_utf8", include_str!("../cases/case_prog_utf8.rs"));
+}
+
+/// Per-error-class pinned grid for [`prog_utf8`]: `input2`'s low bits pick the
+/// planted malformation, so these pairs pin the bad leading byte (tag 1), the
+/// truncated tail (2), the bad continuation byte (3), the surrogate (4) and
+/// the all-valid stream (5), plus zero / all-ones / equal pairs.
+#[test]
+fn prog_utf8_edges() {
+    run_case_with_inputs(
+        "prog_utf8_edges",
+        include_str!("../cases/case_prog_utf8.rs"),
+        &[
+            (0, 1),
+            (0, 6),
+            (0, 2),
+            (0, 3),
+            (0, 0),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (0x9e37_79b9, 0x9e37_79b9),
+        ],
+    );
+}
+
+/// Glob matcher (cliff shape: return-heavy inner loop nested in an outer loop;
+/// 5 u64 statistics, 4 shared rotate constants): three patterns with `*`, `?`
+/// and `[a-c]` classes are matched against a 32-byte text by the classic
+/// backtracking loop, which returns early on an exhausted step budget, a
+/// malformed class, a text that runs out and a match — every exit combining
+/// the position hash, star mask, class fold, wildcard count and step checksum.
+/// Passes at all four optimization levels.
+#[test]
+fn prog_glob() {
+    run_case("prog_glob", include_str!("../cases/case_prog_glob.rs"));
+}
+
+/// Per-exit pinned grid for [`prog_glob`]: the budget exit (tag 1), the
+/// malformed class (2), the exhausted text (3), the match (4) and the
+/// no-match fallthrough (5), plus zero / all-ones / equal pairs.
+#[test]
+fn prog_glob_edges() {
+    run_case_with_inputs(
+        "prog_glob_edges",
+        include_str!("../cases/case_prog_glob.rs"),
+        &[
+            (0, 8),
+            (0, 1),
+            (0, 18),
+            (0, 3),
+            (0, 0),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (0x1234_5678, 0x1234_5678),
+        ],
+    );
+}
+
+/// Bytecode interpreter with 64-bit bookkeeping (cliff shape: in-loop wide
+/// dispatch; 6 u64 bookkeeping words, 6 shared rotate constants): a 20-opcode
+/// stack machine runs one of three `.rodata` images, dispatching on the opcode
+/// with a dense `match` in which four opcodes share the default body and the
+/// opcodes 20..31 are invalid (the images contain none), and every arm updates
+/// the same state hash, checksum, gas counter, flag mask, high-water mark and
+/// trace fold, which a per-step commitment expression then combines. Passes at
+/// all four optimization levels — the dispatch shape survives what the same
+/// state does not survive in `prog_sponge` / `prog_histogram`.
+#[test]
+fn prog_bcvm64() {
+    run_case("prog_bcvm64", include_str!("../cases/case_prog_bcvm64.rs"));
+}
+
+/// Pinned grid for [`prog_bcvm64`]: each `.rodata` image (`input1 % 3`), the
+/// smallest and largest step budgets (`input2 % 40`), the opcode-rotation
+/// extremes (`input2 >> 28`), the gas-exhaustion break, zero / all-ones /
+/// equal pairs.
+#[test]
+fn prog_bcvm64_edges() {
+    run_case_with_inputs(
+        "prog_bcvm64_edges",
+        include_str!("../cases/case_prog_bcvm64.rs"),
+        &[
+            (0, 0),
+            (1, 1),
+            (2, 2),
+            (3, 39),
+            (4, 0x8000_0000),
+            (5, 79),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+        ],
+    );
+}
+
+/// Framing state machine (cliff shape: in-loop wide dispatch; 8 u64
+/// accumulators, 6 shared rotate constants): a sixteen-state serial-protocol
+/// parser consumes a 48-byte stream one byte at a time, three of its states
+/// sharing the resync body, and every state arm updates the same frame hash,
+/// payload hash, CRC accumulator, escape fold, byte and frame counters, error
+/// mask and timing fold, which a watchdog expression at the bottom of the loop
+/// combines. Passes at all four optimization levels.
+#[test]
+fn prog_states() {
+    run_case("prog_states", include_str!("../cases/case_prog_states.rs"));
+}
+
+/// Pinned grid for [`prog_states`]: the mode bits plant the payload length,
+/// the escape byte (`input2 & 8`) and the bad second header byte
+/// (`input2 & 4`), so these pairs pin the clean frame, the escaped frame, the
+/// resync path and their combinations, plus zero / all-ones / equal pairs.
+#[test]
+fn prog_states_edges() {
+    run_case_with_inputs(
+        "prog_states_edges",
+        include_str!("../cases/case_prog_states.rs"),
+        &[
+            (0, 0),
+            (1, 4),
+            (2, 8),
+            (3, 12),
+            (0x5a5a_5a5a, 0x5a5a_5a5a),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+        ],
+    );
+}
+
+/// Table validation pipeline (cliff shape: chain of early-`break` scans — the
+/// most freight-tolerant shape, kept as the control; 6 u64 statistics, 4
+/// shared rotate constants): five sequential scans over a 48-entry u64 table
+/// (first out-of-range entry, duplicate low word, monotonicity, first entry
+/// over the quota, checksum of the accepted prefix) each break as soon as they
+/// have their answer and all share the same constants and statistics. Passes
+/// at all four optimization levels, as campaign 20's ranking predicts.
+#[test]
+fn prog_scanchain() {
+    run_case("prog_scanchain", include_str!("../cases/case_prog_scanchain.rs"));
+}
+
+/// Pinned grid for [`prog_scanchain`]: `input2` sets the range limit (0 makes
+/// the first scan break immediately, all-ones lets it run to the end) and
+/// `input1` the quota, so these pairs pin break / no-break for each scan, plus
+/// zero / all-ones / equal pairs.
+#[test]
+fn prog_scanchain_edges() {
+    run_case_with_inputs(
+        "prog_scanchain_edges",
+        include_str!("../cases/case_prog_scanchain.rs"),
+        &[
+            (0, 0),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (1, 1),
+            (0x9e37_79b9, 0x9e37_79b9),
+            (7, 0x7fff_ffff),
+            (0x8000_0000, 0x8000_0000),
+        ],
+    );
+}
+
+/// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
+/// campaign 21, 2026-09-09). Rabin-Karp substring scanner (cliff shape:
+/// return-heavy inner loop nested in an outer loop; 6 u64 fingerprint words,
+/// 5 shared rotate constants): three needles are searched for in a 64-byte
+/// buffer with a rolling hash, the inner scan loop returning early on a
+/// verified match, on an exhausted false-positive budget and on a sentinel
+/// byte, with the six-word Bloom probe — the only place all six fingerprint
+/// words are live at once — evaluated on every iteration. Building it panics
+/// with `invalid operand stack index (9): requires access to more than 16
+/// elements` at codegen/masm/src/emit/mod.rs:623 (`OperandStack::dup` from the
+/// operand solver). Classification F6, not F2: the spills trace
+/// (`MIDENC_TRACE='analysis:spills=trace,pass:spills=trace'`) shows 20 spills,
+/// 43 reloads, TWO "edges to split" and 26 `erase unused reload` lines for the
+/// split-block reloads (the SSA reconstruction walks the dominator tree cached
+/// before the transform's own splits), plus three "unused phi" warnings.
+/// Per level: default PANIC (index 9), `--optimize=size-min` PASSES,
+/// `--optimize=max` PANIC (index 9), `--optimize=basic` PANIC (index 10).
+/// Bounding sibling: `prog_rkscan_guard` — the same scanner with three rotate
+/// constants instead of five and four fingerprint words instead of six —
+/// compiles and matches native at the default level, at size-min and at max.
+/// The ladder in between still panics at the default level: six→four words
+/// (index 9), four→three (index 10), three→two (index 9). Five→three rotate
+/// constants alone (six words kept) passes at the default level and at
+/// size-min but panics at max (frontier.rs:123) and at basic (index 10), so it
+/// is the crossing COUNT BANDS, not the word count, that carries this program
+/// over the window. Compile-time — no inputs involved. Un-ignore together with
+/// the other F6 reproducers (`pressure::zero_trip_frontier`).
+#[test]
+#[ignore = "compiler panic at the DEFAULT configuration: 'invalid operand stack index (9): \
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
+            class (26 erased split-edge reloads in the spills trace); compile-time, no inputs \
+            involved"]
+fn prog_rkscan() {
+    run_case("prog_rkscan", include_str!("../cases/case_prog_rkscan.rs"));
+}
+
+/// The largest variant of `prog_rkscan` that compiles at the default level:
+/// three distinct rotate constants instead of five and four fingerprint words
+/// instead of six. Passes at the default level, `--optimize=size-min` and
+/// `--optimize=max`; still panics at `--optimize=basic` (see
+/// `prog_rkscan_guard_o1`).
+#[test]
+fn prog_rkscan_guard() {
+    run_case("prog_rkscan_guard", include_str!("../cases/case_prog_rkscan_guard.rs"));
+}
+
+/// Per-exit pinned grid for [`prog_rkscan_guard`]: the verified match (tag 1),
+/// the false-positive budget (2), the sentinel byte (3) and the exhausted
+/// search (4, `input2`'s top bit forcing external-only patterns), plus zero /
+/// all-ones / equal pairs.
+#[test]
+fn prog_rkscan_guard_edges() {
+    run_case_with_inputs(
+        "prog_rkscan_guard_edges",
+        include_str!("../cases/case_prog_rkscan_guard.rs"),
+        &[
+            (0, 0),
+            (0, 4),
+            (768, 0),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (0x9e37_79b9, 0x9e37_79b9),
+            (1, 1),
+        ],
+    );
+}
+
+/// CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC: the reduced
+/// `prog_rkscan_guard` still panics at `--optimize=basic` with `invalid
+/// operand stack index (10): requires access to more than 16 elements` at
+/// codegen/masm/src/emit/mod.rs:623 — the same F6 site as the full program.
+/// Kept so a corpus-wide `--optimize=basic` sweep does not rediscover it as a
+/// new finding. Compile-time — no inputs involved.
+#[test]
+#[ignore = "compiler panic at --optimize=basic: 'invalid operand stack index (10): requires access \
+            to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 class; \
+            compile-time, no inputs involved"]
+fn prog_rkscan_guard_o1() {
+    run_case_with_flags(
+        "prog_rkscan_guard_o1",
+        include_str!("../cases/case_prog_rkscan_guard.rs"),
+        &["--optimize=basic"],
+    );
+}
+
+/// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
+/// campaign 21, 2026-09-09). LEB128 record decoder (cliff shape: return-heavy
+/// inner loop nested in an outer loop; 6 u64 running values, 4 shared shift
+/// constants): a 48-byte frame of varints is decoded by a continuation-byte
+/// loop with four error returns (truncated frame, 64-bit overflow, overlong
+/// encoding, reserved marker), each combining the six running values — sum,
+/// xor fold, minimum, maximum, running hash and checksum — in one expression.
+/// Building it panics with `AliasingViolationError { kind: Mutable, location:
+/// hir/src/ir/operation.rs:877 }` at hir/src/patterns/rewriter.rs:335.
+/// Classification F12: the last line the pattern driver logs before the panic
+/// (`MIDENC_TRACE='pattern-rewrite-driver=trace'`) is `trying to match
+/// 'remove-loop-invariant-args-from-before-block' dialect=scf op=while`. The
+/// documented F12 producer was a labeled `continue` over a loop containing a
+/// call, at `-Oz` where LLVM stops inlining it; this program has neither a
+/// labeled `continue` nor a call in the loop, and fails at the DEFAULT level.
+/// Per level: default PANIC, `--optimize=size-min` PANIC, `--optimize=max`
+/// PASSES, `--optimize=basic` PANIC. Bounding sibling: `prog_varint_guard` —
+/// the same decoder with two running values — compiles at the default level,
+/// at max and at basic; four values still panic, and even ONE value still
+/// panics at size-min (`prog_varint_guard_oz`), so the state count moves the
+/// default-level boundary but not the size-min one. Compile-time — no inputs
+/// involved. Un-ignore when the rewriter stops taking a mutable borrow of an
+/// operation it is already borrowing.
+#[test]
+#[ignore = "compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: Mutable, \
+            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
+            matching 'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no \
+            inputs involved"]
+fn prog_varint() {
+    run_case("prog_varint", include_str!("../cases/case_prog_varint.rs"));
+}
+
+/// The largest variant of `prog_varint` that compiles at the default level:
+/// two running values instead of six. Passes at the default level,
+/// `--optimize=max` and `--optimize=basic`; still panics at
+/// `--optimize=size-min` (see `prog_varint_guard_oz`).
+#[test]
+fn prog_varint_guard() {
+    run_case("prog_varint_guard", include_str!("../cases/case_prog_varint_guard.rs"));
+}
+
+/// Per-error-class pinned grid for [`prog_varint_guard`]: the truncated frame
+/// (tag 1), the 64-bit overflow (2), the overlong encoding (3), the reserved
+/// marker (4) and the clean frame (5), plus zero / all-ones / equal pairs.
+#[test]
+fn prog_varint_guard_edges() {
+    run_case_with_inputs(
+        "prog_varint_guard_edges",
+        include_str!("../cases/case_prog_varint_guard.rs"),
+        &[
+            (0, 0),
+            (0, 8),
+            (0, 2),
+            (30208, 0),
+            (0, 1),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+        ],
+    );
+}
+
+/// CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC: the reduced
+/// `prog_varint_guard` still panics at `--optimize=size-min` in the F12 class
+/// (`AliasingViolationError` at hir/src/patterns/rewriter.rs:335 while
+/// matching `remove-loop-invariant-args-from-before-block`), and so does a
+/// further-reduced variant with a single running value — the size-min failure
+/// does not depend on how much u64 state the loop carries. Compile-time — no
+/// inputs involved.
+#[test]
+#[ignore = "compiler panic at --optimize=size-min: 'AliasingViolationError { kind: Mutable, \
+            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 — F12 \
+            class; compile-time, no inputs involved"]
+fn prog_varint_guard_oz() {
+    run_case_with_flags(
+        "prog_varint_guard_oz",
+        include_str!("../cases/case_prog_varint_guard.rs"),
+        &["--optimize=size-min"],
+    );
+}
+
+/// COMPILE-TIME COMPILER PANIC AT EVERY OPTIMIZATION LEVEL (safe Rust,
+/// campaign 21, 2026-09-09). Conditional-round Feistel mixer (cliff shape:
+/// asymmetric diamond in a hot loop; 6 u64 round keys, 4 shared rotate
+/// constants): 32 counter blocks are encrypted by a Feistel network whose
+/// round function runs only on the iterations the schedule selects, so the
+/// then-arm reads all six round keys and the else-arm none — the pressure
+/// asymmetry the spill analysis has to reconcile on the join. Building it
+/// panics with `failed to schedule operands: [%22, %146] for inst
+/// 'arith.rotl' with error: NoSolution, constraints: [Copy, Move]` at
+/// codegen/masm/src/lower/lowering.rs:109 over a NINETEEN-felt operand stack
+/// (six u64 words and seven u32 count bands). Classification F6, not F2: the
+/// stack is over the K = 16 cap the spill analysis is supposed to enforce and
+/// the spills trace shows 23 spills, 21 reloads, two "edges to split" and six
+/// `erase unused reload` lines; the Copy-constrained operand %22 is one of the
+/// count bands stranded at index 11. Per level: default, `--optimize=size-min`,
+/// `max` and `basic` ALL panic at the same site. Bounding sibling:
+/// `prog_feistel_guard` — the same network with TWO round keys — compiles and
+/// matches native at all four levels; four keys still panic at all four.
+/// Compile-time — no inputs involved. Un-ignore together with the other F6
+/// reproducers.
+#[test]
+#[ignore = "compiler panic at every optimization level: 'failed to schedule operands ... with \
+            error: NoSolution' on 'arith.rotl' [Copy, Move] over a 19-felt operand stack at \
+            codegen/masm/src/lower/lowering.rs:109 — F6 class (six erased split-edge reloads); \
+            compile-time, no inputs involved"]
+fn prog_feistel() {
+    run_case("prog_feistel", include_str!("../cases/case_prog_feistel.rs"));
+}
+
+/// The largest variant of `prog_feistel` that compiles: two round keys instead
+/// of six. Passes at the default level, `--optimize=size-min`, `max` and
+/// `basic`.
+#[test]
+fn prog_feistel_guard() {
+    run_case("prog_feistel_guard", include_str!("../cases/case_prog_feistel_guard.rs"));
+}
+
+/// Pinned grid for [`prog_feistel_guard`]: the schedule predicate
+/// (`((block >> 5) ^ i) % 97 < 48`) decides which iterations take the
+/// key-reading arm, so these seeds pin all-active, all-skipped and mixed
+/// sequences, plus zero / all-ones / equal pairs.
+#[test]
+fn prog_feistel_guard_edges() {
+    run_case_with_inputs(
+        "prog_feistel_guard_edges",
+        include_str!("../cases/case_prog_feistel_guard.rs"),
+        &[
+            (0, 0),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (1, 1),
+            (0x9e37_79b9, 0x9e37_79b9),
+            (0x8000_0000, 0x7fff_ffff),
+            (0x1234_5678, 0xdead_beef),
+        ],
+    );
+}
+
+/// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
+/// campaign 21, 2026-09-09). Run-length + delta encoder (cliff shape:
+/// asymmetric diamond in a hot loop; 5 u64 statistics, 5 shared rotate
+/// constants): a 64-sample signal is encoded into a token buffer, the common
+/// arm only extending the current run while the escape arm — a literal block
+/// that cannot be run-encoded — reads and rewrites all five encoder
+/// statistics (dictionary hash, entropy fold, delta accumulator, escape
+/// counter and checksum). Building it panics with `AliasingViolationError {
+/// kind: Mutable, location: hir/src/ir/operation.rs:877 }` at
+/// hir/src/patterns/rewriter.rs:335 — F12, confirmed the same way as
+/// `prog_varint` (the driver's last line is `trying to match
+/// 'remove-loop-invariant-args-from-before-block' dialect=scf op=while`), and
+/// again with no labeled `continue` and no call in the loop. Per level:
+/// default PANIC, `--optimize=size-min` PASSES, `--optimize=max` PANIC,
+/// `--optimize=basic` PASSES. Bounding sibling: `prog_rle_guard` — the same
+/// encoder with three statistics — compiles at all four levels. Compile-time
+/// — no inputs involved.
+#[test]
+#[ignore = "compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: Mutable, \
+            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
+            matching 'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no \
+            inputs involved"]
+fn prog_rle() {
+    run_case("prog_rle", include_str!("../cases/case_prog_rle.rs"));
+}
+
+/// The largest variant of `prog_rle` that compiles: three encoder statistics
+/// instead of five. Passes at all four optimization levels.
+#[test]
+fn prog_rle_guard() {
+    run_case("prog_rle_guard", include_str!("../cases/case_prog_rle_guard.rs"));
+}
+
+/// Pinned grid for [`prog_rle_guard`]: `input2 % 8` controls how run-heavy the
+/// signal is, so these pairs pin the all-literal signal (no runs, every
+/// iteration takes the escape arm), the run-heavy signal and the mixtures,
+/// plus zero / all-ones / equal pairs.
+#[test]
+fn prog_rle_guard_edges() {
+    run_case_with_inputs(
+        "prog_rle_guard_edges",
+        include_str!("../cases/case_prog_rle_guard.rs"),
+        &[
+            (0, 0),
+            (1, 7),
+            (0x1234_5678, 3),
+            (5, 6),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (0xdead_beef, 0xdead_beef),
+        ],
+    );
+}
+
+/// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
+/// campaign 21, 2026-09-09). Two-pass entropy-coder front-end (cliff shape:
+/// sequential loops sharing constants; 6 u64 statistics, 8 shared shift
+/// constants): a histogram pass over a 96-byte buffer builds sixteen buckets
+/// and six statistics, and a second pass turns the histogram into cumulative
+/// offsets and emits a packed code stream, reusing the SAME shift constants
+/// the first pass used for bucket selection — so every constant is live from
+/// before the first loop, across it and into the second. Building it panics
+/// with `failed to schedule operands: [%1218, %695] for inst 'arith.rotl' with
+/// error: NoSolution, constraints: [Copy, Move]` at
+/// codegen/masm/src/lower/lowering.rs:109 (F6, the `zero_trip_overflow`
+/// signature: the count bands stay live past their spills because the
+/// split-edge reloads are erased; spills trace: one split edge, thirty-five
+/// `erase unused reload` lines). Per level: default PANIC (lowering.rs:109),
+/// `--optimize=size-min` PASSES, `--optimize=max` PANIC (lowering.rs:109),
+/// `--optimize=basic` PANIC (`invalid operand stack index (12)` at
+/// emit/mod.rs:623). Bounding sibling: `prog_histogram_guard` — the same two
+/// passes with SIX distinct shift constants instead of eight — compiles and
+/// matches native at all four levels. Compile-time — no inputs involved.
+#[test]
+#[ignore = "compiler panic at the DEFAULT configuration: 'failed to schedule operands ... with \
+            error: NoSolution' on 'arith.rotl' [Copy, Move] at \
+            codegen/masm/src/lower/lowering.rs:109 — F6 class; compile-time, no inputs involved"]
+fn prog_histogram() {
+    run_case("prog_histogram", include_str!("../cases/case_prog_histogram.rs"));
+}
+
+/// The largest variant of `prog_histogram` that compiles: six distinct shift
+/// constants instead of eight. Passes at all four optimization levels.
+#[test]
+fn prog_histogram_guard() {
+    run_case("prog_histogram_guard", include_str!("../cases/case_prog_histogram_guard.rs"));
+}
+
+/// Pinned grid for [`prog_histogram_guard`]: `input2 % 65` sets the processed
+/// length (32 at 0, 96 at 64), so these pairs pin the shortest and longest
+/// buffer, plus zero / all-ones / equal pairs.
+#[test]
+fn prog_histogram_guard_edges() {
+    run_case_with_inputs(
+        "prog_histogram_guard_edges",
+        include_str!("../cases/case_prog_histogram_guard.rs"),
+        &[
+            (0, 0),
+            (1, 64),
+            (7, 32),
+            (0x1234_5678, 1),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (0x9e37_79b9, 0x9e37_79b9),
+        ],
+    );
+}
+
+/// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
+/// campaign 21, 2026-09-09). Eight-lane sponge hash (cliff shape: sequential
+/// loops sharing constants; 8 u64 lanes, 8 shared rotation offsets): an absorb
+/// loop XORs message blocks into the rate lanes and runs six permutation
+/// rounds (column mix, lane rotations, chi), and a squeeze loop then extracts
+/// four output words with the SAME eight rotation offsets — the shape every
+/// Keccak-like permutation in Rust has, with no 128-bit arithmetic anywhere.
+/// Building it panics with `invalid operand stack index (14): requires access
+/// to more than 16 elements` at codegen/masm/src/emit/mod.rs:623 (F6, the
+/// `prog_fixedpoint_o3` signature at the DEFAULT level rather than at max;
+/// spills trace: four split edges, eighteen `erase unused reload` lines).
+/// Per level: default PANIC (index 14), `--optimize=size-min` PASSES,
+/// `--optimize=max` PANIC (`NoSolution` on `arith.rotl` at lowering.rs:109),
+/// `--optimize=basic` PANIC (index 15). Bounding sibling:
+/// `prog_sponge_guard` — the same eight-lane sponge with FOUR distinct
+/// rotation offsets instead of eight — compiles and matches native at all four
+/// levels, so it is the number of distinct rotation constants, not the number
+/// of lanes, that decides. Compile-time — no inputs involved.
+#[test]
+#[ignore = "compiler panic at the DEFAULT configuration: 'invalid operand stack index (14): \
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
+            class; compile-time, no inputs involved"]
+fn prog_sponge() {
+    run_case("prog_sponge", include_str!("../cases/case_prog_sponge.rs"));
+}
+
+/// The largest variant of `prog_sponge` that compiles: four distinct rotation
+/// offsets instead of eight, on the same eight lanes. Passes at all four
+/// optimization levels.
+#[test]
+fn prog_sponge_guard() {
+    run_case("prog_sponge_guard", include_str!("../cases/case_prog_sponge_guard.rs"));
+}
+
+/// Pinned grid for [`prog_sponge_guard`]: `1 + input2 % 12` is the number of
+/// absorbed blocks, so these pairs pin the single-block and the twelve-block
+/// sponge, plus zero / all-ones / equal pairs.
+#[test]
+fn prog_sponge_guard_edges() {
+    run_case_with_inputs(
+        "prog_sponge_guard_edges",
+        include_str!("../cases/case_prog_sponge_guard.rs"),
+        &[
+            (0, 0),
+            (1, 11),
+            (0x9e37_79b9, 5),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (0x1234_5678, 0x1234_5678),
+            (7, 1),
+        ],
+    );
+}
+
+/// COMPILE-TIME COMPILER PANIC AT EVERY OPTIMIZATION LEVEL (safe Rust,
+/// campaign 21, 2026-09-09). Nested TLV record validator (cliff shape:
+/// three-level diamond nest whose deepest arm is the only consumer of the
+/// accumulated words; 8 u64 digest words, 4 shared rotate constants): a
+/// 64-byte container is parsed as tag / length / value records behind three
+/// nested checks — container magic, record header, value type — and only the
+/// innermost accepted path reads the eight digest words computed before the
+/// loop. Building it panics with `called Option::unwrap() on a None value` at
+/// hir/src/ir/dominance/frontier.rs:123 (`DominanceFrontier::new` from
+/// `spill::rewrite_cfg_spills`) — the F6 flavor `pressure::zero_trip_frontier`
+/// documents, here with no zero-trip-capable loop anywhere in the program and
+/// at EVERY optimization level (default, size-min, max, basic); the spills
+/// trace reports nine edges to split before the unwrap. Bounding
+/// sibling: `prog_tlv_guard` — the same validator with TWO digest words —
+/// compiles at all four levels; four words still panic at all four.
+/// Compile-time — no inputs involved. Un-ignore when the spill transform
+/// recomputes dominance after splitting edges.
+#[test]
+#[ignore = "compiler panic at every optimization level: 'called `Option::unwrap()` on a `None` \
+            value' at hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
+            spill::rewrite_cfg_spills) — F6 class; compile-time, no inputs involved"]
+fn prog_tlv() {
+    run_case("prog_tlv", include_str!("../cases/case_prog_tlv.rs"));
+}
+
+/// The largest variant of `prog_tlv` that compiles: two digest words instead
+/// of eight. Passes at all four optimization levels.
+#[test]
+fn prog_tlv_guard() {
+    run_case("prog_tlv_guard", include_str!("../cases/case_prog_tlv_guard.rs"));
+}
+
+/// Per-path pinned grid for [`prog_tlv_guard`]: `input2`'s low bits break the
+/// container magic (bit 0) and the version (bit 1) and set the record count
+/// and the value type, so these pairs pin the accepted deep path, both
+/// rejected middle paths and the rejected outer path, plus zero / all-ones /
+/// equal pairs.
+#[test]
+fn prog_tlv_guard_edges() {
+    run_case_with_inputs(
+        "prog_tlv_guard_edges",
+        include_str!("../cases/case_prog_tlv_guard.rs"),
+        &[
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (0, 12),
+            (0x1234_5678, 4),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+        ],
     );
 }

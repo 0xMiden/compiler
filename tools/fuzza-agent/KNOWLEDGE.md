@@ -1910,3 +1910,71 @@ native at the default configuration. Facts they established:
 - libtest's `--skip NAME` is a SUBSTRING filter: `--skip probe_m1` also
   skips `probe_m10`..`probe_m19` (a ladder batch that silently runs zero
   tests). Use `-- --exact <full path> <full path> …` to select rungs.
+
+## Realistic programs at the freight cliff (verified 2026-09-09, campaign 21)
+
+Twelve `no_std` kernels written the way a user writes them, but each built
+around one of the structured-control-flow shapes campaign 20 measured the
+spill-freight cliff on (corpus cases in `tests/programs.rs`, `prog_*` /
+`prog_*_guard`). Seven of the twelve fail to COMPILE at the default
+configuration, so the cliff is not a synthetic-ladder artifact.
+
+- **Realistic programs produce crossing count bands by construction.** The
+  producers are ordinary idioms: a mixer's rotation constants reused in the
+  seed, in the loop and in the finalization; a two-pass algorithm reusing the
+  bucket-selection shifts in both passes; a sponge sharing the permutation's
+  rotation offsets between absorb and squeeze; a decoder's error paths each
+  folding the same running statistics. No `#[inline(never)]` pinning, no
+  artificial cluster expression is needed.
+- **The number of DISTINCT rotate/shift constants is the lever, not the number
+  of u64 state values.** An eight-lane sponge compiles with four distinct
+  rotation offsets and panics with eight; a Rabin-Karp scanner still panics
+  with two fingerprint words instead of six but compiles once five rotate
+  constants become three. Reducing the u64 state alone moved the boundary only
+  where the state values were themselves the operands of distinct constants
+  (Feistel round keys, TLV digest words).
+- **In-loop wide dispatch over u64 bookkeeping is the SURVIVING shape.** A
+  20-opcode stack VM and a 16-state framer, each with six to eight u64
+  accumulators updated by every arm and combined in one per-step expression,
+  compile and match native at all four optimization levels; the shapes that
+  break are return-heavy search loops nested in an outer loop, asymmetric
+  diamonds in hot loops, two passes sharing constants, and three-level nests
+  whose deepest arm is the only consumer. A chain of early-`break` scans
+  remains the most tolerant (campaign 20's ranking holds at program scale).
+- **Opt level is not a safety ladder.** Among the seven panicking programs,
+  `--optimize=size-min` rescues four, `--optimize=max` rescues one (a different
+  one), `--optimize=basic` rescues two, and two programs panic at all four
+  levels. A user who hits this cannot rely on "try another `-O`".
+- **F12 (`remove-loop-invariant-args-from-before-block` →
+  `AliasingViolationError` at hir/src/patterns/rewriter.rs:335) has plain-Rust
+  producers at the DEFAULT level** with no labeled `continue` and no call in
+  the loop: a decoder loop with several early error returns carrying five or
+  six u64 statistics. Confirm the class by the driver's last line under
+  `MIDENC_TRACE='pattern-rewrite-driver=trace'`. Reducing the carried state
+  moves the default-level boundary but not the `--optimize=size-min` one (one
+  running value still panics there).
+- **The `frontier.rs:123` unwrap needs only FOUR crossing bands** in the
+  sequential-loop shape (bands used before the first bottom-tested loop and
+  again only inside the second; `pressure::frontier_seq`) — campaign 20 had
+  measured eight. Two and three bands compile, and the same shape with a single
+  loop compiles at every band count tried. In the dispatch shape
+  (`pressure::frontier_dispatch`) every ingredient is necessary at its size:
+  sixteen arms, THREE dynamically impossible `panic!()` arms, nine bands used
+  before / inside / after the loop; dropping any one of them compiles.
+- **The non-monotone cascade band boundary is not an LLVM shape change.** For
+  the empty-`continue` cascade at eleven bands (panics) and twelve (compiles),
+  the guest wasm is structurally identical — same locals `i32 i64 i64 i32 i32`,
+  same 4 loops / 2 blocks / 2 selects / 4 `br_if`, twelve simply carrying one
+  band's extra ops — and so is the pre-lift HIR (4 blocks, 347 vs 366 ops). The
+  difference is in the spill analysis: eleven bands give 25 spills / 37 reloads
+  / 4 split edges / 8 erased split reloads and a `NoSolution`, twelve give 25
+  spills / 44 reloads / 6 split edges / 10 erased — the surviving (non-split)
+  reloads are what happen to keep the failing op inside the window. Do not look
+  for an LLVM explanation of non-monotone band boundaries.
+- **`SinkOperandDefs` cannot sink a spill-slot reload, and never sinks into a
+  region.** It moves an operand's defining op next to its use *within a block*;
+  the pass that moves ops into regions is `ControlFlowSink`, registered but
+  never scheduled. `hir.load_local` carries `MemoryEffect::Read`, so the pass
+  logs `defining 'hir.load_local' cannot be moved: * op has memory effects` for
+  every reload (74 times on `interact::sink_spill`). Any hypothesis of the form
+  "the post-lift sink moves the reload into the region" is closed.
