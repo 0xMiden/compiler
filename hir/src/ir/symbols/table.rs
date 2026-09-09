@@ -32,14 +32,50 @@ pub trait SymbolTable {
     fn symbol_manager_mut(&mut self) -> SymbolManagerMut<'_>;
 
     /// Get the entry for `name` in this table
+    ///
+    /// This is a raw lookup: if the entry is an alias (e.g. [`FunctionAlias`]), the alias itself is
+    /// returned, not its target. See [SymbolTable::resolve_canonical].
+    ///
+    /// [`FunctionAlias`]: crate::dialects::builtin::FunctionAlias
     fn get(&self, name: SymbolName) -> Option<SymbolRef> {
         self.symbol_manager().lookup(name)
     }
 
     /// Resolve the entry for `path` in this table, or via the root symbol table
+    ///
+    /// This resolves the *named* symbol only: if it is an alias (e.g. [`FunctionAlias`]), the alias
+    /// itself is returned, not its target. See [SymbolTable::resolve_canonical].
+    ///
+    /// [`FunctionAlias`]: crate::dialects::builtin::FunctionAlias
     fn resolve(&self, path: &SymbolPath) -> Option<SymbolRef> {
         let found = self.symbol_manager().lookup_symbol_ref(path)?;
         found.as_trait_ref::<dyn Symbol>()
+    }
+
+    /// Like [SymbolTable::resolve], but follows symbol aliases (e.g. [`FunctionAlias`]) to the
+    /// canonical symbol.
+    ///
+    /// Each alias hop is resolved in the symbol table of the alias being followed. Returns
+    /// `None` if the path or any hop does not resolve, or if the alias chain is cyclic.
+    ///
+    /// [`FunctionAlias`]: crate::dialects::builtin::FunctionAlias
+    // TODO consider returning an error
+    fn resolve_canonical(&self, path: &SymbolPath) -> Option<SymbolRef> {
+        let found = self.resolve(path)?;
+        found.resolve_canonical().ok()
+    }
+
+    /// Resolve a callable name to both the named symbol and its validated canonical target.
+    ///
+    /// Non-callable symbols are rejected and resolution failures retain their cause for
+    /// diagnostics.
+    fn resolve_callable(
+        &self,
+        path: &SymbolPath,
+    ) -> Result<crate::ResolvedSymbolCallee, crate::SymbolResolutionError> {
+        self.resolve(path)
+            .ok_or_else(|| crate::SymbolResolutionError::UnknownSymbol { path: path.clone() })?
+            .resolve_callable()
     }
 
     /// Insert `entry` in the symbol table, but only if no other symbol with the same name exists.

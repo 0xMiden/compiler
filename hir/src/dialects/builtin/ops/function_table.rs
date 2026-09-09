@@ -264,12 +264,33 @@ impl FunctionTableEntry {
     /// which may define a different `@target`. Resolving from the call site would silently
     /// dispatch to one function while every analysis reasoned about another.
     ///
+    /// The result is the *named* symbol: if the path names a `FunctionAlias`, the alias itself
+    /// is returned.
+    ///
     /// `FunctionTableEntry` sits in a table's `entries` region rather than a symbol table, so
     /// the nearest symbol table is the module enclosing the table.
     pub fn resolve_callee(&self) -> Option<SymbolRef> {
         let symbol_table = self.as_operation().nearest_symbol_table()?;
         let symbol_table = symbol_table.borrow();
         symbol_table.as_symbol_table()?.resolve(self.callee().path())
+    }
+
+    /// Resolve the entry's named symbol and canonical callable, following `FunctionAlias` hops.
+    ///
+    /// Resolution starts from the symbol table containing the entry, as described by
+    /// [Self::resolve_callee].
+    pub fn resolve_callable(
+        &self,
+    ) -> Result<crate::ResolvedSymbolCallee, crate::SymbolResolutionError> {
+        let table = self
+            .as_operation()
+            .nearest_symbol_table()
+            .ok_or(crate::SymbolResolutionError::NoSymbolTable)?;
+        table
+            .borrow()
+            .as_symbol_table()
+            .ok_or(crate::SymbolResolutionError::NoSymbolTable)?
+            .resolve_callable(self.callee().path())
     }
 }
 
@@ -292,5 +313,69 @@ impl OpParser for FunctionTableEntry {
         );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::string::ToString;
+
+    use super::*;
+    use crate::{
+        diagnostics::Uri,
+        dialects::builtin::{Function, FunctionAlias},
+        parse::{ParserConfig, parse_any},
+        testing::Test,
+    };
+
+    /// An entry resolves its callee in the table's scope, then follows the alias in the alias's
+    /// own scope across module boundaries.
+    ///
+    /// The table lives in `@a` and names `@b`'s alias by absolute path. That alias targets
+    /// a function in `@c` by absolute path. `resolve_callee` must return the alias and
+    /// `resolve_callable` must follow the hop from `@b` to `@c`.
+    #[test]
+    fn resolve_callee_and_callable_follow_scopes_across_modules() {
+        let test = Test::default();
+        let world = parse_any(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("function_table_cross_module_alias.hir"),
+            r#"
+builtin.world {
+builtin.module public @a {
+    builtin.function_table private @tbl : 1 {
+        builtin.function_table_entry 0 ::@b::@alias tag 1;
+    };
+};
+builtin.module public @b {
+    builtin.function_alias private @alias -> ::@c::@body;
+};
+builtin.module public @c {
+    builtin.function private extern("C") @body() { builtin.ret; };
+};
+};
+"#,
+        )
+        .unwrap();
+
+        let mut entry = None;
+        world.borrow().prewalk_all(|op: &Operation| {
+            if let Some(e) = op.downcast_ref::<FunctionTableEntry>() {
+                entry = Some(e.as_function_table_entry_ref());
+            }
+        });
+        let entry = entry.expect("expected a function table entry");
+        let entry = entry.borrow();
+
+        // `resolve_callee` returns the *named* symbol
+        let named = entry.resolve_callee().expect("the alias should resolve");
+        assert!(named.borrow().as_symbol_operation().downcast_ref::<FunctionAlias>().is_some(),);
+        assert_eq!(named.borrow().path().to_string(), "b/alias");
+
+        // `resolve_callable` follows the alias hop from `@b` to the function in `@c`.
+        let target = entry.resolve_callable().unwrap().target().as_symbol_ref();
+        assert!(target.borrow().as_symbol_operation().downcast_ref::<Function>().is_some(),);
+        assert_eq!(target.borrow().path().to_string(), "c/body");
+        assert!(named != target);
     }
 }

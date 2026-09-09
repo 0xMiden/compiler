@@ -32,6 +32,9 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 ///   Declarations are required in order to reference functions which are not in the compilation
 ///   graph, but are expected to be provided at runtime. The difference between the two depends on
 ///   whether or not the [super::Function] operation has a region (no region == declaration).
+/// * [super::FunctionAlias], an additional name for a callable, possibly defined in another
+///   module, e.g. a secondary export name. The alias's visibility is independent of its target's,
+///   so a public alias may expose a private function.
 /// * [super::GlobalVariable], either a declaration of an externally-defined global, or a
 ///   definition, same as [super::Function].
 /// * [super::FunctionTable], describing a function-reference table in the component's shared
@@ -46,7 +49,8 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 /// * `Visibility::Public` indicates that all functions exported from the module with `Public`
 ///   visibility form the public interface of the module, and thus are not permitted to be dead-
 ///   code eliminated, or otherwise rewritten by optimizations in a way that changes the public
-///   interface.
+///   interface. This extends to names exposed via a public [super::FunctionAlias]. the alias is
+///   part of the public interface and keeps its (possibly private) target live.
 /// * `Visibility::Internal` indicates that all functions exported from the module with `Public`
 ///   or `Internal` visibility are only visibile by modules in the current compilation graph, and
 ///   are thus eligible for dead-code elimination or other invasive rewrites so long as all
@@ -90,6 +94,51 @@ impl Module {
     /// lives below this boundary, so the linker treats it as the floor for compiler-managed
     /// memory regions (global variables, function tables, and the dynamic heap).
     pub const RESERVED_MEMORY_ATTR: &'static str = "reserved_memory";
+
+    /// The module's own function operations, including declarations but excluding aliases.
+    ///
+    /// An alias to a function never adds a body to this inventory.
+    pub fn functions(&self) -> impl Iterator<Item = super::FunctionRef> + '_ {
+        self.symbols.symbols().filter_map(|symbol| {
+            symbol
+                .borrow()
+                .as_symbol_operation()
+                .as_operation_ref()
+                .try_downcast_op::<super::Function>()
+                .ok()
+        })
+    }
+
+    /// Returns the function definitions contained in this module.
+    pub fn defined_functions(&self) -> impl Iterator<Item = super::FunctionRef> + '_ {
+        // TODO(opt): don't iterate twice but use more narrow `filter`
+        self.functions().filter(|function| !function.borrow().is_declaration())
+    }
+
+    /// Returns all callable symbols contained in this module, regardless of visibility.
+    pub fn callable_symbols(&self) -> impl Iterator<Item = crate::CallableSymbolRef> + '_ {
+        self.symbols
+            .symbols()
+            .filter_map(|symbol| symbol.as_trait_ref::<dyn crate::CallableSymbol>())
+    }
+
+    /// Returns all non-private callable definitions and aliases exported by this module.
+    ///
+    /// Excludes function declarations (imports), but includes aliases even if they
+    /// target external symbols. Resolution errors are surfaced as `Err` to avoid
+    /// silent omission from the module interface.
+    pub fn exported_callables(
+        &self,
+    ) -> impl Iterator<Item = Result<crate::ResolvedSymbolCallee, crate::SymbolResolutionError>> + '_
+    {
+        // TODO(opt): don't iterate twice but use more narrow `filter`
+        self.callable_symbols()
+            .filter(|symbol| {
+                let symbol = symbol.borrow();
+                !symbol.is_private() && !symbol.is_declaration()
+            })
+            .map(|symbol| (symbol as SymbolRef).resolve_callable())
+    }
 
     #[inline(always)]
     pub fn as_module_ref(&self) -> ModuleRef {
