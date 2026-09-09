@@ -10,6 +10,7 @@ mod canon;
 mod compose;
 mod control_flow;
 mod debug_info;
+mod interact;
 mod memory;
 mod opt_levels;
 mod pressure;
