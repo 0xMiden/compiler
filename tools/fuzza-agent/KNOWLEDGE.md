@@ -1978,3 +1978,82 @@ configuration, so the cliff is not a synthetic-ladder artifact.
   logs `defining 'hir.load_local' cannot be moved: * op has memory effects` for
   every reload (74 times on `interact::sink_spill`). Any hypothesis of the form
   "the post-lift sink moves the reload into the region" is closed.
+
+## F12's producer rule and the workaround map (verified 2026-09-09, campaign 22)
+
+The `RemoveLoopInvariantArgsFromBeforeBlock` aliasing panic (F12,
+`AliasingViolationError` at hir/src/patterns/rewriter.rs:335) and the seven
+campaign-21 programs that do not compile at the default configuration, taken
+apart with post-lift IR dumps (`-Z print-ir-after-pass=lift-control-flow`
+plus `MIDENC_TRACE='pass:lift-control-flow=trace'`) and one-feature-at-a-time
+source ladders (corpus cases `compose::invariant_args_min`/`_guard` and
+`programs::prog_*_wa`).
+
+- **The pattern's "loop-invariant before-block argument" is a payload column
+  that still carries `ub.poison`.** cfg-to-scf materialises exactly ONE
+  `ub.poison` value per TYPE per function and uses it as the initializer of
+  every `scf.while` payload column, so every `scf.while` in a function reads
+  `scf.while %poison, %poison, ...`. Both of the pattern's invariance tests
+  compare against that init operand, so they degenerate into "is this operand
+  the poison value?" — the pattern matches as soon as ONE column still carries
+  poison at the `scf.condition`/`scf.yield`. The panicking minimal reproducer
+  has an in-body `scf.if` whose EVERY arm yields poison in one column;
+  canonicalization (`convert-trivial-if-to-select`) collapses that column to
+  the poison value itself, the condition op forwards it, and the pattern fires.
+  Its passing sibling has no all-arms-poison column. A case that compiles
+  proves the pattern did not match — it fires on every match, and its rewrite
+  always aborts.
+- **The source-level producer is a `return` that leaves the FUNCTION from
+  inside a two-level loop nest** (the returned value is the exit payload
+  cfg-to-scf must thread out, and it is undefined on the continuing path).
+  Verified on seven variants of one 26-line nest: an inner `loop` whose first
+  statement is an early `return` panics; so does the same nest with the inner
+  loop setting a flag and the `return` in the outer body, and so does a version
+  whose returned value is defined on every path (the poison column is the
+  synthesized dispatch payload, not the user value). The same nest compiles
+  when the inner exit is a labeled `break` or a labeled `continue`, when the
+  nest is flattened to a single loop with the same early `return`, and — one
+  statement moved — when the `return` is placed BELOW the inner `break`.
+- **Whether a given source program reaches that IR shape is decided by how much
+  LLVM leaves for cfg-to-scf, not by an idiom.** On the reduction ladder from
+  `prog_varint`, removing the byte buffer, three of the four error returns,
+  five of the six running values, the u64 width and the value accumulator all
+  keep the panic; removing one of the two xorshift steps, replacing the
+  xorshift with an LCG, or dropping the single post-loop `rotate_left` of a
+  band shared with the loop body all make it compile. Reduce by removing
+  features, not by reasoning about which statistic "looks invariant".
+- **F12 is not an opt-level ladder and DWARF can widen it.** The minimal
+  reproducer panics at O2, O3 and O1 and compiles at `-Oz`, identically with
+  and without guest DWARF; `prog_varint` panics at O2, `-Oz` and O1, compiles
+  at `--optimize=max` WITH DWARF and panics at max WITHOUT it
+  (`FUZZA_GUEST_DEBUG=0`) — the campaign-16 no-DWARF widening reproduces at
+  program scale.
+- **`core::hint::black_box` on the rotate/shift constants is the cheapest
+  rescue for the freight-driven panics.** Wrapping every USE of a program's
+  rotate/shift constants (the `const` definitions stay) turns the CSE-merged
+  count bands into runtime counts and rescues four of the five F6 programs and
+  one of the two F12 programs at the default level, with no restructuring and
+  the same answer on every input. It costs about 1.6-4.8x the MASM of the
+  reduced campaign-21 guard (e.g. 3999 vs 2195 lines for the Rabin-Karp
+  scanner, 3840 vs 804 for the Feistel mixer).
+- **"Move the hot loop into an `#[inline(never)]` helper" works only if the
+  state is passed BY REFERENCE.** With six to eight u64s passed by value the
+  call's argument list is 17 felts and the spill analysis panics at
+  hir-analysis/src/analyses/spills.rs:2366 ("unable to spill sufficient
+  capacity to hold all operands on stack at one time at hir.exec ..."): the
+  spill loop's candidate set excludes the instruction's own operands, so it
+  runs out. The same helper taking `&[u64; N]`/`&mut [u64; N]` compiles for
+  every program tried. A call signature at or over 17 felts is not lowerable;
+  keep helper signatures small.
+- **The rewrites that do NOT move any of these panics**: replacing N named u64
+  state values with one `[u64; N]` (LLVM SROAs it straight back), and replacing
+  `x.rotate_left(C)` with a `(x << C) | (x >> (BITS - C))` helper (LLVM
+  re-canonicalises it to the same funnel shift, so the count bands are
+  unchanged). Both were checked on all seven programs and rescued none.
+- **A three-level diamond nest whose deepest arm is the only consumer of
+  pre-computed words is rescued by moving THAT ARM'S expression into an
+  `#[inline(never)]` helper** (or by computing the words lazily inside the
+  arm), while moving the whole record loop into a helper, splitting the program
+  into three functions, and flattening the diamond into an `if`/`else if` chain
+  all leave the `frontier.rs:123` unwrap in place. Shrink what is live ACROSS
+  the loop, not the loop's own shape.
