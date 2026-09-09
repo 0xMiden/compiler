@@ -254,6 +254,21 @@ cargo make fuzza-probe <test-name> hir     # kinds: hir / wat / masm, or a,b lis
 # Nuke all coverage state and start over (also wipes target/fuzza-coverage, but
 # NOT your scratch log under tools/fuzza-agent/scratch/):
 cargo make fuzza-cov-clean
+
+# Evidence traces for one test (add `-- --exact <full::path> --nocapture`):
+#   which canonicalization patterns fired ("trying to match '<name>'" then
+#   "pattern matched successfully"):
+MIDENC_TRACE='pattern-rewrite-driver=trace' cargo test -p midenc-integration-tests <test> -- --exact <full::path> --nocapture
+#   spills, reloads, edge splits, erased split reloads, unused phis:
+MIDENC_TRACE='analysis:spills=trace,pass:spills=trace' cargo test ... --nocapture
+#   emitter operand drops:
+MIDENC_TRACE='codegen:operand-scheduling=trace' cargo test ... --nocapture
+#   the IR after one pass (pin the flag in the case via run_case_with_flags,
+#   or MIDENC_DIFF_FLAGS='-Z print-ir-after-pass=<pass>'; the printer logs
+#   through `pass:<pass>=trace`, so both are needed; pass names include
+#   local2reg, transform-spills, lift-control-flow, canonicalizer,
+#   sink-operand-defs, cse):
+MIDENC_DIFF_FLAGS='-Z print-ir-after-pass=lift-control-flow' MIDENC_TRACE='pass:lift-control-flow=trace' cargo test ... --nocapture
 ```
 
 Outputs live under `target/fuzza-coverage/`:
