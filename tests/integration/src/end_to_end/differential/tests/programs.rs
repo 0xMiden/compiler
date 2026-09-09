@@ -884,6 +884,51 @@ fn prog_rkscan_guard_o1() {
     );
 }
 
+/// Workaround for [`prog_rkscan`] (campaign 22): the whole scanner, unchanged
+/// except that every use of the five rotate constants is wrapped in
+/// `core::hint::black_box` — the counts arrive as runtime values, so no
+/// CSE-merged constant band crosses the search loop and the F6 panic
+/// (`emit/mod.rs:623`) disappears at the default level. Smallest rescue found:
+/// thirty-one one-token edits, no restructuring, identical results on the
+/// 1225-pair native boundary grid. Cost: 3999 MASM lines against 2195 for the
+/// reduced `prog_rkscan_guard` (which drops two rotate constants and two
+/// fingerprint words). Moving the search loop into an `#[inline(never)]`
+/// helper also works, but only when the fingerprint words are passed by
+/// reference: by value the call needs a seventeen-felt argument list and
+/// panics in the spill analysis instead (`calls::sig17` pins that limit).
+/// Configuration note: this rescue holds at the default level, `size-min`,
+/// `max` and `basic`, but WITHOUT guest DWARF (`FUZZA_GUEST_DEBUG=0`) the
+/// black-boxed scanner panics in the F12 class instead
+/// (`AliasingViolationError` at hir/src/patterns/rewriter.rs:335) — the
+/// Local2Reg promotion that DWARF blocks creates the poison-carrying payload
+/// column `compose::invariant_args_min` documents.
+#[test]
+fn prog_rkscan_wa() {
+    run_case("prog_rkscan_wa", include_str!("../cases/case_prog_rkscan_wa.rs"));
+}
+
+/// Per-exit pinned grid for [`prog_rkscan_wa`], the same pairs as
+/// [`prog_rkscan_guard_edges`]: the verified match (tag 1), the
+/// false-positive budget (2), the sentinel byte (3) and the exhausted search
+/// (4), plus zero / all-ones / equal pairs.
+#[test]
+fn prog_rkscan_wa_edges() {
+    run_case_with_inputs(
+        "prog_rkscan_wa_edges",
+        include_str!("../cases/case_prog_rkscan_wa.rs"),
+        &[
+            (0, 0),
+            (0, 4),
+            (768, 0),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (0x9e37_79b9, 0x9e37_79b9),
+            (1, 1),
+        ],
+    );
+}
+
 /// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
 /// campaign 21, 2026-09-09). LEB128 record decoder (cliff shape: return-heavy
 /// inner loop nested in an outer loop; 6 u64 running values, 4 shared shift
@@ -965,6 +1010,43 @@ fn prog_varint_guard_oz() {
     );
 }
 
+/// Workaround for [`prog_varint`] (campaign 22): all six running values and
+/// all four error returns kept, with every use of the four shift constants
+/// wrapped in `core::hint::black_box`; the F12 aliasing panic
+/// (`rewriter.rs:335`) disappears at the default level. It is the ONLY
+/// workaround that rescued this program: the array-state rewrite, the manual
+/// shift spelling, moving the decode loop into an `#[inline(never)]` helper
+/// (by value or by `&mut`), the three-way function split, and even rewriting
+/// the four in-loop `return`s into a single exit through `break 'outer` all
+/// still panic in the same pattern. Cost: 4399 MASM lines against 2904 for
+/// `prog_varint_guard` (two running values instead of six).
+#[test]
+fn prog_varint_wa() {
+    run_case("prog_varint_wa", include_str!("../cases/case_prog_varint_wa.rs"));
+}
+
+/// Per-error-class pinned grid for [`prog_varint_wa`], the same pairs as
+/// [`prog_varint_guard_edges`]: the truncated frame (tag 1), the 64-bit
+/// overflow (2), the overlong encoding (3), the reserved marker (4) and the
+/// clean frame (5), plus zero / all-ones / equal pairs.
+#[test]
+fn prog_varint_wa_edges() {
+    run_case_with_inputs(
+        "prog_varint_wa_edges",
+        include_str!("../cases/case_prog_varint_wa.rs"),
+        &[
+            (0, 0),
+            (0, 8),
+            (0, 2),
+            (30208, 0),
+            (0, 1),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+        ],
+    );
+}
+
 /// COMPILE-TIME COMPILER PANIC AT EVERY OPTIMIZATION LEVEL (safe Rust,
 /// campaign 21, 2026-09-09). Conditional-round Feistel mixer (cliff shape:
 /// asymmetric diamond in a hot loop; 6 u64 round keys, 4 shared rotate
@@ -1011,6 +1093,41 @@ fn prog_feistel_guard_edges() {
     run_case_with_inputs(
         "prog_feistel_guard_edges",
         include_str!("../cases/case_prog_feistel_guard.rs"),
+        &[
+            (0, 0),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (1, 1),
+            (0x9e37_79b9, 0x9e37_79b9),
+            (0x8000_0000, 0x7fff_ffff),
+            (0x1234_5678, 0xdead_beef),
+        ],
+    );
+}
+
+/// Workaround for [`prog_feistel`] (campaign 22): all six round keys kept,
+/// with every use of the four rotate constants wrapped in
+/// `core::hint::black_box`. This is the only rescue for a program that panics
+/// at ALL FOUR optimization levels (F6, `lowering.rs:109`) — `--optimize`
+/// offers nothing here. Cost: 3840 MASM lines against 804 for
+/// `prog_feistel_guard` (two round keys instead of six). Moving the round loop
+/// into an `#[inline(never)]` helper works as well, but only with the keys
+/// behind a `&[u64; 6]`: passing them by value makes the call argument list
+/// seventeen felts and the spill analysis panics instead.
+#[test]
+fn prog_feistel_wa() {
+    run_case("prog_feistel_wa", include_str!("../cases/case_prog_feistel_wa.rs"));
+}
+
+/// Pinned grid for [`prog_feistel_wa`], the same pairs as
+/// [`prog_feistel_guard_edges`]: schedules that take the round function on
+/// most, few and alternating blocks, plus zero / all-ones / equal pairs.
+#[test]
+fn prog_feistel_wa_edges() {
+    run_case_with_inputs(
+        "prog_feistel_wa_edges",
+        include_str!("../cases/case_prog_feistel_wa.rs"),
         &[
             (0, 0),
             (0xffff_ffff, 0xffff_ffff),
@@ -1079,6 +1196,41 @@ fn prog_rle_guard_edges() {
     );
 }
 
+/// Workaround for [`prog_rle`] (campaign 22): all five encoder statistics and
+/// all five rotate constants kept; only the escape arm's statistics update
+/// moves into an `#[inline(never)]` helper taking them as a `&mut [u64; 5]`,
+/// which clears the F12 aliasing panic (`rewriter.rs:335`) at the default
+/// level. Cost: 2493 MASM lines against 1850 for `prog_rle_guard` (three
+/// statistics instead of five). Moving the whole encode loop into a helper and
+/// the four-way function split work too; black-boxing the rotate constants,
+/// the array-state rewrite, the manual rotate spelling and making the common
+/// arm touch every statistic all still panic.
+#[test]
+fn prog_rle_wa() {
+    run_case("prog_rle_wa", include_str!("../cases/case_prog_rle_wa.rs"));
+}
+
+/// Pinned grid for [`prog_rle_wa`], the same pairs as
+/// [`prog_rle_guard_edges`]: run-heavy, escape-heavy and mixed signals, plus
+/// zero / all-ones / equal pairs.
+#[test]
+fn prog_rle_wa_edges() {
+    run_case_with_inputs(
+        "prog_rle_wa_edges",
+        include_str!("../cases/case_prog_rle_wa.rs"),
+        &[
+            (0, 0),
+            (1, 7),
+            (0x1234_5678, 3),
+            (5, 6),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (0xdead_beef, 0xdead_beef),
+        ],
+    );
+}
+
 /// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
 /// campaign 21, 2026-09-09). Two-pass entropy-coder front-end (cliff shape:
 /// sequential loops sharing constants; 6 u64 statistics, 8 shared shift
@@ -1121,6 +1273,39 @@ fn prog_histogram_guard_edges() {
     run_case_with_inputs(
         "prog_histogram_guard_edges",
         include_str!("../cases/case_prog_histogram_guard.rs"),
+        &[
+            (0, 0),
+            (1, 64),
+            (7, 32),
+            (0x1234_5678, 1),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (0x9e37_79b9, 0x9e37_79b9),
+        ],
+    );
+}
+
+/// Workaround for [`prog_histogram`] (campaign 22): both passes and all eight
+/// bucket-selection shift constants kept, with every use of a constant wrapped
+/// in `core::hint::black_box`; the F6 panic (`lowering.rs:109`) disappears at
+/// the default level. Cost: 4112 MASM lines against 2389 for
+/// `prog_histogram_guard` (six constants instead of eight). Moving the
+/// emission loop into an `#[inline(never)]` helper works too, but only with
+/// the six statistics behind a `&mut [u64; 6]`.
+#[test]
+fn prog_histogram_wa() {
+    run_case("prog_histogram_wa", include_str!("../cases/case_prog_histogram_wa.rs"));
+}
+
+/// Pinned grid for [`prog_histogram_wa`], the same pairs as
+/// [`prog_histogram_guard_edges`]: the shortest and longest buffers, a
+/// single-bucket buffer, plus zero / all-ones / equal pairs.
+#[test]
+fn prog_histogram_wa_edges() {
+    run_case_with_inputs(
+        "prog_histogram_wa_edges",
+        include_str!("../cases/case_prog_histogram_wa.rs"),
         &[
             (0, 0),
             (1, 64),
@@ -1189,6 +1374,40 @@ fn prog_sponge_guard_edges() {
     );
 }
 
+/// Workaround for [`prog_sponge`] (campaign 22): all eight lanes and all eight
+/// rotation offsets kept, with every use of an offset wrapped in
+/// `core::hint::black_box`; the F6 panic (`emit/mod.rs:623`) disappears at the
+/// default level. Cost: 3906 MASM lines against 2060 for `prog_sponge_guard`
+/// (four distinct offsets instead of eight). Moving the absorb loop into an
+/// `#[inline(never)]` helper — lanes by value or behind a `&mut [u64; 8]` —
+/// and splitting the program into message/absorb/squeeze functions also work
+/// on this program.
+#[test]
+fn prog_sponge_wa() {
+    run_case("prog_sponge_wa", include_str!("../cases/case_prog_sponge_wa.rs"));
+}
+
+/// Pinned grid for [`prog_sponge_wa`], the same pairs as
+/// [`prog_sponge_guard_edges`]: one block, mid and maximum block counts, plus
+/// zero / all-ones / equal pairs.
+#[test]
+fn prog_sponge_wa_edges() {
+    run_case_with_inputs(
+        "prog_sponge_wa_edges",
+        include_str!("../cases/case_prog_sponge_wa.rs"),
+        &[
+            (0, 0),
+            (1, 11),
+            (0x9e37_79b9, 5),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (0x1234_5678, 0x1234_5678),
+            (7, 1),
+        ],
+    );
+}
+
 /// COMPILE-TIME COMPILER PANIC AT EVERY OPTIMIZATION LEVEL (safe Rust,
 /// campaign 21, 2026-09-09). Nested TLV record validator (cliff shape:
 /// three-level diamond nest whose deepest arm is the only consumer of the
@@ -1231,6 +1450,45 @@ fn prog_tlv_guard_edges() {
     run_case_with_inputs(
         "prog_tlv_guard_edges",
         include_str!("../cases/case_prog_tlv_guard.rs"),
+        &[
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (0, 12),
+            (0x1234_5678, 4),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+        ],
+    );
+}
+
+/// Workaround for [`prog_tlv`] (campaign 22): the three-level nest, the eight
+/// digest words and the container parser are unchanged; only the deepest arm's
+/// mixing expression moves into an `#[inline(never)] fn mix(&[u64; 8], u64)`.
+/// That is enough to clear the F6 `frontier.rs:123` unwrap at the default
+/// level on a program that panics at ALL FOUR optimization levels. Cost: 2318
+/// MASM lines against 1552 for `prog_tlv_guard` (four digest words instead of
+/// eight). Nothing cheaper worked: black-boxing the rotate constants, the
+/// array-state rewrite, the manual rotate spelling, moving the whole record
+/// loop into a helper (by value or by `&mut`), the three-way function split
+/// and flattening the diamond into an `if`/`else if` chain all still panic at
+/// `frontier.rs:123`. Computing the eight words lazily inside the deepest arm
+/// also compiles.
+#[test]
+fn prog_tlv_wa() {
+    run_case("prog_tlv_wa", include_str!("../cases/case_prog_tlv_wa.rs"));
+}
+
+/// Pinned grid for [`prog_tlv_wa`], the same pairs as
+/// [`prog_tlv_guard_edges`]: a well-formed container, a bad magic, a bad
+/// version, the maximum record count and a mid-size container, plus zero /
+/// all-ones / equal pairs.
+#[test]
+fn prog_tlv_wa_edges() {
+    run_case_with_inputs(
+        "prog_tlv_wa_edges",
+        include_str!("../cases/case_prog_tlv_wa.rs"),
         &[
             (0, 0),
             (0, 1),

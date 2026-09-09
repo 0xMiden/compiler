@@ -373,6 +373,77 @@ fn nest_continue_inline() {
     run_case("nest_continue_inline", include_str!("../cases/case_nest_continue_inline.rs"));
 }
 
+/// MINIMAL COMPILE-TIME COMPILER PANIC REPRODUCER for the F12 aliasing class
+/// (safe Rust, campaign 22, 2026-09-09), reduced from `programs::prog_varint`
+/// to twenty-six lines: an inner `loop` whose FIRST statement is an early
+/// `return`, nested in an outer `while`, a two-step xorshift byte source, and
+/// two rotate constants (7 before and inside the loop; 13 in the post-loop
+/// fold, shared with the xorshift's `<< 13` count).
+/// No labeled `continue`, no call in the loop, no u64 state, four running
+/// values fewer than `prog_varint`. Building it panics with
+/// `AliasingViolationError { kind: Mutable, location:
+/// hir/src/ir/operation.rs:877 }` at hir/src/patterns/rewriter.rs:335, the
+/// driver's last line being `trying to match
+/// 'remove-loop-invariant-args-from-before-block' dialect=scf op=while`.
+/// MECHANISM (post-lift IR dumps of this case and of its passing sibling,
+/// `-Z print-ir-after-pass=lift-control-flow`): cfg-to-scf materialises ONE
+/// `ub.poison<u32>` per function and uses it as the initializer of EVERY
+/// `scf.while` payload column, so the pattern's invariance test — "the i-th
+/// yield operand equals the i-th init", or "the condition operand at the
+/// yielded after-block argument's index equals the i-th init" — is satisfied
+/// by ANY column that still carries that one poison value at the loop's back
+/// edge. Here the in-body `scf.if` yields poison in column 2 in every arm, the
+/// canonicalizer collapses it to the poison value itself, the `scf.condition`
+/// forwards it, and the pattern matches. The passing sibling's in-body `if`
+/// has no all-arms-poison column, so the pattern never matches.
+/// Per level: default PANIC, `--optimize=max` PANIC, `--optimize=basic`
+/// PANIC, `--optimize=size-min` PASSES; identical with and without guest
+/// DWARF (`FUZZA_GUEST_DEBUG=0`). Bounded by `invariant_args_guard` below —
+/// the same nest computing the same answer with the `return` moved BELOW the
+/// `break` — and by the same nest with a labeled `break`, with a labeled
+/// `continue`, and by the single-loop version, all of which compile.
+/// Compile-time — no inputs involved. Un-ignore when the rewriter stops taking
+/// a mutable borrow of an operation it is already borrowing.
+#[test]
+#[ignore = "compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: Mutable, \
+            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
+            matching 'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no \
+            inputs involved"]
+fn invariant_args_min() {
+    run_case("invariant_args_min", include_str!("../cases/case_invariant_args_min.rs"));
+}
+
+/// Passing sibling of [`invariant_args_min`]: the same nest, the same answer
+/// on every input, with the inner loop's early `return` moved BELOW the
+/// `break`. One statement moved is the whole diff, and it is enough for the
+/// lifted `scf.while` to have no all-arms-poison payload column, so
+/// `RemoveLoopInvariantArgsFromBeforeBlock` does not match. Passes at all four
+/// optimization levels and with guest DWARF off.
+#[test]
+fn invariant_args_guard() {
+    run_case("invariant_args_guard", include_str!("../cases/case_invariant_args_guard.rs"));
+}
+
+/// Per-exit pinned grid for [`invariant_args_guard`]: the in-loop `return`
+/// (tag 1) and the normal exit (tag 5), plus zero / all-ones / equal pairs.
+#[test]
+fn invariant_args_guard_edges() {
+    run_case_with_inputs(
+        "invariant_args_guard_edges",
+        include_str!("../cases/case_invariant_args_guard.rs"),
+        &[
+            (0, 0),
+            (1, 0),
+            (255, 3),
+            (0xffff_ffff, 0xffff_ffff),
+            (0, 0xffff_ffff),
+            (0xffff_ffff, 0),
+            (1, 1),
+            (0x9e37_79b9, 0x9e37_79b9),
+        ],
+    );
+}
+
 /// packed_fields x ret_area: helpers return `repr(C, packed)` records (a
 /// u128 at byte offset 1, a u64 at offset 3) BY VALUE straight into
 /// runtime-indexed elements of stack arrays of such records, so the
