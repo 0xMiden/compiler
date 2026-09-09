@@ -1562,6 +1562,17 @@ of campaign 18, every rung value-checked at the default level and at
   can stackify differently from the harness's build-std/LTO/cgu=1 build,
   so confirm toolchain-class divergences on the harness-built wasm
   (wasmtime on target/miden_test_shared/.../differential_<case>.wasm).
+- **Block-end sweep of the 2026-09-09 corpus (359 tests; campaign 23):**
+  256 random pairs per case at the default configuration are value-clean
+  (zero divergences); at max / size-min / basic / no-DWARF the only
+  movements beyond the campaign-16 lists are realistic programs entering
+  KNOWN classes (`prog_fixedpoint` at basic → the O3 emitter site;
+  `prog_varint_guard` at size-min and `prog_rkscan_guard` at basic → their
+  pinned twins; without DWARF `prog_sorts`, `prog_rkscan_guard` and
+  `prog_rkscan_wa` → the loop-invariant-args aliasing panic). Rule of
+  thumb confirmed: a no-DWARF sweep is the cheapest way to find the
+  loop-invariant-args producers hiding behind Local2Reg, and `black_box`
+  rescues that depend on constant bands can fall into it.
 - **Configuration knobs summary:** `MIDENC_DIFF_FLAGS` (midenc flags,
   per-case flags win per option), `FUZZA_INPUT_PAIRS=N` (random pairs
   per case), `FUZZA_GUEST_DEBUG=0|1|2` (guest debug-info level; default

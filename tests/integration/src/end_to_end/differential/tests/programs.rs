@@ -219,6 +219,13 @@ fn prog_decoder_edges() {
 /// and pairwise-equality checks, lower-bound binary searches for a present
 /// and an absent key, a linear rank cross-checked against the search; the
 /// sorted array and every flag folded.
+/// Configuration note (campaign 23 sweep): WITHOUT guest DWARF
+/// (`FUZZA_GUEST_DEBUG=0`) this program panics in the F12 class
+/// (`AliasingViolationError` at hir/src/patterns/rewriter.rs:335 while
+/// matching `remove-loop-invariant-args-from-before-block`): the Local2Reg
+/// promotion that DWARF blocks turns the sort loops' early exits into the
+/// poison-carrying payload column `compose::invariant_args_min` documents.
+/// Passes at every opt-level with DWARF on.
 #[test]
 fn prog_sorts() {
     run_case("prog_sorts", include_str!("../cases/case_prog_sorts.rs"));
@@ -253,6 +260,10 @@ fn prog_sorts_edges() {
 /// every quadrant; every result and check flag folded. Passes at the
 /// default level and at `--optimize=size-min`; at `--optimize=max` it is
 /// the `prog_fixedpoint_o3` compile panic below.
+/// Configuration note (campaign 23 sweep): at `--optimize=basic` the full
+/// program panics at codegen/masm/src/emit/mod.rs:623 (`invalid operand
+/// stack index`) — the same F6 site as at `--optimize=max`
+/// (`prog_fixedpoint_o3`); the default level and `size-min` compile.
 #[test]
 fn prog_fixedpoint() {
     run_case("prog_fixedpoint", include_str!("../cases/case_prog_fixedpoint.rs"));
@@ -839,6 +850,11 @@ fn prog_rkscan() {
 /// instead of six. Passes at the default level, `--optimize=size-min` and
 /// `--optimize=max`; still panics at `--optimize=basic` (see
 /// `prog_rkscan_guard_o1`).
+/// Configuration note (campaign 23 sweep): WITHOUT guest DWARF
+/// (`FUZZA_GUEST_DEBUG=0`) the reduced scanner panics in the F12 class
+/// (`AliasingViolationError` at hir/src/patterns/rewriter.rs:335) rather
+/// than compiling — the same no-DWARF amplifier `prog_rkscan_wa` and
+/// `prog_sorts` show.
 #[test]
 fn prog_rkscan_guard() {
     run_case("prog_rkscan_guard", include_str!("../cases/case_prog_rkscan_guard.rs"));

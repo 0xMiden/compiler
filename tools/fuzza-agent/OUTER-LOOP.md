@@ -83,10 +83,42 @@ closed by an unreachability argument).
   new shapes surface only there — and (b) a program-scale campaign of
   realistic no_std programs with pinned grids and deep fuzz, which is where
   long-range pass interactions show up.
+- Campaign types that paid off in the 2026-09-09 block (six campaigns, all
+  plain Rust, zero runtime divergences, eleven realistic-program and
+  minimal reproducers pinned): (1) *closure audits* — the knowledge base's
+  "pattern X can never fire" arguments were wrong nine times out of
+  fifteen once checked with the pattern-rewrite-driver trace; an audit
+  campaign that traces every registered canonicalization over the corpus
+  is cheap and turns closures into producers; (2) *compositions* — freight
+  ladders from one campaign loaded onto the producers of another, with
+  per-pass IR dumps (`-Z print-ir-after-pass=<pass>` plus
+  `MIDENC_TRACE='pass:<pass>=trace'`) to prove the interaction happened
+  before value-checking it; (3) *realistic programs written FOR the cliff
+  shapes* — the ladders say which structured-control-flow shapes break at
+  low pressure, and programs built around those shapes turn "synthetic
+  panic" into "seven of twelve user programs do not compile", which is
+  the evidence a fix priority needs; (4) a *workaround map* for the
+  programs that do not compile (helper boundaries, by-value vs
+  by-reference state, `black_box` on constants) — it produced both a user
+  answer and a new panic site. For realistic programs the "known class
+  = no new twin" rule is suspended: the ignored `prog_*` twin next to its
+  largest compiling `_guard` IS the deliverable.
+- Classify panics by trace, never by marker: erased split-edge reloads
+  and "unused phi" warnings are present in programs that compute the
+  right answer, and the ">16 felts means a spill defect" rule of thumb
+  does not hold at -Oz. Use the spills trace (spills / edges to split /
+  erase unused reload) for F6, the pattern trace's last `trying to match`
+  line for F12, and the absence of both for the in-contract solver gap.
 - Inner-loop agents may stop only processes they spawned (never
   pattern kills); an agent that dies mid-run (usage limit) leaves unverified
   files — relaunch the same brief with a "reuse, verify, trim the partial
-  work" section rather than starting over.
+  work" section rather than starting over. Director-side verification of
+  an agent's claims is cheap and worth doing every time: re-run every
+  ignored twin with `--ignored --exact`, re-trace one pattern claim and
+  one spills claim, and sweep the kept guards at the other opt-levels and
+  without DWARF — the block above found one wrong cross-reference, one
+  hazard note that the source refuted, and one workaround that only holds
+  with DWARF on this way.
 
 ## Per-iteration subagent prompt skeleton
 

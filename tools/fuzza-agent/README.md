@@ -69,7 +69,11 @@ cases come in three flavors:
   pins the exact failing input pair via `run_case_with_inputs`, so the bug
   fails reliably rather than only when proptest happens to draw the input.
 - **Compile-time compiler panics** — the case *is* the reproducer; the panic
-  message and source location are in the ignore reason.
+  message and source location are in the ignore reason. Realistic programs
+  that fail to compile (`programs.rs`, `prog_*`) sit next to their largest
+  compiling variant (`prog_*_guard`) and, where one exists, the smallest
+  source-level workaround (`prog_*_wa`), so the user impact and the escape
+  are documented together.
 - **Configuration-dependent findings** — a `<case>_<config>` twin (e.g.
   `spill_loop_mix_oz`) pins the compiler flags via `run_case_with_flags`
   (or `run_case_with_flags_and_inputs` when the divergence also needs its
