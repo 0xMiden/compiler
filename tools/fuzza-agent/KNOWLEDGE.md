@@ -2155,3 +2155,79 @@ records the difference as facts. The per-case knob is the harness pseudo-flag
   with DWARF and at the default level without it, and panics at
   `rewriter.rs:335` with BOTH together. Validate a workaround at the exact
   configuration the user ships, not one axis at a time.
+
+## Spill slots, frames and recursion (verified 2026-09-10, campaign 25)
+
+Where a spill slot actually lives, what a guest frame can do to it, and what
+the guest stack limit does when it is crossed (corpus cases in
+`tests/frames.rs`).
+
+- **A spill slot is a Miden PROCEDURE LOCAL, not linear memory.**
+  `TransformSpills` allocates one function local per spilled value and rewrites
+  each reload into a `hir.load_local` of it; the emitter addresses every local
+  with `locaddr` (`OpEmitter::local_address` at codegen/masm/src/emit/mem.rs:122
+  emits `Locaddr(LocalVariable::absolute_offset)`; `load_local` / `store_local`
+  at mem.rs:137 / mem.rs:641 push that address and load/store through it), and
+  the assembler advances FMP by the procedure's WORD-aligned local count on
+  entry (codegen/masm/src/lower/component.rs:1574-1590: "locaddr.N computes
+  -(aligned_num_locals - N)"). So slots are PER ACTIVATION by construction, and
+  no recursion or call structure can share them.
+- **Slots and guest stack arrays are in disjoint address regions.** FMP starts
+  at element address 2^31 (`miden_core::FMP_INIT_VALUE`, miden-core-0.29.x
+  src/lib.rs:118; `FMP_ADDR = u32::MAX - 1`), while the guest's wasm linear
+  memory maps to element addresses below 2^19 (17 pages = 278 528 elements).
+  A frame array cannot alias a spill slot however large it is — the
+  slot/array, callee-clobber and frame-fill overlap hypotheses are
+  structurally impossible, and the corpus keeps one value-checked guard each
+  anyway (`frame_spills` with a 256 KiB array, `call_clobber` with three
+  spilling levels that `memset`/`memcpy` their whole frames, `fill_spills` with
+  the bulk ops inside the spilled loop).
+- **Slot indices sit above the user locals.** For `frame_spills`,
+  `-Z print-ir-after-pass=local2reg` shows locals 0..21 and
+  `-Z print-ir-after-pass=transform-spills` shows locals 0..39: the eighteen
+  new locals are exactly the eighteen reloads the pass logged as "convert
+  reload to load".
+- **Direct and mutual recursion do not compile — the ASSEMBLER rejects them**
+  ("found a cycle in the call graph", miden-assembly-0.29.x
+  src/linker/errors.rs:41). Recursion is only expressible through a funcref
+  table (`hir.exec_indirect` -> `dynexec`), which stays in the caller's memory
+  context: only the new-context `dyncall` writes `FMP_INIT_VALUE`
+  (miden-processor src/execution/dyn.rs:86/207), so a recursion chain shares
+  one FMP chain and each activation still advances it.
+- **The guest shadow stack is 1 MiB and overrunning it is SILENT.** The guest
+  wasm declares `(global $__stack_pointer (mut i32) i32.const 1048576)` with
+  the data segments at 0x100000 and `(memory 17)`. Nine activations of a
+  128 KiB frame ask for 1 179 648 bytes, so `__stack_pointer` wraps below zero
+  and the deepest frame lands at 0xFFFE0000. `wasmtime` on exactly that
+  harness-built wasm TRAPS ("memory fault at wasm address 0xfffffff8 in linear
+  memory of size 0x110000 / wasm trap: out of bounds memory access";
+  0xfffffff8 is the deepest frame's last element), while the Miden pipeline
+  emits no bounds check and no diagnostic: it maps the wrapped byte address
+  into element space just under 2^30 and executes silently, computing the RIGHT
+  answer as long as nothing else lives there. Stack overflow in a Miden guest
+  is therefore silent memory corruption, not a trap (corpus: `deep_frames` =
+  largest fitting rung, `deep_overrun` = the first overrunning one).
+- **The native ceiling of a recursion ladder is the 2 MiB libtest thread
+  stack, not 8 MiB.** A case whose NATIVE recursion needs more (nine 256 KiB
+  frames) aborts the whole test process with "has overflowed its stack /
+  fatal runtime error: stack overflow" (SIGABRT), which loses every other
+  test's output in that run, including the failure dumps of tests that had
+  already failed. Keep native frame totals around 1 MiB, or set
+  `RUST_MIN_STACK`.
+- **Freight boundary inside a recursive frame** (u64 cluster consumed by one
+  wide right-leaning chain per loop body, count bands before/inside/after, the
+  recursive dispatch between the two loops): (cluster, bands) = (2, 2), (2, 4)
+  and (3, 3) compile and pass; (4, 2) is the in-window arity-2 `NoSolution`
+  (lowering.rs:109, `arith.rotl`, `[Copy, Copy]`, exactly 16 felts); (4, 4),
+  (6, 6) and (8, 8) are the over-full stack (emit/mod.rs:623, indexes 11 / 13 /
+  14). Cluster values are the expensive axis in a frame that also dispatches,
+  bands the cheap one — the opposite of the campaign-21 program-scale rule,
+  where the number of distinct rotate constants was the lever.
+- **Value verdict: no divergence anywhere in this area.** Recursion depths 0..5
+  with an eight-u64 cluster live across the dispatch, mutual recursion with
+  asymmetric freight, a 256 KiB frame array written at its extremes while
+  values are spilled, three call levels that each spill and refill their whole
+  frame, `write_bytes`/`copy_from_slice` inside a spilled loop, spills across a
+  funcref dispatch and across two return-area calls, and 512 KiB of recursive
+  frames all agree with native on pinned grids and at `--optimize=max`,
+  `--optimize=size-min` and `FUZZA_GUEST_DEBUG=0`.
