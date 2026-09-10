@@ -1832,6 +1832,17 @@ at the test site.
   (cargo caching only affects the Rust→wasm step), so no cache-busting is
   needed to re-probe an unchanged case. `cargo make fuzza-probe` handles all
   of this and writes to `target/fuzza-probe/<case>/`.
+- **The printed HIR shows a constant's RESULT type, not its immediate's
+  variant.** `arith.constant 10 : i64` prints identically whether the
+  attribute is `Immediate::I64(10)` or `Immediate::I128(10)`, and the
+  emitter pushes (and models) from the IMMEDIATE (`arith::Constant::emit` →
+  `literal(value)`), so an attribute/type mismatch is invisible in every IR
+  dump and shows up only in the MASM as a wrong-width push (`push.0 push.0
+  push.0 push.10` or `dup.N` ×4 feeding a two-felt `intrinsics::i64::*`
+  call) followed by a stack misalignment. When a divergence smells like
+  "an operand was replaced by zeros", read the MASM around the consumer;
+  the constant-folding coercions (`Sext`/`Zext`/`Trunc::fold`) are the
+  known producer of such a mismatch (specifics at `wide::parse_i64_hand`).
 - **Tracing a whole module in ONE `cargo test` run needs care with test
   attribution**: with `--test-threads=1 --nocapture`, libtest prints
   `test <name> ... ` BEFORE the test runs, so log lines that follow a name
@@ -1877,8 +1888,10 @@ arena AST, Dijkstra, Levenshtein/LCS/Needleman-Wunsch, CRC/Adler/LFSRs,
 `core::fmt` into a stack buffer, iterator pipelines) all compile and match
 native at the default configuration. Facts they established:
 
-- **Slice / array `==` is unlinkable in guests**: `[u32; 8] == [u32; 8]`,
-  `[u32; 64] == …` and any slice equality lower to a `memcmp`/`bcmp`
+- **Slice / array `==` is unlinkable in guests** (REFINED by campaign 27's
+  link-reach section below: a constant-size array `==` links at every level
+  except `-Oz`, and the `str::split(char)` result is opt-level dependent):
+  `[u32; 64] == …` and any runtime-length slice equality lower to a `memcmp`/`bcmp`
   libcall and the guest link fails with `rust-lld: undefined symbol:
   memcmp` (no wasi-libc, compiler-builtins' `mem` symbols absent).
   This includes core code that compares slices internally — `str::split`
@@ -1886,11 +1899,12 @@ native at the default configuration. Facts they established:
   `==`) — bisected standalone in `prog_fmt`. Compare element-wise / scan
   bytes by hand. A user program hitting this gets a link error, not a
   midenc diagnostic.
-- **`core`'s unstable sorts are recursive** (`slice::sort_unstable`,
-  `sort_unstable_by_key`, `select_nth_unstable` → ipnsort `quicksort`,
-  `median3_rec`, `median_of_medians` call themselves) and hit the
-  linker's `found a cycle in the call graph` error — unusable from
-  guests; `binary_search`, `rotate_left`, `reverse`, `split_at_mut`,
+- **`core`'s unstable sorts are recursive** — SUPERSEDED 2026-09-10 by
+  campaign 27: only `select_nth_unstable` still is (`median_of_medians`);
+  `sort_unstable` / `_by` / `_by_key` link at every level because build-std
+  runs with `optimize_for_size` (non-recursive `heapsort`). The assembler's
+  `found a cycle in the call graph` error remains the symptom for any
+  recursion; `binary_search`, `rotate_left`, `reverse`, `split_at_mut`,
   `fill`, `copy_from_slice`, `swap` and the iterator adapters (`zip`,
   `windows`, `chunks_exact`, `rev().enumerate()`, `max_by_key`,
   `position`/`rposition`, `step_by`, `take_while`, `skip`, `cycle().take`,
@@ -2315,3 +2329,129 @@ at `--optimize=size-min` with guest debug 2 AND 0, at the default level, at
   two Threefish rescues) x 512 boundary-biased input pairs at `-Oz` all agree
   with native, as do the pinned per-path grids (block counts, message lengths,
   every xxHash tail path).
+
+## The `core` link-reach map (verified 2026-09-10, campaign 27)
+
+Which parts of `core` a `no_std` guest can use at all, measured facility by
+facility at all four optimization levels (corpus cases in `tests/corelib.rs`,
+`core_*`). The blocking symbol is always `memcmp`: a guest has no wasi-libc
+and no compiler-builtins `mem` symbols, so any comparison `core` performs as
+a slice compare fails the link with `rust-lld: error: <obj>: undefined
+symbol: memcmp`. A user sees a linker error, never a `midenc` diagnostic.
+
+- **Linkability is a per-PROGRAM, per-OPTIMIZATION-LEVEL property, not a
+  per-API one.** When the comparison is inlined it folds into ordinary loads
+  and the program links; when it stays outlined the libcall survives.
+  Measured (default / `-Oz` / max / basic): a constant-size
+  `[u8; 4] == [u8; 4]` links everywhere; `[u32; 8] == [u32; 8]` and a derived
+  `PartialEq` over a `[u8; 16]` field link everywhere EXCEPT `-Oz`; ONE
+  `str::split(char)` or `split_once(char)` per function links except at
+  `--optimize=basic`; `str::find(char)` / `rfind(char)` link only at the
+  default level and at max; TWO nested `split(char)` loops in one function
+  link at no level at all. So "does `core::str` link" cannot be answered per
+  API — it has to be measured for the program (campaign 17's "`str::split`
+  with a `char` pattern is unlinkable" was one point of this surface, not the
+  rule).
+- **Unlinkable at every level**: runtime-length slice `==` / `!=` / `<`,
+  `&str == &str` (and `Option<&str> ==`, even between same-length literals),
+  `[u8]::starts_with` / `ends_with`, `str::starts_with(&str)`, and
+  `str::contains(&str)` / `find(&str)` / `rfind(&str)` (the two-way
+  searcher). The LLVM-IR-verified source for the splitters and searchers is
+  `core::str::iter::SplitInternal<char>::next`, which compares the encoded
+  pattern bytes with a slice `==`.
+- **The linkable replacements**: `iter().eq(..)`, `zip(..).all(..)`,
+  `iter().cmp(..)`, `str::eq_ignore_ascii_case` /
+  `[u8]::eq_ignore_ascii_case`, `[u8]::contains` (element compare), a
+  constant-size array `==` outside `-Oz`, and a hand-written `char_indices`
+  scan in place of a splitter. `case_prog_expr_wa.rs` is a worked example: the
+  hand-written splitter computes the identical answer on the whole 1225-pair
+  native grid.
+- **`core`'s unstable SORTS link again** — `sort_unstable`,
+  `sort_unstable_by`, `sort_unstable_by_key` at every level — because the
+  compiler builds `core` with `-Zbuild-std-features=optimize_for_size`, whose
+  unstable sort is the non-recursive `core::slice::sort::unstable::heapsort`
+  (the symbol is in the guest wasm's name section). This supersedes campaign
+  17's "the unstable sorts are recursive and unusable". `select_nth_unstable`
+  is the exception: it keeps `core::slice::sort::select::median_of_medians`,
+  which calls itself, and the assembler still rejects it with `found a cycle
+  in the call graph`.
+- **A constant length hides both**: with a constant-size slice LLVM
+  specialises `select_nth_unstable` away entirely (no cycle) and folds
+  `str::parse` at compile time (no runtime parse). Any probe of these has to
+  take its length from the input.
+- **Everything else probed passes at all four levels**: the non-comparing
+  `core::str` surface (`from_utf8`, `char_indices`, `chars().rev()`, `trim*`,
+  `split_whitespace`, `is_char_boundary`, `get`, `encode_utf8`,
+  `parse::<u32>`, `from_str_radix`), `core::fmt` including `{:#?}` on derived
+  `Debug` over nested enums/structs/arrays/`Option`/`&str`/`char`, the
+  iterator adapters, the in-place slice algorithms (`rotate_*`, `reverse`,
+  `fill`, `swap`, `split_at_mut`, `copy_within` with distinct ranges,
+  `chunks*`, `windows`, `binary_search*`, `is_sorted*`), `Option`/`Result`
+  combinators with `?`, `mem::swap` / `replace` / `take`, derived `Ord` with
+  `max_by_key` / `min_by` / `clamp`, `array::from_fn` / `map`, the `char`
+  APIs, and `core::ptr` (`read_unaligned` / `write_unaligned` / `copy` /
+  `copy_nonoverlapping` / `write_bytes` / `offset_from` / `align_offset`).
+
+A guest that fails to LINK aborts the whole `cargo test` process exactly as a
+guest that fails to COMPILE does (no `test result` line is printed, every
+other test in the batch is lost), so the `*_nolink` cases must be run one at a
+time with `-- --ignored --exact <full::path>`.
+
+### Probing the compile matrix without the harness (campaign 27 recipe)
+
+A guest-side link failure or a compiler panic can be classified in ~5 s
+instead of a harness run, because the guest half is just cargo:
+
+```
+CARGO_ENCODED_RUSTFLAGS=$'-C\x1ftarget-feature=+bulk-memory,+wide-arithmetic\x1f--cfg\x1fmiden\x1f-C\x1flink-args=--fatal-warnings\x1f-Zlocation-detail=none\x1f-Zunstable-options\x1f-Cpanic=immediate-abort' \
+cargo build -Z build-std=core,alloc,panic_abort -Z build-std-features=optimize_for_size \
+  --config profile.release.opt-level=<2|"z"|3|1> --config profile.release.lto=true \
+  --config profile.release.codegen-units=1 --release --target wasm32-wasip1 ...
+target/debug/midenc <the.wasm> --release [--optimize=size-min|max|basic]
+```
+
+The `--optimize` level maps to the cargo opt level the compiler passes:
+default = 2, size-min = "z", max = 3, basic = 1 (`cargo_profile_opt_level`).
+Validated against known results (the `prog_threefish` `-Oz` and `prog_sha512`
+default panics reproduce at their exact sites, as does the assembler's
+call-graph-cycle error). It does NOT execute the VM, so value checks still
+need the harness.
+
+### Arbitrating a divergence: wasmtime on the harness-built wasm
+
+Campaign 27 found two divergences with the SAME wasm op (`i64.mul_wide_s`)
+pointing in opposite directions, and only `wasmtime -W wide-arithmetic=y
+--invoke entrypoint target/miden_test_shared/wasm32-wasip1/release/
+differential_<case>.wasm a b` separated them:
+
+- `str::parse::<i64>` of a runtime-length digit slice: native 9 = wasmtime 9,
+  MASM 0 → the wasm is right, `midenc` is wrong (a compiler miscompile;
+  `core_parse_i64`, reproduces at all four levels). The same shape with `u64`
+  or `i32`, and the plain `(a as i128) * (b as i128)` widening multiply, all
+  agree — the bug is specific to the signed 64-bit `from_str` accumulation.
+- `i64::checked_mul(10)` in a loop (the same `from_str` fast-path shape by
+  hand): native 90, wasmtime 0xdead = MASM 0xdead → the WASM is wrong, i.e.
+  the F9 guest-toolchain family, and the smallest producer of it in the
+  corpus (`core_chkmul_i64`).
+
+Never attribute a divergence involving `+wide-arithmetic` ops without this
+arbitration: "it goes through `mul_wide`" is not enough to call it F9.
+
+### Compile-time reach of the realistic `core` programs (campaign 27)
+
+Ten programs over the surface above, each value-checked on the 1225-pair
+native grid (corpus: `tests/corelib.rs`, `prog_*`):
+
+- Three of the ten do not compile at some level, and each fails at a
+  DIFFERENT one: a slice-algorithm program panics only at
+  `--optimize=basic`, a derived-`Ord` priority table only at
+  `--optimize=max`, and a `core::num` measurement pipeline at the default
+  level, at max and at basic (it compiles only at `-Oz`) — all three at the
+  F6 sites (`frontier.rs:123`, `lowering.rs:109`). The "opt level is not a
+  safety ladder" rule from campaign 21 holds for ordinary `core` code with no
+  hand-written rotation constants at all.
+- For the `core::num` pipeline the lever is total live pressure in the loop
+  body, not any one API: removing EITHER the 64-bit lane OR the byte-order
+  round trips makes the default level compile, and removing both makes all
+  four levels compile (ladder in `case_prog_numeric_guard.rs`). Halving the
+  trip count changes nothing.
