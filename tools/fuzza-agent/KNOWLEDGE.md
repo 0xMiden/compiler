@@ -2231,3 +2231,87 @@ the guest stack limit does when it is crossed (corpus cases in
   funcref dispatch and across two return-area calls, and 512 KiB of recursive
   frames all agree with native on pinned grids and at `--optimize=max`,
   `--optimize=size-min` and `FUZZA_GUEST_DEBUG=0`.
+
+## Real programs at -Oz: the constant count is not the lever (campaign 26, 2026-09-10)
+
+Ten `no_std` kernels whose ALGORITHM carries its rotate/shift constants
+(Keccak-f, SHA-512, Threefish-256, xxHash64+Murmur, SplitMix/xoshiro/PCG,
+base64, ChaCha20+Salsa20, bit reversal/Morton, SipHash-2-4, BLAKE2b), each run
+at `--optimize=size-min` with guest debug 2 AND 0, at the default level, at
+`--optimize=max` and at `--optimize=basic`. Corpus cases in
+`tests/programs_oz.rs` (`prog_*_oz`, pinned with `run_case_with_flags`).
+
+- **The synthetic `-Oz` band cap (N + M <= 11) does NOT transfer to real
+  programs.** A 12-round Keccak-f[1600] with the real TWENTY-FOUR rho offsets
+  unrolled inside its kept round loop compiles and matches native at every
+  optimization level, while a Threefish-256 with FIFTEEN rotation constants
+  does not compile at `-Oz` at all, and a four-constant BLAKE2b does not
+  compile at the default level. What separates them is not the count but how
+  many band results are live as scheduled OPERANDS across the loop: Keccak's
+  25 lanes live in a stack array, so every rotate consumes a freshly loaded
+  lane, whereas Threefish carries four u64 words in scalars that every one of
+  its fifteen constants rotates. Array-resident state is the structural
+  reason a big permutation is safe — cite that, not the constant count.
+- **A real `-Oz` constant ladder is NON-MONOTONE and cannot be used as a user
+  rule.** Merging Threefish's rotation rows down from fifteen distinct
+  constants: 13, 12, 11, 9 panic, 8 compiles, 6 panics, 4 compiles (every rung
+  value-checked natively, every panic at emit/mod.rs:623). "Use fewer distinct
+  rotation constants" is therefore NOT a reliable fix. The campaign-18
+  synthetic rescue "no post-loop use of the bands (`M = 0`)" also fails on the
+  real program: keeping all fifteen constants but folding the output without
+  rotations still panics.
+- **Three window-overflow signatures, told apart by the spills trace
+  (director re-classification, 2026-09-10).** (1) Erased SPLIT-edge reloads
+  — `edges to split > 0` and `erase unused reload` lines — is the stale
+  dominator tree (`prog_sha512` at the default level: 4 split edges, 14
+  erased). (2) An arity-2 `NoSolution` with a Copy constraint on a stack
+  that is IN the window (<= 16 felts) is the solver gap whether or not the
+  function spilled elsewhere: Threefish at `--optimize=max` dumps 8
+  operands / 15 felts on `arith.rotl` `[Move, Copy]` with `edges to split =
+  0` — its single "erase unused reload" is not a split-edge reload — so it
+  is the first REALISTIC-program producer of the arity-2 gap. (3) Over-window
+  pressure at the emitter (`emit/mod.rs:623`) with spills requested but NO
+  edge splits and NO erasure — Threefish at `-Oz`: 8-10 values spilled,
+  fourteen `max usage on exit (17)/(18) exceeds K (16), additional spills
+  required` lines, `edges to split = 0` — is a third mechanism (the analysis
+  ran and still let the emitter's stack exceed 16 felts; ledger entry F17).
+  The emitter drop trace (`codegen:operand-scheduling=trace`) shows its
+  failing op is the SPILL STORE itself (`hir.store_local` into a spill
+  slot): the value chosen for spilling is already past the window when the
+  store is emitted. Never classify by the crash site or by the felt total
+  alone; when a panic is at `emit/mod.rs:623`, read the last
+  `dropping unused operands at:` line of the drop trace to learn which op
+  was being emitted.
+- **The `-Oz` escape hatch runs in BOTH directions, per program.**
+  `prog_sha512` (F6) and `prog_blake2b` (F12) panic at the default level, at
+  max and at basic and compile ONLY at `-Oz`; `prog_threefish` compiles at the
+  default level and at basic and panics at `-Oz` (with and without guest
+  DWARF) and at max; `prog_xxh64` compiles everywhere except basic (F12).
+  Guest DWARF moved nothing in this family: the `-Oz` results at
+  `--guest-debug=0` are identical to `debug = 2`, panic site for panic site.
+- **F12's producer set is wider than "a `return` from a two-level nest".**
+  `prog_blake2b` (default, max, basic) and `prog_xxh64` (basic) hit
+  `rewriter.rs:335` while containing NO `return`, `break` or `continue` at all
+  — plain `while` nests over array-indexed state with an `if`-guarded tail are
+  enough. Nor is F12 count-driven: its producer here has the FEWEST distinct
+  constants of the ten programs (four).
+- **What to tell a user whose `-Oz` build panics**: wrap the rotate/shift
+  counts in `core::hint::black_box` (25 one-token edits on Threefish, same
+  answer on the 1225-pair native grid, passes at `-Oz` with and without DWARF,
+  at the default level, at max and at basic), or move the round function into
+  an `#[inline(never)]` helper taking the state BY REFERENCE (`&mut [u64; 4]`,
+  also passes in all five). Both are the campaign-22 rescues, and unlike the
+  release-configuration Rabin-Karp result they do not fall into F12 here.
+  Reducing the constant count is the one thing that does not work.
+- **What `-Oz` keeps in these programs** (wat-probed): Keccak's permutation
+  stays a real call from three sites and the program keeps ten loops;
+  bit-reversal/Morton keeps `morton_spread`/`morton_compact` (four call sites)
+  and inlines the single-use `reverse_bits64`; xxHash64's `round` and
+  SplitMix's `splitmix` are INLINED even at `-Oz` (one function, no calls,
+  eight kept loops) — per-callee size arithmetic, as the earlier -Oz shape
+  facts say. When a program looks "safe at -Oz", check whether the reason is
+  that LLVM kept the round function as a call.
+- **Value verdict: zero divergences.** Twelve cases (the ten programs plus the
+  two Threefish rescues) x 512 boundary-biased input pairs at `-Oz` all agree
+  with native, as do the pinned per-path grids (block counts, message lengths,
+  every xxHash tail path).
