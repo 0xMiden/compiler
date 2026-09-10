@@ -16,6 +16,7 @@ mod memory;
 mod opt_levels;
 mod pressure;
 mod programs;
+mod programs_oz;
 mod scale;
 mod signed;
 mod spills;
