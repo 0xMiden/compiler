@@ -6,7 +6,7 @@
 //! differentially. Every case passes; the ladder rungs above each guard
 //! hit only known panic classes (recorded in the doc comments).
 
-use super::super::harness::{run_case, run_case_with_inputs};
+use super::super::harness::{run_case, run_case_with_flags, run_case_with_inputs};
 
 /// chain_window x sm16: six rotate counts shared between the code before a
 /// sixteen-state machine (64 transition arms, four arm breaks, an early
@@ -17,10 +17,10 @@ use super::super::harness::{run_case, run_case_with_inputs};
 /// `rotl_window` class: 15-felt in-contract stack, Copy count at the bottom).
 /// Configuration note (campaign 16): at `--optimize=size-min` six counts
 /// already hit the F2 gap (the bands stay un-hoisted, `spill_loop_mix_oz`
-/// class), and WITHOUT guest DWARF (`FUZZA_GUEST_DEBUG=0`) the case hits the
-/// F12 aliasing panic (`nest_continue` class) although it has no labeled
-/// continue: Local2Reg promotion, which DWARF blocks, creates the
-/// loop-invariant before-block arguments the pattern matches.
+/// class), and WITHOUT guest DWARF the case hits the F12 aliasing panic
+/// (`nest_continue` class) although it has no labeled continue: Local2Reg
+/// promotion, which DWARF blocks, creates the loop-invariant before-block
+/// arguments the pattern matches — pinned by [`chain_sm_nodwarf`] below.
 #[test]
 fn chain_sm() {
     run_case("chain_sm", include_str!("../cases/case_chain_sm.rs"));
@@ -42,6 +42,40 @@ fn chain_sm_edges() {
             (222, 0),
             (0xffff_ffff, 0xffff_ffff),
         ],
+    );
+}
+
+/// The release-build twin of [`chain_sm`]: the SAME source with the guest's
+/// debug-info level pinned to 0 through the harness pseudo-flag, so the
+/// finding reproduces without any environment setup.
+///
+/// Local2Reg promotes a slot only when the local has exactly one store and
+/// one load in one block with no branch/region/call op between them, AND
+/// `convert_debug_references_for_local` succeeds; under full DWARF rustc's
+/// two-op `[WasmLocal(N), StackValue]` declares make that last check fail, so
+/// the stores survive. With `debug = 0` there are no declares, the promotions
+/// go through, and cfg-to-scf ends up with a payload column that still
+/// carries its `ub.poison` initializer at the back edge — the shape
+/// [`invariant_args_min`] documents. The pattern then matches and its rewrite
+/// aborts.
+///
+/// Campaign 24 measured the reach: the panic is identical at guest `debug = 0`
+/// and `debug = 1` (line tables carry no variable DIEs either), and appears
+/// at 16 and at 256 input pairs alike — it is compile-time, so no input is
+/// involved. Only `debug = 2` masks it. Un-ignore when the rewriter stops
+/// taking a mutable borrow of an operation it is already borrowing (same fix
+/// as `invariant_args_min`).
+#[test]
+#[ignore = "compiler panic WITHOUT full guest DWARF (guest debug 0 and 1, i.e. an ordinary release \
+            build): 'AliasingViolationError { kind: Mutable, location: hir/src/ir/operation.rs:877 \
+            }' at hir/src/patterns/rewriter.rs:335 while matching \
+            'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no inputs \
+            involved"]
+fn chain_sm_nodwarf() {
+    run_case_with_flags(
+        "chain_sm_nodwarf",
+        include_str!("../cases/case_chain_sm.rs"),
+        &["--guest-debug=0"],
     );
 }
 
