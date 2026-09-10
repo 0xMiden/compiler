@@ -99,6 +99,11 @@ pub(super) fn run_case_with_inputs(name: &str, source: &str, inputs: &[(u32, u32
 /// Use this to pin a configuration-dependent finding (e.g. a divergence that
 /// appears only under `--optimize=max`) so it reproduces in-repo without any
 /// environment setup. The native reference build is not affected by the flags.
+///
+/// One pseudo-flag is interpreted by the harness instead of `midenc`:
+/// `--guest-debug=0|1|2` pins the guest's debug-info level (the per-case
+/// counterpart of the `FUZZA_GUEST_DEBUG` sweep knob), so a finding that only
+/// exists without DWARF can be pinned the same way.
 pub(super) fn run_case_with_flags(name: &str, source: &str, flags: &[&str]) {
     run_case_inner_with_flags(name, source, Inputs::Random16, flags);
 }
@@ -139,20 +144,11 @@ fn run_case_inner(name: &str, source: &str, inputs: Inputs<'_>) {
 /// that appears only under some flag set is a real compiler bug.
 fn run_case_inner_with_flags(name: &str, source: &str, inputs: Inputs<'_>, flags: &[&str]) {
     let pkg_name = format!("differential_{name}");
-    let manifest = cargo_toml(&pkg_name);
-    let miden_project_manifest = miden_project_toml(&pkg_name);
-    let full_source = format!("{CASE_HEADER}{source}");
-
-    let masm_proj = project(&format!("{pkg_name}_masm"))
-        .file("miden-project.toml", &miden_project_manifest)
-        .file("Cargo.toml", &manifest)
-        .file("src/lib.rs", &full_source)
-        .build();
     // Per-case flags win: an env flag for an option the case already pins is
     // dropped, so a corpus-wide sweep never passes the same option twice.
     let option_name = |flag: &str| flag.split('=').next().unwrap_or(flag).to_string();
     let pinned: Vec<String> = flags.iter().map(|f| option_name(f)).collect();
-    let midenc_flags: Vec<String> = flags
+    let all_flags: Vec<String> = flags
         .iter()
         .map(|f| f.to_string())
         .chain(
@@ -163,6 +159,28 @@ fn run_case_inner_with_flags(name: &str, source: &str, inputs: Inputs<'_>, flags
                 .map(|f| f.to_string()),
         )
         .collect();
+    // `--guest-debug=<0|1|2>` is a harness pseudo-flag: it pins the guest's
+    // debug-info level for this case (per-case wins over the env, like any
+    // other flag) and never reaches `midenc`.
+    let guest_debug =
+        all_flags.iter().find_map(|f| f.strip_prefix(GUEST_DEBUG_FLAG)).map(|level| {
+            assert!(
+                matches!(level, "0" | "1" | "2"),
+                "{GUEST_DEBUG_FLAG} must be 0, 1 or 2, got `{level}`"
+            );
+            level.to_string()
+        });
+    let midenc_flags: Vec<String> =
+        all_flags.into_iter().filter(|f| !f.starts_with(GUEST_DEBUG_FLAG)).collect();
+    let manifest = cargo_toml_with_guest_debug(&pkg_name, guest_debug.as_deref());
+    let miden_project_manifest = miden_project_toml(&pkg_name);
+    let full_source = format!("{CASE_HEADER}{source}");
+
+    let masm_proj = project(&format!("{pkg_name}_masm"))
+        .file("miden-project.toml", &miden_project_manifest)
+        .file("Cargo.toml", &manifest)
+        .file("src/lib.rs", &full_source)
+        .build();
     let mut test = CompilerTest::rust_source_cargo_miden(
         masm_proj.root(),
         WasmTranslationConfig::default(),
@@ -264,13 +282,29 @@ extern "C" fn rust_eh_personality() {}
 
 "#;
 
+/// The harness pseudo-flag that pins a case's guest debug-info level
+/// (`--guest-debug=0|1|2`); see [`run_case_with_flags`].
+const GUEST_DEBUG_FLAG: &str = "--guest-debug=";
+
+/// Guest `Cargo.toml` with the debug-info level taken from `FUZZA_GUEST_DEBUG`
+/// (default: full DWARF); see [`cargo_toml_with_guest_debug`].
 pub(crate) fn cargo_toml(pkg_name: &str) -> String {
-    // `FUZZA_GUEST_DEBUG` overrides the guest's debug-info level for a sweep
-    // (e.g. `0` to build every guest without DWARF and expose the shapes that
-    // debug info happens to mask). Default: 2 (full DWARF).
-    let debug = std::env::var("FUZZA_GUEST_DEBUG")
-        .ok()
-        .filter(|v| matches!(v.as_str(), "0" | "1" | "2"))
+    cargo_toml_with_guest_debug(pkg_name, None)
+}
+
+/// Guest `Cargo.toml` for `pkg_name`. `guest_debug` (`"0"`, `"1"` or `"2"`)
+/// pins the guest's debug-info level; `None` falls back to the
+/// `FUZZA_GUEST_DEBUG` environment variable, which overrides the level for a
+/// whole sweep (e.g. `0` to build every guest without DWARF and expose the
+/// shapes that debug info happens to mask), and then to 2 (full DWARF).
+pub(crate) fn cargo_toml_with_guest_debug(pkg_name: &str, guest_debug: Option<&str>) -> String {
+    let debug = guest_debug
+        .map(str::to_string)
+        .or_else(|| {
+            std::env::var("FUZZA_GUEST_DEBUG")
+                .ok()
+                .filter(|v| matches!(v.as_str(), "0" | "1" | "2"))
+        })
         .unwrap_or_else(|| "2".to_string());
     format!(
         r#"[package]
