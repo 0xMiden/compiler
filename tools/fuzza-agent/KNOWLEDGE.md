@@ -412,7 +412,10 @@ hir-transform/) — scope FUZZA_AREA accordingly.
   the stores (DWARF-on builds promote fewer locals; codegen-only,
   differentially semantics-neutral). The frontend still synthesizes plain
   `[DW_OP_WASM_local(N)]` `di.debug_value` records at local.set/tee and for
-  params, which keeps the safe-values rewrite loop warm.
+  params, which keeps the safe-values rewrite loop warm. Quantified in
+  campaign 24 (see "The release configuration" below): the candidate set is
+  the same at every debug level and only the conversion check differs — 4
+  slots promoted with full DWARF vs 27 without, over the same seven guests.
 - Other closed Local2Reg arms: ExecFpi prefix-local pinning (SDK-only
   producer); the loaded-but-never-stored "poison" arm (no safe-Rust
   producer of a read-before-any-write wasm local — LLVM materializes
@@ -1796,13 +1799,13 @@ at the test site.
   so an area's headline can *drop* after `fuzza-cov-clean` relative to the
   session that created the ignored case. Expected.
 - `MIDENC_DIFF_FLAGS` is appended AFTER a case's `run_case_with_flags`
-  flags with no dedup, so an env-prefixed run of a test that pins the same
-  flag fails at once with clap's `the argument '--optimize [<LEVEL>]'
-  cannot be used multiple times`. Probe pinned `_oz` tests WITHOUT the
-  prefix, and note that an env-prefixed `fuzza-cov-step` cannot exercise
-  pinned cases at all (they error out and contribute nothing): measure a
-  new configuration case with plain `run_case` under the prefix, then pin
-  it and re-verify without the prefix.
+  flags, and the harness drops any env flag whose option the case already
+  pins (per-case wins, keyed on the text before `=`), so an env-prefixed
+  sweep runs pinned `_oz` / `_o3` / `_nodwarf` tests in THEIR configuration
+  rather than failing on clap's "cannot be used multiple times" (verified
+  2026-09-10: `fir_cordic_guard_o3` passes under a `size-min` prefix). A
+  sweep therefore never measures a pinned case in the sweep's
+  configuration — add a plain `run_case` sibling if that is what you need.
 - **Panic unwinding leaves phantom warm regions.** llvm-cov derives many
   region counts as expressions (entry minus error edge, entry minus
   sibling arm) that do not model unwinding, so a frame a panic unwinds
@@ -1838,6 +1841,11 @@ at the test site.
   it right, and single-test `--exact` runs have no such hazard). The
   `pattern-rewrite-driver` trace lines also carry `dialect=`/`op=` fields, so
   a fired count can be split by the op kind it rewrote.
+- **`pass:local2reg=trace` logs "found promotable local X" BEFORE the debug
+  check.** The pass may then log "ignoring X: debug declarations cannot all be
+  converted safely" and skip it, so the number ACTUALLY promoted is
+  (found promotable) - (declare-blocked). Counting only the first line reports
+  identical promotion at every debug level, which is exactly wrong.
 - `cargo test <filter> -- --exact` needs the FULL test path
   (`end_to_end::differential::tests::<module>::<name>`); a partial path
   with `--exact` silently runs zero tests. Also, extra names after `--`
@@ -2069,3 +2077,81 @@ source ladders (corpus cases `compose::invariant_args_min`/`_guard` and
   into three functions, and flattening the diamond into an `if`/`else if` chain
   all leave the `frontier.rs:123` unwrap in place. Shrink what is live ACROSS
   the loop, not the loop's own shape.
+
+## The release configuration: guests without full DWARF (verified 2026-09-10, campaign 24)
+
+A user's `cargo miden build` emits no guest DWARF; the differential harness
+builds with `debug = 2`. These are two different pipelines, and this section
+records the difference as facts. The per-case knob is the harness pseudo-flag
+`--guest-debug=0|1|2` in `run_case_with_flags*`; the sweep knob is
+`FUZZA_GUEST_DEBUG`.
+
+- **`debug = 1` (line tables only) is on the DWARF-OFF side of every known
+  boundary.** Line tables carry no variable DIEs, so
+  `convert_debug_references_for_local` finds neither declares nor values and
+  takes its "no debug references" early return — promotion runs exactly as at
+  `debug = 0`. Whole-corpus sweeps at `FUZZA_GUEST_DEBUG=1` and `=0` produce
+  the IDENTICAL failure list, panic site for panic site. Only `debug = 2`
+  masks anything. (The F9 guest-toolchain family was already known to need
+  `-C debuginfo=2`; this extends the same rule to the compiler-side F12
+  cluster.)
+- **Local2Reg's promotion contract, and what the debug level actually
+  changes.** A slot is promoted only when it has EXACTLY ONE `hir.load_local`
+  and EXACTLY ONE `hir.store_local`, both in the same block, with no op
+  implementing `BranchOpInterface` / `RegionBranchOpInterface` /
+  `CallOpInterface` between them. Everything else is skipped with a specific
+  trace reason ("loaded more than once", "stored more than once", "load and
+  store are in different blocks", "found control flow between load and
+  store"). The debug level does NOT change that candidate set — the load/store
+  trace is byte-identical at `debug = 0` and `debug = 2` — it changes only
+  whether `convert_debug_references_for_local` lets an otherwise-eligible slot
+  through. Measured over the seven `debug_info::l2r_*` cases: 4 slots promoted
+  with full DWARF, 27 without (`l2r_params` alone: 0 vs 14).
+- **Function parameters are the promotable population.** The frontend stores
+  every parameter unconditionally at entry, so a parameter read once in
+  straight-line entry-block code is the canonical promotable slot; loop
+  accumulators (many loads), values assigned in several `match` arms (many
+  stores), values live across a call (control flow between store and load) and
+  loop-carried locals (load and store in different blocks) are rejected
+  STRUCTURALLY at every debug level. A `&mut` local is not a wasm local at all
+  (its address escapes into the shadow stack), and a constant-indexed
+  `[u32; N]` is SROA'd into ordinary promotable scalars while a
+  runtime-indexed one is not.
+- **The dead-store-erasure arm is not debug-gated**: an unused parameter gets
+  no DWARF variable, so the conversion succeeds and the stores are erased at
+  every debug level ("preserving dead stores" needs a declare, which rustc
+  does not emit for a dead parameter).
+- **The corpus is value-clean in the release configuration.** 359 tests x 256
+  boundary-biased input pairs at `FUZZA_GUEST_DEBUG=0`: zero divergences; the
+  only failures are compile-time (the F12 cluster below) plus the known F9
+  value-use family (`signed::sext_shapes`, `wide::wide_loop_cmp`,
+  `wide::wide_words` and their twins). The same holds at `=1`. Promotion
+  changes codegen, not semantics.
+- **Promotion does not move the F2 count-band boundary.** The
+  `spill_loop_mix` / `band_guard_oz` family swept over K = 8..16 at the
+  default level and K = 6..12 at `--optimize=size-min`, each rung at guest
+  debug 0 and 2: `-Oz` panics from K = 10 up and compiles at K <= 9 in BOTH
+  configurations, and the default level compiles every rung to K = 16 in both.
+  The panic is the same arity-2 `NoSolution` on `arith.rotl` with
+  `[Copy, Move]` at lowering.rs:109. Do not re-run this ladder.
+- **What the release configuration DOES move is F12's producer set.** Programs
+  that compile with DWARF and panic at `rewriter.rs:335` without it:
+  `compose::chain_sm`, `programs::prog_rkscan_guard`, `prog_rkscan_wa`,
+  `prog_sorts` (pinned twins in-repo). One program changes CLASS with the
+  debug level — `prog_rkscan` panics at the emitter's window assert
+  (`emit/mod.rs:623`, F6) with DWARF and at `rewriter.rs:335` (F12) without —
+  because the promotions reach cfg-to-scf before the spill freight reaches the
+  emitter.
+- **In the release configuration the campaign-22 workaround map does not
+  hold.** For the Rabin-Karp scanner, `black_box` on every rotate-constant
+  use, moving the hot expression into an `#[inline(never)]` helper taking
+  `&[u64; 4]`, and replacing all four escaping `return`s with a single
+  `break 'outer` exit ALL still panic at `rewriter.rs:335` at `debug = 0`,
+  while all three compile with DWARF and compute the same answer. The only
+  escape found is `--optimize=size-min`, which compiles the scanner (and
+  `prog_sorts`) even without DWARF.
+- **Two individually-safe configurations can compose into a panic.**
+  `prog_varint_wa` (the black-boxed decoder) compiles at `--optimize=size-min`
+  with DWARF and at the default level without it, and panics at
+  `rewriter.rs:335` with BOTH together. Validate a workaround at the exact
+  configuration the user ships, not one axis at a time.

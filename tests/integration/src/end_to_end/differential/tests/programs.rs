@@ -219,13 +219,16 @@ fn prog_decoder_edges() {
 /// and pairwise-equality checks, lower-bound binary searches for a present
 /// and an absent key, a linear rank cross-checked against the search; the
 /// sorted array and every flag folded.
-/// Configuration note (campaign 23 sweep): WITHOUT guest DWARF
-/// (`FUZZA_GUEST_DEBUG=0`) this program panics in the F12 class
-/// (`AliasingViolationError` at hir/src/patterns/rewriter.rs:335 while
-/// matching `remove-loop-invariant-args-from-before-block`): the Local2Reg
-/// promotion that DWARF blocks turns the sort loops' early exits into the
+/// Configuration note (campaigns 23 and 24): WITHOUT full guest DWARF this
+/// program panics in the F12 class (`AliasingViolationError` at
+/// hir/src/patterns/rewriter.rs:335 while matching
+/// `remove-loop-invariant-args-from-before-block`): the Local2Reg promotion
+/// that DWARF blocks turns the sort loops' early exits into the
 /// poison-carrying payload column `compose::invariant_args_min` documents.
-/// Passes at every opt-level with DWARF on.
+/// Passes at every opt-level with DWARF on. Campaign 24 mapped the reach:
+/// the panic is the same at guest `debug = 1` (line tables carry no variable
+/// DIEs, so they do not block the promotion either) and survives a 256-pair
+/// sweep, but `--optimize=size-min` compiles and passes even at `debug = 0`.
 #[test]
 fn prog_sorts() {
     run_case("prog_sorts", include_str!("../cases/case_prog_sorts.rs"));
@@ -836,11 +839,17 @@ fn prog_scanchain_edges() {
 /// is the crossing COUNT BANDS, not the word count, that carries this program
 /// over the window. Compile-time — no inputs involved. Un-ignore together with
 /// the other F6 reproducers (`pressure::zero_trip_frontier`).
+/// Configuration note (campaign 24): WITHOUT full guest DWARF the program
+/// changes CLASS — it panics with `AliasingViolationError` at
+/// hir/src/patterns/rewriter.rs:335 (F12) instead of at the emitter's window
+/// assert, because the Local2Reg promotions DWARF blocks reach cfg-to-scf
+/// first. It is the only program in the corpus whose panic class depends on
+/// the debug level.
 #[test]
 #[ignore = "compiler panic at the DEFAULT configuration: 'invalid operand stack index (9): \
             requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
-            class (26 erased split-edge reloads in the spills trace); compile-time, no inputs \
-            involved"]
+            class (26 erased split-edge reloads in the spills trace); WITHOUT guest DWARF it is \
+            the F12 class instead (rewriter.rs:335); compile-time, no inputs involved"]
 fn prog_rkscan() {
     run_case("prog_rkscan", include_str!("../cases/case_prog_rkscan.rs"));
 }
@@ -850,11 +859,11 @@ fn prog_rkscan() {
 /// instead of six. Passes at the default level, `--optimize=size-min` and
 /// `--optimize=max`; still panics at `--optimize=basic` (see
 /// `prog_rkscan_guard_o1`).
-/// Configuration note (campaign 23 sweep): WITHOUT guest DWARF
-/// (`FUZZA_GUEST_DEBUG=0`) the reduced scanner panics in the F12 class
-/// (`AliasingViolationError` at hir/src/patterns/rewriter.rs:335) rather
-/// than compiling — the same no-DWARF amplifier `prog_rkscan_wa` and
-/// `prog_sorts` show.
+/// Configuration note (campaigns 23 and 24): WITHOUT full guest DWARF the
+/// reduced scanner panics in the F12 class (`AliasingViolationError` at
+/// hir/src/patterns/rewriter.rs:335) rather than compiling — the same
+/// no-DWARF amplifier `prog_rkscan_wa` and `prog_sorts` show; pinned in-repo
+/// by [`prog_rkscan_guard_nodwarf`] below.
 #[test]
 fn prog_rkscan_guard() {
     run_case("prog_rkscan_guard", include_str!("../cases/case_prog_rkscan_guard.rs"));
@@ -879,6 +888,70 @@ fn prog_rkscan_guard_edges() {
             (0x9e37_79b9, 0x9e37_79b9),
             (1, 1),
         ],
+    );
+}
+
+/// THE RELEASE-BUILD ROW: [`prog_rkscan_guard`] — the largest Rabin-Karp
+/// variant that compiles at the default level — does NOT compile in the
+/// configuration a user actually ships. `cargo miden build` emits no guest
+/// DWARF, and with the debug level pinned to 0 the program panics in the F12
+/// class: `AliasingViolationError { kind: Mutable, location:
+/// hir/src/ir/operation.rs:877 }` at hir/src/patterns/rewriter.rs:335, the
+/// driver's last line under `MIDENC_TRACE='pattern-rewrite-driver=trace'`
+/// being `trying to match 'remove-loop-invariant-args-from-before-block'
+/// dialect=scf op=while`. The producer is F12's rule exactly: four `return`s
+/// leaving the function from inside the `while round` / `loop pos` nest, whose
+/// exit payload cfg-to-scf threads out as a column that still carries
+/// `ub.poison` at the back edge. Full DWARF blocks the Local2Reg promotions
+/// that produce that column (`debug_info::l2r_*` measures which slots), which
+/// is the only reason the corpus sees this program compile.
+///
+/// Reach measured in campaign 24: identical at guest `debug = 1` (line tables
+/// carry no variable DIEs, so they block nothing); NO source-level workaround
+/// survives — `prog_rkscan_wa`'s `black_box` on every rotate-constant use,
+/// [`prog_rkscan_ref_nodwarf`]'s by-reference helper and a restructure that
+/// replaces all four escaping `return`s with a single `break 'outer` exit all
+/// still panic at rewriter.rs:335 while all three pass with DWARF and compute
+/// the same answer on the 1225-pair native boundary grid. The ONE escape is
+/// `--optimize=size-min`, which compiles and passes even at `debug = 0`.
+/// Compile-time — no inputs involved. Un-ignore with `invariant_args_min`.
+#[test]
+#[ignore = "compiler panic WITHOUT full guest DWARF (guest debug 0 and 1, i.e. an ordinary release \
+            build) at the DEFAULT optimization level: 'AliasingViolationError { kind: Mutable, \
+            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
+            matching 'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no \
+            inputs involved"]
+fn prog_rkscan_guard_nodwarf() {
+    run_case_with_flags(
+        "prog_rkscan_guard_nodwarf",
+        include_str!("../cases/case_prog_rkscan_guard.rs"),
+        &["--guest-debug=0"],
+    );
+}
+
+/// The by-reference-helper rescue of [`prog_rkscan_guard`], which does NOT
+/// hold in the release configuration: the Bloom-probe expression moves into an
+/// `#[inline(never)] fn(&[u64; 4], u64)`, so the four fingerprint words live
+/// in the shadow stack instead of crossing the search loop as scheduled
+/// operands. That is the shape that rescues `prog_tlv` and `prog_rle` from
+/// their F6/F12 panics, and it compiles and passes here WITH guest DWARF —
+/// but at `debug = 0` it still panics at hir/src/patterns/rewriter.rs:335,
+/// because moving the words out of the window does nothing about the four
+/// `return`s that leave the function from inside the two-level nest. Computes
+/// the same answer as `prog_rkscan_guard` on the 1225-pair native boundary
+/// grid (checksum 0x2168a1769f80256d), so it is a like-for-like substitution.
+/// Kept as the counter-example to `prog_rkscan_wa`'s "pass the fingerprint
+/// words by reference" note. Compile-time — no inputs involved.
+#[test]
+#[ignore = "compiler panic WITHOUT full guest DWARF: 'AliasingViolationError { kind: Mutable, \
+            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
+            matching 'remove-loop-invariant-args-from-before-block' — F12 class; the same source \
+            compiles and passes with DWARF; compile-time, no inputs involved"]
+fn prog_rkscan_ref_nodwarf() {
+    run_case_with_flags(
+        "prog_rkscan_ref_nodwarf",
+        include_str!("../cases/case_prog_rkscan_ref.rs"),
+        &["--guest-debug=0"],
     );
 }
 
@@ -913,11 +986,14 @@ fn prog_rkscan_guard_o1() {
 /// reference: by value the call needs a seventeen-felt argument list and
 /// panics in the spill analysis instead (`calls::sig17` pins that limit).
 /// Configuration note: this rescue holds at the default level, `size-min`,
-/// `max` and `basic`, but WITHOUT guest DWARF (`FUZZA_GUEST_DEBUG=0`) the
-/// black-boxed scanner panics in the F12 class instead
-/// (`AliasingViolationError` at hir/src/patterns/rewriter.rs:335) — the
-/// Local2Reg promotion that DWARF blocks creates the poison-carrying payload
-/// column `compose::invariant_args_min` documents.
+/// `max` and `basic`, but WITHOUT full guest DWARF the black-boxed scanner
+/// panics in the F12 class instead (`AliasingViolationError` at
+/// hir/src/patterns/rewriter.rs:335) — the Local2Reg promotion that DWARF
+/// blocks creates the poison-carrying payload column
+/// `compose::invariant_args_min` documents. Campaign 24: that also holds at
+/// guest `debug = 1`, and the by-reference-helper alternative fails the same
+/// way (see [`prog_rkscan_ref_nodwarf`]), so this program has NO source-level
+/// rescue in a release build — only `--optimize=size-min` compiles there.
 #[test]
 fn prog_rkscan_wa() {
     run_case("prog_rkscan_wa", include_str!("../cases/case_prog_rkscan_wa.rs"));
@@ -1036,6 +1112,10 @@ fn prog_varint_guard_oz() {
 /// the four in-loop `return`s into a single exit through `break 'outer` all
 /// still panic in the same pattern. Cost: 4399 MASM lines against 2904 for
 /// `prog_varint_guard` (two running values instead of six).
+/// Configuration note (campaign 24): the rescue holds at the default level
+/// with and without guest DWARF, but the two conditions COMPOSE — at
+/// `--optimize=size-min` AND `debug = 0` together it panics again (see
+/// [`prog_varint_wa_oz_nodwarf`]), while either alone compiles.
 #[test]
 fn prog_varint_wa() {
     run_case("prog_varint_wa", include_str!("../cases/case_prog_varint_wa.rs"));
@@ -1060,6 +1140,34 @@ fn prog_varint_wa_edges() {
             (0, 0xffff_ffff),
             (0xffff_ffff, 0),
         ],
+    );
+}
+
+/// The two rescues of [`prog_varint`] do not COMPOSE (campaign 24): the
+/// black-boxed decoder compiles at `--optimize=size-min` with guest DWARF and
+/// compiles at the default level without it, but with BOTH — the ordinary
+/// release build of a size-tuned guest — it panics again in the F12 class
+/// (`AliasingViolationError { kind: Mutable, location:
+/// hir/src/ir/operation.rs:877 }` at hir/src/patterns/rewriter.rs:335).
+/// Mechanism: `-Oz` keeps the count bands un-hoisted while `debug = 0` lets
+/// Local2Reg promote the slots DWARF pins, and the payload column that still
+/// carries cfg-to-scf's `ub.poison` at the back edge survives both. This is
+/// the only case in the corpus where two independently-safe configurations
+/// combine into a panic, so it is the reason a "workaround" must be validated
+/// at the exact configuration the user ships. `prog_varint_guard` (the
+/// reduced program) panics at `-Oz` with DWARF too — that one is
+/// [`prog_varint_guard_oz`]. Compile-time — no inputs involved.
+#[test]
+#[ignore = "compiler panic at --optimize=size-min WITHOUT full guest DWARF (either configuration \
+            alone compiles): 'AliasingViolationError { kind: Mutable, location: \
+            hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while matching \
+            'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no inputs \
+            involved"]
+fn prog_varint_wa_oz_nodwarf() {
+    run_case_with_flags(
+        "prog_varint_wa_oz_nodwarf",
+        include_str!("../cases/case_prog_varint_wa.rs"),
+        &["--optimize=size-min", "--guest-debug=0"],
     );
 }
 
