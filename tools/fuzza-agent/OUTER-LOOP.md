@@ -103,12 +103,41 @@ closed by an unreachability argument).
   answer and a new panic site. For realistic programs the "known class
   = no new twin" rule is suspended: the ignored `prog_*` twin next to its
   largest compiling `_guard` IS the deliverable.
-- Classify panics by trace, never by marker: erased split-edge reloads
-  and "unused phi" warnings are present in programs that compute the
-  right answer, and the ">16 felts means a spill defect" rule of thumb
-  does not hold at -Oz. Use the spills trace (spills / edges to split /
-  erase unused reload) for F6, the pattern trace's last `trying to match`
-  line for F12, and the absence of both for the in-contract solver gap.
+- Classify panics by trace, never by marker or crash site: erased
+  split-edge reloads and "unused phi" warnings are present in programs
+  that compute the right answer, the ">16 felts means a spill defect" rule
+  of thumb does not hold at -Oz, and one crash site (`emit/mod.rs:623`)
+  now has THREE mechanisms behind it. Precedence: `edges to split > 0` plus
+  `erase unused reload` lines = the stale dominator tree; an arity-2 Copy
+  `NoSolution` on an in-window stack with no split erasure = the solver
+  gap; `additional spills required` with no splits and a spill store as the
+  drop trace's last op = spill placement past the window; the pattern
+  trace's last `trying to match` line = the aliasing panic. In the
+  2026-09-10 block the inner-loop agents mislabeled three twins by site;
+  the director's re-trace caught all three, so the re-trace is not
+  optional.
+- Arbitrate EVERY runtime divergence with wasmtime on the harness-built
+  wasm (`wasmtime run -W wide-arithmetic=y --invoke entrypoint
+  target/miden_test_shared/wasm32-wasip1/release/differential_<case>.wasm
+  a b`): wasmtime agreeing with MASM is the guest toolchain, wasmtime
+  agreeing with native is the compiler. Then the director owns the root
+  cause: the one genuine compiler miscompile of the block (a constant
+  folder retyping a shared constant) was invisible in every IR dump — the
+  printer shows result types, not immediate variants — and was found by
+  reading the MASM for a wrong-width push, bisecting the shape by hand,
+  and reading the folder source. Budget an hour of director time for it;
+  do not hand a live miscompile back to an agent for "classification".
+- A *minimal-reproducer suite* is a worthwhile closing campaign: one
+  smallest runnable case per crash site and mechanism, at the default
+  configuration where possible, beside the sibling that differs by one
+  ingredient, plus a per-class "must turn green / must stay green" test
+  map — that is what a fix PR and an issue need, and the reductions
+  themselves refine the producer rules (the aliasing panic turned out not
+  to need an early exit at all).
+- Configuration-dependent findings need a per-case pin, not only an env
+  sweep: the `--guest-debug=0|1|2` harness pseudo-flag exists because the
+  release configuration (no guest DWARF) changes which programs compile,
+  and every ordinary build is on that side.
 - Inner-loop agents may stop only processes they spawned (never
   pattern kills); an agent that dies mid-run (usage limit) leaves unverified
   files — relaunch the same brief with a "reuse, verify, trim the partial
