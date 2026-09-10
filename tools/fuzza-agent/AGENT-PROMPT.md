@@ -205,7 +205,15 @@ fn <name>() {
      configuration-dependent divergence has exact failing inputs to pin (see
      `chk_add_u128_o1_repro`); a finding that exists only without guest DWARF
      is pinned with the harness pseudo-flag `--guest-debug=0` in the same
-     way. If the case mixes several constructs,
+     way. Before you call a divergence a compiler bug, run wasmtime on the
+     harness-built wasm (`wasmtime run -W wide-arithmetic=y --invoke
+     entrypoint target/miden_test_shared/wasm32-wasip1/release/
+     differential_<case>.wasm a b`): if wasmtime agrees with MASM the guest
+     toolchain is wrong, not the compiler. Before you name a compile-time
+     panic's class, take the spills trace and the pattern trace (see
+     "Reference commands") — the crash site alone does not identify the
+     mechanism (`KNOWLEDGE.md`, "Minimal reproducers per class"). If the case
+     mixes several constructs,
      split it so each divergence gets its own minimal reproducer — the passing
      siblings *bound* the bug for free. The test's doc comment and ignore
      reason are the bug's **only** documentation (nothing goes in README or
