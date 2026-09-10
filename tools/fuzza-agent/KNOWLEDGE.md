@@ -2048,6 +2048,23 @@ source ladders (corpus cases `compose::invariant_args_min`/`_guard` and
   when the inner exit is a labeled `break` or a labeled `continue`, when the
   nest is flattened to a single loop with the same early `return`, and — one
   statement moved — when the `return` is placed BELOW the inner `break`.
+- **A `return` is not required: the SECOND producer is an inner counted loop's
+  merged EXIT DISPATCH** (verified 2026-09-10, campaign 28, minimal case
+  `compose::invariant_args_noreturn`, reduced from `programs_oz::prog_blake2b`
+  and containing no `return`, `break` or `continue` at all). Shape: an outer
+  loop over a chaining state and an inner counted loop over array-indexed state
+  with `.rodata` index tables. In the lifted IR the inner `scf.while`'s
+  `before` region ends in an `scf.if` on the mixing loop's exit test whose
+  TWELVE results have their first SIX columns equal to the function's single
+  `ub.poison` in BOTH arms; canonicalization collapses each all-arms-poison
+  column, `scf.condition` forwards it, and the pattern matches — the same IR
+  rule as the `return` producer, with the poison coming from the payload the
+  outer loop's `scf.index_switch` exit dispatch selects on. The one-ingredient
+  sibling that compiles differs only in the inner loop's trip count (six
+  instead of seven): LLVM unrolls it, cfg-to-scf sees ONE `scf.while` whose
+  condition forwards only real values, and no column carries poison. So the
+  question to ask of a source program is "does cfg-to-scf still see a nested
+  loop with a merged exit?", not "does it contain an early exit?".
 - **Whether a given source program reaches that IR shape is decided by how much
   LLVM leaves for cfg-to-scf, not by an idiom.** On the reduction ladder from
   `prog_varint`, removing the byte buffer, three of the four error returns,
@@ -2455,3 +2472,62 @@ native grid (corpus: `tests/corelib.rs`, `prog_*`):
   round trips makes the default level compile, and removing both makes all
   four levels compile (ladder in `case_prog_numeric_guard.rs`). Halving the
   trip count changes nothing.
+
+## Minimal reproducers per class: the corpus map (campaign 28, 2026-09-10)
+
+Which committed tests a fix for each known compile-time class must turn green,
+and which value-checked siblings must stay green. One filter per class:
+`cargo test -p midenc-integration-tests <filter> -- --ignored`. Every entry was
+classified by TRACE, not by crash site (the three-signature rule above).
+
+- **F6, stale dominator tree** (`spill::rewrite_cfg_spills` rebuilds SSA form
+  from the `DominanceInfo` the spill ANALYSIS cached before the transform's own
+  edge splits; signature: `edges to split > 0` plus `erase unused reload`
+  lines). Must turn green: `pressure::window_erased_min` (24 lines, four u64
+  values live across a bottom-tested loop plus one crossing band ->
+  `emit/mod.rs:623`, all four opt levels), `pressure::overflow_cluster_min`
+  (23 lines, five values and no band -> `lowering.rs:109` over a 17-felt
+  stack, all four levels), `pressure::zero_trip_frontier` and
+  `pressure::frontier_seq` / `frontier_dispatch` (-> `frontier.rs:123`),
+  `pressure::zero_trip_overflow`, and the realistic members
+  `programs_oz::prog_sha512` and the F6 `programs::prog_*` group. Must stay
+  green:
+  `pressure::window_erased_guard` (+ `_edges`), `pressure::zero_trip_guard`
+  (+ `_repro`), `pressure::while_results`, and the `interact::*` guards that
+  carry erased split reloads (2-32 of them) while computing the right answer —
+  a fix must keep those answers, not just stop erasing.
+- **F17, spill placement past the window** (`emit/mod.rs:623` with
+  `additional spills required`, `edges to split = 0`, no erased reloads; the
+  drop trace's last op is the spill `hir.store_local`). Must turn green:
+  `opt_levels::spill_store_min` (60-line ARX kernel at -Oz) and
+  `programs_oz::prog_threefish_oz` (the only realistic member). Must stay green:
+  `opt_levels::spill_store_guard` (one rotation row fewer) and the rest of
+  `opt_levels` at -Oz.
+- **F2, arity-2 solver gap** (in-window <= 16-felt stack, `[Move, Copy]` /
+  `[Copy, Move]`). Must turn green: `spills::rotl_window`,
+  `spills::spill_loop_mix_oz`, `programs_oz::prog_threefish_o3`. Must stay
+  green: `pressure::chain_window` (eighteen counts, one rung below the gap),
+  `pressure::unary_window`, `pressure::width_mix`.
+- **F12, `RemoveLoopInvariantArgsFromBeforeBlock` aliasing** (pattern driver's
+  last `trying to match` line). Must turn green: `compose::invariant_args_min`
+  (the `return` producer) and `compose::invariant_args_noreturn` (the
+  return-free producer), plus `programs_oz::prog_blake2b`,
+  `programs_oz::prog_xxh64_o1`, `programs::prog_varint`/`prog_rkscan*` and the
+  `_nodwarf` twins (`compose::chain_sm_nodwarf` and the `debug_info` ones). Must stay green: `compose::invariant_args_guard`,
+  `compose::invariant_args_noreturn_guard`.
+- **F18, coercion folders mutate the operand constant's attribute**
+  (`Sext::fold`/`Zext::fold`/`Trunc::fold` in
+  dialects/arith/src/ops/coercions.rs call `set_from_immediate_lossy` on the
+  attribute reached through `foldable_operand_of_trait`, and the folder's
+  `try_get_or_create_constant` reuses that same attribute object for the
+  materialised constant). Must turn green: `wide::sext_const_shared` (8-line
+  loop-free reproducer), `wide::parse_i64_hand`, `corelib::core_parse_i64`.
+  Must stay green: `wide::sext_const_split`, `wide::zext_const_shared`,
+  `wide::trunc_const_shared`, `wide::parse_i64_hand11`, `parse_i64_short`,
+  `corelib::core_parse_u64`. Reach measured 2026-09-10: only the SIGNED folder
+  has a plain-Rust producer — `I64MulWideS` sign-extends the wasm operand
+  directly, while `I64MulWideU` bitcasts to `u64` first (so `Zext::fold`
+  mutates the bitcast's materialised constant, not the shared one) and every
+  64-bit shift/rotate count that `mask_movement_count` truncates to `u32` ends
+  up as a distinct attribute from the `i64` constant a plain use holds. A
+  wrong-width push is invisible in every IR dump; read the MASM.

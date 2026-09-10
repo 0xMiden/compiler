@@ -255,3 +255,89 @@ fn frontier_dispatch() {
 fn frontier_seq() {
     run_case("frontier_seq", include_str!("../cases/case_frontier_seq.rs"));
 }
+
+/// MINIMAL DEFAULT-LEVEL REPRODUCER of the F6 EMITTER site (campaign 28): 24
+/// lines, no dispatch, no zero-trip loop, no nested loop. FOUR u64 values are
+/// defined before a bottom-tested `(input1 % 7) + 2` loop, consumed inside it
+/// in ONE wide expression (so all four are live at a single program point) and
+/// used again after it, with ONE masked rotate count band used before, inside
+/// and after the same loop. Building it panics with `invalid operand stack
+/// index (10): requires access to more than 16 elements, which is not
+/// supported in Miden` at codegen/masm/src/emit/mod.rs:623.
+/// CLASSIFIED F6 by trace, not by site
+/// (`MIDENC_TRACE='analysis:spills=trace,pass:spills=trace'`): `edges to split
+/// = 1` and SIX `erase unused reload` lines — the spill transform rebuilds SSA
+/// form from the dominator tree the spill ANALYSIS cached before the
+/// transform's own edge split, never visits the split block, and erases the
+/// reloads it placed there, so the spilled values stay live on the operand
+/// stack past their spills. Same defect as `zero_trip_frontier` /
+/// `frontier_seq`, met at the emitter instead of the dominance frontier.
+/// Panics at ALL FOUR optimization levels (emit/mod.rs:623 at the default
+/// level and at max, lowering.rs:109 at size-min and basic), so no `-O` escape
+/// exists for it. Bounded by `window_erased_guard` below, which removes the
+/// band (the same four values, same loop, same post-loop uses), and by the
+/// three-value/one-band rung, which also compiles; note the band axis is
+/// NON-MONOTONE here — two bands compile again at the default level.
+/// Compile-time — no inputs involved. Un-ignore when the transform recomputes
+/// dominance after splitting edges.
+#[test]
+#[ignore = "compiler panic: 'invalid operand stack index (10): requires access to more than 16 \
+            elements' at codegen/masm/src/emit/mod.rs:623 — F6 (edges to split = 1, six erased \
+            split reloads): four u64 values live across a bottom-tested loop plus one crossing \
+            count band; all four optimization levels, compile-time, no inputs"]
+fn window_erased_min() {
+    run_case("window_erased_min", include_str!("../cases/case_window_erased_min.rs"));
+}
+
+/// Passing sibling of [`window_erased_min`] and [`overflow_cluster_min`]
+/// (campaign 28): the same shape with the count band removed — four u64 values
+/// defined before the loop, joined in one wide expression inside it and used
+/// again after it. The spill analysis requests NO spill here (`edges to split`
+/// never appears in the trace), so this rung is the last one below the cliff;
+/// it also passes at `--optimize=size-min` and `--optimize=max` and panics at
+/// `--optimize=basic` (lowering.rs:109), which is the campaign-21 "opt level is
+/// not a safety ladder" rule at minimal scale.
+#[test]
+fn window_erased_guard() {
+    run_case("window_erased_guard", include_str!("../cases/case_window_erased_guard.rs"));
+}
+
+/// Pinned trip-count grid for [`window_erased_guard`]: the minimum (2) and
+/// maximum (8) trips of the `(input1 % 7) + 2` loop, the all-zero and all-ones
+/// rows, and an equal pair — the values the cluster and the wide expression
+/// must still compute correctly when the analysis is one rung below spilling.
+#[test]
+fn window_erased_guard_edges() {
+    run_case_with_inputs(
+        "window_erased_guard_edges",
+        include_str!("../cases/case_window_erased_guard.rs"),
+        &[(0, 0), (6, 1), (7, 0xffff_ffff), (0xffff_ffff, 0xffff_ffff), (13, 13)],
+    );
+}
+
+/// MINIMAL DEFAULT-LEVEL REPRODUCER of the F6 LOWERING site WITHOUT a
+/// zero-trip-capable loop (campaign 28): 23 lines — [`window_erased_guard`]
+/// with one more u64 value in the cluster (five defined before the loop,
+/// joined in one wide expression inside it, used again after it) and no count
+/// band at all. Building it panics with `failed to schedule operands: [%24,
+/// %82] for inst 'arith.rotl' with error: NoSolution` at
+/// codegen/masm/src/lower/lowering.rs:109, constraints `[Copy, Copy]`, over a
+/// SEVENTEEN-felt operand stack (six u64 operands and five u32 counts) — the
+/// Copy-constrained count sits at index 10, outside the MASM window, so this
+/// is the over-window mechanism and not the in-window arity-2 solver gap
+/// (`rotl_window`/F2). CLASSIFIED F6 by trace: `edges to split = 1` and SIX
+/// `erase unused reload` lines, the same stale-dominator-tree defect as
+/// `zero_trip_overflow` — which needed twelve counts and a zero-trip-capable
+/// loop for the same site. Panics at all four optimization levels. Bounded by
+/// [`window_erased_guard`] (one cluster value fewer, no spills at all).
+/// Compile-time — no inputs involved. Un-ignore when the transform recomputes
+/// dominance after splitting edges.
+#[test]
+#[ignore = "compiler panic: 'failed to schedule operands: [%24, %82] for inst arith.rotl with \
+            error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 over a 17-felt stack — F6 \
+            (edges to split = 1, six erased split reloads): five u64 values live across a \
+            bottom-tested loop, no zero-trip loop and no count band; all four optimization levels, \
+            compile-time, no inputs"]
+fn overflow_cluster_min() {
+    run_case("overflow_cluster_min", include_str!("../cases/case_overflow_cluster_min.rs"));
+}

@@ -510,3 +510,65 @@ fn switch_calls_edges() {
         &[(0, 1), (1, 1), (3, 12), (0, 0), (2, 0), (23, 12), (0xffff_ffff, 0xffff_ffff)],
     );
 }
+
+/// MINIMAL RETURN-FREE REPRODUCER of the F12 aliasing panic (campaign 28),
+/// reduced from `programs_oz::prog_blake2b`: an outer block loop over a
+/// two-word chaining state and an inner SEVEN-trip mixing loop over an
+/// array-indexed working vector, with `.rodata` index tables and a message
+/// array. The program contains no `return`, no `break` and no `continue` —
+/// the campaign-22 source rule ("a `return` that leaves the function from
+/// inside a two-level nest") is therefore not the only producer. Building it
+/// panics with `AliasingViolationError { kind: Mutable, location:
+/// hir/src/ir/operation.rs:877 }` at hir/src/patterns/rewriter.rs:335, the
+/// pattern driver's last line being `trying to match
+/// 'remove-loop-invariant-args-from-before-block' dialect=scf op=while`.
+/// MECHANISM (post-lift IR of this case and of its sibling, `-Z
+/// print-ir-after-pass=lift-control-flow` with
+/// `MIDENC_TRACE='pass:lift-control-flow=trace'`): cfg-to-scf materialises ONE
+/// `ub.poison<u32>` per function and initialises every `scf.while` payload
+/// column with it. Here the INNER loop's exit dispatch is the poison source:
+/// inside the inner while's `before` region an `scf.if` on the mixing loop's
+/// exit test yields TWELVE results whose first SIX columns are that one poison
+/// value in BOTH arms (the remaining six carry a value pair swapped between
+/// the arms and four values common to both), the canonicalizer collapses each
+/// all-arms-poison
+/// column to the poison value itself, `scf.condition` forwards it, and the
+/// pattern's "yield operand equals the init operand" test is satisfied. The
+/// source construct behind those columns is the merged exit of the inner
+/// counted loop — the payload the outer loop's `scf.index_switch` dispatch
+/// selects on — not any user-visible early exit.
+/// Per level: default PANIC, `--optimize=basic` PANIC, `--optimize=max` and
+/// `--optimize=size-min` compile.
+/// Bounded by [`invariant_args_noreturn_guard`] below: with SIX mixing steps
+/// LLVM unrolls the inner loop into the block loop, cfg-to-scf sees a single
+/// `scf.while` whose `scf.condition` forwards only real values, and the
+/// pattern never matches. Compile-time — no inputs involved. Un-ignore when
+/// the rewriter stops taking a mutable borrow of an operation it is already
+/// borrowing.
+#[test]
+#[ignore = "compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: Mutable, \
+            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
+            matching 'remove-loop-invariant-args-from-before-block' — F12 with NO \
+            return/break/continue: the poison column is the inner counted loop's exit dispatch \
+            payload; compile-time, no inputs involved"]
+fn invariant_args_noreturn() {
+    run_case(
+        "invariant_args_noreturn",
+        include_str!("../cases/case_invariant_args_noreturn.rs"),
+    );
+}
+
+/// Passing sibling of [`invariant_args_noreturn`]: the same program with SIX
+/// mixing steps instead of seven. LLVM unrolls the inner loop, so the lifted
+/// IR has ONE `scf.while` (four payload columns) instead of a nest, its
+/// `scf.condition` forwards four real values, and no column carries poison.
+/// This is the one-ingredient boundary of the return-free producer: what
+/// decides F12 is whether cfg-to-scf still sees a nested loop with a merged
+/// exit, not any source-level idiom.
+#[test]
+fn invariant_args_noreturn_guard() {
+    run_case(
+        "invariant_args_noreturn_guard",
+        include_str!("../cases/case_invariant_args_noreturn_guard.rs"),
+    );
+}
