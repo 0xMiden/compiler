@@ -832,3 +832,97 @@ fn parse_i64_hand11() {
         &[(0, 0), (0, 1), (0, 3), (0, 14), (1, 7)],
     );
 }
+
+/// MINIMAL, LOOP-FREE REPRODUCER of F18 (campaign 28): eight lines of
+/// straight-line Rust in which the same `i64` constant 10 feeds a widening
+/// multiply and a plain `i64` multiply of another value. `(a as i128) * 10`
+/// lowers to `i64.mul_wide_s`, whose operands the wasm frontend sign-extends
+/// (`arith.sext %c : i128`); `Sext::fold`
+/// (dialects/arith/src/ops/coercions.rs) reads the constant's attribute
+/// through `foldable_operand_of_trait` — a shared reference into the defining
+/// `arith.constant` — and calls `set_from_immediate_lossy` on it, and the
+/// folder's `try_get_or_create_constant` then materialises the `i128` constant
+/// around that SAME attribute object. The `i64` constant the plain multiply
+/// still uses therefore carries an `I128` immediate under an `i64` result
+/// type, and `arith::Constant::emit` pushes from the immediate: the MASM
+/// materialises that constant as `push.0 push.0 push.0 push.10` (four felts)
+/// at BOTH use sites, including the one feeding
+/// `exec.::intrinsics::i64::wrapping_mul`, which consumes two — the operand
+/// stack is misaligned by two felts from there on. The printed HIR is no help
+/// (it shows the result type, not the immediate variant): it prints
+/// `arith.constant 10 : i64` either way.
+/// GUEST-ARBITRATED: only the HIGH word of the wide product is consumed (the
+/// `mul_hi_only` shape), and `wasmtime 48 -W wide-arithmetic=y` on the
+/// harness-built wasm returns the native answer on the pinned rows (30 at
+/// (1, 2), 44 at (3, 5)), so this is midenc's defect and not the F9
+/// guest-toolchain family. The wrong-width push is present in the MASM at all
+/// four optimization levels; the value check here runs at the default one.
+/// BOUNDED by [`sext_const_split`] (the plain multiply uses 11, so nothing is
+/// shared — same shape, correct answer), by [`zext_const_shared`] (the
+/// unsigned twin passes) and by [`trunc_const_shared`] (the truncating twin
+/// passes). The `core` producer of the same defect is `corelib::core_parse_i64`
+/// and the hand-written two-path form is [`parse_i64_hand`]. Un-ignore when
+/// the coercion folders build a NEW immediate instead of mutating the
+/// operand's (as `fold_with` already does).
+#[test]
+#[ignore = "midenc miscompile (F18) on pinned inputs (1, 2): native/wasmtime 30 vs masm 0 — \
+            Sext::fold retypes the shared `i64` constant 10 to `i128` in place, so the plain \
+            multiply is fed four felts; see the doc comment"]
+fn sext_const_shared() {
+    run_case_with_inputs(
+        "sext_const_shared",
+        include_str!("../cases/case_sext_const_shared.rs"),
+        &[(1, 2), (3, 5), (0, 0), (0xffff_ffff, 1), (7, 0xffff_ffff)],
+    );
+}
+
+/// The discriminating sibling of [`sext_const_shared`]: identical except that
+/// the plain multiply uses 11, so the sign-extended constant is not shared
+/// with a two-felt `i64` use. Agrees with native on the same pinned rows.
+#[test]
+fn sext_const_split() {
+    run_case_with_inputs(
+        "sext_const_split",
+        include_str!("../cases/case_sext_const_split.rs"),
+        &[(1, 2), (3, 5), (0, 0), (0xffff_ffff, 1), (7, 0xffff_ffff)],
+    );
+}
+
+/// F18 reach guard, UNSIGNED folder (campaign 28): the [`sext_const_shared`]
+/// shape with `u64`/`u128`, i.e. a `u64` constant shared between an
+/// `i64.mul_wide_u` and a plain `u64` multiply. It PASSES, and the MASM says
+/// why: the `I64MulWideU` translation bitcasts each operand to `u64` before
+/// zero-extending it (`hir.bitcast` then `arith.zext %x : u128`, frontend
+/// mod.rs), so the attribute `Zext::fold` mutates belongs to the `u64`
+/// constant materialised for the bitcast, not to the `i64` constant the plain
+/// multiply uses — the plain multiply is fed `push.0 push.10` (two felts,
+/// correct) while the wide one gets four. `Sext` has no such bitcast:
+/// `I64MulWideS` sign-extends the wasm operand directly. This test fails if a
+/// fix (or a regression) makes the unsigned path alias the shared constant.
+#[test]
+fn zext_const_shared() {
+    run_case_with_inputs(
+        "zext_const_shared",
+        include_str!("../cases/case_zext_const_shared.rs"),
+        &[(1, 2), (3, 5), (0, 0), (0xffff_ffff, 1), (7, 0xffff_ffff)],
+    );
+}
+
+/// F18 reach guard, TRUNCATING folder (campaign 28): a 64-bit rotate count
+/// constant — every 64-bit shift/rotate count goes through
+/// `mask_movement_count`'s `builder.trunc(count, U32)`, so this folder runs on
+/// most of the corpus — shared with a plain `i64` use of the same constant.
+/// It PASSES: the MASM pushes the count as one felt (`push.63 push.24 u32and`,
+/// the folded count band) and the `i64` addend as two (`push.0 push.24`), so
+/// the two constants are distinct attributes here. The same holds when the two
+/// uses sit in different branches and when the plain use is a multiply
+/// (campaign-28 probes). This test fails if the truncating folder starts
+/// aliasing shared constants the way `Sext::fold` does.
+#[test]
+fn trunc_const_shared() {
+    run_case_with_inputs(
+        "trunc_const_shared",
+        include_str!("../cases/case_trunc_const_shared.rs"),
+        &[(1, 2), (3, 5), (0, 0), (0xffff_ffff, 1), (7, 0xffff_ffff)],
+    );
+}

@@ -212,3 +212,57 @@ fn deadfall_oz_edges() {
         &[(0, 21), (0, 1), (0, 0), (0, 12), (0, 56), (512, 122)],
     );
 }
+
+/// MINIMAL `-Oz` REPRODUCER of F17 (campaign 28), reduced from
+/// `programs_oz::prog_threefish_oz` (16 rounds, a block loop, a chain array,
+/// output whitening) to four u64 words mixed by EIGHT rotation rows — sixteen
+/// distinct rotation constants — inside a kept two-trip round-group loop, with
+/// subkey and tweak injection from a `[u64; 5]` and a `[u64; 3]`. At
+/// `--optimize=size-min` building it panics with `invalid operand stack index
+/// (10): requires access to more than 16 elements` at
+/// codegen/masm/src/emit/mod.rs:623.
+/// CLASSIFIED F17 by trace, not by site: the spills trace shows the analysis
+/// DID run and spill (3 and 5 values) with SEVEN `max usage on exit exceeds K
+/// (16), additional spills required` lines, `edges to split = 0` in both runs
+/// and ZERO `erase unused reload` lines — so it is not the stale-dominator-tree
+/// defect (F6) — and the stack is over the window, so it is not the in-window
+/// arity-2 solver gap (F2). The emitter drop trace
+/// (`MIDENC_TRACE='codegen:operand-scheduling=trace'`) shows the failing op is
+/// the SPILL STORE itself: the last `dropping unused operands at:` line is
+/// `hir.store_local %15 <{ local = local_variable<12, u32> }>`, i.e. the value
+/// chosen for spilling is already at operand index 10 when its store is
+/// emitted. Reproduces ONLY at `-Oz` (the default level, max and basic all
+/// compile this kernel), and adding freight at the default level does not
+/// produce F17 but F6 (a campaign-28 composition with a four-value u64 cluster
+/// panics at emit/mod.rs:623 WITH one split edge and six erased reloads).
+/// Bounded by [`spill_store_guard`] below (one rotation row fewer, compiles and
+/// matches native at -Oz). Compile-time — no inputs involved. Un-ignore when
+/// the spill placement keeps the spilled value inside the window.
+#[test]
+#[ignore = "compiler panic at --optimize=size-min: 'invalid operand stack index (10): requires \
+            access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F17 (seven \
+            'additional spills required', edges to split = 0, no erased reloads; the failing op is \
+            the spill store hir.store_local into slot 12); compile-time, no inputs involved"]
+fn spill_store_min() {
+    run_case_with_flags(
+        "spill_store_min",
+        include_str!("../cases/case_spill_store_min.rs"),
+        SIZE_MIN,
+    );
+}
+
+/// Passing sibling of [`spill_store_min`]: the same ARX kernel with SEVEN
+/// rotation rows (fourteen constants) instead of eight. It compiles at -Oz and
+/// matches native, so the one ingredient that crosses the F17 boundary in this
+/// kernel is the last rotation row — while the constant ladder itself is
+/// non-monotone (campaign 26 measured 13, 12, 11, 9 panicking and 8, 4
+/// compiling on the full Threefish), so this rung bounds the reproducer
+/// without being a user rule.
+#[test]
+fn spill_store_guard() {
+    run_case_with_flags(
+        "spill_store_guard",
+        include_str!("../cases/case_spill_store_guard.rs"),
+        SIZE_MIN,
+    );
+}
