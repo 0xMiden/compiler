@@ -760,3 +760,75 @@ fn fixmul_u64_repro() {
         &[(1, 1), (0xffffffff, 0xffffffff), (0x12345678, 0x9abcdef0)],
     );
 }
+
+/// The passing sibling of [`parse_i64_hand`] with the wide path removed: the
+/// same `str::parse::<i64>` of a runtime-length slice with the length capped
+/// below sixteen, so LLVM emits only the plain `i64.mul` accumulation and no
+/// constant is shared with a sign-extension. Agrees with native on every
+/// pinned row.
+#[test]
+fn parse_i64_short() {
+    run_case_with_inputs(
+        "parse_i64_short",
+        include_str!("../cases/case_parse_i64_short.rs"),
+        &[(0, 0), (0, 1), (0, 3), (0, 14), (1, 7)],
+    );
+}
+
+/// RUNTIME MISCOMPILE, ROOT-CAUSED (director, campaign 27 follow-up,
+/// 2026-09-10): the two accumulation paths `core` generates for a signed
+/// 64-bit parse, written by hand in one function with no `core::str::parse` —
+/// an overflow-checked path (`checked_mul(10)` + `checked_add`, which LLVM
+/// lowers through `i64.mul_wide_s acc, 10`) for a sixteen-byte slice and a
+/// plain wrapping path (`* 10 + digit`) for shorter ones. At `(0, 0)` the
+/// slice is `"9"`: native returns 9, MASM returns 0.
+///
+/// MECHANISM: the frontend sign-extends both `mul_wide_s` operands to `i128`,
+/// so the wasm's single `i64.const 10` becomes `%17 = arith.constant 10 :
+/// i64` feeding both `arith.sext %17 : i128` (wide path) and the plain
+/// `arith.mul %acc, %17` (plain path). `Sext::fold`
+/// (dialects/arith/src/ops/coercions.rs, the in-place `fold`, unlike
+/// `fold_with` which clones) obtains the constant's attribute through
+/// `foldable_operand_of_trait` — a shared reference into the defining
+/// `arith.constant` — and calls `set_from_immediate_lossy(Immediate::I128(10))`
+/// on it, so after canonicalization `%17` carries an `i128` immediate under
+/// its `i64` result type. `arith::Constant::emit` pushes from the immediate:
+/// `push.0 push.0 push.0 push.10` (four felts, modelled as four) feed the
+/// two-felt `intrinsics::i64::wrapping_mul`, the operand stack is misaligned
+/// by two felts, and the digit add consumes the leftover zeros. The same
+/// in-place mutation exists in `Zext::fold` and `Trunc::fold`.
+/// BOUNDED by [`parse_i64_hand11`] (the plain path multiplies by 11 — no
+/// shared constant — and every plain row is correct) and by
+/// [`parse_i64_short`] (no wide path at all). The `core` producer is
+/// `corelib::core_parse_i64`. Un-ignore when the coercion folders stop
+/// mutating the operand attribute (build a new immediate as `fold_with`
+/// does) — an `arith.constant` verifier check that the immediate's type
+/// matches the result type would have caught it.
+#[test]
+#[ignore = "midenc miscompile on pinned inputs (0, 0): native 9 vs masm 0 — Sext::fold retypes the \
+            shared `i64` constant 10 to `i128` in place, so the plain multiply is fed four felts; \
+            see the doc comment"]
+fn parse_i64_hand() {
+    run_case_with_inputs(
+        "parse_i64_hand",
+        include_str!("../cases/case_parse_i64_hand.rs"),
+        &[(0, 0), (0, 1), (0, 3), (0, 14), (1, 7)],
+    );
+}
+
+/// The discriminating sibling of [`parse_i64_hand`]: identical except that
+/// the plain path multiplies by 11, so the wide path's sign-extended constant
+/// 10 is no longer shared with it — and every plain row agrees with native
+/// (rows below sixteen digits). The sixteen-digit row `(0, 15)` is pinned
+/// OUT: it takes the overflow-checked path and returns the overflow marker on
+/// MASM AND under wasmtime (`-W wide-arithmetic=y`: -559038737) against
+/// native 2097153, i.e. the guest-toolchain `+wide-arithmetic` miscompile of
+/// `checked_mul` (the `core_chkmul_i64` family), not a midenc defect.
+#[test]
+fn parse_i64_hand11() {
+    run_case_with_inputs(
+        "parse_i64_hand11",
+        include_str!("../cases/case_parse_i64_hand11.rs"),
+        &[(0, 0), (0, 1), (0, 3), (0, 14), (1, 7)],
+    );
+}
