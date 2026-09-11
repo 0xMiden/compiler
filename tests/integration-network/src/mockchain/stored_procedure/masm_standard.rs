@@ -101,14 +101,10 @@ fn masm_standard() {
         let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
         note_cycles.push(single_note_cycles(&tx_measurements).to_string());
     }
-    // Member query, then non-member query
-    expect![[r#"
-        [
-            "3602",
-            "3507",
-        ]
-    "#]]
-    .assert_debug_eq(&note_cycles);
+    let [member_cycles, non_member_cycles]: [String; 2] =
+        note_cycles.try_into().expect("one measurement per consumed note");
+    expect!["3758"].assert_eq(&member_cycles);
+    expect!["3663"].assert_eq(&non_member_cycles);
 }
 
 /// Returns the MAST root of the procedure `leaf` exported by a standards component.

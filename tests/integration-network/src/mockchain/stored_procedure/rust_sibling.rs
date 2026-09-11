@@ -134,7 +134,7 @@ fn rust_sibling() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["13211"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["13348"].assert_eq(single_note_cycles(&tx_measurements));
 
     // 314, incremented once, then increased by 5 through the two-argument procedure
     assert_counter_storage_at_key(
