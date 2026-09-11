@@ -193,7 +193,7 @@ See `examples/auth-component-rpo-falcon512` for the complete component.
 
 ## 0.13.1 -> 0.14.0
 
-### Stored-procedure storage slots and the reserved `dyncall-` prefix
+### Stored-procedure storage slots
 
 An account component can now keep the MAST root of a procedure exported by a *sibling* component
 (another component deployed on the same account) in one of its storage slots and call it. Declare
@@ -235,27 +235,6 @@ Roots are expected to be written by the host at deployment or update time; the S
 constructor for a `StoredProcedure`, and neither the compiler nor the VM checks a stored root
 against the declared signature. Calling an unset slot fails the transaction, so check `is_set()`
 on a slot that may not have been populated yet.
-
-The generated imports are named `dyncall-<field>`, and that WIT function-name prefix is now
-reserved: the compiler lowers every imported function whose name starts with `dyncall-` as a
-stored-procedure dispatch instead of linking it. A dependency WIT interface that declares such a
-function is now rejected at compile time and has to rename it.
-
-Before:
-
-```
-interface api {
-    dyncall-notify: func(root: word, amount: felt);
-}
-```
-
-After:
-
-```
-interface api {
-    notify: func(root: word, amount: felt);
-}
-```
 
 ### Transaction summaries are six words (protocol 0.16)
 
