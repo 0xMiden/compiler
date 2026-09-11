@@ -1108,7 +1108,7 @@ impl HirLowering for hir::Dyncall {
         let op = self.as_operation();
         let span = self.span();
         let signature = self.get_signature().clone();
-        let root_scratch_addr = crate::linker::ReservedCell::DyncallRoot.element_addr();
+        let root_scratch_addr = crate::linker::DYNCALL_ROOT_ADDR;
 
         // The plain emitter, not the instruction emitter: the latter renames the stack top to the
         // op's results when dropped, and the results only exist after the dispatch below
