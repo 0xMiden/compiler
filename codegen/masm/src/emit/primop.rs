@@ -420,7 +420,7 @@ impl OpEmitter<'_> {
     /// checked to be non-zero — an all-zero root is an unset storage slot, reported with a
     /// descriptive assertion instead of the VM's late "procedure not found" failure — then
     /// spilled to the reserved scratch word at `root_scratch_addr` (see
-    /// [crate::linker::ReservedCell::DyncallRoot]), as the VM reads a `dyncall` target from
+    /// [crate::linker::DYNCALL_ROOT_ADDR]), as the VM reads a `dyncall` target from
     /// memory, and dropped. The arguments are scheduled afterwards, so the root and the
     /// arguments never have to share the addressable operand stack window.
     ///
@@ -815,7 +815,7 @@ mod tests {
         }
 
         let span = SourceSpan::default();
-        let scratch = crate::linker::ReservedCell::DyncallRoot.element_addr();
+        let scratch = crate::linker::DYNCALL_ROOT_ADDR;
         emitter.dyncall_spill_root(scratch, span);
         emitter.dyncall_dispatch(scratch, &signature, span);
 
