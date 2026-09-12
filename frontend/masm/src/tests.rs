@@ -2312,10 +2312,7 @@ fn project_disassembly_loads_support_modules_into_world_tree() -> Result<()> {
         }
     }
     let callee = callee.expect("entry should contain a call");
-    assert!(
-        callee.borrow().as_symbol_operation().nearest_parent_op::<builtin::Module>()
-            == Some(support)
-    );
+    assert!(callee.borrow().as_operation().nearest_parent_op::<builtin::Module>() == Some(support));
 
     let _ = fs::remove_dir_all(root);
 
@@ -2361,7 +2358,7 @@ fn project_disassembly_accepts_module_index_roots() -> Result<()> {
         }
     }
     let callee = callee.expect("child::double should call through the public re-export");
-    assert_eq!(callee.borrow().name().as_str(), "inc");
+    assert_eq!(callee.as_symbol_ref().borrow().name().as_str(), "inc");
 
     let _ = fs::remove_dir_all(root);
 
