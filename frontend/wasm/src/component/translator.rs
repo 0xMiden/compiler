@@ -1483,6 +1483,58 @@ mod tests {
         );
     }
 
+    /// Regression: a startup target exported under two names must translate, preserving the
+    /// secondary as a function alias while the primary carries the start marker.
+    #[test]
+    fn folds_startup_adapter_with_multiple_export_aliases() {
+        let (_context, component) = translate_wat(
+            r#"
+            (component
+                (core module $main
+                    (func $actual-start (export "aliased-start") (export "other-start"))
+                )
+                (core instance $main-instance (instantiate $main))
+                (core module $adapter
+                    (import "not-main" "other-start" (func $start))
+                    (start $start)
+                )
+                (core instance $adapter-instance
+                    (instantiate $adapter
+                        (with "not-main" (instance $main-instance))))
+                (component $export-component)
+                (instance $exports (instantiate $export-component))
+                (export "miden:test/component@1.0.0" (instance $exports))
+            )
+            "#,
+        );
+
+        let main = component
+            .find_module(SymbolName::intern("main"))
+            .expect("main module should be translated");
+        let mb = ModuleBuilder::new(main);
+
+        // Adapter imported the secondary name, but the marker belongs on the primary.
+        let start = mb
+            .get_function("aliased-start")
+            .expect("primary start definition should be translated");
+        assert!(
+            start
+                .borrow()
+                .as_operation()
+                .get_typed_attribute::<UnitAttr>(WASM_COMPONENT_START_ATTR)
+                .is_some(),
+            "primary should carry the start marker"
+        );
+
+        // Secondary export survives as an alias resolving to the primary.
+        let aliased = mb.resolve_function("other-start").expect("secondary export should resolve");
+        assert!(aliased == start, "secondary export should resolve to the primary definition");
+        assert!(
+            mb.get_function_alias("other-start").is_some(),
+            "secondary export should be a function alias"
+        );
+    }
+
     #[test]
     fn folds_combined_startup_fixup_after_validating_bypassed_shim() {
         let wat = combined_startup_fixup_wat("$lowered", "$shim-instance");

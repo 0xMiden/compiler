@@ -8,8 +8,8 @@ use midenc_dialect_hir::{
 };
 use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
-    FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolPath, Type, ValueRange, ValueRef,
-    Visibility,
+    CallableSymbolRef, FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolPath, Type,
+    ValueRange, ValueRef, Visibility,
     dialects::{
         builtin::{
             BuiltinOpBuilder, ComponentBuilder, ModuleBuilder,
@@ -92,19 +92,19 @@ pub fn generate_export_lifting_function(
         .resolve_module(&core_export_module_path)
         .expect("failed to find the core module");
 
-    let mut core_module_builder = ModuleBuilder::new(core_module_ref);
-    let core_export_func_ref = core_module_builder
-        .get_function(core_export_func_path.name().as_str())
-        .expect("failed to find the core module export function");
-    let export_func_span = core_export_func_ref.borrow().span();
+    let core_module_builder = ModuleBuilder::new(core_module_ref);
+    let core_export = core_module_builder
+        .resolve_callable(core_export_func_path.name().as_str())
+        .expect("failed to resolve the core module export");
+    let export_func_span = core_export.target().as_operation_ref().span();
     let export_func_ident =
         Ident::new(midenc_hir::interner::Symbol::intern(export_func_name), export_func_span);
     // Make the lowered core WASM export internal so only the lifted wrapper is
     // publicly exported from the component, while still allowing the wrapper to
     // call across the nested core module symbol table boundary.
-    core_module_builder
-        .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Internal);
-    let core_export_func_sig = core_export_func_ref.borrow().get_signature().clone();
+    let mut core_export_callee = core_export.named_symbol();
+    core_export_callee.borrow_mut().set_visibility(Visibility::Internal);
+    let core_export_func_sig = core_export.signature();
 
     let export_func_ref = if transformation.is_needed() {
         generate_lifting_with_transformation(
@@ -112,7 +112,7 @@ pub fn generate_export_lifting_function(
             export_func_ident,
             &export_metadata,
             cross_ctx_export_sig_flat,
-            core_export_func_ref,
+            core_export_callee,
             core_export_func_sig,
             &core_export_func_path,
             diagnostics,
@@ -122,7 +122,7 @@ pub fn generate_export_lifting_function(
             component_builder,
             export_func_ident,
             &export_metadata,
-            core_export_func_ref,
+            core_export_callee,
             core_export_func_sig,
             cross_ctx_export_sig_flat,
         )?
@@ -157,8 +157,8 @@ pub fn generate_export_lifting_function(
 ///   applying canonical ABI transformations. This signature represents how the function appears in
 ///   cross-context calls.
 ///
-/// * `core_export_func_ref` - Reference to the lowered core WebAssembly function that implements the actual
-///   logic. This function follows core WASM conventions (returns pointer for complex types).
+/// * `core_export_callee` - Reference to the lowered core WebAssembly callee that implements the
+///   actual logic. This function follows core WASM conventions (returns pointer for complex types).
 ///
 /// * `core_export_func_sig` - The signature of the lowered core WASM function, which may use pointer
 ///   returns for complex types according to canonical ABI rules.
@@ -171,7 +171,7 @@ fn generate_lifting_with_transformation(
     export_func_ident: Ident,
     export_metadata: &ComponentExportMetadata<'_>,
     cross_ctx_export_sig_flat: Signature,
-    core_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
+    core_export_callee: CallableSymbolRef,
     core_export_func_sig: Signature,
     core_export_func_path: &SymbolPath,
     diagnostics: &DiagnosticsHandler,
@@ -205,7 +205,7 @@ fn generate_lifting_with_transformation(
     )?;
 
     // Extract flattened result types from the exported component-level function type
-    let context = { core_export_func_ref.borrow().as_operation().context_rc() };
+    let context = { core_export_callee.borrow().as_symbol_operation().context_rc() };
     let flattened_results = flatten_types(&context, &export_metadata.ty.results).map_err(|e| {
         let message = format!(
             "Failed to flatten result types for exported function {core_export_func_path}: {e}"
@@ -261,7 +261,7 @@ fn generate_lifting_with_transformation(
 
     validate_flat_variants(&mut fb, &export_metadata.ty.params, &args, span)?;
 
-    let exec = fb.exec(core_export_func_ref, core_export_func_sig, args, span)?;
+    let exec = fb.exec(core_export_callee, core_export_func_sig, args, span)?;
 
     let borrow = exec.borrow();
     let results = borrow.results().all();
@@ -311,11 +311,11 @@ fn generate_lifting_with_transformation(
 ///
 /// # Arguments
 ///
-/// * `export_func_ident` - The identifier (name) for the exported function. This name will be
-///   used by external callers to invoke the function.
+/// * `export_func_ident` - The identifier (name) for the exported callee. This name will be
+///   used by external callers to invoke it.
 ///
-/// * `core_export_func_ref` - Reference to the underlying lowered core WebAssembly function that provides
-///   the actual implementation. This function is called directly without transformation.
+/// * `core_export_callee` - The named core WebAssembly export, which may be a function alias.
+///   It is called directly without transformation.
 ///
 /// * `core_export_func_sig` - The signature of the lowered core function, which is compatible with the
 ///   component model signature (no transformation needed).
@@ -333,7 +333,7 @@ fn generate_direct_lifting(
     component_builder: &mut ComponentBuilder,
     export_func_ident: Ident,
     export_metadata: &ComponentExportMetadata<'_>,
-    core_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
+    core_export_callee: CallableSymbolRef,
     core_export_func_sig: Signature,
     cross_ctx_export_sig_flat: Signature,
 ) -> WasmResult<midenc_hir::dialects::builtin::FunctionRef> {
@@ -381,7 +381,7 @@ fn generate_direct_lifting(
     validate_flat_variants(&mut fb, &export_metadata.ty.params, &args, span)?;
 
     let exec = fb
-        .exec(core_export_func_ref, core_export_func_sig, args, span)
+        .exec(core_export_callee, core_export_func_sig, args, span)
         .expect("failed to build an exec op");
 
     let borrow = exec.borrow();
@@ -545,8 +545,8 @@ mod tests {
     use alloc::sync::Arc;
 
     use midenc_hir::{
-        CallConv, FunctionType, Ident, SymbolName, SymbolNameComponent, SymbolPath, Type,
-        Visibility,
+        CallConv, FunctionType, Ident, Symbol, SymbolName, SymbolNameComponent, SymbolPath, Type,
+        Visibility, WalkResult,
         dialects::builtin::attributes::{AbiParam, Signature},
     };
     use midenc_session::DiagnosticsHandler;
@@ -566,6 +566,55 @@ mod tests {
 
     fn scalar_u64_type() -> Type {
         Type::U64
+    }
+
+    #[test]
+    fn export_lifting_preserves_alias_identity_and_target_visibility() {
+        for result_ty in [Type::U32, two_field_record_type()] {
+            let (_context, mut component_builder, mut module_builder) =
+                component_with_core_module();
+            let target = module_builder
+                .define_function(
+                    Ident::from("implementation"),
+                    Visibility::Private,
+                    Signature {
+                        params: vec![],
+                        results: vec![AbiParam::new(Type::I32)],
+                        cc: CallConv::ComponentModel,
+                    },
+                )
+                .unwrap();
+            let alias = module_builder
+                .define_function_alias(Ident::from("exported_core"), Visibility::Public, target)
+                .unwrap();
+            let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty]);
+            ir.abi = CallConv::ComponentModel;
+
+            generate_export_lifting_function(
+                &mut component_builder,
+                "lifted",
+                ComponentFunctionType { ir },
+                &[],
+                component_export_path("exported_core"),
+                None,
+                &DiagnosticsHandler::default(),
+            )
+            .expect("export lifting should accept an alias to a private function");
+
+            assert_eq!(alias.borrow().visibility(), Visibility::Internal);
+            assert_eq!(target.borrow().visibility(), Visibility::Private);
+            let mut callees = vec![];
+            let _ = component_function(&component_builder, "lifted")
+                .borrow()
+                .as_operation()
+                .prewalk(|op| {
+                    if let Some(exec) = op.downcast_ref::<midenc_dialect_hir::Exec>() {
+                        callees.push(exec.callee().path().clone());
+                    }
+                    WalkResult::<()>::Continue(())
+                });
+            assert_eq!(callees, [alias.borrow().path()]);
+        }
     }
 
     #[test]
