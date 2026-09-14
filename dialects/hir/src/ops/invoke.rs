@@ -233,6 +233,8 @@ impl InferTypeOpInterface for ExecFpi {
 /// A private callee may be referenced only from its defining symbol table, which lowers to the
 /// same MASM module. Cross-module users must target a callee declared `internal` or `public`;
 /// MASM legalization rejects a private cross-module target rather than widening its visibility.
+///
+/// If `callee` names a `FunctionAlias`, the alias's own visibility applies.
 #[derive(EffectOpInterface)]
 #[operation(
     dialect = HirDialect,
@@ -471,6 +473,14 @@ impl OpParser for ExecIndirect {
 }
 
 impl CallOpInterface for ExecIndirect {
+    fn resolve(&self) -> Option<CanonicalCallableRef> {
+        None
+    }
+
+    fn resolve_in_symbol_table(&self, _symbols: &dyn SymbolTable) -> Option<CanonicalCallableRef> {
+        None
+    }
+
     /// The callee is the table-index value: the function it names is only known at runtime.
     #[inline(always)]
     fn callable_for_callee(&self) -> Callable {
@@ -494,14 +504,6 @@ impl CallOpInterface for ExecIndirect {
         self.operands_mut().group_mut(1)
     }
 
-    fn resolve(&self) -> Option<SymbolRef> {
-        None
-    }
-
-    fn resolve_in_symbol_table(&self, _symbols: &dyn SymbolTable) -> Option<SymbolRef> {
-        None
-    }
-
     /// The signature is the contract the lowering emits against — the stack shape pushed before
     /// `dynexec` and popped after — so it is the call site's answer even though no single
     /// callee is known.
@@ -515,7 +517,7 @@ impl CallOpInterface for ExecIndirect {
     /// entries overwrite earlier ones at the same slot, so only the last entry per slot is
     /// dispatchable. Returns `None` (unknown) if the table or any dispatchable entry does not
     /// resolve, so analyses cannot treat a partially-resolved set as complete.
-    fn possible_callees(&self) -> Option<SmallVec<[SymbolRef; 2]>> {
+    fn possible_callees(&self) -> Option<SmallVec<[CanonicalCallableRef; 2]>> {
         let symbol_table_op = self.as_operation().nearest_symbol_table()?;
         let symbol_table_op = symbol_table_op.borrow();
         let symbol_table = symbol_table_op.as_symbol_table()?;
@@ -542,7 +544,7 @@ impl CallOpInterface for ExecIndirect {
             // would understate the call's effects. Valid IR cannot reach this — the
             // `hir.exec_indirect` verifier rejects a call whose tag-matching entry does not
             // resolve — so this is the malformed-IR path only.
-            let callee = entry.resolve_callee()?;
+            let callee = entry.resolve_callable().ok()?.target();
             if !callees.contains(&callee) {
                 callees.push(callee);
             }
@@ -640,21 +642,14 @@ impl Verify<dyn CallOpInterface> for ExecIndirect {
             }
             let callee_ref = entry.callee();
             let callee_path = callee_ref.path();
-            let Some(callee) = entry.resolve_callee() else {
-                return Err(Report::msg(format!(
+            let callee = entry.resolve_callable().map_err(|err| {
+                Report::msg(format!(
                     "invalid hir.exec_indirect: slot {slot} of '{table_path}' matches tag \
-                     {expected_tag}, but its callee '{callee_path}' does not resolve"
-                )));
-            };
-            let callee = callee.borrow();
-            let Some(callable) = callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>()
-            else {
-                return Err(Report::msg(format!(
-                    "invalid hir.exec_indirect: slot {slot} of '{table_path}' names \
-                     '{callee_path}', which is not callable"
-                )));
-            };
-            let callee_signature = callable.signature();
+                     {expected_tag}, but its callee '{callee_path}' does not resolve to a \
+                     callable: {err}"
+                ))
+            })?;
+            let callee_signature = callee.signature();
             if callee_signature != *signature {
                 return Err(Report::msg(format!(
                     "invalid hir.exec_indirect: this call dispatches through '{table_path}' with \
@@ -701,19 +696,6 @@ impl CallOpInterface for Exec {
     #[inline(always)]
     fn arguments_mut(&mut self) -> OpOperandRangeMut<'_> {
         self.operands_mut().group_mut(0)
-    }
-
-    fn resolve(&self) -> Option<SymbolRef> {
-        let callee = self.callee();
-        let symbol_table = self.as_operation().nearest_symbol_table()?;
-        let symbol_table = symbol_table.borrow();
-        let symbol_table = symbol_table.as_symbol_table().unwrap();
-        symbol_table.resolve(callee.path())
-    }
-
-    fn resolve_in_symbol_table(&self, symbols: &dyn SymbolTable) -> Option<SymbolRef> {
-        let callee = self.callee();
-        symbols.resolve(callee.path())
     }
 }
 
@@ -812,19 +794,6 @@ impl CallOpInterface for Call {
     fn arguments_mut(&mut self) -> OpOperandRangeMut<'_> {
         self.operands_mut().group_mut(0)
     }
-
-    fn resolve(&self) -> Option<SymbolRef> {
-        let callee = self.callee();
-        let symbol_table = self.as_operation().nearest_symbol_table()?;
-        let symbol_table = symbol_table.borrow();
-        let symbol_table = symbol_table.as_symbol_table().unwrap();
-        symbol_table.resolve(callee.path())
-    }
-
-    fn resolve_in_symbol_table(&self, symbols: &dyn SymbolTable) -> Option<SymbolRef> {
-        let callee = self.callee();
-        symbols.resolve(callee.path())
-    }
 }
 
 // TODO(pauls): Validate that the arguments/results of the callee of this operation do not contain
@@ -920,19 +889,6 @@ impl CallOpInterface for Syscall {
     fn arguments_mut(&mut self) -> OpOperandRangeMut<'_> {
         self.operands_mut().group_mut(0)
     }
-
-    fn resolve(&self) -> Option<SymbolRef> {
-        let callee = self.callee();
-        let symbol_table = self.as_operation().nearest_symbol_table()?;
-        let symbol_table = symbol_table.borrow();
-        let symbol_table = symbol_table.as_symbol_table().unwrap();
-        symbol_table.resolve(callee.path())
-    }
-
-    fn resolve_in_symbol_table(&self, symbols: &dyn SymbolTable) -> Option<SymbolRef> {
-        let callee = self.callee();
-        symbols.resolve(callee.path())
-    }
 }
 
 #[cfg(test)]
@@ -944,18 +900,19 @@ mod tests {
 
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        CallOpInterface, Operation, SourceSpan, Symbol, SymbolTable, Type, Usable,
+        CallOpInterface, Ident, Op, Operation, SourceSpan, Symbol, SymbolTable, Type, Usable,
+        Visibility,
         conversion::{
             TypeConversion, TypeConverter, converted_resolved_call_signature_1_to_1,
             verify_call_signature_operands_and_results,
         },
         diagnostics::Uri,
-        dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
+        dialects::builtin::{BuiltinOpBuilder, ModuleBuilder, attributes::Signature},
         parse::{self, ParserConfig},
         testing::Test,
     };
 
-    use super::ExecIndirect;
+    use super::{Exec, ExecIndirect};
     use crate::HirOpBuilder;
 
     /// Build a module with a one-slot table and a `dispatch` function whose `hir.exec_indirect`
@@ -1228,7 +1185,7 @@ builtin.module public @test {
 
         let resolved = call.borrow().resolve().unwrap();
         assert_eq!(call.borrow().callee().path(), &replacement_path);
-        assert_eq!(resolved.borrow().path(), replacement_path);
+        assert_eq!(resolved.as_symbol_ref().borrow().path(), replacement_path);
         assert_eq!(original.borrow().iter_uses().count(), 0);
         assert_eq!(replacement.borrow().iter_uses().count(), 1);
     }
@@ -1274,6 +1231,114 @@ builtin.module public @test {
         assert_eq!(call.borrow().callee().path(), &replacement_path);
         assert_eq!(original.borrow().iter_uses().count(), 0);
         assert_eq!(replacement.borrow().iter_uses().count(), 1);
+    }
+
+    #[test]
+    fn direct_calls_resolve_aliases_without_rewriting_symbol_uses() {
+        for kind in ["exec", "call", "syscall"] {
+            let mut test = Test::default().in_module("test");
+            let target = test.define_function("target", &[], &[]);
+            // `alias` uses `target`
+            let alias = ModuleBuilder::new(test.module())
+                .define_function_alias(Ident::from("alias"), Visibility::Public, target)
+                .unwrap();
+
+            // `op` uses `alias`
+            test.with_function("caller", &[], &[]);
+            let signature = target.borrow().get_signature().clone();
+            let op = {
+                let mut builder = test.function_builder();
+                let op = match kind {
+                    "exec" => builder
+                        .exec(alias, signature, [], SourceSpan::UNKNOWN)
+                        .unwrap()
+                        .as_operation_ref(),
+                    "call" => builder
+                        .call(alias, signature, [], SourceSpan::UNKNOWN)
+                        .unwrap()
+                        .as_operation_ref(),
+                    "syscall" => builder
+                        .syscall(alias, signature, [], SourceSpan::UNKNOWN)
+                        .unwrap()
+                        .as_operation_ref(),
+                    _ => unreachable!(),
+                };
+                builder.ret(None, SourceSpan::UNKNOWN).unwrap();
+                op
+            };
+            let op = op.borrow();
+            let call = op.as_trait::<dyn CallOpInterface>().unwrap();
+            let module = test.module();
+            let module = module.borrow();
+
+            let expected = Some(
+                target
+                    .borrow()
+                    .as_operation()
+                    .as_symbol_ref()
+                    .unwrap()
+                    .resolve_callable()
+                    .unwrap()
+                    .target(),
+            );
+            assert_eq!(call.resolve(), expected, "{kind}");
+            assert_eq!(call.resolve_in_symbol_table(&*module), expected, "{kind}");
+            assert_eq!(call.possible_callees().unwrap().as_slice(), &[expected.unwrap()]);
+            // the use chain `op -> alias -> target` stays intact
+            assert_eq!(call.callable_for_callee().unwrap_symbol_path(), alias.borrow().path());
+            assert_eq!(alias.borrow().iter_uses().count(), 1);
+            assert_eq!(target.borrow().iter_uses().count(), 1);
+        }
+    }
+
+    #[test]
+    fn calls_resolve_alias_chains_in_each_alias_symbol_table() {
+        // Assert resolution ends up in correct module when same names used in both modules.
+        let test = Test::default();
+        let source = r#"
+builtin.world {
+    builtin.module public @a {
+        builtin.function private extern("C") @target() { builtin.ret; };
+        builtin.function_alias private @callee -> @target;
+        builtin.function public extern("C") @caller() {
+            hir.exec ::@b::@callee() : extern("C") () -> ();
+            builtin.ret;
+        };
+    };
+    builtin.module public @b {
+        builtin.function private extern("C") @target() { builtin.ret; };
+        builtin.function_alias private @target_alias -> @target;
+        builtin.function_alias public @callee -> @target_alias;
+    };
+};
+"#;
+        let world = parse::parse_any(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("alias_scopes.hir"),
+            source,
+        )
+        .unwrap();
+        let mut checked = false;
+        world.borrow().prewalk_all(|op| {
+            if let Some(call) = op.downcast_ref::<Exec>() {
+                let table = op.nearest_symbol_table().unwrap();
+                let table = table.borrow();
+                for target in
+                    [call.resolve(), call.resolve_in_symbol_table(table.as_symbol_table().unwrap())]
+                {
+                    assert_eq!(
+                        target.unwrap().as_symbol_ref().borrow().path().to_string(),
+                        "b/target"
+                    );
+                }
+                assert_eq!(
+                    call.callee().resolve().unwrap().borrow().path().to_string(),
+                    "b/callee"
+                );
+                checked = true;
+            }
+        });
+        assert!(checked);
     }
 
     #[test]
@@ -1350,7 +1415,7 @@ builtin.module public @test {
                 sets.push(call.possible_callees().map(|callees| {
                     callees
                         .iter()
-                        .map(|callee| callee.borrow().name().to_string())
+                        .map(|callee| callee.as_symbol_ref().borrow().name().to_string())
                         .collect::<alloc::vec::Vec<_>>()
                 }));
             }
@@ -1479,7 +1544,7 @@ builtin.module public @b {
             if let Some(call) = op.downcast_ref::<ExecIndirect>() {
                 let callees = call.possible_callees().expect("targets should be known");
                 assert_eq!(callees.len(), 1, "one entry matches the call's tag");
-                resolved = callees[0].borrow().path().to_string();
+                resolved = callees[0].as_symbol_ref().borrow().path().to_string();
             }
         });
 
