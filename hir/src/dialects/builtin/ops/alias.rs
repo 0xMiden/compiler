@@ -1,8 +1,8 @@
 use alloc::format;
 
 use crate::{
-    CallableOpInterface, CallableSymbol, Op, OpParser, OpPrinter, Operation, Symbol, SymbolName,
-    SymbolRef, SymbolUseList, Usable, Visibility,
+    CallableSymbol, Op, OpParser, OpPrinter, Operation, Symbol, SymbolName, SymbolRef,
+    SymbolUseList, Usable, Visibility,
     derive::operation,
     dialects::builtin::{
         BuiltinDialect, FunctionRef,
@@ -13,11 +13,19 @@ use crate::{
 
 pub type FunctionAliasRef = crate::UnsafeIntrusiveEntityRef<FunctionAlias>;
 
-/// References a function.
+/// References a function under another name.
 ///
-/// The signature and body belong to the resolved callable.
+/// The signature and body belong to the resolved (canonical) target, as an alias has no region of
+/// its own. An alias introduces a new name even if its target is only a declaration.
 ///
-// TODO mention limitations such as need to be in same symbol table
+/// Alias chains are supported. Each hop is resolved in the symbol table of the alias being followed
+/// (see [Self::resolve_target]), meaning an alias can only reference symbols resolvable from
+/// its own table. The canonical target must be callable (see the `Verify<dyn CallableSymbol>`
+/// implementation), but it does not need to live in the same symbol table as the aliases pointing
+/// to it.
+///
+/// An alias's visibility is independent of its target, so a public alias can expose a private
+/// target under the alias name.
 #[operation(
     dialect = BuiltinDialect,
     implements(Symbol, CallableSymbol, OpPrinter)
@@ -49,37 +57,14 @@ impl FunctionAlias {
     /// Canonical target of `symbol`, following `FunctionAlias` hops in their own tables.
     ///
     /// Returns `symbol` itself when it is not an alias. Returns `None` on unresolvable
-    /// hop or cycle.
+    /// hop or cycle. Use [SymbolRef::resolve_canonical] to retain the error cause.
     pub fn canonicalize(symbol: SymbolRef) -> Option<SymbolRef> {
-        let mut current = symbol;
-        // TODO don't have 32 as magic number, instead use const defined in this module
-        // bound iterations to avoid hangs on malformed cycles (verifier rejects them).
-        for _ in 0..32 {
-            let next = {
-                let op_ref = current.borrow().as_operation_ref();
-                let op = op_ref.borrow();
-                let Some(alias) = op.downcast_ref::<FunctionAlias>() else {
-                    return Some(current);
-                };
-                alias.resolve_target()?
-            };
-            if next == current {
-                return None;
-            }
-            current = next;
-        }
-        None
+        symbol.resolve_canonical().ok()
     }
 
     /// Like [`Self::canonicalize`], but downcasts to `Function`.
     pub fn canonicalize_function(symbol: SymbolRef) -> Option<FunctionRef> {
-        let canonical = Self::canonicalize(symbol)?;
-        canonical
-            .borrow()
-            .as_symbol_operation()
-            .as_operation_ref()
-            .try_downcast_op::<crate::dialects::builtin::Function>()
-            .ok()
+        symbol.resolve_function().ok()
     }
 }
 
@@ -196,46 +181,25 @@ impl crate::Verify<dyn CallableSymbol> for FunctionAlias {
         use crate::Spanned;
 
         let span = self.as_operation().span();
-        let target_path = self.target().path().clone();
-        let Some(table) = self.as_operation().nearest_symbol_table() else {
-            return Err(context
-                .diagnostics()
-                .diagnostic(Severity::Error)
-                // TODO make this error messages clearer
-                .with_message(
-                    "invalid builtin.function_alias: cannot resolve target outside a symbol table",
-                )
-                .with_primary_label(span, "this alias is not nested in a symbol table")
-                .into_report());
-        };
+        self.as_operation()
+            .as_symbol_ref()
+            .expect("function aliases are symbols")
+            .resolve_callable()
+            .map(|_| ())
+            .map_err(|err| {
+                context
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message(format!(
+                        "invalid builtin.function_alias '{}': {err}",
+                        self.get_name().as_str()
+                    ))
+                    .with_primary_label(span, "cannot resolve this alias to a callable")
+                    .into_report()
+            })
+    }
+}
 
-        let resolved = {
-            let table = table.borrow();
-            table.as_symbol_table().and_then(|t| t.resolve(&target_path))
-        };
-        let Some(resolved) = resolved else {
-            return Err(context
-                .diagnostics()
-                .diagnostic(Severity::Error)
-                .with_message(format!(
-                    "invalid builtin.function_alias '{}': target '{target_path}' does not resolve",
-                    self.name().as_str()
-                ))
-                .with_primary_label(span, "unknown target")
-                .into_report());
-        };
-
-        // Reject direct self-reference
-        if resolved.borrow().as_operation_ref() == self.as_operation_ref() {
-            return Err(context
-                .diagnostics()
-                .diagnostic(Severity::Error)
-                .with_message(format!(
-                    "invalid builtin.function_alias '{}': alias cannot reference itself",
-                    self.name().as_str()
-                ))
-                .with_primary_label(span, "self-reference")
-                .into_report());
         }
 
         let Some(target) = Self::canonicalize(resolved) else {
