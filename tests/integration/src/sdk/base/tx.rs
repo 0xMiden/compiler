@@ -81,6 +81,15 @@ fn rust_sdk_account_tx_get_reference_block_commitment_binding() {
 }
 
 #[test]
+fn rust_sdk_account_tx_get_block_commitment_binding() {
+    run_tx_binding_test(
+        "rust_sdk_account_tx_get_block_commitment_binding",
+        "let commitment = tx::get_block_commitment(tx::get_block_number());\n    let _ = \
+         commitment;",
+    );
+}
+
+#[test]
 fn rust_sdk_account_tx_get_block_number_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_block_number_binding",

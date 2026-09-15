@@ -259,6 +259,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     tx_kernel::tx::GET_INPUT_NOTES_COMMITMENT
                     | tx_kernel::tx::GET_OUTPUT_NOTES_COMMITMENT
                     | tx_kernel::tx::GET_REFERENCE_BLOCK_COMMITMENT
+                    | tx_kernel::tx::GET_BLOCK_COMMITMENT
                     | tx_kernel::tx::GET_TX_SCRIPT_ROOT => {
                         Some(TransformStrategy::ReturnViaPointer)
                     }

@@ -14,6 +14,13 @@ pub extern "C" fn tx_get_reference_block_commitment_plain(_out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
+#[unsafe(export_name = "miden::protocol::tx::get_block_commitment")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn tx_get_block_commitment_plain(_block_number: f32, _out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
 #[unsafe(export_name = "miden::protocol::tx::get_block_timestamp")]
 #[optimize(none)]
 #[inline(never)]
