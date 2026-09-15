@@ -469,4 +469,13 @@ pub trait ActiveNote {
     fn get_storage_info(&self) -> ActiveNoteStorageInfo {
         get_storage_info()
     }
+
+    /// Removes `asset` from the currently executing note and returns the asset value left in it.
+    ///
+    /// The returned value is empty when the entire asset was removed. This mutates the note's
+    /// assets in the transaction kernel, so the note script needs a `mut self` receiver to call it.
+    #[inline]
+    fn remove_asset(&mut self, asset: Asset) -> Word {
+        remove_asset(asset)
+    }
 }

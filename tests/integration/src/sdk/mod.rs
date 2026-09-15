@@ -536,7 +536,7 @@ struct TraitNote {
 #[note]
 impl TraitNote {
     #[note_script]
-    pub fn run(self, _arg: Word) {
+    pub fn run(mut self, _arg: Word) {
         let sender = self.get_sender();
         assert_eq!(sender, self.owner);
 
@@ -574,6 +574,8 @@ impl TraitNote {
         if num_assets > 0 {
             let first = self.get_asset(0);
             assert_eq!(first.key, first.key);
+            let remaining = self.remove_asset(first);
+            assert_eq!(remaining, remaining);
         }
         assert!(storage_info.num_storage_items < 1024);
     }

@@ -941,13 +941,8 @@ fn parse_entrypoint_signature(
         ));
     }
 
-    if receiver.mutability.is_some() {
-        return Err(syn::Error::new(
-            receiver.span(),
-            "entrypoint receiver must be `self` (non-mutable); `mut self` is not supported",
-        ));
-    }
-
+    // `mut self` is accepted: the generated export owns the decoded note and calls the entrypoint
+    // on it, so receiver mutability only affects the method body (e.g. `&mut self` trait calls).
     if !is_unit_return_type(&sig.output) {
         return Err(syn::Error::new(sig.output.span(), "entrypoint method must return `()`"));
     }
@@ -1230,6 +1225,15 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.to_string().contains("must not be `async`"));
+    }
+
+    #[test]
+    fn entrypoint_signature_accepts_mutable_receiver() {
+        let item_fn: ImplItemFn = parse_quote! {
+            pub fn run(mut self, _arg: Word) {}
+        };
+
+        parse_entrypoint_signature(&item_fn).expect("`mut self` should be accepted");
     }
 
     #[test]
