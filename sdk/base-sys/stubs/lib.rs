@@ -9,6 +9,7 @@
 
 mod active_account;
 mod active_note;
+mod asset;
 mod faucet;
 mod input_note;
 mod note;

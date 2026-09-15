@@ -130,6 +130,74 @@ impl From<Asset> for (Word, Word) {
     }
 }
 
+/// The class of an asset, composed of two field elements.
+///
+/// The asset class groups every asset issued by the same faucet under the same semantics; it is
+/// the part of an asset id that is shared by all of that faucet's assets.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+pub struct AssetClass {
+    pub prefix: Felt,
+    pub suffix: Felt,
+}
+
+impl AssetClass {
+    /// Creates a new [`AssetClass`] from prefix and suffix Felt values.
+    pub fn new(prefix: Felt, suffix: Felt) -> Self {
+        Self { prefix, suffix }
+    }
+}
+
+/// Raw protocol return layout for asset classes.
+/// The protocol MASM procedures are returning [suffix, prefix]
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub(crate) struct RawAssetClass {
+    pub suffix: Felt,
+    pub prefix: Felt,
+}
+
+impl RawAssetClass {
+    /// Converts the protocol return layout into the Rust [`AssetClass`] layout.
+    pub(crate) fn into_asset_class(self) -> AssetClass {
+        AssetClass::new(self.prefix, self.suffix)
+    }
+}
+
+/// Raw protocol return layout for the non-consuming asset-class accessor, which leaves the asset
+/// id on the stack below the class felts.
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub(crate) struct RawAssetClassWithId {
+    pub suffix: Felt,
+    pub prefix: Felt,
+    pub asset_id: Word,
+}
+
+/// How the value of an asset combines when the same asset id is added to a vault twice.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AssetComposition {
+    /// The asset has no composition rule and cannot be held more than once.
+    None,
+    /// The asset's amounts add together, as for a fungible asset.
+    Fungible,
+    /// The asset composes under a faucet-defined rule. Not yet supported by the protocol.
+    Custom,
+}
+
+impl TryFrom<Felt> for AssetComposition {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        match value.as_canonical_u64() {
+            0 => Ok(Self::None),
+            1 => Ok(Self::Fungible),
+            2 => Ok(Self::Custom),
+            _ => Err("unrecognized asset composition"),
+        }
+    }
+}
+
 /// An error produced while constructing an [`AssetAmount`] from an out-of-range value.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AssetAmountError {

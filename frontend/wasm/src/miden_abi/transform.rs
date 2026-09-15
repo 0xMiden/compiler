@@ -173,6 +173,19 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         _ => None,
                     }
                 }
+                symbols::Asset => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        tx_kernel::asset::ID_INTO_COMPOSITION => {
+                            Some(TransformStrategy::NoTransform)
+                        }
+                        tx_kernel::asset::ID_INTO_FAUCET_ID
+                        | tx_kernel::asset::ID_TO_ASSET_CLASS
+                        | tx_kernel::asset::ID_INTO_ASSET_CLASS => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        _ => None,
+                    }
+                }
                 symbols::Faucet => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::faucet::MINT | tx_kernel::faucet::BURN => {
