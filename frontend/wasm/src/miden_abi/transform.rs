@@ -255,7 +255,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::output_note::GET_RECIPIENT
                         | tx_kernel::output_note::GET_METADATA
                         | tx_kernel::output_note::GET_ATTACHMENTS_COMMITMENT
-                        | tx_kernel::output_note::FIND_ATTACHMENT => {
+                        | tx_kernel::output_note::FIND_ATTACHMENT
+                        | tx_kernel::output_note::COMPUTE_NOTE_ID => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,

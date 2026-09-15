@@ -6,7 +6,9 @@ use miden_stdlib_sys::{Felt, Word, WordAligned};
 use super::{
     MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, assert_attachment_count,
     assert_attachment_word_count,
-    types::{Asset, NoteIdx, NoteMetadata, NoteType, RawAttachmentLocation, Recipient, Tag},
+    types::{
+        Asset, NoteId, NoteIdx, NoteMetadata, NoteType, RawAttachmentLocation, Recipient, Tag,
+    },
 };
 
 #[allow(improper_ctypes)]
@@ -97,6 +99,9 @@ unsafe extern "C" {
         attachment_idx: Felt,
         note_index: Felt,
     ) -> usize;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::output_note::compute_note_id"]
+    fn extern_output_note_compute_note_id(note_idx: Felt, ptr: *mut NoteId);
 }
 
 /// Creates a new output note and returns its index.
@@ -332,4 +337,20 @@ pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> V
         attachment.set_len(num_words);
     }
     attachment
+}
+
+/// Computes the ID of the output note at `note_index`.
+///
+/// The ID is only final once the note has been fully constructed, that is, once all of its assets
+/// and attachments have been added.
+///
+/// # Panics
+///
+/// Panics if `note_index` is out of bounds for the transaction's output notes.
+pub fn compute_note_id(note_index: NoteIdx) -> NoteId {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<NoteId>::uninit());
+        extern_output_note_compute_note_id(note_index.inner, ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
+    }
 }

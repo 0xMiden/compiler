@@ -167,6 +167,16 @@ fn rust_sdk_output_note_get_assets_binding() {
 }
 
 #[test]
+fn rust_sdk_output_note_compute_note_id_binding() {
+    run_output_note_binding_test(
+        "rust_sdk_output_note_compute_note_id_binding",
+        "pub fn binding(&self) -> Word {
+        output_note::compute_note_id(NoteIdx { inner: Felt::new(0).unwrap() }).inner
+    }",
+    );
+}
+
+#[test]
 fn rust_sdk_output_note_get_recipient_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_get_recipient_binding",
