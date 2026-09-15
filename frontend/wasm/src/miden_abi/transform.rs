@@ -269,16 +269,14 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     | tx_kernel::tx::GET_NUM_INPUT_NOTES
                     | tx_kernel::tx::GET_NUM_OUTPUT_NOTES
                     | tx_kernel::tx::GET_EXPIRATION_BLOCK_DELTA
-                    | tx_kernel::tx::UPDATE_EXPIRATION_BLOCK_DELTA => {
-                        Some(TransformStrategy::NoTransform)
-                    }
+                    | tx_kernel::tx::UPDATE_EXPIRATION_BLOCK_DELTA
+                    | tx_kernel::tx::COMPUTE_FEE => Some(TransformStrategy::NoTransform),
                     tx_kernel::tx::GET_INPUT_NOTES_COMMITMENT
                     | tx_kernel::tx::GET_OUTPUT_NOTES_COMMITMENT
                     | tx_kernel::tx::GET_REFERENCE_BLOCK_COMMITMENT
                     | tx_kernel::tx::GET_BLOCK_COMMITMENT
-                    | tx_kernel::tx::GET_TX_SCRIPT_ROOT => {
-                        Some(TransformStrategy::ReturnViaPointer)
-                    }
+                    | tx_kernel::tx::GET_TX_SCRIPT_ROOT
+                    | tx_kernel::tx::GET_FEE_ASSET_ID => Some(TransformStrategy::ReturnViaPointer),
                     tx_kernel::tx::EXECUTE_FOREIGN_PROCEDURE_INDIRECT => {
                         Some(TransformStrategy::FpiIndirectReturnViaPointer)
                     }

@@ -25,6 +25,8 @@ pub const GET_EXPIRATION_BLOCK_DELTA: &str = "get_expiration_block_delta";
 pub const UPDATE_EXPIRATION_BLOCK_DELTA: &str = "update_expiration_block_delta";
 pub const GET_TX_SCRIPT_ROOT: &str = "get_tx_script_root";
 pub const EXECUTE_FOREIGN_PROCEDURE_INDIRECT: &str = "execute_foreign_procedure_indirect";
+pub const COMPUTE_FEE: &str = "compute_fee";
+pub const GET_FEE_ASSET_ID: &str = "get_fee_asset_id";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -72,6 +74,15 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         // Raw FPI calls pass the full 22-felt executor ABI through one pointer so Rust callers
         // avoid materializing more arguments than the frontend spill/lowering pipeline supports.
         FunctionType::new(CallConv::Wasm, [I32], vec![Felt; 16]),
+    );
+    tx.insert(
+        Symbol::from(COMPUTE_FEE),
+        // num_extra_cycles, EXCLUDE_NOTES_COMMITMENT -> fee_amount
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt, Felt], [Felt]),
+    );
+    tx.insert(
+        Symbol::from(GET_FEE_ASSET_ID),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), tx);
     m

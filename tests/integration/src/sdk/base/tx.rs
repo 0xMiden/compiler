@@ -98,6 +98,23 @@ fn rust_sdk_account_tx_get_reference_block_number_binding() {
 }
 
 #[test]
+fn rust_sdk_account_tx_compute_fee_binding() {
+    run_tx_binding_test(
+        "rust_sdk_account_tx_compute_fee_binding",
+        "let exclude = Word::from([Felt::new(0).unwrap(); 4]);
+    let _ = tx::compute_fee(0, exclude);",
+    );
+}
+
+#[test]
+fn rust_sdk_account_tx_get_fee_asset_id_binding() {
+    run_tx_binding_test(
+        "rust_sdk_account_tx_get_fee_asset_id_binding",
+        "let _ = tx::get_fee_asset_id();",
+    );
+}
+
+#[test]
 fn rust_sdk_account_tx_get_block_timestamp_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_block_timestamp_binding",

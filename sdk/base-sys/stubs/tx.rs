@@ -77,6 +77,26 @@ pub extern "C" fn tx_get_tx_script_root_plain(_out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
+#[unsafe(export_name = "miden::protocol::tx::compute_fee")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn tx_compute_fee_plain(
+    _num_extra_cycles: f32,
+    _exclude_notes_commitment_0: f32,
+    _exclude_notes_commitment_1: f32,
+    _exclude_notes_commitment_2: f32,
+    _exclude_notes_commitment_3: f32,
+) -> f32 {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[unsafe(export_name = "miden::protocol::tx::get_fee_asset_id")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn tx_get_fee_asset_id_plain(_out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
 #[unsafe(export_name = "miden::protocol::tx::execute_foreign_procedure_indirect")]
 #[optimize(none)]
 #[inline(never)]
