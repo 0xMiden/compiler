@@ -1675,7 +1675,12 @@ fn resolve_debug_var_location(
         | [ExpressionOp::FrameBase { base, byte_offset }, ExpressionOp::StackValue] => {
             let base = match base {
                 FrameBase::Local(index) => local_offset(*index).map(DebugFrameBase::Local),
-                FrameBase::Global(_) => stack_pointer_addr.map(DebugFrameBase::Memory),
+                // The globals layout is in bytes, but the debugger reads the frame-base cell at a
+                // Miden element address; the stack pointer is a 4-byte aligned global.
+                FrameBase::Global(_) => stack_pointer_addr.map(|addr| {
+                    debug_assert_eq!(addr % 4, 0, "stack pointer global must be word aligned");
+                    DebugFrameBase::Memory(addr / 4)
+                }),
             };
             Some(base.map_or(DebugVarLocation::Unavailable, |base| {
                 DebugVarLocation::ResolvedFrameBase {
@@ -1774,23 +1779,65 @@ mod tests {
         assert_eq!(value, Some(Felt::new(13).unwrap()));
     }
 
-    #[test]
-    fn frame_base_memory_preserves_high_address_bits() {
-        let expression = Expression::with_ops(vec![ExpressionOp::FrameBase {
+    /// A variable addressed relative to the shadow stack pointer global.
+    fn stack_pointer_relative_expression() -> Expression {
+        Expression::with_ops(vec![ExpressionOp::FrameBase {
             base: FrameBase::Global(0),
             byte_offset: -4,
-        }]);
+        }])
+    }
+
+    #[test]
+    fn frame_base_memory_converts_the_stack_pointer_byte_address_to_an_element_address() {
+        // The linker places the stack pointer global at a byte address; the debugger reads the
+        // frame base from the Miden memory element (four bytes per element) holding that global.
+        let stack_pointer_byte_address = 32;
+        let stack_pointer_element_address = 8;
+
+        let location = resolve_debug_var_location(
+            &stack_pointer_relative_expression(),
+            None,
+            0,
+            Some(stack_pointer_byte_address),
+        );
+
         assert_eq!(
-            resolve_debug_var_location(&expression, None, 0, Some(1 << 31)),
+            location,
             Some(DebugVarLocation::ResolvedFrameBase {
-                base: DebugFrameBase::Memory(1 << 31),
+                base: DebugFrameBase::Memory(stack_pointer_element_address),
                 byte_offset: -4,
             })
         );
-        assert_eq!(
-            resolve_debug_var_location(&expression, None, 0, None),
-            Some(DebugVarLocation::Unavailable)
+    }
+
+    #[test]
+    fn frame_base_memory_keeps_high_stack_pointer_addresses() {
+        // Addresses in the upper half of the 32-bit space must survive the conversion untruncated.
+        let stack_pointer_byte_address = 0x8000_0000;
+        let stack_pointer_element_address = 0x2000_0000;
+
+        let location = resolve_debug_var_location(
+            &stack_pointer_relative_expression(),
+            None,
+            0,
+            Some(stack_pointer_byte_address),
         );
+
+        assert_eq!(
+            location,
+            Some(DebugVarLocation::ResolvedFrameBase {
+                base: DebugFrameBase::Memory(stack_pointer_element_address),
+                byte_offset: -4,
+            })
+        );
+    }
+
+    #[test]
+    fn frame_base_memory_is_unavailable_without_a_stack_pointer() {
+        let location =
+            resolve_debug_var_location(&stack_pointer_relative_expression(), None, 0, None);
+
+        assert_eq!(location, Some(DebugVarLocation::Unavailable));
     }
 
     #[test]

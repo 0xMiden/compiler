@@ -244,10 +244,8 @@ fn load_attachment_words(commitment: Word, max_words: usize) -> Vec<Word> {
     assert!(num_elements <= (max_words * 4) as u64, "attachment exceeds protocol limit");
     assert_eq!(num_elements % 4, 0, "attachment must contain whole words");
     let elements = adv_load_preimage(Felt::from_u32((num_elements / 4) as u32), commitment);
-    elements
-        .chunks_exact(4)
-        .map(|word| Word::new(word.try_into().unwrap()))
-        .collect()
+    // The whole-word assertion above guarantees there is no remainder chunk.
+    elements.as_chunks::<4>().0.iter().map(|word| Word::new(*word)).collect()
 }
 
 /// Computes a note recipient from serial number, script root, and storage commitment.

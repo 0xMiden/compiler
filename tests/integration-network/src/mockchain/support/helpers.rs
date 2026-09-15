@@ -172,6 +172,7 @@ pub(crate) fn transaction_script_from_package_with_deps(
         .expect("transaction script entrypoint should survive the MAST forest merge");
 
     TransactionScript::from_parts(Arc::new(merged), entrypoint)
+        .expect("transaction script entrypoint should be a procedure root of the merged forest")
 }
 
 // ================================================================================================
@@ -187,11 +188,10 @@ pub(crate) fn assert_account_has_fungible_asset(
 ) {
     let expected_amount =
         AssetAmount::new(expected_amount).expect("expected amount should be a valid asset amount");
-    let found_asset = account.vault().assets().find_map(|asset| match asset {
-        Asset::Fungible(fungible_asset) if fungible_asset.faucet_id() == expected_faucet_id => {
-            Some(fungible_asset)
-        }
-        _ => None,
+    let found_asset = account.vault().assets().find_map(|asset| {
+        asset
+            .as_fungible()
+            .filter(|fungible_asset| fungible_asset.faucet_id() == expected_faucet_id)
     });
 
     match found_asset {

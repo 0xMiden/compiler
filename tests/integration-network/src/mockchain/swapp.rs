@@ -280,12 +280,10 @@ fn output_note_ids(executed_tx: &ExecutedTransaction) -> Vec<NoteId> {
 
 /// Asserts that the account vault holds no fungible asset from the given faucet.
 fn assert_no_fungible_asset(account: &Account, faucet_id: AccountId) {
-    let found = account.vault().assets().find(|asset| {
-        matches!(
-            asset,
-            Asset::Fungible(fungible_asset) if fungible_asset.faucet_id() == faucet_id
-        )
-    });
+    let found = account
+        .vault()
+        .assets()
+        .find(|asset| asset.is_fungible() && asset.faucet_id() == faucet_id);
     assert!(
         found.is_none(),
         "account {} unexpectedly holds an asset from faucet {faucet_id}",
@@ -356,7 +354,7 @@ fn swapp_note_full_fill_transfers_assets() {
         vec![p2id_note.id()],
         "full fill must create exactly the P2ID routing note"
     );
-    expect!["12839"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["12802"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 50);
@@ -446,7 +444,7 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
         vec![first_p2id_note.id(), remainder_note.id()],
         "partial fill must create the P2ID routing note and the remainder note"
     );
-    expect!["17931"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["17875"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 3);
@@ -530,7 +528,7 @@ fn swapp_note_creator_reclaims_offered_asset() {
         output_note_ids(&executed_tx).is_empty(),
         "reclaiming the swap note must not create any output notes"
     );
-    expect!["5573"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["5551"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let alice_account = chain.committed_account(alice.id()).unwrap();
     assert_account_has_fungible_asset(alice_account, usdc_faucet.id(), 50);

@@ -20,8 +20,9 @@ doctest = false
 miden-field.workspace = true
 miden-field-repr.workspace = true
 miden-tx-script-args.workspace = true
-# Pending a Miden client release compatible with protocol 0.17.0-rc.4.
-miden-client = { version = "0.16.0", features = ["std", "tonic", "testing"] }
+# TODO: switch back to a crates.io release once a Miden client compatible with
+# protocol 0.17.0-rc.4 is published (tracked in 0xMiden/rust-sdk#2530).
+miden-client = { git = "https://github.com/0xMiden/rust-sdk", branch = "update-protocol-0.17-rc", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std", "testing"] }
 miden-standards = { workspace = true, features = ["std", "testing"] }

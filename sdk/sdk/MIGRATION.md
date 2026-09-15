@@ -12,17 +12,30 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
-### Transaction summaries are six words (protocol 0.16)
+### Transaction summaries are versioned six-word preimages (protocol 0.17)
 
-Custom authentication components sign a commitment to the transaction summary. Protocol 0.16
-extends the summary from four words to six: it now also binds the reference block commitment,
-the transaction's expiration block delta, and seven user-defined parameters. The host rebuilds
-the summary from the advice-map preimage and rejects the signing request unless its commitment
-matches, so a component that still hashes the old four-word layout fails at runtime with
-`TransactionSummaryConstructionFailed` even though it compiles unchanged.
+Custom authentication components sign a commitment to the transaction summary. Protocol 0.17
+changes the summary preimage from the four-word layout to a versioned six-word layout: it now
+also binds the reference block number and commitment, the transaction's expiration block delta,
+and six user-defined parameters. The host rebuilds the summary from the advice-map preimage and
+rejects the signing request unless its commitment matches, so a component that still hashes the
+old layout fails at runtime with `TransactionSummaryConstructionFailed` even though it compiles
+unchanged.
 
-Build the six words in this order and place the final nonce in the first user parameter, as the
-standards components do:
+The words are hashed in this order, with the parameters first and the block commitment last:
+
+```text
+[
+    [version, metadata, user_param0, user_param1],
+    [user_param2, user_param3, user_param4, user_param5],
+    ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+    OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT,
+]
+```
+
+`version` is `1` and `metadata` packs the expiration delta above the reference block number
+(`expiration_delta << 32 | block_number`). Place the final nonce in the first user parameter, as
+the standards components do:
 
 Before:
 
@@ -37,20 +50,22 @@ After:
 
 ```rust
 let block_commit = tx::get_block_commitment();
+let block_number = tx::get_block_number();
 let expiration_delta = tx::get_expiration_block_delta();
 
-// [expiration_delta, user_param0..2] and [user_param3..6]; the first user parameter carries
-// the final nonce for replay protection.
-let params_head = Word::from([expiration_delta.into(), final_nonce.into(), felt!(0), felt!(0)]);
+let metadata = Felt::from_u32(expiration_delta as u32) * Felt::new_unchecked(1 << 32)
+    + block_number.as_felt();
+// The first user parameter carries the final nonce for replay protection.
+let params_head = Word::from([Felt::from_u32(1), metadata, final_nonce.into(), felt!(0)]);
 let params_tail = Word::from([felt!(0), felt!(0), felt!(0), felt!(0)]);
 
 let tx_summary = [
+    params_head,
+    params_tail,
     acct_delta_commit,
     input_notes_commit,
     output_notes_commit,
     block_commit,
-    params_head,
-    params_tail,
 ];
 let msg: Word = hash_words(&tx_summary).into();
 adv_insert(msg, &tx_summary);
