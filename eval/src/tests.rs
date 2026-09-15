@@ -130,6 +130,58 @@ fn eval_callable_test() -> Result<(), Report> {
     Ok(())
 }
 
+#[test]
+fn alias_entrypoint_and_nested_call_execute_the_canonical_body() -> Result<(), Report> {
+    // TODO import these things on top of module
+    use midenc_hir::{
+        SymbolName, SymbolTable,
+        diagnostics::Uri,
+        dialects::builtin::Module,
+        parse::{ParserConfig, parse},
+    };
+
+    let test = Test::default();
+    test.context().get_or_register_dialect::<midenc_dialect_hir::HirDialect>();
+    let mut evaluator = HirEvaluator::new(test.context_rc());
+    let module = parse::<Module>(
+        ParserConfig::new(test.context_rc()),
+        Uri::new("eval_alias.hir"),
+        r#"
+builtin.module public @test {
+    builtin.function private extern("C") @body(%x: u32) -> u32 { builtin.ret %x : (u32); };
+    builtin.function_alias private @first -> @body;
+    builtin.function_alias public @api -> @first;
+    builtin.function public extern("C") @caller(%x: u32) -> u32 {
+        %result = hir.exec @api(%x) : extern("C") (u32) -> u32;
+        builtin.ret %result : (u32);
+    };
+};
+"#,
+    )?;
+    let module = module.borrow();
+
+    for name in ["api", "caller"] {
+        let path = module.get(SymbolName::intern(name)).unwrap().borrow().path();
+        let results = evaluator.call(module.as_operation(), &path, [42u32.into()])?;
+        assert_eq!(results.as_slice(), &[Value::Immediate(42u32.into())]);
+    }
+
+    // TODO put this into separate test `alias_call_with_wrong_signature_fails`
+    let alias = module.get(SymbolName::intern("api")).unwrap();
+    let path = alias.borrow().path();
+    let err = evaluator
+        .call(module.as_operation(), &path, [])
+        .expect_err("calling the alias without its required argument should fail");
+    let expected = alloc::format!("entrypoint '{path}' expects 1 arguments, but 0 were given");
+    assert!(
+        err.labels()
+            .expect("argument-count mismatch should have a diagnostic label")
+            .any(|label| label.label() == Some(expected.as_str())),
+        "unexpected diagnostic: {err:?}"
+    );
+    Ok(())
+}
+
 /// Test evaluation of a callable that calls another callable.
 ///
 /// This verifies the handling of ControlFlowEffect::Call and ControlFlowEffect::Return, and their
