@@ -124,7 +124,7 @@ unsafe extern "C" {
     pub fn extern_tx_get_block_number() -> Felt;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_reference_block_commitment"]
-    pub fn extern_tx_get_block_commitment(ptr: *mut Word);
+    pub fn extern_tx_get_reference_block_commitment(ptr: *mut Word);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_block_timestamp"]
     pub fn extern_tx_get_block_timestamp() -> Felt;
@@ -175,10 +175,10 @@ pub fn get_input_notes_commitment() -> Word {
 }
 
 /// Returns the block commitment of the reference block.
-pub fn get_block_commitment() -> Word {
+pub fn get_reference_block_commitment() -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_tx_get_block_commitment(ret_area.as_mut_ptr());
+        extern_tx_get_reference_block_commitment(ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init()
     }
 }

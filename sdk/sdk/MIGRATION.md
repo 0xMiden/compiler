@@ -12,6 +12,10 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
+### Renames
+
+- `tx::get_block_commitment()` -> `tx::get_reference_block_commitment()`
+
 ### Transaction summaries are versioned six-word preimages (protocol 0.17)
 
 Custom authentication components sign a commitment to the transaction summary. Protocol 0.17
@@ -49,7 +53,7 @@ adv_insert(msg, &tx_summary);
 After:
 
 ```rust
-let block_commit = tx::get_block_commitment();
+let block_commit = tx::get_reference_block_commitment();
 let block_number = tx::get_block_number();
 let expiration_delta = tx::get_expiration_block_delta();
 

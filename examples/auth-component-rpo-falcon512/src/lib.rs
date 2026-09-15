@@ -41,7 +41,7 @@ impl AuthComponent for AuthComponentStorage {
         let acct_delta_commit = self.compute_delta_commitment();
         let input_notes_commit = tx::get_input_notes_commitment();
         let output_notes_commit = tx::get_output_notes_commitment();
-        let block_commit = tx::get_block_commitment();
+        let block_commit = tx::get_reference_block_commitment();
         let block_number = tx::get_block_number();
         let expiration_delta = tx::get_expiration_block_delta();
 
