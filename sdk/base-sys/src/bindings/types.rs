@@ -92,6 +92,12 @@ impl Asset {
         }
     }
 
+    /// Returns this asset's id, which is the word identifying it in an account vault.
+    #[inline]
+    pub fn id(&self) -> AssetId {
+        AssetId { inner: self.key }
+    }
+
     /// Returns this asset's fungible amount.
     ///
     /// Intended for kernel-encoded assets (e.g. the ones returned by the `get_assets`
@@ -127,6 +133,31 @@ impl Asset {
 impl From<Asset> for (Word, Word) {
     fn from(val: Asset) -> Self {
         (val.key, val.value)
+    }
+}
+
+/// The identifier of an asset, the word under which it is keyed in an account vault.
+///
+/// An asset id encodes the issuing faucet, the asset class and the composition rule; read them with
+/// [`AssetId::faucet_id`], [`AssetId::asset_class`] and [`AssetId::composition`] rather than
+/// decoding the limbs by hand, since the encoding is protocol-versioned.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+#[repr(transparent)]
+pub struct AssetId {
+    pub inner: Word,
+}
+
+impl From<Word> for AssetId {
+    #[inline]
+    fn from(value: Word) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl From<AssetId> for Word {
+    #[inline]
+    fn from(value: AssetId) -> Self {
+        value.inner
     }
 }
 

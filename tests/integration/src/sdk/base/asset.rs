@@ -74,7 +74,7 @@ fn asset_id_into_faucet_id_binding() {
     run_asset_binding_test(
         "asset_id_into_faucet_id_binding",
         "pub fn binding(&self) -> AccountId {
-        let asset_id = Word::from([Felt::new(0).unwrap(); 4]);
+        let asset_id = AssetId::from(Word::from([Felt::new(0).unwrap(); 4]));
         asset::id_into_faucet_id(asset_id)
     }",
     );
@@ -85,7 +85,7 @@ fn asset_id_into_asset_class_binding() {
     run_asset_binding_test(
         "asset_id_into_asset_class_binding",
         "pub fn binding(&self) -> Felt {
-        let asset_id = Word::from([Felt::new(0).unwrap(); 4]);
+        let asset_id = AssetId::from(Word::from([Felt::new(0).unwrap(); 4]));
         let class = asset::id_into_asset_class(asset_id);
         class.prefix + class.suffix
     }",
@@ -97,8 +97,46 @@ fn asset_id_into_composition_binding() {
     run_asset_binding_test(
         "asset_id_into_composition_binding",
         "pub fn binding(&self) -> Felt {
-        let asset_id = Word::from([Felt::new(0).unwrap(); 4]);
+        let asset_id = AssetId::from(Word::from([Felt::new(0).unwrap(); 4]));
         match asset::id_into_composition(asset_id) {
+            AssetComposition::None => Felt::new(0).unwrap(),
+            AssetComposition::Fungible => Felt::new(1).unwrap(),
+            AssetComposition::Custom => Felt::new(2).unwrap(),
+        }
+    }",
+    );
+}
+
+#[test]
+fn asset_id_faucet_id_method_binding() {
+    run_asset_binding_test(
+        "asset_id_faucet_id_method_binding",
+        "pub fn binding(&self) -> AccountId {
+        let empty = Word::from([Felt::new(0).unwrap(); 4]);
+        Asset::new(empty, empty).id().faucet_id()
+    }",
+    );
+}
+
+#[test]
+fn asset_id_asset_class_method_binding() {
+    run_asset_binding_test(
+        "asset_id_asset_class_method_binding",
+        "pub fn binding(&self) -> Felt {
+        let empty = Word::from([Felt::new(0).unwrap(); 4]);
+        let class = Asset::new(empty, empty).id().asset_class();
+        class.prefix + class.suffix
+    }",
+    );
+}
+
+#[test]
+fn asset_id_composition_method_binding() {
+    run_asset_binding_test(
+        "asset_id_composition_method_binding",
+        "pub fn binding(&self) -> Felt {
+        let empty = Word::from([Felt::new(0).unwrap(); 4]);
+        match Asset::new(empty, empty).id().composition() {
             AssetComposition::None => Felt::new(0).unwrap(),
             AssetComposition::Fungible => Felt::new(1).unwrap(),
             AssetComposition::Custom => Felt::new(2).unwrap(),

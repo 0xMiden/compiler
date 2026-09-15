@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, Asset, Nonce, RawAccountId};
+use super::types::{AccountId, Asset, AssetId, Nonce, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -248,10 +248,10 @@ pub fn has_state_changed() -> bool {
 /// Returns `true` if the native account's vault held an asset with the specified asset id at the
 /// beginning of the transaction.
 #[inline]
-pub fn has_initial_asset(asset_id: Word) -> bool {
+pub fn has_initial_asset(asset_id: AssetId) -> bool {
+    let id = asset_id.inner;
     unsafe {
-        extern_native_account_has_initial_asset(asset_id[0], asset_id[1], asset_id[2], asset_id[3])
-            != Felt::new(0).unwrap()
+        extern_native_account_has_initial_asset(id[0], id[1], id[2], id[3]) != Felt::new(0).unwrap()
     }
 }
 

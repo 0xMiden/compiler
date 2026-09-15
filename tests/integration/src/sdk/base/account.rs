@@ -275,7 +275,7 @@ fn account_has_initial_asset_binding() {
     run_account_binding_test(
         "account_has_initial_asset_binding",
         "pub fn binding(&self) -> Felt {
-        let asset_id = Word::from([Felt::new(0).unwrap(); 4]);
+        let asset_id = AssetId::from(Word::from([Felt::new(0).unwrap(); 4]));
         if native_account::has_initial_asset(asset_id) {
             Felt::new(1).unwrap()
         } else {

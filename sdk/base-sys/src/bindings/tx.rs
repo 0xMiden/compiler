@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, AssetAmount, BlockNumber};
+use super::types::{AccountId, AssetAmount, AssetId, BlockNumber};
 
 /// Marker trait for raw FPI input array lengths supported by the protocol executor.
 #[doc(hidden)]
@@ -169,7 +169,7 @@ unsafe extern "C" {
     ) -> Felt;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_fee_asset_id"]
-    fn extern_tx_get_fee_asset_id(ptr: *mut Word);
+    fn extern_tx_get_fee_asset_id(ptr: *mut AssetId);
 }
 
 /// Returns the transaction reference block number.
@@ -311,9 +311,9 @@ pub fn compute_fee(num_extra_cycles: u32, exclude_notes_commitment: Word) -> Ass
 }
 
 /// Returns the asset id that transaction fees are paid in, as of the transaction reference block.
-pub fn get_fee_asset_id() -> Word {
+pub fn get_fee_asset_id() -> AssetId {
     unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<AssetId>::uninit());
         extern_tx_get_fee_asset_id(ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init()
     }

@@ -110,7 +110,8 @@ fn rust_sdk_account_tx_compute_fee_binding() {
 fn rust_sdk_account_tx_get_fee_asset_id_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_fee_asset_id_binding",
-        "let _ = tx::get_fee_asset_id();",
+        "let fee_asset_id: AssetId = tx::get_fee_asset_id();
+    let _ = fee_asset_id.faucet_id();",
     );
 }
 
