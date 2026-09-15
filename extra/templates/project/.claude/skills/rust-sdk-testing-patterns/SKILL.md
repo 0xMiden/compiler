@@ -176,7 +176,7 @@ See [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/main/
 
 ## MockChain Block Numbering
 
-Genesis is block 0. Each `prove_next_block()` advances the block number by 1. In contract code, `tx::get_block_number()` returns the **reference block**: the last proven block at the time the transaction started, not the block the transaction will be included in.
+Genesis is block 0. Each `prove_next_block()` advances the block number by 1. In contract code, `tx::get_reference_block_number()` returns the **reference block**: the last proven block at the time the transaction started, not the block the transaction will be included in.
 
 ## Note Construction
 

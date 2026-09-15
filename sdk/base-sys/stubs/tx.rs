@@ -3,7 +3,7 @@ use core::ffi::c_void;
 #[unsafe(export_name = "miden::protocol::tx::get_reference_block_number")]
 #[optimize(none)]
 #[inline(never)]
-pub extern "C" fn tx_get_block_number_plain() -> f32 {
+pub extern "C" fn tx_get_reference_block_number_plain() -> f32 {
     unsafe { core::hint::unreachable_unchecked() }
 }
 

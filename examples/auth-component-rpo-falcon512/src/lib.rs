@@ -42,7 +42,7 @@ impl AuthComponent for AuthComponentStorage {
         let input_notes_commit = tx::get_input_notes_commitment();
         let output_notes_commit = tx::get_output_notes_commitment();
         let block_commit = tx::get_reference_block_commitment();
-        let block_number = tx::get_block_number();
+        let block_number = tx::get_reference_block_number();
         let expiration_delta = tx::get_expiration_block_delta();
 
         // The transaction summary (layout version 1) binds the reference block number and the

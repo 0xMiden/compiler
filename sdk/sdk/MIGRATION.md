@@ -15,6 +15,7 @@ directly below this paragraph, above the previous one (newest first, like the
 ### Renames
 
 - `tx::get_block_commitment()` -> `tx::get_reference_block_commitment()`
+- `tx::get_block_number()` -> `tx::get_reference_block_number()`
 
 ### Transaction summaries are versioned six-word preimages (protocol 0.17)
 
@@ -54,7 +55,7 @@ After:
 
 ```rust
 let block_commit = tx::get_reference_block_commitment();
-let block_number = tx::get_block_number();
+let block_number = tx::get_reference_block_number();
 let expiration_delta = tx::get_expiration_block_delta();
 
 let metadata = Felt::from_u32(expiration_delta as u32) * Felt::new_unchecked(1 << 32)
@@ -196,13 +197,13 @@ tx::update_expiration_block_delta(Felt::new(42).unwrap());
 
 // after
 let timelock_height = BlockNumber::try_from(inputs[3]).unwrap();
-assert!(tx::get_block_number() >= timelock_height);
+assert!(tx::get_reference_block_number() >= timelock_height);
 tx::update_expiration_block_delta(42);
 ```
 
 Account nonces are wrapped in the new `Nonce` type (comparable as integers; use
 `as_felt()`/`as_u64()` or `Felt::from(nonce)` where the raw value is needed, e.g. when packing a
-nonce into a `Word` — `ref_block_num` below is a `BlockNumber` from `tx::get_block_number()` and
+nonce into a `Word` — `ref_block_num` below is a `BlockNumber` from `tx::get_reference_block_number()` and
 converts the same way):
 
 ```rust
