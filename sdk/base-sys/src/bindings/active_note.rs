@@ -5,8 +5,8 @@ use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::{
     AccountId, Asset, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteId, NoteMetadata,
-    RawAccountId, RawAttachmentLocation, Recipient, assert_attachment_count,
-    assert_attachment_word_count,
+    RawAccountId, RawAttachmentLocation, RawCommitmentWithCount, Recipient,
+    assert_attachment_count, assert_attachment_word_count,
 };
 
 #[allow(improper_ctypes)]
@@ -53,7 +53,7 @@ unsafe extern "C" {
     fn extern_note_find_attachment(attachment_scheme: Felt, ptr: *mut RawAttachmentLocation);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_initial_assets_info"]
-    fn extern_active_note_get_initial_assets_info(ptr: *mut (Word, Felt));
+    fn extern_active_note_get_initial_assets_info(ptr: *mut RawCommitmentWithCount);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_initial_num_assets"]
     fn extern_active_note_get_initial_num_assets() -> Felt;
@@ -78,7 +78,7 @@ unsafe extern "C" {
     fn extern_active_note_get_note_id(ptr: *mut NoteId);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_storage_info"]
-    fn extern_active_note_get_storage_info(ptr: *mut (Word, Felt));
+    fn extern_active_note_get_storage_info(ptr: *mut RawCommitmentWithCount);
 }
 
 /// Contains summary information about the assets stored in the active note.
@@ -257,13 +257,14 @@ pub fn find_attachment(attachment_scheme: Felt) -> Option<u32> {
 /// These describe the note's assets at creation time, unaffected by in-transaction removal.
 pub fn get_initial_assets_info() -> ActiveNoteAssetsInfo {
     unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<(Word, Felt)>::uninit());
+        let mut ret_area =
+            WordAligned::new(::core::mem::MaybeUninit::<RawCommitmentWithCount>::uninit());
         extern_active_note_get_initial_assets_info(ret_area.as_mut_ptr());
-        let (commitment, num_assets) = ret_area.into_inner().assume_init();
+        let raw = ret_area.into_inner().assume_init();
         ActiveNoteAssetsInfo {
-            commitment,
+            commitment: raw.commitment,
             // The transaction kernel guarantees asset counts fit in a u32.
-            num_assets: num_assets.as_canonical_u64() as u32,
+            num_assets: raw.count.as_canonical_u64() as u32,
         }
     }
 }
@@ -327,13 +328,14 @@ pub fn get_note_id() -> NoteId {
 /// Returns the storage commitment and storage item count of the active note.
 pub fn get_storage_info() -> ActiveNoteStorageInfo {
     unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<(Word, Felt)>::uninit());
+        let mut ret_area =
+            WordAligned::new(::core::mem::MaybeUninit::<RawCommitmentWithCount>::uninit());
         extern_active_note_get_storage_info(ret_area.as_mut_ptr());
-        let (commitment, num_storage_items) = ret_area.into_inner().assume_init();
+        let raw = ret_area.into_inner().assume_init();
         ActiveNoteStorageInfo {
-            commitment,
+            commitment: raw.commitment,
             // The transaction kernel guarantees storage item counts fit in a u32.
-            num_storage_items: num_storage_items.as_canonical_u64() as u32,
+            num_storage_items: raw.count.as_canonical_u64() as u32,
         }
     }
 }

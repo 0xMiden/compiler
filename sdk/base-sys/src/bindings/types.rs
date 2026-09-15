@@ -472,6 +472,19 @@ impl From<NoteId> for Word {
     }
 }
 
+/// Raw protocol return layout for procedures that leave a commitment word followed by a count.
+///
+/// Used by the note asset and storage summaries (`get_initial_assets_info`, `get_storage_info`,
+/// `get_assets_info`), whose stack outputs are `[COMMITMENT, count]`.
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub(crate) struct RawCommitmentWithCount {
+    /// The commitment word.
+    pub commitment: Word,
+    /// The count that follows the commitment on the stack.
+    pub count: Felt,
+}
+
 /// Raw protocol return layout for input-note lookups by note ID.
 #[derive(Copy, Clone)]
 #[repr(C)]
