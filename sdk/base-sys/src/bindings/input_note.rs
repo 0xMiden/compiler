@@ -7,7 +7,8 @@ use super::{
     MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, assert_attachment_count,
     assert_attachment_word_count,
     types::{
-        AccountId, Asset, NoteIdx, NoteMetadata, RawAccountId, RawAttachmentLocation, Recipient,
+        AccountId, Asset, NoteId, NoteIdx, NoteMetadata, RawAccountId, RawAttachmentLocation,
+        RawNoteLocation, Recipient,
     },
 };
 
@@ -59,6 +60,38 @@ unsafe extern "C" {
         attachment_scheme: Felt,
         note_index: Felt,
         ptr: *mut RawAttachmentLocation,
+    );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::input_note::get_initial_num_assets"]
+    fn extern_input_note_get_initial_num_assets(note_index: Felt) -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::input_note::get_asset"]
+    fn extern_input_note_get_asset(asset_index: Felt, note_index: Felt, ptr: *mut Asset);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::input_note::remove_asset"]
+    fn extern_input_note_remove_asset(
+        asset_id_0: Felt,
+        asset_id_1: Felt,
+        asset_id_2: Felt,
+        asset_id_3: Felt,
+        asset_value_0: Felt,
+        asset_value_1: Felt,
+        asset_value_2: Felt,
+        asset_value_3: Felt,
+        note_index: Felt,
+        ptr: *mut Word,
+    );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::input_note::get_note_id"]
+    fn extern_input_note_get_note_id(note_index: Felt, ptr: *mut NoteId);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::input_note::find_note"]
+    fn extern_input_note_find_note(
+        note_id_0: Felt,
+        note_id_1: Felt,
+        note_id_2: Felt,
+        note_id_3: Felt,
+        ptr: *mut RawNoteLocation,
     );
 }
 
@@ -228,5 +261,77 @@ pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u
             ret_area.as_mut_ptr(),
         );
         ret_area.into_inner().assume_init().into_attachment_index()
+    }
+}
+
+/// Returns the number of assets the input note at `note_index` was created with.
+///
+/// The count is unaffected by in-transaction removal.
+#[inline]
+pub fn get_initial_num_assets(note_index: NoteIdx) -> u32 {
+    // The transaction kernel guarantees asset counts fit in a u32.
+    let count = unsafe { extern_input_note_get_initial_num_assets(note_index.inner) };
+    count.as_canonical_u64() as u32
+}
+
+/// Returns the asset at `asset_index` in the input note at `note_index`.
+///
+/// The asset is returned as it currently is: an asset that was already removed from the note reads
+/// back with both words empty.
+///
+/// # Panics
+///
+/// Panics if either index is out of bounds.
+pub fn get_asset(note_index: NoteIdx, asset_index: u32) -> Asset {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Asset>::uninit());
+        extern_input_note_get_asset(
+            Felt::from_u32(asset_index),
+            note_index.inner,
+            ret_area.as_mut_ptr(),
+        );
+        ret_area.into_inner().assume_init()
+    }
+}
+
+/// Removes `asset` from the input note at `note_index` and returns the asset value left in it.
+///
+/// The returned value is empty when the entire asset was removed.
+pub fn remove_asset(note_index: NoteIdx, asset: Asset) -> Word {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        extern_input_note_remove_asset(
+            asset.key[0],
+            asset.key[1],
+            asset.key[2],
+            asset.key[3],
+            asset.value[0],
+            asset.value[1],
+            asset.value[2],
+            asset.value[3],
+            note_index.inner,
+            ret_area.as_mut_ptr(),
+        );
+        ret_area.into_inner().assume_init()
+    }
+}
+
+/// Returns the ID of the input note at `note_index`, as cached by the transaction prologue.
+pub fn get_note_id(note_index: NoteIdx) -> NoteId {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<NoteId>::uninit());
+        extern_input_note_get_note_id(note_index.inner, ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
+    }
+}
+
+/// Returns the index of the input note with the given ID, or `None` when the transaction does not
+/// consume it.
+pub fn find_note(note_id: NoteId) -> Option<NoteIdx> {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawNoteLocation>::uninit());
+        let id = note_id.inner;
+        extern_input_note_find_note(id[0], id[1], id[2], id[3], ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init().into_note_index()
     }
 }

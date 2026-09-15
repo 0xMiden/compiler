@@ -213,7 +213,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::input_note::GET_INITIAL_ASSETS
                         | tx_kernel::input_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
-                        | tx_kernel::input_note::WRITE_ATTACHMENT_TO_MEMORY => {
+                        | tx_kernel::input_note::WRITE_ATTACHMENT_TO_MEMORY
+                        | tx_kernel::input_note::GET_INITIAL_NUM_ASSETS => {
                             Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::input_note::GET_INITIAL_ASSETS_INFO
@@ -224,7 +225,11 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::input_note::GET_SCRIPT_ROOT
                         | tx_kernel::input_note::GET_SERIAL_NUMBER
                         | tx_kernel::input_note::GET_ATTACHMENTS_COMMITMENT
-                        | tx_kernel::input_note::FIND_ATTACHMENT => {
+                        | tx_kernel::input_note::FIND_ATTACHMENT
+                        | tx_kernel::input_note::GET_ASSET
+                        | tx_kernel::input_note::REMOVE_ASSET
+                        | tx_kernel::input_note::GET_NOTE_ID
+                        | tx_kernel::input_note::FIND_NOTE => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,

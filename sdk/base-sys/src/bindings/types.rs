@@ -383,6 +383,26 @@ impl From<NoteId> for Word {
     }
 }
 
+/// Raw protocol return layout for input-note lookups by note ID.
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub(crate) struct RawNoteLocation {
+    /// Non-zero when an input note with the requested ID was found.
+    pub is_found: Felt,
+    /// The matching input-note index, valid only when `is_found` is non-zero.
+    pub index: Felt,
+}
+
+impl RawNoteLocation {
+    /// Converts the protocol return layout into the found input-note index, if any.
+    pub(crate) fn into_note_index(self) -> Option<NoteIdx> {
+        if self.is_found == Felt::ZERO {
+            return None;
+        }
+        Some(NoteIdx { inner: self.index })
+    }
+}
+
 /// The note metadata returned by `*_note::get_metadata` procedures.
 ///
 /// In the Miden protocol, metadata retrieval returns a single metadata header word. Note
