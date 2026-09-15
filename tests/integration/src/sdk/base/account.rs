@@ -257,6 +257,24 @@ fn account_storage_get_initial_item_binding() {
 }
 
 #[test]
+fn account_storage_has_storage_slot_binding() {
+    run_account_binding_test_with_struct(
+        "account_storage_has_storage_slot_binding",
+        r#"struct TestAccountStorage {
+    #[storage(description = "test value")]
+    value: StorageValue<Word>,
+}"#,
+        "pub fn binding(&self) -> Felt {
+        if storage::has_storage_slot(Self::default().value.slot) {
+            Felt::new(1).unwrap()
+        } else {
+            Felt::new(0).unwrap()
+        }
+    }",
+    );
+}
+
+#[test]
 fn account_storage_get_initial_map_item_binding() {
     run_account_binding_test_with_struct(
         "account_storage_get_initial_map_item_binding",

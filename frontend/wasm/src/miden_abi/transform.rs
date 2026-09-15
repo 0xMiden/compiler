@@ -153,7 +153,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         tx_kernel::active_account::GET_NONCE
                         | tx_kernel::active_account::GET_NUM_PROCEDURES
                         | tx_kernel::active_account::HAS_ASSET
-                        | tx_kernel::active_account::HAS_PROCEDURE => {
+                        | tx_kernel::active_account::HAS_PROCEDURE
+                        | tx_kernel::active_account::HAS_STORAGE_SLOT => {
                             Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::active_account::GET_ID
