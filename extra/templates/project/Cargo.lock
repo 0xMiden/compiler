@@ -2450,7 +2450,7 @@ dependencies = [
 [[package]]
 name = "miden-client"
 version = "0.17.0-rc.1"
-source = "git+https://github.com/0xMiden/rust-sdk?branch=update-protocol-0.17-rc#d3f895deb225af23d17a63528ec2d589d1abef86"
+source = "git+https://github.com/0xMiden/rust-sdk?rev=542f54443fbf8529ad1005cceede7156c0e68fb1#542f54443fbf8529ad1005cceede7156c0e68fb1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2488,7 +2488,7 @@ dependencies = [
 [[package]]
 name = "miden-client-sqlite-store"
 version = "0.17.0-rc.1"
-source = "git+https://github.com/0xMiden/rust-sdk?branch=update-protocol-0.17-rc#d3f895deb225af23d17a63528ec2d589d1abef86"
+source = "git+https://github.com/0xMiden/rust-sdk?rev=542f54443fbf8529ad1005cceede7156c0e68fb1#542f54443fbf8529ad1005cceede7156c0e68fb1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4359,9 +4359,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.44"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6725596c3f2c3a0aef021139e145d4eafe314a6623e4680ca83852b2c67ab2ba"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "log",
  "once_cell",
@@ -5224,12 +5224,11 @@ dependencies = [
 
 [[package]]
 name = "tonic-web-wasm-client"
-version = "0.9.1"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c0469c353de5f665c95f898074b5b004b500c6722214c3249f1dc79c0a2a3f6"
+checksum = "435bc48a5921927390c263ebf21c32f7e2aabbe04f3d2de0d75bddb50608c566"
 dependencies = [
- "base64 0.22.1",
- "byteorder",
+ "base64 0.23.1",
  "bytes",
  "futures-util",
  "http",
@@ -5600,9 +5599,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-streams"
-version = "0.5.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d1ec4f6517c9e11ae630e200b2b65d193279042e28edd4a2cda233e46670bbb"
+checksum = "94ce9bdac782bbca70d6ac48a3ba18b873c848a706d6dc3bd9a03c1b96f04693"
 dependencies = [
  "futures-util",
  "js-sys",
