@@ -562,6 +562,20 @@ impl TraitNote {
         for asset in assets {
             assert_eq!(asset.key, asset.key);
         }
+
+        let note_id = self.get_note_id();
+        assert_eq!(note_id.inner, note_id.inner);
+        let assets_info = self.get_initial_assets_info();
+        assert_eq!(assets_info.commitment, assets_info.commitment);
+        let storage_info = self.get_storage_info();
+        assert_eq!(storage_info.commitment, storage_info.commitment);
+        let num_assets = self.get_initial_num_assets();
+        assert_eq!(num_assets, assets_info.num_assets);
+        if num_assets > 0 {
+            let first = self.get_asset(0);
+            assert_eq!(first.key, first.key);
+        }
+        assert!(storage_info.num_storage_items < 1024);
     }
 }
 "#;

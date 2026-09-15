@@ -326,4 +326,20 @@ pub trait NativeAccount {
     fn was_procedure_called(&self, proc_root: Word) -> bool {
         was_procedure_called(proc_root)
     }
+
+    /// Returns `true` if the native account's state has changed since the transaction began.
+    ///
+    /// Unlike [`NativeAccount::compute_delta_commitment`], this may be called before the
+    /// authentication procedure increments the nonce.
+    #[inline]
+    fn has_state_changed(&self) -> bool {
+        has_state_changed()
+    }
+
+    /// Returns `true` if the native account's vault held an asset with the specified asset id at
+    /// the beginning of the transaction.
+    #[inline]
+    fn has_initial_asset(&self, asset_id: AssetId) -> bool {
+        has_initial_asset(asset_id)
+    }
 }

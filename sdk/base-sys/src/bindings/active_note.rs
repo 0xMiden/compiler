@@ -427,4 +427,46 @@ pub trait ActiveNote {
     fn find_attachment(&self, attachment_scheme: Felt) -> Option<u32> {
         find_attachment(attachment_scheme)
     }
+
+    /// Returns the initial assets commitment and asset count of the note that is currently
+    /// executing.
+    ///
+    /// These describe the note's assets at creation time, unaffected by in-transaction removal.
+    #[inline]
+    fn get_initial_assets_info(&self) -> ActiveNoteAssetsInfo {
+        get_initial_assets_info()
+    }
+
+    /// Returns the number of assets the currently executing note was created with.
+    ///
+    /// The count is unaffected by in-transaction removal.
+    #[inline]
+    fn get_initial_num_assets(&self) -> u32 {
+        get_initial_num_assets()
+    }
+
+    /// Returns the asset at `asset_index` in the note that is currently executing.
+    ///
+    /// The asset is returned as it currently is: an asset that was already removed from the note
+    /// reads back with both words empty.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `asset_index` is out of bounds for the note.
+    #[inline]
+    fn get_asset(&self, asset_index: u32) -> Asset {
+        get_asset(asset_index)
+    }
+
+    /// Returns the ID of the note that is currently executing.
+    #[inline]
+    fn get_note_id(&self) -> NoteId {
+        get_note_id()
+    }
+
+    /// Returns the storage commitment and storage item count of the currently executing note.
+    #[inline]
+    fn get_storage_info(&self) -> ActiveNoteStorageInfo {
+        get_storage_info()
+    }
 }

@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, Nonce, RawAccountId};
+use super::types::{AccountId, Nonce, RawAccountId, StorageSlotId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -260,6 +260,13 @@ pub trait ActiveAccount {
     fn has_procedure(&self, proc_root: Word) -> bool {
         self.__assert_active_account();
         has_procedure(proc_root)
+    }
+
+    /// Returns `true` if the active account has a storage slot with the given slot id.
+    #[inline]
+    fn has_storage_slot(&self, slot_id: StorageSlotId) -> bool {
+        self.__assert_active_account();
+        super::storage::has_storage_slot(slot_id)
     }
 }
 
