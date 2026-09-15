@@ -163,16 +163,6 @@ impl RawAssetClass {
     }
 }
 
-/// Raw protocol return layout for the non-consuming asset-class accessor, which leaves the asset
-/// id on the stack below the class felts.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub(crate) struct RawAssetClassWithId {
-    pub suffix: Felt,
-    pub prefix: Felt,
-    pub asset_id: Word,
-}
-
 /// How the value of an asset combines when the same asset id is added to a vault twice.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AssetComposition {

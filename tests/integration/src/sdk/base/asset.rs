@@ -81,18 +81,6 @@ fn asset_id_into_faucet_id_binding() {
 }
 
 #[test]
-fn asset_id_to_asset_class_binding() {
-    run_asset_binding_test(
-        "asset_id_to_asset_class_binding",
-        "pub fn binding(&self) -> Felt {
-        let asset_id = Word::from([Felt::new(0).unwrap(); 4]);
-        let (class, echoed) = asset::id_to_asset_class(asset_id);
-        class.prefix + class.suffix + echoed[0]
-    }",
-    );
-}
-
-#[test]
 fn asset_id_into_asset_class_binding() {
     run_asset_binding_test(
         "asset_id_into_asset_class_binding",

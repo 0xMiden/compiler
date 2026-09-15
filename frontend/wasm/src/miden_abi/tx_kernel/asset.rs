@@ -14,7 +14,6 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
 ];
 
 pub const ID_INTO_FAUCET_ID: &str = "id_into_faucet_id";
-pub const ID_TO_ASSET_CLASS: &str = "id_to_asset_class";
 pub const ID_INTO_ASSET_CLASS: &str = "id_into_asset_class";
 pub const ID_INTO_COMPOSITION: &str = "id_into_composition";
 
@@ -25,15 +24,6 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         Symbol::from(ID_INTO_FAUCET_ID),
         // ASSET_ID -> faucet_id_suffix, faucet_id_prefix
         FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt]),
-    );
-    asset.insert(
-        Symbol::from(ID_TO_ASSET_CLASS),
-        // ASSET_ID -> asset_class_suffix, asset_class_prefix, ASSET_ID
-        FunctionType::new(
-            CallConv::Wasm,
-            [Felt, Felt, Felt, Felt],
-            [Felt, Felt, Felt, Felt, Felt, Felt],
-        ),
     );
     asset.insert(
         Symbol::from(ID_INTO_ASSET_CLASS),

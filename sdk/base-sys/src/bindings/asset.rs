@@ -5,9 +5,7 @@
 
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{
-    AccountId, AssetClass, AssetComposition, RawAccountId, RawAssetClass, RawAssetClassWithId,
-};
+use super::types::{AccountId, AssetClass, AssetComposition, RawAccountId, RawAssetClass};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -19,15 +17,6 @@ unsafe extern "C" {
         asset_id_2: Felt,
         asset_id_3: Felt,
         ptr: *mut RawAccountId,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::asset::id_to_asset_class"]
-    fn extern_asset_id_to_asset_class(
-        asset_id_0: Felt,
-        asset_id_1: Felt,
-        asset_id_2: Felt,
-        asset_id_3: Felt,
-        ptr: *mut RawAssetClassWithId,
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::asset::id_into_asset_class"]
@@ -62,26 +51,6 @@ pub fn id_into_faucet_id(asset_id: Word) -> AccountId {
             ret_area.as_mut_ptr(),
         );
         ret_area.into_inner().assume_init().into_account_id()
-    }
-}
-
-/// Returns the asset class of `asset_id` together with the asset id itself.
-///
-/// This binds the protocol's non-consuming accessor, which leaves the asset id on the stack below
-/// the class felts. [`id_into_asset_class`] returns the same class without echoing the input back.
-pub fn id_to_asset_class(asset_id: Word) -> (AssetClass, Word) {
-    unsafe {
-        let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<RawAssetClassWithId>::uninit());
-        extern_asset_id_to_asset_class(
-            asset_id[0],
-            asset_id[1],
-            asset_id[2],
-            asset_id[3],
-            ret_area.as_mut_ptr(),
-        );
-        let raw = ret_area.into_inner().assume_init();
-        (AssetClass::new(raw.prefix, raw.suffix), raw.asset_id)
     }
 }
 

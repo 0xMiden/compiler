@@ -179,7 +179,6 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                             Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::asset::ID_INTO_FAUCET_ID
-                        | tx_kernel::asset::ID_TO_ASSET_CLASS
                         | tx_kernel::asset::ID_INTO_ASSET_CLASS => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
