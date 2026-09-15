@@ -257,6 +257,35 @@ fn account_storage_get_initial_item_binding() {
 }
 
 #[test]
+fn account_has_state_changed_binding() {
+    run_account_binding_test(
+        "account_has_state_changed_binding",
+        "pub fn binding(&self) -> Felt {
+        if native_account::has_state_changed() {
+            Felt::new(1).unwrap()
+        } else {
+            Felt::new(0).unwrap()
+        }
+    }",
+    );
+}
+
+#[test]
+fn account_has_initial_asset_binding() {
+    run_account_binding_test(
+        "account_has_initial_asset_binding",
+        "pub fn binding(&self) -> Felt {
+        let asset_id = Word::from([Felt::new(0).unwrap(); 4]);
+        if native_account::has_initial_asset(asset_id) {
+            Felt::new(1).unwrap()
+        } else {
+            Felt::new(0).unwrap()
+        }
+    }",
+    );
+}
+
+#[test]
 fn account_storage_has_storage_slot_binding() {
     run_account_binding_test_with_struct(
         "account_storage_has_storage_slot_binding",

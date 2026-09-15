@@ -123,7 +123,9 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         tx_kernel::native_account::INCR_NONCE
-                        | tx_kernel::native_account::WAS_PROCEDURE_CALLED => {
+                        | tx_kernel::native_account::WAS_PROCEDURE_CALLED
+                        | tx_kernel::native_account::HAS_STATE_CHANGED
+                        | tx_kernel::native_account::HAS_INITIAL_ASSET => {
                             Some(TransformStrategy::NoTransform)
                         }
                         _ => None,

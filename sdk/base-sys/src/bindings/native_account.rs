@@ -65,6 +65,17 @@ unsafe extern "C" {
         asset_key_3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::native_account::has_state_changed"]
+    fn extern_native_account_has_state_changed() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::native_account::has_initial_asset"]
+    fn extern_native_account_has_initial_asset(
+        asset_id_0: Felt,
+        asset_id_1: Felt,
+        asset_id_2: Felt,
+        asset_id_3: Felt,
+    ) -> Felt;
 }
 
 /// Adds the specified asset to the vault and returns the resulting asset value word stored under
@@ -222,6 +233,25 @@ pub fn get_initial_asset(asset_key: Word) -> Word {
             ret_area.as_mut_ptr(),
         );
         ret_area.into_inner().assume_init()
+    }
+}
+
+/// Returns `true` if the native account's state has changed since the transaction began.
+///
+/// Unlike [`compute_delta_commitment`], this may be called before the authentication procedure
+/// increments the nonce.
+#[inline]
+pub fn has_state_changed() -> bool {
+    unsafe { extern_native_account_has_state_changed() != Felt::new(0).unwrap() }
+}
+
+/// Returns `true` if the native account's vault held an asset with the specified asset id at the
+/// beginning of the transaction.
+#[inline]
+pub fn has_initial_asset(asset_id: Word) -> bool {
+    unsafe {
+        extern_native_account_has_initial_asset(asset_id[0], asset_id[1], asset_id[2], asset_id[3])
+            != Felt::new(0).unwrap()
     }
 }
 
