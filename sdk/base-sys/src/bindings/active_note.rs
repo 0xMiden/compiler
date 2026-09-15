@@ -4,8 +4,9 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::{
-    AccountId, Asset, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteMetadata, RawAccountId,
-    RawAttachmentLocation, Recipient, assert_attachment_count, assert_attachment_word_count,
+    AccountId, Asset, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteId, NoteMetadata,
+    RawAccountId, RawAttachmentLocation, Recipient, assert_attachment_count,
+    assert_attachment_word_count,
 };
 
 #[allow(improper_ctypes)]
@@ -50,6 +51,50 @@ unsafe extern "C" {
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::find_attachment"]
     fn extern_note_find_attachment(attachment_scheme: Felt, ptr: *mut RawAttachmentLocation);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::get_initial_assets_info"]
+    fn extern_active_note_get_initial_assets_info(ptr: *mut (Word, Felt));
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::get_initial_num_assets"]
+    fn extern_active_note_get_initial_num_assets() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::get_asset"]
+    fn extern_active_note_get_asset(asset_index: Felt, ptr: *mut Asset);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::remove_asset"]
+    fn extern_active_note_remove_asset(
+        asset_id_0: Felt,
+        asset_id_1: Felt,
+        asset_id_2: Felt,
+        asset_id_3: Felt,
+        asset_value_0: Felt,
+        asset_value_1: Felt,
+        asset_value_2: Felt,
+        asset_value_3: Felt,
+        ptr: *mut Word,
+    );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::get_note_id"]
+    fn extern_active_note_get_note_id(ptr: *mut NoteId);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::get_storage_info"]
+    fn extern_active_note_get_storage_info(ptr: *mut (Word, Felt));
+}
+
+/// Contains summary information about the assets stored in the active note.
+pub struct ActiveNoteAssetsInfo {
+    /// The commitment over the assets the note was created with.
+    pub commitment: Word,
+    /// The number of assets the note was created with.
+    pub num_assets: u32,
+}
+
+/// Contains summary information about the storage stored in the active note.
+pub struct ActiveNoteStorageInfo {
+    /// The commitment over the note's storage.
+    pub commitment: Word,
+    /// The number of storage items the note was created with.
+    pub num_storage_items: u32,
 }
 
 /// Returns the storage of the currently executing note.
@@ -204,6 +249,92 @@ pub fn find_attachment(attachment_scheme: Felt) -> Option<u32> {
             WordAligned::new(::core::mem::MaybeUninit::<RawAttachmentLocation>::uninit());
         extern_note_find_attachment(attachment_scheme, ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init().into_attachment_index()
+    }
+}
+
+/// Returns the initial assets commitment and asset count of the active note.
+///
+/// These describe the note's assets at creation time, unaffected by in-transaction removal.
+pub fn get_initial_assets_info() -> ActiveNoteAssetsInfo {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<(Word, Felt)>::uninit());
+        extern_active_note_get_initial_assets_info(ret_area.as_mut_ptr());
+        let (commitment, num_assets) = ret_area.into_inner().assume_init();
+        ActiveNoteAssetsInfo {
+            commitment,
+            // The transaction kernel guarantees asset counts fit in a u32.
+            num_assets: num_assets.as_canonical_u64() as u32,
+        }
+    }
+}
+
+/// Returns the number of assets the active note was created with.
+///
+/// The count is unaffected by in-transaction removal.
+#[inline]
+pub fn get_initial_num_assets() -> u32 {
+    // The transaction kernel guarantees asset counts fit in a u32.
+    let count = unsafe { extern_active_note_get_initial_num_assets() };
+    count.as_canonical_u64() as u32
+}
+
+/// Returns the asset at `asset_index` in the active note.
+///
+/// The asset is returned as it currently is: an asset that was already removed from the note reads
+/// back with both words empty.
+///
+/// # Panics
+///
+/// Panics if `asset_index` is out of bounds for the note.
+pub fn get_asset(asset_index: u32) -> Asset {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Asset>::uninit());
+        extern_active_note_get_asset(Felt::from_u32(asset_index), ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
+    }
+}
+
+/// Removes `asset` from the active note and returns the asset value left in the note.
+///
+/// The returned value is empty when the entire asset was removed.
+pub fn remove_asset(asset: Asset) -> Word {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        extern_active_note_remove_asset(
+            asset.key[0],
+            asset.key[1],
+            asset.key[2],
+            asset.key[3],
+            asset.value[0],
+            asset.value[1],
+            asset.value[2],
+            asset.value[3],
+            ret_area.as_mut_ptr(),
+        );
+        ret_area.into_inner().assume_init()
+    }
+}
+
+/// Returns the ID of the active note, as cached by the transaction prologue.
+pub fn get_note_id() -> NoteId {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<NoteId>::uninit());
+        extern_active_note_get_note_id(ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
+    }
+}
+
+/// Returns the storage commitment and storage item count of the active note.
+pub fn get_storage_info() -> ActiveNoteStorageInfo {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<(Word, Felt)>::uninit());
+        extern_active_note_get_storage_info(ret_area.as_mut_ptr());
+        let (commitment, num_storage_items) = ret_area.into_inner().assume_init();
+        ActiveNoteStorageInfo {
+            commitment,
+            // The transaction kernel guarantees storage item counts fit in a u32.
+            num_storage_items: num_storage_items.as_canonical_u64() as u32,
+        }
     }
 }
 

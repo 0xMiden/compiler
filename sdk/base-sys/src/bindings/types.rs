@@ -362,6 +362,27 @@ pub struct Recipient {
     pub inner: Word,
 }
 
+/// The unique identifier of a note, a digest over the note's recipient and assets commitment.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+#[repr(transparent)]
+pub struct NoteId {
+    pub inner: Word,
+}
+
+impl From<Word> for NoteId {
+    #[inline]
+    fn from(value: Word) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl From<NoteId> for Word {
+    #[inline]
+    fn from(value: NoteId) -> Self {
+        value.inner
+    }
+}
+
 /// The note metadata returned by `*_note::get_metadata` procedures.
 ///
 /// In the Miden protocol, metadata retrieval returns a single metadata header word. Note

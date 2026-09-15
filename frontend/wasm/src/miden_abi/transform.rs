@@ -187,7 +187,9 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::active_note::WRITE_ATTACHMENT_TO_MEMORY => {
                             Some(TransformStrategy::NoTransform)
                         }
-                        tx_kernel::active_note::IS_PUBLIC | tx_kernel::active_note::IS_PRIVATE => {
+                        tx_kernel::active_note::IS_PUBLIC
+                        | tx_kernel::active_note::IS_PRIVATE
+                        | tx_kernel::active_note::GET_INITIAL_NUM_ASSETS => {
                             Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::active_note::GET_SENDER
@@ -196,7 +198,12 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::active_note::GET_SERIAL_NUMBER
                         | tx_kernel::active_note::GET_METADATA
                         | tx_kernel::active_note::GET_ATTACHMENTS_COMMITMENT
-                        | tx_kernel::active_note::FIND_ATTACHMENT => {
+                        | tx_kernel::active_note::FIND_ATTACHMENT
+                        | tx_kernel::active_note::GET_INITIAL_ASSETS_INFO
+                        | tx_kernel::active_note::GET_ASSET
+                        | tx_kernel::active_note::REMOVE_ASSET
+                        | tx_kernel::active_note::GET_NOTE_ID
+                        | tx_kernel::active_note::GET_STORAGE_INFO => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
