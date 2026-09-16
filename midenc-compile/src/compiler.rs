@@ -386,9 +386,10 @@ pub struct Compiler {
     /// Path to the project manifest to build
     ///
     /// Either a `miden-project.toml`, or the `Cargo.toml` beside it. This names the project when
-    /// no input file is given; given both, they must name the same file. Absent both, the
-    /// `miden-project.toml` in the working directory is built. A relative path is resolved
-    /// against the directory the compiler is run from, not against `--working-dir`.
+    /// no input file is given; given both, they must name the same file. Absent both, the project
+    /// is the `Cargo.toml` in the working directory when there is one, otherwise its
+    /// `miden-project.toml`. A relative path is resolved against the directory the compiler is
+    /// run from, not against `--working-dir`.
     #[cfg_attr(feature = "std", arg(long, value_name = "PATH",))]
     pub manifest_path: Option<PathBuf>,
     /// Specify path prefixes to remap for any file paths encoded in debug info

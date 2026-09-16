@@ -277,10 +277,11 @@ impl Options {
     /// Resolve the input a compilation request names.
     ///
     /// `input` is the input file given on the command line, if any. Without one, `--manifest-path`
-    /// names the project to build; without that too, the project is the `miden-project.toml` in
-    /// the working directory. Given both, they must name the same file — a `Cargo.toml` counting
-    /// as the `miden-project.toml` beside it — and the input is kept as given. Anything else is
-    /// rejected rather than silently building one of the two.
+    /// names the project to build. Absent both, the project is the `Cargo.toml` in the working
+    /// directory when there is one, otherwise its `miden-project.toml`. Given both, they must name
+    /// the same file — a `Cargo.toml` counting as the `miden-project.toml` beside it — and the
+    /// input is kept as given. Anything else is rejected rather than silently building one of the
+    /// two.
     ///
     /// A relative `--manifest-path` is relative to the directory the compiler is run from, exactly
     /// like a relative input file; `--working-dir` moves neither.
@@ -311,7 +312,13 @@ impl Options {
             }
             (None, Some(manifest_path)) => InputFile::from_path(manifest_path).into_diagnostic(),
             (None, None) => {
-                InputFile::from_path(self.current_dir.join("miden-project.toml")).into_diagnostic()
+                let cargo_manifest = self.current_dir.join("Cargo.toml");
+                let locator = if cargo_manifest.is_file() {
+                    cargo_manifest
+                } else {
+                    self.current_dir.join("miden-project.toml")
+                };
+                InputFile::from_path(locator).into_diagnostic()
             }
         }
     }
@@ -549,9 +556,30 @@ mod tests {
         );
     }
 
+    /// Options for a compiler run from `dir`, with no `--manifest-path`.
+    fn options_in(dir: &std::path::Path) -> Options {
+        Options {
+            current_dir: dir.to_path_buf(),
+            ..Options::default()
+        }
+    }
+
     #[test]
-    fn without_either_the_project_is_in_the_working_directory() {
-        assert_eq!(resolved_path(&options(None), None), PathBuf::from("/work/miden-project.toml"));
+    fn without_either_a_cargo_project_in_the_working_directory_is_the_project() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"work\"\n").unwrap();
+
+        assert_eq!(resolved_path(&options_in(dir.path()), None), dir.path().join("Cargo.toml"));
+    }
+
+    #[test]
+    fn without_either_and_without_a_cargo_manifest_the_miden_manifest_is_the_project() {
+        let dir = tempfile::TempDir::new().unwrap();
+
+        assert_eq!(
+            resolved_path(&options_in(dir.path()), None),
+            dir.path().join("miden-project.toml")
+        );
     }
 
     #[test]

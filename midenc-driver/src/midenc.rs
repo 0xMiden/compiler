@@ -32,34 +32,24 @@ pub struct Midenc {
 }
 
 impl Midenc {
-    pub fn run<P, A>(
-        cwd: P,
-        args: A,
-        logger: Box<dyn Log>,
-        filter: log::LevelFilter,
-    ) -> Result<(), Report>
-    where
-        P: Into<PathBuf>,
-        A: IntoIterator<Item = OsString>,
-    {
-        Self::run_with_emitter(cwd, args, None, logger, filter)
-    }
-
-    pub fn run_with_emitter<P, A>(
+    /// Run one compilation of `args`, as if `midenc` had been invoked with them in `cwd`.
+    ///
+    /// This is the library entry point: it installs nothing global — no logger, no diagnostics
+    /// hook — so an embedder keeps whatever it installed itself. `args` is the full argument
+    /// vector including the program name, exactly as a process receives it.
+    ///
+    /// The path of the package that was written, if one was, for a caller that has to say where
+    /// its build went; see [`compile::compile`]. A run deliberately stopped short of a package by
+    /// `--stop-after` is a success with nothing to name, not a failure.
+    pub fn exec<P, A>(
         cwd: P,
         args: A,
         emitter: Option<Arc<dyn Emitter>>,
-        logger: Box<dyn Log>,
-        filter: log::LevelFilter,
-    ) -> Result<(), Report>
+    ) -> Result<Option<PathBuf>, Report>
     where
         P: Into<PathBuf>,
         A: IntoIterator<Item = OsString>,
     {
-        log::set_boxed_logger(logger)
-            .unwrap_or_else(|err| panic!("failed to install logger: {err}"));
-        log::set_max_level(filter);
-
         let command = <Self as clap::CommandFactory>::command();
         let command = midenc_session::flags::register_flags(command);
 
@@ -77,7 +67,46 @@ impl Midenc {
 
         let session = Rc::new(options.into_session(input, emitter, None)?);
         let context = Rc::new(Context::new(session));
-        compile::compile(context)
+        match compile::compile(context) {
+            Err(report) => match report.downcast::<compile::CompilerStopped>() {
+                Ok(_) => Ok(None),
+                Err(report) => Err(report),
+            },
+            result => result,
+        }
+    }
+
+    /// Run `midenc` from the command line, logging through `logger` at `filter`.
+    pub fn run<P, A>(
+        cwd: P,
+        args: A,
+        logger: Box<dyn Log>,
+        filter: log::LevelFilter,
+    ) -> Result<(), Report>
+    where
+        P: Into<PathBuf>,
+        A: IntoIterator<Item = OsString>,
+    {
+        Self::run_with_emitter(cwd, args, None, logger, filter)
+    }
+
+    /// The same as [`run`](Self::run), with diagnostics rendered by `emitter`.
+    pub fn run_with_emitter<P, A>(
+        cwd: P,
+        args: A,
+        emitter: Option<Arc<dyn Emitter>>,
+        logger: Box<dyn Log>,
+        filter: log::LevelFilter,
+    ) -> Result<(), Report>
+    where
+        P: Into<PathBuf>,
+        A: IntoIterator<Item = OsString>,
+    {
+        log::set_boxed_logger(logger)
+            .unwrap_or_else(|err| panic!("failed to install logger: {err}"));
+        log::set_max_level(filter);
+
+        Self::exec(cwd, args, emitter).map(|_| ())
     }
 }
 

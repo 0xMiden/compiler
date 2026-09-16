@@ -87,6 +87,14 @@ cargo miden build --release
 This will emit the compiled artifacts to `target/miden/release/foo.masp`, and print the path of
 the compiled Miden package on success.
 
+`cargo miden build` is a thin wrapper: every argument after `build` is passed to
+[`midenc`](midenc.md) unchanged, so `cargo miden build <args>` compiles what `midenc <args>` would
+in the same directory. Run `cargo miden build --help` to see the options — that help is `midenc`'s.
+
+The project is located the same way too: the `Cargo.toml` in the current directory, or the one
+`--manifest-path` names. Logging is controlled by `MIDENC_TRACE`, the same variable `midenc`
+reads.
+
 ## Running a compiled Miden VM program
 
 Use `miden-debug` to execute the compiled package. See [Debugging programs](../guides/debugger.md)

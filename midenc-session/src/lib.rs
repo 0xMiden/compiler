@@ -116,7 +116,8 @@ impl Session {
     /// - the **library target's kind**, which is what [`Options::target_type`] defaults to, and
     ///   which [`add_target_link_libraries`] then consults to decide whether the Miden protocol
     ///   is linked;
-    /// - the **executable targets' names**, from which [`Options::entrypoint`] is defaulted.
+    /// - the **executable targets' names**, from which [`Options::entrypoint`] is defaulted when
+    ///   the target is rooted at Rust — see [`infer_rust_entrypoint`].
     ///
     /// All three come from `ProjectManifest`, which parses the manifest's *AST* and reads
     /// exactly those three things out of it with `miden_project`'s own extractors. What it
@@ -147,9 +148,7 @@ impl Session {
             if options.target_type.is_none() {
                 options.target_type = Some(manifest.library_target_type());
             }
-            if is_cargo_project_input(&input) {
-                infer_cargo_project_entrypoint(manifest, &mut options)?;
-            }
+            infer_rust_entrypoint(manifest, &mut options)?;
         }
 
         let name = options
@@ -592,10 +591,6 @@ impl Session {
     }
 }
 
-fn is_cargo_project_input(input: &InputFile) -> bool {
-    matches!(&input.file, InputType::Real(path) if is_cargo_manifest(path))
-}
-
 /// Whether `path` names a Cargo manifest, by file name alone.
 fn is_cargo_manifest(path: &Path) -> bool {
     path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
@@ -613,6 +608,46 @@ pub(crate) fn project_manifest_path(path: &Path) -> PathBuf {
     } else {
         path.to_path_buf()
     }
+}
+
+/// The extension of `target`'s root, which is what everything dispatches on.
+///
+/// Owned rather than borrowed, because the path is reconstructed from the target's `Uri` and so
+/// lives no longer than this call. It is the one derivation of "what kind of file is this target
+/// rooted at?" in the workspace, and it must stay that way: `midenc-compile` uses it to select a
+/// frontend and to choose the provider key a seed is installed under, and [`Session::new`] uses it
+/// to decide whether an entrypoint is inferred — so a second copy that grew, say, case folding
+/// would make them disagree, and the disagreement would surface as an internal error on a project
+/// that is perfectly valid.
+#[cfg(feature = "std")]
+pub fn target_root_extension(target: &miden_project::Target) -> Option<String> {
+    target
+        .path
+        .inner()
+        .to_path()
+        .as_deref()
+        .and_then(Path::extension)
+        .and_then(|extension| extension.to_str())
+        .map(ToString::to_string)
+}
+
+/// Whether `target` is rooted at a Rust source file.
+///
+/// Only a Rust root gets a defaulted [`Options::entrypoint`]: the names that default is built from
+/// — `<target>::entrypoint`, and the transaction-script `run` — are the ones the Rust frontend
+/// emits. A target rooted at hand-written Miden Assembly names its own.
+#[cfg(feature = "std")]
+fn is_rust_root(target: &miden_project::Target) -> bool {
+    target_root_extension(target).as_deref() == Some("rs")
+}
+
+/// Whether `target` is rooted at a Rust source file.
+///
+/// Without `std` a target root's `Uri` cannot be turned into a path, and no manifest read from a
+/// file is available to ask about in the first place — see [`ProjectManifest::read`].
+#[cfg(not(feature = "std"))]
+fn is_rust_root(_target: &miden_project::Target) -> bool {
+    false
 }
 
 /// What a project's manifest says about the targets it declares.
@@ -766,21 +801,36 @@ impl ProjectManifest {
     }
 }
 
-fn infer_cargo_project_entrypoint(
-    manifest: &ProjectManifest,
-    options: &mut Options,
-) -> Result<(), Report> {
+/// Default [`Options::entrypoint`] from what `manifest` declares, for a Rust-rooted target.
+///
+/// What the compiler is asked to build decides which name: an executable's entrypoint is the
+/// `entrypoint` of the selected executable target's module, and a transaction script's is the
+/// `run` of the interface every transaction script implements. Anything else names no entrypoint.
+///
+/// Nothing is inferred for a target rooted at something other than Rust — see [`is_rust_root`] —
+/// nor for a run that already named an entrypoint. An ambiguous executable selection is an
+/// error: which executable is built has to be settled before a name can be derived from it.
+fn infer_rust_entrypoint(manifest: &ProjectManifest, options: &mut Options) -> Result<(), Report> {
     if options.entrypoint.is_some() {
         return Ok(());
     }
 
     match options.target_type {
         Some(miden_project::TargetType::Executable) => {
+            // Asking the selection first would reject a project with several non-Rust executables
+            // that is perfectly buildable, since nothing would be derived from the selection.
+            if !manifest.executables.iter().any(is_rust_root) {
+                return Ok(());
+            }
             let target = manifest.selected_executable(options.target.as_deref())?;
-            let masm_module_name = target.name.inner().replace('-', "_");
-            options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
+            if is_rust_root(target) {
+                let masm_module_name = target.name.inner().replace('-', "_");
+                options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
+            }
         }
-        Some(miden_project::TargetType::TransactionScript) => {
+        Some(miden_project::TargetType::TransactionScript)
+            if manifest.library.as_ref().is_some_and(is_rust_root) =>
+        {
             options.entrypoint = Some("miden:base/transaction-script@1.0.0::run".to_string());
         }
         _ => (),

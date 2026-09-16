@@ -53,6 +53,7 @@ use midenc_session::{
         Dependency, DependencyVersionScheme, Linkage, Package as ProjectPackage, Project, Target,
         TargetType, VersionReq, VersionRequirement,
     },
+    target_root_extension,
 };
 
 use super::{FrontendRegistration, FrontendRegistry};
@@ -799,25 +800,6 @@ fn select_frontend(
     })
 }
 
-/// The extension of `target`'s root, which is what everything dispatches on.
-///
-/// Owned rather than borrowed, because the path is reconstructed from the target's `Uri` and so
-/// lives no longer than this call. It is the one derivation of "what kind of file is this target
-/// rooted at?" in the crate, and it must stay that way: [`select_frontend`] uses it to choose a
-/// frontend and `seed.rs` uses it to choose the provider key a seed is installed under, so a
-/// second copy that grew, say, case folding would make the two disagree — and the disagreement
-/// would surface as an internal error on a project that is perfectly valid.
-pub(crate) fn target_root_extension(target: &Target) -> Option<String> {
-    target
-        .path
-        .inner()
-        .to_path()
-        .as_deref()
-        .and_then(Path::extension)
-        .and_then(|extension| extension.to_str())
-        .map(ToString::to_string)
-}
-
 /// The key a request-scoped provider for `prepared`'s **selected** frontend is installed under.
 ///
 /// [`SourceProviderRegistry`](miden_assembly::SourceProviderRegistry) is keyed by the
@@ -984,7 +966,10 @@ namespace = "prepare_fixture"
 path = "lib.wat"
 "#;
 
-    /// A project with exactly one executable target, named after the package.
+    /// A project with exactly one executable target, named after the package, rooted at Rust.
+    ///
+    /// Rust rather than `.wat`, because only a Rust root gets an inferred entrypoint, which is
+    /// what the sessions opened on this manifest are about.
     const SINGLE_EXECUTABLE_MANIFEST: &str = r#"
 [package]
 name = "prepare_fixture"
@@ -992,7 +977,18 @@ version = "0.1.0"
 
 [[bin]]
 name = "prepare_fixture"
-path = "main.wat"
+path = "src/main.rs"
+"#;
+
+    /// The same project, rooted at hand-written Miden Assembly instead of Rust.
+    const SINGLE_MASM_EXECUTABLE_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "prepare_fixture"
+path = "src/main.masm"
 "#;
 
     /// A registry that handles `.wasm` and `.wat` target roots, and nothing else.
@@ -1156,6 +1152,44 @@ path = "main.wat"
             Some("prepare_fixture::entrypoint"),
             "the entrypoint is derived from the sole executable target's name, which a `[[bin]]` \
              without one takes from the package"
+        );
+    }
+
+    #[test]
+    fn a_miden_locator_infers_the_entrypoint_of_a_rust_executable() {
+        // The same inference as from a Cargo locator, and no `Cargo.toml` in sight: what decides
+        // it is the target's root, not which of the two files the locator named.
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_miden",
+            "miden-project.toml",
+            SINGLE_EXECUTABLE_MANIFEST,
+        );
+
+        let session = session_for(&manifest);
+
+        assert_eq!(session.options.target_type, Some(TargetType::Executable));
+        assert_eq!(
+            session.options.entrypoint.as_deref(),
+            Some("prepare_fixture::entrypoint"),
+            "a manifest locator infers an entrypoint exactly as a Cargo locator does"
+        );
+    }
+
+    #[test]
+    fn a_masm_rooted_executable_gets_no_inferred_entrypoint() {
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_masm",
+            "miden-project.toml",
+            SINGLE_MASM_EXECUTABLE_MANIFEST,
+        );
+
+        let session = session_for(&manifest);
+
+        assert_eq!(session.options.target_type, Some(TargetType::Executable));
+        assert_eq!(
+            session.options.entrypoint, None,
+            "`<target>::entrypoint` is a name the Rust frontend emits; Miden Assembly names its \
+             own entrypoint"
         );
     }
 

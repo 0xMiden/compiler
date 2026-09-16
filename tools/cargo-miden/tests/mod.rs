@@ -1,3 +1,4 @@
+mod build_forwarding;
 mod masm_dependency;
 mod p2id_cargo_miden_build;
 mod target_dir;
