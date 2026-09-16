@@ -91,10 +91,7 @@ fn a_manifest_path_builds_a_project_from_another_directory() {
     .into_iter())
     .expect("cargo miden new failed")
     .expect("expected NewCommandOutput");
-    let project = match created {
-        cargo_miden::CommandOutput::NewCommandOutput { project_path } => scratch.join(project_path),
-        other => panic!("expected NewCommandOutput, got {other:?}"),
-    };
+    let project = scratch.join(created.unwrap_new_output());
 
     // Deliberately not entering the project: the working directory stays where nothing is
     // buildable.
@@ -116,6 +113,5 @@ fn a_manifest_path_builds_a_project_from_another_directory() {
         output[0]
     );
 
-    env::set_current_dir(env::temp_dir()).unwrap();
     fs::remove_dir_all(scratch).unwrap();
 }
