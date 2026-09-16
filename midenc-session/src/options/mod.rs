@@ -15,7 +15,7 @@ use miden_project::TargetType;
 
 pub use self::printing::IrFilter;
 use crate::{
-    ColorChoice, CompileFlags, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
+    ColorChoice, CompileFlags, FileType, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
     diagnostics::{DiagnosticsConfig, Emitter, Report},
 };
 
@@ -30,9 +30,13 @@ pub struct Options {
     pub entrypoint: Option<String>,
     /// The name of the build profile to use
     pub profile: String,
-    /// Build all packages in the current workspace (used by `cargo miden`)
+    /// Build all packages in the current workspace
+    ///
+    /// Forwarded to the nested `cargo build` a manifest-backed Rust build runs.
     pub workspace: bool,
-    /// Build the specified packages in the current workspace (used by `cargo miden`)
+    /// Build the specified packages in the current workspace
+    ///
+    /// Forwarded to the nested `cargo build` a manifest-backed Rust build runs.
     pub packages: Vec<String>,
     /// The name of the current project target being compiled
     pub target: Option<String>,
@@ -293,6 +297,10 @@ impl Options {
         match (input, self.manifest_path.as_deref()) {
             (Some(input), None) => Ok(input),
             (Some(input), Some(manifest_path)) => {
+                // Checked before the comparison, so that a `--manifest-path` naming something
+                // that is not a manifest is reported as such rather than as a mismatch — or, if
+                // the input happens to name the same file, accepted.
+                manifest_input(manifest_path)?;
                 // Compared by identity when the file exists, else by absolute path, so
                 // `foo/Cargo.toml`, `./foo/miden-project.toml` and a path through `..` or a
                 // symlink agree.
@@ -314,7 +322,7 @@ impl Options {
                     )))
                 }
             }
-            (None, Some(manifest_path)) => InputFile::from_path(manifest_path).into_diagnostic(),
+            (None, Some(manifest_path)) => manifest_input(manifest_path),
             (None, None) => {
                 let miden_manifest = self.current_dir.join("miden-project.toml");
                 let cargo_manifest = self.current_dir.join("Cargo.toml");
@@ -523,6 +531,28 @@ impl clap::builder::TypedValueParser for RemapPathPrefixParser {
     }
 }
 
+/// The compiler input for the project manifest `--manifest-path` names.
+///
+/// A project manifest is a TOML file, and a flag that names anything else is a usage error rather
+/// than an input to compile. *Which* `.toml` names are project manifests is not decided here: that
+/// stays the job of `normalize_locator` in `midenc-compile`, the one place a locator may be
+/// refused.
+#[cfg(feature = "std")]
+fn manifest_input(manifest_path: &crate::Path) -> Result<InputFile, Report> {
+    use crate::diagnostics::IntoDiagnostic;
+
+    let input = InputFile::from_path(manifest_path).into_diagnostic()?;
+    if matches!(input.file_type(), FileType::Toml) {
+        Ok(input)
+    } else {
+        Err(Report::msg(alloc::format!(
+            "--manifest-path '{}' is not a project manifest; expected a miden-project.toml or the \
+             Cargo.toml beside it",
+            manifest_path.display()
+        )))
+    }
+}
+
 /// The identity of the Miden project the locator `path` names, for comparing two locators.
 ///
 /// Canonical when the manifest is on disk, so that a path through `..` or a symlink is
@@ -658,6 +688,13 @@ mod tests {
             detour,
             "the input is kept as given once both sides are seen to be the same manifest"
         );
+    }
+
+    /// A flag naming a compilable input rather than a manifest is a usage error, not an input.
+    #[test]
+    fn a_manifest_path_that_is_not_a_manifest_is_rejected() {
+        let err = options(Some("foo.wat")).resolve_input(None).unwrap_err();
+        assert!(err.to_string().contains("is not a project manifest"), "{err}");
     }
 
     #[test]
