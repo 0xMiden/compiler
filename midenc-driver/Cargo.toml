@@ -19,7 +19,7 @@ doctest = false
 
 [features]
 default = ["std"]
-std = ["alloc", "log/std", "clap/color"]
+std = ["alloc", "log/std", "clap/color", "midenc-session/std", "midenc-compile/std"]
 alloc = ["clap/help", "clap/usage", "clap/error-context", "clap/suggestions"]
 
 [dependencies]
