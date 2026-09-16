@@ -591,13 +591,25 @@ impl Session {
     }
 }
 
-/// Whether `path` names a Cargo manifest, by file name alone, ignoring case.
+/// The file name of a Miden project manifest, the one spelling the compiler produces.
+pub const MIDEN_MANIFEST_FILE_NAME: &str = "miden-project.toml";
+
+/// Whether `path` names a Cargo manifest, by file name alone.
 ///
-/// Case-insensitively, because a filesystem that is case-insensitive will hand a `cargo.toml` to
-/// a caller that asked for `Cargo.toml` — and a predicate that disagreed with the filesystem
-/// would classify that manifest as something else entirely.
+/// Matched case-insensitively, as [`is_miden_manifest`] is: a case-insensitive filesystem will
+/// hand a `cargo.toml` to a caller that asked for `Cargo.toml`, and a predicate that disagreed
+/// with the filesystem would classify that manifest as something else entirely. Every name the
+/// compiler itself *produces* is the constant — `Cargo.toml`, [`MIDEN_MANIFEST_FILE_NAME`].
 pub fn is_cargo_manifest(path: &Path) -> bool {
     path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
+}
+
+/// Whether `path` names a Miden project manifest, by file name alone.
+///
+/// Matched case-insensitively, for the reason given on [`is_cargo_manifest`].
+pub fn is_miden_manifest(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case(MIDEN_MANIFEST_FILE_NAME))
 }
 
 /// The `miden-project.toml` the project locator `path` names.
@@ -611,7 +623,7 @@ pub fn is_cargo_manifest(path: &Path) -> bool {
 /// given on its own is not mapped: it is the locator, and whoever normalizes it maps it then.
 pub fn project_manifest_path(path: &Path) -> PathBuf {
     if is_cargo_manifest(path) {
-        path.with_file_name("miden-project.toml")
+        path.with_file_name(MIDEN_MANIFEST_FILE_NAME)
     } else {
         path.to_path_buf()
     }
@@ -632,7 +644,7 @@ pub fn is_workspace_manifest(path: &Path, source_manager: &dyn SourceManager) ->
         .load_file(path)
         .ok()
         .and_then(|source| miden_project::ast::MidenProject::parse(source).ok())
-        .is_some_and(|manifest| matches!(manifest, miden_project::ast::MidenProject::Workspace(_)))
+        .is_some_and(|manifest| manifest.is_workspace())
 }
 
 /// The extension of `target`'s root, which is what everything dispatches on.
@@ -668,8 +680,8 @@ fn is_rust_root(target: &miden_project::Target) -> bool {
 
 /// Whether `target` is rooted at a Rust source file.
 ///
-/// Without `std` a target root's `Uri` cannot be turned into a path, and no manifest read from a
-/// file is available to ask about in the first place — see [`ProjectManifest::read`].
+/// Always false without `std`: the extension is read through [`target_root_extension`], which is
+/// std-only because a target root's `Uri` cannot be turned into a path without it.
 #[cfg(not(feature = "std"))]
 fn is_rust_root(_target: &miden_project::Target) -> bool {
     false

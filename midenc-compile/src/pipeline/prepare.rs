@@ -693,8 +693,10 @@ pub fn prepare_project(
 /// The mapping itself is [`midenc_session::project_manifest_path`], the one place a `Cargo.toml`
 /// is turned into the `miden-project.toml` beside it — so this and the session that read the
 /// manifest's facts through the same helper cannot resolve to different files. What is this
-/// function's own is the rejection: this is the copy that decides what gets built, and the only
-/// one that may refuse a locator.
+/// function's own is the rejection: this is the copy that decides what gets built, so it is where
+/// a *positional* locator's name is refused and where a Cargo workspace root that selects no
+/// package is rejected. A `--manifest-path` is validated as a flag where it is given, by
+/// `Options::resolve_input`.
 fn normalize_locator(input: &InputFile) -> CompilerResult<PathBuf> {
     let file_name = input.file_name();
     match file_name.file_name() {
@@ -706,7 +708,7 @@ fn normalize_locator(input: &InputFile) -> CompilerResult<PathBuf> {
             reject_unselected_workspace_root(cargo_manifest_path)?;
             Ok(midenc_session::project_manifest_path(cargo_manifest_path))
         }
-        Some(name) if name.eq_ignore_ascii_case("miden-project.toml") => {
+        Some(_) if midenc_session::is_miden_manifest(file_name.as_path()) => {
             Ok(file_name.as_path().to_path_buf())
         }
         _ => Err(Report::msg(
@@ -1027,6 +1029,25 @@ name = "prepare_fixture"
 path = "main.wat"
 "#;
 
+    /// A project with two executables, one rooted at Rust and one at hand-written Miden Assembly.
+    ///
+    /// Mixed on purpose: a project with a Rust executable in it is one whose entrypoint
+    /// inference is reached, and which of its two executables is selected then decides whether a
+    /// name is derived — see [`the_entrypoint_follows_the_selected_executables_root`].
+    const MIXED_EXECUTABLES_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "prepare_fixture"
+path = "src/main.rs"
+
+[[bin]]
+name = "helper"
+path = "helper.masm"
+"#;
+
     /// A transaction script whose library target is rooted at Rust.
     ///
     /// A transaction script's entrypoint is a fixed name, not one derived from the target — so
@@ -1297,6 +1318,41 @@ namespace = "miden:base/transaction-script@1.0.0"
             session.options.entrypoint, None,
             "no root but a Rust one gets `<bin>::entrypoint`; a hand-written module names its own"
         );
+    }
+
+    /// The root that decides the entrypoint is the *selected* executable's, not just any one.
+    ///
+    /// A mixed project is what reaches the per-target check: a project with no Rust executable
+    /// at all is let through before a target is ever selected, so only a project like this one
+    /// gets as far as asking what the target the session named is rooted at.
+    #[test]
+    fn the_entrypoint_follows_the_selected_executables_root() {
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_mixed",
+            "miden-project.toml",
+            MIXED_EXECUTABLES_MANIFEST,
+        );
+
+        for (target, expected) in
+            [("helper", None), ("prepare_fixture", Some("prepare_fixture::entrypoint"))]
+        {
+            let mut options = Box::new(Options::default());
+            options.target = Some(target.to_string());
+
+            let session = Session::new(
+                input(&manifest),
+                options,
+                None,
+                Arc::new(DefaultSourceManager::default()),
+            )
+            .expect("a Miden manifest with executable targets should open a compiler session");
+
+            assert_eq!(
+                session.options.entrypoint.as_deref(),
+                expected,
+                "`--target {target}` selects the executable whose root is asked about"
+            );
+        }
     }
 
     #[test]

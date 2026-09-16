@@ -15,7 +15,7 @@ use miden_project::TargetType;
 
 pub use self::printing::IrFilter;
 use crate::{
-    ColorChoice, CompileFlags, FileType, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
+    ColorChoice, CompileFlags, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
     diagnostics::{DiagnosticsConfig, Emitter, Report},
 };
 
@@ -32,11 +32,13 @@ pub struct Options {
     pub profile: String,
     /// Build all packages in the current workspace
     ///
-    /// Forwarded to the nested `cargo build` a manifest-backed Rust build runs.
+    /// A manifest-backed Rust build selects on this — it builds every member of the workspace
+    /// rather than one package — and forwards it to its nested `cargo build`.
     pub workspace: bool,
     /// Build the specified packages in the current workspace
     ///
-    /// Forwarded to the nested `cargo build` a manifest-backed Rust build runs.
+    /// A manifest-backed Rust build selects on this — these are the workspace members it builds
+    /// — and forwards them to its nested `cargo build`.
     pub packages: Vec<String>,
     /// The name of the current project target being compiled
     pub target: Option<String>,
@@ -287,6 +289,9 @@ impl Options {
     /// beside it — and the input is kept as given. Anything else is rejected rather than silently
     /// building one of the two.
     ///
+    /// Whenever `--manifest-path` is given it is validated first, as a flag: it must name an
+    /// existing manifest file, whether or not an input was given alongside it.
+    ///
     /// A relative `--manifest-path` is relative to the directory the compiler is run from, exactly
     /// like a relative input file, and `--working-dir` does not move it. The default is the one
     /// thing here that *is* looked up in the working directory, which `--working-dir` sets.
@@ -300,7 +305,7 @@ impl Options {
                 // Checked before the comparison, so that a `--manifest-path` naming something
                 // that is not a manifest is reported as such rather than as a mismatch — or, if
                 // the input happens to name the same file, accepted.
-                manifest_input(manifest_path)?;
+                validate_manifest_path(manifest_path)?;
                 // Compared by identity when the file exists, else by absolute path, so
                 // `foo/Cargo.toml`, `./foo/miden-project.toml` and a path through `..` or a
                 // symlink agree.
@@ -322,9 +327,12 @@ impl Options {
                     )))
                 }
             }
-            (None, Some(manifest_path)) => manifest_input(manifest_path),
+            (None, Some(manifest_path)) => {
+                validate_manifest_path(manifest_path)?;
+                InputFile::from_path(manifest_path).into_diagnostic()
+            }
             (None, None) => {
-                let miden_manifest = self.current_dir.join("miden-project.toml");
+                let miden_manifest = self.current_dir.join(crate::MIDEN_MANIFEST_FILE_NAME);
                 let cargo_manifest = self.current_dir.join("Cargo.toml");
                 // The Miden manifest wins, and is also what a directory holding neither is
                 // reported as missing — the project is named by its own manifest, not by Cargo's.
@@ -531,26 +539,31 @@ impl clap::builder::TypedValueParser for RemapPathPrefixParser {
     }
 }
 
-/// The compiler input for the project manifest `--manifest-path` names.
+/// Check that `manifest_path`, as `--manifest-path` gave it, names a project manifest on disk.
 ///
-/// A project manifest is a TOML file, and a flag that names anything else is a usage error rather
-/// than an input to compile. *Which* `.toml` names are project manifests is not decided here: that
-/// stays the job of `normalize_locator` in `midenc-compile`, the one place a locator may be
-/// refused.
+/// The flag is validated here, on its own terms: it is not an input to compile but a way of
+/// naming the project, so nothing downstream would report it as a flag. A *positional* input
+/// keeps the checks its parser makes, and `normalize_locator` in `midenc-compile` is where a
+/// positional locator's name is refused.
+///
+/// An existing file named `Cargo.toml` or `miden-project.toml` is accepted; everything else — a
+/// missing path, a directory, a file by any other name — is a usage error.
 #[cfg(feature = "std")]
-fn manifest_input(manifest_path: &crate::Path) -> Result<InputFile, Report> {
-    use crate::diagnostics::IntoDiagnostic;
-
-    let input = InputFile::from_path(manifest_path).into_diagnostic()?;
-    if matches!(input.file_type(), FileType::Toml) {
-        Ok(input)
-    } else {
-        Err(Report::msg(alloc::format!(
+fn validate_manifest_path(manifest_path: &crate::Path) -> Result<(), Report> {
+    if !manifest_path.is_file() {
+        return Err(Report::msg(alloc::format!(
+            "--manifest-path '{}' does not exist or is not a file",
+            manifest_path.display()
+        )));
+    }
+    if !(crate::is_cargo_manifest(manifest_path) || crate::is_miden_manifest(manifest_path)) {
+        return Err(Report::msg(alloc::format!(
             "--manifest-path '{}' is not a project manifest; expected a miden-project.toml or the \
              Cargo.toml beside it",
             manifest_path.display()
-        )))
+        )));
     }
+    Ok(())
 }
 
 /// The identity of the Miden project the locator `path` names, for comparing two locators.
@@ -585,15 +598,15 @@ mod tests {
     use super::*;
 
     /// Options for a compiler whose working directory is `/work`, with the given `--manifest-path`.
-    fn options(manifest_path: Option<&str>) -> Options {
+    fn options(manifest_path: Option<PathBuf>) -> Options {
         Options {
-            manifest_path: manifest_path.map(PathBuf::from),
+            manifest_path,
             current_dir: PathBuf::from("/work"),
             ..Options::default()
         }
     }
 
-    fn input(path: &str) -> InputFile {
+    fn input(path: impl AsRef<std::path::Path>) -> InputFile {
         InputFile::from_path(path).unwrap()
     }
 
@@ -601,13 +614,24 @@ mod tests {
         options.resolve_input(input).unwrap().as_path().unwrap().to_path_buf()
     }
 
-    /// The manifest is taken as given, relative to where the compiler runs — not to `/work`.
+    /// Create a project manifest at `relative` under `dir`, and hand back the path to it.
+    ///
+    /// The contents are a minimal package manifest: `--manifest-path` is validated on the file's
+    /// name and its existence, and nothing on this path parses it.
+    fn manifest_at(dir: &std::path::Path, relative: &str) -> PathBuf {
+        let path = dir.join(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "[package]\nname = \"contract\"\n").unwrap();
+        path
+    }
+
+    /// The manifest is taken as given: the working directory, `/work`, plays no part in it.
     #[test]
     fn the_manifest_path_names_the_project_when_no_input_is_given() {
-        assert_eq!(
-            resolved_path(&options(Some("../contract/Cargo.toml")), None),
-            PathBuf::from("../contract/Cargo.toml")
-        );
+        let dir = tempfile::TempDir::new().unwrap();
+        let manifest = manifest_at(dir.path(), "contract/Cargo.toml");
+
+        assert_eq!(resolved_path(&options(Some(manifest.clone())), None), manifest);
     }
 
     /// Options for a compiler run from `dir`, with no `--manifest-path`.
@@ -661,10 +685,16 @@ mod tests {
     /// A `Cargo.toml` names the `miden-project.toml` beside it, and `.` is normalized away.
     #[test]
     fn an_input_and_a_manifest_path_naming_the_same_project_keep_the_input() {
-        let options = options(Some("./contract/miden-project.toml"));
+        let dir = tempfile::TempDir::new().unwrap();
+        let contract = manifest_at(dir.path(), "contract/miden-project.toml")
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let options = options(Some(contract.join(".").join("miden-project.toml")));
+
         assert_eq!(
-            resolved_path(&options, Some(input("contract/Cargo.toml"))),
-            PathBuf::from("contract/Cargo.toml")
+            resolved_path(&options, Some(input(contract.join("Cargo.toml")))),
+            contract.join("Cargo.toml")
         );
     }
 
@@ -690,17 +720,46 @@ mod tests {
         );
     }
 
-    /// A flag naming a compilable input rather than a manifest is a usage error, not an input.
+    /// A flag naming anything but an existing project manifest is a usage error, not an input.
     #[test]
     fn a_manifest_path_that_is_not_a_manifest_is_rejected() {
-        let err = options(Some("foo.wat")).resolve_input(None).unwrap_err();
-        assert!(err.to_string().contains("is not a project manifest"), "{err}");
+        let dir = tempfile::TempDir::new().unwrap();
+        let directory = dir.path().join("contract");
+        std::fs::create_dir(&directory).unwrap();
+        for name in ["toolchain", "rust-toolchain.toml", "foo.wat"] {
+            std::fs::write(dir.path().join(name), "").unwrap();
+        }
+
+        let cases = [
+            (directory, "does not exist or is not a file"),
+            (dir.path().join("nowhere").join("Cargo.toml"), "does not exist or is not a file"),
+            // A file that exists is refused on its name alone: neither an extension nor being
+            // TOML makes a file a project manifest, and only the two manifest names name one.
+            (dir.path().join("toolchain"), "is not a project manifest"),
+            (dir.path().join("rust-toolchain.toml"), "is not a project manifest"),
+            (dir.path().join("foo.wat"), "is not a project manifest"),
+        ];
+
+        for (manifest_path, expected) in cases {
+            let err = options(Some(manifest_path.clone())).resolve_input(None).unwrap_err();
+            assert!(
+                err.to_string().contains(expected),
+                "expected '{expected}' for '{}', got: {err}",
+                manifest_path.display()
+            );
+        }
     }
 
     #[test]
     fn an_input_and_a_manifest_path_naming_different_files_are_rejected() {
-        for input_path in ["other/Cargo.toml", "contract/target/foo.wasm"] {
-            let err = options(Some("contract/Cargo.toml"))
+        let dir = tempfile::TempDir::new().unwrap();
+        let manifest = manifest_at(dir.path(), "contract/Cargo.toml");
+
+        for input_path in [
+            dir.path().join("other").join("Cargo.toml"),
+            dir.path().join("contract").join("target").join("foo.wasm"),
+        ] {
+            let err = options(Some(manifest.clone()))
                 .resolve_input(Some(input(input_path)))
                 .unwrap_err();
             assert!(err.to_string().contains("name different files"), "{err}");

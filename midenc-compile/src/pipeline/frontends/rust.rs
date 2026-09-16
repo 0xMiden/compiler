@@ -1303,7 +1303,7 @@ fn add_workspace_build_inputs(
 ) {
     use midenc_hir::diagnostics::SourceManagerExt;
 
-    let manifest_path = workspace_root.join("miden-project.toml");
+    let manifest_path = workspace_root.join(midenc_session::MIDEN_MANIFEST_FILE_NAME);
     inputs.add_existing_file(manifest_path.clone());
     let Ok(source) = source_manager.load_file(&manifest_path) else {
         inputs.mark_opaque("workspace-metadata-unavailable");
@@ -1846,9 +1846,7 @@ pub(crate) mod manifest {
             // if `--package` was given, as otherwise there is no way for us to select a package
             // to build
             let source = source_manager.load_file(&project_manifest_path).into_diagnostic()?;
-            if let miden_project::ast::MidenProject::Workspace(_) =
-                miden_project::ast::MidenProject::parse(source.clone())?
-            {
+            if miden_project::ast::MidenProject::parse(source.clone())?.is_workspace() {
                 if compiler_opts.packages.is_empty() {
                     return Err(Report::msg(
                         "a workspace manifest was provided, but --workspace was not specified",
@@ -3449,6 +3447,12 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
     const PACKAGE_MANIFEST: &str = "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\n";
 
     /// A package declaring two executables, neither of which a build can pick unaided.
+    ///
+    /// Both roots are `.rs` files, and load-bearingly so: a session only selects an executable
+    /// for a project that has a Rust one in it, so with any other root
+    /// [`an_ambiguous_executable_is_refused_by_both_the_session_and_the_manifest_build`] would
+    /// be left with only the manifest build's half, which refuses the ambiguity whatever the
+    /// roots are.
     const TWO_EXECUTABLES_MANIFEST: &str = r#"
 [package]
 name = "fixture"
