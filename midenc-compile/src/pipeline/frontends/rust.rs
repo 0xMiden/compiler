@@ -1826,40 +1826,12 @@ pub(crate) mod manifest {
         compiler_opts.manifest_path = Some(manifest_path.to_path_buf());
         let cargo_opts = CargoOptions::from_compiler(&compiler_opts)?;
 
-        let cwd = compiler_opts.current_dir.clone();
-        let (project_dir, project_manifest_path) = match compiler_opts.manifest_path.as_mut() {
-            Some(manifest_path)
-                if manifest_path
-                    .file_stem()
-                    .is_some_and(|stem| stem.eq_ignore_ascii_case("miden-project")) =>
-            {
-                let manifest_path = manifest_path.clone();
-                let cwd = manifest_path.parent().map(|dir| dir.to_path_buf()).unwrap_or(cwd);
-                (cwd, manifest_path)
-            }
-            Some(cargo_manifest_path) => {
-                let Some(project_dir) = cargo_manifest_path.parent() else {
-                    return Err(Report::msg(
-                        "unable to locate project manifest: --manifest-path specifies a path with \
-                         no parent",
-                    ));
-                };
-                let manifest_path = project_dir.join("miden-project.toml");
-                let project_dir = project_dir.to_path_buf();
-                *cargo_manifest_path = manifest_path.clone();
-                (project_dir, manifest_path)
-            }
-            None => {
-                let Ok(cwd) = std::env::current_dir() else {
-                    return Err(Report::msg(
-                        "unable to locate project manifest: current working directory is \
-                         unavailable",
-                    ));
-                };
-                let manifest_path = cwd.join("miden-project.toml");
-                compiler_opts.manifest_path = Some(manifest_path.clone());
-                (cwd, manifest_path)
-            }
+        let project_manifest_path = midenc_session::project_manifest_path(manifest_path);
+        let Some(project_dir) = project_manifest_path.parent().map(Path::to_path_buf) else {
+            return Err(Report::msg(
+                "unable to locate project manifest: --manifest-path specifies a path with no \
+                 parent",
+            ));
         };
 
         let source_manager =
@@ -3587,8 +3559,8 @@ path = "lib.rs"
     #[test]
     fn an_ambiguous_executable_is_refused_by_both_the_session_and_the_manifest_build() {
         let dir = manifest_fixture("rust_manifest_ambiguous_target", TWO_EXECUTABLES_MANIFEST);
-        // The session's copy is reached only for a `Cargo.toml` input, which resolves to the
-        // manifest beside it — so both sides are asked about the very same project.
+        // The session is opened on the `Cargo.toml` beside the manifest, so the locator mapping
+        // is exercised as well and both sides are asked about the very same project.
         std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"fixture\"\n")
             .expect("should write the Cargo manifest");
 

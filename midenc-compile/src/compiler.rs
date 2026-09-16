@@ -352,7 +352,7 @@ pub struct Compiler {
         )
     )]
     pub profile: String,
-    /// Build in release mode (used by cargo miden build)
+    /// Build in release mode (the `release` profile)
     #[cfg_attr(
         feature = "std",
         arg(
@@ -387,9 +387,9 @@ pub struct Compiler {
     ///
     /// Either a `miden-project.toml`, or the `Cargo.toml` beside it. This names the project when
     /// no input file is given; given both, they must name the same file. Absent both, the project
-    /// is the `Cargo.toml` in the working directory when there is one, otherwise its
-    /// `miden-project.toml`. A relative path is resolved against the directory the compiler is
-    /// run from, not against `--working-dir`.
+    /// is the `miden-project.toml` in the working directory, or the `Cargo.toml` there when no
+    /// Miden manifest exists beside it. A relative path is resolved against the directory the
+    /// compiler is run from, not against `--working-dir`.
     #[cfg_attr(feature = "std", arg(long, value_name = "PATH",))]
     pub manifest_path: Option<PathBuf>,
     /// Specify path prefixes to remap for any file paths encoded in debug info
@@ -643,8 +643,8 @@ impl Compiler {
     ///
     /// Returns the parsed options or an error if parsing failed.
     ///
-    /// This is used by `cargo miden build` to parse all arguments into `Compiler` options before
-    /// selectively forwarding them to `cargo build` and `midenc`.
+    /// Used by embedders and tests that build a session from an argument vector without going
+    /// through the `midenc` command line.
     #[cfg(feature = "std")]
     pub fn try_parse_from<I, T>(cwd: PathBuf, iter: I) -> Result<Box<Options>, clap::Error>
     where

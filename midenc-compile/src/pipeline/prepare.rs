@@ -50,8 +50,8 @@ use midenc_session::{
     DebugInfo, FileType, InputFile, InputType, Options, Session,
     diagnostics::{Report, SourceManager, Uri},
     miden_project::{
-        Dependency, DependencyVersionScheme, Linkage, Package as ProjectPackage, Project, Target,
-        TargetType, VersionReq, VersionRequirement,
+        self, Dependency, DependencyVersionScheme, Linkage, Package as ProjectPackage, Project,
+        Target, TargetType, VersionReq, VersionRequirement,
     },
     target_root_extension,
 };
@@ -641,7 +641,18 @@ pub fn prepare_project(
     // build compiled. `Session::new` now reads the manifest's *AST* for the three facts it needs
     // before a session exists (its own documentation lists them) and builds no project at all.
     let project = Project::load(&manifest_path, source_manager).map_err(|err| {
-        err.wrap_err(format!("failed to load Miden project from {}", manifest_path.display()))
+        // A workspace root is a manifest the loader cannot load *because* it selects no package,
+        // so on the error path it gets the diagnostic that belongs to it rather than the generic
+        // "failed to load" wrapper.
+        if is_miden_workspace_root(&manifest_path, source_manager) {
+            Report::msg(format!(
+                "'{}' is a Miden workspace root, which selects no package to build; run `miden \
+                 build` from a workspace member or select one with --manifest-path",
+                manifest_path.display()
+            ))
+        } else {
+            err.wrap_err(format!("failed to load Miden project from {}", manifest_path.display()))
+        }
     })?;
     let package = project.package();
 
@@ -679,18 +690,18 @@ pub fn prepare_project(
 
 /// Resolve the project locator `input` names to the `miden-project.toml` it stands for.
 ///
-/// A `Cargo.toml` locates the `miden-project.toml` beside it, which is where `cargo miden`
-/// writes the Miden manifest for a crate. This is the same normalization `Session::new` performs
-/// — through `ProjectManifest::read`, to reach the manifest facts a session needs — and the two
-/// must agree: they resolve to the same file. This is the copy that decides what gets built, and
-/// the only one that may reject a locator.
+/// The mapping itself is [`midenc_session::project_manifest_path`], the one place a `Cargo.toml`
+/// is turned into the `miden-project.toml` beside it — so this and the session that read the
+/// manifest's facts through the same helper cannot resolve to different files. What is this
+/// function's own is the rejection: this is the copy that decides what gets built, and the only
+/// one that may refuse a locator.
 fn normalize_locator(input: &InputFile) -> CompilerResult<PathBuf> {
     let file_name = input.file_name();
     match file_name.file_name() {
         Some(name) if name.eq_ignore_ascii_case("Cargo.toml") => {
             let cargo_manifest_path = file_name.as_path();
             reject_unselected_workspace_root(cargo_manifest_path)?;
-            Ok(cargo_manifest_path.with_file_name("miden-project.toml"))
+            Ok(midenc_session::project_manifest_path(cargo_manifest_path))
         }
         Some(name) if name.eq_ignore_ascii_case("miden-project.toml") => {
             Ok(file_name.as_path().to_path_buf())
@@ -729,6 +740,22 @@ fn reject_unselected_workspace_root(manifest_path: &Path) -> CompilerResult<()> 
     } else {
         Ok(())
     }
+}
+
+/// Whether the Miden manifest at `manifest_path` is a workspace root rather than a package.
+///
+/// Answered from the manifest's AST, which is all the evidence there is: a workspace root is
+/// precisely a manifest [`Project::load`] refuses to load, so this runs on that failure's path.
+/// A manifest that cannot be read or parsed is not a workspace root — its own diagnostic is the
+/// one worth reporting.
+fn is_miden_workspace_root(manifest_path: &Path, source_manager: &dyn SourceManager) -> bool {
+    use midenc_hir::diagnostics::SourceManagerExt;
+
+    source_manager
+        .load_file(manifest_path)
+        .ok()
+        .and_then(|source| miden_project::ast::MidenProject::parse(source).ok())
+        .is_some_and(|manifest| matches!(manifest, miden_project::ast::MidenProject::Workspace(_)))
 }
 
 /// Select the frontend that compiles `target`'s root for a **standalone** request.
@@ -910,6 +937,12 @@ crate-type = ["cdylib"]
 members = ["member"]
 "#;
 
+    /// A Miden workspace root: the same shape, in the Miden manifest the loader is handed.
+    const MIDEN_WORKSPACE_ROOT: &str = r#"
+[workspace]
+members = ["a"]
+"#;
+
     /// The profile a project defines for itself, over and above the two every package is
     /// seeded with.
     const CUSTOM_PROFILE: &str = "checked";
@@ -989,6 +1022,33 @@ version = "0.1.0"
 [[bin]]
 name = "prepare_fixture"
 path = "src/main.masm"
+"#;
+
+    /// A transaction script whose library target is rooted at Rust.
+    ///
+    /// A transaction script's entrypoint is a fixed name, not one derived from the target — so
+    /// this and [`SINGLE_EXECUTABLE_MANIFEST`] pin the two halves of the inference.
+    const SINGLE_TX_SCRIPT_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+path = "src/lib.rs"
+namespace = "miden:base/transaction-script@1.0.0"
+"#;
+
+    /// The same transaction script, rooted at hand-written Miden Assembly instead of Rust.
+    const SINGLE_MASM_TX_SCRIPT_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+path = "src/lib.masm"
+namespace = "miden:base/transaction-script@1.0.0"
 "#;
 
     /// A registry that handles `.wasm` and `.wat` target roots, and nothing else.
@@ -1106,6 +1166,32 @@ path = "src/main.masm"
         );
     }
 
+    #[test]
+    fn a_miden_workspace_root_is_rejected_with_a_selection_hint() {
+        // A Miden workspace root reaches `Project::load` — `normalize_locator` passes it straight
+        // through — so the only place it can be recognized is that load's failure.
+        let manifest = fixture_source(
+            "prepare_miden_workspace_root",
+            "miden-project.toml",
+            MIDEN_WORKSPACE_ROOT,
+        );
+
+        let err = prepare_project(
+            &input(&manifest),
+            &Options::default(),
+            &registry(),
+            &DefaultSourceManager::default(),
+        )
+        .expect_err("a Miden workspace root selects no package to build");
+
+        let rendered = format!("{err}");
+        assert!(
+            rendered.contains("workspace root") && rendered.contains("--manifest-path"),
+            "a workspace root must be reported as one, and say how to select a member, rather \
+             than as a project that failed to load: {rendered}"
+        );
+    }
+
     /// Open a session for the project locator at `path`, as the driver does.
     fn session_for(path: &Path) -> Session {
         Session::new(input(path), Box::default(), None, Arc::new(DefaultSourceManager::default()))
@@ -1190,6 +1276,43 @@ path = "src/main.masm"
             session.options.entrypoint, None,
             "`<target>::entrypoint` is a name the Rust frontend emits; Miden Assembly names its \
              own entrypoint"
+        );
+    }
+
+    #[test]
+    fn a_rust_rooted_transaction_script_infers_the_fixed_entrypoint() {
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_tx_script",
+            "miden-project.toml",
+            SINGLE_TX_SCRIPT_MANIFEST,
+        );
+
+        let session = session_for(&manifest);
+
+        assert_eq!(session.options.target_type, Some(TargetType::TransactionScript));
+        assert_eq!(
+            session.options.entrypoint.as_deref(),
+            Some("miden:base/transaction-script@1.0.0::run"),
+            "a transaction script's entrypoint is the protocol's fixed name, not one derived from \
+             the target"
+        );
+    }
+
+    #[test]
+    fn a_masm_rooted_transaction_script_gets_no_inferred_entrypoint() {
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_tx_script_masm",
+            "miden-project.toml",
+            SINGLE_MASM_TX_SCRIPT_MANIFEST,
+        );
+
+        let session = session_for(&manifest);
+
+        assert_eq!(session.options.target_type, Some(TargetType::TransactionScript));
+        assert_eq!(
+            session.options.entrypoint, None,
+            "the fixed name is what the Rust frontend emits; Miden Assembly names its own \
+             entrypoint"
         );
     }
 

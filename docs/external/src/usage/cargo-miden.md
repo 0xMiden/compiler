@@ -91,9 +91,9 @@ the compiled Miden package on success.
 [`midenc`](midenc.md) unchanged, so `cargo miden build <args>` compiles what `midenc <args>` would
 in the same directory. Run `cargo miden build --help` to see the options — that help is `midenc`'s.
 
-The project is located the same way too: the `Cargo.toml` in the current directory, or the one
-`--manifest-path` names. Logging is controlled by `MIDENC_TRACE`, the same variable `midenc`
-reads.
+The project is located the same way too: the `miden-project.toml` in the current directory, the
+`Cargo.toml` beside it, or the one `--manifest-path` names. Logging is controlled by
+`MIDENC_TRACE`, the same variable `midenc` reads.
 
 ## Running a compiled Miden VM program
 

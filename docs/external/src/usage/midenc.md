@@ -41,10 +41,10 @@ midenc --help
 Usage: midenc [OPTIONS] [FILE]
 
 Arguments:
-  [INPUTS]...
-          Path(s) to the source file(s) to compile.
+  [FILE]
+          The input file to compile
 
-          You may also use `-` as a file name to read a file from stdin.
+          You may specify `-` to read from stdin, otherwise you must provide a path
 
 Options:
   -p, --package <SPEC>
@@ -55,9 +55,9 @@ Options:
 
           Either a `miden-project.toml`, or the `Cargo.toml` beside it. This names the project when
           no input file is given; given both, they must name the same file. Absent both, the project
-          is the `Cargo.toml` in the working directory when there is one, otherwise its
-          `miden-project.toml`. A relative path is resolved against the directory the compiler is
-          run from, not against `--working-dir`.
+          is the `miden-project.toml` in the working directory, or the `Cargo.toml` there when no
+          Miden manifest exists beside it. A relative path is resolved against the directory the
+          compiler is run from, not against `--working-dir`.
 
   -h, --help
           Print help (see a summary with '-h')

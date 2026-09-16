@@ -117,7 +117,7 @@ impl Session {
     ///   which [`add_target_link_libraries`] then consults to decide whether the Miden protocol
     ///   is linked;
     /// - the **executable targets' names**, from which [`Options::entrypoint`] is defaulted when
-    ///   the target is rooted at Rust — see [`infer_rust_entrypoint`].
+    ///   the target is rooted at Rust — see `infer_rust_entrypoint`.
     ///
     /// All three come from `ProjectManifest`, which parses the manifest's *AST* and reads
     /// exactly those three things out of it with `miden_project`'s own extractors. What it
@@ -599,10 +599,11 @@ fn is_cargo_manifest(path: &Path) -> bool {
 /// The `miden-project.toml` the project locator `path` names.
 ///
 /// A `Cargo.toml` locates the `miden-project.toml` beside it, which is where `cargo miden` writes
-/// the Miden manifest for a crate; any other path is taken as given. This is the same
-/// normalization `normalize_locator` performs in `midenc-compile`, and the two must agree: that
-/// is the copy that decides what gets built, and the only one that may reject a locator.
-pub(crate) fn project_manifest_path(path: &Path) -> PathBuf {
+/// the Miden manifest for a crate; any other path is taken as given. This is the one mapping from
+/// a Cargo manifest to the Miden manifest beside it: [`Options::resolve_input`],
+/// `ProjectManifest::read`, `normalize_locator` in `midenc-compile` and the nested cargo build all
+/// go through it, so they cannot disagree about which file a locator names.
+pub fn project_manifest_path(path: &Path) -> PathBuf {
     if is_cargo_manifest(path) {
         path.with_file_name("miden-project.toml")
     } else {

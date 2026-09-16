@@ -277,14 +277,15 @@ impl Options {
     /// Resolve the input a compilation request names.
     ///
     /// `input` is the input file given on the command line, if any. Without one, `--manifest-path`
-    /// names the project to build. Absent both, the project is the `Cargo.toml` in the working
-    /// directory when there is one, otherwise its `miden-project.toml`. Given both, they must name
-    /// the same file — a `Cargo.toml` counting as the `miden-project.toml` beside it — and the
-    /// input is kept as given. Anything else is rejected rather than silently building one of the
-    /// two.
+    /// names the project to build. Absent both, the project is the `miden-project.toml` in the
+    /// working directory, or the `Cargo.toml` there when no Miden manifest exists beside it. Given
+    /// both, they must name the same file — a `Cargo.toml` counting as the `miden-project.toml`
+    /// beside it — and the input is kept as given. Anything else is rejected rather than silently
+    /// building one of the two.
     ///
     /// A relative `--manifest-path` is relative to the directory the compiler is run from, exactly
-    /// like a relative input file; `--working-dir` moves neither.
+    /// like a relative input file, and `--working-dir` does not move it. The default is the one
+    /// thing here that *is* looked up in the working directory, which `--working-dir` sets.
     #[cfg(feature = "std")]
     pub fn resolve_input(&self, input: Option<InputFile>) -> Result<InputFile, Report> {
         use crate::diagnostics::IntoDiagnostic;
@@ -292,13 +293,16 @@ impl Options {
         match (input, self.manifest_path.as_deref()) {
             (Some(input), None) => Ok(input),
             (Some(input), Some(manifest_path)) => {
-                // Compared absolute, so that `foo/Cargo.toml` and `./foo/miden-project.toml` agree.
-                let absolute = |path: &crate::Path| {
-                    std::path::absolute(crate::project_manifest_path(path)).ok()
+                // Compared by identity when the file exists, else by absolute path, so
+                // `foo/Cargo.toml`, `./foo/miden-project.toml` and a path through `..` or a
+                // symlink agree.
+                let names_same_file = match input.as_path() {
+                    Some(input_path) => {
+                        project_identity(input_path)? == project_identity(manifest_path)?
+                    }
+                    // Bytes on standard input name no file, so they cannot name this one.
+                    None => false,
                 };
-                let names_same_file = input.as_path().is_some_and(|input| {
-                    matches!((absolute(input), absolute(manifest_path)), (Some(a), Some(b)) if a == b)
-                });
                 if names_same_file {
                     Ok(input)
                 } else {
@@ -312,11 +316,14 @@ impl Options {
             }
             (None, Some(manifest_path)) => InputFile::from_path(manifest_path).into_diagnostic(),
             (None, None) => {
+                let miden_manifest = self.current_dir.join("miden-project.toml");
                 let cargo_manifest = self.current_dir.join("Cargo.toml");
-                let locator = if cargo_manifest.is_file() {
-                    cargo_manifest
+                // The Miden manifest wins, and is also what a directory holding neither is
+                // reported as missing — the project is named by its own manifest, not by Cargo's.
+                let locator = if miden_manifest.is_file() || !cargo_manifest.is_file() {
+                    miden_manifest
                 } else {
-                    self.current_dir.join("miden-project.toml")
+                    cargo_manifest
                 };
                 InputFile::from_path(locator).into_diagnostic()
             }
@@ -516,6 +523,23 @@ impl clap::builder::TypedValueParser for RemapPathPrefixParser {
     }
 }
 
+/// The identity of the Miden project the locator `path` names, for comparing two locators.
+///
+/// Canonical when the manifest is on disk, so that a path through `..` or a symlink is
+/// recognized as the file it reaches; absolute otherwise, which is as far as two paths to a file
+/// that does not exist can be compared. Both are exact: an unrepresentable path is an error, not
+/// a silent mismatch.
+#[cfg(feature = "std")]
+fn project_identity(path: &crate::Path) -> Result<PathBuf, Report> {
+    use crate::diagnostics::IntoDiagnostic;
+
+    let manifest_path = crate::project_manifest_path(path);
+    match std::fs::canonicalize(&manifest_path) {
+        Ok(canonical) => Ok(canonical),
+        Err(_) => std::path::absolute(&manifest_path).into_diagnostic(),
+    }
+}
+
 #[cfg(feature = "std")]
 fn current_dir() -> PathBuf {
     std::env::current_dir().expect("could not get working directory")
@@ -565,15 +589,29 @@ mod tests {
     }
 
     #[test]
-    fn without_either_a_cargo_project_in_the_working_directory_is_the_project() {
+    fn without_either_the_miden_manifest_in_the_working_directory_wins() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"work\"\n").unwrap();
+        std::fs::write(dir.path().join("miden-project.toml"), "[package]\nname = \"work\"\n")
+            .unwrap();
+
+        assert_eq!(
+            resolved_path(&options_in(dir.path()), None),
+            dir.path().join("miden-project.toml")
+        );
+    }
+
+    #[test]
+    fn without_either_a_lone_cargo_manifest_is_the_project() {
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"work\"\n").unwrap();
 
         assert_eq!(resolved_path(&options_in(dir.path()), None), dir.path().join("Cargo.toml"));
     }
 
+    /// A directory with no manifest at all is reported as missing its *Miden* manifest.
     #[test]
-    fn without_either_and_without_a_cargo_manifest_the_miden_manifest_is_the_project() {
+    fn without_either_and_without_any_manifest_the_miden_manifest_is_the_project() {
         let dir = tempfile::TempDir::new().unwrap();
 
         assert_eq!(
@@ -597,6 +635,28 @@ mod tests {
         assert_eq!(
             resolved_path(&options, Some(input("contract/Cargo.toml"))),
             PathBuf::from("contract/Cargo.toml")
+        );
+    }
+
+    /// A manifest that exists is compared by identity, so a detour through `..` is not a mismatch.
+    #[test]
+    fn an_input_reaching_the_manifest_through_a_detour_keeps_the_input() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let contract = dir.path().join("contract");
+        std::fs::create_dir(&contract).unwrap();
+        std::fs::write(contract.join("miden-project.toml"), "[package]\nname = \"c\"\n").unwrap();
+
+        let manifest_path = contract.join("miden-project.toml");
+        let detour = contract.join("..").join("contract").join("Cargo.toml");
+        let options = Options {
+            manifest_path: Some(manifest_path),
+            ..Options::default()
+        };
+
+        assert_eq!(
+            resolved_path(&options, Some(input(detour.to_str().unwrap()))),
+            detour,
+            "the input is kept as given once both sides are seen to be the same manifest"
         );
     }
 
