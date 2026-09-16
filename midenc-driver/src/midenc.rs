@@ -38,6 +38,10 @@ impl Midenc {
     /// hook — so an embedder keeps whatever it installed itself. `args` is the full argument
     /// vector including the program name, exactly as a process receives it.
     ///
+    /// `cwd` is what `--working-dir` defaults to, so it is the directory the working-directory
+    /// options are anchored on. It is not what relative paths in `args` are resolved against:
+    /// those are resolved by the process, exactly as they would be on the command line.
+    ///
     /// The path of the package that was written, if one was, for a caller that has to say where
     /// its build went; see [`compile::compile`]. A run deliberately stopped short of a package by
     /// `--stop-after` is a success with nothing to name, not a failure.

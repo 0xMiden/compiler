@@ -41,8 +41,9 @@ pub struct CompilerStopped(&'static str);
 /// Run the compiler using the provided [midenc_session::Session], and report what it wrote.
 ///
 /// The path is `Some` only when the assembled package was written to a file of its own — the very
-/// file the "Compiled …" line names. A package emitted to standard output, a session that asked
-/// for no `masp` output, and a run stopped before assembly all leave nothing to name.
+/// file the "Compiled …" line names, unless `--quiet` suppressed that line. A package emitted to
+/// standard output, a session that asked for no `masp` output, and a run stopped before assembly
+/// all leave nothing to name.
 pub fn compile(context: Rc<Context>) -> CompilerResult<Option<PathBuf>> {
     use midenc_hir::formatter::DisplayHex;
 

@@ -1,3 +1,9 @@
+//! `cargo miden build` is a thin wrapper: what it does with its arguments is hand them to
+//! `midenc` unchanged.
+//!
+//! These tests pin that end to end — the help a user gets, the tokens a `--` delimiter carries
+//! through, and a build driven from another directory by `--manifest-path`.
+
 use std::{env, fs, process::Command};
 
 use cargo_miden::run;
