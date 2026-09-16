@@ -533,6 +533,43 @@ fn component_init(component: &MasmComponent) -> &masm::Procedure {
         .expect("a marked component must define `init`")
 }
 
+#[test]
+fn cross_module_call_preserves_public_alias_of_private_function() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @a {
+        builtin.function public extern("C") @caller() {
+            hir.exec ::@"hir_ns:test@1.0.0"::@b::@alias() : extern("C") () -> ();
+            builtin.ret;
+        };
+    };
+    builtin.module public @b {
+        builtin.function private extern("C") @target() { builtin.ret; };
+        builtin.function_alias public @alias -> @target;
+    };
+};
+"#,
+    )
+    .expect("calls through public aliases must lower");
+
+    let caller = lowered
+        .modules
+        .iter()
+        .flat_map(|module| module.procedures())
+        .find(|procedure| procedure.name().as_str() == "caller")
+        .unwrap();
+    let calls = exec_paths(caller.body());
+    assert!(calls.iter().any(|path| path.ends_with("::b::alias")), "{calls:?}");
+    assert!(!calls.iter().any(|path| path.ends_with("::b::target")), "{calls:?}");
+
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(exports.iter().any(|path| path.ends_with("::b::alias")), "{exports:?}");
+    assert!(!exports.iter().any(|path| path.ends_with("::b::target")), "{exports:?}");
+}
+
 /// A world holding a single component lowers to exactly what that component lowers to.
 ///
 /// The defect: the world's *own* operation used to be handed to
@@ -824,6 +861,56 @@ fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
         init < harness && harness < entry,
         "generated main must preserve init -> harness -> entry ordering"
     );
+}
+
+#[test]
+fn canonical_alias_entrypoint_uses_target_calling_convention() {
+    let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::alias");
+    let op = parse(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.function_alias public @alias -> @entry;
+    builtin.function public extern("component-model") @entry() {
+        builtin.ret;
+    };
+    builtin.module private @core {
+        builtin.global_variable private @g : i32 {
+            builtin.ret_imm 1 : i32;
+        };
+        builtin.function public extern("C") @component_start() {
+            builtin.ret;
+        };
+        builtin.function public extern("C") @core_entry() {
+            builtin.ret;
+        };
+    };
+};
+"#,
+    );
+    mark_start_function(&context, op, "component_start");
+
+    let component = op.try_downcast_op::<builtin::Component>().unwrap();
+    let lowered = component
+        .borrow()
+        .to_masm_component(AnalysisManager::new(op, None))
+        .expect("an alias to a canonical entrypoint must lower through its private copy");
+
+    let public_alias = lowered.modules[0]
+        .procedures()
+        .find(|procedure| procedure.name().as_str() == "alias")
+        .expect("the alias must retain its public wrapper");
+    // Direct calls through the public alias still need the init prologue.
+    assert_eq!(exec_paths(public_alias.body()).first().map(String::as_str), Some("init"));
+
+    // A copy is emitted only if the alias's target, not the alias, carries the canonical ABI.
+    let private_entry = lowered
+        .executable_entrypoint_without_init
+        .as_ref()
+        .expect("the alias's resolved calling convention must select a no-init entry body");
+
+    // `main` owns init, so the executable-only copy must not repeat it
+    assert!(!exec_paths(private_entry.body()).iter().any(|target| target == "init"));
 }
 
 #[test]

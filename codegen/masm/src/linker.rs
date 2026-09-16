@@ -287,7 +287,8 @@ impl Linker {
     /// Discover the single function carrying the frontend/backend component-start contract.
     ///
     /// The marker is deliberately legal only on a public, defined `extern("C") () -> ()`
-    /// function nested in this component's core-module tree. In particular, component/interface
+    /// function nested in this component's core-module tree. Function aliases must remain
+    /// unmarked, even when a startup adapter imports a secondary export name. Component/interface
     /// functions and arbitrary operations cannot use it to acquire initialization semantics.
     fn discover_component_start(
         &mut self,
@@ -974,6 +975,31 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("only valid on a core-module function"), "{message}");
         assert!(message.contains("builtin.module"), "{message}");
+    }
+
+    #[test]
+    fn component_start_marker_is_invalid_on_function_aliases() {
+        let fixture = start_fixture(Visibility::Public, CallConv::C, [], [], true);
+        let mut alias = ModuleBuilder::new(fixture.module)
+            .define_function_alias(
+                Ident::from("initialize_alias"),
+                Visibility::Public,
+                fixture.function,
+            )
+            .unwrap();
+        let marker = fixture.context.create_attribute::<UnitAttr, _>(());
+        alias
+            .borrow_mut()
+            .as_operation_mut()
+            .set_attribute(midenc_dialect_hir::WASM_COMPONENT_START_ATTR, marker);
+
+        let err = expect_link_error(
+            link_start_fixture(&fixture),
+            "a marker on an alias to a valid start definition must not link",
+        );
+        let message = err.to_string();
+        assert!(message.contains("only valid on a core-module function"), "{message}");
+        assert!(message.contains("builtin.function_alias"), "{message}");
     }
 
     #[test]
