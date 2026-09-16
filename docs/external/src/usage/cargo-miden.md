@@ -36,6 +36,8 @@ This will take a minute to compile, but once complete, you can run `cargo help m
 `cargo miden` to see the set of available commands and options.
 
 To get help for a specific command, use `cargo miden help <command>` or `cargo miden <command> --help`.
+For `build`, use `cargo miden build --help`: every argument of `cargo miden build` is forwarded to
+`midenc`, so that is `midenc`'s own help, and it is the one that lists them.
 
 ## Creating a new project
 
