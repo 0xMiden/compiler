@@ -1827,12 +1827,6 @@ pub(crate) mod manifest {
         let cargo_opts = CargoOptions::from_compiler(&compiler_opts)?;
 
         let project_manifest_path = midenc_session::project_manifest_path(manifest_path);
-        let Some(project_dir) = project_manifest_path.parent().map(Path::to_path_buf) else {
-            return Err(Report::msg(
-                "unable to locate project manifest: --manifest-path specifies a path with no \
-                 parent",
-            ));
-        };
 
         let source_manager =
             Arc::new(DefaultSourceManager::default()) as Arc<dyn SourceManager + Send + Sync>;
@@ -1841,7 +1835,6 @@ pub(crate) mod manifest {
             let workspace = miden_project::Workspace::load(source, &source_manager)?;
             build_workspace(
                 &workspace,
-                project_dir,
                 compiler_opts,
                 &cargo_opts,
                 filesystem_cache_dir,
@@ -1934,7 +1927,6 @@ pub(crate) mod manifest {
 
     fn build_workspace(
         workspace: &miden_project::Workspace,
-        _cwd: PathBuf,
         _compiler_opts: Box<midenc_session::Options>,
         _cargo_opts: &CargoOptions,
         _filesystem_cache_dir: Option<&std::path::Path>,

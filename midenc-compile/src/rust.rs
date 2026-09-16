@@ -207,7 +207,7 @@ pub enum BuildOutput {
     Wasm {
         /// Path to the compiled WASM file.
         artifact_path: PathBuf,
-        /// The compiler options extracted from the arguments given to `cargo miden build`
+        /// The compiler options of a manifest-backed build
         options: Box<midenc_session::Options>,
     },
 }

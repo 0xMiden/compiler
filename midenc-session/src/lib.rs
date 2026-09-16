@@ -591,8 +591,12 @@ impl Session {
     }
 }
 
-/// Whether `path` names a Cargo manifest, by file name alone.
-fn is_cargo_manifest(path: &Path) -> bool {
+/// Whether `path` names a Cargo manifest, by file name alone, ignoring case.
+///
+/// Case-insensitively, because a filesystem that is case-insensitive will hand a `cargo.toml` to
+/// a caller that asked for `Cargo.toml` — and a predicate that disagreed with the filesystem
+/// would classify that manifest as something else entirely.
+pub fn is_cargo_manifest(path: &Path) -> bool {
     path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
 }
 
@@ -600,15 +604,35 @@ fn is_cargo_manifest(path: &Path) -> bool {
 ///
 /// A `Cargo.toml` locates the `miden-project.toml` beside it, which is where `cargo miden` writes
 /// the Miden manifest for a crate; any other path is taken as given. This is the one mapping from
-/// a Cargo manifest to the Miden manifest beside it: [`Options::resolve_input`],
+/// a Cargo manifest to the Miden manifest beside it: the same-file comparison
+/// [`Options::resolve_input`] makes between an input and `--manifest-path`, the session's
 /// `ProjectManifest::read`, `normalize_locator` in `midenc-compile` and the nested cargo build all
-/// go through it, so they cannot disagree about which file a locator names.
+/// go through it, so they cannot disagree about which file a locator names. A `--manifest-path`
+/// given on its own is not mapped: it is the locator, and whoever normalizes it maps it then.
 pub fn project_manifest_path(path: &Path) -> PathBuf {
     if is_cargo_manifest(path) {
         path.with_file_name("miden-project.toml")
     } else {
         path.to_path_buf()
     }
+}
+
+/// Whether the Miden manifest at `path` is a workspace root rather than a package manifest.
+///
+/// Answered from the manifest's AST — the same parse `ProjectManifest::parse` performs — because
+/// that is all the evidence there is: a workspace root declares members and no package of its
+/// own. A manifest that cannot be read or parsed is not a workspace root; its own diagnostic is
+/// the one worth reporting. Preparation asks this on the path where loading the project failed,
+/// so that a workspace root is reported on its own terms.
+#[cfg(feature = "std")]
+pub fn is_workspace_manifest(path: &Path, source_manager: &dyn SourceManager) -> bool {
+    use miden_debug_types::SourceManagerExt;
+
+    source_manager
+        .load_file(path)
+        .ok()
+        .and_then(|source| miden_project::ast::MidenProject::parse(source).ok())
+        .is_some_and(|manifest| matches!(manifest, miden_project::ast::MidenProject::Workspace(_)))
 }
 
 /// The extension of `target`'s root, which is what everything dispatches on.

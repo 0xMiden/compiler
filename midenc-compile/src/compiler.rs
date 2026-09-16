@@ -875,7 +875,7 @@ impl clap::builder::TypedValueParser for TargetTypeValueParser {
 mod tests {
     use super::*;
 
-    /// Parse `args` as a command line, as `cargo miden` and the `midenc` binary both do.
+    /// Parse `args` as a command line, as [`Compiler::try_parse_from`] does.
     fn options(args: &[&str]) -> Box<Options> {
         Compiler::try_parse_from(PathBuf::from("/tmp"), args)
             .unwrap_or_else(|err| panic!("`midenc {}` should parse: {err}", args.join(" ")))

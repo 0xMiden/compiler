@@ -50,8 +50,8 @@ use midenc_session::{
     DebugInfo, FileType, InputFile, InputType, Options, Session,
     diagnostics::{Report, SourceManager, Uri},
     miden_project::{
-        self, Dependency, DependencyVersionScheme, Linkage, Package as ProjectPackage, Project,
-        Target, TargetType, VersionReq, VersionRequirement,
+        Dependency, DependencyVersionScheme, Linkage, Package as ProjectPackage, Project, Target,
+        TargetType, VersionReq, VersionRequirement,
     },
     target_root_extension,
 };
@@ -644,7 +644,7 @@ pub fn prepare_project(
         // A workspace root is a manifest the loader cannot load *because* it selects no package,
         // so on the error path it gets the diagnostic that belongs to it rather than the generic
         // "failed to load" wrapper.
-        if is_miden_workspace_root(&manifest_path, source_manager) {
+        if midenc_session::is_workspace_manifest(&manifest_path, source_manager) {
             Report::msg(format!(
                 "'{}' is a Miden workspace root, which selects no package to build; run `miden \
                  build` from a workspace member or select one with --manifest-path",
@@ -698,7 +698,10 @@ pub fn prepare_project(
 fn normalize_locator(input: &InputFile) -> CompilerResult<PathBuf> {
     let file_name = input.file_name();
     match file_name.file_name() {
-        Some(name) if name.eq_ignore_ascii_case("Cargo.toml") => {
+        // Recognized through `midenc_session::is_cargo_manifest`, the same predicate
+        // `project_manifest_path` maps with: a locator this arm accepts is exactly one that
+        // mapping rewrites.
+        Some(_) if midenc_session::is_cargo_manifest(file_name.as_path()) => {
             let cargo_manifest_path = file_name.as_path();
             reject_unselected_workspace_root(cargo_manifest_path)?;
             Ok(midenc_session::project_manifest_path(cargo_manifest_path))
@@ -740,22 +743,6 @@ fn reject_unselected_workspace_root(manifest_path: &Path) -> CompilerResult<()> 
     } else {
         Ok(())
     }
-}
-
-/// Whether the Miden manifest at `manifest_path` is a workspace root rather than a package.
-///
-/// Answered from the manifest's AST, which is all the evidence there is: a workspace root is
-/// precisely a manifest [`Project::load`] refuses to load, so this runs on that failure's path.
-/// A manifest that cannot be read or parsed is not a workspace root — its own diagnostic is the
-/// one worth reporting.
-fn is_miden_workspace_root(manifest_path: &Path, source_manager: &dyn SourceManager) -> bool {
-    use midenc_hir::diagnostics::SourceManagerExt;
-
-    source_manager
-        .load_file(manifest_path)
-        .ok()
-        .and_then(|source| miden_project::ast::MidenProject::parse(source).ok())
-        .is_some_and(|manifest| matches!(manifest, miden_project::ast::MidenProject::Workspace(_)))
 }
 
 /// Select the frontend that compiles `target`'s root for a **standalone** request.
@@ -1024,6 +1011,22 @@ name = "prepare_fixture"
 path = "src/main.masm"
 "#;
 
+    /// The same project, rooted at hand-written WebAssembly text instead of Rust.
+    ///
+    /// The second hand-written root, so that "no entrypoint is inferred" is pinned as a fact
+    /// about Rust roots rather than about the `masm` extension: a hand-written module names its
+    /// own entrypoint, whichever language it is written in, and only a Rust root gets
+    /// `<bin>::entrypoint`.
+    const SINGLE_WAT_EXECUTABLE_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "prepare_fixture"
+path = "main.wat"
+"#;
+
     /// A transaction script whose library target is rooted at Rust.
     ///
     /// A transaction script's entrypoint is a fixed name, not one derived from the target — so
@@ -1276,6 +1279,23 @@ namespace = "miden:base/transaction-script@1.0.0"
             session.options.entrypoint, None,
             "`<target>::entrypoint` is a name the Rust frontend emits; Miden Assembly names its \
              own entrypoint"
+        );
+    }
+
+    #[test]
+    fn a_wat_rooted_executable_gets_no_inferred_entrypoint() {
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_wat",
+            "miden-project.toml",
+            SINGLE_WAT_EXECUTABLE_MANIFEST,
+        );
+
+        let session = session_for(&manifest);
+
+        assert_eq!(session.options.target_type, Some(TargetType::Executable));
+        assert_eq!(
+            session.options.entrypoint, None,
+            "no root but a Rust one gets `<bin>::entrypoint`; a hand-written module names its own"
         );
     }
 
