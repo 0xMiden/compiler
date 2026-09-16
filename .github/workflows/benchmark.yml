@@ -56,17 +56,23 @@ jobs:
           cargo make cargo-miden
           cargo build --release -p midenc-benchmark-runner --bin example-benchmarks
 
-      - name: Build next cargo-miden
+      - name: Build next benchmark tools
+        # The baseline is benchmarked with its own runner: a VM upgrade in the
+        # candidate can leave its runner unable to read the package format
+        # that next's cargo-miden still produces.
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/benchmark-next
         run: |
           git fetch --no-tags origin next:refs/remotes/origin/next
           git worktree add --detach "${RUNNER_TEMP}/compiler-next" origin/next
           pushd "${RUNNER_TEMP}/compiler-next"
-          CARGO_TARGET_DIR="${GITHUB_WORKSPACE}/target/benchmark-next" cargo make cargo-miden
+          cargo make cargo-miden
+          cargo build --release -p midenc-benchmark-runner --bin example-benchmarks
           popd
 
       - name: Benchmark next
         run: |
-          target/benchmark-candidate/release/example-benchmarks \
+          target/benchmark-next/release/example-benchmarks \
             --workspace-root "${RUNNER_TEMP}/compiler-next" \
             --cargo-miden "${RUNNER_TEMP}/compiler-next/bin/cargo-miden" \
             --output-dir target/example-benchmarks/baseline \
