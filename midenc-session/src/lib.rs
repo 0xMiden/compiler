@@ -593,10 +593,26 @@ impl Session {
 }
 
 fn is_cargo_project_input(input: &InputFile) -> bool {
-    matches!(
-        &input.file,
-        InputType::Real(path) if path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
-    )
+    matches!(&input.file, InputType::Real(path) if is_cargo_manifest(path))
+}
+
+/// Whether `path` names a Cargo manifest, by file name alone.
+fn is_cargo_manifest(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
+}
+
+/// The `miden-project.toml` the project locator `path` names.
+///
+/// A `Cargo.toml` locates the `miden-project.toml` beside it, which is where `cargo miden` writes
+/// the Miden manifest for a crate; any other path is taken as given. This is the same
+/// normalization `normalize_locator` performs in `midenc-compile`, and the two must agree: that
+/// is the copy that decides what gets built, and the only one that may reject a locator.
+pub(crate) fn project_manifest_path(path: &Path) -> PathBuf {
+    if is_cargo_manifest(path) {
+        path.with_file_name("miden-project.toml")
+    } else {
+        path.to_path_buf()
+    }
 }
 
 /// What a project's manifest says about the targets it declares.
@@ -691,16 +707,7 @@ impl ProjectManifest {
     fn read(input: &InputFile, source_manager: &dyn SourceManager) -> Result<Option<Self>, Report> {
         match &input.file {
             InputType::Real(path) => {
-                // The same normalization `normalize_locator` performs in `midenc-compile`: a
-                // `Cargo.toml` locates the `miden-project.toml` beside it, which is where
-                // `cargo miden` writes the Miden manifest for a crate.
-                let manifest_path =
-                    if path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
-                    {
-                        path.with_file_name("miden-project.toml")
-                    } else {
-                        path.clone()
-                    };
+                let manifest_path = project_manifest_path(path);
                 #[cfg(feature = "std")]
                 {
                     use miden_debug_types::SourceManagerExt;

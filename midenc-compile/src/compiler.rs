@@ -383,10 +383,12 @@ pub struct Compiler {
         arg(long, short = 'p', value_name = "SPEC", conflicts_with("workspace"),)
     )]
     pub package: Vec<String>,
-    /// Path to the package/project manifest
+    /// Path to the project manifest to build
     ///
-    /// If unspecified, the compiler will create a virtual manifest for the given input file, if
-    /// the input is not a manifest path itself.
+    /// Either a `miden-project.toml`, or the `Cargo.toml` beside it. This names the project when
+    /// no input file is given; given both, they must name the same file. Absent both, the
+    /// `miden-project.toml` in the working directory is built. A relative path is resolved
+    /// against the directory the compiler is run from, not against `--working-dir`.
     #[cfg_attr(feature = "std", arg(long, value_name = "PATH",))]
     pub manifest_path: Option<PathBuf>,
     /// Specify path prefixes to remap for any file paths encoded in debug info
@@ -811,21 +813,16 @@ impl Compiler {
         input: Option<InputFile>,
         emitter: Option<Arc<dyn Emitter>>,
     ) -> Session {
-        // Raise an error if no inputs were provided
-        let input = match input {
-            Some(input) => input,
-            None => InputFile::from_path(options.current_dir.join("miden-project.toml"))
-                .unwrap_or_else(|err| {
-                    let cmd = <Compiler as clap::CommandFactory>::command();
-                    let mut err = clap::Error::raw(clap::error::ErrorKind::ValueValidation, err)
-                        .with_cmd(&cmd);
-                    err.insert(
-                        clap::error::ContextKind::InvalidArg,
-                        clap::error::ContextValue::String("INPUT".to_string()),
-                    );
-                    err.exit();
-                }),
-        };
+        let input = options.resolve_input(input).unwrap_or_else(|err| {
+            let cmd = <Compiler as clap::CommandFactory>::command();
+            let mut err =
+                clap::Error::raw(clap::error::ErrorKind::ValueValidation, err).with_cmd(&cmd);
+            err.insert(
+                clap::error::ContextKind::InvalidArg,
+                clap::error::ContextValue::String("INPUT".to_string()),
+            );
+            err.exit();
+        });
 
         log::trace!(target: "driver", "current working directory = {}", options.current_dir.display());
 
@@ -908,5 +905,23 @@ mod tests {
     #[test]
     fn no_stop_after_means_no_cap() {
         assert_eq!(options(&[]).stop_after, None);
+    }
+
+    /// `--manifest-path` reaches [`Options`] as given — relative to the directory the compiler is
+    /// run from, never joined onto `--working-dir` — so it means what it does in a shell, and what
+    /// `cargo` makes of the same flag.
+    #[test]
+    fn manifest_path_reaches_the_options_as_given() {
+        let manifest = PathBuf::from("../contract/Cargo.toml");
+        assert_eq!(
+            options(&["--manifest-path", "../contract/Cargo.toml"]).manifest_path,
+            Some(manifest.clone())
+        );
+        assert_eq!(
+            options(&["--working-dir", "/elsewhere", "--manifest-path", "../contract/Cargo.toml"])
+                .manifest_path,
+            Some(manifest),
+            "`--working-dir` must not move it"
+        );
     }
 }

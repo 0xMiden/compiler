@@ -274,6 +274,48 @@ impl Options {
         crate::Session::new(input, self, emitter, source_manager)
     }
 
+    /// Resolve the input a compilation request names.
+    ///
+    /// `input` is the input file given on the command line, if any. Without one, `--manifest-path`
+    /// names the project to build; without that too, the project is the `miden-project.toml` in
+    /// the working directory. Given both, they must name the same file — a `Cargo.toml` counting
+    /// as the `miden-project.toml` beside it — and the input is kept as given. Anything else is
+    /// rejected rather than silently building one of the two.
+    ///
+    /// A relative `--manifest-path` is relative to the directory the compiler is run from, exactly
+    /// like a relative input file; `--working-dir` moves neither.
+    #[cfg(feature = "std")]
+    pub fn resolve_input(&self, input: Option<InputFile>) -> Result<InputFile, Report> {
+        use crate::diagnostics::IntoDiagnostic;
+
+        match (input, self.manifest_path.as_deref()) {
+            (Some(input), None) => Ok(input),
+            (Some(input), Some(manifest_path)) => {
+                // Compared absolute, so that `foo/Cargo.toml` and `./foo/miden-project.toml` agree.
+                let absolute = |path: &crate::Path| {
+                    std::path::absolute(crate::project_manifest_path(path)).ok()
+                };
+                let names_same_file = input.as_path().is_some_and(|input| {
+                    matches!((absolute(input), absolute(manifest_path)), (Some(a), Some(b)) if a == b)
+                });
+                if names_same_file {
+                    Ok(input)
+                } else {
+                    Err(Report::msg(alloc::format!(
+                        "input file '{}' and --manifest-path '{}' name different files; give one \
+                         or the other",
+                        input.file_name().as_str(),
+                        manifest_path.display()
+                    )))
+                }
+            }
+            (None, Some(manifest_path)) => InputFile::from_path(manifest_path).into_diagnostic(),
+            (None, None) => {
+                InputFile::from_path(self.current_dir.join("miden-project.toml")).into_diagnostic()
+            }
+        }
+    }
+
     /// Get a new [Emitter] based on the current options.
     pub fn default_emitter(&self) -> Arc<dyn Emitter> {
         use crate::diagnostics::{DefaultEmitter, NullEmitter};
@@ -475,4 +517,68 @@ fn current_dir() -> PathBuf {
 #[cfg(not(feature = "std"))]
 fn current_dir() -> PathBuf {
     PathBuf::from(".")
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+
+    /// Options for a compiler whose working directory is `/work`, with the given `--manifest-path`.
+    fn options(manifest_path: Option<&str>) -> Options {
+        Options {
+            manifest_path: manifest_path.map(PathBuf::from),
+            current_dir: PathBuf::from("/work"),
+            ..Options::default()
+        }
+    }
+
+    fn input(path: &str) -> InputFile {
+        InputFile::from_path(path).unwrap()
+    }
+
+    fn resolved_path(options: &Options, input: Option<InputFile>) -> PathBuf {
+        options.resolve_input(input).unwrap().as_path().unwrap().to_path_buf()
+    }
+
+    /// The manifest is taken as given, relative to where the compiler runs — not to `/work`.
+    #[test]
+    fn the_manifest_path_names_the_project_when_no_input_is_given() {
+        assert_eq!(
+            resolved_path(&options(Some("../contract/Cargo.toml")), None),
+            PathBuf::from("../contract/Cargo.toml")
+        );
+    }
+
+    #[test]
+    fn without_either_the_project_is_in_the_working_directory() {
+        assert_eq!(resolved_path(&options(None), None), PathBuf::from("/work/miden-project.toml"));
+    }
+
+    #[test]
+    fn an_input_alone_is_kept_as_given() {
+        assert_eq!(
+            resolved_path(&options(None), Some(input("foo.wasm"))),
+            PathBuf::from("foo.wasm")
+        );
+    }
+
+    /// A `Cargo.toml` names the `miden-project.toml` beside it, and `.` is normalized away.
+    #[test]
+    fn an_input_and_a_manifest_path_naming_the_same_project_keep_the_input() {
+        let options = options(Some("./contract/miden-project.toml"));
+        assert_eq!(
+            resolved_path(&options, Some(input("contract/Cargo.toml"))),
+            PathBuf::from("contract/Cargo.toml")
+        );
+    }
+
+    #[test]
+    fn an_input_and_a_manifest_path_naming_different_files_are_rejected() {
+        for input_path in ["other/Cargo.toml", "contract/target/foo.wasm"] {
+            let err = options(Some("contract/Cargo.toml"))
+                .resolve_input(Some(input(input_path)))
+                .unwrap_err();
+            assert!(err.to_string().contains("name different files"), "{err}");
+        }
+    }
 }

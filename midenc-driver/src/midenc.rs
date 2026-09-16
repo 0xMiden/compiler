@@ -73,12 +73,7 @@ impl Midenc {
         let mut options = options.into_options(cwd.into());
         options.set_extra_flags(compile_matches.into());
 
-        let input = input.unwrap_or_else(|| {
-            InputFile::new(
-                midenc_session::FileType::Toml,
-                midenc_session::InputType::Real(options.current_dir.join("miden-project.toml")),
-            )
-        });
+        let input = options.resolve_input(input)?;
 
         let session = Rc::new(options.into_session(input, emitter, None)?);
         let context = Rc::new(Context::new(session));

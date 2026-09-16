@@ -51,9 +51,12 @@ Options:
           Package(s) to build
 
       --manifest-path <PATH>
-          Path to the package/project manifest
+          Path to the project manifest to build
 
-          If unspecified, the compiler will create a virtual manifest for the given input
+          Either a `miden-project.toml`, or the `Cargo.toml` beside it. This names the project when
+          no input file is given; given both, they must name the same file. Absent both, the
+          `miden-project.toml` in the working directory is built. A relative path is resolved
+          against the directory the compiler is run from, not against `--working-dir`.
 
   -h, --help
           Print help (see a summary with '-h')
