@@ -41,9 +41,8 @@ pub struct CompilerStopped(&'static str);
 /// Run the compiler using the provided [midenc_session::Session], and report what it wrote.
 ///
 /// The path is `Some` only when the assembled package was written to a file of its own — the very
-/// file the "Compiled …" line names. A package emitted to standard output or to a directory, a
-/// session that asked for no `masp` output, and a run stopped before assembly all leave nothing to
-/// name.
+/// file the "Compiled …" line names. A package emitted to standard output, a session that asked
+/// for no `masp` output, and a run stopped before assembly all leave nothing to name.
 pub fn compile(context: Rc<Context>) -> CompilerResult<Option<PathBuf>> {
     use midenc_hir::formatter::DisplayHex;
 
@@ -89,13 +88,9 @@ fn announce_package(session: &midenc_session::Session, name: &str) -> Option<Pat
             }
             Some(path)
         }
-        OutputFile::Directory(path) => {
-            if !quiet {
-                println!("Compiled to {}", path.display());
-            }
-            None
-        }
-        OutputFile::Stdout => None,
+        // `Session::emit` treats a directory output as unreachable, so a package can only have
+        // gone to a file or to standard output.
+        OutputFile::Stdout | OutputFile::Directory(_) => None,
     }
 }
 
