@@ -21,6 +21,7 @@ mod pressure;
 mod programs;
 mod programs_oz;
 mod scale;
+mod sccp;
 mod signed;
 mod spills;
 mod traps;

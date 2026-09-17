@@ -2979,3 +2979,102 @@ Corpus: `tests/cse.rs` (12 cases + pinned grids), each evidenced with
   `-Z print-ir-after-pass=canonicalizer` but no `rewriter=trace`, exits 0.
   Reproducer: `cse::dead_region`. Take erase-order evidence on a shape that
   traces cleanly (`cse::dead_outer`) until this is fixed.
+
+## SCCP reach and lattice joins (campaign 33, 2026-09-17)
+
+What sparse conditional constant propagation (`hir-transform/src/sccp.rs`) can
+still see on plain-Rust guests after the rebase's two dataflow fixes, and
+therefore what its lattice join is ever asked to decide. Corpus:
+`tests/sccp.rs` (10 cases + 8 pinned grids), each evidenced with
+`-Z print-ir-after-pass=<pass>` plus
+`MIDENC_TRACE='pass:<pass>=trace,rewriter=trace'`.
+
+- **The sparse `meet` has no caller on ANY compile, so b7aed6ca1 ("apply meet
+  in sparse lattice guards", guard.rs:365) is dead code.** `grep -rn
+  'SparseBackwardDataFlowAnalysis for' --include='*.rs' .` returns nothing: the
+  trait (hir-analysis/src/sparse/backward.rs:23) has zero implementors
+  workspace-wide, and the only calls to the sparse guard's `meet` are the five
+  in that file (lines 181, 244, 309, 360, 413), all inside functions generic
+  over an implementor. The DENSE backward meet (guard.rs:345) is a different
+  method and was already right; its one user is `Liveness`
+  (hir-analysis/src/analyses/liveness.rs:261) inside TransformSpills. The three
+  solver loaders in the workspace are SCCP's (`DeadCodeAnalysis` +
+  `SparseConstantPropagation`, both FORWARD), `LivenessAnalysis`'s (those two
+  plus `Liveness`), and the advice-taint family's — and the latter runs only
+  under `-Zlint` (midenc-compile/src/pipeline/backend.rs:167), which the
+  harness never passes.
+- **Anchor identity is now decided by value, not by hash.**
+  `LatticeAnchorRef::intern` (hir-analysis/src/anchor.rs:39) keys the intern map
+  by `anchor_id()` (an FxHash of `dyn_hash`) but stores a `SmallVec` BUCKET per
+  key, and picks an existing entry only when `anchor.equivalent_to(existing)` —
+  `dyn_eq` against the canonical value, which every `LatticeAnchorExt` impl
+  (anchor.rs:334-425) takes from the borrowed IR entity. A hash collision now
+  costs a bucket scan instead of sharing lattice state. 13210e157 is a real fix;
+  it just cannot be aimed at deterministically from Rust source.
+- **SCCP never sees a block argument in a plain-Rust guest, so its lattice join
+  is never exercised at a merge.** Two independent measurements:
+  (1) across all 1304 harness-built `differential_*.wasm`, the only block-result
+  construct LLVM's wasm backend emits is `loop (result i32)` — 108 occurrences
+  in 106 files, and ZERO `block (result …)` / `if (result …)`. Every `if`, every
+  `match` and every loop-carried value merges through a wasm LOCAL, which is
+  `hir.store_local`/`hir.load_local` traffic until Local2Reg, two passes after
+  SCCP. (2) The block arguments the frontend *does* build — `translate_loop`'s
+  exit block and the synthetic function-exit block — are gone before SCCP runs:
+  `sccp::loop_result` enters the FIRST canonicalizer with 16 blocks and four
+  block arguments and leaves with none. Two of the four are empty,
+  predecessor-less blocks (the `loop (result i32)` exit is unreachable because
+  LLVM only types it to satisfy the function signature); the rest are merged
+  away by `simplify-br-to-block-with-single-predecessor`, which logs
+  `merging ^blockN into ^blockM replacing uses of its block arguments`.
+  Measured on 22 cases in all — the ten below plus `canon::col_cascade`,
+  `memory::slice_ops`, `programs::prog_sorts`, `programs::prog_utf8` (at
+  `-Oz`), `compose::chain_sm`, `compose::nest_continue` and six of
+  `control_flow` (`switch_shapes`, `triangle`, `do_while`, `sm_bits`,
+  `switch_loop_mix`, `threading`) — every one shows zero block arguments in its
+  SCCP dump. The other would-be carrier is just as empty: every `cf.switch` in
+  these bodies is printed with bare successors
+  (`cf.switch %76 [#builtin.u32<0> -> ^block19, …], ^block20 : (u32)`), and
+  every `cf.cond_br` / `cf.br` likewise — no successor operands anywhere,
+  because `br`/`br_if`/`br_table` can only carry values to a block that has
+  params, and no wasm block here has any.
+- **Which `loop (result i32)` shapes exist.** A loop whose every exit is a
+  `return` and whose `end` is therefore unreachable, sitting last in the
+  function. The producer is several `break`s falling into ONE tail expression
+  that is also the function's result: LLVM tail-duplicates the tail into a
+  `return` inside the loop. A loop with a genuine fall-through tail gets rotated
+  into a plain `loop` instead — that is the difference between the two drafts of
+  `sccp::loop_result`.
+- **SCCP is a no-op on every one of the ten cases.** The `entrypoint` op
+  histogram is identical before and after the pass in all ten (55/84/78/187/80/
+  132/120/132/65/93 ops in and out), no op is folded or erased, and the constant
+  count is unchanged: the pass re-uniques each function's existing
+  `arith.constant`s one-for-one (8 to 20 per case). This holds for the two
+  const-operand cases built specifically for W2 — literal rotate/shift counts,
+  `/` and `%` by literals, unsigned compares against literals, and their 64-bit
+  twins with the frontend's own truncated counts — so the canonicalizer's folder
+  reaches everything first.
+- **The constant-uniquing key IS type-aware in practice.** `OperationFolder`'s
+  `UniquedConstant { dialect, value, ty }` (hir/src/folder.rs:355) keeps
+  same-value/different-type constants apart, and that is visible in the
+  post-SCCP dumps rather than only in the source: `sccp::const_ops` carries
+  `5 : i32` beside `5 : u32`, `16 : i32` beside `16 : u32`, `12 : i32` beside
+  `12 : u32` and `8 : i32` beside `8 : u32`; `sccp::const_wide` carries
+  `3 : u32` beside `3 : u64`. No F18-shaped wrong-width materialization from
+  this path.
+- **The dead-code half has no plain-Rust producer, and the reason is
+  structural.** A constant SCCP could see must live in the same SSA graph LLVM
+  optimized, so LLVM has already used it; hiding it from LLVM (`black_box`, an
+  opaque helper, a `static`) hides it from SCCP too. Measured both ways:
+  `sccp::dead_flag`'s `phi(1, 1)` is folded by InstSimplify and its dependent
+  `if` is DELETED before the wasm (the tail is unconditional, no trace of the
+  dead arm), while `sccp::dead_arm`'s `black_box`ed selector keeps the
+  `br_table 1 2 3 4 0` default arm alive for LLVM *and* leaves it unprovable for
+  SCCP (the selector is a `hir.load` of a shadow-stack slot).
+- **No-DWARF changes nothing about what SCCP sees.** At `debug = 0` the guest
+  wasm of `sccp::if_merge`, `sccp::loop_result` and `sccp::switch_merge` has the
+  same block-result count (0/1/0) and the same `local.set`/`local.get` count
+  (12/29/26) as at `debug = 2`; only the `di.*` ops leave the HIR. The idea that
+  more stackification without debug info would turn local-carried phis into
+  block results is REFUTED for these shapes. The whole module passes at
+  `FUZZA_GUEST_DEBUG=0`, `--optimize=max`, `--optimize=size-min`,
+  `--optimize=basic` and `FUZZA_INPUT_PAIRS=256`, with no divergence anywhere.
