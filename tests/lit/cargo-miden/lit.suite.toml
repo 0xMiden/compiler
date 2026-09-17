@@ -1,0 +1,4 @@
+name = "cargo-miden"
+patterns = ["*.shtest"]
+
+[format.shtest]

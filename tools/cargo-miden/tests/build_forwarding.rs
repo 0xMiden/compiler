@@ -1,65 +1,15 @@
 //! `cargo miden build` is a thin wrapper: what it does with its arguments is hand them to
 //! `midenc` unchanged.
 //!
-//! These tests pin that end to end — the help a user gets, the tokens a `--` delimiter carries
-//! through, and a build driven from another directory by `--manifest-path`.
+//! This pins a build driven from another directory by `--manifest-path`, through the library
+//! and through the binary. The argument forwarding itself — the help a user gets and the tokens a
+//! `--` delimiter carries through — is pinned by the lit tests in `tests/lit/cargo-miden`.
 
 use std::{env, fs, process::Command};
 
 use cargo_miden::run;
 
 use crate::utils::{current_dir_lock, project_template_arg};
-
-/// `cargo miden build` forwards its arguments to `midenc`, help included.
-///
-/// The wrapper parses nothing of its own, so the help a user gets is the compiler's — which is
-/// the only place the forwarded options are documented. Two options no wrapper stub ever had
-/// stand in for "this is midenc's help": if they are there, the arguments reached the driver.
-#[test]
-fn build_help_is_the_compilers_help() {
-    let output = Command::new(env!("CARGO_BIN_EXE_cargo-miden"))
-        .args(["miden", "build", "--help"])
-        .output()
-        .expect("cargo-miden should run");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        output.status.success(),
-        "`cargo miden build --help` failed: {}\n{stdout}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    for option in ["--manifest-path", "--working-dir"] {
-        assert!(
-            stdout.contains(option),
-            "expected midenc's help, which documents `{option}`, but got:\n{stdout}"
-        );
-    }
-}
-
-/// A leading `--` reaches `midenc` instead of being eaten by the wrapper's own parse.
-///
-/// `--` is how a user names an input file that starts with a hyphen, so what follows it must be
-/// taken as an input and not as an option: `build -- --help` has to fail on the input `--help`,
-/// not print the compiler's help. Clap strips that delimiter, so the wrapper forwards the raw
-/// tokens instead of clap's parse of them.
-#[test]
-fn a_leading_double_dash_is_forwarded_rather_than_consumed() {
-    let output = Command::new(env!("CARGO_BIN_EXE_cargo-miden"))
-        .args(["miden", "build", "--", "--help"])
-        .output()
-        .expect("cargo-miden should run");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !output.status.success(),
-        "`cargo miden build -- --help` must not succeed: {}",
-        String::from_utf8_lossy(&output.stdout)
-    );
-    assert!(
-        stderr.contains("invalid input file"),
-        "`--help` after `--` must be rejected as an input file, but got:\n{stderr}"
-    );
-}
 
 /// `--manifest-path` names the project to build, from a directory that holds no project at all.
 ///
