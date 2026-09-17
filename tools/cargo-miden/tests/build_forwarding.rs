@@ -65,7 +65,9 @@ fn a_leading_double_dash_is_forwarded_rather_than_consumed() {
 ///
 /// The scratch directory the build runs from has no manifest of its own, so the only project
 /// anything can find is the one the option names — which is what makes this the regression test
-/// for a `--manifest-path` that was parsed and then dropped.
+/// for a `--manifest-path` that was parsed and then dropped. Run through the wrapper binary, the
+/// same build prints the `Compiled …` announcement exactly once: the driver prints it, and the
+/// wrapper must not repeat it.
 #[test]
 fn a_manifest_path_builds_a_project_from_another_directory() {
     let _cwd = current_dir_lock();
@@ -117,6 +119,27 @@ fn a_manifest_path_builds_a_project_from_another_directory() {
         Some("masp"),
         "the build must produce a Miden package: {:?}",
         output[0]
+    );
+
+    // The same directory and the same flag, so the build is already cached and only the wrapper's
+    // own output is under test.
+    let wrapped = Command::new(env!("CARGO_BIN_EXE_cargo-miden"))
+        .args(["miden", "build", "--manifest-path", manifest_path.to_str().unwrap()])
+        .current_dir(&scratch)
+        .output()
+        .expect("cargo-miden should run");
+    let stdout = String::from_utf8_lossy(&wrapped.stdout);
+    assert!(
+        wrapped.status.success(),
+        "`cargo miden build --manifest-path` failed: {}\n{stdout}",
+        String::from_utf8_lossy(&wrapped.stderr)
+    );
+    let announcements =
+        stdout.lines().filter(|line| line.starts_with("Compiled ")).collect::<Vec<_>>();
+    assert_eq!(
+        announcements,
+        vec![format!("Compiled {}", output[0].display())],
+        "the finished build must be announced exactly once, naming the package it wrote"
     );
 
     fs::remove_dir_all(scratch).unwrap();
