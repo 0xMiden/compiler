@@ -21,4 +21,5 @@ mod programs_oz;
 mod scale;
 mod signed;
 mod spills;
+mod traps;
 mod wide;
