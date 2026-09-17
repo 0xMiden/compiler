@@ -332,9 +332,12 @@ impl AsmParserState {
             return;
         }
 
-        self.symbol_use_scopes
+        // Keep each use on the operation that contains the reference. The surrounding symbol
+        // table determines resolution, but is not itself the user of every nested reference.
+        self.partial_operations
             .last_mut()
             .unwrap()
+            .symbol_uses
             .borrow_mut()
             .entry(path.clone())
             .or_default()
