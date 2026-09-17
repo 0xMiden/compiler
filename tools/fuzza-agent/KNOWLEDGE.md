@@ -136,8 +136,9 @@ Maintenance rules:
   only for the native build. An explicit `core::arch::wasm32::unreachable()`
   behind an impossible cross-modulus guard (`case_unreachable_exits.rs`)
   is still the way to plant a trap edge with no panic machinery around it.
-  Trap-parity cases (`run_case_traps`,
-  `run_case_traps_with_inputs`, module `tests/traps.rs`) are built with a
+  Trap-parity cases (`run_case_traps`, `run_case_traps_with_inputs`,
+  `run_case_traps_with_flags`; modules `tests/traps.rs`,
+  `tests/trapspill.rs`) are built with a
   header whose panic handler DOES trap on both targets — `unreachable` on
   wasm (what the SDK's handler does; the compiler lowers it to
   `push.0 assert` "entered unreachable code") and `_exit(101)` on the host,
@@ -1599,9 +1600,10 @@ of campaign 18, every rung value-checked at the default level and at
   2), `run_case_with_flags` (pin a configuration in-repo; the harness
   pseudo-flag `--guest-debug=0|1|2` pins the guest debug level per case),
   `run_case_with_flags_and_inputs` (pin a configuration together with the
-  exact input pairs), `run_case_traps` / `run_case_traps_with_inputs` (trap
-  parity: a trap on both sides is a match, a trap on one side a finding;
-  the env knobs apply to those cases too).
+  exact input pairs), `run_case_traps` / `run_case_traps_with_inputs` /
+  `run_case_traps_with_flags` (trap parity: a trap on both sides is a
+  match, a trap on one side a finding; the env knobs apply to those cases
+  too, and the flags variant pins a configuration per case).
 
 ## Debug-info (DWARF) cluster facts (verified 2026-09-02, campaign 7)
 
@@ -3243,3 +3245,110 @@ SEGMENTS, not of the new pages — a plain-Rust allocator that grows memory the
 usual way would write over its own statics. There is no way for a plain-Rust
 guest to learn the dynamic heap base (the SDK gets it from the `heap_base`
 intrinsic), so this could not be turned into a differential case.
+
+## Trap edges under spill freight (campaign 35, 2026-09-17)
+
+Crossing campaign 29's trap oracle with the spill/edge-split/cfg-to-scf
+machinery of campaigns 18/20/21: seventeen cases in `tests/trapspill.rs`, each
+a committed `interact.rs` freight shape plus ONE trapping edge, every one
+trace-verified for its freight and its lift and native-grid-checked (1225
+boundary pairs, `repeat stable`) before the harness run. ZERO wrong
+trap-or-value decisions and zero wrong values, in the default env and at
+`--optimize=size-min`, `--optimize=basic` and `FUZZA_GUEST_DEBUG=0`.
+
+- **The guard KIND is invisible to the spill analysis.** Six cases differing
+  only in what panics — an array index, `get(..).unwrap()`, a zero divisor, a
+  `checked_add(..).unwrap()`, an `assert!` and an `unreachable!()`, all on the
+  same five-bit slice of the same loop-carried accumulator — produce byte-equal
+  freight: 45 spills / 56 reloads / 3 split edges / 20 erased split reloads /
+  36 `convert reload to load` / 0 unused phi. Under `-Cpanic=immediate-abort`
+  they are the same wasm `unreachable`, and nothing below the frontend can tell
+  them apart. Do not spend a case per guard kind again; spend it per guard
+  POSITION or per enclosing shape.
+- **LLVM merges every trapping edge of a function into ONE wasm
+  `unreachable`.** Every case measured — including one with an explicit
+  `core::arch::wasm32::unreachable()` AND a Rust panic edge on different
+  accumulator slices, and a two-loop cascade with guards in two places — has
+  exactly one `unreachable` per function in the wasm and exactly one
+  `ub.unreachable` in `entrypoint` both before and after `lift-control-flow`,
+  at `--optimize=basic`, the default level and `--optimize=size-min` alike.
+  Consequence: `combine_exit` / `ReturnLikeOpKey`
+  (hir-transform/src/cfg_to_scf/transform.rs:1310) NEVER has two
+  `ub.unreachable` terminators to combine on a plain-Rust guest — the
+  type-compared operand forwarding is exercised only against the function's
+  single `builtin.ret`. Moving a guard into an `#[inline(never)]` callee moves
+  the single `ub.unreachable` there (`entrypoint` then has zero and the callee
+  one) — it does not produce two in one function either. No plain-Rust shape
+  tried in this campaign gives cfg-to-scf two `ub.unreachable` terminators to
+  combine; a producer, if one exists, has to defeat LLVM's simplifycfg block
+  merging, which is what makes them one.
+- **What the lift does with a trap edge is add an exit COLUMN.** An in-loop
+  trapping edge becomes one extra u32 result on the enclosing `scf.while`,
+  dispatched after the region by a top-level `cf.switch <tag> [1 -> ^blockN],
+  ^blockM` whose `^blockN` holds the `ub.unreachable`. Measured against the
+  no-trap control of the same shape: +3 blocks, +3 `scf` ops and +1 `cf` op
+  after the lift, where the `cf` op is that switch (the control has none).
+- **A trap edge does not move the spill analysis' numbers in the interaction
+  shapes.** `dispatch_spill` (20/20/1/4), `select_spill` (10/10/1/2),
+  `scan_spill` (18/18/1/4) and `cascade_spill` (57/84/6/32) reproduce their
+  documented counts EXACTLY with a trapping edge added at the place each shape
+  is about. The two exceptions are positional: a guard in the cascade's
+  empty-`continue` ARM costs +2 reloads / +1 split edge / +2 erased reloads,
+  and a guard placed immediately above the cluster-consuming wide expression
+  converts two reloads into two spills (46/56 -> 48/54).
+- **The trapping edge alone moves a compile-time boundary, twice.** (a) Default
+  level: the single-loop cascade freight with the guard above the wide
+  expression panics `invalid operand stack index (11)` at
+  codegen/masm/src/emit/mod.rs:623, while the byte-identical file with the
+  index masked into range (same load, same mask, same live cluster, no trap
+  edge) compiles — `trapspill::guard_above` vs `guard_above_masked`. The same
+  guard at the END of the body compiles WITH the trap edge, and at the TOP of
+  the body neither version compiles, so the boundary is a function of the
+  position AND the edge, not of either alone. (b) `--optimize=max`: the
+  two-loop cascade with an `assert!` in the `continue` arm panics at
+  `hir/src/ir/dominance/frontier.rs:123` while `interact::cascade_spill`
+  compiles there. Rule update for campaign 29's "a trapping edge does not move
+  the compile-time class boundary": that holds for the SPILL-FREE deep nest it
+  was measured on; under freight a trap edge is worth about two felts of
+  pressure and can decide the rung. Always build the masked-index control
+  before calling one of these a finding.
+- **The class markers do not discriminate these pairs.** The failing
+  `guard_above` shows `edges to split = 3` plus 20 `erase unused reload` (the
+  F6 signature) AND 49 `additional spills required` (an F17 marker) — and so
+  does the COMPILING control, with 48. The only trace difference is the
+  spill/reload balance. When a twin and its control differ by one trapping
+  edge, report the balance, not the marker set.
+- **Trapping arms do not stop the canonicalization patterns; they add new
+  ones.** `pattern-rewrite-driver` counts, trap twin vs original, default
+  level: `ConvertTrivialIfToSelect` still fires with an `unreachable` arm in
+  the diamond and fires one MORE time (select 2 vs 1, dispatch 2 vs 1);
+  `SimplifySwitchFallbackOverlap` is unchanged at 1 with a trapping `match`
+  arm; `SimplifyCondBrLikeSwitch` fires once in each trap twin and zero times
+  in every original, and `WhileRemoveUnusedArgs` gains a firing in the dispatch
+  and select shapes. Two producers LOSE firings to a trapping edge placed in
+  what they are about: the cascade's `WhileUnusedResult` /
+  `IndexSwitchRemoveUnusedResults` drop from 2 to 1 (the guarded loop stops
+  producing the cascade; the unguarded one still fires it) with
+  `SimplifyPassthroughCondBr` jumping 0 -> 10 and `SplitCriticalEdges` 2 -> 11,
+  and the scan chain's `WhileRemoveUnusedArgs` drops from 4 to 3 when the
+  guard is in one loop's break predicate.
+- **Freight cases must be edited from a committed `interact.rs` case, never
+  written from scratch.** A hand-rolled single-loop shape with the documented
+  recipe (H-value u64 cluster in one wide expression + B count bands) fails to
+  compile at EVERY rung from (8 values, 8 bands) down to (4, 4), with a
+  constant trip bound, with a runtime trip bound and with a value-carrying
+  body-splitting `if`; `case_cascade_spill.rs` with its second loop deleted
+  compiles at (8, 8). The difference is the empty-`continue` arm, which splits
+  the loop body into two blocks.
+- **Pick a guard predicate from LOW accumulator bits.** The `select_spill`
+  mixing chain (`acc = acc.wrapping_mul(0x0100_0193) ^ t`) drives the
+  accumulator's TOP bits to all-ones, so `(acc >> 58) & 63 != 63` trapped on
+  two thirds of the boundary grid while `(acc >> 3) & 63 != 63` is the uniform
+  1-in-64 it looks like. Always measure the density with
+  `scratch/c29run.sh <case> grid` before wiring a trap case.
+- Configuration-dependent trap-case findings are pinned with
+  `run_case_traps_with_flags` (harness.rs; added for this campaign): the
+  `--optimize=max` cascade panic above is `trapspill::cascade_cont_max`,
+  ignored with the panic text, the same way `spill_loop_mix_oz` pins a value
+  case. Random inputs only — a flags+traps+inputs variant is added when a
+  finding needs it.
