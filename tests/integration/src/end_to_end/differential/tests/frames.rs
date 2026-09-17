@@ -102,6 +102,18 @@ fn rec_freight() {
 /// carried by loops and bands rather than by cluster size because `ra` with a
 /// four-u64 cluster and `rb` with six or eight both hit the same arity-2
 /// `NoSolution` as the `rec_freight` (4, 2) rung.
+///
+/// CONFIGURATION-DEPENDENT (first measured 2026-09-17, campaign 36 — this
+/// module had never been swept at `--optimize=basic`): passes at the default
+/// level, at `--optimize=max`, at `--optimize=size-min` and without guest
+/// DWARF; at `--optimize=basic` it panics with `failed to schedule operands
+/// [%226, %282] for inst 'arith.rotl' with error: NoSolution, constraints:
+/// [Move, Copy]` at codegen/masm/src/lower/lowering.rs:109. F6, not the
+/// arity-2 gap: the spills trace shows `edges to split = 1` and two `erase
+/// unused reload` lines before the panic. `-O1` keeps `rb`'s bands
+/// un-hoisted, so the same freight sits one rung deeper in the window. No
+/// pinned twin — F6 is a known class with committed reproducers
+/// (`pressure::window_erased_min` and friends).
 #[test]
 fn rec_mutual() {
     run_case("rec_mutual", include_str!("../cases/case_rec_mutual.rs"));
@@ -137,6 +149,16 @@ fn rec_mutual_edges() {
 /// edges, and the locals table grows from 22 entries after Local2Reg to 40
 /// after TransformSpills — the eighteen slots are locals 22..39, above every
 /// user local, and none of them can reach the frame array in linear memory.
+///
+/// CONFIGURATION-DEPENDENT (first measured 2026-09-17, campaign 36 — this
+/// module had never been swept at `--optimize=basic`): passes at the default
+/// level, at `--optimize=max`, at `--optimize=size-min` and without guest
+/// DWARF; at `--optimize=basic` it panics with `invalid operand stack index
+/// (12): requires access to more than 16 elements` at
+/// codegen/masm/src/emit/mod.rs:623. F6: the spills trace shows `edges to
+/// split = 6` and 34 `erase unused reload` lines, the last trace op before
+/// the panic being a `convert reload to load`. No pinned twin — F6 is a known
+/// class with committed reproducers.
 #[test]
 fn frame_spills() {
     run_case("frame_spills", include_str!("../cases/case_frame_spills.rs"));
