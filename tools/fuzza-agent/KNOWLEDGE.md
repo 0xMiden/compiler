@@ -3352,3 +3352,76 @@ trap-or-value decisions and zero wrong values, in the default env and at
   ignored with the panic text, the same way `spill_loop_mix_oz` pins a value
   case. Random inputs only — a flags+traps+inputs variant is added when a
   finding needs it.
+
+## Post-rebase configuration sweep (campaign 36, 2026-09-17)
+
+The whole 708-test corpus (634 running / 74 ignored) re-run in the five
+configurations the default run does not cover, one cargo invocation per
+(configuration, module), 25 modules. Runner `scratch/c36sweep.sh`, logs
+`scratch/c36/`, failure lists `scratch/c36-fail-<config>.txt`. This is the
+first whole-corpus sweep since campaign 23 (2026-09-09), whose corpus was 407
+tests and which predates ten of today's modules.
+
+- **Per-configuration totals (passed / failed / ignored, and machine time):**
+  default 634 / 0 / 74 (6.3 min) · `--optimize=max` 627 / 7 / 74 (8.4 min) ·
+  `--optimize=size-min` 618 / 15 / 73 (8.1 min) · `--optimize=basic`
+  611 / 21 / 72 (8.6 min) · `FUZZA_GUEST_DEBUG=0` 624 / 10 / 74 (7.7 min) ·
+  `FUZZA_INPUT_PAIRS=256` 634 / 0 / 74 (**72.8 min**). Budget the deep run at
+  well over an hour: it is 9× the cost of a flag sweep, and `programs` (20
+  min), `programs_oz` (12 min) and `memory` (8 min) are more than half of it.
+- **Every single failure in every configuration is a COMPILE-TIME failure.**
+  Zero value divergences and zero trap-decision flips in any configuration,
+  including 634 × 256 = 162,304 input pairs in the deep run. Campaign 23's
+  "the corpus is value-clean at depth" now holds over a 1.77× larger corpus,
+  the rebased compiler and the nightly-2026-09-01 guests.
+- **Complete link-skip map (what a whole-corpus sweep actually needs).**
+  Only `corelib` needs any `--skip` at all: `core_str_find` at
+  `--optimize=size-min`, and `core_str_find` + `core_str_patterns` at
+  `--optimize=basic`. Campaign 31's skip of `core_str_patterns` at size-min is
+  UNNECESSARY — left in, the run completes and the case passes, matching the
+  link-reach map. No other module needs a skip at any level, and no run died
+  without a summary. Note `--skip` is a SUBSTRING filter, so `--skip
+  core_str_find` also removes the ignored `core_str_find_oz` (that is why the
+  ignored count drops by one per skip).
+- **The opt-level sweeps have a 32-test blind spot, and it is concentrated.**
+  A case that pins `--optimize=...` via `run_case_with_flags` is measured in
+  ITS level in every sweep, never in the sweep's. Of the 634 running tests, 32
+  are pinned: 13 in `opt_levels` and 14 in `programs_oz` (both at size-min, via
+  the modules' `SIZE_MIN` const), plus `calls::add128_checked_oz`,
+  `corelib::prog_slicealg_basic`, `programs::fir_cordic_guard_o3` and
+  `wide::{chk_add_u128_o1, chk_add_u128_o1_repro}`. That is why `opt_levels`
+  (13/0/2) and `programs_oz` (14/0/5) report byte-identical counts at the
+  default level, max, size-min and basic — a sweep of those two modules
+  measures nothing. NO running test pins `--guest-debug`, so the no-DWARF
+  sweep does cover the whole running corpus.
+- **What moved since the baselines.** GONE: `calls::add128_checked` at
+  size-min and at basic, and `signed::{sext_shapes, sext_shapes_repro}` +
+  `wide::{wide_words, wide_words_edges, wide_loop_cmp, wide_loop_cmp_edges}`
+  without DWARF — all F9, fixed by the nightly-2026-09-01 guest toolchain.
+  Nothing else left any baseline, and nothing entered one that campaigns
+  31 / 34 / 35 had not already recorded (`compose::nest_continue`,
+  `wide::wide_limbs_freight`, `calls::indirect_spill_{args,line}`,
+  `corelib::prog_numeric`, `heap::heap_list`, `trapspill::cascade_cont`).
+- **`frames` had never been swept at `--optimize=basic`** (campaign 25's
+  `c25cfg.sh` runs max / size-min / nodwarf only) and it fails there:
+  `frame_spills` (+`_edges`) at `emit/mod.rs:623` index 12 and `rec_mutual`
+  (+`_edges`) at `lowering.rs:109` (`arith.rotl`, `[Move, Copy]`). Both are
+  **F6** by trace (`edges to split` = 6 / 1 with 34 / 2 `erase unused reload`
+  lines), not F17 and not the arity-2 gap, so no twin was added — details are
+  in the two doc comments. Lesson: a module's config coverage is whatever its
+  CREATING campaign swept; check that script before trusting "it passes
+  everywhere".
+- **`pressure::window_erased_guard` is an F6 guard at the default level, at
+  max and at size-min — but not at `--optimize=basic`**, where it panics
+  (`arith.rotl`, `[Copy, Copy]`, `lowering.rs:109`) with `edges to split = 1`
+  and four erased split reloads. Its doc's "the spill analysis requests NO
+  spill here" is default-level only. Whoever fixes F6 must read the "must stay
+  green" list in the corpus map with that level qualifier attached.
+- **The class mix per configuration is stable and narrow.** At max: 5 ×
+  `lowering.rs:109` / `emit/mod.rs:623` plus the two `frontier.rs:123` trap
+  cases. At size-min: 6 × `lowering.rs:109`, 6 × `rewriter.rs:335` (F12), 2 ×
+  `spills.rs:1533` (F7), 1 × `emit/mod.rs:623`. At basic: 7 ×
+  `emit/mod.rs:623`, 7 × `lowering.rs:109`, 4 × F12, 2 × F7, 1 assembler
+  call-graph cycle. Without DWARF: **all ten failures are F12** — the no-DWARF
+  sweep remains the single cheapest way to find loop-invariant-args producers,
+  and it finds nothing else.

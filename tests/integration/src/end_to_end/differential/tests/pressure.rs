@@ -296,7 +296,13 @@ fn window_erased_min() {
 /// never appears in the trace), so this rung is the last one below the cliff;
 /// it also passes at `--optimize=size-min` and `--optimize=max` and panics at
 /// `--optimize=basic` (lowering.rs:109), which is the campaign-21 "opt level is
-/// not a safety ladder" rule at minimal scale.
+/// not a safety ladder" rule at minimal scale. The "no spill" half of that is
+/// DEFAULT-LEVEL ONLY (re-traced 2026-09-17, campaign 36): at
+/// `--optimize=basic` the analysis does spill — `edges to split = 1` and four
+/// `erase unused reload` lines — so the `-O1` panic (`arith.rotl`,
+/// `[Copy, Copy]`) is F6 here too, not the arity-2 gap. That also means this
+/// case guards F6 at the default level, at max and at size-min, but not at
+/// `--optimize=basic`.
 #[test]
 fn window_erased_guard() {
     run_case("window_erased_guard", include_str!("../cases/case_window_erased_guard.rs"));
