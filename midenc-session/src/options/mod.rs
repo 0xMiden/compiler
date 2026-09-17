@@ -15,7 +15,7 @@ use miden_project::TargetType;
 
 pub use self::printing::IrFilter;
 use crate::{
-    ColorChoice, CompileFlags, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
+    ColorChoice, CompileFlags, FileType, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
     diagnostics::{DiagnosticsConfig, Emitter, Report},
 };
 
@@ -284,9 +284,10 @@ impl Options {
     ///
     /// `input` is the input file given on the command line, if any. Without one, `--manifest-path`
     /// names the project to build. Absent both, the project is the `miden-project.toml` in the
-    /// working directory, or the `Cargo.toml` there when no Miden manifest exists beside it. Given
-    /// both, they must name the same file — a `Cargo.toml` counting as the `miden-project.toml`
-    /// beside it — and the input is kept as given. Anything else is rejected rather than silently
+    /// working directory, or the `Cargo.toml` there when no Miden manifest exists beside it. An
+    /// input file may be given as well only when it is that same manifest — a `Cargo.toml`
+    /// counting as the `miden-project.toml` beside it — and is then kept as given; a source file
+    /// cannot be combined with `--manifest-path`. Anything else is rejected rather than silently
     /// building one of the two.
     ///
     /// Whenever `--manifest-path` is given it is validated first, as a flag: it must name an
@@ -306,6 +307,17 @@ impl Options {
                 // that is not a manifest is reported as such rather than as a mismatch — or, if
                 // the input happens to name the same file, accepted.
                 validate_manifest_path(manifest_path)?;
+                // A source file is not a second locator for the same project, so it is refused on
+                // what it is rather than on where it sits — and before the comparison below,
+                // whose "different files" would otherwise be said of two things that are not the
+                // same kind of thing at all.
+                if !matches!(input.file_type(), FileType::Toml) {
+                    return Err(Report::msg(alloc::format!(
+                        "--manifest-path names the project to build, but the input '{}' is a \
+                         source file; give one or the other",
+                        input.file_name().as_str()
+                    )));
+                }
                 // Compared by identity when the file exists, else by absolute path, so
                 // `foo/Cargo.toml`, `./foo/miden-project.toml` and a path through `..` or a
                 // symlink agree.
@@ -755,14 +767,25 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let manifest = manifest_at(dir.path(), "contract/Cargo.toml");
 
-        for input_path in [
-            dir.path().join("other").join("Cargo.toml"),
-            dir.path().join("contract").join("target").join("foo.wasm"),
-        ] {
-            let err = options(Some(manifest.clone()))
-                .resolve_input(Some(input(input_path)))
-                .unwrap_err();
-            assert!(err.to_string().contains("name different files"), "{err}");
-        }
+        let err = options(Some(manifest))
+            .resolve_input(Some(input(dir.path().join("other").join("Cargo.toml"))))
+            .unwrap_err();
+        assert!(err.to_string().contains("name different files"), "{err}");
+    }
+
+    /// A source file alongside `--manifest-path` is refused for what it is, not for where it is.
+    ///
+    /// The two name different kinds of build — one file to compile, one project to build — so
+    /// there is no same-file question to ask about them, and the mismatch above would be the
+    /// wrong thing to say.
+    #[test]
+    fn a_source_input_alongside_a_manifest_path_is_rejected() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let manifest = manifest_at(dir.path(), "contract/Cargo.toml");
+
+        let err = options(Some(manifest))
+            .resolve_input(Some(input(dir.path().join("contract").join("src").join("foo.wasm"))))
+            .unwrap_err();
+        assert!(err.to_string().contains("is a source file"), "{err}");
     }
 }
