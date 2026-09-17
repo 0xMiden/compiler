@@ -47,7 +47,7 @@ use std::path::{Path, PathBuf};
 use miden_assembly::ProjectTargetSelector;
 use miden_assembly_syntax::debuginfo::Span;
 use midenc_session::{
-    DebugInfo, FileType, InputFile, InputType, Options, Session,
+    DebugInfo, FileType, InputFile, InputType, Options, ProjectManifest, Session,
     diagnostics::{Report, SourceManager, Uri},
     miden_project::{
         Dependency, DependencyVersionScheme, Linkage, Package as ProjectPackage, Project, Target,
@@ -641,9 +641,6 @@ pub fn prepare_project(
     // build compiled. `Session::new` now reads the manifest's *AST* for the three facts it needs
     // before a session exists (its own documentation lists them) and builds no project at all.
     let project = Project::load(&manifest_path, source_manager).map_err(|err| {
-        // A workspace root is a manifest the loader cannot load *because* it selects no package,
-        // so on the error path it gets the diagnostic that belongs to it rather than the generic
-        // "failed to load" wrapper.
         if midenc_session::is_workspace_manifest(&manifest_path, source_manager) {
             Report::msg(format!(
                 "'{}' is a Miden workspace root, which selects no package to build; run `miden \
@@ -656,16 +653,26 @@ pub fn prepare_project(
     })?;
     let package = project.package();
 
-    // `Session` derives the artifact name from `--name` if given, and otherwise from the
-    // manifest's package name (see `Session::new`). Preparation takes only `Options`, so that
-    // rule is restated here rather than read off a session — and
-    // `the_selected_executable_is_the_one_the_session_names` runs both, so the two cannot
-    // diverge in silence.
-    let name = options.name.clone().unwrap_or_else(|| package.name().inner().to_string());
-    let selector = if options.target_type.unwrap_or_default().is_executable() {
-        ProjectTargetSelector::Executable(name.as_str())
+    // Which executable this build compiles is not decided here: it is
+    // `ProjectManifest::selected_executable`, the same function `Session::new` derived the
+    // entrypoint from, asked again over the package just loaded. So the executable assembled and
+    // the executable the entrypoint names are one target by construction, and
+    // `the_selected_executable_is_the_one_the_session_names` runs both to say so. The name is
+    // owned before the selector is built, because the facts it was read off are a temporary.
+    let executable_name = if options.target_type.unwrap_or_default().is_executable() {
+        Some(
+            ProjectManifest::from_package(&package)
+                .selected_executable(options)?
+                .name
+                .inner()
+                .to_string(),
+        )
     } else {
-        ProjectTargetSelector::Library
+        None
+    };
+    let selector = match executable_name.as_deref() {
+        Some(name) => ProjectTargetSelector::Executable(name),
+        None => ProjectTargetSelector::Library,
     };
     let target = selector.select_target(&package)?;
     let frontend = select_frontend(&target, registry)?;
@@ -700,9 +707,6 @@ pub fn prepare_project(
 fn normalize_locator(input: &InputFile) -> CompilerResult<PathBuf> {
     let file_name = input.file_name();
     match file_name.file_name() {
-        // Recognized through `midenc_session::is_cargo_manifest`, the same predicate
-        // `project_manifest_path` maps with: a locator this arm accepts is exactly one that
-        // mapping rewrites.
         Some(_) if midenc_session::is_cargo_manifest(file_name.as_path()) => {
             let cargo_manifest_path = file_name.as_path();
             reject_unselected_workspace_root(cargo_manifest_path)?;
@@ -1031,9 +1035,10 @@ path = "main.wat"
 
     /// A project with two executables, one rooted at Rust and one at hand-written Miden Assembly.
     ///
-    /// Mixed on purpose: a project with a Rust executable in it is one whose entrypoint
-    /// inference is reached, and which of its two executables is selected then decides whether a
-    /// name is derived — see [`the_entrypoint_follows_the_selected_executables_root`].
+    /// Mixed on purpose: which of the two is selected decides whether an entrypoint name is
+    /// derived at all, so a selection that moved would be visible in the session as well as in
+    /// the target preparation assembles — see
+    /// [`the_entrypoint_follows_the_selected_executables_root`].
     const MIXED_EXECUTABLES_MANIFEST: &str = r#"
 [package]
 name = "prepare_fixture"
@@ -1046,6 +1051,40 @@ path = "src/main.rs"
 [[bin]]
 name = "helper"
 path = "helper.masm"
+"#;
+
+    /// A project with two executables rooted at Rust, one of them named after the package.
+    ///
+    /// Nothing about the roots tells them apart, so which one a build compiles is decided by the
+    /// selection rule and nothing else — which is what
+    /// [`the_selection_rule_prefers_target_then_name_then_the_package_name`] walks through.
+    const TWO_RUST_EXECUTABLES_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "prepare_fixture"
+path = "src/main.rs"
+
+[[bin]]
+name = "other"
+path = "other.rs"
+"#;
+
+    /// A project with exactly one executable, named something other than the package.
+    ///
+    /// Deliberately not package-named: a sole executable is the selection on its own, and a
+    /// fixture whose only executable carried the package's name could not tell the two clauses of
+    /// the rule apart.
+    const LONE_EXECUTABLE_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "other"
+path = "other.rs"
 "#;
 
     /// A transaction script whose library target is rooted at Rust.
@@ -1322,9 +1361,14 @@ namespace = "miden:base/transaction-script@1.0.0"
 
     /// The root that decides the entrypoint is the *selected* executable's, not just any one.
     ///
-    /// A mixed project is what reaches the per-target check: a project with no Rust executable
-    /// at all is let through before a target is ever selected, so only a project like this one
-    /// gets as far as asking what the target the session named is rooted at.
+    /// And the executable preparation assembles is that same one: both halves of the build ask
+    /// [`midenc_session::ProjectManifest::selected_executable`], so each `--target` is run
+    /// through both here. A session naming one executable's entrypoint while the build assembled
+    /// the other's code would compile a program whose entrypoint does not exist.
+    ///
+    /// The registry carries both the Rust and the Miden Assembly project frontends, because the
+    /// two executables are rooted at different languages and preparation picks a frontend from
+    /// the root of whichever it selected.
     #[test]
     fn the_entrypoint_follows_the_selected_executables_root() {
         let manifest = fixture_source(
@@ -1332,27 +1376,134 @@ namespace = "miden:base/transaction-script@1.0.0"
             "miden-project.toml",
             MIXED_EXECUTABLES_MANIFEST,
         );
+        let mut registry = registry_with_rust();
+        registry
+            .register(crate::pipeline::frontends::MASM_FRONTEND)
+            .expect("the MASM project frontend should register");
 
         for (target, expected) in
             [("helper", None), ("prepare_fixture", Some("prepare_fixture::entrypoint"))]
         {
             let mut options = Box::new(Options::default());
             options.target = Some(target.to_string());
+            let source_manager: Arc<dyn SourceManager + Send + Sync> =
+                Arc::new(DefaultSourceManager::default());
 
-            let session = Session::new(
-                input(&manifest),
-                options,
-                None,
-                Arc::new(DefaultSourceManager::default()),
-            )
-            .expect("a Miden manifest with executable targets should open a compiler session");
+            let session = Session::new(input(&manifest), options, None, source_manager.clone())
+                .expect("a Miden manifest with executable targets should open a compiler session");
 
             assert_eq!(
                 session.options.entrypoint.as_deref(),
                 expected,
                 "`--target {target}` selects the executable whose root is asked about"
             );
+
+            let prepared = prepare_project(
+                &input(&manifest),
+                &session.options,
+                &registry,
+                source_manager.as_ref(),
+            )
+            .expect("a project of mixed executables should prepare");
+
+            assert_eq!(
+                prepared.target.name.inner().as_ref(),
+                target,
+                "`--target {target}` must assemble the executable its entrypoint was derived from"
+            );
         }
+    }
+
+    /// The one selection rule, in the order it tries things.
+    ///
+    /// `--target` names the executable outright, else `--name` does, else the executable named
+    /// after the package. Each row runs the session and preparation over the same options, so a
+    /// rule that moved on one side and not the other would show up as an entrypoint naming a
+    /// different executable than the one assembled.
+    #[test]
+    fn the_selection_rule_prefers_target_then_name_then_the_package_name() {
+        let manifest = fixture_source(
+            "prepare_selection_two_rust_executables",
+            "miden-project.toml",
+            TWO_RUST_EXECUTABLES_MANIFEST,
+        );
+
+        // `--target`, `--name`, the executable compiled, and the entrypoint derived from it.
+        let cases = [
+            (None, None, "prepare_fixture", "prepare_fixture::entrypoint"),
+            (None, Some("other"), "other", "other::entrypoint"),
+            (Some("other"), None, "other", "other::entrypoint"),
+        ];
+
+        for (target, name, selected, entrypoint) in cases {
+            let mut options = Box::new(Options::default());
+            options.target = target.map(ToString::to_string);
+            options.name = name.map(ToString::to_string);
+            let source_manager: Arc<dyn SourceManager + Send + Sync> =
+                Arc::new(DefaultSourceManager::default());
+
+            let session = Session::new(input(&manifest), options, None, source_manager.clone())
+                .expect("a Miden manifest with executable targets should open a compiler session");
+
+            assert_eq!(
+                session.options.entrypoint.as_deref(),
+                Some(entrypoint),
+                "--target {target:?} --name {name:?} must name the entrypoint of '{selected}'"
+            );
+
+            let prepared = prepare_project(
+                &input(&manifest),
+                &session.options,
+                &registry_with_rust(),
+                source_manager.as_ref(),
+            )
+            .expect("a project of Rust executables should prepare");
+
+            assert_eq!(
+                prepared.target.name.inner().as_ref(),
+                selected,
+                "--target {target:?} --name {name:?} must compile '{selected}'"
+            );
+        }
+    }
+
+    /// A project's only executable is the selection, whatever it is named.
+    ///
+    /// The last clause of the rule, and the one that keeps a project naming its single `[[bin]]`
+    /// after something other than its package buildable with no flags at all.
+    #[test]
+    fn a_lone_executable_is_selected_without_being_named() {
+        let manifest = fixture_source(
+            "prepare_selection_lone_executable",
+            "miden-project.toml",
+            LONE_EXECUTABLE_MANIFEST,
+        );
+        let source_manager: Arc<dyn SourceManager + Send + Sync> =
+            Arc::new(DefaultSourceManager::default());
+
+        let session = Session::new(input(&manifest), Box::default(), None, source_manager.clone())
+            .expect("a Miden manifest with one executable target should open a compiler session");
+
+        assert_eq!(
+            session.options.entrypoint.as_deref(),
+            Some("other::entrypoint"),
+            "the sole executable is the selection, so its root is what the entrypoint is derived \
+             from"
+        );
+
+        let prepared = prepare_project(
+            &input(&manifest),
+            &session.options,
+            &registry_with_rust(),
+            source_manager.as_ref(),
+        )
+        .expect("a project with one executable should prepare");
+
+        assert_eq!(
+            prepared.target.name.inner().as_ref(),
+            "other",
+            "and it is the executable preparation assembles"
+        );
     }
 
     #[test]

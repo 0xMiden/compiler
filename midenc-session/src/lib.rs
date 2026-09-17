@@ -702,9 +702,10 @@ fn is_rust_root(_target: &miden_project::Target) -> bool {
 /// default](Self::library_target_type) and [which executable it builds](Self::selected_executable)
 /// — and both have to be answered identically everywhere, because the answers decide different
 /// halves of one build. `Session::new` uses them to set [`Options::target_type`] and
-/// [`Options::entrypoint`]; the Rust frontend's nested `cargo` build uses the second to reject a
-/// project it could not build, and used to carry its own copy of both rules over a separately
-/// loaded project. Two implementations of one rule can only ever agree by coincidence.
+/// [`Options::entrypoint`]; `prepare_project` in `midenc-compile` uses the second to choose the
+/// target it assembles; the Rust frontend's nested `cargo` build uses it to reject a project it
+/// could not build, and used to carry its own copy of both rules over a separately loaded
+/// project. Two implementations of one rule can only ever agree by coincidence.
 ///
 /// `read` parses a manifest for them, and [`from_package`](Self::from_package) takes them off a
 /// project that is already loaded. That is the whole difference between the callers: where the
@@ -747,26 +748,38 @@ impl ProjectManifest {
         }
     }
 
-    /// The executable target this build compiles, of the ones declared.
+    /// The executable this build compiles, of the ones the manifest declares.
     ///
-    /// `requested` is `--target`, which names one outright. Without it there must be exactly one
-    /// to choose, because nothing else distinguishes them: a package declaring several says which
-    /// it means, or is asked to.
-    pub fn selected_executable(
-        &self,
-        requested: Option<&str>,
-    ) -> Result<&miden_project::Target, Report> {
+    /// One rule for everyone who asks — the session deriving the entrypoint, preparation choosing
+    /// what to assemble, and the nested cargo build refusing what it cannot build: `--target`
+    /// names it outright; else `--name` does; else the executable named after the package; else
+    /// the sole executable when there is exactly one. A project declaring several and naming none
+    /// is ambiguous, and says so; a project declaring none has nothing to select.
+    pub fn selected_executable(&self, options: &Options) -> Result<&miden_project::Target, Report> {
+        let requested = options.target.as_deref().or(options.name.as_deref());
         match requested {
             Some(name) => self
                 .executables
                 .iter()
                 .find(|target| name == &**target.name.inner())
                 .ok_or_else(|| Report::msg(format!("no executable target name '{name}'"))),
-            None if self.executables.len() == 1 => Ok(&self.executables[0]),
-            None => Err(Report::msg(
-                "ambiguous executable target selection: use --target to select a specific \
-                 executable target",
-            )),
+            None if self.executables.is_empty() => {
+                Err(Report::msg("project does not declare an executable target"))
+            }
+            None => self
+                .executables
+                .iter()
+                .find(|target| self.name.as_str() == &**target.name.inner())
+                .or(match self.executables.as_slice() {
+                    [sole] => Some(sole),
+                    _ => None,
+                })
+                .ok_or_else(|| {
+                    Report::msg(
+                        "ambiguous executable target selection: use --target to select a specific \
+                         executable target",
+                    )
+                }),
         }
     }
 
@@ -845,8 +858,10 @@ impl ProjectManifest {
 /// `run` of the interface every transaction script implements. Anything else names no entrypoint.
 ///
 /// Nothing is inferred for a target rooted at something other than Rust — see [`is_rust_root`] —
-/// nor for a run that already named an entrypoint. An ambiguous executable selection is an
-/// error: which executable is built has to be settled before a name can be derived from it.
+/// nor for a run that already named an entrypoint. The executable is the one
+/// [`ProjectManifest::selected_executable`] names, which is the executable preparation will
+/// assemble: an ambiguous selection is an error here because it is an error there too, and a
+/// project refused by one has to be refused by the other.
 fn infer_rust_entrypoint(manifest: &ProjectManifest, options: &mut Options) -> Result<(), Report> {
     if options.entrypoint.is_some() {
         return Ok(());
@@ -854,12 +869,7 @@ fn infer_rust_entrypoint(manifest: &ProjectManifest, options: &mut Options) -> R
 
     match options.target_type {
         Some(miden_project::TargetType::Executable) => {
-            // Asking the selection first would reject a project with several non-Rust executables
-            // that is perfectly buildable, since nothing would be derived from the selection.
-            if !manifest.executables.iter().any(is_rust_root) {
-                return Ok(());
-            }
-            let target = manifest.selected_executable(options.target.as_deref())?;
+            let target = manifest.selected_executable(options)?;
             if is_rust_root(target) {
                 let masm_module_name = target.name.inner().replace('-', "_");
                 options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));

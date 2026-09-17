@@ -2226,10 +2226,11 @@ pub(crate) mod manifest {
     ///
     /// Two rejections, and both are this build's own: a **kernel**, which the compiler does not
     /// support through this route, and an **executable that cannot be identified** — a package
-    /// declaring several `[[bin]]`s with no `--target` to choose between them, or a `--target`
-    /// naming one it does not declare. The second is [`ProjectManifest::selected_executable`],
-    /// which is also what derives the entrypoint in `Session::new`, so a project rejected here is
-    /// exactly a project no session could have named an entrypoint for.
+    /// declaring several `[[bin]]`s that nothing picks between, or a selection naming one it does
+    /// not declare. The second is [`ProjectManifest::selected_executable`], which is also what
+    /// derives the entrypoint in `Session::new` and what chooses the target preparation
+    /// assembles, so a project rejected here is exactly a project neither of those could have
+    /// named an executable for.
     ///
     /// # This used to modify the options, and the modifications were dead
     ///
@@ -2258,9 +2259,10 @@ pub(crate) mod manifest {
         let target_type = options.target_type.unwrap_or_else(|| manifest.library_target_type());
         match target_type {
             TargetType::Executable => {
-                // Selected only to be checked: which executable is *built* is decided by the
-                // `cargo` invocation and by the target the assembler asks for, not here.
-                manifest.selected_executable(options.target.as_deref())?;
+                // The same selection preparation makes — one function answers for both — made
+                // here only to refuse a project that has no answer before `cargo` is spawned on
+                // it. Nothing is kept: what gets built is settled again downstream.
+                manifest.selected_executable(options)?;
                 Ok(())
             }
             TargetType::Kernel => {
@@ -3448,11 +3450,10 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
 
     /// A package declaring two executables, neither of which a build can pick unaided.
     ///
-    /// Both roots are `.rs` files, and load-bearingly so: a session only selects an executable
-    /// for a project that has a Rust one in it, so with any other root
+    /// Neither is named `fixture`, and load-bearingly so: an executable carrying the package's
+    /// name would be the selection, and
     /// [`an_ambiguous_executable_is_refused_by_both_the_session_and_the_manifest_build`] would
-    /// be left with only the manifest build's half, which refuses the ambiguity whatever the
-    /// roots are.
+    /// have no ambiguity left to be refused.
     const TWO_EXECUTABLES_MANIFEST: &str = r#"
 [package]
 name = "fixture"

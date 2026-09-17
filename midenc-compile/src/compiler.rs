@@ -113,6 +113,10 @@ pub struct Compiler {
     pub stdout: bool,
     /// Specify the name of the project target being compiled
     ///
+    /// For a manifest build, this names the executable target to build. Without it, `--name` is
+    /// tried, then the executable named after the package, then the sole executable the manifest
+    /// declares; a project declaring several and naming none is ambiguous.
+    ///
     /// By default, if this is not specified, then the target is inferred based on the type of
     /// target requested, and the available project context.
     ///
@@ -386,7 +390,8 @@ pub struct Compiler {
     /// Path to the project manifest to build
     ///
     /// Either a `miden-project.toml`, or the `Cargo.toml` beside it. This names the project when
-    /// no input file is given; given both, they must name the same file. Absent both, the project
+    /// no input file is given. An input file may be given as well only when it is that same
+    /// manifest; a source file cannot be combined with `--manifest-path`. Absent both, the project
     /// is the `miden-project.toml` in the working directory, or the `Cargo.toml` there when no
     /// Miden manifest exists beside it. A relative path is resolved against the directory the
     /// compiler is run from, not against `--working-dir`.
