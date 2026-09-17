@@ -6,8 +6,9 @@ use crate::{
     SymbolName, SymbolTable, Type, UnsafeIntrusiveEntityRef, Visibility,
     constants::ConstantData,
     dialects::builtin::{
-        Function, FunctionRef, FunctionTableEntry, FunctionTableRef, GlobalVariable,
-        GlobalVariableRef, Module, ModuleRef, PrimModuleBuilder, Segment, attributes::Signature,
+        Function, FunctionAlias, FunctionAliasRef, FunctionRef, FunctionTableEntry,
+        FunctionTableRef, GlobalVariable, GlobalVariableRef, Module, ModuleRef, PrimModuleBuilder,
+        Segment, attributes::Signature,
     },
 };
 
@@ -55,6 +56,16 @@ impl ModuleBuilder {
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
         self.builder.create_function(name, visibility, signature)
+    }
+
+    /// Define a [crate::dialects::builtin::FunctionAlias] in this module.
+    pub fn define_function_alias<C: AsCallableSymbolRef>(
+        &mut self,
+        name: Ident,
+        visibility: Visibility,
+        target: C,
+    ) -> Result<FunctionAliasRef, Report> {
+        self.builder.create_function_alias(name, visibility, target)
     }
 
     /// Declare a new [GlobalVariable] in this module with the given name, visibility, and type.
@@ -150,39 +161,48 @@ impl ModuleBuilder {
         Ok(())
     }
 
+    /// Get the function named `name`, without resolving aliases.
+    ///
+    /// Returns `None` if the name is missing or refers to another kind of symbol.
     pub fn get_function(&self, name: &str) -> Option<FunctionRef> {
         let symbol = SymbolName::intern(name);
-        match self.module.borrow().get(symbol) {
-            Some(symbol_ref) => {
-                let op = symbol_ref.borrow();
-                match op.as_symbol_operation().downcast_ref::<Function>() {
-                    Some(function) => Some(function.as_function_ref()),
-                    None => panic!("expected {name} to be a function"),
-                }
-            }
-            None => None,
-        }
+        let symbol_ref = self.module.borrow().get(symbol)?;
+        let op = symbol_ref.borrow();
+        op.as_symbol_operation()
+            .downcast_ref::<Function>()
+            .map(Function::as_function_ref)
     }
 
-    pub fn set_function_visibility(&mut self, name: &str, visibility: Visibility) {
+    /// Resolve `name` to a function, following any function aliases.
+    ///
+    /// Returns `None` if the name or an alias target cannot be resolved, the alias chain is
+    /// cyclic, or the resolved symbol is not a function.
+    pub fn resolve_function(&self, name: &str) -> Option<FunctionRef> {
         let symbol = SymbolName::intern(name);
-        match self.module.borrow_mut().get(symbol) {
-            Some(mut symbol_ref) => {
-                let mut op = symbol_ref.borrow_mut();
-                match op.as_symbol_operation_mut().downcast_mut::<Function>() {
-                    Some(function) => {
-                        *function.get_linkage_mut() = visibility;
-                    }
-                    None => panic!("expected {name} to be a function"),
-                }
-            }
-            None => {
-                panic!(
-                    "failed to find function {name} in module {}",
-                    self.module.borrow().get_name()
-                )
-            }
-        }
+        let symbol_ref = self.module.borrow().get(symbol)?;
+        symbol_ref.resolve_function().ok()
+    }
+
+    /// Resolve a callable name, retaining both the named symbol and its canonical callable.
+    // TODO import needed things at top, don't do `crate::`
+    pub fn resolve_callable(
+        &self,
+        name: &str,
+    ) -> Result<crate::ResolvedSymbolCallee, crate::SymbolResolutionError> {
+        let path = crate::SymbolPath::from_iter([crate::SymbolNameComponent::Leaf(
+            SymbolName::intern(name),
+        )]);
+        self.module.borrow().resolve_callable(&path)
+    }
+
+    /// Get the alias op itself, without resolving its target.
+    pub fn get_function_alias(&self, name: &str) -> Option<FunctionAliasRef> {
+        let symbol = SymbolName::intern(name);
+        let symbol_ref = self.module.borrow().get(symbol)?;
+        let op = symbol_ref.borrow();
+        op.as_symbol_operation()
+            .downcast_ref::<FunctionAlias>()
+            .map(|alias| alias.as_function_alias_ref())
     }
 
     pub fn get_global_var(&self, name: SymbolName) -> Option<GlobalVariableRef> {
