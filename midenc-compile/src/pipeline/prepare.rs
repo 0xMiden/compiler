@@ -47,12 +47,13 @@ use std::path::{Path, PathBuf};
 use miden_assembly::ProjectTargetSelector;
 use miden_assembly_syntax::debuginfo::Span;
 use midenc_session::{
-    DebugInfo, FileType, InputFile, InputType, Options, Session,
+    DebugInfo, FileType, InputFile, InputType, Options, ProjectManifest, Session,
     diagnostics::{Report, SourceManager, Uri},
     miden_project::{
         Dependency, DependencyVersionScheme, Linkage, Package as ProjectPackage, Project, Target,
         TargetType, VersionReq, VersionRequirement,
     },
+    target_root_extension,
 };
 
 use super::{FrontendRegistration, FrontendRegistry};
@@ -640,20 +641,38 @@ pub fn prepare_project(
     // build compiled. `Session::new` now reads the manifest's *AST* for the three facts it needs
     // before a session exists (its own documentation lists them) and builds no project at all.
     let project = Project::load(&manifest_path, source_manager).map_err(|err| {
-        err.wrap_err(format!("failed to load Miden project from {}", manifest_path.display()))
+        if midenc_session::is_workspace_manifest(&manifest_path, source_manager) {
+            Report::msg(format!(
+                "'{}' is a Miden workspace root, which selects no package to build; run `miden \
+                 build` from a workspace member or select one with --manifest-path",
+                manifest_path.display()
+            ))
+        } else {
+            err.wrap_err(format!("failed to load Miden project from {}", manifest_path.display()))
+        }
     })?;
     let package = project.package();
 
-    // `Session` derives the artifact name from `--name` if given, and otherwise from the
-    // manifest's package name (see `Session::new`). Preparation takes only `Options`, so that
-    // rule is restated here rather than read off a session — and
-    // `the_selected_executable_is_the_one_the_session_names` runs both, so the two cannot
-    // diverge in silence.
-    let name = options.name.clone().unwrap_or_else(|| package.name().inner().to_string());
-    let selector = if options.target_type.unwrap_or_default().is_executable() {
-        ProjectTargetSelector::Executable(name.as_str())
+    // Which executable this build compiles is not decided here: it is
+    // `ProjectManifest::selected_executable`, the same function `Session::new` derived the
+    // entrypoint from, asked again over the package just loaded. So the executable assembled and
+    // the executable the entrypoint names are one target by construction, and
+    // `the_selected_executable_is_the_one_the_session_names` runs both to say so. The name is
+    // owned before the selector is built, because the facts it was read off are a temporary.
+    let executable_name = if options.target_type.unwrap_or_default().is_executable() {
+        Some(
+            ProjectManifest::from_package(&package)
+                .selected_executable(options)?
+                .name
+                .inner()
+                .to_string(),
+        )
     } else {
-        ProjectTargetSelector::Library
+        None
+    };
+    let selector = match executable_name.as_deref() {
+        Some(name) => ProjectTargetSelector::Executable(name),
+        None => ProjectTargetSelector::Library,
     };
     let target = selector.select_target(&package)?;
     let frontend = select_frontend(&target, registry)?;
@@ -678,20 +697,22 @@ pub fn prepare_project(
 
 /// Resolve the project locator `input` names to the `miden-project.toml` it stands for.
 ///
-/// A `Cargo.toml` locates the `miden-project.toml` beside it, which is where `cargo miden`
-/// writes the Miden manifest for a crate. This is the same normalization `Session::new` performs
-/// — through `ProjectManifest::read`, to reach the manifest facts a session needs — and the two
-/// must agree: they resolve to the same file. This is the copy that decides what gets built, and
-/// the only one that may reject a locator.
+/// The mapping itself is [`midenc_session::project_manifest_path`], the one place a `Cargo.toml`
+/// is turned into the `miden-project.toml` beside it — so this and the session that read the
+/// manifest's facts through the same helper cannot resolve to different files. What is this
+/// function's own is the rejection: this is the copy that decides what gets built, so it is where
+/// a *positional* locator's name is refused and where a Cargo workspace root that selects no
+/// package is rejected. A `--manifest-path` is validated as a flag where it is given, by
+/// `Options::resolve_input`.
 fn normalize_locator(input: &InputFile) -> CompilerResult<PathBuf> {
     let file_name = input.file_name();
     match file_name.file_name() {
-        Some(name) if name.eq_ignore_ascii_case("Cargo.toml") => {
+        Some(_) if midenc_session::is_cargo_manifest(file_name.as_path()) => {
             let cargo_manifest_path = file_name.as_path();
             reject_unselected_workspace_root(cargo_manifest_path)?;
-            Ok(cargo_manifest_path.with_file_name("miden-project.toml"))
+            Ok(midenc_session::project_manifest_path(cargo_manifest_path))
         }
-        Some(name) if name.eq_ignore_ascii_case("miden-project.toml") => {
+        Some(_) if midenc_session::is_miden_manifest(file_name.as_path()) => {
             Ok(file_name.as_path().to_path_buf())
         }
         _ => Err(Report::msg(
@@ -797,25 +818,6 @@ fn select_frontend(
             registered_extensions(registry)
         ))
     })
-}
-
-/// The extension of `target`'s root, which is what everything dispatches on.
-///
-/// Owned rather than borrowed, because the path is reconstructed from the target's `Uri` and so
-/// lives no longer than this call. It is the one derivation of "what kind of file is this target
-/// rooted at?" in the crate, and it must stay that way: [`select_frontend`] uses it to choose a
-/// frontend and `seed.rs` uses it to choose the provider key a seed is installed under, so a
-/// second copy that grew, say, case folding would make the two disagree — and the disagreement
-/// would surface as an internal error on a project that is perfectly valid.
-pub(crate) fn target_root_extension(target: &Target) -> Option<String> {
-    target
-        .path
-        .inner()
-        .to_path()
-        .as_deref()
-        .and_then(Path::extension)
-        .and_then(|extension| extension.to_str())
-        .map(ToString::to_string)
 }
 
 /// The key a request-scoped provider for `prepared`'s **selected** frontend is installed under.
@@ -928,6 +930,12 @@ crate-type = ["cdylib"]
 members = ["member"]
 "#;
 
+    /// A Miden workspace root: the same shape, in the Miden manifest the loader is handed.
+    const MIDEN_WORKSPACE_ROOT: &str = r#"
+[workspace]
+members = ["a"]
+"#;
+
     /// The profile a project defines for itself, over and above the two every package is
     /// seeded with.
     const CUSTOM_PROFILE: &str = "checked";
@@ -984,7 +992,10 @@ namespace = "prepare_fixture"
 path = "lib.wat"
 "#;
 
-    /// A project with exactly one executable target, named after the package.
+    /// A project with exactly one executable target, named after the package, rooted at Rust.
+    ///
+    /// Rust rather than `.wat`, because only a Rust root gets an inferred entrypoint, which is
+    /// what the sessions opened on this manifest are about.
     const SINGLE_EXECUTABLE_MANIFEST: &str = r#"
 [package]
 name = "prepare_fixture"
@@ -992,7 +1003,115 @@ version = "0.1.0"
 
 [[bin]]
 name = "prepare_fixture"
+path = "src/main.rs"
+"#;
+
+    /// The same project, rooted at hand-written Miden Assembly instead of Rust.
+    const SINGLE_MASM_EXECUTABLE_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "prepare_fixture"
+path = "src/main.masm"
+"#;
+
+    /// The same project, rooted at hand-written WebAssembly text instead of Rust.
+    ///
+    /// The second hand-written root, so that "no entrypoint is inferred" is pinned as a fact
+    /// about Rust roots rather than about the `masm` extension: a hand-written module names its
+    /// own entrypoint, whichever language it is written in, and only a Rust root gets
+    /// `<bin>::entrypoint`.
+    const SINGLE_WAT_EXECUTABLE_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "prepare_fixture"
 path = "main.wat"
+"#;
+
+    /// A project with two executables, one rooted at Rust and one at hand-written Miden Assembly.
+    ///
+    /// Mixed on purpose: which of the two is selected decides whether an entrypoint name is
+    /// derived at all, so a selection that moved would be visible in the session as well as in
+    /// the target preparation assembles — see
+    /// [`the_entrypoint_follows_the_selected_executables_root`].
+    const MIXED_EXECUTABLES_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "prepare_fixture"
+path = "src/main.rs"
+
+[[bin]]
+name = "helper"
+path = "helper.masm"
+"#;
+
+    /// A project with two executables rooted at Rust, one of them named after the package.
+    ///
+    /// Nothing about the roots tells them apart, so which one a build compiles is decided by the
+    /// selection rule and nothing else — which is what
+    /// [`the_selection_rule_prefers_target_then_name_then_the_package_name`] walks through.
+    const TWO_RUST_EXECUTABLES_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "prepare_fixture"
+path = "src/main.rs"
+
+[[bin]]
+name = "other"
+path = "other.rs"
+"#;
+
+    /// A project with exactly one executable, named something other than the package.
+    ///
+    /// Deliberately not package-named: a sole executable is the selection on its own, and a
+    /// fixture whose only executable carried the package's name could not tell the two clauses of
+    /// the rule apart.
+    const LONE_EXECUTABLE_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "other"
+path = "other.rs"
+"#;
+
+    /// A transaction script whose library target is rooted at Rust.
+    ///
+    /// A transaction script's entrypoint is a fixed name, not one derived from the target — so
+    /// this and [`SINGLE_EXECUTABLE_MANIFEST`] pin the two halves of the inference.
+    const SINGLE_TX_SCRIPT_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+path = "src/lib.rs"
+namespace = "miden:base/transaction-script@1.0.0"
+"#;
+
+    /// The same transaction script, rooted at hand-written Miden Assembly instead of Rust.
+    const SINGLE_MASM_TX_SCRIPT_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+path = "src/lib.masm"
+namespace = "miden:base/transaction-script@1.0.0"
 "#;
 
     /// A registry that handles `.wasm` and `.wat` target roots, and nothing else.
@@ -1110,6 +1229,32 @@ path = "main.wat"
         );
     }
 
+    #[test]
+    fn a_miden_workspace_root_is_rejected_with_a_selection_hint() {
+        // A Miden workspace root reaches `Project::load` — `normalize_locator` passes it straight
+        // through — so the only place it can be recognized is that load's failure.
+        let manifest = fixture_source(
+            "prepare_miden_workspace_root",
+            "miden-project.toml",
+            MIDEN_WORKSPACE_ROOT,
+        );
+
+        let err = prepare_project(
+            &input(&manifest),
+            &Options::default(),
+            &registry(),
+            &DefaultSourceManager::default(),
+        )
+        .expect_err("a Miden workspace root selects no package to build");
+
+        let rendered = format!("{err}");
+        assert!(
+            rendered.contains("workspace root") && rendered.contains("--manifest-path"),
+            "a workspace root must be reported as one, and say how to select a member, rather \
+             than as a project that failed to load: {rendered}"
+        );
+    }
+
     /// Open a session for the project locator at `path`, as the driver does.
     fn session_for(path: &Path) -> Session {
         Session::new(input(path), Box::default(), None, Arc::new(DefaultSourceManager::default()))
@@ -1156,6 +1301,245 @@ path = "main.wat"
             Some("prepare_fixture::entrypoint"),
             "the entrypoint is derived from the sole executable target's name, which a `[[bin]]` \
              without one takes from the package"
+        );
+    }
+
+    #[test]
+    fn a_miden_locator_infers_the_entrypoint_of_a_rust_executable() {
+        // The same inference as from a Cargo locator, and no `Cargo.toml` in sight: what decides
+        // it is the target's root, not which of the two files the locator named.
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_miden",
+            "miden-project.toml",
+            SINGLE_EXECUTABLE_MANIFEST,
+        );
+
+        let session = session_for(&manifest);
+
+        assert_eq!(session.options.target_type, Some(TargetType::Executable));
+        assert_eq!(
+            session.options.entrypoint.as_deref(),
+            Some("prepare_fixture::entrypoint"),
+            "a manifest locator infers an entrypoint exactly as a Cargo locator does"
+        );
+    }
+
+    #[test]
+    fn a_masm_rooted_executable_gets_no_inferred_entrypoint() {
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_masm",
+            "miden-project.toml",
+            SINGLE_MASM_EXECUTABLE_MANIFEST,
+        );
+
+        let session = session_for(&manifest);
+
+        assert_eq!(session.options.target_type, Some(TargetType::Executable));
+        assert_eq!(
+            session.options.entrypoint, None,
+            "`<target>::entrypoint` is a name the Rust frontend emits; Miden Assembly names its \
+             own entrypoint"
+        );
+    }
+
+    #[test]
+    fn a_wat_rooted_executable_gets_no_inferred_entrypoint() {
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_wat",
+            "miden-project.toml",
+            SINGLE_WAT_EXECUTABLE_MANIFEST,
+        );
+
+        let session = session_for(&manifest);
+
+        assert_eq!(session.options.target_type, Some(TargetType::Executable));
+        assert_eq!(
+            session.options.entrypoint, None,
+            "no root but a Rust one gets `<bin>::entrypoint`; a hand-written module names its own"
+        );
+    }
+
+    /// The root that decides the entrypoint is the *selected* executable's, not just any one.
+    ///
+    /// And the executable preparation assembles is that same one: both halves of the build ask
+    /// [`midenc_session::ProjectManifest::selected_executable`], so each `--target` is run
+    /// through both here. A session naming one executable's entrypoint while the build assembled
+    /// the other's code would compile a program whose entrypoint does not exist.
+    ///
+    /// The registry carries both the Rust and the Miden Assembly project frontends, because the
+    /// two executables are rooted at different languages and preparation picks a frontend from
+    /// the root of whichever it selected.
+    #[test]
+    fn the_entrypoint_follows_the_selected_executables_root() {
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_mixed",
+            "miden-project.toml",
+            MIXED_EXECUTABLES_MANIFEST,
+        );
+        let mut registry = registry_with_rust();
+        registry
+            .register(crate::pipeline::frontends::MASM_FRONTEND)
+            .expect("the MASM project frontend should register");
+
+        for (target, expected) in
+            [("helper", None), ("prepare_fixture", Some("prepare_fixture::entrypoint"))]
+        {
+            let mut options = Box::new(Options::default());
+            options.target = Some(target.to_string());
+            let source_manager: Arc<dyn SourceManager + Send + Sync> =
+                Arc::new(DefaultSourceManager::default());
+
+            let session = Session::new(input(&manifest), options, None, source_manager.clone())
+                .expect("a Miden manifest with executable targets should open a compiler session");
+
+            assert_eq!(
+                session.options.entrypoint.as_deref(),
+                expected,
+                "`--target {target}` selects the executable whose root is asked about"
+            );
+
+            let prepared = prepare_project(
+                &input(&manifest),
+                &session.options,
+                &registry,
+                source_manager.as_ref(),
+            )
+            .expect("a project of mixed executables should prepare");
+
+            assert_eq!(
+                prepared.target.name.inner().as_ref(),
+                target,
+                "`--target {target}` must assemble the executable its entrypoint was derived from"
+            );
+        }
+    }
+
+    /// The one selection rule, in the order it tries things.
+    ///
+    /// `--target` names the executable outright, else `--name` does, else the executable named
+    /// after the package. Each row runs the session and preparation over the same options, so a
+    /// rule that moved on one side and not the other would show up as an entrypoint naming a
+    /// different executable than the one assembled.
+    #[test]
+    fn the_selection_rule_prefers_target_then_name_then_the_package_name() {
+        let manifest = fixture_source(
+            "prepare_selection_two_rust_executables",
+            "miden-project.toml",
+            TWO_RUST_EXECUTABLES_MANIFEST,
+        );
+
+        // `--target`, `--name`, the executable compiled, and the entrypoint derived from it.
+        let cases = [
+            (None, None, "prepare_fixture", "prepare_fixture::entrypoint"),
+            (None, Some("other"), "other", "other::entrypoint"),
+            (Some("other"), None, "other", "other::entrypoint"),
+        ];
+
+        for (target, name, selected, entrypoint) in cases {
+            let mut options = Box::new(Options::default());
+            options.target = target.map(ToString::to_string);
+            options.name = name.map(ToString::to_string);
+            let source_manager: Arc<dyn SourceManager + Send + Sync> =
+                Arc::new(DefaultSourceManager::default());
+
+            let session = Session::new(input(&manifest), options, None, source_manager.clone())
+                .expect("a Miden manifest with executable targets should open a compiler session");
+
+            assert_eq!(
+                session.options.entrypoint.as_deref(),
+                Some(entrypoint),
+                "--target {target:?} --name {name:?} must name the entrypoint of '{selected}'"
+            );
+
+            let prepared = prepare_project(
+                &input(&manifest),
+                &session.options,
+                &registry_with_rust(),
+                source_manager.as_ref(),
+            )
+            .expect("a project of Rust executables should prepare");
+
+            assert_eq!(
+                prepared.target.name.inner().as_ref(),
+                selected,
+                "--target {target:?} --name {name:?} must compile '{selected}'"
+            );
+        }
+    }
+
+    /// A project's only executable is the selection, whatever it is named.
+    ///
+    /// The last clause of the rule, and the one that keeps a project naming its single `[[bin]]`
+    /// after something other than its package buildable with no flags at all.
+    #[test]
+    fn a_lone_executable_is_selected_without_being_named() {
+        let manifest = fixture_source(
+            "prepare_selection_lone_executable",
+            "miden-project.toml",
+            LONE_EXECUTABLE_MANIFEST,
+        );
+        let source_manager: Arc<dyn SourceManager + Send + Sync> =
+            Arc::new(DefaultSourceManager::default());
+
+        let session = Session::new(input(&manifest), Box::default(), None, source_manager.clone())
+            .expect("a Miden manifest with one executable target should open a compiler session");
+
+        assert_eq!(
+            session.options.entrypoint.as_deref(),
+            Some("other::entrypoint"),
+            "the sole executable is the selection, so its root is what the entrypoint is derived \
+             from"
+        );
+
+        let prepared = prepare_project(
+            &input(&manifest),
+            &session.options,
+            &registry_with_rust(),
+            source_manager.as_ref(),
+        )
+        .expect("a project with one executable should prepare");
+
+        assert_eq!(
+            prepared.target.name.inner().as_ref(),
+            "other",
+            "and it is the executable preparation assembles"
+        );
+    }
+
+    #[test]
+    fn a_rust_rooted_transaction_script_infers_the_fixed_entrypoint() {
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_tx_script",
+            "miden-project.toml",
+            SINGLE_TX_SCRIPT_MANIFEST,
+        );
+
+        let session = session_for(&manifest);
+
+        assert_eq!(session.options.target_type, Some(TargetType::TransactionScript));
+        assert_eq!(
+            session.options.entrypoint.as_deref(),
+            Some("miden:base/transaction-script@1.0.0::run"),
+            "a transaction script's entrypoint is the protocol's fixed name, not one derived from \
+             the target"
+        );
+    }
+
+    #[test]
+    fn a_masm_rooted_transaction_script_gets_no_inferred_entrypoint() {
+        let manifest = fixture_source(
+            "prepare_session_entrypoint_tx_script_masm",
+            "miden-project.toml",
+            SINGLE_MASM_TX_SCRIPT_MANIFEST,
+        );
+
+        let session = session_for(&manifest);
+
+        assert_eq!(session.options.target_type, Some(TargetType::TransactionScript));
+        assert_eq!(
+            session.options.entrypoint, None,
+            "the fixed name is what the Rust frontend emits; Miden Assembly names its own \
+             entrypoint"
         );
     }
 

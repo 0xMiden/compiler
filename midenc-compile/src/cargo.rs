@@ -16,8 +16,8 @@ use crate::{CodegenOutput, CompilerResult};
 
 /// Cargo-specific options extracted from the `Compiler` struct.
 ///
-/// These options are recognized by `cargo miden build` and forwarded to the underlying
-/// `cargo build` invocation. They are not used by the `midenc` compiler itself.
+/// These options are forwarded to the nested `cargo build` that a manifest-backed Rust build
+/// runs; the compiler reads them for nothing else.
 #[derive(Debug, Default)]
 pub struct CargoOptions {
     /// Build in release mode
@@ -321,7 +321,7 @@ pub fn write_package_atomic(
 /// * The module doc begins on the first line of the input
 /// * The frontmatter block is opened with "```cargo" and closed with "```"
 /// * The contents of the frontmatter block must be valid TOML, and should define only
-///   the `[dependencies] table
+///   the `[dependencies]` table
 pub fn parse_cargo_frontmatter(
     input: &str,
     working_dir: &Path,
