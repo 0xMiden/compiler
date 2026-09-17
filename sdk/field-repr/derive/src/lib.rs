@@ -130,7 +130,7 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
-    Data, DeriveInput, Error, Field, Fields, Index, Variant, parse_macro_input,
+    Data, DeriveInput, Error, Field, Fields, Index, LitStr, Variant, parse_macro_input,
     punctuated::Punctuated, spanned::Spanned, token::Comma,
 };
 
@@ -249,6 +249,9 @@ fn ensure_no_explicit_discriminants(
 /// Enums are encoded as a `u32` tag (variant ordinal, starting from `0`)
 /// followed by the selected variant payload encoded in declaration order.
 ///
+/// Use `#[felt_repr(crate_path = "path::to::felt_repr")]` on the type to override the generated
+/// runtime crate path.
+///
 /// # Example
 ///
 /// ```ignore
@@ -260,15 +263,13 @@ fn ensure_no_explicit_discriminants(
 ///     pub suffix: Felt,
 /// }
 /// ```
-#[proc_macro_derive(DeriveFromFeltRepr)]
+#[proc_macro_derive(DeriveFromFeltRepr, attributes(felt_repr))]
 pub fn derive_from_felt_repr(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-
-    let expanded = derive_from_felt_repr_impl(
-        &input,
-        quote!(miden_field_repr),
-        quote!(miden_field_repr::Felt),
-    );
+    let expanded = felt_repr_crate_path(&input).and_then(|felt_repr_crate| {
+        let felt_ty = quote!(#felt_repr_crate::Felt);
+        derive_from_felt_repr_impl(&input, felt_repr_crate, felt_ty)
+    });
     match expanded {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
@@ -411,6 +412,9 @@ fn derive_from_felt_repr_impl(
 /// Enums are encoded as a `u32` tag (variant ordinal, starting from `0`)
 /// followed by the selected variant payload encoded in declaration order.
 ///
+/// Use `#[felt_repr(crate_path = "path::to::felt_repr")]` on the type to override the generated
+/// runtime crate path.
+///
 /// # Example
 ///
 /// ```ignore
@@ -422,14 +426,36 @@ fn derive_from_felt_repr_impl(
 ///     pub suffix: Felt,
 /// }
 /// ```
-#[proc_macro_derive(DeriveToFeltRepr)]
+#[proc_macro_derive(DeriveToFeltRepr, attributes(felt_repr))]
 pub fn derive_to_felt_repr(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match derive_to_felt_repr_impl(&input, quote!(miden_field_repr)) {
+    match felt_repr_crate_path(&input)
+        .and_then(|felt_repr_crate| derive_to_felt_repr_impl(&input, felt_repr_crate))
+    {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
     }
+}
+
+/// Returns the felt representation crate path selected by a generated facade.
+fn felt_repr_crate_path(input: &DeriveInput) -> Result<TokenStream2, Error> {
+    let mut selected = None;
+    for attr in input.attrs.iter().filter(|attr| attr.path().is_ident("felt_repr")) {
+        attr.parse_nested_meta(|meta| {
+            if !meta.path.is_ident("crate_path") {
+                return Err(meta.error("expected `crate_path = \"path\"`"));
+            }
+            if selected.is_some() {
+                return Err(meta.error("`crate_path` is already set"));
+            }
+            let literal: LitStr = meta.value()?.parse()?;
+            let path: syn::Path = literal.parse()?;
+            selected = Some(quote!(#path));
+            Ok(())
+        })?;
+    }
+    Ok(selected.unwrap_or_else(|| quote!(miden_field_repr)))
 }
 
 fn derive_to_felt_repr_impl(

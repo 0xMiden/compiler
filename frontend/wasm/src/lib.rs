@@ -79,3 +79,28 @@ pub(crate) fn supported_features() -> WasmFeatures {
 pub(crate) fn supported_component_model_features() -> WasmFeatures {
     supported_features() | WasmFeatures::COMPONENT_MODEL
 }
+
+#[cfg(test)]
+mod tests {
+    use midenc_frontend_wasm_metadata::WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME;
+
+    use super::*;
+
+    /// A `#[note]` crate compiled as a raw core module keeps its schema section: the
+    /// translation wraps the module as a component and propagates the captured sections.
+    #[test]
+    fn core_module_propagates_note_storage_schema_section() {
+        let wat = format!(
+            r#"(module (@custom "{WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME}" "schema"))"#
+        );
+        let wasm = wat::parse_str(wat).expect("core module WAT must parse");
+        let context = Rc::new(Context::default());
+        let output = translate(&wasm, &WasmTranslationConfig::default(), context)
+            .expect("a core module with a schema section must translate");
+        assert_eq!(
+            output.sections.note_storage_schema.as_deref(),
+            Some(b"schema".as_slice()),
+            "the schema section must be propagated into the frontend output"
+        );
+    }
+}

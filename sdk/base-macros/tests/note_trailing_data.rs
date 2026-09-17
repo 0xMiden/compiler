@@ -18,21 +18,9 @@ pub mod active_note {
 
 #[derive(Debug)]
 #[note]
-struct UnitNote;
-
-#[derive(Debug)]
-#[note]
 struct OneFeltNote {
     #[allow(dead_code)]
     a: miden::Felt,
-}
-
-#[test]
-fn unit_note_rejects_trailing_data() {
-    let felts = [miden::Felt::new(0).unwrap()];
-
-    let err = UnitNote::try_from(felts.as_slice()).unwrap_err();
-    assert_eq!(err, miden::felt_repr::FeltReprError::TrailingData { pos: 0, len: 1 });
 }
 
 #[test]

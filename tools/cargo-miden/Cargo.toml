@@ -57,3 +57,10 @@ walkdir = "2.5"
 serde_json.workspace = true
 # Verifies a downloaded template bundle against the digest GitHub reports.
 sha2.workspace = true
+
+[dev-dependencies]
+miden-mast-package = { workspace = true, features = ["std"] }
+midenc-frontend-wasm-metadata.workspace = true
+midenc-integration-test-support.workspace = true
+wit-component.workspace = true
+wit-parser.workspace = true
