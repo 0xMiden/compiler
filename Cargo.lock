@@ -2995,7 +2995,7 @@ dependencies = [
 [[package]]
 name = "miden-client"
 version = "0.17.0-rc.1"
-source = "git+https://github.com/0xMiden/rust-sdk?rev=590ca464903e269521d8ac24cc43361a01ad19b6#590ca464903e269521d8ac24cc43361a01ad19b6"
+source = "git+https://github.com/0xMiden/rust-sdk?rev=4dbc8d53cb6f730cd2060492c8c68300d4a52962#4dbc8d53cb6f730cd2060492c8c68300d4a52962"
 dependencies = [
  "anyhow",
  "async-trait",

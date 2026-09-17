@@ -6,8 +6,8 @@ edition.workspace = true
 [dependencies]
 # TODO: switch back to crates.io releases once a Miden client compatible with
 # protocol 0.17.0-rc.4 is published (tracked in 0xMiden/rust-sdk#2530).
-miden-client = { git = "https://github.com/0xMiden/rust-sdk", rev = "590ca464903e269521d8ac24cc43361a01ad19b6", features = ["tonic"] }
-miden-client-sqlite-store = { git = "https://github.com/0xMiden/rust-sdk", rev = "590ca464903e269521d8ac24cc43361a01ad19b6" }
+miden-client = { git = "https://github.com/0xMiden/rust-sdk", rev = "4dbc8d53cb6f730cd2060492c8c68300d4a52962", features = ["tonic"] }
+miden-client-sqlite-store = { git = "https://github.com/0xMiden/rust-sdk", rev = "4dbc8d53cb6f730cd2060492c8c68300d4a52962" }
 miden-standards = { version = "=0.17.0-rc.4", features = ["testing"] }
 miden-testing = "=0.17.0-rc.4"
 miden-mast-package = { version = "0.32.1", default-features = false }
