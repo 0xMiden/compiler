@@ -277,6 +277,10 @@ fn mut_arrays() {
 /// callee with `call_indirect` (`dynexec`), and the recursion executes
 /// correctly on the VM — direct or mutual recursion is still a clean "found
 /// a cycle in the call graph" linker error (campaign-14 probe, deleted).
+/// The table is read through `black_box`: nightly-2026-09-01's LLVM
+/// devirtualizes a runtime index into a constant fn-pointer table into a
+/// switch of direct calls (the wasm lost every `call_indirect`), which
+/// closed the cycle and made the linker reject the case.
 #[test]
 fn recursion_indirect() {
     run_case("recursion_indirect", include_str!("../cases/case_recursion_indirect.rs"));

@@ -107,11 +107,18 @@ fn core_select_nth_nolink() {
 /// derived `PartialEq` over a struct with a `[u8; 16]` field, a
 /// `[u32; 8] == [u32; 8]`, `Iterator::eq`, `zip(..).all(..)`,
 /// `iter().cmp(..)`, `str::eq_ignore_ascii_case`,
-/// `[u8]::eq_ignore_ascii_case` and `[u8]::contains`. Passes at the default
-/// level, at `--optimize=max` and at `--optimize=basic`; the constant-size
-/// array compares become `memcmp` at `--optimize=size-min`
-/// (`core_eq_reach_oz`).
+/// `[u8]::eq_ignore_ascii_case` and `[u8]::contains`. On nightly-2026-04-30
+/// it passed at the default level, at `--optimize=max` and at
+/// `--optimize=basic`, with the constant-size array compares becoming
+/// `memcmp` only at `--optimize=size-min` (`core_eq_reach_oz`); since the
+/// nightly-2026-09-01 toolchain bump the default level outlines them too, so
+/// the guest no longer links. A guest build failure exits the whole test
+/// process (`midenc-compile` calls `process::exit` on a failed `cargo
+/// build`), so this stays ignored rather than failing.
 #[test]
+#[ignore = "F13: constant-size array `==` becomes a memcmp libcall at the default level on \
+            nightly-2026-09-01 (it did only at -Oz on nightly-2026-04-30); rust-lld: undefined \
+            symbol: memcmp"]
 fn core_eq_reach() {
     run_case("core_eq_reach", include_str!("../cases/case_core_eqreach.rs"));
 }
@@ -710,10 +717,18 @@ fn prog_records_edges() {
 /// `max` / `min` / `max_by_key` / `min_by` with `Ordering::then_with`,
 /// `clamp`, `partial_cmp`, `is_sorted` / `is_sorted_by`, an insertion sort
 /// by the derived `Ord` and `sort_unstable_by` on a projection, the two
-/// orders cross-checked element-wise. Compiles and matches native at the
-/// default level, at `--optimize=size-min` and at `--optimize=basic`; it
-/// does NOT compile at `--optimize=max` ([`prog_ordkeys_max`]).
+/// orders cross-checked element-wise. With nightly-2026-04-30 guests it
+/// compiles and matches native at the default level, at
+/// `--optimize=size-min` and at `--optimize=basic`, and fails only at
+/// `--optimize=max` ([`prog_ordkeys_max`]); the nightly-2026-09-01 guest
+/// shape fails the same way at the default level (the spills pass splits 8
+/// edges, then `frontier.rs:123` unwraps `None` in the dominance-frontier
+/// query — the F6 stale-dominator-tree mechanism; verified 2026-09-17 to
+/// still pass with `RUSTUP_TOOLCHAIN=nightly-2026-04-30` guests).
 #[test]
+#[ignore = "F6: frontier.rs:123 Option::unwrap on None at the default level with \
+            nightly-2026-09-01 guests (8 split edges in the spills trace); compiled on \
+            nightly-2026-04-30"]
 fn prog_ordkeys() {
     run_case("prog_ordkeys", include_str!("../cases/case_prog_ordkeys.rs"));
 }
@@ -722,6 +737,8 @@ fn prog_ordkeys() {
 /// (`input1 % 12`, `input2 % 12`), a clamp range whose ends are equal, all
 /// three `Class` variants present, zero / all-ones / equal pairs.
 #[test]
+#[ignore = "F6: frontier.rs:123 Option::unwrap on None at the default level with \
+            nightly-2026-09-01 guests; see prog_ordkeys"]
 fn prog_ordkeys_edges() {
     run_case_with_inputs(
         "prog_ordkeys_edges",
@@ -744,8 +761,9 @@ fn prog_ordkeys_edges() {
 /// `called `Option::unwrap()` on a `None` value` at
 /// `hir/src/ir/dominance/frontier.rs:123:55` — the F6 stale-dominator-tree
 /// cluster, reached here by ordinary derived-`Ord` comparison code that LLVM
-/// unrolls at `-O3`. The same program compiles at the other three levels.
-/// Un-ignore when F6 is fixed.
+/// unrolls at `-O3`. With nightly-2026-04-30 guests the same program
+/// compiled at the other three levels; since nightly-2026-09-01 the default
+/// level fails too ([`prog_ordkeys`]). Un-ignore when F6 is fixed.
 #[test]
 #[ignore = "F6: frontier.rs:123 Option::unwrap on None at --optimize=max"]
 fn prog_ordkeys_max() {

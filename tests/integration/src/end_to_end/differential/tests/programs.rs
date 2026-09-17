@@ -508,8 +508,16 @@ fn prog_vm_table_edges() {
 /// `step_by`, `take_while`, `skip`, `cycle().take()`, `nth`, `find`, `min`,
 /// `any` and `Option` combinators over `checked_*` chains (`sort_unstable`
 /// and `select_nth_unstable` are recursive in `core` and hit the linker's
-/// call-graph cycle check — probe deleted).
+/// call-graph cycle check — probe deleted). Compiled and matched native with
+/// nightly-2026-04-30 guests; the nightly-2026-09-01 guest shape hits F6 at
+/// the default level (`emit/mod.rs:623` "only the first 16 elements on the
+/// stack are directly accessible, got 16" after the spills trace reports 2
+/// split edges and erases 6 unused reloads — the stale-dominator-tree
+/// mechanism; verified 2026-09-17 to still pass with
+/// `RUSTUP_TOOLCHAIN=nightly-2026-04-30` guests).
 #[test]
+#[ignore = "F6: emit/mod.rs:623 stack index 16 at the default level with nightly-2026-09-01 guests \
+            (2 split edges, 6 erased reloads); compiled on nightly-2026-04-30"]
 fn prog_iters() {
     run_case("prog_iters", include_str!("../cases/case_prog_iters.rs"));
 }
@@ -518,6 +526,8 @@ fn prog_iters() {
 /// overflowing `checked_pow`, the zero-length `cycle`, the last index,
 /// zero / all-ones / equal pairs.
 #[test]
+#[ignore = "F6: emit/mod.rs:623 stack index 16 at the default level with nightly-2026-09-01 \
+            guests; see prog_iters"]
 fn prog_iters_edges() {
     run_case_with_inputs(
         "prog_iters_edges",

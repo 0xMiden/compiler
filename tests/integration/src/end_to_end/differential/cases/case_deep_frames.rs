@@ -3,8 +3,10 @@
 // assembler's linker rejects a direct call-graph cycle), each writing and
 // reading back its first, last and one runtime-indexed element around the
 // recursive call, so every frame must really span its 65536 bytes and no two
-// activations may share one. The guest shadow stack is 1 MiB.
-use core::mem::MaybeUninit;
+// activations may share one. The guest shadow stack is 1 MiB. The table is
+// read through `black_box` so LLVM (nightly-2026-09-01 and later) cannot
+// devirtualize the dispatch into direct calls that close the cycle.
+use core::{hint::black_box, mem::MaybeUninit};
 
 type Step = fn(u32, u64) -> u64;
 
@@ -18,7 +20,7 @@ fn rec_a(n: u32, s: u64) -> u64 {
     let child = if n == 0 {
         s.wrapping_mul(0x2545_f491_4f6c_dd1d)
     } else {
-        let f = STEPS[((s >> 5) % 2) as usize];
+        let f = black_box(&STEPS)[((s >> 5) % 2) as usize];
         f(n - 1, s.wrapping_add(0x9e37_79b9) ^ (n as u64).rotate_left(7))
     };
     let a = unsafe { frame[0].assume_init() };
@@ -37,7 +39,7 @@ fn rec_b(n: u32, s: u64) -> u64 {
     let child = if n == 0 {
         !s
     } else {
-        let f = STEPS[((s >> 11) % 2) as usize];
+        let f = black_box(&STEPS)[((s >> 11) % 2) as usize];
         f(n - 1, s.wrapping_sub(0x5851_f42d) ^ (n as u64).rotate_left(13))
     };
     let a = unsafe { frame[0].assume_init() };
@@ -51,7 +53,7 @@ static STEPS: [Step; 2] = [rec_a, rec_b];
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let s = ((input1 as u64) << 32) | input2 as u64;
-    let f = STEPS[(input2 % 2) as usize];
+    let f = black_box(&STEPS)[(input2 % 2) as usize];
     let r = f(8, s | 1);
     (r as u32) ^ ((r >> 32) as u32)
 }
