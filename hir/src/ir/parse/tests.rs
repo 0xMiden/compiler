@@ -106,6 +106,51 @@ fn parse_module_with_intra_function_symbol_references() -> TestResult {
     Ok(())
 }
 
+#[test]
+fn module_symbol_attribute_resolves_from_enclosing_table() -> TestResult {
+    use crate::dialects::builtin::attributes::SymbolRefAttr;
+
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.module public @reader attributes { reference = #builtin.symbol<@target> } {
+        builtin.module public @target {};
+    };
+    builtin.module public @target {};
+};";
+
+    let parsed = test.parse_any("module_symbol_attribute.hir", source)?;
+    let (reader, target) = {
+        let world = parsed.borrow();
+        let symbols = world.as_symbol_table().unwrap().symbol_manager();
+        (symbols.lookup_op("reader").unwrap(), symbols.lookup_op("target").unwrap())
+    };
+    let (reference, inner_target) = {
+        let reader = reader.borrow();
+        (
+            reader.get_typed_attribute::<SymbolRefAttr>("reference").unwrap(),
+            reader.as_symbol_table().unwrap().symbol_manager().lookup_op("target").unwrap(),
+        )
+    };
+
+    // The attribute uses the forward-declared sibling, even though the reader contains a
+    // symbol with the same name. Resolution and the tracked use list must agree.
+    let target = target.borrow();
+    let mut uses = target.as_symbol().unwrap().iter_uses();
+    let symbol_use = uses.next().expect("the sibling target must have a tracked use");
+    assert!(uses.next().is_none(), "the sibling target must have exactly one use");
+    assert_eq!(symbol_use.owner, reader);
+    assert_eq!(symbol_use.attr, reference);
+    assert_eq!(reference.borrow().user().borrow().owner, reader);
+    assert_eq!(
+        reference.borrow().resolve().unwrap().borrow().as_operation_ref(),
+        target.as_operation_ref()
+    );
+    assert_eq!(inner_target.borrow().as_symbol().unwrap().iter_uses().count(), 0);
+
+    Ok(())
+}
+
 /// The `reserved_memory` module attribute and the function-table ops are inputs to the linker's
 /// memory layout, so they must survive a print/parse round-trip of the textual HIR.
 #[test]

@@ -333,11 +333,11 @@ pub fn parse_file_anchored(
 /// that is valid once detached.
 ///
 /// After establishing the root, this function passes it to
-/// [`operation::OperationParser::finalize_without_verifying`]. Finalization then resolves
-/// deferred locations and links symbol uses using that root, so its location walk still reaches
-/// the parsed IR after detachment. This function then verifies the root if the parser
-/// configuration requests it. Verification failures are reported as [`ParserError::Report`]
-/// carrying the source, exactly as when `finalize` verified.
+/// [`operation::OperationParser::finalize_without_verifying`]. Finalization then resolves deferred
+/// locations and links symbol uses using that root, so its location walk still reaches the parsed
+/// IR after detachment. This function then verifies the root if the parser configuration requests
+/// it. Verification failures are reported as [`ParserError::Report`] carrying the source, exactly
+/// as when `finalize` verified.
 ///
 /// **Note that [`parse_source_generic`] does none of this.** The generic-format entry points —
 /// [`parse_generic`] and [`parse_file_generic`] — go through `TopLevelOperationParser` instead,
@@ -389,8 +389,8 @@ fn parse_anchored_source(
         anchor
     };
 
-    // Symbol uses must be linked after normalizing the root as well: absolute paths inside an
-    // explicit world cannot resolve while that world is still nested under the temporary anchor.
+    // Symbol uses must be linked after normalizing the root. Absolute paths inside an explicit
+    // world cannot resolve while that world is still nested under the temporary anchor.
     operation_parser
         .finalize_without_verifying(root.try_downcast_op::<World>().expect("root is a world"))
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
