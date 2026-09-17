@@ -10,8 +10,11 @@
 //! table of width/sign-boundary values and occasional forced-equal pairs).
 //! [`run_case_with_inputs`] does the same but
 //! against an explicit list of inputs, for pinning a known divergence.
+//! [`run_case_traps`] and its variants compare trap-or-value outcomes instead
+//! of plain values, for cases that deliberately panic on some inputs.
 
 use std::{
+    fmt,
     path::PathBuf,
     process::{Command, Stdio},
 };
@@ -35,6 +38,55 @@ enum Inputs<'a> {
     /// pinning a known divergence independently of the fuzzer.
     Explicit(&'a [(u32, u32)]),
 }
+
+/// Whether a trap on either side is a comparison outcome or a test failure.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Traps {
+    /// The corpus default: cases never trap. The case is built with
+    /// [`CASE_HEADER`], whose panic handler spins, and a VM execution error
+    /// fails the test with the executor's full diagnostic.
+    Forbidden,
+    /// Trap parity: the case is built with [`TRAPPING_CASE_HEADER`], the host
+    /// `entrypoint` runs in a forked child ([`run_native_isolated`]), a VM
+    /// execution error is caught, and both sides must agree per input on
+    /// [`Outcome`].
+    Compared,
+}
+
+/// What one side of a run produced; see [`run_case_traps`].
+#[derive(Debug, Clone)]
+pub(super) enum Outcome {
+    /// `entrypoint` returned this value.
+    Value(u32),
+    /// The run trapped: on the host the case's panic handler exited the forked
+    /// child (or the child died by a signal), on the VM the program stopped
+    /// with an execution error. The payload describes which.
+    Trap(String),
+}
+
+impl PartialEq for Outcome {
+    /// Traps compare equal whatever their descriptions: the oracle checks
+    /// *whether* a run traps, not the wording of each side's diagnostic.
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Value(a), Self::Value(b)) => a == b,
+            (Self::Trap(_), Self::Trap(_)) => true,
+            _ => false,
+        }
+    }
+}
+
+impl fmt::Display for Outcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Value(value) => write!(f, "value {value}"),
+            Self::Trap(description) => write!(f, "trap ({description})"),
+        }
+    }
+}
+
+/// The signature every case exports from its host `cdylib`.
+type EntryFn = unsafe extern "C" fn(u32, u32) -> u32;
 
 /// `u32` values at the semantic boundaries the differential corpus probes:
 /// algebraic identities, shift counts at every lane width the cases build
@@ -105,7 +157,7 @@ pub(super) fn run_case_with_inputs(name: &str, source: &str, inputs: &[(u32, u32
 /// counterpart of the `FUZZA_GUEST_DEBUG` sweep knob), so a finding that only
 /// exists without DWARF can be pinned the same way.
 pub(super) fn run_case_with_flags(name: &str, source: &str, flags: &[&str]) {
-    run_case_inner_with_flags(name, source, Inputs::Random16, flags);
+    run_case_inner_with_flags(name, source, Inputs::Random16, flags, Traps::Forbidden);
 }
 
 /// Like [`run_case_with_flags`], but compares against an explicit list of
@@ -124,14 +176,38 @@ pub(super) fn run_case_with_flags_and_inputs(
         !inputs.is_empty(),
         "run_case_with_flags_and_inputs requires at least one input pair"
     );
-    run_case_inner_with_flags(name, source, Inputs::Explicit(inputs), flags);
+    run_case_inner_with_flags(name, source, Inputs::Explicit(inputs), flags, Traps::Forbidden);
+}
+
+/// Like [`run_case`], but a trap is an outcome rather than a failure.
+///
+/// The case is built with [`TRAPPING_CASE_HEADER`], whose panic handler traps
+/// on both targets (as the SDK's does), and for every input the two sides
+/// must agree on the [`Outcome`]: the same value, or a trap on both. Use it
+/// for cases that deliberately panic on some inputs — bounds checks,
+/// `unwrap`, division by zero, overflow checks — to verify that Miden traps
+/// exactly where native Rust does; a value on one side and a trap on the
+/// other is a finding either way.
+pub(super) fn run_case_traps(name: &str, source: &str) {
+    run_case_inner_with_flags(name, source, Inputs::Random16, &[], Traps::Compared);
+}
+
+/// Like [`run_case_traps`], but against an explicit list of `(input1,
+/// input2)` pairs — for pinning the boundary inputs (index == length,
+/// divisor 0, `MIN / -1`, …) on which a case must trap or must not.
+pub(super) fn run_case_traps_with_inputs(name: &str, source: &str, inputs: &[(u32, u32)]) {
+    assert!(
+        !inputs.is_empty(),
+        "run_case_traps_with_inputs requires at least one input pair"
+    );
+    run_case_inner_with_flags(name, source, Inputs::Explicit(inputs), &[], Traps::Compared);
 }
 
 /// Shared body of [`run_case`] / [`run_case_with_inputs`]: build the case both
 /// natively and to MASM, then compare `entrypoint` outputs for the requested
 /// inputs.
 fn run_case_inner(name: &str, source: &str, inputs: Inputs<'_>) {
-    run_case_inner_with_flags(name, source, inputs, &[]);
+    run_case_inner_with_flags(name, source, inputs, &[], Traps::Forbidden);
 }
 
 /// [`run_case_inner`] with extra per-case `midenc` flags.
@@ -142,7 +218,16 @@ fn run_case_inner(name: &str, source: &str, inputs: Inputs<'_>) {
 /// `MIDENC_DIFF_FLAGS=--optimize=max`) with no per-case edits. The outputs
 /// must match the native reference under every configuration — a divergence
 /// that appears only under some flag set is a real compiler bug.
-fn run_case_inner_with_flags(name: &str, source: &str, inputs: Inputs<'_>, flags: &[&str]) {
+///
+/// `traps` selects the case header and how each side's run is observed; see
+/// [`Traps`].
+fn run_case_inner_with_flags(
+    name: &str,
+    source: &str,
+    inputs: Inputs<'_>,
+    flags: &[&str],
+    traps: Traps,
+) {
     let pkg_name = format!("differential_{name}");
     // Per-case flags win: an env flag for an option the case already pins is
     // dropped, so a corpus-wide sweep never passes the same option twice.
@@ -174,7 +259,11 @@ fn run_case_inner_with_flags(name: &str, source: &str, inputs: Inputs<'_>, flags
         all_flags.into_iter().filter(|f| !f.starts_with(GUEST_DEBUG_FLAG)).collect();
     let manifest = cargo_toml_with_guest_debug(&pkg_name, guest_debug.as_deref());
     let miden_project_manifest = miden_project_toml(&pkg_name);
-    let full_source = format!("{CASE_HEADER}{source}");
+    let header = match traps {
+        Traps::Forbidden => CASE_HEADER,
+        Traps::Compared => TRAPPING_CASE_HEADER,
+    };
+    let full_source = format!("{header}{source}");
 
     let masm_proj = project(&format!("{pkg_name}_masm"))
         .file("miden-project.toml", &miden_project_manifest)
@@ -196,17 +285,35 @@ fn run_case_inner_with_flags(name: &str, source: &str, inputs: Inputs<'_>, flags
 
     let lib = unsafe { libloading::Library::new(&dylib_path) }
         .unwrap_or_else(|e| panic!("failed to load {}: {e}", dylib_path.display()));
-    type EntryFn = unsafe extern "C" fn(u32, u32) -> u32;
     let entry: libloading::Symbol<EntryFn> = unsafe { lib.get(b"entrypoint\0") }
         .unwrap_or_else(|e| panic!("missing `entrypoint` in {}: {e}", dylib_path.display()));
 
     // Run the case for one input pair and return `(native_out, masm_out)`.
-    let eval = |a: u32, b: u32| -> (u32, u32) {
-        let native_out = unsafe { entry(a, b) };
+    let eval = |a: u32, b: u32| -> (Outcome, Outcome) {
         let exec =
             executor_with_std(vec![Felt::new_unchecked(a as u64), Felt::new_unchecked(b as u64)]);
-        let masm_out: u32 = exec.execute_into(package.clone(), test.session.source_manager.clone());
-        (native_out, masm_out)
+        let source_manager = test.session.source_manager.clone();
+        match traps {
+            Traps::Forbidden => (
+                Outcome::Value(unsafe { entry(a, b) }),
+                Outcome::Value(exec.execute_into(package.clone(), source_manager)),
+            ),
+            Traps::Compared => {
+                // Step the VM by hand so an execution error becomes an
+                // outcome instead of the executor's diagnostic panic.
+                let mut vm = exec.into_debug(package.clone(), source_manager);
+                let masm_out = loop {
+                    if vm.stopped {
+                        let trace = vm.into_execution_trace();
+                        break Outcome::Value(trace.parse_result().expect("invalid result"));
+                    }
+                    if let Err(err) = vm.step() {
+                        break Outcome::Trap(format!("vm: {err}"));
+                    }
+                };
+                (run_native_isolated(*entry, a, b), masm_out)
+            }
+        }
     };
 
     match inputs {
@@ -233,12 +340,13 @@ fn run_case_inner_with_flags(name: &str, source: &str, inputs: Inputs<'_>, flags
             TestRunner::new(cfg)
                 .run(&fuzz_pair(), |(a, b)| {
                     let (native_out, masm_out) = eval(a, b);
-                    prop_assert_eq!(
-                        native_out,
-                        masm_out,
-                        "native vs masm mismatch for inputs ({}, {})",
+                    prop_assert!(
+                        native_out == masm_out,
+                        "native vs masm mismatch for inputs ({}, {}): native {}, masm {}",
                         a,
-                        b
+                        b,
+                        native_out,
+                        masm_out
                     );
                     Ok(())
                 })
@@ -247,9 +355,10 @@ fn run_case_inner_with_flags(name: &str, source: &str, inputs: Inputs<'_>, flags
         Inputs::Explicit(pairs) => {
             for &(a, b) in pairs {
                 let (native_out, masm_out) = eval(a, b);
-                assert_eq!(
-                    native_out, masm_out,
-                    "{name}: native vs masm mismatch for inputs ({a}, {b})"
+                assert!(
+                    native_out == masm_out,
+                    "{name}: native vs masm mismatch for inputs ({a}, {b}): native {native_out}, \
+                     masm {masm_out}"
                 );
             }
         }
@@ -281,6 +390,87 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 extern "C" fn rust_eh_personality() {}
 
 "#;
+
+/// [`CASE_HEADER`] for trap-parity cases (see [`run_case_traps`]): the panic
+/// handler traps instead of spinning — `unreachable` on wasm, as the SDK's
+/// handler does (the compiler lowers it to a failing assertion), and
+/// `_exit(101)` on the host, where the forked child's exit status is the trap
+/// signal [`run_native_isolated`] reads. `_exit` is declared by hand because
+/// the case is `no_std`; the host `cdylib` links the platform libc anyway.
+const TRAPPING_CASE_HEADER: &str = r#"#![no_std]
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    #[cfg(target_family = "wasm")]
+    core::arch::wasm32::unreachable();
+    #[cfg(not(target_family = "wasm"))]
+    unsafe {
+        _exit(101)
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+unsafe extern "C" {
+    fn _exit(status: i32) -> !;
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[unsafe(no_mangle)]
+extern "C" fn rust_eh_personality() {}
+
+"#;
+
+/// Seconds a forked native run may take before [`run_native_isolated`] gives
+/// up on it; every case terminates in well under a second on either side.
+const NATIVE_RUN_TIMEOUT_SECS: u32 = 10;
+
+/// Calls `entry(a, b)` in a forked child and reports what the child did, so a
+/// host trap — [`TRAPPING_CASE_HEADER`]'s panic handler exits the child with
+/// status 101 — cannot take the test process down.
+///
+/// Between `fork` and `_exit` the child runs only the case (`no_std` code that
+/// takes no locks and allocates nothing) and raw `write`/`_exit` calls, which
+/// keeps it async-signal-safe inside the multi-threaded test process. A child
+/// killed by `SIGALRM` did not terminate, which no case may do on either side,
+/// so that is a harness failure rather than an outcome.
+#[cfg(unix)]
+fn run_native_isolated(entry: EntryFn, a: u32, b: u32) -> Outcome {
+    let mut fds = [0 as libc::c_int; 2];
+    assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0, "pipe failed");
+    let [read_end, write_end] = fds;
+    let pid = unsafe { libc::fork() };
+    assert!(pid >= 0, "fork failed");
+    if pid == 0 {
+        unsafe {
+            libc::alarm(NATIVE_RUN_TIMEOUT_SECS);
+            let out = entry(a, b);
+            libc::write(write_end, (&out as *const u32).cast(), 4);
+            libc::_exit(0);
+        }
+    }
+    unsafe { libc::close(write_end) };
+    let mut buf = [0u8; 4];
+    let read = unsafe { libc::read(read_end, buf.as_mut_ptr().cast(), 4) };
+    unsafe { libc::close(read_end) };
+    let mut status = 0;
+    assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid, "waitpid failed");
+    if libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0 {
+        assert_eq!(read, 4, "native child exited without a result for inputs ({a}, {b})");
+        Outcome::Value(u32::from_ne_bytes(buf))
+    } else if libc::WIFSIGNALED(status) && libc::WTERMSIG(status) == libc::SIGALRM {
+        panic!("native entrypoint did not finish within {NATIVE_RUN_TIMEOUT_SECS}s for ({a}, {b})")
+    } else if libc::WIFEXITED(status) {
+        Outcome::Trap(format!("native: exit status {}", libc::WEXITSTATUS(status)))
+    } else {
+        Outcome::Trap(format!("native: signal {}", libc::WTERMSIG(status)))
+    }
+}
+
+/// Trap-parity cases need `fork`; the strict corpus does not use this path.
+#[cfg(not(unix))]
+fn run_native_isolated(_entry: EntryFn, _a: u32, _b: u32) -> Outcome {
+    panic!("trap-parity cases need a unix host")
+}
 
 /// The harness pseudo-flag that pins a case's guest debug-info level
 /// (`--guest-debug=0|1|2`); see [`run_case_with_flags`].

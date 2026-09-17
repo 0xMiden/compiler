@@ -94,6 +94,15 @@ happens to mask in the guest toolchain. A case pins that level for itself
 with the harness pseudo-flag `--guest-debug=0|1|2` in `run_case_with_flags`
 (it never reaches `midenc`; per-case flags win over the env).
 
+Cases in the strict corpus must never trap: the header's panic handler spins,
+so a native panic hangs the test and a VM error fails it. Trap parity is its
+own oracle — `run_case_traps` / `run_case_traps_with_inputs` (`tests/traps.rs`)
+build the case with a panic handler that traps on both targets, run the host
+`entrypoint` in a forked child, catch VM execution errors, and require both
+sides to agree per input on *value or trap*. A trap on one side only is a
+finding in either direction (a missing bounds check on Miden, or a trap where
+native Rust returns).
+
 The specifics of each bug — the failure, the exact inputs, what passing
 sibling cases have *bounded*, and what would allow un-ignoring — live only
 with the tests themselves (doc comments and ignore reasons in the test

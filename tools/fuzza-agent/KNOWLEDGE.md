@@ -126,9 +126,16 @@ Maintenance rules:
   compare legalization only ever materializes an inline `i64.le_u` pair
   (which is what keeps `lte_u64` warm), never `ge_u`.
 - The harness prepends a `loop {}` panic handler, so `panic!` **never** lowers
-  to wasm `unreachable`. To get a genuine trap edge, plant
+  to wasm `unreachable` in the strict corpus. To get a genuine trap edge, plant
   `core::arch::wasm32::unreachable()` behind an impossible cross-modulus guard
-  (`case_unreachable_exits.rs`).
+  (`case_unreachable_exits.rs`). Trap-parity cases (`run_case_traps`,
+  `run_case_traps_with_inputs`, module `tests/traps.rs`) are built with a
+  header whose panic handler DOES trap on both targets — `unreachable` on
+  wasm (what the SDK's handler does; the compiler lowers it to
+  `push.0 assert` "entered unreachable code") and `_exit(101)` on the host,
+  where the entrypoint runs in a forked child — and the two sides must agree
+  per input on value-or-trap. A VM execution error is an outcome there, not a
+  failure; the mismatch message reads `native value 7, masm trap (vm: …)`.
 - `Operator::CallIndirect` is fully supported (PR #1251 + signature-tag-check
   follow-up, 2026-08): function-pointer and dyn-dispatch cases compile and run
   — see the "Indirect calls / funcref tables" section for the verified facts.
@@ -1582,7 +1589,9 @@ of campaign 18, every rung value-checked at the default level and at
   2), `run_case_with_flags` (pin a configuration in-repo; the harness
   pseudo-flag `--guest-debug=0|1|2` pins the guest debug level per case),
   `run_case_with_flags_and_inputs` (pin a configuration together with the
-  exact input pairs).
+  exact input pairs), `run_case_traps` / `run_case_traps_with_inputs` (trap
+  parity: a trap on both sides is a match, a trap on one side a finding;
+  the env knobs apply to those cases too).
 
 ## Debug-info (DWARF) cluster facts (verified 2026-09-02, campaign 7)
 
