@@ -12,13 +12,6 @@ use midenc_session::{
 
 use super::*;
 
-#[test]
-fn debug_frame_size_alignment_fails_closed_at_the_procedure_limit() {
-    assert_eq!(aligned_debug_frame_size(5), Some(8));
-    assert_eq!(aligned_debug_frame_size(u16::MAX - 3), Some(u16::MAX - 3));
-    assert_eq!(aligned_debug_frame_size(u16::MAX), None);
-}
-
 // -------------------------------------------------------------------------------------
 // Fixtures.
 //
