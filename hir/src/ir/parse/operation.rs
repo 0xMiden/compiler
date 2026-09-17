@@ -207,12 +207,12 @@ where
 
     /// Like [`Self::finalize`], but never verifies, regardless of the parser configuration.
     ///
-    /// This exists for callers that must reparent the parsed operation before it can be
-    /// meaningfully verified — verification walks down from the anchor world, so any absolute
-    /// symbol path in the parsed IR resolves against the anchor rather than the root the caller
-    /// will actually hand back. Such a caller is responsible for verifying the root itself when
-    /// [`ParserConfig::should_verify_after_parse`] is set; see `parse_anchored_source`.
-    pub fn finalize_without_verifying(self) -> ParseResult {
+    /// The caller supplies the root after reparenting the parsed operation, so deferred locations
+    /// and symbol uses are resolved in the hierarchy that will actually be returned. The caller
+    /// is responsible for verifying that root when [`ParserConfig::should_verify_after_parse`]
+    /// is set; see `parse_anchored_source`.
+    pub fn finalize_without_verifying(mut self, root: WorldRef) -> ParseResult {
+        self.top_level = root;
         self.finalize_impl(false)
     }
 
