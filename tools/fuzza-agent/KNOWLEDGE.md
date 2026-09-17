@@ -3078,3 +3078,168 @@ therefore what its lattice join is ever asked to decide. Corpus:
   block results is REFUTED for these shapes. The whole module passes at
   `FUZZA_GUEST_DEBUG=0`, `--optimize=max`, `--optimize=size-min`,
   `--optimize=basic` and `FUZZA_INPUT_PAIRS=256`, with no divergence anywhere.
+
+## Heap programs over a case-local allocator (campaign 34, 2026-09-17)
+
+The corpus was allocation-free until this campaign. `tests/heap.rs` runs 23
+`alloc` programs — `Vec`, `Box`, `Rc`/`RefCell`, a `Box`-linked list,
+`Box<dyn Trait>`, `VecDeque`, `BinaryHeap`, `BTreeMap`/`BTreeSet`, sorts,
+iterator `collect` pipelines, `String`, `core::fmt`, allocator OOM and
+`memory.grow` — each over a ~20-line bump allocator the case owns, so the
+wasm guest and the native `cdylib` run the SAME allocator code and no SDK
+crate is involved.
+
+### The allocator recipe and its three rules
+
+`cargo-miden` builds guests with `-Z build-std=core,alloc,panic_abort`
+(midenc-compile/src/pipeline/frontends/rust.rs:832), so `extern crate alloc`
+needs no harness change; the native `cdylib` takes `alloc` from the host
+sysroot.
+
+```rust
+const ARENA_SIZE: usize = 1 << 16;
+#[repr(align(16))]                              // rule 3
+struct Arena(UnsafeCell<[u8; ARENA_SIZE]>);
+unsafe impl Sync for Arena {}
+static ARENA: Arena = Arena(UnsafeCell::new([0; ARENA_SIZE]));
+static mut NEXT: usize = 0;
+struct Bump;                                    // alloc = bump, dealloc = no-op
+#[global_allocator] static GLOBAL: Bump = Bump;
+```
+
+1. **RESET the allocator at entry** (`unsafe { NEXT = 0 }` as the first
+   statement of `entrypoint`). The native `cdylib` stays loaded across every
+   input pair of a run while the VM starts fresh each time, so without the
+   reset the arena leaks on the native side only. Under `run_case` that does
+   not even fail cleanly: `CASE_HEADER`'s panic handler is `loop {}`, so a
+   native OOM HANGS the test. Verified sound at `FUZZA_INPUT_PAIRS=256`
+   (`heap_vecsum`, 256 pairs x up to 63 pushes, 14.6 s).
+2. **Results must be ADDRESS-INDEPENDENT**: content hashes and `len() as u32`
+   only — never a pointer, never `capacity()`, never a `usize` payload
+   (`usize` is 64 bits natively and 32 on wasm). The `usize` trap bites index
+   arithmetic too: `(input2 as usize).wrapping_add(9) % len` wraps on wasm
+   only and produced a false divergence in `heap_deque_edges` at
+   (0, 4294967295) before the index was rebuilt in `u32`.
+3. **The arena needs `#[repr(align(16))]`**: a `[u8; N]` static is only
+   byte-aligned, while the loads LLVM emits for `u32`/`u64` elements carry
+   `align=4`/`align=8` memargs.
+
+`handle_alloc_error` needs no `alloc_error_handler`: the stable default
+handler panics, which is a wasm `unreachable` on the guest
+(`-Cpanic=immediate-abort`) and the case header's `_exit(101)` on the host,
+so allocator exhaustion has trap parity under `run_case_traps`
+(`heap_oom`, `heap_oom_edges`).
+
+### The `alloc` row of the link-reach map (default level unless stated)
+
+Everything below LINKS (no `memcmp`), and all of it assembles except one
+entry:
+
+- `Vec` (push/extend/reserve/insert/remove/drain/retain/dedup/resize/
+  truncate/swap_remove) at element sizes 1, 3, 4, 8 and padded `(u8, u32)`;
+  `Box`, `Box<[T; N]>`, `Option<Box<T>>`, `Vec<Box<T>>`, `Box<dyn Trait>`
+  (vtable dispatch survives as `call_indirect` only when the collection is
+  read through `black_box` — the campaign-31 devirtualization rule applies
+  to vtables too); `Rc` + `RefCell` including `strong_count` and
+  `try_unwrap`; `VecDeque`; `BinaryHeap` + `into_sorted_vec`; `BTreeMap` /
+  `BTreeSet` including `range`; `String` (`push`/`push_str`/`truncate`/
+  `pop`/`from_utf8`/`chars`/`char_indices`/`bytes`); `alloc::format!`,
+  `to_string`, `write!` through `core::fmt::Write`, `{:?}` on a derived
+  `Debug`, radix/width/padding specs, and `str::parse::<u32>()` back out of
+  a runtime-length slice; `collect::<Vec<_>>()` from `map`/`filter`/`chain`/
+  `zip`/`rev`/`take`/`skip`/`step_by` plus `fold`/`max`/`min`/`position`.
+- **`core`'s STABLE sorts do NOT assemble**: `Vec::sort`, `sort_by` and
+  `sort_by_key` reach `core::slice::sort::stable::tiny::mergesort`, which
+  calls itself, and the assembler fails with `found a cycle in the call
+  graph` at ALL FOUR optimization levels (probed one level at a time). This
+  is the `core_select_nth_nolink` family, not a `memcmp` link failure, so it
+  does not take the `cargo test` process down. `sort_unstable`,
+  `sort_unstable_by` and `sort_unstable_by_key` are fine.
+  Replacement that works: a hand-written BOTTOM-UP merge sort over a scratch
+  `Vec` (`heap_sort`) — an allocating stable sort is not what is
+  unsupported, the recursion is.
+- **A recursive DROP GLUE is an opt-level cliff.** A `Box`-linked list
+  dropped iteratively (`Option::take` loop) assembles at the default level,
+  `--optimize=max` and `--optimize=size-min`, but at `--optimize=basic`
+  LLVM keeps `core::ptr::drop_glue::<Node>`, which calls itself through the
+  `Option<Box<Node>>` link, and the assembler rejects it
+  (`heap_list` vs `heap_list_basic`).
+
+### The two `core` libraries are NOT the same library
+
+The guest's `core` is built by `-Z build-std` with `optimize_for_size`; the
+native `cdylib`'s `core` is the host sysroot's. Where an API's result is
+UNSPECIFIED, the two can legitimately disagree, and the harness reports that
+as a divergence. Verified instance: the guest wasm contains only
+`core::slice::sort::unstable::heapsort::heapsort`, while the native `.so`
+contains `core::slice::sort::unstable::ipnsort` with `median3_rec`,
+`small_sort_network` and `insertion_sort_shift_left`. An unstable sort does
+not specify the order of EQUAL keys, so `sort_unstable_by_key(|e| e >> 40)`
+over elements whose payload outlives the key diverged at
+(983633457, 2147483648) with no compiler involvement.
+**Rule for any case using an unstable sort**: the key must be INJECTIVE over
+the element (`e.rotate_left(17)` is a bijection) or the element must BE the
+key (`sort_unstable()`), so ties are indistinguishable.
+
+### Bulk-op lowering facts for `alloc` code
+
+- Every bulk move `alloc` performs is a wasm `memory.copy`; the guests
+  contain ZERO `memcpy`/`memmove`/`memset` libcalls and zero `memory.fill`
+  (measured on all 21 case wasms). Counts per case run 0 (`heap_list`, a
+  linked list moves one node at a time) to 84 (`heap_btree`).
+- The frontend represents each one as
+  `hir.mem_cpy %dst, %src, %count : (ptr<u8, byte>, ptr<u8, byte>, u32)` —
+  BYTE-typed pointers and a RUNTIME count — so codegen always emits the
+  runtime 4-alignment test with `::miden::core::mem::memcopy_elements` on
+  one arm and the byte fallback loop on the other. The choice is made at
+  execution time, per call.
+- **`alloc`'s containers are full of OVERLAPPING copies, and both memcpy
+  arms get them wrong.** Campaign 30 recorded the element path's
+  direction-independent overlap assert and that the byte loop copies upward;
+  campaign 34 found the plain-Rust producers and the second, SILENT symptom:
+
+  | shape | operands | arm | outcome |
+  |---|---|---|---|
+  | `Vec<u32>::insert` (dst > src) | 4-aligned | element | VM abort |
+  | `Vec<u32>::remove` / `drain` (dst < src) | 4-aligned | element | VM abort |
+  | `BTreeMap`/`BTreeSet` insert+remove | 4-aligned | element | VM abort |
+  | `Vec<u8>::insert`, `String::insert` (dst > src) | 1 byte apart | byte loop | SILENT wrong value |
+  | `Vec<u8>::remove` (dst < src) | 1 byte apart | byte loop | correct |
+
+  The byte-loop row is new: the fallback arm has no overlap assert at all,
+  so it corrupts data with no diagnostic. Both wrong rows were arbitrated
+  with wasmtime on the harness-built wasm (wasmtime == native), so the
+  compiler is at fault, not the guest toolchain. Corpus:
+  `heap::heap_vec_shift`, `heap_vec_drain`, `heap_vec_shift_u8`,
+  `heap_string_insert`, `heap_btree` (+ `_repro` twins), bounded by the
+  passing `heap_vec_remove_u8`, `heap_vec_edit`, `heap_string`,
+  `heap_bheap` (a container that reorders by SWAPS, not shifts).
+  Practical consequence: `Vec::insert`/`remove`/`drain`, `String::insert`
+  and ALL of `BTreeMap`/`BTreeSet` are unusable on Miden today — three
+  inserts into one B-tree leaf is enough to abort.
+
+### `memory.grow`'s heap model
+
+`intrinsics/mem.masm` models a DYNAMIC heap that starts at ZERO pages, based
+at the first page boundary past all static memory and function tables
+(`codegen/masm/src/linker.rs`, e.g. 0x120000), and capped by
+`HEAP_END = (2^30 - 1) * 4` bytes. `memory_grow(n)` returns the PREVIOUS page
+count, or `-1` when `size + n` overflows `u32`, when `heap_base + new_size *
+64KiB` overflows 32 bits, or when that top passes `HEAP_END`; on failure the
+metadata is untouched. The ceiling is therefore about 65500 pages.
+
+`memory.size` on Miden counts the DYNAMIC heap, while a wasm engine counts
+the whole linear memory, so absolute page counts differ by target and a case
+may only observe what both models agree on: success flags and size DELTAS.
+`heap_grow` pins exactly that (a 1..5-page growth raises the size by exactly
+that many pages; a 2^20-page request returns `usize::MAX` and leaves the size
+unchanged; a zero-page growth changes nothing) and passes at all four
+optimization levels and without DWARF.
+
+Not covered by a test, read out of mem.masm + linker.rs: the standard wasm
+allocator idiom `let base = memory_grow(0, k) * 65536` computes a base of 0
+under this model on the first growth, which is the start of the DATA
+SEGMENTS, not of the new pages — a plain-Rust allocator that grows memory the
+usual way would write over its own statics. There is no way for a plain-Rust
+guest to learn the dynamic heap base (the SDK gets it from the `heap_base`
+intrinsic), so this could not be turned into a differential case.
