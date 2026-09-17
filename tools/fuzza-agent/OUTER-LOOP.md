@@ -138,6 +138,35 @@ closed by an unreachability argument).
   sweep: the `--guest-debug=0|1|2` harness pseudo-flag exists because the
   release configuration (no guest DWARF) changes which programs compile,
   and every ordinary build is on that side.
+- A rebase onto a moved `next` is a campaign of its own (2026-09-17): run
+  the whole suite first, then arbitrate every changed verdict by
+  rebuilding the guests with the PREVIOUS toolchain
+  (`RUSTUP_TOOLCHAIN=<old nightly> <test binary> <filter> --exact`; the
+  harness's nested cargo honours it) — a case that passes that way is a
+  toolchain-shape shift, not a compiler regression, and gets a
+  toolchain-dated ignore reason rather than a new class. Then a
+  *fix-uptake sweep*: every ignored reproducer re-run ALONE with
+  `--ignored --exact` (a guest build failure exits the whole test process
+  — `process::exit` in midenc-compile — so a batch loses every other
+  result), un-ignored with its history in the doc comment when the fix
+  landed, and every closed class's ladder pushed one rung to the next
+  boundary.
+- Oracle dimensions the strict corpus cannot see need a harness mode, not
+  more cases: trap parity (`run_case_traps`, 2026-09-17) compares
+  value-or-trap per input with a panic handler that traps on both targets
+  and the host entrypoint in a forked child. Its first campaign found the
+  Rust-panic side clean at every level and a real gap only outside the
+  language oracle (Miden does not bounds-check linear memory) — expect the
+  compiler-sensitive direction of such an oracle to be "traps where native
+  returns", since LLVM compiles Rust's own guards into the guest.
+- A *declared-effect audit* (2026-09-17) is the cheap half of a
+  memory-ordering campaign: list every op implementing the effect
+  interface with its declared effects (field-level attributes included —
+  a struct-header grep misses them), mark what plain Rust can produce, and
+  probe only what could understate; then prove each probe with the
+  per-pass IR dump (`-Z print-ir-after-pass=<pass>` AND
+  `MIDENC_TRACE='pass:<pass>=trace'`, with `--nocapture` — a passing test
+  swallows both) before value-checking it.
 - Inner-loop agents may stop only processes they spawned (never
   pattern kills); an agent that dies mid-run (usage limit) leaves unverified
   files — relaunch the same brief with a "reuse, verify, trim the partial
