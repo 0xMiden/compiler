@@ -146,7 +146,8 @@ fn bit_shapes_edges() {
 /// u32/i32 (i64 products + range compares), plus abs_diff, midpoint and
 /// u64/i64 checked_add/checked_sub None arms — all LLVM-legalized into
 /// wrapping ops + compares. The i64 overflow-checked multiplies are pinned
-/// separately as the ignored `sat_mul_i64`/`pow_i64` guest-LLVM miscompile.
+/// separately as the formerly-ignored `sat_mul_i64`/`pow_i64` guest-LLVM
+/// miscompile (F9, fixed by the nightly-2026-09-01 toolchain).
 #[test]
 fn ovf_mul() {
     run_case("ovf_mul", include_str!("../cases/case_ovf_mul.rs"));

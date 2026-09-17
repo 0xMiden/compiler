@@ -39,19 +39,24 @@
 //!   `select_nth_unstable` still does not: it keeps the recursive
 //!   `median_of_medians` (`core_select_nth_nolink`).
 //!
-//! It also holds the campaign's two VALUE divergences, told apart by
-//! `wasmtime` on the harness-built wasm: `str::parse::<i64>` of a
-//! runtime-length slice is miscompiled by `midenc` (`core_parse_i64`:
-//! native = wasmtime != masm), while an `i64::checked_mul` by a constant in
-//! a loop is miscompiled by the GUEST TOOLCHAIN (`core_chkmul_i64`:
-//! wasmtime = masm != native, the F9 family). Both go through
-//! `i64.mul_wide_s`; only the first one is a compiler bug.
+//! It also holds the campaign's two VALUE divergences, both FIXED by
+//! 2026-09-17 and kept as guards. They were told apart by `wasmtime` on the
+//! harness-built wasm: `str::parse::<i64>` of a runtime-length slice was
+//! miscompiled by `midenc` (`core_parse_i64`: native = wasmtime != masm,
+//! fixed by ef358e356), while an `i64::checked_mul` by a constant in a loop
+//! was miscompiled by the GUEST TOOLCHAIN (`core_chkmul_i64`:
+//! wasmtime = masm != native, the F9 family, fixed by the nightly-2026-09-01
+//! bump). Both go through `i64.mul_wide_s`, and `core_parse_i64` turns out to
+//! have carried BOTH defects — with 04-30 guests it still diverges at its
+//! sixteen-digit row.
 //!
-//! OPERATIONAL NOTE: a `*_nolink` case does not just fail — the guest build
-//! error ABORTS the whole `cargo test` process (no `test result` line is
-//! printed), so run them one at a time with
+//! OPERATIONAL NOTE: a `*_nolink` case whose guest fails to LINK does not just
+//! fail — the guest build error ABORTS the whole `cargo test` process (no
+//! `test result` line is printed), so run them one at a time with
 //! `-- --ignored --exact <full::path>` and never in a batch with tests whose
-//! result you need.
+//! result you need. `core_select_nth_nolink` is the exception: its guest
+//! builds and the cycle is caught by the ASSEMBLER, so it fails as an ordinary
+//! test.
 //!
 //! Every case here was value-checked natively on the 1225-pair boundary grid
 //! before it was kept, and compiled at all four optimization levels; each
@@ -245,8 +250,17 @@ fn core_str_search_nolink() {
     run_case("core_str_search_nolink", include_str!("../cases/case_core_strsearch.rs"));
 }
 
-/// A native-vs-MASM DIVERGENCE (campaign 27): `str::parse::<i64>` of a
-/// runtime-length digit slice. At `(0, 0)` the slice is `"9"`; native and
+/// Formerly `#[ignore]`d (F18), the `core` producer of the shared-coercion-
+/// constant miscompile. FIXED by ef358e356 (the coercion folders allocate a
+/// fresh immediate per result) TOGETHER WITH the nightly-2026-09-01 guest
+/// toolchain: re-verified 2026-09-17, it needs both. With 04-30 guests and the
+/// fixed compiler it still diverges, at the sixteen-digit row `(0, 15)` —
+/// native 2097153 vs masm 0xdeadbeef — and `wasmtime -W wide-arithmetic=y` on
+/// THAT wasm returns 0xdeadbeef too, i.e. the old guest wasm carried the F9
+/// `i64.mul_wide_s` stale read on the checked path of the same parse. Kept as
+/// the `core`-side regression guard for both. What it used to do (campaign
+/// 27): `str::parse::<i64>` of a runtime-length digit slice. At `(0, 0)` the
+/// slice is `"9"`; native and
 /// `wasmtime` on the harness-built wasm (`-W wide-arithmetic=y`) both return
 /// 9, MASM returns 0. The wasm is therefore correct and the miscompile is on
 /// the Miden side. `core_parse_u64` (same shape, `u64`) and `core_mulwide_s`
@@ -261,12 +275,9 @@ fn core_str_search_nolink() {
 /// `acc * 10` path over the SAME `i64.const 10`; `Sext::fold` retypes the
 /// shared `arith.constant 10 : i64` to an `i128` immediate in place
 /// (dialects/arith/src/ops/coercions.rs), so the plain multiply is fed four
-/// felts instead of two and the digit add consumes zeros — which is why the
-/// wrong answer is exactly the digits dropped. Un-ignore when the coercion
-/// folders stop mutating their operand constant.
+/// felts instead of two and the digit add consumed zeros — which is why the
+/// wrong answer was exactly the digits dropped.
 #[test]
-#[ignore = "DIVERGENCE: str::parse::<i64> of a runtime-length slice; inputs (0, 0): native 9 / \
-            wasmtime 9 / masm 0"]
 fn core_parse_i64() {
     run_case_with_inputs(
         "core_parse_i64",
@@ -307,21 +318,22 @@ fn core_mulwide_s() {
     );
 }
 
-/// A GUEST-TOOLCHAIN divergence (F9), kept because it is the smallest
-/// producer of that family in the corpus: an `i64` accumulator multiplied by
-/// the CONSTANT 10 with `checked_mul` in a loop — `core`'s signed `from_str`
-/// fast-path shape. LLVM compiles the overflow check to `i64.mul_wide_s` +
-/// `hi != lo >> 63` and gets it wrong: at `(0, 1)` the accumulator is 9,
-/// `9 * 10` does not overflow, native returns 90, and BOTH `wasmtime` on the
-/// harness-built wasm (`-W wide-arithmetic=y`) and MASM return the overflow
-/// marker 0xdead. wasmtime agreeing with MASM is what attributes this to the
-/// guest toolchain rather than to `midenc` (contrast [`core_parse_i64`],
-/// where wasmtime agrees with native). Reproduces at all four optimization
-/// levels — at `--optimize=basic` one digit later, `(0, 2)`. Un-ignore when
-/// the guest toolchain's `+wide-arithmetic` lowering is fixed.
+/// Formerly `#[ignore]`d (F9), the smallest `core`-shaped producer of that
+/// family: an `i64` accumulator multiplied by the CONSTANT 10 with
+/// `checked_mul` in a loop — `core`'s signed `from_str` fast-path shape. The
+/// 2026-04-30 LLVM compiled the overflow check to `i64.mul_wide_s` +
+/// `hi != lo >> 63` and got it wrong: at `(0, 1)` the accumulator is 9,
+/// `9 * 10` does not overflow, native returned 90, and BOTH `wasmtime` on the
+/// harness-built wasm and MASM returned the overflow marker 0xdead — wasmtime
+/// agreeing with MASM is what attributed it to the guest toolchain rather than
+/// to `midenc`.
+///
+/// Fixed by the guest toolchain bump to nightly-2026-09-01; re-verified
+/// 2026-09-17: `wasmtime -W wide-arithmetic=y --invoke entrypoint
+/// differential_core_chkmul_i64.wasm 0 1` now returns 90, the native answer,
+/// and the `i64.mul_wide_s` is still in the wasm. Kept as the `core`-side
+/// guard of the checked-multiply overflow test.
 #[test]
-#[ignore = "F9 guest toolchain: i64::checked_mul by a constant in a loop; inputs (0, 1): native 90 \
-            / wasmtime 0xdead / masm 0xdead"]
 fn core_chkmul_i64() {
     run_case_with_inputs(
         "core_chkmul_i64",
@@ -498,9 +510,9 @@ fn prog_pipeline_edges() {
 /// `fill`, `copy_within` between distinct ranges, `chunks_exact_mut`, an
 /// insertion sort cross-checked element-wise against `sort_unstable` /
 /// `sort_unstable_by_key`, `binary_search`, `windows(2).all(..)` and
-/// `contains`. Compiles and matches native at the default level, at
-/// `--optimize=size-min` and at `--optimize=max`; it does NOT compile at
-/// `--optimize=basic` ([`prog_slicealg_basic`]).
+/// `contains`. Compiles and matches native at all four optimization levels;
+/// `--optimize=basic` used to panic (F6) and is now guarded by
+/// [`prog_slicealg_basic`].
 #[test]
 fn prog_slicealg() {
     run_case("prog_slicealg", include_str!("../cases/case_prog_slicealg.rs"));
@@ -529,19 +541,22 @@ fn prog_slicealg_edges() {
     );
 }
 
-/// [`prog_slicealg`] at `--optimize=basic`: the compiler panics with
-/// `called `Option::unwrap()` on a `None` value` at
-/// `hir/src/ir/dominance/frontier.rs:123:55`. The spills trace
-/// (`MIDENC_TRACE='analysis:spills=trace,pass:spills=trace'`) shows
+/// [`prog_slicealg`] at `--optimize=basic`. Formerly `#[ignore]`d (F6): the
+/// compiler panicked with `called `Option::unwrap()` on a `None` value` at
+/// `hir/src/ir/dominance/frontier.rs:123:55`, the spills trace
+/// (`MIDENC_TRACE='analysis:spills=trace,pass:spills=trace'`) showing
 /// `edges to split = 17` and nineteen `max usage on exit (17) exceeds K (16),
-/// additional spills required` lines for `entrypoint`, i.e. the F6
-/// stale-dominator-tree cluster: the panic happens while the split edges are
-/// being processed, before any reload is erased. The same program compiles
-/// at the other three levels, so `--optimize=basic` is not a safe fallback.
-/// Un-ignore when F6 is fixed.
+/// additional spills required` lines for `entrypoint` — the stale-dominator-
+/// tree cluster, panicking while the split edges are processed and before any
+/// reload is erased.
+///
+/// It compiles and matches native since the guest toolchain bump to
+/// nightly-2026-09-01, but F6 IS NOT FIXED: nightly-2026-04-30 guests
+/// reproduce the same `frontier.rs:123` unwrap (arbitrated 2026-09-17), and
+/// the class's minimal reproducers (`pressure::window_erased_min`,
+/// `pressure::overflow_cluster_min`) still panic with the current toolchain.
+/// Kept as the `--optimize=basic` guard of this program.
 #[test]
-#[ignore = "F6: frontier.rs:123 Option::unwrap on None at --optimize=basic (17 edges to split, 19 \
-            additional-spill rounds)"]
 fn prog_slicealg_basic() {
     run_case_with_flags(
         "prog_slicealg_basic",
@@ -620,9 +635,11 @@ fn prog_numeric_nodwarf() {
 /// `swap_bytes` / `reverse_bits`). It compiles ONLY at
 /// `--optimize=size-min`; at the default level and at `--optimize=max` the
 /// compiler panics at `codegen/masm/src/lower/lowering.rs:109:17` with
-/// `failed to schedule operands: [%3324, %1243] for inst 'arith.shr' with
-/// error: NoSolution constraints: [Move, Copy]` over a thirteen-operand,
-/// sixteen-felt stack. It LOOKS like the arity-2 solver gap (a `Copy`
+/// `failed to schedule operands ... with error: NoSolution constraints:
+/// [Move, Copy]` over a thirteen-operand, sixteen-felt stack. Which operation
+/// takes the hit depends on the guest toolchain — `arith.shr` with
+/// nightly-2026-04-30, `arith.gt` with nightly-2026-09-01 (re-verified
+/// 2026-09-17) — and the value ids move with it, so do not pin either. It LOOKS like the arity-2 solver gap (a `Copy`
 /// constraint on a stack inside the window), but the same function's spills
 /// trace shows `edges to split = 4` and seven `erase unused reload` lines —
 /// the stale-dominator-tree erasure — and erased split-edge reloads take
@@ -636,8 +653,9 @@ fn prog_numeric_nodwarf() {
 /// reproducers.
 #[test]
 #[ignore = "F6 (erased split-edge reloads in the spills trace): lowering.rs:109 NoSolution [Move, \
-            Copy] on arith.shr over an in-window 16-felt stack at the default level and \
-            --optimize=max; frontier.rs:123 at --optimize=basic"]
+            Copy] over an in-window 16-felt stack at the default level and --optimize=max (the \
+            failing op is arith.gt on nightly-2026-09-01 guests, arith.shr on nightly-2026-04-30); \
+            frontier.rs:123 at --optimize=basic"]
 fn prog_numeric_full() {
     run_case("prog_numeric_full", include_str!("../cases/case_prog_numeric.rs"));
 }

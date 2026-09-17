@@ -319,8 +319,8 @@ fn window_erased_guard_edges() {
 /// zero-trip-capable loop (campaign 28): 23 lines — [`window_erased_guard`]
 /// with one more u64 value in the cluster (five defined before the loop,
 /// joined in one wide expression inside it, used again after it) and no count
-/// band at all. Building it panics with `failed to schedule operands: [%24,
-/// %82] for inst 'arith.rotl' with error: NoSolution` at
+/// band at all. Building it panics with `failed to schedule operands ... for
+/// inst 'arith.rotl' with error: NoSolution` at
 /// codegen/masm/src/lower/lowering.rs:109, constraints `[Copy, Copy]`, over a
 /// SEVENTEEN-felt operand stack (six u64 operands and five u32 counts) — the
 /// Copy-constrained count sits at index 10, outside the MASM window, so this
@@ -330,14 +330,16 @@ fn window_erased_guard_edges() {
 /// `zero_trip_overflow` — which needed twelve counts and a zero-trip-capable
 /// loop for the same site. Panics at all four optimization levels. Bounded by
 /// [`window_erased_guard`] (one cluster value fewer, no spills at all).
-/// Compile-time — no inputs involved. Un-ignore when the transform recomputes
-/// dominance after splitting edges.
+/// Compile-time — no inputs involved. Re-verified failing 2026-09-17 on
+/// nightly-2026-09-01 guests (same site, same `[Copy, Copy]` constraints; the
+/// value ids move with the toolchain, which is why they are not pinned).
+/// Un-ignore when the transform recomputes dominance after splitting edges.
 #[test]
-#[ignore = "compiler panic: 'failed to schedule operands: [%24, %82] for inst arith.rotl with \
-            error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 over a 17-felt stack — F6 \
-            (edges to split = 1, six erased split reloads): five u64 values live across a \
-            bottom-tested loop, no zero-trip loop and no count band; all four optimization levels, \
-            compile-time, no inputs"]
+#[ignore = "compiler panic: 'failed to schedule operands ... for inst arith.rotl with error: \
+            NoSolution' at codegen/masm/src/lower/lowering.rs:109 over a 17-felt stack — F6 (edges \
+            to split = 1, six erased split reloads): five u64 values live across a bottom-tested \
+            loop, no zero-trip loop and no count band; all four optimization levels, compile-time, \
+            no inputs"]
 fn overflow_cluster_min() {
     run_case("overflow_cluster_min", include_str!("../cases/case_overflow_cluster_min.rs"));
 }
