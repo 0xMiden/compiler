@@ -29,3 +29,6 @@ midenc-hir.workspace = true
 midenc-session.workspace = true
 midenc-compile.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

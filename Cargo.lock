@@ -3922,6 +3922,7 @@ dependencies = [
  "midenc-compile",
  "midenc-hir",
  "midenc-session",
+ "tempfile",
 ]
 
 [[package]]
