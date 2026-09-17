@@ -397,6 +397,11 @@ extern "C" fn rust_eh_personality() {}
 /// `_exit(101)` on the host, where the forked child's exit status is the trap
 /// signal [`run_native_isolated`] reads. `_exit` is declared by hand because
 /// the case is `no_std`; the host `cdylib` links the platform libc anyway.
+///
+/// Only the host arm is load-bearing today: `midenc` builds guests with
+/// `-Cpanic=immediate-abort`, so a Rust panic becomes a wasm `unreachable`
+/// before any handler runs. The wasm arm keeps the header correct should that
+/// flag ever go away.
 const TRAPPING_CASE_HEADER: &str = r#"#![no_std]
 
 #[panic_handler]

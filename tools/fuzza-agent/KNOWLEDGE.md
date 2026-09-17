@@ -125,10 +125,18 @@ Maintenance rules:
   `(a >= b) as u32` helper (`case_ucmp_ge.rs`, 2026-08-27) — the u128
   compare legalization only ever materializes an inline `i64.le_u` pair
   (which is what keeps `lte_u64` warm), never `ge_u`.
-- The harness prepends a `loop {}` panic handler, so `panic!` **never** lowers
-  to wasm `unreachable` in the strict corpus. To get a genuine trap edge, plant
-  `core::arch::wasm32::unreachable()` behind an impossible cross-modulus guard
-  (`case_unreachable_exits.rs`). Trap-parity cases (`run_case_traps`,
+- Every `panic!` (bounds check, `unwrap`, division guard, `assert!`) lowers
+  to a wasm `unreachable` in EVERY case, strict corpus included: the guest is
+  built with `-Cpanic=immediate-abort` (`MANDATORY_RUST_FLAGS`,
+  midenc-compile/src/pipeline/frontends/rust.rs), so the header's
+  `#[panic_handler]` body is never reached on wasm — the harness-built
+  `trap_branch` wasm has no handler function at all, just the `unreachable`
+  (verified 2026-09-17; the earlier "the `loop {}` handler means `panic!`
+  never becomes `unreachable`" fact was wrong). The handler body matters
+  only for the native build. An explicit `core::arch::wasm32::unreachable()`
+  behind an impossible cross-modulus guard (`case_unreachable_exits.rs`)
+  is still the way to plant a trap edge with no panic machinery around it.
+  Trap-parity cases (`run_case_traps`,
   `run_case_traps_with_inputs`, module `tests/traps.rs`) are built with a
   header whose panic handler DOES trap on both targets — `unreachable` on
   wasm (what the SDK's handler does; the compiler lowers it to
@@ -2584,3 +2592,86 @@ passes that way is a toolchain-shape shift, not a compiler regression.
   dedicated lowering (`i64_srem` un-ignored upstream), heap-growth overflow
   handling, sparse-lattice meet, anchor hash collisions, structural region
   equivalence in CSE, `switch_shapes` / `sext_shapes` un-ignored upstream.
+
+## Trap parity (campaign 29, 2026-09-17)
+
+The first campaign to check the trap oracle — "Miden traps if and only if
+native Rust panics, and returns the same value otherwise" — via
+`run_case_traps` / `run_case_traps_with_inputs` (`tests/traps.rs`). 25 cases
+covering array and slice bounds, slice-range and argument panics, `/` and `%`
+by zero and at `MIN / -1` on all four widths, `checked_*`/`TryFrom`/
+`from_utf8`/`from_u32`/`NonZeroU32`/`Result` unwraps, the assertion macros,
+`br_table` arms, `#[inline(never)]` frames and `call_indirect` dispatch. Each
+case has an `_edges` twin pinning the boundary grid.
+
+**Every Rust panic family has trap parity, at every configuration.** 54 tests
+pass (1 ignored, the W7 probe below) in the default env and under
+`--optimize=max`, `--optimize=size-min`, `--optimize=basic` and
+`FUZZA_GUEST_DEBUG=0`, and at `FUZZA_INPUT_PAIRS=256` in the default env. No
+divergence in either direction.
+
+- **One MASM op behind every Rust panic.** Guests build with
+  `-Cpanic=immediate-abort` (`MANDATORY_RUST_FLAGS`,
+  midenc-compile/src/pipeline/frontends/rust.rs:1800), so a panic never
+  reaches the `#[panic_handler]` at all on the wasm side: rustc emits a wasm
+  `unreachable`, which midenc lowers to `push.0
+  assert.err="entered unreachable code"`. Bounds check, slice range, `/0`,
+  `MIN / -1`, `unwrap`, `assert!`, `unreachable!()`, `todo!()` — all the same
+  op and the same VM error text. The harness's `TRAPPING_CASE_HEADER` wasm
+  arm is belt-and-braces; only its host arm (`_exit(101)`) is load-bearing.
+- **Rust's own guards run before the VM's.** For 64-bit division LLVM emits
+  the zero-divisor and `MIN / -1` tests as explicit `i32.eqz`/`i64.ne` +
+  `br_if` to `unreachable` BEFORE the `i64.div_u`/`i64.div_s`, so
+  `::miden::core::math::u64::div` and `::intrinsics::i64::checked_div` never
+  see a zero divisor from safe Rust. The intrinsics' own assertions
+  (codegen/masm/intrinsics/i64.masm:217 documents "traps if `b == 0` or the
+  result overflows") are a second line of defence with no plain-Rust
+  producer. `i64 %` came out as `a - (a/b)*b`, so the new dedicated
+  `i64.rem_s` lowering is not on this path either.
+- **The trap's POSITION is not preserved, only the decision.** In the MASM
+  the trap is sunk past the value computation (`… push.0 movup.2 eq if.true
+  push.0 assert …` at the end of the function), and LLVM merges sibling
+  guards into one `unreachable` block upstream of that. Do not write a case
+  that tries to observe work done before a trap — nothing before a trap is
+  observable through this harness, and the oracle is exactly the trap-or-value
+  decision.
+- **Release guests: only the `checked_`/explicit forms panic.** Overflow
+  checks are off, so `a + 1` at `u32::MAX`, `x << 40`, `i32::MIN.abs()` and
+  `wrapping_div(MIN, -1)` all return; `debug_assert!`/`debug_assert_eq!` are
+  compiled out and must not trap. What panics is the language-mandated set:
+  indexing, slice ranges, `/` and `%` by zero, `MIN / -1` AND `MIN % -1` for
+  `i32`/`i64` (the division guards are emitted regardless of
+  `-C overflow-checks`), `unwrap`/`expect`, and the `assert!` family.
+- **Statically-present, dynamically-dead panics stay dead.** A `panic!`, a
+  zero divisor and an out-of-range index all guarded by the cross-modulus
+  contradiction `h % 6 == 5 && h % 3 == 0` trap on neither target at any
+  optimization level (`trap_dead_guard`).
+- **`usize::try_from(u64)` is a FALSE divergence source** and must never
+  appear in a case: `usize` is 64 bits natively and 32 bits on wasm, so the
+  conversion panics on the guest and returns on the host by target, not by
+  compiler. (Same family as the campaign-13 `rodata_big` index-wrap trap.)
+- **A trapping edge does not move the compile-time class boundary.** A
+  five-deep loop nest with an accumulator escaping each level stops compiling
+  at `--optimize=max` (`failed to schedule operands … for inst 'arith.rotl'
+  with error: NoSolution, constraints: [Move, Copy]` over a full 16-entry
+  window at codegen/masm/src/lower/lowering.rs:109 — the F2 arity-2 solver
+  gap, `spills::rotl_window`), but a sibling with the index masked into range
+  and therefore no trapping edge at all panics identically. The nest alone is
+  what reaches F2; `trap_deep_nest` is kept one level shallower. Do not file
+  a trap-edge variant of a known compile-time class without building that
+  no-trap sibling first.
+- **W7: Miden does not bounds-check linear memory.** A `read_volatile` at
+  256 MiB past the guest's 17-page memory returns zero on Miden
+  (`masm value 5`) while the host segfaults (`native: signal 11`) and
+  wasmtime traps ("memory fault at wasm address 0x100ffff0 in linear memory
+  of size 0x110000 / wasm trap: out of bounds memory access"). Kept as the
+  `#[ignore]`d `traps::trap_oob_read` probe — the same missing enforcement
+  `frames::deep_overrun` hits from the other side, where a wrapped
+  shadow-stack address only trips the VM's u32 range assertion by accident.
+- Tooling: `scratch/c29run.sh <case> grid` is the native half of the oracle
+  in ~2 s (trap/value map over the 35x35 boundary grid, plus a repeat-stability
+  check). It must strip the case's `extern "C"` ABI first — since Rust 1.81 a
+  panic crossing an `extern "C"` boundary aborts instead of unwinding, so
+  `catch_unwind` would never see it. Use it before every harness run: it
+  caught three trap-density design errors and two collapsed value functions
+  in this campaign.
