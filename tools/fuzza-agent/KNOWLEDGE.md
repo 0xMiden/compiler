@@ -2531,3 +2531,47 @@ classified by TRACE, not by crash site (the three-signature rule above).
   64-bit shift/rotate count that `mask_movement_count` truncates to `u32` ends
   up as a distinct attribute from the `i64` constant a plain use holds. A
   wrong-width push is invisible in every IR dump; read the MASM.
+
+## Guest toolchain nightly-2026-09-01 (rebase of 2026-09-17)
+
+The branch was rebased onto a `next` that bumped the guest toolchain from
+nightly-2026-04-30 to nightly-2026-09-01 (and merged the compiler-audit
+fixes). Every fallout below was arbitrated by rebuilding the guests with the
+old toolchain (`RUSTUP_TOOLCHAIN=nightly-2026-04-30 <test binary> <filter>
+--exact`, which the harness's nested `cargo` invocations honour): a case that
+passes that way is a toolchain-shape shift, not a compiler regression.
+
+- **LLVM now devirtualizes constant fn-pointer tables.** A runtime index into
+  a `static TABLE: [fn(..) -> ..; N]` becomes a switch of direct calls (the
+  wasm loses every `call_indirect`), so funcref-table recursion turns into a
+  direct call-graph cycle the assembler rejects (`recursion_indirect`,
+  `recursion_wide`, `deep_frames`, `deep_overrun` failed; `rec_freight`,
+  `rec_mutual`, `rec_slots`, `recursion_frames` happened to survive). Read the
+  table through `core::hint::black_box(&TABLE)[i]` to keep the dispatch
+  indirect; every recursion case now does.
+- **`memcmp` reach moved down a level:** the constant-size array `==` of
+  `core_eq_reach` is an outlined `memcmp` libcall at the default level now
+  (it was only at `-Oz` before), so the case is F13-ignored at O2 too. Expect
+  other per-level `memcmp` boundaries in the link-reach map to have moved;
+  re-probe before quoting one.
+- **A failed guest build exits the test process.** `midenc-compile`
+  (`rust.rs`, since 2026-05) calls `std::process::exit(cargo status)` when
+  the guest `cargo build` fails, so a link failure (`undefined symbol:
+  memcmp`) or any rustc error in ONE case kills the whole `cargo test`
+  invocation with no summary — "error: test failed" and `Broken pipe` lines
+  from the other in-flight case builds are the tell. Never leave a
+  link-failing case un-ignored, and run suspected non-linking cases alone.
+- **Two realistic programs moved into F6 at the default level:**
+  `corelib::prog_ordkeys` (8 split edges, then `frontier.rs:123` unwraps
+  `None`) and `programs::prog_iters` (`emit/mod.rs:623`, 2 split edges, 6
+  erased reloads). Both compile with nightly-2026-04-30 guests.
+- **F16 is no longer silent for `deep_overrun`:** the wrapped shadow-stack
+  address now lands where the VM's u32 range assertion fires ("operation
+  expected u32 values, but got values: [4295098224]") instead of an unused
+  element region; still no stack-overflow diagnostic, and wasmtime still
+  traps out of bounds.
+- Fixes that landed with the rebase and matter to the ledger: coercion
+  folders allocate a fresh immediate per result (F18), `i64.rem_s` has a
+  dedicated lowering (`i64_srem` un-ignored upstream), heap-growth overflow
+  handling, sparse-lattice meet, anchor hash collisions, structural region
+  equivalence in CSE, `switch_shapes` / `sext_shapes` un-ignored upstream.
