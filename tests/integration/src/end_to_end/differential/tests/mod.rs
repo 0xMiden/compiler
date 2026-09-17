@@ -26,4 +26,5 @@ mod sccp;
 mod signed;
 mod spills;
 mod traps;
+mod trapspill;
 mod wide;

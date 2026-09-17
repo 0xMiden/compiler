@@ -208,7 +208,8 @@ fn <name>() {
      way. A case that is MEANT to panic on some inputs uses `run_case_traps`
      / `run_case_traps_with_inputs` (`tests/traps.rs`): both sides must agree
      per input on value-or-trap, and a value-vs-trap mismatch is pinned like
-     any divergence. Before you call a divergence a compiler bug, run wasmtime on the
+     any divergence; a configuration-dependent trap-case finding is pinned
+     with `run_case_traps_with_flags` (`tests/trapspill.rs`). Before you call a divergence a compiler bug, run wasmtime on the
      harness-built wasm (`wasmtime run -W wide-arithmetic=y --invoke
      entrypoint target/miden_test_shared/wasm32-wasip1/release/
      differential_<case>.wasm a b`): if wasmtime agrees with MASM the guest

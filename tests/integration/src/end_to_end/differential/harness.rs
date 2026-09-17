@@ -203,6 +203,14 @@ pub(super) fn run_case_traps_with_inputs(name: &str, source: &str, inputs: &[(u3
     run_case_inner_with_flags(name, source, Inputs::Explicit(inputs), &[], Traps::Compared);
 }
 
+/// Like [`run_case_traps`], but with extra `midenc` flags (and the
+/// `--guest-debug` pseudo-flag) pinned per case, as [`run_case_with_flags`]
+/// does for value cases — so a trap-parity finding that exists only in one
+/// configuration can be kept in-repo as a `<name>_<config>` twin.
+pub(super) fn run_case_traps_with_flags(name: &str, source: &str, flags: &[&str]) {
+    run_case_inner_with_flags(name, source, Inputs::Random16, flags, Traps::Compared);
+}
+
 /// Shared body of [`run_case`] / [`run_case_with_inputs`]: build the case both
 /// natively and to MASM, then compare `entrypoint` outputs for the requested
 /// inputs.
