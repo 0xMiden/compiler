@@ -2502,6 +2502,8 @@ fn apply_debug_var_metadata(
     var: &midenc_hir::dialects::debuginfo::attributes::Variable,
     session: &midenc_session::Session,
 ) {
+    use miden_assembly_syntax::debuginfo::SourceManagerExt;
+
     // Set arg_index if this is a parameter
     if let Some(arg_index) = var.arg_index {
         debug_var.set_arg_index(arg_index + 1); // Convert to 1-based
