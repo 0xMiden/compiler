@@ -159,10 +159,22 @@ fn dispatch_pressure() {
     run_case("dispatch_pressure", include_str!("../cases/case_dispatch_pressure.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, campaign 14, 2026-09-02): the
-/// LOOP form of the `hir.exec_indirect` argument-blindness class (loop-free
-/// minimal form: `indirect_spill_line`; emitter-side signature:
-/// `indirect_spill_args`). Building this case panics with `NoSolution` at
+/// Formerly `#[ignore]`d as the LOOP form of the `hir.exec_indirect`
+/// argument-blindness class (campaign 14). It compiles and matches native at
+/// every configuration since the guest toolchain bump to nightly-2026-09-01 —
+/// but the COMPILER BUG IS NOT FIXED: at the default level, `-Oz` and `-O3`
+/// LLVM devirtualizes a plain read of a constant fn-pointer table, so the
+/// guest wasm contains ZERO `call_indirect` and the case never reaches
+/// `hir.exec_indirect` at all. Arbitrated 2026-09-17 by rebuilding the guest
+/// with nightly-2026-04-30, which reproduces the original `NoSolution` at
+/// codegen/masm/src/lower/lowering.rs:109 verbatim. The class keeps a
+/// default-level reproducer in `indirect_spill_bb`, which reads the table
+/// through `core::hint::black_box(&WIDES)` and stays indirect at every level;
+/// `--optimize=basic` does not devirtualize either, which is why
+/// `indirect_spill_args` and `indirect_spill_line` still panic there. This
+/// test stays as the devirtualized-dispatch guard. What it used to do:
+///
+/// building it panicked with `NoSolution` at
 /// codegen/masm/src/lower/lowering.rs:109 while scheduling the loop body's
 /// `arith.bxor` `[Move, Copy]` over a SEVENTEEN-felt operand stack (eight
 /// u64 + the loaded fn pointer). Shape: seven loop-invariant u64 locals are
@@ -190,16 +202,30 @@ fn dispatch_pressure() {
 /// (the SAME loop with eight locals and a DIRECT 7-u64 call: `hir.exec`
 /// keeps its arguments in group 0, passes) and `indirect_args` (eight
 /// locals across two straight-line dispatches, passes: the argument loads
-/// happen right before each dispatch with nothing else live). Compile-time
-/// — no inputs involved. Un-ignore when this case compiles (the spill
-/// analysis counts every operand group of `hir.exec_indirect`).
+/// happen right before each dispatch with nothing else live).
 #[test]
-#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 on \
-            a 17-felt operand stack — the spill analysis reads only operand group 0 and so never \
-            sees the arguments of hir.exec_indirect (group 1): spilled dispatch arguments are \
-            never reloaded and the call is budgeted as one felt (compile-time, no inputs involved)"]
 fn indirect_spill() {
     run_case("indirect_spill", include_str!("../cases/case_indirect_spill.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC, the `indirect_spill` class re-armed for the
+/// nightly-2026-09-01 guest toolchain (campaign 31, 2026-09-17): the same
+/// seven-live-u64 loop dispatch, with the table read as
+/// `core::hint::black_box(&WIDES)[idx]` so LLVM cannot devirtualize it and the
+/// wasm keeps its `call_indirect`. The spill analysis still reads operand
+/// group 0 only (hir-analysis/src/analyses/spills.rs), and `hir.exec_indirect`
+/// still keeps its arguments in group 1 (dialects/hir/src/ops/invoke.rs), so
+/// spilled dispatch arguments are never reloaded and the call is budgeted as
+/// one felt while the emitter still holds them. Bounded exactly as
+/// `indirect_spill` was. Compile-time — no inputs involved. Un-ignore when the
+/// spill analysis counts every operand group of `hir.exec_indirect`.
+#[test]
+#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 — \
+            the spill analysis reads only operand group 0 and so never sees the arguments of \
+            hir.exec_indirect (group 1): spilled dispatch arguments are never reloaded and the \
+            call is budgeted as one felt (compile-time, no inputs involved)"]
+fn indirect_spill_bb() {
+    run_case("indirect_spill_bb", include_str!("../cases/case_indirect_spill_bb.rs"));
 }
 
 /// Straight-line twin of `indirect_spill`: eight u64 locals used by two
@@ -224,36 +250,31 @@ fn callee_pressure() {
 /// Campaign-12 lead check: u128/i128 `checked_add`/`overflowing_add`/
 /// `saturating_sub`/`checked_sub`/`overflowing_sub` (`i64.add128` /
 /// `i64.sub128` on this toolchain) in `#[inline(never)]` helpers and a loop
-/// — the forms that expose the F9 guest-LLVM defect for `mul_wide_s` — with
-/// both limbs at their boundaries; passes at the default opt-level. The
-/// defect DOES reach the 128-bit add/sub instructions in other shapes: u128
-/// `saturating_add`/`saturating_sub` (ignored sat_add_u128 / sat_sub_u128),
-/// this `checked_add` loop at `--optimize=basic` (ignored chk_add_u128_o1),
-/// and both-limb value uses masked by DWARF (wide_words) — see tests/wide.rs.
-/// Configuration note (campaign 16): under the harness's own `-Oz` and O1
-/// builds this case DIVERGES — the F9 guest-toolchain class on `i64.add128`
-/// (the harness-built wasm returns the MASM value in wasmtime and carries the
-/// stale-read signature in both helpers); a standalone `-Oz` build happens to
-/// stackify safely. Pinned as `add128_checked_oz` below; the O1 loop shape is
-/// `chk_add_u128_o1` in tests/wide.rs.
+/// — the forms that exposed the F9 guest-LLVM defect for `mul_wide_s` — with
+/// both limbs at their boundaries. The defect reached the 128-bit add/sub
+/// instructions in other shapes too (`sat_add_u128` / `sat_sub_u128`, this
+/// `checked_add` loop at `--optimize=basic`, and both-limb value uses masked
+/// by DWARF — all in tests/wide.rs); every one of them was fixed by the
+/// nightly-2026-09-01 guest toolchain, so this case now passes at every
+/// optimization level, `-Oz` included (`add128_checked_oz` below).
 #[test]
 fn add128_checked() {
     run_case("add128_checked", include_str!("../cases/case_add128_checked.rs"));
 }
 
-/// RUNTIME DIVERGENCE under `--optimize=size-min` only (F9 guest-toolchain
-/// class, 2026-09-03, campaign 16): the `add128_checked` case built by the
-/// harness at -Oz returns 36400036 for (972208690, 972208690) where native
-/// returns the checked-add fold — wasmtime gives the same wrong value for the
-/// harness-built wasm, whose `checked`/`signed` helpers read an `i64.add128`
-/// result local before the op defines it (RegStackify sink; not masked by
-/// DWARF). The same source passes at O2 and O3 under the harness. Not a
-/// midenc bug. Un-ignore when the guest toolchain is past the LLVM fix or
-/// cargo-miden drops `+wide-arithmetic`.
+/// Formerly `#[ignore]`d (F9) under `--optimize=size-min` only (2026-09-03,
+/// campaign 16): the `add128_checked` case built by the harness at -Oz
+/// returned 36400036 for (972208690, 972208690) where native returns the
+/// checked-add fold, because the `checked`/`signed` helpers read an
+/// `i64.add128` result local before the op defined it (RegStackify sink; not
+/// masked by DWARF). The same source passed at O2 and O3.
+///
+/// Fixed by the guest toolchain bump to nightly-2026-09-01; re-verified
+/// 2026-09-17: `wasmtime -W wide-arithmetic=y` on the harness-built -Oz wasm
+/// now returns 164380801 — the native answer — instead of the MASM one, and
+/// the wasm still carries four `i64.add128` and three `i64.sub128`, so the -Oz
+/// build of this shape is still the wide-op guard it was meant to be.
 #[test]
-#[ignore = "guest-toolchain miscompile (LLVM +wide-arithmetic stale-read of an i64.add128 result) \
-            under --optimize=size-min: native vs masm mismatch, e.g. inputs (972208690, 972208690) \
-            -> masm 36400036; wasmtime agrees with masm"]
 fn add128_checked_oz() {
     run_case_with_flags(
         "add128_checked_oz",
@@ -315,8 +336,18 @@ fn direct_loop() {
     run_case("direct_loop", include_str!("../cases/case_direct_loop.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC — the loop-free minimal form of the
-/// `indirect_spill` class (campaign 14 attempt 2, 2026-09-03): a
+/// Formerly `#[ignore]`d as the loop-free minimal form of the
+/// `indirect_spill` class. Passes at the DEFAULT level since the
+/// nightly-2026-09-01 bump for the same reason as `indirect_spill` — the table
+/// read is devirtualized and the wasm has no `call_indirect` — and reproduces
+/// verbatim with nightly-2026-04-30 guests. It is NOT fixed: at
+/// `--optimize=basic` the wasm keeps its `call_indirect` and the same
+/// `NoSolution` at codegen/masm/src/lower/lowering.rs:109 `for inst
+/// 'hir.exec_indirect'`, constraints all `Move`, fires again (measured
+/// 2026-09-17); `--optimize=max`, `--optimize=size-min` and the no-DWARF build
+/// devirtualize like the default level. The class's default-level reproducer
+/// is `indirect_spill_bb`. What it used to do (campaign 14 attempt 2,
+/// 2026-09-03): a
 /// straight-line 7-u64 fn-pointer dispatch with two single-use u64 helper
 /// results computed before it and consumed after it (LLVM stackifies them
 /// UNDER the dispatch, so they are SSA values live across
@@ -329,12 +360,8 @@ fn direct_loop() {
 /// `for inst 'hir.exec_indirect'`, constraints all `Move`. Bounded by
 /// `direct_line` (the same shape with a pinned direct call, passes) and
 /// `indirect_wide` (the same 7-u64 dispatch with nothing live across it,
-/// passes); one live-through u64 still fits (probe deleted). Compile-time —
-/// no inputs involved. Un-ignore together with `indirect_spill`.
+/// passes); one live-through u64 still fits (probe deleted).
 #[test]
-#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
-            scheduling hir.exec_indirect itself over a 17-felt stack — the spill analysis is blind \
-            to the dispatch arguments (operand group 1); compile-time, no inputs involved"]
 fn indirect_spill_line() {
     run_case("indirect_spill_line", include_str!("../cases/case_indirect_spill_line.rs"));
 }
@@ -346,8 +373,14 @@ fn direct_line() {
     run_case("direct_line", include_str!("../cases/case_direct_line.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC — third signature of the `indirect_spill`
-/// class (campaign 14 attempt 2, 2026-09-03): a loop-free 7-u64 fn-pointer
+/// Formerly `#[ignore]`d as the third signature of the `indirect_spill`
+/// class. Passes at the DEFAULT level since the nightly-2026-09-01 bump only
+/// because the table read is devirtualized (zero `call_indirect` in the wasm);
+/// nightly-2026-04-30 guests still abort at emit/mod.rs:623 index 10, and so
+/// does `--optimize=basic` with the current toolchain (measured 2026-09-17 —
+/// -O1 does not devirtualize). The class's default-level reproducer is
+/// `indirect_spill_bb`. What it used to do (campaign 14 attempt 2,
+/// 2026-09-03): a loop-free 7-u64 fn-pointer
 /// dispatch whose fourth and sixth arguments are rotated IN PLACE from two
 /// more u64 locals by runtime counts, so the argument setup alone loads
 /// nine u64 (18 felts) before the dispatch. The spill analysis (blind to the
@@ -363,12 +396,8 @@ fn direct_line() {
 /// parameters in a loop (see `indirect_u128`). Bounded by `direct_args`
 /// (the same in-place arguments through a pinned direct call, passes) and
 /// `bands_calls` (tests/compose.rs: the dispatch takes plain locals only,
-/// passes). Compile-time — no inputs involved. Un-ignore together with
-/// `indirect_spill`.
+/// passes).
 #[test]
-#[ignore = "compiler panic: 'invalid operand stack index (10): requires access to more than 16 \
-            elements' at codegen/masm/src/emit/mod.rs:623 — the spill analysis is blind to the \
-            dispatch arguments (operand group 1); compile-time, no inputs involved"]
 fn indirect_spill_args() {
     run_case("indirect_spill_args", include_str!("../cases/case_indirect_spill_args.rs"));
 }

@@ -626,7 +626,7 @@ fn wide_exits_edges() {
 
 /// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-02, campaign 11): building
 /// this case panics with `implicit operand stack overflow along incoming
-/// control flow edges of after(scf.if in ^block76)` at
+/// control flow edges of after(scf.if in ^block82)` at
 /// hir-analysis/src/analyses/spills.rs:1533 (`assert!(taken <= K)` in
 /// `compute_w_exit_region_branch_op`, post-lift TransformSpills). Shape: NINE
 /// nested `while i < (input >> k) % 3` loops (all zero-trip-capable) with
@@ -649,10 +649,12 @@ fn wide_exits_edges() {
 /// pins it on the kept eight-level source). Compile-time, no inputs
 /// involved. Un-ignore when this case compiles (the region-exit budget
 /// must spill more results, or cfg-to-scf must not widen results per
-/// level).
+/// level). Re-verified failing 2026-09-17 on
+/// nightly-2026-09-01 guests (the block label moved from `^block76` to
+/// `^block82`; the site and the mechanism are unchanged).
 #[test]
 #[ignore = "compiler panic: 'implicit operand stack overflow along incoming control flow edges of \
-            after(scf.if in ^block76)' at hir-analysis/src/analyses/spills.rs:1533 — cfg-to-scf \
+            after(scf.if in ^block82)' at hir-analysis/src/analyses/spills.rs:1533 — cfg-to-scf \
             exit-dispatch result columns of a nine-deep loop nest exceed the 16-felt budget \
             (compile-time, no inputs involved)"]
 fn deep_nest_overflow() {

@@ -2429,7 +2429,14 @@ symbol: memcmp`. A user sees a linker error, never a `midenc` diagnostic.
 A guest that fails to LINK aborts the whole `cargo test` process exactly as a
 guest that fails to COMPILE does (no `test result` line is printed, every
 other test in the batch is lost), so the `*_nolink` cases must be run one at a
-time with `-- --ignored --exact <full::path>`.
+time with `-- --ignored --exact <full::path>`. ONE exception, re-measured
+2026-09-17: `core_select_nth_nolink` is not a link failure at all — its guest
+builds and the recursion is caught by the ASSEMBLER (`found a cycle in the
+call graph`, surfacing as a panic at tests/support/src/compiler_test.rs:1024),
+so it fails as an ordinary test and can be batched. Every `memcmp` case still
+exits the process. All nine `memcmp` boundaries above were re-run one at a time
+on 2026-09-17 and none moved beyond the already-recorded `core_eq_reach` shift
+to the default level.
 
 ### Probing the compile matrix without the harness (campaign 27 recipe)
 
@@ -2490,12 +2497,15 @@ native grid (corpus: `tests/corelib.rs`, `prog_*`):
   four levels compile (ladder in `case_prog_numeric_guard.rs`). Halving the
   trip count changes nothing.
 
-## Minimal reproducers per class: the corpus map (campaign 28, 2026-09-10)
+## Minimal reproducers per class: the corpus map (campaign 28, re-verified campaign 31)
 
 Which committed tests a fix for each known compile-time class must turn green,
 and which value-checked siblings must stay green. One filter per class:
 `cargo test -p midenc-integration-tests <filter> -- --ignored`. Every entry was
-classified by TRACE, not by crash site (the three-signature rule above).
+classified by TRACE, not by crash site (the three-signature rule above), and
+every entry was re-run alone on 2026-09-17 (campaign 31). **F18 is CLOSED**;
+F2, F6, F7, F8, F11, F12, F13, F15 and F17 are open with the reproducers
+below.
 
 - **F6, stale dominator tree** (`spill::rewrite_cfg_spills` rebuilds SSA form
   from the `DominanceInfo` the spill ANALYSIS cached before the transform's own
@@ -2506,9 +2516,13 @@ classified by TRACE, not by crash site (the three-signature rule above).
   (23 lines, five values and no band -> `lowering.rs:109` over a 17-felt
   stack, all four levels), `pressure::zero_trip_frontier` and
   `pressure::frontier_seq` / `frontier_dispatch` (-> `frontier.rs:123`),
-  `pressure::zero_trip_overflow`, and the realistic members
-  `programs_oz::prog_sha512` and the F6 `programs::prog_*` group. Must stay
-  green:
+  `pressure::zero_trip_overflow`, `wide::wide_limbs_freight_oz` (campaign 31:
+  four u128 accumulators over a loop at `-Oz`; the erased reload and the
+  failing spill store are the same value), and the realistic members
+  `programs_oz::prog_sha512` and the F6 `programs::prog_*` group.
+  `corelib::prog_slicealg_basic` LEFT the class on 2026-09-17 — it compiles
+  with nightly-2026-09-01 guests and still panics with 04-30 ones, so it is a
+  guard now, not a reproducer. Must stay green:
   `pressure::window_erased_guard` (+ `_edges`), `pressure::zero_trip_guard`
   (+ `_repro`), `pressure::while_results`, and the `interact::*` guards that
   carry erased split reloads (2-32 of them) while computing the right answer —
@@ -2525,21 +2539,43 @@ classified by TRACE, not by crash site (the three-signature rule above).
   `spills::spill_loop_mix_oz`, `programs_oz::prog_threefish_o3`. Must stay
   green: `pressure::chain_window` (eighteen counts, one rung below the gap),
   `pressure::unary_window`, `pressure::width_mix`.
+- **F11, the spill analysis is blind to `hir.exec_indirect`'s arguments**
+  (it reads operand group 0 only — hir-analysis/src/analyses/spills.rs — while
+  `hir.exec_indirect` keeps the table index in group 0 and the ARGUMENTS in
+  group 1, so dispatch arguments are spilled, never reloaded, and the call is
+  budgeted as one felt). Must turn green: `calls::indirect_spill_bb`. The three
+  original reproducers (`calls::indirect_spill`, `_line`, `_args`) became
+  GUARDS on 2026-09-17: nightly-2026-09-01 LLVM devirtualizes a plain read of
+  a `static [fn(..); N]`, so their wasm has ZERO `call_indirect` and they never
+  reach `hir.exec_indirect`. The class is re-armed by reading the table through
+  `core::hint::black_box(&TABLE)[i]`, which is what `indirect_spill_bb` does —
+  it reproduces the original `lowering.rs:109` `arith.bxor` `[Move, Copy]`
+  panic exactly. Rule: any future fn-pointer-dispatch case must read its table
+  through `black_box`, or it measures nothing.
 - **F12, `RemoveLoopInvariantArgsFromBeforeBlock` aliasing** (pattern driver's
   last `trying to match` line). Must turn green: `compose::invariant_args_min`
-  (the `return` producer) and `compose::invariant_args_noreturn` (the
-  return-free producer), plus `programs_oz::prog_blake2b`,
-  `programs_oz::prog_xxh64_o1`, `programs::prog_varint`/`prog_rkscan*` and the
-  `_nodwarf` twins (`compose::chain_sm_nodwarf` and the `debug_info` ones). Must stay green: `compose::invariant_args_guard`,
+  (the `return` producer), `programs_oz::prog_blake2b`,
+  `programs_oz::prog_xxh64_o1`, `programs::prog_varint` /
+  `prog_varint_guard_oz` / `prog_varint_wa_oz_nodwarf` / `prog_rle` /
+  `prog_rkscan_guard_nodwarf` / `prog_rkscan_ref_nodwarf`,
+  `corelib::prog_numeric_nodwarf` and `compose::chain_sm_nodwarf`. Must stay
+  green: `compose::invariant_args_guard`,
   `compose::invariant_args_noreturn_guard`.
-- **F18, coercion folders mutate the operand constant's attribute**
-  (`Sext::fold`/`Zext::fold`/`Trunc::fold` in
-  dialects/arith/src/ops/coercions.rs call `set_from_immediate_lossy` on the
-  attribute reached through `foldable_operand_of_trait`, and the folder's
-  `try_get_or_create_constant` reuses that same attribute object for the
-  materialised constant). Must turn green: `wide::sext_const_shared` (8-line
-  loop-free reproducer), `wide::parse_i64_hand`, `corelib::core_parse_i64`.
-  Must stay green: `wide::sext_const_split`, `wide::zext_const_shared`,
+  TWO producers STOPPED producing on 2026-09-17 with the nightly-2026-09-01
+  guests and are guards now, not reproducers: `compose::nest_continue` and
+  `compose::invariant_args_noreturn` (the return-free minimal case). Both still
+  panic verbatim with nightly-2026-04-30 guests, so this is LLVM no longer
+  leaving cfg-to-scf a nested loop with a merged exit for those two sources —
+  the pattern is unchanged. The minimal reproducer of the class is now
+  `compose::invariant_args_min` alone.
+- **F18, coercion folders mutate the operand constant's attribute — CLOSED
+  2026-09-17 by ef358e356** (the folders now allocate a fresh immediate per
+  result instead of calling `set_from_immediate_lossy` on the attribute reached
+  through `foldable_operand_of_trait`). The three reproducers are un-ignored
+  and guard it: `wide::sext_const_shared` (8-line loop-free),
+  `wide::parse_i64_hand`, `corelib::core_parse_i64` — the last one needs the
+  nightly-2026-09-01 guests as well, because its checked path also carried the
+  F9 defect. Also green: `wide::sext_const_split`, `wide::zext_const_shared`,
   `wide::trunc_const_shared`, `wide::parse_i64_hand11`, `parse_i64_short`,
   `corelib::core_parse_u64`. Reach measured 2026-09-10: only the SIGNED folder
   has a plain-Rust producer — `I64MulWideS` sign-extends the wasm operand
@@ -2587,11 +2623,27 @@ passes that way is a toolchain-shape shift, not a compiler regression.
   expected u32 values, but got values: [4295098224]") instead of an unused
   element region; still no stack-overflow diagnostic, and wasmtime still
   traps out of bounds.
+- **The `+wide-arithmetic` miscompile (F9) is FIXED by this toolchain.** All
+  sixteen F9 reproducers pass (campaign 31, 2026-09-17), and the evidence is
+  wasmtime, not the test result: `wasmtime run -W wide-arithmetic=y --invoke
+  entrypoint differential_<case>.wasm a b` now returns the NATIVE value on
+  every pinned pair where it used to return the MASM one, and the wide op is
+  still in each wasm (`i64.mul_wide_s` / `mul_wide_u` / `add128` / `sub128`),
+  so the shape survives and only the stale read is gone. Consequences: the
+  DWARF-masked guards (`signed::sext_shapes` + `_repro`, `wide::wide_words` +
+  `_edges`, `wide::wide_loop_cmp` + `_edges`) no longer depend on the
+  harness's `debug = 2` and pass at `FUZZA_GUEST_DEBUG=0`; rows that were
+  pinned OUT of a case because of F9 can go back in (`wide::parse_i64_hand11`
+  got its sixteen-digit row back); and a divergence through a wide op is no
+  longer presumptively the toolchain's — arbitrate every one with wasmtime.
+  NOTE for reading wasmtime output: `--invoke` parses arguments as i32, so a
+  `u32` above `i32::MAX` must be passed in its signed form.
 - Fixes that landed with the rebase and matter to the ledger: coercion
-  folders allocate a fresh immediate per result (F18), `i64.rem_s` has a
-  dedicated lowering (`i64_srem` un-ignored upstream), heap-growth overflow
-  handling, sparse-lattice meet, anchor hash collisions, structural region
-  equivalence in CSE, `switch_shapes` / `sext_shapes` un-ignored upstream.
+  folders allocate a fresh immediate per result (F18 — CLOSED, see the corpus
+  map), `i64.rem_s` has a dedicated lowering (`i64_srem` un-ignored upstream),
+  heap-growth overflow handling, sparse-lattice meet, anchor hash collisions,
+  structural region equivalence in CSE, `switch_shapes` / `sext_shapes`
+  un-ignored upstream.
 
 ## Trap parity (campaign 29, 2026-09-17)
 
@@ -2768,3 +2820,53 @@ native-grid-checked (1225 boundary pairs) before the harness run and swept at
   `debug = 2` only. After the pass: 20 `store_local` / 85 `load_local` with
   DWARF vs 17 / 82 without, and 18 `hir.load` / 21 `hir.store` in both. The
   whole module passes at `FUZZA_GUEST_DEBUG=0`.
+
+## Fix uptake (campaign 31, 2026-09-17)
+
+The whole `#[ignore]` ledger — 83 tests — re-run one per cargo invocation
+against the rebased `next` and the nightly-2026-09-01 guests, every verdict
+arbitrated rather than taken at face value. 25 pass now; the ignore count is
+83 → 60. The arbitration is the durable part:
+
+- **A pass is not a fix.** Three different causes produced the 25 passes, and
+  only two of them are fixes. Always separate them before un-ignoring:
+  * *compiler fix* — the case also passes with `RUSTUP_TOOLCHAIN=
+    nightly-2026-04-30 <test binary> --ignored --exact <path>` (F18);
+  * *guest-toolchain fix* — the wasm changed but the SHAPE survived: wasmtime
+    on the harness-built wasm now returns the native value and the op is still
+    in the wasm (F9);
+  * *shape loss* — the case no longer produces the IR the bug needs; the old
+    toolchain still reproduces the panic verbatim. Six cases were this, and
+    un-ignoring them without saying so would have silently deleted two classes
+    from the ledger.
+- **CLOSED: F18** (ef358e356) and **F9** (the nightly-2026-09-01 LLVM). Their
+  guards are `wide::{sext_const_shared, parse_i64_hand}` +
+  `corelib::core_parse_i64`, and the sixteen former F9 reproducers across
+  `signed`, `wide`, `calls` and `corelib`.
+- **Still open, with the reproducers moved**: F11's three reproducers became
+  guards (devirtualization) and the class is re-armed by
+  `calls::indirect_spill_bb`; F12 lost two producers at the default level
+  (`compose::nest_continue`, `compose::invariant_args_noreturn`) and keeps
+  `compose::invariant_args_min` as its minimal one; F6 lost
+  `corelib::prog_slicealg_basic` and gained `wide::wide_limbs_freight_oz`.
+  F2, F7, F8, F13, F15, F17 and the `memory` overlap findings are unchanged,
+  same sites.
+- **A class can hide behind an optimization level.** Un-ignoring on the
+  default level alone is not enough: `compose::nest_continue` still panics
+  (F12) at `--optimize=size-min` and `--optimize=basic`, and
+  `calls::indirect_spill_args` / `_line` still panic (F11) at
+  `--optimize=basic`, because `-O1` does not devirtualize the fn-pointer
+  table. Sweep every un-ignored case over the four configurations before
+  calling its class closed.
+- **The C21 "7 of 12" realistic programs did not move**, and neither did any
+  `memcmp` boundary in the link-reach map. The rebase's fixes did not touch
+  the freight cliff.
+- **Re-climbing the two closed ladders**: ten shared coercion constants across
+  a loop (`wide::coerce_const_bands`) reach no boundary at all, while FOUR
+  u128 accumulators live across a loop with three rotate bands
+  (`wide::wide_limbs_freight`) stop at `--optimize=size-min` in F6 — the
+  freight that bounds wide arithmetic is live 64-bit VALUES, not shared
+  constants. In that reproducer the erased split reload and the operand of the
+  failing spill store are the SAME value (`%55`), which is the cleanest F6-vs-F17
+  discrimination in the corpus: the two traces name one value, so the
+  classification does not rest on the precedence rule.

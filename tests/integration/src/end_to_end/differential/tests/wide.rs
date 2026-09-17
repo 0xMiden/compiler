@@ -399,41 +399,40 @@ fn width_trees_edges() {
     );
 }
 
-/// GUEST-TOOLCHAIN MISCOMPILE (not a Miden compiler bug), the `i64.add128`
-/// member of the F9 family: `u128::saturating_add` on dynamic operands.
-/// rustc 1.97.0-nightly (c935696dd 2026-04-29, LLVM 22.1.4) with the
-/// `+wide-arithmetic` target feature that cargo-miden enables emits the carry
-/// test `sum < a` with the `local.get` of the sum's high limb placed BEFORE
-/// the `i64.add128` that defines it (WAT: `local.get 4` ... `i64.add128`
-/// `local.set 4` `local.tee 5` ... `i64.lt_u` ... `select`), so the wasm
-/// compares a zero-initialised local instead of the high limb. wasmtime
-/// 48.0.0 (`-W wide-arithmetic=y`) computes the same wrong value as the MASM
-/// build; a plain `rustc --target wasm32-wasip1 -C
-/// target-feature=+wide-arithmetic` build reproduces at every opt-level
-/// (1/2/3/s/z) and at every `-C debuginfo` level (0/1/2 — DWARF does NOT mask
-/// this shape), in straight-line, `#[inline(never)]` helper and loop forms,
-/// with constant and x + x operands, and is correct without the feature.
+/// Formerly `#[ignore]`d (F9), the `i64.add128` member of the family:
+/// `u128::saturating_add` on dynamic operands. rustc 1.97.0-nightly
+/// (c935696dd 2026-04-29, LLVM 22.1.4) emitted the carry test `sum < a` with
+/// the `local.get` of the sum's high limb placed BEFORE the `i64.add128` that
+/// defines it (WAT: `local.get 4` ... `i64.add128` `local.set 4` `local.tee 5`
+/// ... `i64.lt_u` ... `select`), so the wasm compared a zero-initialised local
+/// instead of the high limb: (498957862, 2147483647) gave masm 504025574
+/// against native 195632602. It reproduced at every opt-level and every
+/// `-C debuginfo` level (DWARF did NOT mask this shape) and was correct only
+/// without `+wide-arithmetic`.
+///
+/// Fixed by the guest toolchain bump to nightly-2026-09-01 (fd6f5b171), not by
+/// midenc; re-verified 2026-09-17 on the pinned rows and the random pairs.
+/// Evidence that the wasm changed rather than the compiler: `wasmtime run -W
+/// wide-arithmetic=y --invoke entrypoint differential_sat_add_u128.wasm
+/// 498957862 2147483647` now returns 195632602, the native value, where it
+/// used to return the MASM one — and the `i64.add128` is still in the wasm, so
+/// the case still exercises the wide add.
 ///
 /// Bounded by passing siblings: i128 `saturating_add`/`saturating_sub`
 /// (sign-xor overflow test, `sat_i128`), u128 `checked_add` /
 /// `overflowing_add` / `checked_sub` / `overflowing_sub` (add128_checked), and
-/// u128 `checked_mul`/`saturating_mul` (`mul_wide_u` + `hi != 0`). Un-ignore
-/// (with sat_sub_u128) when the guest toolchain is bumped past the LLVM fix,
-/// or when cargo-miden stops enabling `+wide-arithmetic`.
+/// u128 `checked_mul`/`saturating_mul` (`mul_wide_u` + `hi != 0`).
 #[test]
-#[ignore = "guest LLVM miscompile (wide-arithmetic i64.add128 hi limb read before def): inputs \
-            (498957862, 2147483647) -> native 195632602, masm 504025574; u128::saturating_add"]
 fn sat_add_u128() {
     run_case("sat_add_u128", include_str!("../cases/case_sat_add_u128.rs"));
 }
 
-/// Deterministic reproducer for the `sat_add_u128` divergence: (1, 1) makes
-/// a = 2^96 + 2^64 + 1 and b = 2^96 + 2^32 (no overflow; native folds the true
-/// sum, the wasm saturates because the stale high limb compares below a's),
-/// plus the all-ones row (a genuine overflow) and a mixed row.
+/// Regression guard for the `sat_add_u128` divergence, formerly the pinned
+/// `#[ignore]`d twin: (1, 1) makes a = 2^96 + 2^64 + 1 and b = 2^96 + 2^32 (no
+/// overflow; native folds the true sum 1539, the old wasm saturated to 3
+/// because the stale high limb compared below a's), plus the all-ones row (a
+/// genuine overflow) and a mixed row.
 #[test]
-#[ignore = "guest LLVM miscompile on pinned inputs (1, 1): native 1539 vs masm 3; \
-            u128::saturating_add, see sat_add_u128"]
 fn sat_add_u128_repro() {
     run_case_with_inputs(
         "sat_add_u128_repro",
@@ -442,30 +441,28 @@ fn sat_add_u128_repro() {
     );
 }
 
-/// GUEST-TOOLCHAIN MISCOMPILE (not a Miden compiler bug), the `i64.sub128`
-/// member of the F9 family: `u128::saturating_sub` on dynamic operands. Same
-/// toolchain and `+wide-arithmetic` feature as sat_add_u128; the borrow test
-/// `diff > a` reads the difference's high limb through a `local.get` placed
-/// BEFORE the `i64.sub128` that defines it (WAT: `local.get 4` ...
-/// `i64.sub128` `local.set 4` `local.tee 5` ... `i64.gt_u` ... `select`).
-/// wasmtime 48.0.0 agrees with the MASM value; the standalone build fails at
-/// every opt-level and every debuginfo level (not DWARF-masked) in
-/// straight-line, helper and loop forms and with a constant subtrahend, and
-/// is correct without the feature. Bounded and un-ignored as sat_add_u128.
+/// Formerly `#[ignore]`d (F9), the `i64.sub128` member of the family:
+/// `u128::saturating_sub` on dynamic operands. Same toolchain and
+/// `+wide-arithmetic` feature as sat_add_u128; the borrow test `diff > a` read
+/// the difference's high limb through a `local.get` placed BEFORE the
+/// `i64.sub128` that defines it (WAT: `local.get 4` ... `i64.sub128`
+/// `local.set 4` `local.tee 5` ... `i64.gt_u` ... `select`), so
+/// (2763801839, 2596936063) gave masm 1883194482 against native 246915218.
+///
+/// Fixed by the nightly-2026-09-01 guest toolchain; re-verified 2026-09-17
+/// (wasmtime on the harness-built wasm now returns 246915218 for that pair and
+/// 3758096832 for the pinned (u32::MAX, 2^31) row, both the native values, and
+/// the `i64.sub128` is still in the wasm).
 #[test]
-#[ignore = "guest LLVM miscompile (wide-arithmetic i64.sub128 hi limb read before def): inputs \
-            (2763801839, 2596936063) -> native 246915218, masm 1883194482; u128::saturating_sub"]
 fn sat_sub_u128() {
     run_case("sat_sub_u128", include_str!("../cases/case_sat_sub_u128.rs"));
 }
 
-/// Deterministic reproducer for the `sat_sub_u128` divergence: the
-/// (u32::MAX, 2^31) row (a > b, no borrow; the wasm saturates to 0 because the
-/// stale high limb compares above a's) plus a genuine-borrow row and a mixed
-/// row.
+/// Regression guard for the `sat_sub_u128` divergence, formerly the pinned
+/// `#[ignore]`d twin: the (u32::MAX, 2^31) row (a > b, no borrow; the old wasm
+/// saturated because the stale high limb compared above a's — masm 3758096384
+/// against native 3758096832) plus a genuine-borrow row and a mixed row.
 #[test]
-#[ignore = "guest LLVM miscompile on pinned inputs (4294967295, 2147483648): native 3758096832 vs \
-            masm 3758096384; u128::saturating_sub, see sat_sub_u128"]
 fn sat_sub_u128_repro() {
     run_case_with_inputs(
         "sat_sub_u128_repro",
@@ -474,7 +471,8 @@ fn sat_sub_u128_repro() {
     );
 }
 
-/// Nearest passing neighbour of the ignored `sat_add_u128` / `sat_sub_u128`
+/// Nearest passing neighbour of the formerly-ignored `sat_add_u128` /
+/// `sat_sub_u128`
 /// guest-LLVM miscompiles: i128 `saturating_add` / `saturating_sub` on
 /// both-sign operands in straight-line, `#[inline(never)]` helper and loop
 /// forms. The signed forms test overflow with a sign xor on the
@@ -513,8 +511,8 @@ fn sat_i128_edges() {
     );
 }
 
-/// GUEST-TOOLCHAIN MISCOMPILE MASKED BY DWARF (runs as a guard, not as
-/// proof): BOTH words of one wide result used as values
+/// Formerly a guest-toolchain miscompile masked by DWARF, now a plain guard
+/// (campaign 31): BOTH words of one wide result used as values
 /// (`hi ^ lo.rotate_left(7)`) for each of `i64.mul_wide_u`, `mul_wide_s`,
 /// `add128` and `sub128` in its own `#[inline(never)]` helper — the simplest
 /// F9 shape. A standalone `rustc --target wasm32-wasip1 -C
@@ -523,11 +521,12 @@ fn sat_i128_edges() {
 /// `local.get N`, the op's `local.set N` follows) and disagrees with native
 /// on 39/40 probe inputs at opt-level 1/2/3/s/z with `-C debuginfo=0` or `1`
 /// (wasmtime 48 `-W wide-arithmetic=y` shows the wrong value); `-C
-/// debuginfo=2` pins the definitions and the same source is correct. The
-/// harness builds guests with `debug = 2`, so this passes here exactly like
-/// sext_shapes; dropping `debug = 2` fails it. Un-ignore condition does not
-/// apply (never ignored); the family's real fix is a toolchain past the LLVM
-/// fix or cargo-miden dropping `+wide-arithmetic`.
+/// debuginfo=2` pinned the definitions and the same source was correct. That
+/// was measured on nightly-2026-04-30, where this case passed ONLY because the
+/// harness builds guests with `debug = 2`. The nightly-2026-09-01 toolchain
+/// fixed the family, and this case now passes at `FUZZA_GUEST_DEBUG=0` too
+/// (campaign 31 sweep, 2026-09-17), so the DWARF masking is no longer
+/// load-bearing and the test is a plain wide-op guard.
 #[test]
 fn wide_words() {
     run_case("wide_words", include_str!("../cases/case_wide_words.rs"));
@@ -559,16 +558,19 @@ fn wide_words_edges() {
     );
 }
 
-/// GUEST-TOOLCHAIN MISCOMPILE MASKED BY DWARF (runs as a guard, not as
-/// proof): loops whose wide result's high word is compared against a shift
+/// Formerly a guest-toolchain miscompile masked by DWARF, now a plain guard
+/// (campaign 31): loops whose wide result's high word is compared against a shift
 /// of its low word (`hi != lo >> 60`) to decide a `break`, for
 /// `i64.mul_wide_u`, `add128` and `sub128` (one `#[inline(never)]` helper
-/// each; the `mul_wide_s` form of this compare is the ignored pow_i64 /
+/// each; the `mul_wide_s` form of this compare is the formerly-ignored pow_i64 /
 /// checked_mul_i64 family). Standalone builds with `+wide-arithmetic` read
 /// the high word from the previous iteration's local (zero on the first
-/// trip): the mul form fails at every opt-level, the add/sub forms at
-/// opt-level 2 and 3, with `-C debuginfo=0` or `1`; `debuginfo=2` masks all
-/// three, so it passes under the harness's `debug = 2` like wide_words.
+/// trip): the mul form failed at every opt-level, the add/sub forms at
+/// opt-level 2 and 3, with `-C debuginfo=0` or `1`; `debuginfo=2` masked all
+/// three, so it passed under the harness's `debug = 2` like wide_words. That
+/// was nightly-2026-04-30; the nightly-2026-09-01 toolchain fixed the family
+/// and this case passes at `FUZZA_GUEST_DEBUG=0` too (campaign 31 sweep,
+/// 2026-09-17).
 #[test]
 fn wide_loop_cmp() {
     run_case("wide_loop_cmp", include_str!("../cases/case_wide_loop_cmp.rs"));
@@ -679,24 +681,22 @@ fn u64_sat_forms_edges() {
     );
 }
 
-/// GUEST-TOOLCHAIN MISCOMPILE (not a Miden compiler bug) at guest opt-level
-/// 1 only (`--optimize=basic`): u128 `checked_add` accumulated in a loop.
-/// rustc 1.97.0-nightly (c935696dd 2026-04-29, LLVM 22.1.4) with the
-/// `+wide-arithmetic` feature at `-C opt-level=1` emits the carry test
-/// `sum < a` with the `local.get` of the sum's high limb placed BEFORE the
-/// `i64.add128` that defines it (WAT: the loop body opens `local.get 1
-/// local.get 1 ... i64.add128 local.set 1 local.tee 9 ... i64.lt_u local.get
-/// 1 ... i64.lt_u`), so every trip compares the previous trip's high limb
-/// (zero on the first). wasmtime 48.0.0 (`-W wide-arithmetic=y`) computes the
-/// same wrong value; the standalone build fails at opt-level 1 with and
-/// without DWARF (`-C debuginfo=2` does NOT mask it) and is correct at
-/// opt-level 2/3/s/z — the same shape passes at the default level in
-/// add128_checked. Bounded by the passing add128_checked (O2) and by the
-/// u128 `overflowing_add` / `checked_sub` loop forms at O1 (standalone
-/// probes). Un-ignore with the sat_add_u128 family.
+/// Formerly `#[ignore]`d (F9) at guest opt-level 1 only
+/// (`--optimize=basic`): u128 `checked_add` accumulated in a loop. rustc
+/// 1.97.0-nightly (c935696dd 2026-04-29, LLVM 22.1.4) at `-C opt-level=1`
+/// emitted the carry test `sum < a` with the `local.get` of the sum's high
+/// limb placed BEFORE the `i64.add128` that defines it (WAT: the loop body
+/// opened `local.get 1 local.get 1 ... i64.add128 local.set 1 local.tee 9 ...
+/// i64.lt_u local.get 1 ... i64.lt_u`), so every trip compared the previous
+/// trip's high limb (zero on the first): (3, 3) gave masm 8826 against native
+/// 11898 while the same shape passed at the default level (add128_checked).
+///
+/// Fixed by the nightly-2026-09-01 guest toolchain; re-verified 2026-09-17
+/// (wasmtime on the harness-built `--optimize=basic` wasm returns 11898 for
+/// (3, 3) and 512 for the pinned (1, 1) row, both the native values, and the
+/// `i64.add128` is still there). Kept as the opt-level-1 guard of the wide
+/// add in a loop.
 #[test]
-#[ignore = "guest LLVM miscompile at --optimize=basic (wide-arithmetic i64.add128 hi limb read \
-            before def in a loop): inputs (3, 3) -> native 11898, masm 8826; u128::checked_add loop"]
 fn chk_add_u128_o1() {
     run_case_with_flags(
         "chk_add_u128_o1",
@@ -705,16 +705,13 @@ fn chk_add_u128_o1() {
     );
 }
 
-/// Deterministic reproducer for the `chk_add_u128_o1` divergence: the same
-/// case pinned to the (1, 1) and (3, 3) rows at `--optimize=basic`. On (1, 1)
-/// the operands are a = 2^96 + 2^32 + 1 and y | 1 = 2^96 + 2^64 + 2^32 + 1
-/// over two trips — no overflow, but the wasm takes the `None` arm on the
-/// first trip because the stale high limb reads 0 < a's (native 512 vs masm
-/// 1536).
+/// Regression guard for the `chk_add_u128_o1` divergence, formerly the pinned
+/// `#[ignore]`d twin: the same case pinned to the (1, 1) and (3, 3) rows at
+/// `--optimize=basic`. On (1, 1) the operands are a = 2^96 + 2^32 + 1 and
+/// y | 1 = 2^96 + 2^64 + 2^32 + 1 over two trips — no overflow, but the old
+/// wasm took the `None` arm on the first trip because the stale high limb read
+/// 0 < a's (native 512 vs masm 1536).
 #[test]
-#[ignore = "guest LLVM miscompile at --optimize=basic on the pinned rows: (1, 1) native 512 vs \
-            masm 1536, (3, 3) native 11898 vs masm 8826; u128::checked_add loop, see \
-            chk_add_u128_o1"]
 fn chk_add_u128_o1_repro() {
     run_case_with_flags_and_inputs(
         "chk_add_u128_o1_repro",
@@ -724,35 +721,32 @@ fn chk_add_u128_o1_repro() {
     );
 }
 
-/// GUEST-TOOLCHAIN MISCOMPILE (not a Miden compiler bug), the
-/// `i64.mul_wide_u` member of the F9 family in a plain value idiom: the
-/// fixed-point multiply `((a as u128 * b as u128) >> 32) as u64` in
-/// straight-line code. The limb-straddling shift recombines `(hi << 32) |
-/// (lo >> 32)`, and rustc 1.97.0-nightly (c935696dd 2026-04-29, LLVM
-/// 22.1.4) with `+wide-arithmetic` emits the `local.get` of the high word
-/// BEFORE the `i64.mul_wide_u` that defines it (WAT: `local.get 2` ...
-/// `i64.mul_wide_u` `local.set 2` `i64.const 32` `i64.shr_u` ... `i64.shl`
-/// `i64.or`). wasmtime 48.0.0 (`-W wide-arithmetic=y`) computes the same
-/// wrong value; the standalone build fails at opt-level 1/2/3/s/z and at
-/// every debuginfo level (DWARF does NOT mask this shape) and is correct
-/// without the feature. Bounded by the passing helper and loop forms of the
-/// same expression (standalone probes), the `>> 64` high-word-only form
-/// (mul_hi_only) and the dynamic-count shift (`__lshrti3`, u128_shifts).
-/// Un-ignore with the sat_add_u128 family.
+/// Formerly `#[ignore]`d (F9), the `i64.mul_wide_u` member of the family in a
+/// plain value idiom: the fixed-point multiply
+/// `((a as u128 * b as u128) >> 32) as u64` in straight-line code. The
+/// limb-straddling shift recombines `(hi << 32) | (lo >> 32)`, and rustc
+/// 1.97.0-nightly (c935696dd 2026-04-29, LLVM 22.1.4) emitted the `local.get`
+/// of the high word BEFORE the `i64.mul_wide_u` that defines it (WAT:
+/// `local.get 2` ... `i64.mul_wide_u` `local.set 2` `i64.const 32`
+/// `i64.shr_u` ... `i64.shl` `i64.or`), so (31, 2644960829) gave masm
+/// 4029322267 against native 3877598572.
+///
+/// Fixed by the nightly-2026-09-01 guest toolchain; re-verified 2026-09-17
+/// (wasmtime returns 3877598572 for that pair and 0 for the pinned (1, 1) row,
+/// both the native values, and the `i64.mul_wide_u` is still in the wasm).
+/// Bounded by the `>> 64` high-word-only form (mul_hi_only) and the
+/// dynamic-count shift (`__lshrti3`, u128_shifts).
 #[test]
-#[ignore = "guest LLVM miscompile (wide-arithmetic i64.mul_wide_u hi word read before def): inputs \
-            (31, 2644960829) -> native 3877598572, masm 4029322267; fixed-point u128 product >> 32"]
 fn fixmul_u64() {
     run_case("fixmul_u64", include_str!("../cases/case_fixmul_u64.rs"));
 }
 
-/// Deterministic reproducer for the `fixmul_u64` divergence: (1, 1) makes
-/// a = 2^32 and b = 2^32 + 1, product 2^64 + 2^32 (hi 1, lo 2^32), so the
-/// true `>> 32` is 2^32 + 1 and the wasm's stale high word gives a different
-/// high half; plus the all-ones and a mixed row.
+/// Regression guard for the `fixmul_u64` divergence, formerly the pinned
+/// `#[ignore]`d twin: (1, 1) makes a = 2^32 and b = 2^32 + 1, product
+/// 2^64 + 2^32 (hi 1, lo 2^32), so the true `>> 32` is 2^32 + 1 and the old
+/// wasm's stale high word gave a different high half (native 0 vs masm 1);
+/// plus the all-ones and a mixed row.
 #[test]
-#[ignore = "guest LLVM miscompile on pinned inputs (1, 1): native 0 vs masm 1; the fixed-point \
-            multiply reads a stale i64.mul_wide_u high word, see fixmul_u64"]
 fn fixmul_u64_repro() {
     run_case_with_inputs(
         "fixmul_u64_repro",
@@ -775,8 +769,14 @@ fn parse_i64_short() {
     );
 }
 
-/// RUNTIME MISCOMPILE, ROOT-CAUSED (director, campaign 27 follow-up,
-/// 2026-09-10): the two accumulation paths `core` generates for a signed
+/// Formerly `#[ignore]`d (F18), root-caused 2026-09-10 and FIXED UPSTREAM by
+/// ef358e356 (the coercion folders allocate a fresh immediate per result
+/// instead of mutating the operand's); re-verified passing 2026-09-17 on the
+/// pinned rows, with nightly-2026-09-01 AND nightly-2026-04-30 guests — the
+/// toolchain-independence is what makes it a compiler fix rather than a shape
+/// shift. Kept as the two-path regression guard. What it used to do:
+///
+/// the two accumulation paths `core` generates for a signed
 /// 64-bit parse, written by hand in one function with no `core::str::parse` —
 /// an overflow-checked path (`checked_mul(10)` + `checked_add`, which LLVM
 /// lowers through `i64.mul_wide_s acc, 10`) for a sixteen-byte slice and a
@@ -800,40 +800,43 @@ fn parse_i64_short() {
 /// BOUNDED by [`parse_i64_hand11`] (the plain path multiplies by 11 — no
 /// shared constant — and every plain row is correct) and by
 /// [`parse_i64_short`] (no wide path at all). The `core` producer is
-/// `corelib::core_parse_i64`. Un-ignore when the coercion folders stop
-/// mutating the operand attribute (build a new immediate as `fold_with`
-/// does) — an `arith.constant` verifier check that the immediate's type
-/// matches the result type would have caught it.
+/// `corelib::core_parse_i64`. An `arith.constant` verifier check that the
+/// immediate's type matches the result type would have caught it.
 #[test]
-#[ignore = "midenc miscompile on pinned inputs (0, 0): native 9 vs masm 0 — Sext::fold retypes the \
-            shared `i64` constant 10 to `i128` in place, so the plain multiply is fed four felts; \
-            see the doc comment"]
 fn parse_i64_hand() {
     run_case_with_inputs(
         "parse_i64_hand",
         include_str!("../cases/case_parse_i64_hand.rs"),
-        &[(0, 0), (0, 1), (0, 3), (0, 14), (1, 7)],
+        &[(0, 0), (0, 1), (0, 3), (0, 14), (0, 15), (1, 7)],
     );
 }
 
 /// The discriminating sibling of [`parse_i64_hand`]: identical except that
 /// the plain path multiplies by 11, so the wide path's sign-extended constant
-/// 10 is no longer shared with it — and every plain row agrees with native
-/// (rows below sixteen digits). The sixteen-digit row `(0, 15)` is pinned
-/// OUT: it takes the overflow-checked path and returns the overflow marker on
-/// MASM AND under wasmtime (`-W wide-arithmetic=y`: -559038737) against
-/// native 2097153, i.e. the guest-toolchain `+wide-arithmetic` miscompile of
-/// `checked_mul` (the `core_chkmul_i64` family), not a midenc defect.
+/// 10 is no longer shared with it — and every plain row agrees with native.
+/// The sixteen-digit row `(0, 15)` used to be pinned OUT: it takes the
+/// overflow-checked path and returned the overflow marker on MASM AND under
+/// wasmtime (`-W wide-arithmetic=y`: -559038737) against native 2097153, i.e.
+/// the F9 guest-toolchain miscompile of `checked_mul`. That row is back in
+/// since the nightly-2026-09-01 bump fixed F9 (campaign 31), so the case now
+/// covers BOTH parse paths.
 #[test]
 fn parse_i64_hand11() {
     run_case_with_inputs(
         "parse_i64_hand11",
         include_str!("../cases/case_parse_i64_hand11.rs"),
-        &[(0, 0), (0, 1), (0, 3), (0, 14), (1, 7)],
+        &[(0, 0), (0, 1), (0, 3), (0, 14), (0, 15), (1, 7)],
     );
 }
 
-/// MINIMAL, LOOP-FREE REPRODUCER of F18 (campaign 28): eight lines of
+/// Formerly `#[ignore]`d: the minimal, loop-free reproducer of F18 (campaign
+/// 28), FIXED UPSTREAM by ef358e356 (the coercion folders allocate a fresh
+/// immediate per result); re-verified passing 2026-09-17 on the pinned rows
+/// with nightly-2026-09-01 AND nightly-2026-04-30 guests, so the fix is
+/// midenc's and not a guest-toolchain shape shift. Kept as the minimal
+/// regression guard for shared coercion constants. What it used to do:
+///
+/// eight lines of
 /// straight-line Rust in which the same `i64` constant 10 feeds a widening
 /// multiply and a plain `i64` multiply of another value. `(a as i128) * 10`
 /// lowers to `i64.mul_wide_s`, whose operands the wasm frontend sign-extends
@@ -861,13 +864,8 @@ fn parse_i64_hand11() {
 /// shared — same shape, correct answer), by [`zext_const_shared`] (the
 /// unsigned twin passes) and by [`trunc_const_shared`] (the truncating twin
 /// passes). The `core` producer of the same defect is `corelib::core_parse_i64`
-/// and the hand-written two-path form is [`parse_i64_hand`]. Un-ignore when
-/// the coercion folders build a NEW immediate instead of mutating the
-/// operand's (as `fold_with` already does).
+/// and the hand-written two-path form is [`parse_i64_hand`].
 #[test]
-#[ignore = "midenc miscompile (F18) on pinned inputs (1, 2): native/wasmtime 30 vs masm 0 — \
-            Sext::fold retypes the shared `i64` constant 10 to `i128` in place, so the plain \
-            multiply is fed four felts; see the doc comment"]
 fn sext_const_shared() {
     run_case_with_inputs(
         "sext_const_shared",
@@ -924,5 +922,113 @@ fn trunc_const_shared() {
         "trunc_const_shared",
         include_str!("../cases/case_trunc_const_shared.rs"),
         &[(1, 2), (3, 5), (0, 0), (0xffff_ffff, 1), (7, 0xffff_ffff)],
+    );
+}
+
+/// F18 LADDER, one rung past the campaign-28 boundary (campaign 31,
+/// 2026-09-17). Campaign 28 measured F18's reach as "only the SIGNED folder
+/// has a plain-Rust producer"; with ef358e356 the folders no longer mutate
+/// their operand's attribute, so this case makes ALL THREE compete for the
+/// same literal 10 in one function — `Sext::fold` through an `i128` widening
+/// multiply, `Zext::fold` through a `u128` one, `Trunc::fold` through a
+/// 64-bit rotate count — and then consumes the literal again through four
+/// plain uses at three widths, with BOTH words of each wide product used so a
+/// wrong-width push cannot hide in a dropped limb. Native-grid-checked over
+/// the 1225 boundary pairs before it was kept.
+#[test]
+fn coerce_const_fanout() {
+    run_case_with_inputs(
+        "coerce_const_fanout",
+        include_str!("../cases/case_coerce_const_fanout.rs"),
+        &[(1, 2), (3, 5), (0, 0), (0xffff_ffff, 1), (7, 0xffff_ffff), (10, 10)],
+    );
+}
+
+/// F9 LADDER, one rung past the old boundary (campaign 31, 2026-09-17). Every
+/// F9 reproducer passes with nightly-2026-09-01 guests, so this case pushes
+/// the shape as far as plain Rust reaches: a loop chaining `i64.add128`,
+/// `i64.sub128`, `i64.mul_wide_u` and `i64.mul_wide_s` that consumes BOTH
+/// limbs of every result on every trip, feeds each back into the next
+/// operation and into the loop's exit test, and keeps the overflow/borrow
+/// predicates live through the saturating and checked forms — the union of
+/// every shape the family used to break on. Native-grid-checked over the 1225
+/// boundary pairs before it was kept.
+#[test]
+fn wide_limbs_chain() {
+    run_case("wide_limbs_chain", include_str!("../cases/case_wide_limbs_chain.rs"));
+}
+
+/// Pinned grid for [`wide_limbs_chain`]: the trip counts at both ends of
+/// `input1 % 7 + 2`, the limb boundaries, and the equal pair.
+#[test]
+fn wide_limbs_chain_edges() {
+    run_case_with_inputs(
+        "wide_limbs_chain_edges",
+        include_str!("../cases/case_wide_limbs_chain.rs"),
+        &[
+            (0, 0),
+            (0xffff_ffff, 0xffff_ffff),
+            (6, 0xffff_ffff),
+            (1, 0x8000_0000),
+            (0x7fff_ffff, 1),
+            (13, 13),
+        ],
+    );
+}
+
+/// F18 LADDER rung 2 (campaign 31): the [`coerce_const_fanout`] fan-out
+/// repeated for TEN distinct literals inside a bottom-tested loop, so every
+/// literal is a count band crossing the loop AND is shared between
+/// `Sext::fold` (an `i128` widening multiply), `Trunc::fold` (a rotate count)
+/// and a plain `i64` use. It was written to find the class that bounds the
+/// coercion ladder and did NOT find one: it compiles and matches native at all
+/// four optimization levels and without guest DWARF, so ten shared coercion
+/// constants across a loop are not enough pressure on their own — the freight
+/// that does reach a boundary is live 64-bit VALUES, not shared counts
+/// ([`wide_limbs_freight_oz`]).
+#[test]
+fn coerce_const_bands() {
+    run_case("coerce_const_bands", include_str!("../cases/case_coerce_const_bands.rs"));
+}
+
+/// F9 LADDER rung 2 (campaign 31): the [`wide_limbs_chain`] shape with FOUR
+/// u128 accumulators live across the loop, all consumed limb-by-limb in one
+/// joining expression per trip, plus three crossing rotate bands — eight u64
+/// limbs of freight, the range campaign 20/21 measured the spill cliff on.
+/// This is the rung where the wide-arithmetic ladder stops being about wide
+/// arithmetic: it compiles and matches native at the default level, at
+/// `--optimize=max`, at `--optimize=basic` and without guest DWARF, and stops
+/// at `--optimize=size-min` in the F6 spill cluster ([`wide_limbs_freight_oz`]).
+/// So the class that now bounds wide-arithmetic freight is a spill-placement
+/// class, not a wide-arithmetic one.
+#[test]
+fn wide_limbs_freight() {
+    run_case("wide_limbs_freight", include_str!("../cases/case_wide_limbs_freight.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC, [`wide_limbs_freight`] at
+/// `--optimize=size-min` (campaign 31, 2026-09-17): `invalid operand stack
+/// index (10): requires access to more than 16 elements` at
+/// codegen/masm/src/emit/mod.rs:623. CLASSIFIED F6 by trace, not F17: the
+/// spills trace (`MIDENC_TRACE='analysis:spills=trace,pass:spills=trace'`)
+/// shows `edges to split = 1` for `entrypoint` followed by `erase unused
+/// reload %55`, and the drop trace
+/// (`MIDENC_TRACE='codegen:operand-scheduling=trace'`) ends on `hir.store_local
+/// %55` — the erased reload and the failing spill store are the SAME value, so
+/// the stale-dominator-tree erasure is what leaves it stranded outside the
+/// window rather than an independent placement miss. The other three
+/// optimization levels and the no-DWARF build compile the same source.
+/// Compile-time — no inputs involved. Un-ignore with the other F6
+/// reproducers.
+#[test]
+#[ignore = "compiler panic at --optimize=size-min: 'invalid operand stack index (10): requires \
+            access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 (edges to \
+            split = 1, the erased reload %55 is the operand of the failing spill store); \
+            compile-time, no inputs involved"]
+fn wide_limbs_freight_oz() {
+    run_case_with_flags(
+        "wide_limbs_freight_oz",
+        include_str!("../cases/case_wide_limbs_freight.rs"),
+        &["--optimize=size-min"],
     );
 }

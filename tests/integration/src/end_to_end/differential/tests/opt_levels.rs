@@ -101,16 +101,18 @@ fn switch_loop_oz() {
 /// twin of `control_flow::deep_nest_overflow`: the eight-level loop nest
 /// that passes at the default opt-level (`control_flow::nest8`) panics at
 /// -Oz with `implicit operand stack overflow along incoming control flow
-/// edges of after(scf.if in ^block129)` at
+/// edges of after(scf.if in ^block137)` at
 /// hir-analysis/src/analyses/spills.rs:1533. At -Oz LLVM keeps every level
 /// as a loop (no peeling of the `% 3 + 1` levels), so cfg-to-scf's
 /// exit-dispatch result columns reach the 16-felt budget one nesting level
 /// earlier than at O2: the generated `% 3` nests fail from depth SEVEN at
 /// -Oz (six passes) versus depth nine at O2. Compile-time, no inputs
-/// involved. Un-ignore together with `deep_nest_overflow`.
+/// involved. Re-verified failing 2026-09-17 on nightly-2026-09-01 guests (the
+/// block label moved from `^block129` to `^block137`; site and mechanism
+/// unchanged). Un-ignore together with `deep_nest_overflow`.
 #[test]
 #[ignore = "compiler panic: 'implicit operand stack overflow along incoming control flow edges of \
-            after(scf.if in ^block129)' at hir-analysis/src/analyses/spills.rs:1533 at -Oz — \
+            after(scf.if in ^block137)' at hir-analysis/src/analyses/spills.rs:1533 at -Oz — \
             cfg-to-scf exit-dispatch result columns of the eight-deep nest exceed the 16-felt \
             budget (compile-time, no inputs involved)"]
 fn nest8_oz() {

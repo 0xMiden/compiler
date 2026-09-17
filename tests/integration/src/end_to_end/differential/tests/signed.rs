@@ -12,16 +12,15 @@ use super::super::harness::{run_case, run_case_with_inputs};
 /// 1.97.0-nightly / LLVM 22.1.4 with `+wide-arithmetic` — sinks the
 /// `i64.mul_wide_s` below a `local.get` of its own high word, so the wasm
 /// reads a zero-initialised local and the `(hi as i16) as i64` term vanishes
-/// (the same LLVM defect as the ignored `checked_mul_i64` / `sat_mul_i64` /
-/// `pow_i64`). It passes now ONLY because the harness builds guests with
-/// `debug = 2`: the variable-location records pin the multiply's definitions
-/// and block the sink (`-C debuginfo=1` still miscompiles). The pinned pair
-/// and 512 fresh pairs match at the default, `-Oz` and `-O3` levels in that
-/// configuration, so the test runs as a guard of the guest wasm we actually
-/// compile — not as proof of compiler correctness. If the harness ever drops
-/// `debug = 2`, it fails again with the same numbers; the real un-ignore
-/// condition for the family is a toolchain past the LLVM fix or cargo-miden
-/// dropping `+wide-arithmetic`.
+/// (the same LLVM defect as the then-ignored `checked_mul_i64` /
+/// `sat_mul_i64` / `pow_i64`, the F9 family). On nightly-2026-04-30 it passed
+/// ONLY because the harness builds guests with `debug = 2`: the
+/// variable-location records pinned the multiply's definitions and blocked the
+/// sink (`-C debuginfo=1` still miscompiled). The nightly-2026-09-01 toolchain
+/// fixed the family, and the campaign-31 sweep (2026-09-17) has this case and
+/// its `_repro` twin passing at `FUZZA_GUEST_DEBUG=0` as well — so the DWARF
+/// masking is no longer load-bearing and the test is a plain `arith.sext`
+/// guard again.
 #[test]
 fn sext_shapes() {
     run_case("sext_shapes", include_str!("../cases/case_sext_shapes.rs"));
@@ -232,44 +231,40 @@ fn cmp_chains_edges() {
     );
 }
 
-/// GUEST-TOOLCHAIN MISCOMPILE (not a Miden compiler bug), simplest form: a
-/// non-inlined `i64::checked_mul`. rustc 1.97.0-nightly (c935696dd
-/// 2026-04-29, LLVM 22.1.4) with the `+wide-arithmetic` target feature that
-/// cargo-miden enables emits the overflow test `hi == (lo >> 63)` with the
-/// `local.get` of the `i64.mul_wide_s` hi result placed BEFORE the multiply
-/// that defines it (WAT: `local.get 2` ... `i64.mul_wide_s` `local.set 2`
-/// ... `i64.eq` `br_if`), so the wasm compares the parameter `y` with
-/// `lo >> 63` instead of `hi`. The MASM result equals what wasmtime 48.0.0
-/// (`-W wide-arithmetic=y`) computes for the same wasm, and a plain `rustc
-/// --target wasm32-wasip1 -C target-feature=+wide-arithmetic` build of the
-/// saturating form reproduces it at every opt-level (1/2/3/s/z), while the
-/// build without the feature is correct.
+/// Formerly `#[ignore]`d (F9), simplest form of the guest-toolchain
+/// `+wide-arithmetic` miscompile: a non-inlined `i64::checked_mul`. rustc
+/// 1.97.0-nightly (c935696dd 2026-04-29, LLVM 22.1.4) emitted the overflow
+/// test `hi == (lo >> 63)` with the `local.get` of the `i64.mul_wide_s` hi
+/// result placed BEFORE the multiply that defines it (WAT: `local.get 2` ...
+/// `i64.mul_wide_s` `local.set 2` ... `i64.eq` `br_if`), so the wasm compared
+/// the parameter `y` with `lo >> 63` instead of `hi` and (MAX, MAX) came back
+/// as masm 0 against native 3758096385.
+///
+/// Fixed by the guest toolchain bump to nightly-2026-09-01 (fd6f5b171), not by
+/// midenc; re-verified 2026-09-17 on the pinned inputs and the random pairs.
+/// The evidence that the wasm — not the compiler — changed: `wasmtime run -W
+/// wide-arithmetic=y --invoke entrypoint differential_checked_mul_i64.wasm -1
+/// -1` now returns 3758096385, the native value, where it used to return the
+/// MASM one; and the wasm still contains the `i64.mul_wide_s`, so this case
+/// still exercises the wide multiply rather than having lost the shape.
 ///
 /// Bounded by passing siblings: inlined `if let Some(x) = a.checked_mul(b)`
 /// and `overflowing_mul` flag branches (LLVM stackifies those in a valid
 /// order), u64 / u32 / i32 / u128 / i128 checked/overflowing/saturating
 /// multiplies (ovf_mul, u64_sat_forms; `hi != 0` needs no second operand),
 /// and the high-word-only / branch-on-constant uses of dynamic
-/// `i64.mul_wide_s` products (mul_hi_only). Both-words VALUE uses
-/// (wide_mul_edges, mulwide_dyn, wide_words) pass only under the harness's
-/// `debug = 2` — the same defect, DWARF-masked (see wide_words). The full
-/// blast radius is recorded in KNOWLEDGE.md (F9). Un-ignore (together with
-/// sat_mul_i64 / pow_i64 and the tests/wide.rs family) when the guest
-/// toolchain is bumped past the LLVM fix, or when cargo-miden stops
-/// enabling `+wide-arithmetic`.
+/// `i64.mul_wide_s` products (mul_hi_only).
 #[test]
-#[ignore = "guest LLVM miscompile (wide-arithmetic i64.mul_wide_s hi read before def): inputs \
-            (4294967295, 4294967295) -> native 3758096385, masm 0; non-inlined i64::checked_mul"]
 fn checked_mul_i64() {
     run_case("checked_mul_i64", include_str!("../cases/case_checked_mul_i64.rs"));
 }
 
-/// Deterministic reproducer for the `checked_mul_i64` divergence: -1 * -1
-/// through the helper (native Some(1) folded with the low word; masm reads
-/// y == -1 as the hi word and reports overflow -> None).
+/// Regression guard for the `checked_mul_i64` divergence, formerly the pinned
+/// `#[ignore]`d twin: -1 * -1 through the helper (native Some(1) folded with
+/// the low word; the old wasm read y == -1 as the hi word and reported
+/// overflow -> None). Kept pinned so the fix is checked on the exact rows that
+/// used to fail, not only on random draws.
 #[test]
-#[ignore = "guest LLVM miscompile on pinned inputs (4294967295, 4294967295): native 3758096385 vs \
-            masm 0; non-inlined i64::checked_mul, see checked_mul_i64"]
 fn checked_mul_i64_repro() {
     run_case_with_inputs(
         "checked_mul_i64_repro",
@@ -278,30 +273,30 @@ fn checked_mul_i64_repro() {
     );
 }
 
-/// GUEST-TOOLCHAIN MISCOMPILE (not a Miden compiler bug), saturating form of
-/// the `checked_mul_i64` defect: `i64::saturating_mul` on dynamic operands.
-/// Same toolchain and `+wide-arithmetic` feature; the overflow test
-/// `hi == (lo >> 63)` reads a stale zero local (or the PREVIOUS product's hi
-/// word) instead of the `i64.mul_wide_s` hi result, so overflowing products
-/// with a non-negative low word come back unsaturated and in-range products
-/// after an overflowing one saturate. Fails at the default configuration and
-/// `--optimize=max`; at `--optimize=size-min` this straight-line form
-/// happens to pass. Bounded and un-ignored as checked_mul_i64.
+/// Formerly `#[ignore]`d (F9), saturating form of the `checked_mul_i64`
+/// defect: `i64::saturating_mul` on dynamic operands. On the 2026-04-30
+/// toolchain the overflow test `hi == (lo >> 63)` read a stale zero local (or
+/// the PREVIOUS product's hi word) instead of the `i64.mul_wide_s` hi result,
+/// so overflowing products with a non-negative low word came back unsaturated
+/// and in-range products after an overflowing one saturated — (32, 32) gave
+/// masm 1025 against native 2147483649.
+///
+/// Fixed by the nightly-2026-09-01 guest toolchain; re-verified 2026-09-17
+/// (wasmtime on the harness-built wasm returns 2147483649 for (32, 32) and 0
+/// for the pinned (1508586408, 1) row, both the native values, and the two
+/// `i64.mul_wide_s` ops are still in the wasm).
 #[test]
-#[ignore = "guest LLVM miscompile (wide-arithmetic i64.mul_wide_s hi read before def): inputs (32, \
-            32) -> native 2147483649, masm 1025; i64::saturating_mul"]
 fn sat_mul_i64() {
     run_case("sat_mul_i64", include_str!("../cases/case_sat_mul_i64.rs"));
 }
 
-/// Deterministic reproducer for the `sat_mul_i64` divergence: pins the
-/// distinct-operand overflow row (1508586408, 1) (native 0: MAX xor the
-/// rotated 2^62; masm 1508586409: the unsaturated low word, and the x * x
-/// form then saturates on the FIRST product's stale hi word) and the
-/// i64::MAX * i64::MAX x * x row (u32::MAX, u32::MAX).
+/// Regression guard for the `sat_mul_i64` divergence, formerly the pinned
+/// `#[ignore]`d twin: the distinct-operand overflow row (1508586408, 1)
+/// (native 0: MAX xor the rotated 2^62; the old wasm returned 1508586409, the
+/// unsaturated low word, and the x * x form then saturated on the FIRST
+/// product's stale hi word) and the i64::MAX * i64::MAX x * x row
+/// (u32::MAX, u32::MAX).
 #[test]
-#[ignore = "guest LLVM miscompile on pinned inputs (1508586408, 1): native 0 vs masm 1508586409; \
-            i64::saturating_mul returns the unsaturated low word; see sat_mul_i64"]
 fn sat_mul_i64_repro() {
     run_case_with_inputs(
         "sat_mul_i64_repro",
@@ -310,29 +305,29 @@ fn sat_mul_i64_repro() {
     );
 }
 
-/// GUEST-TOOLCHAIN MISCOMPILE (not a Miden compiler bug), loop form of the
-/// `checked_mul_i64` defect: `i64::checked_pow` with a dynamic exponent. Its
-/// square-and-multiply loop calls `checked_mul` twice per iteration and LLVM
-/// (same toolchain and `+wide-arithmetic` feature) emits each overflow test
-/// `hi != (lo >> 63)` with the `local.get` of the `i64.mul_wide_s` hi result
-/// placed before the multiply, so every test reads the previous iteration's
-/// hi word (zero on the first): (-1)^7 comes back as None. Fails at the
-/// default configuration, `--optimize=size-min` and `--optimize=max` (a
-/// `while` loop accumulating `checked_mul` results diverges the same way).
-/// Bounded by the passing u32/i32/u64 `checked_pow` loops (int_logs). Same
-/// un-ignore condition as checked_mul_i64.
+/// Formerly `#[ignore]`d (F9), loop form of the `checked_mul_i64` defect:
+/// `i64::checked_pow` with a dynamic exponent. Its square-and-multiply loop
+/// calls `checked_mul` twice per iteration, and the 2026-04-30 LLVM emitted
+/// each overflow test `hi != (lo >> 63)` with the `local.get` of the
+/// `i64.mul_wide_s` hi result placed before the multiply, so every test read
+/// the previous iteration's hi word (zero on the first) and (-1)^7 came back
+/// as None. It failed at the default configuration, `--optimize=size-min` and
+/// `--optimize=max`.
+///
+/// Fixed by the nightly-2026-09-01 guest toolchain; re-verified 2026-09-17
+/// (wasmtime returns 2147483713 for (2147483648, 65) and 0 for the pinned
+/// all-ones row — the native values — and both `i64.mul_wide_s` ops survive in
+/// the wasm). Bounded by the passing u32/i32/u64 `checked_pow` loops
+/// (int_logs).
 #[test]
-#[ignore = "guest LLVM miscompile (wide-arithmetic i64.mul_wide_s hi read before def) in the \
-            i64::checked_pow loop: inputs (2147483648, 65) -> native 2147483713, masm 4076380402"]
 fn pow_i64() {
     run_case("pow_i64", include_str!("../cases/case_pow_i64.rs"));
 }
 
-/// Deterministic reproducer for the `pow_i64` divergence: (-1)^7 via the
-/// all-ones row, plus a positive-base overflow row.
+/// Regression guard for the `pow_i64` divergence, formerly the pinned
+/// `#[ignore]`d twin: (-1)^7 via the all-ones row (native 0, old masm
+/// 4076380402), plus a positive-base overflow row.
 #[test]
-#[ignore = "guest LLVM miscompile on pinned inputs (4294967295, 4294967295): native 0 vs masm \
-            4076380402; i64::checked_pow loop, see pow_i64"]
 fn pow_i64_repro() {
     run_case_with_inputs(
         "pow_i64_repro",

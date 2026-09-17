@@ -358,10 +358,22 @@ fn nest_calls_edges() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, campaign 14 attempt 2,
-/// 2026-09-03, NEW class): two nested `for` loops, one `#[inline(never)]`
-/// call in the inner loop and a `continue 'outer` from the inner loop.
-/// Building it panics in the post-lift Canonicalizer with
+/// Formerly `#[ignore]`d as the first F12 reproducer in the corpus (campaign
+/// 14 attempt 2, 2026-09-03). It compiles and matches native AT THE DEFAULT
+/// LEVEL and at `--optimize=max` since the guest toolchain bump to
+/// nightly-2026-09-01, but the COMPILER BUG IS NOT FIXED — it only moved down
+/// the level ladder: at `--optimize=size-min` and `--optimize=basic` the same
+/// source still panics at hir/src/patterns/rewriter.rs:335 (measured
+/// 2026-09-17), as it does at every level with nightly-2026-04-30 guests. What
+/// LLVM changed is whether it leaves cfg-to-scf a loop-invariant before-block
+/// argument, not the pattern. The class's default-level reproducer is
+/// `invariant_args_min`. Not pinned as a `_oz` twin: the level-dependent F12
+/// panic of this exact source is already carried by `nest_continue_inline`.
+/// What it used to do:
+///
+/// two nested `for` loops, one `#[inline(never)]` call in the inner loop and a
+/// `continue 'outer` from the inner loop. Building it panicked in the
+/// post-lift Canonicalizer with
 /// `AliasingViolationError { kind: Mutable, location: hir/src/ir/operation.rs:877 }`
 /// at hir/src/patterns/rewriter.rs:335 (`Rewriter::move_block_before` →
 /// `Block::insert_before` → `Region::borrow_mut`). Mechanism: the lifted
@@ -383,14 +395,10 @@ fn nest_calls_edges() {
 /// every level of a five-level nest with breaks, a return and a same-level
 /// `continue` — passes) and the corpus' labeled continues without a call in
 /// the inner loop (`cf_shapes`, `nest8`, `wide_exits`, `tree_nest`).
-/// Compile-time — no inputs involved. Suggested fix: bind the target region
-/// to a local (dropping the op borrow) before calling
-/// `inline_region_before`. Un-ignore when this case compiles.
+/// Suggested fix (still open, see `invariant_args_min`): bind the target
+/// region to a local (dropping the op borrow) before calling
+/// `inline_region_before`.
 #[test]
-#[ignore = "compiler panic: AliasingViolationError { kind: Mutable, location: \
-            hir/src/ir/operation.rs:877 } at hir/src/patterns/rewriter.rs:335 — \
-            RemoveLoopInvariantArgsFromBeforeBlock inlines the after region while its own borrow \
-            of the new while's region is still alive (compile-time, no inputs involved)"]
 fn nest_continue() {
     run_case("nest_continue", include_str!("../cases/case_nest_continue.rs"));
 }
@@ -399,9 +407,11 @@ fn nest_continue() {
 /// 'outer` with the helper `#[inline(always)]` — LLVM restructures the nest,
 /// the lifted `scf.while` has no loop-invariant iter arg, and the case
 /// compiles and passes.
-/// Configuration note (campaign 16): below O2 (`--optimize=size-min`,
-/// `--optimize=basic`) the helper is no longer inlined, so this twin becomes
-/// the `nest_continue` shape and hits the F12 panic as well.
+/// Configuration note (campaign 16, measured on nightly-2026-04-30 guests):
+/// below O2 (`--optimize=size-min`, `--optimize=basic`) the helper was no
+/// longer inlined, so this twin became the `nest_continue` shape and hit the
+/// F12 panic as well. Both cases compile with nightly-2026-09-01 guests; the
+/// class itself is still open (`invariant_args_min`).
 #[test]
 fn nest_continue_inline() {
     run_case("nest_continue_inline", include_str!("../cases/case_nest_continue_inline.rs"));
@@ -511,8 +521,15 @@ fn switch_calls_edges() {
     );
 }
 
-/// MINIMAL RETURN-FREE REPRODUCER of the F12 aliasing panic (campaign 28),
-/// reduced from `programs_oz::prog_blake2b`: an outer block loop over a
+/// Formerly `#[ignore]`d as the minimal return-free F12 reproducer. It
+/// compiles and matches native at ALL FOUR optimization levels and without
+/// guest DWARF since the toolchain bump to nightly-2026-09-01 — the seven-trip
+/// mixing loop no longer survives into cfg-to-scf as a nested loop with a
+/// merged exit — but the COMPILER BUG IS NOT FIXED: nightly-2026-04-30 guests
+/// still reproduce the panic verbatim (re-arbitrated 2026-09-17) and
+/// `invariant_args_min` still panics with the current toolchain. Kept as a
+/// guard of the new shape. What it used to do (reduced from
+/// `programs_oz::prog_blake2b`): an outer block loop over a
 /// two-word chaining state and an inner SEVEN-trip mixing loop over an
 /// array-indexed working vector, with `.rodata` index tables and a message
 /// array. The program contains no `return`, no `break` and no `continue` —
@@ -537,20 +554,13 @@ fn switch_calls_edges() {
 /// source construct behind those columns is the merged exit of the inner
 /// counted loop — the payload the outer loop's `scf.index_switch` dispatch
 /// selects on — not any user-visible early exit.
-/// Per level: default PANIC, `--optimize=basic` PANIC, `--optimize=max` and
-/// `--optimize=size-min` compile.
+/// Per level on nightly-2026-04-30 guests: default PANIC, `--optimize=basic`
+/// PANIC, `--optimize=max` and `--optimize=size-min` compile.
 /// Bounded by [`invariant_args_noreturn_guard`] below: with SIX mixing steps
 /// LLVM unrolls the inner loop into the block loop, cfg-to-scf sees a single
 /// `scf.while` whose `scf.condition` forwards only real values, and the
-/// pattern never matches. Compile-time — no inputs involved. Un-ignore when
-/// the rewriter stops taking a mutable borrow of an operation it is already
-/// borrowing.
+/// pattern never matches.
 #[test]
-#[ignore = "compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: Mutable, \
-            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
-            matching 'remove-loop-invariant-args-from-before-block' — F12 with NO \
-            return/break/continue: the poison column is the inner counted loop's exit dispatch \
-            payload; compile-time, no inputs involved"]
 fn invariant_args_noreturn() {
     run_case(
         "invariant_args_noreturn",
