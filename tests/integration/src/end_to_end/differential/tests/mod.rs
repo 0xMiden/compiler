@@ -13,6 +13,7 @@ mod corelib;
 mod debug_info;
 mod frames;
 mod interact;
+mod memorder;
 mod memory;
 mod opt_levels;
 mod pressure;

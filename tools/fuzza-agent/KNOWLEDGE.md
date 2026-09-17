@@ -2675,3 +2675,96 @@ divergence in either direction.
   `catch_unwind` would never see it. Use it before every harness run: it
   caught three trap-density design errors and two collapsed value functions
   in this campaign.
+
+## Memory-effect ordering (campaign 30, 2026-09-17)
+
+Whether any middle-end pass can merge, drop, move or fold a load or a store
+it must not. Corpus: `tests/memorder.rs` (14 cases + pinned grids), every case
+native-grid-checked (1225 boundary pairs) before the harness run and swept at
+`FUZZA_GUEST_DEBUG=0`, `--optimize=max`, `--optimize=size-min` and
+`--optimize=basic`.
+
+- **The declared-effect table is complete and conservative.** Every op in
+  `dialects/{hir,arith,scf,cf,ub,wasm}` that implements
+  `MemoryEffectOpInterface` was audited against what it actually touches, and
+  nothing reachable from plain Rust understates its effects:
+  `hir.load`/`hir.load_local` Read, `hir.store`/`hir.store_local` Write,
+  `hir.mem_cpy` Read(source)+Write(destination) and `hir.mem_set`
+  Write(destination) (that is how they PRINT; the structs are `MemCpy` /
+  `MemSet`), `hir.mem_grow` Read+Write, `hir.mem_size` Read,
+  `hir.spill` Write / `hir.reload` Read, the four `hir.assert*` ops and
+  `ub.unreachable` Write (so nothing is moved across a trap guard),
+  `hir.local_address` and `ub.poison` effect-free (address/constant
+  materialization only), and the five signed sub-word wasm loads
+  (`wasm.i32_load_8s`, `wasm.i32_load_16s`, `wasm.i64_load_8s`,
+  `wasm.i64_load_16s`, `wasm.i64_load_32s`) Read on their address operand.
+  `hir.exec`, `hir.exec_indirect`, `hir.call` and `hir.syscall` do NOT
+  implement the interface at all, which is the CONSERVATIVE state: CSE treats
+  an op with no interface as a write (cse.rs:488-493) and
+  `is_memory_effect_free()` returns false for it (operation.rs:1264), so a
+  call is never sunk and never merged across. SDK-only ops (`hir.exec_fpi`,
+  `hir.mem_stream`, the event/advice/crypto family) have no plain-Rust
+  producer.
+- **`#[derive(EffectOpInterface)]` with no `#[effects]` means effect-FREE, not
+  unknown** (`hir-macros/src/operations/effects.rs`: an empty effect map is
+  filled with an empty `MemoryEffect` group, so `has_no_effect()` is true).
+  That is why the audit has to read the FIELD-level `#[effects]` attributes
+  too — the wasm signed sub-word loads declare theirs on the `addr` operand,
+  and a `grep -B6 '#\[effects('` that only looks above the struct misses them.
+- **CSE never merges a heap load; it only merges `hir.load_local`s.** Measured
+  over four W1 cases with `-Z print-ir-after-pass=cse`: `hir.load` and
+  `hir.store` counts are identical before and after the pass in every case
+  (25/25, 12/12, 10/10, 22/22), while 2 to 7 `hir.load_local`s are merged per
+  case — same-block reloads of one wasm local with no store between them.
+  Every opaque-write kind blocks the merge for the documented reason: an
+  `#[inline(never)]` helper is a `hir.exec` (unknown effects), `black_box(&mut
+  _)` / `write_volatile` / an atomic RMW is a `hir.store`, a runtime-range
+  bulk op is `hir.mem_cpy`/`hir.mem_set`. Caveat for designing such a probe:
+  LLVM guards every runtime-length bulk op with its own `len != 0` branch, so
+  a "load; bulk write; load" shape does NOT stay in one block (27 blocks in
+  `memorder::cse_bulk`) and CSE's same-block requirement rules out the merge
+  before the effect check is reached. Use a CALL or a scalar store as the
+  opaque write when the effect model is what you are testing.
+- **SCCP and SinkOperandDefs are no-ops on memory.** On a `static`-heavy
+  function (an immutable `.rodata` table read at a constant index beside its
+  written `static mut` twin) the
+  `sparse-conditional-constant-propagation` dump is byte-identical to its
+  input: 27 `hir.load`s in, 27 out. A `static` is never constant-folded
+  through a load — there is no memory model in the pass, and no `Foldable`
+  impl for `hir.load`/`hir.store`. `sink-operand-defs` likewise moves nothing
+  in a store/load-forwarding case (18 loads / 21 stores, unchanged).
+- **No value divergence anywhere in the area.** Loads across five kinds of
+  opaque write at six widths; store-then-load forwarding at every byte lane
+  and every width of a 4-aligned buffer (u32 store then u8/i8 lane, four lane
+  stores then the word, a u16 store at byte offset 0..3 then both touched
+  words, an unaligned u32 load one byte after a u32 store); two raw-pointer
+  views plus `align_to_mut::<u32>()`; `swap`/`replace`/`take`/`ptr::swap` at
+  possibly-equal runtime indexes; program order inside one expression with and
+  without the campaign-20 freight; `copy_from_slice`/`copy_nonoverlapping` at
+  all sixteen `(src % 4, dst % 4)` combinations and lengths 0..=17;
+  unaligned `fill`/`write_bytes`; and `static`/`static mut`/atomic reads
+  around in-place writes — all agree with native, in the default env and at
+  all four sweep configurations.
+- **The memcpy element fast path rejects overlap in BOTH directions.** The
+  `mem_overlap` / `copy_same_pos` ignore texts describe `dst > src` and
+  `dst == src`; a FORWARD-overlapping `copy_within` (`dst < src`) whose byte
+  count, source and destination are all 4-aligned aborts in the same
+  `miden-core-lib memcopy_elements` assert ("source and destination ranges
+  must not overlap", mem.masm:100) even though a forward copy would be correct
+  for that direction. The byte fallback loop copies upward, so a forward
+  overlap with a non-multiple-of-4 byte count agrees with native at every
+  overlap distance 1..=8 (`memorder::copy_fwd`). Rule for new cases: an
+  overlapping `copy_within` is only safe when `count % 4 != 0` (or the offsets
+  differ mod 4), whatever the direction.
+- **Freight does not reorder memory.** The `seq_expr` ordering shapes carrying
+  an eight-u64 cluster and three rotate bands spill 77 values / 74 reloads /
+  one split edge / seven erased split reloads (vs 38 / 44 / 0 / 2 without the
+  freight) and still compute the native answer: the spill transform places
+  slots around the loads and stores rather than through them.
+- **Without guest DWARF the LOCAL traffic shrinks and the heap traffic does
+  not.** `local2reg` on a lane-forwarding case logs the SAME twelve "found
+  promotable local" lines at `debug = 2` and `debug = 0`; four of them are
+  then blocked by "debug declarations cannot all be converted safely" at
+  `debug = 2` only. After the pass: 20 `store_local` / 85 `load_local` with
+  DWARF vs 17 / 82 without, and 18 `hir.load` / 21 `hir.store` in both. The
+  whole module passes at `FUZZA_GUEST_DEBUG=0`.
