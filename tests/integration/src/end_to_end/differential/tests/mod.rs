@@ -13,6 +13,7 @@ mod corelib;
 mod cse;
 mod debug_info;
 mod frames;
+mod heap;
 mod interact;
 mod memorder;
 mod memory;
