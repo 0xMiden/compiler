@@ -10,6 +10,7 @@ mod canon;
 mod compose;
 mod control_flow;
 mod corelib;
+mod cse;
 mod debug_info;
 mod frames;
 mod interact;

@@ -703,7 +703,9 @@ region-verified.
 ## Rewrite-pass scope closures (CSE / SCCP / DCE / folder / scf patterns)
 
 Verified 2026-07-23 (region-level coverage + source audit of the pass
-pipeline in midenc-compile/src/stages/rewrite.rs):
+pipeline; the pass list now lives in midenc-compile/src/pipeline/backend.rs,
+where it is built unconditionally at every optimization level — it used to be
+in midenc-compile/src/stages/rewrite.rs):
 
 - The rewrite pipeline is Canonicalizer → CSE → SCCP → SinkOperandDefs →
   Local2Reg → TransformSpills → LiftControlFlowToSCF → Canonicalizer →
@@ -2870,3 +2872,110 @@ arbitrated rather than taken at face value. 25 pass now; the ignore count is
   failing spill store are the SAME value (`%55`), which is the cleanest F6-vs-F17
   discrimination in the corpus: the two traces name one value, so the
   classification does not rest on the precedence rule.
+
+## Operation equivalence and CSE (campaign 32, 2026-09-17)
+
+What upstream fab7b7db0 ("midenc-hir: compare region operations
+structurally") actually changed for plain-Rust guests, and what it did not.
+Corpus: `tests/cse.rs` (12 cases + pinned grids), each evidenced with
+`-Z print-ir-after-pass=<pass>` plus
+`MIDENC_TRACE='pass:<pass>=trace,rewriter=trace'`.
+
+- **The structural REGION comparison stays unreachable, post-rebase.** Measured
+  on a function with three byte-identical `if`s (`cse::twin_if`): the
+  `entrypoint` body CSE sees carries `cf.br` 6, `cf.cond_br` 3, `hir.exec` 6,
+  `hir.load_local` 21, `hir.store_local` 11 and the usual `arith.*` — and ZERO
+  `scf.*`. The `after` dump equals the `before` one. The `scf.if`s appear first
+  in the `lift-control-flow` dump (`scf.if` 3, `scf.yield` 6) and the post-lift
+  `canonicalizer`, `sink-operand-defs` and `transform-spills` dumps all still
+  show 3. CSE runs six passes before lifting, so `is_equivalent_with_mapping`'s
+  region arm has no producer here; what the commit changed on this path is the
+  commutative-operand multiset alone.
+- **The `Commutative` list and its plain-Rust reach.** The trait is on `Add`,
+  `AddOverflowing`, `Mul`, `MulOverflowing`, `And`, `Or`, `Xor`, `Band`, `Bor`,
+  `Bxor`, `Eq`, `Neq`, `Min`, `Max` (dialects/arith/src/ops/binary.rs).
+  Reachable from a `(u32, u32) -> u32` guest: `add`, `mul`, `band`, `bor`,
+  `bxor`, `eq`, `neq`. NOT reachable: `and`/`or`/`xor` (the i1 logical forms —
+  the frontend maps `I32And`/`I32Or`/`I32Xor` to `band`/`bor`/`bxor` and never
+  builds them) and `min`/`max` (wasm has no i32 min/max operator, the frontend
+  never calls `builder.min`/`max`, and `core::cmp::min`/`max` lower to a
+  compare plus a select). `Sub`, `Shl`, `Shr`, `Div`, `Mod`, `Lt`, `Lte`, `Gt`,
+  `Gte` are not marked, and none of them merged with swapped operands in any
+  case here. Three more arith ops turned out to have no plain-Rust producer at
+  all, which is worth recording next to the routing facts: `arith.ashr`
+  (`i32.shr_s` reaches HIR as `arith.shr` on a signed operand type),
+  `arith.sdiv` (`I32DivS` calls `builder.div`) and `arith.smod` (`I32RemS`
+  goes through the `wasm.i32_rem_s` expansion).
+- **LLVM closes every straight-line escape hatch; only volatile reads open
+  one.** EarlyCSE/GVN merge `x + y` with `y + x` whenever both are visible on
+  the same SSA values under dominance, and they intersect the IR flags rather
+  than giving up on them. Measured in the guest wasm: source order written
+  both ways, `wrapping_add` beside `unchecked_add`, and a value `black_box`
+  between the copies ALL came out as one `i32.add`. The `black_box` attempt
+  fails twice over — on wasm it is a shadow-stack store plus load, so its
+  result is a different HIR value too. Pointer/GEP arithmetic (the
+  "SelectionDAG builds the address add per block" idea) also produced nothing:
+  InstCombine turns `inttoptr(add(shl i, 2), ptrtoint p)` back into the GEP and
+  the two loads merge.
+  The hatch that works: **two volatile reads of one address**. They are
+  distinct LLVM values, so LLVM keeps both commutative ops; the wasm stack
+  order follows the unreorderable volatile load order, so issuing the second
+  pair in the opposite order puts the swapped operands into HIR; and HIR has no
+  volatility, so CSE merges the reloads and only then can the multiset key
+  match.
+- **Byte accesses are the only heap loads CSE can merge.** `prepare_addr`
+  (dialects/wasm/src/mem.rs) calls `enforce_alignment` only when
+  `memarg.align > 0`, and that is what emits the `divmod` + `hir.assertz`.
+  `hir.assertz` declares Write and has no folder, so for every access of 2
+  bytes or more the second load's own alignment check sits between the two
+  loads and `has_other_side_effecting_op_in_between` stops there. This is the
+  MECHANISM behind campaign 30's "CSE never merges a heap load": it is true for
+  every width except 1 byte. With `u8` reads the merge is routine —
+  `hir.load` 4 -> 2 in every `cse::comm_*` helper.
+- **Two more barriers that silently kill such a shape.** (1) `hir.store_local`
+  is a Write, so any wasm `local.set`/`local.tee` between the reloads blocks
+  the merge. LLVM inserts one whenever a value has to outlive an intervening
+  computation — which is why `bool << k` (lowered through a `cf.select` of two
+  constants) and `x * x` (needs a `local.tee` to duplicate the value) both
+  defeated the shape until the cases were rewritten to a bare `wrapping_sub`
+  combiner and to per-operand loads. (2) CSE's memory-read candidates require
+  `existing.parent() == op.parent()`, so a reload in a DOMINATED block never
+  merges with one in the dominator — the whole hatch is single-block only.
+- **The merges that fire, and the ones that must not.** `arith.add`,
+  `arith.mul`, `arith.band`, `arith.bor`, `arith.bxor`, `arith.eq` and
+  `arith.neq` each merge with their swapped twin (op count -1 per pair, with
+  the `replaced op with Some(%N): arith.<op>` line). An op over {a, a} does not
+  merge with one over {a, b}; `a * b` does not merge with `c * a` when `c` is a
+  different SSA value holding the same byte; an `arith.eq` does not merge with
+  an `arith.neq` over the same pair. The nested case works too:
+  `(a+b)*(c^d)` and `(d^c)*(b+a)` merge all three ops in ONE pass run, because
+  `simplify_block` rewrites operands in place and the later op's key is
+  computed afterwards. No divergence in any configuration.
+- **`a + a` never reaches HIR as an add with two equal operands** — LLVM
+  rewrites it to `a << 1`. Use `*` for that corner. And the POSITIVE half of
+  the {a, a} corner (two `a * a` merging with each other) has no producer at
+  all, for the `local.tee` reason above.
+- **Without guest DWARF nothing about this changes.** The `debug = 0` CSE dump
+  of the hatch case is op-for-op identical to the `debug = 2` one (`hir.load`
+  4 -> 2, `arith.add` 4 -> 2, `arith.mul` 2 -> 1), and the whole module passes
+  at `FUZZA_GUEST_DEBUG=0`, `--optimize=max`, `--optimize=size-min` and
+  `--optimize=basic`.
+- **The post-lift erase path is reachable and ordered.** `Rewriter::erase_op`'s
+  `erase_tree` is reached by the post-lift canonicalizer whenever
+  `convert-trivial-if-to-select` replaces an `scf.if`: the trace prints
+  `erased op scf.yield`, `erased ^block<N>`, `erased op scf.yield`,
+  `erased ^block<M>`, then `erased op scf.if` — nested ops before their blocks,
+  blocks in post-order, the region op last. The `while-remove-unused-args` /
+  `index-switch-remove-unused-results` cascade is NOT a test of that order: the
+  pattern MOVES the body ops into the replacement first, so the `scf.while` it
+  erases has empty regions by then.
+- **`MIDENC_TRACE='rewriter=trace'` can crash the compiler.** On a guest whose
+  post-lift form reaches `IfRemoveUnusedResults`, enabling the rewriter trace
+  panics at `hir/src/program_point.rs:486:63` with `AliasingViolationError
+  { kind: Immutable, location: dialects/scf/src/canonicalization/
+  if_remove_unused_results.rs:86:32 }` — the `TracingRewriterListener` borrows
+  an operation the pattern already holds mutably. The same compile with no
+  trace, or with `pass:canonicalizer=trace` and
+  `-Z print-ir-after-pass=canonicalizer` but no `rewriter=trace`, exits 0.
+  Reproducer: `cse::dead_region`. Take erase-order evidence on a shape that
+  traces cleanly (`cse::dead_outer`) until this is fixed.
