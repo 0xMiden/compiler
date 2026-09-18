@@ -19,6 +19,8 @@ impl fmt::Display for TypePrinter<'_> {
             Type::List(ty) => {
                 write!(f, "list<{}>", TypePrinter(ty))
             }
+            // A recursive struct cannot be expanded field by field without looping, so it falls
+            // through to the type's own `Display` below.
             Type::Struct(ty) if !ty.is_recursive() => {
                 let ty = ty.get();
                 let fields =

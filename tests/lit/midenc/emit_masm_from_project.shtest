@@ -30,7 +30,7 @@ CHECK: namespace example::support
 CHECK: const FOO = 1
 CHECK: pub proc dirty
 
-# Parsed MASM preserves constant references in VM 0.32.1; the linker folds them later.
+# Parsed MASM preserves constant references in VM 0.33; the linker folds them later.
 # The synthesized namespace above distinguishes the parsed artifact from the source file.
 CHECK: push.FOO
 

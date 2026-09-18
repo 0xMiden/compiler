@@ -23,7 +23,11 @@ pub struct NativePtr {
     #[serde(with = "AddressSpaceDef")]
     pub addrspace: midenc_hir::AddressSpace,
 }
-// Keep NativePtr's serialized representation independent of upstream serde support.
+
+/// Serialized form of [`midenc_hir::AddressSpace`].
+///
+/// Defined here so that the serialized representation of [`NativePtr`] does not depend on serde
+/// support in the crate that owns the type.
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "midenc_hir::AddressSpace")]
 enum AddressSpaceDef {
