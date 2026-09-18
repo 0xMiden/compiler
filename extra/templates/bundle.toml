@@ -7,7 +7,7 @@ schema-version = 1
 
 # The bundle version. Moved by `release-tool set-version --unit templates`, and
 # released as `templates/vX.Y.Z`.
-version = "0.32.0"
+version = "0.32.1"
 
 # The requirement every template carries for the `miden` runtime and
 # `miden-sdk-build-script-support` crates.
