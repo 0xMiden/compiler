@@ -237,8 +237,9 @@ impl HybridPackageRegistry {
         package: Arc<Package>,
         published_file_name: Option<&str>,
     ) -> Result<miden_project::Version, InstallPackageError> {
-        let version =
-            miden_project::Version::new(package.version.clone(), package.dependency_commitment());
+        // The commitment is hashed on every call, so it is computed once for both uses.
+        let dependency_commitment = package.dependency_commitment();
+        let version = miden_project::Version::new(package.version.clone(), dependency_commitment);
         log::trace!(target: "package-registry", "preparing to install package {}@{version}", package.name);
         if let Some(previous_digest) = self
             .packages
@@ -246,7 +247,7 @@ impl HybridPackageRegistry {
             .and_then(|versions| versions.get(&package.version))
             .and_then(PackageRecord::digest)
             .copied()
-            && previous_digest != package.dependency_commitment()
+            && previous_digest != dependency_commitment
         {
             log::trace!(target: "package-registry", "package already installed: {}@{version}", package.name);
             return Err(InstallPackageError::AlreadyInstalledWithDifferentDigest {
