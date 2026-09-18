@@ -549,7 +549,7 @@ mod tests {
         let function_name = *function_ref.borrow().get_name();
         let mut invoked = Default::default();
         let emitter = BlockEmitter {
-            aligned_num_locals: 0,
+            frame: Default::default(),
             liveness: &liveness,
             link_info: &link_info,
             invoked: &mut invoked,
@@ -594,7 +594,7 @@ mod tests {
         let function_name = *function_ref.borrow().get_name();
         let mut invoked = Default::default();
         let emitter = BlockEmitter {
-            aligned_num_locals: 0,
+            frame: Default::default(),
             liveness: &liveness,
             link_info: &link_info,
             invoked: &mut invoked,
@@ -685,7 +685,7 @@ mod tests {
         let function_name = *function_ref.borrow().get_name();
         let mut invoked = Default::default();
         let emitter = BlockEmitter {
-            aligned_num_locals: 0,
+            frame: Default::default(),
             liveness: &liveness,
             link_info: &link_info,
             invoked: &mut invoked,
@@ -780,7 +780,7 @@ mod tests {
         let function_name = *function_ref.borrow().get_name();
         let mut invoked = Default::default();
         let emitter = BlockEmitter {
-            aligned_num_locals: 0,
+            frame: Default::default(),
             liveness: &liveness,
             link_info: &link_info,
             invoked: &mut invoked,
@@ -1006,7 +1006,7 @@ mod tests {
         // Instantiate block emitter
         let mut invoked = Default::default();
         let emitter = BlockEmitter {
-            aligned_num_locals: 0,
+            frame: Default::default(),
             liveness: &liveness,
             link_info: &link_info,
             invoked: &mut invoked,

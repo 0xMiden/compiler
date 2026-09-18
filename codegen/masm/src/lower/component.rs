@@ -23,7 +23,7 @@ use smallvec::SmallVec;
 use crate::{
     Event, OperandStack,
     artifact::MasmComponent,
-    emitter::BlockEmitter,
+    emitter::{BlockEmitter, FrameLayout},
     linker::{FunctionTableLayout, LinkInfo, Linker},
     masm,
 };
@@ -1514,7 +1514,7 @@ impl MasmModuleBuilder<'_> {
         let initializer_block = initializer_region.entry();
 
         let mut block_emitter = BlockEmitter {
-            aligned_num_locals: 0,
+            frame: Default::default(),
             liveness: &liveness,
             link_info: self.link_info,
             invoked: self.invoked_from_init,
@@ -1647,9 +1647,21 @@ impl MasmFunctionBuilder {
                 stack.push(arg as ValueRef);
             }
         }
+        let local_offsets = function
+            .locals()
+            .iter()
+            .scan(0u32, |next_offset, ty| {
+                let offset = *next_offset;
+                *next_offset += ty.size_in_felts() as u32;
+                Some(offset)
+            })
+            .collect::<Vec<_>>();
         let mut emitter = BlockEmitter {
-            aligned_num_locals: u32::from(self.num_locals)
-                .next_multiple_of(miden_core::WORD_SIZE as u32),
+            frame: FrameLayout {
+                local_offsets: &local_offsets,
+                aligned_size: u32::from(self.num_locals)
+                    .next_multiple_of(miden_core::WORD_SIZE as u32),
+            },
             liveness: &liveness,
             link_info,
             invoked: &mut invoked,

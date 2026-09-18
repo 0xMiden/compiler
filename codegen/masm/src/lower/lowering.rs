@@ -16,7 +16,11 @@ use smallvec::smallvec;
 
 use super::*;
 use crate::{
-    Constraint, emit::OpEmitter, emitter::BlockEmitter, masm, opt::operands::SolverOptions,
+    Constraint,
+    emit::OpEmitter,
+    emitter::{BlockEmitter, FrameLayout},
+    masm,
+    opt::operands::SolverOptions,
 };
 
 /// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
@@ -1630,6 +1634,11 @@ impl HirLowering for arith::Split {
     }
 }
 
+/// Resolves the debug location of `expr` at the emitter's current program point.
+///
+/// `value` is the SSA value the variable is bound to, if any; its position on the operand stack
+/// is what stack-resident locations resolve to. See [`resolve_debug_var_location`] for the meaning
+/// of the result.
 fn debug_var_location_from_expression(
     expr: &midenc_hir::dialects::debuginfo::attributes::Expression,
     value: Option<ValueRef>,
@@ -1642,16 +1651,30 @@ fn debug_var_location_from_expression(
     resolve_debug_var_location(
         expr,
         stack_position,
-        emitter.aligned_num_locals,
+        emitter.frame,
         emitter.link_info.globals_layout().stack_pointer_offset(),
     )
 }
 
-/// Resolve source coordinates before constructing package-level debug locations.
+/// Translates a source-level location expression into the coordinates the debugger evaluates at
+/// runtime: operand stack positions, offsets from the frame pointer, and element addresses.
+///
+/// `stack_pointer_addr` is the byte address of the shadow stack pointer global, when the program
+/// has one.
+///
+/// # Returns
+///
+/// - `None` when nothing should be recorded. The debugger then keeps showing the variable's
+///   previous location, which is right for a value that is simply not on the operand stack at this
+///   point.
+/// - `Some(DebugVarLocation::Unavailable)` when the variable has a location that cannot be
+///   expressed. Recording it ends the previous location, so the debugger stops showing a value
+///   that is no longer valid.
+/// - `Some` of any other location when the expression resolved.
 fn resolve_debug_var_location(
     expr: &midenc_hir::dialects::debuginfo::attributes::Expression,
     stack_position: Option<u8>,
-    aligned_num_locals: u32,
+    frame: FrameLayout<'_>,
     stack_pointer_addr: Option<u32>,
 ) -> Option<masm::DebugVarLocation> {
     use masm::DebugVarLocation;
@@ -1661,8 +1684,13 @@ fn resolve_debug_var_location(
     use miden_core::Felt;
     use midenc_hir::dialects::debuginfo::attributes::{ExpressionOp, FrameBase};
 
-    let local_offset =
-        |index: u32| i16::try_from(i64::from(index) - i64::from(aligned_num_locals)).ok();
+    // The offset of a local from the frame pointer, matching what `locaddr` computes for it. The
+    // local is looked up by index, since a local wider than one element moves every local after
+    // it; an index with no local behind it has no location.
+    let local_offset = |index: u32| {
+        let element_offset = *frame.local_offsets.get(usize::try_from(index).ok()?)?;
+        i16::try_from(i64::from(element_offset) - i64::from(frame.aligned_size)).ok()
+    };
     match expr.operations.as_slice() {
         [] | [ExpressionOp::StackValue] => stack_position.map(DebugVarLocation::Stack),
         [ExpressionOp::WasmLocal(index)]
@@ -1675,12 +1703,13 @@ fn resolve_debug_var_location(
         | [ExpressionOp::FrameBase { base, byte_offset }, ExpressionOp::StackValue] => {
             let base = match base {
                 FrameBase::Local(index) => local_offset(*index).map(DebugFrameBase::Local),
-                // The globals layout is in bytes, but the debugger reads the frame-base cell at a
-                // Miden element address; the stack pointer is a 4-byte aligned global.
-                FrameBase::Global(_) => stack_pointer_addr.map(|addr| {
-                    debug_assert_eq!(addr % 4, 0, "stack pointer global must be word aligned");
-                    DebugFrameBase::Memory(addr / 4)
-                }),
+                // The only global used as a frame base is the shadow stack pointer, so the global's
+                // index is not consulted. The globals layout is in bytes, but the debugger reads
+                // the frame-base cell at a Miden element address. An address that is not element
+                // aligned has no such cell, so it yields no frame base rather than a truncated one.
+                FrameBase::Global(_) => stack_pointer_addr
+                    .filter(|addr| addr % 4 == 0)
+                    .map(|addr| DebugFrameBase::Memory(addr / 4)),
             };
             Some(base.map_or(DebugVarLocation::Unavailable, |base| {
                 DebugVarLocation::ResolvedFrameBase {
@@ -1707,6 +1736,9 @@ fn resolve_debug_var_location(
             // Only self-contained expressions can be evaluated without the SSA operand. Do not
             // serialize Wasm indices, unsupported pieces, or an implicit operand transformation.
             let mut operations = Vec::new();
+            // The number of values the expression would have on its evaluation stack so far. An
+            // operator is only translated when its operands are there, and the expression is only
+            // emitted when it leaves exactly one value: its result.
             let mut depth = 0usize;
             for op in &expr.operations {
                 let runtime_op = match op {
@@ -1754,7 +1786,13 @@ mod tests {
     use miden_core::Felt;
     use midenc_hir::dialects::debuginfo::attributes::{Expression, ExpressionOp, FrameBase};
 
-    use super::resolve_debug_var_location;
+    use super::{FrameLayout, resolve_debug_var_location};
+
+    /// The frame of a procedure without locals.
+    const NO_LOCALS: FrameLayout<'static> = FrameLayout {
+        local_offsets: &[],
+        aligned_size: 0,
+    };
 
     #[test]
     fn frame_base_locals_resolve_to_runtime_coordinates() {
@@ -1762,7 +1800,12 @@ mod tests {
             base: FrameBase::Local(2),
             byte_offset: 28,
         }]);
-        let location = resolve_debug_var_location(&expression, None, 8, None).unwrap();
+        // Three one-element locals in a frame the assembler rounds up to eight elements.
+        let frame = FrameLayout {
+            local_offsets: &[0, 1, 2],
+            aligned_size: 8,
+        };
+        let location = resolve_debug_var_location(&expression, None, frame, None).unwrap();
         assert_eq!(
             location,
             DebugVarLocation::ResolvedFrameBase {
@@ -1777,6 +1820,46 @@ mod tests {
             |offset| (offset == -6).then_some(Felt::new(100).unwrap()),
         );
         assert_eq!(value, Some(Felt::new(13).unwrap()));
+    }
+
+    #[test]
+    fn locals_behind_a_wide_local_resolve_to_their_element_offset() {
+        // A 64-bit local occupies two elements, so the local after it sits at element offset two
+        // even though its index is one. `locaddr` addresses it the same way.
+        let frame = FrameLayout {
+            local_offsets: &[0, 2],
+            aligned_size: 4,
+        };
+        let narrow_local = Expression::with_ops(vec![ExpressionOp::WasmLocal(1)]);
+        assert_eq!(
+            resolve_debug_var_location(&narrow_local, None, frame, None),
+            Some(DebugVarLocation::Local(-2))
+        );
+
+        let frame_base = Expression::with_ops(vec![ExpressionOp::FrameBase {
+            base: FrameBase::Local(1),
+            byte_offset: 0,
+        }]);
+        assert_eq!(
+            resolve_debug_var_location(&frame_base, None, frame, None),
+            Some(DebugVarLocation::ResolvedFrameBase {
+                base: DebugFrameBase::Local(-2),
+                byte_offset: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn a_local_index_without_a_local_is_unavailable() {
+        let frame = FrameLayout {
+            local_offsets: &[0, 2],
+            aligned_size: 4,
+        };
+        let missing_local = Expression::with_ops(vec![ExpressionOp::WasmLocal(2)]);
+        assert_eq!(
+            resolve_debug_var_location(&missing_local, None, frame, None),
+            Some(DebugVarLocation::Unavailable)
+        );
     }
 
     /// A variable addressed relative to the shadow stack pointer global.
@@ -1797,7 +1880,7 @@ mod tests {
         let location = resolve_debug_var_location(
             &stack_pointer_relative_expression(),
             None,
-            0,
+            NO_LOCALS,
             Some(stack_pointer_byte_address),
         );
 
@@ -1811,6 +1894,19 @@ mod tests {
     }
 
     #[test]
+    fn frame_base_memory_is_unavailable_for_a_misaligned_stack_pointer() {
+        // A byte address between two elements has no element holding the stack pointer.
+        let location = resolve_debug_var_location(
+            &stack_pointer_relative_expression(),
+            None,
+            NO_LOCALS,
+            Some(34),
+        );
+
+        assert_eq!(location, Some(DebugVarLocation::Unavailable));
+    }
+
+    #[test]
     fn frame_base_memory_keeps_high_stack_pointer_addresses() {
         // Addresses in the upper half of the 32-bit space must survive the conversion untruncated.
         let stack_pointer_byte_address = 0x8000_0000;
@@ -1819,7 +1915,7 @@ mod tests {
         let location = resolve_debug_var_location(
             &stack_pointer_relative_expression(),
             None,
-            0,
+            NO_LOCALS,
             Some(stack_pointer_byte_address),
         );
 
@@ -1835,7 +1931,7 @@ mod tests {
     #[test]
     fn frame_base_memory_is_unavailable_without_a_stack_pointer() {
         let location =
-            resolve_debug_var_location(&stack_pointer_relative_expression(), None, 0, None);
+            resolve_debug_var_location(&stack_pointer_relative_expression(), None, NO_LOCALS, None);
 
         assert_eq!(location, Some(DebugVarLocation::Unavailable));
     }
@@ -1851,7 +1947,7 @@ mod tests {
             base: FrameBase::Global(0),
             byte_offset: 0,
         }]);
-        let location = resolve_debug_var_location(&expression, None, 0, None).unwrap();
+        let location = resolve_debug_var_location(&expression, None, NO_LOCALS, None).unwrap();
         let events = Rc::new(RefCell::new(BTreeMap::new()));
         let mut tracker = miden_debug::DebugVarTracker::new(events);
         tracker.record_events(
@@ -1873,31 +1969,40 @@ mod tests {
 
     #[test]
     fn unrepresentable_local_offsets_are_unavailable() {
-        for (index, frame_size) in [(32768, 0), (0, 32769)] {
+        // The offset from the frame pointer must fit the debugger's 16-bit local offset, in both
+        // directions.
+        let too_far_above = FrameLayout {
+            local_offsets: &[32768],
+            aligned_size: 0,
+        };
+        let too_far_below = FrameLayout {
+            local_offsets: &[0],
+            aligned_size: 32769,
+        };
+        for frame in [too_far_above, too_far_below] {
             for op in [
-                ExpressionOp::WasmLocal(index),
+                ExpressionOp::WasmLocal(0),
                 ExpressionOp::FrameBase {
-                    base: FrameBase::Local(index),
+                    base: FrameBase::Local(0),
                     byte_offset: 0,
                 },
             ] {
                 assert_eq!(
-                    resolve_debug_var_location(
-                        &Expression::with_ops(vec![op]),
-                        None,
-                        frame_size,
-                        None
-                    ),
+                    resolve_debug_var_location(&Expression::with_ops(vec![op]), None, frame, None),
                     Some(DebugVarLocation::Unavailable)
                 );
             }
         }
-        // Subtract before narrowing: a large source index can still have a valid local offset.
+        // Subtract before narrowing: a large element offset can still have a valid local offset.
+        let large_frame = FrameLayout {
+            local_offsets: &[32768],
+            aligned_size: 32772,
+        };
         assert_eq!(
             resolve_debug_var_location(
-                &Expression::with_ops(vec![ExpressionOp::WasmLocal(32768)]),
+                &Expression::with_ops(vec![ExpressionOp::WasmLocal(0)]),
                 None,
-                32772,
+                large_frame,
                 None
             ),
             Some(DebugVarLocation::Local(-4))
@@ -1908,7 +2013,7 @@ mod tests {
     fn addresses_and_stack_values_preserve_scalar_semantics() {
         use miden_assembly_syntax::ast::DebugLocationExpressionOp;
         let address = Expression::with_ops(vec![ExpressionOp::Address { address: 128 }]);
-        let location = resolve_debug_var_location(&address, None, 0, None).unwrap();
+        let location = resolve_debug_var_location(&address, None, NO_LOCALS, None).unwrap();
         assert_eq!(
             miden_debug::resolve_variable_value(&location, &[], |_| None, |_| None),
             Some(Felt::new(128).unwrap())
@@ -1919,7 +2024,7 @@ mod tests {
             ExpressionOp::Deref,
             ExpressionOp::StackValue,
         ]);
-        let location = resolve_debug_var_location(&expression, None, 0, None).unwrap();
+        let location = resolve_debug_var_location(&expression, None, NO_LOCALS, None).unwrap();
         let DebugVarLocation::Expression(runtime) = &location else {
             panic!("expected expression")
         };
@@ -1939,7 +2044,7 @@ mod tests {
     fn structured_expressions_execute_in_runtime_coordinates() {
         let expression =
             Expression::with_ops(vec![ExpressionOp::Address { address: 128 }, ExpressionOp::Deref]);
-        let location = resolve_debug_var_location(&expression, None, 0, None).unwrap();
+        let location = resolve_debug_var_location(&expression, None, NO_LOCALS, None).unwrap();
         let value = miden_debug::resolve_variable_value(
             &location,
             &[],
@@ -1957,7 +2062,7 @@ mod tests {
                 resolve_debug_var_location(
                     &Expression::with_ops(vec![op, ExpressionOp::Deref]),
                     None,
-                    0,
+                    NO_LOCALS,
                     None
                 )
                 .is_none()
