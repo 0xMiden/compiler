@@ -366,11 +366,11 @@ are the account-update path. If you instead re-fetch via `mock_chain.committed_a
 ## MockChain Block Numbering
 
 Genesis is block 0. Each `prove_next_block()` advances the block number by 1; `prove_next_block_at(timestamp)`
-does the same at a chosen timestamp. In contract code, `tx::get_block_number()` returns the
+does the same at a chosen timestamp. In contract code, `tx::get_reference_block_number()` returns the
 **reference block** — the last proven block at the time the transaction started, not the block the
 transaction will be included in.
 
-> `tx::get_block_number()` returns a **`BlockNumber`**, not a `Felt`. Compare it directly against
+> `tx::get_reference_block_number()` returns a **`BlockNumber`**, not a `Felt`. Compare it directly against
 > another `BlockNumber`; convert a felt read out of note storage with `BlockNumber::try_from(felt)`.
 
 ## Note Construction

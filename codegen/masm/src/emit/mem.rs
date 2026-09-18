@@ -683,7 +683,7 @@ impl OpEmitter<'_> {
                     Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(None, span),
                     ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, None, span),
                     Type::Array(ref array_ty) => self.store_array(array_ty, None, span),
-                    Type::Struct(ref struct_ty) => self.store_struct(struct_ty, None, span),
+                    Type::Struct(ref struct_ty) => self.store_struct(&struct_ty.get(), None, span),
                     ty => unimplemented!(
                         "invalid store: support for storing {ty} has not been implemented"
                     ),
@@ -711,7 +711,7 @@ impl OpEmitter<'_> {
             Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(Some(ptr), span),
             ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, Some(ptr), span),
             Type::Array(ref array_ty) => self.store_array(array_ty, Some(ptr), span),
-            Type::Struct(ref struct_ty) => self.store_struct(struct_ty, Some(ptr), span),
+            Type::Struct(ref struct_ty) => self.store_struct(&struct_ty.get(), Some(ptr), span),
             ty => {
                 unimplemented!("invalid store: support for storing {ty} has not been implemented")
             }

@@ -52,7 +52,7 @@ impl P2ideNote {
         let timelock_height = BlockNumber::try_from(inputs[3]).unwrap();
 
         // get block number
-        let block_number = tx::get_block_number();
+        let block_number = tx::get_reference_block_number();
         assert!(block_number >= timelock_height);
 
         // get consuming account id

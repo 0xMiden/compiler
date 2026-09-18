@@ -14,8 +14,26 @@ use crate::{
     opt::{OperandMovementConstraintSolver, SolverError, operands::SolverOptions},
 };
 
+/// The layout of a procedure's locals frame, in field elements.
+///
+/// Debug locations refer to locals by index, while the frame is addressed by element offset, so
+/// both are needed to place a local relative to the frame pointer.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct FrameLayout<'a> {
+    /// The offset of each local from the start of the frame, indexed by local.
+    ///
+    /// A local wider than one element moves every local declared after it, so the index of a local
+    /// is not its offset.
+    pub local_offsets: &'a [u32],
+    /// The size of the frame, rounded up the way the assembler rounds it. `locaddr.N` addresses
+    /// `FMP - aligned_size + N`, so offsets relative to the frame pointer are derived from it.
+    pub aligned_size: u32,
+}
+
 pub(crate) struct BlockEmitter<'b> {
     pub liveness: &'b LivenessAnalysis,
+    /// Layout of the current procedure's locals frame.
+    pub frame: FrameLayout<'b>,
     pub link_info: &'b LinkInfo,
     pub invoked: &'b mut BTreeSet<masm::Invoke>,
     pub target: Vec<masm::Op>,
@@ -27,6 +45,7 @@ impl BlockEmitter<'_> {
     pub fn nest<'nested, 'current: 'nested>(&'current mut self) -> BlockEmitter<'nested> {
         BlockEmitter {
             liveness: self.liveness,
+            frame: self.frame,
             link_info: self.link_info,
             invoked: self.invoked,
             target: Default::default(),

@@ -42,7 +42,7 @@ pub(super) mod test_support {
 
     /// Builds a HIR type for a two-case unit-only component variant.
     pub fn unit_only_variant_type() -> Type {
-        Type::Enum(Arc::new(
+        Type::from(Arc::new(
             EnumType::new(
                 "unit-only".into(),
                 Type::U8,
@@ -57,7 +57,7 @@ pub(super) mod test_support {
 
     /// Builds a HIR type for a two-case component variant with scalar payloads.
     pub fn scalar_payload_variant_type() -> Type {
-        Type::Enum(Arc::new(
+        Type::from(Arc::new(
             EnumType::new(
                 "scalar-payload".into(),
                 Type::U8,
@@ -75,7 +75,7 @@ pub(super) mod test_support {
     /// The payload lanes join `i32` and `u64` into one widened `i64` slot, exercising the
     /// positional payload-join rules.
     pub fn mixed_payload_variant_type() -> Type {
-        Type::Enum(Arc::new(
+        Type::from(Arc::new(
             EnumType::new(
                 "mixed-payload".into(),
                 Type::U8,
@@ -90,7 +90,7 @@ pub(super) mod test_support {
 
     /// Builds a HIR type for an option-shaped variant with a felt payload.
     pub fn option_of_felt_type() -> Type {
-        Type::Enum(Arc::new(
+        Type::from(Arc::new(
             EnumType::new(
                 "option-felt".into(),
                 Type::U8,
@@ -111,7 +111,7 @@ pub(super) mod test_support {
 
     /// Builds a HIR type for a two-case variant whose payload is a pointer.
     pub fn pointer_payload_variant_type() -> Type {
-        Type::Enum(Arc::new(
+        Type::from(Arc::new(
             EnumType::new(
                 "request".into(),
                 Type::U8,

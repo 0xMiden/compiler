@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use miden_debug::{FromMidenRepr, ToMidenRepr};
-use miden_processor::{ExecutionOptions, StackInputs, advice::AdviceInputs, execute_sync};
+use miden_processor::{FastProcessor, StackInputs};
 use midenc_hir::{FunctionIdent, Ident, interner::Symbol};
 use proptest::{prelude::*, test_runner::TestCaseError};
 
@@ -35,16 +35,11 @@ fn i64_rem_s() {
         let mut inputs = Vec::with_capacity(4);
         a.push_to_operand_stack(&mut inputs);
         b.push_to_operand_stack(&mut inputs);
-        let actual = execute_sync(
-            &program,
-            StackInputs::new(&inputs).unwrap(),
-            AdviceInputs::default(),
-            &mut default_host_with_core_lib(),
-            ExecutionOptions::default(),
-        );
+        let actual = FastProcessor::new(StackInputs::new(&inputs).unwrap())
+            .execute_sync(&program, &mut default_host_with_core_lib());
         match (expected, actual) {
-            (Ok(expected), Ok(trace)) => {
-                prop_assert_eq!(i64::from_felts(trace.stack.get_num_elements(2)), expected);
+            (Ok(expected), Ok(output)) => {
+                prop_assert_eq!(i64::from_felts(output.stack.get_num_elements(2)), expected);
                 Ok(())
             }
             (Err(wasm_err), Err(vm_err)) => TrapExpectation::try_from(&wasm_err)

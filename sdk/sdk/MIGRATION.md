@@ -12,17 +12,70 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
-### Transaction summaries are six words (protocol 0.16)
+### Renames
 
-Custom authentication components sign a commitment to the transaction summary. Protocol 0.16
-extends the summary from four words to six: it now also binds the reference block commitment,
-the transaction's expiration block delta, and seven user-defined parameters. The host rebuilds
-the summary from the advice-map preimage and rejects the signing request unless its commitment
-matches, so a component that still hashes the old four-word layout fails at runtime with
-`TransactionSummaryConstructionFailed` even though it compiles unchanged.
+- `tx::get_block_commitment()` -> `tx::get_reference_block_commitment()`
+- `tx::get_block_number()` -> `tx::get_reference_block_number()`
 
-Build the six words in this order and place the final nonce in the first user parameter, as the
-standards components do:
+The name `tx::get_block_commitment` is reused: `tx::get_block_commitment(block_number)` reads any
+block up to the reference block.
+
+### `extern_output_note_get_assets_info` is no longer public
+
+Call `output_note::get_assets_info` instead of the raw extern.
+
+### Asset ids carry an encoding version (protocol 0.17)
+
+`Asset::key[2]` packs the faucet id suffix with a metadata byte. Protocol 0.17 lays that byte out
+as `version` (bits 0..=3, currently `1`) and `composition` (bits 4..=5); protocol 0.16 kept the
+composition in the lowest bits. A key built by hand with the old byte is misread: the old fungible
+byte `0x01` now means version 1 with no composition, so `Asset::is_fungible` and `Asset::amount`
+do not recognise it. Take asset ids from the host or from kernel-returned assets (`Asset::id()`);
+if a contract must build one, the byte is `0x11` for a fungible asset.
+
+### P2ID note storage has four items (protocol 0.17)
+
+The standard P2ID note script expects `[target_id_suffix, target_id_prefix, salt_0, salt_1]` and
+rejects any other length. Code that builds a P2ID recipient by hand appends the two salt felts,
+which are zero unless the parties agreed on a secret salt:
+
+```rust
+// before
+note::build_recipient(serial_num, p2id_script_root, vec![target.suffix, target.prefix]);
+// after
+note::build_recipient(
+    serial_num,
+    p2id_script_root,
+    vec![target.suffix, target.prefix, felt!(0), felt!(0)],
+);
+```
+
+### Transaction summaries are versioned six-word preimages (protocol 0.17)
+
+Custom authentication components sign a commitment to the transaction summary. Protocol 0.17
+changes the summary preimage from the four-word layout to a versioned six-word layout: it now
+also binds the reference block number and commitment, the transaction's expiration block delta,
+and six user-defined parameters. The host rebuilds the summary from the advice-map preimage and
+rejects the signing request unless its commitment matches, so a component that still hashes the
+old layout fails at runtime with `TransactionSummaryConstructionFailed` even though it compiles
+unchanged. Components already on the protocol 0.16 six-word layout move the two parameter words to
+the front and replace the expiration-delta felt with `version` and `metadata`. That shifts every
+user parameter down one slot and leaves six of them instead of seven.
+
+The words are hashed in this order, with the parameters first and the block commitment last:
+
+```text
+[
+    [version, metadata, user_param0, user_param1],
+    [user_param2, user_param3, user_param4, user_param5],
+    ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+    OUTPUT_NOTES_COMMITMENT, BLOCK_COMMITMENT,
+]
+```
+
+`version` is `1` and `metadata` packs the expiration delta above the reference block number
+(`expiration_delta << 32 | block_number`). Place the final nonce in the first user parameter, as
+the standards components do:
 
 Before:
 
@@ -36,21 +89,23 @@ adv_insert(msg, &tx_summary);
 After:
 
 ```rust
-let block_commit = tx::get_block_commitment();
+let block_commit = tx::get_reference_block_commitment();
+let block_number = tx::get_reference_block_number();
 let expiration_delta = tx::get_expiration_block_delta();
 
-// [expiration_delta, user_param0..2] and [user_param3..6]; the first user parameter carries
-// the final nonce for replay protection.
-let params_head = Word::from([expiration_delta.into(), final_nonce.into(), felt!(0), felt!(0)]);
+let metadata = Felt::from_u32(expiration_delta as u32) * Felt::new_unchecked(1 << 32)
+    + block_number.as_felt();
+// The first user parameter carries the final nonce for replay protection.
+let params_head = Word::from([Felt::from_u32(1), metadata, final_nonce.into(), felt!(0)]);
 let params_tail = Word::from([felt!(0), felt!(0), felt!(0), felt!(0)]);
 
 let tx_summary = [
+    params_head,
+    params_tail,
     acct_delta_commit,
     input_notes_commit,
     output_notes_commit,
     block_commit,
-    params_head,
-    params_tail,
 ];
 let msg: Word = hash_words(&tx_summary).into();
 adv_insert(msg, &tx_summary);
@@ -177,14 +232,14 @@ tx::update_expiration_block_delta(Felt::new(42).unwrap());
 
 // after
 let timelock_height = BlockNumber::try_from(inputs[3]).unwrap();
-assert!(tx::get_block_number() >= timelock_height);
+assert!(tx::get_reference_block_number() >= timelock_height);
 tx::update_expiration_block_delta(42);
 ```
 
 Account nonces are wrapped in the new `Nonce` type (comparable as integers; use
 `as_felt()`/`as_u64()` or `Felt::from(nonce)` where the raw value is needed, e.g. when packing a
-nonce into a `Word` — `ref_block_num` below is a `BlockNumber` from `tx::get_block_number()` and
-converts the same way):
+nonce into a `Word` — `ref_block_num` below is a `BlockNumber` from
+`tx::get_reference_block_number()` and converts the same way):
 
 ```rust
 // before
@@ -196,9 +251,9 @@ let final_nonce: Nonce = self.incr_nonce();
 let params = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
 ```
 
-This example shows only the type conversions. Do not reuse the word layout: protocol 0.16
+This example shows only the type conversions. Do not reuse the word layout: protocol 0.17
 replaces the four-word transaction summary that packed the nonce this way — see
-[Transaction summaries are six words (protocol 0.16)](#transaction-summaries-are-six-words-protocol-016)
+[Transaction summaries are versioned six-word preimages (protocol 0.17)](#transaction-summaries-are-versioned-six-word-preimages-protocol-017)
 at the top of this guide for the required six-word layout.
 
 Attachment lookups return `Option<u32>` instead of the removed `AttachmentLocation` struct, and
@@ -460,13 +515,12 @@ let asset = miden::native_account::get_initial_asset(asset_key);
 **In-transaction asset construction and balance getters were removed.**
 
 - `active_account::{get_balance, get_initial_balance}` are gone. Read the asset value word with
-  `active_account::get_asset` (or `native_account::get_initial_asset`) and extract the fungible
-  amount from the returned `AssetValue` word (see the protocol `fungible_value_into_amount`
-  helper).
-- `faucet::{create_fungible_asset, create_non_fungible_asset, has_callbacks}` and the whole
-  `asset` module (`asset::{create_fungible_asset, create_non_fungible_asset}`) are gone. The kernel
-  no longer exposes in-transaction asset construction; `faucet::{mint, burn}` take a pre-built
-  `Asset`.
+  `active_account::get_asset` (or `native_account::get_initial_asset`) and take the fungible
+  amount from it, for example with `Asset::new(key, value).amount()`.
+- `faucet::{create_fungible_asset, create_non_fungible_asset, has_callbacks}` and the asset
+  constructors `asset::{create_fungible_asset, create_non_fungible_asset}` are gone; the `asset`
+  module now only hosts the asset-id accessors. The kernel no longer exposes in-transaction asset
+  construction; `faucet::{mint, burn}` take a pre-built `Asset`.
 
 **`output_note::create` is account-context only.** It can now only be called from account-component
 context (runtime-enforced). Tx/note scripts must create notes through an account component wrapper

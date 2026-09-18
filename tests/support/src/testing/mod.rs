@@ -44,11 +44,10 @@ pub fn executor_with_std(args: Vec<Felt>) -> Executor {
 /// Registers the core packages and user-defined event handlers needed by the debug executor.
 fn register_core_packages(exec: &mut Executor) -> Result<(), String> {
     let core_library = miden_core_lib::CoreLibrary::default();
-    for package in core_library.packages() {
-        let package_name = package.name.clone();
-        exec.with_package(package)
-            .map_err(|err| format!("failed to register core package '{package_name}': {err}"))?;
-    }
+    let package = core_library.package();
+    let package_name = package.name.clone();
+    exec.with_package(package)
+        .map_err(|err| format!("failed to register core package '{package_name}': {err}"))?;
 
     // The debug executor path does not automatically install core-library event handlers, but
     // integration tests execute core helpers such as `u64::div` through the VM.

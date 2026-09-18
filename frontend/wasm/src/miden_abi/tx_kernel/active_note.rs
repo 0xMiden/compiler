@@ -27,6 +27,12 @@ pub const GET_ATTACHMENTS_COMMITMENT: &str = "get_attachments_commitment";
 pub const WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY: &str = "write_attachment_commitments_to_memory";
 pub const WRITE_ATTACHMENT_TO_MEMORY: &str = "write_attachment_to_memory";
 pub const FIND_ATTACHMENT: &str = "find_attachment";
+pub const GET_INITIAL_ASSETS_INFO: &str = "get_initial_assets_info";
+pub const GET_INITIAL_NUM_ASSETS: &str = "get_initial_num_assets";
+pub const GET_ASSET: &str = "get_asset";
+pub const REMOVE_ASSET: &str = "remove_asset";
+pub const GET_NOTE_ID: &str = "get_note_id";
+pub const GET_STORAGE_INFO: &str = "get_storage_info";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -70,6 +76,38 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     note.insert(
         Symbol::from(FIND_ATTACHMENT),
         FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt]),
+    );
+    note.insert(
+        Symbol::from(GET_INITIAL_ASSETS_INFO),
+        // ASSETS_COMMITMENT, num_assets
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt, Felt]),
+    );
+    note.insert(
+        Symbol::from(GET_INITIAL_NUM_ASSETS),
+        FunctionType::new(CallConv::Wasm, [], [Felt]),
+    );
+    note.insert(
+        Symbol::from(GET_ASSET),
+        // asset_index -> ASSET_ID, ASSET_VALUE
+        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt]),
+    );
+    note.insert(
+        Symbol::from(REMOVE_ASSET),
+        // ASSET_ID, ASSET_VALUE -> FINAL_ASSET_VALUE
+        FunctionType::new(
+            CallConv::Wasm,
+            [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
+            [Felt, Felt, Felt, Felt],
+        ),
+    );
+    note.insert(
+        Symbol::from(GET_NOTE_ID),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+    );
+    note.insert(
+        Symbol::from(GET_STORAGE_INFO),
+        // NOTE_STORAGE_COMMITMENT, num_storage_items
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt, Felt]),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), note);
     m

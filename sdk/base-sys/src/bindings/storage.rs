@@ -60,6 +60,9 @@ unsafe extern "C" {
         v3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_account::has_storage_slot"]
+    pub fn extern_active_account_has_storage_slot(index_suffix: Felt, index_prefix: Felt) -> Felt;
 }
 
 /// Gets an item from the account storage.
@@ -209,4 +212,18 @@ pub fn set_map_item(slot_id: StorageSlotId, key: Word, value: Word) -> Word {
         );
         ret_area.into_inner().assume_init()
     }
+}
+
+/// Returns `true` if the active account has a storage slot with the given slot id.
+///
+/// Inputs: slot_id
+/// Outputs: has_slot
+///
+/// Where:
+/// - slot_id identifies the storage slot to probe using the public `(prefix, suffix)` shape.
+/// - has_slot is `true` when a slot with that id exists on the active account.
+#[inline]
+pub fn has_storage_slot(slot_id: StorageSlotId) -> bool {
+    let (suffix, prefix) = slot_id.to_suffix_prefix();
+    unsafe { extern_active_account_has_storage_slot(suffix, prefix) != Felt::new(0).unwrap() }
 }

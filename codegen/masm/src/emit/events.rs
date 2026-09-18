@@ -13,7 +13,9 @@ impl OpEmitter<'_> {
     /// Emit an event identified by an immediate felt.
     pub fn emit_event_imm(&mut self, event_id: Felt, span: SourceSpan) {
         self.emit(
-            masm::Instruction::EmitImm(masm::Immediate::Value(masm::Span::new(span, event_id))),
+            masm::Instruction::EmitImm(
+                masm::Immediate::Value(masm::Span::new(span, event_id)).into(),
+            ),
             span,
         );
     }
@@ -69,10 +71,9 @@ mod tests {
             &block[0],
             &Op::Inst(masm::Span::new(
                 span,
-                masm::Instruction::EmitImm(masm::Immediate::Value(masm::Span::new(
-                    span,
-                    Felt::new_unchecked(42),
-                )))
+                masm::Instruction::EmitImm(
+                    masm::Immediate::Value(masm::Span::new(span, Felt::new_unchecked(42),)).into()
+                )
             ))
         );
     }
@@ -96,10 +97,9 @@ mod tests {
             &block[0],
             &Op::Inst(masm::Span::new(
                 span,
-                masm::Instruction::EmitImm(masm::Immediate::Value(masm::Span::new(
-                    span,
-                    Felt::new_unchecked(7),
-                )))
+                masm::Instruction::EmitImm(
+                    masm::Immediate::Value(masm::Span::new(span, Felt::new_unchecked(7),)).into()
+                )
             ))
         );
     }

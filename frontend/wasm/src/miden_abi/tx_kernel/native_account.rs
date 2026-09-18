@@ -27,6 +27,8 @@ pub const GET_INITIAL_VAULT_ROOT: &str = "get_initial_vault_root";
 pub const GET_INITIAL_ASSET: &str = "get_initial_asset";
 pub const GET_INITIAL_STORAGE_ITEM: &str = "get_initial_item";
 pub const GET_INITIAL_STORAGE_MAP_ITEM: &str = "get_initial_map_item";
+pub const HAS_STATE_CHANGED: &str = "has_state_changed";
+pub const HAS_INITIAL_ASSET: &str = "has_initial_asset";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -115,6 +117,12 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
             [Felt, Felt, Felt, Felt, Felt, Felt],
             [Felt, Felt, Felt, Felt],
         ),
+    );
+    native_account
+        .insert(Symbol::from(HAS_STATE_CHANGED), FunctionType::new(CallConv::Wasm, [], [Felt]));
+    native_account.insert(
+        Symbol::from(HAS_INITIAL_ASSET),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt]),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), native_account);
 

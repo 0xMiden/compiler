@@ -13,7 +13,8 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Component(symbols::Tx),
 ];
 
-pub const GET_BLOCK_NUMBER: &str = "get_block_number";
+pub const GET_REFERENCE_BLOCK_NUMBER: &str = "get_reference_block_number";
+pub const GET_REFERENCE_BLOCK_COMMITMENT: &str = "get_reference_block_commitment";
 pub const GET_BLOCK_COMMITMENT: &str = "get_block_commitment";
 pub const GET_BLOCK_TIMESTAMP: &str = "get_block_timestamp";
 pub const GET_INPUT_NOTES_COMMITMENT: &str = "get_input_notes_commitment";
@@ -24,14 +25,23 @@ pub const GET_EXPIRATION_BLOCK_DELTA: &str = "get_expiration_block_delta";
 pub const UPDATE_EXPIRATION_BLOCK_DELTA: &str = "update_expiration_block_delta";
 pub const GET_TX_SCRIPT_ROOT: &str = "get_tx_script_root";
 pub const EXECUTE_FOREIGN_PROCEDURE_INDIRECT: &str = "execute_foreign_procedure_indirect";
+pub const COMPUTE_FEE: &str = "compute_fee";
+pub const GET_FEE_ASSET_ID: &str = "get_fee_asset_id";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
     let mut tx: FunctionTypeMap = Default::default();
-    tx.insert(Symbol::from(GET_BLOCK_NUMBER), FunctionType::new(CallConv::Wasm, [], [Felt]));
+    tx.insert(
+        Symbol::from(GET_REFERENCE_BLOCK_NUMBER),
+        FunctionType::new(CallConv::Wasm, [], [Felt]),
+    );
+    tx.insert(
+        Symbol::from(GET_REFERENCE_BLOCK_COMMITMENT),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+    );
     tx.insert(
         Symbol::from(GET_BLOCK_COMMITMENT),
-        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
     );
     tx.insert(Symbol::from(GET_BLOCK_TIMESTAMP), FunctionType::new(CallConv::Wasm, [], [Felt]));
     tx.insert(
@@ -64,6 +74,15 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         // Raw FPI calls pass the full 22-felt executor ABI through one pointer so Rust callers
         // avoid materializing more arguments than the frontend spill/lowering pipeline supports.
         FunctionType::new(CallConv::Wasm, [I32], vec![Felt; 16]),
+    );
+    tx.insert(
+        Symbol::from(COMPUTE_FEE),
+        // num_extra_cycles, EXCLUDE_NOTES_COMMITMENT -> fee_amount
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt, Felt], [Felt]),
+    );
+    tx.insert(
+        Symbol::from(GET_FEE_ASSET_ID),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), tx);
     m

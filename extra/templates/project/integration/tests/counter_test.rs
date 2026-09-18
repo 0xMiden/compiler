@@ -40,8 +40,9 @@ async fn counter_test() -> anyhow::Result<()> {
     let mut init_storage_data = InitStorageData::default();
     init_storage_data.insert_map_entry(counter_storage_slot.clone(), COUNTER_STORAGE_KEY, 0_u64)?;
 
-    let counter_component = AccountComponent::from_package(&contract_package, &init_storage_data)
-        .context("failed to build account component from counter package")?;
+    let counter_component =
+        AccountComponent::from_package(contract_package.as_ref().clone(), &init_storage_data)
+            .context("failed to build account component from counter package")?;
     let counter_account = builder.add_account_from_builder(
         Auth::BasicAuth {
             auth_scheme: AuthSchemeId::Falcon512Poseidon2,

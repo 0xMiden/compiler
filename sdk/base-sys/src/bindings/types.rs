@@ -73,7 +73,7 @@ impl TryFrom<Word> for AccountId {
 /// A fungible or non-fungible asset encoded as separate vault key and value words.
 ///
 /// The `key` identifies the asset in the account vault and the `value` stores the corresponding
-/// asset contents. This matches the v0.14 protocol/base ABI.
+/// asset contents. The key word contains the protocol asset ID.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(C)]
 pub struct Asset {
@@ -92,10 +92,16 @@ impl Asset {
         }
     }
 
+    /// Returns this asset's id, which is the word identifying it in an account vault.
+    #[inline]
+    pub fn id(&self) -> AssetId {
+        AssetId { inner: self.key }
+    }
+
     /// Returns this asset's fungible amount.
     ///
     /// Intended for kernel-encoded assets (e.g. the ones returned by the `get_assets`
-    /// bindings), whose encoding invariants make the composition bit sufficient to discriminate
+    /// bindings), whose encoding invariants make the composition bits sufficient to discriminate
     /// fungibility.
     ///
     /// # Panics
@@ -114,21 +120,107 @@ impl Asset {
     /// Returns `true` if this asset is fungible.
     ///
     /// Intended for kernel-encoded assets (e.g. the ones returned by the `get_assets`
-    /// bindings), whose encoding invariants make the composition bit sufficient to discriminate
+    /// bindings), whose encoding invariants make the composition bits sufficient to discriminate
     /// fungibility.
     #[inline]
     pub fn is_fungible(&self) -> bool {
-        // The composition field occupies the lowest bits of the vault-key metadata byte (the
-        // low byte of the faucet-id suffix limb, mirroring
-        // `miden_protocol::asset::AssetVaultKey`), and `Fungible = 0b01` is the only odd
-        // composition, so the limb's parity discriminates fungible assets.
-        self.key[2].as_canonical_u64() & 1 == 1
+        // Asset ID version 1 stores the composition in bits 4..=5 of the third limb;
+        // the lower four bits identify the encoding version.
+        (self.key[2].as_canonical_u64() >> 4) & 0b11 == 0b01
     }
 }
 
 impl From<Asset> for (Word, Word) {
     fn from(val: Asset) -> Self {
         (val.key, val.value)
+    }
+}
+
+/// The identifier of an asset, the word under which it is keyed in an account vault.
+///
+/// An asset id encodes the issuing faucet, the asset class and the composition rule; read them with
+/// [`AssetId::faucet_id`], [`AssetId::asset_class`] and [`AssetId::composition`] rather than
+/// decoding the limbs by hand, since the encoding is protocol-versioned.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+#[repr(transparent)]
+pub struct AssetId {
+    /// The asset id word, as the transaction kernel encodes it.
+    pub inner: Word,
+}
+
+impl From<Word> for AssetId {
+    #[inline]
+    fn from(value: Word) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl From<AssetId> for Word {
+    #[inline]
+    fn from(value: AssetId) -> Self {
+        value.inner
+    }
+}
+
+/// The class of an asset, composed of two field elements.
+///
+/// The asset class distinguishes different assets issued by the same faucet; it is empty for
+/// fungible assets. Use [`AssetId::faucet_id`] to identify the issuer.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+pub struct AssetClass {
+    /// The prefix of the class, the second element of the kernel's `[suffix, prefix]` output.
+    pub prefix: Felt,
+    /// The suffix of the class, the first element of the kernel's `[suffix, prefix]` output.
+    pub suffix: Felt,
+}
+
+impl AssetClass {
+    /// Creates a new [`AssetClass`] from prefix and suffix Felt values.
+    pub fn new(prefix: Felt, suffix: Felt) -> Self {
+        Self { prefix, suffix }
+    }
+}
+
+/// Raw protocol return layout for asset classes.
+/// The protocol MASM procedures are returning [suffix, prefix]
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub(crate) struct RawAssetClass {
+    /// The suffix of the class, the first element of the kernel's output.
+    pub suffix: Felt,
+    /// The prefix of the class, the second element of the kernel's output.
+    pub prefix: Felt,
+}
+
+impl RawAssetClass {
+    /// Converts the protocol return layout into the Rust [`AssetClass`] layout.
+    pub(crate) fn into_asset_class(self) -> AssetClass {
+        AssetClass::new(self.prefix, self.suffix)
+    }
+}
+
+/// How the value of an asset combines when the same asset id is added to a vault twice.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AssetComposition {
+    /// The asset has no composition rule and cannot be held more than once.
+    None,
+    /// The asset's amounts add together, as for a fungible asset.
+    Fungible,
+    /// The asset composes under a faucet-defined rule. Not yet supported by the protocol.
+    Custom,
+}
+
+impl TryFrom<Felt> for AssetComposition {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        match value.as_canonical_u64() {
+            0 => Ok(Self::None),
+            1 => Ok(Self::Fungible),
+            2 => Ok(Self::Custom),
+            _ => Err("unrecognized asset composition"),
+        }
     }
 }
 
@@ -364,6 +456,50 @@ pub struct Recipient {
     pub inner: Word,
 }
 
+/// The unique identifier of a note: `hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)`,
+/// where the details commitment covers the note's recipient and assets commitment.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+#[repr(transparent)]
+pub struct NoteId {
+    /// The note id digest.
+    pub inner: Word,
+}
+
+impl From<Word> for NoteId {
+    #[inline]
+    fn from(value: Word) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl From<NoteId> for Word {
+    #[inline]
+    fn from(value: NoteId) -> Self {
+        value.inner
+    }
+}
+
+/// Raw protocol return layout for procedures that leave a commitment word followed by a count.
+///
+/// Used by the note asset and storage summaries (`get_initial_assets_info`, `get_storage_info`,
+/// `get_assets_info`), whose stack outputs are `[COMMITMENT, count]`.
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub(crate) struct RawCommitmentWithCount {
+    /// The commitment word.
+    pub commitment: Word,
+    /// The count that follows the commitment on the stack.
+    pub count: Felt,
+}
+
+impl RawCommitmentWithCount {
+    /// Returns the count as an integer.
+    pub(crate) fn num_items(&self) -> u32 {
+        // The transaction kernel guarantees asset and storage item counts fit in a u32.
+        self.count.as_canonical_u64() as u32
+    }
+}
+
 /// The note metadata returned by `*_note::get_metadata` procedures.
 ///
 /// In the Miden protocol, metadata retrieval returns a single metadata header word. Note
@@ -383,24 +519,33 @@ impl NoteMetadata {
     }
 }
 
-/// Raw protocol return layout for attachment lookups.
+/// Raw protocol return layout for lookups whose stack outputs are `[is_found, index]`.
+///
+/// Used by the attachment lookups (`find_attachment`) and the input-note lookup (`find_note`).
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub(crate) struct RawAttachmentLocation {
-    /// Non-zero when the attachment scheme was found.
+pub(crate) struct RawFoundIndex {
+    /// Non-zero when the lookup found a match.
     pub is_found: Felt,
-    /// The matching attachment index, valid only when `is_found` is non-zero.
+    /// The index of the match, valid only when `is_found` is non-zero.
     pub index: Felt,
 }
 
-impl RawAttachmentLocation {
+impl RawFoundIndex {
+    /// Returns the index of the match, if there was one.
+    fn index(self) -> Option<Felt> {
+        (self.is_found != Felt::ZERO).then_some(self.index)
+    }
+
     /// Converts the protocol return layout into the found attachment index, if any.
     pub(crate) fn into_attachment_index(self) -> Option<u32> {
-        if self.is_found == Felt::ZERO {
-            return None;
-        }
         // The transaction kernel guarantees attachment indexes fit in a u32.
-        Some(self.index.as_canonical_u64() as u32)
+        self.index().map(|index| index.as_canonical_u64() as u32)
+    }
+
+    /// Converts the protocol return layout into the found input-note index, if any.
+    pub(crate) fn into_note_index(self) -> Option<NoteIdx> {
+        self.index().map(|index| NoteIdx { inner: index })
     }
 }
 
@@ -881,45 +1026,43 @@ mod tests {
         assert_eq!(u64::from(amount), 500);
     }
 
-    /// Creates a raw fungible asset encoding (composition bits `0b01` in the key metadata byte)
-    /// for amount tests.
+    /// Creates a version-1 fungible asset encoding for amount tests.
     fn fungible_asset(amount: Felt) -> Asset {
         Asset::new(
-            Word::new([felt!(0), felt!(0), felt!(1), felt!(0)]),
+            Word::new([felt!(0), felt!(0), felt!(17), felt!(0)]),
             Word::new([amount, felt!(0), felt!(0), felt!(0)]),
         )
     }
 
-    /// Ensures the fungibility check discriminates by the composition parity.
+    /// Use upstream encodings so version bits cannot be mistaken for composition bits.
     #[test]
     fn asset_is_fungible() {
-        let non_fungible = Asset::new(
-            Word::new([felt!(0), felt!(0), felt!(2), felt!(0)]),
-            Word::new([felt!(42), felt!(0), felt!(0), felt!(0)]),
-        );
+        use miden_protocol::{
+            account::AccountId,
+            asset::{AssetClass, AssetComposition, AssetId},
+        };
 
-        assert!(fungible_asset(felt!(42)).is_fungible());
-        assert!(!non_fungible.is_fungible());
+        let faucet = AccountId::try_from_elements(felt!(0), felt!(1)).unwrap();
+        for composition in [AssetComposition::None, AssetComposition::Fungible] {
+            let id = AssetId::new(AssetClass::default(), faucet, composition).unwrap();
+            let asset =
+                Asset::new(id.to_word(), Word::new([felt!(42), felt!(0), felt!(0), felt!(0)]));
+            assert_eq!(asset.is_fungible(), composition.is_fungible());
+        }
     }
 
-    /// Ensures fungible asset amounts are decoded from valid key/value encodings.
+    /// Ensures fungible asset amounts are decoded from version-1 key/value encodings.
     #[test]
     fn asset_amount_decodes_valid_fungible_assets() {
-        let asset = fungible_asset(felt!(42));
-        // Metadata byte 0b101: fungible composition with the callback flag set.
-        let callback_asset =
-            Asset::new(Word::new([felt!(0), felt!(0), felt!(5), felt!(0)]), asset.value);
-
-        assert_eq!(asset.amount(), AssetAmount::new(42).unwrap());
-        assert_eq!(callback_asset.amount(), AssetAmount::new(42).unwrap());
+        assert_eq!(fungible_asset(felt!(42)).amount(), AssetAmount::new(42).unwrap());
     }
 
-    /// Ensures the amount accessor panics for non-fungible assets (even composition bits).
+    /// Ensures the amount accessor panics for non-fungible assets.
     #[test]
     #[should_panic(expected = "asset is not fungible")]
     fn asset_amount_panics_on_non_fungible() {
         let non_fungible = Asset::new(
-            Word::new([felt!(1), felt!(0), felt!(0), felt!(0)]),
+            Word::new([felt!(1), felt!(0), felt!(1), felt!(0)]),
             Word::new([felt!(42), felt!(0), felt!(0), felt!(0)]),
         );
 

@@ -15,9 +15,9 @@
 //! Check variable "arg0" - parameter from test_assertion function
 //! CHECK: Variable: "arg0"
     //! CHECK: 4 location entries:
-    //! CHECK: di.debug_kill (param #1) : i32 @ {{.*}}locations-source-loc.rs
-    //! CHECK: di.debug_kill (param #1) : i32 @ {{.*}}locations-source-loc.rs
-    //! CHECK: di.debug_kill (param #1) : i32 @ {{.*}}locations-source-loc.rs
+    //! CHECK: unavailable (param #1) : i32 @ {{.*}}locations-source-loc.rs
+    //! CHECK: unavailable (param #1) : i32 @ {{.*}}locations-source-loc.rs
+    //! CHECK: unavailable (param #1) : i32 @ {{.*}}locations-source-loc.rs
 //! CHECK: FMP-4 (param #1) : i32 @ {{.*}}locations-source-loc.rs
 //!
 //! Check variable "local3" - from panic handler

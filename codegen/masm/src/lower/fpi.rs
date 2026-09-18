@@ -203,6 +203,7 @@ mod tests {
         }
 
         let mut emitter = BlockEmitter {
+            frame: Default::default(),
             liveness: &liveness,
             link_info: &link_info,
             invoked: &mut invoked,

@@ -46,17 +46,20 @@ fn multi_sibling() {
         init_storage_data
             .insert_map_entry(first_storage_slot.clone(), counter_storage_key(), 41_u64)
             .unwrap();
-        AccountComponent::from_package(&first_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(first_package.as_ref().clone(), &init_storage_data).unwrap()
     };
     let second_component = {
         let mut init_storage_data = InitStorageData::default();
         init_storage_data
             .insert_map_entry(second_storage_slot.clone(), counter_storage_key(), 73_u64)
             .unwrap();
-        AccountComponent::from_package(&second_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(second_package.as_ref().clone(), &init_storage_data).unwrap()
     };
-    let caller_component =
-        AccountComponent::from_package(&caller_package, &InitStorageData::default()).unwrap();
+    let caller_component = AccountComponent::from_package(
+        caller_package.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let account_builder = AccountBuilder::new([1_u8; 32])

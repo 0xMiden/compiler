@@ -141,3 +141,10 @@ pub extern "C" fn output_note_write_attachment_to_memory_plain(
 ) -> usize {
     unsafe { core::hint::unreachable_unchecked() }
 }
+
+#[unsafe(export_name = "miden::protocol::output_note::compute_note_id")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn output_note_compute_note_id_plain(_note_idx: f32, _out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}

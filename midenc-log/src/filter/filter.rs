@@ -16,7 +16,7 @@ use crate::filter::{
 ///
 /// ```
 /// # use std::env;
-/// use env_filter::Builder;
+/// use midenc_log::filter::Builder;
 ///
 /// let mut builder = Builder::new();
 ///
@@ -279,11 +279,11 @@ impl Filter {
     ///
     /// ```rust
     /// use log::LevelFilter;
-    /// use env_filter::Builder;
+    /// use midenc_log::filter::Builder;
     ///
     /// let mut builder = Builder::new();
-    /// builder.filter(Some("module1"), LevelFilter::Info);
-    /// builder.filter(Some("module2"), LevelFilter::Error);
+    /// builder.filter_module("module1", LevelFilter::Info);
+    /// builder.filter_module("module2", LevelFilter::Error);
     ///
     /// let filter = builder.build();
     /// assert_eq!(filter.filter(), LevelFilter::Info);

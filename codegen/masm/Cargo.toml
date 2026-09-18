@@ -49,6 +49,7 @@ smallvec.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 itertools = "0.14.0"
 miden-debug = { workspace = true, features = ["std"] }

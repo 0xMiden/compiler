@@ -453,19 +453,17 @@ fn read_package(package_path: &Path) -> Result<Arc<Package>, Error> {
         return Ok(package);
     }
     let package =
-        Package::read_from_bytes_unchecked(&package_bytes)
-            .map(Arc::new)
-            .map_err(|err| {
-                Error::new(
-                    error_span,
-                    format!(
-                        "failed to deserialize dependency package '{}': {err}. The package may \
-                         have been produced by a different Miden toolchain version; rebuild the \
-                         dependency with the current `cargo miden build`.",
-                        package_path.display()
-                    ),
-                )
-            })?;
+        Package::read_from_bytes_trusted(&package_bytes).map(Arc::new).map_err(|err| {
+            Error::new(
+                error_span,
+                format!(
+                    "failed to deserialize dependency package '{}': {err}. The package may have \
+                     been produced by a different Miden toolchain version; rebuild the dependency \
+                     with the current `cargo miden build`.",
+                    package_path.display()
+                ),
+            )
+        })?;
     PACKAGE_READS.with(|reads| {
         let mut reads = reads.borrow_mut();
         // Every driven build exchanges packages through a fresh lease directory, so a

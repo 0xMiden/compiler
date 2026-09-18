@@ -19,6 +19,7 @@ pub const GET_CODE_COMMITMENT: &str = "get_code_commitment";
 pub const COMPUTE_COMMITMENT: &str = "compute_commitment";
 pub const COMPUTE_STORAGE_COMMITMENT: &str = "compute_storage_commitment";
 pub const GET_STORAGE_ITEM: &str = "get_item";
+pub const HAS_STORAGE_SLOT: &str = "has_storage_slot";
 pub const GET_STORAGE_MAP_ITEM: &str = "get_map_item";
 pub const GET_ASSET: &str = "get_asset";
 pub const HAS_ASSET: &str = "has_asset";
@@ -49,6 +50,10 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     active_account.insert(
         Symbol::from(GET_STORAGE_ITEM),
         FunctionType::new(CallConv::Wasm, [Felt, Felt], [Felt, Felt, Felt, Felt]),
+    );
+    active_account.insert(
+        Symbol::from(HAS_STORAGE_SLOT),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt], [Felt]),
     );
     active_account.insert(
         Symbol::from(GET_STORAGE_MAP_ITEM),

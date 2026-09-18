@@ -60,7 +60,8 @@ fn execute_four_words_struct_counter_caller_note(
                 .insert_map_entry(counter_storage_slot.clone(), storage_key, expected_count)
                 .unwrap();
         }
-        AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(counter_package.as_ref().clone(), &init_storage_data)
+            .unwrap()
     };
 
     let mut builder = MockChain::builder();
