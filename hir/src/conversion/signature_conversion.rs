@@ -415,12 +415,7 @@ fn resolve_call_signature(
             "operation '{op_name}' references unresolved callee '{callee}'"
         )));
     };
-    let Some(callable) = resolved.as_trait_ref::<dyn CallableOpInterface>() else {
-        return Err(Report::msg(format!(
-            "operation '{op_name}' resolved callee '{callee}', but it is not callable"
-        )));
-    };
-    Ok(callable.borrow().signature())
+    Ok(resolved.signature())
 }
 
 fn region_successor_inputs(

@@ -397,6 +397,8 @@ impl CallableOpInterface for Function {
     }
 }
 
+impl CallableSymbol for Function {}
+
 /// Returns from the enclosing function with the provided operands as its results.
 #[operation(
     dialect = BuiltinDialect,

@@ -114,9 +114,15 @@ impl AsmParserState {
         self.operation_to_idx.insert(op, self.operations.len());
         self.operations.push(def);
 
-        // If this operation is a symbol table, resolve any symbol uses.
+        // References attached to an operation resolve from its enclosing table, even when the
+        // operation itself is a symbol table. Keep that operation as the use owner.
+        self.symbol_uses
+            .entry(op)
+            .or_default()
+            .extend(symbol_uses.borrow_mut().drain().flat_map(|(_, uses)| uses));
+
+        // Populate symbol tables before resolving the collected uses during finalization.
         if is_symbol_table {
-            // Populate symbol table first
             {
                 let mut op = op.borrow_mut();
                 let symbol_table = SymbolMap::try_build(&op)
@@ -126,12 +132,6 @@ impl AsmParserState {
                 }
             }
             self.symbol_table_operations.push((op, symbol_uses));
-        } else {
-            let mut symbol_uses = symbol_uses.borrow_mut();
-            self.symbol_uses
-                .entry(op)
-                .or_default()
-                .extend(symbol_uses.drain().flat_map(|(_, uses)| uses));
         }
         Ok(())
     }
@@ -332,9 +332,12 @@ impl AsmParserState {
             return;
         }
 
-        self.symbol_use_scopes
+        // Keep each use on the operation that contains the reference. The surrounding symbol
+        // table determines resolution, but is not itself the user of every nested reference.
+        self.partial_operations
             .last_mut()
             .unwrap()
+            .symbol_uses
             .borrow_mut()
             .entry(path.clone())
             .or_default()
@@ -480,7 +483,7 @@ impl AsmParserState {
 }
 
 struct PartialOpDef {
-    /// If this operation is a symbol table, this map contains symbol uses within the operation
+    /// Symbol references attached directly to this operation.
     symbol_uses: SymbolUseMap,
     is_symbol_table: bool,
 }

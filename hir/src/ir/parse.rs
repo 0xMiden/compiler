@@ -324,17 +324,20 @@ pub fn parse_file_anchored(
 /// as the root. The now-empty anchor is left to the context's arena, which is how every other
 /// discarded entity is disposed of.
 ///
-/// # Why verification runs after the detach, not inside `finalize`
+/// # Why finalization and verification run after the detach
 ///
-/// `finalize` resolves deferred locations and records symbol uses by walking down from the
-/// anchor, so it must run while the parsed operation is still attached. Verification must not:
-/// symbol resolution is rooted at the *root* operation, so while the parsed world is still
-/// nested, an absolute path like `::@ns:pkg@1.0.0::@m::@tbl` names a grandchild of the root
-/// rather than a child, and any verifier resolving one — `hir.exec_indirect`'s, for instance —
-/// fails on IR that is perfectly valid once detached. That is why this function calls
-/// [`operation::OperationParser::finalize_without_verifying`] and verifies the root it is about
-/// to return, rather than letting `finalize` do it. Failures are still reported as
-/// [`ParserError::Report`] carrying the source, exactly as when `finalize` verified.
+/// Both symbol-use linking and verification need the final operation hierarchy. While the
+/// parsed world is still nested under the temporary anchor, an absolute path like
+/// `::@ns:pkg@1.0.0::@m::@tbl` resolves against the anchor and cannot find its target. Linking
+/// would leave the use unresolved, and a verifier such as `hir.exec_indirect`'s would reject IR
+/// that is valid once detached.
+///
+/// After establishing the root, this function passes it to
+/// [`operation::OperationParser::finalize_without_verifying`]. Finalization then resolves deferred
+/// locations and links symbol uses using that root, so its location walk still reaches the parsed
+/// IR after detachment. This function then verifies the root if the parser configuration requests
+/// it. Verification failures are reported as [`ParserError::Report`] carrying the source, exactly
+/// as when `finalize` verified.
 ///
 /// **Note that [`parse_source_generic`] does none of this.** The generic-format entry points —
 /// [`parse_generic`] and [`parse_file_generic`] — go through `TopLevelOperationParser` instead,
@@ -366,10 +369,6 @@ fn parse_anchored_source(
     let op = operation_parser
         .parse_operation()
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
-    operation_parser
-        .finalize_without_verifying()
-        .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
-
     // See the note above: a parsed world is the root, not something to be rooted.
     //
     // The mutable borrow held across `remove` is safe *because* the operation is a `World`, and
@@ -389,6 +388,12 @@ fn parse_anchored_source(
         // resolving an absolute path will see, so it is the anchor that must be verified.
         anchor
     };
+
+    // Symbol uses must be linked after normalizing the root. Absolute paths inside an explicit
+    // world cannot resolve while that world is still nested under the temporary anchor.
+    operation_parser
+        .finalize_without_verifying(root.try_downcast_op::<World>().expect("root is a world"))
+        .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
 
     // Verification is the parser's, so its failures must look like the parser's: the same
     // `ParserError::Report` wrapper, carrying the same source code, that `finalize` produced when

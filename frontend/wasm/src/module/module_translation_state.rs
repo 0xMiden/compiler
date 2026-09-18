@@ -18,7 +18,7 @@ use super::{
     types::{ModuleTypesBuilder, WasmRefType},
 };
 use crate::{
-    callable::CallableFunction,
+    callable::CallableFunction::{self, Function},
     component::{SignatureIndex, lower_imports::generate_import_lowering_function},
     error::WasmResult,
     intrinsics::{Intrinsic, IntrinsicsConversionResult, attach_effects_to_function},
@@ -93,11 +93,29 @@ impl<'a> ModuleTranslationState<'a> {
                     module_builder,
                     world_builder,
                     &module_args,
-                    path,
+                    path.clone(),
                     sig,
                     import,
                     diagnostics,
                 )?;
+                // Handle imports that are re-exported
+                if let Function { function_ref, .. } = &func {
+                    let target = *function_ref;
+                    for alias_sym in module.func_aliases(index) {
+                        module_builder
+                            .define_function_alias((*alias_sym).into(), Visibility::Public, target)
+                            .map_err(|e| {
+                                diagnostics
+                                    .diagnostic(Severity::Error)
+                                    .with_message(format!(
+                                        "Failed to add function alias '{alias_sym}' for '{}': \
+                                         {e:?}",
+                                        path.name()
+                                    ))
+                                    .into_report()
+                            })?;
+                    }
+                }
                 functions.insert(index, func);
             } else {
                 let function_ref = module_builder
@@ -111,6 +129,23 @@ impl<'a> ModuleTranslationState<'a> {
                             ))
                             .into_report()
                     })?;
+                for alias_sym in module.func_aliases(index) {
+                    module_builder
+                        .define_function_alias(
+                            (*alias_sym).into(),
+                            Visibility::Public,
+                            function_ref,
+                        )
+                        .map_err(|e| {
+                            diagnostics
+                                .diagnostic(Severity::Error)
+                                .with_message(format!(
+                                    "Failed to add function alias '{alias_sym}' for '{}': {e:?}",
+                                    path.name()
+                                ))
+                                .into_report()
+                        })?;
+                }
                 let defined_function = CallableFunction::Function {
                     wasm_id: path,
                     function_ref,

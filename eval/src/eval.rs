@@ -10,9 +10,9 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm::{self as wasm};
 use midenc_hir::{
-    AttributeRef, Felt, Immediate, ImmediateAttr, Op, OperationRef, Overflow, RegionBranchPoint,
-    RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorInfo, Type,
-    Value as _, ValueRange,
+    AttributeRef, CallOpInterface, Felt, Immediate, ImmediateAttr, Op, OperationRef, Overflow,
+    RegionBranchPoint, RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned,
+    SuccessorInfo, Type, Value as _, ValueRange,
     dialects::{builtin, debuginfo},
 };
 use midenc_session::diagnostics::Severity;
@@ -454,19 +454,17 @@ impl Eval for hir::Bitcast {
 
 impl Eval for hir::Exec {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        let Some(symbol_table) = self.as_operation().nearest_symbol_table() else {
+        if self.as_operation().nearest_symbol_table().is_none() {
             return Err(evaluator.report(
                 "evaluation failed",
                 self.span(),
                 "cannot evaluate function calls without a symbol table in scope",
             ));
-        };
+        }
 
-        let symbol_table = symbol_table.borrow();
-        let symbol_table = symbol_table.as_symbol_table().unwrap();
         let callee = self.callee();
         let symbol_path = callee.path();
-        let Some(symbol) = symbol_table.resolve(symbol_path) else {
+        let Some(symbol) = self.resolve() else {
             return Err(evaluator.report(
                 "evaluation failed",
                 self.span(),
@@ -477,7 +475,7 @@ impl Eval for hir::Exec {
         let arguments = ValueRange::<4>::from(self.arguments()).into_owned();
 
         Ok(ControlFlowEffect::Call {
-            callee: symbol.borrow().as_operation_ref(),
+            callee: symbol.as_operation_ref(),
             arguments,
         })
     }

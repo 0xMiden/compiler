@@ -1,5 +1,8 @@
+mod resolution;
+
 use core::fmt;
 
+pub use self::resolution::{CanonicalCallableRef, ResolvedSymbolCallee, SymbolResolutionError};
 use crate::{
     EntityRef, Op, OpOperandRange, OpOperandRangeMut, RegionRef, Symbol, SymbolPath, SymbolRef,
     UnsafeIntrusiveEntityRef, Value, ValueRef,
@@ -24,14 +27,57 @@ pub trait CallOpInterface: Op {
     /// callee
     fn arguments_mut(&mut self) -> OpOperandRangeMut<'_>;
     /// Resolve the callable operation for the current callee to a `CallableOpInterface`, or `None`
-    /// if a valid callable was not resolved, using the provided symbol table.
+    /// if a valid callable was not resolved. Uses the provided symbol table for the initial
+    /// lookup.
+    ///
+    /// Symbol aliases must be followed to their canonical target, with each alias hop resolved in
+    /// that alias's own symbol table rather than the provided one. This does not change the symbol
+    /// reference stored on the call.
     ///
     /// This method is used to perform callee resolution using a cached symbol table, rather than
     /// traversing the operation hierarchy looking for symbol tables to try resolving with.
-    fn resolve_in_symbol_table(&self, symbols: &dyn crate::SymbolTable) -> Option<SymbolRef>;
+    fn resolve_in_symbol_table(
+        &self,
+        symbols: &dyn crate::SymbolTable,
+    ) -> Option<CanonicalCallableRef> {
+        let callee = self.callable_for_callee();
+        let path = callee.as_symbol_path()?;
+        symbols.resolve_callable(path).ok().map(|callee| callee.target())
+    }
+    /// Resolve a symbolic call to its named symbol and canonical target.
+    fn resolve_symbol_callee(&self) -> Result<ResolvedSymbolCallee, SymbolResolutionError> {
+        let table = self
+            .as_operation()
+            .nearest_symbol_table()
+            .ok_or(SymbolResolutionError::NoSymbolTable)?;
+        let table = table.borrow();
+        let callee = self.callable_for_callee();
+        let path = callee.as_symbol_path().ok_or(SymbolResolutionError::NonSymbolCallee)?;
+        table
+            .as_symbol_table()
+            .ok_or(SymbolResolutionError::NoSymbolTable)?
+            .resolve_callable(path)
+    }
+    /// Resolve the stored callee to the symbol it names, *without* following symbol aliases.
+    ///
+    /// Returns the symbol the call actually references. Unlike [Self::resolve], the result may be a
+    /// symbol alias (e.g. [`FunctionAlias`](crate::dialects::builtin::FunctionAlias))
+    ///
+    /// Returns `None` if the callee is not a symbol, or does not resolve.
+    fn resolve_stored_callee(&self) -> Option<SymbolRef> {
+        let path = self.callable_for_callee().as_symbol_path()?.clone();
+        let symbol_table = self.as_operation().nearest_symbol_table()?;
+        let symbol_table = symbol_table.borrow();
+        symbol_table.as_symbol_table()?.resolve(&path)
+    }
     /// Resolve the callable operation for the current callee to a `CallableOpInterface`, or `None`
     /// if a valid callable was not resolved.
-    fn resolve(&self) -> Option<SymbolRef>;
+    ///
+    /// Symbol aliases must be followed to their canonical target so calls and returns agree on
+    /// the operation that owns the callable body. The stored callee remains unchanged.
+    fn resolve(&self) -> Option<CanonicalCallableRef> {
+        self.resolve_symbol_callee().ok().map(|callee| callee.target())
+    }
     /// Enumerate every callable this operation may transfer control to, or `None` if the set of
     /// possible callees is not statically known.
     ///
@@ -40,7 +86,9 @@ pub trait CallOpInterface: Op {
     /// through a function table) override this to enumerate that set, which interprocedural
     /// analyses join over; an empty set means the call can never transfer control (every
     /// dispatch traps).
-    fn possible_callees(&self) -> Option<crate::SmallVec<[SymbolRef; 2]>> {
+    ///
+    /// Returned targets must be canonical (with symbol aliases resolved) and deduplicated.
+    fn possible_callees(&self) -> Option<crate::SmallVec<[CanonicalCallableRef; 2]>> {
         self.resolve().map(|callee| crate::smallvec![callee])
     }
     /// The signature this call site expects of its callee, if one is known.
@@ -50,10 +98,7 @@ pub trait CallOpInterface: Op {
     /// dispatches with, and overrides this to return it — so consumers reasoning about a call's
     /// parameter types (taint analysis' external-call sinks, for one) work for both.
     fn callee_signature(&self) -> Option<Signature> {
-        let callee = self.resolve()?;
-        let callee = callee.borrow();
-        let callable = callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>()?;
-        Some(callable.signature())
+        Some(self.resolve()?.signature())
     }
 }
 
@@ -64,7 +109,7 @@ pub trait CallOpInterface: Op {
 ///
 /// These operations may only contain a single region.
 pub trait CallableOpInterface: Op {
-    /// Returns the region on the current operation that is callable.
+    /// Returns the region executed by this callable.
     ///
     /// This may return `None` in the case of an external callable object, e.g. an externally-
     /// defined function reference.
@@ -73,10 +118,11 @@ pub trait CallableOpInterface: Op {
     fn signature(&self) -> Signature;
 }
 
-/// A marker trait for all operations which are callable symbols
-pub trait CallableSymbol: Symbol + CallableOpInterface {}
-
-impl<T: Symbol + CallableOpInterface> CallableSymbol for T {}
+/// A marker trait for symbols that can be named by a call-like operation.
+///
+/// This does not imply [CallableOpInterface]: aliases name a callable without owning its
+/// signature or region. Use [SymbolRef::resolve_callable] to access both identities.
+pub trait CallableSymbol: Symbol {}
 
 /// An alias for [`UnsafeIntrusiveEntityRef<dyn CallableSymbol>`]
 pub type CallableSymbolRef = UnsafeIntrusiveEntityRef<dyn CallableSymbol>;

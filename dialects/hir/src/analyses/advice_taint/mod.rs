@@ -379,12 +379,8 @@ fn collect_call_contexts(
 }
 
 fn resolved_callee_function_name(call: &dyn CallOpInterface) -> Option<SymbolName> {
-    let callee = call.resolve()?;
-    let callee = callee.borrow();
-    callee
-        .as_symbol_operation()
-        .downcast_ref::<builtin::Function>()
-        .map(Symbol::name)
+    let function = call.resolve()?.as_function()?;
+    Some(Symbol::name(&*function.borrow()))
 }
 
 fn call_results_contain_origin(
