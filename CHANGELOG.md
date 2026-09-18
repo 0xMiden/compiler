@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Target Miden VM `0.32.1` and protocol `0.17.0-rc.4`, including dependency commitments, bundled
+- Target Miden VM `0.33.0` and protocol `0.17.0-rc.5`, including dependency commitments, bundled
   precompiles, and structured runtime debug locations.
 
 ## [0.10.2]

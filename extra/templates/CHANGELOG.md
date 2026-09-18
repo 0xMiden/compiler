@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Move the project scaffold to the `0.17.0` toolchain channel, VM `0.32.1`, and protocol
-  `0.17.0-rc.4`. Client-based integration tests still require a compatible Miden client release.
+- Move the project scaffold to the `0.17.0` toolchain channel, VM `0.33.0`, protocol
+  `0.17.0-rc.5`, and Miden client `0.17.0-rc.1`.
 
 ## [0.32.1]
 
