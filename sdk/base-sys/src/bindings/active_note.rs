@@ -81,7 +81,7 @@ unsafe extern "C" {
     fn extern_active_note_get_storage_info(ptr: *mut RawCommitmentWithCount);
 }
 
-/// Contains summary information about the assets stored in the active note.
+/// Contains summary information about the assets the active note was created with.
 pub struct ActiveNoteAssetsInfo {
     /// The commitment over the assets the note was created with.
     pub commitment: Word,
@@ -298,6 +298,12 @@ pub fn get_asset(asset_index: u32) -> Asset {
 /// Removes `asset` from the active note and returns the asset value left in the note.
 ///
 /// The returned value is empty when the entire asset was removed.
+///
+/// # Panics
+///
+/// Panics if the asset is not present in the note, if a non-composable asset is not present with
+/// the exact value, if the note holds less of a fungible asset than is removed, if the asset id is
+/// empty or malformed, or if the asset's composition is `Custom`.
 pub fn remove_asset(asset: Asset) -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
@@ -476,6 +482,10 @@ pub trait ActiveNote {
     ///
     /// The returned value is empty when the entire asset was removed. This mutates the note's
     /// assets in the transaction kernel, so the note script needs a `mut self` receiver to call it.
+    ///
+    /// # Panics
+    ///
+    /// Panics under the same conditions as [`remove_asset`].
     #[inline]
     fn remove_asset(&mut self, asset: Asset) -> Word {
         remove_asset(asset)

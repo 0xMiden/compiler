@@ -214,8 +214,15 @@ pub fn get_attachments_commitment(note_index: NoteIdx) -> Word {
 
 /// Returns the attachment commitment of the active note when `is_active_note` is one, or of
 /// the indexed input note when it is zero.
+///
+/// # Panics
+///
+/// Panics if `is_active_note` is neither zero nor one.
 pub fn get_attachments_commitment_raw(is_active_note: Felt, note_index: NoteIdx) -> Word {
-    assert!(is_active_note == Felt::from_u32(0) || is_active_note == Felt::from_u32(1));
+    assert!(
+        is_active_note == Felt::from_u32(0) || is_active_note == Felt::from_u32(1),
+        "is_active_note must be zero or one"
+    );
     if is_active_note == Felt::from_u32(1) {
         super::active_note::get_attachments_commitment()
     } else {
@@ -302,6 +309,13 @@ pub fn get_asset(note_index: NoteIdx, asset_index: u32) -> Asset {
 /// Removes `asset` from the input note at `note_index` and returns the asset value left in it.
 ///
 /// The returned value is empty when the entire asset was removed.
+///
+/// # Panics
+///
+/// Panics if `note_index` is out of bounds, if the call does not originate from the native
+/// account's context, if the asset is not present in the note, if a non-composable asset is not
+/// present with the exact value, if the note holds less of a fungible asset than is removed, if the
+/// asset id is empty or malformed, or if the asset's composition is `Custom`.
 pub fn remove_asset(note_index: NoteIdx, asset: Asset) -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());

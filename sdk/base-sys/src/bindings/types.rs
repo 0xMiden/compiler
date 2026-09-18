@@ -163,8 +163,8 @@ impl From<AssetId> for Word {
 
 /// The class of an asset, composed of two field elements.
 ///
-/// The asset class groups every asset issued by the same faucet under the same semantics; it is
-/// the part of an asset id that is shared by all of that faucet's assets.
+/// The asset class distinguishes different assets issued by the same faucet; it is empty for
+/// fungible assets. Use [`AssetId::faucet_id`] to identify the issuer.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 pub struct AssetClass {
     pub prefix: Felt,
@@ -451,7 +451,8 @@ pub struct Recipient {
     pub inner: Word,
 }
 
-/// The unique identifier of a note, a digest over the note's recipient and assets commitment.
+/// The unique identifier of a note: `hash(NOTE_DETAILS_COMMITMENT || NOTE_METADATA_COMMITMENT)`,
+/// where the details commitment covers the note's recipient and assets commitment.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(transparent)]
 pub struct NoteId {

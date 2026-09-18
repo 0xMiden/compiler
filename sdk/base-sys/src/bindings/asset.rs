@@ -79,7 +79,8 @@ impl AssetId {
         id_into_faucet_id(self)
     }
 
-    /// Returns this asset's class, which every asset issued by the same faucet shares.
+    /// Returns this asset's class, which distinguishes it from the other assets issued by the same
+    /// faucet.
     #[inline]
     pub fn asset_class(self) -> AssetClass {
         id_into_asset_class(self)

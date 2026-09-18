@@ -228,6 +228,10 @@ pub fn write_attachment_to_memory(attachment_commitment: Word) -> Vec<Word> {
 /// Writes the indexed attachment from an attachment commitment list to memory.
 ///
 /// The advice map must contain the selected attachment elements.
+///
+/// # Panics
+///
+/// Panics if `attachment_idx` is out of bounds for `attachment_commitments`.
 pub fn write_indexed_attachment_to_memory(
     attachment_commitments: &[Word],
     attachment_idx: u32,
