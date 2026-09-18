@@ -20,8 +20,18 @@ directly below this paragraph, above the previous one (newest first, like the
 The name `tx::get_block_commitment` is reused: `tx::get_block_commitment(block_number)` reads any
 block up to the reference block.
 
-The raw extern `output_note::extern_output_note_get_assets_info` is no longer public; call
-`output_note::get_assets_info`.
+### `extern_output_note_get_assets_info` is no longer public
+
+Call `output_note::get_assets_info` instead of the raw extern.
+
+### Asset ids carry an encoding version (protocol 0.17)
+
+`Asset::key[2]` packs the faucet id suffix with a metadata byte. Protocol 0.17 lays that byte out
+as `version` (bits 0..=3, currently `1`) and `composition` (bits 4..=5); protocol 0.16 kept the
+composition in the lowest bits. A key built by hand with the old byte is misread: the old fungible
+byte `0x01` now means version 1 with no composition, so `Asset::is_fungible` and `Asset::amount`
+do not recognise it. Take asset ids from the host or from kernel-returned assets (`Asset::id()`);
+if a contract must build one, the byte is `0x11` for a fungible asset.
 
 ### P2ID note storage has four items (protocol 0.17)
 
@@ -49,7 +59,8 @@ and six user-defined parameters. The host rebuilds the summary from the advice-m
 rejects the signing request unless its commitment matches, so a component that still hashes the
 old layout fails at runtime with `TransactionSummaryConstructionFailed` even though it compiles
 unchanged. Components already on the protocol 0.16 six-word layout move the two parameter words to
-the front and replace the expiration-delta felt with `version` and `metadata`.
+the front and replace the expiration-delta felt with `version` and `metadata`. That shifts every
+user parameter down one slot and leaves six of them instead of seven.
 
 The words are hashed in this order, with the parameters first and the block commitment last:
 
