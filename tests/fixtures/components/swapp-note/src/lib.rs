@@ -146,11 +146,13 @@ impl SwappNote {
         inflight_amount: Felt,
         account: &mut Wallet,
     ) {
-        // The protocol P2ID note storage layout is [target_id_suffix, target_id_prefix].
+        // The protocol P2ID note storage layout is
+        // [target_id_suffix, target_id_prefix, salt_0, salt_1]. The salt stays zero, which is what
+        // the creator derives the expected recipient with.
         let recipient = note::build_recipient(
             serial_num,
             self.p2id_script_root,
-            vec![self.creator.suffix, self.creator.prefix],
+            vec![self.creator.suffix, self.creator.prefix, felt!(0), felt!(0)],
         );
 
         // Notes may only be created from an account component context, so the note is created

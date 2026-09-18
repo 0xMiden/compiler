@@ -17,6 +17,23 @@ directly below this paragraph, above the previous one (newest first, like the
 - `tx::get_block_commitment()` -> `tx::get_reference_block_commitment()`
 - `tx::get_block_number()` -> `tx::get_reference_block_number()`
 
+### P2ID note storage has four items (protocol 0.17)
+
+The standard P2ID note script expects `[target_id_suffix, target_id_prefix, salt_0, salt_1]` and
+rejects any other length. Code that builds a P2ID recipient by hand appends the two salt felts,
+which are zero unless the parties agreed on a secret salt:
+
+```rust
+// before
+note::build_recipient(serial_num, p2id_script_root, vec![target.suffix, target.prefix]);
+// after
+note::build_recipient(
+    serial_num,
+    p2id_script_root,
+    vec![target.suffix, target.prefix, felt!(0), felt!(0)],
+);
+```
+
 ### Transaction summaries are versioned six-word preimages (protocol 0.17)
 
 Custom authentication components sign a commitment to the transaction summary. Protocol 0.17
