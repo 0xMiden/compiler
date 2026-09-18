@@ -394,6 +394,7 @@ impl CompilerTestBuilder {
                     fs::remove_dir_all(&working_dir).unwrap();
                 }
                 fs::create_dir_all(&working_dir).unwrap();
+                let working_dir = working_dir.canonicalize().unwrap();
 
                 // Prepare inputs
                 let basename = working_dir.join(config.name.as_ref());
@@ -409,8 +410,13 @@ impl CompilerTestBuilder {
 
                 // `RUSTFLAGS` is for Cargo, direct `rustc` invocations need those flags
                 // passed via argv.
-                let rustflags_env = if !self.rustflags.is_empty() {
-                    Some(self.rustflags.join(" "))
+                let mut rustflags = self.rustflags;
+                rustflags.extend([
+                    "--remap-path-prefix".into(),
+                    format!("{}=", working_dir.display()).into(),
+                ]);
+                let rustflags_env = if !rustflags.is_empty() {
+                    Some(rustflags.join(" "))
                 } else {
                     None
                 };
