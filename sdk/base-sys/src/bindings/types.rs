@@ -186,7 +186,9 @@ impl AssetClass {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub(crate) struct RawAssetClass {
+    /// The suffix of the class, the first element of the kernel's output.
     pub suffix: Felt,
+    /// The prefix of the class, the second element of the kernel's output.
     pub prefix: Felt,
 }
 

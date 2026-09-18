@@ -241,7 +241,9 @@ pub fn write_attachment_to_memory(attachment_commitment: Word) -> Vec<Word> {
 ///
 /// # Panics
 ///
-/// Panics if `attachment_idx` is out of bounds for `attachment_commitments`.
+/// Panics if `attachment_commitments` holds more entries than a note can have attachments, if
+/// `attachment_idx` is out of bounds for it, or under the conditions of
+/// [`write_attachment_to_memory`].
 pub fn write_indexed_attachment_to_memory(
     attachment_commitments: &[Word],
     attachment_idx: u32,
@@ -255,7 +257,10 @@ fn load_attachment_words(commitment: Word, max_words: usize) -> Vec<Word> {
     use miden_stdlib_sys::{adv_load_preimage, intrinsics::advice::adv_push_mapvaln};
 
     let num_elements = adv_push_mapvaln(commitment).as_canonical_u64();
-    assert!(num_elements <= (max_words * 4) as u64, "attachment exceeds protocol limit");
+    assert!(
+        num_elements <= (max_words * 4) as u64,
+        "attachment preimage exceeds protocol limit"
+    );
     assert_eq!(num_elements % 4, 0, "attachment must contain whole words");
     let elements = adv_load_preimage(Felt::from_u32((num_elements / 4) as u32), commitment);
     // The whole-word assertion above guarantees there is no remainder chunk.

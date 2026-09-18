@@ -343,6 +343,11 @@ pub fn get_note_id(note_index: NoteIdx) -> NoteId {
 
 /// Returns the index of the input note with the given ID, or `None` when the transaction does not
 /// consume it.
+///
+/// # Panics
+///
+/// Panics if the host's answer contradicts the transaction's input notes: it reports an index
+/// whose note has a different ID, or reports the note as absent although it is consumed.
 pub fn find_note(note_id: NoteId) -> Option<NoteIdx> {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawFoundIndex>::uninit());

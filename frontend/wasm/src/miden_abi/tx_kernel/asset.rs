@@ -1,3 +1,6 @@
+//! Function types of the `miden::protocol::asset` procedures, which decode the parts of an asset
+//! ID.
+
 use midenc_hir::{
     CallConv, FunctionType, SymbolNameComponent, SymbolPath,
     Type::*,
