@@ -7,10 +7,15 @@
 //! kernel is live.
 //!
 //! Covered bindings: `active_note::{get_note_id, get_initial_assets, get_initial_assets_info,
-//! get_initial_num_assets, get_asset, remove_asset}`, `input_note::{find_note, get_note_id,
-//! get_initial_num_assets, get_asset}`, `asset::{id_into_faucet_id, id_into_asset_class,
-//! id_into_composition}` and `tx::{get_reference_block_number, get_reference_block_commitment,
-//! get_block_commitment}`.
+//! get_initial_num_assets, get_asset, remove_asset, get_storage_info}`, `input_note::{find_note,
+//! get_note_id, get_initial_num_assets, get_asset}`, `asset::{id_into_faucet_id,
+//! id_into_asset_class, id_into_composition}` and `tx::{get_reference_block_number,
+//! get_reference_block_commitment, get_block_commitment}`.
+//!
+//! Not executed here, and so still covered by compile-only tests alone: `tx::{compute_fee,
+//! get_fee_asset_id}`, `output_note::compute_note_id`, `input_note::remove_asset`,
+//! `native_account::{has_state_changed, has_initial_asset}` and
+//! `active_account::has_storage_slot`.
 
 use std::{path::Path, sync::Arc};
 
@@ -65,6 +70,9 @@ pub struct Wallet;
 
 /// Number of assets the host puts into the note.
 const EXPECTED_NUM_ASSETS: u32 = 1;
+
+/// Number of note storage items the host puts into the note: the two felts of the faucet id.
+const EXPECTED_NUM_STORAGE_ITEMS: u32 = 2;
 
 /// Note storage of the bindings note: the id of the faucet that issued the note's asset.
 #[note]
@@ -124,6 +132,12 @@ impl NoteAssetBindingsNote {
         assert!(
             asset_class.prefix == Felt::ZERO && asset_class.suffix == Felt::ZERO,
             "a fungible asset must have an empty asset class"
+        );
+
+        // The storage summary counts the items the host stored in the note.
+        assert!(
+            self.get_storage_info().num_storage_items == EXPECTED_NUM_STORAGE_ITEMS,
+            "unexpected number of note storage items"
         );
 
         // Looking up the reference block by number yields the reference block commitment.
