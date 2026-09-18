@@ -15,7 +15,7 @@ use miden_project::TargetType;
 
 pub use self::printing::IrFilter;
 use crate::{
-    ColorChoice, CompileFlags, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
+    ColorChoice, CompileFlags, FileType, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
     diagnostics::{DiagnosticsConfig, Emitter, Report},
 };
 
@@ -30,9 +30,15 @@ pub struct Options {
     pub entrypoint: Option<String>,
     /// The name of the build profile to use
     pub profile: String,
-    /// Build all packages in the current workspace (used by `cargo miden`)
+    /// Build all packages in the current workspace
+    ///
+    /// A manifest-backed Rust build selects on this — it builds every member of the workspace
+    /// rather than one package — and forwards it to its nested `cargo build`.
     pub workspace: bool,
-    /// Build the specified packages in the current workspace (used by `cargo miden`)
+    /// Build the specified packages in the current workspace
+    ///
+    /// A manifest-backed Rust build selects on this — these are the workspace members it builds
+    /// — and forwards them to its nested `cargo build`.
     pub packages: Vec<String>,
     /// The name of the current project target being compiled
     pub target: Option<String>,
@@ -274,6 +280,84 @@ impl Options {
         crate::Session::new(input, self, emitter, source_manager)
     }
 
+    /// Resolve the input a compilation request names.
+    ///
+    /// `input` is the input file given on the command line, if any. Without one, `--manifest-path`
+    /// names the project to build. Absent both, the project is the `miden-project.toml` in the
+    /// working directory, or the `Cargo.toml` there when no Miden manifest exists beside it. An
+    /// input file may be given as well only when it is that same manifest — a `Cargo.toml`
+    /// counting as the `miden-project.toml` beside it — and is then kept as given; a source file
+    /// cannot be combined with `--manifest-path`. Anything else is rejected rather than silently
+    /// building one of the two.
+    ///
+    /// Whenever `--manifest-path` is given it is validated first, as a flag: it must name an
+    /// existing manifest file, whether or not an input was given alongside it.
+    ///
+    /// A relative `--manifest-path` is relative to the directory the compiler is run from, exactly
+    /// like a relative input file, and `--working-dir` does not move it. The default is the one
+    /// thing here that *is* looked up in the working directory, which `--working-dir` sets.
+    #[cfg(feature = "std")]
+    pub fn resolve_input(&self, input: Option<InputFile>) -> Result<InputFile, Report> {
+        use crate::diagnostics::IntoDiagnostic;
+
+        match (input, self.manifest_path.as_deref()) {
+            (Some(input), None) => Ok(input),
+            (Some(input), Some(manifest_path)) => {
+                // Checked before the comparison, so that a `--manifest-path` naming something
+                // that is not a manifest is reported as such rather than as a mismatch — or, if
+                // the input happens to name the same file, accepted.
+                validate_manifest_path(manifest_path)?;
+                // A source file is not a second locator for the same project, so it is refused on
+                // what it is rather than on where it sits — and before the comparison below,
+                // whose "different files" would otherwise be said of two things that are not the
+                // same kind of thing at all.
+                if !matches!(input.file_type(), FileType::Toml) {
+                    return Err(Report::msg(alloc::format!(
+                        "--manifest-path names the project to build, but the input '{}' is a \
+                         source file; give one or the other",
+                        input.file_name().as_str()
+                    )));
+                }
+                // Compared by identity when the file exists, else by absolute path, so
+                // `foo/Cargo.toml`, `./foo/miden-project.toml` and a path through `..` or a
+                // symlink agree.
+                let names_same_file = match input.as_path() {
+                    Some(input_path) => {
+                        project_identity(input_path)? == project_identity(manifest_path)?
+                    }
+                    // Bytes on standard input name no file, so they cannot name this one.
+                    None => false,
+                };
+                if names_same_file {
+                    Ok(input)
+                } else {
+                    Err(Report::msg(alloc::format!(
+                        "input file '{}' and --manifest-path '{}' name different files; give one \
+                         or the other",
+                        input.file_name().as_str(),
+                        manifest_path.display()
+                    )))
+                }
+            }
+            (None, Some(manifest_path)) => {
+                validate_manifest_path(manifest_path)?;
+                InputFile::from_path(manifest_path).into_diagnostic()
+            }
+            (None, None) => {
+                let miden_manifest = self.current_dir.join(crate::MIDEN_MANIFEST_FILE_NAME);
+                let cargo_manifest = self.current_dir.join("Cargo.toml");
+                // The Miden manifest wins, and is also what a directory holding neither is
+                // reported as missing — the project is named by its own manifest, not by Cargo's.
+                let locator = if miden_manifest.is_file() || !cargo_manifest.is_file() {
+                    miden_manifest
+                } else {
+                    cargo_manifest
+                };
+                InputFile::from_path(locator).into_diagnostic()
+            }
+        }
+    }
+
     /// Get a new [Emitter] based on the current options.
     pub fn default_emitter(&self) -> Arc<dyn Emitter> {
         use crate::diagnostics::{DefaultEmitter, NullEmitter};
@@ -467,6 +551,50 @@ impl clap::builder::TypedValueParser for RemapPathPrefixParser {
     }
 }
 
+/// Check that `manifest_path`, as `--manifest-path` gave it, names a project manifest on disk.
+///
+/// The flag is validated here, on its own terms: it is not an input to compile but a way of
+/// naming the project, so nothing downstream would report it as a flag. A *positional* input
+/// keeps the checks its parser makes, and `normalize_locator` in `midenc-compile` is where a
+/// positional locator's name is refused.
+///
+/// An existing file named `Cargo.toml` or `miden-project.toml` is accepted; everything else — a
+/// missing path, a directory, a file by any other name — is a usage error.
+#[cfg(feature = "std")]
+fn validate_manifest_path(manifest_path: &crate::Path) -> Result<(), Report> {
+    if !manifest_path.is_file() {
+        return Err(Report::msg(alloc::format!(
+            "--manifest-path '{}' does not exist or is not a file",
+            manifest_path.display()
+        )));
+    }
+    if !(crate::is_cargo_manifest(manifest_path) || crate::is_miden_manifest(manifest_path)) {
+        return Err(Report::msg(alloc::format!(
+            "--manifest-path '{}' is not a project manifest; expected a miden-project.toml or the \
+             Cargo.toml beside it",
+            manifest_path.display()
+        )));
+    }
+    Ok(())
+}
+
+/// The identity of the Miden project the locator `path` names, for comparing two locators.
+///
+/// Canonical when the manifest is on disk, so that a path through `..` or a symlink is
+/// recognized as the file it reaches; absolute otherwise, which is as far as two paths to a file
+/// that does not exist can be compared. Both are exact: an unrepresentable path is an error, not
+/// a silent mismatch.
+#[cfg(feature = "std")]
+fn project_identity(path: &crate::Path) -> Result<PathBuf, Report> {
+    use crate::diagnostics::IntoDiagnostic;
+
+    let manifest_path = crate::project_manifest_path(path);
+    match std::fs::canonicalize(&manifest_path) {
+        Ok(canonical) => Ok(canonical),
+        Err(_) => std::path::absolute(&manifest_path).into_diagnostic(),
+    }
+}
+
 #[cfg(feature = "std")]
 fn current_dir() -> PathBuf {
     std::env::current_dir().expect("could not get working directory")
@@ -475,4 +603,189 @@ fn current_dir() -> PathBuf {
 #[cfg(not(feature = "std"))]
 fn current_dir() -> PathBuf {
     PathBuf::from(".")
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+
+    /// Options for a compiler whose working directory is `/work`, with the given `--manifest-path`.
+    fn options(manifest_path: Option<PathBuf>) -> Options {
+        Options {
+            manifest_path,
+            current_dir: PathBuf::from("/work"),
+            ..Options::default()
+        }
+    }
+
+    fn input(path: impl AsRef<std::path::Path>) -> InputFile {
+        InputFile::from_path(path).unwrap()
+    }
+
+    fn resolved_path(options: &Options, input: Option<InputFile>) -> PathBuf {
+        options.resolve_input(input).unwrap().as_path().unwrap().to_path_buf()
+    }
+
+    /// Create a project manifest at `relative` under `dir`, and hand back the path to it.
+    ///
+    /// The contents are a minimal package manifest: `--manifest-path` is validated on the file's
+    /// name and its existence, and nothing on this path parses it.
+    fn manifest_at(dir: &std::path::Path, relative: &str) -> PathBuf {
+        let path = dir.join(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "[package]\nname = \"contract\"\n").unwrap();
+        path
+    }
+
+    /// The manifest is taken as given: the working directory, `/work`, plays no part in it.
+    #[test]
+    fn the_manifest_path_names_the_project_when_no_input_is_given() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let manifest = manifest_at(dir.path(), "contract/Cargo.toml");
+
+        assert_eq!(resolved_path(&options(Some(manifest.clone())), None), manifest);
+    }
+
+    /// Options for a compiler run from `dir`, with no `--manifest-path`.
+    fn options_in(dir: &std::path::Path) -> Options {
+        Options {
+            current_dir: dir.to_path_buf(),
+            ..Options::default()
+        }
+    }
+
+    #[test]
+    fn without_either_the_miden_manifest_in_the_working_directory_wins() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"work\"\n").unwrap();
+        std::fs::write(dir.path().join("miden-project.toml"), "[package]\nname = \"work\"\n")
+            .unwrap();
+
+        assert_eq!(
+            resolved_path(&options_in(dir.path()), None),
+            dir.path().join("miden-project.toml")
+        );
+    }
+
+    #[test]
+    fn without_either_a_lone_cargo_manifest_is_the_project() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"work\"\n").unwrap();
+
+        assert_eq!(resolved_path(&options_in(dir.path()), None), dir.path().join("Cargo.toml"));
+    }
+
+    /// A directory with no manifest at all is reported as missing its *Miden* manifest.
+    #[test]
+    fn without_either_and_without_any_manifest_the_miden_manifest_is_the_project() {
+        let dir = tempfile::TempDir::new().unwrap();
+
+        assert_eq!(
+            resolved_path(&options_in(dir.path()), None),
+            dir.path().join("miden-project.toml")
+        );
+    }
+
+    #[test]
+    fn an_input_alone_is_kept_as_given() {
+        assert_eq!(
+            resolved_path(&options(None), Some(input("foo.wasm"))),
+            PathBuf::from("foo.wasm")
+        );
+    }
+
+    /// A `Cargo.toml` names the `miden-project.toml` beside it, and `.` is normalized away.
+    #[test]
+    fn an_input_and_a_manifest_path_naming_the_same_project_keep_the_input() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let contract = manifest_at(dir.path(), "contract/miden-project.toml")
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let options = options(Some(contract.join(".").join("miden-project.toml")));
+
+        assert_eq!(
+            resolved_path(&options, Some(input(contract.join("Cargo.toml")))),
+            contract.join("Cargo.toml")
+        );
+    }
+
+    /// A manifest that exists is compared by identity, so a detour through `..` is not a mismatch.
+    #[test]
+    fn an_input_reaching_the_manifest_through_a_detour_keeps_the_input() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let contract = dir.path().join("contract");
+        std::fs::create_dir(&contract).unwrap();
+        std::fs::write(contract.join("miden-project.toml"), "[package]\nname = \"c\"\n").unwrap();
+
+        let manifest_path = contract.join("miden-project.toml");
+        let detour = contract.join("..").join("contract").join("Cargo.toml");
+        let options = Options {
+            manifest_path: Some(manifest_path),
+            ..Options::default()
+        };
+
+        assert_eq!(
+            resolved_path(&options, Some(input(detour.to_str().unwrap()))),
+            detour,
+            "the input is kept as given once both sides are seen to be the same manifest"
+        );
+    }
+
+    /// A flag naming anything but an existing project manifest is a usage error, not an input.
+    #[test]
+    fn a_manifest_path_that_is_not_a_manifest_is_rejected() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let directory = dir.path().join("contract");
+        std::fs::create_dir(&directory).unwrap();
+        for name in ["toolchain", "rust-toolchain.toml", "foo.wat"] {
+            std::fs::write(dir.path().join(name), "").unwrap();
+        }
+
+        let cases = [
+            (directory, "does not exist or is not a file"),
+            (dir.path().join("nowhere").join("Cargo.toml"), "does not exist or is not a file"),
+            // A file that exists is refused on its name alone: neither an extension nor being
+            // TOML makes a file a project manifest, and only the two manifest names name one.
+            (dir.path().join("toolchain"), "is not a project manifest"),
+            (dir.path().join("rust-toolchain.toml"), "is not a project manifest"),
+            (dir.path().join("foo.wat"), "is not a project manifest"),
+        ];
+
+        for (manifest_path, expected) in cases {
+            let err = options(Some(manifest_path.clone())).resolve_input(None).unwrap_err();
+            assert!(
+                err.to_string().contains(expected),
+                "expected '{expected}' for '{}', got: {err}",
+                manifest_path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn an_input_and_a_manifest_path_naming_different_files_are_rejected() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let manifest = manifest_at(dir.path(), "contract/Cargo.toml");
+
+        let err = options(Some(manifest))
+            .resolve_input(Some(input(dir.path().join("other").join("Cargo.toml"))))
+            .unwrap_err();
+        assert!(err.to_string().contains("name different files"), "{err}");
+    }
+
+    /// A source file alongside `--manifest-path` is refused for what it is, not for where it is.
+    ///
+    /// The two name different kinds of build — one file to compile, one project to build — so
+    /// there is no same-file question to ask about them, and the mismatch above would be the
+    /// wrong thing to say.
+    #[test]
+    fn a_source_input_alongside_a_manifest_path_is_rejected() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let manifest = manifest_at(dir.path(), "contract/Cargo.toml");
+
+        let err = options(Some(manifest))
+            .resolve_input(Some(input(dir.path().join("contract").join("src").join("foo.wasm"))))
+            .unwrap_err();
+        assert!(err.to_string().contains("is a source file"), "{err}");
+    }
 }

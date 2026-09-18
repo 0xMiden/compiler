@@ -38,13 +38,7 @@ where
 {
     setup_diagnostics();
 
-    match Midenc::run(cwd, args, logger, filter) {
-        Err(report) => match report.downcast::<midenc_compile::CompilerStopped>() {
-            Ok(_) => Ok(()),
-            Err(report) => Err(report),
-        },
-        result => result,
-    }
+    Midenc::run(cwd, args, logger, filter)
 }
 
 fn setup_diagnostics() {

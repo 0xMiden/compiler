@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Move the project scaffold to the `0.17.0` toolchain channel, VM `0.32.1`, and protocol
   `0.17.0-rc.4`. Client-based integration tests still require a compatible Miden client release.
 
+## [0.32.1]
+
+### Templates
+
+- The full-project scaffold's assistant skills under `.claude/skills/` are updated for the `0.16`
+  toolchain line.
+
 ## [0.32.0]
 
 ### Templates

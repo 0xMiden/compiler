@@ -326,6 +326,40 @@ pub use self::{
     suppress::SuppressKnownDependencyErrors,
 };
 
+/// The logger every `midenc` front end installs, and the level it is to be installed at.
+///
+/// Built, not installed: a caller that embeds the compiler decides when — and whether — the
+/// global logger is set. `MIDENC_TRACE` selects what is logged (see the module documentation for
+/// its syntax) and `MIDENC_TRACE_TIMING` selects the timestamp precision, one of `s`, `ms`, `us` or
+/// `ns`; without it, records carry no timestamp. Anything else in `MIDENC_TRACE_TIMING` is an
+/// error, described by the returned message.
+///
+/// One function rather than one per binary, so that `midenc` and `cargo miden` are configured by
+/// the same variables and format their output the same way.
+pub fn midenc_logger() -> Result<(Box<dyn log::Log>, log::LevelFilter), String> {
+    let mut builder = Builder::from_env("MIDENC_TRACE");
+    builder.format_indent(Some(2));
+    match std::env::var("MIDENC_TRACE_TIMING") {
+        Ok(precision) => match precision.as_str() {
+            "s" => builder.format_timestamp_secs(),
+            "ms" => builder.format_timestamp_millis(),
+            "us" => builder.format_timestamp_micros(),
+            "ns" => builder.format_timestamp_nanos(),
+            other => {
+                return Err(format!(
+                    "invalid MIDENC_TRACE_TIMING precision, expected one of [s, ms, us, ns], got \
+                     '{other}'"
+                ));
+            }
+        },
+        Err(_) => builder.format_timestamp(None),
+    };
+    let logger = builder.build();
+    let filter = logger.filter();
+    // Suppress the known-harmless dependency errors until the upstream fix ships
+    Ok((Box::new(SuppressKnownDependencyErrors::new(logger)), filter))
+}
+
 #[doc = include_str!("../README.md")]
 #[cfg(doctest)]
 pub struct ReadmeDoctests;

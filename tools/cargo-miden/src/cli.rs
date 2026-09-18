@@ -21,7 +21,8 @@ pub struct CargoMidenCli {
 pub enum CargoMidenCommand {
     /// Create a new Miden project (default) or a contract from a template (see Options).
     New(NewCommand),
-    /// Compile the current crate to Miden package.
+    /// Compile the project to a Miden package. Every argument is forwarded to `midenc`; run
+    /// `cargo miden build --help` to see them.
     Build(BuildCommand),
     /// Run the miden-tests in the project.
     Test(TestCommand),

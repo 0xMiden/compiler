@@ -19,7 +19,7 @@ doctest = false
 
 [features]
 default = ["std"]
-std = ["alloc", "log/std", "clap/color"]
+std = ["alloc", "log/std", "clap/color", "midenc-session/std", "midenc-compile/std"]
 alloc = ["clap/help", "clap/usage", "clap/error-context", "clap/suggestions"]
 
 [dependencies]
@@ -29,3 +29,6 @@ midenc-hir.workspace = true
 midenc-session.workspace = true
 midenc-compile.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

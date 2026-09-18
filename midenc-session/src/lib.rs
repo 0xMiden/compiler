@@ -116,7 +116,8 @@ impl Session {
     /// - the **library target's kind**, which is what [`Options::target_type`] defaults to, and
     ///   which [`add_target_link_libraries`] then consults to decide whether the Miden protocol
     ///   is linked;
-    /// - the **executable targets' names**, from which [`Options::entrypoint`] is defaulted.
+    /// - the **executable targets' names**, from which [`Options::entrypoint`] is defaulted when
+    ///   the target is rooted at Rust — see `infer_rust_entrypoint`.
     ///
     /// All three come from `ProjectManifest`, which parses the manifest's *AST* and reads
     /// exactly those three things out of it with `miden_project`'s own extractors. What it
@@ -147,9 +148,7 @@ impl Session {
             if options.target_type.is_none() {
                 options.target_type = Some(manifest.library_target_type());
             }
-            if is_cargo_project_input(&input) {
-                infer_cargo_project_entrypoint(manifest, &mut options)?;
-            }
+            infer_rust_entrypoint(manifest, &mut options)?;
         }
 
         let name = options
@@ -592,11 +591,100 @@ impl Session {
     }
 }
 
-fn is_cargo_project_input(input: &InputFile) -> bool {
-    matches!(
-        &input.file,
-        InputType::Real(path) if path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
-    )
+/// The file name of a Miden project manifest, the one spelling the compiler produces.
+pub const MIDEN_MANIFEST_FILE_NAME: &str = "miden-project.toml";
+
+/// Whether `path` names a Cargo manifest, by file name alone.
+///
+/// Matched case-insensitively, as [`is_miden_manifest`] is: a case-insensitive filesystem will
+/// hand a `cargo.toml` to a caller that asked for `Cargo.toml`, and a predicate that disagreed
+/// with the filesystem would classify that manifest as something else entirely. Every name the
+/// compiler itself *produces* is the constant — `Cargo.toml`, [`MIDEN_MANIFEST_FILE_NAME`].
+pub fn is_cargo_manifest(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
+}
+
+/// Whether `path` names a Miden project manifest, by file name alone.
+///
+/// Matched case-insensitively, for the reason given on [`is_cargo_manifest`].
+pub fn is_miden_manifest(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case(MIDEN_MANIFEST_FILE_NAME))
+}
+
+/// The `miden-project.toml` the project locator `path` names.
+///
+/// A `Cargo.toml` locates the `miden-project.toml` beside it, which is where `cargo miden` writes
+/// the Miden manifest for a crate; any other path is taken as given. This is the one mapping from
+/// a Cargo manifest to the Miden manifest beside it: the same-file comparison
+/// [`Options::resolve_input`] makes between an input and `--manifest-path`, the session's
+/// `ProjectManifest::read`, `normalize_locator` in `midenc-compile` and the nested cargo build all
+/// go through it, so they cannot disagree about which file a locator names. A `--manifest-path`
+/// given on its own is not mapped: it is the locator, and whoever normalizes it maps it then.
+pub fn project_manifest_path(path: &Path) -> PathBuf {
+    if is_cargo_manifest(path) {
+        path.with_file_name(MIDEN_MANIFEST_FILE_NAME)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// Whether the Miden manifest at `path` is a workspace root rather than a package manifest.
+///
+/// Answered from the manifest's AST — the same parse `ProjectManifest::parse` performs — because
+/// that is all the evidence there is: a workspace root declares members and no package of its
+/// own. A manifest that cannot be read or parsed is not a workspace root; its own diagnostic is
+/// the one worth reporting. Preparation asks this on the path where loading the project failed,
+/// so that a workspace root is reported on its own terms.
+#[cfg(feature = "std")]
+pub fn is_workspace_manifest(path: &Path, source_manager: &dyn SourceManager) -> bool {
+    use miden_debug_types::SourceManagerExt;
+
+    source_manager
+        .load_file(path)
+        .ok()
+        .and_then(|source| miden_project::ast::MidenProject::parse(source).ok())
+        .is_some_and(|manifest| manifest.is_workspace())
+}
+
+/// The extension of `target`'s root, which is what everything dispatches on.
+///
+/// Owned rather than borrowed, because the path is reconstructed from the target's `Uri` and so
+/// lives no longer than this call. It is the one derivation of "what kind of file is this target
+/// rooted at?" in the workspace, and it must stay that way: `midenc-compile` uses it to select a
+/// frontend and to choose the provider key a seed is installed under, and [`Session::new`] uses it
+/// to decide whether an entrypoint is inferred — so a second copy that grew, say, case folding
+/// would make them disagree, and the disagreement would surface as an internal error on a project
+/// that is perfectly valid.
+#[cfg(feature = "std")]
+pub fn target_root_extension(target: &miden_project::Target) -> Option<String> {
+    target
+        .path
+        .inner()
+        .to_path()
+        .as_deref()
+        .and_then(Path::extension)
+        .and_then(|extension| extension.to_str())
+        .map(ToString::to_string)
+}
+
+/// Whether `target` is rooted at a Rust source file.
+///
+/// Only a Rust root gets a defaulted [`Options::entrypoint`]: the names that default is built from
+/// — `<target>::entrypoint`, and the transaction-script `run` — are the ones the Rust frontend
+/// emits. A target rooted at hand-written Miden Assembly names its own.
+#[cfg(feature = "std")]
+fn is_rust_root(target: &miden_project::Target) -> bool {
+    target_root_extension(target).as_deref() == Some("rs")
+}
+
+/// Whether `target` is rooted at a Rust source file.
+///
+/// Always false without `std`: the extension is read through [`target_root_extension`], which is
+/// std-only because a target root's `Uri` cannot be turned into a path without it.
+#[cfg(not(feature = "std"))]
+fn is_rust_root(_target: &miden_project::Target) -> bool {
+    false
 }
 
 /// What a project's manifest says about the targets it declares.
@@ -614,9 +702,10 @@ fn is_cargo_project_input(input: &InputFile) -> bool {
 /// default](Self::library_target_type) and [which executable it builds](Self::selected_executable)
 /// — and both have to be answered identically everywhere, because the answers decide different
 /// halves of one build. `Session::new` uses them to set [`Options::target_type`] and
-/// [`Options::entrypoint`]; the Rust frontend's nested `cargo` build uses the second to reject a
-/// project it could not build, and used to carry its own copy of both rules over a separately
-/// loaded project. Two implementations of one rule can only ever agree by coincidence.
+/// [`Options::entrypoint`]; `prepare_project` in `midenc-compile` uses the second to choose the
+/// target it assembles; the Rust frontend's nested `cargo` build uses it to reject a project it
+/// could not build, and used to carry its own copy of both rules over a separately loaded
+/// project. Two implementations of one rule can only ever agree by coincidence.
 ///
 /// `read` parses a manifest for them, and [`from_package`](Self::from_package) takes them off a
 /// project that is already loaded. That is the whole difference between the callers: where the
@@ -659,26 +748,38 @@ impl ProjectManifest {
         }
     }
 
-    /// The executable target this build compiles, of the ones declared.
+    /// The executable this build compiles, of the ones the manifest declares.
     ///
-    /// `requested` is `--target`, which names one outright. Without it there must be exactly one
-    /// to choose, because nothing else distinguishes them: a package declaring several says which
-    /// it means, or is asked to.
-    pub fn selected_executable(
-        &self,
-        requested: Option<&str>,
-    ) -> Result<&miden_project::Target, Report> {
+    /// One rule for everyone who asks — the session deriving the entrypoint, preparation choosing
+    /// what to assemble, and the nested cargo build refusing what it cannot build: `--target`
+    /// names it outright; else `--name` does; else the executable named after the package; else
+    /// the sole executable when there is exactly one. A project declaring several and naming none
+    /// is ambiguous, and says so; a project declaring none has nothing to select.
+    pub fn selected_executable(&self, options: &Options) -> Result<&miden_project::Target, Report> {
+        let requested = options.target.as_deref().or(options.name.as_deref());
         match requested {
             Some(name) => self
                 .executables
                 .iter()
                 .find(|target| name == &**target.name.inner())
                 .ok_or_else(|| Report::msg(format!("no executable target name '{name}'"))),
-            None if self.executables.len() == 1 => Ok(&self.executables[0]),
-            None => Err(Report::msg(
-                "ambiguous executable target selection: use --target to select a specific \
-                 executable target",
-            )),
+            None if self.executables.is_empty() => {
+                Err(Report::msg("project does not declare an executable target"))
+            }
+            None => self
+                .executables
+                .iter()
+                .find(|target| self.name.as_str() == &**target.name.inner())
+                .or(match self.executables.as_slice() {
+                    [sole] => Some(sole),
+                    _ => None,
+                })
+                .ok_or_else(|| {
+                    Report::msg(
+                        "ambiguous executable target selection: use --target to select a specific \
+                         executable target",
+                    )
+                }),
         }
     }
 
@@ -691,16 +792,7 @@ impl ProjectManifest {
     fn read(input: &InputFile, source_manager: &dyn SourceManager) -> Result<Option<Self>, Report> {
         match &input.file {
             InputType::Real(path) => {
-                // The same normalization `normalize_locator` performs in `midenc-compile`: a
-                // `Cargo.toml` locates the `miden-project.toml` beside it, which is where
-                // `cargo miden` writes the Miden manifest for a crate.
-                let manifest_path =
-                    if path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
-                    {
-                        path.with_file_name("miden-project.toml")
-                    } else {
-                        path.clone()
-                    };
+                let manifest_path = project_manifest_path(path);
                 #[cfg(feature = "std")]
                 {
                     use miden_debug_types::SourceManagerExt;
@@ -759,21 +851,33 @@ impl ProjectManifest {
     }
 }
 
-fn infer_cargo_project_entrypoint(
-    manifest: &ProjectManifest,
-    options: &mut Options,
-) -> Result<(), Report> {
+/// Default [`Options::entrypoint`] from what `manifest` declares, for a Rust-rooted target.
+///
+/// What the compiler is asked to build decides which name: an executable's entrypoint is the
+/// `entrypoint` of the selected executable target's module, and a transaction script's is the
+/// `run` of the interface every transaction script implements. Anything else names no entrypoint.
+///
+/// Nothing is inferred for a target rooted at something other than Rust — see [`is_rust_root`] —
+/// nor for a run that already named an entrypoint. The executable is the one
+/// [`ProjectManifest::selected_executable`] names, which is the executable preparation will
+/// assemble: an ambiguous selection is an error here because it is an error there too, and a
+/// project refused by one has to be refused by the other.
+fn infer_rust_entrypoint(manifest: &ProjectManifest, options: &mut Options) -> Result<(), Report> {
     if options.entrypoint.is_some() {
         return Ok(());
     }
 
     match options.target_type {
         Some(miden_project::TargetType::Executable) => {
-            let target = manifest.selected_executable(options.target.as_deref())?;
-            let masm_module_name = target.name.inner().replace('-', "_");
-            options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
+            let target = manifest.selected_executable(options)?;
+            if is_rust_root(target) {
+                let masm_module_name = target.name.inner().replace('-', "_");
+                options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
+            }
         }
-        Some(miden_project::TargetType::TransactionScript) => {
+        Some(miden_project::TargetType::TransactionScript)
+            if manifest.library.as_ref().is_some_and(is_rust_root) =>
+        {
             options.entrypoint = Some("miden:base/transaction-script@1.0.0::run".to_string());
         }
         _ => (),
