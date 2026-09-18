@@ -418,15 +418,20 @@ impl PackageProvider for HybridPackageRegistry {
         package: &PackageId,
         version: &miden_project::Version,
     ) -> Result<Arc<Package>, Report> {
-        let found = self.artifacts.get(package).and_then(|versions| versions.get(&version.version));
+        // Artifacts are stored under a version that carries their dependency commitment, so the
+        // stored digest is compared instead of hashing the package again on every lookup.
+        let found = self
+            .artifacts
+            .get(package)
+            .and_then(|versions| versions.get_key_value(&version.version));
         match found {
-            Some(artifact) if version.digest != Some(artifact.dependency_commitment()) => {
+            Some((installed, _)) if version.digest != installed.digest => {
                 Err(Report::msg(format!(
                     "cannot load {package}@{version}: a specific digest was requested, but \
                      differs from the available version"
                 )))
             }
-            Some(artifact) => Ok(Arc::clone(artifact)),
+            Some((_, artifact)) => Ok(Arc::clone(artifact)),
             None => Err(Report::msg(format!(
                 "cannot load {package}@{version}: no such package available",
             ))),
