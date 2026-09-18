@@ -128,7 +128,7 @@ pub fn collect_function_debug_info(
 
     for (defined_idx, body) in parsed_module.function_body_inputs.iter() {
         let func_index = module.func_index(defined_idx);
-        let func_name = module.func_name(func_index);
+        let source_name = module.source_func_name(func_index);
         if let Some(info) = build_function_debug_info(
             parsed_module,
             module_types,
@@ -142,12 +142,12 @@ pub fn collect_function_debug_info(
         ) {
             debug!(
                 "Collected debug info for function {}: {} locals",
-                func_name.as_str(),
+                source_name.as_str(),
                 info.locals.len()
             );
             map.insert(func_index, Rc::new(RefCell::new(info)));
         } else {
-            debug!("No debug info collected for function {}", func_name.as_str());
+            debug!("No debug info collected for function {}", source_name.as_str());
         }
     }
 
@@ -167,7 +167,8 @@ fn build_function_debug_info(
     dwarf_locals: Option<&FxHashMap<u32, DwarfLocalData>>,
     scheduled_vars: Option<&Vec<DwarfLocalData>>,
 ) -> Option<FunctionDebugInfo> {
-    let func_name = module.func_name(func_index);
+    let source_name = module.source_func_name(func_index);
+    let linkage_name = module.func_name(func_index);
 
     let dwarf_offset = parsed_module.wasm_file.dwarf_offset(body.body_offset);
     let (file_symbol, directory_symbol) =
@@ -178,8 +179,13 @@ fn build_function_debug_info(
     compile_unit.directory = directory_symbol;
     compile_unit.producer = Some(Symbol::intern("midenc-frontend-wasm"));
 
-    let mut subprogram = Subprogram::new(func_name, compile_unit.file, line, column);
+    // Name the subprogram after the source name and set the linkage name if it differs,
+    // mirroring `DW_AT_name` and `DW_AT_linkage_name`.
+    let mut subprogram = Subprogram::new(source_name, compile_unit.file, line, column);
     subprogram.is_definition = true;
+    if source_name != linkage_name {
+        subprogram.linkage_name = Some(linkage_name);
+    }
 
     let wasm_signature = module_types[module.functions[func_index].signature].clone();
     let locals = build_local_debug_info(
@@ -442,7 +448,21 @@ fn collect_dwarf_local_data(
 
     let mut func_by_name = FxHashMap::default();
     for (func_index, _) in module.functions.iter() {
-        let name = module.func_name(func_index).as_str().to_owned();
+        // DWARF subprogram names are producer-emitted source names which can only identify
+        // functions whose name-section name is unique. rustc (for debug builds targeting Miden)
+        // can duplicate names in the name section. A duplicated name would make every DWARF
+        // subprogram with that name resolve to whichever function this map kept last. Skip
+        // such functions so their subprograms fall through to `low_pc`-based resolution in
+        // `resolve_subprogram_target`, which is unambiguous.
+        //
+        // Functions without explicit source name are also skipped because they get a fallback
+        // name which producers would not emit as DWARF name.
+        if !module.has_explicit_source_func_name(func_index)
+            || module.is_duplicate_source_func_name(func_index)
+        {
+            continue;
+        }
+        let name = module.source_func_name(func_index).as_str().to_owned();
         func_by_name.insert(name, func_index);
     }
 
@@ -1050,7 +1070,15 @@ fn func_local_index(func_index: FuncIndex, module: &Module) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    use cranelift_entity::EntityRef;
+    use gimli::write as dwarf_write;
+    use wasm_encoder::{CustomSection, Encode, SectionId};
+
     use super::*;
+    use crate::module::{
+        module_env::{ModuleEnvironment, ParsedModule},
+        types::ModuleTypesBuilder,
+    };
 
     #[test]
     fn dwarf_file_paths_include_the_line_program_directory() {
@@ -1094,5 +1122,191 @@ mod tests {
         assert!(schedule[1].storage.is_none());
         assert_eq!(schedule[2].offset, 8);
         assert!(schedule[2].storage.is_some());
+    }
+
+    /// A module with two functions sharing the same name-section name.
+    ///
+    /// Used in tests to verify the corresponding DWARF entries are associated with the correct
+    /// function.
+    const DUPLICATE_FUNC_NAMES_WAT: &str = r#"
+    (module $duplicate_func_names_debug_info.wasm
+      (type (;0;) (func (param i32) (result i32)))
+      (type (;1;) (func (result i32)))
+      (memory (;0;) 16)
+      (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
+      (export "memory" (memory 0))
+      (export "test" (func $test))
+
+      ;; Both functions carry the same name-section name
+      (func $first (@name "foo") (;0;) (type 0) (param i32) (result i32)
+        local.get 0
+        local.tee 0
+      )
+      (func $second (@name "foo") (;1;) (type 0) (param i32) (result i32)
+        local.get 0
+        local.tee 0
+      )
+      (func $test (;2;) (type 1) (result i32)
+        i32.const 1
+        call $first
+        i32.const 2
+        call $second
+        i32.add
+      )
+    )
+    "#;
+
+    fn parse_module(wasm: &[u8]) -> ParsedModule<'_> {
+        let config = crate::WasmTranslationConfig::default();
+        let mut validator = wasmparser::Validator::new_with_features(crate::supported_features());
+        let mut types = ModuleTypesBuilder::default();
+        ModuleEnvironment::new(&config, &mut validator, &mut types)
+            .parse(wasmparser::Parser::new(0), wasm, &DiagnosticsHandler::default())
+            .expect("wasm fixture should parse")
+    }
+
+    /// Serializes one DWARF compilation unit holding a subprogram per `(name, low_pc, param)`:
+    /// the subprogram is named `name`, carries `DW_AT_low_pc` when `low_pc` is `Some`, and has a
+    /// single formal parameter named `param`. Returns the non-empty sections as
+    /// `(section name, bytes)` pairs, built with gimli's writer.
+    fn fixture_dwarf_sections(
+        subprograms: &[(&str, Option<u64>, &str)],
+    ) -> Vec<(&'static str, Vec<u8>)> {
+        let encoding = gimli::Encoding {
+            format: gimli::Format::Dwarf32,
+            version: 5,
+            address_size: 4,
+        };
+        let mut dwarf = dwarf_write::DwarfUnit::new(encoding);
+        let root = dwarf.unit.root();
+        dwarf
+            .unit
+            .get_mut(root)
+            .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"fixture.rs".to_vec()));
+        for &(name, low_pc, param) in subprograms {
+            let subprogram = dwarf.unit.add(root, gimli::DW_TAG_subprogram);
+            dwarf.unit.get_mut(subprogram).set(
+                gimli::DW_AT_name,
+                dwarf_write::AttributeValue::String(name.as_bytes().to_vec()),
+            );
+            if let Some(low_pc) = low_pc {
+                dwarf.unit.get_mut(subprogram).set(
+                    gimli::DW_AT_low_pc,
+                    dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(low_pc)),
+                );
+            }
+            let parameter = dwarf.unit.add(subprogram, gimli::DW_TAG_formal_parameter);
+            dwarf.unit.get_mut(parameter).set(
+                gimli::DW_AT_name,
+                dwarf_write::AttributeValue::String(param.as_bytes().to_vec()),
+            );
+            // Add a location, otherwise the drops the parameter. This mimics how rustc describes
+            // parameters.
+            dwarf.unit.get_mut(parameter).set(
+                gimli::DW_AT_location,
+                dwarf_write::AttributeValue::Exprloc(dwarf_write::Expression::raw(vec![
+                    gimli::DW_OP_WASM_location.0,
+                    0x00, // wasm local
+                    0x00, // local index 0, since parameters map to the first locals
+                ])),
+            );
+        }
+
+        let mut sections =
+            dwarf_write::Sections::new(dwarf_write::EndianVec::new(gimli::LittleEndian));
+        dwarf.write(&mut sections).expect("fixture DWARF should serialize");
+        let mut out = Vec::new();
+        sections
+            .for_each(|id, data| {
+                let bytes = data.slice();
+                if !bytes.is_empty() {
+                    out.push((id.name(), bytes.to_vec()));
+                }
+                Ok::<(), dwarf_write::Error>(())
+            })
+            .expect("section enumeration cannot fail");
+        out
+    }
+
+    /// Appends custom sections (as consumed by [`super::collect_dwarf_local_data`]) to a wasm
+    /// binary. Appending never moves existing sections, so the DWARF address space stays valid.
+    fn append_custom_sections(wasm: &mut Vec<u8>, sections: Vec<(&str, Vec<u8>)>) {
+        for (name, data) in sections {
+            wasm.push(SectionId::Custom as u8); // section classifier
+            CustomSection {
+                name: name.into(),
+                data: data.into(),
+            }
+            .encode(wasm);
+        }
+    }
+
+    /// Assembles the duplicate-name fixture: the [`DUPLICATE_FUNC_NAMES_WAT`] module plus a
+    /// DWARF unit with:
+    ///
+    /// - two subprograms named `foo` (the duplicated name)
+    /// - one named `test` (unique)
+    fn duplicate_func_names_fixture() -> Vec<u8> {
+        let wasm = wat::parse_str(DUPLICATE_FUNC_NAMES_WAT).expect("fixture WAT should assemble");
+        // Parse the module to learn each body's address in the DWARF address space.
+        let parsed = parse_module(&wasm);
+        let body_dwarf_offsets: Vec<u64> = parsed
+            .function_body_inputs
+            .iter()
+            .map(|(_, body)| parsed.wasm_file.dwarf_offset(body.body_offset))
+            .collect();
+
+        // Set different parameter names (`a, b, c`) to enable distinguishing functions.
+        let dwarf = fixture_dwarf_sections(&[
+            ("foo", Some(body_dwarf_offsets[0]), "a"),
+            ("foo", Some(body_dwarf_offsets[1]), "b"),
+            ("test", None, "c"),
+        ]);
+        let mut wasm = wasm;
+        append_custom_sections(&mut wasm, dwarf);
+        wasm
+    }
+
+    #[test]
+    fn dwarf_subprograms_with_duplicate_names_resolve_via_low_pc() {
+        let wasm = duplicate_func_names_fixture();
+        let parsed = parse_module(&wasm);
+
+        // Verify that `foo` is duplicated and `test` is unique.
+        assert!(parsed.module.is_duplicate_source_func_name(FuncIndex::new(0)));
+        assert!(parsed.module.is_duplicate_source_func_name(FuncIndex::new(1)));
+        assert!(!parsed.module.is_duplicate_source_func_name(FuncIndex::new(2)));
+
+        let collected =
+            collect_dwarf_local_data(&parsed, &parsed.module, &DiagnosticsHandler::default());
+        let first_param_name = |func: usize| {
+            collected
+                .by_local
+                .get(&FuncIndex::new(func))
+                .and_then(|locals| locals.get(&0))
+                .and_then(|data| data.name)
+        };
+
+        // Each `foo` subprogram resolved through the `low_pc` to the corresponding `foo` function
+        assert_eq!(first_param_name(0), Some(Symbol::intern("a")));
+        assert_eq!(first_param_name(1), Some(Symbol::intern("b")));
+        // The uniquely named subprogram keeps resolving by name.
+        assert_eq!(first_param_name(2), Some(Symbol::intern("c")));
+    }
+
+    /// Regenerates lit fixture `tests/lit/debug/duplicate-func-names-debug-info.wasm`.
+    ///
+    /// Run with:
+    ///
+    /// `cargo test -p midenc-frontend-wasm --lib -- --ignored write_duplicate_names_dwarf_fixture`
+    #[test]
+    #[ignore = "writes the committed lit fixture; run explicitly to regenerate it"]
+    fn write_duplicate_names_dwarf_fixture() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/lit/debug/duplicate-func-names-debug-info.wasm"
+        );
+        let wasm = duplicate_func_names_fixture();
+        std::fs::write(path, wasm).expect("write the lit fixture");
     }
 }

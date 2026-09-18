@@ -1467,7 +1467,7 @@ mod tests {
             .find_module(SymbolName::intern("main"))
             .expect("main module should be translated");
         let start = ModuleBuilder::new(main)
-            .get_function("actual-start")
+            .get_function("aliased-start")
             .expect("actual start definition should be translated");
         assert!(
             start
@@ -1492,7 +1492,7 @@ mod tests {
             .find_module(SymbolName::intern("main"))
             .expect("main module should be translated");
         let start = ModuleBuilder::new(main)
-            .get_function("actual-start")
+            .get_function("aliased-start")
             .expect("actual start definition should be translated");
         assert!(
             start
