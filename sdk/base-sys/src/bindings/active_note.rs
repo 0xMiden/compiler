@@ -5,8 +5,8 @@ use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::{
     AccountId, Asset, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteId, NoteMetadata,
-    RawAccountId, RawAttachmentLocation, RawCommitmentWithCount, Recipient,
-    assert_attachment_count, assert_attachment_word_count,
+    RawAccountId, RawCommitmentWithCount, RawFoundIndex, Recipient, assert_attachment_count,
+    assert_attachment_word_count,
 };
 
 #[allow(improper_ctypes)]
@@ -50,7 +50,7 @@ unsafe extern "C" {
     fn extern_note_write_attachment_to_memory(dest_ptr: *mut Felt, attachment_idx: Felt) -> usize;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::find_attachment"]
-    fn extern_note_find_attachment(attachment_scheme: Felt, ptr: *mut RawAttachmentLocation);
+    fn extern_note_find_attachment(attachment_scheme: Felt, ptr: *mut RawFoundIndex);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_initial_assets_info"]
     fn extern_active_note_get_initial_assets_info(ptr: *mut RawCommitmentWithCount);
@@ -245,8 +245,7 @@ pub fn write_attachment_to_memory(attachment_idx: u32) -> Vec<Word> {
 /// Searches the active note metadata for `attachment_scheme`.
 pub fn find_attachment(attachment_scheme: Felt) -> Option<u32> {
     unsafe {
-        let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<RawAttachmentLocation>::uninit());
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawFoundIndex>::uninit());
         extern_note_find_attachment(attachment_scheme, ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init().into_attachment_index()
     }
@@ -263,8 +262,7 @@ pub fn get_initial_assets_info() -> ActiveNoteAssetsInfo {
         let raw = ret_area.into_inner().assume_init();
         ActiveNoteAssetsInfo {
             commitment: raw.commitment,
-            // The transaction kernel guarantees asset counts fit in a u32.
-            num_assets: raw.count.as_canonical_u64() as u32,
+            num_assets: raw.num_items(),
         }
     }
 }
@@ -340,8 +338,7 @@ pub fn get_storage_info() -> ActiveNoteStorageInfo {
         let raw = ret_area.into_inner().assume_init();
         ActiveNoteStorageInfo {
             commitment: raw.commitment,
-            // The transaction kernel guarantees storage item counts fit in a u32.
-            num_storage_items: raw.count.as_canonical_u64() as u32,
+            num_storage_items: raw.num_items(),
         }
     }
 }

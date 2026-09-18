@@ -486,23 +486,11 @@ pub(crate) struct RawCommitmentWithCount {
     pub count: Felt,
 }
 
-/// Raw protocol return layout for input-note lookups by note ID.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub(crate) struct RawNoteLocation {
-    /// Non-zero when an input note with the requested ID was found.
-    pub is_found: Felt,
-    /// The matching input-note index, valid only when `is_found` is non-zero.
-    pub index: Felt,
-}
-
-impl RawNoteLocation {
-    /// Converts the protocol return layout into the found input-note index, if any.
-    pub(crate) fn into_note_index(self) -> Option<NoteIdx> {
-        if self.is_found == Felt::ZERO {
-            return None;
-        }
-        Some(NoteIdx { inner: self.index })
+impl RawCommitmentWithCount {
+    /// Returns the count as an integer.
+    pub(crate) fn num_items(&self) -> u32 {
+        // The transaction kernel guarantees asset and storage item counts fit in a u32.
+        self.count.as_canonical_u64() as u32
     }
 }
 
@@ -525,24 +513,33 @@ impl NoteMetadata {
     }
 }
 
-/// Raw protocol return layout for attachment lookups.
+/// Raw protocol return layout for lookups whose stack outputs are `[is_found, index]`.
+///
+/// Used by the attachment lookups (`find_attachment`) and the input-note lookup (`find_note`).
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub(crate) struct RawAttachmentLocation {
-    /// Non-zero when the attachment scheme was found.
+pub(crate) struct RawFoundIndex {
+    /// Non-zero when the lookup found a match.
     pub is_found: Felt,
-    /// The matching attachment index, valid only when `is_found` is non-zero.
+    /// The index of the match, valid only when `is_found` is non-zero.
     pub index: Felt,
 }
 
-impl RawAttachmentLocation {
+impl RawFoundIndex {
+    /// Returns the index of the match, if there was one.
+    fn index(self) -> Option<Felt> {
+        (self.is_found != Felt::ZERO).then_some(self.index)
+    }
+
     /// Converts the protocol return layout into the found attachment index, if any.
     pub(crate) fn into_attachment_index(self) -> Option<u32> {
-        if self.is_found == Felt::ZERO {
-            return None;
-        }
         // The transaction kernel guarantees attachment indexes fit in a u32.
-        Some(self.index.as_canonical_u64() as u32)
+        self.index().map(|index| index.as_canonical_u64() as u32)
+    }
+
+    /// Converts the protocol return layout into the found input-note index, if any.
+    pub(crate) fn into_note_index(self) -> Option<NoteIdx> {
+        self.index().map(|index| NoteIdx { inner: index })
     }
 }
 

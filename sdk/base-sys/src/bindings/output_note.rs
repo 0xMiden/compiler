@@ -7,8 +7,8 @@ use super::{
     MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, assert_attachment_count,
     assert_attachment_word_count,
     types::{
-        Asset, NoteId, NoteIdx, NoteMetadata, NoteType, RawAttachmentLocation,
-        RawCommitmentWithCount, Recipient, Tag,
+        Asset, NoteId, NoteIdx, NoteMetadata, NoteType, RawCommitmentWithCount, RawFoundIndex,
+        Recipient, Tag,
     },
 };
 
@@ -88,7 +88,7 @@ unsafe extern "C" {
     pub(crate) fn extern_output_note_find_attachment(
         attachment_scheme: Felt,
         note_index: Felt,
-        ptr: *mut RawAttachmentLocation,
+        ptr: *mut RawFoundIndex,
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::write_attachment_commitments_to_memory"]
@@ -248,8 +248,7 @@ pub fn get_assets_info(note_index: NoteIdx) -> OutputNoteAssetsInfo {
         let raw = ret_area.into_inner().assume_init();
         OutputNoteAssetsInfo {
             commitment: raw.commitment,
-            // The transaction kernel guarantees asset counts fit in a u32.
-            num_assets: raw.count.as_canonical_u64() as u32,
+            num_assets: raw.num_items(),
         }
     }
 }
@@ -298,8 +297,7 @@ pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
 /// Searches the output note metadata for `attachment_scheme`.
 pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u32> {
     unsafe {
-        let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<RawAttachmentLocation>::uninit());
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawFoundIndex>::uninit());
         extern_output_note_find_attachment(
             attachment_scheme,
             note_index.inner,

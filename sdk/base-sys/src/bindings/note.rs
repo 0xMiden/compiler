@@ -6,7 +6,7 @@ use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::{
     AccountId, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteType, RawAccountId,
-    RawAttachmentLocation, Recipient, Tag, assert_attachment_count,
+    RawFoundIndex, Recipient, Tag, assert_attachment_count,
 };
 
 const MAX_NOTE_STORAGE_ITEMS: usize = 1024;
@@ -94,7 +94,7 @@ unsafe extern "C" {
         metadata_f1: Felt,
         metadata_f2: Felt,
         metadata_f3: Felt,
-        ptr: *mut RawAttachmentLocation,
+        ptr: *mut RawFoundIndex,
     );
     // The name must stay in lockstep with the stub's `export_name` (`stubs/note.rs`) and
     // `SCRIPT_ROOT_STUB_NAME` in the compiler frontend (`frontend/wasm/src/intrinsics/note.rs`).
@@ -336,8 +336,7 @@ pub fn metadata_into_tag(metadata: Word) -> Tag {
 /// Searches a metadata header word for `attachment_scheme`.
 pub fn find_attachment_idx(attachment_scheme: Felt, metadata: Word) -> Option<u32> {
     unsafe {
-        let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<RawAttachmentLocation>::uninit());
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawFoundIndex>::uninit());
         extern_note_find_attachment_idx(
             attachment_scheme,
             metadata[0],

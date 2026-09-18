@@ -7,8 +7,8 @@ use super::{
     MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, assert_attachment_count,
     assert_attachment_word_count,
     types::{
-        AccountId, Asset, NoteId, NoteIdx, NoteMetadata, RawAccountId, RawAttachmentLocation,
-        RawCommitmentWithCount, RawNoteLocation, Recipient,
+        AccountId, Asset, NoteId, NoteIdx, NoteMetadata, RawAccountId, RawCommitmentWithCount,
+        RawFoundIndex, Recipient,
     },
 };
 
@@ -62,7 +62,7 @@ unsafe extern "C" {
     fn extern_input_note_find_attachment(
         attachment_scheme: Felt,
         note_index: Felt,
-        ptr: *mut RawAttachmentLocation,
+        ptr: *mut RawFoundIndex,
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::input_note::get_initial_num_assets"]
@@ -94,7 +94,7 @@ unsafe extern "C" {
         note_id_1: Felt,
         note_id_2: Felt,
         note_id_3: Felt,
-        ptr: *mut RawNoteLocation,
+        ptr: *mut RawFoundIndex,
     );
 }
 
@@ -121,8 +121,7 @@ pub fn get_initial_assets_info(note_index: NoteIdx) -> InputNoteAssetsInfo {
         let raw = ret_area.into_inner().assume_init();
         InputNoteAssetsInfo {
             commitment: raw.commitment,
-            // The transaction kernel guarantees asset counts fit in a u32.
-            num_assets: raw.count.as_canonical_u64() as u32,
+            num_assets: raw.num_items(),
         }
     }
 }
@@ -179,8 +178,7 @@ pub fn get_storage_info(note_index: NoteIdx) -> InputNoteStorageInfo {
         let raw = ret_area.into_inner().assume_init();
         InputNoteStorageInfo {
             commitment: raw.commitment,
-            // The transaction kernel guarantees storage item counts fit in a u32.
-            num_storage_items: raw.count.as_canonical_u64() as u32,
+            num_storage_items: raw.num_items(),
         }
     }
 }
@@ -265,8 +263,7 @@ pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> V
 /// Searches the input note metadata for `attachment_scheme`.
 pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u32> {
     unsafe {
-        let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<RawAttachmentLocation>::uninit());
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawFoundIndex>::uninit());
         extern_input_note_find_attachment(
             attachment_scheme,
             note_index.inner,
@@ -348,7 +345,7 @@ pub fn get_note_id(note_index: NoteIdx) -> NoteId {
 /// consume it.
 pub fn find_note(note_id: NoteId) -> Option<NoteIdx> {
     unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawNoteLocation>::uninit());
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawFoundIndex>::uninit());
         let id = note_id.inner;
         extern_input_note_find_note(id[0], id[1], id[2], id[3], ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init().into_note_index()
