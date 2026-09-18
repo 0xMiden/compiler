@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2]
+
+### Compiler and `midenc`
+
+- `midenc`, and so `miden build`, honors `--manifest-path` and can build a project from any
+  directory; the flag was previously ignored.
+- Rust programs and transaction scripts build under plain `midenc`; they previously failed with
+  `requested target type is executable, but root module provided to assembler is library`.
+- `--target` selects the executable that is assembled, not only its entrypoint.
+
+### `cargo-miden`
+
+- `cargo miden build` forwards its arguments to `midenc` and builds exactly what `midenc` would.
+  Its logging is configured by `MIDENC_TRACE`; `CARGO_MIDEN_LOG` is no longer read.
+
 ## [0.10.1]
 
 ### Compiler and `midenc`
