@@ -1,27 +1,17 @@
-use cargo_miden::CommandOutput;
-use midenc_log::SuppressKnownDependencyErrors;
-
-/// Initializes the global logger, suppressing the known-harmless dependency errors.
-fn init_logger() {
-    let mut builder = midenc_log::Builder::from_env("CARGO_MIDEN_LOG");
-    builder.format_indent(Some(2));
-    builder.format_timestamp(None);
-    let logger = builder.build();
-    let max_level = logger.filter();
-    log::set_boxed_logger(Box::new(SuppressKnownDependencyErrors::new(logger)))
-        .expect("logger already initialized");
+/// Initializes the global logger, configured exactly as `midenc`'s is.
+fn init_logger() -> anyhow::Result<()> {
+    let (logger, max_level) = midenc_log::midenc_logger().map_err(|err| anyhow::anyhow!(err))?;
+    log::set_boxed_logger(logger).expect("logger already initialized");
     log::set_max_level(max_level);
+    Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
-    init_logger();
+    init_logger()?;
 
     match cargo_miden::run(std::env::args()) {
-        Ok(Some(CommandOutput::BuildCommandOutput { output })) => {
-            for artifact_path in output {
-                println!("Compiled {}", artifact_path.display());
-            }
-        }
+        // Nothing is printed for a finished build: the driver has already announced the package
+        // it wrote, and this is the same build.
         Ok(_) => {}
         Err(e) => {
             eprintln!("{e:?}");

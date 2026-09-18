@@ -806,8 +806,7 @@ dependencies = [
  "liquid",
  "liquid-core",
  "log",
- "midenc-compile",
- "midenc-hir",
+ "midenc-driver",
  "midenc-log",
  "midenc-session",
  "path-absolutize",
@@ -3923,6 +3922,7 @@ dependencies = [
  "midenc-compile",
  "midenc-hir",
  "midenc-session",
+ "tempfile",
 ]
 
 [[package]]

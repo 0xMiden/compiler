@@ -1,0 +1,16 @@
+# `cargo miden build` hands its arguments to `midenc` unchanged.
+#
+# The help it prints is the compiler's: two options no wrapper stub ever documented are the
+# evidence that the arguments reached the driver.
+#
+# RUN: cargo-miden miden build --help | filecheck %s --check-prefix=HELP
+#
+# HELP: --manifest-path
+# HELP: --working-dir
+#
+# A `--` delimiter reaches the compiler too, so what follows it is taken as an input file and not
+# as an option: `build -- --help` fails on the input `--help` instead of printing the help.
+#
+# RUN: not cargo-miden miden build -- --help 2>&1 | filecheck %s --check-prefix=DELIM
+#
+# DELIM: invalid input file '--help'
