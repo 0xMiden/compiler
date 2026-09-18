@@ -297,6 +297,10 @@ pub fn execute_foreign_procedure(
 /// computed, so a caller can account for work that still lies ahead of it, such as signature
 /// verification or the epilogue. `exclude_notes_commitment` commits to the output-note indices
 /// that should be left out of the computation, or is the empty word when nothing is excluded.
+///
+/// # Panics
+///
+/// Panics if the computed fee exceeds the maximum asset amount.
 pub fn compute_fee(num_extra_cycles: u32, exclude_notes_commitment: Word) -> AssetAmount {
     let fee = unsafe {
         extern_tx_compute_fee(

@@ -101,7 +101,7 @@ impl Asset {
     /// Returns this asset's fungible amount.
     ///
     /// Intended for kernel-encoded assets (e.g. the ones returned by the `get_assets`
-    /// bindings), whose encoding invariants make the composition bit sufficient to discriminate
+    /// bindings), whose encoding invariants make the composition bits sufficient to discriminate
     /// fungibility.
     ///
     /// # Panics
@@ -120,7 +120,7 @@ impl Asset {
     /// Returns `true` if this asset is fungible.
     ///
     /// Intended for kernel-encoded assets (e.g. the ones returned by the `get_assets`
-    /// bindings), whose encoding invariants make the composition bit sufficient to discriminate
+    /// bindings), whose encoding invariants make the composition bits sufficient to discriminate
     /// fungibility.
     #[inline]
     pub fn is_fungible(&self) -> bool {
@@ -144,6 +144,7 @@ impl From<Asset> for (Word, Word) {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(transparent)]
 pub struct AssetId {
+    /// The asset id word, as the transaction kernel encodes it.
     pub inner: Word,
 }
 
@@ -167,7 +168,9 @@ impl From<AssetId> for Word {
 /// fungible assets. Use [`AssetId::faucet_id`] to identify the issuer.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 pub struct AssetClass {
+    /// The prefix of the class, the second element of the kernel's `[suffix, prefix]` output.
     pub prefix: Felt,
+    /// The suffix of the class, the first element of the kernel's `[suffix, prefix]` output.
     pub suffix: Felt,
 }
 
@@ -456,6 +459,7 @@ pub struct Recipient {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(transparent)]
 pub struct NoteId {
+    /// The note id digest.
     pub inner: Word,
 }
 

@@ -943,6 +943,7 @@ fn parse_entrypoint_signature(
 
     // `mut self` is accepted: the generated export owns the decoded note and calls the entrypoint
     // on it, so receiver mutability only affects the method body (e.g. `&mut self` trait calls).
+
     if !is_unit_return_type(&sig.output) {
         return Err(syn::Error::new(sig.output.span(), "entrypoint method must return `()`"));
     }

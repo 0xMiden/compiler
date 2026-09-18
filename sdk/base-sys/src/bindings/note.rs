@@ -214,6 +214,11 @@ pub fn compute_storage_commitment(storage: &[Felt]) -> Word {
 /// Writes attachment commitments from the advice map to memory.
 ///
 /// The advice map must contain the preimage committed to by `attachments_commitment`.
+///
+/// # Panics
+///
+/// Panics if the preimage is not a whole number of words or holds more commitments than a note
+/// can have attachments.
 pub fn write_attachment_commitments_to_memory(attachments_commitment: Word) -> Vec<Word> {
     load_attachment_words(attachments_commitment, MAX_ATTACHMENTS_PER_NOTE)
 }
@@ -221,6 +226,11 @@ pub fn write_attachment_commitments_to_memory(attachments_commitment: Word) -> V
 /// Writes one attachment from the advice map to memory.
 ///
 /// The advice map must contain the attachment elements committed to by `attachment_commitment`.
+///
+/// # Panics
+///
+/// Panics if the attachment is not a whole number of words or exceeds the protocol's attachment
+/// size limit.
 pub fn write_attachment_to_memory(attachment_commitment: Word) -> Vec<Word> {
     load_attachment_words(attachment_commitment, MAX_ATTACHMENT_WORDS)
 }

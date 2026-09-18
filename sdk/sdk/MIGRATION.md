@@ -20,6 +20,9 @@ directly below this paragraph, above the previous one (newest first, like the
 The name `tx::get_block_commitment` is reused: `tx::get_block_commitment(block_number)` reads any
 block up to the reference block.
 
+The raw extern `output_note::extern_output_note_get_assets_info` is no longer public; call
+`output_note::get_assets_info`.
+
 ### P2ID note storage has four items (protocol 0.17)
 
 The standard P2ID note script expects `[target_id_suffix, target_id_prefix, salt_0, salt_1]` and
