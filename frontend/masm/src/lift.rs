@@ -653,7 +653,11 @@ impl ModuleRegistry {
 
     fn lift_bodies(&self) -> Result<()> {
         let mut builder = OpBuilder::new(self.context.clone());
-        for gid in self.signatures.keys().copied() {
+        // Lift in item order, like the declarations, so that neither the order bodies are created
+        // in nor the first error reported depends on hash table iteration order.
+        let mut gids = self.signatures.keys().copied().collect::<Vec<_>>();
+        gids.sort_unstable();
+        for gid in gids {
             let module_path = self.linker[gid.module].path();
             if let SymbolItem::Procedure(p) = self.linker[gid].item() {
                 let p = p.borrow();
