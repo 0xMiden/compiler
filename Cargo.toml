@@ -104,9 +104,7 @@ log = { version = "0.4", features = ["kv"] }
 # Miden Dependencies
 miden-assembly = { version = "0.33.0", default-features = false }
 miden-core = { version = "0.33.0", default-features = false }
-# TODO: switch back to a crates.io release once a `miden-debug` compatible with VM 0.33 is
-# published. Until then the crate comes from the commit on its `next` branch that migrated it.
-miden-debug = { git = "https://github.com/0xMiden/miden-debug", rev = "dc546d792dd48290c1f3e5175939c998e71fd038", default-features = false }
+miden-debug = { version = "0.16", default-features = false }
 miden-debug-types = { version = "0.33.0", default-features = false }
 miden-assembly-syntax = { version = "0.33.0", default-features = false }
 miden-assembly-syntax-cst = { version = "0.33.0", default-features = false }

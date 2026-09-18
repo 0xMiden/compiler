@@ -3147,8 +3147,9 @@ dependencies = [
 
 [[package]]
 name = "miden-debug"
-version = "0.15.0"
-source = "git+https://github.com/0xMiden/miden-debug?rev=dc546d792dd48290c1f3e5175939c998e71fd038#dc546d792dd48290c1f3e5175939c998e71fd038"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed379249f34016955adde1e09ed04790dfd13d9ff59af512f2ae64b805a98265"
 dependencies = [
  "clap",
  "compact_str",
@@ -3169,8 +3170,9 @@ dependencies = [
 
 [[package]]
 name = "miden-debug-engine"
-version = "0.15.0"
-source = "git+https://github.com/0xMiden/miden-debug?rev=dc546d792dd48290c1f3e5175939c998e71fd038#dc546d792dd48290c1f3e5175939c998e71fd038"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a31cff6562118a1de399b59ae295565eb72103d039189a269f343075a143d310"
 dependencies = [
  "clap",
  "hashbrown 0.17.1",
