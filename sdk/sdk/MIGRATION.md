@@ -17,6 +17,9 @@ directly below this paragraph, above the previous one (newest first, like the
 - `tx::get_block_commitment()` -> `tx::get_reference_block_commitment()`
 - `tx::get_block_number()` -> `tx::get_reference_block_number()`
 
+The name `tx::get_block_commitment` is reused: `tx::get_block_commitment(block_number)` reads any
+block up to the reference block.
+
 ### P2ID note storage has four items (protocol 0.17)
 
 The standard P2ID note script expects `[target_id_suffix, target_id_prefix, salt_0, salt_1]` and
@@ -42,7 +45,8 @@ also binds the reference block number and commitment, the transaction's expirati
 and six user-defined parameters. The host rebuilds the summary from the advice-map preimage and
 rejects the signing request unless its commitment matches, so a component that still hashes the
 old layout fails at runtime with `TransactionSummaryConstructionFailed` even though it compiles
-unchanged.
+unchanged. Components already on the protocol 0.16 six-word layout move the two parameter words to
+the front and replace the expiration-delta felt with `version` and `metadata`.
 
 The words are hashed in this order, with the parameters first and the block commitment last:
 
@@ -220,8 +224,8 @@ tx::update_expiration_block_delta(42);
 
 Account nonces are wrapped in the new `Nonce` type (comparable as integers; use
 `as_felt()`/`as_u64()` or `Felt::from(nonce)` where the raw value is needed, e.g. when packing a
-nonce into a `Word` — `ref_block_num` below is a `BlockNumber` from `tx::get_reference_block_number()` and
-converts the same way):
+nonce into a `Word` — `ref_block_num` below is a `BlockNumber` from
+`tx::get_reference_block_number()` and converts the same way):
 
 ```rust
 // before
@@ -233,9 +237,9 @@ let final_nonce: Nonce = self.incr_nonce();
 let params = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
 ```
 
-This example shows only the type conversions. Do not reuse the word layout: protocol 0.16
+This example shows only the type conversions. Do not reuse the word layout: protocol 0.17
 replaces the four-word transaction summary that packed the nonce this way — see
-[Transaction summaries are six words (protocol 0.16)](#transaction-summaries-are-six-words-protocol-016)
+[Transaction summaries are versioned six-word preimages (protocol 0.17)](#transaction-summaries-are-versioned-six-word-preimages-protocol-017)
 at the top of this guide for the required six-word layout.
 
 Attachment lookups return `Option<u32>` instead of the removed `AttachmentLocation` struct, and
@@ -497,13 +501,12 @@ let asset = miden::native_account::get_initial_asset(asset_key);
 **In-transaction asset construction and balance getters were removed.**
 
 - `active_account::{get_balance, get_initial_balance}` are gone. Read the asset value word with
-  `active_account::get_asset` (or `native_account::get_initial_asset`) and extract the fungible
-  amount from the returned `AssetValue` word (see the protocol `fungible_value_into_amount`
-  helper).
-- `faucet::{create_fungible_asset, create_non_fungible_asset, has_callbacks}` and the whole
-  `asset` module (`asset::{create_fungible_asset, create_non_fungible_asset}`) are gone. The kernel
-  no longer exposes in-transaction asset construction; `faucet::{mint, burn}` take a pre-built
-  `Asset`.
+  `active_account::get_asset` (or `native_account::get_initial_asset`) and take the fungible
+  amount from it, for example with `Asset::new(key, value).amount()`.
+- `faucet::{create_fungible_asset, create_non_fungible_asset, has_callbacks}` and the asset
+  constructors `asset::{create_fungible_asset, create_non_fungible_asset}` are gone; the `asset`
+  module now only hosts the asset-id accessors. The kernel no longer exposes in-transaction asset
+  construction; `faucet::{mint, burn}` take a pre-built `Asset`.
 
 **`output_note::create` is account-context only.** It can now only be called from account-component
 context (runtime-enforced). Tx/note scripts must create notes through an account component wrapper
