@@ -1,16 +1,16 @@
 use std::{path::Path, sync::Arc};
 
 use anyhow::Context;
-use integration::helpers::{COUNTER_STORAGE_KEY, build_project_in_dir, counter_storage_slot};
+use integration::helpers::{build_project_in_dir, counter_storage_slot, COUNTER_STORAGE_KEY};
 use miden_client::{
-    Word,
     account::{
-        AccountBuilder, AccountComponent, AccountType, StorageMapKey, component::InitStorageData,
+        component::InitStorageData, AccountBuilder, AccountComponent, AccountType, StorageMapKey,
     },
     auth::AuthSchemeId,
     crypto::RandomCoin,
     note::NoteScript,
     transaction::RawOutputNote,
+    Word,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{AccountState, Auth, MockChain};
@@ -26,10 +26,14 @@ async fn counter_test() -> anyhow::Result<()> {
     })?;
 
     // Build contracts
-    let contract_package =
-        Arc::new(build_project_in_dir(Path::new("../contracts/counter-account"), true)?);
-    let note_package =
-        Arc::new(build_project_in_dir(Path::new("../contracts/increment-note"), true)?);
+    let contract_package = Arc::new(build_project_in_dir(
+        Path::new("../contracts/counter-account"),
+        true,
+    )?);
+    let note_package = Arc::new(build_project_in_dir(
+        Path::new("../contracts/increment-note"),
+        true,
+    )?);
 
     // Create the counter account with its initial storage through the component schema.
     let counter_storage_slot = counter_storage_slot()?;
@@ -86,6 +90,10 @@ async fn counter_test() -> anyhow::Result<()> {
         .expect("Failed to get counter value from storage slot");
 
     // Map values are returned as scalar words in `[value, 0, 0, 0]` layout.
-    assert_eq!(count[0].as_canonical_u64(), 1, "Count value is not equal to 1");
+    assert_eq!(
+        count[0].as_canonical_u64(),
+        1,
+        "Count value is not equal to 1"
+    );
     Ok(())
 }
