@@ -153,7 +153,13 @@ where
     )
     .map_err(|err| TestCaseError::fail(err.to_string()))?;
     let mut exec = Executor::new(args.to_vec()).with_registry(registry);
-    for library in &session.options.link_libraries {
+    // The core and protocol libraries are registered from their bundled packages below.
+    for library in session
+        .options
+        .link_libraries
+        .iter()
+        .filter(|library| !library.is_core() && !library.is_protocol())
+    {
         let package = library
             .load(&session.options)
             .map_err(|err| TestCaseError::fail(err.to_string()))?;
