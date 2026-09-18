@@ -1647,14 +1647,11 @@ impl MasmFunctionBuilder {
                 stack.push(arg as ValueRef);
             }
         }
+        // Taken from the same offsets `locaddr` is emitted with, so that debug locations and
+        // generated code cannot disagree about where a local lives.
         let local_offsets = function
-            .locals()
-            .iter()
-            .scan(0u32, |next_offset, ty| {
-                let offset = *next_offset;
-                *next_offset += ty.size_in_felts() as u32;
-                Some(offset)
-            })
+            .iter_locals()
+            .map(|local| local.absolute_offset() as u32)
             .collect::<Vec<_>>();
         let mut emitter = BlockEmitter {
             frame: FrameLayout {

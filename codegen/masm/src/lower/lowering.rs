@@ -1664,12 +1664,14 @@ fn debug_var_location_from_expression(
 ///
 /// # Returns
 ///
-/// - `None` when nothing should be recorded. The debugger then keeps showing the variable's
-///   previous location, which is right for a value that is simply not on the operand stack at this
-///   point.
-/// - `Some(DebugVarLocation::Unavailable)` when the variable has a location that cannot be
-///   expressed. Recording it ends the previous location, so the debugger stops showing a value
-///   that is no longer valid.
+/// - `None` when no location is recorded, which leaves the variable's previous location in effect
+///   in the debugger. That is the case when the value is not on the operand stack at this point,
+///   and also when the expression has a shape this lowering does not translate: a constant that is
+///   not a field element, a piece, an unbalanced expression, or a Wasm index inside a compound
+///   expression. No placeholder is recorded for those.
+/// - `Some(DebugVarLocation::Unavailable)` when the expression names a local or a frame base that
+///   resolves to no runtime coordinates. Recording it ends the previous location, so the debugger
+///   stops showing a value that is no longer valid.
 /// - `Some` of any other location when the expression resolved.
 fn resolve_debug_var_location(
     expr: &midenc_hir::dialects::debuginfo::attributes::Expression,
@@ -1708,8 +1710,9 @@ fn resolve_debug_var_location(
                 // the frame-base cell at a Miden element address. An address that is not element
                 // aligned has no such cell, so it yields no frame base rather than a truncated one.
                 FrameBase::Global(_) => stack_pointer_addr
-                    .filter(|addr| addr % 4 == 0)
-                    .map(|addr| DebugFrameBase::Memory(addr / 4)),
+                    .map(crate::NativePtr::from_ptr)
+                    .filter(crate::NativePtr::is_element_aligned)
+                    .map(|ptr| DebugFrameBase::Memory(ptr.addr)),
             };
             Some(base.map_or(DebugVarLocation::Unavailable, |base| {
                 DebugVarLocation::ResolvedFrameBase {
