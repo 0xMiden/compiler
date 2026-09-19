@@ -13,6 +13,7 @@ use midenc_hir::{
     BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType, Op,
     OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Spanned, Type,
     ValueRef,
+    diagnostics::{SourceContent, Uri},
     dialects::{
         builtin::{
             BuiltinOpBuilder, FunctionBuilder, FunctionRef,
@@ -21,7 +22,8 @@ use midenc_hir::{
         debuginfo::{
             DIBuilder,
             attributes::{
-                CompileUnitAttr, Expression, ExpressionOp, SubprogramAttr,
+                CompileUnitAttr, Expression, ExpressionOp, INLINE_CALL_CHAIN_ATTR_NAME,
+                InlineCallChain, InlineCallChainAttr, InlineCallFrame, SubprogramAttr,
                 Variable as DebugVariable,
             },
         },
@@ -88,11 +90,15 @@ enum BlockStatus {
 
 pub struct SSABuilderListener {
     builder: Rc<RefCell<FunctionBuilderContext>>,
+    active_inline_calls: Rc<RefCell<Vec<InlineCallFrame>>>,
 }
 
 impl SSABuilderListener {
-    pub const fn new(builder: Rc<RefCell<FunctionBuilderContext>>) -> Self {
-        Self { builder }
+    pub fn new(builder: Rc<RefCell<FunctionBuilderContext>>) -> Self {
+        Self {
+            builder,
+            active_inline_calls: Default::default(),
+        }
     }
 }
 
@@ -101,7 +107,16 @@ impl Listener for SSABuilderListener {
         ListenerType::Builder
     }
 
-    fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
+    fn notify_operation_inserted(&self, mut op: OperationRef, prev: ProgramPoint) {
+        let inline_calls = self.active_inline_calls.borrow().clone();
+        if !inline_calls.is_empty() {
+            let context = op.borrow().context_rc();
+            let attr = context
+                .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(inline_calls))
+                .as_attribute_ref();
+            op.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, attr);
+        }
+
         let op = op.borrow();
         let mut builder = self.builder.borrow_mut();
 
@@ -146,11 +161,14 @@ pub struct FunctionBuilderExt<'c, B: ?Sized + Builder> {
     debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
     param_values: Vec<(Variable, ValueRef)>,
     param_dbg_emitted: bool,
+    active_inline_calls: Rc<RefCell<Vec<InlineCallFrame>>>,
 }
 
 impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
     pub fn new(func: FunctionRef, builder: &'c mut OpBuilder<SSABuilderListener>) -> Self {
         let func_ctx = builder.listener().map(|l| l.builder.clone()).unwrap();
+        let active_inline_calls =
+            builder.listener().map(|l| l.active_inline_calls.clone()).unwrap();
         debug_assert!(func_ctx.borrow().is_empty());
 
         let inner = FunctionBuilder::new(func, builder);
@@ -161,6 +179,7 @@ impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
             debug_info: None,
             param_values: Vec::new(),
             param_dbg_emitted: false,
+            active_inline_calls,
         }
     }
 }
@@ -188,6 +207,10 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             fill_debug_attr_location(&mut local.attr, file, line, column);
         }
         Some((local.attr.clone(), local.expression.clone(), !local.locations.is_empty()))
+    }
+
+    pub fn set_inline_calls(&mut self, inline_calls: Vec<InlineCallFrame>) {
+        *self.active_inline_calls.borrow_mut() = inline_calls;
     }
 
     pub fn emit_dbg_value_for_var(&mut self, var: Variable, value: ValueRef, span: SourceSpan) {
@@ -714,6 +737,21 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             })
             .max_by_key(|path| path.len())
             .unwrap_or_else(|| uri.as_str().to_owned());
+        let remapped_uri = Uri::new(&file);
+        let register_remapped_source = source_file.uri() != &remapped_uri
+            && session
+                .source_manager
+                .get_by_uri(&remapped_uri)
+                .is_none_or(|existing| existing.as_str() != source_file.as_str());
+        if register_remapped_source {
+            let mut content = SourceContent::new(
+                source_file.content().language(),
+                remapped_uri.clone(),
+                source_file.as_str(),
+            );
+            content.set_version(source_file.content().version());
+            session.source_manager.load_from_raw_parts(remapped_uri, content);
+        }
         let path = Path::new(&file);
         let file_symbol = Symbol::intern(&file);
         let directory_symbol = path.parent().and_then(|parent| parent.to_str()).map(Symbol::intern);
