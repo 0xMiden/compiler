@@ -47,6 +47,7 @@ sha2.workspace = true
 blake3 = "1.5"
 cargo_metadata = "0.19"
 concat-idents = "1.1"
+libc = "0.2"
 libloading = "0.8"
 wasmi = "1.1.0"
 wat.workspace = true

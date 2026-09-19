@@ -4182,6 +4182,7 @@ dependencies = [
  "blake3",
  "cargo_metadata 0.19.2",
  "concat-idents",
+ "libc",
  "libloading",
  "log",
  "miden-assembly",
