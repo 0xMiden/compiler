@@ -15,7 +15,9 @@ use miden_client::Word;
 use miden_core::Felt;
 
 /// Returns the non-zero storage key used by the sibling counter fixtures.
-fn counter_storage_key() -> Word {
+///
+/// Shared with the stored-procedure fixtures, which drive the same counter component.
+pub(crate) fn counter_storage_key() -> Word {
     Word::new([
         Felt::new(13).unwrap(),
         Felt::new(21).unwrap(),

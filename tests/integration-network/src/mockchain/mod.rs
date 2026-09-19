@@ -5,6 +5,7 @@ mod counter;
 mod fpi;
 mod notes;
 mod sibling;
+mod stored_procedure;
 mod support;
 mod swapp;
 mod tx_script_args;

@@ -11,13 +11,16 @@ use syn::{
 
 use crate::{
     boilerplate::runtime_boilerplate,
-    types::{TypeRef, map_type_to_type_ref, registered_export_type_map},
+    generate::reject_reserved_dyncall_export,
+    types::{
+        map_type_to_type_ref, registered_export_type_map, reject_custom_type_ref,
+        rust_ident_to_wit_name, wit_bindgen_rust_ident,
+    },
     util::{
         generate_frontend_link_section, generate_wit_link_section, is_type_named,
         is_unit_return_type,
     },
-    wit_builder::WitBuilder,
-    wit_world::{ManifestPackage, write_world_block},
+    wit_world::{InlineInterfaceWorld, ManifestPackage, wit_func_line, wit_param},
 };
 
 const NOTE_SCRIPT_ATTR: &str = "note_script";
@@ -26,8 +29,11 @@ const NOTE_SCRIPT_DOC_MARKER: &str = "__miden_note_script_marker";
 const NOTE_CONSTRUCTOR_ATTR: &str = "note_constructor";
 const NOTE_CONSTRUCTOR_MARKER_ATTR: &str = "miden_note_constructor_requires_note";
 const NOTE_CONSTRUCTOR_DOC_MARKER: &str = "__miden_note_constructor_marker";
-const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 const ENTRYPOINT_ROOT_METHOD: &str = "get_entrypoint_root";
+/// Diagnostic emitted for an `#[export_type]` custom type in a note constructor signature.
+const CUSTOM_TYPE_ERROR: &str = "custom exported types are not supported in note constructor \
+                                 signatures; use SDK core types (e.g. `Felt`, `Word`, \
+                                 `AccountId`, `Tag`, `NoteType`, `NoteIdx`) or primitives";
 
 /// Expands `#[note]` for either a note input `struct` or an inherent `impl` block.
 pub(crate) fn expand_note(
@@ -299,7 +305,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
 
     let entrypoint_ident = &entrypoint_fn.sig.ident;
     let export_name = rust_ident_to_wit_name(entrypoint_ident);
-    let guest_entrypoint_ident = wit_bindgen_guest_ident(&export_name, entrypoint_ident.span());
+    let guest_entrypoint_ident = wit_bindgen_rust_ident(&export_name, entrypoint_ident.span());
     let (constructors, constructor_type_imports) =
         match collect_note_constructors(&mut item_impl, entrypoint_ident, &export_name) {
             Ok(val) => val,
@@ -633,7 +639,7 @@ fn collect_note_constructors(
                 ));
             };
             let type_ref = map_type_to_type_ref(&pat_type.ty, &exported_types)?;
-            reject_custom_type_ref(&type_ref, pat_type.ty.span())?;
+            reject_custom_type_ref(&type_ref, pat_type.ty.span(), CUSTOM_TYPE_ERROR)?;
             type_ref.add_required_core_type_imports(&mut type_imports);
             // WIT parameter names are kebab-cased, so distinct Rust identifiers can collide;
             // catch that here instead of surfacing a WIT parse error from the generated bindings.
@@ -663,7 +669,7 @@ fn collect_note_constructors(
             }
             syn::ReturnType::Type(_, ty) => {
                 let type_ref = map_type_to_type_ref(ty, &exported_types)?;
-                reject_custom_type_ref(&type_ref, ty.span())?;
+                reject_custom_type_ref(&type_ref, ty.span(), CUSTOM_TYPE_ERROR)?;
                 type_ref.add_required_core_type_imports(&mut type_imports);
                 ConstructorReturn::Type {
                     user_ty: ty.clone(),
@@ -683,6 +689,7 @@ fn collect_note_constructors(
         // the entrypoint export or with a duplicate method definition. Catch that here instead
         // of surfacing a WIT parse error from the generated bindings.
         let wit_name = rust_ident_to_wit_name(&sig.ident);
+        reject_reserved_dyncall_export(&sig.ident, &wit_name, "note constructor")?;
         if wit_name == entrypoint_export_name || !wit_names.insert(wit_name.clone()) {
             return Err(syn::Error::new(
                 sig.ident.span(),
@@ -695,7 +702,7 @@ fn collect_note_constructors(
         }
 
         constructors.push(NoteConstructor {
-            guest_fn_ident: wit_bindgen_guest_ident(&wit_name, sig.ident.span()),
+            guest_fn_ident: wit_bindgen_rust_ident(&wit_name, sig.ident.span()),
             wit_name,
             fn_ident: sig.ident.clone(),
             doc_attrs,
@@ -748,21 +755,6 @@ fn reject_type_import_name_collisions(
     Ok(())
 }
 
-/// Rejects `#[export_type]` custom types in note constructor signatures.
-fn reject_custom_type_ref(type_ref: &TypeRef, span: Span) -> syn::Result<()> {
-    if type_ref.is_custom {
-        return Err(syn::Error::new(
-            span,
-            "custom exported types are not supported in note constructor signatures; use SDK core \
-             types (e.g. `Felt`, `Word`, `AccountId`, `Tag`, `NoteType`, `NoteIdx`) or primitives",
-        ));
-    }
-    for dependency in &type_ref.dependencies {
-        reject_custom_type_ref(dependency, span)?;
-    }
-    Ok(())
-}
-
 /// Renders the guest trait method forwarding an exported constructor to the user's function.
 fn render_constructor_guest_method(
     constructor: &NoteConstructor,
@@ -810,37 +802,14 @@ fn constructor_wit_signature(constructor: &NoteConstructor) -> String {
     let params = constructor
         .params
         .iter()
-        .map(|param| {
-            format!("{}: {}", explicit_wit_identifier(&param.wit_param_name), param.wit_type_name)
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    let wit_name = explicit_wit_identifier(&constructor.wit_name);
-    match &constructor.return_info {
-        ConstructorReturn::Unit => format!("{wit_name}: func({params});"),
-        ConstructorReturn::Type { wit_type_name, .. } => {
-            format!("{wit_name}: func({params}) -> {wit_type_name};")
-        }
-    }
-}
+        .map(|param| wit_param(&param.wit_param_name, &param.wit_type_name))
+        .collect::<Vec<_>>();
+    let result = match &constructor.return_info {
+        ConstructorReturn::Unit => None,
+        ConstructorReturn::Type { wit_type_name, .. } => Some(wit_type_name.as_str()),
+    };
 
-/// Converts a Rust identifier to its canonical WIT spelling before WIT escaping is applied.
-fn rust_ident_to_wit_name(ident: &syn::Ident) -> String {
-    ident.unraw().to_string().to_kebab_case()
-}
-
-/// Returns the Rust trait-method identifier generated by wit-bindgen for a canonical WIT name.
-fn wit_bindgen_guest_ident(wit_name: &str, span: Span) -> syn::Ident {
-    syn::Ident::new(&wit_bindgen_rust::to_rust_ident(wit_name), span)
-}
-
-/// Renders WIT's explicit identifier form.
-///
-/// Explicit identifiers are valid for both keywords and ordinary identifiers. Using this form for
-/// every Rust-derived name keeps generated interfaces valid without duplicating WIT's evolving
-/// keyword list in the macro.
-fn explicit_wit_identifier(name: &str) -> String {
-    format!("%{name}")
+    wit_func_line(&constructor.wit_name, &params, result)
 }
 
 fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
@@ -1113,26 +1082,28 @@ fn build_note_script_wit(
     constructor_type_imports: &BTreeSet<String>,
     dependency_imports: &[String],
 ) -> String {
-    let mut wit = WitBuilder::new("#[note]", component_package, component_version);
-    wit.use_path(CORE_TYPES_PACKAGE);
-    wit.blank_line();
-    wit.interface(interface_name, |interface| {
-        // `word` is always required by the entrypoint's `arg` parameter
-        let mut type_imports = constructor_type_imports.clone();
-        type_imports.insert("word".to_string());
-        let imports = type_imports.iter().cloned().collect::<Vec<_>>().join(", ");
-        interface.line(&format!("use core-types.{{{imports}}};"));
+    // `word` is always required by the entrypoint's `arg` parameter
+    let mut type_imports = constructor_type_imports.clone();
+    type_imports.insert("word".to_string());
+    let exports = [interface_name.to_string()];
+
+    InlineInterfaceWorld {
+        generated_by: "#[note]",
+        package: component_package,
+        version: component_version,
+        interface_name,
+        world_name,
+        imports: dependency_imports,
+        exports: &exports,
+    }
+    .render(&type_imports, |interface| {
         interface.blank_line();
-        interface.line(&format!("{}: func(arg: word);", explicit_wit_identifier(export_name)));
+        // The entrypoint's `arg` parameter is macro-controlled and never needs escaping.
+        interface.line(&wit_func_line(export_name, &["arg: word".to_string()], None));
         for constructor in constructors {
             interface.line(&constructor_wit_signature(constructor));
         }
-    });
-    wit.blank_line();
-    let exports = [interface_name.to_string()];
-    write_world_block(&mut wit, world_name, dependency_imports, &exports);
-
-    wit.finish()
+    })
 }
 
 /// Synthesizes the generated guest trait path for the inline note-script interface.
@@ -1560,6 +1531,29 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.to_string().contains("cannot take `self`"));
+    }
+
+    #[test]
+    fn note_constructors_reject_the_reserved_dyncall_prefix() {
+        // A note package exporting `dyncall-…` compiles on its own and only breaks its consumers,
+        // where the frontend dispatches the import dynamically instead of linking it.
+        let mut item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[note_constructor]
+                pub fn dyncall_notify(target: AccountId) {}
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+        let entrypoint_ident = format_ident!("execute");
+
+        let err = match collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute") {
+            Ok(_) => panic!("the reserved dyncall prefix must be rejected"),
+            Err(err) => err,
+        };
+        let message = err.to_string();
+        assert!(message.contains("note constructor `dyncall_notify`"), "{message}");
+        assert!(message.contains("exported as `dyncall-notify`"), "{message}");
+        assert!(message.contains("reserved for stored-procedure dispatch"), "{message}");
     }
 
     #[test]

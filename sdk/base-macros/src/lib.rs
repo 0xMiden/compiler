@@ -189,8 +189,9 @@ pub fn component(
 
 /// Wires storage metadata for an account component's storage struct.
 ///
-/// Apply this to the `struct` that declares the component's `#[storage(...)]` fields. It generates
-/// the `Default` implementation and implements the account traits so the component's methods can
+/// Apply this to the `struct` that declares the component's `#[storage(...)]` fields (a bare
+/// `#[storage]` declares a slot without a description or type override). It generates the
+/// `Default` implementation and implements the account traits so the component's methods can
 /// access storage and account operations. Use it together with a `#[component]` trait (the API) and
 /// a `#[component]` trait implementation (the behavior).
 ///
@@ -215,6 +216,67 @@ pub fn component(
 ///     }
 /// }
 /// ```
+///
+/// # Stored procedure slots
+///
+/// A slot may hold the MAST root of a procedure exported by a *sibling* component (another
+/// component deployed on the same account) and call it. Declare it in one line, spelling the call
+/// signature as a `fn` type:
+///
+/// ```rust,ignore
+/// use miden::{component_storage, AccountId, Felt, StorageValue, StoredProcedure};
+///
+/// #[component_storage]
+/// pub struct AuthorityStorage {
+///     #[storage(description = "authorization predicate")]
+///     authority: StorageValue<StoredProcedure<fn(role: Felt, caller: AccountId) -> bool>>,
+/// }
+/// ```
+///
+/// Calling it uses the `call` method with exactly that signature:
+///
+/// ```rust,ignore
+/// let allowed = self.authority.get().call(role, caller);
+/// ```
+///
+/// `call` is a method of a generated trait named after the field, `AuthorityCall` here, whose
+/// visibility matches the storage struct's. The trait is in scope in the module declaring the
+/// storage struct; elsewhere, import it (`use crate::AuthorityCall;`). Signature parameters and
+/// the result must be Miden core types or WIT primitives.
+///
+/// Two more items land in that same module: a marker type named after the field,
+/// `AuthoritySignature` here and again with the storage struct's visibility, which seals the slot
+/// to the declared signature and replaces the `fn` type in the field's spelling; and a hidden
+/// `__miden_stored_procedure_bindings_<struct>` module (the struct name snake-cased) holding the
+/// generated imports of all the struct's slots. A field whose `<Field>Signature` or `<Field>Call`
+/// name would collide with the storage struct's own name is rejected, as are two fields whose
+/// names differ only by word separators or letter case, since they generate the same items.
+///
+/// The arguments travel on the VM's operand stack next to the procedure root, which bounds the
+/// signature: at most 12 flat argument values, and at most 12 argument field elements — 11 when
+/// the result is returned through a pointer, which takes an element of its own. Wider signatures
+/// are rejected when the component is compiled.
+///
+/// Roots are expected to be written by the host at deployment or update time; the SDK offers no
+/// constructor for a `StoredProcedure`. Neither the compiler nor the VM checks the stored root
+/// against the declared signature: the called procedure is trusted to honour it. A wrong or stale
+/// root — one that names no procedure of the account, or one with a different stack contract —
+/// fails the transaction or returns wrong values. A result of a variant type (`Option`, `Result`)
+/// is lifted from the returned discriminant without validation, so a root returning an
+/// out-of-range discriminant is undefined behaviour in the caller, like any other canonical-ABI
+/// lift. Use `is_set()` to check whether the slot has been populated.
+///
+/// Arguments reach the procedure with the first parameter on top of the operand stack, each
+/// flattened to its field elements in declaration order. A Rust-compiled sibling expects exactly
+/// that layout.
+///
+/// A MASM procedure documents its own stack contract; spell the signature to match it, e.g. an
+/// account id expected as `[account_suffix, account_prefix]` is two `Felt` parameters in that
+/// order rather than one `AccountId` (which flattens to prefix, then suffix).
+///
+/// The generated imports are named `dyncall-<field>`, with the field name kebab-cased (`last_sum`
+/// gives `dyncall-last-sum`); that WIT name prefix is reserved, and a dependency interface
+/// defining a function with it is rejected.
 #[proc_macro_attribute]
 pub fn component_storage(
     attr: proc_macro::TokenStream,

@@ -51,21 +51,28 @@ pub(crate) struct ResolveOptions {
     pub allow_missing_local_wit: bool,
 }
 
+/// Resolves the bundled SDK prelude alone, without dependency or local WIT sources.
+///
+/// For an inline world a macro renders entirely from its own input — the `#[component_storage]`
+/// stored-procedure world — the SDK core types are the only sources it can reference. Leaving the
+/// dependency packages out keeps their `.masp` files off the expansion's build inputs, so neither
+/// a dependency rebuild nor a package-cache rotation re-expands the macro.
+pub(crate) fn resolve_sdk_wit() -> Result<ResolvedWit, Error> {
+    Ok(ResolvedWit {
+        prelude_dir: Some(sdk_prelude_dir()?),
+        dependency_sources: Vec::new(),
+        dependency_artifact_map: None,
+        local_wit_root: None,
+        world: None,
+        embeddable_local_wit: None,
+    })
+}
+
 /// Collects WIT search paths and the target world from `miden-project.toml` + local files.
 pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, Error> {
     let manifest = ProjectPackageMetadata::load_or_default(Span::call_site())?;
 
-    let canonical_prelude_dir = ensure_sdk_wit()?;
-
-    let prelude_dir = canonical_prelude_dir
-        .to_str()
-        .ok_or_else(|| {
-            Error::new(
-                Span::call_site(),
-                format!("path '{}' contains invalid UTF-8", canonical_prelude_dir.display()),
-            )
-        })?
-        .to_owned();
+    let prelude_dir = sdk_prelude_dir()?;
 
     // Dependency WIT is read from each dependency's compiled `.masp` package rather than
     // from files on disk; the sources are pushed into the wit-bindgen resolver alongside the
@@ -95,6 +102,21 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
         world,
         embeddable_local_wit,
     })
+}
+
+/// Materializes the bundled SDK WIT and returns its directory as a UTF-8 path.
+fn sdk_prelude_dir() -> Result<String, Error> {
+    let canonical_prelude_dir = ensure_sdk_wit()?;
+
+    canonical_prelude_dir
+        .to_str()
+        .ok_or_else(|| {
+            Error::new(
+                Span::call_site(),
+                format!("path '{}' contains invalid UTF-8", canonical_prelude_dir.display()),
+            )
+        })
+        .map(str::to_owned)
 }
 
 /// Ensures the embedded Miden SDK WIT is materialized in the project's folder.
