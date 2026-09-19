@@ -13,6 +13,10 @@ We want to make contributing to this project as easy and transparent as possible
 
 &nbsp;
 
+## AI Tool Policy
+
+If you use, or are planning on using AI tools to assist you in contributing to this project, then please read our [AI Tool Policy](docs/ai-tool-policy.md) before getting started.
+
 ## Contribution Quality
 
 To keep review time focused on meaningful improvements, we generally do not accept:
@@ -27,9 +31,9 @@ Contributions should:
 
 **We reserve the right to close PRs at our discretion, or batch trivial valid fixes into internal commits.**
 
-## Flow
+## Pull Requests
 
-We are using [Github Flow](https://docs.github.com/en/get-started/quickstart/github-flow), so all code changes happen through pull requests from a [forked repo](https://docs.github.com/en/get-started/quickstart/fork-a-repo).
+We are using [Github Flow](https://docs.github.com/en/get-started/quickstart/github-flow), so all code changes from external contributors must happen through pull requests from a [forked repo](https://docs.github.com/en/get-started/quickstart/fork-a-repo).
 
 ### Branching
 
@@ -39,7 +43,7 @@ We are using [Github Flow](https://docs.github.com/en/get-started/quickstart/git
 
     For example, if the issue title is `Fix functionality X in component Y` then the branch name will be something like: `fix-x-in-y`.
 
-- New branch should be rebased from `next` before submitting a PR in case there have been changes to avoid merge commits.
+- New branch should be rebased on `next` before submitting a PR in case there have been changes, so as to keep the history as clean as possible.
 i.e. this branches state:
   ```
           A---B---C fix-x-in-y
@@ -63,52 +67,86 @@ i.e. this branches state:
 
 ### Signing commits
 
-We require all commits to be [signed](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification#ssh-commit-signature-verification).
+We require all commits to be [signed](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification#ssh-commit-signature-verification). If you submit a PR that fails this check, it will not be merged, and will likely be closed for failing to follow our contributing guidelines.
 
 
-### Commit messages
-- Commit messages should be written in a short, descriptive manner and be prefixed with tags for the change type and scope (if possible) according to the [semantic commit](https://gist.github.com/joshbuchea/6f47e86d2510bce28f8e7f42ae84c716) scheme.
-For example, a new change to the codegen crate might have the following message: `feat(codegen): add lowering for new instruction 'hir.foo'`
+### Commit hygiene
 
-- Also squash commits to logically separated, distinguishable stages to keep git log clean:
-    ```
-    7hgf8978g9... Added A to X \
-                                \  (squash)
-    gh354354gh... oops, typo --- * ---------> 9fh1f51gh7... feat(X): add A && B
-                                /
-    85493g2458... Added B to X /
+Commit messages should be written in a short, descriptive manner and adhere to the following format: 
 
+```text
+<scope>: <summary>
 
-    789fdfffdf... Fixed D in Y \
-                                \  (squash)
-    787g8fgf78... blah  blah --- * ---------> 4070df6f00... fix(Y): fixed D && C
-                                /
-    9080gf6567... Fixed C in Y /
-    ```
+<description>
+
+<optional trailers>
+```
+
+Where:
+
+- `<scope>` indicates the scope or component of the compiler affected by the change. This is sometimes a specific crate, e.g. `midenc`, but more often than not a change may modify multiple crates, in which case the scope should indicate what the cross-cutting concern is. For example, `analysis` would be a good scope for a change that implements a new dataflow analysis pass; `arith` would be a good scope for a change that is focused on the `arith` dialect; `build` or `ci` are commonly used for changes that modify build tooling or CI workflows. Don't overthink it - just try to convey to the reader what the scope of the change is, if they were to read the commit without any additional context. Look at existing commits for reference if you are unsure.
+- `<summary>` should be a terse description of the change, no more than 80 characters if possible. You may omit the `<scope>: ` prefix if `<summary>` would exceed 80 characters otherwise, and already adequately conveys the scoping of the commit.
+- `<description>` should be a more detailed description of what changed, primarily focusing on the _why_. The reader can look at the diff to see the _what_, so your goal is only to summarize that aspect briefly. What the reader can't tell from the diff is the context on _why_ the change was made - focus on that.
+- `<optional trailers>` should contain trailers like issue references, `Assisted-by:`, etc. It is not required to specify these, and external contributors should avoid using `Closes:` or `Fixes:` trailers, as issue management is the concern of maintainers alone.
+
+An example of a good commit message is the following:
+
+```
+ci: benchmark each revision with its own SDK and examples
+
+The baseline compiler was driven over candidate sources, so SDK changes such as 
+allocator fixes were included on both sides and their size differences 
+disappeared. Use the baseline checkout for its examples, SDK, and inputs while 
+retaining a common benchmark runner and VM executor. Read result revisions from 
+their source checkouts and fail on either side’s build errors instead of 
+publishing a partial baseline.
+```
+
+Contributors should ensure their PRs are comprised of no more than a single commit, but if necessary, multiple commits are permitted so long as they adhere to the following rules:
+
+- Each commit is logically distinct from the others
+- Each commit is valid on its own (i.e. tests pass and lints are clean)
+- No "oops typo" or "addressing review feedback" commits.
+
+Contributors are encouraged to squash commits and force push on their PR branches to uphold those rules. If you do not do so, a maintainer may choose to manually merge your PR by rewriting your commits themselves, or by squash-merging the PR and collapsing the entire branch into a single commit. If a maintainer does not have time to do this however, then your PR may linger unmerged until such time as someone gets around to doing it for you. 
+
+TIP: If you want your PR merged quickly, then keeping up good commit hygiene makes it much more likely that will happen.
 
 ### Code Style and Documentation
 
-- For documentation in the codebase, we follow the [rustdoc](https://doc.rust-lang.org/rust-by-example/meta/doc.html) convention with no more than 100 characters per line.
+We provide `cargo make` tasks for all of our primary checks:
 
-- [Rustfmt](https://github.com/rust-lang/rustfmt) and [Clippy](https://github.com/rust-lang/rust-clippy) linting is included in CI pipeline. Anyways it's preferable to run linting locally before push:
-    ```
-    cargo make format && cargo make clippy --fix
-    ```
+- `cargo make format` to ensure code is formatted
+- `cargo make clippy` to ensure code passes the set of lints we have enabled, pass `--fix` to automatically fix issues when possible
+- `cargo make unused` to identify any unused dependencies/items that should be removed 
+- `cargo make rustdocs` to ensure Rust-based documentation comments build
+- `cargo make docs` to ensure our Docusaurus-based documentation pages build
+
+You should run any of these that are relevant before submitting a PR.
+
+For documentation in the code itself, we follow the [rustdoc](https://doc.rust-lang.org/rust-by-example/meta/doc.html) convention with line breaks required if a line exceeds 100 characters. You should ensure that any documentation relevant to a change you are making is updated as part of that change. If a new feature is being added, you should ensure that it is documented appropriately.
+
+### Changelog
+
+Do not manually write entries in any of the `CHANGELOG.md` files in this repo - the maintainers will handle this.
 
 ### Versioning
 
-We use [semver](https://semver.org/) naming convention.
+We use [Semantic Versioning](https://semver.org/) in this project, however contributors should not modify the versions of any crates as part of their pull request. If a change is breaking according to SemVer, then that should be indicated in the PR description - but whether it is or not, it will be checked by maintainers before the next release.
 
 &nbsp;
 
-## Pre-PR checklist
+### Pre-submission checklist
+
+Before submitting a PR, run through the following checklist:
+
 1. Repo forked and branch created from `next` according to the naming convention.
 2. Every commit is [signed](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification#ssh-commit-signature-verification).
 3. Commit messages and code style follow conventions.
 4. Tests added for new functionality.
 5. Documentation/comments updated for all changes according to our documentation convention.
 6. `cargo make format`, `cargo make clippy`, and `cargo make unused` lints produce no errors.
-7. New branch rebased from `next`.
+7. Branch is rebased on the latest changes in `next`.
 
 &nbsp;
 
@@ -124,68 +162,6 @@ We use [semver](https://semver.org/) naming convention.
 
 &nbsp;
 
-## Any contributions you make will be under the MIT Software License
+## Contributions are licensed under the project LICENSE
 
-In short, when you submit code changes, your submissions are understood to be under the dual [MIT](./LICENSE-MIT) and [Apache 2.0](./LICENSE-APACHE) license that covers the project. Feel free to contact the maintainers if that's a concern.
-
-## Release Process
-
-Releases are performed by the tooling in `tools/release`, driven by the
-`release.yml` workflow. The operational guide is
-**[docs/release-process.md](docs/release-process.md)** — follow the checklist
-there for the kind of release you are doing.
-
-A few things that used to live here and have changed, because the old procedure
-is still in people's heads:
-
-- **Releases happen from `main`, not `next`.** A release starts by promoting
-  `next` into `main`; the release candidate then branches from and merges into
-  `main`.
-- **`release-plz` is gone.** Versions are moved with
-  `cargo make release set-version --unit <compiler|sdk|templates> <version>`,
-  which updates every manifest, every requirement naming them, the lockfile, and
-  `.release/release.toml`. Never hand-edit a version: an SDK bump also rewrites
-  the SDK requirement in every template, and picks a different form of that
-  requirement for a prerelease than for a stable release.
-- **The compiler, the SDK, and the project templates are three independent
-  release units**, each with its own version, tag namespace, and changelog.
-
-### Changing the project templates
-
-The templates live in this repository at `extra/templates` and are released as
-`templates/v*`. They are no longer maintained in `0xMiden/rust-templates` or
-`0xMiden/project-template`, and no git tag is moved to publish them.
-
-1. Edit the templates under `extra/templates`.
-2. Regenerate the archive `cargo-miden` embeds:
-
-   ```bash
-   cargo make release bundle --output tools/cargo-miden/templates.tar.gz
-   ```
-
-   `cargo make release lint` fails if you forget; the archive is built from
-   files **tracked by git**, so anything untracked is silently absent from it
-   and is reported rather than included.
-
-3. Check that the templates still build:
-
-   ```bash
-   cargo make test-templates
-   ```
-
-   This scaffolds a project from each of the five `rust/` templates with the
-   compiler from your checkout and builds it for both profiles. It is the only
-   thing that compiles them — they are outside the workspace, so no other
-   `cargo test` reaches them. The `project` scaffold is not covered; changes to
-   it are only checked by `tools/cargo-miden/tests/templates_from_bundle.rs`,
-   which renders it but does not build it.
-
-4. Release the `templates` unit to put the change in front of users.
-   `cargo miden new` resolves the newest released bundle in its minor series at
-   runtime and falls back to the copy embedded in the binary, so an installed
-   `cargo-miden` picks up template fixes without being reinstalled — but only
-   once the bundle is released.
-
-   Use `cargo miden new <name> --force-download` to check what a user will
-   actually get: it requires the released bundle and fails rather than quietly
-   falling back to the embedded copy.
+When you submit code changes in a pull request, you are agreeing to license that contribution under the _project's_ dual license ([MIT](./LICENSE-MIT) and [Apache 2.0](./LICENSE-APACHE)). If you do not agree to this, then you must not submit pull requests to this project.
