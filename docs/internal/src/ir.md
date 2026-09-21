@@ -614,7 +614,7 @@ One is generally interested in the call graph for one of a couple reasons:
 3. Visit the call graph reachable from a given call site as part of an analysis
 4. Identify cycles in the call graph
 
-For 1 and 2, the `Symbol` use-list describes uses of that particular name, not all callers of its canonical body. Uses include alias forwarding edges, calls, and address-taking operations. Public aliases can keep private targets externally reachable even without local calls. `midenc_hir_analysis::analyses::CallableUseAnalysis` provides an alias-aware snapshot keyed by canonical callable. This snapshot requires linked symbol-use lists and must be recomputed after mutation.
+For 1 and 2, the `Symbol` use-list describes uses of that particular name, not all callers of its canonical body. Uses include alias forwarding edges, calls, and address-taking operations. Public aliases can keep private targets externally reachable even without local calls. `midenc_hir_analysis::analyses::CallableUseSnapshot` provides an alias-aware snapshot keyed by canonical callable. This snapshot requires linked symbol-use lists and must be recomputed after mutation.
 
 For 2 and 3, the mechanism is essentially identical:
 
