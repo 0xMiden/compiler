@@ -9,13 +9,16 @@ use midenc_hir::{
     AsValueRange, AttributeRef, Block, BlockRef, CallOpInterface, CallableOpInterface,
     EntityWithId, Forward, Operation, OperationRef, ProgramPoint, RegionBranchOpInterface,
     RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionSuccessorIter, Report, SmallVec,
-    SourceSpan, Spanned, Symbol, SymbolManager, SymbolMap, SymbolTable, ValueRef,
+    SourceSpan, Spanned, SymbolMap, ValueRef,
     adt::{SmallDenseMap, SmallSet},
     pass::AnalysisManager,
     traits::{BranchOpInterface, ReturnLike},
 };
 
-use super::constant_propagation::ConstantValue;
+#[cfg(test)]
+mod alias_tests;
+
+use super::{CallableUseAnalysis, constant_propagation::ConstantValue};
 use crate::{
     AnalysisQueue, AnalysisState, AnalysisStateGuardMut, AnalysisStateInfo,
     AnalysisStateSubscription, AnalysisStateSubscriptionBehavior, AnalysisStrategy,
@@ -547,80 +550,16 @@ impl DeadCodeAnalysis {
 
         self.analysis_scope.set(Some(top.as_operation_ref()));
 
-        let walk_fn = |sym_table: &dyn SymbolTable, all_uses_visible: bool| {
-            let symbol_table_op = sym_table.as_symbol_table_operation();
-            log::trace!(target: self.debug_name(), "analyzing symbol table '{}'", symbol_table_op.name());
-            let symbol_table_region = symbol_table_op.region(0);
-            let symbol_table_block = symbol_table_region.entry();
-
-            let mut found_callable_symbol = false;
-            for candidate in symbol_table_block.body().iter() {
-                let Some(callable) = candidate.as_trait::<dyn CallableOpInterface>() else {
-                    continue;
-                };
-
-                // We're only interested in callables with definitions, not declarations
-                if callable.get_callable_region().is_none() {
-                    continue;
-                }
-
-                // We're also only interested in callable symbols
-                let Some(symbol) = callable.as_operation().as_trait::<dyn Symbol>() else {
-                    continue;
-                };
-
-                // If a callable symbol has public visibility, or we are unable see all uses (for
-                // example the address of a function is taken, but not called), then we have
-                // potentially unknown callsites.
-                let visibility = symbol.visibility();
-                log::trace!(
-                    target: self.debug_name(), "found callable symbol '{}' with visibility {visibility}",
-                    symbol.name()
-                );
-                if visibility.is_public() || (!all_uses_visible && visibility.is_internal()) {
-                    log::trace!(target: self.debug_name(), "marking symbol as having unknown predecessors");
-                    let mut state = solver.get_or_create_mut::<PredecessorState, _>(
-                        ProgramPoint::after(callable.as_operation()),
-                    );
-                    state.set_has_unknown_predecessors();
-                }
-                found_callable_symbol = true;
+        let uses = CallableUseAnalysis::new(top);
+        for (target, info) in uses.iter() {
+            if target.callable_region().is_none() || !info.has_unknown_callers() {
+                continue;
             }
-
-            // Exit early if no eligible callable symbols were found in the table.
-            if !found_callable_symbol {
-                log::trace!(target: self.debug_name(), "no callable symbols found in this symbol table");
-                return;
-            }
-
-            // Walk the symbol table to check for non-call uses of symbols.
-            log::trace!(target: self.debug_name(), "looking for non-call uses of symbols in the symbol table region");
-            let uses = Operation::all_symbol_uses_in_region(&symbol_table_region);
-            let top_symbol_table = SymbolManager::from(top);
-            for symbol_use in uses {
-                let symbol_use = symbol_use.borrow();
-                if symbol_use.owner.borrow().implements::<dyn CallOpInterface>() {
-                    continue;
-                }
-
-                // If a callable symbol has a non-call use, then we can't be guaranteed to know all
-                // callsites.
-                let symbol_attr = symbol_use.symbol();
-                log::trace!(
-                    target: self.debug_name(), "found symbol use whose user does not implement CallOpInterface - marking \
-                     symbol as having unknown predecessors"
-                );
-                if let Some(symbol) =
-                    top_symbol_table.lookup_symbol_ref(symbol_attr.borrow().path())
-                {
-                    let mut state = solver
-                        .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(symbol));
-                    state.set_has_unknown_predecessors();
-                }
-            }
-        };
-
-        top.walk_symbol_tables(/*all_symbol_uses_visible=*/ top.parent().is_none(), walk_fn);
+            let mut state = solver.get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(
+                target.as_operation_ref(),
+            ));
+            state.set_has_unknown_predecessors();
+        }
     }
 
     /// Recursively Initialize the analysis on nested regions.
@@ -751,7 +690,8 @@ impl DeadCodeAnalysis {
         // call never transfers control (every dispatch traps), and registers nothing.
         let mut has_external_target = false;
         for callable in targets {
-            let callable = callable.borrow();
+            let symbol = callable.as_symbol_ref();
+            let callable = symbol.borrow();
             if !is_external_callable(callable.as_symbol_operation()) {
                 // Add the live callsite
                 let mut callsites = solver.get_or_create_mut::<PredecessorState, _>(
