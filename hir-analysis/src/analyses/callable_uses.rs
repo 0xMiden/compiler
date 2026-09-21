@@ -1,6 +1,6 @@
 //! Analysis to track the uses and callers of callables within a given scope.
 //!
-//! It identifies direct call sites and flags callables that may be called
+//! It identifies call sites and flags callables that may be called
 //! indirectly or from outside the scope.
 
 use midenc_hir::{
@@ -10,11 +10,14 @@ use midenc_hir::{
 
 /// Usage information for a canonical callable within an analysis scope.
 ///
-/// This tracks known direct call sites and flags that indicate potential
+/// This tracks known call sites and flags that indicate potential
 /// unknown callers.
 #[derive(Debug, Default)]
 pub struct CallableUseInfo {
-    /// Direct call sites within the analysis scope.
+    /// Call sites within the analysis scope that may transfer control to the callable.
+    ///
+    /// A call with a statically known dispatch set is listed for each of its possible targets,
+    /// even when which target it actually reaches is decided at runtime.
     callers: SmallSet<OperationRef, 4>,
     /// Whether the callable is visible outside the analysis scope.
     has_external_name: bool,
@@ -25,7 +28,7 @@ pub struct CallableUseInfo {
 }
 
 impl CallableUseInfo {
-    /// Returns the list of identified direct call sites.
+    /// Returns the identified call sites that may transfer control to the callable.
     pub fn known_callers(&self) -> &[OperationRef] {
         self.callers.as_slice()
     }
@@ -182,7 +185,7 @@ impl CallableUseSnapshot {
 
 #[cfg(test)]
 mod tests {
-    use alloc::format;
+    use alloc::{format, vec::Vec};
 
     use midenc_hir::{
         Op, SymbolName,
@@ -218,6 +221,47 @@ builtin.module public @test {{
         (test, module)
     }
 
+    fn exec_callers(module: ModuleRef, function: &str) -> Vec<OperationRef> {
+        ModuleBuilder::new(module)
+            .get_function(function)
+            .unwrap()
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .filter_map(|op| {
+                op.downcast_ref::<midenc_dialect_hir::Exec>().map(Op::as_operation_ref)
+            })
+            .collect()
+    }
+
+    fn assert_known_callers(info: &CallableUseInfo, expected: &[OperationRef]) {
+        assert_eq!(info.known_callers().len(), expected.len());
+        for caller in expected {
+            assert!(
+                info.known_callers().contains(caller),
+                "expected {caller} to be a known caller"
+            );
+        }
+    }
+
+    fn attach_extra_symbol_attribute(
+        mut owner: OperationRef,
+        referenced: SymbolRef,
+        path: midenc_hir::SymbolPath,
+    ) {
+        owner.borrow_mut().set_symbol_attribute("extra_address", referenced);
+
+        let mut attr = owner
+            .borrow()
+            .get_attribute("extra_address")
+            .unwrap()
+            .try_downcast_attr::<midenc_hir::dialects::builtin::attributes::SymbolRefAttr>()
+            .unwrap();
+        attr.borrow_mut().set_path(path);
+    }
+
     #[test]
     fn alias_use_queries_separate_callers_exposure_and_address_taking() {
         for (visibility, extra, exposed, address_taken) in [
@@ -229,8 +273,9 @@ builtin.module public @test {{
             let body = ModuleBuilder::new(module).resolve_callable("body").unwrap().target();
             let uses = CallableUseSnapshot::new(module.borrow().as_operation());
             let body_uses = uses.get(body).unwrap();
-            assert_eq!(body_uses.known_callers().len(), 2);
-            // TODO check these known_callers are the expected ones
+            let expected_callers = exec_callers(module, "caller");
+            assert_eq!(expected_callers.len(), 2);
+            assert_known_callers(body_uses, &expected_callers);
             assert_eq!(body_uses.has_external_name(), exposed);
             assert_eq!(body_uses.is_address_taken(), address_taken);
             assert!(!body_uses.has_out_of_scope_uses());
@@ -239,67 +284,63 @@ builtin.module public @test {{
             // The analysis does not rewrite the alias chain
             let alias = ModuleBuilder::new(module).get_function_alias("api").unwrap();
             assert_eq!(alias.borrow().target().path().name(), SymbolName::intern("first"));
-            // TODO check first still points to body
+            let first = ModuleBuilder::new(module).get_function_alias("first").unwrap();
+            assert_eq!(first.borrow().target().path().name(), SymbolName::intern("body"));
         }
     }
 
-    /// Verifies that a symbol attribute referencing a callable is treated as an escaping use
-    /// (address taken), whether it is attached to a call op or to an alias op, and that it does not
-    /// change the direct-caller set.
-    // TODO split this into two tests instead of looping over `[false, true]`
+    /// Verifies that an extra symbol attribute on a call op is treated as an escaping use
+    /// (address taken) and does not change the direct-caller set.
     #[test]
-    fn extra_symbol_attributes_on_calls_and_aliases_are_escaping_uses() {
-        for attach_to_call_op in [false, true] {
-            let (_test, module) = fixture("private", "");
-            let mb = ModuleBuilder::new(module);
-            let target = mb.resolve_callable("body").unwrap().target();
-            let alias = mb.get_function_alias("api").unwrap();
-            let (mut owner, referenced, path) = if attach_to_call_op {
-                // Attach attribute to `hir.exec @api` call op
-                let owner = mb
-                    .get_function("caller")
-                    .unwrap()
-                    .borrow()
-                    .entry_block()
-                    .borrow()
-                    .body()
-                    .iter()
-                    .find_map(|op| {
-                        op.downcast_ref::<midenc_dialect_hir::Exec>().map(Op::as_operation_ref)
-                    })
-                    .unwrap();
-                let path = owner
-                    .borrow()
-                    .downcast_ref::<midenc_dialect_hir::Exec>()
-                    .unwrap()
-                    .callee()
-                    .path()
-                    .clone();
-                (owner, mb.resolve_callable("api").unwrap().named_symbol() as SymbolRef, path)
-            } else {
-                // Attach attribute to alias op
-                (
-                    alias.borrow().as_operation_ref(),
-                    mb.resolve_callable("first").unwrap().named_symbol() as SymbolRef,
-                    alias.borrow().target().path().clone(),
-                )
-            };
-            owner.borrow_mut().set_symbol_attribute("extra_address", referenced);
+    fn extra_symbol_attribute_on_call_op_is_escaping_use() {
+        let (_test, module) = fixture("private", "");
+        let mb = ModuleBuilder::new(module);
+        let target = mb.resolve_callable("body").unwrap().target();
+        let owner = mb
+            .get_function("caller")
+            .unwrap()
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .find_map(|op| op.downcast_ref::<midenc_dialect_hir::Exec>().map(Op::as_operation_ref))
+            .unwrap();
+        let path = owner
+            .borrow()
+            .downcast_ref::<midenc_dialect_hir::Exec>()
+            .unwrap()
+            .callee()
+            .path()
+            .clone();
+        let referenced = mb.resolve_callable("api").unwrap().named_symbol() as SymbolRef;
+        attach_extra_symbol_attribute(owner, referenced, path);
 
-            let mut attr = owner
-                .borrow()
-                .get_attribute("extra_address")
-                .unwrap()
-                .try_downcast_attr::<midenc_hir::dialects::builtin::attributes::SymbolRefAttr>()
-                .unwrap();
-            attr.borrow_mut().set_path(path);
-            let uses = CallableUseSnapshot::new(module.borrow().as_operation());
-            let info = uses.get(target).unwrap();
-            assert_eq!(info.known_callers().len(), 2);
-            // TODO check known callers equal expected values
-            assert!(info.is_address_taken());
-            assert!(info.has_unknown_callers());
-        }
+        let uses = CallableUseSnapshot::new(module.borrow().as_operation());
+        let info = uses.get(target).unwrap();
+        assert_known_callers(info, &exec_callers(module, "caller"));
+        assert!(info.is_address_taken());
+        assert!(info.has_unknown_callers());
+    }
+
+    /// Verifies that an extra symbol attribute on an alias op is treated as an escaping use
+    /// (address taken) and does not change the direct-caller set.
+    #[test]
+    fn extra_symbol_attribute_on_alias_op_is_escaping_use() {
+        let (_test, module) = fixture("private", "");
+        let mb = ModuleBuilder::new(module);
+        let target = mb.resolve_callable("body").unwrap().target();
+        let alias = mb.get_function_alias("api").unwrap();
+        let owner = alias.borrow().as_operation_ref();
+        let path = alias.borrow().target().path().clone();
+        let referenced = mb.resolve_callable("first").unwrap().named_symbol() as SymbolRef;
+        attach_extra_symbol_attribute(owner, referenced, path);
+
+        let uses = CallableUseSnapshot::new(module.borrow().as_operation());
+        let info = uses.get(target).unwrap();
+        assert_known_callers(info, &exec_callers(module, "caller"));
+        assert!(info.is_address_taken());
+        assert!(info.has_unknown_callers());
     }
 
     #[test]
@@ -353,8 +394,56 @@ builtin.module public @test {
         assert!(!info.has_external_name());
     }
 
-    // TODO add another test with function table: to entries pointing at two different functions
-    // then also @table[%index](). can't know which target is reached -> known caller?
+    /// A call through a table with a runtime index may reach any dispatchable entry, and which
+    /// one is not known until runtime.
+    #[test]
+    fn ambiguous_table_index_is_known_caller_of_every_dispatchable_target() {
+        let test = Test::default();
+        test.context().get_or_register_dialect::<midenc_dialect_hir::HirDialect>();
+        let module = parse::<Module>(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("table_two_targets.hir"),
+            r#"
+builtin.module public @test {
+    builtin.function private extern("C") @left() { builtin.ret; };
+    builtin.function private extern("C") @right() { builtin.ret; };
+    builtin.function_table private @table : 2 {
+        builtin.function_table_entry 0 @left tag 1;
+        builtin.function_table_entry 1 @right tag 1;
+    };
+    builtin.function public extern("C") @caller(%index: u32) {
+        hir.exec_indirect @table[%index]() : extern("C") () -> () tag 1;
+        builtin.ret;
+    };
+};
+"#,
+        )
+        .unwrap();
+        let mb = ModuleBuilder::new(module);
+        let call = mb
+            .get_function("caller")
+            .unwrap()
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .find_map(|op| {
+                op.downcast_ref::<midenc_dialect_hir::ExecIndirect>().map(Op::as_operation_ref)
+            })
+            .unwrap();
+
+        let uses = CallableUseSnapshot::new(module.borrow().as_operation());
+        for function in ["left", "right"] {
+            let target = mb.resolve_callable(function).unwrap().target();
+            let info = uses.get(target).unwrap();
+            assert_known_callers(info, &[call]);
+            assert!(info.is_address_taken());
+            assert!(!info.has_external_name());
+            assert!(!info.has_out_of_scope_uses());
+            assert!(info.has_unknown_callers());
+        }
+    }
 
     #[test]
     fn internal_alias_visibility_depends_on_analysis_scope() {
@@ -392,11 +481,4 @@ builtin.world {
         assert!(info.has_external_name());
         assert!(info.has_unknown_callers());
     }
-
-    // TODO add following test
-    // fn foo
-    // alias alias1->foo
-    // alias alias2->
-    // fn entrypoint which call both alias1 and alias2
-    // then check analysis returns expected results
 }
