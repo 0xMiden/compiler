@@ -18,7 +18,7 @@ use midenc_hir::{
 #[cfg(test)]
 mod alias_tests;
 
-use super::{CallableUseAnalysis, constant_propagation::ConstantValue};
+use super::{CallableUseSnapshot, constant_propagation::ConstantValue};
 use crate::{
     AnalysisQueue, AnalysisState, AnalysisStateGuardMut, AnalysisStateInfo,
     AnalysisStateSubscription, AnalysisStateSubscriptionBehavior, AnalysisStrategy,
@@ -550,7 +550,7 @@ impl DeadCodeAnalysis {
 
         self.analysis_scope.set(Some(top.as_operation_ref()));
 
-        let uses = CallableUseAnalysis::new(top);
+        let uses = CallableUseSnapshot::new(top);
         for (target, info) in uses.iter() {
             if target.callable_region().is_none() || !info.has_unknown_callers() {
                 continue;

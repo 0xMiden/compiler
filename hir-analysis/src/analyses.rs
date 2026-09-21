@@ -6,7 +6,7 @@ mod loops;
 pub mod spills;
 
 pub use self::{
-    callable_uses::{CallableUseAnalysis, CallableUseInfo},
+    callable_uses::{CallableUseInfo, CallableUseSnapshot},
     constant_propagation::SparseConstantPropagation,
     dce::DeadCodeAnalysis,
     liveness::LivenessAnalysis,
