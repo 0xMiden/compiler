@@ -203,7 +203,7 @@ An _interface_, in contrast to a [_trait_](#traits), represents not only that an
 Some key examples:
 
 - `EffectOpInterface`, operations whose side effects, or lack thereof, are well-specified. `MemoryEffectOpInterface` is a specialization of this interface specifically for operations with memory effects (e.g. read/write, alloc/free). This interface allows querying what effects an operation has, what resource the effect applies to (if known), or whether an operation affects a specific resource, and by what effect(s).
-- `CallableOpInterface`, operations which are "callable", i.e. can be targets of a call-like operation. This allows querying information about the callable, such as its signature, whether it is a declaration or definition, etc.
+- `CallableOpInterface`, operations which are "callable", i.e. can be targets of a call-like operation. This allows querying information about the callable, such as its signature, whether it is a declaration or definition, etc. The related marker trait `CallableSymbol` covers every symbol a call-like operation may *name*, including symbol aliases such as `FunctionAlias`.
 - `CallOpInterface`, operations which can call a callable operation. This interface provides information about the call, and its callee.
 - `SelectOpInterface`, operations which represent a selection between two values based on a boolean condition. This interface allows operating on all select-like operations without knowing what dialect they are from.
 - `BranchOpInterface`, operations which implement an unstructured control flow branch from one block to one or more other blocks. This interface provides a generic means of accessing successors, successor operands, etc.
@@ -229,6 +229,8 @@ A symbol is reified as a _symbol path_, i.e. `foo/bar` represents a symbol path 
 Symbol paths can come in two forms: relative and absolute. Relative paths are resolved as described above, while absolute paths are resolved from the root symbol table, which is either the containing [_world_](#worlds), or the nearest symbol table which has no parent.
 
 Symbols, like the various forms of [_values_](#values), track their uses and definitions, i.e. when you reference a symbol from another operation, that reference is recorded in the use list of the referenced symbol. This allows us to trivially determine if a symbol is used, and visit all of those uses.
+
+Symbols may include aliases (builtin.function_alias), which provide alternative names for functions. Aliases have independent visibility, allowing a public alias to expose a private function. While basic resolution returns the named symbol (potentially an alias), canonical resolution follows aliases to the target function. Aliases are treated as first-class callable symbols in module inventories and exports.
 
 ### Successors and Predecessors
 
@@ -282,10 +284,11 @@ Beyond the core IR concepts introduced in the previous section, HIR also imposes
 - [Components](#components)
 - [Modules](#modules)
 - [Functions](#functions)
+- [Function Aliases](#function-aliases)
 
 In short, when compiling a program, the inputs (source program, dependencies, etc.) are represented in a single _world_ (i.e. everything we know about that program and what is needed to compile it). The input program is then translated into a single top-level _component_ of that world, and any of it's dependendencies are represented in the form of component _declarations_ (in HIR, a declaration - as opposed to a definition - consists of just the metadata about a thing, not its implementation, e.g. a function signature).
 
-A _component_ can contain one or more _modules_, and optionally, one or more _data segments_. Each module can contain any number of _functions_ and _global variables_.
+A _component_ can contain one or more _modules_, and optionally, one or more _data segments_. Each module can contain any number of _functions_, _function aliases_, and _global variables_.
 
 > [!NOTE]
 > To understand how these relate to Miden Assembly, and Miden packages, see the [Packaging](packaging.md) document.
@@ -311,9 +314,9 @@ The following is a rough visual representation of the hierarchy and relationship
                 v           v
               Module  Data Segment
                 |
-                |-----------
-                v           v
-             Function  Global Variable
+                |-------------------------------
+                v           v                  v
+             Function  Global Variable  Function Alias
                 |
                 v
        ----- Region (a function has a single region, it's "body")
@@ -368,7 +371,7 @@ A module is primarily two things:
 
 Functions within a module may be exported. Functions which are _not_ exported, are only visible within that module.
 
-A module defines a symbol table, whose entries are the functions and global variables defined in that module. Relative symbol paths used within the module are always resolved via this symbol table.
+A module defines a symbol table, whose entries are the functions, function aliases, and global variables defined in that module. Relative symbol paths used within the module are always resolved via this symbol table.
 
 ### Functions
 
@@ -384,6 +387,12 @@ Blocks in the function body must be terminated with one of two operations:
 
 - `builtin.ret`, which returns from the function to its caller. The set of operands passed to this operation must match the arity and types specified in the containing function's signature.
 - `ub.unreachable`, representing some control flow path that should never be reachable at runtime. This is translated to an abort/trap during code generation. This operation is defined in the `ub` dialect as it corresponds to undefined behavior in a program.
+
+### Function Aliases
+
+A function alias (`builtin.function_alias`) gives a function an additional name within the same module, without a body of its own. The signature and body belong to the canonical target. Aliases may chain.
+
+The alias's visibility is independent of the target's: a public alias exposes a private target under the alias name. During code generation this is realized by emitting a duplicate procedure with the alias name/visibility and the canonical target's body.
 
 ### Global Variables
 
@@ -605,15 +614,15 @@ One is generally interested in the call graph for one of a couple reasons:
 3. Visit the call graph reachable from a given call site as part of an analysis
 4. Identify cycles in the call graph
 
-For 1 and 2, one can simply use the `Symbol` use-list: an empty use-list means the symbol is unused. For non-empty use-lists, one can visit every use, determine if that use is by a `CallOpInterface`, and take some action based on that.
+For 1 and 2, the `Symbol` use-list describes uses of that particular name, not all callers of its canonical body. Uses include alias forwarding edges, calls, and address-taking operations. Public aliases can keep private targets externally reachable even without local calls. `midenc_hir_analysis::analyses::CallableUseAnalysis` provides an alias-aware snapshot keyed by canonical callable. This snapshot requires linked symbol-use lists and must be recomputed after mutation.
 
 For 2 and 3, the mechanism is essentially identical:
 
-1. Assume that you are starting from a call site, i.e. an operation that implements `CallOpInterface`. Your first step is generally going to be to determine if the callable is a `SymbolPath`, or a `ValueRef` (i.e. an indirect call), using the `get_callable_for_callee` interface method.
+1. Assume that you are starting from a call site, i.e. an operation that implements `CallOpInterface`. Your first step is generally going to be to determine if the callable is a `SymbolPath`, or a `ValueRef` (i.e. an indirect call), using the `callable_for_callee` interface method.
 2. If the callable is a `ValueRef`, you can try to trace that value back to an operation that materialized it from a `Symbol` (if that was the case), so as to make your analysis more precise; but in general there can be situations in which it is not possible to do so. What this means for your analysis depends on what that analysis is.
-3. If the callable is a `SymbolPath`, then we need to try and resolve it. This can be done using the `resolve` or `resolve_in_symbol_table` interface methods. If successful, you will get a `SymbolRef` which represents the callable `Symbol`. If the symbol could not be resolved, `None` is returned, and you can traverse that edge of the call graph no further.
-4. Once you've obtained the `SymbolRef` of the callable, you can borrow it, and then cast the `&dyn Symbol` reference to a `&dyn CallableOpInterface` reference using `symbol.as_symbol_operation().as_trait::<dyn CallableOpInterface>()`.
-5. With that reference, you call the `get_callable_region` interface method. If it returns `None`, then the callable represents a declaration, and so it is not possible to traverse the call graph further. If it returns a `RegionRef`, then you proceed by traversing all of the operations in that region, looking for more call sites to visit.
+3. If the callable is a `SymbolPath`, use `resolve` or `resolve_in_symbol_table` to obtain an `Option<CanonicalCallableRef>`. These methods follow aliases and validate the canonical callable. For structured errors and both identities, use `resolve_symbol_callee`: its `named_symbol()` is the name to emit, and its `target()` owns the body and signature.
+4. A `CanonicalCallableRef` directly exposes `signature()` and `callable_region()`. Its `borrow()` returns the validated `CallableOpInterface`, without a repeated fallible cast. Use `as_symbol_ref()` only for symbol-oriented operations.
+5. If `callable_region()` returns `None`, the callable is a declaration and there is no body to traverse. Otherwise, traverse that region for further call sites. For indirect calls with statically known targets, `possible_callees()` supplies deduplicated canonical handles.
 
 ### Program Points
 
