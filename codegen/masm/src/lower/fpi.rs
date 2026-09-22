@@ -47,7 +47,8 @@ impl HirLowering for hir::ExecFpi {
             prefix_locals
                 .iter()
                 .copied()
-                .collect::<smallvec::SmallVec<[LocalVariable; 6]>>()
+                .map(|local| (local, emitter.frame.locaddr(&local)))
+                .collect::<smallvec::SmallVec<[(LocalVariable, u16); 6]>>()
         };
 
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
@@ -66,8 +67,8 @@ impl HirLowering for hir::ExecFpi {
         // Load the executor prefix from the locals on top of the padded inputs. The locals hold
         // the prefix in executor operand order, so they are pushed in reverse to leave the first
         // operand on top of the stack.
-        for local in prefix_locals.iter().rev() {
-            inst_emitter.load_local(local, span);
+        for (local, offset) in prefix_locals.iter().rev() {
+            inst_emitter.load_local(local, *offset, span);
         }
 
         let signature = Signature::with_convention(
@@ -202,8 +203,19 @@ mod tests {
             stack.push(Type::Felt);
         }
 
+        // The prefix locals are loaded through the frame, so it has to be the real one.
+        let (local_offsets, num_locals) = {
+            let function = function_ref.borrow();
+            let locals_required =
+                function.locals().iter().map(|ty| ty.size_in_felts()).sum::<usize>();
+            (
+                crate::emitter::local_offsets(&function),
+                u16::try_from(locals_required).expect("too many locals"),
+            )
+        };
+
         let mut emitter = BlockEmitter {
-            frame: Default::default(),
+            frame: crate::emitter::FrameLayout::new(&local_offsets, num_locals),
             liveness: &liveness,
             link_info: &link_info,
             invoked: &mut invoked,

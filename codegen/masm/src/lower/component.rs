@@ -1647,18 +1647,11 @@ impl MasmFunctionBuilder {
                 stack.push(arg as ValueRef);
             }
         }
-        // Taken from the same offsets `locaddr` is emitted with, so that debug locations and
-        // generated code cannot disagree about where a local lives.
-        let local_offsets = function
-            .iter_locals()
-            .map(|local| local.absolute_offset() as u32)
-            .collect::<Vec<_>>();
+        // The single layout of this procedure's frame: both the `locaddr` operands of the emitted
+        // code and the debug locations read this table.
+        let local_offsets = crate::emitter::local_offsets(function);
         let mut emitter = BlockEmitter {
-            frame: FrameLayout {
-                local_offsets: &local_offsets,
-                aligned_size: u32::from(self.num_locals)
-                    .next_multiple_of(miden_core::WORD_SIZE as u32),
-            },
+            frame: FrameLayout::new(&local_offsets, self.num_locals),
             liveness: &liveness,
             link_info,
             invoked: &mut invoked,

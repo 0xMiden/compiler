@@ -41,17 +41,19 @@ pub struct CallFrame {
     registers: FxHashMap<ValueRef, Value>,
     /// Function-local memory reserved as scratch space for local variables
     locals: SmallVec<[u8; 64]>,
+    /// The offset of each local variable in `locals`, in elements, indexed by local
+    local_offsets: SmallVec<[usize; 8]>,
 }
 
 impl CallFrame {
     pub fn new(callee: OperationRef) -> Self {
         let callee_op = callee.borrow();
-        let locals = match callee_op.downcast_ref::<builtin::Function>() {
+        let (locals, local_offsets) = match callee_op.downcast_ref::<builtin::Function>() {
             Some(function) => {
                 let capacity = function.num_locals() * core::mem::size_of::<Felt>();
                 let mut buf = SmallVec::with_capacity(capacity);
                 buf.resize(capacity, 0);
-                buf
+                (buf, function.local_offsets().collect())
             }
             None => Default::default(),
         };
@@ -61,6 +63,7 @@ impl CallFrame {
             caller: None,
             registers: Default::default(),
             locals,
+            local_offsets,
         }
     }
 
@@ -127,6 +130,15 @@ impl CallFrame {
         self.registers.insert(id, value.into());
     }
 
+    /// The offset of `local` in this frame's local memory, in elements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `local` is not a local of the callee of this frame.
+    fn local_offset(&self, local: &LocalVariable) -> usize {
+        self.local_offsets[local.as_usize()]
+    }
+
     /// Read the value of the given local variable
     ///
     /// Returns an error if `local` is invalid, or a value of the defined type could not be read
@@ -137,7 +149,7 @@ impl CallFrame {
         span: SourceSpan,
         context: &Context,
     ) -> Result<Value, Report> {
-        let offset = local.absolute_offset() * core::mem::size_of::<Felt>();
+        let offset = self.local_offset(local) * core::mem::size_of::<Felt>();
         let ty = local.ty();
         let size = ty.size_in_bytes();
         if offset >= self.locals.len() || (offset + size) >= self.locals.len() {
@@ -171,7 +183,7 @@ impl CallFrame {
         span: SourceSpan,
         context: &Context,
     ) -> Result<(), Report> {
-        let offset = local.absolute_offset() * core::mem::size_of::<Felt>();
+        let offset = self.local_offset(local) * core::mem::size_of::<Felt>();
         let ty = local.ty();
         let size = ty.size_in_bytes();
         if offset >= self.locals.len() || (offset + size) >= self.locals.len() {

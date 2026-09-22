@@ -1,7 +1,10 @@
 use alloc::collections::BTreeSet;
 
 use miden_assembly::diagnostics::WrapErr;
-use midenc_hir::{Block, Operation, ProgramPoint, TraceTarget, ValueRange, ValueRef};
+use midenc_hir::{
+    Block, Operation, ProgramPoint, TraceTarget, ValueRange, ValueRef,
+    dialects::builtin::{Function, attributes::LocalVariable},
+};
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{SourceSpan, Spanned};
 use smallvec::SmallVec;
@@ -28,6 +31,42 @@ pub(crate) struct FrameLayout<'a> {
     /// The size of the frame, rounded up the way the assembler rounds it. `locaddr.N` addresses
     /// `FMP - aligned_size + N`, so offsets relative to the frame pointer are derived from it.
     pub aligned_size: u32,
+}
+
+impl<'a> FrameLayout<'a> {
+    /// Builds the layout of a frame holding `num_locals` elements, with `local_offsets` from
+    /// [`Function::local_offsets`](midenc_hir::dialects::builtin::Function::local_offsets).
+    pub fn new(local_offsets: &'a [u32], num_locals: u16) -> Self {
+        Self {
+            local_offsets,
+            aligned_size: u32::from(num_locals).next_multiple_of(miden_core::WORD_SIZE as u32),
+        }
+    }
+
+    /// The element offset of `local` from the start of the frame: the operand of the `locaddr`
+    /// that addresses it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `local` is not a local of the procedure this frame belongs to.
+    pub fn locaddr(&self, local: &LocalVariable) -> u16 {
+        let offset = self
+            .local_offsets
+            .get(local.as_usize())
+            .copied()
+            .expect("local is not part of this frame");
+        u16::try_from(offset).expect("local offset exceeds the procedure frame limit")
+    }
+}
+
+/// Collects the local offsets of `function` for a [`FrameLayout`].
+pub(crate) fn local_offsets(function: &Function) -> Vec<u32> {
+    function
+        .local_offsets()
+        .map(|offset| {
+            u32::try_from(offset).expect("local offset exceeds the procedure frame limit")
+        })
+        .collect()
 }
 
 pub(crate) struct BlockEmitter<'b> {
