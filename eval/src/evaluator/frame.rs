@@ -50,7 +50,11 @@ impl CallFrame {
         let callee_op = callee.borrow();
         let (locals, local_offsets) = match callee_op.downcast_ref::<builtin::Function>() {
             Some(function) => {
-                let capacity = function.num_locals() * core::mem::size_of::<Felt>();
+                // Locals are addressed by element offset, so the buffer holds the elements of the
+                // whole frame: a local wider than one element occupies several of them.
+                let frame_elements =
+                    function.locals().iter().map(|ty| ty.size_in_felts()).sum::<usize>();
+                let capacity = frame_elements * core::mem::size_of::<Felt>();
                 let mut buf = SmallVec::with_capacity(capacity);
                 buf.resize(capacity, 0);
                 (buf, function.local_offsets().collect())
