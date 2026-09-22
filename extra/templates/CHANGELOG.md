@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0-rc.1]
+
+### Templates
+
 - Move the project scaffold to the `0.17.0` toolchain channel, VM `0.33.0`, protocol
   `0.17.0-rc.5`, and Miden client `0.17.0-rc.1`.
+
+### SDK compatibility
+
+- Generated crates require `miden = "0.15.0-rc.1"` and
+  `miden-sdk-build-script-support = "0.15.0-rc.1"`; see the
+  [SDK release notes](../../sdk/CHANGELOG.md#0150-rc1) for guest-code migrations.
 
 ## [0.32.1]
 

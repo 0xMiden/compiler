@@ -7,15 +7,21 @@
 schema-version = 1
 units = [
     "compiler",
+    "sdk",
     "templates",
 ]
 
 [compiler]
-version = "0.10.2"
-tag = "v0.10.2"
-prerelease = false
+version = "0.11.0-rc.1"
+tag = "v0.11.0-rc.1"
+prerelease = true
+
+[sdk]
+version = "0.15.0-rc.1"
+tag = "sdk/v0.15.0-rc.1"
+prerelease = true
 
 [templates]
-version = "0.32.1"
-tag = "templates/v0.32.1"
-prerelease = false
+version = "0.33.0-rc.1"
+tag = "templates/v0.33.0-rc.1"
+prerelease = true
