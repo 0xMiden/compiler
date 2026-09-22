@@ -40,10 +40,14 @@ fn single_sibling() {
         init_storage_data
             .insert_map_entry(counter_storage_slot.clone(), counter_storage_key(), 314_u64)
             .unwrap();
-        AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(counter_package.as_ref().clone(), &init_storage_data)
+            .unwrap()
     };
-    let caller_component =
-        AccountComponent::from_package(&caller_package, &InitStorageData::default()).unwrap();
+    let caller_component = AccountComponent::from_package(
+        caller_package.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let account_builder = AccountBuilder::new([1_u8; 32])

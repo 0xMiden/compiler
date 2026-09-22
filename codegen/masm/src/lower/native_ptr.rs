@@ -1,8 +1,6 @@
-use serde::{Deserialize, Serialize};
-
 /// This represents a descriptor for a pointer translated from the IR into a form suitable for
 /// referencing data in Miden's linear memory.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct NativePtr {
     /// This is the address of the element containing the first byte of data
     ///
@@ -22,6 +20,7 @@ pub struct NativePtr {
     /// Currently this has no effect, but is here as we expand support for multiple memories.
     pub addrspace: midenc_hir::AddressSpace,
 }
+
 impl NativePtr {
     pub fn new(addr: u32, offset: u8) -> Self {
         Self {

@@ -216,7 +216,7 @@ pub fn disassemble_source_with_external_signatures(
             )
         };
         let sig = ast::FunctionType::new(
-            sig.abi,
+            sig.abi.clone(),
             sig.params().iter().cloned().map(ast::TypeExpr::from).collect(),
             sig.results().iter().cloned().map(ast::TypeExpr::from).collect(),
         );

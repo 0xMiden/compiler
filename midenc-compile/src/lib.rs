@@ -53,9 +53,9 @@ pub fn compile(context: Rc<Context>) -> CompilerResult<Option<PathBuf>> {
     match compile_to_memory(context.clone())? {
         CompiledArtifact::Assembled(ref package) => {
             log::info!(
-                "succesfully assembled mast package '{}' with digest {}",
+                "successfully assembled mast package '{}' with dependency commitment {}",
                 package.name,
-                DisplayHex::new(&package.digest().as_bytes())
+                DisplayHex::new(&package.dependency_commitment().as_bytes())
             );
             session
                 .emit(OutputMode::Text, package)
@@ -230,8 +230,8 @@ fn artifact_from_outcome(
 
     let package = outcome.into_package()?;
     log::debug!(
-        "successfully assembled package with digest {}",
-        DisplayHex::new(&package.digest().as_bytes())
+        "successfully assembled package with dependency commitment {}",
+        DisplayHex::new(&package.dependency_commitment().as_bytes())
     );
     Ok(CompiledArtifact::Assembled(package))
 }

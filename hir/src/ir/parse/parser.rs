@@ -1137,10 +1137,7 @@ pub trait Parser<'input> {
 
             let span = SourceSpan::new(end.source_id(), start..end.end());
 
-            return Ok(Span::new(
-                span,
-                Type::Struct(Arc::new(StructType::new_with_repr(repr, fields))),
-            ));
+            return Ok(Span::new(span, Type::from(StructType::new_with_repr(repr, fields))));
         }
 
         if self.token_stream_mut().is_next(|tok| matches!(tok, Token::Lparen)) {
@@ -1170,7 +1167,7 @@ pub trait Parser<'input> {
         let end = self.token_stream().current_span();
 
         let span = SourceSpan::new(end.source_id(), start..end.end());
-        Ok(Span::new(span, Type::Struct(Arc::new(StructType::new(elements)))))
+        Ok(Span::new(span, Type::from(StructType::new(elements))))
     }
 
     /// Parse an attribute dictionary.

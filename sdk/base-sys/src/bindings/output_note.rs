@@ -6,7 +6,10 @@ use miden_stdlib_sys::{Felt, Word, WordAligned};
 use super::{
     MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, assert_attachment_count,
     assert_attachment_word_count,
-    types::{Asset, NoteIdx, NoteMetadata, NoteType, RawAttachmentLocation, Recipient, Tag},
+    types::{
+        Asset, NoteId, NoteIdx, NoteMetadata, NoteType, RawCommitmentWithCount, RawFoundIndex,
+        Recipient, Tag,
+    },
 };
 
 #[allow(improper_ctypes)]
@@ -36,7 +39,10 @@ unsafe extern "C" {
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::get_assets_info"]
-    pub fn extern_output_note_get_assets_info(note_index: Felt, ptr: *mut (Word, Felt));
+    pub(crate) fn extern_output_note_get_assets_info(
+        note_index: Felt,
+        ptr: *mut RawCommitmentWithCount,
+    );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::get_assets"]
     pub fn extern_output_note_get_assets(dest_ptr: *mut Felt, note_index: Felt) -> usize;
@@ -82,7 +88,7 @@ unsafe extern "C" {
     pub(crate) fn extern_output_note_find_attachment(
         attachment_scheme: Felt,
         note_index: Felt,
-        ptr: *mut RawAttachmentLocation,
+        ptr: *mut RawFoundIndex,
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::write_attachment_commitments_to_memory"]
@@ -97,6 +103,9 @@ unsafe extern "C" {
         attachment_idx: Felt,
         note_index: Felt,
     ) -> usize;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::output_note::compute_note_id"]
+    fn extern_output_note_compute_note_id(note_idx: Felt, ptr: *mut NoteId);
 }
 
 /// Creates a new output note and returns its index.
@@ -233,13 +242,13 @@ pub struct OutputNoteAssetsInfo {
 /// Retrieves the assets commitment and asset count for the output note at `note_index`.
 pub fn get_assets_info(note_index: NoteIdx) -> OutputNoteAssetsInfo {
     unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<(Word, Felt)>::uninit());
+        let mut ret_area =
+            WordAligned::new(::core::mem::MaybeUninit::<RawCommitmentWithCount>::uninit());
         extern_output_note_get_assets_info(note_index.inner, ret_area.as_mut_ptr());
-        let (commitment, num_assets) = ret_area.into_inner().assume_init();
+        let raw = ret_area.into_inner().assume_init();
         OutputNoteAssetsInfo {
-            commitment,
-            // The transaction kernel guarantees asset counts fit in a u32.
-            num_assets: num_assets.as_canonical_u64() as u32,
+            commitment: raw.commitment,
+            num_assets: raw.num_items(),
         }
     }
 }
@@ -288,8 +297,7 @@ pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
 /// Searches the output note metadata for `attachment_scheme`.
 pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u32> {
     unsafe {
-        let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<RawAttachmentLocation>::uninit());
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawFoundIndex>::uninit());
         extern_output_note_find_attachment(
             attachment_scheme,
             note_index.inner,
@@ -299,7 +307,9 @@ pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u
     }
 }
 
-/// Writes attachment commitments to memory and returns them as protocol words.
+/// Returns the attachment commitments of the output note at `note_index`.
+///
+/// The name mirrors the kernel procedure, which fills the buffer this function returns.
 pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> {
     let mut commitments: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENTS_PER_NOTE);
     let num_attachments = unsafe {
@@ -316,7 +326,10 @@ pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> 
     commitments
 }
 
-/// Writes the selected output-note attachment to memory and returns it as protocol words.
+/// Returns the attachment at `attachment_idx` of the output note at `note_index` as protocol
+/// words.
+///
+/// The name mirrors the kernel procedure, which fills the buffer this function returns.
 pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {
@@ -332,4 +345,20 @@ pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> V
         attachment.set_len(num_words);
     }
     attachment
+}
+
+/// Computes the ID of the output note at `note_index`.
+///
+/// The ID is only final once the note has been fully constructed, that is, once all of its assets
+/// and attachments have been added.
+///
+/// # Panics
+///
+/// Panics if `note_index` is out of bounds for the transaction's output notes.
+pub fn compute_note_id(note_index: NoteIdx) -> NoteId {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<NoteId>::uninit());
+        extern_output_note_compute_note_id(note_index.inner, ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
+    }
 }

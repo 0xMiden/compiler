@@ -845,8 +845,8 @@ path = "{root}"
         let unseeded = from_input.into_package().expect("a full build yields a package");
         let seeded = from_seed.into_package().expect("a seeded full build yields a package");
         assert_eq!(
-            seeded.digest(),
-            unseeded.digest(),
+            seeded.dependency_commitment(),
+            unseeded.dependency_commitment(),
             "everything downstream of the seed is the same code, so the package must be the same"
         );
         assert_eq!(seeded.name, unseeded.name);

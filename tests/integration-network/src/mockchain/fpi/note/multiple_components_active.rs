@@ -50,14 +50,14 @@ pub fn multiple_components_active() {
         init_storage_data
             .insert_map_entry(first_storage_slot.clone(), COUNTER_CONTRACT_STORAGE_KEY, 41_u64)
             .unwrap();
-        AccountComponent::from_package(&first_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(first_package.as_ref().clone(), &init_storage_data).unwrap()
     };
     let second_component = {
         let mut init_storage_data = InitStorageData::default();
         init_storage_data
             .insert_map_entry(second_storage_slot.clone(), COUNTER_CONTRACT_STORAGE_KEY, 73_u64)
             .unwrap();
-        AccountComponent::from_package(&second_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(second_package.as_ref().clone(), &init_storage_data).unwrap()
     };
 
     // Both components are deployed on the transaction's *active* account.

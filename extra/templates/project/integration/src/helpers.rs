@@ -145,7 +145,7 @@ pub async fn create_account_from_package(
     config: AccountCreationConfig,
 ) -> Result<Account> {
     let account_component =
-        AccountComponent::from_package(package.as_ref(), &config.init_storage_data)
+        AccountComponent::from_package(package.as_ref().clone(), &config.init_storage_data)
             .context("Failed to create account component from package")?;
 
     let mut init_seed = [0_u8; 32];

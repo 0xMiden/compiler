@@ -1,4 +1,4 @@
-use miden_processor::{ExecutionOptions, StackInputs, advice::AdviceInputs, execute_sync};
+use miden_processor::{ExecutionOptions, FastProcessor, StackInputs, advice::AdviceInputs};
 
 use super::*;
 use crate::end_to_end::support::default_host_with_core_lib;
@@ -123,17 +123,17 @@ end
 
     let mut host = default_host_with_core_lib();
     let program = package.unwrap_program();
-    let result = execute_sync(
-        &program,
+    let result = FastProcessor::new_with_options(
         StackInputs::default(),
         AdviceInputs::default(),
-        &mut host,
         ExecutionOptions::default(),
-    );
+    )
+    .expect("test processor should initialize")
+    .execute_sync(&program, &mut host);
 
     if should_succeed {
-        let trace = result.expect("accepted attachment length should execute");
-        assert_eq!(trace.stack.get_num_elements(1), &[miden_core::Felt::ONE]);
+        let output = result.expect("accepted attachment length should execute");
+        assert_eq!(output.stack.get_num_elements(1), &[miden_core::Felt::ONE]);
     } else {
         let error = result.expect_err("invalid attachment length should panic in the guest");
         let error = error.to_string();
@@ -162,6 +162,16 @@ fn rust_sdk_output_note_get_assets_binding() {
         "pub fn binding(&self) -> Felt {
         let assets = output_note::get_assets(NoteIdx { inner: Felt::new(0).unwrap() });
         Felt::new(assets.len() as u64).unwrap()
+    }",
+    );
+}
+
+#[test]
+fn rust_sdk_output_note_compute_note_id_binding() {
+    run_output_note_binding_test(
+        "rust_sdk_output_note_compute_note_id_binding",
+        "pub fn binding(&self) -> Word {
+        output_note::compute_note_id(NoteIdx { inner: Felt::new(0).unwrap() }).inner
     }",
     );
 }

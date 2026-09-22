@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Target Miden VM `0.33.0` and protocol `0.17.0-rc.5`. Generic note attachment readers use public
+  core primitives now that the protocol helpers are internal.
+- [BREAKING] `tx::get_block_number` and `tx::get_block_commitment` are renamed to
+  `tx::get_reference_block_number` and `tx::get_reference_block_commitment`. The new
+  `tx::get_block_commitment(block_number)` reads any block up to the reference block.
+- [BREAKING] The `note` attachment helpers are renamed to `note::load_attachment_commitments`,
+  `note::load_attachment` and `note::load_indexed_attachment`.
+- [BREAKING] Transaction summaries use the versioned six-word layout, and standard P2ID note storage
+  has four items; see the [migration guide](./sdk/MIGRATION.md).
+- Bindings for more protocol `0.17` procedures: note IDs and `input_note::find_note`,
+  per-asset note access with `remove_asset`, transaction fee queries, `has_storage_slot`,
+  `has_state_changed`, `has_initial_asset`, and the `asset` ID accessors behind the new `AssetId`.
+- `#[note_script]` entrypoints may take `mut self`.
+
 ## [0.14.0]
 
 ### Added

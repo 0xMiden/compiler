@@ -26,6 +26,7 @@ pub const GET_METADATA: &str = "get_metadata";
 pub const FIND_ATTACHMENT: &str = "find_attachment";
 pub const WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY: &str = "write_attachment_commitments_to_memory";
 pub const WRITE_ATTACHMENT_TO_MEMORY: &str = "write_attachment_to_memory";
+pub const COMPUTE_NOTE_ID: &str = "compute_note_id";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -120,6 +121,10 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     output_note.insert(
         Symbol::from(WRITE_ATTACHMENT_TO_MEMORY),
         FunctionType::new(CallConv::Wasm, [I32, Felt, Felt], [I32]),
+    );
+    output_note.insert(
+        Symbol::from(COMPUTE_NOTE_ID),
+        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), output_note);
     m

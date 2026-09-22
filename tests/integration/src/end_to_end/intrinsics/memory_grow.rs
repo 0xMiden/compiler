@@ -1,5 +1,5 @@
 use miden_core::Felt;
-use miden_processor::{ExecutionOptions, StackInputs, advice::AdviceInputs, execute_sync};
+use miden_processor::{FastProcessor, StackInputs};
 
 use crate::end_to_end::support::{assemble_test_program, default_host_with_core_lib};
 
@@ -46,15 +46,10 @@ fn memory_grow_updates_only_on_success() {
     ];
     for (inputs, expected) in cases {
         let inputs = inputs.map(Felt::from);
-        let trace = execute_sync(
-            &program,
-            StackInputs::new(&inputs).unwrap(),
-            AdviceInputs::default(),
-            &mut default_host_with_core_lib(),
-            ExecutionOptions::default(),
-        )
-        .unwrap_or_else(|err| panic!("memory.grow trapped for {inputs:?}: {err}"));
-        let actual: Vec<u64> = trace
+        let output = FastProcessor::new(StackInputs::new(&inputs).unwrap())
+            .execute_sync(&program, &mut default_host_with_core_lib())
+            .unwrap_or_else(|err| panic!("memory.grow trapped for {inputs:?}: {err}"));
+        let actual: Vec<u64> = output
             .stack
             .get_num_elements(expected.len())
             .iter()

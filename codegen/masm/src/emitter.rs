@@ -1,7 +1,10 @@
 use alloc::collections::BTreeSet;
 
 use miden_assembly::diagnostics::WrapErr;
-use midenc_hir::{Block, Operation, ProgramPoint, TraceTarget, ValueRange, ValueRef};
+use midenc_hir::{
+    Block, Operation, ProgramPoint, TraceTarget, ValueRange, ValueRef,
+    dialects::builtin::{Function, attributes::LocalVariable},
+};
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{SourceSpan, Spanned};
 use smallvec::SmallVec;
@@ -14,8 +17,64 @@ use crate::{
     opt::{OperandMovementConstraintSolver, SolverError, operands::SolverOptions},
 };
 
+/// The layout of a procedure's locals frame, in field elements.
+///
+/// Debug locations refer to locals by index, while the frame is addressed by element offset, so
+/// both are needed to place a local relative to the frame pointer.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct FrameLayout<'a> {
+    /// The offset of each local from the start of the frame, indexed by local.
+    ///
+    /// A local wider than one element moves every local declared after it, so the index of a local
+    /// is not its offset.
+    pub local_offsets: &'a [u32],
+    /// The size of the frame, rounded up the way the assembler rounds it. `locaddr.N` addresses
+    /// `FMP - aligned_size + N`, so offsets relative to the frame pointer are derived from it.
+    pub aligned_size: u32,
+}
+
+impl<'a> FrameLayout<'a> {
+    /// Builds the layout of a frame holding `num_locals` elements, with `local_offsets` from
+    /// [`Function::local_offsets`](midenc_hir::dialects::builtin::Function::local_offsets).
+    pub fn new(local_offsets: &'a [u32], num_locals: u16) -> Self {
+        Self {
+            local_offsets,
+            aligned_size: u32::from(num_locals).next_multiple_of(miden_core::WORD_SIZE as u32),
+        }
+    }
+
+    /// The element offset of `local` from the start of the frame: the operand of the `locaddr`
+    /// that addresses it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `local` is not a local of the procedure this frame belongs to.
+    pub fn locaddr(&self, local: &LocalVariable) -> u16 {
+        let offset =
+            self.element_offset(local.as_usize()).expect("local is not part of this frame");
+        u16::try_from(offset).expect("local offset exceeds the procedure frame limit")
+    }
+
+    /// The element offset shared by executable local accesses and debug expressions.
+    pub fn element_offset(&self, index: usize) -> Option<u32> {
+        self.local_offsets.get(index).copied()
+    }
+}
+
+/// Collects the local offsets of `function` for a [`FrameLayout`].
+pub(crate) fn local_offsets(function: &Function) -> Vec<u32> {
+    function
+        .local_offsets()
+        .map(|offset| {
+            u32::try_from(offset).expect("local offset exceeds the procedure frame limit")
+        })
+        .collect()
+}
+
 pub(crate) struct BlockEmitter<'b> {
     pub liveness: &'b LivenessAnalysis,
+    /// Layout of the current procedure's locals frame.
+    pub frame: FrameLayout<'b>,
     pub link_info: &'b LinkInfo,
     pub invoked: &'b mut BTreeSet<masm::Invoke>,
     pub target: Vec<masm::Op>,
@@ -27,6 +86,7 @@ impl BlockEmitter<'_> {
     pub fn nest<'nested, 'current: 'nested>(&'current mut self) -> BlockEmitter<'nested> {
         BlockEmitter {
             liveness: self.liveness,
+            frame: self.frame,
             link_info: self.link_info,
             invoked: self.invoked,
             target: Default::default(),

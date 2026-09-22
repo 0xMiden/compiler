@@ -173,8 +173,11 @@ fn asset_amount_api_matches_kernel_balances() {
     let note_package =
         compile_note_package("asset-amount-note", ASSET_AMOUNT_NOTE_SOURCE, wallet_project.root());
 
-    let wallet_component =
-        AccountComponent::from_package(&wallet_package, &InitStorageData::default()).unwrap();
+    let wallet_component = AccountComponent::from_package(
+        wallet_package.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let max_supply = 1_000_000_000u64;

@@ -73,18 +73,45 @@ debug = false
 }
 
 #[test]
-fn rust_sdk_account_tx_get_block_commitment_binding() {
+fn rust_sdk_account_tx_get_reference_block_commitment_binding() {
     run_tx_binding_test(
-        "rust_sdk_account_tx_get_block_commitment_binding",
-        "let commitment = tx::get_block_commitment();\n    let _ = commitment;",
+        "rust_sdk_account_tx_get_reference_block_commitment_binding",
+        "let commitment = tx::get_reference_block_commitment();\n    let _ = commitment;",
     );
 }
 
 #[test]
-fn rust_sdk_account_tx_get_block_number_binding() {
+fn rust_sdk_account_tx_get_block_commitment_binding() {
     run_tx_binding_test(
-        "rust_sdk_account_tx_get_block_number_binding",
-        "let _ = tx::get_block_number();",
+        "rust_sdk_account_tx_get_block_commitment_binding",
+        "let commitment = tx::get_block_commitment(tx::get_reference_block_number());\n    let _ \
+         = commitment;",
+    );
+}
+
+#[test]
+fn rust_sdk_account_tx_get_reference_block_number_binding() {
+    run_tx_binding_test(
+        "rust_sdk_account_tx_get_reference_block_number_binding",
+        "let _ = tx::get_reference_block_number();",
+    );
+}
+
+#[test]
+fn rust_sdk_account_tx_compute_fee_binding() {
+    run_tx_binding_test(
+        "rust_sdk_account_tx_compute_fee_binding",
+        "let exclude = Word::from([Felt::new(0).unwrap(); 4]);
+    let _ = tx::compute_fee(0, exclude);",
+    );
+}
+
+#[test]
+fn rust_sdk_account_tx_get_fee_asset_id_binding() {
+    run_tx_binding_test(
+        "rust_sdk_account_tx_get_fee_asset_id_binding",
+        "let fee_asset_id: AssetId = tx::get_fee_asset_id();
+    let _ = fee_asset_id.faucet_id();",
     );
 }
 

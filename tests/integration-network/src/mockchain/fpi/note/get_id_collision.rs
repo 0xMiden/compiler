@@ -36,10 +36,16 @@ fn get_id_component_coexists_with_active_account_builtin() {
     let (account_package, note_package, _storage_slot) =
         build_fpi_test_packages("get_id_collision", GET_ID_COMPONENT_SOURCE, NOTE_SOURCE);
 
-    let active_component =
-        AccountComponent::from_package(&account_package, &InitStorageData::default()).unwrap();
-    let foreign_component =
-        AccountComponent::from_package(&account_package, &InitStorageData::default()).unwrap();
+    let active_component = AccountComponent::from_package(
+        account_package.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
+    let foreign_component = AccountComponent::from_package(
+        account_package.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
 

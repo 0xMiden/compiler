@@ -2,9 +2,7 @@ use std::fmt;
 
 use miden_core::Felt;
 use miden_debug::{FromMidenRepr, ToMidenRepr};
-use miden_processor::{
-    ExecutionOptions, MIN_STACK_DEPTH, StackInputs, advice::AdviceInputs, execute_sync,
-};
+use miden_processor::{FastProcessor, MIN_STACK_DEPTH, StackInputs};
 use proptest::prelude::*;
 
 use crate::end_to_end::support::{
@@ -43,18 +41,13 @@ fn test_i64_intrinsic<V, F1, F2, D>(
         let inputs = to_inputs(&input_tuple);
         let stack_inputs = StackInputs::new(&inputs).expect("invalid stack inputs");
 
-        let vm_result = execute_sync(
-            &program,
-            stack_inputs,
-            AdviceInputs::default(),
-            &mut default_host_with_core_lib(),
-            ExecutionOptions::default(),
-        );
+        let vm_result = FastProcessor::new(stack_inputs)
+            .execute_sync(&program, &mut default_host_with_core_lib());
 
         match (expected_result, vm_result) {
-            (Ok(expected), Ok(trace)) => {
+            (Ok(expected), Ok(output)) => {
                 let outputs: Vec<i64> =
-                    decode_outputs(trace.stack.get_num_elements(MIN_STACK_DEPTH));
+                    decode_outputs(output.stack.get_num_elements(MIN_STACK_DEPTH));
                 prop_assert_eq!(outputs, expected);
                 Ok(())
             }
@@ -65,9 +58,9 @@ fn test_i64_intrinsic<V, F1, F2, D>(
             (Ok(expected), Err(vm_err)) => Err(proptest::test_runner::TestCaseError::fail(
                 format!("Expected success with output {:?} but VM trapped: {:?}", expected, vm_err),
             )),
-            (Err(expectation), Ok(trace)) => {
+            (Err(expectation), Ok(output)) => {
                 let outputs: Vec<i64> =
-                    decode_outputs(trace.stack.get_num_elements(MIN_STACK_DEPTH));
+                    decode_outputs(output.stack.get_num_elements(MIN_STACK_DEPTH));
                 Err(proptest::test_runner::TestCaseError::fail(format!(
                     "Expected VM trap ({:?}) but execution succeeded with outputs: {:?}",
                     expectation, outputs

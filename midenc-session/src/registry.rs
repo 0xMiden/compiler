@@ -131,13 +131,11 @@ impl HybridPackageRegistry {
             registry.load_local_registry(options)?;
         }
 
-        // Load link libraries. The precompiles library is implied because the core library
-        // depends on it; the project assembler resolves and verifies the dependency itself.
+        // Load link libraries, including the bundled core and protocol packages.
         let core = crate::LinkLibrary::core();
-        let precompiles = crate::LinkLibrary::precompiles();
         let tx_kernel = crate::LinkLibrary::tx_kernel();
         let protocol = crate::LinkLibrary::protocol();
-        let implied_libraries = vec![&core, &precompiles, &tx_kernel, &protocol]
+        let implied_libraries = vec![&core, &tx_kernel, &protocol]
             .into_iter()
             .filter(|ll| !options.link_libraries.iter().any(|oll| oll.name == ll.name));
         let link_libraries = options.link_libraries.iter().chain(implied_libraries);
@@ -239,7 +237,9 @@ impl HybridPackageRegistry {
         package: Arc<Package>,
         published_file_name: Option<&str>,
     ) -> Result<miden_project::Version, InstallPackageError> {
-        let version = miden_project::Version::new(package.version.clone(), package.digest());
+        // The commitment is hashed on every call, so it is computed once for both uses.
+        let dependency_commitment = package.dependency_commitment();
+        let version = miden_project::Version::new(package.version.clone(), dependency_commitment);
         log::trace!(target: "package-registry", "preparing to install package {}@{version}", package.name);
         if let Some(previous_digest) = self
             .packages
@@ -247,7 +247,7 @@ impl HybridPackageRegistry {
             .and_then(|versions| versions.get(&package.version))
             .and_then(PackageRecord::digest)
             .copied()
-            && previous_digest != package.digest()
+            && previous_digest != dependency_commitment
         {
             log::trace!(target: "package-registry", "package already installed: {}@{version}", package.name);
             return Err(InstallPackageError::AlreadyInstalledWithDifferentDigest {
@@ -418,15 +418,20 @@ impl PackageProvider for HybridPackageRegistry {
         package: &PackageId,
         version: &miden_project::Version,
     ) -> Result<Arc<Package>, Report> {
-        let found = self.artifacts.get(package).and_then(|versions| versions.get(&version.version));
+        // Artifacts are stored under a version that carries their dependency commitment, so the
+        // stored digest is compared instead of hashing the package again on every lookup.
+        let found = self
+            .artifacts
+            .get(package)
+            .and_then(|versions| versions.get_key_value(&version.version));
         match found {
-            Some(artifact) if version.digest != Some(artifact.digest()) => {
+            Some((installed, _)) if version.digest != installed.digest => {
                 Err(Report::msg(format!(
                     "cannot load {package}@{version}: a specific digest was requested, but \
                      differs from the available version"
                 )))
             }
-            Some(artifact) => Ok(Arc::clone(artifact)),
+            Some((_, artifact)) => Ok(Arc::clone(artifact)),
             None => Err(Report::msg(format!(
                 "cannot load {package}@{version}: no such package available",
             ))),
@@ -481,9 +486,9 @@ mod tests {
     #[test]
     fn rejected_install_preserves_the_cached_artifact() {
         let core_library = miden_core_lib::CoreLibrary::default();
-        let incumbent = core_library.precompiles_package();
-        let intruder = renamed(&core_library.package(), &incumbent);
-        assert_ne!(incumbent.digest(), intruder.digest());
+        let incumbent = core_library.package();
+        let intruder = renamed(&miden_protocol::ProtocolLib::default().package(), &incumbent);
+        assert_ne!(incumbent.dependency_commitment(), intruder.dependency_commitment());
 
         let cache_dir = tempfile::tempdir().unwrap();
         let mut registry = HybridPackageRegistry::empty();
@@ -499,29 +504,29 @@ mod tests {
         let after = std::fs::read(&cached).unwrap();
         assert_eq!(before, after, "a rejected install must not overwrite the cached artifact");
 
-        let version = miden_project::Version::new(incumbent.version.clone(), incumbent.digest());
+        let version = miden_project::Version::new(
+            incumbent.version.clone(),
+            incumbent.dependency_commitment(),
+        );
         let loaded = registry.load_package(&incumbent.name, &version).unwrap();
-        assert_eq!(loaded.digest(), incumbent.digest());
+        assert_eq!(loaded.dependency_commitment(), incumbent.dependency_commitment());
     }
 
-    /// A fresh registry must contain a precompiles artifact that satisfies the exact-digest
-    /// dependency recorded by the installed core package.
+    /// Every bundled dependency must resolve using its dependency commitment.
     #[test]
-    fn seeding_provides_the_precompiles_artifact_the_core_package_requires() {
+    fn seeding_provides_the_dependencies_bundled_packages_require() {
         let registry = HybridPackageRegistry::new(&options(None)).unwrap();
-
-        let core_library = miden_core_lib::CoreLibrary::default();
-        let core = core_library.package();
-        let precompiles_name = core_library.precompiles_package().name.clone();
-        let dep = core
-            .manifest
-            .dependencies()
-            .find(|dep| dep.name == precompiles_name)
-            .expect("core package should depend on the precompiles package");
-
-        let version = miden_project::Version::new(dep.version.clone(), dep.digest);
-        let loaded = registry.load_package(&dep.name, &version).unwrap();
-        assert_eq!(loaded.digest(), dep.digest);
+        for package in [
+            miden_core_lib::CoreLibrary::default().package(),
+            miden_protocol::ProtocolLib::default().package(),
+            miden_protocol::transaction::TransactionKernel::package(),
+        ] {
+            for dep in package.manifest.dependencies() {
+                let version = miden_project::Version::new(dep.version.clone(), dep.digest);
+                let loaded = registry.load_package(&dep.name, &version).unwrap();
+                assert_eq!(loaded.dependency_commitment(), dep.digest);
+            }
+        }
     }
 
     /// A failed filesystem-cache write must surface as an error and must not leave a partial
@@ -531,7 +536,7 @@ mod tests {
     fn failed_cache_write_leaves_no_partial_file() {
         use std::os::unix::fs::PermissionsExt;
 
-        let package = miden_core_lib::CoreLibrary::default().precompiles_package();
+        let package = miden_core_lib::CoreLibrary::default().package();
 
         let cache_dir = tempfile::tempdir().unwrap();
         let mut permissions = std::fs::metadata(cache_dir.path()).unwrap().permissions();
@@ -555,13 +560,13 @@ mod tests {
         assert_eq!(leftovers, 0, "a failed cache write must not leave files behind");
     }
 
-    /// When the local registry provides a same-version precompiles package with a different
+    /// When the local registry provides a same-version core package with a different
     /// digest, seeding must keep the local copy and initialization must still succeed.
     #[test]
     fn seeding_keeps_a_mismatched_local_registry_copy() {
         let core_library = miden_core_lib::CoreLibrary::default();
-        let bundled_precompiles = core_library.precompiles_package();
-        let doctored = renamed(&core_library.package(), &bundled_precompiles);
+        let bundled_core = core_library.package();
+        let doctored = renamed(&miden_protocol::ProtocolLib::default().package(), &bundled_core);
 
         let sysroot = tempfile::tempdir().unwrap();
         let lib_dir = sysroot.path().join("lib");
@@ -571,11 +576,12 @@ mod tests {
         let registry =
             HybridPackageRegistry::new(&options(Some(sysroot.path().to_path_buf()))).unwrap();
 
-        let version = miden_project::Version::new(doctored.version.clone(), doctored.digest());
+        let version =
+            miden_project::Version::new(doctored.version.clone(), doctored.dependency_commitment());
         let loaded = registry.load_package(&doctored.name, &version).unwrap();
         assert_eq!(
-            loaded.digest(),
-            doctored.digest(),
+            loaded.dependency_commitment(),
+            doctored.dependency_commitment(),
             "the local registry copy must survive the bundled seeding"
         );
     }
@@ -614,7 +620,7 @@ mod tests {
         let mut conflict = (*crate::LinkLibrary::tx_kernel().load(&options).unwrap()).clone();
         conflict.name = package.name.clone();
         conflict.version = package.version.clone();
-        assert_ne!(conflict.digest(), package.digest());
+        assert_ne!(conflict.dependency_commitment(), package.dependency_commitment());
         std::fs::write(&cached_package, b"keep-on-conflict").unwrap();
 
         assert!(matches!(
@@ -728,9 +734,12 @@ mod tests {
         let reloaded = crate::libs::load_package_from_path(&published).unwrap();
         let newer_reloaded = crate::libs::load_package_from_path(&newer_published).unwrap();
         assert_eq!(reloaded.name, registry_package.name);
-        assert_eq!(reloaded.digest(), registry_package.digest());
+        assert_eq!(reloaded.dependency_commitment(), registry_package.dependency_commitment());
         assert_eq!(newer_reloaded.version, newer_registry_package.version);
-        assert_eq!(newer_reloaded.digest(), newer_registry_package.digest());
+        assert_eq!(
+            newer_reloaded.dependency_commitment(),
+            newer_registry_package.dependency_commitment()
+        );
         assert!(
             registry
                 .artifacts

@@ -46,44 +46,6 @@ pub extern "C" fn note_compute_storage_commitment_plain(
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "miden::protocol::note::write_attachment_commitments_to_memory")]
-#[optimize(none)]
-#[inline(never)]
-pub extern "C" fn note_write_attachment_commitments_to_memory_plain(
-    _attachments_commitment_f0: f32,
-    _attachments_commitment_f1: f32,
-    _attachments_commitment_f2: f32,
-    _attachments_commitment_f3: f32,
-    _dest_ptr: *mut c_void,
-) -> usize {
-    unsafe { core::hint::unreachable_unchecked() }
-}
-
-#[unsafe(export_name = "miden::protocol::note::write_attachment_to_memory")]
-#[optimize(none)]
-#[inline(never)]
-pub extern "C" fn note_write_attachment_to_memory_plain(
-    _attachment_commitment_f0: f32,
-    _attachment_commitment_f1: f32,
-    _attachment_commitment_f2: f32,
-    _attachment_commitment_f3: f32,
-    _dest_ptr: *mut c_void,
-) -> usize {
-    unsafe { core::hint::unreachable_unchecked() }
-}
-
-#[unsafe(export_name = "miden::protocol::note::write_indexed_attachment_to_memory")]
-#[optimize(none)]
-#[inline(never)]
-pub extern "C" fn note_write_indexed_attachment_to_memory_plain(
-    _num_attachments: f32,
-    _attachment_commitments_ptr: *const c_void,
-    _attachment_idx: f32,
-    _dest_ptr: *mut c_void,
-) -> usize {
-    unsafe { core::hint::unreachable_unchecked() }
-}
-
 #[unsafe(export_name = "miden::protocol::note::compute_recipient")]
 #[optimize(none)]
 #[inline(never)]

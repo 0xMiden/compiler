@@ -301,7 +301,7 @@ impl OpEmitter<'_> {
         );
         assert_eq!(len.ty(), Type::U32, "expected println length operand to be a u32");
 
-        self.emit(masm::Instruction::EmitImm(Event::PrintLn.as_event_id().as_felt().into()), span);
+        self.emit(masm::Instruction::EmitImm(Event::PrintLn.into()), span);
 
         // Clean up the stack after the debug executor handled printing.
         self.dropn(2, span);
@@ -318,12 +318,9 @@ impl OpEmitter<'_> {
     ) {
         self.process_call_signature(&callee, signature, span);
 
-        self.emit(
-            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
-            span,
-        );
+        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::Exec(callee), span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     /// Execute the procedure whose MAST root is stored in slot `index` (stack top) of a function
@@ -422,12 +419,9 @@ impl OpEmitter<'_> {
         }
 
         // `dynexec` pops the element address and reads the callee MAST root word at it
-        self.emit(
-            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
-            span,
-        );
+        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::DynExec, span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     /// Push the MAST root digest of `callee` onto the operand stack as one word.
@@ -452,12 +446,9 @@ impl OpEmitter<'_> {
     ) {
         self.process_call_signature(&callee, signature, span);
 
-        self.emit(
-            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
-            span,
-        );
+        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::Call(callee), span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     /// Execute the given kernel procedure as a syscall.
@@ -469,12 +460,9 @@ impl OpEmitter<'_> {
     ) {
         self.process_call_signature(&callee, signature, span);
 
-        self.emit(
-            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
-            span,
-        );
+        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::SysCall(callee), span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     fn process_call_signature(

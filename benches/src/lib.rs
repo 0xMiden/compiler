@@ -373,7 +373,7 @@ fn recreate_dir(path: &Path) -> Result<()> {
 
 fn load_package(path: &Path) -> Result<Arc<Package>> {
     let bytes = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-    Package::read_from_bytes_unchecked(&bytes)
+    Package::read_from_bytes_trusted(&bytes)
         .map(Arc::new)
         .map_err(|err| anyhow!("failed to load {}: {err}", path.display()))
 }

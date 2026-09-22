@@ -39,16 +39,17 @@ pub fn load<B: ?Sized + Builder>(
         }
 
         Type::Enum(enum_ty) => {
+            let enum_ty = enum_ty.get();
             load(fb, ptr, enum_ty.discriminant(), values, span)?;
             let discriminant = *values.last().expect("variant load should produce a discriminant");
-            let payload_offset32 = canonical_variant_payload_offset32(enum_ty)?;
-            let payload_flat_types = canonical_variant_payload_flat_types(enum_ty)?;
+            let payload_offset32 = canonical_variant_payload_offset32(&enum_ty)?;
+            let payload_flat_types = canonical_variant_payload_flat_types(&enum_ty)?;
             load_variant_payload(
                 fb,
                 ptr,
                 discriminant,
                 payload_offset32,
-                enum_ty,
+                &enum_ty,
                 &payload_flat_types,
                 values,
                 span,
@@ -58,7 +59,7 @@ pub fn load<B: ?Sized + Builder>(
         // Struct types are loaded field by field
         Type::Struct(struct_ty) => {
             let mut offset = 0u32;
-            for field in struct_ty.fields() {
+            for field in struct_ty.get().fields() {
                 let field_abi = canonical_abi_info(&field.ty)?;
                 let field_offset = field_abi.next_field32(&mut offset);
                 let field_addr = offset_addr(fb, ptr, field_offset, span)?;
@@ -85,6 +86,7 @@ pub fn load<B: ?Sized + Builder>(
         }
 
         Type::Unknown
+        | Type::Variadic
         | Type::Never
         | Type::I128
         | Type::U128
@@ -130,16 +132,17 @@ pub fn store<B: ?Sized + Builder>(
         }
 
         Type::Enum(enum_ty) => {
+            let enum_ty = enum_ty.get();
             let discriminant_value = values.next().expect("Not enough values to store");
             store_scalar_value(fb, ptr, enum_ty.discriminant(), discriminant_value, span)?;
-            let payload_offset32 = canonical_variant_payload_offset32(enum_ty)?;
-            let payload_flat_types = canonical_variant_payload_flat_types(enum_ty)?;
+            let payload_offset32 = canonical_variant_payload_offset32(&enum_ty)?;
+            let payload_flat_types = canonical_variant_payload_flat_types(&enum_ty)?;
             store_variant_payload(
                 fb,
                 ptr,
                 discriminant_value,
                 payload_offset32,
-                enum_ty,
+                &enum_ty,
                 &payload_flat_types,
                 values,
                 span,
@@ -149,7 +152,7 @@ pub fn store<B: ?Sized + Builder>(
         // Struct types are stored field by field
         Type::Struct(struct_ty) => {
             let mut offset = 0u32;
-            for field in struct_ty.fields() {
+            for field in struct_ty.get().fields() {
                 let field_abi = canonical_abi_info(&field.ty)?;
                 let field_offset = field_abi.next_field32(&mut offset);
                 let field_addr = offset_addr(fb, ptr, field_offset, span)?;
@@ -176,6 +179,7 @@ pub fn store<B: ?Sized + Builder>(
         }
 
         Type::Unknown
+        | Type::Variadic
         | Type::Never
         | Type::I128
         | Type::U128
@@ -379,7 +383,7 @@ fn validate_flat_type<B: ?Sized + Builder>(
         | Type::Felt => Ok(()),
         Type::Struct(struct_ty) => {
             let mut offset = 0usize;
-            for field in struct_ty.fields() {
+            for field in struct_ty.get().fields() {
                 let len = canonical_flat_types(&field.ty)?.len();
                 validate_flat_type(fb, &field.ty, &values[offset..offset + len], span)?;
                 offset += len;
@@ -387,7 +391,8 @@ fn validate_flat_type<B: ?Sized + Builder>(
             Ok(())
         }
         Type::Enum(enum_ty) => {
-            let payload_flat_types = canonical_variant_payload_flat_types(enum_ty)?;
+            let enum_ty = enum_ty.get();
+            let payload_flat_types = canonical_variant_payload_flat_types(&enum_ty)?;
             let discriminant = values[0];
             if payload_flat_types.is_empty() {
                 return validate_variant_discriminant(
@@ -433,6 +438,7 @@ fn validate_flat_type<B: ?Sized + Builder>(
             Ok(())
         }
         Type::Unknown
+        | Type::Variadic
         | Type::Never
         | Type::I128
         | Type::U128

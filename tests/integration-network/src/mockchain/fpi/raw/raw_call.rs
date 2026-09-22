@@ -332,11 +332,15 @@ fn output_assertions(expected_outputs: [u64; 16]) -> String {
 const RAW_CALLEE_ACCOUNT_SOURCE: &str = r#"
 use miden::core::sys
 
+# Only exports tagged `@account_procedure` join the account interface, and the kernel
+# authenticates foreign calls against that interface.
+
 #! Logical signature: () -> Felt
 #! The executor ABI still uses 16 raw input slots and 16 raw output slots.
 #!
 #! Inputs:  []
 #! Outputs: [101]
+@account_procedure
 pub proc no_arg_to_felt
     push.[0, 0, 0, 0]     assert_eqw.err="raw FPI callee: 0th input word is incorrect"
     push.[0, 0, 0, 0]     assert_eqw.err="raw FPI callee: 1st input word is incorrect"
@@ -353,6 +357,7 @@ end
 #!
 #! Inputs:  [Word(11, 22, 33, 44)]
 #! Outputs: [202]
+@account_procedure
 pub proc word_to_felt
     push.[44, 33, 22, 11] assert_eqw.err="raw FPI callee: 0th input word is incorrect"
     push.[0, 0, 0, 0]     assert_eqw.err="raw FPI callee: 1st input word is incorrect"
@@ -369,6 +374,7 @@ end
 #!
 #! Inputs:  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 #! Outputs: [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+@account_procedure
 pub proc sixteen_felts_to_sixteen_felts
     push.[4, 3, 2, 1]     assert_eqw.err="raw FPI callee: 0th input word is incorrect"
     push.[8, 7, 6, 5]     assert_eqw.err="raw FPI callee: 1st input word is incorrect"

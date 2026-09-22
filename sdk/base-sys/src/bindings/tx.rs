@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, BlockNumber};
+use super::types::{AccountId, AssetAmount, AssetId, BlockNumber};
 
 /// Marker trait for raw FPI input array lengths supported by the protocol executor.
 #[doc(hidden)]
@@ -120,11 +120,14 @@ impl ForeignProcedureInvocation {
 #[allow(improper_ctypes)]
 unsafe extern "C" {
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_block_number"]
-    pub fn extern_tx_get_block_number() -> Felt;
+    #[link_name = "miden::protocol::tx::get_reference_block_number"]
+    pub fn extern_tx_get_reference_block_number() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::tx::get_reference_block_commitment"]
+    pub fn extern_tx_get_reference_block_commitment(ptr: *mut Word);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_block_commitment"]
-    pub fn extern_tx_get_block_commitment(ptr: *mut Word);
+    pub fn extern_tx_get_block_commitment(block_number: Felt, ptr: *mut Word);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_block_timestamp"]
     pub fn extern_tx_get_block_timestamp() -> Felt;
@@ -155,13 +158,25 @@ unsafe extern "C" {
         invocation: *const ForeignProcedureInvocation,
         ptr: *mut ForeignProcedureOutputs,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::tx::compute_fee"]
+    fn extern_tx_compute_fee(
+        num_extra_cycles: Felt,
+        exclude_notes_commitment_0: Felt,
+        exclude_notes_commitment_1: Felt,
+        exclude_notes_commitment_2: Felt,
+        exclude_notes_commitment_3: Felt,
+    ) -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::tx::get_fee_asset_id"]
+    fn extern_tx_get_fee_asset_id(ptr: *mut AssetId);
 }
 
-/// Returns the current block number.
-pub fn get_block_number() -> BlockNumber {
+/// Returns the transaction reference block number.
+pub fn get_reference_block_number() -> BlockNumber {
     BlockNumber {
         // The transaction kernel guarantees block numbers fit in a u32.
-        inner: unsafe { extern_tx_get_block_number() },
+        inner: unsafe { extern_tx_get_reference_block_number() },
     }
 }
 
@@ -175,10 +190,22 @@ pub fn get_input_notes_commitment() -> Word {
 }
 
 /// Returns the block commitment of the reference block.
-pub fn get_block_commitment() -> Word {
+pub fn get_reference_block_commitment() -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_tx_get_block_commitment(ret_area.as_mut_ptr());
+        extern_tx_get_reference_block_commitment(ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
+    }
+}
+
+/// Returns the commitment of the block with the given number.
+///
+/// Any block up to and including the reference block can be read; the transaction kernel aborts
+/// for later blocks.
+pub fn get_block_commitment(block_number: BlockNumber) -> Word {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        extern_tx_get_block_commitment(block_number.as_felt(), ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init()
     }
 }
@@ -260,6 +287,38 @@ pub fn execute_foreign_procedure(
         let mut ret_area =
             WordAligned::new(::core::mem::MaybeUninit::<ForeignProcedureOutputs>::uninit());
         extern_tx_execute_foreign_procedure(&invocation, ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
+    }
+}
+
+/// Computes the fee the current transaction owes, denominated in the fee asset.
+///
+/// `num_extra_cycles` is added to the transaction's current cycle count before the fee is
+/// computed, so a caller can account for work that still lies ahead of it, such as signature
+/// verification or the epilogue. `exclude_notes_commitment` commits to the output-note indices
+/// that should be left out of the computation, or is the empty word when nothing is excluded.
+///
+/// # Panics
+///
+/// Panics if the computed fee exceeds the maximum asset amount.
+pub fn compute_fee(num_extra_cycles: u32, exclude_notes_commitment: Word) -> AssetAmount {
+    let fee = unsafe {
+        extern_tx_compute_fee(
+            Felt::from_u32(num_extra_cycles),
+            exclude_notes_commitment[0],
+            exclude_notes_commitment[1],
+            exclude_notes_commitment[2],
+            exclude_notes_commitment[3],
+        )
+    };
+    AssetAmount::try_from(fee).expect("transaction fee exceeds the maximum asset amount")
+}
+
+/// Returns the asset id that transaction fees are paid in, as of the transaction reference block.
+pub fn get_fee_asset_id() -> AssetId {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<AssetId>::uninit());
+        extern_tx_get_fee_asset_id(ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init()
     }
 }

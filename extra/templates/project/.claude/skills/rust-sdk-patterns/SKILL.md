@@ -213,7 +213,7 @@ See the rust-sdk-pitfalls skill (P5) for more on slot naming.
 | `note::` | `build_recipient(Word, Word, Vec<Felt>) -> Recipient` | Build note recipients from serial number, script root, and note storage |
 | `output_note::` | `create(Tag, NoteType, Recipient) -> NoteIdx`, `add_asset(Asset, NoteIdx)`, the `*_attachment` family | Create output notes |
 | `faucet::` | `mint(Asset)`, `burn(Asset)` | Move assets in and out of existence |
-| `tx::` | `get_block_number() -> BlockNumber`, `get_block_timestamp() -> u32`, `get_num_input_notes() -> u32`, `get_num_output_notes() -> u32`, `get_expiration_block_delta() -> u16`, `update_expiration_block_delta(u16)`, `execute_foreign_procedure(..)` | Transaction context and FPI |
+| `tx::` | `get_reference_block_number() -> BlockNumber`, `get_block_timestamp() -> u32`, `get_num_input_notes() -> u32`, `get_num_output_notes() -> u32`, `get_expiration_block_delta() -> u16`, `update_expiration_block_delta(u16)`, `execute_foreign_procedure(..)` | Transaction context and FPI |
 | Intrinsics | `assert(Felt)`, `assertz(Felt)`, `assert_eq(Felt, Felt)` | Validation (`assert` fails unless the felt equals 1; `assertz` fails unless it equals 0) |
 
 `add_asset`, `remove_asset` and the `active_account` queries are also trait methods auto-implemented on the `#[component_storage]` struct, so the idiomatic body is `self.add_asset(asset)` rather than the free function.

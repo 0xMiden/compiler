@@ -7,7 +7,7 @@
 ;; CHECK: Name:               simple:simple
 ;; CHECK-NEXT: Version:            0.0.0
 ;; CHECK-NEXT: Kind:               executable
-;; CHECK-NEXT: Debug Info Version: 2
+;; CHECK-NEXT: Debug Info Version: 3
 
 ;; Check summary section is present
 ;; CHECK: Summary:

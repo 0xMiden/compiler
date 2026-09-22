@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, Asset, Nonce, RawAccountId};
+use super::types::{AccountId, Asset, AssetId, Nonce, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -65,6 +65,17 @@ unsafe extern "C" {
         asset_key_3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::native_account::has_state_changed"]
+    fn extern_native_account_has_state_changed() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::native_account::has_initial_asset"]
+    fn extern_native_account_has_initial_asset(
+        asset_id_0: Felt,
+        asset_id_1: Felt,
+        asset_id_2: Felt,
+        asset_id_3: Felt,
+    ) -> Felt;
 }
 
 /// Adds the specified asset to the vault and returns the resulting asset value word stored under
@@ -225,6 +236,25 @@ pub fn get_initial_asset(asset_key: Word) -> Word {
     }
 }
 
+/// Returns `true` if the native account's state has changed since the transaction began.
+///
+/// Unlike [`compute_delta_commitment`], this may be called before the authentication procedure
+/// increments the nonce.
+#[inline]
+pub fn has_state_changed() -> bool {
+    unsafe { extern_native_account_has_state_changed() != Felt::new(0).unwrap() }
+}
+
+/// Returns `true` if the native account's vault held an asset with the specified asset id at the
+/// beginning of the transaction.
+#[inline]
+pub fn has_initial_asset(asset_id: AssetId) -> bool {
+    let id = asset_id.inner;
+    unsafe {
+        extern_native_account_has_initial_asset(id[0], id[1], id[2], id[3]) != Felt::new(0).unwrap()
+    }
+}
+
 /// Trait that provides native account operations for components.
 ///
 /// This trait is automatically implemented for the storage struct marked with the
@@ -295,5 +325,21 @@ pub trait NativeAccount {
     #[inline]
     fn was_procedure_called(&self, proc_root: Word) -> bool {
         was_procedure_called(proc_root)
+    }
+
+    /// Returns `true` if the native account's state has changed since the transaction began.
+    ///
+    /// Unlike [`NativeAccount::compute_delta_commitment`], this may be called before the
+    /// authentication procedure increments the nonce.
+    #[inline]
+    fn has_state_changed(&self) -> bool {
+        has_state_changed()
+    }
+
+    /// Returns `true` if the native account's vault held an asset with the specified asset id at
+    /// the beginning of the transaction.
+    #[inline]
+    fn has_initial_asset(&self, asset_id: AssetId) -> bool {
+        has_initial_asset(asset_id)
     }
 }

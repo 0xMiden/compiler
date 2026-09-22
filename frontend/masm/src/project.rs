@@ -378,7 +378,7 @@ fn load_mast_package(path: &Path) -> Result<Arc<MastPackage>> {
     let bytes = fs::read(path).map_err(|err| {
         Report::msg(format!("failed to read Miden package dependency '{}': {err}", path.display()))
     })?;
-    MastPackage::read_from_bytes_unchecked(&bytes).map(Arc::new).map_err(|err| {
+    MastPackage::read_from_bytes_trusted(&bytes).map(Arc::new).map_err(|err| {
         Report::msg(format!(
             "failed to decode Miden package dependency '{}': {err}",
             path.display()

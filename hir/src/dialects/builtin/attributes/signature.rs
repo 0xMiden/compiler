@@ -381,9 +381,8 @@ impl Signature {
     }
 
     /// Get the calling convention of this function
-    #[inline(always)]
-    pub const fn calling_convention(&self) -> CallConv {
-        self.cc
+    pub fn calling_convention(&self) -> CallConv {
+        self.cc.clone()
     }
 
     /// Returns the number of arguments expected by this function
