@@ -588,8 +588,8 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
                                 frame_base = Some(FrameBase::LocalSlot(index));
                             }
                             Operation::WasmGlobal { index } => {
-                                let name = module.global_name(GlobalIndex::from_u32(index));
-                                frame_base = Some(FrameBase::GlobalSlot(name));
+                                frame_base =
+                                    resolve_debug_global(module, index).map(FrameBase::GlobalSlot);
                             }
                             _ => {}
                         }
@@ -990,6 +990,13 @@ fn push_dwarf_path(path: &mut String, component: &str) {
     path.push_str(component);
 }
 
+fn resolve_debug_global(module: &Module, index: u32) -> Option<Symbol> {
+    if index == u32::MAX || usize::try_from(index).ok()? >= module.globals.len() {
+        return None;
+    }
+    Some(module.global_name(GlobalIndex::from_u32(index)))
+}
+
 fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
     expr: &gimli::Expression<R>,
     unit: &gimli::Unit<R>,
@@ -1004,7 +1011,9 @@ fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
             // carries logical slots; only MASM lowering knows the final frame/global layout.
             Operation::WasmLocal { index } => storage.push(ExpressionOp::LocalSlot(index)),
             Operation::WasmGlobal { index } => {
-                let name = module.global_name(GlobalIndex::from_u32(index));
+                let Some(name) = resolve_debug_global(module, index) else {
+                    return Ok(None);
+                };
                 storage.push(ExpressionOp::GlobalSlot(name));
             }
             Operation::WasmStack { index } => {
@@ -1071,6 +1080,24 @@ fn func_local_index(func_index: FuncIndex, module: &Module) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dwarf_global_indices_must_reference_existing_globals() {
+        let mut module = Module::default();
+        assert_eq!(resolve_debug_global(&module, 0), None);
+        assert_eq!(resolve_debug_global(&module, u32::MAX), None);
+        let global = module.globals.push(crate::module::types::Global {
+            ty: crate::module::types::WasmType::I32,
+            mutability: true,
+        });
+        assert_eq!(resolve_debug_global(&module, 0), Some(Symbol::intern("global0")));
+        let name = Symbol::intern("__stack_pointer");
+        module.name_section.globals_names.insert(global, name);
+        assert_eq!(resolve_debug_global(&module, 0), Some(name));
+        for index in [1, u32::MAX - 1, u32::MAX] {
+            assert_eq!(resolve_debug_global(&module, index), None);
+        }
+    }
 
     #[test]
     fn wasm_locations_are_normalized_to_hir_slots() {
