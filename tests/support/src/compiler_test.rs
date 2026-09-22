@@ -389,11 +389,11 @@ impl CompilerTestBuilder {
                 let working_dir = config
                     .target_dir
                     .unwrap_or_else(|| std::env::temp_dir().join(config.name.as_ref()));
-                let working_dir = working_dir.canonicalize().unwrap_or(working_dir);
                 if working_dir.exists() {
                     fs::remove_dir_all(&working_dir).unwrap();
                 }
                 fs::create_dir_all(&working_dir).unwrap();
+                let working_dir = working_dir.canonicalize().unwrap();
 
                 // Prepare inputs
                 let basename = working_dir.join(config.name.as_ref());
@@ -409,8 +409,9 @@ impl CompilerTestBuilder {
 
                 // `RUSTFLAGS` is for Cargo, direct `rustc` invocations need those flags
                 // passed via argv.
-                let rustflags_env = if !self.rustflags.is_empty() {
-                    Some(self.rustflags.join(" "))
+                let rustflags = self.rustflags;
+                let rustflags_env = if !rustflags.is_empty() {
+                    Some(rustflags.join(" "))
                 } else {
                     None
                 };

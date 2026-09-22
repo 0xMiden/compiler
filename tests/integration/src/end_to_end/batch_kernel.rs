@@ -207,7 +207,7 @@ fn build_advice_inputs(transactions: &[MockTransaction]) -> AdviceInputs {
         stack.extend_from_slice(&[Felt::new_unchecked(0); 3]);
     }
 
-    AdviceInputs::default().with_map(map).with_advice_stack(stack.into())
+    AdviceInputs::default().with_map(map).with_stack(stack.into())
 }
 
 /// Returns the operand stack arguments for the kernel entrypoint:
@@ -326,7 +326,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed by the kernel for this two-transaction batch.
-        expect!["32500"].assert_eq(&cycles.to_string());
+        expect!["32550"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -378,7 +378,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed for a batch that erases a note.
-        expect!["28618"].assert_eq(&cycles.to_string());
+        expect!["28663"].assert_eq(&cycles.to_string());
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");
@@ -406,9 +406,10 @@ fn batch_kernel() {
 
         let mut advice = build_advice_inputs(&transactions);
         let key = batch_id(&transactions);
-        let mut tampered: Vec<Felt> = advice.map.get(&key).expect("layer 1 advice entry").to_vec();
+        let mut tampered: Vec<Felt> =
+            advice.map().get(&key).expect("layer 1 advice entry").to_vec();
         tampered[0] += Felt::new_unchecked(1);
-        advice.map.insert(key, tampered);
+        advice = advice.with_map([(key, tampered)]);
 
         let cycles = match execute(&transactions, advice) {
             Err((_, cycles)) => cycles,
@@ -416,7 +417,7 @@ fn batch_kernel() {
         };
 
         // The cycle at which the Layer 1 hash check rejects the tampered pre-image.
-        expect!["1084"].assert_eq(&cycles.to_string());
+        expect!["1089"].assert_eq(&cycles.to_string());
     }
 
     // Scenario 4: tx1 consumes a note that only tx2 creates; the consume-before-create ordering
@@ -450,7 +451,7 @@ fn batch_kernel() {
         };
 
         // The cycle at which the consume-before-create ordering gate rejects the batch.
-        expect!["15756"].assert_eq(&cycles.to_string());
+        expect!["15791"].assert_eq(&cycles.to_string());
     }
 }
 

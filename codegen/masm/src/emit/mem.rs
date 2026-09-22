@@ -120,9 +120,11 @@ impl OpEmitter<'_> {
 /// Loads
 impl OpEmitter<'_> {
     /// Push an element-address-space pointer to the given local.
-    pub fn local_address(&mut self, local: &LocalVariable, span: SourceSpan) {
-        let local_index = local.absolute_offset();
-        self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
+    ///
+    /// `offset` is the frame's `locaddr` operand for `local`, see
+    /// [FrameLayout::locaddr](crate::emitter::FrameLayout::locaddr).
+    pub fn local_address(&mut self, local: &LocalVariable, offset: u16, span: SourceSpan) {
+        self.emit(masm::Instruction::Locaddr(offset.into()), span);
         self.push(Type::from(PointerType::new_with_address_space(
             local.ty(),
             AddressSpace::Element,
@@ -132,11 +134,14 @@ impl OpEmitter<'_> {
     /// Load a value corresponding to the type of the given local, from the memory allocated for
     /// that local.
     ///
+    /// `offset` is the frame's `locaddr` operand for `local`, see
+    /// [FrameLayout::locaddr](crate::emitter::FrameLayout::locaddr).
+    ///
     /// Internally, this pushes the address of the local on the stack, then delegates to
     /// [OpEmitter::load]
-    pub fn load_local(&mut self, local: &LocalVariable, span: SourceSpan) {
+    pub fn load_local(&mut self, local: &LocalVariable, offset: u16, span: SourceSpan) {
         let ty = local.ty();
-        self.local_address(local, span);
+        self.local_address(local, offset, span);
         self.load(ty, span)
     }
 
@@ -636,10 +641,13 @@ impl OpEmitter<'_> {
     /// Store a value of the type given by the specified [hir::LocalId], using the memory allocated
     /// for that local.
     ///
+    /// `offset` is the frame's `locaddr` operand for `local`, see
+    /// [FrameLayout::locaddr](crate::emitter::FrameLayout::locaddr).
+    ///
     /// Internally, this pushes the address of the given local on the stack, and delegates to
     /// [OpEmitter::store] to perform the actual store.
-    pub fn store_local(&mut self, local: &LocalVariable, span: SourceSpan) {
-        self.local_address(local, span);
+    pub fn store_local(&mut self, local: &LocalVariable, offset: u16, span: SourceSpan) {
+        self.local_address(local, offset, span);
         self.store(span)
     }
 
@@ -683,7 +691,7 @@ impl OpEmitter<'_> {
                     Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(None, span),
                     ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, None, span),
                     Type::Array(ref array_ty) => self.store_array(array_ty, None, span),
-                    Type::Struct(ref struct_ty) => self.store_struct(struct_ty, None, span),
+                    Type::Struct(ref struct_ty) => self.store_struct(&struct_ty.get(), None, span),
                     ty => unimplemented!(
                         "invalid store: support for storing {ty} has not been implemented"
                     ),
@@ -711,7 +719,7 @@ impl OpEmitter<'_> {
             Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(Some(ptr), span),
             ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, Some(ptr), span),
             Type::Array(ref array_ty) => self.store_array(array_ty, Some(ptr), span),
-            Type::Struct(ref struct_ty) => self.store_struct(struct_ty, Some(ptr), span),
+            Type::Struct(ref struct_ty) => self.store_struct(&struct_ty.get(), Some(ptr), span),
             ty => {
                 unimplemented!("invalid store: support for storing {ty} has not been implemented")
             }

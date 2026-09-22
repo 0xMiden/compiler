@@ -27,8 +27,9 @@ pub fn counter_note_basic_auth_increments_storage() {
     init_storage_data
         .insert_map_entry(counter_storage_slot.clone(), COUNTER_CONTRACT_STORAGE_KEY, 1_u64)
         .unwrap();
-    let contract_component = AccountComponent::from_package(&contract_package, &init_storage_data)
-        .expect("Failed to build account component from counter project");
+    let contract_component =
+        AccountComponent::from_package(contract_package.as_ref().clone(), &init_storage_data)
+            .expect("Failed to build account component from counter project");
 
     let mut builder = MockChain::builder();
     let counter_account = builder
@@ -67,7 +68,7 @@ pub fn counter_note_basic_auth_increments_storage() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["9090"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["9058"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed (incremented by 1).
     assert_counter_storage(

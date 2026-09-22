@@ -3,6 +3,7 @@
 mod asset_amount;
 mod counter;
 mod fpi;
+mod note_asset_bindings;
 mod notes;
 mod sibling;
 mod support;

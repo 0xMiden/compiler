@@ -386,26 +386,22 @@ fn parsing_verifies_what_it_parsed() {
 }
 
 #[test]
-fn parse_preserves_full_width_frame_base_indices() -> TestResult {
+fn parse_preserves_full_width_frame_base_local_indices() -> TestResult {
     use crate::dialects::debuginfo::DebugInfoDialect;
 
-    for modifier in ["local", "global"] {
-        let mut test = ParserTest::default();
-        test.context().get_or_register_dialect::<DebugInfoDialect>();
-        let source = format!(
-            r#"builtin.function public extern("C") @frame_base(%0: i32) -> i32 {{
-    di.debug_declare <{{ variable = #di.variable<{{ name = "x", file = "test.rs", line = 1 }}>, expression = #di.expression<[DW_OP_fbreg({modifier}, 2147483648+0)]> }}>;
+    let mut test = ParserTest::default();
+    test.context().get_or_register_dialect::<DebugInfoDialect>();
+    let source = r#"builtin.function public extern("C") @frame_base(%0: i32) -> i32 {
+    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 2147483648+0)]> }>;
     builtin.ret %0 : (i32);
-}};"#
-        );
+};"#;
 
-        let function = test.parse::<Function>("frame_base_full_width_index.hir", &source)?;
-        let printed = format!("{}", function.as_operation_ref().borrow());
-        assert!(
-            printed.contains(&format!("DW_OP_fbreg({modifier}, 2147483648+0)")),
-            "frame-base index was not preserved: {printed}"
-        );
-    }
+    let function = test.parse::<Function>("frame_base_full_width_index.hir", source)?;
+    let printed = format!("{}", function.as_operation_ref().borrow());
+    assert!(
+        printed.contains("DI_OP_frame_base(local_slot, 2147483648+0)"),
+        "frame-base index was not preserved: {printed}"
+    );
 
     Ok(())
 }

@@ -416,8 +416,8 @@ pub fn note(
 ///
 /// # Supported entrypoint signature
 ///
-/// - Receiver must be plain `self` (by value); `&self`, `&mut self`, `mut self`, and typed
-///   receivers (e.g. `self: Box<Self>`) are not supported.
+/// - Receiver must be `self` or `mut self` (by value); `&self`, `&mut self`, and typed receivers
+///   (e.g. `self: Box<Self>`) are not supported.
 /// - The method must return `()`.
 /// - Excluding `self`, the method must accept:
 ///   - exactly one `Word` argument, and

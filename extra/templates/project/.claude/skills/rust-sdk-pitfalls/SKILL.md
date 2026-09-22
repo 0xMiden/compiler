@@ -63,7 +63,7 @@ if balance.as_canonical_u64() > threshold.as_canonical_u64() { ... }
 on this directly:
 
 ```rust
-let block_number = tx::get_block_number();          // BlockNumber
+let block_number = tx::get_reference_block_number();          // BlockNumber
 let timelock_height = BlockNumber::try_from(inputs[3]).unwrap();
 assert!(block_number >= timelock_height);           // integer comparison, correct as written
 ```
@@ -610,7 +610,7 @@ plus `compute_delta_commitment()` and `was_procedure_called(Word) -> bool`.
 
 | Binding | Return type |
 |---|---|
-| `tx::get_block_number()` | `BlockNumber` |
+| `tx::get_reference_block_number()` | `BlockNumber` |
 | `tx::get_block_timestamp()` | `u32` (seconds) |
 | `tx::get_num_input_notes()` / `get_num_output_notes()` | `u32` |
 | `tx::get_expiration_block_delta()` | `u16` (and `update_expiration_block_delta(delta: u16)`) |
@@ -625,7 +625,7 @@ plus `compute_delta_commitment()` and `was_procedure_called(Word) -> bool`.
 Packing them back into a `Word` needs an explicit conversion:
 
 ```rust
-let ref_block_num = tx::get_block_number();
+let ref_block_num = tx::get_reference_block_number();
 let final_nonce = self.incr_nonce();
 let w = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
 ```

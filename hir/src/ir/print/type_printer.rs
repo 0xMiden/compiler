@@ -19,7 +19,11 @@ impl fmt::Display for TypePrinter<'_> {
             Type::List(ty) => {
                 write!(f, "list<{}>", TypePrinter(ty))
             }
-            Type::Struct(ty) => {
+            // A recursive struct cannot be expanded field by field without looping, so it falls
+            // through to the type's own `Display` below, which names the struct instead. That
+            // spelling is print-only: the parser accepts the field-by-field form alone.
+            Type::Struct(ty) if !ty.is_recursive() => {
+                let ty = ty.get();
                 let fields =
                     crate::formatter::DisplayValues::new(ty.fields().iter().map(|field| {
                         let align = if field.align as usize != field.ty.min_alignment() {

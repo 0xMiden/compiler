@@ -123,7 +123,9 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         tx_kernel::native_account::INCR_NONCE
-                        | tx_kernel::native_account::WAS_PROCEDURE_CALLED => {
+                        | tx_kernel::native_account::WAS_PROCEDURE_CALLED
+                        | tx_kernel::native_account::HAS_STATE_CHANGED
+                        | tx_kernel::native_account::HAS_INITIAL_ASSET => {
                             Some(TransformStrategy::NoTransform)
                         }
                         _ => None,
@@ -133,11 +135,6 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::note::COMPUTE_AND_STORE_RECIPIENT => {
                             Some(TransformStrategy::ReturnViaPointer)
-                        }
-                        tx_kernel::note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
-                        | tx_kernel::note::WRITE_ATTACHMENT_TO_MEMORY
-                        | tx_kernel::note::WRITE_INDEXED_ATTACHMENT_TO_MEMORY => {
-                            Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::note::COMPUTE_STORAGE_COMMITMENT
                         | tx_kernel::note::COMPUTE_RECIPIENT
@@ -158,7 +155,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         tx_kernel::active_account::GET_NONCE
                         | tx_kernel::active_account::GET_NUM_PROCEDURES
                         | tx_kernel::active_account::HAS_ASSET
-                        | tx_kernel::active_account::HAS_PROCEDURE => {
+                        | tx_kernel::active_account::HAS_PROCEDURE
+                        | tx_kernel::active_account::HAS_STORAGE_SLOT => {
                             Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::active_account::GET_ID
@@ -170,6 +168,18 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::active_account::GET_ASSET
                         | tx_kernel::active_account::GET_VAULT_ROOT
                         | tx_kernel::active_account::GET_PROCEDURE_ROOT => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        _ => None,
+                    }
+                }
+                symbols::Asset => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        tx_kernel::asset::ID_INTO_COMPOSITION => {
+                            Some(TransformStrategy::NoTransform)
+                        }
+                        tx_kernel::asset::ID_INTO_FAUCET_ID
+                        | tx_kernel::asset::ID_INTO_ASSET_CLASS => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
@@ -191,7 +201,9 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::active_note::WRITE_ATTACHMENT_TO_MEMORY => {
                             Some(TransformStrategy::NoTransform)
                         }
-                        tx_kernel::active_note::IS_PUBLIC | tx_kernel::active_note::IS_PRIVATE => {
+                        tx_kernel::active_note::IS_PUBLIC
+                        | tx_kernel::active_note::IS_PRIVATE
+                        | tx_kernel::active_note::GET_INITIAL_NUM_ASSETS => {
                             Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::active_note::GET_SENDER
@@ -200,7 +212,12 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::active_note::GET_SERIAL_NUMBER
                         | tx_kernel::active_note::GET_METADATA
                         | tx_kernel::active_note::GET_ATTACHMENTS_COMMITMENT
-                        | tx_kernel::active_note::FIND_ATTACHMENT => {
+                        | tx_kernel::active_note::FIND_ATTACHMENT
+                        | tx_kernel::active_note::GET_INITIAL_ASSETS_INFO
+                        | tx_kernel::active_note::GET_ASSET
+                        | tx_kernel::active_note::REMOVE_ASSET
+                        | tx_kernel::active_note::GET_NOTE_ID
+                        | tx_kernel::active_note::GET_STORAGE_INFO => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
@@ -210,7 +227,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::input_note::GET_INITIAL_ASSETS
                         | tx_kernel::input_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
-                        | tx_kernel::input_note::WRITE_ATTACHMENT_TO_MEMORY => {
+                        | tx_kernel::input_note::WRITE_ATTACHMENT_TO_MEMORY
+                        | tx_kernel::input_note::GET_INITIAL_NUM_ASSETS => {
                             Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::input_note::GET_INITIAL_ASSETS_INFO
@@ -221,8 +239,11 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::input_note::GET_SCRIPT_ROOT
                         | tx_kernel::input_note::GET_SERIAL_NUMBER
                         | tx_kernel::input_note::GET_ATTACHMENTS_COMMITMENT
-                        | tx_kernel::input_note::GET_ATTACHMENTS_COMMITMENT_RAW
-                        | tx_kernel::input_note::FIND_ATTACHMENT => {
+                        | tx_kernel::input_note::FIND_ATTACHMENT
+                        | tx_kernel::input_note::GET_ASSET
+                        | tx_kernel::input_note::REMOVE_ASSET
+                        | tx_kernel::input_note::GET_NOTE_ID
+                        | tx_kernel::input_note::FIND_NOTE => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
@@ -246,7 +267,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::output_note::GET_RECIPIENT
                         | tx_kernel::output_note::GET_METADATA
                         | tx_kernel::output_note::GET_ATTACHMENTS_COMMITMENT
-                        | tx_kernel::output_note::FIND_ATTACHMENT => {
+                        | tx_kernel::output_note::FIND_ATTACHMENT
+                        | tx_kernel::output_note::COMPUTE_NOTE_ID => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
@@ -254,20 +276,19 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 }
                 symbols::Tx => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str()
                 {
-                    tx_kernel::tx::GET_BLOCK_NUMBER
+                    tx_kernel::tx::GET_REFERENCE_BLOCK_NUMBER
                     | tx_kernel::tx::GET_BLOCK_TIMESTAMP
                     | tx_kernel::tx::GET_NUM_INPUT_NOTES
                     | tx_kernel::tx::GET_NUM_OUTPUT_NOTES
                     | tx_kernel::tx::GET_EXPIRATION_BLOCK_DELTA
-                    | tx_kernel::tx::UPDATE_EXPIRATION_BLOCK_DELTA => {
-                        Some(TransformStrategy::NoTransform)
-                    }
+                    | tx_kernel::tx::UPDATE_EXPIRATION_BLOCK_DELTA
+                    | tx_kernel::tx::COMPUTE_FEE => Some(TransformStrategy::NoTransform),
                     tx_kernel::tx::GET_INPUT_NOTES_COMMITMENT
                     | tx_kernel::tx::GET_OUTPUT_NOTES_COMMITMENT
+                    | tx_kernel::tx::GET_REFERENCE_BLOCK_COMMITMENT
                     | tx_kernel::tx::GET_BLOCK_COMMITMENT
-                    | tx_kernel::tx::GET_TX_SCRIPT_ROOT => {
-                        Some(TransformStrategy::ReturnViaPointer)
-                    }
+                    | tx_kernel::tx::GET_TX_SCRIPT_ROOT
+                    | tx_kernel::tx::GET_FEE_ASSET_ID => Some(TransformStrategy::ReturnViaPointer),
                     tx_kernel::tx::EXECUTE_FOREIGN_PROCEDURE_INDIRECT => {
                         Some(TransformStrategy::FpiIndirectReturnViaPointer)
                     }

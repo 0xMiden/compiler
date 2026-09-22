@@ -270,7 +270,7 @@ fn validate_fpi_value_type(
             )));
         }
         Type::Struct(struct_ty) => {
-            for field in struct_ty.fields() {
+            for field in struct_ty.get().fields() {
                 let field_location = field.name.as_ref().map_or_else(
                     || format!("{location}.{}", field.index),
                     |name| format!("{location}.{name}"),
@@ -286,6 +286,7 @@ fn validate_fpi_value_type(
             )?;
         }
         Type::Enum(enum_ty) => {
+            let enum_ty = enum_ty.get();
             validate_fpi_value_type(import_func_path, location, enum_ty.discriminant())?;
             for variant in enum_ty.variants() {
                 if let Some(payload_ty) = variant.value.as_ref() {
@@ -308,6 +309,7 @@ fn validate_fpi_value_type(
         | Type::U64
         | Type::Felt => {}
         Type::Unknown
+        | Type::Variadic
         | Type::Never
         | Type::I128
         | Type::U128
@@ -738,24 +740,23 @@ fn has_flattened_fpi_abi_prefix(params: &[Type]) -> bool {
 
 /// Returns true when `ty` matches the generated FPI `felt` type.
 fn is_fpi_felt_type(ty: &Type) -> bool {
-    matches!(ty, Type::Felt)
-        || matches!(
-            ty,
-            Type::Struct(struct_ty)
-                if struct_ty.fields().len() == 1
-                    && struct_ty.fields()[0].offset == 0
-                    && struct_ty.fields()[0].ty == Type::Felt
-        )
+    match ty {
+        Type::Felt => true,
+        Type::Struct(struct_ty) => {
+            matches!(struct_ty.get().fields(), [field] if field.offset == 0 && field.ty == Type::Felt)
+        }
+        _ => false,
+    }
 }
 
 /// Returns true when `ty` matches the generated FPI procedure-root `word` record.
 fn is_fpi_proc_root_type(ty: &Type) -> bool {
-    matches!(
-        ty,
-        Type::Struct(struct_ty)
-            if struct_ty.fields().len() == 4
-                && struct_ty.fields().iter().all(|field| is_fpi_felt_type(&field.ty))
-    )
+    let Type::Struct(struct_ty) = ty else {
+        return false;
+    };
+    let struct_ty = struct_ty.get();
+    struct_ty.fields().len() == 4
+        && struct_ty.fields().iter().all(|field| is_fpi_felt_type(&field.ty))
 }
 
 /// Rejects component import signatures that require tuple-parameter lowering.

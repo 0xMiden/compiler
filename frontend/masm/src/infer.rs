@@ -680,7 +680,7 @@ impl<'a> InferState<'a> {
             EvalCircuit => self.constrain_top_n(3, Type::Felt, span),
             LogDeferred => self.constrain_top_n(12, Type::Felt, span),
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
-            DebugVar(_) => Ok(()),
+            DebugVar(_) | DebugInlineCall(_) | DebugInlineCallClear => Ok(()),
             _ => unsupported_instruction(inst, span),
         };
         self.current_span = previous_span;

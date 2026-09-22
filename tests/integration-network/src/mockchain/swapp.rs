@@ -91,10 +91,10 @@ fn compile_swapp_packages() -> SwappPackages {
             // debug sections, which normal untrusted package deserialization discards.
             SwappPackages {
                 wallet: Arc::new(
-                    Package::read_from_bytes_unchecked(&wallet).expect("invalid cached wallet"),
+                    Package::read_from_bytes_trusted(&wallet).expect("invalid cached wallet"),
                 ),
                 swapp: Arc::new(
-                    Package::read_from_bytes_unchecked(&swapp).expect("invalid cached note"),
+                    Package::read_from_bytes_trusted(&swapp).expect("invalid cached note"),
                 ),
             }
         })
@@ -280,12 +280,10 @@ fn output_note_ids(executed_tx: &ExecutedTransaction) -> Vec<NoteId> {
 
 /// Asserts that the account vault holds no fungible asset from the given faucet.
 fn assert_no_fungible_asset(account: &Account, faucet_id: AccountId) {
-    let found = account.vault().assets().find(|asset| {
-        matches!(
-            asset,
-            Asset::Fungible(fungible_asset) if fungible_asset.faucet_id() == faucet_id
-        )
-    });
+    let found = account
+        .vault()
+        .assets()
+        .find(|asset| asset.is_fungible() && asset.faucet_id() == faucet_id);
     assert!(
         found.is_none(),
         "account {} unexpectedly holds an asset from faucet {faucet_id}",
@@ -297,7 +295,7 @@ fn assert_no_fungible_asset(account: &Account, faucet_id: AccountId) {
 #[test]
 fn swapp_note_package_size() {
     let packages = compile_swapp_packages();
-    expect!["42586"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
+    expect!["42432"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
 }
 
 /// Tests a full fill of a SWAPP note.
@@ -307,8 +305,11 @@ fn swapp_note_package_size() {
 #[test]
 fn swapp_note_full_fill_transfers_assets() {
     let packages = compile_swapp_packages();
-    let wallet_component =
-        AccountComponent::from_package(&packages.wallet, &InitStorageData::default()).unwrap();
+    let wallet_component = AccountComponent::from_package(
+        packages.wallet.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let usdc_faucet = builder
@@ -353,7 +354,7 @@ fn swapp_note_full_fill_transfers_assets() {
         vec![p2id_note.id()],
         "full fill must create exactly the P2ID routing note"
     );
-    expect!["12839"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["12876"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 50);
@@ -379,8 +380,11 @@ fn swapp_note_full_fill_transfers_assets() {
 #[test]
 fn swapp_note_partial_fill_creates_remainder_and_chains() {
     let packages = compile_swapp_packages();
-    let wallet_component =
-        AccountComponent::from_package(&packages.wallet, &InitStorageData::default()).unwrap();
+    let wallet_component = AccountComponent::from_package(
+        packages.wallet.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let usdc_faucet = builder
@@ -440,7 +444,7 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
         vec![first_p2id_note.id(), remainder_note.id()],
         "partial fill must create the P2ID routing note and the remainder note"
     );
-    expect!["17931"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["17949"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 3);
@@ -485,8 +489,11 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
 #[test]
 fn swapp_note_creator_reclaims_offered_asset() {
     let packages = compile_swapp_packages();
-    let wallet_component =
-        AccountComponent::from_package(&packages.wallet, &InitStorageData::default()).unwrap();
+    let wallet_component = AccountComponent::from_package(
+        packages.wallet.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let usdc_faucet = builder
@@ -521,7 +528,7 @@ fn swapp_note_creator_reclaims_offered_asset() {
         output_note_ids(&executed_tx).is_empty(),
         "reclaiming the swap note must not create any output notes"
     );
-    expect!["5573"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["5551"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let alice_account = chain.committed_account(alice.id()).unwrap();
     assert_account_has_fungible_asset(alice_account, usdc_faucet.id(), 50);
@@ -536,8 +543,11 @@ fn swapp_note_creator_reclaims_offered_asset() {
 #[test]
 fn swapp_note_inflight_cross_swap_without_capital() {
     let packages = compile_swapp_packages();
-    let wallet_component =
-        AccountComponent::from_package(&packages.wallet, &InitStorageData::default()).unwrap();
+    let wallet_component = AccountComponent::from_package(
+        packages.wallet.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let usdc_faucet = builder
@@ -641,8 +651,11 @@ fn assert_swapp_fill_fails(
     note_args: Word,
     context: &str,
 ) {
-    let wallet_component =
-        AccountComponent::from_package(&packages.wallet, &InitStorageData::default()).unwrap();
+    let wallet_component = AccountComponent::from_package(
+        packages.wallet.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let usdc_faucet = builder
@@ -743,8 +756,11 @@ fn swapp_note_non_divisible_full_fill_fails() {
 #[test]
 fn swapp_note_private_partial_fill_creates_private_notes() {
     let packages = compile_swapp_packages();
-    let wallet_component =
-        AccountComponent::from_package(&packages.wallet, &InitStorageData::default()).unwrap();
+    let wallet_component = AccountComponent::from_package(
+        packages.wallet.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let usdc_faucet = builder

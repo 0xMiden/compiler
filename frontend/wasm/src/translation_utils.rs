@@ -125,6 +125,7 @@ pub fn emit_zero<B: ?Sized + Builder>(
         Type::F64 => builder.f64(0.0, span),
         Type::Felt => builder.felt(Felt::ZERO, span),
         Type::Enum(enum_ty) => {
+            let enum_ty = enum_ty.get();
             assert!(
                 enum_ty.is_c_like(),
                 "non-C-like enums are not yet supported in canonical ABI zero emission: {enum_ty}"
@@ -140,6 +141,7 @@ pub fn emit_zero<B: ?Sized + Builder>(
         | Type::List(_)
         | Type::Function(_)
         | Type::Unknown
+        | Type::Variadic
         | Type::Never => {
             unsupported_diag!(diagnostics, "cannot emit zero value for type: {:?}", ty);
         }

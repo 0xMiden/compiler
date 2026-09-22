@@ -983,6 +983,8 @@ fn unsupported_instruction_matrix_reports_diagnostics() {
         unsupported_instruction_case("dynexec", 0, "dynexec"),
         unsupported_instruction_case("dyncall", 0, "dyncall"),
         unsupported_instruction_case("exp_u8", 0, "exp.u8"),
+        unsupported_instruction_case("trace", 0, "trace"),
+        unsupported_instruction_case("trace_imm", 0, r#"trace.event("migration")"#),
     ];
 
     for case in &cases {
@@ -992,14 +994,14 @@ fn unsupported_instruction_matrix_reports_diagnostics() {
 
 #[test]
 fn instruction_inventory_classifies_all_masm_instruction_variants() {
-    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 238);
+    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 240);
     assert_eq!(INFER_ONLY_INSTRUCTION_VARIANT_COUNT, 1);
-    assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 2);
+    assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 4);
     assert_eq!(
         LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT
             + INFER_ONLY_INSTRUCTION_VARIANT_COUNT
             + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
-        241
+        245
     );
     assert_eq!(instruction_semantics(&Instruction::Nop), InstructionSemantics::LiftAndInfer);
     assert_eq!(
@@ -1441,7 +1443,7 @@ end
         target_id,
         Signature::with_convention(
             &context,
-            target_signature.abi,
+            target_signature.abi.clone(),
             target_signature.params.iter().cloned(),
             target_signature.results.iter().cloned(),
         ),

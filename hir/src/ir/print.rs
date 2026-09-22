@@ -216,7 +216,7 @@
 //! * Named values (e.g. `%flag`) and result packs (i.e. `%out:2`)
 //! * An example location specifier
 //!
-//! ```
+//! ```text
 //! %flag, %out:2 = "dialect.op"(%arg0, %0) <{ prop = true }> ({
 //!     builtin.br ^after(%arg0, %0);
 //! ^after(%1: i32, %2 : ptr<u8>):

@@ -1,5 +1,5 @@
 use miden_debug::{FromMidenRepr, ToMidenRepr};
-use miden_processor::{ExecutionOptions, StackInputs, advice::AdviceInputs, execute_sync};
+use miden_processor::{FastProcessor, StackInputs};
 use midenc_hir::{FunctionIdent, Ident, interner::Symbol};
 
 use crate::{CompilerTestBuilder, end_to_end::support::default_host_with_core_lib};
@@ -75,16 +75,11 @@ fn wide_product_local_order_matches_wasm() {
         let mut stack = Vec::new();
         inputs.0.push_to_operand_stack(&mut stack);
         inputs.1.push_to_operand_stack(&mut stack);
-        let trace = execute_sync(
-            &program,
-            StackInputs::new(&stack).unwrap(),
-            AdviceInputs::default(),
-            &mut default_host_with_core_lib(),
-            ExecutionOptions::default(),
-        )
-        .unwrap();
+        let output = FastProcessor::new(StackInputs::new(&stack).unwrap())
+            .execute_sync(&program, &mut default_host_with_core_lib())
+            .unwrap();
         assert_eq!(
-            u32::from_felts(trace.stack.get_num_elements(1)),
+            u32::from_felts(output.stack.get_num_elements(1)),
             expected,
             "inputs: {inputs:?}"
         );

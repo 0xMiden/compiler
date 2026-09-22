@@ -3,7 +3,7 @@ use miden_core::Felt;
 use miden_core_lib::CoreLibrary;
 use miden_debug::DebugQuery;
 use miden_mast_package::{Package, QualifiedProcedureName};
-use miden_processor::{ExecutionOptions, StackInputs, advice::AdviceInputs, execute_sync};
+use miden_processor::{FastProcessor, StackInputs};
 
 use crate::{
     CompilerTestBuilder, end_to_end::support::default_host_with_core_lib,
@@ -163,11 +163,9 @@ fn compile(wat: &str) -> std::sync::Arc<Package> {
 fn boundary_caller(library: std::sync::Arc<Package>, calls: usize) -> std::sync::Arc<Package> {
     let source_manager = std::sync::Arc::new(DefaultSourceManager::default());
     let mut assembler = Assembler::new(source_manager);
-    for package in CoreLibrary::default().packages() {
-        assembler
-            .link_package(package, Linkage::Dynamic)
-            .expect("core library package should link");
-    }
+    assembler
+        .link_package(CoreLibrary::default().package(), Linkage::Dynamic)
+        .expect("core library package should link");
     let target = entrypoint(&library);
     let calls = (0..calls).map(|_| format!("    call.{target}\n")).collect::<String>();
     let source = format!("begin\n{calls}end\n");
@@ -182,29 +180,19 @@ fn boundary_caller(library: std::sync::Arc<Package>, calls: usize) -> std::sync:
 #[test]
 fn component_start_runs_after_static_initialization_and_before_entrypoint() {
     let package = compile(START_WITH_OBSERVABLE_EFFECT);
-    let trace = execute_sync(
-        &package.unwrap_program(),
-        StackInputs::default(),
-        AdviceInputs::default(),
-        &mut default_host_with_core_lib(),
-        ExecutionOptions::default(),
-    )
-    .expect("component start and entrypoint should execute");
+    let output = FastProcessor::new(StackInputs::default())
+        .execute_sync(&package.unwrap_program(), &mut default_host_with_core_lib())
+        .expect("component start and entrypoint should execute");
 
-    assert_eq!(trace.stack.get_num_elements(1), &[Felt::new_unchecked(42)]);
+    assert_eq!(output.stack.get_num_elements(1), &[Felt::new_unchecked(42)]);
 }
 
 #[test]
 fn a_trapping_component_start_prevents_entrypoint_execution() {
     let package = compile(TRAPPING_START);
-    execute_sync(
-        &package.unwrap_program(),
-        StackInputs::default(),
-        AdviceInputs::default(),
-        &mut default_host_with_core_lib(),
-        ExecutionOptions::default(),
-    )
-    .expect_err("a trapping component start must prevent entrypoint execution");
+    FastProcessor::new(StackInputs::default())
+        .execute_sync(&package.unwrap_program(), &mut default_host_with_core_lib())
+        .expect_err("a trapping component start must prevent entrypoint execution");
 
     let trace = executor_with_std(vec![])
         .capture_trace(package, std::sync::Arc::new(DefaultSourceManager::default()));
@@ -219,17 +207,12 @@ fn a_trapping_component_start_prevents_entrypoint_execution() {
 fn each_library_boundary_call_initializes_one_fresh_non_reentrant_context() {
     let library = compile_library(COUNTING_START);
     let package = boundary_caller(library, 2);
-    let trace = execute_sync(
-        &package.unwrap_program(),
-        StackInputs::default(),
-        AdviceInputs::default(),
-        &mut default_host_with_core_lib(),
-        ExecutionOptions::default(),
-    )
-    .expect("both component boundary calls should execute");
+    let output = FastProcessor::new(StackInputs::default())
+        .execute_sync(&package.unwrap_program(), &mut default_host_with_core_lib())
+        .expect("both component boundary calls should execute");
 
     assert_eq!(
-        trace.stack.get_num_elements(2),
+        output.stack.get_num_elements(2),
         &[Felt::ONE, Felt::ONE],
         "each fresh context must run start exactly once; the entrypoint's internal call must not"
     );

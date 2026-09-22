@@ -53,7 +53,8 @@ fn execute_word_word_counter_caller_note(
         init_storage_data
             .insert_map_entry(counter_storage_slot.clone(), counter_storage_key, expected_count)
             .unwrap();
-        AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(counter_package.as_ref().clone(), &init_storage_data)
+            .unwrap()
     };
 
     let mut builder = MockChain::builder();

@@ -84,8 +84,9 @@ pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, C
             return Err(CanonicalTypeError::Unsupported(ty.clone()));
         }
         Type::F64 => return Err(CanonicalTypeError::Reserved(ty.clone())),
-        Type::Enum(enum_ty) => flatten_enum_type(context, enum_ty)?,
+        Type::Enum(enum_ty) => flatten_enum_type(context, &enum_ty.get())?,
         Type::Struct(struct_ty) => struct_ty
+            .get()
             .fields()
             .iter()
             .map(|field| flatten_type(context, &field.ty))
@@ -102,7 +103,7 @@ pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, C
             // length of the list
             AbiParam::new(Type::I32),
         ],
-        Type::Unknown | Type::Never | Type::Ptr(_) | Type::Function(_) => {
+        Type::Unknown | Type::Variadic | Type::Never | Type::Ptr(_) | Type::Function(_) => {
             return Err(CanonicalTypeError::Unsupported(ty.clone()));
         }
     })
@@ -309,7 +310,7 @@ pub fn expected_core_signature(lowered_sig: &Signature) -> Signature {
     Signature {
         params,
         results: lowered_sig.results().to_vec(),
-        cc: lowered_sig.cc,
+        cc: lowered_sig.cc.clone(),
     }
 }
 
@@ -500,7 +501,7 @@ mod tests {
     #[test]
     fn test_flatten_type_c_like_enum() {
         let context = Rc::new(Context::default());
-        let enum_ty = Type::Enum(Arc::new(
+        let enum_ty = Type::from(Arc::new(
             EnumType::new(
                 "status".into(),
                 Type::U8,
@@ -518,7 +519,7 @@ mod tests {
     #[test]
     fn test_flatten_type_payload_enum() {
         let context = Rc::new(Context::default());
-        let enum_ty = Type::Enum(Arc::new(
+        let enum_ty = Type::from(Arc::new(
             EnumType::new(
                 "result".into(),
                 Type::U8,
@@ -542,7 +543,7 @@ mod tests {
     fn test_flatten_type_payload_enum_joins_missing_trailing_payloads() {
         let context = Rc::new(Context::default());
         let word_ty = Type::from(StructType::new([Type::Felt, Type::Felt, Type::Felt, Type::Felt]));
-        let enum_ty = Type::Enum(Arc::new(
+        let enum_ty = Type::from(Arc::new(
             EnumType::new(
                 "request".into(),
                 Type::U8,
@@ -564,7 +565,7 @@ mod tests {
     fn test_flatten_type_payload_enum_joins_word_and_u64() {
         let context = Rc::new(Context::default());
         let word_ty = Type::from(StructType::new([Type::Felt, Type::Felt, Type::Felt, Type::Felt]));
-        let enum_ty = Type::Enum(Arc::new(
+        let enum_ty = Type::from(Arc::new(
             EnumType::new(
                 "request".into(),
                 Type::U8,
@@ -588,7 +589,7 @@ mod tests {
         let context = Rc::new(Context::default());
         let payload_a = Type::from(StructType::new([Type::U64, Type::U32]));
         let payload_b = Type::from(StructType::new([Type::U32, Type::U64]));
-        let enum_ty = Type::Enum(Arc::new(
+        let enum_ty = Type::from(Arc::new(
             EnumType::new(
                 "request".into(),
                 Type::U8,
@@ -610,7 +611,7 @@ mod tests {
     #[test]
     fn test_flatten_type_payload_enum_joins_u8_and_u64() {
         let context = Rc::new(Context::default());
-        let enum_ty = Type::Enum(Arc::new(
+        let enum_ty = Type::from(Arc::new(
             EnumType::new(
                 "request".into(),
                 Type::U8,
@@ -635,7 +636,7 @@ mod tests {
             .map(|index| Variant::c_like(format!("case-{index}").into(), Some(index)))
             .collect::<Vec<_>>();
         let enum_255 =
-            Type::Enum(Arc::new(EnumType::new("enum255".into(), Type::U8, cases_255).unwrap()));
+            Type::from(Arc::new(EnumType::new("enum255".into(), Type::U8, cases_255).unwrap()));
 
         let result = flatten_type(&context, &enum_255).unwrap();
         assert_eq!(result.len(), 1);
@@ -646,7 +647,7 @@ mod tests {
             .map(|index| Variant::c_like(format!("case-{index}").into(), Some(index)))
             .collect::<Vec<_>>();
         let enum_256 =
-            Type::Enum(Arc::new(EnumType::new("enum256".into(), Type::U16, cases_256).unwrap()));
+            Type::from(Arc::new(EnumType::new("enum256".into(), Type::U16, cases_256).unwrap()));
 
         let result = flatten_type(&context, &enum_256).unwrap();
         assert_eq!(result.len(), 1);

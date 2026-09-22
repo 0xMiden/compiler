@@ -48,16 +48,6 @@ impl LinkLibrary {
         }
     }
 
-    /// Construct a LinkLibrary for the Miden precompiles library, a dependency of the core
-    /// library
-    pub fn precompiles() -> Self {
-        LinkLibrary {
-            name: "miden-precompiles".into(),
-            path: None,
-            linkage: Linkage::Dynamic,
-        }
-    }
-
     /// Construct a LinkLibrary for the Miden transaction kernel library
     pub fn tx_kernel() -> Self {
         LinkLibrary {
@@ -83,9 +73,6 @@ impl LinkLibrary {
             "std" | "core" | "miden-core" => {
                 return Ok(CoreLibrary::default().package());
             }
-            "precompiles" | "miden-precompiles" => {
-                return Ok(CoreLibrary::default().precompiles_package());
-            }
             "base" | "protocol" | "miden-protocol" => {
                 return Ok(miden_protocol::ProtocolLib::default().package());
             }
@@ -109,9 +96,6 @@ impl LinkLibrary {
         match self.name.as_ref() {
             "std" | "core" | "miden-core" => {
                 return Ok(CoreLibrary::default().package());
-            }
-            "precompiles" | "miden-precompiles" => {
-                return Ok(CoreLibrary::default().precompiles_package());
             }
             "base" | "protocol" | "miden-protocol" => {
                 return Ok(miden_protocol::ProtocolLib::default().package());
@@ -184,7 +168,7 @@ impl LinkLibrary {
 #[cfg(feature = "std")]
 pub(crate) fn load_package_from_path(path: &Path) -> Result<Arc<Package>, Report> {
     let bytes = std::fs::read(path).into_diagnostic()?;
-    miden_mast_package::Package::read_from_bytes_unchecked(&bytes)
+    miden_mast_package::Package::read_from_bytes_trusted(&bytes)
         .map_err(|e| {
             Report::msg(format!("failed to load Miden package from {}: {e}", path.display()))
         })

@@ -7,7 +7,7 @@ use miden_protocol::{ProtocolLib, transaction::TransactionKernel};
 use miden_standards::StandardsLib;
 use midenc_compile::MidenComponent;
 use midenc_hir::{Type, dialects::builtin::attributes::Signature};
-use midenc_session::{PackageId, Session};
+use midenc_session::Session;
 use proptest::{prop_assert_eq, test_runner::TestCaseError};
 
 use super::*;
@@ -149,20 +149,22 @@ where
     let registry = miden_debug::HybridPackageRegistry::new(
         session.options.sysroot.as_deref(),
         session.options.search_paths.as_slice(),
-        &session
-            .options
-            .link_libraries
-            .iter()
-            .filter(|ll| !ll.is_core() && !ll.is_protocol())
-            .map(|ll| miden_debug::LinkLibrary {
-                name: PackageId::from(ll.name.as_ref()),
-                path: ll.path.clone(),
-                linkage: ll.linkage,
-            })
-            .collect::<Vec<_>>(),
+        &[],
     )
     .map_err(|err| TestCaseError::fail(err.to_string()))?;
     let mut exec = Executor::new(args.to_vec()).with_registry(registry);
+    // The core and protocol libraries are registered from their bundled packages below.
+    for library in session
+        .options
+        .link_libraries
+        .iter()
+        .filter(|library| !library.is_core() && !library.is_protocol())
+    {
+        let package = library
+            .load(&session.options)
+            .map_err(|err| TestCaseError::fail(err.to_string()))?;
+        exec.with_package(package).map_err(|err| TestCaseError::fail(err.to_string()))?;
+    }
 
     register_core_packages(&mut exec).map_err(TestCaseError::fail)?;
 
@@ -175,7 +177,7 @@ where
     exec.with_package(Arc::new(StandardsLib::default().as_ref().clone()))
         .map_err(|err| TestCaseError::fail(err.to_string()))?;
 
-    exec.with_advice_inputs(AdviceInputs::default().with_advice_stack(advice_stack.into()));
+    exec.with_advice_inputs(AdviceInputs::default().with_stack(advice_stack.into()));
 
     let trace = exec.execute(package, session.source_manager.clone());
     verify_trace(&trace)?;

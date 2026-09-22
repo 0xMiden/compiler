@@ -36,8 +36,11 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
     let note_package = compile_rust_package("../../examples/p2id-note", true);
     let tx_script_package = compile_rust_package("../../examples/basic-wallet-tx-script", true);
 
-    let wallet_component =
-        AccountComponent::from_package(&wallet_package, &InitStorageData::default()).unwrap();
+    let wallet_component = AccountComponent::from_package(
+        wallet_package.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let max_supply = 1_000_000_000u64;
@@ -110,8 +113,8 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["3473"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["5030"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["3883"].assert_eq(prologue_cycles(&tx_measurements));
+    expect!["5008"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -131,7 +134,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         &mut note_rng,
     );
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["6409"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["6431"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
@@ -142,7 +145,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["5030"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["5008"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -166,8 +169,11 @@ pub fn basic_wallet_p2ide_allows_recipient_claim() {
     let p2id_note_package = compile_rust_package("../../examples/p2id-note", true);
     let p2ide_note_package = compile_rust_package("../../examples/p2ide-note", true);
 
-    let wallet_component =
-        AccountComponent::from_package(&wallet_package, &InitStorageData::default()).unwrap();
+    let wallet_component = AccountComponent::from_package(
+        wallet_package.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let max_supply = 1_000_000_000u64;
@@ -281,7 +287,7 @@ pub fn basic_wallet_p2ide_allows_recipient_claim() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["5467"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["5428"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify balances
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -319,8 +325,11 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
         .unwrap();
     let faucet_id = faucet_account.id();
 
-    let wallet_component =
-        AccountComponent::from_package(&wallet_package, &InitStorageData::default()).unwrap();
+    let wallet_component = AccountComponent::from_package(
+        wallet_package.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let alice_account = builder
         .add_existing_account_from_components(
@@ -420,7 +429,7 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["6042"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["5992"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify Alice has her original amount back
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -428,12 +437,9 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
 
     // Ensure Bob did not receive the asset.
     let bob_account = chain.committed_account(bob_id).unwrap();
-    let bob_found = bob_account.vault().assets().find(|asset| {
-        matches!(
-            asset,
-            miden_protocol::asset::Asset::Fungible(fungible_asset)
-                if fungible_asset.faucet_id() == faucet_id
-        )
-    });
+    let bob_found = bob_account
+        .vault()
+        .assets()
+        .find(|asset| asset.is_fungible() && asset.faucet_id() == faucet_id);
     assert!(bob_found.is_none(), "Bob unexpectedly received reclaimed assets");
 }

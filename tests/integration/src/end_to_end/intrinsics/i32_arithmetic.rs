@@ -1,7 +1,7 @@
 use std::fmt;
 
 use miden_core::Felt;
-use miden_processor::{ExecutionOptions, StackInputs, advice::AdviceInputs, execute_sync};
+use miden_processor::{FastProcessor, StackInputs};
 use proptest::prelude::*;
 
 use crate::end_to_end::support::{
@@ -37,17 +37,12 @@ fn test_i32_intrinsic<V, F1, F2>(
         let inputs = to_inputs(&input_tuple);
         let stack_inputs = StackInputs::new(&inputs).expect("invalid stack inputs");
 
-        let vm_result = execute_sync(
-            &program,
-            stack_inputs,
-            AdviceInputs::default(),
-            &mut default_host_with_core_lib(),
-            ExecutionOptions::default(),
-        );
+        let vm_result = FastProcessor::new(stack_inputs)
+            .execute_sync(&program, &mut default_host_with_core_lib());
 
         match (expected_result, vm_result) {
-            (Ok(expected), Ok(trace)) => {
-                let output_felts = trace.stack.get_num_elements(expected.len());
+            (Ok(expected), Ok(output)) => {
+                let output_felts = output.stack.get_num_elements(expected.len());
                 let outputs: Vec<i32> =
                     output_felts.iter().map(|f| f.as_canonical_u64() as u32 as i32).collect();
                 prop_assert_eq!(outputs, expected);
@@ -60,8 +55,8 @@ fn test_i32_intrinsic<V, F1, F2>(
             (Ok(expected), Err(vm_err)) => Err(proptest::test_runner::TestCaseError::fail(
                 format!("Expected success with output {:?} but VM trapped: {:?}", expected, vm_err),
             )),
-            (Err(expectation), Ok(trace)) => {
-                let outputs: Vec<i32> = trace
+            (Err(expectation), Ok(output)) => {
+                let outputs: Vec<i32> = output
                     .stack
                     .iter()
                     .map(|f| f.as_canonical_u64() as u32 as i32)

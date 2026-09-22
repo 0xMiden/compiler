@@ -65,16 +65,6 @@ impl LocalVariable {
         assert!(!self.is_uninit);
         self.function.borrow().get_local(self).clone()
     }
-
-    /// Compute the absolute offset from the start of the procedure locals for this local variable
-    pub fn absolute_offset(&self) -> usize {
-        assert!(!self.is_uninit);
-        let index = self.as_usize();
-        self.function.borrow().locals()[..index]
-            .iter()
-            .map(|ty| ty.size_in_felts())
-            .sum::<usize>()
-    }
 }
 
 impl core::fmt::Debug for LocalVariable {
