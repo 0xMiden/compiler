@@ -307,7 +307,9 @@ pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u
     }
 }
 
-/// Writes attachment commitments to memory and returns them as protocol words.
+/// Returns the attachment commitments of the output note at `note_index`.
+///
+/// The name mirrors the kernel procedure, which fills the buffer this function returns.
 pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> {
     let mut commitments: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENTS_PER_NOTE);
     let num_attachments = unsafe {
@@ -324,7 +326,10 @@ pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> 
     commitments
 }
 
-/// Writes the selected output-note attachment to memory and returns it as protocol words.
+/// Returns the attachment at `attachment_idx` of the output note at `note_index` as protocol
+/// words.
+///
+/// The name mirrors the kernel procedure, which fills the buffer this function returns.
 pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {

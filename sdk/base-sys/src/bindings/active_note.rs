@@ -214,7 +214,9 @@ pub fn get_attachments_commitment() -> Word {
     }
 }
 
-/// Writes attachment commitments to memory and returns them as protocol words.
+/// Returns the attachment commitments of the active note.
+///
+/// The name mirrors the kernel procedure, which fills the buffer this function returns.
 pub fn write_attachment_commitments_to_memory() -> Vec<Word> {
     let mut commitments: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENTS_PER_NOTE);
     let num_attachments = unsafe {
@@ -228,7 +230,9 @@ pub fn write_attachment_commitments_to_memory() -> Vec<Word> {
     commitments
 }
 
-/// Writes the selected attachment to memory and returns it as protocol words.
+/// Returns the attachment at `attachment_idx` of the active note as protocol words.
+///
+/// The name mirrors the kernel procedure, which fills the buffer this function returns.
 pub fn write_attachment_to_memory(attachment_idx: u32) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {
@@ -415,13 +419,13 @@ pub trait ActiveNote {
         get_attachments_commitment()
     }
 
-    /// Writes attachment commitments to memory and returns them as protocol words.
+    /// Returns the attachment commitments of the active note.
     #[inline]
     fn write_attachment_commitments_to_memory(&self) -> Vec<Word> {
         write_attachment_commitments_to_memory()
     }
 
-    /// Writes the selected attachment to memory and returns it as protocol words.
+    /// Returns the attachment at `attachment_idx` of the active note as protocol words.
     #[inline]
     fn write_attachment_to_memory(&self, attachment_idx: u32) -> Vec<Word> {
         write_attachment_to_memory(attachment_idx)

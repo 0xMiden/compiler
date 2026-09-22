@@ -114,11 +114,11 @@ fn note_compute_storage_commitment_binding() {
 }
 
 #[test]
-fn note_write_attachment_commitments_to_memory_binding() {
+fn note_load_attachment_commitments_binding() {
     run_note_binding_test(
-        "note_write_attachment_commitments_to_memory_binding",
+        "note_load_attachment_commitments_binding",
         "pub fn binding(&self) -> Felt {
-        let commitments = note::write_attachment_commitments_to_memory(
+        let commitments = note::load_attachment_commitments(
             Word::from([Felt::new(0).unwrap(); 4]),
         );
         Felt::new(commitments.len() as u64).unwrap()
@@ -127,11 +127,11 @@ fn note_write_attachment_commitments_to_memory_binding() {
 }
 
 #[test]
-fn note_write_attachment_to_memory_binding() {
+fn note_load_attachment_binding() {
     run_note_binding_test(
-        "note_write_attachment_to_memory_binding",
+        "note_load_attachment_binding",
         "pub fn binding(&self) -> Felt {
-        let attachment = note::write_attachment_to_memory(
+        let attachment = note::load_attachment(
             Word::from([Felt::new(0).unwrap(); 4]),
         );
         Felt::new(attachment.len() as u64).unwrap()
@@ -140,13 +140,13 @@ fn note_write_attachment_to_memory_binding() {
 }
 
 #[test]
-fn note_write_indexed_attachment_to_memory_binding() {
+fn note_load_indexed_attachment_binding() {
     run_note_binding_test(
-        "note_write_indexed_attachment_to_memory_binding",
+        "note_load_indexed_attachment_binding",
         "pub fn binding(&self) -> Felt {
         let commitments = [Word::from([Felt::new(0).unwrap(); 4])];
         let attachment =
-            note::write_indexed_attachment_to_memory(&commitments, 0);
+            note::load_indexed_attachment(&commitments, 0);
         Felt::new(attachment.len() as u64).unwrap()
     }",
     );
@@ -229,10 +229,7 @@ fn note_attachment_preimages() {
 
     use crate::end_to_end::support::default_host_with_core_lib;
 
-    for (loader, max_words) in [
-        ("write_attachment_commitments_to_memory", 4),
-        ("write_attachment_to_memory", 256),
-    ] {
+    for (loader, max_words) in [("load_attachment_commitments", 4), ("load_attachment", 256)] {
         let source = format!(
             r#"(k0: Felt, k1: Felt, k2: Felt, k3: Felt) -> Felt {{
                 let words = note::{loader}(Word::new([k0, k1, k2, k3]));

@@ -16,9 +16,16 @@ directly below this paragraph, above the previous one (newest first, like the
 
 - `tx::get_block_commitment()` -> `tx::get_reference_block_commitment()`
 - `tx::get_block_number()` -> `tx::get_reference_block_number()`
+- `note::write_attachment_commitments_to_memory()` -> `note::load_attachment_commitments()`
+- `note::write_attachment_to_memory()` -> `note::load_attachment()`
+- `note::write_indexed_attachment_to_memory()` -> `note::load_indexed_attachment()`
 
 The name `tx::get_block_commitment` is reused: `tx::get_block_commitment(block_number)` reads any
 block up to the reference block.
+
+The `note` attachment helpers no longer wrap kernel procedures (protocol 0.17 made those
+internal): they load the committed words from the advice map, and their names now say so. The
+`active_note`, `input_note` and `output_note` wrappers keep the kernel names.
 
 ### `extern_output_note_get_assets_info` is no longer public
 

@@ -211,7 +211,7 @@ pub fn compute_storage_commitment(storage: &[Felt]) -> Word {
     }
 }
 
-/// Writes attachment commitments from the advice map to memory.
+/// Loads the attachment commitments committed to by `attachments_commitment` from the advice map.
 ///
 /// The advice map must contain the preimage committed to by `attachments_commitment`.
 ///
@@ -219,11 +219,11 @@ pub fn compute_storage_commitment(storage: &[Felt]) -> Word {
 ///
 /// Panics if the preimage is not a whole number of words or holds more commitments than a note
 /// can have attachments.
-pub fn write_attachment_commitments_to_memory(attachments_commitment: Word) -> Vec<Word> {
+pub fn load_attachment_commitments(attachments_commitment: Word) -> Vec<Word> {
     load_attachment_words(attachments_commitment, MAX_ATTACHMENTS_PER_NOTE)
 }
 
-/// Writes one attachment from the advice map to memory.
+/// Loads the attachment committed to by `attachment_commitment` from the advice map.
 ///
 /// The advice map must contain the attachment elements committed to by `attachment_commitment`.
 ///
@@ -231,25 +231,21 @@ pub fn write_attachment_commitments_to_memory(attachments_commitment: Word) -> V
 ///
 /// Panics if the attachment is not a whole number of words or exceeds the protocol's attachment
 /// size limit.
-pub fn write_attachment_to_memory(attachment_commitment: Word) -> Vec<Word> {
+pub fn load_attachment(attachment_commitment: Word) -> Vec<Word> {
     load_attachment_words(attachment_commitment, MAX_ATTACHMENT_WORDS)
 }
 
-/// Writes the indexed attachment from an attachment commitment list to memory.
+/// Loads the attachment at `attachment_idx` of an attachment commitment list from the advice map.
 ///
 /// The advice map must contain the selected attachment elements.
 ///
 /// # Panics
 ///
 /// Panics if `attachment_commitments` holds more entries than a note can have attachments, if
-/// `attachment_idx` is out of bounds for it, or under the conditions of
-/// [`write_attachment_to_memory`].
-pub fn write_indexed_attachment_to_memory(
-    attachment_commitments: &[Word],
-    attachment_idx: u32,
-) -> Vec<Word> {
+/// `attachment_idx` is out of bounds for it, or under the conditions of [`load_attachment`].
+pub fn load_indexed_attachment(attachment_commitments: &[Word], attachment_idx: u32) -> Vec<Word> {
     assert_attachment_count(attachment_commitments.len());
-    write_attachment_to_memory(attachment_commitments[attachment_idx as usize])
+    load_attachment(attachment_commitments[attachment_idx as usize])
 }
 
 /// Loads and authenticates a bounded word preimage using the public core library primitives.
