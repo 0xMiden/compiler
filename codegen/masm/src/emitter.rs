@@ -50,12 +50,14 @@ impl<'a> FrameLayout<'a> {
     ///
     /// Panics if `local` is not a local of the procedure this frame belongs to.
     pub fn locaddr(&self, local: &LocalVariable) -> u16 {
-        let offset = self
-            .local_offsets
-            .get(local.as_usize())
-            .copied()
-            .expect("local is not part of this frame");
+        let offset =
+            self.element_offset(local.as_usize()).expect("local is not part of this frame");
         u16::try_from(offset).expect("local offset exceeds the procedure frame limit")
+    }
+
+    /// The element offset shared by executable local accesses and debug expressions.
+    pub fn element_offset(&self, index: usize) -> Option<u32> {
+        self.local_offsets.get(index).copied()
     }
 }
 

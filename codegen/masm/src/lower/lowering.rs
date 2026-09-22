@@ -1650,93 +1650,63 @@ fn debug_var_location_from_expression(
     operation: &midenc_hir::Operation,
     emitter: &BlockEmitter<'_>,
 ) -> masm::DebugVarLocation {
-    use masm::DebugVarLocation;
-    use miden_core::Felt;
-    use midenc_hir::dialects::debuginfo::attributes::ExpressionOp;
-
-    // For `di.debug_value`, the SSA operand carries the variable's current value, so its live
-    // position on the Miden operand stack is an accurate location. An unavailable location is
-    // emitted when the value is no longer live, so an older location cannot remain active.
     let stack_position = value
         .as_ref()
         .and_then(|value| emitter.stack.find(value))
         .and_then(|position| u8::try_from(emitter.stack.effective_index(position)).ok());
-    let stack_location = || {
-        stack_position
-            .map(DebugVarLocation::Stack)
-            .unwrap_or(DebugVarLocation::Unavailable)
-    };
-
-    let simple_location = match expr.operations.as_slice() {
-        // An empty expression (or a bare DW_OP_stack_value) means the operand itself is the
-        // variable's value
-        [] | [ExpressionOp::StackValue] => Some(stack_location()),
-        [first] | [first, ExpressionOp::StackValue] => match first {
-            ExpressionOp::LocalSlot(idx) => {
-                Some(resolve_local_slot_location(*idx, Some(emitter.frame.aligned_size), |index| {
-                    resolve_local_slot_felt_offset(index, emitter.frame)
-                }))
-            }
-            ExpressionOp::FrameBase { base, byte_offset } if expr.operations.len() == 1 => {
-                Some(resolve_frame_base_location(
-                    *base,
-                    *byte_offset,
-                    Some(emitter.frame.aligned_size),
-                    |index| resolve_local_slot_felt_offset(index, emitter.frame),
-                    |name| resolve_global_slot_word_address(name, operation, emitter),
-                ))
-            }
-            ExpressionOp::ConstU64(val) => Some(
-                Felt::new(*val)
-                    .ok()
-                    .map(DebugVarLocation::Const)
-                    .unwrap_or(DebugVarLocation::Unavailable),
-            ),
-            ExpressionOp::ConstS64(val) => Some(
-                u64::try_from(*val)
-                    .ok()
-                    .and_then(|val| Felt::new(val).ok())
-                    .map(DebugVarLocation::Const)
-                    .unwrap_or(DebugVarLocation::Unavailable),
-            ),
-            // A logical operand-stack slot has no stable correspondence to the final Miden
-            // operand stack. When the SSA operand is live on the stack, its position is still an
-            // accurate value location; otherwise there is nothing valid to emit.
-            ExpressionOp::OperandStackSlot(_) => Some(stack_location()),
-            ExpressionOp::GlobalSlot(name) => Some(
-                resolve_global_slot_word_address(*name, operation, emitter)
-                    .map(DebugVarLocation::Memory)
-                    .unwrap_or_else(stack_location),
-            ),
-            ExpressionOp::Deref
-            | ExpressionOp::FrameBase { .. }
-            | ExpressionOp::Address { .. }
-            | ExpressionOp::PlusUConst(_)
-            | ExpressionOp::Minus
-            | ExpressionOp::Plus
-            | ExpressionOp::StackValue
-            | ExpressionOp::Piece(_)
-            | ExpressionOp::BitPiece { .. }
-            | ExpressionOp::Unsupported(_) => None,
-        },
-        _ => None,
-    };
-
-    if let Some(location) = simple_location {
-        return location;
-    }
-
-    lower_debug_location_expression(
+    resolve_debug_var_location(
         expr,
         stack_position,
         Some(emitter.frame.aligned_size),
         |index| resolve_local_slot_felt_offset(index, emitter.frame),
-        |name| resolve_global_slot_word_address(name, operation, emitter),
+        |name| resolve_global_slot_element_address(name, operation, emitter),
     )
-    .map(DebugVarLocation::Expression)
-    .unwrap_or(DebugVarLocation::Unavailable)
 }
 
+/// Lowers a HIR expression once, then selects a compact VM location when equivalent.
+/// Failure always emits an unavailable location, ending any previous location for the variable.
+fn resolve_debug_var_location(
+    expression: &midenc_hir::dialects::debuginfo::attributes::Expression,
+    stack_position: Option<u8>,
+    frame_size: Option<u32>,
+    resolve_local_offset: impl FnMut(u32) -> Option<usize>,
+    resolve_global_address: impl FnMut(midenc_hir::interner::Symbol) -> Option<u32>,
+) -> masm::DebugVarLocation {
+    use masm::{DebugLocationExpressionOp as Op, DebugVarLocation};
+    let Some(expression) = lower_debug_location_expression(
+        expression,
+        stack_position,
+        frame_size,
+        resolve_local_offset,
+        resolve_global_address,
+    ) else {
+        return DebugVarLocation::Unavailable;
+    };
+    match expression.operations() {
+        [Op::ReadLocal(offset)] => DebugVarLocation::Local(*offset),
+        [Op::ReadMemory(address)] => DebugVarLocation::Memory(*address),
+        [Op::ReadStack(position)] => DebugVarLocation::Stack(*position),
+        [Op::ConstU64(value)] => miden_core::Felt::new(*value)
+            .ok()
+            .map(DebugVarLocation::Const)
+            .unwrap_or(DebugVarLocation::Unavailable),
+        [Op::ConstI64(value)] => u64::try_from(*value)
+            .ok()
+            .and_then(|value| miden_core::Felt::new(value).ok())
+            .map(DebugVarLocation::Const)
+            .unwrap_or(DebugVarLocation::Unavailable),
+        [Op::FrameBaseAddress { base, byte_offset }, Op::DerefBytes] => {
+            DebugVarLocation::ResolvedFrameBase {
+                base: *base,
+                byte_offset: *byte_offset,
+            }
+        }
+        _ => DebugVarLocation::Expression(expression),
+    }
+}
+
+/// Translates slot values and byte-address locations to the VM expression protocol.
+/// A terminal VM dereference describes typed memory; a non-terminal one reads a pointer/value.
 fn lower_debug_location_expression(
     expression: &midenc_hir::dialects::debuginfo::attributes::Expression,
     operand_stack_position: Option<u8>,
@@ -1752,13 +1722,12 @@ fn lower_debug_location_expression(
             operation,
             ExpressionOp::LocalSlot(_)
                 | ExpressionOp::OperandStackSlot(_)
-                | ExpressionOp::ConstU64(_)
-                | ExpressionOp::ConstS64(_)
                 | ExpressionOp::FrameBase { .. }
                 | ExpressionOp::Address { .. }
                 | ExpressionOp::GlobalSlot(_)
         )
     });
+    // Address results require a final typed memory read; scalar results do not.
     #[derive(Clone, Copy)]
     enum ValueKind {
         Value,
@@ -1769,7 +1738,25 @@ fn lower_debug_location_expression(
     let mut value_kinds = Vec::<ValueKind>::new();
     let mut operand_stack_slot = None;
 
-    if !starts_with_source {
+    let mut depth = 0isize;
+    let mut required = 0isize;
+    for operation in &expression.operations {
+        let (inputs, outputs) = match operation {
+            ExpressionOp::Plus | ExpressionOp::Minus => (2, 1),
+            ExpressionOp::Deref | ExpressionOp::PlusUConst(_) | ExpressionOp::StackValue => (1, 1),
+            ExpressionOp::Piece(_)
+            | ExpressionOp::BitPiece { .. }
+            | ExpressionOp::Unsupported(_) => return None,
+            _ => (0, 1),
+        };
+        required = required.max(inputs - depth);
+        depth += outputs - inputs;
+    }
+    let needs_operand = expression.operations.is_empty() || required == 1;
+    if required > 1 || (starts_with_source && required > 0) {
+        return None;
+    }
+    if needs_operand {
         operations.push(DebugLocationExpressionOp::ReadStack(operand_stack_position?));
         value_kinds.push(ValueKind::Value);
     }
@@ -1777,11 +1764,8 @@ fn lower_debug_location_expression(
     for operation in &expression.operations {
         let target_operation = match operation {
             ExpressionOp::LocalSlot(index) => {
-                let masm::DebugVarLocation::Local(offset) =
-                    resolve_local_slot_location(*index, frame_size, &mut resolve_local_offset)
-                else {
-                    return None;
-                };
+                let offset =
+                    resolve_local_slot_offset(*index, frame_size, &mut resolve_local_offset)?;
                 value_kinds.push(ValueKind::Value);
                 Some(DebugLocationExpressionOp::ReadLocal(offset))
             }
@@ -1832,11 +1816,11 @@ fn lower_debug_location_expression(
                 Some(DebugLocationExpressionOp::Sub)
             }
             ExpressionOp::Deref if !value_kinds.is_empty() => {
-                *value_kinds.last_mut()? = ValueKind::Value;
                 Some(DebugLocationExpressionOp::DerefBytes)
             }
             ExpressionOp::StackValue if !value_kinds.is_empty() => {
                 *value_kinds.last_mut()? = ValueKind::Value;
+                // Keep the dereference non-terminal so the VM returns its scalar result.
                 matches!(operations.last(), Some(DebugLocationExpressionOp::DerefBytes))
                     .then_some(DebugLocationExpressionOp::AddUnsigned(0))
             }
@@ -1874,6 +1858,7 @@ fn lower_debug_location_expression(
         operations.extend(target_operation);
     }
 
+    // A location expression must produce exactly one result.
     let [result_kind] = value_kinds.as_slice() else {
         return None;
     };
@@ -1885,26 +1870,34 @@ fn lower_debug_location_expression(
         .and_then(|operations| DebugLocationExpression::new(operations).ok())
 }
 
-fn resolve_local_slot_location(
+/// Resolves a logical local slot to a signed FMP-relative element offset.
+fn resolve_local_slot_offset(
     index: u32,
     frame_size: Option<u32>,
     mut resolve_local_offset: impl FnMut(u32) -> Option<usize>,
+) -> Option<i16> {
+    let (frame_size, offset) = frame_size.zip(resolve_local_offset(index))?;
+    i16::try_from(i64::try_from(offset).ok()? - i64::from(frame_size)).ok()
+}
+
+#[cfg(test)]
+fn resolve_local_slot_location(
+    index: u32,
+    frame_size: Option<u32>,
+    resolve_local_offset: impl FnMut(u32) -> Option<usize>,
 ) -> masm::DebugVarLocation {
-    frame_size
-        .zip(resolve_local_offset(index))
-        .and_then(|(frame_size, offset)| {
-            let offset = i64::try_from(offset).ok()?;
-            i16::try_from(offset - i64::from(frame_size)).ok()
-        })
+    resolve_local_slot_offset(index, frame_size, resolve_local_offset)
         .map(masm::DebugVarLocation::Local)
         .unwrap_or(masm::DebugVarLocation::Unavailable)
 }
 
+/// Reads the element offset from the same frame layout used by executable local accesses.
 fn resolve_local_slot_felt_offset(index: u32, frame: FrameLayout<'_>) -> Option<usize> {
-    let offset = *frame.local_offsets.get(usize::try_from(index).ok()?)?;
+    let offset = frame.element_offset(usize::try_from(index).ok()?)?;
     usize::try_from(offset).ok()
 }
 
+#[cfg(test)]
 fn resolve_frame_base_location(
     base: midenc_hir::dialects::debuginfo::attributes::FrameBase,
     byte_offset: i64,
@@ -1920,6 +1913,7 @@ fn resolve_frame_base_location(
     masm::DebugVarLocation::ResolvedFrameBase { base, byte_offset }
 }
 
+/// Resolves the slot holding the runtime byte-address frame base.
 fn resolve_frame_base(
     base: midenc_hir::dialects::debuginfo::attributes::FrameBase,
     frame_size: Option<u32>,
@@ -1930,11 +1924,7 @@ fn resolve_frame_base(
 
     match base {
         FrameBase::LocalSlot(index) => {
-            let masm::DebugVarLocation::Local(offset) =
-                resolve_local_slot_location(index, frame_size, &mut resolve_local_offset)
-            else {
-                return None;
-            };
+            let offset = resolve_local_slot_offset(index, frame_size, &mut resolve_local_offset)?;
             Some(masm::DebugFrameBase::Local(offset))
         }
         FrameBase::GlobalSlot(name) => {
@@ -1943,7 +1933,8 @@ fn resolve_frame_base(
     }
 }
 
-fn resolve_global_slot_word_address(
+/// Resolves a module-scoped global slot to its aligned Miden storage cell.
+fn resolve_global_slot_element_address(
     name: midenc_hir::interner::Symbol,
     operation: &midenc_hir::Operation,
     emitter: &BlockEmitter<'_>,
@@ -1961,8 +1952,14 @@ fn resolve_global_slot_word_address(
         .link_info
         .globals_layout()
         .get_computed_addr(global)
-        .filter(|address| address.is_multiple_of(4))
-        .map(|address| address / 4)
+        .and_then(debug_global_element_address)
+}
+
+/// Converts an aligned global storage cell to an element address without truncation.
+/// Unaligned cells cannot be represented by the VM's ReadMemory operation.
+fn debug_global_element_address(address: u32) -> Option<u32> {
+    let pointer = crate::NativePtr::from_ptr(address);
+    pointer.is_element_aligned().then_some(pointer.addr)
 }
 
 #[cfg(test)]
@@ -1979,6 +1976,140 @@ mod tests {
     use crate::masm::{
         DebugFrameBase, DebugLocationExpression, DebugLocationExpressionOp, DebugVarLocation,
     };
+
+    #[test]
+    fn global_storage_addresses_preserve_element_coordinates() {
+        assert_eq!(super::debug_global_element_address(32), Some(8));
+        assert_eq!(super::debug_global_element_address(34), None);
+        assert_eq!(super::debug_global_element_address(0x8000_0000), Some(0x2000_0000));
+    }
+
+    #[test]
+    fn address_dereferences_preserve_each_indirection() {
+        for source in [
+            ExpressionOp::Address { address: 100 },
+            ExpressionOp::FrameBase {
+                base: FrameBase::LocalSlot(0),
+                byte_offset: 0,
+            },
+        ] {
+            for scalar in [false, true] {
+                let mut operations = vec![source.clone(), ExpressionOp::Deref];
+                if scalar {
+                    operations.push(ExpressionOp::StackValue);
+                }
+                let expression = lower_debug_location_expression(
+                    &Expression::with_ops(operations),
+                    None,
+                    Some(4),
+                    |_| Some(0),
+                    |_| None,
+                )
+                .unwrap();
+                let value = miden_debug::resolve_variable_value(
+                    &DebugVarLocation::Expression(expression),
+                    &[],
+                    |address| match address {
+                        25 => Some(Felt::new(200).unwrap()),
+                        50 => Some(Felt::new(37).unwrap()),
+                        _ => None,
+                    },
+                    |_| Some(Felt::new(100).unwrap()),
+                );
+                assert_eq!(value, Some(Felt::new(if scalar { 200 } else { 37 }).unwrap()));
+            }
+        }
+    }
+
+    #[test]
+    fn leading_constants_can_transform_an_implicit_operand() {
+        for (operations, expected) in [
+            (
+                vec![ExpressionOp::ConstU64(4), ExpressionOp::Plus, ExpressionOp::StackValue],
+                12,
+            ),
+            (vec![ExpressionOp::ConstU64(4), ExpressionOp::Minus, ExpressionOp::Deref], 27),
+            (vec![ExpressionOp::ConstU64(4), ExpressionOp::StackValue], 4),
+        ] {
+            let expression = lower_debug_location_expression(
+                &Expression::with_ops(operations),
+                Some(0),
+                Some(0),
+                |_| None,
+                |_| None,
+            )
+            .unwrap();
+            assert_eq!(
+                miden_debug::resolve_variable_value(
+                    &DebugVarLocation::Expression(expression),
+                    &[Felt::new(8).unwrap()],
+                    |address| (address == 1).then_some(Felt::new(27).unwrap()),
+                    |_| None,
+                ),
+                Some(Felt::new(expected).unwrap()),
+            );
+        }
+    }
+
+    #[test]
+    fn compact_locations_and_unavailable_records_use_the_common_resolver() {
+        use alloc::{collections::BTreeMap, rc::Rc};
+        use core::cell::RefCell;
+
+        use miden_debug::processor::trace::RowIndex;
+        let global = Symbol::intern("global");
+        for (operations, expected) in [
+            (vec![], DebugVarLocation::Stack(0)),
+            (vec![ExpressionOp::LocalSlot(0)], DebugVarLocation::Local(-4)),
+            (vec![ExpressionOp::GlobalSlot(global)], DebugVarLocation::Memory(8)),
+            (vec![ExpressionOp::ConstU64(7)], DebugVarLocation::Const(Felt::new(7).unwrap())),
+            (vec![ExpressionOp::ConstS64(-1)], DebugVarLocation::Unavailable),
+            (
+                vec![ExpressionOp::GlobalSlot(Symbol::intern("missing"))],
+                DebugVarLocation::Unavailable,
+            ),
+            (
+                vec![ExpressionOp::FrameBase {
+                    base: FrameBase::LocalSlot(0),
+                    byte_offset: 3,
+                }],
+                DebugVarLocation::ResolvedFrameBase {
+                    base: DebugFrameBase::Local(-4),
+                    byte_offset: 3,
+                },
+            ),
+        ] {
+            let location = super::resolve_debug_var_location(
+                &Expression::with_ops(operations),
+                Some(0),
+                Some(4),
+                |_| Some(0),
+                |name| (name == global).then_some(8),
+            );
+            assert_eq!(location, expected);
+        }
+        let location = super::resolve_debug_var_location(
+            &Expression::with_ops(vec![ExpressionOp::GlobalSlot(global)]),
+            Some(0),
+            Some(4),
+            |_| None,
+            |_| None,
+        );
+        let mut tracker = miden_debug::DebugVarTracker::new(Rc::new(RefCell::new(BTreeMap::new())));
+        tracker.record_events(
+            RowIndex::from(1),
+            vec![crate::masm::DebugVarInfo::new(
+                "x",
+                DebugVarLocation::Const(Felt::new(7).unwrap()),
+            )],
+        );
+        tracker
+            .record_events(RowIndex::from(2), vec![crate::masm::DebugVarInfo::new("x", location)]);
+        tracker.update_to_cycle(RowIndex::from(1));
+        assert!(tracker.get_variable("x").is_some());
+        tracker.update_to_cycle(RowIndex::from(2));
+        assert!(tracker.get_variable("x").is_none());
+    }
 
     #[test]
     fn debug_local_offsets_use_the_shared_frame_layout() {

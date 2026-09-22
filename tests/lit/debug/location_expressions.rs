@@ -17,10 +17,10 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 pub extern "C" fn test_expressions(p0: i32, p1: i32, p2: i32, p3: i32) -> i32 {
     // These parameters should be in WASM locals 0, 1, 2, 3
     // The debug info expressions should show:
-    // p0 -> DW_OP_WASM_local 0
-    // p1 -> DW_OP_WASM_local 1
-    // p2 -> DW_OP_WASM_local 2
-    // p3 -> DW_OP_WASM_local 3
+    // p0 -> DI_OP_local_slot(0)
+    // p1 -> DI_OP_local_slot(1)
+    // p2 -> DI_OP_local_slot(2)
+    // p3 -> DI_OP_local_slot(3)
 
     // Simple arithmetic using all parameters
     let sum1 = p0.wrapping_add(p1);
