@@ -3896,8 +3896,6 @@ dependencies = [
  "midenc-session",
  "petgraph 0.8.3",
  "proptest",
- "serde",
- "serde_json",
  "smallvec",
 ]
 
