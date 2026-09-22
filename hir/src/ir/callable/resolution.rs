@@ -1,6 +1,3 @@
-#[cfg(test)]
-mod tests;
-
 use crate::{
     CallableOpInterface, CallableSymbol, CallableSymbolRef, EntityRef, FxHashSet, OperationRef,
     RegionRef, Symbol, SymbolName, SymbolPath, SymbolRef, UnsafeIntrusiveEntityRef,
@@ -28,12 +25,14 @@ pub enum SymbolResolutionError {
     UntrackedSymbol { path: SymbolPath },
 }
 
-/// A symbol known to implement [CallableOpInterface], with all function aliases resolved.
+/// A reference to a symbol implementing [CallableOpInterface], with all function aliases resolved.
 ///
-/// Equality and hashing describe the body/signature owner, not the name used to reach it.
-/// This is a snapshot of resolution, not a cache: resolve again after retargeting aliases or
-/// changing symbol tables. Signatures and regions are always read from the current target.
-// TODO edit comment
+/// Equality and hashing identify the target operation (the provider of the body and signature)
+/// rather than the name used to reach it.
+///
+/// This is a snapshot of resolution and it must be re-acquired if function aliases are retargeted
+/// or symbol tables are modified. Signatures and regions are retrieved from the target operation
+/// upon request.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct CanonicalCallableRef {
     symbol: SymbolRef,
@@ -73,12 +72,13 @@ impl CanonicalCallableRef {
     }
 }
 
-/// A resolved symbolic callee, retaining both its referenced name and its canonical callable.
+/// A resolved callee that preserves both the original referencing name and the canonical target.
 ///
-/// Use [Self::named_symbol] for visibility, emission and symbol uses; use [Self::target] for
-/// analyses and execution. Construct through [SymbolRef::resolve_callable]. Like
-/// [CanonicalCallableRef], this is a short-lived resolution snapshot, not an IR mutation cache.
-// TODO edit doc comment
+/// Use [Self::named_symbol] for operations concerning symbol visibility, emission, or usage.
+/// use [Self::target] for analyses and execution.
+///
+/// Like [CanonicalCallableRef], this is a transient resolution snapshot and may become stale if
+/// function aliases are retargeted or symbol tables are modified.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct ResolvedSymbolCallee {
     named: CallableSymbolRef,
@@ -176,5 +176,234 @@ impl UnsafeIntrusiveEntityRef<dyn Symbol> {
         target.as_function().ok_or_else(|| SymbolResolutionError::NotFunction {
             symbol: target.as_symbol_ref().borrow().name(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use alloc::{format, string::ToString};
+
+    use super::*;
+    use crate::{
+        AsCallableSymbolRef, Op, SymbolNameComponent, SymbolTable, Type, Visibility,
+        diagnostics::Uri,
+        dialects::builtin::{
+            Module, ModuleBuilder, ModuleRef,
+            attributes::{SymbolRef as SymbolRefValue, SymbolRefAttr},
+        },
+        parse::{ParserConfig, parse},
+        testing::Test,
+    };
+
+    fn module(source: &str) -> (Test, ModuleRef) {
+        let test = Test::default();
+        let module = parse::<Module>(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("resolution.hir"),
+            source,
+        )
+        .unwrap();
+        (test, module)
+    }
+
+    const ALIASED: &str = r#"
+builtin.module public @test {
+    builtin.function private extern("C") @body() { builtin.ret; };
+    builtin.function_alias private @first -> @body;
+    builtin.function_alias public @api -> @first;
+};
+"#;
+
+    #[test]
+    fn resolved_alias_retains_name_and_reads_current_target_signature() {
+        let (test, module) = module(ALIASED);
+        let mb = ModuleBuilder::new(module);
+        let alias = mb.resolve_callable("api").unwrap();
+        let direct = mb.resolve_callable("body").unwrap();
+        assert_eq!(alias.named_symbol().borrow().name(), SymbolName::intern("api"));
+        assert_eq!(alias.named_symbol().borrow().visibility(), Visibility::Public);
+        assert_eq!(alias.target(), direct.target());
+        assert_eq!(
+            alias.as_callable_symbol_ref(),
+            module.borrow().get(SymbolName::intern("api")).unwrap()
+        );
+        assert!(alias.target().callable_region().is_some());
+        let mut function = alias.target().as_function().unwrap();
+        assert_eq!(function.borrow().visibility(), Visibility::Private);
+        let updated = Signature::new(&test.context_rc(), [Type::U32], [Type::U64]);
+        *function.borrow_mut().get_signature_mut() = updated.clone();
+        assert_eq!(alias.signature(), updated);
+        assert_eq!(alias.target().borrow().signature(), updated);
+    }
+
+    #[test]
+    fn canonical_alias_resolution_and_verification_agree_for_long_chains() {
+        for length in [0, 1, 128] {
+            let mut source = "builtin.module public @test {\n".to_string();
+            for i in 0..length {
+                source.push_str(&format!("builtin.function_alias public @a{i} -> @a{};\n", i + 1));
+            }
+            source.push_str(&format!(
+                "builtin.function private extern(\"C\") @a{length}() {{ builtin.ret; }};\n}};"
+            ));
+            let (_test, module) = module(&source);
+            let mb = ModuleBuilder::new(module);
+            let callee = mb.resolve_callable("a0").unwrap();
+            assert!(callee.target().as_function() == mb.get_function(&format!("a{length}")));
+            module.borrow().as_operation().recursively_verify().unwrap();
+        }
+    }
+
+    #[test]
+    fn alias_resolution_reports_direct_self_reference_cycles() {
+        let (_test, module) = module(ALIASED);
+        let mb = ModuleBuilder::new(module);
+        let mut first = mb.get_function_alias("first").unwrap();
+        // Builders reject self-uses. Emulate malformed IR to exercise resolution.
+        let path = first.borrow().path();
+        first.borrow_mut().target_mut().set_path(path);
+        assert!(matches!(mb.resolve_callable("api"), Err(SymbolResolutionError::Cycle { .. })));
+        let error = module.borrow().as_operation().recursively_verify().unwrap_err();
+        assert!(format!("{error}").contains("cycle"));
+    }
+
+    #[test]
+    fn alias_resolution_reports_mutual_alias_cycles() {
+        let (_test, module) = module(ALIASED);
+        let mb = ModuleBuilder::new(module);
+        let api = mb.get_function_alias("api").unwrap();
+        let mut first = mb.get_function_alias("first").unwrap();
+        first.borrow_mut().set_target(api).unwrap();
+        assert!(matches!(mb.resolve_callable("api"), Err(SymbolResolutionError::Cycle { .. })));
+        let error = module.borrow().as_operation().recursively_verify().unwrap_err();
+        assert!(format!("{error}").contains("cycle"));
+    }
+
+    #[test]
+    fn resolving_an_unknown_symbol_name_reports_unknown_symbol() {
+        let (_test, module) = module(ALIASED);
+        let mb = ModuleBuilder::new(module);
+        assert!(matches!(
+            mb.resolve_callable("missing"),
+            Err(SymbolResolutionError::UnknownSymbol { .. })
+        ));
+    }
+
+    #[test]
+    fn alias_chain_with_removed_target_reports_unknown_symbol() {
+        let (_test, mut module) = module(ALIASED);
+        let mb = ModuleBuilder::new(module);
+        module.borrow_mut().remove(SymbolName::intern("body"));
+        assert!(matches!(
+            mb.resolve_callable("api"),
+            Err(SymbolResolutionError::UnknownSymbol { .. })
+        ));
+    }
+
+    #[test]
+    fn alias_chain_with_non_callable_target_reports_not_callable() {
+        let (_test, mut module) = module(ALIASED);
+        let mut mb = ModuleBuilder::new(module);
+        module.borrow_mut().remove(SymbolName::intern("body"));
+        mb.define_global_variable("body".into(), Visibility::Private, Type::U32)
+            .unwrap();
+        assert!(matches!(
+            mb.resolve_callable("api"),
+            Err(SymbolResolutionError::NotCallable { .. })
+        ));
+    }
+
+    #[test]
+    fn resolving_a_non_callable_symbol_reports_not_callable() {
+        let (_test, module) = module(ALIASED);
+        let mut mb = ModuleBuilder::new(module);
+        mb.define_global_variable("data".into(), Visibility::Private, Type::U32)
+            .unwrap();
+        assert!(matches!(
+            mb.resolve_callable("data"),
+            Err(SymbolResolutionError::NotCallable { .. })
+        ));
+    }
+
+    #[test]
+    fn canonical_resolution_accepts_non_callable_symbols() {
+        let (_test, module) = module(ALIASED);
+        let mut mb = ModuleBuilder::new(module);
+        let global = mb
+            .define_global_variable("data".into(), Visibility::Private, Type::U32)
+            .unwrap();
+        let symbol = global.borrow().as_operation().as_symbol_ref().unwrap();
+        assert_eq!(symbol.resolve_canonical().unwrap(), symbol);
+    }
+
+    #[test]
+    fn detached_alias_reports_no_symbol_table() {
+        let (_test, module) = module(ALIASED);
+        let mb = ModuleBuilder::new(module);
+        let mut first = mb.get_function_alias("first").unwrap();
+        let symbol = first.borrow().as_operation().as_symbol_ref().unwrap();
+        first.borrow_mut().as_operation_mut().remove();
+        assert_eq!(symbol.resolve_callable().unwrap_err(), SymbolResolutionError::NoSymbolTable);
+    }
+
+    #[test]
+    fn resolving_a_detached_alias_through_its_user_reports_unknown_symbol() {
+        let (_test, mut module) = module(ALIASED);
+        let mb = ModuleBuilder::new(module);
+        let api = mb.get_function_alias("api").unwrap();
+        let mut first = mb.get_function_alias("first").unwrap();
+        module.borrow_mut().remove(SymbolName::intern("first"));
+        first.borrow_mut().as_operation_mut().remove();
+        assert!(matches!(
+            api.borrow().target().resolve_callable(),
+            Err(SymbolResolutionError::UnknownSymbol { .. })
+        ));
+    }
+
+    #[test]
+    fn untracked_symbol_attribute_returns_a_structured_error() {
+        let test = Test::default();
+        let path = SymbolPath::new([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Leaf(SymbolName::intern("untracked")),
+        ])
+        .unwrap();
+        let attr = test
+            .context_rc()
+            .create_attribute::<SymbolRefAttr, _>(SymbolRefValue::new(path.clone(), None));
+        assert_eq!(
+            attr.borrow().resolve_callable(),
+            Err(SymbolResolutionError::UntrackedSymbol { path })
+        );
+    }
+
+    #[test]
+    fn resolved_callable_is_a_snapshot_of_the_alias_target() {
+        let mut test = Test::default().in_module("test");
+        let old_target = test.define_function("old_target", &[], &[]);
+        let new_target = test.define_function("new_target", &[], &[]);
+        let mut mb = ModuleBuilder::new(test.module());
+        let mut alias = mb
+            .define_function_alias("entry".into(), Visibility::Public, old_target)
+            .unwrap();
+        let old = mb.resolve_callable("entry").unwrap();
+        alias.borrow_mut().set_target(new_target).unwrap();
+        let new = mb.resolve_callable("entry").unwrap();
+        assert!(old.named_symbol() == new.named_symbol());
+        assert!(old.target().as_function() == Some(old_target));
+        assert!(new.target().as_function() == Some(new_target));
+    }
+
+    #[test]
+    fn callable_declaration_has_signature_but_no_body() {
+        let mut test = Test::default().in_module("test");
+        let decl = test.define_function("decl", &[Type::U32], &[Type::U32]);
+        let mut module = ModuleBuilder::new(test.module());
+        module.define_function_alias("entry".into(), Visibility::Public, decl).unwrap();
+        let callee = module.resolve_callable("entry").unwrap();
+        assert!(callee.target().callable_region().is_none());
+        assert!(callee.target().as_function().unwrap().borrow().is_declaration());
+        assert_eq!(callee.signature().arity(), 1);
     }
 }
