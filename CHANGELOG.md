@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0-rc.1]
+
+### Compiler and `midenc`
+
 - Target Miden VM `0.33.0` and protocol `0.17.0-rc.5`, including dependency commitments, bundled
   precompiles, and structured runtime debug locations.
+- Debug variable locations are lowered to VM coordinates, so the debugger resolves locals, frame
+  bases, and compound or bounded DWARF expressions. A local declared after a 64-bit local was
+  previously read one element too low.
+- Installing and resolving packages hashes a package's dependency commitment once instead of on
+  every lookup.
+- The MASM frontend lifts procedure bodies in item order, so its output and the first reported
+  error no longer vary between runs.
 
 ## [0.10.2]
 
