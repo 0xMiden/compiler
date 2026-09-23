@@ -153,9 +153,8 @@ fn is_declaration_only(op: &midenc_hir::OperationRef) -> bool {
             if let Some(function) = item.downcast_ref::<builtin::Function>() {
                 function.is_declaration()
             } else if item.is::<builtin::FunctionAlias>() {
-                // Aliases hold no body, their target decides. Conservatively treat
-                // the alias itself as a definition so modules carrying exports are lowered.
-                // TODO try to resolve the target and check if it's a declaration
+                // An alias introduces a callable name even without owning a body.
+                // Retain its module so that name is not silently dropped.
                 false
             } else if let Some(gv) = item.downcast_ref::<builtin::GlobalVariable>() {
                 gv.is_declaration()
@@ -750,7 +749,7 @@ fn classify_marked_canonical_abi_entrypoint(
                 if alias_path.unwrap_path() == entrypoint_path.as_ref()
                     && let Some(target) = alias
                         .resolve_target()
-                        .and_then(|sym| builtin::FunctionAlias::canonicalize_function(sym))
+                        .and_then(builtin::FunctionAlias::canonicalize_function)
                     && target.borrow().get_signature().cc.is_wasm_canonical_abi()
                 {
                     canonical_entrypoint = Some(target);

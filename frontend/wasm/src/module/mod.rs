@@ -172,7 +172,6 @@ pub struct Module {
     /// The first of this `N` exports becomes the primary in [`Self::func_linkages`] and gets
     /// translated to a function. The remaining exports are preseved here and they will become
     /// function aliases.
-    /// TODO store visibility for each alias. Then use it in ModuleTranslationState::new instead of hardcoding Visibility::Public
     func_aliases: PrimaryMap<FuncIndex, Vec<Symbol>>,
 
     /// Names in the name section that are shared by more than one function.
@@ -363,7 +362,6 @@ impl Module {
     }
 
     /// Synthesized name for functions without a name-section entry (e.g. stripped binaries).
-    // TODO check if there are more places that could use this
     fn fallback_func_name(index: FuncIndex) -> Symbol {
         Symbol::intern(format!("func{}", index.as_u32()))
     }

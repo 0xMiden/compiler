@@ -41,7 +41,8 @@ fn resolve_invocation_callee(
     call: &dyn midenc_hir::CallOpInterface,
 ) -> Result<midenc_hir::ResolvedSymbolCallee, Report> {
     call.resolve_symbol_callee().map_err(|err| {
-        call.as_operation()
+        let mut diagnostic = call
+            .as_operation()
             .context()
             .diagnostics()
             .diagnostic(Severity::Error)
@@ -49,13 +50,14 @@ fn resolve_invocation_callee(
                 "invalid {}: unable to resolve callee",
                 call.as_operation().name()
             ))
-            .with_primary_label(call.as_operation().span(), err.to_string())
-            // TODO verify the help message makes sense in this context
-            .with_help(
+            .with_primary_label(call.as_operation().span(), err.to_string());
+        if matches!(err, midenc_hir::SymbolResolutionError::UnknownSymbol { .. }) {
+            diagnostic = diagnostic.with_help(
                 "Make sure that all referenced symbols are reachable via the root symbol table, \
                  and use absolute paths to refer to symbols in ancestor/sibling modules",
-            )
-            .into_report()
+            );
+        }
+        diagnostic.into_report()
     })
 }
 

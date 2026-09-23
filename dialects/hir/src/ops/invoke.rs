@@ -1271,19 +1271,17 @@ builtin.module public @test {
             let module = test.module();
             let module = module.borrow();
 
-            let expected = Some(
-                target
-                    .borrow()
-                    .as_operation()
-                    .as_symbol_ref()
-                    .unwrap()
-                    .resolve_callable()
-                    .unwrap()
-                    .target(),
-            );
-            assert_eq!(call.resolve(), expected, "{kind}");
-            assert_eq!(call.resolve_in_symbol_table(&*module), expected, "{kind}");
-            assert_eq!(call.possible_callees().unwrap().as_slice(), &[expected.unwrap()]);
+            let expected = target
+                .borrow()
+                .as_operation()
+                .as_symbol_ref()
+                .unwrap()
+                .resolve_callable()
+                .unwrap()
+                .target();
+            assert_eq!(call.resolve(), Some(expected), "{kind}");
+            assert_eq!(call.resolve_in_symbol_table(&*module), Some(expected), "{kind}");
+            assert_eq!(call.possible_callees().unwrap().as_slice(), &[expected]);
             // the use chain `op -> alias -> target` stays intact
             assert_eq!(call.callable_for_callee().unwrap_symbol_path(), alias.borrow().path());
             assert_eq!(alias.borrow().iter_uses().count(), 1);
