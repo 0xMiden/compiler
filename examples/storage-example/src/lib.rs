@@ -21,7 +21,7 @@ struct MyAccount {
     #[storage(description = "owner public key")]
     owner_public_key: StorageValue<Word>,
 
-    /// A map from asset vault key to quantity held by the account.
+    /// A map from asset id word to quantity held by the account.
     #[storage(description = "asset quantity map")]
     asset_qty_map: StorageMap<Word, AssetAmount>,
 }

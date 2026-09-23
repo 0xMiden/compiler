@@ -133,7 +133,7 @@ unsafe extern "C" {
 /// let note_idx = output_note::create(tag, note_type, recipient);
 /// output_note::add_asset(
 ///     Asset::new(
-///         Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]),
+///         [felt!(0), felt!(0), felt!(0), felt!(1)],
 ///         [felt!(1), felt!(0), felt!(0), felt!(0)],
 ///     ),
 ///     note_idx,
@@ -212,7 +212,7 @@ pub fn add_attachment_from_memory(note_idx: NoteIdx, attachment_scheme: Felt, at
 /// let note_idx: NoteIdx = /* ... */
 ///
 /// let asset = Asset::new(
-///     Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]),
+///     [felt!(0), felt!(0), felt!(0), felt!(1)],
 ///     [felt!(1), felt!(0), felt!(0), felt!(0)],
 /// );
 /// output_note::add_asset(asset, note_idx);

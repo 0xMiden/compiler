@@ -175,8 +175,11 @@ pub fn incr_nonce() -> Nonce {
 
 /// Computes and returns the commitment to the native account's current state.
 ///
-/// Panics if the active account is not the native account, so this cannot be called against a
-/// foreign account reached through FPI.
+/// # Panics
+///
+/// - If the invocation does not originate from the account context (a note or transaction
+///   script cannot call it directly).
+/// - If the active account is not the native account (a foreign account reached through FPI).
 #[inline]
 pub fn compute_commitment() -> Word {
     unsafe {
@@ -332,8 +335,10 @@ pub trait NativeAccount {
     ///
     /// # Panics
     ///
-    /// - If the active account is not the native account, so this cannot be called against a
-    ///   foreign account reached through FPI.
+    /// - If the invocation does not originate from the account context (a note or transaction
+    ///   script cannot call it directly).
+    /// - If the active account is not the native account (a foreign account reached through
+    ///   FPI).
     #[inline]
     fn compute_commitment(&self) -> Word {
         compute_commitment()

@@ -115,6 +115,8 @@ fn account_compute_commitment_binding() {
     );
 }
 
+/// Compiles a call to the free function `native_account::compute_commitment`; the trait method
+/// is covered by `account_compute_commitment_binding`.
 #[test]
 fn account_native_account_compute_commitment_binding() {
     run_account_binding_test(

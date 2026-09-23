@@ -52,7 +52,7 @@ interface core-types {
         inner: felt
     }
 
-    /// The identifier of an asset: the word it is keyed under in an account vault. It encodes the
+    /// The identifier of an asset: the word that identifies it in an account vault. It encodes the
     /// issuing faucet, the asset class and the composition rule; read them through the SDK's
     /// `AssetId` getters rather than decoding the limbs.
     record asset-id {

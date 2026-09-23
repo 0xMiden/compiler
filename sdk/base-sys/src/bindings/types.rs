@@ -72,12 +72,12 @@ impl TryFrom<Word> for AccountId {
 
 /// A fungible or non-fungible asset encoded as an asset id and a value word.
 ///
-/// The `id` identifies the asset (faucet, class, composition rule) and is the word it is keyed
-/// under in a vault; `value` is the asset contents.
+/// The `id` identifies the asset in a vault (issuing faucet, asset class, composition rule);
+/// `value` is the asset contents.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(C)]
 pub struct Asset {
-    /// The asset's id, the word it is keyed under in a vault.
+    /// The asset's id, which identifies it in a vault.
     pub id: AssetId,
     /// The asset's contents.
     pub value: Word,
@@ -92,7 +92,7 @@ impl Asset {
         }
     }
 
-    /// Returns this asset's id, which is the word identifying it in an account vault.
+    /// Returns this asset's id; the same value as the `id` field.
     #[inline]
     pub fn id(&self) -> AssetId {
         self.id
@@ -100,11 +100,12 @@ impl Asset {
 
     /// Returns this asset's fungible amount.
     ///
-    /// The composition rule is read from the asset id through the kernel.
+    /// The composition rule is read from the asset id with [`AssetId::composition`], which
+    /// executes the protocol library's `asset::id_into_composition` procedure.
     ///
     /// # Panics
     ///
-    /// Panics if the asset id is malformed (unrecognized version or composition), if the asset is
+    /// Panics if the composition bits of the asset id hold an unrecognized value, if the asset is
     /// not fungible, or if its amount exceeds [`AssetAmount::MAX_U64`].
     pub fn amount(&self) -> AssetAmount {
         assert!(self.is_fungible(), "asset is not fungible");
@@ -118,11 +119,12 @@ impl Asset {
 
     /// Returns `true` if this asset is fungible.
     ///
-    /// The composition rule is read from the asset id through the kernel.
+    /// The composition rule is read from the asset id with [`AssetId::composition`], which
+    /// executes the protocol library's `asset::id_into_composition` procedure.
     ///
     /// # Panics
     ///
-    /// Panics if the asset id is malformed (unrecognized version or composition).
+    /// Panics if the composition bits of the asset id hold an unrecognized value.
     #[inline]
     pub fn is_fungible(&self) -> bool {
         self.id.composition() == AssetComposition::Fungible
@@ -135,7 +137,7 @@ impl From<Asset> for (Word, Word) {
     }
 }
 
-/// The identifier of an asset, the word under which it is keyed in an account vault.
+/// The identifier of an asset, the word that identifies it in an account vault.
 ///
 /// An asset id encodes the issuing faucet, the asset class and the composition rule; read them with
 /// [`AssetId::faucet_id`], [`AssetId::asset_class`] and [`AssetId::composition`] rather than
@@ -151,6 +153,15 @@ impl From<Word> for AssetId {
     #[inline]
     fn from(value: Word) -> Self {
         Self { inner: value }
+    }
+}
+
+impl From<[Felt; 4]> for AssetId {
+    #[inline]
+    fn from(value: [Felt; 4]) -> Self {
+        Self {
+            inner: Word::from(value),
+        }
     }
 }
 
