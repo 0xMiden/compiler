@@ -55,7 +55,9 @@ jobs:
 
   lint:
     name: lint
-    runs-on: warp-ubuntu-latest-x64-8x
+    # The cheapest runner that keeps clippy well under the unit tests job duration; see the
+    # measurements in #1406. ARM64 cores are slower than x64 ones but 25% cheaper per vCPU.
+    runs-on: warp-ubuntu-latest-arm64-4x
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -73,11 +75,13 @@ jobs:
           shared-key: ${{ github.workflow }}-shared
           prefix-key: ${{ env.RUST_CACHE_KEY }}
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-      - &install-cargo-make
-        name: Install cargo-make
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
-        with:
-          tool: cargo-make@0.37.24
+      - name: Install cargo-make
+        # No prebuilt aarch64 Linux binary exists, so compile it unless the restored cache
+        # already has it (`~/.cargo/bin` is part of the cache)
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
       # The formatting check compiles nothing and takes seconds, so it runs here first
       # instead of in its own job with its own runner and cache restore.
       - name: Check formatting
@@ -98,7 +102,11 @@ jobs:
         with:
           persist-credentials: false
       - *install-rust
-      - *install-cargo-make
+      - &install-cargo-make
+        name: Install cargo-make
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: cargo-make@0.37.24
       - name: Install cargo-shear
         uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
         with:
