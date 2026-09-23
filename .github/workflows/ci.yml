@@ -74,10 +74,10 @@ jobs:
           prefix-key: ${{ env.RUST_CACHE_KEY }}
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - &install-cargo-make
-        run: |
-          if ! cargo make --version 2>/dev/null; then
-            cargo install cargo-make --force
-          fi
+        name: Install cargo-make
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: cargo-make@0.37.24
       # The formatting check compiles nothing and takes seconds, so it runs here first
       # instead of in its own job with its own runner and cache restore.
       - name: Check formatting
@@ -91,16 +91,12 @@ jobs:
 
   check_unused:
     name: check for unused items/dependencies
+    # Compiles nothing, so it needs neither a cache nor the runner disk cleanup
     runs-on: ubuntu-latest
-    # Run this job after the linter, so the cache is hot
-    needs: [lint]
-    # But run this check even if the lint check failed
-    if: ${{ always() }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - *install-cargo-make
       - name: Install cargo-shear
