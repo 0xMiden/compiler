@@ -19,6 +19,13 @@ on:
       - "**.txt"
       - "docs/**"
 
+# A new push to a PR supersedes the still-running CI of its previous commit. Runs outside
+# PRs (pushes to `next`/`main`, manual dispatches) each get their own group, so they are
+# never cancelled or queued behind each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 env:
   # Set the new value when the cache grows too much and we hit the runner's disk space limit
   # via https://github.com/rust-lang/docs.rs/pull/2433
