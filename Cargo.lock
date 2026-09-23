@@ -2994,8 +2994,7 @@ dependencies = [
 [[package]]
 name = "miden-client"
 version = "0.17.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51a4336958775c89f1ed7ba6f1b88d984f6c80173a09fcc661889c631fab163e"
+source = "git+https://github.com/0xMiden/rust-sdk?rev=5a13fac2a90d825451d335c3e67fd3538b3d9e52#5a13fac2a90d825451d335c3e67fd3538b3d9e52"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3366,9 +3365,8 @@ dependencies = [
 
 [[package]]
 name = "miden-node-proto-build"
-version = "0.17.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ea7fdb412d0a1e2b795cd5a433524bafeff0462a1e82a7f1aca000fb52869d5"
+version = "0.17.0-rc.2"
+source = "git+https://github.com/0xMiden/node?rev=e55c065d79d476633e932ec610742628965fb158#e55c065d79d476633e932ec610742628965fb158"
 dependencies = [
  "build-rs",
  "codegen",
