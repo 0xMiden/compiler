@@ -17,49 +17,51 @@ macro_rules! supported_foreign_procedure_input_len {
 supported_foreign_procedure_input_len!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
 
 /// Fully-padded input felts accepted by `execute_foreign_procedure`.
+///
+/// Slot `i` is the `i`-th felt of the callee's `#! Inputs:` list, so slot `0` is on top of the
+/// callee's stack. A `Word` passed as `[w[0], w[1], w[2], w[3]]` reaches the callee as the same
+/// `Word`.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct ForeignProcedureInputs {
-    words: [Word; 4],
+    felts: [Felt; 16],
 }
 
 impl ForeignProcedureInputs {
-    /// Creates raw FPI inputs and zero-pads unused protocol input slots.
+    /// Creates raw FPI inputs where `values[i]` fills input slot `i`, and zero-pads the unused
+    /// trailing slots.
     ///
     /// This is only implemented for input arrays with at most 16 felts.
     pub fn new<const N: usize>(values: [Felt; N]) -> Self
     where
         [(); N]: SupportedForeignProcedureInputLen,
     {
-        let mut padded = [Felt::ZERO; 16];
-        padded[..N].copy_from_slice(&values);
-
-        Self {
-            words: [
-                Word::new([padded[3], padded[2], padded[1], padded[0]]),
-                Word::new([padded[7], padded[6], padded[5], padded[4]]),
-                Word::new([padded[11], padded[10], padded[9], padded[8]]),
-                Word::new([padded[15], padded[14], padded[13], padded[12]]),
-            ],
-        }
+        let mut felts = [Felt::ZERO; 16];
+        felts[..N].copy_from_slice(&values);
+        Self { felts }
     }
 }
 
 /// Fully-padded output felts returned by `execute_foreign_procedure`.
+///
+/// Slot `i` is the `i`-th felt of the callee's `#! Outputs:` list, so slot `0` is on top of the
+/// callee's stack on return. A `Word` the callee leaves on top reads back as
+/// `[get(0), get(1), get(2), get(3)]`.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct ForeignProcedureOutputs {
-    words: [Word; 4],
+    // The compiler stores the 16 executor results consecutively, top of stack first.
+    felts: [Felt; 16],
 }
 
 impl ForeignProcedureOutputs {
-    /// Returns the output felt at `index`.
+    /// Returns the output felt in slot `index`.
     ///
     /// # Panics
     ///
     /// Panics if `index` is greater than or equal to 16.
     pub fn get(&self, index: usize) -> Felt {
-        self.words[index / 4][3 - (index % 4)]
+        self.felts[index]
     }
 }
 
@@ -90,28 +92,13 @@ impl ForeignProcedureInvocation {
                 Word::new([
                     foreign_proc_root[2],
                     foreign_proc_root[3],
-                    inputs.words[0][0],
-                    inputs.words[0][1],
+                    inputs.felts[0],
+                    inputs.felts[1],
                 ]),
-                Word::new([
-                    inputs.words[0][2],
-                    inputs.words[0][3],
-                    inputs.words[1][0],
-                    inputs.words[1][1],
-                ]),
-                Word::new([
-                    inputs.words[1][2],
-                    inputs.words[1][3],
-                    inputs.words[2][0],
-                    inputs.words[2][1],
-                ]),
-                Word::new([
-                    inputs.words[2][2],
-                    inputs.words[2][3],
-                    inputs.words[3][0],
-                    inputs.words[3][1],
-                ]),
-                Word::new([inputs.words[3][2], inputs.words[3][3], zero, zero]),
+                Word::new([inputs.felts[2], inputs.felts[3], inputs.felts[4], inputs.felts[5]]),
+                Word::new([inputs.felts[6], inputs.felts[7], inputs.felts[8], inputs.felts[9]]),
+                Word::new([inputs.felts[10], inputs.felts[11], inputs.felts[12], inputs.felts[13]]),
+                Word::new([inputs.felts[14], inputs.felts[15], zero, zero]),
             ],
         }
     }
@@ -268,7 +255,8 @@ pub fn get_output_notes_commitment() -> Word {
 /// Executes `foreign_proc_root` against `foreign_account_id` with raw felt inputs.
 ///
 /// The protocol executor always consumes exactly 16 input felts and returns exactly 16 output
-/// felts. Callers whose target procedure uses fewer values can pass the actual values to
+/// felts, both in the order of the callee's `#! Inputs:` and `#! Outputs:` lists. Callers whose
+/// target procedure uses fewer values can pass the actual values to
 /// [`ForeignProcedureInputs::new`], which pads the remaining input slots with zeroes. Callers whose
 /// target procedure returns fewer values should ignore the unused padded outputs.
 ///
