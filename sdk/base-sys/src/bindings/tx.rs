@@ -82,7 +82,8 @@ impl ForeignProcedureInvocation {
     ) -> Self {
         // The compiler reloads these as 22 consecutive felts in this order (account id prefix,
         // account id suffix, procedure root, 16 inputs) and swaps prefix and suffix into the
-        // executor's operand order itself; see `fpi_indirect_return_via_pointer` in the frontend.
+        // executor's operand order itself; see `fpi_indirect_return_via_pointer` (reload) and
+        // `store_fpi_prefix_locals` (swap) in the Wasm frontend.
         let zero = Felt::ZERO;
         Self {
             words: [
@@ -258,10 +259,11 @@ pub fn get_output_notes_commitment() -> Word {
 /// Executes `foreign_proc_root` against `foreign_account_id` with raw felt inputs.
 ///
 /// The protocol executor always consumes exactly 16 input felts and returns exactly 16 output
-/// felts, top of stack first, in the order of the callee's flattened `#! Inputs:` and
-/// `#! Outputs:` lists. Callers whose target procedure uses fewer values can pass the actual
-/// values to [`ForeignProcedureInputs::new`], which pads the remaining input slots with zeroes.
-/// Callers whose target procedure returns fewer values should ignore the unused padded outputs.
+/// felts. Both are ordered top of stack first, that is, in the order of the callee's flattened
+/// `#! Inputs:` and `#! Outputs:` lists. Callers whose target procedure uses fewer values can pass
+/// the actual values to [`ForeignProcedureInputs::new`], which pads the remaining input slots with
+/// zeroes. Callers whose target procedure returns fewer values should ignore the unused padded
+/// outputs.
 ///
 /// # Panics
 ///
@@ -332,7 +334,8 @@ mod tests {
         assert_eq!(inputs.felts, expected);
     }
 
-    /// Ensures `ForeignProcedureOutputs::get` returns slot `i` for index `i`.
+    /// Ensures `ForeignProcedureOutputs::get` maps index `i` straight to slot `i`, with no index
+    /// arithmetic in between.
     #[test]
     fn outputs_get_reads_slots_in_order() {
         let felts: [Felt; 16] = core::array::from_fn(|i| Felt::from_u32(i as u32 + 1));
@@ -342,7 +345,8 @@ mod tests {
         }
     }
 
-    /// Ensures the invocation flattens to the 22 consecutive felts the compiler reloads by offset.
+    /// Ensures the invocation packs the account id, the root and the inputs in slot order. The
+    /// byte layout the compiler reloads is pinned by the `fpi::raw` network tests.
     #[test]
     fn invocation_flattens_to_prefix_root_and_inputs() {
         let account_id = AccountId::new(felt!(1), felt!(2));
@@ -352,10 +356,6 @@ mod tests {
         }));
         let invocation = ForeignProcedureInvocation::new(account_id, root, inputs);
 
-        let mut flattened = [Felt::ZERO; 24];
-        for (index, word) in invocation.words.iter().enumerate() {
-            flattened[index * 4..][..4].copy_from_slice(&word.into_elements());
-        }
         let expected: [Felt; 24] = core::array::from_fn(|i| {
             if i < 22 {
                 Felt::from_u32(i as u32 + 1)
@@ -363,6 +363,6 @@ mod tests {
                 Felt::ZERO
             }
         });
-        assert_eq!(flattened, expected);
+        assert_eq!(Word::words_as_elements(&invocation.words), &expected[..]);
     }
 }

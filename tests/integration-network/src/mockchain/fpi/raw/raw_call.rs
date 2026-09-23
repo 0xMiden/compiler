@@ -256,8 +256,8 @@ fn raw_note_source_word_to_felt(procedure_root: Word) -> String {
 fn raw_note_source_two_felts_to_felt(procedure_root: Word) -> String {
     raw_note_source(
         procedure_root,
-        "Checks that a partial input word lands on top of the callee's stack, zero padding after \
-         it.",
+        "Checks that a partial input word lands on top of the callee's stack, with the zero \
+         padding after it.",
         "tx::ForeignProcedureInputs::new([felt!(7), felt!(8)])",
         one_felt_output(303),
     )
