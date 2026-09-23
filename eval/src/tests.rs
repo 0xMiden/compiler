@@ -192,6 +192,43 @@ fn alias_call_with_wrong_signature_fails() -> Result<(), Report> {
     Ok(())
 }
 
+#[test]
+fn eval_on_alias_executes_the_canonical_body() -> Result<(), Report> {
+    let (mut evaluator, module) = parse_alias_test_source()?;
+    let module = module.borrow();
+
+    for name in ["first", "api"] {
+        let alias = module.get(SymbolName::intern(name)).unwrap();
+        let alias = alias.borrow();
+        let results = evaluator.eval(alias.as_symbol_operation(), [42u32.into()])?;
+        assert_eq!(results.as_slice(), &[Value::Immediate(42u32.into())]);
+    }
+
+    Ok(())
+}
+
+#[test]
+fn eval_on_alias_with_broken_target_reports_resolution_error() -> Result<(), Report> {
+    let (mut evaluator, mut module) = parse_alias_test_source()?;
+    module.borrow_mut().remove(SymbolName::intern("first"));
+    let module = module.borrow();
+
+    let alias = module.get(SymbolName::intern("api")).unwrap();
+    let alias = alias.borrow();
+    let err = evaluator
+        .eval(alias.as_symbol_operation(), [42u32.into()])
+        .expect_err("evaluating an alias whose target is missing should fail");
+    let label = err
+        .labels()
+        .expect("unresolvable alias should have a diagnostic label")
+        .find_map(|label| label.label().map(alloc::string::ToString::to_string))
+        .expect("diagnostic label should have text");
+    assert!(label.contains("function alias 'api'"), "unexpected diagnostic: {err:?}");
+    assert!(label.contains("does not resolve"), "unexpected diagnostic: {err:?}");
+
+    Ok(())
+}
+
 /// Test evaluation of a callable that calls another callable.
 ///
 /// This verifies the handling of ControlFlowEffect::Call and ControlFlowEffect::Return, and their

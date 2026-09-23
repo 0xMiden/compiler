@@ -13,7 +13,7 @@ use alloc::{
 use midenc_hir::{
     CallableOpInterface, Context, Immediate, Operation, OperationRef, RegionBranchPoint, RegionRef,
     Report, SmallVec, SourceSpan, Spanned, SymbolPath, Type, Value as _, ValueRange, ValueRef,
-    dialects::builtin::{ComponentId, attributes::LocalVariable},
+    dialects::builtin::{ComponentId, FunctionAlias, attributes::LocalVariable},
     formatter::DisplayValues,
     smallvec,
 };
@@ -109,9 +109,12 @@ impl HirEvaluator {
 
     /// Evaluate `op` with `args`, returning the results, if any, produced by it.
     ///
+    /// If `op` is a `FunctionAlias`, its canonical target is evaluated instead.
+    ///
     /// This will fail with an error if any of the following occur:
     ///
     /// * The number and type of arguments does not match the operands expected by `op`
+    /// * `op` is a `FunctionAlias` which does not resolve to a callable
     /// * `op` implements `Initialize` and initialization fails
     /// * An error occurs while evaluating `op`
     pub fn eval<I>(&mut self, op: &Operation, args: I) -> Result<SmallVec<[Value; 1]>, Report>
@@ -123,7 +126,21 @@ impl HirEvaluator {
             return self.eval_callable(callable, args);
         }
 
-        // TODO special case `FunctionAlias` similar to CallableOpInterface as above?
+        // Aliases have no body of their own, so evaluate their canonical target instead
+        if let Some(alias) = op.downcast_ref::<FunctionAlias>() {
+            let span = op.span();
+            let symbol = op.as_symbol_ref().expect("function aliases are symbols");
+            let callee = symbol.resolve_callable().map_err(|err| {
+                self.report(
+                    "invalid entrypoint",
+                    span,
+                    format!("function alias '{}': {err}", alias.get_name().as_str()),
+                )
+            })?;
+            let target = callee.target();
+            let callable = target.borrow();
+            return self.eval_callable(&*callable, args);
+        }
 
         self.reset();
 
