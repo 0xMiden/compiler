@@ -207,7 +207,7 @@ See the rust-sdk-pitfalls skill (P5) for more on slot naming.
 
 | Module | Key Functions | Purpose |
 |--------|--------------|---------|
-| `native_account::` | `add_asset(Asset) -> Word`, `remove_asset(Asset) -> Word`, `incr_nonce() -> Nonce`, `get_id() -> AccountId`, `get_initial_asset(AssetId) -> Word`, `get_initial_commitment() -> Word`, `was_procedure_called(Word) -> bool`, `compute_delta_commitment() -> Word` | Modify / read the native account |
+| `native_account::` | `add_asset(Asset) -> Word`, `remove_asset(Asset) -> Word`, `incr_nonce() -> Nonce`, `get_id() -> AccountId`, `get_initial_asset(AssetId) -> Word`, `get_initial_commitment() -> Word`, `compute_commitment() -> Word`, `has_state_changed() -> bool`, `was_procedure_called(Word) -> bool`, `compute_delta_commitment() -> Word` | Modify / read the native account |
 | `active_account::` | `get_id() -> AccountId`, `get_nonce() -> Nonce`, `get_asset(asset_id: AssetId) -> Word`, `has_asset(asset_id: AssetId) -> bool`, `get_vault_root() -> Word`, `get_num_procedures() -> u32`, `get_procedure_root(u32) -> Word`, `has_procedure(Word) -> bool` | Query the active account |
 | `active_note::` | `get_storage() -> Vec<Felt>`, `get_initial_assets() -> Vec<Asset>`, `get_sender() -> AccountId`, `get_recipient() -> Recipient`, `get_metadata() -> NoteMetadata`, `find_attachment(Felt) -> Option<u32>`, `write_attachment_to_memory(u32) -> Vec<Word>` | Query the note being consumed |
 | `note::` | `build_recipient(Word, Word, Vec<Felt>) -> Recipient` | Build note recipients from serial number, script root, and note storage |
@@ -228,7 +228,7 @@ See the rust-sdk-pitfalls skill (P5) for more on slot naming.
 
 There is no `active_account::get_balance`. Read the asset value word with `active_account::get_asset(asset_id)` (or `native_account::get_initial_asset(asset_id)` for the pre-transaction value) and take the fungible amount from it; test membership with `active_account::has_asset(asset_id)`.
 
-There is also no in-transaction asset construction: `faucet::create_fungible_asset`, `create_non_fungible_asset`, `has_callbacks` and the whole `asset` module are gone. `faucet::mint` and `faucet::burn` take an already-built `Asset`.
+There is also no in-transaction asset construction: `faucet::create_fungible_asset`, `create_non_fungible_asset` and `has_callbacks` are gone, and the `asset` module keeps only the asset-id readers behind `AssetId::faucet_id()`, `asset_class()` and `composition()`. `faucet::mint` and `faucet::burn` take an already-built `Asset`.
 
 ## Asset Handling
 
@@ -248,8 +248,9 @@ pub struct Asset {
 For fungible assets the amount lives in `asset.value[0]`. Prefer the typed accessors over raw felt maths:
 
 ```rust
-// Typed amount: panics if the asset id is malformed, the asset is non-fungible,
-// or the amount is out of range. Fungibility is read through a kernel call.
+// Typed amount: panics if the asset is non-fungible, the amount is out of range, or the
+// composition bits of the asset id are unrecognized. Fungibility is read through the protocol
+// library's `asset::id_into_composition` procedure, not decoded in the SDK.
 let amount: AssetAmount = asset.amount();
 let fungible: bool = asset.is_fungible();
 

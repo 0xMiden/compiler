@@ -339,8 +339,9 @@ pub struct Asset {
 `Asset::new(id: impl Into<AssetId>, value: impl Into<Word>)`; a raw `Word` converts into `AssetId`.
 
 ```rust
-// Preferred accessors — validated, and integer-ordered. Fungibility is read through a kernel
-// call, so both panic on a malformed asset id.
+// Preferred accessors — validated, and integer-ordered. Fungibility is read through the protocol
+// library's `asset::id_into_composition` procedure, so both panic if the asset id's composition
+// bits are unrecognized.
 let amount: AssetAmount = asset.amount();   // also panics if non-fungible or out of range
 let fungible: bool = asset.is_fungible();
 
@@ -590,7 +591,7 @@ have exactly one (`authentication components require exactly one #[auth_script] 
 | `input_note::get_assets_info(idx)` | `input_note::get_initial_assets_info(idx)` |
 | `active_account::get_balance` / `get_initial_balance` | `active_account::get_asset(asset_id: AssetId) -> Word` (or `native_account::get_initial_asset(asset_id: AssetId) -> Word`), then read the amount out of the value word |
 | `active_account::has_non_fungible_asset(asset)` | `active_account::has_asset(asset_id: AssetId) -> bool` |
-| `faucet::create_fungible_asset` / `create_non_fungible_asset` / `has_callbacks`, and the whole `asset` module | build the `Asset` outside the transaction; only `faucet::mint(Asset)` and `faucet::burn(Asset)` remain |
+| `faucet::create_fungible_asset` / `create_non_fungible_asset` / `has_callbacks`, and the asset constructors of the `asset` module | build the `Asset` outside the transaction; only `faucet::mint(Asset)`, `faucet::burn(Asset)` and the asset-id readers `AssetId::faucet_id()` / `asset_class()` / `composition()` remain |
 | `AttachmentLocation` | `Option<u32>` from `find_attachment` |
 | `output_note::set_attachment` | append with `output_note::add_word_attachment`, `output_note::add_attachment`, or `output_note::add_attachment_from_memory` |
 
