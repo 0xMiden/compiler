@@ -232,7 +232,7 @@ jobs:
           if-no-files-found: ignore
 
   midenc_integration_tests_examples:
-    name: midenc integration tests
+    name: midenc integration tests (examples)
     runs-on: warp-ubuntu-latest-x64-8x
     # We only want to run the integration tests if the unit tests pass, and that has the added
     # benefit that we can re-use the cache from the unit test job for all integration tests
