@@ -69,7 +69,7 @@ jobs:
       - name: Cache Cargo
         uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
-          # Use a common cache for the basic compilation/formatter/clippy checks
+          # Cache for the clippy check; the test jobs use their own caches below
           shared-key: ${{ github.workflow }}-shared
           prefix-key: ${{ env.RUST_CACHE_KEY }}
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
@@ -78,35 +78,16 @@ jobs:
           if ! cargo make --version 2>/dev/null; then
             cargo install cargo-make --force
           fi
-      - name: Clippy
-        run: |
-          cargo make clippy
-
-  check_format:
-    name: check formatting
-    runs-on: warp-ubuntu-latest-x64-8x
-    # Run this job after the linter, so the cache is hot
-    needs: [lint]
-    # But run this check even if the lint check failed
-    if: ${{ always() }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/cleanup-runner
-      - *install-rust
-      - name: Cache Cargo
-        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
-        with:
-          # Use a common cache for the basic compilation/formatter/clippy checks
-          shared-key: ${{ github.workflow }}-shared
-          prefix-key: ${{ env.RUST_CACHE_KEY }}
-          # But do not save this cache, just use it
-          save-if: false
-      - *install-cargo-make
-      - name: Check Formatting
+      # The formatting check compiles nothing and takes seconds, so it runs here first
+      # instead of in its own job with its own runner and cache restore.
+      - name: Check formatting
         run: |
           cargo make check-format
+      - name: Clippy
+        # Report the clippy verdict even when the formatting check failed
+        if: ${{ !cancelled() }}
+        run: |
+          cargo make clippy
 
   check_unused:
     name: check for unused items/dependencies
