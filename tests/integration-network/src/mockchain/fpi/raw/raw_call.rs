@@ -29,10 +29,10 @@ const RAW_CALLEE_MODULE: &str = "raw_fpi_callee";
 const NO_ARG_TO_FELT_PROC: &str = "no_arg_to_felt";
 /// Raw FPI callee procedure with the logical signature `Word -> Felt`.
 const WORD_TO_FELT_PROC: &str = "word_to_felt";
-/// Raw FPI callee procedure with the logical signature `(16 felts) -> 16 felts`.
-const SIXTEEN_FELTS_TO_SIXTEEN_FELTS_PROC: &str = "sixteen_felts_to_sixteen_felts";
 /// Raw FPI callee procedure with the logical signature `(Felt, Felt) -> Felt`.
 const TWO_FELTS_TO_FELT_PROC: &str = "two_felts_to_felt";
+/// Raw FPI callee procedure with the logical signature `(16 felts) -> 16 felts`.
+const SIXTEEN_FELTS_TO_SIXTEEN_FELTS_PROC: &str = "sixteen_felts_to_sixteen_felts";
 
 /// Deploys a MASM account and consumes a note which calls a `() -> Felt` raw FPI procedure.
 #[test]
@@ -46,6 +46,17 @@ pub fn word_to_felt() {
     execute_raw_fpi_case("raw_word_to_felt", WORD_TO_FELT_PROC, raw_note_source_word_to_felt);
 }
 
+/// Deploys a MASM account and consumes a note which calls a `(Felt, Felt) -> Felt` raw FPI
+/// procedure, pinning that a partial input word lands on top with the zero padding after it.
+#[test]
+pub fn two_felts_to_felt() {
+    execute_raw_fpi_case(
+        "raw_two_felts_to_felt",
+        TWO_FELTS_TO_FELT_PROC,
+        raw_note_source_two_felts_to_felt,
+    );
+}
+
 /// Deploys a MASM account and consumes a note which calls a full-slot raw FPI procedure.
 #[test]
 pub fn sixteen_felts_to_sixteen_felts() {
@@ -53,16 +64,6 @@ pub fn sixteen_felts_to_sixteen_felts() {
         "raw_sixteen_felts_to_sixteen_felts",
         SIXTEEN_FELTS_TO_SIXTEEN_FELTS_PROC,
         raw_note_source_sixteen_felts_to_sixteen_felts,
-    );
-}
-
-/// Deploys a MASM account and consumes a note which calls a two-felt-input raw FPI procedure.
-#[test]
-pub fn two_felts_to_felt() {
-    execute_raw_fpi_case(
-        "raw_two_felts_to_felt",
-        TWO_FELTS_TO_FELT_PROC,
-        raw_note_source_two_felts_to_felt,
     );
 }
 
@@ -245,7 +246,7 @@ fn raw_note_source_word_to_felt(procedure_root: Word) -> String {
         "Checks that the raw SDK binding forwards one flattened word input.",
         r#"{
             let key = Word::new([felt!(11), felt!(22), felt!(33), felt!(44)]);
-            tx::ForeignProcedureInputs::new([key[0], key[1], key[2], key[3]])
+            tx::ForeignProcedureInputs::new(key.into_elements())
         }"#,
         one_felt_output(202),
     )
@@ -255,7 +256,8 @@ fn raw_note_source_word_to_felt(procedure_root: Word) -> String {
 fn raw_note_source_two_felts_to_felt(procedure_root: Word) -> String {
     raw_note_source(
         procedure_root,
-        "Checks that the raw SDK binding leaves a short input list on top of the callee's stack.",
+        "Checks that a partial input word lands on top of the callee's stack, zero padding after \
+         it.",
         "tx::ForeignProcedureInputs::new([felt!(7), felt!(8)])",
         one_felt_output(303),
     )
