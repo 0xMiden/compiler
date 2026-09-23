@@ -113,3 +113,13 @@ pub extern "C" fn active_account_has_procedure_plain(
 ) -> f32 {
     unsafe { core::hint::unreachable_unchecked() }
 }
+
+#[unsafe(export_name = "miden::protocol::active_account::has_storage_slot")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn active_account_has_storage_slot_plain(
+    _index_suffix: f32,
+    _index_prefix: f32,
+) -> f32 {
+    unsafe { core::hint::unreachable_unchecked() }
+}

@@ -1439,18 +1439,20 @@ pub fn canonical_abi_info(ty: &Type) -> Result<CanonicalAbiInfo, CanonicalTypeEr
         Type::I64 | Type::U64 => CanonicalAbiInfo::SCALAR8,
         Type::Struct(struct_ty) => {
             let fields = struct_ty
+                .get()
                 .fields()
                 .iter()
                 .map(|field| canonical_abi_info(&field.ty))
                 .collect::<Result<Vec<_>, _>>()?;
             CanonicalAbiInfo::record(fields.iter())
         }
-        Type::Enum(enum_ty) => canonical_variant_abi_info(enum_ty)?,
+        Type::Enum(enum_ty) => canonical_variant_abi_info(&enum_ty.get())?,
         Type::Array(array_ty) => {
             let element = canonical_abi_info(array_ty.element_type())?;
             CanonicalAbiInfo::record((0..array_ty.len()).map(|_| &element))
         }
         Type::Unknown
+        | Type::Variadic
         | Type::Never
         | Type::I128
         | Type::U128
@@ -1484,6 +1486,7 @@ pub fn canonical_flat_types(ty: &Type) -> Result<Box<[Type]>, CanonicalTypeError
         | Type::U64
         | Type::Felt => Box::new([canonical_flat_scalar_type(ty)]),
         Type::Struct(struct_ty) => struct_ty
+            .get()
             .fields()
             .iter()
             .map(|field| canonical_flat_types(&field.ty))
@@ -1492,14 +1495,16 @@ pub fn canonical_flat_types(ty: &Type) -> Result<Box<[Type]>, CanonicalTypeError
             .flat_map(|flat| flat.into_vec())
             .collect(),
         Type::Enum(enum_ty) => {
+            let enum_ty = enum_ty.get();
             let mut flat = canonical_flat_types(enum_ty.discriminant())?.into_vec();
-            flat.extend(canonical_variant_payload_flat_types(enum_ty)?.into_vec());
+            flat.extend(canonical_variant_payload_flat_types(&enum_ty)?.into_vec());
             flat.into_boxed_slice()
         }
         Type::Array(array_ty) => {
             vec![array_ty.element_type().clone(); array_ty.len()].into_boxed_slice()
         }
         Type::Unknown
+        | Type::Variadic
         | Type::Never
         | Type::I128
         | Type::U128
@@ -2066,7 +2071,7 @@ fn variant_type_to_ir(
             None => Variant::c_like(name, discriminant),
         }
     });
-    Type::Enum(Arc::new(
+    Type::from(Arc::new(
         EnumType::new(name, discriminant_size_to_ir(variant_ty.info.size), variants)
             .expect("component variant should map to a valid HIR enum type"),
     ))
@@ -2084,7 +2089,7 @@ fn enum_type_to_ir(
         enum_ty.names.iter().enumerate().map(|(index, name)| {
             Variant::c_like(Arc::<str>::from(name.as_str()), Some(index as u128))
         });
-    Type::Enum(Arc::new(
+    Type::from(Arc::new(
         EnumType::new(name, discriminant_size_to_ir(enum_ty.info.size), variants)
             .expect("component enum should map to a valid HIR enum type"),
     ))
@@ -2106,7 +2111,7 @@ fn option_type_to_ir(
             Some(1),
         ),
     ];
-    Type::Enum(Arc::new(
+    Type::from(Arc::new(
         EnumType::new(name, discriminant_size_to_ir(option_ty.info.size), variants)
             .expect("component option should map to a valid HIR enum type"),
     ))
@@ -2134,7 +2139,7 @@ fn result_type_to_ir(
             None => Variant::c_like(Arc::from("err"), Some(1)),
         },
     ];
-    Type::Enum(Arc::new(
+    Type::from(Arc::new(
         EnumType::new(name, discriminant_size_to_ir(result_ty.info.size), variants)
             .expect("component result should map to a valid HIR enum type"),
     ))
@@ -2293,6 +2298,7 @@ mod tests {
         let Type::Enum(ir_enum) = ir_ty else {
             panic!("expected InterfaceType::Enum to lower to HIR EnumType");
         };
+        let ir_enum = ir_enum.get();
         assert!(ir_enum.is_c_like());
         assert_eq!(ir_enum.discriminant(), &Type::U8);
         assert_eq!(ir_enum.variants().len(), 3);

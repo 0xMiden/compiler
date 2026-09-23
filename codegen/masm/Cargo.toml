@@ -44,7 +44,6 @@ midenc-dialect-ub.workspace = true
 midenc-dialect-wasm.workspace = true
 midenc-session.workspace = true
 petgraph.workspace = true
-serde.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 

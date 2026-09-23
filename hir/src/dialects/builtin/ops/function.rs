@@ -315,6 +315,21 @@ impl Function {
         (0..self.locals().len()).map(move |i| LocalVariable::new(fun, i))
     }
 
+    /// The offset of each local from the start of the procedure frame, in elements, indexed by
+    /// local.
+    ///
+    /// A local wider than one element moves every local declared after it, so the offsets are the
+    /// running sum of the sizes of the preceding locals.
+    pub fn local_offsets(&self) -> impl Iterator<Item = usize> + '_ {
+        let locals = self.get_locals();
+        // The borrow of the locals table is carried by the scan state, so the offsets stay lazy.
+        (0..locals.len()).scan((locals, 0usize), |(locals, offset), index| {
+            let local_offset = *offset;
+            *offset += locals[index].size_in_felts();
+            Some(local_offset)
+        })
+    }
+
     #[inline(always)]
     pub fn as_function_ref(&self) -> FunctionRef {
         unsafe { FunctionRef::from_raw(self) }

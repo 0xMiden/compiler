@@ -276,10 +276,10 @@ const MASM_LOWERED_SEED: &str =
 /// runtime `Cow<str>` that could not be a key at all.
 ///
 /// The root's own extension is read through
-/// [`target_root_extension`](super::target_root_extension), the same derivation preparation
-/// dispatched on. That is deliberate: a second copy of those six lines here would be the kind of
-/// duplicate that only diverges once — and the divergence would present as this function's
-/// internal error on a project nothing is wrong with.
+/// [`target_root_extension`](midenc_session::target_root_extension), the same derivation
+/// preparation dispatched on. That is deliberate: a second copy of those six lines here would be
+/// the kind of duplicate that only diverges once — and the divergence would present as this
+/// function's internal error on a project nothing is wrong with.
 fn seed_extension(prepared: &PreparedProject) -> CompilerResult<&'static str> {
     super::selected_provider_extension(prepared)
 }
@@ -845,8 +845,8 @@ path = "{root}"
         let unseeded = from_input.into_package().expect("a full build yields a package");
         let seeded = from_seed.into_package().expect("a seeded full build yields a package");
         assert_eq!(
-            seeded.digest(),
-            unseeded.digest(),
+            seeded.dependency_commitment(),
+            unseeded.dependency_commitment(),
             "everything downstream of the seed is the same code, so the package must be the same"
         );
         assert_eq!(seeded.name, unseeded.name);

@@ -63,21 +63,7 @@ pub extern "C" fn input_note_get_serial_number_plain(_note_index: f32, _out: *mu
 #[unsafe(export_name = "miden::protocol::input_note::get_attachments_commitment")]
 #[optimize(none)]
 #[inline(never)]
-pub extern "C" fn input_note_get_attachments_commitment_plain(
-    _note_index: f32,
-    _out: *mut c_void,
-) {
-    unsafe { core::hint::unreachable_unchecked() }
-}
-
-#[unsafe(export_name = "miden::protocol::input_note::get_attachments_commitment_raw")]
-#[optimize(none)]
-#[inline(never)]
-pub extern "C" fn input_note_get_attachments_commitment_raw_plain(
-    _is_active_note: f32,
-    _note_index: f32,
-    _out: *mut c_void,
-) {
+pub extern "C" fn input_note_get_attachments_commitment_plain(_note_index: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
@@ -108,6 +94,63 @@ pub extern "C" fn input_note_write_attachment_to_memory_plain(
 pub extern "C" fn input_note_find_attachment_plain(
     _attachment_scheme: f32,
     _note_index: f32,
+    _out: *mut c_void,
+) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[unsafe(export_name = "miden::protocol::input_note::get_initial_num_assets")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn input_note_get_initial_num_assets_plain(_note_index: f32) -> f32 {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[unsafe(export_name = "miden::protocol::input_note::get_asset")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn input_note_get_asset_plain(
+    _asset_index: f32,
+    _note_index: f32,
+    _out: *mut c_void,
+) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[unsafe(export_name = "miden::protocol::input_note::remove_asset")]
+#[optimize(none)]
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn input_note_remove_asset_plain(
+    _asset_id_0: f32,
+    _asset_id_1: f32,
+    _asset_id_2: f32,
+    _asset_id_3: f32,
+    _asset_value_0: f32,
+    _asset_value_1: f32,
+    _asset_value_2: f32,
+    _asset_value_3: f32,
+    _note_index: f32,
+    _out: *mut c_void,
+) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[unsafe(export_name = "miden::protocol::input_note::get_note_id")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn input_note_get_note_id_plain(_note_index: f32, _out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[unsafe(export_name = "miden::protocol::input_note::find_note")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn input_note_find_note_plain(
+    _note_id_0: f32,
+    _note_id_1: f32,
+    _note_id_2: f32,
+    _note_id_3: f32,
     _out: *mut c_void,
 ) {
     unsafe { core::hint::unreachable_unchecked() }

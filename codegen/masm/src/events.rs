@@ -48,3 +48,9 @@ impl From<Event> for EventId {
         event.as_event_id()
     }
 }
+
+impl From<Event> for miden_assembly_syntax::ast::EventImmediate {
+    fn from(event: Event) -> Self {
+        miden_assembly_syntax::ast::ImmFelt::from(event.as_event_id().as_felt()).into()
+    }
+}

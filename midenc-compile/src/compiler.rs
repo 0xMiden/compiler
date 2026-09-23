@@ -113,6 +113,10 @@ pub struct Compiler {
     pub stdout: bool,
     /// Specify the name of the project target being compiled
     ///
+    /// For a manifest build, this names the executable target to build. Without it, `--name` is
+    /// tried, then the executable named after the package, then the sole executable the manifest
+    /// declares; a project declaring several and naming none is ambiguous.
+    ///
     /// By default, if this is not specified, then the target is inferred based on the type of
     /// target requested, and the available project context.
     ///
@@ -352,7 +356,7 @@ pub struct Compiler {
         )
     )]
     pub profile: String,
-    /// Build in release mode (used by cargo miden build)
+    /// Build in release mode (the `release` profile)
     #[cfg_attr(
         feature = "std",
         arg(
@@ -383,10 +387,14 @@ pub struct Compiler {
         arg(long, short = 'p', value_name = "SPEC", conflicts_with("workspace"),)
     )]
     pub package: Vec<String>,
-    /// Path to the package/project manifest
+    /// Path to the project manifest to build
     ///
-    /// If unspecified, the compiler will create a virtual manifest for the given input file, if
-    /// the input is not a manifest path itself.
+    /// Either a `miden-project.toml`, or the `Cargo.toml` beside it. This names the project when
+    /// no input file is given. An input file may be given as well only when it is that same
+    /// manifest; a source file cannot be combined with `--manifest-path`. Absent both, the project
+    /// is the `miden-project.toml` in the working directory, or the `Cargo.toml` there when no
+    /// Miden manifest exists beside it. A relative path is resolved against the directory the
+    /// compiler is run from, not against `--working-dir`.
     #[cfg_attr(feature = "std", arg(long, value_name = "PATH",))]
     pub manifest_path: Option<PathBuf>,
     /// Specify path prefixes to remap for any file paths encoded in debug info
@@ -640,8 +648,8 @@ impl Compiler {
     ///
     /// Returns the parsed options or an error if parsing failed.
     ///
-    /// This is used by `cargo miden build` to parse all arguments into `Compiler` options before
-    /// selectively forwarding them to `cargo build` and `midenc`.
+    /// Used by embedders and tests that build a session from an argument vector without going
+    /// through the `midenc` command line.
     #[cfg(feature = "std")]
     pub fn try_parse_from<I, T>(cwd: PathBuf, iter: I) -> Result<Box<Options>, clap::Error>
     where
@@ -811,21 +819,16 @@ impl Compiler {
         input: Option<InputFile>,
         emitter: Option<Arc<dyn Emitter>>,
     ) -> Session {
-        // Raise an error if no inputs were provided
-        let input = match input {
-            Some(input) => input,
-            None => InputFile::from_path(options.current_dir.join("miden-project.toml"))
-                .unwrap_or_else(|err| {
-                    let cmd = <Compiler as clap::CommandFactory>::command();
-                    let mut err = clap::Error::raw(clap::error::ErrorKind::ValueValidation, err)
-                        .with_cmd(&cmd);
-                    err.insert(
-                        clap::error::ContextKind::InvalidArg,
-                        clap::error::ContextValue::String("INPUT".to_string()),
-                    );
-                    err.exit();
-                }),
-        };
+        let input = options.resolve_input(input).unwrap_or_else(|err| {
+            let cmd = <Compiler as clap::CommandFactory>::command();
+            let mut err =
+                clap::Error::raw(clap::error::ErrorKind::ValueValidation, err).with_cmd(&cmd);
+            err.insert(
+                clap::error::ContextKind::InvalidArg,
+                clap::error::ContextValue::String("INPUT".to_string()),
+            );
+            err.exit();
+        });
 
         log::trace!(target: "driver", "current working directory = {}", options.current_dir.display());
 
@@ -877,7 +880,7 @@ impl clap::builder::TypedValueParser for TargetTypeValueParser {
 mod tests {
     use super::*;
 
-    /// Parse `args` as a command line, as `cargo miden` and the `midenc` binary both do.
+    /// Parse `args` as a command line, as [`Compiler::try_parse_from`] does.
     fn options(args: &[&str]) -> Box<Options> {
         Compiler::try_parse_from(PathBuf::from("/tmp"), args)
             .unwrap_or_else(|err| panic!("`midenc {}` should parse: {err}", args.join(" ")))
@@ -908,5 +911,23 @@ mod tests {
     #[test]
     fn no_stop_after_means_no_cap() {
         assert_eq!(options(&[]).stop_after, None);
+    }
+
+    /// `--manifest-path` reaches [`Options`] as given — relative to the directory the compiler is
+    /// run from, never joined onto `--working-dir` — so it means what it does in a shell, and what
+    /// `cargo` makes of the same flag.
+    #[test]
+    fn manifest_path_reaches_the_options_as_given() {
+        let manifest = PathBuf::from("../contract/Cargo.toml");
+        assert_eq!(
+            options(&["--manifest-path", "../contract/Cargo.toml"]).manifest_path,
+            Some(manifest.clone())
+        );
+        assert_eq!(
+            options(&["--working-dir", "/elsewhere", "--manifest-path", "../contract/Cargo.toml"])
+                .manifest_path,
+            Some(manifest),
+            "`--working-dir` must not move it"
+        );
     }
 }

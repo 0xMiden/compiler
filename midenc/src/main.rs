@@ -11,28 +11,7 @@ pub fn main() -> Result<(), Report> {
     }
 
     // Initialize logger, but do not install it, leave that up to the command handler
-    let mut builder = midenc_log::Builder::from_env("MIDENC_TRACE");
-    builder.format_indent(Some(2));
-    if let Ok(precision) = env::var("MIDENC_TRACE_TIMING") {
-        match precision.as_str() {
-            "s" => builder.format_timestamp_secs(),
-            "ms" => builder.format_timestamp_millis(),
-            "us" => builder.format_timestamp_micros(),
-            "ns" => builder.format_timestamp_nanos(),
-            other => {
-                return Err(Report::msg(format!(
-                    "invalid MIDENC_TRACE_TIMING precision, expected one of [s, ms, us, ns], got \
-                     '{other}'"
-                )));
-            }
-        };
-    } else {
-        builder.format_timestamp(None);
-    }
-    let logger = builder.build();
-    let filter = logger.filter();
-    // Suppress the known-harmless dependency errors until the upstream fix ships
-    let logger = Box::new(midenc_log::SuppressKnownDependencyErrors::new(logger));
+    let (logger, filter) = midenc_log::midenc_logger().map_err(Report::msg)?;
 
     // Get current working directory
     let cwd = env::current_dir()

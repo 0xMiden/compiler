@@ -41,7 +41,8 @@ pub fn counter_note_no_auth_increments_storage_without_signature() {
         init_storage_data
             .insert_map_entry(counter_storage_slot.clone(), COUNTER_CONTRACT_STORAGE_KEY, 1_u64)
             .unwrap();
-        AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(counter_package.as_ref().clone(), &init_storage_data)
+            .unwrap()
     };
 
     let mut builder = MockChain::builder();
@@ -102,8 +103,8 @@ pub fn counter_note_no_auth_increments_storage_without_signature() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["2125"].assert_eq(auth_procedure_cycles(&tx_measurements));
-    expect!["9090"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["2079"].assert_eq(auth_procedure_cycles(&tx_measurements));
+    expect!["9058"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed
     assert_counter_storage(

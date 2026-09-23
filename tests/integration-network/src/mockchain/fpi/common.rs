@@ -314,7 +314,8 @@ pub(super) fn execute_counter_caller_note(
         init_storage_data
             .insert_map_entry(counter_storage_slot.clone(), counter_storage_key, expected_count)
             .unwrap();
-        AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(counter_package.as_ref().clone(), &init_storage_data)
+            .unwrap()
     };
 
     let mut builder = MockChain::builder();
@@ -393,10 +394,13 @@ pub(super) fn execute_account_to_account_note(
         init_storage_data
             .insert_map_entry(callee_storage_slot.clone(), callee_storage_key, expected_count)
             .unwrap();
-        AccountComponent::from_package(&callee_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(callee_package.as_ref().clone(), &init_storage_data).unwrap()
     };
-    let caller_component =
-        AccountComponent::from_package(&caller_package, &InitStorageData::default()).unwrap();
+    let caller_component = AccountComponent::from_package(
+        caller_package.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let callee_account = AccountBuilder::new([0_u8; 32])

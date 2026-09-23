@@ -27,11 +27,12 @@
 
 # Support modules are written first, then the root, matching the standalone `.masm` path.
 CHECK: namespace example::support
+CHECK: const FOO = 1
 CHECK: pub proc dirty
 
-# `push.1` rather than the source's `push.FOO`: what is written is the parsed artifact, not a
-# copy of the file it came from.
-CHECK: push.1
+# Parsed MASM preserves constant references in VM 0.33; the linker folds them later.
+# The synthesized namespace above distinguishes the parsed artifact from the source file.
+CHECK: push.FOO
 
 CHECK: namespace example
 CHECK: pub mod support

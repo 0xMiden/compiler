@@ -5,11 +5,23 @@
 # set-version`, then reviewed and merged like any other change.
 
 schema-version = 1
-units = ["compiler"]
+units = [
+    "compiler",
+    "sdk",
+    "templates",
+]
 
 [compiler]
-version = "0.10.1"
-tag = "v0.10.1"
-prerelease = false
+version = "0.11.0-rc.1"
+tag = "v0.11.0-rc.1"
+prerelease = true
 
-# comment to satisfy the requirement that the last commit should touch this file
+[sdk]
+version = "0.15.0-rc.1"
+tag = "sdk/v0.15.0-rc.1"
+prerelease = true
+
+[templates]
+version = "0.33.0-rc.1"
+tag = "templates/v0.33.0-rc.1"
+prerelease = true

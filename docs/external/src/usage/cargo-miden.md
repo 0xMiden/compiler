@@ -36,6 +36,8 @@ This will take a minute to compile, but once complete, you can run `cargo help m
 `cargo miden` to see the set of available commands and options.
 
 To get help for a specific command, use `cargo miden help <command>` or `cargo miden <command> --help`.
+For `build`, use `cargo miden build --help`: every argument of `cargo miden build` is forwarded to
+`midenc`, so that is `midenc`'s own help, and it is the one that lists them.
 
 ## Creating a new project
 
@@ -86,6 +88,14 @@ cargo miden build --release
 
 This will emit the compiled artifacts to `target/miden/release/foo.masp`, and print the path of
 the compiled Miden package on success.
+
+`cargo miden build` is a thin wrapper: every argument after `build` is passed to
+[`midenc`](midenc.md) unchanged, so `cargo miden build <args>` compiles what `midenc <args>` would
+in the same directory. Run `cargo miden build --help` to see the options — that help is `midenc`'s.
+
+The project is located the same way too: the `miden-project.toml` in the current directory, or the
+`Cargo.toml` there when no Miden manifest exists beside it, or the one `--manifest-path` names.
+Logging is controlled by `MIDENC_TRACE`, the same variable `midenc` reads.
 
 ## Running a compiled Miden VM program
 

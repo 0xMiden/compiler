@@ -193,7 +193,7 @@ fn generate_lifting_with_transformation(
     let expected_core_sig = Signature {
         params: cross_ctx_export_sig_flat.params().to_vec(),
         results: vec![AbiParam::new(Type::I32)],
-        cc: core_export_func_sig.cc,
+        cc: core_export_func_sig.cc.clone(),
     };
     check_core_wasm_signature_equivalence(&core_export_func_sig, &expected_core_sig).map_err(
         |message| {
@@ -525,7 +525,7 @@ fn annotate_component_export_debug_signature(
     let subprogram =
         Subprogram::new(midenc_hir::interner::Symbol::intern(export_func_name), file, 1, Some(1))
             .with_function_type(FunctionType {
-                abi: export_func_ty.abi,
+                abi: export_func_ty.abi.clone(),
                 params: export_func_ty.params.clone(),
                 results: export_func_ty.results.clone(),
             })

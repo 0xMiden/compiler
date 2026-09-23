@@ -121,7 +121,7 @@ fn component_with_count(
     init_storage_data
         .insert_map_entry(slot.clone(), COUNTER_CONTRACT_STORAGE_KEY, count)
         .unwrap();
-    AccountComponent::from_package(package, &init_storage_data).unwrap()
+    AccountComponent::from_package(package.as_ref().clone(), &init_storage_data).unwrap()
 }
 
 /// Counter component exporting the `counter-contract` interface, shared by both packages.

@@ -21,7 +21,7 @@ use midenc_hir::Op;
 #[cfg(feature = "std")]
 use midenc_session::{OutputFile, OutputType};
 use midenc_session::{
-    OutputMode,
+    OutputMode, PathBuf,
     diagnostics::{Diagnostic, Report, WrapErr, miette},
 };
 
@@ -38,8 +38,13 @@ pub type CompilerResult<T> = Result<T, Report>;
 #[diagnostic()]
 pub struct CompilerStopped(&'static str);
 
-/// Run the compiler using the provided [midenc_session::Session]
-pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
+/// Run the compiler using the provided [midenc_session::Session], and report what it wrote.
+///
+/// The path is `Some` only when the assembled package was written to a file of its own — the very
+/// file the "Compiled …" line names, unless `--quiet` suppressed that line. A package emitted to
+/// standard output, a session that asked for no `masp` output, and a run stopped before assembly
+/// all leave nothing to name.
+pub fn compile(context: Rc<Context>) -> CompilerResult<Option<PathBuf>> {
     use midenc_hir::formatter::DisplayHex;
 
     log::info!(target: "driver", "starting compilation session");
@@ -48,9 +53,9 @@ pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
     match compile_to_memory(context.clone())? {
         CompiledArtifact::Assembled(ref package) => {
             log::info!(
-                "succesfully assembled mast package '{}' with digest {}",
+                "successfully assembled mast package '{}' with dependency commitment {}",
                 package.name,
-                DisplayHex::new(&package.digest().as_bytes())
+                DisplayHex::new(&package.dependency_commitment().as_bytes())
             );
             session
                 .emit(OutputMode::Text, package)
@@ -61,29 +66,41 @@ pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
                 .map_err(Report::msg)
                 .wrap_err("failed to serialize 'mast' artifact")?;
 
-            #[cfg(feature = "std")]
-            if let Some(output_file) =
-                session.output_path_for(OutputType::Masp, Some(package.name.as_ref()))
-                && !session.options.quiet()
-            {
-                match output_file {
-                    OutputFile::Real(path) => {
-                        println!("Compiled {}", path.display());
-                    }
-                    OutputFile::Directory(path) => {
-                        println!("Compiled to {}", path.display());
-                    }
-                    OutputFile::Stdout => {}
-                }
-            }
-
-            Ok(())
+            Ok(announce_package(session, package.name.as_ref()))
         }
         CompiledArtifact::Lowered(_) => {
             log::debug!("no outputs requested by user: pipeline stopped before assembly");
-            Ok(())
+            Ok(None)
         }
     }
+}
+
+/// Announce where the assembled package named `name` went, and hand back the file it went to.
+///
+/// The one place a finished build is reported, because both binaries report it the same way:
+/// `midenc` prints it and `cargo miden build` returns it to its caller.
+#[cfg(feature = "std")]
+fn announce_package(session: &midenc_session::Session, name: &str) -> Option<PathBuf> {
+    let quiet = session.options.quiet();
+    match session.output_path_for(OutputType::Masp, Some(name))? {
+        OutputFile::Real(path) => {
+            if !quiet {
+                println!("Compiled {}", path.display());
+            }
+            Some(path)
+        }
+        // `Session::emit` treats a directory output as unreachable, so a package can only have
+        // gone to a file or to standard output.
+        OutputFile::Stdout | OutputFile::Directory(_) => None,
+    }
+}
+
+/// Announce where the assembled package named `name` went, and hand back the file it went to.
+///
+/// Without `std` there are no output files to name, and nothing to print to.
+#[cfg(not(feature = "std"))]
+fn announce_package(_session: &midenc_session::Session, _name: &str) -> Option<PathBuf> {
+    None
 }
 
 /// Same as `compile`, but return compiled artifacts to the caller
@@ -213,8 +230,8 @@ fn artifact_from_outcome(
 
     let package = outcome.into_package()?;
     log::debug!(
-        "successfully assembled package with digest {}",
-        DisplayHex::new(&package.digest().as_bytes())
+        "successfully assembled package with dependency commitment {}",
+        DisplayHex::new(&package.dependency_commitment().as_bytes())
     );
     Ok(CompiledArtifact::Assembled(package))
 }

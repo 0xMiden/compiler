@@ -86,8 +86,12 @@ fn assert_struct_field_types(ty: &Type, expected_fields: &[&str]) {
     let Type::Struct(struct_ty) = ty else {
         panic!("expected struct type, got {ty:?}");
     };
-    let actual_fields =
-        struct_ty.fields().iter().map(|field| field.ty.to_string()).collect::<Vec<_>>();
+    let actual_fields = struct_ty
+        .get()
+        .fields()
+        .iter()
+        .map(|field| field.ty.to_string())
+        .collect::<Vec<_>>();
     let expected_fields = expected_fields.iter().map(|ty| ty.to_string()).collect::<Vec<_>>();
     assert_eq!(actual_fields, expected_fields);
 }
@@ -298,7 +302,7 @@ fn read_cached_dependency_package(test: &CompilerTest, package_name: &str) -> Pa
         });
     let bytes = fs::read(&path)
         .unwrap_or_else(|err| panic!("failed to read cached package '{}': {err}", path.display()));
-    Package::read_from_bytes_unchecked(&bytes)
+    Package::read_from_bytes_trusted(&bytes)
         .unwrap_or_else(|err| panic!("failed to decode cached package '{}': {err}", path.display()))
 }
 
@@ -532,7 +536,7 @@ struct TraitNote {
 #[note]
 impl TraitNote {
     #[note_script]
-    pub fn run(self, _arg: Word) {
+    pub fn run(mut self, _arg: Word) {
         let sender = self.get_sender();
         assert_eq!(sender, self.owner);
 
@@ -558,6 +562,22 @@ impl TraitNote {
         for asset in assets {
             assert_eq!(asset.key, asset.key);
         }
+
+        let note_id = self.get_note_id();
+        assert_eq!(note_id.inner, note_id.inner);
+        let assets_info = self.get_initial_assets_info();
+        assert_eq!(assets_info.commitment, assets_info.commitment);
+        let storage_info = self.get_storage_info();
+        assert_eq!(storage_info.commitment, storage_info.commitment);
+        let num_assets = self.get_initial_num_assets();
+        assert_eq!(num_assets, assets_info.num_assets);
+        if num_assets > 0 {
+            let first = self.get_asset(0);
+            assert_eq!(first.key, first.key);
+            let remaining = self.remove_asset(first);
+            assert_eq!(remaining, remaining);
+        }
+        assert!(storage_info.num_storage_items < 1024);
     }
 }
 "#;
@@ -632,7 +652,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
-    let loaded_package = miden_mast_package::Package::read_from_bytes_unchecked(&bytes).unwrap();
+    let loaded_package = miden_mast_package::Package::read_from_bytes_trusted(&bytes).unwrap();
     assert_eq!(&account_package.manifest, &loaded_package.manifest);
 
     // Build counter note
@@ -679,7 +699,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
-    let _loaded_package = miden_mast_package::Package::read_from_bytes_unchecked(&bytes).unwrap();
+    let _loaded_package = miden_mast_package::Package::read_from_bytes_trusted(&bytes).unwrap();
 
     // Build counter note
     let builder = CompilerTestBuilder::rust_source_cargo_miden(
@@ -717,7 +737,7 @@ fn rust_sdk_account_package_build_is_deterministic() {
         );
         let masm_src = test.masm_src();
         let package = test.compile_package();
-        let digest = package.digest();
+        let digest = package.dependency_commitment();
         let bytes = package.to_bytes();
         let Some((first_digest, first_bytes, first_masm)) = baseline.as_ref() else {
             baseline = Some((digest, bytes, masm_src));

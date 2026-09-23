@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use miden_core::Felt;
-use miden_processor::{ExecutionOptions, StackInputs, advice::AdviceInputs, execute_sync};
+use miden_processor::{FastProcessor, StackInputs};
 use midenc_hir::{FunctionIdent, Ident, interner::Symbol};
 use proptest::{prelude::*, test_runner::TestCaseError};
 
@@ -59,13 +59,8 @@ where
         ])
         .expect("invalid stack inputs");
 
-        let vm_result = execute_sync(
-            &program,
-            stack_inputs,
-            AdviceInputs::default(),
-            &mut default_host_with_core_lib(),
-            ExecutionOptions::default(),
-        );
+        let vm_result = FastProcessor::new(stack_inputs)
+            .execute_sync(&program, &mut default_host_with_core_lib());
 
         match (expected, vm_result) {
             (Ok(expected), Ok(output)) => {

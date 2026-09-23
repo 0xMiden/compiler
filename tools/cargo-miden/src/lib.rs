@@ -57,13 +57,20 @@ where
     }
 }
 
-/// Parse wrapper options while retaining the original argument boundary for `cargo test`.
+/// Parse wrapper options while retaining the original argument boundary for `build` and `test`.
 fn parse_command_tokens(tokens: Vec<String>) -> Result<cli::CargoMidenCli, clap::Error> {
     let mut cli = cli::CargoMidenCli::try_parse_from(&tokens)?;
-    if let cli::CargoMidenCommand::Test(command) = &mut cli.command {
-        // Clap consumes a leading `--`, but Cargo needs that delimiter to distinguish
-        // its options from test-binary options. Dispatch/help remain Clap's responsibility.
-        command.args = tokens.into_iter().skip(2).collect();
+    // Clap consumes a leading `--`, but both forwarding subcommands need it verbatim: `cargo`
+    // uses it to separate its own options from test-binary options, and `midenc` uses it to
+    // separate its options from hyphen-led input file names. Dispatch and help remain clap's.
+    match &mut cli.command {
+        cli::CargoMidenCommand::Build(command) => {
+            command.args = tokens.into_iter().skip(2).collect();
+        }
+        cli::CargoMidenCommand::Test(command) => {
+            command.args = tokens.into_iter().skip(2).collect();
+        }
+        cli::CargoMidenCommand::New(_) => (),
     }
     Ok(cli)
 }

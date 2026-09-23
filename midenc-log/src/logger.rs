@@ -33,7 +33,7 @@ pub const DEFAULT_WRITE_STYLE_ENV: &str = "MIDENC_TRACE_STYLE";
 ///
 /// builder
 ///     .format(|buf, record| writeln!(buf, "{} - {}", record.level(), record.args()))
-///     .filter(None, LevelFilter::Info)
+///     .filter_level(LevelFilter::Info)
 ///     .init();
 ///
 /// error!("error message");
@@ -51,7 +51,7 @@ impl Builder {
     /// Initializes the log builder with defaults.
     ///
     /// **NOTE:** This method won't read from any environment variables.
-    /// Use the [`filter`] and [`write_style`] methods to configure the builder
+    /// Use the [`filter_level`] and [`write_style`] methods to configure the builder
     /// or use [`from_env`] or [`from_default_env`] instead.
     ///
     /// # Examples
@@ -65,12 +65,12 @@ impl Builder {
     /// let mut builder = Builder::new();
     ///
     /// builder
-    ///     .filter(None, LevelFilter::Info)
+    ///     .filter_level(LevelFilter::Info)
     ///     .write_style(WriteStyle::Always)
     ///     .init();
     /// ```
     ///
-    /// [`filter`]: #method.filter
+    /// [`filter_level`]: #method.filter_level
     /// [`write_style`]: #method.write_style
     /// [`from_env`]: #method.from_env
     /// [`from_default_env`]: #method.from_default_env

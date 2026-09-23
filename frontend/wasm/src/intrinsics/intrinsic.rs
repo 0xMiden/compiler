@@ -160,6 +160,9 @@ impl Intrinsic {
 }
 
 /// Represents how an intrinsic will be converted to IR
+// A short-lived conversion result that is matched immediately after construction, so the
+// size imbalance between the variants has no practical cost.
+#[allow(clippy::large_enum_variant)]
 pub enum IntrinsicsConversionResult {
     /// As a function
     FunctionType {

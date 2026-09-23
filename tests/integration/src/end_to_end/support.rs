@@ -20,14 +20,13 @@ use crate::compiler_test::{sdk_alloc_crate_path, sdk_crate_path};
 const INTRINSICS_ROOT: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/../../codegen/masm/intrinsics/mod.masm");
 
-/// Links the core library packages into the assembler.
-fn link_core_packages(assembler: &mut Assembler, core_library: &CoreLibrary) {
-    for package in core_library.packages() {
-        let package_name = package.name.clone();
-        assembler
-            .link_package(package, miden_assembly::Linkage::Dynamic)
-            .unwrap_or_else(|err| panic!("failed to link package '{package_name}': {err}"));
-    }
+/// Links the core library package into the assembler.
+fn link_core_package(assembler: &mut Assembler, core_library: &CoreLibrary) {
+    let package = core_library.package();
+    let package_name = package.name.clone();
+    assembler
+        .link_package(package, miden_assembly::Linkage::Dynamic)
+        .unwrap_or_else(|err| panic!("failed to link package '{package_name}': {err}"));
 }
 
 /// Assembles an executable program that wraps `procedure_body` inside a procedure that is called
@@ -39,7 +38,7 @@ pub(super) fn assemble_test_program(procedure_body: &str) -> Arc<Package> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager.clone());
-    link_core_packages(&mut assembler, &core_library);
+    link_core_package(&mut assembler, &core_library);
 
     // Parse the intrinsics
     assembler
@@ -57,7 +56,7 @@ pub(super) fn assemble_test_program(procedure_body: &str) -> Arc<Package> {
         .unwrap_or_else(|err| panic!("{}", PrintDiagnostic::new(err)));
 
     let mut assembler = Assembler::new(source_manager);
-    link_core_packages(&mut assembler, &core_library);
+    link_core_package(&mut assembler, &core_library);
     assembler
         .with_package(library.into(), miden_assembly::Linkage::Static)
         .expect("failed to add library package as dependency")

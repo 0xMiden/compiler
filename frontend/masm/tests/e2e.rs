@@ -2,13 +2,10 @@ use std::{rc::Rc, sync::Arc};
 
 use miden_assembly::{Assembler, ast::Module};
 use miden_assembly_syntax::{ast::ModuleKind, debuginfo::Uri};
+use miden_core::advice::{AdviceInputs, AdviceStack};
 use miden_core_lib::CoreLibrary;
 use miden_mast_package::Package;
-use miden_processor::{
-    DefaultHost, ExecutionOptions, Felt, StackInputs,
-    advice::{AdviceInputs, AdviceStack},
-    execute_sync,
-};
+use miden_processor::{DefaultHost, ExecutionOptions, FastProcessor, Felt, StackInputs};
 use midenc_codegen_masm::{ToMasmComponent, intrinsics};
 use midenc_frontend_masm::{DisassemblerConfig, disassemble_source};
 use midenc_hir::{Context, pass::AnalysisManager};
@@ -227,13 +224,11 @@ fn e2e_context() -> Rc<Context> {
     Rc::new(Context::new(session))
 }
 
-/// Links the core library packages into the assembler.
-fn link_core_packages(assembler: &mut Assembler, core_library: &CoreLibrary) {
-    for package in core_library.packages() {
-        assembler
-            .link_package(package, miden_project::Linkage::Dynamic)
-            .expect("core library package should link");
-    }
+/// Links the core library package into the assembler.
+fn link_core_package(assembler: &mut Assembler, core_library: &CoreLibrary) {
+    assembler
+        .link_package(core_library.package(), miden_project::Linkage::Dynamic)
+        .expect("core library package should link");
 }
 
 fn assemble_original_program(source: &str, context: &Context) -> Arc<Package> {
@@ -249,7 +244,7 @@ fn assemble_original_program(source: &str, context: &Context) -> Arc<Package> {
         .expect("original MASM library should assemble");
     let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager);
-    link_core_packages(&mut assembler, &core_library);
+    link_core_package(&mut assembler, &core_library);
     assembler
         .with_package(library, miden_project::Linkage::Static)
         .expect("original MASM library should link")
@@ -283,7 +278,7 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
     let source_manager = context.session().source_manager.clone();
     let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager.clone());
-    link_core_packages(&mut assembler, &core_library);
+    link_core_package(&mut assembler, &core_library);
     assembler
         .link_package(intrinsics::load(), miden_project::Linkage::Static)
         .expect("intrinsics should link");
@@ -317,7 +312,7 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
             )
         });
     let mut assembler = Assembler::new(source_manager);
-    link_core_packages(&mut assembler, &core_library);
+    link_core_package(&mut assembler, &core_library);
     assembler
         .with_package(library, miden_project::Linkage::Static)
         .expect("round-tripped MASM library should link")
@@ -358,14 +353,16 @@ fn execute_program(
     let stack_inputs = StackInputs::new(inputs).expect("test inputs should fit on VM stack");
     let advice_stack = AdviceStack::try_from_values(advice.iter().copied())
         .expect("test advice inputs should be canonical field elements");
-    let advice_inputs = AdviceInputs::default().with_advice_stack(advice_stack);
+    let advice_inputs = AdviceInputs::default().with_stack(advice_stack);
     let mut host = DefaultHost::default();
     let core_library = CoreLibrary::default();
     host.load_library(miden_processor::HostLibrary::from(&core_library))
         .expect("failed to load core library");
     let program = program.unwrap_program();
-    let trace =
-        execute_sync(&program, stack_inputs, advice_inputs, &mut host, ExecutionOptions::default())
+    let output =
+        FastProcessor::new_with_options(stack_inputs, advice_inputs, ExecutionOptions::default())
+            .expect("test processor should initialize")
+            .execute_sync(&program, &mut host)
             .expect("program should execute");
-    trace.stack.get_num_elements(num_outputs).to_vec()
+    output.stack.get_num_elements(num_outputs).to_vec()
 }

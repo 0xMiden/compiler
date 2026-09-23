@@ -486,7 +486,7 @@ impl ModuleRegistry {
                                     let signature = match self.linker.resolve_signature(gid)? {
                                         Some(sig) => Signature::with_convention(
                                             &self.context,
-                                            sig.abi,
+                                            sig.abi.clone(),
                                             sig.params.iter().cloned(),
                                             sig.results.iter().cloned(),
                                         ),
@@ -535,7 +535,7 @@ impl ModuleRegistry {
                             let signature = match p.signature.as_deref() {
                                 Some(sig) => Ok(Signature::with_convention(
                                     &self.context,
-                                    sig.abi,
+                                    sig.abi.clone(),
                                     sig.params.iter().cloned(),
                                     sig.results.iter().cloned(),
                                 )),
@@ -602,7 +602,11 @@ impl ModuleRegistry {
             self.modules.insert(module_index, module_ref);
         }
 
-        for (gid, signature) in self.signatures.iter() {
+        // Preserve module/item order in the HIR rather than exposing hash table iteration order
+        // to downstream analyses and diagnostics.
+        let mut signatures = self.signatures.iter().collect::<Vec<_>>();
+        signatures.sort_unstable_by_key(|(gid, _)| **gid);
+        for (gid, signature) in signatures {
             let gid = *gid;
             let module_ref = if let Some(module_ref) = self.modules.get(&gid.module).copied() {
                 module_ref
@@ -649,7 +653,11 @@ impl ModuleRegistry {
 
     fn lift_bodies(&self) -> Result<()> {
         let mut builder = OpBuilder::new(self.context.clone());
-        for gid in self.signatures.keys().copied() {
+        // Lift in item order, like the declarations, so that neither the order bodies are created
+        // in nor the first error reported depends on hash table iteration order.
+        let mut gids = self.signatures.keys().copied().collect::<Vec<_>>();
+        gids.sort_unstable();
+        for gid in gids {
             let module_path = self.linker[gid.module].path();
             if let SymbolItem::Procedure(p) = self.linker[gid].item() {
                 let p = p.borrow();
@@ -1450,7 +1458,13 @@ impl<'a> ProcedureLifter<'a> {
             AdvPipe => self.advice_pipe(span, builder),
             Emit => self.emit_event(span, builder),
             EmitImm(event_id) => {
-                builder.emit_event_imm(immediate_value(event_id)?, span)?;
+                let event_id = match event_id {
+                    ast::EventImmediate::Immediate(value) => immediate_value(value)?,
+                    ast::EventImmediate::Name(name) => {
+                        miden_core::events::EventId::from_name(name.inner()).as_felt()
+                    }
+                };
+                builder.emit_event_imm(event_id, span)?;
                 Ok(())
             }
             SysEvent(event) => self.system_event(event, span, builder),
@@ -1628,7 +1642,7 @@ impl<'a> ProcedureLifter<'a> {
             IsOdd => self.unary_with_type(builder, Type::Felt, span, |builder, value, span| {
                 builder.is_odd(value, span)
             }),
-            DebugVar(_) => Ok(()),
+            DebugVar(_) | DebugInlineCall(_) | DebugInlineCallClear => Ok(()),
             _ => unsupported_instruction(inst, span),
         }
     }

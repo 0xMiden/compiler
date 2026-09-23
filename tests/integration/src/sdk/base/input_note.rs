@@ -218,3 +218,61 @@ fn input_note_find_attachment_binding() {
     }",
     );
 }
+
+#[test]
+fn input_note_get_initial_num_assets_binding() {
+    run_input_note_binding_test(
+        "input_note_get_initial_num_assets_binding",
+        "pub fn binding(&self) -> u32 {
+        input_note::get_initial_num_assets(NoteIdx { inner: Felt::new(0).unwrap() })
+    }",
+    );
+}
+
+#[test]
+fn input_note_get_asset_binding() {
+    run_input_note_binding_test(
+        "input_note_get_asset_binding",
+        "pub fn binding(&self) -> Word {
+        input_note::get_asset(NoteIdx { inner: Felt::new(0).unwrap() }, 0).key
+    }",
+    );
+}
+
+#[test]
+fn input_note_remove_asset_binding() {
+    run_input_note_binding_test(
+        "input_note_remove_asset_binding",
+        "pub fn binding(&self) -> Word {
+        let empty = Word::from([Felt::new(0).unwrap(); 4]);
+        input_note::remove_asset(
+            NoteIdx { inner: Felt::new(0).unwrap() },
+            Asset::new(empty, empty),
+        )
+    }",
+    );
+}
+
+#[test]
+fn input_note_get_note_id_binding() {
+    run_input_note_binding_test(
+        "input_note_get_note_id_binding",
+        "pub fn binding(&self) -> Word {
+        input_note::get_note_id(NoteIdx { inner: Felt::new(0).unwrap() }).inner
+    }",
+    );
+}
+
+#[test]
+fn input_note_find_note_binding() {
+    run_input_note_binding_test(
+        "input_note_find_note_binding",
+        "pub fn binding(&self) -> Felt {
+        let note_id = NoteId::from(Word::from([Felt::new(0).unwrap(); 4]));
+        match input_note::find_note(note_id) {
+            Some(idx) => idx.inner,
+            None => Felt::new(0).unwrap(),
+        }
+    }",
+    );
+}

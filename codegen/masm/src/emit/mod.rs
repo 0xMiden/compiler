@@ -282,12 +282,9 @@ impl<'a> OpEmitter<'a> {
         let module = masm::LibraryPath::new(module_name).unwrap();
         let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
         let target = masm::InvocationTarget::Path(Span::new(span, qualified.into_inner()));
-        self.emit(
-            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
-            span,
-        );
+        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::Exec(target), span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     /// Emit `op` to the current block
