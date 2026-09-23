@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0-rc.1]
+
 - Target Miden VM `0.33.0` and protocol `0.17.0-rc.5`. Generic note attachment readers use public
   core primitives now that the protocol helpers are internal.
 - [BREAKING] `tx::get_block_number` and `tx::get_block_commitment` are renamed to
@@ -20,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-asset note access with `remove_asset`, transaction fee queries, `has_storage_slot`,
   `has_state_changed`, `has_initial_asset`, and the `asset` ID accessors behind the new `AssetId`.
 - `#[note_script]` entrypoints may take `mut self`.
+- `miden-sdk-alloc` aligns every returned address and reserves the whole padded allocation, so
+  allocations with mixed alignments no longer overlap live ones.
 
 ## [0.14.0]
 
