@@ -116,6 +116,16 @@ fn account_compute_commitment_binding() {
 }
 
 #[test]
+fn account_native_account_compute_commitment_binding() {
+    run_account_binding_test(
+        "account_native_account_compute_commitment_binding",
+        "pub fn binding(&self) -> Word {
+        native_account::compute_commitment()
+    }",
+    );
+}
+
+#[test]
 fn account_compute_delta_commitment_binding() {
     run_account_binding_test(
         "account_compute_delta_commitment_binding",
