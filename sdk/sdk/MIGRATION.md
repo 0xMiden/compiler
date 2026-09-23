@@ -10,6 +10,26 @@ directly below this paragraph, above the previous one (newest first, like the
 
 <!-- Add the next migration section here, above the most recent one. -->
 
+## Unreleased
+
+### `compute_commitment` moved to `native_account` (protocol 0.17.0-rc.6)
+
+The kernel now computes the state commitment for the native account only, so the binding moved
+from the active-account module to the native-account one, both as a free function and as a trait
+method. Calling it against a foreign account reached through FPI panics.
+
+```rust
+// before
+let commitment = active_account::compute_commitment();
+let commitment = <Storage as ActiveAccount>::compute_commitment(&self);
+// after
+let commitment = native_account::compute_commitment();
+let commitment = <Storage as NativeAccount>::compute_commitment(&self);
+```
+
+Component storage structs implement both traits, so `self.compute_commitment()` keeps compiling
+when both traits are in scope; only explicit paths and UFCS calls need the edit.
+
 ## 0.14.0 -> 0.15.0
 
 ### Renames

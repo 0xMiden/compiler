@@ -595,14 +595,16 @@ have exactly one (`authentication components require exactly one #[auth_script] 
 The output-note attachment APIs append attachment entries; they do not replace an existing attachment in place.
 
 The current `active_account` surface is `get_id() -> AccountId`, `get_nonce() -> Nonce`,
-`compute_commitment() -> Word`, `get_code_commitment() -> Word`, `compute_storage_commitment() ->
-Word`, `get_asset(Word) -> Word`, `has_asset(Word) -> bool`, `get_vault_root() -> Word`,
-`get_num_procedures() -> u32`, `get_procedure_root(u32) -> Word`, `has_procedure(Word) -> bool` —
-all also available on the `ActiveAccount` trait.
+`get_code_commitment() -> Word`, `compute_storage_commitment() -> Word`, `get_asset(Word) -> Word`,
+`has_asset(Word) -> bool`, `get_vault_root() -> Word`, `get_num_procedures() -> u32`,
+`get_procedure_root(u32) -> Word`, `has_procedure(Word) -> bool` — all also available on the
+`ActiveAccount` trait.
 
 Initial-state getters live on `native_account` as free functions: `get_initial_commitment()`,
 `get_initial_storage_commitment()`, `get_initial_vault_root()`, `get_initial_asset(Word) -> Word`,
-plus `compute_delta_commitment()` and `was_procedure_called(Word) -> bool`.
+plus `compute_commitment()` (the native account's current state commitment; it panics against a
+foreign account), `compute_delta_commitment()`, `has_state_changed() -> bool` and
+`was_procedure_called(Word) -> bool`.
 
 ## P16: Kernel Scalars Are Typed, Not `Felt`
 

@@ -48,6 +48,13 @@ pub extern "C" fn native_account_incr_nonce_plain() -> f32 {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
+#[unsafe(export_name = "miden::protocol::native_account::compute_commitment")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn native_account_compute_commitment_plain(_out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
 #[unsafe(export_name = "miden::protocol::native_account::compute_delta_commitment")]
 #[optimize(none)]
 #[inline(never)]

@@ -14,13 +14,6 @@ pub extern "C" fn active_account_get_nonce_plain() -> f32 {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "miden::protocol::active_account::compute_commitment")]
-#[optimize(none)]
-#[inline(never)]
-pub extern "C" fn active_account_compute_commitment_plain(_out: *mut c_void) {
-    unsafe { core::hint::unreachable_unchecked() }
-}
-
 #[unsafe(export_name = "miden::protocol::active_account::get_code_commitment")]
 #[optimize(none)]
 #[inline(never)]

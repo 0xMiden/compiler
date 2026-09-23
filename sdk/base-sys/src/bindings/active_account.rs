@@ -11,9 +11,6 @@ unsafe extern "C" {
     #[link_name = "miden::protocol::active_account::get_nonce"]
     fn extern_active_account_get_nonce() -> Felt;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::compute_commitment"]
-    fn extern_active_account_compute_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_code_commitment"]
     fn extern_active_account_get_code_commitment(ptr: *mut Word);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
@@ -69,16 +66,6 @@ pub fn get_id() -> AccountId {
 pub fn get_nonce() -> Nonce {
     Nonce {
         inner: unsafe { extern_active_account_get_nonce() },
-    }
-}
-
-/// Computes and returns the commitment of the current account data.
-#[inline]
-pub fn compute_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_compute_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
     }
 }
 
@@ -195,13 +182,6 @@ pub trait ActiveAccount {
     fn get_nonce(&self) -> Nonce {
         self.__assert_active_account();
         get_nonce()
-    }
-
-    /// Computes and returns the commitment of the current account data.
-    #[inline]
-    fn compute_commitment(&self) -> Word {
-        self.__assert_active_account();
-        compute_commitment()
     }
 
     /// Returns the code commitment of the active account.

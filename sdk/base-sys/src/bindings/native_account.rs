@@ -37,6 +37,9 @@ unsafe extern "C" {
     #[link_name = "miden::protocol::native_account::incr_nonce"]
     fn extern_native_account_incr_nonce() -> Felt;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::native_account::compute_commitment"]
+    fn extern_native_account_compute_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::compute_delta_commitment"]
     fn extern_native_account_compute_delta_commitment(ptr: *mut Word);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
@@ -165,6 +168,19 @@ pub fn get_id() -> AccountId {
 pub fn incr_nonce() -> Nonce {
     Nonce {
         inner: unsafe { extern_native_account_incr_nonce() },
+    }
+}
+
+/// Computes and returns the commitment to the native account's current state.
+///
+/// Panics if the active account is not the native account, so this cannot be called against a
+/// foreign account reached through FPI.
+#[inline]
+pub fn compute_commitment() -> Word {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        extern_native_account_compute_commitment(ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -313,6 +329,17 @@ pub trait NativeAccount {
     #[inline]
     fn incr_nonce(&mut self) -> Nonce {
         incr_nonce()
+    }
+
+    /// Computes and returns the commitment to the native account's current state.
+    ///
+    /// # Panics
+    ///
+    /// - If the active account is not the native account, so this cannot be called against a
+    ///   foreign account reached through FPI.
+    #[inline]
+    fn compute_commitment(&self) -> Word {
+        compute_commitment()
     }
 
     /// Computes and returns the commitment to the native account's delta for this transaction.

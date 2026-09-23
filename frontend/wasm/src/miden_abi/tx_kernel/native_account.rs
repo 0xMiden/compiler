@@ -16,6 +16,7 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
 pub const ADD_ASSET: &str = "add_asset";
 pub const REMOVE_ASSET: &str = "remove_asset";
 pub const GET_ID: &str = "get_id";
+pub const COMPUTE_COMMITMENT: &str = "compute_commitment";
 pub const COMPUTE_DELTA_COMMITMENT: &str = "compute_delta_commitment";
 pub const SET_STORAGE_ITEM: &str = "set_item";
 pub const SET_STORAGE_MAP_ITEM: &str = "set_map_item";
@@ -58,6 +59,10 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     native_account
         .insert(Symbol::from(GET_ID), FunctionType::new(CallConv::Wasm, [], [Felt, Felt]));
+    native_account.insert(
+        Symbol::from(COMPUTE_COMMITMENT),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+    );
     native_account.insert(
         Symbol::from(COMPUTE_DELTA_COMMITMENT),
         FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
