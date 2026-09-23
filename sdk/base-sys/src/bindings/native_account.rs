@@ -7,10 +7,10 @@ unsafe extern "C" {
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::add_asset"]
     fn extern_native_account_add_asset(
-        asset_key_0: Felt,
-        asset_key_1: Felt,
-        asset_key_2: Felt,
-        asset_key_3: Felt,
+        asset_id_0: Felt,
+        asset_id_1: Felt,
+        asset_id_2: Felt,
+        asset_id_3: Felt,
         asset_value_0: Felt,
         asset_value_1: Felt,
         asset_value_2: Felt,
@@ -20,10 +20,10 @@ unsafe extern "C" {
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::remove_asset"]
     fn extern_native_account_remove_asset(
-        asset_key_0: Felt,
-        asset_key_1: Felt,
-        asset_key_2: Felt,
-        asset_key_3: Felt,
+        asset_id_0: Felt,
+        asset_id_1: Felt,
+        asset_id_2: Felt,
+        asset_id_3: Felt,
         asset_value_0: Felt,
         asset_value_1: Felt,
         asset_value_2: Felt,
@@ -62,10 +62,10 @@ unsafe extern "C" {
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::get_initial_asset"]
     fn extern_native_account_get_initial_asset(
-        asset_key_0: Felt,
-        asset_key_1: Felt,
-        asset_key_2: Felt,
-        asset_key_3: Felt,
+        asset_id_0: Felt,
+        asset_id_1: Felt,
+        asset_id_2: Felt,
+        asset_id_3: Felt,
         ptr: *mut Word,
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
@@ -82,7 +82,7 @@ unsafe extern "C" {
 }
 
 /// Adds the specified asset to the vault and returns the resulting asset value word stored under
-/// that asset key.
+/// that asset id.
 ///
 /// Panics:
 /// - If the asset is not valid.
@@ -115,11 +115,12 @@ unsafe extern "C" {
 pub fn add_asset(asset: Asset) -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        let id = asset.id.inner;
         extern_native_account_add_asset(
-            asset.key[0],
-            asset.key[1],
-            asset.key[2],
-            asset.key[3],
+            id[0],
+            id[1],
+            id[2],
+            id[3],
             asset.value[0],
             asset.value[1],
             asset.value[2],
@@ -139,11 +140,12 @@ pub fn add_asset(asset: Asset) -> Word {
 pub fn remove_asset(asset: Asset) -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        let id = asset.id.inner;
         extern_native_account_remove_asset(
-            asset.key[0],
-            asset.key[1],
-            asset.key[2],
-            asset.key[3],
+            id[0],
+            id[1],
+            id[2],
+            id[3],
             asset.value[0],
             asset.value[1],
             asset.value[2],
@@ -237,17 +239,12 @@ pub fn get_initial_vault_root() -> Word {
     }
 }
 
-/// Returns the native account's initial value stored under the specified `asset_key` in the vault.
-pub fn get_initial_asset(asset_key: Word) -> Word {
+/// Returns the native account's initial value stored under the specified `asset_id` in the vault.
+pub fn get_initial_asset(asset_id: AssetId) -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_native_account_get_initial_asset(
-            asset_key[0],
-            asset_key[1],
-            asset_key[2],
-            asset_key[3],
-            ret_area.as_mut_ptr(),
-        );
+        let id = asset_id.inner;
+        extern_native_account_get_initial_asset(id[0], id[1], id[2], id[3], ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init()
     }
 }
@@ -277,7 +274,7 @@ pub fn has_initial_asset(asset_id: AssetId) -> bool {
 /// `#[component_storage]` macro.
 pub trait NativeAccount {
     /// Adds the specified asset to the vault and returns the resulting asset value word stored
-    /// under that asset key.
+    /// under that asset id.
     ///
     /// # Panics
     ///

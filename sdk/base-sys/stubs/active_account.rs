@@ -32,10 +32,10 @@ pub extern "C" fn active_account_compute_storage_commitment_plain(_out: *mut c_v
 #[optimize(none)]
 #[inline(never)]
 pub extern "C" fn active_account_get_asset_plain(
-    _asset_key_0: f32,
-    _asset_key_1: f32,
-    _asset_key_2: f32,
-    _asset_key_3: f32,
+    _asset_id_0: f32,
+    _asset_id_1: f32,
+    _asset_id_2: f32,
+    _asset_id_3: f32,
     _out: *mut c_void,
 ) {
     unsafe { core::hint::unreachable_unchecked() }

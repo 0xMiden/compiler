@@ -40,7 +40,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         FunctionType::new(
             CallConv::Wasm,
             [
-                Felt, Felt, Felt, Felt, // asset key
+                Felt, Felt, Felt, Felt, // asset id
                 Felt, Felt, Felt, Felt, // asset value
             ],
             [Felt, Felt, Felt, Felt], // asset value
@@ -51,7 +51,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         FunctionType::new(
             CallConv::Wasm,
             [
-                Felt, Felt, Felt, Felt, // ASSET_KEY
+                Felt, Felt, Felt, Felt, // ASSET_ID
                 Felt, Felt, Felt, Felt, // ASSET_VALUE
             ],
             [Felt, Felt, Felt, Felt],

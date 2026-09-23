@@ -1,7 +1,6 @@
 //! Mock-chain tests for the typed fungible-asset amount API (`AssetAmount`).
 //!
-//! Unlike the unit tests in `miden-base-sys`, which decode hand-built asset encodings, these
-//! tests execute the on-chain `AssetAmount` API inside a real transaction: the note script
+//! These tests execute the on-chain `AssetAmount` API inside a real transaction: the note script
 //! decodes amounts from kernel-built assets and checks its arithmetic against the kernel's own
 //! vault bookkeeping.
 
@@ -38,7 +37,7 @@ const AMOUNT_WALLET_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Asset, AssetAmount, Word, active_account, component, component_storage};
+use miden::{Asset, AssetAmount, AssetId, active_account, component, component_storage};
 
 #[component_storage]
 struct AmountWalletStorage;
@@ -49,9 +48,9 @@ trait AmountWallet {
     /// Adds an asset to the account vault.
     #[account_procedure]
     fn receive_asset(&mut self, asset: Asset);
-    /// Returns the typed amount currently held in the vault under `asset_key`.
+    /// Returns the typed amount currently held in the vault under `asset_id`.
     #[account_procedure]
-    fn vault_amount(&self, asset_key: Word) -> AssetAmount;
+    fn vault_amount(&self, asset_id: AssetId) -> AssetAmount;
 }
 
 #[component]
@@ -60,8 +59,8 @@ impl AmountWallet for AmountWalletStorage {
         self.add_asset(asset);
     }
 
-    fn vault_amount(&self, asset_key: Word) -> AssetAmount {
-        Asset::new(asset_key, active_account::get_asset(asset_key)).amount()
+    fn vault_amount(&self, asset_id: AssetId) -> AssetAmount {
+        Asset::new(asset_id, active_account::get_asset(asset_id)).amount()
     }
 }
 "#;
@@ -96,10 +95,9 @@ impl AssetAmountNote {
             let amount = asset.amount();
             assert!(amount > AssetAmount::ZERO);
 
-            let key = asset.key;
-            let before = account.vault_amount(key);
+            let before = account.vault_amount(asset.id);
             account.receive_asset(asset);
-            let after = account.vault_amount(key);
+            let after = account.vault_amount(asset.id);
 
             // The vault amount must grow by exactly the decoded amount (checked addition).
             assert_eq!(after, before + amount);

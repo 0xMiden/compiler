@@ -32,13 +32,13 @@ impl foo::Guest for MyAccount {
         let mut my_account = MyAccount::default();
         let owner_key: Word = my_account.owner_public_key.get();
         if pub_key == owner_key {
-            my_account.asset_qty_map.set(asset.key, qty);
+            my_account.asset_qty_map.set(asset.id.inner, qty);
         }
     }
 
     /// Returns the stored quantity for `asset`, or 0 if not present.
     fn get_asset_qty(asset: Asset) -> AssetAmount {
         let my_account = MyAccount::default();
-        my_account.asset_qty_map.get(asset.key)
+        my_account.asset_qty_map.get(asset.id.inner)
     }
 }

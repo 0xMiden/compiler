@@ -207,8 +207,8 @@ See the rust-sdk-pitfalls skill (P5) for more on slot naming.
 
 | Module | Key Functions | Purpose |
 |--------|--------------|---------|
-| `native_account::` | `add_asset(Asset) -> Word`, `remove_asset(Asset) -> Word`, `incr_nonce() -> Nonce`, `get_id() -> AccountId`, `get_initial_asset(Word) -> Word`, `get_initial_commitment() -> Word`, `was_procedure_called(Word) -> bool`, `compute_delta_commitment() -> Word` | Modify / read the native account |
-| `active_account::` | `get_id() -> AccountId`, `get_nonce() -> Nonce`, `get_asset(asset_key: Word) -> Word`, `has_asset(asset_id: Word) -> bool`, `get_vault_root() -> Word`, `get_num_procedures() -> u32`, `get_procedure_root(u32) -> Word`, `has_procedure(Word) -> bool` | Query the active account |
+| `native_account::` | `add_asset(Asset) -> Word`, `remove_asset(Asset) -> Word`, `incr_nonce() -> Nonce`, `get_id() -> AccountId`, `get_initial_asset(AssetId) -> Word`, `get_initial_commitment() -> Word`, `was_procedure_called(Word) -> bool`, `compute_delta_commitment() -> Word` | Modify / read the native account |
+| `active_account::` | `get_id() -> AccountId`, `get_nonce() -> Nonce`, `get_asset(asset_id: AssetId) -> Word`, `has_asset(asset_id: AssetId) -> bool`, `get_vault_root() -> Word`, `get_num_procedures() -> u32`, `get_procedure_root(u32) -> Word`, `has_procedure(Word) -> bool` | Query the active account |
 | `active_note::` | `get_storage() -> Vec<Felt>`, `get_initial_assets() -> Vec<Asset>`, `get_sender() -> AccountId`, `get_recipient() -> Recipient`, `get_metadata() -> NoteMetadata`, `find_attachment(Felt) -> Option<u32>`, `write_attachment_to_memory(u32) -> Vec<Word>` | Query the note being consumed |
 | `note::` | `build_recipient(Word, Word, Vec<Felt>) -> Recipient` | Build note recipients from serial number, script root, and note storage |
 | `output_note::` | `create(Tag, NoteType, Recipient) -> NoteIdx`, `add_asset(Asset, NoteIdx)`, the `*_attachment` family | Create output notes |
@@ -226,37 +226,40 @@ See the rust-sdk-pitfalls skill (P5) for more on slot naming.
 
 ### Balances and asset construction
 
-There is no `active_account::get_balance`. Read the asset value word with `active_account::get_asset(asset_key)` (or `native_account::get_initial_asset(asset_key)` for the pre-transaction value) and take the fungible amount from it; test membership with `active_account::has_asset(asset_id)`.
+There is no `active_account::get_balance`. Read the asset value word with `active_account::get_asset(asset_id)` (or `native_account::get_initial_asset(asset_id)` for the pre-transaction value) and take the fungible amount from it; test membership with `active_account::has_asset(asset_id)`.
 
 There is also no in-transaction asset construction: `faucet::create_fungible_asset`, `create_non_fungible_asset`, `has_callbacks` and the whole `asset` module are gone. `faucet::mint` and `faucet::burn` take an already-built `Asset`.
 
 ## Asset Handling
 
-`Asset` is a two-word value:
+`Asset` is a two-word value, an asset id and a value word:
 
 ```rust
 pub struct Asset {
-    pub key: Word,
+    pub id: AssetId,   // #[repr(transparent)] over the asset-id Word (`id.inner`)
     pub value: Word,
 }
 ```
 
-**Constructor**: `Asset::new(key, value)` builds an Asset from its two words (the arguments are `impl Into<Word>`).
+**Constructor**: `Asset::new(id, value)` builds an Asset from its asset id and value word (`id: impl Into<AssetId>`, `value: impl Into<Word>`; a raw `Word` converts into `AssetId`).
 
-The guest field is literally named `key`, but the word it holds is the protocol's **asset ID** — the vault's unique identifier for the asset. Read `asset.key` as "the asset-ID word".
+`asset.id` is the protocol's **asset ID** — the vault's unique identifier for the asset, encoding the issuing faucet, the asset class and the composition rule. Read those through `asset.id().faucet_id()`, `asset.id().asset_class()` and `asset.id().composition()` rather than decoding the limbs.
 
 For fungible assets the amount lives in `asset.value[0]`. Prefer the typed accessors over raw felt maths:
 
 ```rust
-// Typed amount: panics if the asset is non-fungible or the amount is out of range
+// Typed amount: panics if the asset id is malformed, the asset is non-fungible,
+// or the amount is out of range. Fungibility is read through a kernel call.
 let amount: AssetAmount = asset.amount();
 let fungible: bool = asset.is_fungible();
 
 // Raw form, if you need the felt
 let amount_felt = asset.value[0];
 
-// Keep the asset-ID word if you need to persist or compare the asset
-let asset_id = asset.key;
+// Keep the asset id if you need to persist or compare the asset
+let asset_id: AssetId = asset.id;
+let asset_id_word: Word = asset.id.inner;
+let held: bool = self.has_asset(asset_id);
 
 // Vault operations (component methods only — see pitfall P11)
 self.add_asset(asset);

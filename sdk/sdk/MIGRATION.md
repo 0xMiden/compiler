@@ -30,6 +30,37 @@ let commitment = <Storage as NativeAccount>::compute_commitment(&self);
 Component storage structs implement both traits, so `self.compute_commitment()` keeps compiling
 when both traits are in scope; only explicit paths and UFCS calls need the edit.
 
+### Asset ids are typed
+
+The first word of an `Asset` is now an `AssetId` named `id` (the kernel calls it `ASSET_ID`)
+instead of a raw `Word` named `key`. `AssetId` is `#[repr(transparent)]` over the word, so the
+layout is unchanged. The raw word is `asset.id.inner` or `Word::from(asset.id)`.
+
+```rust
+// before
+let key: Word = asset.key;
+let held = active_account::has_asset(asset.key);
+let value = active_account::get_asset(key_word);
+let initial = native_account::get_initial_asset(key_word);
+// after
+let id: AssetId = asset.id; // or asset.id()
+let held = active_account::has_asset(asset.id);
+let value = active_account::get_asset(AssetId::from(key_word));
+let initial = native_account::get_initial_asset(AssetId::from(key_word));
+```
+
+- `Asset::new(word, value)` keeps compiling, because `AssetId: From<Word>`.
+- `active_account::get_asset`, `active_account::has_asset`, `native_account::get_initial_asset`
+  and the matching `ActiveAccount` trait methods take an `AssetId` instead of a `Word`. Pass
+  `asset.id()` or `AssetId::from(word)`.
+- The WIT core-types record `asset` changed its first field from `key: word` to `id: asset-id`
+  (a new `asset-id` record wrapping a word). Bindings for components that take or return an
+  `Asset` regenerate with the new field name, so code reading `.key` on a generated binding type
+  needs the same edit.
+- `Asset::is_fungible` and `Asset::amount` read the composition through the kernel
+  (`asset::id_into_composition`) instead of decoding the id limbs. They now cost a kernel call
+  and panic on a malformed asset id (unrecognized encoding version or composition).
+
 ## 0.14.0 -> 0.15.0
 
 ### Renames

@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, Nonce, RawAccountId, StorageSlotId};
+use super::types::{AccountId, AssetId, Nonce, RawAccountId, StorageSlotId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -19,10 +19,10 @@ unsafe extern "C" {
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_asset"]
     fn extern_active_account_get_asset(
-        asset_key_0: Felt,
-        asset_key_1: Felt,
-        asset_key_2: Felt,
-        asset_key_3: Felt,
+        asset_id_0: Felt,
+        asset_id_1: Felt,
+        asset_id_2: Felt,
+        asset_id_3: Felt,
         ptr: *mut Word,
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
@@ -89,17 +89,12 @@ pub fn compute_storage_commitment() -> Word {
     }
 }
 
-/// Returns the current value stored under the specified `asset_key` in the active account vault.
-pub fn get_asset(asset_key: Word) -> Word {
+/// Returns the current value stored under the specified `asset_id` in the active account vault.
+pub fn get_asset(asset_id: AssetId) -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_get_asset(
-            asset_key[0],
-            asset_key[1],
-            asset_key[2],
-            asset_key[3],
-            ret_area.as_mut_ptr(),
-        );
+        let id = asset_id.inner;
+        extern_active_account_get_asset(id[0], id[1], id[2], id[3], ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init()
     }
 }
@@ -107,11 +102,9 @@ pub fn get_asset(asset_key: Word) -> Word {
 /// Returns `true` if the active account vault currently contains an asset with the specified asset
 /// id.
 #[inline]
-pub fn has_asset(asset_id: Word) -> bool {
-    unsafe {
-        extern_active_account_has_asset(asset_id[0], asset_id[1], asset_id[2], asset_id[3])
-            != Felt::new(0).unwrap()
-    }
+pub fn has_asset(asset_id: AssetId) -> bool {
+    let id = asset_id.inner;
+    unsafe { extern_active_account_has_asset(id[0], id[1], id[2], id[3]) != Felt::new(0).unwrap() }
 }
 
 /// Returns the current vault root of the active account.
@@ -198,18 +191,18 @@ pub trait ActiveAccount {
         compute_storage_commitment()
     }
 
-    /// Returns the current value stored under the specified `asset_key` in the active account
+    /// Returns the current value stored under the specified `asset_id` in the active account
     /// vault.
     #[inline]
-    fn get_asset(&self, asset_key: Word) -> Word {
+    fn get_asset(&self, asset_id: AssetId) -> Word {
         self.__assert_active_account();
-        get_asset(asset_key)
+        get_asset(asset_id)
     }
 
     /// Returns `true` if the active account vault currently contains an asset with the specified
     /// asset id.
     #[inline]
-    fn has_asset(&self, asset_id: Word) -> bool {
+    fn has_asset(&self, asset_id: AssetId) -> bool {
         self.__assert_active_account();
         has_asset(asset_id)
     }

@@ -27,10 +27,10 @@ unsafe extern "C" {
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::add_asset"]
     pub fn extern_output_note_add_asset(
-        asset_key_f0: Felt,
-        asset_key_f1: Felt,
-        asset_key_f2: Felt,
-        asset_key_f3: Felt,
+        asset_id_f0: Felt,
+        asset_id_f1: Felt,
+        asset_id_f2: Felt,
+        asset_id_f3: Felt,
         asset_value_f0: Felt,
         asset_value_f1: Felt,
         asset_value_f2: Felt,
@@ -133,7 +133,7 @@ unsafe extern "C" {
 /// let note_idx = output_note::create(tag, note_type, recipient);
 /// output_note::add_asset(
 ///     Asset::new(
-///         [felt!(0), felt!(0), felt!(0), felt!(1)],
+///         Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]),
 ///         [felt!(1), felt!(0), felt!(0), felt!(0)],
 ///     ),
 ///     note_idx,
@@ -206,24 +206,25 @@ pub fn add_attachment_from_memory(note_idx: NoteIdx, attachment_scheme: Felt, at
 /// # Examples
 ///
 /// ```rust,ignore
-/// use miden::{felt, output_note, Asset, NoteIdx};
+/// use miden::{felt, output_note, Asset, NoteIdx, Word};
 ///
 /// // `note_idx` is returned by `output_note::create(...)`.
 /// let note_idx: NoteIdx = /* ... */
 ///
 /// let asset = Asset::new(
-///     [felt!(0), felt!(0), felt!(0), felt!(1)],
+///     Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]),
 ///     [felt!(1), felt!(0), felt!(0), felt!(0)],
 /// );
 /// output_note::add_asset(asset, note_idx);
 /// ```
 pub fn add_asset(asset: Asset, note_idx: NoteIdx) {
+    let id = asset.id.inner;
     unsafe {
         extern_output_note_add_asset(
-            asset.key[0],
-            asset.key[1],
-            asset.key[2],
-            asset.key[3],
+            id[0],
+            id[1],
+            id[2],
+            id[3],
             asset.value[0],
             asset.value[1],
             asset.value[2],

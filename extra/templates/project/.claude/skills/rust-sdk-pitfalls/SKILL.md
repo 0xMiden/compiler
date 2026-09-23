@@ -330,27 +330,29 @@ In the Rust SDK (`miden::Asset` / `miden_base_sys::bindings::Asset`), an `Asset`
 
 ```rust
 pub struct Asset {
-    pub key: Word,
+    pub id: AssetId,   // #[repr(transparent)] over the asset-id Word (`id.inner`)
     pub value: Word,
 }
 ```
 
-The field is literally named `key`, but the word it holds is the **asset-ID word** at the protocol
-layer (see P17). Construct with `Asset::new(key: impl Into<Word>, value: impl Into<Word>)`.
+`asset.id` is the **asset ID** at the protocol layer (see P17). Construct with
+`Asset::new(id: impl Into<AssetId>, value: impl Into<Word>)`; a raw `Word` converts into `AssetId`.
 
 ```rust
-// Preferred accessors — validated, and integer-ordered
-let amount: AssetAmount = asset.amount();   // panics if non-fungible or out of range
+// Preferred accessors — validated, and integer-ordered. Fungibility is read through a kernel
+// call, so both panic on a malformed asset id.
+let amount: AssetAmount = asset.amount();   // also panics if non-fungible or out of range
 let fungible: bool = asset.is_fungible();
 
 // Raw access when you need the words themselves
 let raw_amount: Felt = asset.value[0];      // fungible amount lives here
-let asset_id_word: Word = asset.key;        // persist or compare the asset class
+let asset_id: AssetId = asset.id;           // persist or compare the asset (not its class)
+let asset_id_word: Word = asset.id.inner;
 ```
 
-Use `asset.key` / `asset.value` (or the accessors above) rather than reconstructing an asset from raw `asset.inner[...]` offsets.
+Use `asset.id` / `asset.value` (or the accessors above) rather than reconstructing an asset from raw `asset.inner[...]` offsets.
 
-**SDK vs protocol `Asset`**: the two-word `{key, value}` form is the Rust SDK ABI type. At the
+**SDK vs protocol `Asset`**: the two-word `{id, value}` form is the Rust SDK ABI type. At the
 protocol layer, `Asset` is an enum `{ Fungible(FungibleAsset), NonFungible(NonFungibleAsset) }` and
 the vault words come from `Asset::to_id_word()` and `Asset::to_value_word()`. There is no
 `to_key_word()` — that name does not exist anywhere in the protocol source. Related protocol
@@ -586,8 +588,8 @@ have exactly one (`authentication components require exactly one #[auth_script] 
 | `active_note::get_assets()` | `active_note::get_initial_assets() -> Vec<Asset>` |
 | `input_note::get_assets(idx)` | `input_note::get_initial_assets(idx)` |
 | `input_note::get_assets_info(idx)` | `input_note::get_initial_assets_info(idx)` |
-| `active_account::get_balance` / `get_initial_balance` | `active_account::get_asset(asset_key: Word) -> Word` (or `native_account::get_initial_asset(asset_key: Word) -> Word`), then read the amount out of the value word |
-| `active_account::has_non_fungible_asset(asset)` | `active_account::has_asset(asset_id: Word) -> bool` |
+| `active_account::get_balance` / `get_initial_balance` | `active_account::get_asset(asset_id: AssetId) -> Word` (or `native_account::get_initial_asset(asset_id: AssetId) -> Word`), then read the amount out of the value word |
+| `active_account::has_non_fungible_asset(asset)` | `active_account::has_asset(asset_id: AssetId) -> bool` |
 | `faucet::create_fungible_asset` / `create_non_fungible_asset` / `has_callbacks`, and the whole `asset` module | build the `Asset` outside the transaction; only `faucet::mint(Asset)` and `faucet::burn(Asset)` remain |
 | `AttachmentLocation` | `Option<u32>` from `find_attachment` |
 | `output_note::set_attachment` | append with `output_note::add_word_attachment`, `output_note::add_attachment`, or `output_note::add_attachment_from_memory` |
@@ -595,13 +597,13 @@ have exactly one (`authentication components require exactly one #[auth_script] 
 The output-note attachment APIs append attachment entries; they do not replace an existing attachment in place.
 
 The current `active_account` surface is `get_id() -> AccountId`, `get_nonce() -> Nonce`,
-`get_code_commitment() -> Word`, `compute_storage_commitment() -> Word`, `get_asset(Word) -> Word`,
-`has_asset(Word) -> bool`, `get_vault_root() -> Word`, `get_num_procedures() -> u32`,
+`get_code_commitment() -> Word`, `compute_storage_commitment() -> Word`, `get_asset(AssetId) -> Word`,
+`has_asset(AssetId) -> bool`, `get_vault_root() -> Word`, `get_num_procedures() -> u32`,
 `get_procedure_root(u32) -> Word`, `has_procedure(Word) -> bool` — all also available on the
 `ActiveAccount` trait.
 
 Initial-state getters live on `native_account` as free functions: `get_initial_commitment()`,
-`get_initial_storage_commitment()`, `get_initial_vault_root()`, `get_initial_asset(Word) -> Word`,
+`get_initial_storage_commitment()`, `get_initial_vault_root()`, `get_initial_asset(AssetId) -> Word`,
 plus `compute_commitment()` (the native account's current state commitment; it panics against a
 foreign account), `compute_delta_commitment()`, `has_state_changed() -> bool` and
 `was_procedure_called(Word) -> bool`.
@@ -660,8 +662,8 @@ is `AssetId`, declared at
 `protocol:v0.16.0-rc.6:crates/miden-protocol/src/asset/vault/asset_id.rs:42` and re-exported by the
 client at `miden-client:v0.16.0-rc.2:crates/rust-client/src/lib.rs:195`.
 
-On the guest side nothing renamed: `miden::Asset` still has a field literally named `key`, and that
-word is the asset-ID word (P7).
+On the guest side the same name is used: `miden::Asset` has an `id: AssetId` field holding the
+asset-ID word (P7), and `AssetId` is the asset id, not the asset class.
 
 ## P18: `MAX_ASSETS_PER_NOTE` Is 16
 
