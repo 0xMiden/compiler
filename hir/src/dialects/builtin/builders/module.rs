@@ -176,7 +176,7 @@ impl ModuleBuilder {
     /// Resolve `name` to a function, following any function aliases.
     ///
     /// Returns `None` if the name or an alias target cannot be resolved, the alias chain is
-    /// cyclic, or the resolved symbol is not a function.
+    /// cyclic or too deep, or the resolved symbol is not a function.
     pub fn resolve_function(&self, name: &str) -> Option<FunctionRef> {
         let symbol = SymbolName::intern(name);
         let symbol_ref = self.module.borrow().get(symbol)?;

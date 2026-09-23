@@ -4,6 +4,9 @@ use crate::{
     dialects::builtin::{Function, FunctionAlias, FunctionRef, attributes::Signature},
 };
 
+/// Maximum number of alias hops followed when canonicalizing a symbol.
+const MAX_ALIAS_DEPTH: usize = 256;
+
 /// A failure to resolve a named symbol or its canonical callable.
 ///
 /// Errors own their identifying information, so diagnostics do not borrow the IR arena.
@@ -15,6 +18,8 @@ pub enum SymbolResolutionError {
     UnknownSymbol { path: SymbolPath },
     #[error("alias cycle at '{symbol}'")]
     Cycle { symbol: SymbolName },
+    #[error("alias chain from '{symbol}' exceeds the maximum depth of {limit}")]
+    AliasDepthExceeded { symbol: SymbolName, limit: usize },
     #[error("symbol '{symbol}' is not callable")]
     NotCallable { symbol: SymbolName },
     #[error("symbol '{symbol}' is not a builtin.function")]
@@ -113,21 +118,20 @@ impl ResolvedSymbolCallee {
 
 impl crate::AsCallableSymbolRef for ResolvedSymbolCallee {
     fn as_callable_symbol_ref(&self) -> SymbolRef {
-        // TODO check if this cast is safe
-        self.named as SymbolRef
+        self.named
     }
 }
 
 impl UnsafeIntrusiveEntityRef<dyn Symbol> {
     /// Follow aliases in each alias's own symbol table, preserving the stored symbol uses.
     ///
-    /// Non-alias symbols are returned unchanged. Cycles are detected by identity and acyclic
-    /// chains have no depth limit.
-    ///
-    // TODO consider add depth limit (top level CONST) with variant in `SymbolResolutionError`
+    /// Non-alias symbols are returned unchanged. Cycles and chains requiring more than
+    /// [MAX_ALIAS_DEPTH] alias hops are rejected.
     pub fn resolve_canonical(self) -> Result<SymbolRef, SymbolResolutionError> {
+        let entry = self.borrow().name();
         let mut current = self;
         let mut visited = FxHashSet::default();
+        let mut hops = 0;
         loop {
             let symbol = current.borrow();
             let op = symbol.as_symbol_operation();
@@ -139,6 +143,13 @@ impl UnsafeIntrusiveEntityRef<dyn Symbol> {
                     symbol: symbol.name(),
                 });
             }
+            if hops == MAX_ALIAS_DEPTH {
+                return Err(SymbolResolutionError::AliasDepthExceeded {
+                    symbol: entry,
+                    limit: MAX_ALIAS_DEPTH,
+                });
+            }
+            hops += 1;
             let table = op.nearest_symbol_table().ok_or(SymbolResolutionError::NoSymbolTable)?;
             let path = alias.target().path().clone();
             let next = table
@@ -237,22 +248,50 @@ builtin.module public @test {
         assert_eq!(alias.target().borrow().signature(), updated);
     }
 
+    fn alias_chain(length: usize) -> (Test, ModuleRef) {
+        let test = Test::default();
+        let mut source = "builtin.module public @test {\n".to_string();
+        for i in 0..length {
+            source.push_str(&format!("builtin.function_alias public @a{i} -> @a{};\n", i + 1));
+        }
+        source.push_str(&format!(
+            "builtin.function private extern(\"C\") @a{length}() {{ builtin.ret; }};\n}};"
+        ));
+        // Verification rejects chains deeper than `MAX_ALIAS_DEPTH` at their head alias, so
+        // parse unverified and let tests verify explicitly.
+        let module = parse::<Module>(
+            ParserConfig::new(test.context_rc()).verify_after_parse(false),
+            Uri::new("resolution.hir"),
+            &source,
+        )
+        .unwrap();
+        (test, module)
+    }
+
     #[test]
     fn canonical_alias_resolution_and_verification_agree_for_long_chains() {
         for length in [0, 1, 128] {
-            let mut source = "builtin.module public @test {\n".to_string();
-            for i in 0..length {
-                source.push_str(&format!("builtin.function_alias public @a{i} -> @a{};\n", i + 1));
-            }
-            source.push_str(&format!(
-                "builtin.function private extern(\"C\") @a{length}() {{ builtin.ret; }};\n}};"
-            ));
-            let (_test, module) = module(&source);
+            let (_test, module) = alias_chain(length);
             let mb = ModuleBuilder::new(module);
             let callee = mb.resolve_callable("a0").unwrap();
             assert!(callee.target().as_function() == mb.get_function(&format!("a{length}")));
             module.borrow().as_operation().recursively_verify().unwrap();
         }
+    }
+
+    #[test]
+    fn alias_chain_exceeding_max_depth_is_rejected() {
+        let (_test, module) = alias_chain(MAX_ALIAS_DEPTH + 1);
+        let mb = ModuleBuilder::new(module);
+        assert_eq!(
+            mb.resolve_callable("a0").unwrap_err(),
+            SymbolResolutionError::AliasDepthExceeded {
+                symbol: SymbolName::intern("a0"),
+                limit: MAX_ALIAS_DEPTH,
+            }
+        );
+        // one hop shorter stays within the limit
+        assert!(mb.resolve_callable("a1").is_ok());
     }
 
     #[test]

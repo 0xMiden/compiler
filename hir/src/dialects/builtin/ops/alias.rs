@@ -57,7 +57,8 @@ impl FunctionAlias {
     /// Canonical target of `symbol`, following `FunctionAlias` hops in their own tables.
     ///
     /// Returns `symbol` itself when it is not an alias. Returns `None` on unresolvable
-    /// hop or cycle. Use [SymbolRef::resolve_canonical] to retain the error cause.
+    /// hop, cycle, or excessive depth. Use [SymbolRef::resolve_canonical] to retain the
+    /// error cause.
     pub fn canonicalize(symbol: SymbolRef) -> Option<SymbolRef> {
         symbol.resolve_canonical().ok()
     }

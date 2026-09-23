@@ -56,10 +56,13 @@ pub trait SymbolTable {
     /// canonical symbol.
     ///
     /// Each alias hop is resolved in the symbol table of the alias being followed. Returns
-    /// `None` if the path or any hop does not resolve, or if the alias chain is cyclic.
+    /// `None` if
+    ///
+    /// * the path or any hop does not resolve
+    /// * the alias chain is cyclic
+    /// * the ilas chain exceeds the maximum alias depth
     ///
     /// [`FunctionAlias`]: crate::dialects::builtin::FunctionAlias
-    // TODO consider returning an error
     fn resolve_canonical(&self, path: &SymbolPath) -> Option<SymbolRef> {
         let found = self.resolve(path)?;
         found.resolve_canonical().ok()
