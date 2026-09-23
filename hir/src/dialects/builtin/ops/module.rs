@@ -111,7 +111,6 @@ impl Module {
 
     /// Returns the function definitions contained in this module.
     pub fn defined_functions(&self) -> impl Iterator<Item = super::FunctionRef> + '_ {
-        // TODO(opt): don't iterate twice but use more narrow `filter`
         self.functions().filter(|function| !function.borrow().is_declaration())
     }
 
@@ -131,7 +130,6 @@ impl Module {
         &self,
     ) -> impl Iterator<Item = Result<crate::ResolvedSymbolCallee, crate::SymbolResolutionError>> + '_
     {
-        // TODO(opt): don't iterate twice but use more narrow `filter`
         self.callable_symbols()
             .filter(|symbol| {
                 let symbol = symbol.borrow();

@@ -2,8 +2,9 @@ use alloc::format;
 
 use super::BuiltinOpBuilder;
 use crate::{
-    AsCallableSymbolRef, Builder, BuilderExt, Ident, Op, OpBuilder, Report, SourceSpan, Spanned,
-    SymbolName, SymbolTable, Type, UnsafeIntrusiveEntityRef, Visibility,
+    AsCallableSymbolRef, Builder, BuilderExt, Ident, Op, OpBuilder, Report, ResolvedSymbolCallee,
+    SourceSpan, Spanned, SymbolName, SymbolNameComponent, SymbolPath, SymbolResolutionError,
+    SymbolTable, Type, UnsafeIntrusiveEntityRef, Visibility,
     constants::ConstantData,
     dialects::builtin::{
         Function, FunctionAlias, FunctionAliasRef, FunctionRef, FunctionTableEntry,
@@ -184,14 +185,11 @@ impl ModuleBuilder {
     }
 
     /// Resolve a callable name, retaining both the named symbol and its canonical callable.
-    // TODO import needed things at top, don't do `crate::`
     pub fn resolve_callable(
         &self,
         name: &str,
-    ) -> Result<crate::ResolvedSymbolCallee, crate::SymbolResolutionError> {
-        let path = crate::SymbolPath::from_iter([crate::SymbolNameComponent::Leaf(
-            SymbolName::intern(name),
-        )]);
+    ) -> Result<ResolvedSymbolCallee, SymbolResolutionError> {
+        let path = SymbolPath::from_iter([SymbolNameComponent::Leaf(SymbolName::intern(name))]);
         self.module.borrow().resolve_callable(&path)
     }
 
