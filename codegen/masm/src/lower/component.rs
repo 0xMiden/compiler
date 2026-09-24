@@ -1092,9 +1092,7 @@ impl MasmComponentBuilder<'_> {
             Box::new(masm::Module::new(masm::ModuleKind::Library, interface_path));
         let builder = MasmModuleBuilder {
             module: &mut masm_module,
-            analysis_manager: self
-                .analysis_manager
-                .nest(interface.as_operation().as_operation_ref()),
+            analysis_manager: self.analysis_manager.clone(),
             link_info: self.link_info,
             source_manager: self.source_manager.clone(),
             init_body: &mut self.init_body,
@@ -1150,7 +1148,7 @@ impl MasmComponentBuilder<'_> {
             .expect("expected unique reference");
         let builder = MasmModuleBuilder {
             module: masm_module,
-            analysis_manager: self.analysis_manager.nest(module.as_operation_ref()),
+            analysis_manager: self.analysis_manager.clone(),
             link_info: self.link_info,
             source_manager: self.source_manager.clone(),
             init_body: &mut self.init_body,
@@ -1470,6 +1468,7 @@ struct FunctionTableFragment {
 
 struct MasmModuleBuilder<'a> {
     module: &'a mut masm::Module,
+    /// Shared world/component analysis root, covering cross-module alias targets.
     analysis_manager: AnalysisManager,
     link_info: &'a LinkInfo,
     source_manager: Arc<dyn midenc_session::SourceManager>,
