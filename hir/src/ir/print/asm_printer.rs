@@ -1,4 +1,4 @@
-use alloc::{borrow::Cow, rc::Rc};
+use alloc::{borrow::Cow, rc::Rc, string::String};
 use core::ops::AddAssign;
 
 use super::*;
@@ -571,6 +571,8 @@ impl<'a> AsmPrinter<'a> {
 
     /// Print a single-component symbol name, i.e. `@foo`, or `@"foo:bar"` if `name` is not a valid
     /// bare identifier.
+    ///
+    /// A quoted name escapes `"` and `\` with a `\`, which is exactly what the lexer unescapes.
     pub fn print_symbol_name(&mut self, name: interner::Symbol) {
         use crate::formatter::*;
 
@@ -578,7 +580,16 @@ impl<'a> AsmPrinter<'a> {
         if is_valid_bare_identifier(name) {
             self.document += text(format!("@{name}"));
         } else {
-            self.document += text(format!("@\"{}\"", name.escape_default()));
+            let mut quoted = String::with_capacity(name.len() + 3);
+            quoted.push_str("@\"");
+            for c in name.chars() {
+                if matches!(c, '"' | '\\') {
+                    quoted.push('\\');
+                }
+                quoted.push(c);
+            }
+            quoted.push('"');
+            self.document += text(quoted);
         }
     }
 
@@ -676,7 +687,10 @@ impl AddAssign<Document> for AsmPrinter<'_> {
     }
 }
 
+/// Returns true if `id` reads back as one bare identifier, mirroring the lexer's
+/// `lex_identifier`: an ASCII letter or `_`, followed by ASCII letters, digits, `_`, `$` and `.`.
 fn is_valid_bare_identifier(id: &str) -> bool {
-    id.chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '$'))
+    let mut chars = id.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '$'))
 }

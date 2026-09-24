@@ -191,21 +191,14 @@ pub(crate) fn translate_wasm_input(
 pub(crate) fn target_namespace(
     target: &midenc_session::miden_project::Target,
 ) -> Option<midenc_hir::SymbolPath> {
-    use miden_assembly_syntax::PathComponent;
-    use midenc_hir::{SymbolName, SymbolNameComponent};
+    use midenc_hir::{SymbolNameComponent, SymbolPath};
     use midenc_session::miden_project::TargetType;
 
     if matches!(target.ty, TargetType::Executable) {
         return None;
     }
-    let namespace = target.namespace.inner();
-    // A prepared namespace is a valid path, so its components never fail to parse; a quoted
-    // component stays one segment.
-    let segments = namespace
-        .components()
-        .filter_map(|component| component.ok())
-        .filter(|component| !matches!(component, PathComponent::Root))
-        .map(|component| SymbolNameComponent::Component(SymbolName::intern(component.as_str())));
+    let namespace = SymbolPath::from_library_path(target.namespace.inner());
+    let segments = namespace.components().filter(|component| !component.is_root());
     Some(core::iter::once(SymbolNameComponent::Root).chain(segments).collect())
 }
 
