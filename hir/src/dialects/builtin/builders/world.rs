@@ -1,8 +1,8 @@
 use alloc::{format, rc::Rc};
 
 use crate::{
-    Builder, Context, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolNameComponent,
-    SymbolPath, SymbolTable,
+    Builder, Context, Ident, Op, OpBuilder, Report, SmallVec, Spanned, SymbolName,
+    SymbolNameComponent, SymbolPath, SymbolTable,
     dialects::builtin::{
         Component, ComponentRef, Module, ModuleBuilder, ModuleRef, PrimComponentBuilder,
         PrimModuleBuilder, World, WorldRef,
@@ -43,7 +43,34 @@ impl WorldBuilder {
     /// The name is the component's namespace path, with its segments joined by `::`, e.g.
     /// `miden::counter_contract::counter_contract`. Callers holding a [SymbolPath] use
     /// [SymbolPath::to_symbol_name].
+    ///
+    /// Returns an error when the world declares a module tree reaching the path the name spells,
+    /// which the component would shadow: resolution prefers the longest registered name.
     pub fn define_component(&mut self, name: Ident) -> Result<ComponentRef, Report> {
+        let segments = SymbolPath::segments_of(name.name);
+        let mut symbol_table = self.world.as_operation_ref();
+        let mut shadowed = true;
+        for segment in segments.iter() {
+            let module = symbol_table.borrow().as_symbol_table().unwrap().get(*segment).and_then(
+                |symbol_ref| {
+                    symbol_ref
+                        .borrow()
+                        .as_symbol_operation()
+                        .downcast_ref::<Module>()
+                        .map(|m| m.as_module_ref())
+                },
+            );
+            match module {
+                Some(module) => symbol_table = module.as_operation_ref(),
+                None => {
+                    shadowed = false;
+                    break;
+                }
+            }
+        }
+        if shadowed {
+            return Err(shadowing_error(name.name, name.name, name.name));
+        }
         let builder = PrimComponentBuilder::new(&mut self.builder, name.span());
         let component_ref = builder(name)?;
         Ok(component_ref)
@@ -83,8 +110,21 @@ impl WorldBuilder {
     ///
     /// NOTE: The entire [SymbolPath], ignoring root and leaf components, must resolve to a Module,
     /// or to nothing. A path component which resolves to some other operation will be treated as
-    /// a conflict, and an error will be returned.
+    /// a conflict, and an error will be returned. So is a world-level component named by a prefix
+    /// of the path, which would shadow the module tree.
     pub fn declare_module_tree(&mut self, path: &SymbolPath) -> Result<ModuleRef, Report> {
+        let modules = path
+            .components()
+            .filter(|component| matches!(component, SymbolNameComponent::Component(_)))
+            .collect::<SmallVec<[_; 4]>>();
+        for len in 1..=modules.len() {
+            let prefix = SymbolPath::join_components(&modules[..len]);
+            if self.find_component(prefix).is_some() {
+                let module_path = SymbolPath::join_components(&modules);
+                return Err(shadowing_error(prefix, module_path, prefix));
+            }
+        }
+
         let mut parts = path.components().peekable();
         parts.next_if_eq(&SymbolNameComponent::Root);
 
@@ -132,6 +172,15 @@ impl WorldBuilder {
 
         Ok(leaf_module.expect("invalid empty module path"))
     }
+}
+
+/// The error for a component named `component` that shadows the module path `module_path`, the
+/// two sharing the prefix `prefix`.
+fn shadowing_error(component: SymbolName, module_path: SymbolName, prefix: SymbolName) -> Report {
+    Report::msg(format!(
+        "component `{component}` and module path `{module_path}` share the prefix `{prefix}`; a \
+         component name must not shadow a module tree"
+    ))
 }
 
 #[cfg(test)]
@@ -216,5 +265,79 @@ mod tests {
         assert_eq!(f_path.to_library_path().to_string(), "::miden::a::b::m::f");
         assert_eq!(component.borrow().namespace_path().to_string(), "::miden::a::b");
         assert!(world_builder.find_component("miden::a::b".into()) == Some(component));
+    }
+
+    /// A world with the kernel-like module tree `miden::protocol::note` declared.
+    fn world_with_module_tree() -> (WorldRef, WorldBuilder) {
+        let context = Rc::new(Context::default());
+        let mut builder = OpBuilder::new(context);
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        world_builder
+            .declare_module_tree(&SymbolPath::from_masm_module_id("miden::protocol::note"))
+            .expect("failed to declare module tree");
+        (world, world_builder)
+    }
+
+    #[test]
+    fn a_component_named_like_a_declared_module_path_is_rejected() {
+        use alloc::string::ToString;
+
+        let (_world, mut world_builder) = world_with_module_tree();
+        for name in ["miden::protocol::note", "miden::protocol", "miden"] {
+            let Err(err) = world_builder.define_component(Ident::from(name)) else {
+                panic!("the component `{name}` would shadow the module tree");
+            };
+            assert_eq!(
+                err.to_string(),
+                alloc::format!(
+                    "component `{name}` and module path `{name}` share the prefix `{name}`; a \
+                     component name must not shadow a module tree"
+                )
+            );
+        }
+        world_builder
+            .define_component(Ident::from("miden::protocol::other"))
+            .expect("a component beside the module tree is accepted");
+    }
+
+    #[test]
+    fn a_module_tree_below_a_component_name_is_rejected() {
+        use alloc::string::ToString;
+
+        let context = Rc::new(Context::default());
+        let mut builder = OpBuilder::new(context);
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        world_builder
+            .define_component(Ident::from("miden::protocol::note"))
+            .expect("failed to define component");
+        world_builder
+            .define_component(Ident::from("std"))
+            .expect("failed to define component");
+
+        for (path, prefix) in [
+            ("miden::protocol::note::sub", "miden::protocol::note"),
+            ("miden::protocol::note", "miden::protocol::note"),
+            ("std::mem", "std"),
+        ] {
+            let Err(err) =
+                world_builder.declare_module_tree(&SymbolPath::from_masm_module_id(path))
+            else {
+                panic!("the component `{prefix}` would shadow the module tree `{path}`");
+            };
+            assert_eq!(
+                err.to_string(),
+                alloc::format!(
+                    "component `{prefix}` and module path `{path}` share the prefix `{prefix}`; a \
+                     component name must not shadow a module tree"
+                )
+            );
+        }
+        world_builder
+            .declare_module_tree(&SymbolPath::from_masm_module_id("miden::protocol::tx"))
+            .expect("a module tree beside the component is accepted");
     }
 }

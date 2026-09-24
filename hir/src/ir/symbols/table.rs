@@ -131,6 +131,8 @@ pub struct SymbolMap {
     /// single-segment names at one lookup per path component in [SymbolMap::lookup_prefix].
     max_name_segments: usize,
 }
+/// An empty map, whose `max_name_segments` starts at 1: every name has at least one segment, so
+/// [SymbolMap::lookup_prefix] tries no multi-segment names until one is registered.
 impl Default for SymbolMap {
     fn default() -> Self {
         Self {
@@ -314,6 +316,8 @@ impl SymbolMap {
                     .iter()
                     .take_while(|c| matches!(c, SymbolNameComponent::Component(_)))
                     .count();
+                // Multi-segment names first, longest first; a one-segment name is the plain
+                // lookup of `first` below, which also covers a run of one `Component`.
                 for len in (2..=run.min(self.max_name_segments)).rev() {
                     let name = SymbolPath::join_components(&components[..len]);
                     if let Some(op) = self.get_op(name) {
