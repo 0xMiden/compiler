@@ -142,6 +142,22 @@ impl<'a> ModuleTranslationState<'a> {
         })
     }
 
+    /// Returns the names of the functions defined in the module for the imports of `module`,
+    /// which differ from the core import names when an import stub is named by its Miden path.
+    pub(crate) fn import_stub_names<'m>(
+        &'m self,
+        module: &'m Module,
+    ) -> impl Iterator<Item = (FuncIndex, SymbolName)> + 'm {
+        self.functions.iter().filter_map(|(index, func)| match func {
+            CallableFunction::Function { function_ref, .. }
+                if module.is_imported_function(*index) =>
+            {
+                Some((*index, function_ref.borrow().name().as_symbol()))
+            }
+            _ => None,
+        })
+    }
+
     /// Get the `CallableFunction` that should be used to make a direct call to function `index`.
     pub(crate) fn get_direct_func(&mut self, index: FuncIndex) -> WasmResult<CallableFunction> {
         let defined_func = self.functions[&index].clone();
@@ -481,6 +497,11 @@ fn process_import(
     )
 }
 
+/// Returns [`CallableFunction`] for the core import at `path` (with signature `sig`), filled by
+/// the instantiation argument `module_arg` matched by the core import path `wasm_import_path`.
+///
+/// A component import is lowered by an import stub defined in `module_builder`, named so that
+/// it avoids `defined_names` and the symbols the module already holds.
 #[allow(clippy::too_many_arguments)]
 fn process_module_arg(
     module_builder: &mut ModuleBuilder,
@@ -503,16 +524,18 @@ fn process_module_arg(
         ModuleArgument::ComponentImport {
             signature,
             path: import_path,
+            first_cm_path,
         } => {
             let stub_name = import_stub_name(import_path, path.name(), |name| {
                 !defined_names.contains(&name) && module_builder.module.borrow().get(name).is_none()
-            });
+            })?;
             generate_import_lowering_function(
                 world_builder,
                 module_builder,
                 ComponentImportPath {
                     cm_path: wasm_import_path,
                     path: import_path.clone(),
+                    first_cm_path: first_cm_path.clone(),
                 },
                 signature,
                 path,
