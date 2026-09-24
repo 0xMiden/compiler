@@ -372,6 +372,11 @@ impl WasmFrontend {
         }
     }
 
+    /// The WebAssembly binary `input` holds, decoded from text when it is `.wat`.
+    pub(crate) fn read_binary(input: &midenc_session::InputFile) -> CompilerResult<Vec<u8>> {
+        Self::read_input(input).map(|source| source.wasm)
+    }
+
     /// The WebAssembly binary at `path`, decoded from text when `file_type` says it is `.wat`.
     fn read_file(path: &Path, file_type: FileType) -> CompilerResult<Vec<u8>> {
         match file_type {

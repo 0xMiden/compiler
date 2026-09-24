@@ -94,6 +94,8 @@ impl OpPrinter for Component {
         printer.print_space();
         printer.print_keyword(self.get_visibility().as_str());
         printer.print_space();
+        // Printed one `@`-prefixed segment per `::`-separated segment of the name
+        // (`@miden::@a::@b`), the symbol-path form the parser reads back and re-joins.
         let path = SymbolPath::from_iter(
             SymbolPath::segments_of(Symbol::name(self))
                 .into_iter()

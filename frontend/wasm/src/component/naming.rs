@@ -116,6 +116,11 @@ pub fn declared_namespace(wasm: &[u8]) -> WasmResult<Option<SymbolPath>> {
     for payload in Parser::new(0).parse_all(wasm) {
         match payload.into_diagnostic()? {
             Payload::Version { encoding, .. } => {
+                // Counts the nested components in the order their headers appear, which is the
+                // order the component parser assigns `StaticComponentIndex`es in, so
+                // `nested_components - 1` is the index of the most recently entered nested
+                // component: the one whose exports are being read, as long as nested components
+                // do not nest further.
                 if encoding == Encoding::Component && !stack.is_empty() {
                     nested_components += 1;
                 }
@@ -131,6 +136,7 @@ pub fn declared_namespace(wasm: &[u8]) -> WasmResult<Option<SymbolPath>> {
                         (1, ComponentExternalKind::Instance) => {
                             root_instance_exports.push(export.name.name)
                         }
+                        // `depth > 1`: a function export of a nested component.
                         (depth, ComponentExternalKind::Func) if depth > 1 => functions.push((
                             nested_components - 1,
                             export.name.name,
@@ -473,6 +479,147 @@ mod tests {
         assert!(
             hir.contains("@api_read()") && hir.contains("@read"),
             "the import stub takes the parent-qualified name next to the global `read`:\n{hir}"
+        );
+    }
+
+    #[test]
+    fn an_export_named_like_the_core_module_is_rejected() {
+        let wasm = counter_component(r#"(external-id "miden::counter::counter::m")"#);
+        let err = error_of(&wasm, None);
+        assert!(
+            err.contains(
+                "export `m` of `::miden::counter::counter` clashes with the core module `m` of \
+                 the same name"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// A component importing `read` from `acme:first/api` (returning `u32`) and from
+    /// `acme:second/api` (returning `second_result`, lowered to the core type `second_core`),
+    /// both carrying the external-id `acme::shared::api::read`.
+    fn two_imports_of_one_path_component(second_result: &str, second_core: &str) -> Vec<u8> {
+        wat::parse_str(format!(
+            r#"
+            (component
+                (import "acme:first/api" (instance $first
+                    (export "read" (external-id "acme::shared::api::read") (func (result u32)))
+                ))
+                (import "acme:second/api" (instance $second
+                    (export "read" (external-id "acme::shared::api::read")
+                        (func (result {second_result})))
+                ))
+                (alias export $first "read" (func $first-read))
+                (alias export $second "read" (func $second-read))
+                (core func $lowered-first (canon lower (func $first-read)))
+                (core func $lowered-second (canon lower (func $second-read)))
+                (core instance $first-args (export "read" (func $lowered-first)))
+                (core instance $second-args (export "read" (func $lowered-second)))
+                (core module $main
+                    (import "acme:first/api" "read" (func $first (result i32)))
+                    (import "acme:second/api" "read" (func $second (result {second_core})))
+                    (func (export "sum") (result i32) call $first call $second drop)
+                )
+                (core instance $main-instance (instantiate $main
+                    (with "acme:first/api" (instance $first-args))
+                    (with "acme:second/api" (instance $second-args))
+                ))
+                (func $sum (result u32) (canon lift (core func $main-instance "sum")))
+                (component $exports
+                    (import "import-func-sum" (func $f (result u32)))
+                    (export "sum" (external-id "acme::app::app::sum") (func $f))
+                )
+                (instance $app (instantiate $exports (with "import-func-sum" (func $sum))))
+                (export "acme:app/app" (instance $app))
+            )
+            "#
+        ))
+        .expect("component WAT should compile")
+    }
+
+    #[test]
+    fn imports_of_one_path_share_a_declaration() {
+        let context = Rc::default();
+        let output =
+            translate_with(&context, &two_imports_of_one_path_component("u32", "i32"), None)
+                .expect("component should translate");
+        let hir = core_modules_of(&output);
+        assert_eq!(
+            hir.matches("hir.call ::@acme::@shared::@api::@read()").count(),
+            2,
+            "both import stubs call the one declaration:\n{hir}"
+        );
+    }
+
+    #[test]
+    fn imports_of_one_path_with_different_signatures_are_rejected() {
+        let err = error_of(&two_imports_of_one_path_component("u64", "i64"), None);
+        assert!(
+            err.contains(
+                "imports `::acme:first/api::read` and `::acme:second/api::read` both lower to \
+                 `::acme::shared::api::read` with different signatures"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// A component whose core module imports `read` with the external-id `read_id` and exports
+    /// `export_field`, lifted as `acme::app::app::<export_leaf>`.
+    fn import_and_export_component(
+        read_id: &str,
+        export_field: &str,
+        export_leaf: &str,
+    ) -> Vec<u8> {
+        wat::parse_str(format!(
+            r#"
+            (component
+                (import "acme:first/api" (instance $first
+                    (export "read" (external-id "{read_id}") (func (result u32)))
+                ))
+                (alias export $first "read" (func $first-read))
+                (core func $lowered (canon lower (func $first-read)))
+                (core instance $args (export "read" (func $lowered)))
+                (core module $main
+                    (import "acme:first/api" "read" (func $import (result i32)))
+                    (func (export "sum") (result i32) call $import)
+                    (export "read-export" (func $import))
+                )
+                (core instance $main-instance
+                    (instantiate $main (with "acme:first/api" (instance $args))))
+                (func $lifted (result u32) (canon lift (core func $main-instance "{export_field}")))
+                (component $exports
+                    (import "import-func" (func $f (result u32)))
+                    (export "lifted" (external-id "acme::app::app::{export_leaf}") (func $f))
+                )
+                (instance $app (instantiate $exports (with "import-func" (func $lifted))))
+                (export "acme:app/app" (instance $app))
+            )
+            "#
+        ))
+        .expect("component WAT should compile")
+    }
+
+    #[test]
+    fn an_import_inside_the_components_own_namespace_is_rejected() {
+        let wasm = import_and_export_component("acme::app::app::read", "sum", "sum");
+        let err = error_of(&wasm, None);
+        assert!(
+            err.contains(
+                "import `::acme::app::app::read` lies inside this component's own namespace \
+                 `::acme::app::app`"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    #[test]
+    fn a_core_export_of_an_imported_function_can_be_lifted() {
+        let wasm = import_and_export_component("acme::first::api::read", "read-export", "read");
+        let context = Rc::default();
+        let output = translate_with(&context, &wasm, None).expect("component should translate");
+        assert!(
+            output.component.borrow().get(SymbolName::intern("read")).is_some(),
+            "the re-exported import is lifted"
         );
     }
 }

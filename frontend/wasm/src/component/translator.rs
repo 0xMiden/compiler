@@ -5,10 +5,10 @@ use midenc_dialect_hir::WASM_COMPONENT_START_ATTR;
 use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
 use midenc_hir::{
     self as hir2, BuilderExt, CallConv, Context, FxHashMap, FxHashSet, Ident, OpExt, Symbol as _,
-    SymbolName, SymbolNameComponent, SymbolPath,
+    SymbolName, SymbolNameComponent, SymbolPath, SymbolTable,
     diagnostics::Report,
     dialects::builtin::{
-        ComponentBuilder, ModuleBuilder, World, WorldBuilder, attributes::UnitAttr,
+        ComponentBuilder, Module, ModuleBuilder, World, WorldBuilder, attributes::UnitAttr,
     },
     formatter::DisplayValues,
     interner::Symbol,
@@ -83,8 +83,14 @@ pub struct ComponentTranslator<'a> {
     /// Miden paths of the component exports for which a lifting shim was emitted.
     lifted_export_paths: FxHashSet<String>,
 
-    /// The current HIR names of the core functions renamed after the exports they back.
+    /// The current HIR names of the core functions whose name differs from the parsed one: the
+    /// import stubs named by their Miden paths, and the functions renamed after the exports they
+    /// back.
     core_func_names: FxHashMap<(StaticModuleIndex, FuncIndex), SymbolName>,
+
+    /// For each Miden path of a lowered import, the core-import path of the first import that
+    /// lowers to it.
+    import_cm_paths: FxHashMap<SymbolPath, SymbolPath>,
 
     /// Information about shim modules to bypass
     shim_bypass_info: ShimBypassInfo,
@@ -131,6 +137,9 @@ impl<'a> ComponentTranslator<'a> {
         );
     }
 
+    /// Creates a translator that defines the component `name` (its `::`-joined namespace path)
+    /// in the configured world, or in a new one, naming the lifted exports of the nested
+    /// components by `export_paths`.
     pub fn new(
         name: SymbolName,
         export_paths: ExportPaths<'a>,
@@ -167,6 +176,7 @@ impl<'a> ComponentTranslator<'a> {
             export_paths,
             lifted_export_paths: FxHashSet::default(),
             core_func_names: FxHashMap::default(),
+            import_cm_paths: FxHashMap::default(),
             has_component_start: false,
         })
     }
@@ -524,6 +534,7 @@ impl<'a> ComponentTranslator<'a> {
             convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let (core_func, core_export_func_path) =
             self.core_module_export_func_path(frame, canon_lift);
+        self.ensure_export_leaf_is_free(path)?;
         let path_name = path.to_string();
         let protocol_export_kind: Option<ProtocolExportKind> = self
             .component_frontend_metadata
@@ -542,6 +553,25 @@ impl<'a> ComponentTranslator<'a> {
         self.core_func_names.insert(core_func, core_func_name);
         self.lifted_export_paths.insert(path_name);
         Ok(())
+    }
+
+    /// Reports an error when the component already holds a symbol named by the leaf of the
+    /// export path `path`: the core module, or the lifted function of another export.
+    fn ensure_export_leaf_is_free(&self, path: &SymbolPath) -> WasmResult<()> {
+        let leaf = path.name();
+        let component = self.result.component.borrow();
+        let Some(symbol) = component.get(leaf) else {
+            return Ok(());
+        };
+        let message = if symbol.borrow().as_symbol_operation().is::<Module>() {
+            format!(
+                "export `{leaf}` of `{}` clashes with the core module `{leaf}` of the same name",
+                component.namespace_path()
+            )
+        } else {
+            format!("two exports lower to `{path}`")
+        };
+        Err(Report::msg(message))
     }
 
     /// Returns the core function `canon_lift` lifts, identified by its static module and index,
@@ -655,9 +685,9 @@ impl<'a> ComponentTranslator<'a> {
 
         let mut import_canon_lower_args: FxHashMap<SymbolPath, ModuleArgument> =
             FxHashMap::default();
-        match &frame.modules[*module_idx] {
+        match frame.modules[*module_idx] {
             ModuleDef::Static(static_module_idx) => {
-                let parsed_module = self.nested_modules.get_mut(*static_module_idx).unwrap();
+                let parsed_module = self.nested_modules.get_mut(static_module_idx).unwrap();
                 for module_arg in args {
                     let arg_module_name = module_arg.0;
                     let module_path = SymbolPath {
@@ -703,9 +733,19 @@ impl<'a> ComponentTranslator<'a> {
                                      at path '{cm_path}' (Miden path '{path}')"
                                     , signature.ir
                                 );
+                                ensure_import_outside_own_namespace(&self.result, &path)?;
+                                let first_cm_path = self
+                                    .import_cm_paths
+                                    .entry(path.clone())
+                                    .or_insert_with(|| cm_path.clone())
+                                    .clone();
                                 import_canon_lower_args.insert(
                                     cm_path,
-                                    ModuleArgument::ComponentImport { signature, path },
+                                    ModuleArgument::ComponentImport {
+                                        signature,
+                                        path,
+                                        first_cm_path,
+                                    },
                                 );
                             }
                         }
@@ -737,6 +777,16 @@ impl<'a> ComponentTranslator<'a> {
                     self.config,
                     self.context.clone(),
                 )?;
+                // Import stubs are named by their Miden paths, so a lift of a core export that
+                // re-exports an import must find the stub under that name.
+                let stub_names: Vec<_> =
+                    module_state.import_stub_names(&parsed_module.module).collect();
+                drop(module_state);
+                self.core_func_names.extend(
+                    stub_names
+                        .into_iter()
+                        .map(|(func_idx, name)| ((static_module_idx, func_idx), name)),
+                );
             }
             ModuleDef::Import(_) => {
                 panic!("Module import instantiation is not supported yet")
@@ -1004,6 +1054,8 @@ impl<'a> ComponentTranslator<'a> {
         Ok(())
     }
 
+    /// Records the component instance import `name` of type `ty`, registering the names of the
+    /// types it exports.
     fn component_import(
         &mut self,
         frame: &mut ComponentFrame<'a>,
@@ -1026,6 +1078,21 @@ impl<'a> ComponentTranslator<'a> {
 
         Ok(())
     }
+}
+
+/// Reports an error when the Miden path `import_path` of an import lies inside the namespace of
+/// `component`, the component being translated, where it would be declared among its own symbols.
+fn ensure_import_outside_own_namespace(
+    component: &ComponentBuilder,
+    import_path: &SymbolPath,
+) -> WasmResult<()> {
+    let namespace = component.component.borrow().namespace_path();
+    if *import_path.without_leaf() == namespace {
+        return Err(Report::msg(format!(
+            "import `{import_path}` lies inside this component's own namespace `{namespace}`"
+        )));
+    }
+    Ok(())
 }
 
 fn convert_lifted_func_ty(

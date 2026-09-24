@@ -373,18 +373,12 @@ fn declared_namespace(input: &InputFile) -> Option<String> {
     match input.file_type() {
         FileType::Masm => masm_namespace_declaration(&root_source_text(input)?),
         FileType::Hir => hir_declared_namespace(&root_source_text(input)?),
-        FileType::Wasm => wasm_declared_namespace(&root_source_bytes(input)?),
-        // Every other format — WebAssembly text, Rust — has nothing to declare, and keeps the
+        FileType::Wasm | FileType::Wat => {
+            wasm_declared_namespace(&super::frontends::WasmFrontend::read_binary(input).ok()?)
+        }
+        // Every other format — Rust, packages, manifests — has nothing to declare, and keeps the
         // artifact name.
         _ => None,
-    }
-}
-
-/// The bytes of `input`'s root source, however the input carries it.
-fn root_source_bytes(input: &InputFile) -> Option<Vec<u8>> {
-    match &input.file {
-        InputType::Real(path) => std::fs::read(path).ok(),
-        InputType::Stdin { input, .. } => Some(input.to_vec()),
     }
 }
 
@@ -930,6 +924,9 @@ mod tests {
         // short of running both can show that they do.
         frontends::{
             HIR_FRONTEND,
+            // The shipped WebAssembly frontend, run for the same reason on the `.wasm` and
+            // `.wat` half.
+            WASM_FRONTEND,
             // And its own fixtures, so that the scan cannot be tested against HIR text the
             // frontend has never been asked to compile.
             hir::tests::{COMPONENT, MODULE, WORLD},
@@ -2347,6 +2344,15 @@ namespace = "miden::prepare_fixture::prepare_fixture"
     /// therefore where its **root module's path** — the value `load_target_sources` compares
     /// against the target's namespace — is decided.
     fn lower_prepared_hir(prepared: &PreparedProject) -> CompilerResult<ProjectSourceInputs> {
+        lower_prepared(prepared, &HIR_FRONTEND)
+    }
+
+    /// Lower the target `prepared` synthesized, with the shipped `frontend`, up to
+    /// `masm.lowered`; see [`lower_prepared_hir`].
+    fn lower_prepared(
+        prepared: &PreparedProject,
+        frontend: &FrontendRegistration,
+    ) -> CompilerResult<ProjectSourceInputs> {
         let project = VirtualProject::for_prepared_target(prepared)?;
         let assembly = project.assembly_context()?;
         let state = RequestState::new(Goal::at(CheckpointId::MASM_LOWERED), Vec::new());
@@ -2359,7 +2365,7 @@ namespace = "miden::prepare_fixture::prepare_fixture"
 
         // The returned `ControlFlow` is dropped rather than asserted on: it is not `Debug`, and
         // what this needs is the artifact captured at the goal.
-        let _ = HIR_FRONTEND.instantiate(cx.session()).compile(&cx)?;
+        let _ = frontend.instantiate(cx.session()).compile(&cx)?;
         Ok(state
             .take_outcome()
             .expect("stopping at masm.lowered must capture the lowered sources")
@@ -2641,6 +2647,53 @@ namespace = "miden::prepare_fixture::prepare_fixture"
                 "the namespace preparation synthesized is where codegen roots this target's Miden \
                  Assembly, or the assembler rejects the build"
             );
+        }
+    }
+
+    /// A WebAssembly component whose one function export carries the Miden path
+    /// `miden::counter::counter::get_count`.
+    const COUNTER_COMPONENT_WAT: &str = r#"
+(component
+  (core module $m
+    (func (export "get-count") (result i32) i32.const 0))
+  (core instance $i (instantiate $m))
+  (func $lifted (result u32) (canon lift (core func $i "get-count")))
+  (component $exports
+    (import "import-func-get-count" (func $f (result u32)))
+    (export "get-count" (external-id "miden::counter::counter::get_count") (func $f)))
+  (instance $counter
+    (instantiate $exports (with "import-func-get-count" (func $lifted))))
+  (export "miden:counter/counter@0.1.0" (instance $counter))
+)
+"#;
+
+    #[test]
+    fn a_standalone_webassembly_component_is_rooted_at_the_namespace_of_its_exports() {
+        // The binary and the text spelling of one component take the same route: both are
+        // decoded the way the frontend decodes them, and scanned for their exports' namespace.
+        let wasm = wat::parse_str(COUNTER_COMPONENT_WAT).expect("the fixture is valid text");
+        for (dir, file, bytes) in [
+            ("prepare_standalone_component_wasm", "lib.wasm", wasm.as_slice()),
+            ("prepare_standalone_component_wat", "lib.wat", COUNTER_COMPONENT_WAT.as_bytes()),
+        ] {
+            let root = fixture_source(dir, file, "");
+            std::fs::write(&root, bytes).expect("should write the fixture");
+            let input = input(&root);
+            let source_manager: Arc<dyn SourceManager + Send + Sync> =
+                Arc::new(DefaultSourceManager::default());
+            let session = Session::new(input.clone(), Box::default(), None, source_manager)
+                .expect("a source file input should open a compiler session");
+            let prepared = prepare_standalone(&input, &session, &registry())
+                .expect("a WebAssembly file is a standalone input this registry handles");
+            assert_eq!(
+                prepared.target.namespace.inner().as_str(),
+                "::miden::counter::counter",
+                "`{file}` is rooted at the namespace its exports declare"
+            );
+
+            let inputs = lower_prepared(&prepared, &WASM_FRONTEND)
+                .unwrap_or_else(|err| panic!("`{file}` should lower: {err}"));
+            assert_eq!(inputs.root.path(), prepared.target.namespace.inner().as_ref());
         }
     }
 

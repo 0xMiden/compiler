@@ -8,10 +8,10 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{ExecFpi, HirOpBuilder};
 use midenc_hir::{
     Builder, FunctionType, Ident, Op, SmallVec, SourceSpan, SymbolName, SymbolNameComponent,
-    SymbolPath, Type, ValueRef, Visibility,
+    SymbolPath, SymbolTable, Type, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
-        BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, WorldBuilder,
+        BuiltinOpBuilder, ComponentBuilder, Function, FunctionRef, ModuleBuilder, WorldBuilder,
         attributes::{AbiParam, Signature},
     },
 };
@@ -49,18 +49,21 @@ pub struct ComponentImportPath {
     /// The Miden path from the import's `external-id`; names the imported function, which is
     /// declared in the stub component at the path's parent.
     pub path: SymbolPath,
+    /// The core-import path of the first import of the component that lowers to `path`; names
+    /// the other side of a clash in diagnostics.
+    pub first_cm_path: SymbolPath,
 }
 
 /// Chooses the name of the core function that lowers the import at the Miden path `import_path`.
 ///
 /// Returns the first name `is_free` accepts among the path's leaf (`receive_asset`), the leaf
 /// prefixed by the last segment of the path's parent (`basic_wallet_receive_asset`), and
-/// `core_name`, the core import's own name.
+/// `core_name`, the core import's own name, or an error when all of them are taken.
 pub fn import_stub_name(
     import_path: &SymbolPath,
     core_name: SymbolName,
     is_free: impl Fn(SymbolName) -> bool,
-) -> SymbolName {
+) -> WasmResult<SymbolName> {
     let leaf = import_path.name();
     let qualified =
         import_path.without_leaf().components().last().and_then(|parent| match parent {
@@ -69,18 +72,16 @@ pub fn import_stub_name(
             }
             _ => None,
         });
-    [Some(leaf), qualified]
-        .into_iter()
-        .flatten()
-        .find(|name| is_free(*name))
-        .unwrap_or_else(|| {
-            log::warn!(
-                target: "component-translator",
-                "the lowering of import `{import_path}` keeps its core name `{core_name}`: the \
-                 core module already defines `{leaf}` and its parent-qualified form"
-            );
-            core_name
-        })
+    let candidates: SmallVec<[SymbolName; 3]> =
+        [Some(leaf), qualified, Some(core_name)].into_iter().flatten().collect();
+    candidates.iter().copied().find(|name| is_free(*name)).ok_or_else(|| {
+        let taken = candidates.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>();
+        let (last, rest) = taken.split_last().expect("the leaf is always a candidate");
+        Report::msg(format!(
+            "cannot name the import stub for `{import_path}`: {} and {last} are all taken",
+            rest.join(", ")
+        ))
+    })
 }
 
 /// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import
@@ -94,20 +95,17 @@ pub fn generate_import_lowering_function(
     stub_name: SymbolName,
     core_func_sig: Signature,
 ) -> WasmResult<CallableFunction> {
-    let ComponentImportPath {
-        cm_path: import_func_path,
-        path: import_path,
-    } = import;
+    let import_func_path = &import.cm_path;
     let context = module_builder.builder().context_rc();
     // FPI imports bypass canonical ABI validation and classification: they use their own
     // typed-signature checks, and oversized argument lists take the FPI indirect lowering
     // path instead of tupled parameters. The typed checks run before canonical flattening so
     // unsupported types fail with FPI diagnostics instead of flattening errors.
-    let is_fpi = is_fpi_import(&import_func_path, &import_func_ty.ir)?;
+    let is_fpi = is_fpi_import(import_func_path, &import_func_ty.ir)?;
     if is_fpi {
-        validate_fpi_typed_signature(&import_func_path, &import_func_ty.ir)?;
+        validate_fpi_typed_signature(import_func_path, &import_func_ty.ir)?;
     } else {
-        reject_unsupported_import_canonical_abi_types(&import_func_path, import_func_ty)?;
+        reject_unsupported_import_canonical_abi_types(import_func_path, import_func_ty)?;
     }
     let import_lowered_sig =
         flatten_function_type(&context, &import_func_ty.ir, CanonicalAbiMode::Import)
@@ -131,7 +129,7 @@ pub fn generate_import_lowering_function(
         // final flattened parameter list can exceed the budget even when classification
         // reported no parameter tuple.
         if transformation.has_param_tuple() || flat_params_need_tuple(import_lowered_sig.params()) {
-            return reject_tuple_parameter_import_lowering(&import_func_path);
+            return reject_tuple_parameter_import_lowering(import_func_path);
         }
         Some(transformation)
     };
@@ -175,8 +173,7 @@ pub fn generate_import_lowering_function(
     match transformation {
         CanonicalAbiIndirection::None => generate_direct_lowering(
             world_builder,
-            &import_func_path,
-            &import_path,
+            &import,
             import_func_ty,
             core_func_path,
             core_func_sig,
@@ -188,8 +185,7 @@ pub fn generate_import_lowering_function(
         ),
         CanonicalAbiIndirection::Out => generate_lowering_with_transformation(
             world_builder,
-            &import_func_path,
-            &import_path,
+            &import,
             import_func_ty,
             core_func_path,
             core_func_sig,
@@ -829,11 +825,8 @@ fn reject_tuple_parameter_import_lowering<T>(import_func_path: &SymbolPath) -> W
 ///
 /// # Arguments
 ///
-/// * `import_func_path` - The component-model path of the imported function
-///   (`::<interface id>::<function>`), used in diagnostics.
-///
-/// * `import_path` - The Miden path of the imported function (from its `external-id`). The
-///   function is declared in the stub component named by the path's parent.
+/// * `import` - The component-model and Miden paths of the imported function. The function is
+///   declared in the stub component named by the parent of its Miden path.
 ///
 /// * `import_func_ty` - The original Component Model function type with high-level types
 ///   (structs, records) before any flattening or transformation.
@@ -856,8 +849,7 @@ fn reject_tuple_parameter_import_lowering<T>(import_func_path: &SymbolPath) -> W
 #[allow(clippy::too_many_arguments)]
 fn generate_lowering_with_transformation(
     world_builder: &mut WorldBuilder,
-    import_func_path: &SymbolPath,
-    import_path: &SymbolPath,
+    import: &ComponentImportPath,
     import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
@@ -867,6 +859,7 @@ fn generate_lowering_with_transformation(
     args: &[ValueRef],
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
+    let import_func_path = &import.cm_path;
     assert!(
         import_func_sig_flat.params().last().unwrap().is_sret_param(),
         "The flattened component import function {import_func_path} signature should have the \
@@ -884,15 +877,6 @@ fn generate_lowering_with_transformation(
             ))
         },
     )?;
-
-    let component_name = import_path.without_leaf().to_symbol_name();
-    let component_ref = world_builder.find_component(component_name).unwrap_or_else(|| {
-        world_builder
-            .define_component(Ident::with_empty_span(component_name))
-            .expect("failed to define the component")
-    });
-
-    let mut component_builder = ComponentBuilder::new(component_ref);
 
     // The import function's results are passed via a pointer parameter.
     // This happens when the result type would flatten to more than 1 value
@@ -915,13 +899,7 @@ fn generate_lowering_with_transformation(
         results: flattened_results,
         cc: import_func_sig_flat.cc,
     };
-    let import_func_ref = component_builder
-        .define_function(
-            import_path.name().into(),
-            Visibility::Internal,
-            new_import_func_sig.clone(),
-        )
-        .expect("failed to define the import function");
+    let import_func_ref = declare_import_function(world_builder, import, &new_import_func_sig)?;
 
     // Import lowering: The lowered function takes a pointer as the last parameter
     // where results should be stored. The import function returns a pointer to the result.
@@ -979,11 +957,8 @@ fn generate_lowering_with_transformation(
 ///
 /// # Arguments
 ///
-/// * `import_func_path` - The component-model path of the imported function
-///   (`::<interface id>::<function>`), used in diagnostics.
-///
-/// * `import_path` - The Miden path of the imported function (from its `external-id`). The
-///   function is declared in the stub component named by the path's parent.
+/// * `import` - The component-model and Miden paths of the imported function. The function is
+///   declared in the stub component named by the parent of its Miden path.
 ///
 /// * `import_func_ty` - The Component Model function type. In this case, it should be simple
 ///   enough to not require transformation.
@@ -1010,8 +985,7 @@ fn generate_lowering_with_transformation(
 #[allow(clippy::too_many_arguments)]
 fn generate_direct_lowering(
     world_builder: &mut WorldBuilder,
-    import_func_path: &SymbolPath,
-    import_path: &SymbolPath,
+    import: &ComponentImportPath,
     import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
@@ -1021,15 +995,7 @@ fn generate_direct_lowering(
     args: &[ValueRef],
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
-    let component_name = import_path.without_leaf().to_symbol_name();
-    let component_ref = world_builder.find_component(component_name).unwrap_or_else(|| {
-        world_builder
-            .define_component(Ident::with_empty_span(component_name))
-            .expect("failed to define the component")
-    });
-
-    let mut component_builder = ComponentBuilder::new(component_ref);
-
+    let import_func_path = &import.cm_path;
     validate_flat_variants(fb, &import_func_ty.ir.params, args, span)?;
 
     check_core_wasm_signature_equivalence(&core_func_sig, &import_func_sig_flat).map_err(
@@ -1040,13 +1006,7 @@ fn generate_direct_lowering(
             ))
         },
     )?;
-    let import_func_ref = component_builder
-        .define_function(
-            import_path.name().into(),
-            Visibility::Internal,
-            import_func_sig_flat.clone(),
-        )
-        .expect("failed to define the import function");
+    let import_func_ref = declare_import_function(world_builder, import, &import_func_sig_flat)?;
 
     let call = fb
         .call(import_func_ref, import_func_sig_flat, args.to_vec(), span)
@@ -1075,6 +1035,43 @@ fn generate_direct_lowering(
         function_ref: core_func_ref,
         signature: core_func_sig,
     })
+}
+
+/// Declares the imported function at the Miden path `import.path` with `signature` in the stub
+/// component named by the path's parent.
+///
+/// When an earlier import already declared that path, its declaration is returned if the
+/// signatures agree, and an error is reported otherwise.
+fn declare_import_function(
+    world_builder: &mut WorldBuilder,
+    import: &ComponentImportPath,
+    signature: &Signature,
+) -> WasmResult<FunctionRef> {
+    let import_path = &import.path;
+    let component_name = import_path.without_leaf().to_symbol_name();
+    let component_ref = match world_builder.find_component(component_name) {
+        Some(component_ref) => component_ref,
+        None => world_builder.define_component(Ident::with_empty_span(component_name))?,
+    };
+    let existing = component_ref.borrow().get(import_path.name());
+    if let Some(existing) = existing {
+        let existing = existing.borrow();
+        let declared = existing
+            .as_symbol_operation()
+            .downcast_ref::<Function>()
+            .filter(|function| *function.get_signature() == *signature);
+        return declared.map(|function| function.as_function_ref()).ok_or_else(|| {
+            Report::msg(format!(
+                "imports `{}` and `{}` both lower to `{import_path}` with different signatures",
+                import.first_cm_path, import.cm_path
+            ))
+        });
+    }
+    ComponentBuilder::new(component_ref).define_function(
+        import_path.name().into(),
+        Visibility::Internal,
+        signature.clone(),
+    )
 }
 
 /// Rejects component import signatures containing unsupported canonical ABI shapes.
@@ -1607,7 +1604,11 @@ mod tests {
         let leaf = cm_path.name().as_str().replace('-', "_");
         let mut path = SymbolPath::from_masm_module_id("miden::test::test");
         path.path.push(SymbolNameComponent::Leaf(SymbolName::intern(leaf)));
-        ComponentImportPath { cm_path, path }
+        ComponentImportPath {
+            first_cm_path: cm_path.clone(),
+            cm_path,
+            path,
+        }
     }
 
     fn component_import_path(function: &str) -> ComponentImportPath {
@@ -2099,7 +2100,8 @@ mod tests {
         let core_name = SymbolName::intern("miden:test@1.0.0#roundtrip");
         let stub_name = import_stub_name(&import_path, core_name, |name| {
             module_builder.get_function(name.as_str()).is_none()
-        });
+        })
+        .expect("the leaf is free");
         assert_eq!(stub_name.as_str(), "roundtrip");
 
         let lowered = generate_import_lowering_function(
@@ -2118,10 +2120,22 @@ mod tests {
         // The leaf is now taken, so the next choice is qualified by the parent's last segment.
         let stub_name = import_stub_name(&import_path, core_name, |name| {
             module_builder.get_function(name.as_str()).is_none()
-        });
+        })
+        .expect("the qualified leaf is free");
         assert_eq!(stub_name.as_str(), "test_roundtrip");
 
         // With both Miden-derived names taken, the core import's own name is kept.
-        assert_eq!(import_stub_name(&import_path, core_name, |_| false), core_name);
+        let stub_name = import_stub_name(&import_path, core_name, |name| name == core_name)
+            .expect("the core name is free");
+        assert_eq!(stub_name, core_name);
+
+        // With every candidate taken, the stub cannot be named.
+        let err = import_stub_name(&import_path, core_name, |_| false)
+            .expect_err("every candidate is taken");
+        assert_eq!(
+            err.to_string(),
+            "cannot name the import stub for `::miden::test::test::roundtrip`: `roundtrip`, \
+             `test_roundtrip` and `miden:test@1.0.0#roundtrip` are all taken"
+        );
     }
 }

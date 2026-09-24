@@ -83,8 +83,8 @@ fn component_namespace<'data>(
     ) {
         (Some(declared), Some(expected)) if declared != *expected => {
             return Err(Report::msg(format!(
-                "manifest namespace `{expected}` does not match the component's exports, which \
-                 are under `{declared}`"
+                "the target namespace `{expected}` (from the project manifest or `--name`) does \
+                 not match the component's exports, which are under `{declared}`"
             )));
         }
         (Some(declared), _) => declared,
