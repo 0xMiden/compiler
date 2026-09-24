@@ -8,7 +8,7 @@ use miden_assembly::{
 use midenc_frontend_masm::{DisassembledWorld, DisassemblerConfig};
 use midenc_session::{
     FileName, InputType, OutputMode, Session,
-    diagnostics::{IntoDiagnostic, Report},
+    diagnostics::{IntoDiagnostic, Report, Severity},
 };
 
 use crate::{
@@ -18,6 +18,8 @@ use crate::{
         FrontendRegistration, TargetContext,
     },
 };
+
+const MASM_LINT_WORKLIST_BUDGET: usize = 10_000;
 
 /// Declares the frontend that handles targets rooted at a `.masm` file.
 pub const MASM_FRONTEND: FrontendRegistration = FrontendRegistration::new(
@@ -145,17 +147,28 @@ fn render_masm_sources(artifact: &Artifact, session: &Session) -> CompilerResult
 pub struct MasmProjectFrontend {
     /// The assembler's own MASM source provider, which every source read delegates to.
     sources: MasmSourceProvider,
+    /// Maximum number of queued dataflow analyses the advice-taint lint may process.
+    lint_worklist_budget: usize,
 }
 
 impl Default for MasmProjectFrontend {
     fn default() -> Self {
         Self {
             sources: MasmSourceProvider,
+            lint_worklist_budget: MASM_LINT_WORKLIST_BUDGET,
         }
     }
 }
 
 impl MasmProjectFrontend {
+    #[cfg(test)]
+    fn with_lint_worklist_budget(lint_worklist_budget: usize) -> Self {
+        Self {
+            sources: MasmSourceProvider,
+            lint_worklist_budget,
+        }
+    }
+
     /// Read this target's Miden Assembly sources.
     ///
     /// Almost always [`MasmSourceProvider`]'s job, and the type doc says why it must stay that
@@ -308,7 +321,7 @@ impl MasmProjectFrontend {
         let config = DisassemblerConfig {
             infer_missing_signatures: true,
         };
-        let world = midenc_frontend_masm::disassemble_project_target_with_sources(
+        let world = midenc_frontend_masm::disassemble_project_target_for_lint(
             // Cloned, because `masm.lowered` must publish the very sources `masm.parsed`
             // did, unchanged. This mirrors the clone the legacy stage made.
             ProjectSourceInputs {
@@ -320,14 +333,40 @@ impl MasmProjectFrontend {
             context.clone(),
         )?;
         crate::emit_hir_if_requested(world.world.borrow().as_operation(), context.clone())?;
+        for skipped in &world.skipped_procedures {
+            session
+                .diagnostics
+                .diagnostic(Severity::Warning)
+                .with_message(format!(
+                    "MASM lint skipped procedure '{}': {}",
+                    skipped.path, skipped.reason
+                ))
+                .with_primary_label(skipped.span, "procedure skipped here")
+                .emit();
+        }
 
         let analysis_manager =
             midenc_hir::pass::AnalysisManager::new(world.world.as_operation_ref(), None);
-        let analysis =
-            analysis_manager.get_analysis::<midenc_dialect_hir::analyses::AdviceTaintAnalysis>()?;
+        let mut dataflow_config = midenc_hir_analysis::DataFlowConfig::new();
+        dataflow_config
+            .set_interprocedural(true)
+            .set_max_worklist_iterations(Some(self.lint_worklist_budget));
+        let analysis_result =
+            midenc_dialect_hir::analyses::AdviceTaintAnalysis::run_with_config_allow_partial(
+                world.world.borrow().as_operation(),
+                analysis_manager,
+                dataflow_config,
+            )?;
         let source_manager = context.source_manager();
-        for diagnostic in analysis.diagnostics(&source_manager) {
+        for diagnostic in analysis_result.analysis.diagnostics(&source_manager) {
             session.diagnostics.emit(diagnostic);
+        }
+        if let Some(reason) = analysis_result.incomplete_reason {
+            session
+                .diagnostics
+                .diagnostic(Severity::Warning)
+                .with_message(format!("MASM advice taint analysis incomplete: {reason}"))
+                .emit();
         }
         if session.diagnostics.has_errors() {
             return Err(Report::msg(crate::pipeline::lint_errors_reported(&session.options)));
@@ -430,7 +469,7 @@ mod tests {
     use midenc_hir::Context;
     use midenc_session::{
         InputFile, Options, OutputFile, OutputType, OutputTypeSpec, OutputTypes, Session,
-        diagnostics::{DefaultSourceManager, SourceManager},
+        diagnostics::{CaptureEmitter, DefaultSourceManager, SourceManager},
         miden_project::TargetType,
     };
 
@@ -473,6 +512,56 @@ mod tests {
     /// The submodule [`DIRTY_ROOT`] taints.
     const DIRTY_SUPPORT: &str = "pub proc consume\n    push.1\n    u32wrapping_add\nend\n";
 
+    /// A root with one analyzable taint finding and one procedure lint mode must skip.
+    const PARTIAL_ROOT: &str = r#"
+pub proc entry() -> u32
+    adv_push
+    push.1
+    u32wrapping_add
+end
+
+pub proc bad
+    push.1
+    if.true
+        push.1
+    else
+        push.1
+        push.2
+    end
+end
+"#;
+
+    /// A root with one clean procedure and one procedure lint mode must skip.
+    const SKIP_ONLY_ROOT: &str = r#"
+pub proc entry() -> u32
+    push.1
+end
+
+pub proc bad
+    push.1
+    if.true
+        push.1
+    else
+        push.1
+        push.2
+    end
+end
+"#;
+
+    /// A root that yields a finding during initialization and queues interprocedural solver work.
+    const BUDGET_ROOT: &str = r#"
+proc duplicate(value: u32) -> (u32, u32)
+    dup
+end
+
+pub proc entry(rhs: u32) -> u32
+    adv_push
+    exec.duplicate
+    drop
+    u32wrapping_add
+end
+"#;
+
     /// The root module the standard-input fixtures are handed as bytes.
     ///
     /// Deliberately unlike [`ROOT`]: it declares no submodule, and its procedure has a name
@@ -503,6 +592,24 @@ mod tests {
     fn dirty_project(name: &str) -> VirtualProject {
         let root = testing::fixture_source(name, "lib.masm", DIRTY_ROOT);
         testing::fixture_source(name, "support.masm", DIRTY_SUPPORT);
+        VirtualProject::new(name, &root, TargetType::Library).expect("should build project")
+    }
+
+    /// Materialize a project that can only be analyzed through partial lint disassembly.
+    fn partial_project(name: &str) -> VirtualProject {
+        let root = testing::fixture_source(name, "lib.masm", PARTIAL_ROOT);
+        VirtualProject::new(name, &root, TargetType::Library).expect("should build project")
+    }
+
+    /// Materialize a project whose only warning is a skipped procedure.
+    fn skip_only_project(name: &str) -> VirtualProject {
+        let root = testing::fixture_source(name, "lib.masm", SKIP_ONLY_ROOT);
+        VirtualProject::new(name, &root, TargetType::Library).expect("should build project")
+    }
+
+    /// Materialize a project that exhausts a small advice-taint worklist budget.
+    fn budget_project(name: &str) -> VirtualProject {
+        let root = testing::fixture_source(name, "lib.masm", BUDGET_ROOT);
         VirtualProject::new(name, &root, TargetType::Library).expect("should build project")
     }
 
@@ -585,6 +692,21 @@ mod tests {
         let session = Session::new(InputFile::empty(), options, None, source_manager)
             .expect("should build a session");
         Rc::new(Context::new(Rc::new(session)))
+    }
+
+    /// A context whose rendered diagnostics can be inspected by the caller.
+    fn capturing_context(
+        configure: impl FnOnce(&mut Options),
+    ) -> (Rc<Context>, Arc<CaptureEmitter>) {
+        let mut options = Box::new(Options::default());
+        configure(&mut options);
+        let source_manager: Arc<dyn SourceManager + Send + Sync> =
+            Arc::new(DefaultSourceManager::default());
+        let emitter = Arc::new(CaptureEmitter::new());
+        let session =
+            Session::new(InputFile::empty(), options, Some(emitter.clone()), source_manager)
+                .expect("should build a session");
+        (Rc::new(Context::new(Rc::new(session))), emitter)
     }
 
     /// A context whose session writes `--emit=masm` into `out_dir`.
@@ -802,6 +924,101 @@ mod tests {
         assert!(
             !world.module.borrow().body().is_empty(),
             "the lifted root module must hold the fixture's procedures"
+        );
+    }
+
+    /// A procedure that cannot be lifted must not suppress findings from the rest of the target.
+    #[test]
+    fn lint_reports_findings_when_another_procedure_is_skipped() {
+        let project = partial_project("masm_frontend_partial_lint");
+        let (context, diagnostics) = capturing_context(|options| options.lint = true);
+        let run = run(&project, context, Goal::at(CheckpointId::HIR_ANALYZED));
+
+        assert!(run.stopped, "the partial HIR world must reach hir.analyzed");
+        let world = run
+            .captured
+            .expect("stopping at hir.analyzed must capture")
+            .downcast::<DisassembledWorld>()
+            .expect("the analyzed artifact is the partial HIR world");
+        assert_eq!(world.skipped_procedures.len(), 1);
+        assert!(world.skipped_procedures[0].path.as_str().ends_with("::bad"));
+
+        let diagnostics = diagnostics.captured();
+        assert!(diagnostics.contains("MASM lint skipped procedure"), "{diagnostics}");
+        assert!(
+            diagnostics.contains("if branches leave different inferred stack depths"),
+            "{diagnostics}"
+        );
+        assert!(diagnostics.contains("unconstrained advice"), "{diagnostics}");
+    }
+
+    /// Budget exhaustion keeps findings reached before the cutoff and reports incomplete coverage.
+    #[test]
+    fn lint_reports_partial_findings_when_the_worklist_budget_is_exhausted() {
+        let project = budget_project("masm_frontend_partial_budget");
+        let (context, diagnostics) = capturing_context(|options| options.lint = true);
+        let assembly = project.assembly_context().expect("assembly context");
+        let state = RequestState::new(Goal::at(CheckpointId::HIR_ANALYZED), vec![]);
+        let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
+        let frontend = MasmProjectFrontend::with_lint_worklist_budget(12);
+
+        let flow = frontend.compile(&cx).expect("budget exhaustion must return a partial result");
+
+        assert!(flow.is_break(), "the partial HIR world must reach hir.analyzed");
+        let diagnostics = diagnostics.captured();
+        assert!(diagnostics.contains("unconstrained advice"), "{diagnostics}");
+        assert!(diagnostics.contains("MASM advice taint analysis incomplete"), "{diagnostics}");
+        assert!(diagnostics.contains("worklist iteration budget of 12"), "{diagnostics}");
+    }
+
+    /// Coverage warnings use the session diagnostics policy and fail under `-Dwarnings`.
+    #[test]
+    fn lint_coverage_warnings_follow_warnings_as_errors() {
+        use midenc_session::Warnings;
+
+        fn compile(
+            project: &VirtualProject,
+            context: Rc<Context>,
+            frontend: &MasmProjectFrontend,
+        ) -> CompilerResult<Flow<ProjectSourceInputs>> {
+            let assembly = project.assembly_context().expect("assembly context");
+            let state = RequestState::new(Goal::at(CheckpointId::HIR_ANALYZED), vec![]);
+            let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
+            frontend.compile(&cx)
+        }
+
+        let (context, diagnostics) = capturing_context(|options| {
+            options.lint = true;
+            options.diagnostics.warnings = Warnings::Error;
+        });
+        let result = compile(
+            &skip_only_project("masm_frontend_skip_warning_error"),
+            context,
+            &MasmProjectFrontend::default(),
+        );
+        assert!(result.is_err(), "a promoted skipped-procedure warning must fail the lint");
+        assert!(
+            diagnostics.captured().contains("MASM lint skipped procedure"),
+            "the promoted diagnostic must identify the skipped procedure"
+        );
+
+        let (context, diagnostics) = capturing_context(|options| {
+            options.lint = true;
+            options.diagnostics.warnings = Warnings::Error;
+        });
+        let result = compile(
+            &budget_project("masm_frontend_budget_warning_error"),
+            context,
+            &MasmProjectFrontend::with_lint_worklist_budget(0),
+        );
+        assert!(
+            result.is_err(),
+            "a promoted incomplete-analysis warning must fail the lint: {}",
+            diagnostics.captured()
+        );
+        assert!(
+            diagnostics.captured().contains("MASM advice taint analysis incomplete"),
+            "the promoted diagnostic must report incomplete analysis"
         );
     }
 

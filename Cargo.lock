@@ -4261,6 +4261,7 @@ dependencies = [
  "midenc-frontend-wasm",
  "midenc-frontend-wasm-metadata",
  "midenc-hir",
+ "midenc-hir-analysis",
  "midenc-hir-transform",
  "midenc-session",
  "sha2",
