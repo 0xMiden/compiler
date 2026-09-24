@@ -29,6 +29,8 @@ const RAW_CALLEE_MODULE: &str = "raw_fpi_callee";
 const NO_ARG_TO_FELT_PROC: &str = "no_arg_to_felt";
 /// Raw FPI callee procedure with the logical signature `Word -> Felt`.
 const WORD_TO_FELT_PROC: &str = "word_to_felt";
+/// Raw FPI callee procedure with the logical signature `(Felt, Felt) -> Felt`.
+const TWO_FELTS_TO_FELT_PROC: &str = "two_felts_to_felt";
 /// Raw FPI callee procedure with the logical signature `(16 felts) -> 16 felts`.
 const SIXTEEN_FELTS_TO_SIXTEEN_FELTS_PROC: &str = "sixteen_felts_to_sixteen_felts";
 
@@ -42,6 +44,17 @@ pub fn no_arg_to_felt() {
 #[test]
 pub fn word_to_felt() {
     execute_raw_fpi_case("raw_word_to_felt", WORD_TO_FELT_PROC, raw_note_source_word_to_felt);
+}
+
+/// Deploys a MASM account and consumes a note which calls a `(Felt, Felt) -> Felt` raw FPI
+/// procedure, pinning that a partial input word lands on top with the zero padding after it.
+#[test]
+pub fn two_felts_to_felt() {
+    execute_raw_fpi_case(
+        "raw_two_felts_to_felt",
+        TWO_FELTS_TO_FELT_PROC,
+        raw_note_source_two_felts_to_felt,
+    );
 }
 
 /// Deploys a MASM account and consumes a note which calls a full-slot raw FPI procedure.
@@ -233,9 +246,20 @@ fn raw_note_source_word_to_felt(procedure_root: Word) -> String {
         "Checks that the raw SDK binding forwards one flattened word input.",
         r#"{
             let key = Word::new([felt!(11), felt!(22), felt!(33), felt!(44)]);
-            tx::ForeignProcedureInputs::new([key[0], key[1], key[2], key[3]])
+            tx::ForeignProcedureInputs::new(key.into_elements())
         }"#,
         one_felt_output(202),
+    )
+}
+
+/// Builds the note source for a `(Felt, Felt) -> Felt` raw FPI call.
+fn raw_note_source_two_felts_to_felt(procedure_root: Word) -> String {
+    raw_note_source(
+        procedure_root,
+        "Checks that a partial input word lands on top of the callee's stack, with the zero \
+         padding after it.",
+        "tx::ForeignProcedureInputs::new([felt!(7), felt!(8)])",
+        one_felt_output(303),
     )
 }
 
@@ -348,7 +372,7 @@ pub proc no_arg_to_felt
     push.[0, 0, 0, 0]     assert_eqw.err="raw FPI callee: 3rd input word is incorrect"
 
     push.[0, 0, 0, 0] push.[0, 0, 0, 0]
-    push.[0, 0, 0, 0] push.[0, 0, 0, 101]
+    push.[0, 0, 0, 0] push.[101, 0, 0, 0]
     exec.sys::truncate_stack
 end
 
@@ -359,13 +383,30 @@ end
 #! Outputs: [202]
 @account_procedure
 pub proc word_to_felt
-    push.[44, 33, 22, 11] assert_eqw.err="raw FPI callee: 0th input word is incorrect"
+    push.[11, 22, 33, 44] assert_eqw.err="raw FPI callee: 0th input word is incorrect"
     push.[0, 0, 0, 0]     assert_eqw.err="raw FPI callee: 1st input word is incorrect"
     push.[0, 0, 0, 0]     assert_eqw.err="raw FPI callee: 2nd input word is incorrect"
     push.[0, 0, 0, 0]     assert_eqw.err="raw FPI callee: 3rd input word is incorrect"
 
     push.[0, 0, 0, 0] push.[0, 0, 0, 0]
-    push.[0, 0, 0, 0] push.[0, 0, 0, 202]
+    push.[0, 0, 0, 0] push.[202, 0, 0, 0]
+    exec.sys::truncate_stack
+end
+
+#! Logical signature: (Felt, Felt) -> Felt
+#! The executor ABI still uses 16 raw input slots and 16 raw output slots.
+#!
+#! Inputs:  [7, 8]
+#! Outputs: [303]
+@account_procedure
+pub proc two_felts_to_felt
+    push.[7, 8, 0, 0]     assert_eqw.err="raw FPI callee: 0th input word is incorrect"
+    push.[0, 0, 0, 0]     assert_eqw.err="raw FPI callee: 1st input word is incorrect"
+    push.[0, 0, 0, 0]     assert_eqw.err="raw FPI callee: 2nd input word is incorrect"
+    push.[0, 0, 0, 0]     assert_eqw.err="raw FPI callee: 3rd input word is incorrect"
+
+    push.[0, 0, 0, 0] push.[0, 0, 0, 0]
+    push.[0, 0, 0, 0] push.[303, 0, 0, 0]
     exec.sys::truncate_stack
 end
 
@@ -376,13 +417,13 @@ end
 #! Outputs: [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
 @account_procedure
 pub proc sixteen_felts_to_sixteen_felts
-    push.[4, 3, 2, 1]     assert_eqw.err="raw FPI callee: 0th input word is incorrect"
-    push.[8, 7, 6, 5]     assert_eqw.err="raw FPI callee: 1st input word is incorrect"
-    push.[12, 11, 10, 9]  assert_eqw.err="raw FPI callee: 2nd input word is incorrect"
-    push.[16, 15, 14, 13] assert_eqw.err="raw FPI callee: 3rd input word is incorrect"
+    push.[1, 2, 3, 4]     assert_eqw.err="raw FPI callee: 0th input word is incorrect"
+    push.[5, 6, 7, 8]     assert_eqw.err="raw FPI callee: 1st input word is incorrect"
+    push.[9, 10, 11, 12]  assert_eqw.err="raw FPI callee: 2nd input word is incorrect"
+    push.[13, 14, 15, 16] assert_eqw.err="raw FPI callee: 3rd input word is incorrect"
 
-    push.[32, 31, 30, 29] push.[28, 27, 26, 25]
-    push.[24, 23, 22, 21] push.[20, 19, 18, 17]
+    push.[29, 30, 31, 32] push.[25, 26, 27, 28]
+    push.[21, 22, 23, 24] push.[17, 18, 19, 20]
     exec.sys::truncate_stack
 end
 "#;
