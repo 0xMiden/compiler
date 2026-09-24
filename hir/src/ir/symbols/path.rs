@@ -276,6 +276,24 @@ impl SymbolPath {
         path
     }
 
+    /// Derive a symbol path from the Miden Assembly path `path`, the inverse of
+    /// [SymbolPath::to_library_path]: one [SymbolNameComponent::Component] per segment of the
+    /// path, rooted when the path is absolute.
+    ///
+    /// A quoted segment stays one component. Segments that fail to parse are skipped; a valid
+    /// path has none.
+    pub fn from_library_path(path: &midenc_session::miden_assembly_syntax::Path) -> SymbolPath {
+        use midenc_session::miden_assembly_syntax::PathComponent;
+
+        path.components()
+            .filter_map(|component| component.ok())
+            .map(|component| match component {
+                PathComponent::Root => SymbolNameComponent::Root,
+                component => SymbolNameComponent::Component(SymbolName::intern(component.as_str())),
+            })
+            .collect()
+    }
+
     /// Returns true if this symbol name is fully-qualified
     pub fn is_absolute(&self) -> bool {
         matches!(&self.path[0], SymbolNameComponent::Root)
@@ -478,5 +496,25 @@ impl Ord for SymbolNameComponent {
 impl PartialOrd for SymbolNameComponent {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::string::ToString;
+
+    use super::*;
+
+    #[test]
+    fn from_library_path_inverts_to_library_path() {
+        use midenc_session::miden_assembly_syntax::Path;
+
+        let path = SymbolPath::from_library_path(Path::new("::miden::a::b"));
+        assert_eq!(path, SymbolPath::from_masm_module_id("miden::a::b"));
+        assert_eq!(path.to_library_path().to_string(), "::miden::a::b");
+
+        let relative = SymbolPath::from_library_path(Path::new("miden::a"));
+        assert!(!relative.is_absolute());
+        assert_eq!(relative.to_string(), "miden::a");
     }
 }

@@ -525,6 +525,10 @@ fn component_name_roundtrips_through_the_printer() -> TestResult {
     for (name, header) in [
         ("miden::a::b", "builtin.component private @miden::@a::@b {"),
         ("hir_ns:test@1.0.0", "builtin.component private @\"hir_ns:test@1.0.0\" {"),
+        ("$kernel", "builtin.component private @\"$kernel\" {"),
+        ("1st", "builtin.component private @\"1st\" {"),
+        ("a-b", "builtin.component private @\"a-b\" {"),
+        (r#"q"u\o\"te"#, r#"builtin.component private @"q\"u\\o\\\"te" {"#),
     ] {
         let world = test.context_rc().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
         let component = WorldBuilder::new(world).define_component(name.into())?;
