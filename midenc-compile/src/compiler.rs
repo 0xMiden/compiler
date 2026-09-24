@@ -1,6 +1,8 @@
 #[cfg(feature = "std")]
+use alloc::sync::Arc;
+#[cfg(feature = "std")]
 use alloc::{borrow::ToOwned, format, string::ToString, vec};
-use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 #[cfg(feature = "std")]
 use std::ffi::OsString;
 
@@ -8,10 +10,11 @@ use std::ffi::OsString;
 use clap::{Parser, builder::ArgPredicate};
 use miden_mast_package::TargetType;
 use midenc_session::{
-    ColorChoice, DebugInfo, InputFile, IrFilter, LinkLibrary, OptLevel, Options, OutputFile,
-    OutputTypeSpec, OutputTypes, PathBuf, RemapPathPrefix, Session, Verbosity, Warnings,
-    add_target_link_libraries, diagnostics::Emitter,
+    ColorChoice, DebugInfo, IrFilter, LinkLibrary, OptLevel, Options, OutputFile, OutputTypeSpec,
+    OutputTypes, PathBuf, RemapPathPrefix, Verbosity, Warnings, add_target_link_libraries,
 };
+#[cfg(feature = "std")]
+use midenc_session::{InputFile, Session, diagnostics::Emitter};
 
 /// Compile a program from WebAssembly or Miden IR, to Miden Assembly.
 #[derive(Debug, Clone)]
@@ -387,6 +390,12 @@ pub struct Compiler {
         arg(long, short = 'p', value_name = "SPEC", conflicts_with("workspace"),)
     )]
     pub package: Vec<String>,
+    /// Require Cargo.lock to remain unchanged in Cargo builds.
+    #[cfg_attr(feature = "std", arg(long, help_heading = "Compiler"))]
+    pub locked: bool,
+    /// Prevent Cargo builds from accessing the network.
+    #[cfg_attr(feature = "std", arg(long, help_heading = "Compiler"))]
+    pub offline: bool,
     /// Path to the project manifest to build
     ///
     /// Either a `miden-project.toml`, or the `Cargo.toml` beside it. This names the project when
@@ -718,6 +727,8 @@ impl Compiler {
             release: _,
             workspace,
             package,
+            locked,
+            offline,
             manifest_path,
             remap_path_prefixes,
         } = self;
@@ -785,6 +796,8 @@ impl Compiler {
         options.entrypoint = entrypoint;
         options.workspace = workspace;
         options.packages = package;
+        options.cargo_locked = locked;
+        options.cargo_offline = offline;
         options.stop_after = stop_after;
         options.parse_only = parse_only;
         options.analyze_only = analyze_only;
@@ -814,6 +827,7 @@ impl Compiler {
     }
 
     /// Use this configuration to obtain a [Session] used for compilation
+    #[cfg(feature = "std")]
     fn into_session(
         options: Box<Options>,
         input: Option<InputFile>,
@@ -850,9 +864,11 @@ fn format_error<I: clap::CommandFactory>(err: clap::Error) -> clap::Error {
     err.format(&mut cmd)
 }
 
+#[cfg(feature = "std")]
 #[derive(Clone)]
 struct TargetTypeValueParser;
 
+#[cfg(feature = "std")]
 impl clap::builder::TypedValueParser for TargetTypeValueParser {
     type Value = TargetType;
 
@@ -929,5 +945,13 @@ mod tests {
             Some(manifest),
             "`--working-dir` must not move it"
         );
+    }
+
+    /// Cargo resolution policy flags reach the Rust project build through the session options.
+    #[test]
+    fn cargo_resolution_policy_reaches_the_options() {
+        let options = options(&["--locked", "--offline"]);
+        assert!(options.cargo_locked);
+        assert!(options.cargo_offline);
     }
 }

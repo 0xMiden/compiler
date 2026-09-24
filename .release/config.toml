@@ -217,6 +217,34 @@ unit = "sdk"
 name = "midenc-frontend-wasm-metadata"
 unit = "sdk"
 
+[[packages]]
+name = "miden-note-schema"
+unit = "sdk"
+
+[[packages]]
+name = "miden-note-schema-codegen"
+unit = "sdk"
+
+[[packages]]
+name = "miden-note-bindings"
+unit = "sdk"
+
+[[packages]]
+name = "miden-note-bindings-macros"
+unit = "sdk"
+
+[[packages]]
+name = "miden-note-codec"
+unit = "sdk"
+
+[[packages]]
+name = "miden-note-codec-macros"
+unit = "sdk"
+
+[[packages]]
+name = "miden-note-codec-wit"
+unit = "sdk"
+
 # --- private: repository infrastructure, never published ----------------------
 
 [[packages]]

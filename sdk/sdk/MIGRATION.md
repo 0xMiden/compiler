@@ -191,6 +191,71 @@ adv_insert(msg, &tx_summary);
 
 See `examples/auth-component-rpo-falcon512` for the complete component.
 
+### Keep duplicate `#[export_type]` registrations nominally unique and shape-compatible
+
+Two different Rust types that map to the same WIT name are now a compile error, even when their
+record fields or enum cases are identical. Shape-identical duplicate registrations of the same Rust
+type remain allowed, while conflicting shapes do not. Previously, the last registration silently
+replaced the first. Rename one Rust type so it maps to a different WIT name.
+
+### `#[export_type]` reserves `__MIDEN_EXPORT_TYPE_SHAPE`
+
+The `#[export_type]` macro now emits an inherent public associated constant named
+`__MIDEN_EXPORT_TYPE_SHAPE` on the annotated type. Rename any user-defined associated item with
+that exact name.
+
+### Keep one `#[note]` struct in each crate
+
+There can now be only one `#[note]` struct per linked artifact. Two note structs compiled before
+this change. Now the linker rejects the second struct because both structs define the
+`__MIDEN_NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD` symbol. The guard covers the whole link, so a note
+crate cannot depend on another note crate either.
+
+Keep one note struct in the current crate. Move each extra note struct and its implementation into
+a separate note crate, and do not depend on that crate from a note crate.
+
+### Rewrite tuple-note and `Vec` storage layouts
+
+`#[note]` now emits a WIT storage schema and therefore requires each stored value to have a stable,
+named position. Unit structs remain valid, but tuple structs must become named-field structs. Keep
+the fields in the same order to preserve the existing felt layout:
+
+```rust
+// before
+#[note]
+struct PaymentNote(AccountId, u64);
+
+// after
+#[note]
+struct PaymentNote {
+    target: AccountId,
+    amount: u64,
+}
+```
+
+Dynamic `Vec` fields have no fixed note-storage layout and are no longer accepted. Replace a vector
+with explicit fields. Use `Option` for fixed optional positions, or use a named `#[export_type]`
+record when the same fixed group is nested or reused:
+
+```rust
+// before
+#[note]
+struct ValuesNote {
+    values: Vec<Felt>,
+}
+
+// after
+#[note]
+struct ValuesNote {
+    first: Felt,
+    second: Option<Felt>,
+}
+```
+
+There is no direct replacement for an unbounded vector. Choose a fixed maximum represented by
+named and optional fields, or redesign the note so variable-sized data is committed outside its
+storage payload.
+
 ## 0.13.1 -> 0.14.0
 
 ### Transaction summaries are six words (protocol 0.16)
