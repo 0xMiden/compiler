@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use heck::ToUpperCamelCase;
+use heck::{ToSnakeCase, ToUpperCamelCase};
 use liquid::{Object, Parser, model::Value};
 use liquid_core::{Display_filter, Filter, FilterReflection, ParseFilter, Runtime, ValueView};
 use tempfile::TempDir;
@@ -239,7 +239,7 @@ fn toml_str<'a>(document: &'a DocumentMut, path: &[&str]) -> Option<&'a str> {
 ///
 /// The namespace names every exported procedure and storage slot of the project.
 fn component_namespace(package_name: &str) -> String {
-    let package = package_name.replace('-', "_");
+    let package = package_name.to_snake_case();
     format!("miden::{package}::{package}")
 }
 
@@ -748,6 +748,16 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn component_namespace_snake_cases_the_package_name() {
+        assert_eq!(component_namespace("my-account"), "miden::my_account::my_account");
+        assert_eq!(component_namespace("MyAccount"), "miden::my_account::my_account");
+        assert_eq!(
+            component_namespace("counter_contract"),
+            "miden::counter_contract::counter_contract"
+        );
+    }
 
     #[test]
     fn crate_name_is_sanitized() {
