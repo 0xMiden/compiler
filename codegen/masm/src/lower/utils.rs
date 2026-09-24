@@ -536,7 +536,7 @@ mod tests {
 
         let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
-        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root:root@1.0.0")));
+        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root")));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(value);
@@ -577,7 +577,7 @@ mod tests {
 
         let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
-        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root:root@1.0.0")));
+        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root")));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(value);
@@ -662,7 +662,7 @@ mod tests {
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
-        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root:root@1.0.0")));
+        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root")));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);
@@ -753,7 +753,7 @@ mod tests {
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
-        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root:root@1.0.0")));
+        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root")));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);
@@ -976,7 +976,7 @@ mod tests {
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
-        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root:root@1.0.0")));
+        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root")));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);

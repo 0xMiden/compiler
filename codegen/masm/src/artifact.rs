@@ -266,7 +266,7 @@ impl MasmComponent {
     /// preparation refused, or threading a flag down from lowering for a case that is a no-op.
     /// Third, a world is not a component: a module's name says where its procedures sit *within*
     /// a namespace, not what that namespace is, so a target that names a different one is not
-    /// contradicting the file the way a component id would be.
+    /// contradicting the file the way a component's namespace path would be.
     fn has_no_authored_identity(&self) -> bool {
         self.id.is_none()
     }
@@ -846,11 +846,11 @@ mod tests {
                     .all(|(before, after)| Arc::ptr_eq(before, after))
         }
 
-        /// A component whose id its author chose is left exactly where it is.
+        /// A component whose namespace its author chose is left exactly where it is.
         ///
         /// Re-rooting is justified only by a component-less world having no identity at all.
-        /// An authored component id is part of the code's own identity, and moving it would
-        /// silently rename the procedures every dependent addresses.
+        /// An authored component namespace is part of the code's own identity, and moving it
+        /// would silently rename the procedures every dependent addresses.
         #[test]
         fn an_authored_components_library_keeps_its_own_path() {
             let context = context();

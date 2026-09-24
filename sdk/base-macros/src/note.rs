@@ -11,7 +11,7 @@ use syn::{
 
 use crate::{
     boilerplate::runtime_boilerplate,
-    component_macro::{CORE_TYPES_PACKAGE, export_path},
+    component_macro::export_path,
     namespace::ComponentNamespace,
     types::{TypeRef, map_type_to_type_ref, registered_export_type_map},
     util::{
@@ -19,7 +19,7 @@ use crate::{
         is_unit_return_type,
     },
     wit_builder::WitBuilder,
-    wit_world::{ManifestPackage, write_world_block},
+    wit_world::ManifestPackage,
 };
 
 const NOTE_SCRIPT_ATTR: &str = "note_script";
@@ -1076,37 +1076,34 @@ fn build_note_script_wit(
     constructor_type_imports: &BTreeSet<String>,
     dependency_imports: &[String],
 ) -> String {
-    let interface_name = namespace.wit_interface();
-    let mut wit = WitBuilder::new("#[note]", &namespace.wit_package(), component_version);
-    wit.use_path(CORE_TYPES_PACKAGE);
-    wit.blank_line();
-    wit.interface(&interface_name, |interface| {
-        // `word` is always required by the entrypoint's `arg` parameter
-        let mut type_imports = constructor_type_imports.clone();
-        type_imports.insert("word".to_string());
-        let imports = type_imports.iter().cloned().collect::<Vec<_>>().join(", ");
-        interface.line(&format!("use core-types.{{{imports}}};"));
-        interface.blank_line();
-        interface.function(
-            &export_path(namespace, entrypoint_ident),
-            &format!(
-                "{}: func(arg: word);",
-                explicit_wit_identifier(&rust_ident_to_wit_name(entrypoint_ident))
-            ),
-        );
-        for constructor in constructors {
+    let (wit, ()) = WitBuilder::exported_interface(
+        "#[note]",
+        namespace,
+        component_version,
+        dependency_imports,
+        |interface| {
+            // `word` is always required by the entrypoint's `arg` parameter
+            let mut type_imports = constructor_type_imports.clone();
+            type_imports.insert("word".to_string());
+            let imports = type_imports.iter().cloned().collect::<Vec<_>>().join(", ");
+            interface.line(&format!("use core-types.{{{imports}}};"));
+            interface.blank_line();
             interface.function(
-                &export_path(namespace, &constructor.fn_ident),
-                &constructor_wit_signature(constructor),
+                &export_path(namespace, entrypoint_ident),
+                &format!(
+                    "{}: func(arg: word);",
+                    explicit_wit_identifier(&rust_ident_to_wit_name(entrypoint_ident))
+                ),
             );
-        }
-    });
-    wit.blank_line();
-    let world_name = format!("{interface_name}-world");
-    let exports = [interface_name];
-    write_world_block(&mut wit, &world_name, dependency_imports, &exports);
-
-    wit.finish()
+            for constructor in constructors {
+                interface.function(
+                    &export_path(namespace, &constructor.fn_ident),
+                    &constructor_wit_signature(constructor),
+                );
+            }
+        },
+    );
+    wit
 }
 
 /// Builds frontend metadata for the `#[note_script]` method exported by a note at `path`.

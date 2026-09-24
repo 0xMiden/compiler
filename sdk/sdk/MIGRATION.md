@@ -74,6 +74,10 @@ interface foo {
 }
 ```
 
+`midenc-frontend-wasm-metadata` follows the same naming: the `FrontendMetadata` variants carry the
+export's full Miden path in `path` instead of `export_name`, `FrontendMetadata::export_name()` is
+replaced by `path()`, and `protocol_export_kind_for` takes the full Miden path of the export.
+
 The bindings generator moved to wit-bindgen 0.62 (wit-parser and wit-component 0.259), which
 understands the attribute; crates that depend on `wit-bindgen` directly should move to the same
 version.

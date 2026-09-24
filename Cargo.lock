@@ -4081,7 +4081,6 @@ dependencies = [
  "pretty_assertions",
  "rustc-demangle",
  "rustc-hash",
- "semver 1.0.28",
  "smallvec",
 ]
 

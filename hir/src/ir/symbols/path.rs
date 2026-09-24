@@ -1,4 +1,4 @@
-use alloc::{borrow::Cow, format, string::String};
+use alloc::{borrow::Cow, string::String};
 use core::fmt;
 
 use crate::{
@@ -11,24 +11,6 @@ use crate::{
 pub enum InvalidSymbolPathError {
     #[error("invalid symbol path: cannot be empty")]
     Empty,
-    #[error("invalid symbol path: invalid format")]
-    #[diagnostic(help(
-        "A symbol path is a `::`-separated Miden path, e.g. `::miden::foo::bar::baz`, where no \
-         segment is empty"
-    ))]
-    InvalidFormat,
-    #[error("invalid symbol path: missing package")]
-    #[diagnostic(help(
-        "A fully-qualified symbol must be nested in a namespace, i.e. `<namespace>::<name>`, but \
-         you've only provided one segment"
-    ))]
-    MissingPackage,
-    #[error("invalid symbol path: only fully-qualified symbols can be versioned")]
-    UnexpectedVersion,
-    #[error("invalid symbol path: unexpected character '{token}' at byte {pos}")]
-    UnexpectedToken { token: char, pos: usize },
-    #[error("invalid symbol path: no leaf component was provided")]
-    MissingLeaf,
     #[error("invalid symbol path: unexpected components found after leaf")]
     UnexpectedTrailingComponents,
     #[error("invalid symbol path: only one root component is allowed, and it must come first")]
@@ -222,15 +204,6 @@ impl SymbolPath {
             .copied()
             .collect::<SmallVec<[SymbolNameComponent; 4]>>();
         Self::join_components(&components)
-    }
-
-    /// Returns the absolute path `[Root, Component(segment)*]` made of every segment of `name`,
-    /// i.e. the namespace a symbol-table op named `name` roots at the global namespace.
-    pub fn namespace_from_name(name: SymbolName) -> SymbolPath {
-        Self::from_iter(
-            core::iter::once(SymbolNameComponent::Root)
-                .chain(Self::segments_of(name).into_iter().map(SymbolNameComponent::Component)),
-        )
     }
 
     /// Joins the names of `components` with `::`.
