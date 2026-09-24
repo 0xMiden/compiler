@@ -11,7 +11,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub use miden_assembly_syntax::diagnostics::{
     Diagnostic, Label, LabeledSpan, RelatedError, RelatedLabel, Report, Severity, WrapErr, miette,
-    miette::MietteDiagnostic as AdHocDiagnostic,
+    miette::{MietteDiagnostic as AdHocDiagnostic, SourceCode},
     reporting,
     reporting::{PrintDiagnostic, ReportHandlerOpts},
 };
@@ -382,6 +382,10 @@ impl Diagnostic for InFlightDiagnostic {
 
     fn url<'a>(&'a self) -> Option<Box<dyn Display + 'a>> {
         self.url.as_ref().map(Box::new).map(|c| c as Box<dyn Display>)
+    }
+
+    fn source_code(&self) -> Option<&dyn SourceCode> {
+        self.source_code.as_deref().map(|source| source as &dyn SourceCode)
     }
 
     fn labels(&self) -> Option<Box<dyn Iterator<Item = LabeledSpan> + '_>> {
