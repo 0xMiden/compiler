@@ -7,8 +7,8 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{Dyncall, ExecFpi, HirOpBuilder};
 use midenc_hir::{
-    Builder, Context, FunctionType, Ident, Op, SmallVec, SourceSpan, SymbolPath, Type, ValueRef,
-    Visibility,
+    Builder, Context, FunctionType, Ident, Op, SmallVec, SourceSpan, SymbolName,
+    SymbolNameComponent, SymbolPath, Type, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, WorldBuilder,
@@ -57,15 +57,56 @@ enum ImportCallKind {
     Dyncall,
 }
 
-/// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import function.
+/// The two paths of a component import function.
+pub struct ComponentImportPath {
+    /// The component-model path `::<interface id>::<function>`, which matches the core import
+    /// to its `canon lower`; used to recognize FPI imports and in diagnostics.
+    pub cm_path: SymbolPath,
+    /// The Miden path from the import's `external-id`; names the imported function, which is
+    /// declared in the stub component at the path's parent.
+    pub path: SymbolPath,
+}
+
+/// Chooses the name of the core function that lowers the import at the Miden path `import_path`.
+///
+/// Returns the first name `is_free` accepts among the path's leaf (`receive_asset`), the leaf
+/// prefixed by the last segment of the path's parent (`basic_wallet_receive_asset`), and
+/// `core_name`, the core import's own name.
+pub fn import_stub_name(
+    import_path: &SymbolPath,
+    core_name: SymbolName,
+    is_free: impl Fn(SymbolName) -> bool,
+) -> SymbolName {
+    let leaf = import_path.name();
+    let qualified =
+        import_path.without_leaf().components().last().and_then(|parent| match parent {
+            SymbolNameComponent::Component(parent) => {
+                Some(SymbolName::intern(format!("{parent}_{leaf}")))
+            }
+            _ => None,
+        });
+    [Some(leaf), qualified]
+        .into_iter()
+        .flatten()
+        .find(|name| is_free(*name))
+        .unwrap_or(core_name)
+}
+
+/// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import
+/// function, defined in the core module as `stub_name`.
 pub fn generate_import_lowering_function(
     world_builder: &mut WorldBuilder,
     module_builder: &mut ModuleBuilder,
-    import_func_path: SymbolPath,
+    import: ComponentImportPath,
     import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
+    stub_name: SymbolName,
     core_func_sig: Signature,
 ) -> WasmResult<CallableFunction> {
+    let ComponentImportPath {
+        cm_path: import_func_path,
+        path: import_path,
+    } = import;
     let context = module_builder.builder().context_rc();
     // FPI imports bypass canonical ABI validation and classification: they use their own
     // typed-signature checks, and oversized argument lists take the FPI indirect lowering
@@ -135,7 +176,7 @@ pub fn generate_import_lowering_function(
     import_lowered_sig.params.splice(0..0, root_flat_params);
 
     let core_func_ref = module_builder
-        .define_function(core_func_path.name().into(), Visibility::Internal, core_func_sig.clone())
+        .define_function(stub_name.into(), Visibility::Internal, core_func_sig.clone())
         .expect("failed to define the core function");
 
     let (span, context) = {
@@ -175,6 +216,7 @@ pub fn generate_import_lowering_function(
             world_builder,
             call_kind,
             &import_func_path,
+            &import_path,
             import_func_ty,
             core_func_path,
             core_func_sig,
@@ -188,6 +230,7 @@ pub fn generate_import_lowering_function(
             world_builder,
             call_kind,
             &import_func_path,
+            &import_path,
             import_func_ty,
             core_func_path,
             core_func_sig,
@@ -950,6 +993,7 @@ fn build_import_call(
     world_builder: &mut WorldBuilder,
     call_kind: ImportCallKind,
     import_func_path: &SymbolPath,
+    import_path: &SymbolPath,
     import_func_sig: Signature,
     args: Vec<ValueRef>,
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
@@ -957,7 +1001,7 @@ fn build_import_call(
 ) -> WasmResult<Vec<ValueRef>> {
     let results = match call_kind {
         ImportCallKind::Call => {
-            let component_name = import_func_path.without_leaf().to_symbol_name();
+            let component_name = import_path.without_leaf().to_symbol_name();
             let component_ref = world_builder.find_component(component_name).unwrap_or_else(|| {
                 world_builder
                     .define_component(Ident::with_empty_span(component_name))
@@ -966,7 +1010,7 @@ fn build_import_call(
             let mut component_builder = ComponentBuilder::new(component_ref);
             let import_func_ref = component_builder
                 .define_function(
-                    import_func_path.name().into(),
+                    import_path.name().into(),
                     Visibility::Internal,
                     import_func_sig.clone(),
                 )
@@ -1027,8 +1071,11 @@ fn reject_tuple_parameter_import_lowering<T>(import_func_path: &SymbolPath) -> W
 ///
 /// * `call_kind` - How the import is reached (see [`build_import_call`]).
 ///
-/// * `import_func_path` - The full symbol path to the imported function, including namespace,
-///   component name, and function name (e.g., "miden:component/interface@1.0.0#function").
+/// * `import_func_path` - The component-model path of the imported function
+///   (`::<interface id>::<function>`), used in diagnostics.
+///
+/// * `import_path` - The Miden path of the imported function (from its `external-id`). The
+///   function is declared in the stub component named by the path's parent.
 ///
 /// * `import_func_ty` - The original Component Model function type with high-level types
 ///   (structs, records) before any flattening or transformation.
@@ -1053,6 +1100,7 @@ fn generate_lowering_with_transformation(
     world_builder: &mut WorldBuilder,
     call_kind: ImportCallKind,
     import_func_path: &SymbolPath,
+    import_path: &SymbolPath,
     import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
@@ -1119,6 +1167,7 @@ fn generate_lowering_with_transformation(
         world_builder,
         call_kind,
         import_func_path,
+        import_path,
         new_import_func_sig,
         args_without_ptr,
         fb,
@@ -1163,8 +1212,11 @@ fn generate_lowering_with_transformation(
 /// * `call_kind` - How the import is reached: a declared `hir.call` target, or a `hir.dyncall` to
 ///   the procedure root passed as the leading arguments (see [`build_import_call`]).
 ///
-/// * `import_func_path` - The full symbol path to the imported function in Component Model
-///   format (e.g., "miden:component/interface@1.0.0#function").
+/// * `import_func_path` - The component-model path of the imported function
+///   (`::<interface id>::<function>`), used in diagnostics.
+///
+/// * `import_path` - The Miden path of the imported function (from its `external-id`). The
+///   function is declared in the stub component named by the path's parent.
 ///
 /// * `import_func_ty` - The Component Model function type. In this case, it should be simple
 ///   enough to not require transformation.
@@ -1194,6 +1246,7 @@ fn generate_direct_lowering(
     world_builder: &mut WorldBuilder,
     call_kind: ImportCallKind,
     import_func_path: &SymbolPath,
+    import_path: &SymbolPath,
     import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
@@ -1217,6 +1270,7 @@ fn generate_direct_lowering(
         world_builder,
         call_kind,
         import_func_path,
+        import_path,
         import_func_sig_flat,
         args.to_vec(),
         fb,
@@ -1836,12 +1890,20 @@ mod tests {
         );
     }
 
-    fn component_import_path(function: &str) -> SymbolPath {
-        SymbolPath::from_iter([
+    /// Pairs the component-model path `cm_path` with a Miden path under `::miden::test::test`.
+    fn import_paths(cm_path: SymbolPath) -> ComponentImportPath {
+        let leaf = cm_path.name().as_str().replace('-', "_");
+        let mut path = SymbolPath::from_masm_module_id("miden::test::test");
+        path.path.push(SymbolNameComponent::Leaf(SymbolName::intern(leaf)));
+        ComponentImportPath { cm_path, path }
+    }
+
+    fn component_import_path(function: &str) -> ComponentImportPath {
+        import_paths(SymbolPath::from_iter([
             SymbolNameComponent::Root,
             SymbolNameComponent::Component(SymbolName::intern("miden:test@1.0.0")),
             SymbolNameComponent::Leaf(SymbolName::intern(function)),
-        ])
+        ]))
     }
 
     fn core_function_path(function: &str) -> SymbolPath {
@@ -1877,6 +1939,7 @@ mod tests {
             component_import_path("too_many_params"),
             &import_func_ty,
             core_function_path("too_many_params"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -1912,6 +1975,7 @@ mod tests {
             component_import_path("too_many_params_with_result"),
             &import_func_ty,
             core_function_path("too_many_params_with_result"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -1948,6 +2012,7 @@ mod tests {
             component_import_path("roundtrip"),
             &import_func_ty,
             core_function_path("roundtrip"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("import lowering should build");
@@ -1981,6 +2046,7 @@ mod tests {
             component_import_path("variant_result"),
             &import_func_ty,
             core_function_path("variant_result"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("import lowering should build");
@@ -2018,9 +2084,10 @@ mod tests {
         let lowered = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            test_import_path("fpi-send-variant"),
+            import_paths(test_import_path("fpi-send-variant")),
             &import_func_ty,
             core_function_path("fpi-send-variant"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("FPI import lowering should build");
@@ -2054,9 +2121,10 @@ mod tests {
         let lowered = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            test_import_path("fpi-send-variant-indirect"),
+            import_paths(test_import_path("fpi-send-variant-indirect")),
             &import_func_ty,
             core_function_path("fpi-send-variant-indirect"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("FPI import lowering should build");
@@ -2088,9 +2156,10 @@ mod tests {
         let lowered = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            test_import_path("fpi-get-variant"),
+            import_paths(test_import_path("fpi-get-variant")),
             &import_func_ty,
             core_function_path("fpi-get-variant"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("FPI import lowering should build");
@@ -2125,9 +2194,10 @@ mod tests {
         let result = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            test_import_path("fpi-get-u256"),
+            import_paths(test_import_path("fpi-get-u256")),
             &import_func_ty,
             core_function_path("fpi-get-u256"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2165,9 +2235,10 @@ mod tests {
         let result = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            test_import_path("fpi-send-pointer-enum"),
+            import_paths(test_import_path("fpi-send-pointer-enum")),
             &import_func_ty,
             core_function_path("fpi-send-pointer-enum"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2227,14 +2298,16 @@ mod tests {
             results: vec![AbiParam::new(Type::Felt)],
             cc: CallConv::ComponentModel,
         };
-        let import_func_path = component_import_path("dyncall-authority");
+        let import = component_import_path("dyncall-authority");
+        let stub_component = import.path.without_leaf().to_symbol_name();
 
         let lowered = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            import_func_path.clone(),
+            import,
             &import_func_ty,
             core_function_path("dyncall-authority"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("dyncall import lowering should build");
@@ -2249,8 +2322,7 @@ mod tests {
         assert_eq!(results, vec![Type::Felt]);
         assert_eq!(count_ops(function, |op| op.is::<midenc_dialect_hir::Call>()), 0);
         // Nothing is declared for a runtime target: the import's component does not exist
-        let component_name = import_func_path.without_leaf().to_symbol_name();
-        assert!(world_builder.find_component(component_name).is_none());
+        assert!(world_builder.find_component(stub_component).is_none());
     }
 
     /// A dyncall import whose results need the canonical out-pointer keeps that transformation:
@@ -2281,6 +2353,7 @@ mod tests {
             component_import_path("dyncall-pair"),
             &import_func_ty,
             core_function_path("dyncall-pair"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("dyncall import lowering should build");
@@ -2342,6 +2415,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("a 12-felt argument list should be accepted");
@@ -2365,6 +2439,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2395,6 +2470,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2428,6 +2504,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2460,6 +2537,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("an 11-felt argument list with a returned pointer should be accepted");
@@ -2486,6 +2564,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2532,6 +2611,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2569,6 +2649,7 @@ mod tests {
             component_import_path("mismatched_result"),
             &import_func_ty,
             core_function_path("mismatched_result"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2606,6 +2687,7 @@ mod tests {
             component_import_path("mismatched_params"),
             &import_func_ty,
             core_function_path("mismatched_params"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2644,6 +2726,7 @@ mod tests {
             component_import_path("list_param"),
             &import_func_ty,
             core_function_path("list_param"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2656,5 +2739,52 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn import_stub_is_named_by_miden_leaf_with_collision_fallbacks() {
+        let (context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let variant_ty = unit_only_variant_type();
+        let result_ty = two_field_record_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![variant_ty], vec![result_ty]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::zext(Type::I32, &context), AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        // `::miden::test::test::roundtrip`
+        let import = component_import_path("roundtrip");
+        let import_path = import.path.clone();
+        let core_name = SymbolName::intern("miden:test@1.0.0#roundtrip");
+        let stub_name = import_stub_name(&import_path, core_name, |name| {
+            module_builder.get_function(name.as_str()).is_none()
+        });
+        assert_eq!(stub_name.as_str(), "roundtrip");
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            import,
+            &import_func_ty,
+            core_function_path("miden:test@1.0.0#roundtrip"),
+            stub_name,
+            core_func_sig,
+        )
+        .expect("import lowering should build");
+        let function_ref = lowered.function_ref().expect("expected function lowering");
+        assert_eq!(function_ref.borrow().name().as_str(), "roundtrip");
+
+        // The leaf is now taken, so the next choice is qualified by the parent's last segment.
+        let stub_name = import_stub_name(&import_path, core_name, |name| {
+            module_builder.get_function(name.as_str()).is_none()
+        });
+        assert_eq!(stub_name.as_str(), "test_roundtrip");
+
+        // With both Miden-derived names taken, the core import's own name is kept.
+        assert_eq!(import_stub_name(&import_path, core_name, |_| false), core_name);
     }
 }

@@ -61,14 +61,20 @@ pub fn translate_module_as_component(
     };
     let mut world_builder = WorldBuilder::new(world_ref);
 
-    let mut component_ref = world_builder.define_component(Ident::from("root_ns:root@1.0.0"))?;
+    // The wrapper is rooted at the target namespace, or at the module's name when there is none
+    let module_name = parsed_module.module.name().as_str();
+    let namespace = config
+        .namespace
+        .clone()
+        .unwrap_or_else(|| SymbolPath::from_masm_module_id(module_name));
+    let mut component_ref =
+        world_builder.define_component(Ident::with_empty_span(namespace.to_symbol_name()))?;
 
     // Mark this as the compiler's wrapper: nothing downstream should have to infer it by
     // comparing the name, which an author may legitimately use.
     component_ref.borrow_mut().mark_synthetic_wrapper();
 
     let mut cb = ComponentBuilder::new(component_ref);
-    let module_name = parsed_module.module.name().as_str();
     let module_ref = cb.define_module(Ident::from(module_name)).unwrap();
 
     let mut module_builder = ModuleBuilder::new(module_ref);

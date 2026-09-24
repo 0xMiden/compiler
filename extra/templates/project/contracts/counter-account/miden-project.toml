@@ -5,9 +5,9 @@ version = "0.1.0"
 [lib]
 path = "src/lib.rs"
 kind = "account-component"
-# Full `miden:<package>/<interface>@<version>` id. The interface segment is the
-# kebab-cased component trait name (`CounterContract` -> `counter-contract`).
-namespace = "miden:counter-account/counter-contract@0.1.0"
+# Miden path `<namespace>::<package>::<interface>` naming every exported procedure
+# (`miden::counter_account::counter_contract::get_count`) and storage slot.
+namespace = "miden::counter_account::counter_contract"
 
 [dependencies]
 miden-core = "*"

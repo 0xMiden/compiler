@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "note"
-namespace = "miden:cross-ctx-note-word-arg/miden-cross-ctx-note-word-arg@0.1.0"
+namespace = "miden::cross_ctx_note_word_arg::cross_ctx_note_word_arg"
 path = "src/lib.rs"
 
 [dependencies]

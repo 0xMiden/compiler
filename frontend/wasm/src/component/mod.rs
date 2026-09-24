@@ -8,6 +8,7 @@ mod canon_abi_utils;
 mod flat;
 mod lift_exports;
 pub(crate) mod lower_imports;
+pub(crate) mod naming;
 mod parser;
 mod shim_bypass;
 mod start;

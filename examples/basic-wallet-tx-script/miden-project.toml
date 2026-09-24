@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "tx-script"
-namespace = "miden:base/transaction-script@1.0.0"
+namespace = "miden::basic_wallet_tx_script::basic_wallet_tx_script"
 path = "src/lib.rs"
 
 [profile.release]

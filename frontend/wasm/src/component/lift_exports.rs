@@ -8,11 +8,11 @@ use midenc_dialect_hir::{
 };
 use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
-    FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolPath, Type, ValueRange, ValueRef,
-    Visibility,
+    FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolName, SymbolPath, SymbolTable, Type,
+    ValueRange, ValueRef, Visibility,
     dialects::{
         builtin::{
-            BuiltinOpBuilder, ComponentBuilder, ModuleBuilder,
+            BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, ModuleRef,
             attributes::{AbiParam, Signature, UnitAttr},
         },
         debuginfo::attributes::{CompileUnit, CompileUnitAttr, Subprogram, SubprogramAttr},
@@ -45,6 +45,10 @@ struct ComponentExportMetadata<'a> {
 }
 
 /// Generates a lifted component export wrapper around a lowered core Wasm export.
+///
+/// The wrapper is defined in the component as `export_func_name`, the leaf of the export's Miden
+/// path. The core function at `core_export_func_path` becomes internal and takes the same leaf
+/// name when the core module has no other symbol by that name.
 pub fn generate_export_lifting_function(
     component_builder: &mut ComponentBuilder,
     export_func_name: &str,
@@ -104,6 +108,7 @@ pub fn generate_export_lifting_function(
     // call across the nested core module symbol table boundary.
     core_module_builder
         .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Internal);
+    name_core_export_by_leaf(core_module_ref, &core_export_func_path, export_func_ident.name)?;
     let core_export_func_sig = core_export_func_ref.borrow().get_signature().clone();
 
     let export_func_ref = if transformation.is_needed() {
@@ -134,6 +139,30 @@ pub fn generate_export_lifting_function(
     }
 
     Ok(())
+}
+
+/// Renames the core function at `core_export_func_path` (named by its component-model core
+/// export, `<interface id>#<function>`) to `leaf`, the leaf of the export's Miden path, unless the
+/// core module already defines a symbol named `leaf`.
+fn name_core_export_by_leaf(
+    mut core_module_ref: ModuleRef,
+    core_export_func_path: &SymbolPath,
+    leaf: SymbolName,
+) -> WasmResult<()> {
+    let core_name = core_export_func_path.name();
+    if core_name == leaf {
+        return Ok(());
+    }
+    let mut core_module = core_module_ref.borrow_mut();
+    if core_module.get(leaf).is_some() {
+        log::debug!(
+            target: "component-translator",
+            "keeping the core function name `{core_name}` of export `{leaf}`: the core module \
+             already defines `{leaf}`"
+        );
+        return Ok(());
+    }
+    core_module.rename(core_name, leaf)
 }
 
 /// Generates a lifting function for component exports that require transformation.
@@ -609,6 +638,49 @@ mod tests {
             unreachable_count, 1,
             "invalid transformed export param tag should be unreachable"
         );
+    }
+
+    #[test]
+    fn core_export_is_renamed_to_miden_leaf_unless_taken() {
+        let (_context, mut component_builder, mut module_builder) = component_with_core_module();
+
+        let mut ir = FunctionType::new(CallConv::Fast, vec![Type::Felt], vec![Type::Felt]);
+        ir.abi = CallConv::ComponentModel;
+        let core_sig = Signature {
+            params: vec![AbiParam::new(Type::Felt)],
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::ComponentModel,
+        };
+        for name in ["miden:test/x@1.0.0#get-count", "miden:test/x@1.0.0#taken", "taken"] {
+            module_builder
+                .define_function(
+                    Ident::with_empty_span(name.into()),
+                    Visibility::Public,
+                    core_sig.clone(),
+                )
+                .expect("failed to define core function");
+        }
+
+        for (leaf, core_name) in [
+            ("get_count", "miden:test/x@1.0.0#get-count"),
+            ("taken", "miden:test/x@1.0.0#taken"),
+        ] {
+            generate_export_lifting_function(
+                &mut component_builder,
+                leaf,
+                ComponentFunctionType { ir: ir.clone() },
+                &["value".to_string()],
+                component_export_path(core_name),
+                None,
+                &DiagnosticsHandler::default(),
+            )
+            .expect("export lifting should build");
+        }
+
+        assert!(module_builder.get_function("get_count").is_some());
+        assert!(module_builder.get_function("miden:test/x@1.0.0#get-count").is_none());
+        // `taken` already names another core function, so the export shim keeps its name.
+        assert!(module_builder.get_function("miden:test/x@1.0.0#taken").is_some());
     }
 
     #[test]

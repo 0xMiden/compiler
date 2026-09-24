@@ -32,13 +32,20 @@ interface foo {
         value: felt
     }
 
+    @external-id("miden::cross_ctx_account_word::foo::process_word")
     process-word: func(input: word) -> word;
+    @external-id("miden::cross_ctx_account_word::foo::process_another_word")
     process-another-word: func(input: word) -> word;
+    @external-id("miden::cross_ctx_account_word::foo::process_felt")
     process-felt: func(input: felt) -> felt;
 
+    @external-id("miden::cross_ctx_account_word::foo::process_pair")
     process-pair: func(input: pair) -> pair;
+    @external-id("miden::cross_ctx_account_word::foo::process_triple")
     process-triple: func(input: triple) -> triple;
+    @external-id("miden::cross_ctx_account_word::foo::process_mixed")
     process-mixed: func(input: mixed-struct) -> mixed-struct;
+    @external-id("miden::cross_ctx_account_word::foo::process_nested")
     process-nested: func(input: nested-struct) -> nested-struct;
 }
 

@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "note"
-namespace = "miden:component-macros-note/miden-component-macros-note@0.1.0"
+namespace = "miden::component_macros_note::component_macros_note"
 path = "src/lib.rs"
 
 [dependencies]
