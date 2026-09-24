@@ -61,7 +61,8 @@ fn rust_sibling() {
         init_storage_data
             .insert_map_entry(counter_storage_slot.clone(), counter_storage_key(), 314_u64)
             .unwrap();
-        AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(counter_package.as_ref().clone(), &init_storage_data)
+            .unwrap()
     };
     let dispatcher_component = {
         // The roots come from the sibling package's manifest, as a deployment would set them;
@@ -83,7 +84,8 @@ fn rust_sibling() {
                 lifted_export_root(&counter_package, "add-to-count"),
             )
             .unwrap();
-        AccountComponent::from_package(&dispatcher_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(dispatcher_package.as_ref().clone(), &init_storage_data)
+            .unwrap()
     };
 
     let mut builder = MockChain::builder();

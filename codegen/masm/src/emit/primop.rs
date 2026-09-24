@@ -484,12 +484,9 @@ impl OpEmitter<'_> {
         // `dyncall` pops the element address and reads the callee MAST root word at it
         self.emit_push(root_scratch_addr, span);
         self.consume_exact_call_signature(signature, "dyncall");
-        self.emit(
-            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
-            span,
-        );
+        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::DynCall, span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     /// Push the MAST root digest of `callee` onto the operand stack as one word.
