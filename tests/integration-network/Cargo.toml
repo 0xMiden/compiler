@@ -20,10 +20,7 @@ doctest = false
 miden-field.workspace = true
 miden-field-repr.workspace = true
 miden-tx-script-args.workspace = true
-# Temporary: the published client (0.17.0-rc.1) is built against protocol rc.5. Pinned to the
-# rust-sdk rc.6 migration (https://github.com/0xMiden/rust-sdk/pull/2594) until a client release
-# built on rc.6 is published.
-miden-client = { git = "https://github.com/0xMiden/rust-sdk", rev = "5a13fac2a90d825451d335c3e67fd3538b3d9e52", features = ["std", "tonic", "testing"] }
+miden-client = { version = "0.17.0-rc.2", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std", "testing"] }
 miden-standards = { workspace = true, features = ["std", "testing"] }

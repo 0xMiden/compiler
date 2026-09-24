@@ -2449,8 +2449,9 @@ dependencies = [
 
 [[package]]
 name = "miden-client"
-version = "0.17.0-rc.1"
-source = "git+https://github.com/0xMiden/rust-sdk?rev=5a13fac2a90d825451d335c3e67fd3538b3d9e52#5a13fac2a90d825451d335c3e67fd3538b3d9e52"
+version = "0.17.0-rc.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7283f7bdd6f5ec8515f33551de54c3b02daef0b7bbebedf11934865cac94cef"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2461,7 +2462,6 @@ dependencies = [
  "miden-agglayer",
  "miden-assembly-syntax",
  "miden-node-proto-build",
- "miden-note-transport-proto-build",
  "miden-objects",
  "miden-processor",
  "miden-protocol",
@@ -2487,8 +2487,9 @@ dependencies = [
 
 [[package]]
 name = "miden-client-sqlite-store"
-version = "0.17.0-rc.1"
-source = "git+https://github.com/0xMiden/rust-sdk?rev=5a13fac2a90d825451d335c3e67fd3538b3d9e52#5a13fac2a90d825451d335c3e67fd3538b3d9e52"
+version = "0.17.0-rc.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bec09ad75e2e42c0a5eff5d1d1536d29b5ed9c6dc1593a085ebbe46de8ea88b1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2758,24 +2759,13 @@ dependencies = [
 [[package]]
 name = "miden-node-proto-build"
 version = "0.17.0-rc.2"
-source = "git+https://github.com/0xMiden/node?rev=e55c065d79d476633e932ec610742628965fb158#e55c065d79d476633e932ec610742628965fb158"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "faccdf0eb561a149dace1215ee3a18017ce555e60bbcf29f2f627c0f45286a8d"
 dependencies = [
  "build-rs",
  "codegen",
  "fs-err",
  "miden-objects",
- "miette",
- "protox",
- "tonic-prost-build",
-]
-
-[[package]]
-name = "miden-note-transport-proto-build"
-version = "0.5.0-rc.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a9d736051a42941788c6534caf8cf779b388c0ae72c9d5f0d729d2a9872d833"
-dependencies = [
- "fs-err",
  "miette",
  "protox",
  "tonic-prost-build",
