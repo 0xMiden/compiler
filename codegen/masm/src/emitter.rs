@@ -3,8 +3,10 @@ use alloc::collections::BTreeSet;
 use miden_assembly::diagnostics::WrapErr;
 use midenc_hir::{
     Block, Operation, ProgramPoint, TraceTarget, ValueRange, ValueRef,
-    dialects::builtin::{Function, attributes::LocalVariable},
-    dialects::debuginfo::attributes::{INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChainAttr},
+    dialects::{
+        builtin::{Function, attributes::LocalVariable},
+        debuginfo::attributes::{INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChainAttr},
+    },
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{SourceSpan, Spanned};
