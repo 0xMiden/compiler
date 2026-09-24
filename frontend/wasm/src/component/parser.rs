@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 use midenc_hir::{FxBuildHasher, FxHashMap};
 use midenc_session::{Session, diagnostics::IntoDiagnostic};
 use wasmparser::{
-    Chunk, ComponentImportName, Encoding, Parser, Payload, Validator,
+    Chunk, ComponentExternName, Encoding, Parser, Payload, Validator,
     component_types::{
         AliasableResourceId, ComponentEntityType, ComponentFuncTypeId, ComponentInstanceTypeId,
     },
@@ -85,7 +85,7 @@ pub struct ComponentParser<'a, 'data> {
 
     /// The byte offset where the first module starts within the component.
     /// Used to adjust DWARF addresses when looking up source locations.
-    first_module_base_offset: Option<usize>,
+    first_module_base_offset: Option<u64>,
 }
 
 pub struct ParsedRootComponent<'data> {
@@ -222,7 +222,7 @@ pub struct ComponentInstantiation<'data> {
 #[derive(Debug)]
 pub enum LocalInitializer<'data> {
     // imports
-    Import(ComponentImportName<'data>, ComponentEntityType),
+    Import(ComponentExternName<'data>, ComponentEntityType),
 
     // canonical function sections
     Lower(CanonLower),
@@ -233,7 +233,6 @@ pub enum LocalInitializer<'data> {
     ResourceNew(AliasableResourceId, SignatureIndex),
     ResourceRep(AliasableResourceId, SignatureIndex),
     ResourceDrop(AliasableResourceId, SignatureIndex),
-    ResourceDropAsync(AliasableResourceId, SignatureIndex),
 
     // core wasm modules
     ModuleStatic(StaticModuleIndex),
@@ -371,7 +370,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 first_module.debuginfo = self.component_debuginfo;
                 // Store the module's base offset for DWARF address translation
                 if let Some(base_offset) = self.first_module_base_offset {
-                    first_module.wasm_file.module_base_offset = base_offset as u64;
+                    first_module.wasm_file.module_base_offset = base_offset;
                 }
             }
         }
@@ -437,7 +436,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 unchecked_range: range,
             } => {
                 self.module_section(range.clone(), parser, component)?;
-                return Ok(Action::Skip(range.end - range.start));
+                return Ok(Action::Skip((range.end - range.start) as usize));
             }
             Payload::ComponentSection {
                 parser,
@@ -520,7 +519,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         for import in s {
             let import = import.into_diagnostic()?;
             let types = self.validator.types(0).unwrap();
-            let ty = types.component_entity_type_of_import(import.name.0).unwrap();
+            let ty = types.component_item_for_import(import.name.name).unwrap().ty;
             self.result.initializers.push(LocalInitializer::Import(import.name, ty));
         }
         Ok(())
@@ -578,12 +577,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     core_func_index += 1;
                     LocalInitializer::ResourceDrop(resource, ty)
                 }
-                wasmparser::CanonicalFunction::ResourceDropAsync { resource } => {
-                    let resource = types.component_any_type_at(resource).unwrap_resource();
-                    let ty = self.core_func_signature(core_func_index);
-                    core_func_index += 1;
-                    LocalInitializer::ResourceDropAsync(resource, ty)
-                }
                 wasmparser::CanonicalFunction::ResourceRep { resource } => {
                     let resource = types.component_any_type_at(resource).unwrap_resource();
                     let ty = self.core_func_signature(core_func_index);
@@ -598,12 +591,13 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 | wasmparser::CanonicalFunction::ThreadNewIndirect { .. }
                 | wasmparser::CanonicalFunction::ThreadAvailableParallelism
                 | wasmparser::CanonicalFunction::ThreadIndex
-                | wasmparser::CanonicalFunction::ThreadSuspend { .. }
-                | wasmparser::CanonicalFunction::ThreadSuspendTo { .. }
-                | wasmparser::CanonicalFunction::ThreadSuspendToSuspended { .. }
-                | wasmparser::CanonicalFunction::ThreadUnsuspend
-                | wasmparser::CanonicalFunction::ThreadYield { .. }
-                | wasmparser::CanonicalFunction::ThreadYieldToSuspended { .. }
+                | wasmparser::CanonicalFunction::ThreadResumeLater
+                | wasmparser::CanonicalFunction::ThreadSuspend
+                | wasmparser::CanonicalFunction::ThreadSuspendThenResume
+                | wasmparser::CanonicalFunction::ThreadYieldThenResume
+                | wasmparser::CanonicalFunction::ThreadSuspendThenPromote
+                | wasmparser::CanonicalFunction::ThreadYieldThenPromote
+                | wasmparser::CanonicalFunction::ThreadYield
                 | wasmparser::CanonicalFunction::BackpressureInc
                 | wasmparser::CanonicalFunction::BackpressureDec
                 | wasmparser::CanonicalFunction::WaitableJoin
@@ -640,7 +634,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
 
     fn module_section(
         &mut self,
-        range: std::ops::Range<usize>,
+        range: std::ops::Range<u64>,
         parser: Parser,
         component: &'data [u8],
     ) -> WasmResult<()> {
@@ -667,7 +661,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         );
         let parsed_module = module_environment.parse(
             parser,
-            &component[range.start..range.end],
+            &component[range.start as usize..range.end as usize],
             &self.session.diagnostics,
         )?;
         let static_idx = self.static_modules.push(parsed_module);
@@ -682,11 +676,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         Ok(())
     }
 
-    fn component_section(
-        &mut self,
-        range: std::ops::Range<usize>,
-        parser: Parser,
-    ) -> WasmResult<()> {
+    fn component_section(&mut self, range: std::ops::Range<u64>, parser: Parser) -> WasmResult<()> {
         // When a sub-component is found then the current parsing state
         // is pushed onto the `lexical_scopes` stack. This will subsequently
         // get popped as part of `Payload::End` processing above.
@@ -768,9 +758,9 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         for export in s {
             let export = export.into_diagnostic()?;
             let item = self.kind_to_item(export.kind, export.index)?;
-            let prev = self.result.exports.insert(export.name.0, item);
+            let prev = self.result.exports.insert(export.name.name, item);
             assert!(prev.is_none());
-            self.result.initializers.push(LocalInitializer::Export(export.name.0, item));
+            self.result.initializers.push(LocalInitializer::Export(export.name.name, item));
         }
         Ok(())
     }
@@ -840,7 +830,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         let mut map = FxHashMap::with_capacity_and_hasher(exports.len(), FxBuildHasher);
         for export in exports {
             let idx = self.kind_to_item(export.kind, export.index)?;
-            map.insert(export.name.0, idx);
+            map.insert(export.name.name, idx);
         }
 
         Ok(LocalInitializer::ComponentSynthetic(map))

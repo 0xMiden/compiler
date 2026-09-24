@@ -77,7 +77,10 @@ pub(crate) fn supported_features() -> WasmFeatures {
 /// The extended set of WebAssembly features which are enabled when working with the Wasm Component
 /// Model
 pub(crate) fn supported_component_model_features() -> WasmFeatures {
-    supported_features() | WasmFeatures::COMPONENT_MODEL
+    supported_features()
+        | WasmFeatures::COMPONENT_MODEL
+        // Enables the `external-id` and `implements` component name attributes.
+        | WasmFeatures::CM_IMPLEMENTS
 }
 
 #[cfg(test)]
