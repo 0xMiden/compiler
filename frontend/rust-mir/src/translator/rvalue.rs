@@ -12,7 +12,9 @@ pub(crate) fn translate_rvalue(
     rvalue: &Rvalue,
 ) -> Result<ValueRef, Report> {
     match rvalue {
-        Rvalue::Use(value) => operand::translate_operand(translator, value),
+        // The retag marker is aliasing-model metadata. It has no runtime effect, thus the Miden IR
+        // ignores it.
+        Rvalue::Use(value, _) => operand::translate_operand(translator, value),
         Rvalue::BinaryOp(op, lhs, rhs) => translate_binary_op(translator, *op, lhs, rhs),
         rvalue => Err(Report::msg(format!(
             "rust mir frontend: unsupported MIR rvalue: {}",
@@ -54,10 +56,11 @@ fn rvalue_name(rvalue: &Rvalue) -> &'static str {
         Rvalue::CopyForDeref(_) => "CopyForDeref",
         Rvalue::Discriminant(_) => "Discriminant",
         Rvalue::Len(_) => "Len",
+        Rvalue::Reborrow(..) => "Reborrow",
         Rvalue::Ref(..) => "Ref",
         Rvalue::Repeat(..) => "Repeat",
         Rvalue::ThreadLocalRef(_) => "ThreadLocalRef",
         Rvalue::UnaryOp(..) => "UnaryOp",
-        Rvalue::Use(_) => "Use",
+        Rvalue::Use(..) => "Use",
     }
 }
