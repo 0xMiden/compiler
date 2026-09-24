@@ -4,9 +4,13 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
+use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
-    Builder, Op, PointerType, Report, SourceSpan, Type, ValueRef,
-    dialects::builtin::{BuiltinOpBuilder, FunctionBuilder},
+    Builder, Op, PointerType, Report, SourceSpan, SymbolName, SymbolTable, Type,
+    UnsafeIntrusiveEntityRef, ValueRef,
+    diagnostics::Uri,
+    dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, Module},
+    parse::{ParserConfig, parse},
     testing::Test,
 };
 
@@ -50,6 +54,30 @@ impl DerefMut for EvalTest {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.test
     }
+}
+
+const ALIAS_TEST_SOURCE: &str = r#"
+builtin.module public @test {
+    builtin.function private extern("C") @body(%x: u32) -> u32 { builtin.ret %x : (u32); };
+    builtin.function_alias private @first -> @body;
+    builtin.function_alias public @api -> @first;
+    builtin.function public extern("C") @caller(%x: u32) -> u32 {
+        %result = hir.exec @api(%x) : extern("C") (u32) -> u32;
+        builtin.ret %result : (u32);
+    };
+};
+"#;
+
+fn parse_alias_test_source() -> Result<(HirEvaluator, UnsafeIntrusiveEntityRef<Module>), Report> {
+    let test = Test::default();
+    test.context().get_or_register_dialect::<midenc_dialect_hir::HirDialect>();
+    let evaluator = HirEvaluator::new(test.context_rc());
+    let module = parse::<Module>(
+        ParserConfig::new(test.context_rc()),
+        Uri::new("eval_alias.hir"),
+        ALIAS_TEST_SOURCE,
+    )?;
+    Ok((evaluator, module))
 }
 
 /// Test that we can evaluate a standalone operation, not just callables
@@ -126,6 +154,77 @@ fn eval_callable_test() -> Result<(), Report> {
     let results = test.evaluator.eval_callable(&*callable, [false.into()])?;
     assert_eq!(results.len(), 1);
     assert_eq!(results[0], Value::Immediate(0u32.into()));
+
+    Ok(())
+}
+
+#[test]
+fn alias_entrypoint_and_nested_call_execute_the_canonical_body() -> Result<(), Report> {
+    let (mut evaluator, module) = parse_alias_test_source()?;
+    let module = module.borrow();
+
+    for name in ["api", "caller"] {
+        let path = module.get(SymbolName::intern(name)).unwrap().borrow().path();
+        let results = evaluator.call(module.as_operation(), &path, [42u32.into()])?;
+        assert_eq!(results.as_slice(), &[Value::Immediate(42u32.into())]);
+    }
+
+    Ok(())
+}
+
+#[test]
+fn alias_call_with_wrong_signature_fails() -> Result<(), Report> {
+    let (mut evaluator, module) = parse_alias_test_source()?;
+    let module = module.borrow();
+
+    let alias = module.get(SymbolName::intern("api")).unwrap();
+    let path = alias.borrow().path();
+    let err = evaluator
+        .call(module.as_operation(), &path, [])
+        .expect_err("calling the alias without its required argument should fail");
+    let expected = alloc::format!("entrypoint '{path}' expects 1 arguments, but 0 were given");
+    assert!(
+        err.labels()
+            .expect("argument-count mismatch should have a diagnostic label")
+            .any(|label| label.label() == Some(expected.as_str())),
+        "unexpected diagnostic: {err:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn eval_on_alias_executes_the_canonical_body() -> Result<(), Report> {
+    let (mut evaluator, module) = parse_alias_test_source()?;
+    let module = module.borrow();
+
+    for name in ["first", "api"] {
+        let alias = module.get(SymbolName::intern(name)).unwrap();
+        let alias = alias.borrow();
+        let results = evaluator.eval(alias.as_symbol_operation(), [42u32.into()])?;
+        assert_eq!(results.as_slice(), &[Value::Immediate(42u32.into())]);
+    }
+
+    Ok(())
+}
+
+#[test]
+fn eval_on_alias_with_broken_target_reports_resolution_error() -> Result<(), Report> {
+    let (mut evaluator, mut module) = parse_alias_test_source()?;
+    module.borrow_mut().remove(SymbolName::intern("first"));
+    let module = module.borrow();
+
+    let alias = module.get(SymbolName::intern("api")).unwrap();
+    let alias = alias.borrow();
+    let err = evaluator
+        .eval(alias.as_symbol_operation(), [42u32.into()])
+        .expect_err("evaluating an alias whose target is missing should fail");
+    let label = err
+        .labels()
+        .expect("unresolvable alias should have a diagnostic label")
+        .find_map(|label| label.label().map(alloc::string::ToString::to_string))
+        .expect("diagnostic label should have text");
+    assert!(label.contains("function alias 'api'"), "unexpected diagnostic: {err:?}");
+    assert!(label.contains("does not resolve"), "unexpected diagnostic: {err:?}");
 
     Ok(())
 }
@@ -280,8 +379,6 @@ fn println_reports_invalid_utf8() -> Result<(), Report> {
 
 #[test]
 fn wasm_i64_remainder() -> Result<(), Report> {
-    use midenc_dialect_wasm::WasmOpBuilder;
-
     let mut test = EvalTest::named("wasm_i64_remainder");
     test.with_function(&[Type::I64, Type::I64], &[Type::I64]);
     {

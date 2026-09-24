@@ -25,17 +25,8 @@ pub enum CallControlFlowAction {
 /// propagation even without a single resolvable callee (e.g. an indirect call through a function
 /// table).
 pub(crate) fn is_external_call(call: &dyn midenc_hir::CallOpInterface) -> bool {
-    use midenc_hir::CallableOpInterface;
-
-    call.possible_callees().is_none_or(|targets| {
-        targets.iter().any(|target| {
-            let target = target.borrow();
-            target
-                .as_symbol_operation()
-                .as_trait::<dyn CallableOpInterface>()
-                .is_none_or(|callable| callable.get_callable_region().is_none())
-        })
-    })
+    call.possible_callees()
+        .is_none_or(|targets| targets.iter().any(|target| target.callable_region().is_none()))
 }
 
 /// [DataFlowAnalysis] is the base trait for all data-flow analyses.

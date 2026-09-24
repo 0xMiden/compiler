@@ -317,7 +317,7 @@ fn export_name_identical_to_source_name_records_no_linkage_override() {
 }
 
 #[test]
-fn multiple_exports_for_single_function_is_an_error() {
+fn multiple_exports_for_single_function_become_aliases() {
     let mut module = module_with_func_names(&[(0, "foo")]);
     module
         .exports
@@ -326,13 +326,12 @@ fn multiple_exports_for_single_function_is_an_error() {
         .exports
         .insert("export_2".to_string(), EntityIndex::Function(FuncIndex::new(0)));
 
-    let err = module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap_err();
+    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
 
-    assert!(
-        err.to_string()
-            .contains("exporting a function under multiple names is not supported"),
-        "unexpected error: {err:?}"
-    );
+    // First export in Wasm order is primary, the rest are aliases.
+    assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "export_1");
+    assert_eq!(module.func_aliases(FuncIndex::new(0)), &[Symbol::intern("export_2")]);
+    assert_eq!(module.source_func_name(FuncIndex::new(0)).as_str(), "foo");
 }
 
 #[test]

@@ -406,16 +406,13 @@ pub fn visit_call_operation<A>(
         Some(cache) => call.resolve_in_symbol_table(cache),
     };
 
-    let callee_ref = callee.as_ref().map(|callee| callee.borrow());
-    let callable = match callee_ref.as_ref() {
-        None => None,
-        Some(callee) => callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>(),
-    };
+    let callable = callee.as_ref().map(|callee| callee.borrow());
 
     // No region means the callee is only declared in this module. If that is the case or if the
     // solver is not interprocedural, let the hook handle it.
-    let is_declaration =
-        callable.is_some_and(|c| c.get_callable_region().is_none_or(|cr| cr.borrow().is_empty()));
+    let is_declaration = callable
+        .as_ref()
+        .is_some_and(|c| c.get_callable_region().is_none_or(|cr| cr.borrow().is_empty()));
     let is_interprocedural = solver.config().is_interprocedural();
     if is_declaration || !is_interprocedural {
         return analysis.visit_call_control_flow_transfer(

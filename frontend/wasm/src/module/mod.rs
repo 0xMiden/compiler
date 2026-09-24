@@ -166,6 +166,14 @@ pub struct Module {
     /// Built by [`Self::resolve_func_symbols`].
     func_linkages: PrimaryMap<FuncIndex, Symbol>,
 
+    /// Secondary export names per function.
+    ///
+    /// Wasm allows `N:1` exports, i.e. exporting a function `N` times with different export names.
+    /// The first of this `N` exports becomes the primary in [`Self::func_linkages`] and gets
+    /// translated to a function. The remaining exports are preseved here and they will become
+    /// function aliases.
+    func_aliases: PrimaryMap<FuncIndex, Vec<Symbol>>,
+
     /// Names in the name section that are shared by more than one function.
     duplicate_source_names: FxHashSet<Symbol>,
 
@@ -354,7 +362,6 @@ impl Module {
     }
 
     /// Synthesized name for functions without a name-section entry (e.g. stripped binaries).
-    // TODO check if there are more places that could use this
     fn fallback_func_name(index: FuncIndex) -> Symbol {
         Symbol::intern(format!("func{}", index.as_u32()))
     }
@@ -393,10 +400,11 @@ impl Module {
     /// [`maybe_lower_linker_stub`]: linker_stubs::maybe_lower_linker_stub
     pub fn resolve_func_symbols(&mut self, diagnostics: &DiagnosticsHandler) -> WasmResult<()> {
         self.func_linkages.clear();
+        self.func_aliases.clear();
         self.duplicate_source_names.clear();
 
-        // Collect and validate function exports
-        let mut exported_as: FxHashMap<FuncIndex, Symbol> = FxHashMap::default();
+        // Collect and validate function exports.
+        let mut exported_as: FxHashMap<FuncIndex, Vec<Symbol>> = FxHashMap::default();
         let mut export_names: FxHashSet<Symbol> = FxHashSet::default();
         for (export_name, entity) in &self.exports {
             let EntityIndex::Function(func_idx) = entity else {
@@ -404,14 +412,7 @@ impl Module {
             };
             let export_sym = Symbol::intern(export_name.as_str());
 
-            if exported_as.insert(*func_idx, export_sym).is_some() {
-                unsupported_diag!(
-                    diagnostics,
-                    "exporting a function under multiple names is not supported: function index \
-                     `{}`, `{export_name}`)",
-                    func_idx.as_u32()
-                );
-            }
+            exported_as.entry(*func_idx).or_default().push(export_sym);
             export_names.insert(export_sym);
 
             if let Ok(func_ident) = FunctionIdent::from_str(export_name.as_str()) {
@@ -478,10 +479,13 @@ impl Module {
 
         // Assign dense linkage names in deterministic `FuncIndex` order.
         let mut linkages: Vec<Option<Symbol>> = vec![None; self.functions.len()];
+        let mut aliases: Vec<Vec<Symbol>> = vec![Vec::new(); self.functions.len()];
         for fidx in self.functions.keys() {
-            let linkage = if let Some(export_name) = exported_as.get(&fidx) {
-                // Export name must become linkage name for external calls to resolve.
-                *export_name
+            let linkage = if let Some(names) = exported_as.get(&fidx) {
+                // Export names must become linkage/alias names for external calls to resolve.
+                // First export in Wasm order is primary, the rest are aliases.
+                aliases[fidx.index()] = names.iter().skip(1).copied().collect();
+                names[0]
             } else {
                 // Not exported: linkage defaults to the source name. Fallbacks are unique among
                 // themselves, but an explicit name may be `funcY` while `Y` is unnamed. Explicit
@@ -538,8 +542,23 @@ impl Module {
             let key = self.func_linkages.push(linkage);
             debug_assert_eq!(key, FuncIndex::new(idx));
         }
+        self.func_aliases.clear();
+        self.func_aliases.reserve(aliases.len());
+        for (idx, names) in aliases.into_iter().enumerate() {
+            let key = self.func_aliases.push(names);
+            debug_assert_eq!(key, FuncIndex::new(idx));
+        }
 
         Ok(())
+    }
+
+    /// Returns the secondary export names for `index`.
+    ///
+    /// Empty for functions exported under a single name or not exported at all.
+    ///
+    /// Requires [`Self::resolve_func_symbols`] to have run.
+    pub fn func_aliases(&self, index: FuncIndex) -> &[Symbol] {
+        self.func_aliases.get(index).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
     /// Returns the name of the given data segment.

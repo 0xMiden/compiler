@@ -13,7 +13,7 @@ use alloc::{
 use midenc_hir::{
     CallableOpInterface, Context, Immediate, Operation, OperationRef, RegionBranchPoint, RegionRef,
     Report, SmallVec, SourceSpan, Spanned, SymbolPath, Type, Value as _, ValueRange, ValueRef,
-    dialects::builtin::{ComponentId, attributes::LocalVariable},
+    dialects::builtin::{ComponentId, FunctionAlias, attributes::LocalVariable},
     formatter::DisplayValues,
     smallvec,
 };
@@ -109,9 +109,12 @@ impl HirEvaluator {
 
     /// Evaluate `op` with `args`, returning the results, if any, produced by it.
     ///
+    /// If `op` is a `FunctionAlias`, its canonical target is evaluated instead.
+    ///
     /// This will fail with an error if any of the following occur:
     ///
     /// * The number and type of arguments does not match the operands expected by `op`
+    /// * `op` is a `FunctionAlias` which does not resolve to a callable
     /// * `op` implements `Initialize` and initialization fails
     /// * An error occurs while evaluating `op`
     pub fn eval<I>(&mut self, op: &Operation, args: I) -> Result<SmallVec<[Value; 1]>, Report>
@@ -121,6 +124,22 @@ impl HirEvaluator {
         // Handle evaluation of callable symbols specially
         if let Some(callable) = op.as_trait::<dyn CallableOpInterface>() {
             return self.eval_callable(callable, args);
+        }
+
+        // Aliases have no body of their own, so evaluate their canonical target instead
+        if let Some(alias) = op.downcast_ref::<FunctionAlias>() {
+            let span = op.span();
+            let symbol = op.as_symbol_ref().expect("function aliases are symbols");
+            let callee = symbol.resolve_callable().map_err(|err| {
+                self.report(
+                    "invalid entrypoint",
+                    span,
+                    format!("function alias '{}': {err}", alias.get_name().as_str()),
+                )
+            })?;
+            let target = callee.target();
+            let callable = target.borrow();
+            return self.eval_callable(&*callable, args);
         }
 
         self.reset();
@@ -262,8 +281,8 @@ impl HirEvaluator {
     /// * `symbol_table` does not implement `SymbolTable`
     /// * `symbol_table` implements `Initialize` and initialization fails
     /// * `symbol` is not resolvable via `op`'s symbol table
-    /// * `symbol` does not implement `CallableOpInterface`
-    /// * `symbol` is only a declaration
+    /// * `symbol` does not resolve to a `CallableOpInterface` implementation
+    /// * the resolved callable is only a declaration
     /// * The number and type of arguments does not match the symbol parameter list
     /// * An error occurs while evaluating the given symbol
     pub fn call<I>(
@@ -285,7 +304,8 @@ impl HirEvaluator {
 
         // Resolve the symbol
         let symbol_manager = symbol_table.symbol_manager();
-        let Some(symbol) = symbol_manager.lookup_symbol_ref(symbol) else {
+        let entrypoint = symbol;
+        let Some(named_symbol) = symbol_manager.lookup_symbol_ref(symbol) else {
             return Err(self.report(
                 "invalid entrypoint",
                 symbol_table.as_symbol_table_operation().span(),
@@ -293,23 +313,27 @@ impl HirEvaluator {
             ));
         };
 
-        let op = symbol.borrow();
-
-        // Verify the symbol is callable
-        let Some(callable) = op.as_trait::<dyn CallableOpInterface>() else {
-            return Err(self.report(
+        // Diagnostics refer to the selected symbol; execution uses the resolved body owner.
+        let entrypoint_span = named_symbol.borrow().span();
+        let named = named_symbol.borrow().as_symbol_ref().expect("symbol lookup returns a symbol");
+        let callee = named.resolve_callable().map_err(|err| {
+            self.report(
                 "invalid entrypoint",
-                op.span(),
-                "this symbol does not implement CallableOpInterface",
-            ));
-        };
+                entrypoint_span,
+                format!("entrypoint '{entrypoint}': {err}"),
+            )
+        })?;
+        let target = callee.target();
+        let symbol = target.as_operation_ref();
+        let op = symbol.borrow();
+        let callable = target.borrow();
 
         // Verify the callable symbol is defined, not just declared
         let Some(callable_region) = callable.get_callable_region() else {
             return Err(self.report(
                 "invalid entrypoint",
-                op.span(),
-                "symbol declarations are not valid callee targets",
+                entrypoint_span,
+                format!("entrypoint '{entrypoint}' resolves to a declaration"),
             ));
         };
 
@@ -320,8 +344,12 @@ impl HirEvaluator {
         if signature.arity() != args.len() {
             return Err(self.report(
                 "invalid call",
-                op.span(),
-                format!("expected {} arguments, but {} were given", signature.arity(), args.len()),
+                entrypoint_span,
+                format!(
+                    "entrypoint '{entrypoint}' expects {} arguments, but {} were given",
+                    signature.arity(),
+                    args.len()
+                ),
             ));
         }
 
@@ -333,8 +361,12 @@ impl HirEvaluator {
                 return Err(self
                     .error("invalid call")
                     .with_primary_label(
-                        op.span(),
-                        format!("argument type mismatch: expected {}, got {given_ty}", expected.ty),
+                        entrypoint_span,
+                        format!(
+                            "argument type mismatch for entrypoint '{entrypoint}': expected {}, \
+                             got {given_ty}",
+                            expected.ty
+                        ),
                     )
                     .with_secondary_label(
                         arg.span(),

@@ -25,6 +25,7 @@ use crate::{
     artifact::MasmComponent,
     emitter::{BlockEmitter, FrameLayout},
     linker::{FunctionTableLayout, LinkInfo, Linker},
+    lower::lowering::invocation_target_from_symbol_path,
     masm,
 };
 
@@ -151,6 +152,10 @@ fn is_declaration_only(op: &midenc_hir::OperationRef) -> bool {
         region.entry().body().iter().all(|item| {
             if let Some(function) = item.downcast_ref::<builtin::Function>() {
                 function.is_declaration()
+            } else if item.is::<builtin::FunctionAlias>() {
+                // An alias introduces a callable name even without owning a body.
+                // Retain its module so that name is not silently dropped.
+                false
             } else if let Some(gv) = item.downcast_ref::<builtin::GlobalVariable>() {
                 gv.is_declaration()
             } else {
@@ -189,14 +194,14 @@ fn is_declaration_only(op: &midenc_hir::OperationRef) -> bool {
 /// than *silently mistranslated*:
 ///
 /// - **Anything unrecognized counts as owning memory.** A module body is only ever legal here if
-///   it holds functions, global variables, segments, function tables and nested modules —
-///   `MasmModuleBuilder::build` panics on anything else — so an item this does not recognize is
-///   one that cannot be translated anyway. Treating it as owning memory is therefore also what
-///   makes the answer right *at any depth*: the only container that could hold a global or a
-///   segment deeper down is a nested `builtin::Module`, which is not recognized here and so does
-///   not get past this. That is deliberately stricter than lowering now requires — a nested module
-///   can be lowered, but a top-level sibling holding one still has no parent component to own
-///   whatever memory that nesting hides, and this predicate cannot see that far.
+///   it holds functions, function aliases, global variables, segments, function tables and nested
+///   modules — `MasmModuleBuilder::build` panics on anything else — so an item this does not
+///   recognize is one that cannot be translated anyway. Treating it as owning memory is therefore
+///   also what makes the answer right *at any depth*: the only container that could hold a global
+///   or a segment deeper down is a nested `builtin::Module`, which is not recognized here and so
+///   does not get past this. That is deliberately stricter than lowering now requires — a nested
+///   module can be lowered, but a top-level sibling holding one still has no parent component to
+///   own whatever memory that nesting hides, and this predicate cannot see that far.
 /// - **A declared global counts, not just a defined one.** [`Linker::link`] skips declarations
 ///   when building the layout, so this is strictly stricter than the overlay hazard requires. It
 ///   is the right side to err on: a declaration whose definition is elsewhere is absent from the
@@ -212,7 +217,8 @@ fn module_owns_memory(module: &builtin::Module) -> bool {
         // Plus anything this cannot place, which includes a nested `builtin::Module` — the only
         // item that could hide a global or a segment deeper down — so this arm is the conservative
         // one, not a third case.
-        !item.is::<builtin::Function>()
+        // Function aliases own no memory, like functions.
+        !(item.is::<builtin::Function>() || item.is::<builtin::FunctionAlias>())
     })
 }
 
@@ -736,6 +742,20 @@ fn classify_marked_canonical_abi_entrypoint(
     let find_canonical_entrypoint = |root: midenc_hir::OperationRef| {
         let mut canonical_entrypoint = None;
         root.borrow().prewalk_all(|op| {
+            // Entrypoints may name an alias. Resolve to the canonical function so
+            // `--entrypoint=...::alias` works like the primary name.
+            if let Some(alias) = op.downcast_ref::<builtin::FunctionAlias>() {
+                let alias_path = invocation_target_from_symbol_path(&alias.path(), alias.span());
+                if alias_path.unwrap_path() == entrypoint_path.as_ref()
+                    && let Some(target) = alias
+                        .resolve_target()
+                        .and_then(builtin::FunctionAlias::canonicalize_function)
+                    && target.borrow().get_signature().cc.is_wasm_canonical_abi()
+                {
+                    canonical_entrypoint = Some(target);
+                }
+                return;
+            }
             let Some(function) = op.downcast_ref::<builtin::Function>() else {
                 return;
             };
@@ -743,10 +763,8 @@ fn classify_marked_canonical_abi_entrypoint(
                 return;
             }
 
-            let function_target = super::lowering::invocation_target_from_symbol_path(
-                &function.path(),
-                function.span(),
-            );
+            let function_target =
+                invocation_target_from_symbol_path(&function.path(), function.span());
             if function_target.unwrap_path() == entrypoint_path.as_ref() {
                 canonical_entrypoint = Some(function.as_function_ref());
             }
@@ -756,11 +774,10 @@ fn classify_marked_canonical_abi_entrypoint(
 
     if let Some(function) = find_canonical_entrypoint(component) {
         if function.borrow().as_operation().parent_op() != Some(component) {
-            let path = function.borrow().path();
             return Err(Report::msg(format!(
-                "unsupported executable entrypoint '{path}': a canonical-ABI entrypoint for a \
-                 component with a core Wasm start function must be defined directly in the \
-                 selected component"
+                "unsupported executable entrypoint '{entrypoint_path}': a canonical-ABI \
+                 entrypoint for a component with a core Wasm start function must be defined \
+                 directly in the selected component"
             )));
         }
         return Ok(Some(function));
@@ -769,12 +786,11 @@ fn classify_marked_canonical_abi_entrypoint(
     let supporting_entrypoint = supporting
         .iter()
         .find_map(|module| find_canonical_entrypoint(module.borrow().as_operation_ref()));
-    if let Some(function) = supporting_entrypoint {
-        let path = function.borrow().path();
+    if supporting_entrypoint.is_some() {
         return Err(Report::msg(format!(
-            "unsupported executable entrypoint '{path}': a canonical-ABI entrypoint cannot be \
-             selected for a component with a core Wasm start function because it would execute \
-             component initialization twice in the same context"
+            "unsupported executable entrypoint '{entrypoint_path}': a canonical-ABI entrypoint \
+             cannot be selected for a component with a core Wasm start function because it would \
+             execute component initialization twice in the same context"
         )));
     }
 
@@ -871,6 +887,8 @@ impl MasmComponentBuilder<'_> {
                 self.define_interface(interface)?;
             } else if let Some(function) = op.downcast_ref::<builtin::Function>() {
                 self.define_function(function)?;
+            } else if let Some(alias) = op.downcast_ref::<builtin::FunctionAlias>() {
+                self.define_function_alias(alias)?;
             } else {
                 panic!(
                     "invalid component-level operation: '{}' is not supported in a component body",
@@ -1074,9 +1092,7 @@ impl MasmComponentBuilder<'_> {
             Box::new(masm::Module::new(masm::ModuleKind::Library, interface_path));
         let builder = MasmModuleBuilder {
             module: &mut masm_module,
-            analysis_manager: self
-                .analysis_manager
-                .nest(interface.as_operation().as_operation_ref()),
+            analysis_manager: self.analysis_manager.clone(),
             link_info: self.link_info,
             source_manager: self.source_manager.clone(),
             init_body: &mut self.init_body,
@@ -1132,7 +1148,7 @@ impl MasmComponentBuilder<'_> {
             .expect("expected unique reference");
         let builder = MasmModuleBuilder {
             module: masm_module,
-            analysis_manager: self.analysis_manager.nest(module.as_operation_ref()),
+            analysis_manager: self.analysis_manager.clone(),
             link_info: self.link_info,
             source_manager: self.source_manager.clone(),
             init_body: &mut self.init_body,
@@ -1235,6 +1251,39 @@ impl MasmComponentBuilder<'_> {
             .into_diagnostic()
             .wrap_err("failed to define MASM procedure")?;
 
+        Ok(())
+    }
+
+    fn define_function_alias(&mut self, alias: &builtin::FunctionAlias) -> Result<(), Report> {
+        let target_ref = alias
+            .resolve_target()
+            .and_then(builtin::FunctionAlias::canonicalize)
+            .and_then(|sym| {
+                let op = sym.borrow();
+                op.as_symbol_operation()
+                    .downcast_ref::<builtin::Function>()
+                    .map(|f| f.as_function_ref())
+            })
+            .ok_or_else(|| {
+                Report::msg(format!(
+                    "invalid function alias '{}': target does not resolve to a function",
+                    alias.get_name().as_symbol().as_str()
+                ))
+            })?;
+        let target = target_ref.borrow();
+        let builder = MasmFunctionBuilder::new_for_alias(alias, &target)?;
+        let procedure = builder.build(
+            &target,
+            self.analysis_manager.nest(target.as_operation_ref()),
+            self.link_info,
+            FunctionLoweringMode::Normal,
+        )?;
+        let module =
+            Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
+        module
+            .define_procedure(procedure, self.source_manager.clone())
+            .into_diagnostic()
+            .wrap_err("failed to define MASM procedure for alias")?;
         Ok(())
     }
 
@@ -1419,6 +1468,7 @@ struct FunctionTableFragment {
 
 struct MasmModuleBuilder<'a> {
     module: &'a mut masm::Module,
+    /// Shared world/component analysis root, covering cross-module alias targets.
     analysis_manager: AnalysisManager,
     link_info: &'a LinkInfo,
     source_manager: Arc<dyn midenc_session::SourceManager>,
@@ -1440,6 +1490,8 @@ impl MasmModuleBuilder<'_> {
         for op in block.body() {
             if let Some(function) = op.downcast_ref::<builtin::Function>() {
                 self.define_function(function)?;
+            } else if let Some(alias) = op.downcast_ref::<builtin::FunctionAlias>() {
+                self.define_function_alias(alias)?;
             } else if let Some(gv) = op.downcast_ref::<builtin::GlobalVariable>() {
                 self.emit_global_variable_initializer(gv)?;
             } else if let Some(nested_module) = op.downcast_ref::<builtin::Module>() {
@@ -1468,6 +1520,8 @@ impl MasmModuleBuilder<'_> {
         for op in block.body() {
             if let Some(function) = op.downcast_ref::<builtin::Function>() {
                 self.define_function(function)?;
+            } else if let Some(alias) = op.downcast_ref::<builtin::FunctionAlias>() {
+                self.define_function_alias(alias)?;
             } else {
                 panic!(
                     "invalid interface-level operation: '{}' is not legal in a MASM module body",
@@ -1485,6 +1539,42 @@ impl MasmModuleBuilder<'_> {
         let procedure = builder.build(
             function,
             self.analysis_manager.nest(function.as_operation_ref()),
+            self.link_info,
+            FunctionLoweringMode::Normal,
+        )?;
+
+        self.module
+            .define_procedure(procedure, self.source_manager.clone())
+            .map_err(|e| Report::msg(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Lower an alias by emitting a duplicate procedure with the alias name/visibility
+    /// but the canonical target body.
+    fn define_function_alias(&mut self, alias: &builtin::FunctionAlias) -> Result<(), Report> {
+        let target_ref = alias
+            .resolve_target()
+            .and_then(builtin::FunctionAlias::canonicalize)
+            .and_then(|sym| {
+                let op = sym.borrow();
+                op.as_symbol_operation()
+                    .downcast_ref::<builtin::Function>()
+                    .map(|f| f.as_function_ref())
+            })
+            .ok_or_else(|| {
+                Report::msg(format!(
+                    "invalid function alias '{}': target does not resolve to a function",
+                    alias.get_name().as_symbol().as_str()
+                ))
+            })?;
+
+        let target = target_ref.borrow();
+        let builder = MasmFunctionBuilder::new_for_alias(alias, &target)?;
+
+        let procedure = builder.build(
+            &target,
+            self.analysis_manager.nest(target.as_operation_ref()),
             self.link_info,
             FunctionLoweringMode::Normal,
         )?;
@@ -1612,6 +1702,54 @@ impl MasmFunctionBuilder {
 
         Ok(Self {
             span: function.span(),
+            name,
+            signature,
+            visibility,
+            num_locals,
+        })
+    }
+
+    /// Prepare to translate `alias` by emitting the `target` body under the alias name.
+    pub fn new_for_alias(
+        alias: &builtin::FunctionAlias,
+        target: &builtin::Function,
+    ) -> Result<Self, Report> {
+        use midenc_hir::Visibility;
+
+        if target.is_declaration() {
+            return Err(function_without_a_body(target));
+        }
+
+        let alias_name = *alias.get_name();
+        let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(Span::new(
+            alias_name.span,
+            alias_name.as_ref().into(),
+        )));
+        let visibility = match *alias.get_linkage() {
+            Visibility::Public => masm::Visibility::Public,
+            Visibility::Internal => masm::Visibility::Public,
+            Visibility::Private => masm::Visibility::Private,
+        };
+        let locals_required = target.locals().iter().map(|ty| ty.size_in_felts()).sum::<usize>();
+        let num_locals = u16::try_from(locals_required).map_err(|_| {
+            let context = target.as_operation().context();
+            context
+                .diagnostics()
+                .diagnostic(miden_assembly::diagnostics::Severity::Error)
+                .with_message("cannot emit masm for function alias")
+                .with_primary_label(
+                    alias.span(),
+                    "local storage exceeds procedure limit: no more than u16::MAX elements are \
+                     supported",
+                )
+                .into_report()
+        })?;
+
+        let signature =
+            semantic_debug_signature(target).unwrap_or_else(|| lowered_signature(target));
+
+        Ok(Self {
+            span: alias.span(),
             name,
             signature,
             visibility,

@@ -6,8 +6,8 @@ mod world;
 pub use self::{component::*, function::*, module::*, world::*};
 use super::{attributes::Signature, ops::*};
 use crate::{
-    Builder, BuilderExt, Ident, Immediate, OpBuilder, Report, SourceSpan, Spanned, Type,
-    UnsafeIntrusiveEntityRef, ValueRef, Visibility, constants::ConstantData,
+    AsCallableSymbolRef, Builder, BuilderExt, Ident, Immediate, OpBuilder, Report, SourceSpan,
+    Spanned, Type, UnsafeIntrusiveEntityRef, ValueRef, Visibility, constants::ConstantData,
 };
 
 pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
@@ -29,6 +29,17 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
     ) -> Result<FunctionRef, Report> {
         let op_builder = self.builder_mut().create::<Function, (_, _, _)>(name.span());
         op_builder(name, visibility, signature)
+    }
+
+    /// Create a [FunctionAlias] referring to `target`.
+    fn create_function_alias<C: AsCallableSymbolRef>(
+        &mut self,
+        name: Ident,
+        visibility: Visibility,
+        target: C,
+    ) -> Result<FunctionAliasRef, Report> {
+        let op_builder = self.builder_mut().create::<FunctionAlias, (_, _, C)>(name.span());
+        op_builder(name, visibility, target)
     }
 
     fn create_global_variable(
