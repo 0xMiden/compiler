@@ -5,13 +5,10 @@ use semver::Version;
 use syn::spanned::Spanned;
 
 use crate::{
-    component_macro::{
-        CORE_TYPES_PACKAGE, ComponentMethod, MethodReturn, export_path, to_kebab_case,
-    },
+    component_macro::{ComponentMethod, MethodReturn, export_path, to_kebab_case},
     namespace::ComponentNamespace,
     types::{ExportedTypeDef, ExportedTypeKind, ensure_custom_type_defined},
     wit_builder::WitBuilder,
-    wit_world::write_world_block,
 };
 
 /// Inputs used to render the WIT interface and world for a component implementation.
@@ -63,69 +60,66 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
         }
     }
 
-    let interface_name = spec.namespace.wit_interface();
-    let mut wit =
-        WitBuilder::new("#[component]", &spec.namespace.wit_package(), spec.component_version);
-    wit.use_path(CORE_TYPES_PACKAGE);
-    wit.blank_line();
-    wit.interface(&interface_name, |interface| {
-        if !combined_core_imports.is_empty() {
-            let imports = combined_core_imports.iter().cloned().collect::<Vec<_>>().join(", ");
-            interface.line(&format!("use core-types.{{{imports}}};"));
-            interface.blank_line();
-        }
-
-        for (index, exported) in spec.exported_types.iter().enumerate() {
-            if index > 0 {
+    let (wit, result) = WitBuilder::exported_interface(
+        "#[component]",
+        spec.namespace,
+        spec.component_version,
+        spec.dependency_imports,
+        |interface| {
+            if !combined_core_imports.is_empty() {
+                let imports = combined_core_imports.iter().cloned().collect::<Vec<_>>().join(", ");
+                interface.line(&format!("use core-types.{{{imports}}};"));
                 interface.blank_line();
             }
 
-            match &exported.kind {
-                ExportedTypeKind::Record { fields } => {
-                    interface.block(&format!("record {} {{", exported.wit_name), |record| {
-                        for field in fields {
-                            let field_name = to_kebab_case(&field.name);
-                            record.line(&format!("{field_name}: {},", field.ty.wit_name));
-                        }
-                    });
+            for (index, exported) in spec.exported_types.iter().enumerate() {
+                if index > 0 {
+                    interface.blank_line();
                 }
-                ExportedTypeKind::Variant { variants } => {
-                    interface.block(
-                        &format!("variant {} {{", exported.wit_name),
-                        |variant_block| {
-                            for variant in variants {
-                                if let Some(payload) = &variant.payload {
-                                    variant_block.line(&format!(
-                                        "{}({}),",
-                                        variant.wit_name, payload.wit_name
-                                    ));
-                                } else {
-                                    variant_block.line(&format!("{},", variant.wit_name));
-                                }
+
+                match &exported.kind {
+                    ExportedTypeKind::Record { fields } => {
+                        interface.block(&format!("record {} {{", exported.wit_name), |record| {
+                            for field in fields {
+                                let field_name = to_kebab_case(&field.name);
+                                record.line(&format!("{field_name}: {},", field.ty.wit_name));
                             }
-                        },
-                    );
+                        });
+                    }
+                    ExportedTypeKind::Variant { variants } => {
+                        interface.block(
+                            &format!("variant {} {{", exported.wit_name),
+                            |variant_block| {
+                                for variant in variants {
+                                    if let Some(payload) = &variant.payload {
+                                        variant_block.line(&format!(
+                                            "{}({}),",
+                                            variant.wit_name, payload.wit_name
+                                        ));
+                                    } else {
+                                        variant_block.line(&format!("{},", variant.wit_name));
+                                    }
+                                }
+                            },
+                        );
+                    }
                 }
             }
-        }
 
-        if !spec.exported_types.is_empty() && !spec.methods.is_empty() {
-            interface.blank_line();
-        }
+            if !spec.exported_types.is_empty() && !spec.methods.is_empty() {
+                interface.blank_line();
+            }
 
-        for method in spec.methods {
-            let signature = component_method_signature(method, &exported_type_names)?;
-            interface.function(&export_path(spec.namespace, &method.fn_ident), &signature);
-        }
+            for method in spec.methods {
+                let signature = component_method_signature(method, &exported_type_names)?;
+                interface.function(&export_path(spec.namespace, &method.fn_ident), &signature);
+            }
 
-        Ok::<(), syn::Error>(())
-    })?;
-    wit.blank_line();
-    let world_name = format!("{interface_name}-world");
-    let exports = [interface_name];
-    write_world_block(&mut wit, &world_name, spec.dependency_imports, &exports);
-
-    Ok(wit.finish())
+            Ok::<(), syn::Error>(())
+        },
+    );
+    result?;
+    Ok(wit)
 }
 
 /// Renders the WIT function signature for a component method.

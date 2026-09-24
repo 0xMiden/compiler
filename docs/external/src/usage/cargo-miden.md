@@ -146,8 +146,9 @@ interface counter-contract {
 ```
 
 When compiling a bare `.wasm` component without a manifest or an explicit namespace, the namespace is
-taken from the common parent path of the component's exports. If a manifest namespace is given and
-does not match the exports, compilation fails.
+inferred only when every export has the same parent path, which becomes the namespace; exports
+under different parents are an error, and so is a component without exports. If a manifest
+namespace is given and does not match the exports, compilation fails.
 
 ## Running a compiled Miden VM program
 

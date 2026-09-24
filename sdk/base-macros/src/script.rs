@@ -5,11 +5,10 @@ use syn::{FnArg, ItemFn, Type, parse_macro_input, spanned::Spanned};
 
 use crate::{
     boilerplate::runtime_boilerplate,
-    component_macro::CORE_TYPES_PACKAGE,
     namespace::ComponentNamespace,
     util::{generate_frontend_link_section, is_type_named, is_unit_return_type},
     wit_builder::WitBuilder,
-    wit_world::{ManifestPackage, write_world_block},
+    wit_world::ManifestPackage,
 };
 
 /// Name of the entrypoint function exported by the transaction-script WIT interface.
@@ -307,25 +306,21 @@ fn build_script_wit(
     error_span: Span,
 ) -> Result<String, syn::Error> {
     let imports = manifest.collect_miden_dependency_imports(error_span)?;
-    let interface_name = namespace.wit_interface();
-    let world_name = format!("{interface_name}-world");
-
-    let mut wit =
-        WitBuilder::new("#[tx_script]", &namespace.wit_package(), manifest.component_version());
-    wit.use_path(CORE_TYPES_PACKAGE);
-    wit.blank_line();
-    wit.interface(&interface_name, |interface| {
-        interface.line("use core-types.{word};");
-        interface.blank_line();
-        interface.function(
-            &namespace.procedure_path(EXPORT_NAME),
-            &format!("{EXPORT_NAME}: func(arg: word);"),
-        );
-    });
-    wit.blank_line();
-    write_world_block(&mut wit, &world_name, &imports, &[interface_name]);
-
-    Ok(wit.finish())
+    let (wit, ()) = WitBuilder::exported_interface(
+        "#[tx_script]",
+        namespace,
+        manifest.component_version(),
+        &imports,
+        |interface| {
+            interface.line("use core-types.{word};");
+            interface.blank_line();
+            interface.function(
+                &namespace.procedure_path(EXPORT_NAME),
+                &format!("{EXPORT_NAME}: func(arg: word);"),
+            );
+        },
+    );
+    Ok(wit)
 }
 
 #[cfg(test)]

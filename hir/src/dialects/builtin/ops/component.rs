@@ -255,7 +255,7 @@ impl Component {
     /// Note that `Symbol::path()` of the component itself ends in a single `Leaf` holding its
     /// whole name instead.
     pub fn namespace_path(&self) -> SymbolPath {
-        SymbolPath::namespace_from_name(Symbol::name(self))
+        SymbolPath::from_masm_module_id(Symbol::name(self).as_str())
     }
 
     /// Mark this component as the compiler's wrapper around a bare core module.

@@ -572,7 +572,7 @@ mod tests {
         let function_ref = test.function();
         let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>().unwrap();
-        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root:root@1.0.0")));
+        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root")));
 
         let function = function_ref.borrow();
         let entry = function.entry_block();

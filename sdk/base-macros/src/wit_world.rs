@@ -19,13 +19,11 @@ use wit_bindgen_core::wit_parser::{
 
 use crate::{
     dependency_package::{DependencyWitSource, collect_dependency_wit_sources},
+    generate::CORE_TYPES_INTERFACE,
     namespace::ComponentNamespace,
     types::explicit_wit_identifier,
     wit_builder::{WitBody, WitBuilder},
 };
-
-/// WIT package declaring the SDK core types, used by every inline world the macros render.
-pub(crate) const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 
 /// Parsed package metadata from the consuming crate's manifest.
 pub struct ManifestPackage {
@@ -419,7 +417,7 @@ impl InlineInterfaceWorld<'_> {
         body: impl FnOnce(&mut WitBody),
     ) -> String {
         let mut wit = WitBuilder::new(self.generated_by, self.package, self.version);
-        wit.use_path(CORE_TYPES_PACKAGE);
+        wit.use_path(CORE_TYPES_INTERFACE);
         wit.blank_line();
         wit.interface(self.interface_name, |interface| {
             let core_types = core_types.iter().cloned().collect::<Vec<_>>().join(", ");

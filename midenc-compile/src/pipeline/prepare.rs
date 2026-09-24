@@ -496,9 +496,10 @@ const HIR_MODULE_OP: &str = "builtin.module";
 /// [`SymbolPath::segments_of`](midenc_hir::SymbolPath::segments_of)) become one path component
 /// each, rendered by the very same `SymbolPath::to_library_path` codegen calls, which quotes a
 /// segment that is not a bare identifier. So `@miden::@a::@b` becomes `miden::a::b`, and
-/// `@"a:b"` becomes `"a:b"`. A module's name needs no such interpretation, and both sides normalize it identically: [`synthesize_target`] absolutizes it
-/// through `Path::to_absolute` while codegen builds `PathBuf::new("::{module}")`, and both route
-/// every component through `PathBuf::push_component`, which decides quoting.
+/// `@"a:b"` becomes `"a:b"`. A module's name needs no such interpretation, and both sides
+/// normalize it identically: [`synthesize_target`] absolutizes it through `Path::to_absolute`
+/// while codegen builds `PathBuf::new("::{module}")`, and both route every component through
+/// `PathBuf::push_component`, which decides quoting.
 ///
 /// This leaves the scan responsible for exactly one thing: *locating* the name. Everything after
 /// that is shared code, which is what makes a mis-scan fail rather than mislead.
@@ -2471,8 +2472,8 @@ namespace = "miden::prepare_fixture::prepare_fixture"
 
     #[test]
     fn a_hir_root_declaring_more_than_one_component_declares_no_namespace() {
-        // Not "the first component's id": a world with two components has no single id to be
-        // rooted at, and choosing one would be an invention. Codegen rejects such a world
+        // Not "the first component's namespace": a world with two components has no single
+        // namespace to be rooted at, and choosing one would be an invention. Codegen rejects such a world
         // outright — see `too_many_components` in `codegen/masm` — which is the answer the user
         // gets either way, so the scan says nothing rather than disagreeing with it.
         assert_eq!(
@@ -2489,10 +2490,10 @@ namespace = "miden::prepare_fixture::prepare_fixture"
         // user cannot act on.
         //
         // Be precise about what this test can and cannot carry. It would pass just as well if
-        // the scan had picked the *first* component's id, because codegen refuses before any
-        // namespace is compared — so it does not discriminate the scan's answer at all. That is
-        // its sibling's job: `…_declares_no_namespace` pins the answer, and this pins that the
-        // answer costs nothing, because the diagnostic the user sees is the same either way.
+        // the scan had picked the *first* component's namespace, because codegen refuses before
+        // any namespace is compared — so it does not discriminate the scan's answer at all. That
+        // is its sibling's job: `…_declares_no_namespace` pins the answer, and this pins that
+        // the answer costs nothing, because the diagnostic the user sees is the same either way.
         // The pair is what settles the decision; neither test settles it alone.
         let prepared = prepare_standalone_source(
             "prepare_standalone_hir_two_lowered",
@@ -2612,9 +2613,10 @@ namespace = "miden::prepare_fixture::prepare_fixture"
         // standalone `.hir` build of that shape would assemble at all.
         //
         // Every shape a `.hir` file can declare a namespace in, and each is rooted by different
-        // code: a component's id (`ToMasmComponent for builtin::Component`) whether or not it is
-        // nested in a world, and a module's own name (`world_body_to_masm_component`). The
-        // module row is renamed away from the file stem deliberately — with a module called
+        // code: a component's namespace path (`ToMasmComponent for builtin::Component`) whether
+        // or not it is nested in a world, and a module's own name
+        // (`world_body_to_masm_component`). The module row is renamed away from the file stem
+        // deliberately — with a module called
         // `lib` in `lib.hir`, both a working scan and a scan that read nothing produce `::lib`,
         // and the test would pass either way.
         for (dir, contents) in [
