@@ -1,4 +1,8 @@
-use std::{collections::HashSet, env, fs, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    env, fs,
+    path::PathBuf,
+};
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
@@ -12,8 +16,8 @@ use syn::{
 use wit_bindgen_core::{
     WorldGenerator,
     wit_parser::{
-        Function, Handle, InterfaceId, PackageId, Resolve, Type as WitType, TypeDefKind, TypeId,
-        TypeOwner, UnresolvedPackageGroup, WorldId, WorldItem,
+        Function, Handle, InterfaceId, PackageId, PackageName, Resolve, Type as WitType,
+        TypeDefKind, TypeId, TypeOwner, UnresolvedPackageGroup, WorldId, WorldItem,
     },
 };
 use wit_bindgen_rust::{Opts, WithOption};
@@ -530,6 +534,8 @@ fn load_wit_sources(
     let mut resolve = Resolve::default();
     let mut packages = Vec::new();
     let mut files = Vec::new();
+    // The source that registered each WIT package, for the duplicate-package diagnostic.
+    let mut owners = HashMap::new();
 
     let push_path = |resolve: &mut Resolve,
                      packages: &mut Vec<PackageId>,
@@ -557,6 +563,7 @@ fn load_wit_sources(
     // resolver with type definitions those sources may depend on.
     if let Some(prelude_dir) = &config.prelude_dir {
         push_path(&mut resolve, &mut packages, &mut files, PathBuf::from(prelude_dir))?;
+        record_package_owners(&resolve, &mut owners, "the Miden SDK WIT");
     }
 
     // Load WIT definitions embedded in the compiled packages of Miden dependencies. The
@@ -568,7 +575,9 @@ fn load_wit_sources(
         files.push(map_path.clone());
     }
     for source in &config.dependency_sources {
-        let pkg = resolve.push_str(format!("{}.wit", source.name), &source.wit).map_err(|err| {
+        let owner =
+            format!("dependency `{}` (package '{}')", source.name, source.package_path.display());
+        let load_error = |err: String| {
             Error::new(
                 Span::call_site(),
                 format!(
@@ -576,7 +585,12 @@ fn load_wit_sources(
                     source.package_path.display()
                 ),
             )
-        })?;
+        };
+        let group = UnresolvedPackageGroup::parse(format!("{}.wit", source.name), &source.wit)
+            .map_err(|(map, err)| load_error(err.render(&map)))?;
+        ensure_new_packages(&owners, &group, &owner)?;
+        let pkg = resolve.push_group(group).map_err(|err| load_error(err.to_string()))?;
+        record_package_owners(&resolve, &mut owners, &owner);
         packages.push(pkg);
         files.push(source.package_path.clone());
         if let Some(wit_override_path) = &source.wit_override_path {
@@ -586,7 +600,12 @@ fn load_wit_sources(
 
     // Load the crate's own `wit/` directory last so it can reference the dependency packages.
     if let Some(local_wit_root) = &config.local_wit_root {
+        let owner = format!("this crate's WIT directory '{}'", local_wit_root.display());
+        if let Ok(group) = UnresolvedPackageGroup::parse_dir(manifest_dir.join(local_wit_root)) {
+            ensure_new_packages(&owners, &group, &owner)?;
+        }
         push_path(&mut resolve, &mut packages, &mut files, local_wit_root.clone())?;
+        record_package_owners(&resolve, &mut owners, &owner);
     }
 
     if let Some(src) = inline_source {
@@ -597,6 +616,7 @@ fn load_wit_sources(
         packages.clear();
         let group = UnresolvedPackageGroup::parse("inline", src)
             .map_err(|(map, err)| Error::new(Span::call_site(), err.render(&map)))?;
+        ensure_new_packages(&owners, &group, "this crate (from its `[lib].namespace`)")?;
         let pkg = resolve
             .push_group(group)
             .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
@@ -608,6 +628,43 @@ fn load_wit_sources(
         packages,
         files_read: files,
     })
+}
+
+/// Records `owner` as the source of every package of `resolve` without a recorded source.
+fn record_package_owners(
+    resolve: &Resolve,
+    owners: &mut HashMap<PackageName, String>,
+    owner: &str,
+) {
+    for name in resolve.package_names.keys() {
+        owners.entry(name.clone()).or_insert_with(|| owner.to_owned());
+    }
+}
+
+/// Fails when a package of `group`, loaded from `owner`, is already registered by another source.
+///
+/// The WIT package id of a crate is derived from the first two segments of its
+/// `[lib].namespace`, so two crates sharing them define the same package.
+fn ensure_new_packages(
+    owners: &HashMap<PackageName, String>,
+    group: &UnresolvedPackageGroup,
+    owner: &str,
+) -> Result<(), Error> {
+    let names = core::iter::once(&group.main).chain(&group.nested).map(|package| &package.name);
+    for name in names {
+        if let Some(previous) = owners.get(name) {
+            return Err(Error::new(
+                Span::call_site(),
+                format!(
+                    "WIT package `{name}` of {owner} is already defined by {previous}; the first \
+                     two segments of `[lib].namespace` (`ns::pkg`) form the WIT package id and \
+                     must be unique per crate: the `pkg` segment identifies the crate and must \
+                     not be shared by two crates a consumer links"
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Pushes user-provided `with` entries to the wit-bindgen options.
@@ -943,6 +1000,33 @@ mod tests {
         crate::namespace::ComponentNamespace::parse("miden::acme::acme", Span::call_site()).unwrap()
     }
 
+    /// Two crates sharing `ns::pkg` define the same WIT package; the second is reported with
+    /// both sources instead of reaching wit-parser's duplicate-package assertion.
+    #[test]
+    fn a_wit_package_defined_twice_is_reported_with_both_sources() {
+        let wit = |iface: &str| {
+            format!("package miden:my-account@0.1.0;\ninterface {iface} {{ ping: func(); }}\n")
+        };
+        let parse = |iface: &str| UnresolvedPackageGroup::parse("dep.wit", &wit(iface)).unwrap();
+
+        let mut resolve = Resolve::default();
+        let mut owners = HashMap::new();
+        ensure_new_packages(&owners, &parse("wallet"), "dependency `wallet`").unwrap();
+        resolve.push_group(parse("wallet")).unwrap();
+        record_package_owners(&resolve, &mut owners, "dependency `wallet`");
+
+        let err = ensure_new_packages(&owners, &parse("auth"), "dependency `auth`")
+            .expect_err("the second definition of the package must be rejected")
+            .to_string();
+        assert!(
+            err.contains("`miden:my-account@0.1.0`")
+                && err.contains("dependency `auth`")
+                && err.contains("dependency `wallet`")
+                && err.contains("must be unique per crate"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
     /// Produces portable, non-empty inline-WIT artifact names.
     #[test]
     fn inline_wit_filename_components_are_sanitized() {
@@ -1009,7 +1093,7 @@ interface api {
         assert!(rendered.contains("package miden:fpi-v1-wallet@1.0.0 {"));
         assert!(rendered.contains("fpi-ping: func("));
         assert!(
-            rendered.contains("@external-id(\"miden::acme::acme::fpi::wallet::ping\")"),
+            rendered.contains("@external-id(\"miden::acme::acme::fpi::miden::wallet::api::ping\")"),
             "the FPI function must carry its Miden path: {rendered}"
         );
         UnresolvedPackageGroup::parse("emitted.wit", &rendered).unwrap();

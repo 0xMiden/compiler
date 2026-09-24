@@ -101,8 +101,12 @@ Logging is controlled by `MIDENC_TRACE`, the same variable `midenc` reads.
 
 Account component, note and transaction script projects are named by the `[lib].namespace` key of
 their `miden-project.toml`. It is a Miden path of exactly three segments, `ns::pkg::iface`, where
-each segment is made of ASCII letters, digits and `_`, and does not start with `_`. Projects created
-with `cargo miden new` default to `miden::<package>::<package>` (package name in snake_case):
+each segment is a snake_case identifier: lowercase ASCII letters and digits in words joined by
+single `_`, starting with a letter (`[a-z][a-z0-9]*(_[a-z0-9]+)*`, e.g. `counter_contract` or
+`wallet2`), and not a WIT keyword such as `list` or `type`. The first two segments form the WIT
+package id, so the `pkg` segment identifies the crate and must not be shared by two crates a
+consumer links. Projects created with `cargo miden new` default to `miden::<package>::<package>`
+(package name in snake_case):
 
 ```toml
 [package]

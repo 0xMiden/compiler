@@ -26,7 +26,8 @@ impl ComponentNamespace {
     /// Parses a `[lib].namespace` value given as an assembler path.
     ///
     /// The path must consist of exactly three unquoted segments (a leading `::` is tolerated),
-    /// each made of ASCII letters, digits and `_` and not starting with `_`.
+    /// each a snake_case identifier that maps to a valid WIT identifier (see
+    /// [`is_valid_segment`]).
     pub(crate) fn from_path(path: &Path, span: Span) -> syn::Result<Self> {
         // The manifest loader absolutizes the path; show it the way the user wrote it.
         let raw = path.as_str().strip_prefix("::").unwrap_or(path.as_str());
@@ -103,11 +104,65 @@ impl ComponentNamespace {
     }
 }
 
-/// Returns true if `segment` is a non-empty `[A-Za-z0-9_]+` identifier not starting with `_`.
+/// The WIT keywords, spelled as snake_case segments; a keyword cannot name a WIT package or
+/// interface.
+const WIT_KEYWORDS: &[&str] = &[
+    "as",
+    "async",
+    "bool",
+    "borrow",
+    "char",
+    "constructor",
+    "enum",
+    "error_context",
+    "export",
+    "f32",
+    "f64",
+    "flags",
+    "from",
+    "func",
+    "future",
+    "import",
+    "include",
+    "interface",
+    "list",
+    "map",
+    "option",
+    "own",
+    "package",
+    "record",
+    "resource",
+    "result",
+    "s16",
+    "s32",
+    "s64",
+    "s8",
+    "static",
+    "stream",
+    "string",
+    "tuple",
+    "type",
+    "u16",
+    "u32",
+    "u64",
+    "u8",
+    "use",
+    "variant",
+    "with",
+    "world",
+];
+
+/// Returns true if `segment` is a snake_case identifier, `[a-z][a-z0-9]*(_[a-z0-9]+)*`, whose
+/// kebab-case form is a valid WIT identifier that is not a WIT keyword.
 fn is_valid_segment(segment: &str) -> bool {
-    !segment.is_empty()
-        && !segment.starts_with('_')
-        && segment.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    let is_snake_case = segment.starts_with(|ch: char| ch.is_ascii_lowercase())
+        && segment.split('_').all(|word| {
+            !word.is_empty()
+                && word.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
+        });
+    is_snake_case
+        && wit_bindgen_core::wit_parser::validate_id(&kebab(segment)).is_ok()
+        && !WIT_KEYWORDS.contains(&segment)
 }
 
 /// Converts a namespace segment into its WIT spelling.
@@ -121,9 +176,12 @@ fn invalid_namespace(raw: &str, span: Span) -> syn::Error {
         span,
         format!(
             "invalid `[lib].namespace` `{raw}` in `miden-project.toml`: expected a Miden path of \
-             exactly three segments, each made of ASCII letters, digits and `_` and not starting \
-             with `_`, e.g. `{EXAMPLE_NAMESPACE}`. The segments name the exported procedures and \
-             become the components of the storage slot names."
+             exactly three segments, each a snake_case identifier (lowercase ASCII letters and \
+             digits in words joined by single `_`, starting with a letter, and not a WIT keyword \
+             such as `list`), e.g. `{EXAMPLE_NAMESPACE}`. The segments name the exported \
+             procedures and become the components of the storage slot names; the first two \
+             (`ns::pkg`) form the WIT package id, so the `pkg` segment identifies the crate and \
+             must not be shared by two crates a consumer links."
         ),
     )
 }
@@ -159,8 +217,8 @@ mod tests {
 
     #[test]
     fn accepts_leading_root() {
-        let namespace = parse("::acme::Wallet2::main").unwrap();
-        assert_eq!(namespace.path(), "acme::Wallet2::main");
+        let namespace = parse("::acme::wallet2::main").unwrap();
+        assert_eq!(namespace.path(), "acme::wallet2::main");
     }
 
     #[test]
@@ -193,5 +251,14 @@ mod tests {
     #[test]
     fn rejects_bad_characters() {
         assert!(parse("miden::counter-contract::counter").is_err());
+    }
+
+    #[test]
+    fn rejects_segments_without_a_valid_wit_spelling() {
+        for segment in ["Wallet2", "a__b", "a_", "_a", "2a", "list", "error_context"] {
+            let value = format!("miden::{segment}::main");
+            let err = parse(&value).expect_err("the segment must be rejected").to_string();
+            assert!(err.contains("snake_case"), "`{value}`: {err}");
+        }
     }
 }

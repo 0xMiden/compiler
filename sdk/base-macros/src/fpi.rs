@@ -64,7 +64,9 @@ pub(crate) struct FpiImportSpec {
     /// Fully-qualified private synthetic interface identity.
     synthetic_import: String,
     /// Miden path prefix of the generated FPI functions,
-    /// `<consumer namespace>::fpi::<dependency package>`.
+    /// `<consumer namespace>::fpi::<dependency ns>::<dependency pkg>::<dependency iface>`, each
+    /// dependency segment the snake_case form of the dependency's WIT id, so that functions of
+    /// two dependency interfaces never share a path.
     external_id_prefix: String,
 }
 
@@ -73,8 +75,13 @@ impl FpiImportSpec {
     /// component named `consumer`.
     fn new(source_import: String, consumer: &ComponentNamespace) -> syn::Result<Self> {
         let (source_package, synthetic_interface) = parse_interface_id(&source_import)?;
-        let external_id_prefix =
-            format!("{}::fpi::{}", consumer.path(), source_package.name.replace('-', "_"));
+        let external_id_prefix = format!(
+            "{}::fpi::{}::{}::{}",
+            consumer.path(),
+            source_package.namespace.to_snake_case(),
+            source_package.name.to_snake_case(),
+            synthetic_interface.to_snake_case()
+        );
         let synthetic_package = PackageName {
             namespace: source_package.namespace,
             name: format!("{FPI_PACKAGE_PREFIX}-{FPI_ABI_VERSION}-{}", source_package.name),
@@ -1775,7 +1782,30 @@ interface api {
             import_specs(&["miden:basic-wallet/basic-wallet@0.1.0".to_string()], &test_consumer())
                 .unwrap();
 
-        assert_eq!(specs[0].external_id_prefix, "miden::acme::acme::fpi::basic_wallet");
+        assert_eq!(
+            specs[0].external_id_prefix,
+            "miden::acme::acme::fpi::miden::basic_wallet::basic_wallet"
+        );
+    }
+
+    #[test]
+    fn fpi_external_id_prefixes_separate_dependency_namespaces_and_interfaces() {
+        let imports = [
+            "miden:wallet/api@0.1.0".to_string(),
+            "acme:wallet/api@0.1.0".to_string(),
+            "miden:wallet/admin@0.1.0".to_string(),
+        ];
+        let specs = import_specs(&imports, &test_consumer()).unwrap();
+        let prefixes =
+            specs.iter().map(|spec| spec.external_id_prefix.as_str()).collect::<Vec<_>>();
+        assert_eq!(
+            prefixes,
+            [
+                "miden::acme::acme::fpi::acme::wallet::api",
+                "miden::acme::acme::fpi::miden::wallet::admin",
+                "miden::acme::acme::fpi::miden::wallet::api",
+            ]
+        );
     }
 
     #[test]
