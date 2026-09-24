@@ -302,6 +302,8 @@ fn import_synthetic_interface(
         WorldItem::Interface {
             id: synthetic_id,
             stability: Default::default(),
+            external_id: None,
+            docs: Docs::default(),
             span: WitSpan::default(),
         },
     );
@@ -794,6 +796,7 @@ fn alias_wit_type(
             owner: TypeOwner::None,
             docs: source_type.docs,
             stability: source_type.stability,
+            external_id: source_type.external_id,
             span: source_type.span,
         });
         aliases.insert(source_id_value, clone_id);
@@ -808,6 +811,7 @@ fn alias_wit_type(
         owner: TypeOwner::Interface(synthetic_id),
         docs: Docs::default(),
         stability: Default::default(),
+        external_id: None,
         span: WitSpan::default(),
     });
     aliases.insert(source_id_value, alias_id);
@@ -932,6 +936,7 @@ fn build_import_function(function: Function, fpi_name: String, core_types: CoreT
         // The generated function belongs to a private synthetic package, so source-package
         // feature metadata cannot be copied across package ownership boundaries.
         stability: Default::default(),
+        external_id: None,
         span: WitSpan::default(),
     }
 }
@@ -2011,6 +2016,7 @@ interface api {
             result: None,
             docs: Docs::default(),
             stability: Default::default(),
+            external_id: None,
             span: WitSpan::default(),
         }
     }

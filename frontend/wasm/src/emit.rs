@@ -49,7 +49,7 @@ pub fn wasm_to_wat(wasm_bytes: &[u8]) -> anyhow::Result<String> {
             self.0.newline()
         }
 
-        fn start_line(&mut self, binary_offset: Option<usize>) {
+        fn start_line(&mut self, binary_offset: Option<u64>) {
             self.0.start_line(binary_offset);
         }
 
@@ -60,7 +60,7 @@ pub fn wasm_to_wat(wasm_bytes: &[u8]) -> anyhow::Result<String> {
         fn print_custom_section(
             &mut self,
             name: &str,
-            binary_offset: usize,
+            binary_offset: u64,
             data: &[u8],
         ) -> std::io::Result<bool> {
             match name {

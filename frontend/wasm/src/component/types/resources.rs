@@ -195,9 +195,9 @@ impl ResourcesBuilder {
             // `path` which is used for the recursive invocation of this method.
             component_types::ComponentEntityType::Instance(id) => {
                 let ty = &types[id];
-                for (name, ty) in ty.exports.iter() {
+                for (name, item) in ty.exports.iter() {
                     path.push(name);
-                    self.register_component_entity_type(types, *ty, path, register);
+                    self.register_component_entity_type(types, item.ty, path, register);
                     path.pop();
                 }
             }

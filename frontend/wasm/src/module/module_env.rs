@@ -491,7 +491,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         Ok(())
     }
 
-    fn payload_end(&mut self, offset: usize) -> Result<(), Report> {
+    fn payload_end(&mut self, offset: u64) -> Result<(), Report> {
         self.validator.end(offset).into_diagnostic()?;
         self.result.exported_signatures = self
             .result
@@ -704,7 +704,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         Ok(())
     }
 
-    fn start_section(&mut self, func: u32, range: Range<usize>) -> Result<(), Report> {
+    fn start_section(&mut self, func: u32, range: Range<u64>) -> Result<(), Report> {
         self.validator.start_section(func, &range).into_diagnostic()?;
         let func_index = FuncIndex::from_u32(func);
         self.flag_func_escaped(func_index);
@@ -813,11 +813,11 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         Ok(())
     }
 
-    fn code_section_start(&mut self, count: u32, range: Range<usize>) -> Result<(), Report> {
+    fn code_section_start(&mut self, count: u32, range: Range<u64>) -> Result<(), Report> {
         self.validator.code_section_start(&range).into_diagnostic()?;
         let cnt = usize::try_from(count).unwrap();
         self.result.function_body_inputs.reserve_exact(cnt);
-        self.result.wasm_file.code_section_offset = range.start as u64;
+        self.result.wasm_file.code_section_offset = range.start;
         Ok(())
     }
 
@@ -839,7 +839,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 params: sig.params().into(),
             });
         }
-        let body_offset = body.range().start as u64;
+        let body_offset = body.range().start;
         self.result.function_body_inputs.push(FunctionBodyData {
             validator,
             body,

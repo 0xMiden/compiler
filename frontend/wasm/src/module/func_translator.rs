@@ -243,7 +243,7 @@ fn parse_function_body<B: ?Sized + Builder>(
         let (op, offset) = reader.read_with_offset().into_diagnostic()?;
         func_validator.op(pos, &op).into_diagnostic()?;
 
-        let dwarf_offset = module.wasm_file.dwarf_offset(offset as u64);
+        let dwarf_offset = module.wasm_file.dwarf_offset(offset);
         let span = resolve_instruction_span(addr2line, dwarf_offset, session, config)?;
         if !span.is_unknown() {
             last_valid_span = span;
