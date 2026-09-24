@@ -80,7 +80,7 @@ fn dispatches_bool_wide_unit_and_word_signatures() {
         init_storage_data
             .insert_value(StorageValueName::from_slot_name(&count_slot), Felt::ZERO)
             .unwrap();
-        AccountComponent::from_package(&target_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(target_package.as_ref().clone(), &init_storage_data).unwrap()
     };
     let dispatcher_component = {
         let mut init_storage_data = InitStorageData::default();
@@ -115,7 +115,8 @@ fn dispatches_bool_wide_unit_and_word_signatures() {
         init_storage_data
             .insert_value(StorageValueName::from_slot_name(&last_pack_slot), Word::default())
             .unwrap();
-        AccountComponent::from_package(&dispatcher_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(dispatcher_package.as_ref().clone(), &init_storage_data)
+            .unwrap()
     };
 
     let mut builder = MockChain::builder();

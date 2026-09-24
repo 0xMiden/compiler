@@ -53,7 +53,8 @@ fn masm_standard() {
         init_storage_data
             .insert_value(StorageValueName::from_slot_name(&has_role_slot), has_role_root)
             .unwrap();
-        AccountComponent::from_package(&dispatcher_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(dispatcher_package.as_ref().clone(), &init_storage_data)
+            .unwrap()
     };
 
     let account_builder = AccountBuilder::new([2_u8; 32])
