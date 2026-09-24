@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Benchmark contract examples through deterministic MockChain transactions, comparing VM cycles
   against `next` and retaining replay snapshots and cycle-weighted flamegraphs.
+- The MASM frontend now reports advice taint findings from supported procedures even when it skips
+  other procedures or reaches the lint work limit ([#1412](https://github.com/0xMiden/compiler/pull/1412)).
 
 ## [0.11.0]
 
