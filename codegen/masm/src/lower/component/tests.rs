@@ -534,6 +534,121 @@ fn component_init(component: &MasmComponent) -> &masm::Procedure {
 }
 
 #[test]
+fn cross_module_alias_to_sibling_lowers_and_assembles_from_world() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(
+        &context,
+        r#"
+builtin.world {
+    builtin.module public @lib {
+        builtin.module public @api {
+            builtin.function_alias public @foo -> ::@lib::@implementation::@body;
+        };
+        builtin.module public @implementation {
+            builtin.function public extern("C") @body() { builtin.ret; };
+        };
+    };
+};
+"#,
+    );
+    let lowered = lower_world(world).expect("an alias to a sibling module's function must lower");
+
+    let exports = assembled_library_exports(&context, &lowered, "lib");
+    assert!(exports.iter().any(|path| path.ends_with("::api::foo")), "{exports:?}");
+}
+
+#[test]
+fn cross_module_alias_to_ancestor_lowers_and_assembles() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @implementation {
+        builtin.function public extern("C") @body() { builtin.ret; };
+        builtin.module public @api {
+            builtin.function_alias public @foo -> ::@"hir_ns:test@1.0.0"::@implementation::@body;
+        };
+    };
+};
+"#,
+    )
+    .expect("an alias to an ancestor module's function must lower");
+
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(
+        exports.iter().any(|path| path.ends_with("::implementation::api::foo")),
+        "{exports:?}"
+    );
+}
+
+#[test]
+fn cross_module_alias_chain_lowers_and_assembles() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @api {
+        builtin.function_alias public @foo -> @forward;
+        builtin.function_alias private @forward -> ::@"hir_ns:test@1.0.0"::@implementation::@body;
+    };
+    builtin.module public @implementation {
+        builtin.function public extern("C") @body() { builtin.ret; };
+    };
+};
+"#,
+    )
+    .expect("an alias chain with a canonical target in a sibling module must lower");
+
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(exports.iter().any(|path| path.ends_with("::api::foo")), "{exports:?}");
+    assert!(!exports.iter().any(|path| path.ends_with("::api::forward")), "{exports:?}");
+}
+
+#[test]
+fn cross_module_alias_in_interface_lowers_and_its_module_assembles() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.interface @api {
+        builtin.function_alias public @foo -> ::@"hir_ns:test@1.0.0"::@implementation::@body;
+    };
+    builtin.module public @implementation {
+        builtin.function public extern("C") @body() { builtin.ret; };
+    };
+};
+"#,
+    )
+    .expect("an interface alias to a sibling module's function must lower");
+
+    let interface = lowered
+        .modules
+        .iter()
+        .find(|module| module.path().as_str().ends_with("::api"))
+        .expect("the interface must have a MASM module");
+    // Assemble the emitted interface in isolation: component lowering currently omits its
+    // submodule declaration, which is independent of the alias analysis lookup tested here.
+    let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library(
+            "api",
+            Box::new(Arc::unwrap_or_clone(interface.clone())),
+            core::iter::empty::<Box<masm::Module>>(),
+        )
+        .expect("the interface module containing the alias must assemble");
+    assert!(
+        package.manifest.exports().any(|export| export
+            .path()
+            .as_ref()
+            .as_str()
+            .ends_with("::api::foo")),
+        "the assembled interface must export the alias"
+    );
+}
+
+#[test]
 fn cross_module_call_preserves_public_alias_of_private_function() {
     let context = Rc::new(Context::default());
     let lowered = lower_component(
