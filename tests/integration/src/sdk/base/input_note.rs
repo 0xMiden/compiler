@@ -234,7 +234,7 @@ fn input_note_get_asset_binding() {
     run_input_note_binding_test(
         "input_note_get_asset_binding",
         "pub fn binding(&self) -> Word {
-        input_note::get_asset(NoteIdx { inner: Felt::new(0).unwrap() }, 0).key
+        input_note::get_asset(NoteIdx { inner: Felt::new(0).unwrap() }, 0).id.inner
     }",
     );
 }

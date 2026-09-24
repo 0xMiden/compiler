@@ -99,7 +99,7 @@ impl NoteAssetBindingsNote {
         assert!(left.is_empty(), "removing the whole asset must leave nothing in the note");
         let removed = self.get_asset(0);
         assert!(
-            removed.key.is_empty() && removed.value.is_empty(),
+            removed.id.inner.is_empty() && removed.value.is_empty(),
             "a fully removed asset must read back as the empty asset"
         );
 

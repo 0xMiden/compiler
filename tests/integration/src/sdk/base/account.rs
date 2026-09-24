@@ -115,6 +115,18 @@ fn account_compute_commitment_binding() {
     );
 }
 
+/// Compiles a call to the free function `native_account::compute_commitment`; the trait method
+/// is covered by `account_compute_commitment_binding`.
+#[test]
+fn account_native_account_compute_commitment_binding() {
+    run_account_binding_test(
+        "account_native_account_compute_commitment_binding",
+        "pub fn binding(&self) -> Word {
+        native_account::compute_commitment()
+    }",
+    );
+}
+
 #[test]
 fn account_compute_delta_commitment_binding() {
     run_account_binding_test(
@@ -140,8 +152,8 @@ fn account_get_asset_binding() {
     run_account_binding_test(
         "account_get_asset_binding",
         "pub fn binding(&self) -> Word {
-        let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
-        self.get_asset(asset_key)
+        let asset_id = AssetId::from(Word::from([Felt::new(0).unwrap(); 4]));
+        self.get_asset(asset_id)
     }",
     );
 }
@@ -151,8 +163,8 @@ fn account_get_initial_asset_binding() {
     run_account_binding_test(
         "account_get_initial_asset_binding",
         "pub fn binding(&self) -> Word {
-        let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
-        native_account::get_initial_asset(asset_key)
+        let asset_id = AssetId::from(Word::from([Felt::new(0).unwrap(); 4]));
+        native_account::get_initial_asset(asset_id)
     }",
     );
 }
@@ -162,7 +174,7 @@ fn account_has_asset_binding() {
     run_account_binding_test(
         "account_has_asset_binding",
         "pub fn binding(&self) -> Felt {
-        let asset_id = Word::from([Felt::new(0).unwrap(); 4]);
+        let asset_id = AssetId::from(Word::from([Felt::new(0).unwrap(); 4]));
         if self.has_asset(asset_id) {
             Felt::new(1).unwrap()
         } else {

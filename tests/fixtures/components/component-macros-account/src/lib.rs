@@ -66,7 +66,7 @@ trait MyAccount {
 #[component]
 impl MyAccount for MyAccountStorage {
     fn test_custom_types(&self, a: StructA, asset: Asset) -> StructB {
-        let foo_val = Word::from([a.foo.a, asset.key.a, a.foo.b, a.foo.c]);
+        let foo_val = Word::from([a.foo.a, asset.id.inner.a, a.foo.b, a.foo.c]);
 
         let val_a = StructA {
             foo: foo_val,

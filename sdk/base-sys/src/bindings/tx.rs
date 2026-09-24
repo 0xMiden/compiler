@@ -2,6 +2,9 @@ use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::types::{AccountId, AssetAmount, AssetId, BlockNumber};
 
+/// Number of input felt slots and of output felt slots of the protocol's FPI executor.
+pub const FOREIGN_PROCEDURE_SLOTS: usize = 16;
+
 /// Marker trait for raw FPI input array lengths supported by the protocol executor.
 #[doc(hidden)]
 pub trait SupportedForeignProcedureInputLen {}
@@ -17,49 +20,51 @@ macro_rules! supported_foreign_procedure_input_len {
 supported_foreign_procedure_input_len!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
 
 /// Fully-padded input felts accepted by `execute_foreign_procedure`.
+///
+/// Slot `i` is the `i`-th felt from the top of the callee's stack, that is the `i`-th felt of its
+/// flattened `#! Inputs:` list. A `Word` passed as `word.into_elements()` reaches the callee as
+/// the same `Word`.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct ForeignProcedureInputs {
-    words: [Word; 4],
+    felts: [Felt; FOREIGN_PROCEDURE_SLOTS],
 }
 
 impl ForeignProcedureInputs {
-    /// Creates raw FPI inputs and zero-pads unused protocol input slots.
+    /// Creates raw FPI inputs where `values[i]` fills input slot `i`, and zero-pads the unused
+    /// trailing slots.
     ///
-    /// This is only implemented for input arrays with at most 16 felts.
+    /// This is only implemented for input arrays with at most [`FOREIGN_PROCEDURE_SLOTS`] felts.
     pub fn new<const N: usize>(values: [Felt; N]) -> Self
     where
         [(); N]: SupportedForeignProcedureInputLen,
     {
-        let mut padded = [Felt::ZERO; 16];
-        padded[..N].copy_from_slice(&values);
-
-        Self {
-            words: [
-                Word::new([padded[3], padded[2], padded[1], padded[0]]),
-                Word::new([padded[7], padded[6], padded[5], padded[4]]),
-                Word::new([padded[11], padded[10], padded[9], padded[8]]),
-                Word::new([padded[15], padded[14], padded[13], padded[12]]),
-            ],
-        }
+        let mut felts = [Felt::ZERO; FOREIGN_PROCEDURE_SLOTS];
+        felts[..N].copy_from_slice(&values);
+        Self { felts }
     }
 }
 
 /// Fully-padded output felts returned by `execute_foreign_procedure`.
+///
+/// Slot `i` is the `i`-th felt from the top of the callee's stack on return, that is the `i`-th
+/// felt of its flattened `#! Outputs:` list. A `Word` the callee leaves on top reads back as
+/// `Word::new([get(0), get(1), get(2), get(3)])`.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct ForeignProcedureOutputs {
-    words: [Word; 4],
+    // The compiler stores the executor results consecutively, top of stack first.
+    felts: [Felt; FOREIGN_PROCEDURE_SLOTS],
 }
 
 impl ForeignProcedureOutputs {
-    /// Returns the output felt at `index`.
+    /// Returns the output felt in slot `index`.
     ///
     /// # Panics
     ///
-    /// Panics if `index` is greater than or equal to 16.
+    /// Panics if `index` is greater than or equal to [`FOREIGN_PROCEDURE_SLOTS`].
     pub fn get(&self, index: usize) -> Felt {
-        self.words[index / 4][3 - (index % 4)]
+        self.felts[index]
     }
 }
 
@@ -78,6 +83,10 @@ impl ForeignProcedureInvocation {
         foreign_proc_root: Word,
         inputs: ForeignProcedureInputs,
     ) -> Self {
+        // The compiler reloads these as 22 consecutive felts in this order (account id prefix,
+        // account id suffix, procedure root, 16 inputs) and swaps prefix and suffix into the
+        // executor's operand order itself; see `fpi_indirect_return_via_pointer` (reload) and
+        // `store_fpi_prefix_locals` (swap) in the Wasm frontend.
         let zero = Felt::ZERO;
         Self {
             words: [
@@ -90,28 +99,13 @@ impl ForeignProcedureInvocation {
                 Word::new([
                     foreign_proc_root[2],
                     foreign_proc_root[3],
-                    inputs.words[0][0],
-                    inputs.words[0][1],
+                    inputs.felts[0],
+                    inputs.felts[1],
                 ]),
-                Word::new([
-                    inputs.words[0][2],
-                    inputs.words[0][3],
-                    inputs.words[1][0],
-                    inputs.words[1][1],
-                ]),
-                Word::new([
-                    inputs.words[1][2],
-                    inputs.words[1][3],
-                    inputs.words[2][0],
-                    inputs.words[2][1],
-                ]),
-                Word::new([
-                    inputs.words[2][2],
-                    inputs.words[2][3],
-                    inputs.words[3][0],
-                    inputs.words[3][1],
-                ]),
-                Word::new([inputs.words[3][2], inputs.words[3][3], zero, zero]),
+                Word::new([inputs.felts[2], inputs.felts[3], inputs.felts[4], inputs.felts[5]]),
+                Word::new([inputs.felts[6], inputs.felts[7], inputs.felts[8], inputs.felts[9]]),
+                Word::new([inputs.felts[10], inputs.felts[11], inputs.felts[12], inputs.felts[13]]),
+                Word::new([inputs.felts[14], inputs.felts[15], zero, zero]),
             ],
         }
     }
@@ -268,9 +262,11 @@ pub fn get_output_notes_commitment() -> Word {
 /// Executes `foreign_proc_root` against `foreign_account_id` with raw felt inputs.
 ///
 /// The protocol executor always consumes exactly 16 input felts and returns exactly 16 output
-/// felts. Callers whose target procedure uses fewer values can pass the actual values to
-/// [`ForeignProcedureInputs::new`], which pads the remaining input slots with zeroes. Callers whose
-/// target procedure returns fewer values should ignore the unused padded outputs.
+/// felts. Both are ordered top of stack first, that is, in the order of the callee's flattened
+/// `#! Inputs:` and `#! Outputs:` lists. Callers whose target procedure uses fewer values can pass
+/// the actual values to [`ForeignProcedureInputs::new`], which pads the remaining input slots with
+/// zeroes. Callers whose target procedure returns fewer values should ignore the unused padded
+/// outputs.
 ///
 /// # Panics
 ///
@@ -320,5 +316,59 @@ pub fn get_fee_asset_id() -> AssetId {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<AssetId>::uninit());
         extern_tx_get_fee_asset_id(ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_stdlib_sys::{Felt, Word, felt};
+
+    use super::{
+        AccountId, FOREIGN_PROCEDURE_SLOTS, ForeignProcedureInputs, ForeignProcedureInvocation,
+        ForeignProcedureOutputs,
+    };
+
+    /// Ensures `ForeignProcedureInputs::new` keeps `values[i]` in slot `i` and zero-pads the rest.
+    #[test]
+    fn inputs_keep_slot_order_and_zero_pad_trailing_slots() {
+        let inputs = ForeignProcedureInputs::new([felt!(7), felt!(8)]);
+        let mut expected = [Felt::ZERO; FOREIGN_PROCEDURE_SLOTS];
+        expected[0] = felt!(7);
+        expected[1] = felt!(8);
+        assert_eq!(inputs.felts, expected);
+    }
+
+    /// Ensures `ForeignProcedureOutputs::get` maps index `i` straight to slot `i`, with no index
+    /// arithmetic in between.
+    #[test]
+    fn outputs_get_reads_slots_in_order() {
+        let felts: [Felt; FOREIGN_PROCEDURE_SLOTS] =
+            core::array::from_fn(|i| Felt::from_u32(i as u32 + 1));
+        let outputs = ForeignProcedureOutputs { felts };
+        for (index, felt) in felts.iter().enumerate() {
+            assert_eq!(outputs.get(index), *felt);
+        }
+    }
+
+    /// Ensures the invocation packs the account id, the root and the inputs in slot order. The
+    /// byte layout the compiler reloads is pinned by the `fpi::raw` network tests.
+    #[test]
+    fn invocation_flattens_to_prefix_root_and_inputs() {
+        let account_id = AccountId::new(felt!(1), felt!(2));
+        let root = Word::new([felt!(3), felt!(4), felt!(5), felt!(6)]);
+        let inputs =
+            ForeignProcedureInputs::new(core::array::from_fn::<Felt, FOREIGN_PROCEDURE_SLOTS, _>(
+                |i| Felt::from_u32(i as u32 + 7),
+            ));
+        let invocation = ForeignProcedureInvocation::new(account_id, root, inputs);
+
+        let expected: [Felt; 24] = core::array::from_fn(|i| {
+            if i < 22 {
+                Felt::from_u32(i as u32 + 1)
+            } else {
+                Felt::ZERO
+            }
+        });
+        assert_eq!(Word::words_as_elements(&invocation.words), &expected[..]);
     }
 }

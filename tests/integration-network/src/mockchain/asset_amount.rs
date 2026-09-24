@@ -1,9 +1,12 @@
 //! Mock-chain tests for the typed fungible-asset amount API (`AssetAmount`).
 //!
-//! Unlike the unit tests in `miden-base-sys`, which decode hand-built asset encodings, these
-//! tests execute the on-chain `AssetAmount` API inside a real transaction: the note script
+//! These tests execute the on-chain `AssetAmount` API inside a real transaction: the note script
 //! decodes amounts from kernel-built assets and checks its arithmetic against the kernel's own
 //! vault bookkeeping.
+//!
+//! They also cover the asset shape checks (`Asset::is_fungible`, and `Asset::amount` rejecting
+//! non-fungible and out-of-range assets), which read the asset composition through the protocol
+//! library and therefore only run on the VM.
 
 use std::{path::Path, sync::Arc};
 
@@ -13,7 +16,12 @@ use miden_client::{
     transaction::RawOutputNote,
 };
 use miden_mast_package::Package;
-use miden_protocol::{account::auth::AuthScheme, crypto::rand::RandomCoin};
+use miden_protocol::{
+    Felt, Word,
+    account::auth::AuthScheme,
+    asset::{NonFungibleAsset, NonFungibleAssetDetails},
+    crypto::rand::RandomCoin,
+};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain};
 use midenc_integration_test_support::{cargo_proj::Project, project};
@@ -21,7 +29,8 @@ use midenc_integration_test_support::{cargo_proj::Project, project};
 use super::support::{
     account_cargo_toml_for, account_miden_project_toml_with_interface,
     assert_account_has_fungible_asset, build_send_notes_script, compile_rust_package, execute_tx,
-    note_cargo_toml_for_dependency, note_miden_project_toml_for_dependency, note_script_root,
+    execute_tx_expect_failure, note_cargo_toml_for_dependency,
+    note_miden_project_toml_for_dependency, note_script_root,
 };
 
 /// Project name of the generated wallet account component.
@@ -38,7 +47,7 @@ const AMOUNT_WALLET_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Asset, AssetAmount, Word, active_account, component, component_storage};
+use miden::{Asset, AssetAmount, AssetId, active_account, component, component_storage};
 
 #[component_storage]
 struct AmountWalletStorage;
@@ -49,9 +58,9 @@ trait AmountWallet {
     /// Adds an asset to the account vault.
     #[account_procedure]
     fn receive_asset(&mut self, asset: Asset);
-    /// Returns the typed amount currently held in the vault under `asset_key`.
+    /// Returns the typed amount currently held in the vault under `asset_id`.
     #[account_procedure]
-    fn vault_amount(&self, asset_key: Word) -> AssetAmount;
+    fn vault_amount(&self, asset_id: AssetId) -> AssetAmount;
 }
 
 #[component]
@@ -60,8 +69,8 @@ impl AmountWallet for AmountWalletStorage {
         self.add_asset(asset);
     }
 
-    fn vault_amount(&self, asset_key: Word) -> AssetAmount {
-        Asset::new(asset_key, active_account::get_asset(asset_key)).amount()
+    fn vault_amount(&self, asset_id: AssetId) -> AssetAmount {
+        Asset::new(asset_id, active_account::get_asset(asset_id)).amount()
     }
 }
 "#;
@@ -96,10 +105,9 @@ impl AssetAmountNote {
             let amount = asset.amount();
             assert!(amount > AssetAmount::ZERO);
 
-            let key = asset.key;
-            let before = account.vault_amount(key);
+            let before = account.vault_amount(asset.id);
             account.receive_asset(asset);
-            let after = account.vault_amount(key);
+            let after = account.vault_amount(asset.id);
 
             // The vault amount must grow by exactly the decoded amount (checked addition).
             assert_eq!(after, before + amount);
@@ -109,6 +117,48 @@ impl AssetAmountNote {
             // Amounts order and convert like integers.
             assert!(before < after);
             assert_eq!(after.as_u64(), before.as_u64() + amount.as_u64());
+        }
+    }
+}
+"#;
+
+/// On-chain note script exercising the asset shape checks on an asset taken from its storage.
+///
+/// The note storage holds `[mode, id0, id1, id2, id3, value0, value1, value2, value3]`: mode `0`
+/// asserts the asset is not fungible, mode `1` decodes its fungible amount. Any violated check
+/// aborts the transaction.
+const ASSET_SHAPE_NOTE_SOURCE: &str = r#"
+#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{Asset, AssetAmount, Felt, Word, account, active_note, felt, note};
+
+/// Native account of the note; the script does not use it.
+#[account(asset_amount_wallet::AmountWallet)]
+pub struct Wallet;
+
+/// A note that checks the shape of the asset encoded in its storage.
+#[note]
+struct AssetShapeNote;
+
+#[note]
+impl AssetShapeNote {
+    #[note_script]
+    pub fn script(self, _arg: Word, _account: &mut Wallet) {
+        let storage = active_note::get_storage();
+        assert_eq!(storage.len(), 9);
+        let mode = storage[0];
+        let id: [Felt; 4] = storage[1..5].try_into().unwrap();
+        let value: [Felt; 4] = storage[5..9].try_into().unwrap();
+        let asset = Asset::new(id, value);
+
+        if mode == felt!(0) {
+            assert!(!asset.is_fungible());
+        } else if mode == felt!(1) {
+            let amount = asset.amount();
+            assert!(amount > AssetAmount::ZERO);
+        } else {
+            panic!();
         }
     }
 }
@@ -243,4 +293,133 @@ fn asset_amount_api_matches_kernel_balances() {
     eprintln!("\n=== Step 3: Checking Alice's committed vault holds the checked sum ===");
     let alice_account = chain.committed_account(alice_id).unwrap();
     assert_account_has_fungible_asset(alice_account, faucet_id, first_amount + second_amount);
+}
+
+/// The fixed VM assertion code every guest panic reports, so the failing shape checks cannot be
+/// satisfied by an unrelated kernel failure.
+const GUEST_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";
+
+/// Builds the nine-felt shape-note storage `[mode, id word, value word]`.
+fn shape_note_storage(mode: u64, id: Word, value: Word) -> Vec<Felt> {
+    let mut storage = vec![Felt::new(mode).unwrap()];
+    storage.extend(id.iter().copied());
+    storage.extend(value.iter().copied());
+    storage
+}
+
+/// Tests the on-chain asset shape checks (`Asset::is_fungible`, `Asset::amount`) against
+/// protocol-built assets on a mock chain.
+///
+/// Flow:
+/// - Genesis holds four shape-check notes, each encoding one asset in its storage: a
+///   non-fungible asset, a valid fungible asset, and the same two with checks that must fail
+/// - Alice consumes each note in its own transaction
+/// - `is_fungible()` on the non-fungible asset and `amount()` on the fungible one succeed
+/// - `amount()` on the non-fungible asset and on a fungible asset whose amount exceeds the
+///   protocol maximum abort the transaction
+#[test]
+fn asset_shape_checks_match_the_kernel_on_chain() {
+    // Compile the contracts first (before creating any runtime)
+    let (wallet_project, wallet_package) = build_wallet_project();
+    let note_package =
+        compile_note_package("asset-shape-note", ASSET_SHAPE_NOTE_SOURCE, wallet_project.root());
+
+    let wallet_component = AccountComponent::from_package(
+        wallet_package.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
+
+    let mut builder = MockChain::builder();
+    let faucet_id = builder
+        .add_existing_basic_faucet(
+            Auth::BasicAuth {
+                auth_scheme: AuthScheme::Falcon512Poseidon2,
+            },
+            "TEST",
+            1_000_000_000,
+            None,
+        )
+        .unwrap()
+        .id();
+    let nft_faucet_id = builder
+        .add_existing_non_fungible_faucet(
+            Auth::BasicAuth {
+                auth_scheme: AuthScheme::Falcon512Poseidon2,
+            },
+            "NFT",
+        )
+        .unwrap()
+        .id();
+    let alice_id = builder
+        .add_existing_account_from_components(
+            Auth::BasicAuth {
+                auth_scheme: AuthScheme::Falcon512Poseidon2,
+            },
+            [wallet_component],
+        )
+        .unwrap()
+        .id();
+
+    let non_fungible = Asset::from(NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        nft_faucet_id,
+        vec![1, 2, 3, 4],
+    )));
+    let fungible = Asset::from(FungibleAsset::new(faucet_id, 42).unwrap());
+    let oversized_amount = Felt::new(FungibleAsset::MAX_AMOUNT.as_u64() + 1).unwrap();
+    let oversized_value = Word::from([oversized_amount, Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+
+    let mut note_rng = RandomCoin::new(note_script_root(note_package.as_ref()));
+    let mut shape_note = |storage: Vec<Felt>| {
+        let note = NoteBuilder::new(alice_id, &mut note_rng)
+            .package((*note_package).clone())
+            .note_storage(storage)
+            .unwrap()
+            .build()
+            .unwrap();
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
+        note
+    };
+    let non_fungible_is_not_fungible = shape_note(shape_note_storage(
+        0,
+        non_fungible.id().to_word(),
+        non_fungible.to_value_word(),
+    ));
+    let fungible_amount =
+        shape_note(shape_note_storage(1, fungible.id().to_word(), fungible.to_value_word()));
+    let non_fungible_amount = shape_note(shape_note_storage(
+        1,
+        non_fungible.id().to_word(),
+        non_fungible.to_value_word(),
+    ));
+    let oversized_fungible_amount =
+        shape_note(shape_note_storage(1, fungible.id().to_word(), oversized_value));
+
+    let mut chain = builder.build().unwrap();
+    chain.prove_next_block().unwrap();
+
+    eprintln!("\n=== Step 1: Consuming the notes whose shape checks must succeed ===");
+    for note in [&non_fungible_is_not_fungible, &fungible_amount] {
+        let tx = chain
+            .build_transaction(alice_id)
+            .authenticated_input_notes([note.id()])
+            .build()
+            .unwrap();
+        execute_tx(&mut chain, tx);
+    }
+
+    eprintln!("\n=== Step 2: Consuming the notes whose shape checks must abort ===");
+    for (label, note) in [
+        ("amount() on a non-fungible asset", &non_fungible_amount),
+        ("amount() above the maximum", &oversized_fungible_amount),
+    ] {
+        let tx = chain
+            .build_transaction(alice_id)
+            .authenticated_input_notes([note.id()])
+            .build()
+            .unwrap();
+        let err = execute_tx_expect_failure(tx);
+        eprintln!("{label} aborted the transaction: {err}");
+        assert!(err.contains(GUEST_PANIC_CODE), "{label} failed for an unexpected reason: {err}");
+    }
 }

@@ -35,14 +35,14 @@ use rand::{SeedableRng, rngs::StdRng};
 
 /// Host-side mirror of the transaction-script arguments declared in
 /// `examples/basic-wallet-tx-script`, spelled in the felt-repr primitives its field types encode
-/// to (`Tag`/`NoteType` = one felt, `Recipient` = one word, `Asset` = key and value words); what
+/// to (`Tag`/`NoteType` = one felt, `Recipient` = one word, `Asset` = id and value words); what
 /// must match the script's struct is the felt-repr wire sequence, not the Rust fields.
 #[derive(FromFeltRepr, ToFeltRepr)]
 struct TxScriptArgs {
     tag: miden_field::Felt,
     note_type: miden_field::Felt,
     recipient: miden_field::Word,
-    asset_key: miden_field::Word,
+    asset_id: miden_field::Word,
     asset_value: miden_field::Word,
 }
 
@@ -302,13 +302,13 @@ pub(crate) fn build_asset_transfer_tx(
     // tx script decodes, so the host-side layout cannot drift from the guest side.
     let recipient_digest: [Felt; 4] = output_note.recipient().digest().into();
     let asset_elements = asset.as_elements();
-    let asset_key: [Felt; 4] = asset_elements[..4].try_into().unwrap();
+    let asset_id: [Felt; 4] = asset_elements[..4].try_into().unwrap();
     let asset_value: [Felt; 4] = asset_elements[4..].try_into().unwrap();
     let script_args = TxScriptArgs {
         tag: to_field_felt(Felt::ZERO),
         note_type: to_field_felt(Felt::from(NoteType::Public)),
         recipient: to_field_word(recipient_digest),
-        asset_key: to_field_word(asset_key),
+        asset_id: to_field_word(asset_id),
         asset_value: to_field_word(asset_value),
     };
 
@@ -454,7 +454,7 @@ mod tests {
 
     /// Pins the mirror's encoded size so layout drift vs the guest struct in
     /// `examples/basic-wallet-tx-script` fails loudly (tag + note type + recipient word +
-    /// asset key and value words = 14 felts).
+    /// asset id and value words = 14 felts).
     #[test]
     fn tx_script_arg_mirror_has_the_guest_layout_size() {
         assert_eq!(<TxScriptArgs as ScriptArgs>::FIXED_LEN, Some(14));
@@ -473,7 +473,7 @@ mod tests {
             tag: felt(1),
             note_type: felt(2),
             recipient: word(10),
-            asset_key: word(20),
+            asset_id: word(20),
             asset_value: word(30),
         };
 

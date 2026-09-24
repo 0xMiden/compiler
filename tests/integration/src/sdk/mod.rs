@@ -447,8 +447,8 @@ impl Note {
         let sender = active_note::get_sender();
         let script_root = active_note::get_script_root();
         let serial_number = active_note::get_serial_number();
-        let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
-        let asset_value = active_account::get_asset(asset_key);
+        let asset_id = AssetId::from(Word::from([Felt::new(0).unwrap(); 4]));
+        let asset_value = active_account::get_asset(asset_id);
 
         assert_eq!(sender.prefix, sender.prefix);
         assert_eq!(sender.suffix, sender.suffix);
@@ -560,7 +560,7 @@ impl TraitNote {
 
         let assets = self.get_initial_assets();
         for asset in assets {
-            assert_eq!(asset.key, asset.key);
+            assert_eq!(asset.id, asset.id);
         }
 
         let note_id = self.get_note_id();
@@ -573,7 +573,7 @@ impl TraitNote {
         assert_eq!(num_assets, assets_info.num_assets);
         if num_assets > 0 {
             let first = self.get_asset(0);
-            assert_eq!(first.key, first.key);
+            assert_eq!(first.id, first.id);
             let remaining = self.remove_asset(first);
             assert_eq!(remaining, remaining);
         }

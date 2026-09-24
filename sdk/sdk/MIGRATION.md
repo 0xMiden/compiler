@@ -10,6 +10,65 @@ directly below this paragraph, above the previous one (newest first, like the
 
 <!-- Add the next migration section here, above the most recent one. -->
 
+## Unreleased
+
+### `compute_commitment` moved to `native_account` (protocol 0.17.0-rc.6)
+
+The kernel now computes the state commitment for the native account only, so the binding moved
+from the active-account module to the native-account one, both as a free function and as a trait
+method. Calling it against a foreign account reached through FPI panics.
+
+```rust
+// before
+let commitment = active_account::compute_commitment();
+let commitment = <Storage as ActiveAccount>::compute_commitment(&self);
+// after
+let commitment = native_account::compute_commitment();
+let commitment = <Storage as NativeAccount>::compute_commitment(&self);
+```
+
+The method now exists only on the `NativeAccount` trait. A `#[component_storage]` struct
+implements both traits, so `self.compute_commitment()` inside a component keeps compiling as long
+as `NativeAccount` is in scope; explicit paths, UFCS calls, and generic code bounded on
+`ActiveAccount` need the edit. The `#[account(...)]` wrapper types used by notes and transaction
+scripts implement only `ActiveAccount`, so `account.compute_commitment()` there no longer compiles
+and has no replacement: the kernel procedure has always required the account context, so such a
+call trapped at runtime before. Compute the commitment inside a component method instead.
+
+### Asset ids are typed
+
+The first word of an `Asset` is now an `AssetId` named `id` (the kernel calls it `ASSET_ID`)
+instead of a raw `Word` named `key`. `AssetId` is `#[repr(transparent)]` over the word, so the
+layout is unchanged. The raw word is `asset.id.inner` or `Word::from(asset.id)`.
+
+```rust
+// before
+let key: Word = asset.key;
+let held = active_account::has_asset(asset.key);
+let value = active_account::get_asset(key_word);
+let initial = native_account::get_initial_asset(key_word);
+// after
+let id: AssetId = asset.id; // or asset.id()
+let held = active_account::has_asset(asset.id);
+let value = active_account::get_asset(AssetId::from(key_word));
+let initial = native_account::get_initial_asset(AssetId::from(key_word));
+```
+
+- `Asset::new(word, value)` and `Asset::new([f0, f1, f2, f3], value)` keep compiling, because
+  `AssetId` converts from both `Word` and `[Felt; 4]`.
+- `active_account::get_asset`, `active_account::has_asset`, `native_account::get_initial_asset`
+  and the matching `ActiveAccount` trait methods take an `AssetId` instead of a `Word`. Pass
+  `asset.id()` or `AssetId::from(word)`.
+- The WIT core-types record `asset` changed its first field from `key: word` to `id: asset-id`
+  (a new `asset-id` record wrapping a word). Bindings for components that take or return an
+  `Asset` regenerate with the new field name, so code reading `.key` on a generated binding type
+  needs the same edit.
+- `Asset::is_fungible` and `Asset::amount` read the composition through `AssetId::composition`,
+  which executes the protocol library's `asset::id_into_composition` procedure, instead of
+  decoding the id limbs in the SDK. They now cost one library procedure call and panic if the
+  composition bits of the asset id hold an unrecognized value. The encoding version is not
+  checked on this path.
+
 ## 0.14.0 -> 0.15.0
 
 ### Renames
