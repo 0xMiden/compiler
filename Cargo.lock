@@ -834,10 +834,8 @@ dependencies = [
  "liquid-core",
  "log",
  "miden-mast-package",
- "midenc-compile",
  "midenc-driver",
  "midenc-frontend-wasm-metadata",
- "midenc-hir",
  "midenc-integration-test-support",
  "midenc-log",
  "midenc-session",
@@ -3613,7 +3611,7 @@ dependencies = [
 
 [[package]]
 name = "miden-note-bindings"
-version = "0.14.0"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-field",
  "miden-field-repr",
@@ -3628,7 +3626,7 @@ dependencies = [
 
 [[package]]
 name = "miden-note-bindings-macros"
-version = "0.14.0"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-note-schema",
  "miden-note-schema-codegen",
@@ -3643,7 +3641,7 @@ dependencies = [
 
 [[package]]
 name = "miden-note-codec"
-version = "0.14.0"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-field",
  "miden-field-repr",
@@ -3660,7 +3658,7 @@ dependencies = [
 
 [[package]]
 name = "miden-note-codec-macros"
-version = "0.14.0"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-note-codec-wit",
  "miden-note-schema",
@@ -3675,11 +3673,11 @@ dependencies = [
 
 [[package]]
 name = "miden-note-codec-wit"
-version = "0.14.0"
+version = "0.15.0-rc.2"
 
 [[package]]
 name = "miden-note-schema"
-version = "0.14.0"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-core",
  "miden-field",
@@ -3699,7 +3697,7 @@ dependencies = [
 
 [[package]]
 name = "miden-note-schema-codegen"
-version = "0.14.0"
+version = "0.15.0-rc.2"
 dependencies = [
  "heck",
  "miden-note-schema",

@@ -1,7 +1,7 @@
 [package]
 name = "miden-note-bindings-macros"
 description = "Procedural macros for typed Miden note storage bindings"
-version = "0.14.0"
+version = "0.15.0-rc.2"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true

@@ -41,8 +41,6 @@ flate2.workspace = true
 
 [dependencies]
 midenc-driver = { workspace = true, features = ["std"] }
-midenc-compile = { workspace = true, features = ["std"] }
-midenc-hir = { workspace = true, features = ["std"] }
 midenc-session.workspace = true
 midenc-log.workspace = true
 log.workspace = true

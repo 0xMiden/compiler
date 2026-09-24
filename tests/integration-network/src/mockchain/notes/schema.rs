@@ -34,8 +34,11 @@ fn transfer_with_storage(
     build_storage: impl FnOnce(AccountId) -> NoteStorage,
 ) -> (Note, AccountId) {
     let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
-    let wallet_component =
-        AccountComponent::from_package(&wallet_package, &InitStorageData::default()).unwrap();
+    let wallet_component = AccountComponent::from_package(
+        wallet_package.as_ref().clone(),
+        &InitStorageData::default(),
+    )
+    .unwrap();
 
     let mut builder = MockChain::builder();
     let faucet = builder

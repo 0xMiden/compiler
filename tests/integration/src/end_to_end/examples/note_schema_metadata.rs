@@ -60,21 +60,18 @@ const EXPECTED_CORE_TYPES: &str = concat!(
             inner: felt
         }
 
-        /// A fungible or a non-fungible asset.
-        ///
-        /// In protocol v0.14 assets are encoded as two words: an asset key and an asset value.
-        ///
-        /// The methodology for constructing fungible and non-fungible assets is described below.
-        ///
-        /// # Fungible assets
-        /// - `key`: `[0, 0, faucet_id_suffix, faucet_id_prefix]`
-        /// - `value`: `[amount, 0, 0, 0]`
-        ///
-        /// # Non-fungible assets
-        /// - `key`: `[hash0, hash1, faucet_id_suffix, faucet_id_prefix]`
-        /// - `value`: `DATA_HASH`
+        /// The identifier of an asset: the word that identifies it in an account vault. It encodes the
+        /// issuing faucet, the asset class and the composition rule; read them through the SDK's
+        /// `AssetId` getters rather than decoding the limbs.
+        record asset-id {
+            inner: word,
+        }
+
+        /// A fungible or a non-fungible asset, encoded as its asset id and a value word. For a
+        /// fungible asset the value holds the amount in its first element; for a non-fungible asset
+        /// it holds the asset data hash.
         record asset {
-            key: word,
+            id: asset-id,
             value: word,
         }
 
@@ -227,8 +224,8 @@ fn note_packages_carry_resolvable_storage_schema_metadata() {
                 /// The note creator stores the swap terms in the note storage; the fields below are decoded
                 /// from the storage elements in declaration order.
                 record swapp-note {
-                    /// Vault key identifying the requested asset (faucet id, composition, callback flags).
-                    requested-asset-key: word,
+                    /// Asset id of the requested asset (faucet id, class, composition rule).
+                    requested-asset-id: word,
                     /// Total requested asset amount for the full offer.
                     requested-total: felt,
                     /// The account that created the swap offer and receives the requested asset.

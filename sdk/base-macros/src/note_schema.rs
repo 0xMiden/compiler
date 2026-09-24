@@ -821,21 +821,18 @@ mod tests {
                         inner: felt
                     }
 
-                    /// A fungible or a non-fungible asset.
-                    ///
-                    /// In protocol v0.14 assets are encoded as two words: an asset key and an asset value.
-                    ///
-                    /// The methodology for constructing fungible and non-fungible assets is described below.
-                    ///
-                    /// # Fungible assets
-                    /// - `key`: `[0, 0, faucet_id_suffix, faucet_id_prefix]`
-                    /// - `value`: `[amount, 0, 0, 0]`
-                    ///
-                    /// # Non-fungible assets
-                    /// - `key`: `[hash0, hash1, faucet_id_suffix, faucet_id_prefix]`
-                    /// - `value`: `DATA_HASH`
+                    /// The identifier of an asset: the word that identifies it in an account vault. It encodes the
+                    /// issuing faucet, the asset class and the composition rule; read them through the SDK's
+                    /// `AssetId` getters rather than decoding the limbs.
+                    record asset-id {
+                        inner: word,
+                    }
+
+                    /// A fungible or a non-fungible asset, encoded as its asset id and a value word. For a
+                    /// fungible asset the value holds the amount in its first element; for a non-fungible asset
+                    /// it holds the asset data hash.
                     record asset {
-                        key: word,
+                        id: asset-id,
                         value: word,
                     }
 
@@ -1047,21 +1044,18 @@ mod tests {
                         inner: felt
                     }
 
-                    /// A fungible or a non-fungible asset.
-                    ///
-                    /// In protocol v0.14 assets are encoded as two words: an asset key and an asset value.
-                    ///
-                    /// The methodology for constructing fungible and non-fungible assets is described below.
-                    ///
-                    /// # Fungible assets
-                    /// - `key`: `[0, 0, faucet_id_suffix, faucet_id_prefix]`
-                    /// - `value`: `[amount, 0, 0, 0]`
-                    ///
-                    /// # Non-fungible assets
-                    /// - `key`: `[hash0, hash1, faucet_id_suffix, faucet_id_prefix]`
-                    /// - `value`: `DATA_HASH`
+                    /// The identifier of an asset: the word that identifies it in an account vault. It encodes the
+                    /// issuing faucet, the asset class and the composition rule; read them through the SDK's
+                    /// `AssetId` getters rather than decoding the limbs.
+                    record asset-id {
+                        inner: word,
+                    }
+
+                    /// A fungible or a non-fungible asset, encoded as its asset id and a value word. For a
+                    /// fungible asset the value holds the amount in its first element; for a non-fungible asset
+                    /// it holds the asset data hash.
                     record asset {
-                        key: word,
+                        id: asset-id,
                         value: word,
                     }
 
