@@ -10,7 +10,7 @@ directly below this paragraph, above the previous one (newest first, like the
 
 <!-- Add the next migration section here, above the most recent one. -->
 
-## Unreleased
+## 0.14.0 -> 0.15.0
 
 ### `compute_commitment` moved to `native_account` (protocol 0.17.0-rc.6)
 
@@ -68,8 +68,6 @@ let initial = native_account::get_initial_asset(AssetId::from(key_word));
   decoding the id limbs in the SDK. They now cost one library procedure call and panic if the
   composition bits of the asset id hold an unrecognized value. The encoding version is not
   checked on this path.
-
-## 0.14.0 -> 0.15.0
 
 ### Renames
 
