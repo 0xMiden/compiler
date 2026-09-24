@@ -45,13 +45,13 @@ defaults. When `--cargo-miden` is omitted, the runner invokes `cargo miden` from
 
 ## Pull requests
 
-The `Examples and contracts benchmark` workflow builds `cargo-miden` from both the pull request and the current
-`origin/next` HEAD. Each compiler builds the examples and local SDK from its own checkout, so SDK,
-example, and input changes are included in the comparison. Each side is measured with the benchmark
-harness and VM executor built from its own checkout, so a VM upgrade that changes the package format
-does not stop the candidate from reading the baseline. The report therefore compares the two
-toolchains as wholes, and a change to the results schema must keep the comparison script able to
-read the baseline's output. The commit recorded in each result is read from that source checkout. A
+The `Examples and contracts benchmark` workflow builds `cargo-miden` from both the pull request
+and the current `origin/next` HEAD. Each compiler builds the examples and local SDK from its own
+checkout, so SDK, example, and input changes are included in the comparison. Each side is measured
+with the benchmark harness and VM executor built from its own checkout, so a VM upgrade that changes
+the package format does not stop the candidate from reading the baseline. The report therefore
+compares the two toolchains as wholes. Schema changes must keep the comparison script able to read
+the baseline's output. The commit recorded in each result is read from that source checkout. A
 sticky PR comment reports cycle and MAST-size changes. Lower values are marked as improvements;
 the job is informational and does not reject regressions automatically. Fork pull requests receive
 the same report in the job summary because their workflow token cannot write comments. Both result
