@@ -73,7 +73,14 @@ pub fn import_stub_name(
         .into_iter()
         .flatten()
         .find(|name| is_free(*name))
-        .unwrap_or(core_name)
+        .unwrap_or_else(|| {
+            log::warn!(
+                target: "component-translator",
+                "the lowering of import `{import_path}` keeps its core name `{core_name}`: the \
+                 core module already defines `{leaf}` and its parent-qualified form"
+            );
+            core_name
+        })
 }
 
 /// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import
