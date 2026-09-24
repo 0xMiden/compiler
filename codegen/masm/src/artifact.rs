@@ -3,7 +3,7 @@ use core::{fmt, ops::ControlFlow};
 
 use miden_assembly::{Path, ProjectSourceInputs, ast::InvocationTarget};
 use miden_core::Word;
-use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
+use midenc_hir::{SymbolPath, constants::ConstantData, interner::Symbol};
 use midenc_session::{
     Emit, OutputMode, OutputType, Session, Writer,
     diagnostics::{IntoDiagnostic, Report, SourceSpan, Span, WrapErr},
@@ -12,10 +12,11 @@ use midenc_session::{
 use crate::{Event, lower::NativePtr, masm};
 
 pub struct MasmComponent {
-    pub id: Option<builtin::ComponentId>,
+    /// The namespace path of the component, see [`Component::namespace_path`](midenc_hir::dialects::builtin::Component::namespace_path)
+    pub id: Option<SymbolPath>,
     /// True if [`Self::id`] belongs to a component the compiler invented to wrap a bare core
     /// module, rather than one an author wrote — see
-    /// [`builtin::Component::SYNTHETIC_WRAPPER_ATTR`], which is where this comes from.
+    /// [`Component::SYNTHETIC_WRAPPER_ATTR`](midenc_hir::dialects::builtin::Component::SYNTHETIC_WRAPPER_ATTR), which is where this comes from.
     pub synthetic_wrapper: bool,
     /// The path of the root module for this component
     ///
@@ -75,7 +76,7 @@ impl Emit for MasmComponent {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Rodata {
     /// The component to which this read-only data segment belongs
-    pub component: builtin::ComponentId,
+    pub component: SymbolPath,
     /// The content digest computed for `data`
     pub digest: Word,
     /// The address at which the data for this segment begins
@@ -245,8 +246,9 @@ impl MasmComponent {
     ///
     /// - **The synthetic wrapper** the Wasm frontend builds around every *core* Wasm module
     ///   (`frontend/wasm`'s `build_ir_component`). Its identity is the same for every such build
-    ///   and carries no information about this one, and `ComponentId::to_library_path` renders it
-    ///   as the single quoted component `"root_ns:root@1.0.0"` — a spelling no target is named.
+    ///   and carries no information about this one, and
+    ///   `Component::namespace_path().to_library_path()` renders it as the single quoted
+    ///   component `"root_ns:root@1.0.0"` — a spelling no target is named.
     /// - **A world declaring no component**, which has no id at all. Its modules "belong to one
     ///   logical component, which has no identity beyond the namespace those modules sit in"
     ///   (`world_body_to_masm_component`), so lowering has to invent a root: the placeholder
@@ -599,18 +601,14 @@ mod tests {
     mod rooting {
         use alloc::rc::Rc;
 
-        use midenc_hir::{Context, version::Version};
+        use midenc_hir::Context;
         use midenc_session::miden_project::{Target, Uri};
 
         use super::*;
 
         /// The identity a real Wasm *component* carries, which its author chose.
-        fn authored_id() -> builtin::ComponentId {
-            builtin::ComponentId {
-                namespace: Symbol::intern("miden:example"),
-                name: Symbol::intern("example"),
-                version: Version::new(1, 0, 0),
-            }
+        fn authored_id() -> SymbolPath {
+            SymbolPath::from_masm_module_id("miden:example:example@1.0.0")
         }
 
         /// The component `frontend/wasm` wraps around a core Wasm module: the identity it gives
@@ -618,18 +616,14 @@ mod tests {
         /// [`MasmComponent::has_no_authored_identity`] reads. The id alone is a name an author
         /// may write, and says nothing on its own.
         fn wrapper_component() -> MasmComponent {
-            let id = builtin::ComponentId {
-                namespace: Symbol::intern("root_ns"),
-                name: Symbol::intern("root"),
-                version: Version::new(1, 0, 0),
-            };
+            let id = SymbolPath::from_masm_module_id("root_ns:root@1.0.0");
             let mut component = component(id);
             component.synthetic_wrapper = true;
             component
         }
 
         /// A component of `id` whose author wrote that id, rooted at the path it renders to.
-        fn component(id: builtin::ComponentId) -> MasmComponent {
+        fn component(id: SymbolPath) -> MasmComponent {
             let root_path: Arc<Path> = Arc::from(
                 id.to_library_path()
                     .to_absolute()
@@ -660,10 +654,7 @@ mod tests {
         /// shape code generation produces: the submodule is nested under the component's path,
         /// the root declares it, and the submodule's exported procedure calls one of its own by
         /// absolute path as well as an intrinsic that lives outside the component.
-        fn rooted_component(
-            id: Option<builtin::ComponentId>,
-            root_path: Arc<Path>,
-        ) -> MasmComponent {
+        fn rooted_component(id: Option<SymbolPath>, root_path: Arc<Path>) -> MasmComponent {
             let child_path = root_path.join(masm::Path::new("child"));
 
             let mut root = masm::Module::new(masm::ModuleKind::Library, &root_path);
@@ -905,7 +896,7 @@ mod tests {
         ///
         /// A manifest may declare `namespace = "root_ns:root@1.0.0"`, which is how projects worked
         /// around this defect before it was fixed, and which parses to exactly the path
-        /// `ComponentId::to_library_path` produces. Such a target needs no re-rooting, and the
+        /// `Component::namespace_path().to_library_path()` produces. Such a target needs no re-rooting, and the
         /// equality guard in [`MasmComponent::source_inputs`] is what keeps it from being rewritten
         /// to itself — which is what lets those existing projects be said to be unaffected by this
         /// change.

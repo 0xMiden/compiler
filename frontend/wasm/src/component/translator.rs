@@ -5,10 +5,10 @@ use midenc_dialect_hir::WASM_COMPONENT_START_ATTR;
 use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
 use midenc_hir::{
     self as hir2, BuilderExt, CallConv, Context, FxHashMap, FxHashSet, Ident, OpExt, Symbol as _,
-    SymbolNameComponent, SymbolPath,
+    SymbolName, SymbolNameComponent, SymbolPath,
     diagnostics::Report,
     dialects::builtin::{
-        self, ComponentBuilder, ModuleBuilder, World, WorldBuilder, attributes::UnitAttr,
+        ComponentBuilder, ModuleBuilder, World, WorldBuilder, attributes::UnitAttr,
     },
     formatter::DisplayValues,
     interner::Symbol,
@@ -125,14 +125,12 @@ impl<'a> ComponentTranslator<'a> {
     }
 
     pub fn new(
-        id: builtin::ComponentId,
+        name: SymbolName,
         nested_modules: &'a mut PrimaryMap<StaticModuleIndex, ParsedModule<'a>>,
         nested_components: &'a PrimaryMap<StaticComponentIndex, ParsedComponent<'a>>,
         config: &'a WasmTranslationConfig,
         context: Rc<Context>,
     ) -> WasmResult<Self> {
-        let ns = hir2::Ident::with_empty_span(id.namespace);
-        let name = hir2::Ident::with_empty_span(id.name);
         let component_frontend_metadata =
             merge_frontend_metadata(nested_modules.iter().map(|(_, module)| module));
 
@@ -145,7 +143,7 @@ impl<'a> ComponentTranslator<'a> {
         let mut world_builder = WorldBuilder::new(world_ref);
 
         let raw_entity_ref = world_builder
-            .define_component(ns, name, id.version)
+            .define_component(hir2::Ident::with_empty_span(name))
             .expect("failed to define component");
         let result = ComponentBuilder::new(raw_entity_ref);
 

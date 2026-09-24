@@ -1484,7 +1484,7 @@ builtin.module public @b {
         });
 
         assert_eq!(
-            resolved, "b/target",
+            resolved, "::b::target",
             "the entry's relative path must resolve beside the table, not beside the call"
         );
     }

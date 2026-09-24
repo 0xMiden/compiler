@@ -129,8 +129,8 @@ pub(crate) fn minimal_component(context: &Rc<midenc_hir::Context>) -> crate::Mid
 
 /// The component name [`component_in_namespace`] builds under, and its version.
 ///
-/// Constants rather than literals because they are half of the component's id, and a target
-/// that assembles what this module builds has to name that whole id — see
+/// Constants rather than literals because they are part of the component's name, and a target
+/// that assembles what this module builds has to name that whole name — see
 /// [`component_target_namespace`].
 const COMPONENT_NAME: &str = "test";
 const COMPONENT_VERSION: (u64, u64, u64) = (1, 0, 0);
@@ -138,8 +138,8 @@ const COMPONENT_VERSION: (u64, u64, u64) = (1, 0, 0);
 /// The target namespace a project must declare to assemble what
 /// [`component_in_namespace`]`(_, namespace, ..)` produces.
 ///
-/// Codegen roots a component's Miden Assembly at its *id* — namespace, name and version
-/// together, as one quoted path component — and the assembler refuses to assemble a target
+/// Codegen roots a component's Miden Assembly at its *name* — here `<namespace>:test@1.0.0`,
+/// which has no `::` and so is one quoted path component — and the assembler refuses to assemble a target
 /// whose root module sits anywhere but the target's own namespace. So a manifest for such a
 /// target reads `namespace = "test_ns:test@1.0.0"`, not `namespace = "test_ns"`. Real projects
 /// look the same: `tests/fixtures/components/cross-ctx-account` declares
@@ -153,8 +153,8 @@ pub(crate) fn component_target_namespace(namespace: &str) -> alloc::string::Stri
 ///
 /// The namespace is a parameter because a component assembled as part of a project must be
 /// lowered into the *target's* namespace: codegen derives the root Miden Assembly module path
-/// from the component's id, and the assembler rejects a root module that does not sit exactly
-/// at the target's own namespace. The id is not the namespace alone, so a caller that assembles
+/// from the component's name, and the assembler rejects a root module that does not sit exactly
+/// at the target's own namespace. The name is not the namespace alone, so a caller that assembles
 /// what this builds must declare its target's namespace as
 /// [`component_target_namespace(namespace)`](component_target_namespace) rather than
 /// `namespace`.
@@ -178,18 +178,15 @@ pub(crate) fn component_in_namespace(
             self, BuiltinOpBuilder, ComponentBuilder, FunctionBuilder, ModuleBuilder, WorldBuilder,
             attributes::Signature,
         },
-        version::Version,
     };
 
     let mut builder = OpBuilder::new(context.clone());
     let world = builder.create::<builtin::World, ()>(SourceSpan::UNKNOWN)().unwrap();
     let mut world_builder = WorldBuilder::new(world);
     let component = world_builder
-        .define_component(
-            Ident::with_empty_span(midenc_hir::interner::Symbol::intern(namespace)),
-            Ident::with_empty_span(COMPONENT_NAME.into()),
-            Version::new(COMPONENT_VERSION.0, COMPONENT_VERSION.1, COMPONENT_VERSION.2),
-        )
+        .define_component(Ident::with_empty_span(midenc_hir::interner::Symbol::intern(
+            component_target_namespace(namespace),
+        )))
         .unwrap();
 
     let mut component_builder = ComponentBuilder::new(component);
