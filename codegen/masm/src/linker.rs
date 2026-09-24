@@ -72,6 +72,7 @@ pub struct LinkInfo {
 }
 
 impl LinkInfo {
+    /// Creates empty link information for the op rooted at the namespace path `id`, if any.
     #[cfg(test)]
     pub fn new(id: Option<SymbolPath>) -> Self {
         Self {
@@ -84,6 +85,7 @@ impl LinkInfo {
         }
     }
 
+    /// Returns the namespace path the linked op is rooted at, if it was linked with one.
     #[inline]
     pub fn component(&self) -> Option<&SymbolPath> {
         self.component.as_ref()
@@ -176,6 +178,8 @@ impl Linker {
         }
     }
 
+    /// Computes the memory layout of `component`, the component or world being linked, which is
+    /// rooted at the namespace path `id` when it has one.
     pub fn link(
         mut self,
         id: Option<SymbolPath>,
