@@ -465,8 +465,9 @@ impl WasmFrontend {
     ///
     /// The module is named after the source's file stem, which is what the legacy stage passed
     /// and therefore what every fixture's HIR is named after today. Note that it names the
-    /// *module*: the enclosing component's id is the frontend's own, so this does not decide
-    /// the namespace the target is lowered into.
+    /// *module*: the enclosing component is rooted at `namespace`, or at the namespace its
+    /// exports declare, so the file stem does not decide the namespace the target is lowered
+    /// into.
     ///
     /// `noname` is the fallback for a root with no file stem, or one that is not valid UTF-8 —
     /// which the legacy stage handled by unwrapping, i.e. by panicking. It is not invented here:

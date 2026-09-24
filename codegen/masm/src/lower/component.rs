@@ -601,8 +601,8 @@ fn component_to_masm_component(
             let path = if synthetic_wrapper {
                 component_path.join(entry_id.module.as_str())
             } else {
-                // We're compiling a Wasm component and the component id is included
-                // in the entrypoint.
+                // We're compiling a Wasm component and the component's namespace path is
+                // included in the entrypoint.
                 LibraryPath::new(entry_id.module.as_str()).into_diagnostic()?
             };
             let qualified = masm::QualifiedProcedureName::new(path.as_path(), name);
@@ -1101,7 +1101,7 @@ impl MasmComponentBuilder<'_> {
         //
         // Two of the shapes reaching here have no component boundary to speak of, and in both
         // the modules *are* the artifact's interface, so they keep public submodules. A world
-        // lowered without a component id is one. The other is the wrapper the compiler invents
+        // lowered without a component namespace is one. The other is the wrapper the compiler invents
         // around a bare core module, which is not a real boundary either: the wrapped module is
         // the artifact's own interface (the entrypoint of an executable, or the exports of a
         // bare library), and the generated executable `main` module lives outside the wrapper's

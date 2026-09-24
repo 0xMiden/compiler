@@ -173,8 +173,8 @@ name = "{name}"
 version = "0.1.0"
 
 [lib]
-# Names the Wasm frontend's synthetic wrapper component of the core Wasm module. See
-# `tests/integration/src/end_to_end/support.rs`, which writes the same namespace.
+# The namespace the Wasm frontend roots the core Wasm module's wrapper component at; any
+# namespace works.
 namespace = "root"
 path = "src/lib.rs"
 

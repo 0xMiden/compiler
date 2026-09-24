@@ -178,12 +178,12 @@ pub(super) mod test_support {
         (context, world_builder, ModuleBuilder::new(module))
     }
 
-    /// Creates a world fixture with a "miden:test" component and its "core" module for export
+    /// Creates a world fixture with a `miden::test` component and its `core` module for export
     /// lifting tests.
     pub fn component_with_core_module() -> (Rc<Context>, ComponentBuilder, ModuleBuilder) {
         let (context, mut world_builder) = test_world();
         let component = world_builder
-            .define_component("miden:test@1.0.0".into())
+            .define_component("miden::test".into())
             .expect("failed to define component");
         let mut component_builder = ComponentBuilder::new(component);
         let core_module = component_builder

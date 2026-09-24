@@ -188,7 +188,7 @@ mod tests {
 
         let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
-        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root:root@1.0.0")));
+        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root")));
         let mut invoked = BTreeSet::default();
         let mut stack = OperandStack::new(test.context_rc());
         for _ in 0..num_inputs {
