@@ -33,7 +33,6 @@ pub(super) mod test_support {
             BuiltinOpBuilder, ComponentBuilder, Function, FunctionRef, ModuleBuilder, World,
             WorldBuilder, attributes::Signature,
         },
-        version::Version,
     };
 
     use crate::module::function_builder_ext::{
@@ -183,7 +182,7 @@ pub(super) mod test_support {
     pub fn component_with_core_module() -> (Rc<Context>, ComponentBuilder, ModuleBuilder) {
         let (context, mut world_builder) = test_world();
         let component = world_builder
-            .define_component("miden".into(), "test".into(), Version::new(1, 0, 0))
+            .define_component("miden:test@1.0.0".into())
             .expect("failed to define component");
         let mut component_builder = ComponentBuilder::new(component);
         let core_module = component_builder

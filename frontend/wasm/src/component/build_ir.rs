@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use midenc_hir::{Context, dialects::builtin::BuiltinDialect};
+use midenc_hir::{Context, dialects::builtin::BuiltinDialect, interner::Symbol};
 use midenc_session::{Session, diagnostics::Report};
 
 use super::{ComponentTypesBuilder, ParsedRootComponent, translator::ComponentTranslator};
@@ -33,24 +33,18 @@ pub fn translate_component(
         parse(config, wasm, context.session())?;
     let dialect = context.get_or_register_dialect::<BuiltinDialect>();
     dialect.expect_registered_name::<midenc_hir::dialects::builtin::Component>();
-    // Extract component name from exported component instance
-    let id = {
-        let instance = parsed_root_component
-            .root_component
-            .exports
-            .iter()
-            .find_map(|(name, c)| match c {
-                super::ComponentItem::ComponentInstance(_) => Some((*name).to_string()),
-                _ => None,
-            })
-            .expect("expected at least one component instance to be exported");
-
-        instance
-            .parse()
-            .expect("failed to parse ComponentId from Wasm component instance name")
-    };
+    // The component is named by its exported component instance name, as one symbol
+    let name = parsed_root_component
+        .root_component
+        .exports
+        .iter()
+        .find_map(|(name, c)| match c {
+            super::ComponentItem::ComponentInstance(_) => Some(Symbol::intern(*name)),
+            _ => None,
+        })
+        .expect("expected at least one component instance to be exported");
     let translator = ComponentTranslator::new(
-        id,
+        name,
         &mut parsed_root_component.static_modules,
         &parsed_root_component.static_components,
         config,

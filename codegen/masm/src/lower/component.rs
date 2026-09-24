@@ -10,10 +10,9 @@ use alloc::{
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
 use midenc_hir::{
-    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, Type, ValueRef,
+    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, SymbolPath, TraceTarget, Type, ValueRef,
     diagnostics::IntoDiagnostic,
     dialects::{builtin, debuginfo::attributes::SubprogramAttr},
-    interner,
     pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
@@ -561,12 +560,12 @@ fn component_to_masm_component(
     let context = component.as_operation().context_rc();
 
     // Whether this component is one the compiler invented to wrap a bare core module, which it
-    // says by carrying a marker the frontend set rather than by its id — see
+    // says by carrying a marker the frontend set rather than by its name — see
     // `builtin::Component::SYNTHETIC_WRAPPER_ATTR`.
     let synthetic_wrapper = component.is_synthetic_wrapper();
 
     // Run the linker for this component in order to compute its data layout
-    let id = component.id();
+    let id = component.namespace_path();
     let link_info = Linker::default()
         .link(Some(id.clone()), component.as_operation())
         .map_err(Report::msg)?;
@@ -698,11 +697,10 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
             let felts = crate::Rodata::bytes_to_elements(data.as_slice());
             let digest = miden_core::crypto::hash::Poseidon2::hash_elements(&felts);
             alloc::vec![crate::Rodata {
-                component: link_info.component().cloned().unwrap_or(builtin::ComponentId {
-                    namespace: interner::Symbol::intern("root_ns"),
-                    name: interner::Symbol::intern("root"),
-                    version: midenc_hir::version::Version::new(1, 0, 0)
-                }),
+                component: link_info
+                    .component()
+                    .cloned()
+                    .unwrap_or_else(|| SymbolPath::from_masm_module_id("root_ns:root@1.0.0")),
                 digest,
                 start: super::NativePtr::from_ptr(merged.offset),
                 data,
@@ -1222,10 +1220,9 @@ impl MasmComponentBuilder<'_> {
 
         let module =
             Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
-        let expected_path_len = if module.path().is_absolute() { 2 } else { 1 };
         assert_eq!(
-            module.path().len(),
-            expected_path_len,
+            module.path(),
+            &*self.component.root,
             "expected top-level namespace module, but one has not been defined (in '{}' of '{}')",
             module.path(),
             function.path()

@@ -36,6 +36,11 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
     fn name(&self) -> SymbolName;
     /// Get the fully-qualified (absolute) path of this symbol
     ///
+    /// The name of this symbol is the `Leaf` of the path, and is never split. Each named ancestor
+    /// symbol table contributes one `Component` per `::`-separated segment of its name (see
+    /// [SymbolPath::segments_of]), so a function `f` in module `m` of a component named
+    /// `miden::a::b` has the path `::miden::a::b::m::f`.
+    ///
     /// # Panics
     ///
     /// This function traverses the parents of this operation to the top level. If called while
@@ -47,7 +52,9 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
         while let Some(parent_symbol_table) = symbol_table.take() {
             let sym_table_op = parent_symbol_table.borrow();
             if let Some(sym) = sym_table_op.as_symbol() {
-                parts.push_front(SymbolNameComponent::Component(sym.name()));
+                for segment in SymbolPath::segments_of(sym.name()).into_iter().rev() {
+                    parts.push_front(SymbolNameComponent::Component(segment));
+                }
                 symbol_table = sym_table_op.nearest_symbol_table();
             } else {
                 // This is an anonymous symbol table - for now we require all symbol tables to be

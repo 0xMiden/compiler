@@ -7,11 +7,11 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{Dyncall, ExecFpi, HirOpBuilder};
 use midenc_hir::{
-    Builder, Context, FunctionType, Op, SmallVec, SourceSpan, SymbolPath, Type, ValueRef,
+    Builder, Context, FunctionType, Ident, Op, SmallVec, SourceSpan, SymbolPath, Type, ValueRef,
     Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
-        BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
+        BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, WorldBuilder,
         attributes::{AbiParam, Signature},
     },
 };
@@ -957,15 +957,12 @@ fn build_import_call(
 ) -> WasmResult<Vec<ValueRef>> {
     let results = match call_kind {
         ImportCallKind::Call => {
-            let id = ComponentId::try_from(import_func_path)
-                .wrap_err("path does not start with a valid component id")?;
-            let component_ref = if let Some(component_ref) = world_builder.find_component(&id) {
-                component_ref
-            } else {
+            let component_name = import_func_path.without_leaf().to_symbol_name();
+            let component_ref = world_builder.find_component(component_name).unwrap_or_else(|| {
                 world_builder
-                    .define_component(id.namespace.into(), id.name.into(), id.version)
+                    .define_component(Ident::with_empty_span(component_name))
                     .expect("failed to define the component")
-            };
+            });
             let mut component_builder = ComponentBuilder::new(component_ref);
             let import_func_ref = component_builder
                 .define_function(
@@ -2252,8 +2249,8 @@ mod tests {
         assert_eq!(results, vec![Type::Felt]);
         assert_eq!(count_ops(function, |op| op.is::<midenc_dialect_hir::Call>()), 0);
         // Nothing is declared for a runtime target: the import's component does not exist
-        let id = ComponentId::try_from(&import_func_path).expect("valid component id");
-        assert!(world_builder.find_component(&id).is_none());
+        let component_name = import_func_path.without_leaf().to_symbol_name();
+        assert!(world_builder.find_component(component_name).is_none());
     }
 
     /// A dyncall import whose results need the canonical out-pointer keeps that transformation:

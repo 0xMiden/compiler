@@ -303,7 +303,7 @@ fn parsing_a_world_yields_that_world_rather_than_nesting_it() -> TestResult {
         let module = module.downcast_ref::<Module>().expect("expected 'lib' to be a module");
         let path = module.path();
         assert!(path.is_absolute(), "a symbol path is rooted at the world");
-        assert_eq!(path.to_string(), "lib");
+        assert_eq!(path.to_string(), "::lib");
     }
 
     // The function's path crosses two symbol tables, so it also pins that the world contributes
@@ -315,7 +315,7 @@ fn parsing_a_world_yields_that_world_rather_than_nesting_it() -> TestResult {
     };
     let function = function.borrow();
     let function = function.downcast_ref::<Function>().expect("expected 'main' to be a function");
-    assert_eq!(function.path().to_string(), "lib/main");
+    assert_eq!(function.path().to_string(), "::lib::main");
 
     Ok(())
 }
@@ -343,7 +343,7 @@ fn parsing_a_module_still_wraps_it_in_a_world() -> TestResult {
 
     let path = module.borrow().path();
     assert!(path.is_absolute(), "a symbol path is rooted at the wrapper world");
-    assert_eq!(path.to_string(), "lib");
+    assert_eq!(path.to_string(), "::lib");
 
     Ok(())
 }
@@ -509,4 +509,35 @@ builtin.module public @t {
     };
 };";
     assert!(test.parse_any("dup.hir", source).is_err(), "a duplicate symbol must not parse");
+}
+
+/// A component prints its name as a symbol path, one segment per `::`-separated segment of the
+/// name, quoting a segment that is not a bare identifier, and that text parses back to the same
+/// name.
+#[test]
+fn component_name_roundtrips_through_the_printer() -> TestResult {
+    use crate::{
+        Op,
+        dialects::builtin::{Component, WorldBuilder},
+    };
+
+    let test = ParserTest::default();
+    for (name, header) in [
+        ("miden::a::b", "builtin.component private @miden::@a::@b {"),
+        ("hir_ns:test@1.0.0", "builtin.component private @\"hir_ns:test@1.0.0\" {"),
+    ] {
+        let world = test.context_rc().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+        let component = WorldBuilder::new(world).define_component(name.into())?;
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(component.as_operation_ref().borrow());
+        let printed = printer.finish().to_string();
+        assert!(printed.starts_with(header), "unexpected printed form:\n{printed}");
+
+        let reparsed = test.parse::<Component>("component_roundtrip.hir", &printed)?;
+        assert_eq!(Symbol::name(&*reparsed.borrow()).as_str(), name);
+    }
+
+    Ok(())
 }
