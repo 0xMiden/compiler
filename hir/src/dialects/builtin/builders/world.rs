@@ -4,10 +4,9 @@ use crate::{
     Builder, Context, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolNameComponent,
     SymbolPath, SymbolTable,
     dialects::builtin::{
-        Component, ComponentId, ComponentRef, Module, ModuleBuilder, ModuleRef,
-        PrimComponentBuilder, PrimModuleBuilder, World, WorldRef,
+        Component, ComponentRef, Module, ModuleBuilder, ModuleRef, PrimComponentBuilder,
+        PrimModuleBuilder, World, WorldRef,
     },
-    version::Version,
 };
 
 pub struct WorldBuilder {
@@ -39,19 +38,22 @@ impl WorldBuilder {
         self.builder.context_rc()
     }
 
-    pub fn define_component(
-        &mut self,
-        ns: Ident,
-        name: Ident,
-        ver: Version,
-    ) -> Result<ComponentRef, Report> {
+    /// Define a new world-level component `name`.
+    ///
+    /// The name is the component's namespace path, with its segments joined by `::`, e.g.
+    /// `miden::counter_contract::counter_contract`. Callers holding a [SymbolPath] use
+    /// [SymbolPath::to_symbol_name].
+    pub fn define_component(&mut self, name: Ident) -> Result<ComponentRef, Report> {
         let builder = PrimComponentBuilder::new(&mut self.builder, name.span());
-        let component_ref = builder(ns, name, ver.clone())?;
+        let component_ref = builder(name)?;
         Ok(component_ref)
     }
 
-    pub fn find_component(&self, id: &ComponentId) -> Option<ComponentRef> {
-        self.world.borrow().get(SymbolName::intern(id)).and_then(|symbol_ref| {
+    /// Resolve a world-level component with `name`, if defined.
+    ///
+    /// The name is the component's namespace path, see [WorldBuilder::define_component].
+    pub fn find_component(&self, name: SymbolName) -> Option<ComponentRef> {
+        self.world.borrow().get(name).and_then(|symbol_ref| {
             let op = symbol_ref.borrow();
             op.as_symbol_operation()
                 .downcast_ref::<Component>()
@@ -156,5 +158,63 @@ mod tests {
             .resolve(&path)
             .expect("nested module should resolve from the world");
         assert!(resolved.borrow().as_symbol_operation().is::<Module>());
+    }
+
+    /// A component named by a multi-segment path coexists with a module tree sharing its first
+    /// segment, and symbols in both resolve by their `::`-separated paths.
+    #[test]
+    fn multi_segment_component_name_resolves_beside_module_tree() {
+        use alloc::string::ToString;
+
+        use crate::{
+            FunctionIdent, Symbol, Visibility,
+            dialects::builtin::{ComponentBuilder, Function, attributes::Signature},
+        };
+
+        let context = Rc::new(Context::default());
+        let mut builder = OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+
+        let x = world_builder
+            .declare_module_tree(&SymbolPath::from_masm_module_id("miden::protocol::x"))
+            .expect("failed to declare module tree");
+        ModuleBuilder::new(x)
+            .define_function(Ident::from("g"), Visibility::Public, Signature::new(&context, [], []))
+            .expect("failed to declare g");
+
+        let component = world_builder
+            .define_component(Ident::from("miden::a::b"))
+            .expect("failed to define component");
+        let m = ComponentBuilder::new(component)
+            .define_module(Ident::from("m"))
+            .expect("failed to define module");
+        let f = ModuleBuilder::new(m)
+            .define_function(Ident::from("f"), Visibility::Public, Signature::new(&context, [], []))
+            .expect("failed to define f");
+
+        let resolve = |id: &str| {
+            let id = id.parse::<FunctionIdent>().expect("valid function id");
+            let path = SymbolPath::from_masm_function_id(id);
+            world
+                .borrow()
+                .resolve(&path)
+                .unwrap_or_else(|| panic!("'{path}' should resolve"))
+        };
+        let g = resolve("miden::protocol::x::g");
+        assert_eq!(g.borrow().name().as_str(), "g");
+        let resolved_f = resolve("miden::a::b::m::f");
+        assert!(resolved_f.borrow().as_symbol_operation().is::<Function>());
+        assert_eq!(
+            resolved_f.borrow().as_symbol_operation().as_operation_ref(),
+            f.as_operation_ref()
+        );
+
+        let f_path = f.borrow().path();
+        assert_eq!(f_path.to_string(), "::miden::a::b::m::f");
+        assert_eq!(f_path.to_library_path().to_string(), "::miden::a::b::m::f");
+        assert_eq!(component.borrow().namespace_path().to_string(), "::miden::a::b");
+        assert!(world_builder.find_component("miden::a::b".into()) == Some(component));
     }
 }

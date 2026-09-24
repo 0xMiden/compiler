@@ -7,10 +7,10 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{ExecFpi, HirOpBuilder};
 use midenc_hir::{
-    Builder, FunctionType, Op, SmallVec, SourceSpan, SymbolPath, Type, ValueRef, Visibility,
+    Builder, FunctionType, Ident, Op, SmallVec, SourceSpan, SymbolPath, Type, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
-        BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
+        BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, WorldBuilder,
         attributes::{AbiParam, Signature},
     },
 };
@@ -830,15 +830,12 @@ fn generate_lowering_with_transformation(
         },
     )?;
 
-    let id = ComponentId::try_from(import_func_path)
-        .wrap_err("path does not start with a valid component id")?;
-    let component_ref = if let Some(component_ref) = world_builder.find_component(&id) {
-        component_ref
-    } else {
+    let component_name = import_func_path.without_leaf().to_symbol_name();
+    let component_ref = world_builder.find_component(component_name).unwrap_or_else(|| {
         world_builder
-            .define_component(id.namespace.into(), id.name.into(), id.version)
+            .define_component(Ident::with_empty_span(component_name))
             .expect("failed to define the component")
-    };
+    });
 
     let mut component_builder = ComponentBuilder::new(component_ref);
 
@@ -965,16 +962,12 @@ fn generate_direct_lowering(
     args: &[ValueRef],
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
-    let id = ComponentId::try_from(import_func_path)
-        .wrap_err("path does not start with a valid component id")?;
-
-    let component_ref = if let Some(component_ref) = world_builder.find_component(&id) {
-        component_ref
-    } else {
+    let component_name = import_func_path.without_leaf().to_symbol_name();
+    let component_ref = world_builder.find_component(component_name).unwrap_or_else(|| {
         world_builder
-            .define_component(id.namespace.into(), id.name.into(), id.version)
+            .define_component(Ident::with_empty_span(component_name))
             .expect("failed to define the component")
-    };
+    });
 
     let mut component_builder = ComponentBuilder::new(component_ref);
 

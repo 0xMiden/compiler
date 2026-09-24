@@ -12,10 +12,8 @@ use alloc::{
 
 use midenc_hir::{
     CallableOpInterface, Context, Immediate, Operation, OperationRef, RegionBranchPoint, RegionRef,
-    Report, SmallVec, SourceSpan, Spanned, SymbolPath, Type, Value as _, ValueRange, ValueRef,
-    dialects::builtin::{ComponentId, attributes::LocalVariable},
-    formatter::DisplayValues,
-    smallvec,
+    Report, SmallVec, SourceSpan, Spanned, SymbolName, SymbolPath, Type, Value as _, ValueRange,
+    ValueRef, dialects::builtin::attributes::LocalVariable, formatter::DisplayValues, smallvec,
 };
 use midenc_session::diagnostics::{InFlightDiagnosticBuilder, Severity};
 
@@ -97,7 +95,7 @@ impl HirEvaluator {
     }
 
     /// Enter a fresh execution context (i.e. memory, registers), with an optional identifier
-    pub fn enter_context(&mut self, id: Option<ComponentId>) {
+    pub fn enter_context(&mut self, id: Option<SymbolName>) {
         self.contexts.push(id.map(ExecutionContext::new).unwrap_or_default());
     }
 

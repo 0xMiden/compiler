@@ -16,10 +16,8 @@ use super::*;
 // Fixtures.
 //
 // Task 7's, copied from `midenc-compile/src/pipeline/frontends/hir.rs` rather than shared:
-// `midenc-compile` depends on this crate, so nothing here can import from it. Its report
-// records which shapes parse — in particular that a component id is *one quoted*
-// symbol-path component, because `ComponentId::try_from` splits the `:` and the `@` back
-// out of it itself.
+// `midenc-compile` depends on this crate, so nothing here can import from it. The component
+// name `hir_ns:test@1.0.0` has no `::`, so it is one segment, quoted as the printer emits it.
 // -------------------------------------------------------------------------------------
 
 /// A component, written on its own — the other half of the equivalence [`WORLD`] pins.
@@ -592,7 +590,7 @@ fn a_component_lowers_rooted_at_its_own_id() {
         .expect("the component lowers");
 
     let id = lowered.id.as_ref().expect("a component knows its own id");
-    assert_eq!(id.to_string(), "hir_ns:test@1.0.0");
+    assert_eq!(id.to_string(), "::hir_ns:test@1.0.0");
     assert_eq!(
         lowered.root.to_string(),
         "::\"hir_ns:test@1.0.0\"",
@@ -1033,7 +1031,7 @@ fn a_sibling_module_owning_no_memory_is_translated_beside_the_component() {
     // The component itself is untouched by the sibling beside it.
     assert_eq!(
         lowered.id.as_ref().map(|id| id.to_string()).as_deref(),
-        Some("hir_ns:test@1.0.0")
+        Some("::hir_ns:test@1.0.0")
     );
     assert_eq!(lowered.root.to_string(), "::\"hir_ns:test@1.0.0\"");
 
@@ -1634,7 +1632,7 @@ fn cross_module_private_procedure_roots_are_rejected_for_every_owner_in_both_ord
             let message = err.to_string();
             assert!(
                 message.contains("private callee")
-                    && message.contains("callee_mod/callee")
+                    && message.contains("callee_mod::callee")
                     && message.contains("not linkable from another Miden Assembly module"),
                 "owner: {caller_owner:?}, callee_first: {callee_first}, error: {message}"
             );

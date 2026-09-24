@@ -9,7 +9,6 @@ use midenc_hir::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
         attributes::U64Attr,
     },
-    version::Version,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
 use wasmparser::Validator;
@@ -62,13 +61,10 @@ pub fn translate_module_as_component(
     };
     let mut world_builder = WorldBuilder::new(world_ref);
 
-    let ns = Ident::from("root_ns");
-    let name = Ident::from("root");
-    let ver = Version::parse("1.0.0").unwrap();
-    let mut component_ref = world_builder.define_component(ns, name, ver)?;
+    let mut component_ref = world_builder.define_component(Ident::from("root_ns:root@1.0.0"))?;
 
     // Mark this as the compiler's wrapper: nothing downstream should have to infer it by
-    // comparing the id, which an author may legitimately use.
+    // comparing the name, which an author may legitimately use.
     component_ref.borrow_mut().mark_synthetic_wrapper();
 
     let mut cb = ComponentBuilder::new(component_ref);

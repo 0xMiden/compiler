@@ -473,7 +473,7 @@ impl WasmFrontend {
         } = midenc_frontend_wasm::translate(&source.wasm, &config, context.clone())?;
         log::debug!(
             "parsed hir component from wasm bytes with first module name: {}",
-            component.borrow().id()
+            component.borrow().get_name().as_symbol()
         );
 
         crate::emit_hir_if_requested(component.borrow().as_operation(), context)?;

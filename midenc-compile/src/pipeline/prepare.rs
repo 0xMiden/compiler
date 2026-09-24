@@ -320,10 +320,10 @@ pub(crate) fn require_input_path_for_seed(input: &InputFile) -> CompilerResult<(
 /// # The rule is shared across formats; the reading is not
 ///
 /// "The file says what it is" is also how a standalone `.hir` input is handled: a `.hir` file
-/// declares its own component id, codegen roots the Miden Assembly at
-/// `ComponentId::to_library_path()`, and no name-derived library namespace can ever equal
-/// that. Only the *extraction* differs by format — a `namespace` declaration in Miden Assembly,
-/// a component id in HIR — which is why [`declared_namespace`] dispatches on the input's file
+/// declares its own component name, codegen roots the Miden Assembly at
+/// `Component::namespace_path().to_library_path()`, and no name-derived library namespace can
+/// ever equal that. Only the *extraction* differs by format — a `namespace` declaration in Miden
+/// Assembly, a component name in HIR — which is why [`declared_namespace`] dispatches on the input's file
 /// type and each format gets its own reader: [`masm_namespace_declaration`] and
 /// [`hir_declared_namespace`].
 ///
@@ -334,11 +334,11 @@ pub(crate) fn require_input_path_for_seed(input: &InputFile) -> CompilerResult<(
 /// all, whose root code generation has to invent. Those need no declaration read out of them,
 /// because they are moved to whatever namespace the target ends up with.
 ///
-/// What re-rooting deliberately does *not* cover is an authored component id, which is the code's
-/// own identity — moving it would rename the procedures every dependent addresses. So for a `.hir`
-/// file declaring a component, this scan is the only thing that can make the two namespaces agree,
-/// which is why [`hir_declared_namespace`] re-renders the id through `ComponentId` rather than
-/// echoing the token it found.
+/// What re-rooting deliberately does *not* cover is an authored component name, which is the
+/// code's own identity — moving it would rename the procedures every dependent addresses. So for a
+/// `.hir` file declaring a component, this scan is the only thing that can make the two namespaces
+/// agree, which is why [`hir_declared_namespace`] re-renders the name through `SymbolPath` rather
+/// than echoing the token it found.
 ///
 /// Two mechanisms, and no third: either the file names its root, and the target is derived from
 /// it here, or it does not, and codegen puts the root wherever the target says.
@@ -447,7 +447,7 @@ const HIR_MODULE_OP: &str = "builtin.module";
 /// Assembly at, because `load_target_sources` rejects a root module that does not sit exactly at
 /// its target's namespace. Codegen decides that in one of two places, and this mirrors both:
 ///
-/// - **A file declaring a component** is rooted at that component's *id*
+/// - **A file declaring a component** is rooted at that component's *name*
 ///   (`ToMasmComponent for builtin::Component`). This is the case whether the component stands
 ///   alone or is nested in a `builtin.world`, because a world holding one component is lowered by
 ///   lowering that component.
@@ -465,32 +465,28 @@ const HIR_MODULE_OP: &str = "builtin.module";
 ///
 /// # The names are re-rendered, not echoed
 ///
-/// A component's id is handed to the very same
-/// [`ComponentId`](midenc_hir::dialects::builtin::ComponentId) parser the
-/// [`Component`](midenc_hir::dialects::builtin::Component) op uses, and rendered by the very same
-/// `to_library_path` codegen calls. That is not cosmetic: a component id may omit its version,
-/// and `ComponentId` supplies `1.0.0`, so `@"a:b"` must become `"a:b@1.0.0"` — echoing the token
-/// would produce a namespace codegen never roots anything at. A module's name needs no such
-/// interpretation, and both sides normalize it identically: [`synthesize_target`] absolutizes it
+/// A component's name is a Miden namespace path: its `::`-separated segments (see
+/// [`SymbolPath::segments_of`](midenc_hir::SymbolPath::segments_of)) become one path component
+/// each, rendered by the very same `SymbolPath::to_library_path` codegen calls, which quotes a
+/// segment that is not a bare identifier. So `@miden::@a::@b` becomes `miden::a::b`, and
+/// `@"a:b"` becomes `"a:b"`. A module's name needs no such interpretation, and both sides normalize it identically: [`synthesize_target`] absolutizes it
 /// through `Path::to_absolute` while codegen builds `PathBuf::new("::{module}")`, and both route
 /// every component through `PathBuf::push_component`, which decides quoting.
 ///
 /// This leaves the scan responsible for exactly one thing: *locating* the name. Everything after
 /// that is shared code, which is what makes a mis-scan fail rather than mislead.
 ///
-/// # A component id is always quoted; a module name need not be
+/// # A component name is a run of symbol names
 ///
-/// `namespace:name@version` is **one** symbol-path component, and neither `:` nor `@` is an
-/// identifier character — so the lexer only produces such a name from a string literal, and the
-/// op's parser rejects a bare `@name` with "invalid component id: missing namespace identifier".
-/// Both spellings are therefore scanned and the difference is left to `ComponentId`: a component
-/// declaring a bare name is rejected here because it is rejected there.
+/// A component is printed as `@a::@b::@c`, one `@`-name per segment, each either bare or quoted
+/// (a segment that is not a bare identifier, e.g. `hir_ns:test@1.0.0`, is quoted). The whole run
+/// is scanned and joined with `::`, exactly as the op's parser joins it.
 ///
 /// # What it does not accept
 ///
 /// - **A file declaring neither a component nor a module** — nothing was declared, so the
 ///   artifact name stands, as it does for a `.wasm`.
-/// - **A file declaring more than one component.** There is no single id to be rooted at, and
+/// - **A file declaring more than one component.** There is no single name to be rooted at, and
 ///   picking one would be an invention. Saying nothing agrees with codegen, which rejects such a
 ///   world outright naming the package-metadata limitation (`too_many_components` in
 ///   `codegen/masm`), so the build fails on the limitation rather than on a namespace this
@@ -515,21 +511,25 @@ const HIR_MODULE_OP: &str = "builtin.module";
 /// anything mis-scanned is a build that fails rather than one that assembles under a namespace
 /// the source never claimed. What is lost is the quality of the message, not the outcome.
 fn hir_declared_namespace(source: &str) -> Option<String> {
-    use midenc_hir::dialects::builtin::ComponentId;
+    use midenc_hir::{SymbolNameComponent, SymbolPath, interner::Symbol};
 
     let components = hir_declarations(source, HIR_COMPONENT_OP)?;
     if !components.is_empty() {
-        let [id] = components[..] else {
+        let [name] = &components[..] else {
             return None;
         };
-        let id = id.parse::<ComponentId>().ok()?;
-        return Some(id.to_library_path().to_string());
+        let path = SymbolPath::from_iter(
+            SymbolPath::segments_of(Symbol::intern(name))
+                .into_iter()
+                .map(SymbolNameComponent::Component),
+        );
+        return Some(path.to_library_path().to_string());
     }
 
-    let [module] = hir_declarations(source, HIR_MODULE_OP)?[..] else {
+    let [module] = &hir_declarations(source, HIR_MODULE_OP)?[..] else {
         return None;
     };
-    Some(module.to_string())
+    Some(module.clone())
 }
 
 /// The names declared by every `op_name` declaration in `source`, in order.
@@ -537,7 +537,7 @@ fn hir_declared_namespace(source: &str) -> Option<String> {
 /// `None` — rather than a shorter list — when any occurrence of `op_name` cannot be read as a
 /// declaration, because a scan that skipped what it could not understand would report a *count*
 /// the file does not have, and the count is what decides whether anything is declared at all.
-fn hir_declarations<'a>(source: &'a str, op_name: &str) -> Option<Vec<&'a str>> {
+fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<String>> {
     let mut declared = Vec::new();
     for line in source.lines() {
         // `//` runs to the end of the line, so everything after it is trivia — as it is to the
@@ -567,8 +567,9 @@ fn hir_declarations<'a>(source: &'a str, op_name: &str) -> Option<Vec<&'a str>> 
 /// The symbol name declared by `rest`, the text following an operation name.
 ///
 /// One function for both operations because they are written alike: `builtin.component` and
-/// `builtin.module` each parse a visibility keyword and then a symbol name, in that order.
-fn hir_declared_name(rest: &str) -> Option<&str> {
+/// `builtin.module` each parse a visibility keyword and then a symbol name, in that order. A
+/// component's name may be a run `@a::@b::@c` of symbol names, which is returned joined with `::`.
+fn hir_declared_name(rest: &str) -> Option<String> {
     // A keyword only when a separator follows it, exactly as in Miden Assembly.
     let rest = rest.strip_prefix(char::is_whitespace)?.trim_start();
     // The visibility is not optional in either grammar, so it is not optional here.
@@ -580,13 +581,25 @@ fn hir_declared_name(rest: &str) -> Option<&str> {
         })?
         .trim_start();
 
+    let (first, mut rest) = hir_symbol_name(rest)?;
+    let mut name = first.to_string();
+    while let Some((segment, tail)) = rest.strip_prefix("::").and_then(hir_symbol_name) {
+        name.push_str("::");
+        name.push_str(segment);
+        rest = tail;
+    }
+    Some(name)
+}
+
+/// The `@`-prefixed symbol name at the start of `rest`, and the text following it.
+fn hir_symbol_name(rest: &str) -> Option<(&str, &str)> {
     // `symbol-ref-id ::= '@' (bare-id | string-literal)`, which is what the lexer accepts.
     let name = rest.strip_prefix('@')?;
     match name.strip_prefix('"') {
-        Some(quoted) => quoted.split_once('"').map(|(name, _rest)| name),
+        Some(quoted) => quoted.split_once('"'),
         None => {
             let end = name.find(|c| !is_hir_identifier_char(c)).unwrap_or(name.len());
-            Some(&name[..end]).filter(|name| !name.is_empty())
+            (end > 0).then(|| name.split_at(end))
         }
     }
 }
@@ -2266,10 +2279,11 @@ namespace = "miden:base/transaction-script@1.0.0"
 
     /// The namespace a target rooted at [`WORLD`] or [`COMPONENT`] must be given.
     ///
-    /// One **quoted** path component, because that is what `ComponentId::to_library_path`
-    /// produces and therefore where codegen roots the Miden Assembly: the `:` and the `@` are
-    /// part of the name, not path separators. Preparation absolutizes what it scanned, so the
-    /// target's namespace carries the `::` prefix that codegen's own `to_absolute` adds.
+    /// One **quoted** path component, because the component name `hir_ns:test@1.0.0` has no
+    /// `::` in it, so it is a single segment, and a segment that is not a bare identifier is
+    /// quoted by `SymbolPath::to_library_path`, which is where codegen roots the Miden Assembly.
+    /// Preparation absolutizes what it scanned, so the target's namespace carries the `::`
+    /// prefix that codegen's own `to_absolute` adds.
     const COMPONENT_NAMESPACE: &str = "::\"hir_ns:test@1.0.0\"";
 
     /// A registry that also dispatches `.hir` target roots, to the shipped HIR frontend.
@@ -2339,8 +2353,8 @@ namespace = "miden:base/transaction-script@1.0.0"
             assert_eq!(
                 hir_namespace(dir, contents, |_| {}),
                 COMPONENT_NAMESPACE,
-                "a `.hir` root declares its own component id, and codegen roots the Miden \
-                 Assembly at that id — so no name-derived namespace can ever be right for one"
+                "a `.hir` root declares its own component name, and codegen roots the Miden \
+                 Assembly at that name — so no name-derived namespace can ever be right for one"
             );
         }
     }
@@ -2478,7 +2492,7 @@ namespace = "miden:base/transaction-script@1.0.0"
     #[test]
     fn an_explicit_name_is_passed_through_over_the_hir_roots_component_id() {
         // As for `.masm`: `--name` asserts rather than overrides. The namespace it names is what
-        // the target gets, and a root whose component id says otherwise then fails the
+        // the target gets, and a root whose component name says otherwise then fails the
         // assembler's root-module check. What must not happen is the flag being quietly ignored.
         assert_eq!(
             hir_namespace("prepare_standalone_hir_named", WORLD, |options| {
@@ -2493,36 +2507,39 @@ namespace = "miden:base/transaction-script@1.0.0"
     fn what_counts_as_a_hir_namespace_declaration() {
         // The scan stands in for a parse, so what it accepts has to be what the grammar
         // accepts. Every row here is a claim about the *parser*: a name this rejects is one the
-        // parser rejects too, and an id it renders differently from the source spelling is one
-        // `ComponentId` itself renders that way.
+        // parser rejects too, and a name renders one path component per `::`-separated segment,
+        // exactly as codegen roots the component.
         for (source, declared) in [
             (
                 "builtin.component private @\"hir_ns:test@1.0.0\" {\n};\n",
                 Some("\"hir_ns:test@1.0.0\""),
             ),
+            // A component named by a multi-segment path, as the printer writes it.
+            (
+                "builtin.component private @miden::@counter_contract::@counter_contract {\n};\n",
+                Some("miden::counter_contract::counter_contract"),
+            ),
             // Nested in a world and holding a module, which is the shape `--emit=hir` writes —
-            // and the shape that decides the *order* of the two scans: the component's id wins,
+            // and the shape that decides the *order* of the two scans: the component's name wins,
             // and the module inside it is never read as a top-level one.
             (
                 "builtin.world {\n  builtin.component public @\"a:b@2.1.0\" {\n    builtin.module \
                  private @inner {\n    };\n  };\n};\n",
                 Some("\"a:b@2.1.0\""),
             ),
-            // A component id may omit the version, and `ComponentId` supplies `1.0.0` — so the
-            // namespace is *not* the text that was scanned.
-            ("builtin.component internal @\"a:b\" {\n};\n", Some("\"a:b@1.0.0\"")),
+            // No version is invented: the name is the namespace.
+            ("builtin.component internal @\"a:b\" {\n};\n", Some("\"a:b\"")),
             // A file declaring no component is rooted at the module it does declare, bare name
             // or quoted: `synthesize_target` and codegen both normalize it the same way.
             ("builtin.module public @lib {\n};\n", Some("lib")),
             ("builtin.world {\n  builtin.module public @lib {\n  };\n};\n", Some("lib")),
             ("builtin.module public @\"lib.rs\" {\n};\n", Some("lib.rs")),
-            // Not a declaration: `ComponentId` requires a namespace, and the parser rejects a
-            // bare name with "invalid component id: missing namespace identifier". The module
-            // inside it must *not* be read instead — a component was declared, so its id is the
-            // only answer, and there is no fall-through to the second scan.
+            // A single bare segment is a valid component name. The module inside it must *not*
+            // be read instead — a component was declared, so its name is the only answer, and
+            // there is no fall-through to the second scan.
             (
                 "builtin.component private @test {\n  builtin.module public @m {\n  };\n};\n",
-                None,
+                Some("test"),
             ),
             // Not a declaration: nothing separates the operation name from what follows it, so
             // this is some other operation whose name merely begins the same way. What that
@@ -2539,7 +2556,7 @@ namespace = "miden:base/transaction-script@1.0.0"
             // whether the comment is the whole line or follows something on it.
             ("// builtin.component private @\"a:b@1.0.0\" {\n", None),
             ("builtin.world {\n}; // builtin.component private @\"a:b@1.0.0\"\n", None),
-            // Two components: no single id to be rooted at.
+            // Two components: no single name to be rooted at.
             (
                 "builtin.world {\n  builtin.component private @\"a:b@1.0.0\" {\n  };\n  \
                  builtin.component private @\"c:d@1.0.0\" {\n  };\n};\n",

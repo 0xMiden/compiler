@@ -9,7 +9,6 @@ use midenc_hir::{
         self, BuiltinOpBuilder, ComponentBuilder, FunctionBuilder, ModuleBuilder, WorldBuilder,
         attributes::Signature,
     },
-    version::Version,
 };
 
 /// Code generation accepts a component built only from operations it can lower.
@@ -56,11 +55,7 @@ fn build_test_component(
     let world = builder.create::<builtin::World, ()>(SourceSpan::UNKNOWN)().unwrap();
     let mut world_builder = WorldBuilder::new(world);
     let component = world_builder
-        .define_component(
-            Ident::with_empty_span("test_ns".into()),
-            Ident::with_empty_span("test".into()),
-            Version::new(1, 0, 0),
-        )
+        .define_component(Ident::with_empty_span("test_ns:test@1.0.0".into()))
         .unwrap();
 
     let mut component_builder = ComponentBuilder::new(component);

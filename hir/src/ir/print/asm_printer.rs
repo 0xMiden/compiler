@@ -569,11 +569,17 @@ impl<'a> AsmPrinter<'a> {
         }
     }
 
-    /// Print a single-component symbol name, i.e. `@foo`
+    /// Print a single-component symbol name, i.e. `@foo`, or `@"foo:bar"` if `name` is not a valid
+    /// bare identifier.
     pub fn print_symbol_name(&mut self, name: interner::Symbol) {
         use crate::formatter::*;
 
-        self.document += text(format!("@{name}"));
+        let name = name.as_str();
+        if is_valid_bare_identifier(name) {
+            self.document += text(format!("@{name}"));
+        } else {
+            self.document += text(format!("@\"{}\"", name.escape_default()));
+        }
     }
 
     /// Print a custom keyword.

@@ -595,20 +595,10 @@ builtin.module public @lib {
 };
 "#;
 
-    /// A whole world, component and all — the *shape* `--emit=hir` writes, though not its
-    /// literal text; see below.
+    /// A whole world, component and all — the shape `--emit=hir` writes.
     ///
-    /// The component's id is quoted because it is one symbol-path component, not three: the
-    /// `:` and the `@` are part of the name, and `ComponentId::try_from` splits them back out
-    /// itself.
-    ///
-    /// **And that quoting is why this is not verbatim `--emit=hir` output.** `OpPrinter for
-    /// builtin::Component` emits the id *bare* — `@hir_ns:test@1.0.0` — which the parser then
-    /// rejects with "invalid component id: missing namespace identifier". So a printed world
-    /// holding a component does not re-parse today, and this fixture is hand-quoted to work
-    /// around that. A world holding only modules, like [`MODULE`] wrapped in a world, does
-    /// round-trip. The defect is a printer/parser disagreement in `builtin::Component`, not in
-    /// the anchoring parser, and it is recorded as a `TODO(hir)` on that printer.
+    /// The component's name `hir_ns:test@1.0.0` is one segment (it has no `::`), and is quoted
+    /// because it is not a bare identifier, which is also how the printer emits it.
     ///
     /// Shared with the namespace pre-scan's tests, as [`MODULE`] is.
     pub(crate) const WORLD: &str = r#"
