@@ -329,15 +329,15 @@ pub(crate) fn build_asset_transfer_tx(
 
 /// Returns the storage slot name used by the counter contract's storage map.
 ///
-/// Slot names derive from the `[lib].namespace` interface segment, so this tracks the
-/// `counter-contract` interface of the `counter-contract` example.
+/// Slot names are `<[lib].namespace>::<field>`, so this tracks the namespace of the
+/// `counter-contract` example.
 pub(crate) fn counter_storage_slot_name() -> StorageSlotName {
-    StorageSlotName::new("counter_contract::counter_contract::count_map")
+    StorageSlotName::new("miden::counter_contract::counter_contract::count_map")
         .expect("counter storage slot name should be valid")
 }
 
 fn auth_public_key_slot_name() -> StorageSlotName {
-    StorageSlotName::new("auth_component_rpo_falcon512::auth_component::owner_public_key")
+    StorageSlotName::new("miden::auth_component_rpo_falcon512::auth_component::owner_public_key")
         .expect("auth component storage slot name should be valid")
 }
 

@@ -5,7 +5,10 @@ use semver::Version;
 use syn::spanned::Spanned;
 
 use crate::{
-    component_macro::{CORE_TYPES_PACKAGE, ComponentMethod, MethodReturn, to_kebab_case},
+    component_macro::{
+        CORE_TYPES_PACKAGE, ComponentMethod, MethodReturn, export_path, to_kebab_case,
+    },
+    namespace::ComponentNamespace,
     types::{ExportedTypeDef, ExportedTypeKind, ensure_custom_type_defined},
     wit_builder::WitBuilder,
     wit_world::write_world_block,
@@ -13,14 +16,10 @@ use crate::{
 
 /// Inputs used to render the WIT interface and world for a component implementation.
 pub(super) struct ComponentWitSpec<'a> {
-    /// Fully-qualified WIT package name for the component.
-    pub(super) component_package: &'a str,
+    /// Component namespace naming the WIT package, interface, and every exported function.
+    pub(super) namespace: &'a ComponentNamespace,
     /// Component package version.
     pub(super) component_version: &'a Version,
-    /// Interface exported by the component world.
-    pub(super) interface_name: &'a str,
-    /// World generated for the component package.
-    pub(super) world_name: &'a str,
     /// Fully-qualified interfaces imported by the component world.
     pub(super) dependency_imports: &'a [String],
     /// Core type names imported by the exported interface.
@@ -64,10 +63,12 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
         }
     }
 
-    let mut wit = WitBuilder::new("#[component]", spec.component_package, spec.component_version);
+    let interface_name = spec.namespace.wit_interface();
+    let mut wit =
+        WitBuilder::new("#[component]", &spec.namespace.wit_package(), spec.component_version);
     wit.use_path(CORE_TYPES_PACKAGE);
     wit.blank_line();
-    wit.interface(spec.interface_name, |interface| {
+    wit.interface(&interface_name, |interface| {
         if !combined_core_imports.is_empty() {
             let imports = combined_core_imports.iter().cloned().collect::<Vec<_>>().join(", ");
             interface.line(&format!("use core-types.{{{imports}}};"));
@@ -114,14 +115,15 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
 
         for method in spec.methods {
             let signature = component_method_signature(method, &exported_type_names)?;
-            interface.line(&signature);
+            interface.function(&export_path(spec.namespace, &method.fn_ident), &signature);
         }
 
         Ok::<(), syn::Error>(())
     })?;
     wit.blank_line();
-    let exports = [spec.interface_name.to_string()];
-    write_world_block(&mut wit, spec.world_name, spec.dependency_imports, &exports);
+    let world_name = format!("{interface_name}-world");
+    let exports = [interface_name];
+    write_world_block(&mut wit, &world_name, spec.dependency_imports, &exports);
 
     Ok(wit.finish())
 }

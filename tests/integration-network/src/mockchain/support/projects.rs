@@ -171,6 +171,7 @@ debug = false
 
 /// Returns a generated transaction-script project `miden-project.toml`.
 pub(crate) fn tx_script_miden_project_toml(script_name: &str) -> String {
+    let segment = script_name.replace('-', "_");
     format!(
         r#"
 [package]
@@ -179,7 +180,7 @@ version = "0.0.1"
 
 [lib]
 kind = "tx-script"
-namespace = "miden:base/transaction-script@1.0.0"
+namespace = "miden::{segment}::{segment}"
 path = "src/lib.rs"
 
 [dependencies]
@@ -276,21 +277,27 @@ pub(crate) fn miden_dependency_name(package: &str) -> &str {
         .unwrap_or(package)
 }
 
-/// Returns the generated WIT namespace used by temporary note projects.
-pub(crate) fn miden_project_namespace(package: &str, project_name: &str) -> String {
-    format!("{package}/miden-{project_name}@0.0.1")
+/// Returns the Miden path segment of a generated component package (`miden:foo-bar` ->
+/// `foo_bar`).
+fn package_segment(package: &str) -> String {
+    package.strip_prefix("miden:").unwrap_or(package).replace('-', "_")
 }
 
-/// Builds the `[lib].namespace` for a generated account component. The interface segment must
-/// equal the component trait name (kebab-case).
+/// Returns the `[lib].namespace` used by temporary note projects: `miden::<package>::<project>`.
+pub(crate) fn miden_project_namespace(package: &str, project_name: &str) -> String {
+    format!("miden::{}::{}", package_segment(package), project_name.replace('-', "_"))
+}
+
+/// Builds the `[lib].namespace` for a generated account component:
+/// `miden::<package>::<interface>`.
 pub(crate) fn account_component_namespace(package: &str, interface: &str) -> String {
-    format!("{package}/{interface}@0.0.1")
+    format!("miden::{}::{}", package_segment(package), interface.replace('-', "_"))
 }
 
 /// Returns the derived `count_map` storage slot name for the generated counter account package.
 ///
-/// The middle segment tracks the `counter-contract` interface declared in the generated account's
-/// `[lib].namespace`, from which the macro derives slot names.
+/// The slot name is `<[lib].namespace>::count_map`, with the `counter-contract` interface declared
+/// in the generated account's namespace.
 pub(crate) fn counter_storage_slot_name_for_package(account_package: &str) -> StorageSlotName {
     storage_slot_name_for_package(account_package, "counter_contract")
 }
@@ -300,32 +307,7 @@ pub(crate) fn storage_slot_name_for_package(
     account_package: &str,
     interface_segment: &str,
 ) -> StorageSlotName {
-    let package_name = account_package.strip_prefix("miden:").unwrap_or(account_package);
-    let namespace = sanitize_slot_name_component(package_name);
-    StorageSlotName::new(format!("{namespace}::{interface_segment}::count_map"))
+    let namespace = account_component_namespace(account_package, interface_segment);
+    StorageSlotName::new(format!("{namespace}::count_map"))
         .expect("generated counter storage slot name must be valid")
-}
-
-/// Normalizes a generated component package into its storage slot namespace segment.
-fn sanitize_slot_name_component(component: &str) -> String {
-    let component = component.split('@').next().unwrap_or(component);
-    let mut out: String = component
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-
-    if out.is_empty() {
-        out.push('x');
-    }
-    if out.starts_with('_') {
-        out.insert(0, 'x');
-    }
-
-    out
 }

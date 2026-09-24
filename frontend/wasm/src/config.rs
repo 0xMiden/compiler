@@ -1,5 +1,6 @@
 use alloc::{borrow::Cow, vec::Vec};
 
+use midenc_hir::SymbolPath;
 use midenc_session::RemapPathPrefix;
 
 /// Configuration for the WASM translation.
@@ -24,6 +25,9 @@ pub struct WasmTranslationConfig {
 
     /// Whether or not to retain DWARF sections in compiled modules.
     pub parse_wasm_debuginfo: bool,
+
+    /// The target namespace the component must be rooted at, when the build knows it.
+    pub namespace: Option<SymbolPath>,
 }
 
 impl core::fmt::Debug for WasmTranslationConfig {
@@ -36,6 +40,7 @@ impl core::fmt::Debug for WasmTranslationConfig {
             .field("world", &world)
             .field("generate_native_debuginfo", &self.generate_native_debuginfo)
             .field("parse_wasm_debuginfo", &self.parse_wasm_debuginfo)
+            .field("namespace", &self.namespace)
             .finish()
     }
 }
@@ -49,6 +54,7 @@ impl Default for WasmTranslationConfig {
             world: None,
             generate_native_debuginfo: false,
             parse_wasm_debuginfo: true,
+            namespace: None,
         }
     }
 }

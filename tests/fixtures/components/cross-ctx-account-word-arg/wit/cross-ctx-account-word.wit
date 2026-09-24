@@ -5,6 +5,7 @@ use miden:base/core-types@1.0.0;
 interface foo {
     use core-types.{word, felt};
 
+    @external-id("miden::cross_ctx_account_word_arg::foo::process_word")
     process-word: func(input1: word, input2: word, input3: word, felt1: felt, felt2: felt, felt3: felt, felt4: felt) -> felt;
 }
 

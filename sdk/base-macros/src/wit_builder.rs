@@ -95,6 +95,12 @@ impl WitBody {
         self.source += text(line);
     }
 
+    /// Writes a function line preceded by the `@external-id` attribute carrying its Miden path.
+    pub(crate) fn function(&mut self, external_id: &str, signature: &str) {
+        self.line(&format!("@external-id(\"{external_id}\")"));
+        self.line(signature);
+    }
+
     /// Inserts a blank line inside the current WIT block.
     pub(crate) fn blank_line(&mut self) {
         self.source += nl();

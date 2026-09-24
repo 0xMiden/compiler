@@ -323,16 +323,17 @@ pub(crate) fn require_input_path_for_seed(input: &InputFile) -> CompilerResult<(
 /// declares its own component name, codegen roots the Miden Assembly at
 /// `Component::namespace_path().to_library_path()`, and no name-derived library namespace can
 /// ever equal that. Only the *extraction* differs by format — a `namespace` declaration in Miden
-/// Assembly, a component name in HIR — which is why [`declared_namespace`] dispatches on the input's file
-/// type and each format gets its own reader: [`masm_namespace_declaration`] and
-/// [`hir_declared_namespace`].
+/// Assembly, a component name in HIR, the namespace of the function exports' Miden paths in a
+/// WebAssembly component — which is why [`declared_namespace`] dispatches on the input's file
+/// type and each format gets its own reader: [`masm_namespace_declaration`],
+/// [`hir_declared_namespace`] and [`wasm_declared_namespace`].
 ///
-/// The complementary mechanism is codegen's re-rooting (`MasmComponent::source_inputs` in
-/// `codegen/masm`), and the line between the two is *whether the source named its own root*, not
-/// which format it is written in. Re-rooting covers the roots nobody wrote: the synthetic wrapper
-/// the Wasm frontend builds around every core Wasm module, and a world declaring no component at
+/// The complementary mechanisms cover the roots nobody wrote, and the line is *whether the source
+/// named its own root*, not which format it is written in. The Wasm frontend roots the synthetic
+/// wrapper it builds around a core Wasm module at the target namespace, and codegen's re-rooting
+/// (`MasmComponent::source_inputs` in `codegen/masm`) moves a world declaring no component at
 /// all, whose root code generation has to invent. Those need no declaration read out of them,
-/// because they are moved to whatever namespace the target ends up with.
+/// because they end up at whatever namespace the target ends up with.
 ///
 /// What re-rooting deliberately does *not* cover is an authored component name, which is the
 /// code's own identity — moving it would rename the procedures every dependent addresses. So for a
@@ -372,10 +373,36 @@ fn declared_namespace(input: &InputFile) -> Option<String> {
     match input.file_type() {
         FileType::Masm => masm_namespace_declaration(&root_source_text(input)?),
         FileType::Hir => hir_declared_namespace(&root_source_text(input)?),
-        // Every other format — WebAssembly, Rust — has nothing to declare, and keeps the
+        FileType::Wasm => wasm_declared_namespace(&root_source_bytes(input)?),
+        // Every other format — WebAssembly text, Rust — has nothing to declare, and keeps the
         // artifact name.
         _ => None,
     }
+}
+
+/// The bytes of `input`'s root source, however the input carries it.
+fn root_source_bytes(input: &InputFile) -> Option<Vec<u8>> {
+    match &input.file {
+        InputType::Real(path) => std::fs::read(path).ok(),
+        InputType::Stdin { input, .. } => Some(input.to_vec()),
+    }
+}
+
+/// The namespace a WebAssembly component declares: the one shared by the Miden paths of its
+/// function exports, rendered relative (`a::b::c`) like [`hir_declared_namespace`] does.
+///
+/// A core module, a component without function exports, and a component the frontend is going to
+/// reject (a missing or malformed `external-id`, or exports under different namespaces) declare
+/// nothing here; the frontend reports the latter with its own diagnostic.
+fn wasm_declared_namespace(wasm: &[u8]) -> Option<String> {
+    use midenc_hir::{SymbolNameComponent, SymbolPath};
+
+    let namespace = midenc_frontend_wasm::declared_namespace(wasm).ok()??;
+    let relative = namespace
+        .components()
+        .filter(|component| !matches!(component, SymbolNameComponent::Root))
+        .collect::<SymbolPath>();
+    Some(relative.to_library_path().to_string())
 }
 
 /// The text of `input`'s root source, however the input carries it.
@@ -485,7 +512,7 @@ const HIR_MODULE_OP: &str = "builtin.module";
 /// # What it does not accept
 ///
 /// - **A file declaring neither a component nor a module** — nothing was declared, so the
-///   artifact name stands, as it does for a `.wasm`.
+///   artifact name stands, as it does for a core Wasm module.
 /// - **A file declaring more than one component.** There is no single name to be rooted at, and
 ///   picking one would be an invention. Saying nothing agrees with codegen, which rejects such a
 ///   world outright naming the package-metadata limitation (`too_many_components` in
@@ -1102,8 +1129,8 @@ path = "other.rs"
 
     /// A transaction script whose library target is rooted at Rust.
     ///
-    /// A transaction script's entrypoint is a fixed name, not one derived from the target — so
-    /// this and [`SINGLE_EXECUTABLE_MANIFEST`] pin the two halves of the inference.
+    /// A transaction script's entrypoint is `run` under the library namespace — so this and
+    /// [`SINGLE_EXECUTABLE_MANIFEST`] pin the two halves of the inference.
     const SINGLE_TX_SCRIPT_MANIFEST: &str = r#"
 [package]
 name = "prepare_fixture"
@@ -1112,7 +1139,7 @@ version = "0.1.0"
 [lib]
 kind = "tx-script"
 path = "src/lib.rs"
-namespace = "miden:base/transaction-script@1.0.0"
+namespace = "miden::prepare_fixture::prepare_fixture"
 "#;
 
     /// The same transaction script, rooted at hand-written Miden Assembly instead of Rust.
@@ -1124,7 +1151,7 @@ version = "0.1.0"
 [lib]
 kind = "tx-script"
 path = "src/lib.masm"
-namespace = "miden:base/transaction-script@1.0.0"
+namespace = "miden::prepare_fixture::prepare_fixture"
 "#;
 
     /// A registry that handles `.wasm` and `.wat` target roots, and nothing else.
@@ -1520,7 +1547,7 @@ namespace = "miden:base/transaction-script@1.0.0"
     }
 
     #[test]
-    fn a_rust_rooted_transaction_script_infers_the_fixed_entrypoint() {
+    fn a_rust_rooted_transaction_script_infers_run_under_its_namespace() {
         let manifest = fixture_source(
             "prepare_session_entrypoint_tx_script",
             "miden-project.toml",
@@ -1532,9 +1559,8 @@ namespace = "miden:base/transaction-script@1.0.0"
         assert_eq!(session.options.target_type, Some(TargetType::TransactionScript));
         assert_eq!(
             session.options.entrypoint.as_deref(),
-            Some("miden:base/transaction-script@1.0.0::run"),
-            "a transaction script's entrypoint is the protocol's fixed name, not one derived from \
-             the target"
+            Some("::miden::prepare_fixture::prepare_fixture::run"),
+            "a transaction script's entrypoint is `run` under its library namespace"
         );
     }
 
@@ -2279,12 +2305,11 @@ namespace = "miden:base/transaction-script@1.0.0"
 
     /// The namespace a target rooted at [`WORLD`] or [`COMPONENT`] must be given.
     ///
-    /// One **quoted** path component, because the component name `hir_ns:test@1.0.0` has no
-    /// `::` in it, so it is a single segment, and a segment that is not a bare identifier is
-    /// quoted by `SymbolPath::to_library_path`, which is where codegen roots the Miden Assembly.
+    /// One path component per segment of the component name `hir_ns::test`, rendered by
+    /// `SymbolPath::to_library_path`, which is where codegen roots the Miden Assembly.
     /// Preparation absolutizes what it scanned, so the target's namespace carries the `::`
     /// prefix that codegen's own `to_absolute` adds.
-    const COMPONENT_NAMESPACE: &str = "::\"hir_ns:test@1.0.0\"";
+    const COMPONENT_NAMESPACE: &str = "::hir_ns::test";
 
     /// A registry that also dispatches `.hir` target roots, to the shipped HIR frontend.
     fn registry_with_hir() -> FrontendRegistry {
@@ -2311,7 +2336,7 @@ namespace = "miden:base/transaction-script@1.0.0"
         format!(
             "builtin.world {{{}{}}};\n",
             COMPONENT,
-            COMPONENT.replace("hir_ns:test", "hir_ns:other")
+            COMPONENT.replace("@hir_ns::@test", "@hir_ns::@other")
         )
     }
 

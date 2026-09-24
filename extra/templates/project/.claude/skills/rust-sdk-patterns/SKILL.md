@@ -75,7 +75,7 @@ version = "0.1.0"
 [lib]
 path = "src/lib.rs"
 kind = "account-component"
-namespace = "miden:counter-account/counter-contract@0.1.0"
+namespace = "miden::counter_account::counter_contract"
 
 [dependencies]
 miden-core = "*"
@@ -141,7 +141,7 @@ A `#[note]` struct with fields is auto-decoded from `active_note::get_storage()`
 
 Reference: `examples/p2id-note/src/lib.rs`, `examples/p2ide-note/src/lib.rs`, `examples/counter-note/src/lib.rs`.
 
-**Project metadata for notes:** `[lib] kind = "note"`, plus `namespace` and `path`. Conventional namespace shape is `miden:<pkg>/miden-<pkg>@0.1.0`.
+**Project metadata for notes:** `[lib] kind = "note"`, plus `namespace` and `path`. Conventional namespace shape is `miden::<pkg>::<pkg>` (snake_case package name).
 
 ### Transaction Script (`#[tx_script]`)
 One-off logic executed in the context of an account. Used for initialization, admin operations, etc.
@@ -164,7 +164,7 @@ fn run(_arg: Word, account: &mut Wallet) {
 
 Reference: `examples/basic-wallet-tx-script/src/lib.rs`.
 
-**Project metadata for tx scripts:** like a note, but `[lib] kind = "tx-script"` and `namespace = "miden:base/transaction-script@1.0.0"`, plus `path = "src/lib.rs"`.
+**Project metadata for tx scripts:** like a note, but `[lib] kind = "tx-script"` and `namespace = "miden::<pkg>::<pkg>"`, plus `path = "src/lib.rs"`. The script's entrypoint is exported at `<namespace>::run`.
 
 ## `#[account(...)]` generates one trait per interface
 
@@ -185,12 +185,12 @@ The consequences worth knowing before you hit them:
 Storage slot names are part of the on-chain storage ABI and are derived as:
 
 ```
-<package_name_snake>::<interface_segment_snake>::<field_name>
+<[lib].namespace>::<field_name>
 ```
 
-The first segment is `[package] name` from **`miden-project.toml`** (character-sanitised, not re-snake-cased). The **middle segment is the interface segment of the `[lib].namespace`** (the part between the last `/` and `@`), snake-cased — **not** the snake-cased struct name. This deliberately decouples slot names from private Rust renames. The version suffix (`@0.1.0`) is ignored so the slot name stays stable, and there is no `slot(...)` attribute.
+The prefix is the three-segment `[lib].namespace` Miden path from **`miden-project.toml`** (e.g. `miden::counter_contract::counter_contract`) — **not** the struct name. This deliberately decouples slot names from private Rust renames, and there is no `slot(...)` attribute. The same namespace names every exported procedure: `<namespace>::<method>`.
 
-Live values from the pinned examples: `counter_contract::counter_contract::count_map`, `auth_component_rpo_falcon512::auth_component::owner_public_key`.
+Live values from the examples: `miden::counter_contract::counter_contract::count_map`, `miden::auth_component_rpo_falcon512::auth_component::owner_public_key`.
 
 See the rust-sdk-pitfalls skill (P5) for more on slot naming.
 
@@ -412,7 +412,7 @@ Note side (`examples/p2id-note/src/lib.rs`): the note declares `#[account(basic_
 - [ ] Contract `Cargo.toml` matches the local template shape: `edition = "2021"`, `crate-type = ["cdylib"]`, `miden = { version = "0.14" }`, and matching `miden-sdk-build-script-support = { version = "0.14" }`
 - [ ] `[lib]` in `miden-project.toml` has `kind` (`account-component` / `note` / `tx-script`), `namespace`, **and `path`**
 - [ ] `[dependencies]` in `miden-project.toml` carries `miden-core = "*"` and `miden-protocol = "*"`
-- [ ] Typed storage uses `StorageValue<T>` / `StorageMap<K, V>` with `get()` / `set()`; slot names derive from `<package>::<namespace-interface>::<field>`
+- [ ] Typed storage uses `StorageValue<T>` / `StorageMap<K, V>` with `get()` / `set()`; slot names derive from `<[lib].namespace>::<field>`
 - [ ] Notes/tx-scripts that call a component declare an `#[account(package::Interface)]` wrapper and call methods on the injected `account`
 - [ ] Cross-component deps declared in `miden-project.toml` (never `Cargo.toml`) under `[dependencies]`; rely on embedded WIT and the package cache unless source inspection proves an override is required
 - [ ] `incr_nonce()` is called only from an authentication procedure; `output_note::create` and the vault operations only from account-component context

@@ -396,8 +396,8 @@ impl MyNote {
     );
 }
 
-/// Builds a generated account-component project whose component trait is named `TestComponent`
-/// (WIT interface `test-component`, matching the generated `[lib].namespace`).
+/// Builds a generated account-component project with the `[lib].namespace`
+/// `miden::<name>::test_component`.
 fn account_component_project(name: &str, lib_rs: &str) -> crate::cargo_proj::Project {
     let sdk_path = sdk_crate_path();
     let namespace = base::account_component_namespace(name, "test-component");
@@ -610,7 +610,9 @@ use miden:base/core-types@1.0.0;
 interface test-sibling {
     use core-types.{felt};
 
+    @external-id("miden::test_sibling::test_sibling::get_value")
     get-value: func() -> felt;
+    @external-id("miden::test_sibling::test_sibling::bump_value")
     bump-value: func(delta: felt) -> felt;
 }
 
@@ -635,6 +637,7 @@ interface test-sibling {
         y: felt,
     }
 
+    @external-id("miden::test_sibling::test_sibling::echo_point")
     echo-point: func(p: point) -> point;
 }
 
@@ -1315,10 +1318,9 @@ impl TestComponent for TestComponentStorage {
 }
 
 #[test]
-fn component_impl_rejects_a_trait_alias_mismatching_the_namespace() {
-    // The WIT interface is named after the trait as spelled in the impl, so an alias would
-    // silently generate an interface named after the alias; the impl-side namespace validation
-    // must reject it even though the declared trait name validates fine.
+fn component_impl_accepts_a_trait_alias() {
+    // Every generated name derives from `[lib].namespace`, so implementing the component trait
+    // through an alias generates the same interface as the declared trait name.
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
@@ -1346,18 +1348,13 @@ impl Alias for TestComponentStorage {
 }
 "#;
 
-    let cargo_proj = account_component_project(
-        "component_impl_rejects_a_trait_alias_mismatching_the_namespace",
-        lib_rs,
-    );
+    let cargo_proj = account_component_project("component_impl_accepts_a_trait_alias", lib_rs);
     let output = cargo_check_miden_target(&cargo_proj);
     assert!(
-        !output.status.success(),
-        "expected an aliased component trait impl to fail namespace validation"
+        output.status.success(),
+        "expected an aliased component trait impl to compile: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    assert!(stderr.contains("produces WIT interface `alias`"), "unexpected stderr: {stderr}");
 }
 
 #[test]
@@ -1405,9 +1402,8 @@ impl TestComponent for TestComponentStorage {
 
 #[test]
 fn component_storage_fields_require_a_miden_project_manifest() {
-    // Storage slot names derive from the `[lib].namespace` interface segment; without a
-    // `miden-project.toml` they would silently be derived from placeholder metadata
-    // (`empty::empty::<field>`).
+    // Storage slot names derive from the `[lib].namespace`; without a `miden-project.toml` there
+    // is no namespace to derive them from.
     let name = "component_storage_fields_require_a_miden_project_manifest";
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
@@ -1431,7 +1427,7 @@ struct TestComponentStorage {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
-        stderr.contains("storage slot names derive from the `[lib].namespace`"),
+        stderr.contains("storage slot names derive from its `[lib].namespace`"),
         "unexpected stderr: {stderr}"
     );
 }
@@ -1492,8 +1488,7 @@ supported-types = ["RegularAccountUpdatableCode"]
         .build()
 }
 
-/// Component source whose trait yields WIT interface `test-component`, shared by the namespace
-/// negative tests.
+/// Component source shared by the namespace negative tests.
 const NAMESPACE_TEST_COMPONENT: &str = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
@@ -1516,41 +1511,40 @@ impl TestComponent for TestComponentStorage {
 "#;
 
 #[test]
-fn component_namespace_rejects_a_mismatching_package() {
-    // The interface segment matches the trait, but the package segment diverges from the
-    // manifest's package name; only full namespace equality catches it.
-    let name = "component_namespace_rejects_a_mismatching_package";
-    let namespace = "miden:wrong-package/test-component@0.0.1";
+fn component_namespace_rejects_two_segments() {
+    let name = "component_namespace_rejects_two_segments";
+    let namespace = "miden::test_component";
     let cargo_proj =
         account_component_project_with_namespace(name, namespace, NAMESPACE_TEST_COMPONENT);
 
     let output = cargo_check_miden_target(&cargo_proj);
-    assert!(!output.status.success(), "expected a wrong package segment to be rejected");
+    assert!(!output.status.success(), "expected a two-segment namespace to be rejected");
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(stderr.contains("declares `miden:wrong-package/"), "unexpected stderr: {stderr}");
     assert!(
-        stderr.contains(&format!(
-            "Update `[lib].namespace` to `miden:{}/test-component@0.0.1`",
-            name.replace('_', "-")
-        )),
+        stderr.contains("invalid `[lib].namespace` `miden::test_component`"),
+        "unexpected stderr: {stderr}"
+    );
+    assert!(stderr.contains("exactly three segments"), "unexpected stderr: {stderr}");
+    assert!(
+        stderr.contains("miden::counter_contract::counter_contract"),
         "unexpected stderr: {stderr}"
     );
 }
 
 #[test]
-fn component_namespace_rejects_a_mismatching_version() {
-    let name = "component_namespace_rejects_a_mismatching_version";
-    let namespace = format!("miden:{}/test-component@9.9.9", name.replace('_', "-"));
+fn component_namespace_rejects_a_component_model_id() {
+    let name = "component_namespace_rejects_a_component_model_id";
+    let namespace = format!("miden:{}/test-component@0.0.1", name.replace('_', "-"));
     let cargo_proj =
         account_component_project_with_namespace(name, &namespace, NAMESPACE_TEST_COMPONENT);
 
     let output = cargo_check_miden_target(&cargo_proj);
-    assert!(!output.status.success(), "expected a wrong namespace version to be rejected");
+    assert!(!output.status.success(), "expected a component-model id to be rejected");
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(stderr.contains("@9.9.9`"), "unexpected stderr: {stderr}");
-    assert!(stderr.contains("Update `[lib].namespace` to"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains("invalid `[lib].namespace`"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains(&namespace), "unexpected stderr: {stderr}");
 }
 
 #[test]

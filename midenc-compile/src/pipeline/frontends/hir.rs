@@ -597,13 +597,13 @@ builtin.module public @lib {
 
     /// A whole world, component and all — the shape `--emit=hir` writes.
     ///
-    /// The component's name `hir_ns:test@1.0.0` is one segment (it has no `::`), and is quoted
-    /// because it is not a bare identifier, which is also how the printer emits it.
+    /// The component's name `hir_ns::test` is a two-segment path, printed one `@`-name per
+    /// segment, which is also how the printer emits it.
     ///
     /// Shared with the namespace pre-scan's tests, as [`MODULE`] is.
     pub(crate) const WORLD: &str = r#"
 builtin.world {
-    builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.component private @hir_ns::@test {
         builtin.module private @test {
             builtin.function public extern("C") @main() {
                 builtin.ret;
@@ -617,7 +617,7 @@ builtin.world {
     ///
     /// Shared with the namespace pre-scan's tests, as [`MODULE`] is.
     pub(crate) const COMPONENT: &str = r#"
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module private @test {
         builtin.function public extern("C") @main() {
             builtin.ret;
@@ -791,18 +791,8 @@ builtin.function public extern("C") @main() {
     /// have parents" somewhere in codegen. Reaching `masm.lowered` at all is the assertion; the
     /// trace pins that it got there the same way a module does.
     ///
-    /// # This is not yet a full `--emit=hir` round trip, and the fixture is not verbatim output
-    ///
-    /// Be precise about what is and is not pinned here. A world of **modules** does round-trip:
-    /// `--emit=hir` output for one re-parses and recompiles unchanged. A world holding a
-    /// **component** — which is what [`WORLD`] is — does not, for a *second*, unrelated defect
-    /// that this test does not cover and that is not in the parser: a `builtin.component`'s id
-    /// **prints unquoted** but must be **written quoted**, so `--emit=hir` emits
-    /// `@hir_ns:test@1.0.0` where the parser demands `@"hir_ns:test@1.0.0"` and rejects the
-    /// former with "invalid component id: missing namespace identifier". [`WORLD`] is hand-quoted
-    /// for that reason and is therefore *not* the literal text `--emit=hir` produces for the
-    /// component it describes. Until that is fixed, this test pins "a world-shaped `.hir` file
-    /// compiles", not "`midenc`'s own output for a component recompiles".
+    /// This pins "a world-shaped `.hir` file compiles"; [`WORLD`] is written in the shape
+    /// `--emit=hir` prints, with the component name printed one `@`-name per path segment.
     #[test]
     fn a_whole_world_hir_target_reaches_every_checkpoint_in_order() {
         let project = hir_project("hir_frontend_world_route", WORLD);

@@ -1,7 +1,7 @@
 use cranelift_entity::packed_option::ReservedValue;
 use midenc_hir::{
-    CallConv, FunctionType, FxHashMap, Ident, SourceSpan, SymbolName, SymbolNameComponent,
-    SymbolPath, SymbolTable, Visibility,
+    CallConv, FunctionType, FxHashMap, FxHashSet, Ident, SourceSpan, SymbolName,
+    SymbolNameComponent, SymbolPath, SymbolTable, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
         FunctionRef, FunctionTableRef, ModuleBuilder, WorldBuilder, attributes::Signature,
@@ -19,7 +19,10 @@ use super::{
 };
 use crate::{
     callable::CallableFunction,
-    component::{SignatureIndex, lower_imports::generate_import_lowering_function},
+    component::{
+        SignatureIndex,
+        lower_imports::{ComponentImportPath, generate_import_lowering_function, import_stub_name},
+    },
     error::WasmResult,
     intrinsics::{Intrinsic, IntrinsicsConversionResult, attach_effects_to_function},
     translation_utils::sig_from_func_type,
@@ -69,6 +72,14 @@ impl<'a> ModuleTranslationState<'a> {
         diagnostics: &DiagnosticsHandler,
     ) -> WasmResult<Self> {
         let mut functions = FxHashMap::default();
+        // Import stubs are defined before the module's own functions (imports come first in the
+        // function index space), so their names must avoid the names defined later too.
+        let defined_names: FxHashSet<SymbolName> = module
+            .functions
+            .keys()
+            .filter(|index| !module.is_imported_function(*index))
+            .map(|index| module.func_name(index))
+            .collect();
         for (index, func_type) in &module.functions {
             let wasm_func_type = mod_types[func_type.signature].clone();
             let ir_func_type = ir_func_type(&wasm_func_type, diagnostics)?;
@@ -93,6 +104,7 @@ impl<'a> ModuleTranslationState<'a> {
                     module_builder,
                     world_builder,
                     &module_args,
+                    &defined_names,
                     path,
                     sig,
                     import,
@@ -430,11 +442,15 @@ fn collect_table_image(
     Ok(image)
 }
 
-/// Returns [`CallableFunction`] translated from the core Wasm module import
+/// Returns [`CallableFunction`] translated from the core Wasm module import.
+///
+/// `defined_names` are the names of the functions the core module defines itself.
+#[allow(clippy::too_many_arguments)]
 fn process_import(
     module_builder: &mut ModuleBuilder,
     world_builder: &mut WorldBuilder,
     module_args: &FxHashMap<SymbolPath, ModuleArgument>,
+    defined_names: &FxHashSet<SymbolName>,
     core_func_id: SymbolPath,
     core_func_sig: Signature,
     import: &super::ModuleImport,
@@ -453,6 +469,7 @@ fn process_import(
     process_module_arg(
         module_builder,
         world_builder,
+        defined_names,
         core_func_id,
         core_func_sig,
         import_path,
@@ -461,9 +478,11 @@ fn process_import(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_module_arg(
     module_builder: &mut ModuleBuilder,
     world_builder: &mut WorldBuilder,
+    defined_names: &FxHashSet<SymbolName>,
     path: SymbolPath,
     sig: Signature,
     wasm_import_path: SymbolPath,
@@ -478,14 +497,26 @@ fn process_module_arg(
                 "core Wasm function imports are not supported yet"
             );
         }
-        ModuleArgument::ComponentImport(signature) => generate_import_lowering_function(
-            world_builder,
-            module_builder,
-            wasm_import_path,
+        ModuleArgument::ComponentImport {
             signature,
-            path,
-            sig,
-        )?,
+            path: import_path,
+        } => {
+            let stub_name = import_stub_name(import_path, path.name(), |name| {
+                !defined_names.contains(&name) && module_builder.module.borrow().get(name).is_none()
+            });
+            generate_import_lowering_function(
+                world_builder,
+                module_builder,
+                ComponentImportPath {
+                    cm_path: wasm_import_path,
+                    path: import_path.clone(),
+                },
+                signature,
+                path,
+                stub_name,
+                sig,
+            )?
+        }
         ModuleArgument::Table => {
             crate::unsupported_diag!(diagnostics, "imported tables are not supported yet");
         }

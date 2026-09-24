@@ -126,16 +126,3 @@ interface core-types {
     }
 
 }
-
-
-/// The transaction script interface that is expected to be implemented by transaction scripts.
-interface transaction-script {
-    use core-types.{word};
-
-    run: func(arg: word);
-}
-
-world base-world {
-    export core-types;
-    export transaction-script;
-}

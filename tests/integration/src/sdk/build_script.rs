@@ -534,7 +534,7 @@ version = "0.1.0"
 
 [lib]
 kind = "account-component"
-namespace = "miden:selective-inputs/selective-inputs@0.1.0"
+namespace = "miden::selective_inputs::selective_inputs"
 path = "src/lib.rs"
 
 [dependencies]
@@ -678,7 +678,7 @@ version = "0.1.0"
 
 [lib]
 kind = "account-component"
-namespace = "miden:missing-tool/missing-tool@0.1.0"
+namespace = "miden::missing_tool::missing_tool"
 path = "src/lib.rs"
 "#,
         )

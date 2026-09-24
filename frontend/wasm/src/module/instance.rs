@@ -8,7 +8,12 @@ pub enum ModuleArgument {
     /// Represents function that is exported from another module.
     Function(SymbolPath),
     /// Represents component import (component level type signature) that is lowered to a module import.
-    ComponentImport(ComponentFunctionType),
+    ComponentImport {
+        /// The component-level type signature of the import.
+        signature: ComponentFunctionType,
+        /// The Miden path of the imported function, from its `external-id`.
+        path: SymbolPath,
+    },
     /// Represents table exported from another module.
     Table,
 }

@@ -938,6 +938,11 @@ pub(crate) fn format_module_path(path: &[syn::Ident]) -> String {
 mod tests {
     use super::*;
 
+    /// Namespace of the component importing the FPI dependencies in these tests.
+    fn test_consumer() -> crate::namespace::ComponentNamespace {
+        crate::namespace::ComponentNamespace::parse("miden::acme::acme", Span::call_site()).unwrap()
+    }
+
     /// Produces portable, non-empty inline-WIT artifact names.
     #[test]
     fn inline_wit_filename_components_are_sanitized() {
@@ -991,7 +996,7 @@ interface api {
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("foreign-account-bindings-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1003,6 +1008,10 @@ interface api {
         assert!(rendered.contains("import miden:fpi-v1-wallet/api@1.0.0;"));
         assert!(rendered.contains("package miden:fpi-v1-wallet@1.0.0 {"));
         assert!(rendered.contains("fpi-ping: func("));
+        assert!(
+            rendered.contains("@external-id(\"miden::acme::acme::fpi::wallet::ping\")"),
+            "the FPI function must carry its Miden path: {rendered}"
+        );
         UnresolvedPackageGroup::parse("emitted.wit", &rendered).unwrap();
     }
 
@@ -1326,7 +1335,7 @@ interface api {
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("fpi-type-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1478,7 +1487,7 @@ interface api {
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("fpi-anonymous-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1545,7 +1554,7 @@ interface api {
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("fpi-use-alias-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1714,7 +1723,7 @@ interface api {
 
         let (source, specs) = match imports {
             Some(imports) => {
-                let specs = fpi::import_specs(imports).unwrap();
+                let specs = fpi::import_specs(imports, &test_consumer()).unwrap();
                 let world_name = fpi::import_world_name("foreign-account-bindings", &specs);
                 (fpi::import_world_wit(&world_name, &specs), Some(specs))
             }

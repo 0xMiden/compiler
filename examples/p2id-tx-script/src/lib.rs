@@ -4,7 +4,7 @@
 
 use miden::{intrinsics::advice::adv_push_mapvaln, *};
 
-use crate::bindings::miden::p2id::miden_p2id;
+use crate::bindings::miden::p2id::p2id;
 
 /// Native account of the transaction script: exposes the `basic-wallet` component methods (e.g.
 /// `move_asset_to_note`) gathered from the `basic_wallet` package.
@@ -41,7 +41,7 @@ fn run(arg: Word, account: &mut Wallet) {
     let note_type: NoteType = input[NOTE_TYPE_INDEX].into();
     let target = AccountId::new(input[TARGET_PREFIX_INDEX], input[TARGET_SUFFIX_INDEX]);
     let serial_num: [Felt; 4] = input[SERIAL_NUM_START..SERIAL_NUM_END].try_into().unwrap();
-    let recipient = miden_p2id::build_recipient(target, serial_num.into());
+    let recipient = p2id::build_recipient(target, serial_num.into());
     let note_idx = account.create_note(tag, note_type, recipient);
     let asset: [Felt; 8] = input[ASSET_START..ASSET_END].try_into().unwrap();
     let asset_id: [Felt; 4] = asset[..4].try_into().unwrap();

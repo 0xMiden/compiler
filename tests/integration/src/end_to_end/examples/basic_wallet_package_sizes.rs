@@ -36,11 +36,15 @@ fn basic_wallet_and_p2id() {
     let note_package = p2id_test.compile_package();
     assert!(note_package.is_library(), "expected library");
     expect!["21763"].assert_eq(stripped_mast_size_str(&note_package).as_str());
-    // The note package exports both the note script and the `build-recipient` constructor; the
+    // The note package exports both the note script and the `build_recipient` constructor; the
     // constructor must not interfere with the `@note_script`-attributed export selection.
     assert!(
-        note_package.manifest.exports().any(|export| export.name() == "build-recipient"),
-        "expected the p2id note package to export the `build-recipient` constructor"
+        note_package
+            .manifest
+            .exports()
+            .any(|export| export.path().as_ref().as_str()
+                == "::miden::p2id::p2id::build_recipient"),
+        "expected the p2id note package to export the `build_recipient` constructor"
     );
     miden_protocol::note::NoteScript::from_package(&note_package)
         .expect("expected the p2id note package to contain exactly one note script export");

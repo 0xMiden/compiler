@@ -55,7 +55,7 @@ version = "0.1.0"
 [lib]
 kind = "note"
 path = "src/lib.rs"
-namespace = "miden:note-script-root-probe/miden-note-script-root-probe@0.1.0"
+namespace = "miden::note_script_root_probe::note_script_root_probe"
 
 [dependencies]
 miden-core = "*"
@@ -99,15 +99,15 @@ impl ProbeNote {
 /// Rebuilds an executable program from the lifted component export with the given leaf name.
 ///
 /// A package manifest exposes two exports per component function under the same leaf name: the
-/// core-Wasm function (under its `namespace::interface` path) and the compiler-lifted component
-/// export (under the component-id root module). They have different digests and calling
-/// conventions; execution must target the lifted export, recognizable by its module segment
-/// holding the full `ns:pkg/interface@version` component id (the only segment containing `/`).
+/// core-Wasm function (under the nested `<namespace>::<crate>` module) and the compiler-lifted
+/// component export (directly under the component namespace). They have different digests and
+/// calling conventions; execution must target the lifted export at `<namespace>::<name>`.
 fn export_program(package: &Package, name: &str) -> Arc<Package> {
+    let expected = format!("::miden::note_script_root_probe::note_script_root_probe::{name}");
     let procedure = super::find_manifest_procedure(
         package,
         &format!("the lifted component export '{name}'"),
-        |path| path.contains('/') && path.ends_with(&format!("::{name}")),
+        |path| path == expected,
     );
     package
         .make_executable(&QualifiedProcedureName::from(procedure.path.clone()))

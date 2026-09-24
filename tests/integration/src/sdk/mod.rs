@@ -99,8 +99,7 @@ fn assert_struct_field_types(ty: &Type, expected_fields: &[&str]) {
 fn assert_component_export_signatures_match_wit(package: &miden_mast_package::Package) {
     let component_export =
         find_manifest_procedure(package, "component export process-mixed", |name| {
-            name.starts_with("::\"miden:cross-ctx-account-word/foo@1.0.0\"::")
-                && name.ends_with("::\"process-mixed\"")
+            name == "::miden::cross_ctx_account_word::foo::process_mixed"
         });
     assert_eq!(
         component_export
@@ -237,7 +236,7 @@ version = "0.1.0"
 
 [lib]
 kind = "note"
-namespace = "miden:swapp-note/miden-swapp-note@0.1.0"
+namespace = "miden::swapp_note::swapp_note"
 path = "src/lib.rs"
 
 [dependencies]
@@ -385,8 +384,8 @@ fn build_consumer_wat_with_package_cache(
 }
 
 fn component_namespace(name: &str) -> String {
-    let package = name.replace('_', "-");
-    format!("miden:{package}/miden-{package}@0.0.1")
+    let package = name.replace('-', "_");
+    format!("miden::{package}::{package}")
 }
 
 #[test]
@@ -642,8 +641,8 @@ fn rust_sdk_cross_ctx_account_and_note() {
             .starts_with("intrinsics")),
         "expected no intrinsics in the exports"
     );
-    let expected_module_prefix = "::\"miden:cross-ctx-account/";
-    let expected_function_suffix = "\"process-felt\"";
+    let expected_module_prefix = "::miden::cross_ctx_account::foo::";
+    let expected_function_suffix = "::process_felt";
     assert!(
         exports.iter().any(|export| export.starts_with(expected_module_prefix)
             && export.ends_with(expected_function_suffix)),
@@ -682,8 +681,8 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     let account_package = test.compile_package();
     assert!(account_package.is_library());
     assert_component_export_signatures_match_wit(account_package.as_ref());
-    let expected_module_prefix = "::\"miden:cross-ctx-account-word/";
-    let expected_function_suffix = "\"process-word\"";
+    let expected_module_prefix = "::miden::cross_ctx_account_word::foo::";
+    let expected_function_suffix = "::process_word";
     let exports = account_package
         .manifest
         .exports()
@@ -782,7 +781,7 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
     let first_dependency = read_cached_dependency_package(&first_build, "basic-wallet");
     let first_export =
         find_manifest_procedure(&first_dependency, "basic-wallet receive-asset export", |path| {
-            path.ends_with("::\"receive-asset\"")
+            path == "::miden::basic_wallet::basic_wallet::receive_asset"
         });
     let first_root = first_export.digest;
     assert!(
@@ -811,7 +810,7 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
     let second_dependency = read_cached_dependency_package(&second_build, "basic-wallet");
     let second_export =
         find_manifest_procedure(&second_dependency, "basic-wallet receive-asset export", |path| {
-            path.ends_with("::\"receive-asset\"")
+            path == "::miden::basic_wallet::basic_wallet::receive_asset"
         });
     let second_root = second_export.digest;
 
@@ -840,17 +839,9 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
             "expected exactly one package-version field in {}",
             manifest_path.display()
         );
-        let mut changed_manifest =
+        // The namespace carries no version, so only the package version changes.
+        let changed_manifest =
             original_manifest.replacen("version = \"0.1.0\"", "version = \"0.1.1\"", 1);
-        if manifest_path == &dependency_miden_manifest {
-            assert_eq!(
-                changed_manifest.matches("@0.1.0").count(),
-                1,
-                "expected exactly one namespace version in {}",
-                manifest_path.display()
-            );
-            changed_manifest = changed_manifest.replacen("@0.1.0", "@0.1.1", 1);
-        }
         fs::write(manifest_path, changed_manifest).unwrap();
     }
 
@@ -859,7 +850,7 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
     let third_dependency = read_cached_dependency_package(&third_build, "basic-wallet");
     let third_export =
         find_manifest_procedure(&third_dependency, "basic-wallet receive-asset export", |path| {
-            path.ends_with("::\"receive-asset\"")
+            path == "::miden::basic_wallet::basic_wallet::receive_asset"
         });
     let third_root = third_export.digest;
 
@@ -894,7 +885,7 @@ fn rust_sdk_fpi_reexpands_after_only_package_cache_env_changes() {
     let first_root = find_manifest_procedure(
         &first_package,
         "original basic-wallet receive-asset export",
-        |path| path.ends_with("::\"receive-asset\""),
+        |path| path == "::miden::basic_wallet::basic_wallet::receive_asset",
     )
     .digest;
 
@@ -918,7 +909,7 @@ fn rust_sdk_fpi_reexpands_after_only_package_cache_env_changes() {
     let second_root = find_manifest_procedure(
         &second_package,
         "changed basic-wallet receive-asset export",
-        |path| path.ends_with("::\"receive-asset\""),
+        |path| path == "::miden::basic_wallet::basic_wallet::receive_asset",
     )
     .digest;
     assert_ne!(first_root, second_root, "the prepopulated packages must embed different roots");
@@ -975,8 +966,8 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     );
     let account_package = test.compile_package();
     assert!(account_package.is_library());
-    let expected_module_prefix = "::\"miden:cross-ctx-account-word-arg/";
-    let expected_function_suffix = "\"process-word\"";
+    let expected_module_prefix = "::miden::cross_ctx_account_word_arg::foo::";
+    let expected_function_suffix = "::process_word";
     let exports = account_package
         .manifest
         .exports()

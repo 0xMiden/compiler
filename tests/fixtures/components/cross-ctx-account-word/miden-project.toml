@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "account-component"
-namespace = "miden:cross-ctx-account-word/foo@1.0.0"
+namespace = "miden::cross_ctx_account_word::foo"
 path = "src/lib.rs"
 
 [package.metadata.miden]

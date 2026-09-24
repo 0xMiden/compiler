@@ -700,7 +700,7 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
                 component: link_info
                     .component()
                     .cloned()
-                    .unwrap_or_else(|| SymbolPath::from_masm_module_id("root_ns:root@1.0.0")),
+                    .unwrap_or_else(|| SymbolPath::from_masm_module_id("root")),
                 digest,
                 start: super::NativePtr::from_ptr(merged.offset),
                 data,

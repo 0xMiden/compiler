@@ -211,60 +211,32 @@ pub(crate) fn validate_lifted_frontend_metadata_exports(
     lifted_exports: &FxHashSet<String>,
 ) -> WasmResult<()> {
     for entry in metadata {
-        match entry {
-            FrontendMetadata::AuthScript {
-                method_path,
-                export_name,
-            } => validate_lifted_export(
-                method_path,
-                export_name,
-                "`#[auth_script]`",
-                lifted_exports,
-            )?,
-            FrontendMetadata::AccountProcedure {
-                method_path,
-                export_name,
-            } => validate_lifted_export(
-                method_path,
-                export_name,
-                "`#[account_procedure]`",
-                lifted_exports,
-            )?,
-            FrontendMetadata::NoteScript {
-                method_path,
-                export_name,
-            } => validate_lifted_export(
-                method_path,
-                export_name,
-                "`#[note_script]`",
-                lifted_exports,
-            )?,
-            FrontendMetadata::TxScript {
-                method_path,
-                export_name,
-            } => {
-                validate_lifted_export(method_path, export_name, "`#[tx_script]`", lifted_exports)?
-            }
-        }
+        let attribute = match entry {
+            FrontendMetadata::AuthScript { .. } => "`#[auth_script]`",
+            FrontendMetadata::AccountProcedure { .. } => "`#[account_procedure]`",
+            FrontendMetadata::NoteScript { .. } => "`#[note_script]`",
+            FrontendMetadata::TxScript { .. } => "`#[tx_script]`",
+        };
+        validate_lifted_export(entry.method_path(), entry.path(), attribute, lifted_exports)?;
     }
 
     Ok(())
 }
 
-/// Validates that a metadata-selected export name was seen among the lifted component exports.
+/// Validates that a metadata-selected export path was seen among the lifted component exports.
 fn validate_lifted_export(
     method_path: &str,
-    export_name: &str,
+    export_path: &str,
     attribute: &str,
     lifted_exports: &FxHashSet<String>,
 ) -> WasmResult<()> {
-    if lifted_exports.contains(export_name) {
+    if lifted_exports.contains(export_path) {
         return Ok(());
     }
 
     Err(Report::from(WasmError::MissingExportMetadata(format!(
         "failed to find the component export marked with {attribute}: `{method_path}` (expected \
-         lifted export `{export_name}`)"
+         lifted export `{export_path}`)"
     ))))
 }
 

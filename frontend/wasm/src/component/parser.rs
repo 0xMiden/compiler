@@ -183,6 +183,9 @@ pub struct ParsedComponent<'data> {
     /// index into an index space of what's being exported.
     pub exports: IndexMap<&'data str, ComponentItem>,
 
+    /// The `external-id` attribute of each export that carries one, keyed by the export name.
+    pub export_external_ids: FxHashMap<&'data str, &'data str>,
+
     /// Type information produced by `wasmparser` for this component.
     ///
     /// This type information is available after the parsing of the entire
@@ -760,6 +763,9 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             let item = self.kind_to_item(export.kind, export.index)?;
             let prev = self.result.exports.insert(export.name.name, item);
             assert!(prev.is_none());
+            if let Some(external_id) = export.name.external_id {
+                self.result.export_external_ids.insert(export.name.name, external_id);
+            }
             self.result.initializers.push(LocalInitializer::Export(export.name.name, item));
         }
         Ok(())

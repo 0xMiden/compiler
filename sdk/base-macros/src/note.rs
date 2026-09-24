@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use heck::{ToKebabCase, ToSnakeCase};
+use heck::ToKebabCase;
 use midenc_frontend_wasm_metadata::FrontendMetadata;
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::{ToTokens, format_ident, quote};
@@ -11,6 +11,8 @@ use syn::{
 
 use crate::{
     boilerplate::runtime_boilerplate,
+    component_macro::{CORE_TYPES_PACKAGE, export_path},
+    namespace::ComponentNamespace,
     types::{TypeRef, map_type_to_type_ref, registered_export_type_map},
     util::{
         generate_frontend_link_section, generate_wit_link_section, is_type_named,
@@ -26,7 +28,6 @@ const NOTE_SCRIPT_DOC_MARKER: &str = "__miden_note_script_marker";
 const NOTE_CONSTRUCTOR_ATTR: &str = "note_constructor";
 const NOTE_CONSTRUCTOR_MARKER_ATTR: &str = "miden_note_constructor_requires_note";
 const NOTE_CONSTRUCTOR_DOC_MARKER: &str = "__miden_note_constructor_marker";
-const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 const ENTRYPOINT_ROOT_METHOD: &str = "get_entrypoint_root";
 
 /// Expands `#[note]` for either a note input `struct` or an inherent `impl` block.
@@ -351,17 +352,13 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     };
     let call = quote! { __miden_note.#entrypoint_ident(#(#args),*); };
 
-    let metadata = match ManifestPackage::load_or_default(proc_macro::Span::call_site().into()) {
-        Ok(metadata) => metadata,
-        Err(err) => return err.to_compile_error(),
-    };
-    let component_package =
-        format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
-    let interface_name = component_package.to_kebab_case();
-    let world_name = format!("{interface_name}-world");
-    let interface_module = interface_name.to_snake_case();
     let manifest = match ManifestPackage::load(Span::call_site()) {
         Ok(manifest) => manifest,
+        Err(err) => return err.into_compile_error(),
+    };
+    // The WIT package, interface and every export path derive from `[lib].namespace`.
+    let namespace = match manifest.namespace(note_ident.span()) {
+        Ok(namespace) => namespace,
         Err(err) => return err.into_compile_error(),
     };
     let dependency_imports = match manifest.collect_miden_dependency_imports(Span::call_site()) {
@@ -370,11 +367,9 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     };
 
     let inline_wit = build_note_script_wit(
-        &component_package,
-        metadata.package.version().inner(),
-        &interface_name,
-        &world_name,
-        &export_name,
+        &namespace,
+        manifest.component_version(),
+        entrypoint_ident,
         &constructors,
         &constructor_type_imports,
         &dependency_imports,
@@ -385,11 +380,9 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     // export-only (no dependency imports), so it is self-contained for the consumer's
     // resolver, which parses dependency WIT against the bundled SDK WIT alone.
     let public_wit = build_note_script_wit(
-        &component_package,
-        metadata.package.version().inner(),
-        &interface_name,
-        &world_name,
-        &export_name,
+        &namespace,
+        manifest.component_version(),
+        entrypoint_ident,
         &constructors,
         &constructor_type_imports,
         &[],
@@ -398,12 +391,13 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         Ok(tokens) => tokens,
         Err(err) => return err.into_compile_error(),
     };
-    let guest_trait_path = match build_guest_trait_path(&component_package, &interface_module) {
-        Ok(path) => path,
-        Err(err) => return err.into_compile_error(),
-    };
+    let guest_trait_path = namespace.guest_trait_path();
     let runtime_boilerplate = runtime_boilerplate();
-    let frontend_metadata = note_script_frontend_metadata(&note_ty, entrypoint_ident, &export_name);
+    let frontend_metadata = note_script_frontend_metadata(
+        &note_ty,
+        entrypoint_ident,
+        export_path(&namespace, entrypoint_ident),
+    );
     let frontend_link_section = generate_frontend_link_section(&[frontend_metadata]);
     let constructor_guest_methods: Vec<TokenStream2> = constructors
         .iter()
@@ -606,18 +600,6 @@ fn collect_note_constructors(
         }
         if let Some(variadic) = &sig.variadic {
             return Err(syn::Error::new(variadic.span(), "note constructors cannot be variadic"));
-        }
-
-        // The generated bindings implement a trait whose method name wit-bindgen derives by
-        // snake-casing the WIT export name; a non-snake-case Rust name would make the generated
-        // impl miss the trait method (E0407/E0046 deep inside generated code).
-        let ident_string = sig.ident.unraw().to_string();
-        if ident_string != ident_string.to_snake_case() {
-            return Err(syn::Error::new(
-                sig.ident.span(),
-                "note constructor names must be snake_case: the WIT export name and the generated \
-                 bindings derive from the method name",
-            ));
         }
 
         let mut params = Vec::new();
@@ -901,18 +883,6 @@ fn parse_entrypoint_signature(
 ) -> syn::Result<(usize, Option<AccountParam>)> {
     let sig = &entrypoint.sig;
 
-    // The generated bindings implement a trait whose method name wit-bindgen derives by
-    // snake-casing the WIT export name; a non-snake-case Rust name would make the generated
-    // impl miss the trait method (E0407/E0046 deep inside generated code).
-    let ident_string = sig.ident.unraw().to_string();
-    if ident_string != ident_string.to_snake_case() {
-        return Err(syn::Error::new(
-            sig.ident.span(),
-            "entrypoint method names must be snake_case: the WIT export name and the generated \
-             bindings derive from the method name",
-        ));
-    }
-
     if let Some(asyncness) = sig.asyncness {
         return Err(syn::Error::new(asyncness.span(), "entrypoint method must not be `async`"));
     }
@@ -1097,87 +1067,57 @@ fn is_doc_marker_attr(attr: &Attribute, marker: &str) -> bool {
 /// Renders the inline WIT world exported by a note script.
 ///
 /// The interface exports the note-script entrypoint plus any note constructors collected from
-/// the `#[note]` impl block.
-#[allow(clippy::too_many_arguments)]
+/// the `#[note]` impl block, each at the Miden path `<namespace>::<rust ident>`.
 fn build_note_script_wit(
-    component_package: &str,
+    namespace: &ComponentNamespace,
     component_version: &semver::Version,
-    interface_name: &str,
-    world_name: &str,
-    export_name: &str,
+    entrypoint_ident: &syn::Ident,
     constructors: &[NoteConstructor],
     constructor_type_imports: &BTreeSet<String>,
     dependency_imports: &[String],
 ) -> String {
-    let mut wit = WitBuilder::new("#[note]", component_package, component_version);
+    let interface_name = namespace.wit_interface();
+    let mut wit = WitBuilder::new("#[note]", &namespace.wit_package(), component_version);
     wit.use_path(CORE_TYPES_PACKAGE);
     wit.blank_line();
-    wit.interface(interface_name, |interface| {
+    wit.interface(&interface_name, |interface| {
         // `word` is always required by the entrypoint's `arg` parameter
         let mut type_imports = constructor_type_imports.clone();
         type_imports.insert("word".to_string());
         let imports = type_imports.iter().cloned().collect::<Vec<_>>().join(", ");
         interface.line(&format!("use core-types.{{{imports}}};"));
         interface.blank_line();
-        interface.line(&format!("{}: func(arg: word);", explicit_wit_identifier(export_name)));
+        interface.function(
+            &export_path(namespace, entrypoint_ident),
+            &format!(
+                "{}: func(arg: word);",
+                explicit_wit_identifier(&rust_ident_to_wit_name(entrypoint_ident))
+            ),
+        );
         for constructor in constructors {
-            interface.line(&constructor_wit_signature(constructor));
+            interface.function(
+                &export_path(namespace, &constructor.fn_ident),
+                &constructor_wit_signature(constructor),
+            );
         }
     });
     wit.blank_line();
-    let exports = [interface_name.to_string()];
-    write_world_block(&mut wit, world_name, dependency_imports, &exports);
+    let world_name = format!("{interface_name}-world");
+    let exports = [interface_name];
+    write_world_block(&mut wit, &world_name, dependency_imports, &exports);
 
     wit.finish()
 }
 
-/// Synthesizes the generated guest trait path for the inline note-script interface.
-fn build_guest_trait_path(
-    component_package: &str,
-    interface_module: &str,
-) -> syn::Result<syn::Path> {
-    let package_without_version =
-        component_package.split('@').next().unwrap_or(component_package).trim();
-
-    let segments: Vec<_> = package_without_version
-        .split([':', '/'])
-        .filter(|segment| !segment.is_empty())
-        .map(|segment| segment.to_snake_case())
-        .collect();
-
-    if segments.is_empty() {
-        return Err(syn::Error::new(
-            Span::call_site(),
-            "invalid component package identifier provided in manifest metadata",
-        ));
-    }
-
-    let mut path = String::from("self::bindings::exports");
-    for segment in segments {
-        path.push_str("::");
-        path.push_str(&segment);
-    }
-    path.push_str("::");
-    path.push_str(interface_module);
-    path.push_str("::Guest");
-
-    syn::parse_str(&path).map_err(|err| {
-        syn::Error::new(
-            Span::call_site(),
-            format!("failed to parse guest trait path '{path}': {err}"),
-        )
-    })
-}
-
-/// Builds frontend metadata for the `#[note_script]` method exported by a note.
+/// Builds frontend metadata for the `#[note_script]` method exported by a note at `path`.
 fn note_script_frontend_metadata(
     note_ty: &syn::TypePath,
     entrypoint_ident: &syn::Ident,
-    export_name: &str,
+    path: String,
 ) -> FrontendMetadata {
     FrontendMetadata::NoteScript {
         method_path: render_method_path(note_ty, entrypoint_ident),
-        export_name: export_name.to_owned(),
+        path,
     }
 }
 
@@ -1192,6 +1132,11 @@ mod tests {
     use syn::parse_quote;
 
     use super::*;
+
+    /// Namespace of the note used by the WIT rendering tests.
+    fn test_namespace() -> ComponentNamespace {
+        ComponentNamespace::parse("miden::my_note::my_note", Span::call_site()).unwrap()
+    }
 
     #[test]
     fn entrypoint_signature_allows_non_run_name() {
@@ -1333,7 +1278,11 @@ mod tests {
     fn note_script_frontend_metadata_emits_project_wide_uniqueness_guard() {
         let note_ty: syn::TypePath = parse_quote!(crate::notes::PaymentNote);
         let entrypoint_ident = format_ident!("execute");
-        let metadata = note_script_frontend_metadata(&note_ty, &entrypoint_ident, "execute");
+        let metadata = note_script_frontend_metadata(
+            &note_ty,
+            &entrypoint_ident,
+            "miden::payment::payment::execute".into(),
+        );
         let tokens = generate_frontend_link_section(&[metadata]).to_string();
 
         assert!(tokens.contains(crate::util::FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL));
@@ -1345,13 +1294,17 @@ mod tests {
         let note_ty: syn::TypePath = parse_quote!(crate::notes::PaymentNote);
         let entrypoint_ident = format_ident!("execute");
 
-        let metadata = note_script_frontend_metadata(&note_ty, &entrypoint_ident, "execute");
+        let metadata = note_script_frontend_metadata(
+            &note_ty,
+            &entrypoint_ident,
+            "miden::payment::payment::execute".into(),
+        );
 
         assert_eq!(
             metadata,
             FrontendMetadata::NoteScript {
                 method_path: "crate::notes::PaymentNote::execute".into(),
-                export_name: "execute".into(),
+                path: "miden::payment::payment::execute".into(),
             }
         );
     }
@@ -1359,17 +1312,24 @@ mod tests {
     #[test]
     fn note_script_wit_uses_the_marked_method_name() {
         let wit = build_note_script_wit(
-            "miden:my-note",
+            &test_namespace(),
             &semver::Version::new(1, 0, 0),
-            "my-note",
-            "my-note-world",
-            "execute",
+            &format_ident!("execute"),
             &[],
             &BTreeSet::new(),
             &[],
         );
 
-        assert!(wit.contains("%execute: func(arg: word);"));
+        assert!(wit.contains("package miden:my-note@1.0.0;"), "unexpected WIT: {wit}");
+        assert!(wit.contains("interface my-note {"), "unexpected WIT: {wit}");
+        assert!(wit.contains("world my-note-world {"), "unexpected WIT: {wit}");
+        assert!(
+            wit.contains(
+                "@external-id(\"miden::my_note::my_note::execute\")\n    %execute: func(arg: \
+                 word);"
+            ),
+            "unexpected WIT: {wit}"
+        );
         assert!(!wit.contains("%run: func(arg: word);"));
     }
 
@@ -1398,19 +1358,17 @@ mod tests {
 
         assert_eq!(constructors.len(), 1);
         let wit = build_note_script_wit(
-            "miden:my-note",
+            &test_namespace(),
             &semver::Version::new(1, 0, 0),
-            "my-note",
-            "my-note-world",
-            "execute",
+            &entrypoint_ident,
             &constructors,
             &type_imports,
             &[],
         );
 
         assert!(wit.contains(
-            "%create: func(%target: account-id, %tag: tag, %note-type: note-type, %serial-num: \
-             word) -> note-idx;"
+            "@external-id(\"miden::my_note::my_note::create\")\n    %create: func(%target: \
+             account-id, %tag: tag, %note-type: note-type, %serial-num: word) -> note-idx;"
         ));
         assert!(wit.contains("%execute: func(arg: word);"));
         assert!(
@@ -1447,17 +1405,19 @@ mod tests {
             collect_note_constructors(&mut item_impl, &entrypoint_ident, "result").unwrap();
 
         let wit = build_note_script_wit(
-            "miden:my-note",
+            &test_namespace(),
             &semver::Version::new(1, 0, 0),
-            "my-note",
-            "my-note-world",
-            "result",
+            &entrypoint_ident,
             &constructors,
             &type_imports,
             &[],
         );
 
         assert!(wit.contains("%result: func(arg: word);"), "unexpected WIT: {wit}");
+        assert!(
+            wit.contains("@external-id(\"miden::my_note::my_note::type\")"),
+            "the constructor path must use the unraw'd Rust identifier: {wit}"
+        );
         assert!(wit.contains("%type: func(%result: word);"), "unexpected WIT: {wit}");
         wit_bindgen_core::wit_parser::UnresolvedPackageGroup::parse("inline", &wit)
             .expect("explicit WIT identifiers must parse for keywords and raw Rust identifiers");
@@ -1590,9 +1550,7 @@ mod tests {
     }
 
     #[test]
-    fn note_constructors_reject_non_snake_case_names() {
-        // wit-bindgen names the generated trait method by snake-casing the WIT export name, so a
-        // camelCase constructor would not match its trait item.
+    fn note_constructors_accept_non_snake_case_names() {
         let mut item_impl: ItemImpl = parse_quote! {
             impl MyNote {
                 #[note_constructor]
@@ -1602,24 +1560,33 @@ mod tests {
         };
         let entrypoint_ident = format_ident!("execute");
 
-        let err = match collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute") {
-            Ok(_) => panic!("non-snake-case constructor names must be rejected"),
-            Err(err) => err,
-        };
-        assert!(err.to_string().contains("must be snake_case"));
+        let (constructors, type_imports) =
+            collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute").unwrap();
+        let constructor = constructors.first().unwrap();
+        assert_eq!(constructor.wit_name, "make-note");
+        assert_eq!(constructor.guest_fn_ident, "make_note");
+
+        let wit = build_note_script_wit(
+            &test_namespace(),
+            &semver::Version::new(1, 0, 0),
+            &entrypoint_ident,
+            &constructors,
+            &type_imports,
+            &[],
+        );
+        assert!(
+            wit.contains("@external-id(\"miden::my_note::my_note::makeNote\")"),
+            "the export path must keep the Rust identifier: {wit}"
+        );
     }
 
     #[test]
-    fn entrypoint_signature_rejects_non_snake_case_names() {
+    fn entrypoint_signature_accepts_non_snake_case_names() {
         let item_fn: ImplItemFn = parse_quote! {
             pub fn runNote(self, _arg: Word) {}
         };
 
-        let err = match parse_entrypoint_signature(&item_fn) {
-            Ok(_) => panic!("non-snake-case entrypoint names must be rejected"),
-            Err(err) => err,
-        };
-        assert!(err.to_string().contains("must be snake_case"));
+        assert!(parse_entrypoint_signature(&item_fn).is_ok());
     }
 
     #[test]

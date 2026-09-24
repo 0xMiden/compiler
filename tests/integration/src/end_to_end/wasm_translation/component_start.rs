@@ -51,7 +51,8 @@ const START_WITH_OBSERVABLE_EFFECT: &str = r#"
   (component $export-component
     (type $entrypoint-type (func (result u32)))
     (import "import-func-entrypoint" (func $entrypoint (type $entrypoint-type)))
-    (export "entrypoint" (func $entrypoint) (func (type $entrypoint-type))))
+    (export "entrypoint" (external-id "miden::test::component_start::entrypoint")
+      (func $entrypoint) (func (type $entrypoint-type))))
   (instance $exports
     (instantiate $export-component
       (with "import-func-entrypoint" (func $entrypoint-lifted))))
@@ -82,7 +83,8 @@ const TRAPPING_START: &str = r#"
   (component $export-component
     (type $entrypoint-type (func (result u32)))
     (import "import-func-entrypoint" (func $entrypoint (type $entrypoint-type)))
-    (export "entrypoint" (func $entrypoint) (func (type $entrypoint-type))))
+    (export "entrypoint" (external-id "miden::test::component_start::entrypoint")
+      (func $entrypoint) (func (type $entrypoint-type))))
   (instance $exports
     (instantiate $export-component
       (with "import-func-entrypoint" (func $entrypoint-lifted))))
@@ -122,7 +124,8 @@ const COUNTING_START: &str = r#"
   (component $export-component
     (type $entrypoint-type (func (result u32)))
     (import "import-func-entrypoint" (func $entrypoint (type $entrypoint-type)))
-    (export "entrypoint" (func $entrypoint) (func (type $entrypoint-type))))
+    (export "entrypoint" (external-id "miden::test::component_start::entrypoint")
+      (func $entrypoint) (func (type $entrypoint-type))))
   (instance $exports
     (instantiate $export-component
       (with "import-func-entrypoint" (func $entrypoint-lifted))))
@@ -132,11 +135,7 @@ const COUNTING_START: &str = r#"
 
 fn compile_library(wat: &str) -> std::sync::Arc<Package> {
     let wasm = wat::parse_str(wat).expect("component fixture must be valid WebAssembly text");
-    let builder = CompilerTestBuilder::from_wasm(
-        "component_start",
-        wasm,
-        ["--target=miden:test/component-start@1.0.0".to_string()],
-    );
+    let builder = CompilerTestBuilder::from_wasm("component_start", wasm, []);
     let package = builder.build().compile_package();
     assert!(package.is_library(), "component fixture should compile as a library");
     package

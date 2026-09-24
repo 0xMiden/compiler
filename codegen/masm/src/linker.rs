@@ -757,7 +757,7 @@ mod tests {
         let world_ref =
             context.clone().builder().create::<World, ()>(Default::default())().unwrap();
         let mut world_builder = WorldBuilder::new(world_ref);
-        let component = world_builder.define_component(Ident::from("test_ns:test@1.0.0")).unwrap();
+        let component = world_builder.define_component(Ident::from("test_ns::test")).unwrap();
         let mut component_builder = ComponentBuilder::new(component);
         let module = component_builder.define_module(Ident::from("core")).unwrap();
         let signature = Signature::with_convention(&context, call_conv, params, results);
@@ -806,8 +806,7 @@ mod tests {
         let world_ref =
             context.clone().builder().create::<World, ()>(Default::default())().unwrap();
         let mut world_builder = WorldBuilder::new(world_ref);
-        let component_ref =
-            world_builder.define_component(Ident::from("test_ns:test@1.0.0")).unwrap();
+        let component_ref = world_builder.define_component(Ident::from("test_ns::test")).unwrap();
         let mut component_builder = ComponentBuilder::new(component_ref);
         let mut module_ref = component_builder.define_module(Ident::from("m")).unwrap();
         if reserved_bytes > 0 {
@@ -850,8 +849,7 @@ mod tests {
         let world_ref =
             context.clone().builder().create::<World, ()>(Default::default())().unwrap();
         let mut world_builder = WorldBuilder::new(world_ref);
-        let component_ref =
-            world_builder.define_component(Ident::from("test_ns:test@1.0.0")).unwrap();
+        let component_ref = world_builder.define_component(Ident::from("test_ns::test")).unwrap();
         let mut component_builder = ComponentBuilder::new(component_ref);
         let module_ref = component_builder.define_module(Ident::from("m")).unwrap();
         let mut module_builder = ModuleBuilder::new(module_ref);
@@ -884,8 +882,7 @@ mod tests {
         let world_ref =
             context.clone().builder().create::<World, ()>(Default::default())().unwrap();
         let mut world_builder = WorldBuilder::new(world_ref);
-        let component_ref =
-            world_builder.define_component(Ident::from("test_ns:test@1.0.0")).unwrap();
+        let component_ref = world_builder.define_component(Ident::from("test_ns::test")).unwrap();
         let mut component_builder = ComponentBuilder::new(component_ref);
         let outer = component_builder.define_module(Ident::from("outer")).unwrap();
         let inner = ModuleBuilder::new(outer).declare_module(Ident::from("inner")).unwrap();
