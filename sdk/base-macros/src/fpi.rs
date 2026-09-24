@@ -392,6 +392,7 @@ struct Dependency {
     roots: HashMap<MasmPathBuf, ProcedureRoot>,
 }
 
+/// Lookups of the dependency functions' Miden paths.
 impl Dependency {
     /// Returns the canonical Miden path of the dependency function `wit_name`, read from its WIT
     /// `@external-id`.
@@ -476,7 +477,8 @@ fn is_fpi_source_function(function: &Function) -> bool {
 }
 
 /// Copies FPI variants of source functions into an empty private synthetic interface, each at
-/// the Miden path `<external_id_prefix>::<function>`.
+/// the Miden path `<external_id_prefix>::<leaf>`, `<leaf>` being the leaf of the source
+/// function's own `@external-id`.
 fn inject_functions_into_synthetic_interface(
     resolve: &mut Resolve,
     source_id: InterfaceId,
@@ -504,8 +506,22 @@ fn inject_functions_into_synthetic_interface(
     let mut fpi_functions = Vec::with_capacity(functions.len());
     for function in functions {
         let fpi_name = format!("{WIT_FUNCTION_PREFIX}{}", function.name);
-        let external_id =
-            format!("{external_id_prefix}::{}", wit_bindgen_rust::to_rust_ident(&function.name));
+        let leaf = function
+            .external_id
+            .as_deref()
+            .and_then(|external_id| external_id.rsplit_once("::"))
+            .map(|(_, leaf)| leaf.to_owned())
+            .ok_or_else(|| {
+                Error::new(
+                    Span::call_site(),
+                    format!(
+                        "dependency WIT function `{}` carries no `@external-id` with a Miden \
+                         path; rebuild the dependency with the current SDK",
+                        function.name
+                    ),
+                )
+            })?;
+        let external_id = format!("{external_id_prefix}::{leaf}");
         let mut function =
             build_import_function(function, fpi_name.clone(), core_types, external_id);
         alias_function_types(

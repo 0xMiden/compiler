@@ -7,7 +7,7 @@ use anyhow::{Context, anyhow};
 use clap::Args;
 use toml_edit::{DocumentMut, Item, Value};
 
-use crate::template::{GenerateArgs, TemplatePath, generate};
+use crate::template::{GenerateArgs, TemplatePath, generate, validated_component_namespace};
 
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
@@ -157,6 +157,14 @@ impl NewCommand {
                 )
             })?
             .to_string();
+
+        // The component templates name their exports after a namespace derived from the project
+        // name, which must be one the SDK macros accept.
+        if self.template_path.is_none()
+            && self.template.as_ref().is_some_and(|template| !template.program)
+        {
+            validated_component_namespace(&name)?;
+        }
 
         let mut define = vec![];
         if let Some(compiler_path) = self.compiler_path.as_deref() {
@@ -373,4 +381,33 @@ fn add_to_workspace_if_exists(project_path: &Path) -> anyhow::Result<()> {
         .context("Failed to write updated workspace Cargo.toml")?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A component project whose name yields an invalid namespace is refused before anything is
+    /// generated.
+    #[test]
+    fn a_component_project_name_yielding_an_invalid_namespace_is_refused() {
+        let scratch = tempfile::tempdir().expect("create scratch directory");
+        for name in ["123abc", "list"] {
+            let path = scratch.path().join(name);
+            let err = NewCommand {
+                path: path.clone(),
+                template: Some(ProjectTemplate::account()),
+                template_path: None,
+                force_download: false,
+                compiler_path: None,
+                compiler_rev: None,
+                compiler_branch: None,
+            }
+            .exec()
+            .expect_err("the project name must be refused")
+            .to_string();
+            assert!(err.contains("invalid component namespace"), "unexpected diagnostic: {err}");
+            assert!(!path.exists(), "nothing is generated for a refused project name");
+        }
+    }
 }

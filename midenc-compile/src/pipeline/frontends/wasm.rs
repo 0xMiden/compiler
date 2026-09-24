@@ -508,7 +508,7 @@ impl WasmFrontend {
             sections,
         } = midenc_frontend_wasm::translate(&source.wasm, &config, context.clone())?;
         log::debug!(
-            "parsed hir component from wasm bytes with first module name: {}",
+            "parsed hir component `{}` from wasm bytes",
             component.borrow().get_name().as_symbol()
         );
 

@@ -174,7 +174,7 @@ version = "0.1.0"
 
 [lib]
 # The namespace the Wasm frontend roots the core Wasm module's wrapper component at; any
-# namespace works.
+# namespace that does not shadow a kernel or standard-library module path.
 namespace = "root"
 path = "src/lib.rs"
 

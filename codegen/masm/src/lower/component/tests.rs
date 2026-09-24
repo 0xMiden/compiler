@@ -233,14 +233,14 @@ fn module_paths(component: &MasmComponent) -> Vec<String> {
 /// A world declaring two components, which is what this crate does not implement.
 const TWO_COMPONENT_WORLD: &str = r#"
 builtin.world {
-builtin.component private @"hir_ns:first@1.0.0" {
+builtin.component private @hir_ns::@first {
     builtin.module private @first {
         builtin.function public extern("C") @main() {
             builtin.ret;
         };
     };
 };
-builtin.component private @"hir_ns:second@1.0.0" {
+builtin.component private @hir_ns::@second {
     builtin.module private @second {
         builtin.function public extern("C") @other() {
             builtin.ret;
@@ -510,8 +510,7 @@ fn component_init(component: &MasmComponent) -> &masm::Procedure {
 /// the answer.
 ///
 /// The world here is parsed from `.hir` text rather than taken from the parser's anchor, so
-/// the world under test is the one the file declares — the shape `--emit=hir` writes. See
-/// [`WORLD`] for why the id is quoted here but is not in what `--emit=hir` actually prints.
+/// the world under test is the one the file declares — the shape `--emit=hir` writes.
 #[test]
 fn a_world_holding_one_component_lowers_as_that_component() {
     let context = Rc::new(Context::default());
@@ -1292,7 +1291,7 @@ fn a_world_of_modules_still_lowers_as_a_component_body() {
     let lowered =
         lower_world(anchoring_world(module)).expect("a world of modules lowers as it always did");
 
-    assert!(lowered.id.is_none(), "a world declares no component id of its own");
+    assert!(lowered.id.is_none(), "a world declares no component namespace of its own");
     assert_eq!(
         lowered.root.to_string(),
         "::lib",
@@ -1396,15 +1395,15 @@ fn a_world_of_one_module_already_at_its_targets_namespace_is_left_alone() {
     assert_eq!(format!("{}", sources.root), emitted, "and nothing in it moved");
 }
 
-/// A world holding a component keeps that component's id, whatever its target is called.
+/// A world holding a component keeps that component's namespace, whatever its target is called.
 ///
 /// The discriminating half of the two above, at the seam that decides it: re-rooting is
 /// justified only for a component-less world, whose modules have no identity beyond the
-/// namespace they sit in. An authored component id *is* the code's identity — every dependent
-/// addresses its procedures through it — so a target named something else must not silently
-/// rename them, and this is the shape every Wasm and Rust build produces.
+/// namespace they sit in. An authored component namespace *is* the code's identity — every
+/// dependent addresses its procedures through it — so a target named something else must not
+/// silently rename them, and this is the shape every Wasm and Rust build produces.
 #[test]
-fn a_world_holding_one_component_keeps_that_components_id() {
+fn a_world_holding_one_component_keeps_that_components_namespace() {
     let context = Rc::new(Context::default());
     let lowered =
         lower_world(parse_world(&context, WORLD)).expect("a single-component world lowers");
