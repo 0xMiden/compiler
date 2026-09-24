@@ -203,7 +203,7 @@ impl<'a> ComponentTranslator<'a> {
         log::trace!(target: "component-translator", "init: {init:?}");
         match init {
             LocalInitializer::Import(name, ty) => {
-                match frame.args.get(name.0) {
+                match frame.args.get(name.name) {
                     Some(arg) => {
                         frame.push_item(arg.clone());
                     }
@@ -248,7 +248,7 @@ impl<'a> ComponentTranslator<'a> {
                     "Resource representation is not supported"
                 )
             }
-            LocalInitializer::ResourceDrop(..) | LocalInitializer::ResourceDropAsync(..) => {
+            LocalInitializer::ResourceDrop(..) => {
                 unsupported_diag!(self.context.diagnostics(), "Resource dropping is not supported")
             }
             LocalInitializer::ModuleStatic(static_module_idx) => {
@@ -972,7 +972,7 @@ impl<'a> ComponentTranslator<'a> {
         &mut self,
         frame: &mut ComponentFrame<'a>,
         types: &mut ComponentTypesBuilder,
-        name: &wasmparser::ComponentImportName<'_>,
+        name: &wasmparser::ComponentExternName<'_>,
         ty: &ComponentEntityType,
     ) -> Result<(), Report> {
         let ty = types.convert_component_entity_type(frame.types, *ty).map_err(Report::msg)?;
@@ -980,11 +980,11 @@ impl<'a> ComponentTranslator<'a> {
             TypeDef::ComponentInstance(type_component_instance_idx) => type_component_instance_idx,
             _ => panic!("expected component instance"),
         };
-        types.register_component_instance_export_type_names(ty, Some(name.0));
+        types.register_component_instance_export_type_names(ty, Some(name.name));
         frame
             .component_instances
             .push(ComponentInstanceDef::Import(ComponentInstanceImport {
-                name: name.0.to_string(),
+                name: name.name.to_string(),
                 ty,
             }));
 

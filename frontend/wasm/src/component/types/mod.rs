@@ -616,15 +616,15 @@ impl ComponentTypesBuilder {
     ) -> Result<TypeComponentIndex> {
         let ty = &types[id];
         let mut result = TypeComponent::default();
-        for (name, ty) in ty.imports.iter() {
+        for (name, item) in ty.imports.iter() {
             result
                 .imports
-                .insert(name.clone(), self.convert_component_entity_type(types, *ty)?);
+                .insert(name.clone(), self.convert_component_entity_type(types, item.ty)?);
         }
-        for (name, ty) in ty.exports.iter() {
+        for (name, item) in ty.exports.iter() {
             result
                 .exports
-                .insert(name.clone(), self.convert_component_entity_type(types, *ty)?);
+                .insert(name.clone(), self.convert_component_entity_type(types, item.ty)?);
         }
         Ok(self.component_types.components.push(result))
     }
@@ -636,10 +636,10 @@ impl ComponentTypesBuilder {
     ) -> Result<TypeComponentInstanceIndex> {
         let ty = &types[id];
         let mut result = TypeComponentInstance::default();
-        for (name, ty) in ty.exports.iter() {
+        for (name, item) in ty.exports.iter() {
             result
                 .exports
-                .insert(name.clone(), self.convert_component_entity_type(types, *ty)?);
+                .insert(name.clone(), self.convert_component_entity_type(types, item.ty)?);
         }
         Ok(self.component_types.component_instances.push(result))
     }
@@ -689,8 +689,8 @@ impl ComponentTypesBuilder {
             component_types::ComponentDefinedType::Variant(e) => {
                 InterfaceType::Variant(self.variant_type(types, e)?)
             }
-            component_types::ComponentDefinedType::List(e) => {
-                InterfaceType::List(self.list_type(types, e)?)
+            component_types::ComponentDefinedType::List { element, .. } => {
+                InterfaceType::List(self.list_type(types, element)?)
             }
             component_types::ComponentDefinedType::Tuple(e) => {
                 InterfaceType::Tuple(self.tuple_type(types, e)?)
@@ -701,10 +701,10 @@ impl ComponentTypesBuilder {
             component_types::ComponentDefinedType::Enum(e) => {
                 InterfaceType::Enum(self.enum_type(e))
             }
-            component_types::ComponentDefinedType::Option(e) => {
-                InterfaceType::Option(self.option_type(types, e)?)
+            component_types::ComponentDefinedType::Option { ty, .. } => {
+                InterfaceType::Option(self.option_type(types, ty)?)
             }
-            component_types::ComponentDefinedType::Result { ok, err } => {
+            component_types::ComponentDefinedType::Result { ok, err, .. } => {
                 InterfaceType::Result(self.result_type(types, ok, err)?)
             }
             component_types::ComponentDefinedType::Own(r) => {
@@ -713,12 +713,12 @@ impl ComponentTypesBuilder {
             component_types::ComponentDefinedType::Borrow(r) => {
                 InterfaceType::Borrow(self.resource_id(r.resource()))
             }
-            component_types::ComponentDefinedType::Stream(_)
-            | component_types::ComponentDefinedType::Future(_) => {
+            component_types::ComponentDefinedType::Stream { .. }
+            | component_types::ComponentDefinedType::Future { .. } => {
                 unimplemented!("support for the async proposal is not implemented")
             }
-            component_types::ComponentDefinedType::Map(..)
-            | component_types::ComponentDefinedType::FixedLengthList(..) => {
+            component_types::ComponentDefinedType::Map { .. }
+            | component_types::ComponentDefinedType::FixedLengthList { .. } => {
                 todo!("support for maps/fixed-length lists has not been implemented yet")
             }
         };

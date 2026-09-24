@@ -301,9 +301,9 @@ fn import_synthetic_interface(
         WorldKey::Interface(synthetic_id),
         WorldItem::Interface {
             id: synthetic_id,
-            external_id: None,
-            docs: Default::default(),
             stability: Default::default(),
+            external_id: None,
+            docs: Docs::default(),
             span: WitSpan::default(),
         },
     );
@@ -791,12 +791,12 @@ fn alias_wit_type(
         let mut kind = source_type.kind;
         alias_type_def_kind(resolve, synthetic_id, &mut kind, aliases, interface_types);
         let clone_id = resolve.types.alloc(TypeDef {
-            external_id: None,
             name: None,
             kind,
             owner: TypeOwner::None,
             docs: source_type.docs,
             stability: source_type.stability,
+            external_id: source_type.external_id,
             span: source_type.span,
         });
         aliases.insert(source_id_value, clone_id);
@@ -806,12 +806,12 @@ fn alias_wit_type(
 
     let name = format!("miden-fpi-type-{}", interface_types.len());
     let alias_id = resolve.types.alloc(TypeDef {
-        external_id: None,
         name: Some(name.clone()),
         kind: TypeDefKind::Type(WitType::Id(source_id_value)),
         owner: TypeOwner::Interface(synthetic_id),
         docs: Docs::default(),
         stability: Default::default(),
+        external_id: None,
         span: WitSpan::default(),
     });
     aliases.insert(source_id_value, alias_id);
@@ -928,7 +928,6 @@ fn build_import_function(function: Function, fpi_name: String, core_types: CoreT
     params.extend(function.params);
 
     Function {
-        external_id: None,
         name: fpi_name,
         kind: FunctionKind::Freestanding,
         params,
@@ -937,6 +936,7 @@ fn build_import_function(function: Function, fpi_name: String, core_types: CoreT
         // The generated function belongs to a private synthetic package, so source-package
         // feature metadata cannot be copied across package ownership boundaries.
         stability: Default::default(),
+        external_id: None,
         span: WitSpan::default(),
     }
 }
@@ -2010,13 +2010,13 @@ interface api {
 
     fn test_function(name: &str) -> Function {
         Function {
-            external_id: None,
             name: name.to_string(),
             kind: FunctionKind::Freestanding,
             params: Vec::new(),
             result: None,
             docs: Docs::default(),
             stability: Default::default(),
+            external_id: None,
             span: WitSpan::default(),
         }
     }
