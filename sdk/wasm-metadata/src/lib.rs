@@ -313,7 +313,18 @@ impl FrontendMetadata {
     /// Returns the selected protocol-export kind when `path` is the Miden path of the marked
     /// export.
     pub fn protocol_export_kind_for(&self, path: &str) -> Option<ProtocolExportKind> {
-        (self.path() == path).then(|| self.protocol_export_kind())
+        self.matches_path(path).then(|| self.protocol_export_kind())
+    }
+
+    /// Returns `true` when `path` is the Miden path of the marked export.
+    ///
+    /// Both paths are compared without their optional leading `::`, so an absolute and an
+    /// unrooted spelling of one path match.
+    pub fn matches_path(&self, path: &str) -> bool {
+        fn unrooted(path: &str) -> &str {
+            path.strip_prefix("::").unwrap_or(path)
+        }
+        unrooted(self.path()) == unrooted(path)
     }
 
     /// Returns the Rust method path marked by this metadata entry.
@@ -579,6 +590,11 @@ package miden:new@0.1.0;
         assert_eq!(
             auth_metadata.protocol_export_kind_for("miden::auth::auth::auth"),
             Some(ProtocolExportKind::AuthScript)
+        );
+        assert_eq!(
+            auth_metadata.protocol_export_kind_for("::miden::auth::auth::auth"),
+            Some(ProtocolExportKind::AuthScript),
+            "an absolute spelling of the path matches"
         );
         assert_eq!(auth_metadata.protocol_export_kind_for("miden::auth::auth::other"), None);
         assert_eq!(

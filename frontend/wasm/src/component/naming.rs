@@ -10,19 +10,18 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use core::str::FromStr;
 
-use midenc_hir::{FunctionIdent, FxHashMap, SymbolPath};
+use midenc_hir::{FxHashMap, SymbolName, SymbolNameComponent, SymbolPath};
 use midenc_session::diagnostics::{IntoDiagnostic, Report};
 use wasmparser::{ComponentExternalKind, Encoding, Parser, Payload};
 
-use crate::error::WasmResult;
+use crate::{component::StaticComponentIndex, error::WasmResult};
 
 /// Returns the Miden path carried by the `external_id` of the component function `cm_name` of the
 /// component-model interface `cm_iface`.
 ///
 /// Fails when the attribute is missing, or when its value is not an absolute Miden path with a
-/// module and a function name (a leading `::` is accepted).
+/// module and a function name whose segments are bare identifiers (a leading `::` is accepted).
 pub(crate) fn external_id_path(
     cm_iface: &str,
     cm_name: &str,
@@ -35,47 +34,42 @@ pub(crate) fn external_id_path(
         )));
     };
     let value = external_id.strip_prefix("::").unwrap_or(external_id);
-    let has_module_and_leaf =
-        value.contains("::") && value.split("::").all(|segment| !segment.is_empty());
-    let id =
-        FunctionIdent::from_str(value)
-            .ok()
-            .filter(|_| has_module_and_leaf)
-            .ok_or_else(|| {
-                Report::msg(format!(
-                    "the `@external-id` of function `{cm_name}` of interface `{cm_iface}` is \
-                     `{external_id}`, which is not an absolute Miden path with a module and a \
-                     function name, e.g. `miden::counter_contract::counter_contract::get_count`"
-                ))
-            })?;
-    Ok(SymbolPath::from_masm_function_id(id))
+    let is_bare_identifier = |segment: &str| {
+        !segment.is_empty() && segment.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    };
+    let Some((module, function)) =
+        value.rsplit_once("::").filter(|_| value.split("::").all(is_bare_identifier))
+    else {
+        return Err(Report::msg(format!(
+            "the `@external-id` of function `{cm_name}` of interface `{cm_iface}` is \
+             `{external_id}`, which is not an absolute Miden path with a module and a function \
+             name whose segments are ASCII letters, digits and `_`, e.g. \
+             `miden::counter_contract::counter_contract::get_count`"
+        )));
+    };
+    let mut path = SymbolPath::from_masm_module_id(module);
+    path.path.push(SymbolNameComponent::Leaf(SymbolName::intern(function)));
+    Ok(path)
 }
 
-/// A component function export, as seen by the namespace pre-scan.
-pub(crate) struct ExportedFunction<'a> {
-    /// The component-model interface the function is exported through (for diagnostics).
-    pub interface: String,
-    /// The component-model name of the function.
-    pub name: &'a str,
-    /// The value of its `external-id` attribute, if any.
-    pub external_id: Option<&'a str>,
-}
+/// The Miden paths of the function exports of the nested components, keyed by the nested
+/// component and the component-model name of the export.
+pub(crate) type ExportPaths<'a> = FxHashMap<(StaticComponentIndex, &'a str), SymbolPath>;
 
-/// Returns the namespace shared by the Miden paths of `exports`, or `None` when there are none.
+/// Returns the namespace shared by `exports`, the component-model names of the component's
+/// function exports paired with their Miden paths, or `None` when there are none.
 ///
-/// Fails when a function has no valid Miden path, when two functions share a path, or when the
-/// functions are not all under the same namespace.
+/// Fails when two functions share a path, or when the functions are not all under the same
+/// namespace.
 pub(crate) fn exports_namespace<'a>(
-    exports: impl IntoIterator<Item = ExportedFunction<'a>>,
+    exports: impl IntoIterator<Item = (&'a str, &'a SymbolPath)>,
 ) -> WasmResult<Option<SymbolPath>> {
-    let mut seen: FxHashMap<SymbolPath, &'a str> = FxHashMap::default();
+    let mut seen: FxHashMap<&'a SymbolPath, &'a str> = FxHashMap::default();
     let mut namespaces: Vec<SymbolPath> = Vec::new();
-    for export in exports {
-        let path = external_id_path(&export.interface, export.name, export.external_id)?;
-        if let Some(previous) = seen.insert(path.clone(), export.name) {
+    for (name, path) in exports {
+        if let Some(previous) = seen.insert(path, name) {
             return Err(Report::msg(format!(
-                "component functions `{previous}` and `{}` share the Miden path `{path}`",
-                export.name
+                "component functions `{previous}` and `{name}` share the Miden path `{path}`"
             )));
         }
         let namespace = path.without_leaf().into_owned();
@@ -149,20 +143,21 @@ pub fn declared_namespace(wasm: &[u8]) -> WasmResult<Option<SymbolPath>> {
             _ => {}
         }
     }
-    exports_namespace(functions.into_iter().map(|(component, name, external_id)| {
-        ExportedFunction {
-            interface: interface_hint(&root_instance_exports, component),
-            name,
-            external_id,
-        }
-    }))
+    let paths = functions
+        .into_iter()
+        .map(|(component, name, external_id)| {
+            let interface = interface_hint(&root_instance_exports, component);
+            Ok((name, external_id_path(&interface, name, external_id)?))
+        })
+        .collect::<WasmResult<Vec<_>>>()?;
+    exports_namespace(paths.iter().map(|(name, path)| (*name, path)))
 }
 
 #[cfg(test)]
 mod tests {
     use alloc::{format, rc::Rc, string::String};
 
-    use midenc_hir::{Context, SymbolName, SymbolTable};
+    use midenc_hir::{Context, Op, Operation, SymbolName, SymbolTable, dialects::builtin::Module};
 
     use super::*;
     use crate::{WasmTranslationConfig, translate};
@@ -191,25 +186,123 @@ mod tests {
         .expect("component WAT should compile")
     }
 
-    fn translate_with(wasm: &[u8], namespace: Option<&str>) -> WasmResult<crate::FrontendOutput> {
+    /// Translates `wasm` in `context` (which owns the resulting IR), rooted at `namespace` when
+    /// given.
+    fn translate_with(
+        context: &Rc<Context>,
+        wasm: &[u8],
+        namespace: Option<&str>,
+    ) -> WasmResult<crate::FrontendOutput> {
         let config = WasmTranslationConfig {
             namespace: namespace.map(SymbolPath::from_masm_module_id),
             ..Default::default()
         };
-        translate(wasm, &config, Rc::new(Context::default()))
+        translate(wasm, &config, context.clone())
     }
 
-    fn error_of(result: WasmResult<crate::FrontendOutput>) -> String {
-        match result {
+    /// Returns the diagnostic of translating `wasm` (rooted at `namespace` when given), which
+    /// must fail.
+    fn error_of(wasm: &[u8], namespace: Option<&str>) -> String {
+        match translate_with(&Rc::default(), wasm, namespace) {
             Ok(_) => panic!("translation should fail"),
             Err(err) => err.to_string(),
         }
     }
 
+    /// Returns the printed core modules of the translated component `output`.
+    fn core_modules_of(output: &crate::FrontendOutput) -> String {
+        let mut hir = String::new();
+        output.component.borrow().as_operation().prewalk_all(|op: &Operation| {
+            if op.is::<Module>() {
+                hir.push_str(&op.to_string());
+            }
+        });
+        hir
+    }
+
+    /// A component importing `read` from both `acme:first/api` and `acme:second/api`, with the
+    /// core imports routed through a wit-component style indirection shim and fixup module.
+    fn two_interfaces_through_shim_component() -> Vec<u8> {
+        wat::parse_str(
+            r#"
+            (component
+                (import "acme:first/api" (instance $first
+                    (export "read" (external-id "acme::first::api::read") (func (result u32)))
+                ))
+                (import "acme:second/api" (instance $second
+                    (export "read" (external-id "acme::second::api::read") (func (result u32)))
+                ))
+                (alias export $first "read" (func $first-read))
+                (alias export $second "read" (func $second-read))
+                (core module $main
+                    (import "acme:first/api" "read" (func $first (result i32)))
+                    (import "acme:second/api" "read" (func $second (result i32)))
+                    (memory (export "memory") 1)
+                    (func (export "sum") (result i32) call $first call $second i32.add)
+                )
+                (core module $shim
+                    (type $read (func (result i32)))
+                    (table (export "$imports") 2 2 funcref)
+                    (func (export "0") (result i32) i32.const 0 call_indirect (type $read))
+                    (func (export "1") (result i32) i32.const 1 call_indirect (type $read))
+                )
+                (core module $fixup
+                    (type $read (func (result i32)))
+                    (import "" "0" (func (type $read)))
+                    (import "" "1" (func (type $read)))
+                    (import "" "$imports" (table 2 2 funcref))
+                    (elem (table 0) (i32.const 0) func 0 1)
+                )
+                (core instance $shim-instance (instantiate $shim))
+                (alias core export $shim-instance "0" (core func $shim-0))
+                (alias core export $shim-instance "1" (core func $shim-1))
+                (core instance $first-args (export "read" (func $shim-0)))
+                (core instance $second-args (export "read" (func $shim-1)))
+                (core instance $main-instance (instantiate $main
+                    (with "acme:first/api" (instance $first-args))
+                    (with "acme:second/api" (instance $second-args))
+                ))
+                (alias core export $main-instance "memory" (core memory $memory))
+                (core func $lowered-first (canon lower (func $first-read)))
+                (core func $lowered-second (canon lower (func $second-read)))
+                (alias core export $shim-instance "$imports" (core table $imports))
+                (core instance $fixup-args
+                    (export "$imports" (table $imports))
+                    (export "0" (func $lowered-first))
+                    (export "1" (func $lowered-second))
+                )
+                (core instance (instantiate $fixup (with "" (instance $fixup-args))))
+                (func $sum (result u32) (canon lift (core func $main-instance "sum")))
+                (component $exports
+                    (import "import-func-sum" (func $f (result u32)))
+                    (export "sum" (external-id "acme::app::app::sum") (func $f))
+                )
+                (instance $app (instantiate $exports (with "import-func-sum" (func $sum))))
+                (export "acme:app/app" (instance $app))
+            )
+            "#,
+        )
+        .expect("component WAT should compile")
+    }
+
+    #[test]
+    fn shim_bypassed_imports_call_their_own_interface() {
+        let context = Rc::default();
+        let output = translate_with(&context, &two_interfaces_through_shim_component(), None)
+            .expect("component should translate");
+        let hir = core_modules_of(&output);
+        assert!(
+            hir.contains("hir.call ::@acme::@first::@api::@read()")
+                && hir.contains("hir.call ::@acme::@second::@api::@read()"),
+            "each import must call the procedure of its own interface:\n{hir}"
+        );
+    }
+
     #[test]
     fn an_export_is_named_by_its_external_id() {
         let wasm = counter_component(r#"(external-id "miden::counter::counter::get_count")"#);
-        let output = translate_with(&wasm, None).expect("component should translate");
+        let context = Rc::default();
+        let output = translate_with(&context, &wasm, None).expect("component should translate");
         let component = output.component.borrow();
         assert_eq!(component.namespace_path().to_string(), "::miden::counter::counter");
         assert!(
@@ -224,7 +317,7 @@ mod tests {
 
     #[test]
     fn an_export_without_external_id_is_rejected() {
-        let err = error_of(translate_with(&counter_component(""), None));
+        let err = error_of(&counter_component(""), None);
         assert!(
             err.contains("`get-count`")
                 && err.contains("`miden:counter/counter@0.1.0`")
@@ -235,10 +328,7 @@ mod tests {
 
     #[test]
     fn an_external_id_without_a_module_is_rejected() {
-        let err = error_of(translate_with(
-            &counter_component(r#"(external-id "no-double-colon")"#),
-            None,
-        ));
+        let err = error_of(&counter_component(r#"(external-id "no-double-colon")"#), None);
         assert!(
             err.contains("`no-double-colon`") && err.contains("not an absolute Miden path"),
             "unexpected diagnostic: {err}"
@@ -248,7 +338,7 @@ mod tests {
     #[test]
     fn exports_outside_the_target_namespace_are_rejected() {
         let wasm = counter_component(r#"(external-id "miden::counter::counter::get_count")"#);
-        let err = error_of(translate_with(&wasm, Some("miden::other::other")));
+        let err = error_of(&wasm, Some("miden::other::other"));
         assert!(
             err.contains("`::miden::other::other`") && err.contains("`::miden::counter::counter`"),
             "unexpected diagnostic: {err}"
@@ -263,5 +353,126 @@ mod tests {
         let path = external_id_path("i", "f", Some("::a::b::f")).expect("valid path");
         assert_eq!(path.to_string(), "::a::b::f");
         assert_eq!(path.name().as_str(), "f");
+    }
+
+    #[test]
+    fn external_id_path_rejects_segments_that_are_not_bare_identifiers() {
+        for value in [
+            "miden::x::y::get-count",
+            "miden::test::api::\"first\"",
+            "miden:x::y::f",
+            "miden::x/y::f",
+            "miden::x::y@1::f",
+            "miden::x::y#f",
+        ] {
+            let err = external_id_path("i", "f", Some(value))
+                .expect_err("a segment that is not a bare identifier must be rejected")
+                .to_string();
+            assert!(
+                err.contains(&format!("`{value}`"))
+                    && err.contains("ASCII letters, digits and `_`"),
+                "unexpected diagnostic: {err}"
+            );
+        }
+        let path = external_id_path("i", "f", Some("::miden::x::y::get_count")).expect("valid");
+        assert_eq!(path.to_string(), "::miden::x::y::get_count");
+    }
+
+    #[test]
+    fn a_component_without_exports_or_namespace_is_rejected() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $m (func (export "f")))
+                (core instance $i (instantiate $m))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let err = error_of(&wasm, None);
+        assert!(
+            err.contains("exports no functions and no namespace was given")
+                && err.contains("[lib].namespace"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    #[test]
+    fn two_exports_can_lift_one_core_function() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $m
+                    (func $count (result i32) i32.const 0)
+                    (export "get-count" (func $count))
+                    (export "read-count" (func $count))
+                )
+                (core instance $i (instantiate $m))
+                (func $get (result u32) (canon lift (core func $i "get-count")))
+                (func $read (result u32) (canon lift (core func $i "read-count")))
+                (component $shim
+                    (import "import-func-get-count" (func $g (result u32)))
+                    (import "import-func-read-count" (func $r (result u32)))
+                    (export "get-count" (external-id "miden::counter::counter::get_count")
+                        (func $g))
+                    (export "read-count" (external-id "miden::counter::counter::read_count")
+                        (func $r))
+                )
+                (instance $exports (instantiate $shim
+                    (with "import-func-get-count" (func $get))
+                    (with "import-func-read-count" (func $read))
+                ))
+                (export "miden:counter/counter@0.1.0" (instance $exports))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let context = Rc::default();
+        let output = translate_with(&context, &wasm, None).expect("component should translate");
+        let component = output.component.borrow();
+        for leaf in ["get_count", "read_count"] {
+            assert!(
+                component.get(SymbolName::intern(leaf)).is_some(),
+                "the lifted export `{leaf}` is defined"
+            );
+        }
+    }
+
+    #[test]
+    fn an_import_stub_avoids_the_name_of_a_global() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (import "acme:first/api" (instance $first
+                    (export "read" (external-id "acme::first::api::read") (func (result u32)))
+                ))
+                (alias export $first "read" (func $first-read))
+                (core func $lowered (canon lower (func $first-read)))
+                (core instance $args (export "read" (func $lowered)))
+                (core module $main
+                    (import "acme:first/api" "read" (func $import (result i32)))
+                    (global $read (mut i32) (i32.const 0))
+                    (func (export "sum") (result i32) call $import global.get $read i32.add)
+                )
+                (core instance $main-instance
+                    (instantiate $main (with "acme:first/api" (instance $args))))
+                (func $sum (result u32) (canon lift (core func $main-instance "sum")))
+                (component $exports
+                    (import "import-func-sum" (func $f (result u32)))
+                    (export "sum" (external-id "acme::app::app::sum") (func $f))
+                )
+                (instance $app (instantiate $exports (with "import-func-sum" (func $sum))))
+                (export "acme:app/app" (instance $app))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let context = Rc::default();
+        let output = translate_with(&context, &wasm, None).expect("component should translate");
+        let hir = core_modules_of(&output);
+        assert!(
+            hir.contains("@api_read()") && hir.contains("@read"),
+            "the import stub takes the parent-qualified name next to the global `read`:\n{hir}"
+        );
     }
 }

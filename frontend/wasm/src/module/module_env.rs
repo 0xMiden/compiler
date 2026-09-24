@@ -217,27 +217,17 @@ pub(crate) fn validate_lifted_frontend_metadata_exports(
             FrontendMetadata::NoteScript { .. } => "`#[note_script]`",
             FrontendMetadata::TxScript { .. } => "`#[tx_script]`",
         };
-        validate_lifted_export(entry.method_path(), entry.path(), attribute, lifted_exports)?;
+        if !lifted_exports.iter().any(|path| entry.matches_path(path)) {
+            return Err(Report::from(WasmError::MissingExportMetadata(format!(
+                "failed to find the component export marked with {attribute}: `{}` (expected \
+                 lifted export `{}`)",
+                entry.method_path(),
+                entry.path()
+            ))));
+        }
     }
 
     Ok(())
-}
-
-/// Validates that a metadata-selected export path was seen among the lifted component exports.
-fn validate_lifted_export(
-    method_path: &str,
-    export_path: &str,
-    attribute: &str,
-    lifted_exports: &FxHashSet<String>,
-) -> WasmResult<()> {
-    if lifted_exports.contains(export_path) {
-        return Ok(());
-    }
-
-    Err(Report::from(WasmError::MissingExportMetadata(format!(
-        "failed to find the component export marked with {attribute}: `{method_path}` (expected \
-         lifted export `{export_path}`)"
-    ))))
 }
 
 /// Contains function data: byte code and its offset in the module.

@@ -73,12 +73,15 @@ impl<'a> ModuleTranslationState<'a> {
     ) -> WasmResult<Self> {
         let mut functions = FxHashMap::default();
         // Import stubs are defined before the module's own functions (imports come first in the
-        // function index space), so their names must avoid the names defined later too.
+        // function index space) and global variables, so their names must avoid every name the
+        // module defines later. Function tables are named when built and avoid taken names
+        // themselves; data segments are not symbols.
         let defined_names: FxHashSet<SymbolName> = module
             .functions
             .keys()
             .filter(|index| !module.is_imported_function(*index))
             .map(|index| module.func_name(index))
+            .chain(module.globals.keys().map(|index| module.global_name(index)))
             .collect();
         for (index, func_type) in &module.functions {
             let wasm_func_type = mod_types[func_type.signature].clone();
@@ -444,7 +447,7 @@ fn collect_table_image(
 
 /// Returns [`CallableFunction`] translated from the core Wasm module import.
 ///
-/// `defined_names` are the names of the functions the core module defines itself.
+/// `defined_names` are the names of the symbols the core module defines itself.
 #[allow(clippy::too_many_arguments)]
 fn process_import(
     module_builder: &mut ModuleBuilder,
