@@ -49,6 +49,8 @@ struct ComponentExportMetadata<'a> {
 /// The wrapper is defined in the component as `export_func_name`, the leaf of the export's Miden
 /// path. The core function at `core_export_func_path` becomes internal and takes the same leaf
 /// name when the core module has no other symbol by that name.
+///
+/// Returns the name of the core function after this renaming.
 pub fn generate_export_lifting_function(
     component_builder: &mut ComponentBuilder,
     export_func_name: &str,
@@ -57,7 +59,7 @@ pub fn generate_export_lifting_function(
     core_export_func_path: SymbolPath,
     protocol_export_kind: Option<ProtocolExportKind>,
     diagnostics: &DiagnosticsHandler,
-) -> WasmResult<()> {
+) -> WasmResult<SymbolName> {
     reject_unsupported_export_canonical_abi_types(&core_export_func_path, &export_func_ty)?;
     let context = { component_builder.component.borrow().as_operation().context_rc() };
     let cross_ctx_export_sig_flat =
@@ -108,7 +110,8 @@ pub fn generate_export_lifting_function(
     // call across the nested core module symbol table boundary.
     core_module_builder
         .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Internal);
-    name_core_export_by_leaf(core_module_ref, &core_export_func_path, export_func_ident.name)?;
+    let core_func_name =
+        name_core_export_by_leaf(core_module_ref, &core_export_func_path, export_func_ident.name)?;
     let core_export_func_sig = core_export_func_ref.borrow().get_signature().clone();
 
     let export_func_ref = if transformation.is_needed() {
@@ -138,31 +141,34 @@ pub fn generate_export_lifting_function(
         retarget_note_script_root_ops(&core_module_builder, export_func_ref);
     }
 
-    Ok(())
+    Ok(core_func_name)
 }
 
 /// Renames the core function at `core_export_func_path` (named by its component-model core
 /// export, `<interface id>#<function>`) to `leaf`, the leaf of the export's Miden path, unless the
 /// core module already defines a symbol named `leaf`.
+///
+/// Returns the name the core function has afterwards.
 fn name_core_export_by_leaf(
     mut core_module_ref: ModuleRef,
     core_export_func_path: &SymbolPath,
     leaf: SymbolName,
-) -> WasmResult<()> {
+) -> WasmResult<SymbolName> {
     let core_name = core_export_func_path.name();
     if core_name == leaf {
-        return Ok(());
+        return Ok(core_name);
     }
     let mut core_module = core_module_ref.borrow_mut();
     if core_module.get(leaf).is_some() {
-        log::debug!(
+        log::warn!(
             target: "component-translator",
             "keeping the core function name `{core_name}` of export `{leaf}`: the core module \
              already defines `{leaf}`"
         );
-        return Ok(());
+        return Ok(core_name);
     }
-    core_module.rename(core_name, leaf)
+    core_module.rename(core_name, leaf)?;
+    Ok(leaf)
 }
 
 /// Generates a lifting function for component exports that require transformation.
