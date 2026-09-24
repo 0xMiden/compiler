@@ -712,8 +712,8 @@ end
         (Rc::new(Context::new(Rc::new(session))), emitter)
     }
 
-    /// Extract the complete messages of warning diagnostics from rendered output.
-    fn warning_messages(rendered: &str) -> Vec<String> {
+    /// Remove the renderer's SGR styling from captured diagnostic output.
+    fn unstyle_diagnostics(rendered: &str) -> String {
         let mut plain = String::with_capacity(rendered.len());
         let mut parts = rendered.split('\u{1b}');
         plain.push_str(parts.next().expect("split always yields the text before the first match"));
@@ -723,7 +723,12 @@ end
                 .expect("captured diagnostic styling must use SGR escape sequences");
             plain.push_str(text);
         }
+        plain
+    }
 
+    /// Extract the complete messages of warning diagnostics from rendered output.
+    fn warning_messages(rendered: &str) -> Vec<String> {
+        let plain = unstyle_diagnostics(rendered);
         let mut messages = Vec::<String>::new();
         for line in plain.lines() {
             let line = line.trim_start();
@@ -739,6 +744,101 @@ end
             }
         }
         messages
+    }
+
+    /// Normalize one promoted warning into a stable snapshot of every rendered field.
+    fn promoted_warning_snapshot(rendered: &str, source_path: Option<&str>) -> String {
+        fn append_wrapped(message: &mut String, continuation: &str) {
+            if !message.ends_with(['-', '/']) {
+                message.push(' ');
+            }
+            message.push_str(continuation);
+        }
+
+        fn normalize_path(text: String, source_path: Option<&str>) -> String {
+            match source_path {
+                Some(path) => text.replace(path, "$SOURCE"),
+                None => text,
+            }
+        }
+
+        let plain = unstyle_diagnostics(rendered);
+        let mut lines = plain.lines().peekable();
+        let first = lines.next().expect("a rendered diagnostic has a header").trim_start();
+        let mut message = first
+            .strip_prefix("x ")
+            .expect("a promoted warning renders as an error")
+            .to_string();
+        while !lines
+            .peek()
+            .expect("a promoted warning has a related diagnostic")
+            .trim_start()
+            .starts_with("`->")
+        {
+            let continuation = lines
+                .next()
+                .expect("peeked line exists")
+                .trim_start()
+                .strip_prefix("| ")
+                .expect("a wrapped error message uses the error continuation marker");
+            append_wrapped(&mut message, continuation);
+        }
+
+        let related_header =
+            lines.next().expect("a promoted warning has a related diagnostic").trim_start();
+        let mut related = related_header
+            .strip_prefix("`->")
+            .expect("the related diagnostic follows the error")
+            .trim_start()
+            .strip_prefix("! ")
+            .expect("the related diagnostic retains warning severity")
+            .to_string();
+        while let Some(line) = lines.peek() {
+            let line = line.trim_start();
+            if line.is_empty() || line.starts_with(",-[") || line.starts_with("help: ") {
+                break;
+            }
+            let continuation = lines.next().expect("peeked line exists").trim_start();
+            append_wrapped(&mut related, continuation.strip_prefix("| ").unwrap_or(continuation));
+        }
+
+        let mut source = Vec::new();
+        if lines.peek().is_some_and(|line| line.trim_start().starts_with(",-[")) {
+            loop {
+                let line =
+                    lines.next().expect("a source excerpt has a closing border").trim_start();
+                let is_last = line == "`----";
+                source.push(normalize_path(line.to_string(), source_path));
+                if is_last {
+                    break;
+                }
+            }
+        }
+        while lines.peek().is_some_and(|line| line.trim().is_empty()) {
+            lines.next();
+        }
+        let help = lines
+            .next()
+            .expect("a promoted warning explains the promotion")
+            .trim_start()
+            .strip_prefix("help: ")
+            .expect("a promoted warning has help text");
+        assert!(
+            lines.all(|line| line.trim().is_empty()),
+            "the snapshot must account for every rendered diagnostic"
+        );
+
+        let message = normalize_path(message, source_path);
+        let related = normalize_path(related, source_path);
+        let source = if source.is_empty() {
+            "none".to_string()
+        } else {
+            source.join("\n")
+        };
+        format!(
+            "diagnostics: 1\nseverity: error\nmessage: {message}\nrelated severity: \
+             warning\nrelated message: {related}\nsource:\n{source}\nhelp: {help}"
+        )
     }
 
     /// A context whose session writes `--emit=masm` into `out_dir`.
@@ -1046,6 +1146,12 @@ end
         }
 
         let skip_project = skip_only_project("masm_frontend_skip_warning_error");
+        let skip_source = skip_project
+            .assembly_context()
+            .expect("assembly context")
+            .resolved_target_root
+            .display()
+            .to_string();
         let (context, diagnostics) = capturing_context(&skip_project, |options| {
             options.lint = true;
             options.diagnostics.warnings = Warnings::Error;
@@ -1061,17 +1167,17 @@ end
         );
         let diagnostics = diagnostics.captured();
         assert_eq!(
-            diagnostics
-                .matches("MASM lint skipped procedure '::masm_frontend_skip_warning_error::bad'")
-                .count(),
-            2
-        );
-        assert_eq!(diagnostics.matches("procedure skipped here").count(), 1);
-        assert_eq!(
-            diagnostics
-                .matches("this warning was promoted to an error via --warnings-as-errors")
-                .count(),
-            1
+            promoted_warning_snapshot(&diagnostics, Some(&skip_source)),
+            "diagnostics: 1\nseverity: error\nmessage: MASM lint skipped procedure \
+             '::masm_frontend_skip_warning_error::bad': if branches leave different inferred \
+             stack depths at [$SOURCE@8:5]: then=1, else=2\nrelated severity: warning\nrelated \
+             message: MASM lint skipped procedure '::masm_frontend_skip_warning_error::bad': if \
+             branches leave different inferred stack depths at [$SOURCE@8:5]: then=1, \
+             else=2\nsource:\n,-[$SOURCE:6:1]\n5 |\n6 | ,-> pub proc bad\n7 | |       push.1\n8 | \
+             |       if.true\n9 | |           push.1\n10 | |       else\n11 | |           \
+             push.1\n12 | |           push.2\n13 | |       end\n14 | |-> end\n: `---- procedure \
+             skipped here\n`----\nhelp: this warning was promoted to an error via \
+             --warnings-as-errors"
         );
 
         let budget_project = budget_project("masm_frontend_budget_warning_error");
@@ -1091,20 +1197,17 @@ end
         );
         let diagnostics = diagnostics.captured();
         assert_eq!(
-            diagnostics
-                .matches(
-                    "MASM advice taint analysis incomplete: dataflow solver exceeded worklist \
-                     iteration budget of 0"
-                )
-                .count(),
-            2
-        );
-        assert_eq!(diagnostics.matches("unconstrained advice value reaches").count(), 0);
-        assert_eq!(
-            diagnostics
-                .matches("this warning was promoted to an error via --warnings-as-errors")
-                .count(),
-            1
+            promoted_warning_snapshot(&diagnostics, None),
+            "diagnostics: 1\nseverity: error\nmessage: MASM advice taint analysis incomplete: \
+             dataflow solver exceeded worklist iteration budget of 0; next analysis would run \
+             dead-code at after(builtin.function in ^block1) in function 'duplicate', with 1 \
+             queued item(s) remaining; queued analyses: dead-code=1; queued functions: \
+             duplicate=1\nrelated severity: warning\nrelated message: MASM advice taint analysis \
+             incomplete: dataflow solver exceeded worklist iteration budget of 0; next analysis \
+             would run dead-code at after(builtin.function in ^block1) in function 'duplicate', \
+             with 1 queued item(s) remaining; queued analyses: dead-code=1; queued functions: \
+             duplicate=1\nsource:\nnone\nhelp: this warning was promoted to an error via \
+             --warnings-as-errors"
         );
     }
 
