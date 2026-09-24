@@ -153,7 +153,7 @@ fn dispatches_bool_wide_unit_and_word_signatures() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["15576"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["15505"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The dispatcher recorded the low and high halves of the `u64` sum it received.
     let committed_storage = chain.committed_account(account.id()).unwrap().storage();
