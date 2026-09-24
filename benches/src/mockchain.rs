@@ -13,7 +13,7 @@ use miden_mast_package::Package;
 use miden_processor::{
     BaseHost, ExecutionError, ExecutionOptions, ExecutionOutput, FastProcessor, FutureMaybeSend,
     Host, LoadedMastForest, ProcessorState, StackInputs, StackOutputs,
-    advice::{AdviceInputs, AdviceMutation},
+    advice::{AdviceError, AdviceInputs, AdviceMutation},
     event::EventError,
 };
 use miden_protocol::{
@@ -270,7 +270,7 @@ fn required_package<'a>(packages: &'a ScenarioPackages, name: &str) -> Result<&'
 
 fn build_no_auth_transaction(packages: &ScenarioPackages) -> Result<MockTransaction> {
     let auth_component = AccountComponent::from_package(
-        required_package(packages, AUTH_NO_AUTH)?,
+        (**required_package(packages, AUTH_NO_AUTH)?).clone(),
         &InitStorageData::default(),
     )?;
     let account = AccountBuilder::new([0_u8; 32])
@@ -304,7 +304,7 @@ fn build_rpo_auth_transaction(packages: &ScenarioPackages) -> Result<MockTransac
         public_key,
     )?;
     let auth_component = AccountComponent::from_package(
-        required_package(packages, AUTH_RPO_FALCON512)?,
+        (**required_package(packages, AUTH_RPO_FALCON512)?).clone(),
         &auth_storage,
     )?;
     let account = AccountBuilder::new([1_u8; 32])
@@ -337,7 +337,7 @@ fn build_counter_transaction(packages: &ScenarioPackages) -> Result<MockTransact
     let mut counter_storage = InitStorageData::default();
     counter_storage.insert_map_entry(counter_slot.clone(), COUNTER_STORAGE_KEY, 1_u64)?;
     let counter_component = AccountComponent::from_package(
-        required_package(packages, COUNTER_CONTRACT)?,
+        (**required_package(packages, COUNTER_CONTRACT)?).clone(),
         &counter_storage,
     )?;
 
@@ -388,7 +388,7 @@ fn build_note_consumption(
     storage: impl FnOnce(AccountId) -> Vec<Felt>,
 ) -> Result<MockTransaction> {
     let wallet_component = AccountComponent::from_package(
-        required_package(packages, BASIC_WALLET)?,
+        (**required_package(packages, BASIC_WALLET)?).clone(),
         &InitStorageData::default(),
     )?;
     let mut builder = MockChain::builder();
@@ -495,7 +495,7 @@ struct WalletTransferContext {
 
 fn build_wallet_transfer_context(packages: &ScenarioPackages) -> Result<WalletTransferContext> {
     let wallet_component = AccountComponent::from_package(
-        required_package(packages, BASIC_WALLET)?,
+        (**required_package(packages, BASIC_WALLET)?).clone(),
         &InitStorageData::default(),
     )?;
     let mut builder = MockChain::builder();
@@ -629,7 +629,7 @@ fn transaction_script_with_dependencies(
     let entrypoint = merged
         .find_procedure_root(entrypoint_digest)
         .ok_or_else(|| anyhow!("transaction script entrypoint was removed while linking"))?;
-    Ok(TransactionScript::from_parts(Arc::new(merged), entrypoint))
+    Ok(TransactionScript::from_parts(Arc::new(merged), entrypoint)?)
 }
 
 fn build_storage_transaction(packages: &ScenarioPackages) -> Result<MockTransaction> {
@@ -639,9 +639,9 @@ fn build_storage_transaction(packages: &ScenarioPackages) -> Result<MockTransact
         required_package(packages, STORAGE_EXAMPLE)?,
         STORAGE_ACCOUNT_PROCEDURES,
     )?;
-    let component = AccountComponent::from_package(&storage_package, &storage)?;
+    let component = AccountComponent::from_package(storage_package, &storage)?;
     let wallet = AccountComponent::from_package(
-        required_package(packages, BASIC_WALLET)?,
+        (**required_package(packages, BASIC_WALLET)?).clone(),
         &InitStorageData::default(),
     )?;
     let mut builder = MockChain::builder();
@@ -778,6 +778,8 @@ struct TransactionReplayExecutor {
     advice_inputs: AdviceInputs,
     options: ExecutionOptions,
     capture: ReplayCapture,
+    package_debug_info: PackageDebugInfo,
+    entrypoint_source_node: Option<DebugSourceNodeId>,
 }
 
 impl ProgramExecutor for TransactionReplayExecutor {
@@ -785,7 +787,7 @@ impl ProgramExecutor for TransactionReplayExecutor {
         stack_inputs: StackInputs,
         advice_inputs: AdviceInputs,
         options: ExecutionOptions,
-    ) -> Self {
+    ) -> Result<Self, AdviceError> {
         let capture = ACTIVE_REPLAY_CAPTURES.with(|captures| {
             captures
                 .borrow()
@@ -793,12 +795,27 @@ impl ProgramExecutor for TransactionReplayExecutor {
                 .cloned()
                 .expect("TransactionReplayExecutor used without an active replay capture")
         });
-        Self {
+        Ok(Self {
             stack_inputs,
             advice_inputs,
             options,
             capture,
-        }
+            package_debug_info: PackageDebugInfo::default(),
+            entrypoint_source_node: None,
+        })
+    }
+
+    fn with_debug_info(mut self, package_debug_info: PackageDebugInfo) -> Self {
+        self.package_debug_info = package_debug_info;
+        self
+    }
+
+    fn with_entrypoint_source_node(
+        mut self,
+        entrypoint_source_node: Option<DebugSourceNodeId>,
+    ) -> Self {
+        self.entrypoint_source_node = entrypoint_source_node;
+        self
     }
 
     fn execute<H: Host + Send>(
@@ -806,19 +823,11 @@ impl ProgramExecutor for TransactionReplayExecutor {
         program: &miden_processor::Program,
         host: &mut H,
     ) -> impl FutureMaybeSend<Result<ExecutionOutput, ExecutionError>> {
-        let package = build_transaction_package(program, &PackageDebugInfo::default(), None);
-        self.execute_package(package, host)
-    }
-
-    fn execute_with_package_debug_info<H: Host + Send>(
-        self,
-        program: &miden_processor::Program,
-        package_debug_info: &PackageDebugInfo,
-        entrypoint_source_node: Option<DebugSourceNodeId>,
-        host: &mut H,
-    ) -> impl FutureMaybeSend<Result<ExecutionOutput, ExecutionError>> {
-        let package =
-            build_transaction_package(program, package_debug_info, entrypoint_source_node);
+        let package = build_transaction_package(
+            program,
+            &self.package_debug_info,
+            self.entrypoint_source_node,
+        );
         self.execute_package(package, host)
     }
 }
@@ -845,6 +854,7 @@ impl TransactionReplayExecutor {
             advice_inputs,
             options,
             capture,
+            ..
         } = self;
         let events = Arc::new(Mutex::new(Vec::new()));
         let forests = Arc::new(Mutex::new(Vec::new()));
@@ -888,13 +898,16 @@ impl TransactionReplayExecutor {
         let stack_top = processor.stack_top().iter().rev().copied().collect::<Vec<_>>();
         let stack = StackOutputs::new(&stack_top)
             .unwrap_or_else(|_| StackOutputs::new(&[]).expect("empty stack output is valid"));
-        let deferred_state = processor.deferred_state().clone();
+        let precompile_witness =
+            processor.deferred_state().clone().into_witness().map_err(|_| {
+                ExecutionError::Internal("failed to export deferred execution witness")
+            })?;
         let (advice, memory) = processor.into_parts();
         Ok(ExecutionOutput {
             stack,
             advice,
             memory,
-            deferred_state,
+            precompile_witness,
         })
     }
 }

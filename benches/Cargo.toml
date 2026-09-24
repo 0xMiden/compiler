@@ -35,7 +35,7 @@ miden-processor.workspace = true
 miden-protocol = { workspace = true, features = ["std", "testing"] }
 miden-standards = { workspace = true, features = ["std", "testing"] }
 miden-testing = { workspace = true, features = ["std"] }
-miden-tx = { version = "=0.16.0-rc.4" }
+miden-tx = { version = "=0.17.0-rc.6" }
 miden-tx-script-args.workspace = true
 rand.workspace = true
 serde.workspace = true
