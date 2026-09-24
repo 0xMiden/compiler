@@ -604,6 +604,52 @@ fn a_component_lowers_rooted_at_its_own_id() {
     );
 }
 
+#[test]
+fn inline_call_metadata_enables_markers_for_its_procedure() {
+    use midenc_hir::dialects::debuginfo::attributes::{
+        INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain, InlineCallChainAttr, InlineCallFrame,
+    };
+
+    let context = Rc::new(Context::default());
+    let op = parse(&context, COMPONENT);
+    let component = op.try_downcast_op::<builtin::Component>().unwrap();
+    let mut function = None;
+    op.borrow().prewalk_all(|nested| {
+        if let Some(candidate) = nested.downcast_ref::<builtin::Function>() {
+            function = Some(candidate.as_function_ref());
+        }
+    });
+    let entry = function.unwrap().borrow().entry_block();
+    let mut ret = entry.borrow().body().front().get().unwrap().as_operation_ref();
+    let frame = InlineCallFrame {
+        name: "inlined".into(),
+        linkage_name: None,
+        file: "source.rs".into(),
+        line: 1,
+        column: 1,
+        call_file: "source.rs".into(),
+        call_line: 2,
+        call_column: 1,
+    };
+    let attr = context
+        .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(vec![frame]))
+        .as_attribute_ref();
+    ret.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, attr);
+
+    let analysis_manager = AnalysisManager::new(op, None);
+    let lowered = component.borrow().to_masm_component(analysis_manager).unwrap();
+    let body = lowered
+        .modules
+        .iter()
+        .flat_map(|module| module.procedures())
+        .find(|procedure| procedure.name().as_str() == "main")
+        .unwrap()
+        .body();
+    assert!(body.iter().any(|op| matches!(op, masm::Op::Inst(inst) if matches!(
+        inst.inner(), masm::Instruction::DebugInlineCall(_)
+    ))));
+}
+
 /// A start marker is sufficient to create component `init`, and the marked function is its final
 /// same-context invocation even when the component has no ordinary memory initialization needs.
 #[test]

@@ -74,8 +74,17 @@ pub(crate) fn local_offsets(function: &Function) -> Vec<u32> {
         .collect()
 }
 
+pub(crate) fn has_inline_call_chain(operation: &Operation) -> bool {
+    let mut has_inline_call_chain = false;
+    operation.prewalk_all(|op| {
+        has_inline_call_chain |= op.has_attribute(INLINE_CALL_CHAIN_ATTR_NAME);
+    });
+    has_inline_call_chain
+}
+
 pub(crate) struct BlockEmitter<'b> {
     pub liveness: &'b LivenessAnalysis,
+    pub emit_inline_calls: bool,
     /// Layout of the current procedure's locals frame.
     pub frame: FrameLayout<'b>,
     pub link_info: &'b LinkInfo,
@@ -89,6 +98,7 @@ impl BlockEmitter<'_> {
     pub fn nest<'nested, 'current: 'nested>(&'current mut self) -> BlockEmitter<'nested> {
         BlockEmitter {
             liveness: self.liveness,
+            emit_inline_calls: self.emit_inline_calls,
             frame: self.frame,
             link_info: self.link_info,
             invoked: self.invoked,
@@ -174,7 +184,9 @@ impl BlockEmitter<'_> {
     fn emit_inst(&mut self, op: &Operation) {
         use crate::HirLowering;
 
-        self.emit_inline_call_chain(op);
+        if self.emit_inline_calls {
+            self.emit_inline_call_chain(op);
+        }
 
         // If any values on the operand stack are no longer live, drop them now to avoid wasting
         // operand stack space on operands that will never be used.
