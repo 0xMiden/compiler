@@ -13,6 +13,8 @@ pub enum ModuleArgument {
         signature: ComponentFunctionType,
         /// The Miden path of the imported function, from its `external-id`.
         path: SymbolPath,
+        /// The core-import path of the first import of the component that lowers to `path`.
+        first_cm_path: SymbolPath,
     },
     /// Represents table exported from another module.
     Table,
