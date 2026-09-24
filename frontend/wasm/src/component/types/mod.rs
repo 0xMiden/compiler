@@ -640,6 +640,9 @@ impl ComponentTypesBuilder {
             result
                 .exports
                 .insert(name.clone(), self.convert_component_entity_type(types, item.ty)?);
+            if let Some(external_id) = &item.external_id {
+                result.external_ids.insert(name.clone(), external_id.clone());
+            }
         }
         Ok(self.component_types.component_instances.push(result))
     }
@@ -1059,6 +1062,8 @@ pub struct TypeComponent {
 pub struct TypeComponentInstance {
     /// The list of exports that this component has along with their types.
     pub exports: IndexMap<String, TypeDef>,
+    /// The `external-id` attribute of each export that carries one, keyed by the export name.
+    pub external_ids: FxHashMap<String, String>,
 }
 
 /// A component function type in the component model.

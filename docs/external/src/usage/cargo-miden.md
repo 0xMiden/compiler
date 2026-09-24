@@ -97,6 +97,54 @@ The project is located the same way too: the `miden-project.toml` in the current
 `Cargo.toml` there when no Miden manifest exists beside it, or the one `--manifest-path` names.
 Logging is controlled by `MIDENC_TRACE`, the same variable `midenc` reads.
 
+## Naming
+
+Account component, note and transaction script projects are named by the `[lib].namespace` key of
+their `miden-project.toml`. It is a Miden path of exactly three segments, `ns::pkg::iface`, where
+each segment is made of ASCII letters, digits and `_`, and does not start with `_`. Projects created
+with `cargo miden new` default to `miden::<package>::<package>` (package name in snake_case):
+
+```toml
+[package]
+name = "counter-contract"
+version = "0.1.0"
+
+[lib]
+kind = "account-component"
+namespace = "miden::counter_contract::counter_contract"
+path = "src/lib.rs"
+```
+
+The SDK macros derive every other name from the namespace:
+
+| Item | Rule | Example |
+|------|------|---------|
+| WIT interface id | `ns:pkg/iface@<[package].version>`, `_` replaced by `-` | `miden:counter-contract/counter-contract@0.1.0` |
+| Exported procedure | `<namespace>::<Rust fn name>` | `miden::counter_contract::counter_contract::get_count` |
+| Storage slot | `<namespace>::<field name>` | `miden::counter_contract::counter_contract::count_map` |
+| Transaction script entrypoint | `<namespace>::run` | `miden::basic_wallet_tx_script::basic_wallet_tx_script::run` |
+
+Paths never contain a version. Changing the namespace changes procedure paths and storage slot
+names, so treat it as part of the component's on-chain interface.
+
+All exports of a package sit directly under its namespace. Calls into a dependency use the
+dependency's paths as they are, e.g. a note calling the basic wallet calls
+`miden::basic_wallet::basic_wallet::receive_asset`.
+
+If you write WIT by hand instead of generating it with the SDK macros, every function must carry its
+full Miden path in an `@external-id` attribute, otherwise compilation fails:
+
+```wit
+interface counter-contract {
+    @external-id("miden::counter_contract::counter_contract::get_count")
+    get-count: func() -> felt;
+}
+```
+
+When compiling a bare `.wasm` component without a manifest or an explicit namespace, the namespace is
+taken from the common parent path of the component's exports. If a manifest namespace is given and
+does not match the exports, compilation fails.
+
 ## Running a compiled Miden VM program
 
 Use `miden-debug` to execute the compiled package. See [Debugging programs](../guides/debugger.md)

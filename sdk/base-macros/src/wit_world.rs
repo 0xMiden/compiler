@@ -1,31 +1,30 @@
 //! Shared manifest and WIT world helpers used by script-like SDK proc macros.
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     env, fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use heck::ToKebabCase;
 use miden_assembly_syntax::ast;
 use miden_debug_types::DefaultSourceManager;
 use miden_project::Uri;
 use proc_macro2::Span;
-use toml::{Value, value::Table};
+use toml::Value;
 use wit_bindgen_core::wit_parser::{
     InterfaceId, PackageId, Resolve, Type as WitType, TypeDefKind, TypeOwner, WorldItem,
 };
 
 use crate::{
     dependency_package::{DependencyWitSource, collect_dependency_wit_sources},
+    namespace::ComponentNamespace,
     wit_builder::WitBuilder,
 };
 
 /// Parsed package metadata from the consuming crate's manifest.
 pub struct ManifestPackage {
     pub manifest_dir: PathBuf,
-    pub package_table: Table,
     pub project_kind: Option<String>,
     pub package: Arc<miden_project::Package>,
     pub target: miden_project::Target,
@@ -124,7 +123,6 @@ impl ManifestPackage {
             );
             return Ok(Self {
                 manifest_dir,
-                package_table: Default::default(),
                 project_kind: None,
                 package: Arc::from(miden_project::Package::new("empty", target.clone())),
                 target,
@@ -198,7 +196,6 @@ impl ManifestPackage {
 
         Ok(Self {
             manifest_dir,
-            package_table,
             project_kind,
             package,
             target,
@@ -207,17 +204,9 @@ impl ManifestPackage {
         })
     }
 
-    /// Returns the crate name declared in `[package]`.
-    pub(crate) fn crate_name(&self, error_span: Span) -> Result<&str, syn::Error> {
-        self.package_table
-            .get("name")
-            .and_then(Value::as_str)
-            .ok_or_else(|| syn::Error::new(error_span, "manifest package missing `name`"))
-    }
-
-    /// Returns the declared component package identifier from manifest metadata.
-    pub(crate) fn component_package(&self) -> String {
-        format!("miden:{}", self.package.name().into_inner().to_kebab_case())
+    /// Parses and validates the component namespace declared by `[lib].namespace`.
+    pub(crate) fn namespace(&self, error_span: Span) -> Result<ComponentNamespace, syn::Error> {
+        ComponentNamespace::from_path(self.target.namespace.inner(), error_span)
     }
 
     /// Returns the declared component version from manifest metadata.
@@ -352,6 +341,9 @@ pub(crate) struct DependencyInterface {
     pub(crate) import: String,
     /// WIT type names owned by the imported interface.
     pub(crate) types: Vec<String>,
+    /// Miden paths of the interface's functions (their `@external-id`, `None` when absent), keyed
+    /// by WIT function name.
+    pub(crate) function_paths: BTreeMap<String, Option<String>>,
 }
 
 /// Renders a standalone inline WIT package whose single world imports the given interfaces.
@@ -544,11 +536,17 @@ fn dependency_interface_metadata(
             }
         })
         .collect();
+    let function_paths = interface
+        .functions
+        .iter()
+        .map(|(name, function)| (name.clone(), function.external_id.clone()))
+        .collect();
 
     Ok(DependencyInterface {
         name,
         import,
         types,
+        function_paths,
     })
 }
 

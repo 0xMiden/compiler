@@ -1214,8 +1214,7 @@ mod tests {
     /// The three shapes are the ones whose *spelling* could diverge between the two sides.
     /// Preparation absolutizes what it scanned; semantic analysis canonicalizes the declaration
     /// and then absolutizes that. A single bare component cannot tell those apart — a
-    /// multi-component path and a quoted one can, and the quoted form is what a
-    /// component-rooted module carries.
+    /// multi-component path and a quoted one can.
     #[test]
     fn a_declared_namespace_reaches_the_target_the_frontend_is_asked_to_parse() {
         for (declared, namespace) in [

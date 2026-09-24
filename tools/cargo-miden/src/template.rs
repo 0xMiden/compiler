@@ -158,25 +158,22 @@ version = \"{}\"
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"account-component\"\n");
             manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
-            manifest.push_str(&format!(
-                "namespace = \"{}\"\n\n",
-                account_component_namespace(package_name, package_version)
-            ));
+            manifest
+                .push_str(&format!("namespace = \"{}\"\n\n", component_namespace(package_name)));
         }
         "note" | "note-script" => {
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"note\"\n");
             manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
-            manifest.push_str(&format!(
-                "namespace = \"{}\"\n\n",
-                component_namespace(package_name, package_version)
-            ));
+            manifest
+                .push_str(&format!("namespace = \"{}\"\n\n", component_namespace(package_name)));
         }
         "tx-script" | "transaction-script" => {
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"tx-script\"\n");
-            manifest.push_str("namespace = \"miden:base/transaction-script@1.0.0\"\n\n");
             manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
+            manifest
+                .push_str(&format!("namespace = \"{}\"\n\n", component_namespace(package_name)));
         }
         "library" => {
             manifest.push_str("[lib]\n");
@@ -237,23 +234,13 @@ fn toml_str<'a>(document: &'a DocumentMut, path: &[&str]) -> Option<&'a str> {
     item.as_str()
 }
 
-/// Builds the default `[lib].namespace` for a note/note-script project.
+/// Builds the default `[lib].namespace` for an account, note or tx-script project:
+/// `miden::<package>::<package>` with the package name snake-cased.
 ///
-/// Notes export a package-derived interface (`miden-<package>`), matching the `#[note]` macro.
-fn component_namespace(package_name: &str, version: &str) -> String {
-    let package = package_name.replace('_', "-");
-    format!("miden:{package}/miden-{package}@{}", toml_escape(version))
-}
-
-/// Builds the default `[lib].namespace` for an account-component project.
-///
-/// The exported WIT interface is derived from the component trait name. By default the trait is
-/// expected to share the package name (kebab-case), so the interface segment defaults to the
-/// package name. Projects whose trait uses a different name should commit a `miden-project.toml`
-/// with a matching `[lib].namespace`.
-fn account_component_namespace(package_name: &str, version: &str) -> String {
-    let package = package_name.replace('_', "-");
-    format!("miden:{package}/{package}@{}", toml_escape(version))
+/// The namespace names every exported procedure and storage slot of the project.
+fn component_namespace(package_name: &str) -> String {
+    let package = package_name.replace('-', "_");
+    format!("miden::{package}::{package}")
 }
 
 fn component_package_name(package: &str) -> Option<&str> {
@@ -645,8 +632,8 @@ fn render_file(
 
 /// Liquid `upper_camel_case` filter matching cargo-generate's filter of the same name.
 ///
-/// Templates use it to derive Rust type names from the project name — in particular the component
-/// trait name, which must kebab-match the interface segment of the generated `[lib].namespace`.
+/// Templates use it to derive Rust type names from the project name, e.g. the component trait
+/// name.
 #[derive(Clone, ParseFilter, FilterReflection)]
 #[filter(
     name = "upper_camel_case",

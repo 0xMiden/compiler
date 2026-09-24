@@ -58,7 +58,7 @@ where
     Rc::new(session)
 }
 
-/// Create a [LinkOutput] representing an empty component named `root:root@1.0.0`.
+/// Create a [LinkOutput] representing an empty component named `root`.
 ///
 /// Callers may then populate the world/component as they see fit for a particular test.
 ///
@@ -76,7 +76,7 @@ pub fn build_empty_component_for_test(context: Rc<Context>) -> MidenComponent {
     };
     let mut world_builder = WorldBuilder::new(world);
     let mut component = world_builder
-        .define_component(Ident::with_empty_span("root_ns:root@1.0.0".into()))
+        .define_component(Ident::with_empty_span("root".into()))
         .unwrap_or_else(|err| panic!("failed to define component:\n{}", format_report(err)));
     component.borrow_mut().mark_synthetic_wrapper();
 

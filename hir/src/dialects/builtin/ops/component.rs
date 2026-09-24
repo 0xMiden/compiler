@@ -243,9 +243,10 @@ impl Component {
     /// Name of the optional operation attribute (a `BoolAttr`) marking a component the compiler
     /// invented to wrap a bare core module, rather than one an author wrote.
     ///
-    /// This is a marker rather than a name comparison because the name is not the compiler's to
-    /// reserve: `root_ns:root@1.0.0`, the name of the wrapper, is a name an author may write, and
-    /// a component carrying it is theirs, with the module visibility they declared.
+    /// This is a marker rather than a name comparison because the wrapper has no name of its own:
+    /// it is named by the target namespace (or by the wrapped module when there is none), which is
+    /// a name an author may equally give a component of theirs, with the module visibility they
+    /// declared.
     pub const SYNTHETIC_WRAPPER_ATTR: &'static str = "synthetic_wrapper";
 
     /// Returns the absolute path this component is rooted at, with one component per `::`-separated

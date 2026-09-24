@@ -5,6 +5,8 @@ use syn::{FnArg, ItemFn, Type, parse_macro_input, spanned::Spanned};
 
 use crate::{
     boilerplate::runtime_boilerplate,
+    component_macro::CORE_TYPES_PACKAGE,
+    namespace::ComponentNamespace,
     util::{generate_frontend_link_section, is_type_named, is_unit_return_type},
     wit_builder::WitBuilder,
     wit_world::{ManifestPackage, write_world_block},
@@ -13,20 +15,12 @@ use crate::{
 /// Name of the entrypoint function exported by the transaction-script WIT interface.
 const EXPORT_NAME: &str = "run";
 
-/// Configuration describing the script macro expansion details.
-pub(crate) struct ScriptConfig {
-    /// Fully-qualified export interface emitted by the generated WIT world.
-    pub export_interface: &'static str,
-    /// Fully-qualified path to the guest trait implemented by the generated struct.
-    pub guest_trait_path: &'static str,
-}
-
 /// Configuration for generating a script guest wrapper.
 struct GuestWrapperConfig {
-    /// Fully-qualified export interface emitted by the generated WIT world.
-    pub export_interface: &'static str,
-    /// Fully-qualified path to the guest trait implemented by the generated struct.
-    pub guest_trait_path: &'static str,
+    /// Inline WIT source of the script's interface and world.
+    pub inline_wit: String,
+    /// Path to the guest trait implemented by the generated struct.
+    pub guest_trait_path: TokenStream2,
     /// The name of the generated guest struct.
     pub guest_struct_ident: syn::Ident,
     /// Doc string attached to the generated guest struct.
@@ -37,28 +31,20 @@ struct GuestWrapperConfig {
 ///
 /// The guest entrypoint receives the `TX_SCRIPT_ARGS` word as `arg`; `run_body` may reference it.
 fn expand_guest_wrapper(
-    error_span: Span,
     config: GuestWrapperConfig,
     user_items: TokenStream2,
     extra_items: TokenStream2,
     run_body: TokenStream2,
-) -> syn::Result<TokenStream2> {
-    let inline_wit = build_script_wit(error_span, config.export_interface)?;
-    let inline_literal = Literal::string(&inline_wit);
-
-    let export_path: syn::Path = syn::parse_str(config.guest_trait_path).map_err(|err| {
-        syn::Error::new(
-            error_span,
-            format!("failed to parse guest trait path '{}': {err}", config.guest_trait_path),
-        )
-    })?;
+) -> TokenStream2 {
+    let inline_literal = Literal::string(&config.inline_wit);
+    let export_path = config.guest_trait_path;
 
     let runtime_boilerplate = runtime_boilerplate();
     let guest_struct_ident = config.guest_struct_ident;
     let doc = config.guest_struct_doc;
     let export_ident = quote::format_ident!("{EXPORT_NAME}");
 
-    Ok(quote! {
+    quote! {
         #runtime_boilerplate
 
         #user_items
@@ -80,14 +66,13 @@ fn expand_guest_wrapper(
                 #run_body
             }
         }
-    })
+    }
 }
 
 /// Expansion logic used by `#[tx_script]`.
 pub(crate) fn expand(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
-    config: ScriptConfig,
 ) -> proc_macro::TokenStream {
     if !attr.is_empty() {
         return syn::Error::new(Span::call_site(), "this attribute does not accept arguments")
@@ -145,20 +130,32 @@ pub(crate) fn expand(
         }
     }
 
+    let manifest = match ManifestPackage::load(Span::call_site()) {
+        Ok(manifest) => manifest,
+        Err(err) => return err.into_compile_error().into(),
+    };
+    let namespace = match manifest.namespace(fn_ident.span()) {
+        Ok(namespace) => namespace,
+        Err(err) => return err.into_compile_error().into(),
+    };
+    let inline_wit = match build_script_wit(&manifest, &namespace, Span::call_site()) {
+        Ok(wit) => wit,
+        Err(err) => return err.into_compile_error().into(),
+    };
+
     // Mark the generated entrypoint export so downstream consumers can identify the
     // transaction-script procedure by its `@transaction_script` attribute (e.g.
-    // `TransactionScript::from_library` in `miden-protocol`). The export name is fixed by the
-    // transaction-script WIT interface regardless of the user's function name.
+    // `TransactionScript::from_library` in `miden-protocol`). The export is always
+    // `<namespace>::run`, regardless of the user's function name.
     let frontend_link_section = generate_frontend_link_section(&[FrontendMetadata::TxScript {
         method_path: fn_ident.to_string(),
-        export_name: EXPORT_NAME.to_string(),
+        path: namespace.procedure_path(EXPORT_NAME),
     }]);
 
-    let expanded = match expand_guest_wrapper(
-        Span::call_site(),
+    let expanded = expand_guest_wrapper(
         GuestWrapperConfig {
-            export_interface: config.export_interface,
-            guest_trait_path: config.guest_trait_path,
+            inline_wit,
+            guest_trait_path: namespace.guest_trait_path(),
             guest_struct_ident: struct_ident.clone(),
             guest_struct_doc: "Guest entry point generated by the Miden script attribute.",
         },
@@ -170,10 +167,7 @@ pub(crate) fn expand(
             // name with the wrapper's `arg` parameter.
             self::#fn_ident(#(#call_args),*);
         },
-    ) {
-        Ok(tokens) => tokens,
-        Err(err) => err.into_compile_error(),
-    };
+    );
 
     expanded.into()
 }
@@ -305,21 +299,31 @@ fn peel_type(mut ty: &Type) -> &Type {
     }
 }
 
-/// Builds an inlined WIT world definition for a script crate.
-pub(crate) fn build_script_wit(
+/// Builds the inline WIT for a script crate: an interface exporting `run` at `<namespace>::run`
+/// and a world exporting it alongside the dependency imports.
+fn build_script_wit(
+    manifest: &ManifestPackage,
+    namespace: &ComponentNamespace,
     error_span: Span,
-    export_interface: &'static str,
 ) -> Result<String, syn::Error> {
-    let manifest = ManifestPackage::load(error_span)?;
-    let crate_name = manifest.crate_name(error_span)?;
-    let component_package = manifest.component_package();
-    let component_version = manifest.component_version();
     let imports = manifest.collect_miden_dependency_imports(error_span)?;
-    let world_name = format!("{}-world", crate_name.replace('_', "-"));
-    let exports = [export_interface.to_string()];
+    let interface_name = namespace.wit_interface();
+    let world_name = format!("{interface_name}-world");
 
-    let mut wit = WitBuilder::new("#[tx_script]", &component_package, component_version);
-    write_world_block(&mut wit, &world_name, &imports, &exports);
+    let mut wit =
+        WitBuilder::new("#[tx_script]", &namespace.wit_package(), manifest.component_version());
+    wit.use_path(CORE_TYPES_PACKAGE);
+    wit.blank_line();
+    wit.interface(&interface_name, |interface| {
+        interface.line("use core-types.{word};");
+        interface.blank_line();
+        interface.function(
+            &namespace.procedure_path(EXPORT_NAME),
+            &format!("{EXPORT_NAME}: func(arg: word);"),
+        );
+    });
+    wit.blank_line();
+    write_world_block(&mut wit, &world_name, &imports, &[interface_name]);
 
     Ok(wit.finish())
 }

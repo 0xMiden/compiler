@@ -127,26 +127,23 @@ pub(crate) fn minimal_component(context: &Rc<midenc_hir::Context>) -> crate::Mid
     component_in_namespace(context, "test_ns", None, None)
 }
 
-/// The component name [`component_in_namespace`] builds under, and its version.
+/// The last segment of the name of the component [`component_in_namespace`] builds.
 ///
-/// Constants rather than literals because they are part of the component's name, and a target
+/// A constant rather than a literal because it is part of the component's name, and a target
 /// that assembles what this module builds has to name that whole name — see
 /// [`component_target_namespace`].
 const COMPONENT_NAME: &str = "test";
-const COMPONENT_VERSION: (u64, u64, u64) = (1, 0, 0);
 
 /// The target namespace a project must declare to assemble what
 /// [`component_in_namespace`]`(_, namespace, ..)` produces.
 ///
-/// Codegen roots a component's Miden Assembly at its *name* — here `<namespace>:test@1.0.0`,
-/// which has no `::` and so is one quoted path component — and the assembler refuses to assemble a target
-/// whose root module sits anywhere but the target's own namespace. So a manifest for such a
-/// target reads `namespace = "test_ns:test@1.0.0"`, not `namespace = "test_ns"`. Real projects
-/// look the same: `tests/fixtures/components/cross-ctx-account` declares
-/// `namespace = "miden:cross-ctx-account/foo@1.0.0"`.
+/// Codegen roots a component's Miden Assembly at its *name* — here `<namespace>::test` — and the
+/// assembler refuses to assemble a target whose root module sits anywhere but the target's own
+/// namespace. So a manifest for such a target reads `namespace = "test_ns::test"`, not
+/// `namespace = "test_ns"`. Real projects look the same: `tests/fixtures/components/cross-ctx-account`
+/// declares `namespace = "miden::cross_ctx_account::foo"`, the namespace of its components.
 pub(crate) fn component_target_namespace(namespace: &str) -> alloc::string::String {
-    let (major, minor, patch) = COMPONENT_VERSION;
-    format!("{namespace}:{COMPONENT_NAME}@{major}.{minor}.{patch}")
+    format!("{namespace}::{COMPONENT_NAME}")
 }
 
 /// [`minimal_component`], in `namespace`, carrying `rodata` and `metadata` if given.
@@ -154,7 +151,7 @@ pub(crate) fn component_target_namespace(namespace: &str) -> alloc::string::Stri
 /// The namespace is a parameter because a component assembled as part of a project must be
 /// lowered into the *target's* namespace: codegen derives the root Miden Assembly module path
 /// from the component's name, and the assembler rejects a root module that does not sit exactly
-/// at the target's own namespace. The name is not the namespace alone, so a caller that assembles
+/// at the target's own namespace. The name is `<namespace>::test`, so a caller that assembles
 /// what this builds must declare its target's namespace as
 /// [`component_target_namespace(namespace)`](component_target_namespace) rather than
 /// `namespace`.

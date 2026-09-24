@@ -29,6 +29,8 @@ const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 const CORE_TYPES_PACKAGE_NAME: &str = "miden:base";
 /// SDK interface copied into generated schemas.
 const CORE_TYPES_INTERFACE: &str = "core-types";
+/// Component package of a crate without a `miden-project.toml`.
+const PLACEHOLDER_COMPONENT_PACKAGE: &str = "miden:empty";
 /// Source name reported for generated schema validation errors.
 const NOTE_STORAGE_SCHEMA_SOURCE_NAME: &str = "note-storage-schema.wit";
 /// Storage types accepted by the note schema diagnostic.
@@ -51,10 +53,17 @@ pub(crate) fn expand_note_storage_schema(
     item_struct: &ItemStruct,
 ) -> Result<TokenStream2, syn::Error> {
     let package = ManifestPackage::load_or_default(item_struct.ident.span())?;
+    // The schema package derives from `[lib].namespace` like every other generated WIT id. A
+    // crate without a project manifest has no namespace and gets a placeholder package.
+    let component_package = if package.has_miden_project_toml {
+        package.namespace(item_struct.ident.span())?.wit_package()
+    } else {
+        PLACEHOLDER_COMPONENT_PACKAGE.to_owned()
+    };
     let registry = registered_export_types();
     let rendered = render_note_storage_schema_with_registry_model(
         item_struct,
-        &package.component_package(),
+        &component_package,
         package.component_version(),
         &registry,
     )?;

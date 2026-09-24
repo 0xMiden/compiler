@@ -55,7 +55,7 @@ fn build_test_component(
     let world = builder.create::<builtin::World, ()>(SourceSpan::UNKNOWN)().unwrap();
     let mut world_builder = WorldBuilder::new(world);
     let component = world_builder
-        .define_component(Ident::with_empty_span("test_ns:test@1.0.0".into()))
+        .define_component(Ident::with_empty_span("test_ns::test".into()))
         .unwrap();
 
     let mut component_builder = ComponentBuilder::new(component);

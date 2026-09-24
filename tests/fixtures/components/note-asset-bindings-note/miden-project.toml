@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "note"
-namespace = "miden:note-asset-bindings-note/miden-note-asset-bindings-note@0.1.0"
+namespace = "miden::note_asset_bindings_note::note_asset_bindings_note"
 path = "src/lib.rs"
 
 [dependencies]

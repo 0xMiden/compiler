@@ -174,7 +174,7 @@ pub(crate) fn translate_wasm_input(
     }
     .to_inputs();
 
-    WasmFrontend::translate(context, &source, provenance)
+    WasmFrontend::translate(context, &source, provenance, None)
 }
 
 /// A renderer for the checkpoints on this route, every one of which something else writes.
@@ -429,6 +429,32 @@ impl WasmFrontend {
         Ok(inputs)
     }
 
+    /// The namespace a library-like target's component must be rooted at.
+    ///
+    /// Executables and kernels have none: their namespace is a reserved sentinel, not a name
+    /// the component's exports could be under.
+    fn target_namespace(cx: &TargetContext<'_>) -> Option<midenc_hir::SymbolPath> {
+        use miden_assembly_syntax::PathComponent;
+        use midenc_hir::{SymbolName, SymbolNameComponent};
+        use midenc_session::miden_project::TargetType;
+
+        let target = cx.assembly().target;
+        if matches!(target.ty, TargetType::Executable | TargetType::Kernel) {
+            return None;
+        }
+        let namespace = target.namespace.inner();
+        // A prepared namespace is a valid path, so its components never fail to parse; a quoted
+        // component stays one segment.
+        let segments = namespace
+            .components()
+            .filter_map(|component| component.ok())
+            .filter(|component| !matches!(component, PathComponent::Root))
+            .map(|component| {
+                SymbolNameComponent::Component(SymbolName::intern(component.as_str()))
+            });
+        Some(core::iter::once(SymbolNameComponent::Root).chain(segments).collect())
+    }
+
     /// Translate `source` to HIR, writing the pre-rewrite `--emit=hir` document on the way.
     ///
     /// The module is named after the source's file stem, which is what the legacy stage passed
@@ -440,10 +466,14 @@ impl WasmFrontend {
     /// which the legacy stage handled by unwrapping, i.e. by panicking. It is not invented here:
     /// it is what [`WasmTranslationConfig::default`] already uses for a source it cannot name,
     /// so an unnameable root is translated exactly as an unnamed one is.
+    ///
+    /// `namespace` is the target namespace the component must be rooted at, when the build
+    /// knows it (see [`Self::target_namespace`]).
     fn translate(
         context: Rc<midenc_hir::Context>,
         source: &WasmSource,
         source_provenance: ProjectSourceProvenanceInputs,
+        namespace: Option<midenc_hir::SymbolPath>,
     ) -> CompilerResult<MidenComponent> {
         use midenc_hir::{BuilderExt, Op, OpBuilder, SourceSpan, dialects::builtin};
 
@@ -464,6 +494,7 @@ impl WasmFrontend {
             remap_path_prefixes: session.options.remap_path_prefixes.clone(),
             world: Some(world),
             generate_native_debuginfo: session.options.emit_source_locations(),
+            namespace,
             ..Default::default()
         };
 
@@ -514,7 +545,7 @@ impl WasmFrontend {
         let source = WasmSource { path, wasm };
 
         let provenance = self.provenance_of(cx, &source)?;
-        let hir = Self::translate(cx.context(), &source, provenance)?;
+        let hir = Self::translate(cx.context(), &source, provenance, Self::target_namespace(cx))?;
         let hir = match cx.checkpoint(CheckpointId::HIR_INITIAL, ArtifactId::HIR, hir)? {
             Flow::Continue(hir) => hir,
             Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
@@ -942,15 +973,13 @@ mod tests {
         );
     }
 
-    /// A library target's root module is the target's namespace too, and its whole module tree
-    /// moves there with it.
+    /// A library target's root module is the target's namespace too.
     ///
-    /// A core Wasm module is translated into a component whose id is always the synthetic
-    /// wrapper `root_ns:root@1.0.0`, and code generation would otherwise root the target's Miden
-    /// Assembly at that id. `assemble_source_package` rejects a root module whose path is not
-    /// exactly `target.namespace`, and the two can never agree — the id renders as the single
-    /// quoted component `::"root_ns:root@1.0.0"`, which no target is named — so
-    /// `MasmComponent::source_inputs` re-roots the wrapper at the target's namespace instead.
+    /// A core Wasm module is translated into a synthetic wrapper component, which the frontend
+    /// names after the target namespace it is handed, and code generation roots the target's
+    /// Miden Assembly at that name. `assemble_source_package` rejects a root module whose path is
+    /// not exactly `target.namespace`, so this pins that the pipeline hands the frontend the
+    /// target's namespace.
     ///
     /// Asserted against `project.target()`'s namespace rather than a literal, so that it is the
     /// agreement between the two that is pinned, not one particular fixture name.

@@ -118,7 +118,7 @@ fn build_raw_fpi_note_package(test_name: &str, note_source: &str) -> Arc<Package
 
 /// Returns the generated note project manifest for a raw FPI SDK binding test.
 fn raw_fpi_note_miden_project_toml(note_name: &str, note_package: &str) -> String {
-    let namespace = format!("{note_package}/miden-{note_name}@0.0.1");
+    let namespace = crate::mockchain::support::miden_project_namespace(note_package, note_name);
     format!(
         r#"
 [package]
