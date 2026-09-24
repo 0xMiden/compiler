@@ -2,6 +2,9 @@ use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::types::{AccountId, AssetAmount, AssetId, BlockNumber};
 
+/// Number of input felt slots and of output felt slots of the protocol's FPI executor.
+pub const FOREIGN_PROCEDURE_SLOTS: usize = 16;
+
 /// Marker trait for raw FPI input array lengths supported by the protocol executor.
 #[doc(hidden)]
 pub trait SupportedForeignProcedureInputLen {}
@@ -24,19 +27,19 @@ supported_foreign_procedure_input_len!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct ForeignProcedureInputs {
-    felts: [Felt; 16],
+    felts: [Felt; FOREIGN_PROCEDURE_SLOTS],
 }
 
 impl ForeignProcedureInputs {
     /// Creates raw FPI inputs where `values[i]` fills input slot `i`, and zero-pads the unused
     /// trailing slots.
     ///
-    /// This is only implemented for input arrays with at most 16 felts.
+    /// This is only implemented for input arrays with at most [`FOREIGN_PROCEDURE_SLOTS`] felts.
     pub fn new<const N: usize>(values: [Felt; N]) -> Self
     where
         [(); N]: SupportedForeignProcedureInputLen,
     {
-        let mut felts = [Felt::ZERO; 16];
+        let mut felts = [Felt::ZERO; FOREIGN_PROCEDURE_SLOTS];
         felts[..N].copy_from_slice(&values);
         Self { felts }
     }
@@ -50,8 +53,8 @@ impl ForeignProcedureInputs {
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct ForeignProcedureOutputs {
-    // The compiler stores the 16 executor results consecutively, top of stack first.
-    felts: [Felt; 16],
+    // The compiler stores the executor results consecutively, top of stack first.
+    felts: [Felt; FOREIGN_PROCEDURE_SLOTS],
 }
 
 impl ForeignProcedureOutputs {
@@ -59,7 +62,7 @@ impl ForeignProcedureOutputs {
     ///
     /// # Panics
     ///
-    /// Panics if `index` is greater than or equal to 16.
+    /// Panics if `index` is greater than or equal to [`FOREIGN_PROCEDURE_SLOTS`].
     pub fn get(&self, index: usize) -> Felt {
         self.felts[index]
     }
@@ -321,14 +324,15 @@ mod tests {
     use miden_stdlib_sys::{Felt, Word, felt};
 
     use super::{
-        AccountId, ForeignProcedureInputs, ForeignProcedureInvocation, ForeignProcedureOutputs,
+        AccountId, FOREIGN_PROCEDURE_SLOTS, ForeignProcedureInputs, ForeignProcedureInvocation,
+        ForeignProcedureOutputs,
     };
 
     /// Ensures `ForeignProcedureInputs::new` keeps `values[i]` in slot `i` and zero-pads the rest.
     #[test]
     fn inputs_keep_slot_order_and_zero_pad_trailing_slots() {
         let inputs = ForeignProcedureInputs::new([felt!(7), felt!(8)]);
-        let mut expected = [Felt::ZERO; 16];
+        let mut expected = [Felt::ZERO; FOREIGN_PROCEDURE_SLOTS];
         expected[0] = felt!(7);
         expected[1] = felt!(8);
         assert_eq!(inputs.felts, expected);
@@ -338,7 +342,8 @@ mod tests {
     /// arithmetic in between.
     #[test]
     fn outputs_get_reads_slots_in_order() {
-        let felts: [Felt; 16] = core::array::from_fn(|i| Felt::from_u32(i as u32 + 1));
+        let felts: [Felt; FOREIGN_PROCEDURE_SLOTS] =
+            core::array::from_fn(|i| Felt::from_u32(i as u32 + 1));
         let outputs = ForeignProcedureOutputs { felts };
         for (index, felt) in felts.iter().enumerate() {
             assert_eq!(outputs.get(index), *felt);
@@ -351,9 +356,10 @@ mod tests {
     fn invocation_flattens_to_prefix_root_and_inputs() {
         let account_id = AccountId::new(felt!(1), felt!(2));
         let root = Word::new([felt!(3), felt!(4), felt!(5), felt!(6)]);
-        let inputs = ForeignProcedureInputs::new(core::array::from_fn::<Felt, 16, _>(|i| {
-            Felt::from_u32(i as u32 + 7)
-        }));
+        let inputs =
+            ForeignProcedureInputs::new(core::array::from_fn::<Felt, FOREIGN_PROCEDURE_SLOTS, _>(
+                |i| Felt::from_u32(i as u32 + 7),
+            ));
         let invocation = ForeignProcedureInvocation::new(account_id, root, inputs);
 
         let expected: [Felt; 24] = core::array::from_fn(|i| {
