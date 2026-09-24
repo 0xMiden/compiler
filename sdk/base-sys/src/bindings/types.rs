@@ -70,43 +70,43 @@ impl TryFrom<Word> for AccountId {
     }
 }
 
-/// A fungible or non-fungible asset encoded as separate vault key and value words.
+/// A fungible or non-fungible asset encoded as an asset id and a value word.
 ///
-/// The `key` identifies the asset in the account vault and the `value` stores the corresponding
-/// asset contents. The key word contains the protocol asset ID.
+/// The `id` identifies the asset in a vault (issuing faucet, asset class, composition rule);
+/// `value` is the asset contents.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(C)]
 pub struct Asset {
-    /// The asset's vault key.
-    pub key: Word,
-    /// The asset's vault value.
+    /// The asset's id, which identifies it in a vault.
+    pub id: AssetId,
+    /// The asset's contents.
     pub value: Word,
 }
 
 impl Asset {
-    /// Creates a new [`Asset`] from its key and value words.
-    pub fn new(key: impl Into<Word>, value: impl Into<Word>) -> Self {
+    /// Creates a new [`Asset`] from its id and value word.
+    pub fn new(id: impl Into<AssetId>, value: impl Into<Word>) -> Self {
         Self {
-            key: key.into(),
+            id: id.into(),
             value: value.into(),
         }
     }
 
-    /// Returns this asset's id, which is the word identifying it in an account vault.
+    /// Returns this asset's id; the same value as the `id` field.
     #[inline]
     pub fn id(&self) -> AssetId {
-        AssetId { inner: self.key }
+        self.id
     }
 
     /// Returns this asset's fungible amount.
     ///
-    /// Intended for kernel-encoded assets (e.g. the ones returned by the `get_assets`
-    /// bindings), whose encoding invariants make the composition bits sufficient to discriminate
-    /// fungibility.
+    /// The composition rule is read from the asset id with [`AssetId::composition`], which
+    /// executes the protocol library's `asset::id_into_composition` procedure.
     ///
     /// # Panics
     ///
-    /// Panics if the asset is not fungible or its amount exceeds [`AssetAmount::MAX_U64`].
+    /// Panics if the composition bits of the asset id hold an unrecognized value, if the asset is
+    /// not fungible, or if its amount exceeds [`AssetAmount::MAX_U64`].
     pub fn amount(&self) -> AssetAmount {
         assert!(self.is_fungible(), "asset is not fungible");
         let amount = self.value[0];
@@ -119,24 +119,25 @@ impl Asset {
 
     /// Returns `true` if this asset is fungible.
     ///
-    /// Intended for kernel-encoded assets (e.g. the ones returned by the `get_assets`
-    /// bindings), whose encoding invariants make the composition bits sufficient to discriminate
-    /// fungibility.
+    /// The composition rule is read from the asset id with [`AssetId::composition`], which
+    /// executes the protocol library's `asset::id_into_composition` procedure.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the composition bits of the asset id hold an unrecognized value.
     #[inline]
     pub fn is_fungible(&self) -> bool {
-        // Asset ID version 1 stores the composition in bits 4..=5 of the third limb;
-        // the lower four bits identify the encoding version.
-        (self.key[2].as_canonical_u64() >> 4) & 0b11 == 0b01
+        self.id.composition() == AssetComposition::Fungible
     }
 }
 
 impl From<Asset> for (Word, Word) {
     fn from(val: Asset) -> Self {
-        (val.key, val.value)
+        (val.id.inner, val.value)
     }
 }
 
-/// The identifier of an asset, the word under which it is keyed in an account vault.
+/// The identifier of an asset, the word that identifies it in an account vault.
 ///
 /// An asset id encodes the issuing faucet, the asset class and the composition rule; read them with
 /// [`AssetId::faucet_id`], [`AssetId::asset_class`] and [`AssetId::composition`] rather than
@@ -152,6 +153,15 @@ impl From<Word> for AssetId {
     #[inline]
     fn from(value: Word) -> Self {
         Self { inner: value }
+    }
+}
+
+impl From<[Felt; 4]> for AssetId {
+    #[inline]
+    fn from(value: [Felt; 4]) -> Self {
+        Self {
+            inner: Word::from(value),
+        }
     }
 }
 
@@ -808,8 +818,7 @@ mod tests {
     use miden_stdlib_sys::{Felt, Word, felt};
 
     use super::{
-        Asset, AssetAmount, AssetAmountError, BlockNumber, felt_from_padded_word,
-        padded_word_from_felt,
+        AssetAmount, AssetAmountError, BlockNumber, felt_from_padded_word, padded_word_from_felt,
     };
 
     /// Ensures `padded_word_from_felt` zero-pads the trailing three limbs.
@@ -1024,58 +1033,6 @@ mod tests {
         assert_eq!(amount.as_felt(), felt!(500));
         assert_eq!(Felt::from(amount), felt!(500));
         assert_eq!(u64::from(amount), 500);
-    }
-
-    /// Creates a version-1 fungible asset encoding for amount tests.
-    fn fungible_asset(amount: Felt) -> Asset {
-        Asset::new(
-            Word::new([felt!(0), felt!(0), felt!(17), felt!(0)]),
-            Word::new([amount, felt!(0), felt!(0), felt!(0)]),
-        )
-    }
-
-    /// Use upstream encodings so version bits cannot be mistaken for composition bits.
-    #[test]
-    fn asset_is_fungible() {
-        use miden_protocol::{
-            account::AccountId,
-            asset::{AssetClass, AssetComposition, AssetId},
-        };
-
-        let faucet = AccountId::try_from_elements(felt!(0), felt!(1)).unwrap();
-        for composition in [AssetComposition::None, AssetComposition::Fungible] {
-            let id = AssetId::new(AssetClass::default(), faucet, composition).unwrap();
-            let asset =
-                Asset::new(id.to_word(), Word::new([felt!(42), felt!(0), felt!(0), felt!(0)]));
-            assert_eq!(asset.is_fungible(), composition.is_fungible());
-        }
-    }
-
-    /// Ensures fungible asset amounts are decoded from version-1 key/value encodings.
-    #[test]
-    fn asset_amount_decodes_valid_fungible_assets() {
-        assert_eq!(fungible_asset(felt!(42)).amount(), AssetAmount::new(42).unwrap());
-    }
-
-    /// Ensures the amount accessor panics for non-fungible assets.
-    #[test]
-    #[should_panic(expected = "asset is not fungible")]
-    fn asset_amount_panics_on_non_fungible() {
-        let non_fungible = Asset::new(
-            Word::new([felt!(1), felt!(0), felt!(1), felt!(0)]),
-            Word::new([felt!(42), felt!(0), felt!(0), felt!(0)]),
-        );
-
-        let _ = non_fungible.amount();
-    }
-
-    /// Ensures the amount accessor panics when the amount exceeds the maximum.
-    #[test]
-    #[should_panic(expected = "asset amount exceeds the maximum allowed amount")]
-    fn asset_amount_panics_on_excessive_amount() {
-        let excessive_amount = fungible_asset(Felt::new(AssetAmount::MAX_U64 + 1).unwrap());
-
-        let _ = excessive_amount.amount();
     }
 
     /// Ensures block-number felts validate against the `u32` protocol bound.

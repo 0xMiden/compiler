@@ -117,8 +117,8 @@ fn aux_attachment_scheme() -> Felt {
 /// from the storage elements in declaration order.
 #[note]
 struct SwappNote {
-    /// Vault key identifying the requested asset (faucet id, composition, callback flags).
-    requested_asset_key: Word,
+    /// Asset id of the requested asset (faucet id, class, composition rule).
+    requested_asset_id: Word,
     /// Total requested asset amount for the full offer.
     requested_total: Felt,
     /// The account that created the swap offer and receives the requested asset.
@@ -172,13 +172,13 @@ impl SwappNote {
 
         if input_amount != felt!(0) {
             let input_asset =
-                Asset::new(self.requested_asset_key, padded_word_from_felt(input_amount));
+                Asset::new(self.requested_asset_id, padded_word_from_felt(input_amount));
             account.move_asset_to_note(input_asset, note_idx);
         }
 
         if inflight_amount != felt!(0) {
             let inflight_asset =
-                Asset::new(self.requested_asset_key, padded_word_from_felt(inflight_amount));
+                Asset::new(self.requested_asset_id, padded_word_from_felt(inflight_amount));
             output_note::add_asset(inflight_asset, note_idx);
         }
     }
@@ -197,10 +197,10 @@ impl SwappNote {
         account: &mut Wallet,
     ) {
         let storage = vec![
-            self.requested_asset_key[0],
-            self.requested_asset_key[1],
-            self.requested_asset_key[2],
-            self.requested_asset_key[3],
+            self.requested_asset_id[0],
+            self.requested_asset_id[1],
+            self.requested_asset_id[2],
+            self.requested_asset_id[3],
             remainder_requested_total,
             self.creator.prefix,
             self.creator.suffix,
@@ -277,7 +277,7 @@ impl SwappNote {
         // The consumer receives the offered share corresponding to the vault-provided input.
         if input_offered_out != felt!(0) {
             let input_offered_asset =
-                Asset::new(offered_asset.key, padded_word_from_felt(input_offered_out));
+                Asset::new(offered_asset.id, padded_word_from_felt(input_offered_out));
             account.receive_asset(input_offered_asset);
         }
 
@@ -293,7 +293,7 @@ impl SwappNote {
 
             let total_offered_out = input_offered_out + inflight_offered_out;
             let remainder_offered_asset = Asset::new(
-                offered_asset.key,
+                offered_asset.id,
                 padded_word_from_felt(offered_total - total_offered_out),
             );
             let remainder_requested_total = requested_total - total_input_amount;

@@ -86,7 +86,7 @@ An asset is **two words**: an identifier word and a value word. On the operand s
 
 **`AssetId` and `AssetClass` are different things, and the names are a trap.** `AssetId` is the *unique identifier of an asset in the vault*; its Word layout is `[asset_class_suffix, asset_class_prefix, faucet_id_suffix|reserved|composition, faucet_id_prefix]`, and `AssetId::hash()` produces the `AssetIdHash` used as the vault SMT key. `AssetClass` is the narrower thing that *distinguishes different assets issued by the same faucet* — two felts, and one component of an `AssetId`. Code that treats an `AssetId` as if it were a per-faucet class (or vice versa) type-checks and is wrong.
 
-> **Layer note.** The Rust *contract* SDK (the guest `miden` crate) builds against an earlier protocol snapshot than the client/protocol line, and there the guest type is still `Asset { key: Word, value: Word }` with `asset.value[0]` as the fungible amount. The field is named `key`, not `id`, in guest contract code. Read the layer you are actually writing for rather than renaming across the boundary.
+> **Layer note.** In the Rust *contract* SDK (the guest `miden` crate) the guest type is `Asset { id: AssetId, value: Word }` with `asset.value[0]` as the fungible amount; the guest `AssetId` wraps the asset-ID word (`id.inner`) and reads its faucet, class and composition through the protocol library's `asset` procedures. The guest and protocol types share names but not definitions, so read the layer you are actually writing for.
 
 ### Felt and Word
 - **Felt**: Field element in the Goldilocks prime field (p = 2^64 - 2^32 + 1). The fundamental data unit.

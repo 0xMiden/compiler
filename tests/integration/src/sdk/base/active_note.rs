@@ -191,7 +191,7 @@ fn active_note_get_asset_binding() {
     run_active_note_binding_test(
         "active_note_get_asset_binding",
         "pub fn binding(&self) -> Word {
-        active_note::get_asset(0).key
+        active_note::get_asset(0).id.inner
     }",
     );
 }
