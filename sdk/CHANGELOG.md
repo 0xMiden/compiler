@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0-rc.2]
+
+- Target protocol `0.17.0-rc.6` on Miden VM `0.33.0`.
+- [BREAKING] `compute_commitment` moves from `active_account` and the `ActiveAccount` trait to
+  `native_account` and `NativeAccount`; the kernel now computes it for the native account only.
+- [BREAKING] `Asset::key` is now `Asset::id: AssetId`, and `get_asset`, `has_asset`, and
+  `get_initial_asset` take an `AssetId`, which converts from `Word` and `[Felt; 4]`. The WIT
+  `asset` record field `key` is renamed to `id`. `Asset::is_fungible` and `Asset::amount` read the
+  composition through the protocol library instead of decoding the id in the SDK; see the
+  [migration guide](./sdk/MIGRATION.md).
+- Raw FPI `ForeignProcedureInputs` and `ForeignProcedureOutputs` pass felts in the callee's stack
+  order: slot `i` is the `i`-th entry of the callee's inputs or outputs, with slot 0 on top. Every
+  group of four felts was previously reversed, so a `Word` reached the callee reversed and inputs
+  shorter than sixteen felts sat under the zero padding. `FOREIGN_PROCEDURE_SLOTS` names the slot
+  count.
+
 ## [0.15.0-rc.1]
 
 - Target Miden VM `0.33.0` and protocol `0.17.0-rc.5`. Generic note attachment readers use public

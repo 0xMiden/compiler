@@ -797,7 +797,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-miden"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2828,7 +2828,7 @@ dependencies = [
 
 [[package]]
 name = "miden"
-version = "0.15.0-rc.1"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-base",
  "miden-base-macros",
@@ -2948,7 +2948,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base"
-version = "0.15.0-rc.1"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-base-sys",
  "miden-stdlib-sys",
@@ -2956,7 +2956,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.15.0-rc.1"
+version = "0.15.0-rc.2"
 dependencies = [
  "heck",
  "miden-assembly",
@@ -2981,7 +2981,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-sys"
-version = "0.15.0-rc.1"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-field-repr",
  "miden-protocol",
@@ -3246,7 +3246,7 @@ dependencies = [
 
 [[package]]
 name = "miden-field-repr"
-version = "0.15.0-rc.1"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-field",
  "miden-field-repr-derive",
@@ -3254,7 +3254,7 @@ dependencies = [
 
 [[package]]
 name = "miden-field-repr-derive"
-version = "0.15.0-rc.1"
+version = "0.15.0-rc.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3404,7 +3404,7 @@ dependencies = [
 
 [[package]]
 name = "miden-objtool"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "clap",
  "miden-assembly-syntax",
@@ -3636,11 +3636,11 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-alloc"
-version = "0.15.0-rc.1"
+version = "0.15.0-rc.2"
 
 [[package]]
 name = "miden-sdk-build-script-support"
-version = "0.15.0-rc.1"
+version = "0.15.0-rc.2"
 
 [[package]]
 name = "miden-serde-utils"
@@ -3694,7 +3694,7 @@ dependencies = [
 
 [[package]]
 name = "miden-stdlib-sys"
-version = "0.15.0-rc.1"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-field",
 ]
@@ -3770,7 +3770,7 @@ dependencies = [
 
 [[package]]
 name = "miden-tx-script-args"
-version = "0.15.0-rc.1"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-field",
  "miden-field-repr",
@@ -3841,7 +3841,7 @@ dependencies = [
 
 [[package]]
 name = "midenc"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "human-panic",
  "midenc-driver",
@@ -3865,7 +3865,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-codegen-masm"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "anyhow",
  "inventory",
@@ -3897,7 +3897,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-compile"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "cargo_metadata 0.23.1",
  "clap",
@@ -3922,7 +3922,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-arith"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "midenc-hir",
  "paste",
@@ -3930,7 +3930,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-cf"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "log",
  "midenc-dialect-arith",
@@ -3940,7 +3940,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-hir"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "litcheck-filecheck",
  "log",
@@ -3956,7 +3956,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-scf"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "bitvec",
  "log",
@@ -3970,14 +3970,14 @@ dependencies = [
 
 [[package]]
 name = "midenc-dialect-ub"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "midenc-hir",
 ]
 
 [[package]]
 name = "midenc-dialect-wasm"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "midenc-dialect-arith",
  "midenc-dialect-hir",
@@ -3986,7 +3986,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-driver"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "clap",
  "log",
@@ -3999,7 +3999,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-expect-test"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "once_cell",
  "similar",
@@ -4007,7 +4007,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-frontend-masm"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "miden-assembly",
  "miden-assembly-syntax",
@@ -4030,7 +4030,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-frontend-wasm"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "addr2line 0.26.1",
  "anyhow",
@@ -4058,7 +4058,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-frontend-wasm-metadata"
-version = "0.15.0-rc.1"
+version = "0.15.0-rc.2"
 dependencies = [
  "miden-mast-package",
  "serde",
@@ -4067,7 +4067,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "anyhow",
  "base64",
@@ -4097,7 +4097,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-analysis"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "bitvec",
  "blink-alloc",
@@ -4112,7 +4112,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-eval"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "log",
  "miden-core",
@@ -4129,7 +4129,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-macros"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "darling",
  "heck",
@@ -4140,7 +4140,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-opt"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -4160,7 +4160,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-symbol"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "Inflector",
  "compact_str",
@@ -4175,7 +4175,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-hir-transform"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "litcheck-filecheck",
  "log",
@@ -4285,7 +4285,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-log"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "anstream",
  "anstyle",
@@ -4297,7 +4297,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-session"
-version = "0.11.0-rc.1"
+version = "0.11.0-rc.2"
 dependencies = [
  "anyhow",
  "clap",

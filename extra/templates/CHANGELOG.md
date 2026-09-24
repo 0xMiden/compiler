@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0-rc.2]
+
+### Templates
+
+- Move the project scaffold to protocol `0.17.0-rc.6` and Miden client `0.17.0-rc.2`. Its
+  assistant skills describe the typed `AssetId` and the `compute_commitment` move to the native
+  account.
+
+### SDK compatibility
+
+- Generated crates require `miden = "0.15.0-rc.2"` and
+  `miden-sdk-build-script-support = "0.15.0-rc.2"`; see the
+  [SDK release notes](../../sdk/CHANGELOG.md#0150-rc2) for guest-code migrations.
+
 ## [0.33.0-rc.1]
 
 ### Templates

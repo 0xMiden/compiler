@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0-rc.2]
+
+### Compiler and `midenc`
+
+- Target protocol `0.17.0-rc.6` on Miden VM `0.33.0`. The transaction-kernel `compute_commitment`
+  binding is recognized under the native-account module, where the kernel now defines it.
+
 ## [0.11.0-rc.1]
 
 ### Compiler and `midenc`
