@@ -106,6 +106,9 @@ impl ComponentNamespace {
 
 /// The WIT keywords, spelled as snake_case segments; a keyword cannot name a WIT package or
 /// interface.
+///
+/// This mirrors the keywords of the lexer of wit-parser 0.259 (`src/ast/lex.rs`) and must be
+/// updated together with that dependency.
 const WIT_KEYWORDS: &[&str] = &[
     "as",
     "async",
@@ -153,7 +156,11 @@ const WIT_KEYWORDS: &[&str] = &[
 ];
 
 /// Returns true if `segment` is a snake_case identifier, `[a-z][a-z0-9]*(_[a-z0-9]+)*`, whose
-/// kebab-case form is a valid WIT identifier that is not a WIT keyword.
+/// kebab-case form is a valid WIT identifier that is not a WIT keyword, and that is a Rust
+/// identifier (not a Rust keyword), as the generated bindings name modules after it.
+///
+/// `cargo miden new` checks the namespaces it derives against the same rule
+/// (`tools/cargo-miden/src/template.rs`), and must follow any change to it.
 fn is_valid_segment(segment: &str) -> bool {
     let is_snake_case = segment.starts_with(|ch: char| ch.is_ascii_lowercase())
         && segment.split('_').all(|word| {
@@ -163,6 +170,7 @@ fn is_valid_segment(segment: &str) -> bool {
     is_snake_case
         && wit_bindgen_core::wit_parser::validate_id(&kebab(segment)).is_ok()
         && !WIT_KEYWORDS.contains(&segment)
+        && syn::parse_str::<syn::Ident>(segment).is_ok()
 }
 
 /// Converts a namespace segment into its WIT spelling.
@@ -177,11 +185,11 @@ fn invalid_namespace(raw: &str, span: Span) -> syn::Error {
         format!(
             "invalid `[lib].namespace` `{raw}` in `miden-project.toml`: expected a Miden path of \
              exactly three segments, each a snake_case identifier (lowercase ASCII letters and \
-             digits in words joined by single `_`, starting with a letter, and not a WIT keyword \
-             such as `list`), e.g. `{EXAMPLE_NAMESPACE}`. The segments name the exported \
-             procedures and become the components of the storage slot names; the first two \
-             (`ns::pkg`) form the WIT package id, so the `pkg` segment identifies the crate and \
-             must not be shared by two crates a consumer links."
+             digits in words joined by single `_`, starting with a letter, and not a WIT or Rust \
+             keyword such as `list` or `match`), e.g. `{EXAMPLE_NAMESPACE}`. The segments name \
+             the exported procedures and become the components of the storage slot names; the \
+             first two (`ns::pkg`) form the WIT package id, so the `pkg` segment identifies the \
+             crate and must not be shared by two crates a consumer links."
         ),
     )
 }
@@ -255,10 +263,19 @@ mod tests {
 
     #[test]
     fn rejects_segments_without_a_valid_wit_spelling() {
-        for segment in ["Wallet2", "a__b", "a_", "_a", "2a", "list", "error_context"] {
+        for segment in ["Wallet2", "a__b", "a_", "_a", "2a", "list", "error_context", "match"] {
             let value = format!("miden::{segment}::main");
             let err = parse(&value).expect_err("the segment must be rejected").to_string();
             assert!(err.contains("snake_case"), "`{value}`: {err}");
+        }
+    }
+
+    #[test]
+    fn rejects_rust_keyword_segments() {
+        for segment in ["match", "loop", "mod", "self", "super", "crate", "fn"] {
+            let value = format!("miden::{segment}::main");
+            let err = parse(&value).expect_err("a Rust keyword must be rejected").to_string();
+            assert!(err.contains("Rust keyword"), "`{value}`: {err}");
         }
     }
 }

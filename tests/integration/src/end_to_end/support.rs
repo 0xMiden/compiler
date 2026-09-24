@@ -178,7 +178,7 @@ pub(super) fn miden_project_toml(name: &str) -> String {
 
                 [lib]
                 # The namespace the frontend roots the core Wasm module's wrapper component at;
-                # any namespace works.
+                # any namespace that does not shadow a kernel or standard-library module path.
                 namespace = "root"
                 path = "src/lib.rs"
 

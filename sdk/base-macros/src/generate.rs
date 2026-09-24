@@ -535,7 +535,7 @@ fn load_wit_sources(
     let mut packages = Vec::new();
     let mut files = Vec::new();
     // The source that registered each WIT package, for the duplicate-package diagnostic.
-    let mut owners = HashMap::new();
+    let mut owners = sdk_package_owners();
 
     let push_path = |resolve: &mut Resolve,
                      packages: &mut Vec<PackageId>,
@@ -630,36 +630,57 @@ fn load_wit_sources(
     })
 }
 
+/// The source that registered each WIT package, keyed by the package's `namespace:name`
+/// without its version, for the duplicate-package diagnostic.
+type PackageOwners = HashMap<(String, String), (PackageName, String)>;
+
+/// The owners map with the packages of the bundled SDK WIT registered as owned by the Miden SDK.
+fn sdk_package_owners() -> PackageOwners {
+    let mut owners = PackageOwners::new();
+    let sdk = UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE)
+        .expect("the bundled SDK WIT parses");
+    for package in core::iter::once(&sdk.main).chain(&sdk.nested) {
+        record_package_owner(&mut owners, &package.name, "the Miden SDK");
+    }
+    owners
+}
+
+/// Records `owner` as the source of the package `name`, unless it already has one.
+fn record_package_owner(owners: &mut PackageOwners, name: &PackageName, owner: &str) {
+    owners
+        .entry((name.namespace.clone(), name.name.clone()))
+        .or_insert_with(|| (name.clone(), owner.to_owned()));
+}
+
 /// Records `owner` as the source of every package of `resolve` without a recorded source.
-fn record_package_owners(
-    resolve: &Resolve,
-    owners: &mut HashMap<PackageName, String>,
-    owner: &str,
-) {
+fn record_package_owners(resolve: &Resolve, owners: &mut PackageOwners, owner: &str) {
     for name in resolve.package_names.keys() {
-        owners.entry(name.clone()).or_insert_with(|| owner.to_owned());
+        record_package_owner(owners, name, owner);
     }
 }
 
-/// Fails when a package of `group`, loaded from `owner`, is already registered by another source.
+/// Fails when a package of `group`, loaded from `owner`, shares its `namespace:name` with a
+/// package another source registered, whatever the two versions.
 ///
 /// The WIT package id of a crate is derived from the first two segments of its
-/// `[lib].namespace`, so two crates sharing them define the same package.
+/// `[lib].namespace`, so two crates sharing them define packages of one `namespace:name`, which
+/// wit-bindgen tells apart only by mangling their module paths with the versions.
 fn ensure_new_packages(
-    owners: &HashMap<PackageName, String>,
+    owners: &PackageOwners,
     group: &UnresolvedPackageGroup,
     owner: &str,
 ) -> Result<(), Error> {
     let names = core::iter::once(&group.main).chain(&group.nested).map(|package| &package.name);
     for name in names {
-        if let Some(previous) = owners.get(name) {
+        let key = (name.namespace.clone(), name.name.clone());
+        if let Some((previous_name, previous)) = owners.get(&key) {
             return Err(Error::new(
                 Span::call_site(),
                 format!(
-                    "WIT package `{name}` of {owner} is already defined by {previous}; the first \
-                     two segments of `[lib].namespace` (`ns::pkg`) form the WIT package id and \
-                     must be unique per crate: the `pkg` segment identifies the crate and must \
-                     not be shared by two crates a consumer links"
+                    "WIT package `{name}` of {owner} clashes with `{previous_name}` defined by \
+                     {previous}; the first two segments of `[lib].namespace` (`ns::pkg`) form the \
+                     WIT package id and must be unique among all linked crates regardless of \
+                     version"
                 ),
             ));
         }
@@ -1000,29 +1021,76 @@ mod tests {
         crate::namespace::ComponentNamespace::parse("miden::acme::acme", Span::call_site()).unwrap()
     }
 
+    /// Parses a WIT package `package` with one interface `iface`.
+    fn package_group(package: &str, iface: &str) -> UnresolvedPackageGroup {
+        let wit = format!("package {package};\ninterface {iface} {{ ping: func(); }}\n");
+        UnresolvedPackageGroup::parse("dep.wit", &wit).unwrap()
+    }
+
     /// Two crates sharing `ns::pkg` define the same WIT package; the second is reported with
     /// both sources instead of reaching wit-parser's duplicate-package assertion.
     #[test]
     fn a_wit_package_defined_twice_is_reported_with_both_sources() {
-        let wit = |iface: &str| {
-            format!("package miden:my-account@0.1.0;\ninterface {iface} {{ ping: func(); }}\n")
-        };
-        let parse = |iface: &str| UnresolvedPackageGroup::parse("dep.wit", &wit(iface)).unwrap();
-
         let mut resolve = Resolve::default();
-        let mut owners = HashMap::new();
-        ensure_new_packages(&owners, &parse("wallet"), "dependency `wallet`").unwrap();
-        resolve.push_group(parse("wallet")).unwrap();
+        let mut owners = sdk_package_owners();
+        let wallet = || package_group("miden:my-account@0.1.0", "wallet");
+        ensure_new_packages(&owners, &wallet(), "dependency `wallet`").unwrap();
+        resolve.push_group(wallet()).unwrap();
         record_package_owners(&resolve, &mut owners, "dependency `wallet`");
 
-        let err = ensure_new_packages(&owners, &parse("auth"), "dependency `auth`")
-            .expect_err("the second definition of the package must be rejected")
-            .to_string();
+        let err = ensure_new_packages(
+            &owners,
+            &package_group("miden:my-account@0.1.0", "auth"),
+            "dependency `auth`",
+        )
+        .expect_err("the second definition of the package must be rejected")
+        .to_string();
         assert!(
             err.contains("`miden:my-account@0.1.0`")
                 && err.contains("dependency `auth`")
                 && err.contains("dependency `wallet`")
-                && err.contains("must be unique per crate"),
+                && err.contains("must be unique among all linked crates regardless of version"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// Packages of one `namespace:name` at two versions clash too: wit-bindgen would mangle
+    /// their module paths with the versions, breaking the paths the macros generate.
+    #[test]
+    fn a_wit_package_at_another_version_is_rejected() {
+        let mut resolve = Resolve::default();
+        let mut owners = sdk_package_owners();
+        let core = || package_group("miden:wallet@0.1.0", "core");
+        resolve.push_group(core()).unwrap();
+        record_package_owners(&resolve, &mut owners, "dependency `wallet`");
+
+        let err = ensure_new_packages(
+            &owners,
+            &package_group("miden:wallet@0.2.0", "main"),
+            "this crate",
+        )
+        .expect_err("the package at another version must be rejected")
+        .to_string();
+        assert!(
+            err.contains("`miden:wallet@0.2.0` of this crate clashes with `miden:wallet@0.1.0`")
+                && err.contains("dependency `wallet`"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// The SDK's own packages are registered up front, so a crate namespace `miden::base::x`
+    /// cannot define a package that clashes with them.
+    #[test]
+    fn a_wit_package_of_the_sdk_is_rejected() {
+        let err = ensure_new_packages(
+            &sdk_package_owners(),
+            &package_group("miden:base@0.1.0", "x"),
+            "this crate",
+        )
+        .expect_err("the SDK package must not be redefined")
+        .to_string();
+        assert!(
+            err.contains("clashes with `miden:base@1.0.0` defined by the Miden SDK"),
             "unexpected diagnostic: {err}"
         );
     }
@@ -1073,7 +1141,10 @@ mod tests {
 package miden:wallet@1.0.0;
 
 interface api {
+    @external-id("miden::wallet::api::ping")
     ping: func(value: u32) -> u32;
+    @external-id("miden::wallet::api::type")
+    %type: func() -> u32;
 }
 "#,
         )
@@ -1095,6 +1166,10 @@ interface api {
         assert!(
             rendered.contains("@external-id(\"miden::acme::acme::fpi::miden::wallet::api::ping\")"),
             "the FPI function must carry its Miden path: {rendered}"
+        );
+        assert!(
+            rendered.contains("@external-id(\"miden::acme::acme::fpi::miden::wallet::api::type\")"),
+            "the FPI leaf is the leaf of the dependency function's own path: {rendered}"
         );
         UnresolvedPackageGroup::parse("emitted.wit", &rendered).unwrap();
     }
@@ -1406,12 +1481,19 @@ interface api {
     type maybe-request = option<request>;
     type nested-result = result<payload, mode>;
 
+    @external-id("miden::typed_dependency::api::primitive_roundtrip")
     primitive-roundtrip: func(value: u64) -> u32;
+    @external-id("miden::typed_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
+    @external-id("miden::typed_dependency::api::choose")
     choose: func(value: request) -> request;
+    @external-id("miden::typed_dependency::api::set_mode")
     set-mode: func(value: mode) -> mode;
+    @external-id("miden::typed_dependency::api::set_permissions")
     set-permissions: func(value: permissions) -> permissions;
+    @external-id("miden::typed_dependency::api::core_roundtrip")
     core-roundtrip: func(value: word) -> felt;
+    @external-id("miden::typed_dependency::api::nested_roundtrip")
     nested-roundtrip: func(value: maybe-request) -> nested-result;
 }
 "#,
@@ -1560,10 +1642,15 @@ interface api {
         key: word,
     }
 
+    @external-id("miden::anonymous_dependency::api::many")
     many: func(values: list<payload>) -> list<payload>;
+    @external-id("miden::anonymous_dependency::api::find")
     find: func(key: word) -> option<payload>;
+    @external-id("miden::anonymous_dependency::api::try_get")
     try-get: func(flag: bool) -> result<payload, felt>;
+    @external-id("miden::anonymous_dependency::api::pair")
     pair: func() -> tuple<felt, payload>;
+    @external-id("miden::anonymous_dependency::api::words")
     words: func(values: list<word>) -> u32;
 }
 "#,
@@ -1631,6 +1718,7 @@ interface types {
 
 interface api {
     use types.{payload};
+    @external-id("miden::shared_types_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1766,6 +1854,7 @@ interface api {
 package miden:first-dependency@1.0.0;
 interface api {
     record payload { value: u32 }
+    @external-id("miden::first_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1776,6 +1865,7 @@ interface api {
 package miden:second-dependency@1.0.0;
 interface api {
     variant payload { none, value(u64) }
+    @external-id("miden::second_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1786,6 +1876,7 @@ interface api {
 package miden:versioned-dependency@1.0.0;
 interface api {
     record payload { value: u32 }
+    @external-id("miden::versioned_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1796,6 +1887,7 @@ interface api {
 package miden:versioned-dependency@2.0.0;
 interface api {
     record payload { value: u64 }
+    @external-id("miden::versioned_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,

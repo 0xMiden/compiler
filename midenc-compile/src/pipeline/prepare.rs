@@ -2522,7 +2522,7 @@ namespace = "miden::prepare_fixture::prepare_fixture"
     }
 
     #[test]
-    fn an_explicit_name_is_passed_through_over_the_hir_roots_component_id() {
+    fn an_explicit_name_is_passed_through_over_the_hir_roots_component_namespace() {
         // As for `.masm`: `--name` asserts rather than overrides. The namespace it names is what
         // the target gets, and a root whose component name says otherwise then fails the
         // assembler's root-module check. What must not happen is the flag being quietly ignored.

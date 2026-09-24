@@ -103,9 +103,9 @@ Account component, note and transaction script projects are named by the `[lib].
 their `miden-project.toml`. It is a Miden path of exactly three segments, `ns::pkg::iface`, where
 each segment is a snake_case identifier: lowercase ASCII letters and digits in words joined by
 single `_`, starting with a letter (`[a-z][a-z0-9]*(_[a-z0-9]+)*`, e.g. `counter_contract` or
-`wallet2`), and not a WIT keyword such as `list` or `type`. The first two segments form the WIT
-package id, so the `pkg` segment identifies the crate and must not be shared by two crates a
-consumer links. Projects created with `cargo miden new` default to `miden::<package>::<package>`
+`wallet2`), and not a WIT or Rust keyword such as `list`, `type` or `match`. The first two
+segments form the WIT package id, so they must be unique among all crates a consumer links,
+whatever their versions, and must not be `miden::base`, which the SDK's own WIT uses. Projects created with `cargo miden new` default to `miden::<package>::<package>`
 (package name in snake_case):
 
 ```toml
@@ -145,10 +145,11 @@ interface counter-contract {
 }
 ```
 
-When compiling a bare `.wasm` component without a manifest or an explicit namespace, the namespace is
-inferred only when every export has the same parent path, which becomes the namespace; exports
-under different parents are an error, and so is a component without exports. If a manifest
-namespace is given and does not match the exports, compilation fails.
+When compiling a bare `.wasm` or `.wat` component without a manifest or an explicit namespace, the
+namespace is inferred only when every export has the same parent path, which becomes the
+namespace; exports under different parents are an error, and a component that exports nothing is
+an error unless a namespace is given. If a namespace is given (by the manifest or `--name`) and
+does not match the exports, compilation fails.
 
 ## Running a compiled Miden VM program
 

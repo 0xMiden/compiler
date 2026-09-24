@@ -26,6 +26,7 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
+    /// Creates an empty execution context for the component named `id`.
     pub fn new(id: SymbolName) -> Self {
         Self {
             id: Some(id),
