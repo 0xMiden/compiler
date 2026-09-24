@@ -38,7 +38,6 @@ fn statement_name(kind: &StatementKind) -> &'static str {
         StatementKind::SetDiscriminant { .. } => "SetDiscriminant",
         StatementKind::StorageLive(_) => "StorageLive",
         StatementKind::StorageDead(_) => "StorageDead",
-        StatementKind::Retag(..) => "Retag",
         StatementKind::PlaceMention(_) => "PlaceMention",
         StatementKind::AscribeUserType { .. } => "AscribeUserType",
         StatementKind::Coverage(_) => "Coverage",
