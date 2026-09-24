@@ -86,7 +86,7 @@ impl InvalidStackOffsetMovupNote {
 
         let aux_value = offered_out;
         let input_asset = Asset::new(
-            requested_asset.key,
+            requested_asset.id,
             Word::from([input_amount, felt!(0), felt!(0), felt!(0)]),
         );
 
@@ -96,11 +96,11 @@ impl InvalidStackOffsetMovupNote {
             let remainder_serial = hash_words(&[current_note_serial]).inner;
             let remainder_aux = offered_out;
             let remainder_requested_asset = Asset::new(
-                requested_asset.key,
+                requested_asset.id,
                 Word::from([requested_asset_total - input_amount, felt!(0), felt!(0), felt!(0)]),
             );
             let remainder_offered_asset = Asset::new(
-                offered_asset_word.key,
+                offered_asset_word.id,
                 Word::from([offered_asset_total - offered_out, felt!(0), felt!(0), felt!(0)]),
             );
 
@@ -179,18 +179,18 @@ fn create_swapp_note(
         serial_num,
         active_note::get_script_root(),
         vec![
-            offered_asset.key[0],
-            offered_asset.key[1],
-            offered_asset.key[2],
-            offered_asset.key[3],
+            offered_asset.id.inner[0],
+            offered_asset.id.inner[1],
+            offered_asset.id.inner[2],
+            offered_asset.id.inner[3],
             offered_asset.value[0],
             offered_asset.value[1],
             offered_asset.value[2],
             offered_asset.value[3],
-            requested_asset.key[0],
-            requested_asset.key[1],
-            requested_asset.key[2],
-            requested_asset.key[3],
+            requested_asset.id.inner[0],
+            requested_asset.id.inner[1],
+            requested_asset.id.inner[2],
+            requested_asset.id.inner[3],
             requested_asset.value[0],
             requested_asset.value[1],
             requested_asset.value[2],

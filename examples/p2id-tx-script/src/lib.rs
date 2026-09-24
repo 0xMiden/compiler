@@ -44,8 +44,8 @@ fn run(arg: Word, account: &mut Wallet) {
     let recipient = miden_p2id::build_recipient(target, serial_num.into());
     let note_idx = account.create_note(tag, note_type, recipient);
     let asset: [Felt; 8] = input[ASSET_START..ASSET_END].try_into().unwrap();
-    let asset_key: [Felt; 4] = asset[..4].try_into().unwrap();
+    let asset_id: [Felt; 4] = asset[..4].try_into().unwrap();
     let asset_value: [Felt; 4] = asset[4..].try_into().unwrap();
-    let asset = Asset::new(asset_key, asset_value);
+    let asset = Asset::new(asset_id, asset_value);
     account.move_asset_to_note(asset, note_idx);
 }

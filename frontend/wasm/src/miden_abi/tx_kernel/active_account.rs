@@ -16,7 +16,6 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
 pub const GET_ID: &str = "get_id";
 pub const GET_NONCE: &str = "get_nonce";
 pub const GET_CODE_COMMITMENT: &str = "get_code_commitment";
-pub const COMPUTE_COMMITMENT: &str = "compute_commitment";
 pub const COMPUTE_STORAGE_COMMITMENT: &str = "compute_storage_commitment";
 pub const GET_STORAGE_ITEM: &str = "get_item";
 pub const HAS_STORAGE_SLOT: &str = "has_storage_slot";
@@ -37,10 +36,6 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     active_account.insert(Symbol::from(GET_NONCE), FunctionType::new(CallConv::Wasm, [], [Felt]));
     active_account.insert(
         Symbol::from(GET_CODE_COMMITMENT),
-        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
-    );
-    active_account.insert(
-        Symbol::from(COMPUTE_COMMITMENT),
         FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
     );
     active_account.insert(

@@ -309,11 +309,12 @@ pub fn get_asset(asset_index: u32) -> Asset {
 pub fn remove_asset(asset: Asset) -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        let id = asset.id.inner;
         extern_active_note_remove_asset(
-            asset.key[0],
-            asset.key[1],
-            asset.key[2],
-            asset.key[3],
+            id[0],
+            id[1],
+            id[2],
+            id[3],
             asset.value[0],
             asset.value[1],
             asset.value[2],

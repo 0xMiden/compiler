@@ -111,6 +111,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         tx_kernel::native_account::ADD_ASSET
                         | tx_kernel::native_account::REMOVE_ASSET
                         | tx_kernel::native_account::GET_ID
+                        | tx_kernel::native_account::COMPUTE_COMMITMENT
                         | tx_kernel::native_account::COMPUTE_DELTA_COMMITMENT
                         | tx_kernel::native_account::SET_STORAGE_ITEM
                         | tx_kernel::native_account::SET_STORAGE_MAP_ITEM
@@ -161,7 +162,6 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         }
                         tx_kernel::active_account::GET_ID
                         | tx_kernel::active_account::GET_CODE_COMMITMENT
-                        | tx_kernel::active_account::COMPUTE_COMMITMENT
                         | tx_kernel::active_account::COMPUTE_STORAGE_COMMITMENT
                         | tx_kernel::active_account::GET_STORAGE_ITEM
                         | tx_kernel::active_account::GET_STORAGE_MAP_ITEM
