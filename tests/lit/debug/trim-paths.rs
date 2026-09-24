@@ -21,7 +21,7 @@
 // inherit the span from the previous valid instruction (the panic call).
 //
 // HIR: hir.exec {{.*}}panic_fmt(
-// HIR-NEXT: ub.unreachable loc(trim-paths.rs:36:{{\d+}});
+// HIR-NEXT: ub.unreachable {{.*}}loc(trim-paths.rs:36:{{\d+}});
 
 #![no_std]
 #![no_main]
