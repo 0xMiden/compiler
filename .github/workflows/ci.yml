@@ -31,6 +31,8 @@ env:
   # via https://github.com/rust-lang/docs.rs/pull/2433
   RUST_CACHE_KEY: rust-cache-20251212
   NEXTEST_PROFILE: ci
+  # One pin for both the prebuilt (x64) and the compiled (ARM64) cargo-make installs
+  CARGO_MAKE_VERSION: 0.37.24
   # Both integration shards derive from this selection, so their partition stays complementary.
   MIDENC_EXAMPLE_TEST_FILTER: "package(midenc-integration-tests) and test(~end_to_end::examples::)"
 
@@ -76,11 +78,11 @@ jobs:
           prefix-key: ${{ env.RUST_CACHE_KEY }}
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install cargo-make
-        # No prebuilt aarch64 Linux binary exists, so compile it unless the restored cache
-        # already has it (`~/.cargo/bin` is part of the cache)
+        # No prebuilt aarch64 Linux binary exists, so compile the pinned version unless the
+        # restored cache (`~/.cargo/bin` is part of it) already has exactly that version
         run: |
-          if ! cargo make --version 2>/dev/null; then
-            cargo install cargo-make --force
+          if [ "$(cargo make --version 2>/dev/null)" != "cargo-make ${CARGO_MAKE_VERSION}" ]; then
+            cargo install cargo-make --version "${CARGO_MAKE_VERSION}" --locked --force
           fi
       # The formatting check compiles nothing and takes seconds, so it runs here first
       # instead of in its own job with its own runner and cache restore.
@@ -106,7 +108,7 @@ jobs:
         name: Install cargo-make
         uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
         with:
-          tool: cargo-make@0.37.24
+          tool: cargo-make@${{ env.CARGO_MAKE_VERSION }}
       - name: Install cargo-shear
         uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
         with:
