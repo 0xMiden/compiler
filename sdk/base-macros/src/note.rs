@@ -16,14 +16,12 @@ use crate::{
     generate::reject_reserved_dyncall_export,
     namespace::ComponentNamespace,
     note_schema::{expand_note_storage_schema, note_storage_schema_uniqueness_guard},
-    types::{
-        map_type_to_type_ref, registered_export_type_map, reject_custom_type_ref,
-        rust_ident_to_wit_name, wit_bindgen_rust_ident,
-    },
+    types::{map_type_to_type_ref, registered_export_type_map, reject_custom_type_ref},
     util::{
         NOTE_NAMED_FIELDS_ERROR, base_macros_derive_path, generate_frontend_link_section,
         generate_wit_link_section, is_type_named, is_unit_return_type,
     },
+    wit_names::{rust_ident_to_wit_name, wit_bindgen_guest_ident},
     wit_world::{InlineInterfaceWorld, ManifestPackage, wit_func_line, wit_param},
 };
 
@@ -310,8 +308,11 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     };
 
     let entrypoint_ident = &entrypoint_fn.sig.ident;
-    let export_name = rust_ident_to_wit_name(entrypoint_ident);
-    let guest_entrypoint_ident = wit_bindgen_rust_ident(&export_name, entrypoint_ident.span());
+    let export_name = match rust_ident_to_wit_name(entrypoint_ident) {
+        Ok(val) => val,
+        Err(err) => return err.into_compile_error(),
+    };
+    let guest_entrypoint_ident = wit_bindgen_guest_ident(&export_name, entrypoint_ident.span());
     let (constructors, constructor_type_imports) =
         match collect_note_constructors(&mut item_impl, entrypoint_ident, &export_name) {
             Ok(val) => val,
@@ -377,27 +378,33 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         Err(err) => return err.to_compile_error(),
     };
 
-    let inline_wit = build_note_script_wit(
+    let inline_wit = match build_note_script_wit(
         &namespace,
         manifest.component_version(),
         entrypoint_ident,
         &constructors,
         &constructor_type_imports,
         &dependency_imports,
-    );
+    ) {
+        Ok(wit) => wit,
+        Err(err) => return err.into_compile_error(),
+    };
     let inline_literal = Literal::string(&inline_wit);
     // The public WIT is embedded in the compiled package, so a dependent crate that imports
     // this note's constructors reads the interface from the `.masp` itself. It stays
     // export-only (no dependency imports), so it is self-contained for the consumer's
     // resolver, which parses dependency WIT against the bundled SDK WIT alone.
-    let public_wit = build_note_script_wit(
+    let public_wit = match build_note_script_wit(
         &namespace,
         manifest.component_version(),
         entrypoint_ident,
         &constructors,
         &constructor_type_imports,
         &[],
-    );
+    ) {
+        Ok(wit) => wit,
+        Err(err) => return err.into_compile_error(),
+    };
     let wit_link_section = match generate_wit_link_section(&public_wit) {
         Ok(tokens) => tokens,
         Err(err) => return err.into_compile_error(),
@@ -630,7 +637,7 @@ fn collect_note_constructors(
             type_ref.add_required_core_type_imports(&mut type_imports);
             // WIT parameter names are kebab-cased, so distinct Rust identifiers can collide;
             // catch that here instead of surfacing a WIT parse error from the generated bindings.
-            let wit_param_name = rust_ident_to_wit_name(&pat_ident.ident);
+            let wit_param_name = rust_ident_to_wit_name(&pat_ident.ident)?;
             if !wit_param_names.insert(wit_param_name.clone()) {
                 return Err(syn::Error::new(
                     pat_ident.ident.span(),
@@ -675,7 +682,7 @@ fn collect_note_constructors(
         // WIT export names must be unique across the interface: a constructor can collide with
         // the entrypoint export or with a duplicate method definition. Catch that here instead
         // of surfacing a WIT parse error from the generated bindings.
-        let wit_name = rust_ident_to_wit_name(&sig.ident);
+        let wit_name = rust_ident_to_wit_name(&sig.ident)?;
         reject_reserved_dyncall_export(&sig.ident, &wit_name, "note constructor")?;
         if wit_name == entrypoint_export_name || !wit_names.insert(wit_name.clone()) {
             return Err(syn::Error::new(
@@ -689,7 +696,7 @@ fn collect_note_constructors(
         }
 
         constructors.push(NoteConstructor {
-            guest_fn_ident: wit_bindgen_rust_ident(&wit_name, sig.ident.span()),
+            guest_fn_ident: wit_bindgen_guest_ident(&wit_name, sig.ident.span()),
             wit_name,
             fn_ident: sig.ident.clone(),
             doc_attrs,
@@ -1049,7 +1056,8 @@ fn build_note_script_wit(
     constructors: &[NoteConstructor],
     constructor_type_imports: &BTreeSet<String>,
     dependency_imports: &[String],
-) -> String {
+) -> syn::Result<String> {
+    let entrypoint_name = rust_ident_to_wit_name(entrypoint_ident)?;
     let interface_name = namespace.wit_interface();
     let world_name = format!("{interface_name}-world");
     // `word` is always required by the entrypoint's `arg` parameter
@@ -1057,7 +1065,7 @@ fn build_note_script_wit(
     type_imports.insert("word".to_string());
     let exports = [interface_name.clone()];
 
-    InlineInterfaceWorld {
+    Ok(InlineInterfaceWorld {
         generated_by: "#[note]",
         package: &namespace.wit_package(),
         version: component_version,
@@ -1071,7 +1079,7 @@ fn build_note_script_wit(
         // The entrypoint's `arg` parameter is macro-controlled and never needs escaping.
         interface.function(
             &export_path(namespace, entrypoint_ident),
-            &wit_func_line(&rust_ident_to_wit_name(entrypoint_ident), &["arg: word".to_string()], None),
+            &wit_func_line(&entrypoint_name, &["arg: word".to_string()], None),
         );
         for constructor in constructors {
             interface.function(
@@ -1079,7 +1087,7 @@ fn build_note_script_wit(
                 &constructor_wit_signature(constructor),
             );
         }
-    })
+    }))
 }
 
 /// Builds frontend metadata for the `#[note_script]` method exported by a note at `path`.
@@ -1484,7 +1492,8 @@ fn main() {{}}
             &[],
             &BTreeSet::new(),
             &[],
-        );
+        )
+        .unwrap();
 
         assert!(wit.contains("package miden:my-note@1.0.0;"), "unexpected WIT: {wit}");
         assert!(wit.contains("interface my-note {"), "unexpected WIT: {wit}");
@@ -1530,7 +1539,8 @@ fn main() {{}}
             &constructors,
             &type_imports,
             &[],
-        );
+        )
+        .unwrap();
 
         assert!(wit.contains(
             "@external-id(\"miden::my_note::my_note::create\")\n    %create: func(%target: \
@@ -1577,7 +1587,8 @@ fn main() {{}}
             &constructors,
             &type_imports,
             &[],
-        );
+        )
+        .unwrap();
 
         assert!(wit.contains("%result: func(arg: word);"), "unexpected WIT: {wit}");
         assert!(
@@ -1762,7 +1773,8 @@ fn main() {{}}
             &constructors,
             &type_imports,
             &[],
-        );
+        )
+        .unwrap();
         assert!(
             wit.contains("@external-id(\"miden::my_note::my_note::makeNote\")"),
             "the export path must keep the Rust identifier: {wit}"
@@ -1795,6 +1807,25 @@ fn main() {{}}
             Err(err) => err,
         };
         assert!(err.to_string().contains("already used by another parameter"));
+    }
+
+    #[test]
+    fn note_constructors_reject_identifiers_without_a_wit_name() {
+        let mut item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[note_constructor]
+                pub fn _1(serial_num: Word) {}
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+        let entrypoint_ident = format_ident!("execute");
+
+        let err = match collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute") {
+            Ok(_) => panic!("a constructor without a valid WIT name must be rejected"),
+            Err(err) => err,
+        };
+        let message = err.to_string();
+        assert!(message.contains("`_1`") && message.contains("WIT name"), "{message}");
     }
 
     #[test]
