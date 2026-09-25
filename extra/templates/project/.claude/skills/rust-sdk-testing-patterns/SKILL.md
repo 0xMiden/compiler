@@ -422,7 +422,7 @@ The contracts a test builds depend on the guest SDK `miden = { version = "0.14" 
 - [ ] `miden-testing` is available as a direct dependency, or through `miden_client::testing` only when that optional client feature is enabled
 - [ ] Auth uses `AuthSchemeId::Falcon512Poseidon2` (or the equivalent `AuthScheme::Falcon512Poseidon2`)
 - [ ] `AccountBuilder` uses `.account_type(..)`, and no `.storage_mode(..)` and no `.with_auth_component(..)` — auth goes through `.with_component(..)`
-- [ ] Storage slot names follow `<package_name>::<interface_segment>::<field_name>`
+- [ ] Storage slot names follow `<[lib].namespace>::<field_name>`, where `[lib].namespace` is the three-segment Miden path from `miden-project.toml`
 - [ ] Value slots without a schema default are seeded via `InitStorageData::insert_value(StorageValueName::from_slot_name(&slot), ..)`; `StorageValue<Word>` slots get a `Word`, not a bare integer
 - [ ] Contracts are built out of process with `build_project_in_dir(...)` / midenup / `CARGO_MIDEN` / `cargo miden`, not by depending on `cargo-miden`
 - [ ] `NoteScript::root()` converted with `Word::from(..)` before seeding `RandomCoin`
