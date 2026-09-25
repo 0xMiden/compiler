@@ -355,7 +355,7 @@ fn synthesized_target_name(
     {
         return session.name.clone();
     }
-    declared_namespace(input).unwrap_or_else(|| session.name.clone())
+    declared_namespace(input, session).unwrap_or_else(|| session.name.clone())
 }
 
 /// The namespace `input`'s root source declares for itself, if its format has such a thing and
@@ -369,12 +369,13 @@ fn synthesized_target_name(
 /// a missing or non-UTF-8 root fails with the parser's own diagnostic a moment later, and
 /// reporting it twice — once in a worse form — helps nobody. Seeded requests rely on this too;
 /// they name an input path that need not exist.
-fn declared_namespace(input: &InputFile) -> Option<String> {
+fn declared_namespace(input: &InputFile, session: &Session) -> Option<String> {
     match input.file_type() {
         FileType::Masm => masm_namespace_declaration(&root_source_text(input)?),
         FileType::Hir => hir_declared_namespace(&root_source_text(input)?),
         FileType::Wasm | FileType::Wat => {
-            wasm_declared_namespace(&super::frontends::WasmFrontend::read_binary(input).ok()?)
+            let wasm = super::frontends::WasmFrontend::read_binary(input).ok()?;
+            wasm_declared_namespace(&wasm, session)
         }
         // Every other format — Rust, packages, manifests — has nothing to declare, and keeps the
         // artifact name.
@@ -388,10 +389,10 @@ fn declared_namespace(input: &InputFile) -> Option<String> {
 /// A core module, a component without function exports, and a component the frontend is going to
 /// reject (a missing or malformed `external-id`, or exports under different namespaces) declare
 /// nothing here; the frontend reports the latter with its own diagnostic.
-fn wasm_declared_namespace(wasm: &[u8]) -> Option<String> {
+fn wasm_declared_namespace(wasm: &[u8], session: &Session) -> Option<String> {
     use midenc_hir::{SymbolNameComponent, SymbolPath};
 
-    let namespace = midenc_frontend_wasm::declared_namespace(wasm).ok()??;
+    let namespace = midenc_frontend_wasm::declared_namespace(wasm, session).ok()??;
     let relative = namespace
         .components()
         .filter(|component| !matches!(component, SymbolNameComponent::Root))
