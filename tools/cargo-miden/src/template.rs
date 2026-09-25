@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use liquid::{Object, Parser, model::Value};
 use liquid_core::{Display_filter, Filter, FilterReflection, ParseFilter, Runtime, ValueView};
-use midenc_frontend_wasm_metadata::namespace::{SegmentPosition, validate_namespace_segment};
+use midenc_frontend_wasm_metadata::namespace::validate_namespace;
 use tempfile::TempDir;
 use toml_edit::DocumentMut;
 use walkdir::WalkDir;
@@ -69,6 +69,14 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
 
     let config = load_template_config(&source_root)?;
 
+    // A component template names its exports after the namespace derived from the project name,
+    // which must be one the SDK macros accept; refuse it before anything is written.
+    let namespace = if template_declares_namespace(&source_root) {
+        validated_component_namespace(&project_name)?
+    } else {
+        component_namespace(&project_name)
+    };
+
     let destination_root = args
         .destination
         .clone()
@@ -81,7 +89,6 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
     prepare_destination(&project_dir, args.force)?;
 
     let crate_name = sanitize_crate_name(&project_name);
-    let namespace = component_namespace(&project_name);
     let mut variables = build_variable_map(crate_name, namespace.clone(), &args.define)?;
     // Expose the original project name as well.
     variables.insert("project_name".into(), Value::scalar(project_name.clone()));
@@ -255,15 +262,56 @@ fn component_namespace(package_name: &str) -> String {
 /// [`component_namespace`]), or an error naming the project name when that namespace is invalid.
 pub(crate) fn validated_component_namespace(project_name: &str) -> Result<String> {
     let namespace = component_namespace(project_name);
-    for (segment, position) in namespace.split("::").zip(SegmentPosition::ALL) {
-        if let Err(reason) = validate_namespace_segment(segment, position) {
-            bail!(
-                "the project name `{project_name}` yields the invalid component namespace \
-                 `{namespace}`: the segment `{segment}` {reason}; choose another project name"
-            );
-        }
+    if let Err(reason) = validate_namespace(&namespace) {
+        bail!(
+            "the project name `{project_name}` yields the invalid component namespace \
+             `{namespace}`: {reason}; choose another project name"
+        );
     }
     Ok(namespace)
+}
+
+/// Returns whether the project generated from the template at `source_root` declares the derived
+/// component namespace in its `miden-project.toml`: the template's manifest renders the
+/// `namespace` variable, or, without one, the manifest generated for its `Cargo.toml` names a
+/// component `project-kind`.
+fn template_declares_namespace(source_root: &Path) -> bool {
+    match fs::read_to_string(source_root.join("miden-project.toml")) {
+        Ok(manifest) => renders_variable(&manifest, "namespace"),
+        Err(_) => fs::read_to_string(source_root.join("Cargo.toml"))
+            .ok()
+            .and_then(|manifest| manifest.parse::<DocumentMut>().ok())
+            .and_then(|manifest| {
+                toml_str(&manifest, &["package", "metadata", "miden", "project-kind"])
+                    .map(project_kind_has_namespace)
+            })
+            .unwrap_or(false),
+    }
+}
+
+/// Returns whether the manifest generated for `project_kind` declares a `[lib].namespace`.
+fn project_kind_has_namespace(project_kind: &str) -> bool {
+    matches!(
+        project_kind,
+        "account"
+            | "account-component"
+            | "authentication-component"
+            | "note"
+            | "note-script"
+            | "tx-script"
+            | "transaction-script"
+    )
+}
+
+/// Returns whether the Liquid template `source` outputs the variable `name` (`{{ name }}`,
+/// optionally with whitespace control or filters).
+fn renders_variable(source: &str, name: &str) -> bool {
+    source.split("{{").skip(1).any(|tag| {
+        let expression = tag.trim_start_matches('-').trim_start();
+        expression
+            .strip_prefix(name)
+            .is_some_and(|rest| !rest.starts_with(|ch: char| ch.is_alphanumeric() || ch == '_'))
+    })
 }
 
 fn component_package_name(package: &str) -> Option<&str> {
@@ -808,6 +856,64 @@ mod tests {
                 "unexpected diagnostic: {err}"
             );
         }
+    }
+
+    /// A template whose project declares the derived namespace refuses a project name yielding
+    /// an invalid one before rendering; a template that does not declare it accepts the name.
+    #[test]
+    fn templates_declaring_the_namespace_validate_it_before_rendering() -> Result<()> {
+        let generate_from = |files: &[(&str, &str)]| -> Result<(Result<PathBuf>, TempDir)> {
+            let template_dir = tempdir()?;
+            let template_root = template_dir.path().join("template");
+            fs::create_dir_all(&template_root)?;
+            for (file, contents) in files {
+                fs::write(template_root.join(file), contents)?;
+            }
+            let destination_dir = tempdir()?;
+            let generated = generate(GenerateArgs {
+                template_path: TemplatePath {
+                    path: Some(template_dir.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+                destination: Some(destination_dir.path().to_path_buf()),
+                name: Some("match".into()),
+                force: true,
+                ..Default::default()
+            });
+            Ok((generated, destination_dir))
+        };
+
+        for files in [
+            &[(
+                "miden-project.toml",
+                "[package]\nname = \"{{crate_name}}\"\n\n[lib]\nnamespace = \"{{- namespace \
+                 -}}\"\n",
+            )][..],
+            &[(
+                "Cargo.toml",
+                "[package]\nname = \"{{crate_name}}\"\n\n[package.metadata.miden]\nproject-kind \
+                 = \"note\"\n",
+            )][..],
+        ] {
+            let (generated, destination_dir) = generate_from(files)?;
+            let err = generated.expect_err("the derived namespace is invalid").to_string();
+            assert!(
+                err.contains("`miden::match::match`") && err.contains("is a Rust keyword"),
+                "unexpected diagnostic: {err}"
+            );
+            assert!(
+                !destination_dir.path().join("match").exists(),
+                "nothing may be rendered before the check"
+            );
+        }
+
+        let (generated, _) = generate_from(&[(
+            "Cargo.toml",
+            "[package]\nname = \"{{crate_name}}\"\n\n[package.metadata.miden]\nproject-kind = \
+             \"program\"\n",
+        )])?;
+        generated.expect("a program does not declare a namespace");
+        Ok(())
     }
 
     /// The namespace a template renders through the `namespace` variable and the one the

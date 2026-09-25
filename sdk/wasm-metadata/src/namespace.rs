@@ -1,9 +1,10 @@
-//! The rule for the segments of a component namespace (`[lib].namespace`, e.g.
-//! `miden::counter_contract::counter_contract`).
+//! The rule for a component namespace (`[lib].namespace`, e.g.
+//! `miden::counter_contract::counter_contract`) and its segments.
 //!
 //! The SDK macros enforce it on the declared namespace and `cargo miden new` on the namespace it
 //! derives from a project name, so both accept exactly the same namespaces.
 
+use alloc::string::{String, ToString};
 use core::fmt;
 
 /// The WIT keywords, spelled as snake_case segments; a keyword cannot name a WIT package,
@@ -148,9 +149,77 @@ pub fn validate_namespace_segment(
     Ok(())
 }
 
+/// Why a namespace is invalid.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NamespaceError {
+    /// The namespace does not have exactly three `::`-separated segments.
+    SegmentCount,
+    /// A segment is invalid at its position.
+    Segment {
+        /// The offending segment.
+        segment: String,
+        /// Why the segment is invalid.
+        reason: NamespaceSegmentError,
+    },
+}
+
+impl fmt::Display for NamespaceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SegmentCount => f.write_str("does not have exactly three `::`-separated segments"),
+            Self::Segment { segment, reason } => write!(f, "the segment `{segment}` {reason}"),
+        }
+    }
+}
+
+/// Checks that `namespace` is a component namespace: an optional leading `::` followed by exactly
+/// three `::`-separated segments, each valid at its position (see [`validate_namespace_segment`]).
+pub fn validate_namespace(namespace: &str) -> Result<(), NamespaceError> {
+    let namespace = namespace.strip_prefix("::").unwrap_or(namespace);
+    let mut segments = namespace.split("::");
+    let (Some(ns), Some(pkg), Some(iface), None) =
+        (segments.next(), segments.next(), segments.next(), segments.next())
+    else {
+        return Err(NamespaceError::SegmentCount);
+    };
+    for (segment, position) in [ns, pkg, iface].into_iter().zip(SegmentPosition::ALL) {
+        validate_namespace_segment(segment, position).map_err(|reason| {
+            NamespaceError::Segment {
+                segment: segment.to_string(),
+                reason,
+            }
+        })?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_whole_namespaces() {
+        assert_eq!(validate_namespace("miden::counter_contract::counter_contract"), Ok(()));
+        assert_eq!(validate_namespace("::acme::wallet2::main"), Ok(()));
+        for namespace in ["", "miden::counter", "miden::a::b::c"] {
+            assert_eq!(
+                validate_namespace(namespace),
+                Err(NamespaceError::SegmentCount),
+                "`{namespace}`"
+            );
+        }
+        assert_eq!(
+            validate_namespace("miden::wallet::core_types"),
+            Err(NamespaceError::Segment {
+                segment: "core_types".to_string(),
+                reason: NamespaceSegmentError::ReservedInterface,
+            })
+        );
+        assert_eq!(
+            validate_namespace("miden::match::main").unwrap_err().to_string(),
+            "the segment `match` is a Rust keyword"
+        );
+    }
 
     fn validate(segment: &str) -> Result<(), NamespaceSegmentError> {
         validate_namespace_segment(segment, SegmentPosition::Package)
