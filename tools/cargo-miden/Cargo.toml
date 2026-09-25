@@ -43,6 +43,7 @@ flate2.workspace = true
 midenc-driver = { workspace = true, features = ["std"] }
 midenc-session.workspace = true
 midenc-log.workspace = true
+midenc-frontend-wasm-metadata.workspace = true
 log.workspace = true
 clap.workspace = true
 anyhow.workspace = true

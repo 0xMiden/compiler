@@ -807,6 +807,7 @@ dependencies = [
  "liquid-core",
  "log",
  "midenc-driver",
+ "midenc-frontend-wasm-metadata",
  "midenc-log",
  "midenc-session",
  "path-absolutize",

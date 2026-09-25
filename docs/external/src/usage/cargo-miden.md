@@ -103,9 +103,10 @@ Account component, note and transaction script projects are named by the `[lib].
 their `miden-project.toml`. It is a Miden path of exactly three segments, `ns::pkg::iface`, where
 each segment is a snake_case identifier: lowercase ASCII letters and digits in words joined by
 single `_`, starting with a letter (`[a-z][a-z0-9]*(_[a-z0-9]+)*`, e.g. `counter_contract` or
-`wallet2`), and not a WIT or Rust keyword such as `list`, `type` or `match`. The first two
-segments form the WIT package id, so they must be unique among all crates a consumer links,
-whatever their versions, and must not be `miden::base`, which the SDK's own WIT uses. Projects created with `cargo miden new` default to `miden::<package>::<package>`
+`wallet2`), and not a WIT or Rust 2024 keyword such as `list`, `type`, `match` or `gen`. The first
+two segments form the WIT package id, so they must be unique among all crates a consumer links,
+whatever their versions, and must not be `miden::base`, which the SDK's own WIT uses; for the same
+reason the last segment must not be `core_types`. Projects created with `cargo miden new` default to `miden::<package>::<package>`
 (package name in snake_case):
 
 ```toml

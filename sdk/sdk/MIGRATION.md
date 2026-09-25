@@ -17,7 +17,8 @@ directly below this paragraph, above the previous one (newest first, like the
 `[lib].namespace` in `miden-project.toml` is now a Miden path of exactly three segments,
 `<namespace>::<package>::<interface>`, each a snake_case identifier: lowercase ASCII letters and
 digits in words joined by single `_`, starting with a letter (`[a-z][a-z0-9]*(_[a-z0-9]+)*`), and
-not a WIT or Rust keyword such as `list`, `type` or `match`. The component-model id used before is
+not a WIT or Rust 2024 keyword such as `list`, `type`, `match` or `gen`; the interface segment
+cannot be `core_types`, which names the SDK's own WIT interface. The component-model id used before is
 rejected by the SDK macros with an error that shows the expected shape. `cargo miden new` writes
 `miden::<package>::<package>` (package name snake-cased) for account, note and
 transaction-script projects, and refuses a project name that yields an invalid namespace. The

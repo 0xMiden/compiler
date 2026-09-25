@@ -9,6 +9,7 @@ use anyhow::{Context, Result, bail};
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use liquid::{Object, Parser, model::Value};
 use liquid_core::{Display_filter, Filter, FilterReflection, ParseFilter, Runtime, ValueView};
+use midenc_frontend_wasm_metadata::namespace::{SegmentPosition, validate_namespace_segment};
 use tempfile::TempDir;
 use toml_edit::DocumentMut;
 use walkdir::WalkDir;
@@ -254,123 +255,15 @@ fn component_namespace(package_name: &str) -> String {
 /// [`component_namespace`]), or an error naming the project name when that namespace is invalid.
 pub(crate) fn validated_component_namespace(project_name: &str) -> Result<String> {
     let namespace = component_namespace(project_name);
-    if !namespace.split("::").all(is_valid_namespace_segment) {
-        bail!(
-            "the project name `{project_name}` yields the invalid component namespace \
-             `{namespace}`: each namespace segment must be a snake_case identifier starting with \
-             a letter that is not a WIT or Rust keyword; choose another project name"
-        );
+    for (segment, position) in namespace.split("::").zip(SegmentPosition::ALL) {
+        if let Err(reason) = validate_namespace_segment(segment, position) {
+            bail!(
+                "the project name `{project_name}` yields the invalid component namespace \
+                 `{namespace}`: the segment `{segment}` {reason}; choose another project name"
+            );
+        }
     }
     Ok(namespace)
-}
-
-/// The WIT and Rust keywords a namespace segment may not be.
-///
-/// Mirrors `WIT_KEYWORDS` and the Rust identifier check of `is_valid_segment` in
-/// `sdk/base-macros/src/namespace.rs` (lowercase keywords only: segments are lowercase). A test
-/// there reads this list and fails when it drifts from `WIT_KEYWORDS`.
-const NAMESPACE_KEYWORDS: &[&str] = &[
-    "abstract",
-    "as",
-    "async",
-    "await",
-    "become",
-    "bool",
-    "borrow",
-    "box",
-    "break",
-    "char",
-    "const",
-    "constructor",
-    "continue",
-    "crate",
-    "do",
-    "dyn",
-    "else",
-    "enum",
-    "error_context",
-    "export",
-    "extern",
-    "f32",
-    "f64",
-    "false",
-    "final",
-    "flags",
-    "fn",
-    "for",
-    "from",
-    "func",
-    "future",
-    "if",
-    "impl",
-    "import",
-    "in",
-    "include",
-    "interface",
-    "let",
-    "list",
-    "loop",
-    "macro",
-    "map",
-    "match",
-    "mod",
-    "move",
-    "mut",
-    "option",
-    "override",
-    "own",
-    "package",
-    "priv",
-    "pub",
-    "record",
-    "ref",
-    "resource",
-    "result",
-    "return",
-    "s16",
-    "s32",
-    "s64",
-    "s8",
-    "self",
-    "static",
-    "stream",
-    "string",
-    "struct",
-    "super",
-    "trait",
-    "true",
-    "try",
-    "tuple",
-    "type",
-    "typeof",
-    "u16",
-    "u32",
-    "u64",
-    "u8",
-    "unsafe",
-    "unsized",
-    "use",
-    "variant",
-    "virtual",
-    "where",
-    "while",
-    "with",
-    "world",
-    "yield",
-];
-
-/// Returns true if `segment` is a valid `[lib].namespace` segment: a snake_case identifier,
-/// `[a-z][a-z0-9]*(_[a-z0-9]+)*`, that is not a keyword.
-///
-/// A local copy of `is_valid_segment` in `sdk/base-macros/src/namespace.rs`, which the SDK
-/// macros enforce; keep the two in sync.
-fn is_valid_namespace_segment(segment: &str) -> bool {
-    segment.starts_with(|ch: char| ch.is_ascii_lowercase())
-        && segment.split('_').all(|word| {
-            !word.is_empty()
-                && word.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
-        })
-        && !NAMESPACE_KEYWORDS.contains(&segment)
 }
 
 fn component_package_name(package: &str) -> Option<&str> {
@@ -898,12 +791,20 @@ mod tests {
             validated_component_namespace("HelloWorld").unwrap(),
             "miden::hello_world::hello_world"
         );
-        for name in ["123abc", "list", "match"] {
+        for (name, reason) in [
+            ("123abc", "is not a snake_case identifier"),
+            ("list", "is a WIT keyword"),
+            ("match", "is a Rust keyword"),
+            ("gen", "is a Rust keyword"),
+            ("core-types", "is reserved as an interface name"),
+        ] {
             let err = validated_component_namespace(name)
                 .expect_err("the derived namespace is invalid")
                 .to_string();
             assert!(
-                err.contains(&format!("`{name}`")) && err.contains("choose another project name"),
+                err.contains(&format!("`{name}`"))
+                    && err.contains(reason)
+                    && err.contains("choose another project name"),
                 "unexpected diagnostic: {err}"
             );
         }

@@ -6,13 +6,13 @@ use std::{
 static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
 
 use heck::{ToKebabCase, ToUpperCamelCase};
+use midenc_frontend_wasm_metadata::namespace::WIT_KEYWORDS;
 use proc_macro2::Span;
 use syn::{ItemStruct, Type, ext::IdentExt, spanned::Spanned};
 use wit_bindgen_core::wit_parser::Type as WitType;
 
 use crate::{
     manifest_paths::SDK_WIT_SOURCE,
-    namespace::WIT_KEYWORDS,
     wit_names::{rust_ident_to_wit_name, wit_bindgen_guest_ident},
 };
 
