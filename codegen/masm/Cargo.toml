@@ -42,6 +42,7 @@ midenc-dialect-hir.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-ub.workspace = true
 midenc-dialect-wasm.workspace = true
+midenc-frontend-wasm-metadata.workspace = true
 midenc-session.workspace = true
 petgraph.workspace = true
 smallvec.workspace = true
