@@ -1204,7 +1204,11 @@ pub(crate) fn augment_foreign_account_bindings(
 
         let mut methods = Vec::with_capacity(foreign_module.functions.len());
         for foreign_func in &foreign_module.functions {
-            let native_ident = method_ident(foreign_func)?;
+            let (wit_name, path) = dependency.function_path(&foreign_func.sig.ident)?;
+            // Pair the FPI variant with the native binding through the dependency's WIT name:
+            // wit-bindgen escapes a keyword name (`type` -> `type_`) but not the prefixed FPI
+            // variant (`fpi_type`), so stripping the prefix does not give the native name.
+            let native_ident = native_ident(wit_name, foreign_func.sig.ident.span());
             let native_func = native_module
                 .functions
                 .iter()
@@ -1218,7 +1222,6 @@ pub(crate) fn augment_foreign_account_bindings(
                         ),
                     )
                 })?;
-            let (wit_name, path) = dependency.function_path(&foreign_func.sig.ident)?;
             let root = dependency.roots.get(&path).ok_or_else(|| {
                 Error::new(
                     foreign_func.sig.ident.span(),
@@ -1398,22 +1401,14 @@ fn append_module_path(mut base: TokenStream2, module_path: &[syn::Ident]) -> Tok
     base
 }
 
-/// Verifies that a private FPI binding has the native function name and FPI ABI prefix.
+/// Verifies that a private FPI binding has the native function's parameters behind the FPI ABI
+/// prefix.
 ///
-/// Resolved WIT types are compared by [`validate_synthetic_interface`]. Rust aliases may render
-/// with different token spellings, so this layer checks only properties introduced by wit-bindgen
-/// and leaves alias compatibility to Rust's type checker.
+/// The caller pairs the two bindings through the dependency's WIT name. Resolved WIT types are
+/// compared by [`validate_synthetic_interface`]. Rust aliases may render with different token
+/// spellings, so this layer checks only properties introduced by wit-bindgen and leaves alias
+/// compatibility to Rust's type checker.
 pub(crate) fn validate_fpi_signature(native: &ItemFn, foreign: &ItemFn) -> syn::Result<()> {
-    if method_ident(foreign)? != native.sig.ident {
-        return Err(Error::new(
-            foreign.sig.ident.span(),
-            format!(
-                "generated private FPI function `{}` does not match native function `{}`",
-                foreign.sig.ident, native.sig.ident
-            ),
-        ));
-    }
-
     let foreign_inputs = foreign.sig.inputs.iter().collect::<Vec<_>>();
     let native_inputs = native.sig.inputs.iter().collect::<Vec<_>>();
     if foreign_inputs.len() != native_inputs.len() + FPI_ABI_PARAM_COUNT {
@@ -1553,24 +1548,14 @@ fn active_account_impl(account_struct: &ItemStruct) -> TokenStream2 {
     }
 }
 
-/// Returns the generated trait method name for a generated FPI free function.
-fn method_ident(func: &ItemFn) -> syn::Result<syn::Ident> {
-    let fn_name = func.sig.ident.to_string();
-    let Some(method_name) = fn_name.strip_prefix(RUST_FUNCTION_PREFIX) else {
-        return Err(Error::new(
-            func.sig.ident.span(),
-            format!(
-                "expected generated FPI function name to start with `{}`",
-                RUST_FUNCTION_PREFIX
-            ),
-        ));
-    };
-
+/// Returns the identifier wit-bindgen gives the native import binding, and so the generated trait
+/// method, of the dependency WIT function `wit_name`.
+pub(crate) fn native_ident(wit_name: &str, span: Span) -> syn::Ident {
     // No dependency method name is reserved. Component methods live on the generated trait, so a
     // method that shares a name with the inherent constructor `new` or an `ActiveAccount` built-in
     // (e.g. `get_id`) coexists with it and is resolved by the caller with UFCS
     // (`<Wallet as Interface>::method(account, ..)`) rather than silently shadowing it.
-    Ok(syn::Ident::new(method_name, func.sig.ident.span()))
+    syn::Ident::new(&wit_bindgen_rust::to_rust_ident(wit_name), span)
 }
 
 /// Converts a procedure root into SDK `Word` construction tokens.
@@ -1915,6 +1900,25 @@ interface api {
     }
 
     #[test]
+    fn keyword_named_dependency_functions_pair_with_their_native_binding() {
+        let dependency = test_dependency(&[("type", "miden::counter::counter::type")]);
+        let foreign_ident =
+            syn::Ident::new(&wit_bindgen_rust::to_rust_ident("fpi-type"), Span::call_site());
+        assert_eq!(foreign_ident, "fpi_type");
+
+        let (wit_name, path) = dependency
+            .function_path(&foreign_ident)
+            .expect("the dependency function must be found");
+        assert_eq!(wit_name, "type");
+        assert_eq!(
+            Some(path),
+            canonical_procedure_path(MasmPath::new("miden::counter::counter::type"))
+        );
+        // wit-bindgen escapes the keyword in the native binding it generates.
+        assert_eq!(native_ident(wit_name, Span::call_site()), "type_");
+    }
+
+    #[test]
     fn dependency_external_ids_follow_the_compilers_procedure_path_rule() {
         let dependency =
             test_dependency(&[("get-count", "miden::counter::counter::\"get-count\"")]);
@@ -1955,19 +1959,10 @@ interface api {
     }
 
     #[test]
-    fn method_ident_allows_new() {
+    fn native_ident_allows_new() {
         // A component method named `new` is a trait method and coexists with the inherent
         // constructor `Wallet::new(id)`; it is no longer reserved.
-        let func: ItemFn = parse_quote! {
-            pub fn fpi_new(
-                account_id_prefix: ::miden::Felt,
-                account_id_suffix: ::miden::Felt,
-                foreign_proc_root: ::miden::Word,
-            ) {}
-        };
-
-        let ident = method_ident(&func).expect("a component method named `new` must be allowed");
-        assert_eq!(ident, "new");
+        assert_eq!(native_ident("new", Span::call_site()), "new");
     }
 
     #[test]
@@ -2014,19 +2009,10 @@ interface api {
     }
 
     #[test]
-    fn method_ident_allows_active_account_method_names() {
+    fn native_ident_allows_active_account_method_names() {
         // Component methods sharing a name with an `ActiveAccount` built-in are now legal: both
         // live on traits, so the clash is resolved by the caller with UFCS rather than rejected.
-        let func: ItemFn = parse_quote! {
-            pub fn fpi_get_id(
-                account_id_prefix: ::miden::Felt,
-                account_id_suffix: ::miden::Felt,
-                foreign_proc_root: ::miden::Word,
-            ) {}
-        };
-
-        let ident = method_ident(&func).expect("active-account method names must be allowed");
-        assert_eq!(ident, "get_id");
+        assert_eq!(native_ident("get-id", Span::call_site()), "get_id");
     }
 
     #[test]
