@@ -556,7 +556,9 @@ impl<'a> ComponentTranslator<'a> {
     }
 
     /// Reports an error when the component already holds a symbol named by the leaf of the
-    /// export path `path`: the core module, or the lifted function of another export.
+    /// export path `path`, i.e. when the export clashes with the core module of the same name.
+    ///
+    /// Two exports sharing one path are rejected earlier, by the export pre-scan.
     fn ensure_export_leaf_is_free(&self, path: &SymbolPath) -> WasmResult<()> {
         let leaf = path.name();
         let component = self.result.component.borrow();
@@ -569,7 +571,12 @@ impl<'a> ComponentTranslator<'a> {
                 component.namespace_path()
             )
         } else {
-            format!("two exports lower to `{path}`")
+            // Internal error: the export pre-scan (`exports_namespace`) rejects two exports of
+            // one path before any export is lifted.
+            format!(
+                "export `{path}` clashes with the component symbol `{leaf}` (two exports of one \
+                 path are rejected by the export pre-scan)"
+            )
         };
         Err(Report::msg(message))
     }

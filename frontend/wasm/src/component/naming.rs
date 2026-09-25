@@ -331,6 +331,45 @@ mod tests {
     }
 
     #[test]
+    fn two_exports_sharing_one_path_are_rejected() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $m
+                    (func (export "get-count") (result i32) i32.const 0)
+                    (func (export "read-count") (result i32) i32.const 1)
+                )
+                (core instance $i (instantiate $m))
+                (func $get (result u32) (canon lift (core func $i "get-count")))
+                (func $read (result u32) (canon lift (core func $i "read-count")))
+                (component $shim
+                    (import "import-func-get-count" (func $g (result u32)))
+                    (import "import-func-read-count" (func $r (result u32)))
+                    (export "get-count" (external-id "miden::counter::counter::get_count")
+                        (func $g))
+                    (export "read-count" (external-id "miden::counter::counter::get_count")
+                        (func $r))
+                )
+                (instance $exports (instantiate $shim
+                    (with "import-func-get-count" (func $get))
+                    (with "import-func-read-count" (func $read))
+                ))
+                (export "miden:counter/counter@0.1.0" (instance $exports))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let expected = "component functions `get-count` and `read-count` share the Miden path \
+                        `::miden::counter::counter::get_count`";
+        let err = error_of(&wasm, None);
+        assert!(err.contains(expected), "unexpected diagnostic: {err}");
+        let err = declared_namespace(&wasm)
+            .expect_err("the pre-scan must reject the shared path")
+            .to_string();
+        assert!(err.contains(expected), "unexpected diagnostic: {err}");
+    }
+
+    #[test]
     fn an_export_without_external_id_is_rejected() {
         let err = error_of(&counter_component(""), None);
         assert!(
