@@ -390,6 +390,9 @@ pub fn build_manifest_to_wasm(
 ///
 /// Named rather than inlined so that the half of the entry point which does *not* require a
 /// multi-minute `cargo build -Z build-std` against the SDK is assertable on its own.
+///
+/// `namespace` is the target's component namespace, the Miden path the component is rooted at;
+/// `None` for a target without one, e.g. an executable.
 fn lower_wasm_artifact(
     wasm: InputFile,
     namespace: Option<midenc_hir::SymbolPath>,

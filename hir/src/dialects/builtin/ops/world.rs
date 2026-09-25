@@ -120,6 +120,8 @@ impl World {
             };
             module = next;
         }
+        // The module tree reaches the component's whole path, so that path is at once the
+        // component, the shadowed module path and their shared prefix.
         Err(shadowing_error(component, component, component))
     }
 

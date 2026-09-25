@@ -12,11 +12,13 @@ use midenc_session::{
 use crate::{Event, lower::NativePtr, masm};
 
 pub struct MasmComponent {
-    /// The namespace path of the component, see [`Component::namespace_path`](midenc_hir::dialects::builtin::Component::namespace_path)
+    /// The namespace path of the component, see
+    /// [`Component::namespace_path`](midenc_hir::dialects::builtin::Component::namespace_path)
     pub id: Option<SymbolPath>,
     /// True if [`Self::id`] belongs to a component the compiler invented to wrap a bare core
     /// module, rather than one an author wrote — see
-    /// [`Component::SYNTHETIC_WRAPPER_ATTR`](midenc_hir::dialects::builtin::Component::SYNTHETIC_WRAPPER_ATTR), which is where this comes from.
+    /// [`Component::SYNTHETIC_WRAPPER_ATTR`](midenc_hir::dialects::builtin::Component::SYNTHETIC_WRAPPER_ATTR),
+    /// which is where this comes from.
     pub synthetic_wrapper: bool,
     /// The path of the root module for this component
     ///

@@ -1256,6 +1256,9 @@ fn canon_lower_func(
 /// instead of a direct canon lower definition.
 ///
 /// The function is resolved in the imported component instance named `import_name`.
+///
+/// Returns the import's signature, the component-model path `module_path::func_name` the core
+/// import is matched by, and the Miden path from the import's `external-id`.
 #[allow(clippy::too_many_arguments)]
 fn canon_lower_from_alias_export(
     frame: &ComponentFrame,
