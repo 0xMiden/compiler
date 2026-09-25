@@ -61,7 +61,9 @@ takes part in naming, and the WIT package and interface ids derive from the name
   generated WIT spells Rust-derived method and parameter names in explicit `%` form
   (`%get-url: func(%type: u32) -> u32;`). `#[export_type]` record fields and variant cases are
   spelled the same way (`record point { %x: felt, %record: bool, }`), so fields and cases named
-  like a WIT keyword (e.g. `record`, `flags`, `Variant`) now work.
+  like a WIT keyword (e.g. `record`, `flags`, `Variant`) now work. Record fields must still be
+  snake_case and not a Rust keyword (the generated bindings access them by that spelling), so
+  fields such as `r#type` or `getURL` are rejected with the name to use instead.
 - `<namespace>::init` is reserved for the compiler's component initializer; rename any exported
   procedure, note entrypoint or note constructor called `init`.
 
