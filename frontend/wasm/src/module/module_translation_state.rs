@@ -463,8 +463,9 @@ pub(crate) fn core_import_path(import: &super::ModuleImport) -> SymbolPath {
 
 /// Returns [`CallableFunction`] translated from the core Wasm module import.
 ///
-/// `stub_name` is the name assigned to the import when it lowers a component import, which must
-/// lie outside of the namespace `namespace` of the component being translated.
+/// `stub_name` is the name assigned to the import when it lowers a component import; the Miden
+/// path of that component import must lie outside of the namespace `namespace` of the component
+/// being translated.
 #[allow(clippy::too_many_arguments)]
 fn process_import(
     module_builder: &mut ModuleBuilder,
@@ -498,7 +499,8 @@ fn process_import(
 /// the instantiation argument `module_arg` matched by the core import path `wasm_import_path`.
 ///
 /// A component import is lowered by an import stub defined in `module_builder` as `stub_name`;
-/// it must lie outside of the namespace `namespace` of the component being translated.
+/// the import's Miden path must lie outside of the namespace `namespace` of the component being
+/// translated.
 #[allow(clippy::too_many_arguments)]
 fn process_module_arg(
     module_builder: &mut ModuleBuilder,

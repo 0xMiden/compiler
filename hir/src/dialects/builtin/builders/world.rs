@@ -45,7 +45,8 @@ impl WorldBuilder {
     /// [SymbolPath::to_symbol_name].
     ///
     /// Returns an error when the world declares a module tree reaching the path the name spells,
-    /// which the component would shadow: resolution prefers the longest registered name.
+    /// which the component would shadow, or another component whose name nests with this one (one
+    /// is a segment-prefix of the other): resolution prefers the longest registered name.
     pub fn define_component(&mut self, name: Ident) -> Result<ComponentRef, Report> {
         self.world.borrow().reject_component_shadowing(name.name)?;
         let builder = PrimComponentBuilder::new(&mut self.builder, name.span());

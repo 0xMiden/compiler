@@ -688,6 +688,8 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
                 component: link_info
                     .component()
                     .cloned()
+                    // A world without a component has no namespace; the segment only needs an
+                    // owner label, which nothing resolves as a path.
                     .unwrap_or_else(|| SymbolPath::from_masm_module_id("root")),
                 digest,
                 start: super::NativePtr::from_ptr(merged.offset),
