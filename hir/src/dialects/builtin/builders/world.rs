@@ -316,6 +316,52 @@ mod tests {
             .expect("a component beside the module tree is accepted");
     }
 
+    /// Two world-level components whose names nest are rejected in either definition order;
+    /// components sharing only a proper prefix of segments are accepted.
+    #[test]
+    fn nested_component_names_are_rejected() {
+        use alloc::string::ToString;
+
+        let new_world = || {
+            let context = Rc::new(Context::default());
+            let mut builder = OpBuilder::new(context);
+            let world = builder.create::<World, ()>(SourceSpan::default())()
+                .expect("failed to create world");
+            WorldBuilder::new(world)
+        };
+        for (first, second) in [("acme::app::app", "acme::app::app::main"), ("a::b::c", "a::b")] {
+            let mut world_builder = new_world();
+            world_builder
+                .define_component(Ident::from(first))
+                .expect("failed to define component");
+            let Err(err) = world_builder.define_component(Ident::from(second)) else {
+                panic!("the components `{first}` and `{second}` nest");
+            };
+            let (shorter, longer) = if first.len() < second.len() {
+                (first, second)
+            } else {
+                (second, first)
+            };
+            assert_eq!(
+                err.to_string(),
+                alloc::format!(
+                    "component `{second}` and component `{first}` nest (`{shorter}` is a prefix \
+                     of `{longer}`); component namespaces must not nest"
+                )
+            );
+        }
+
+        let mut world_builder = new_world();
+        world_builder
+            .define_component(Ident::from("acme::app::app"))
+            .expect("failed to define component");
+        for name in ["acme::app::apps", "acme::app::other", "acme::ap"] {
+            world_builder
+                .define_component(Ident::from(name))
+                .unwrap_or_else(|err| panic!("`{name}` does not nest: {err}"));
+        }
+    }
+
     #[test]
     fn a_module_tree_below_a_component_name_is_rejected() {
         use alloc::string::ToString;

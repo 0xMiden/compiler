@@ -101,11 +101,13 @@ impl SymbolTable for World {
 
 impl World {
     /// Returns an error when the world declares a module tree reaching the path the component name
-    /// `component` spells, which the component would shadow: resolution prefers the longest
-    /// registered name.
+    /// `component` spells, which the component would shadow, or another component whose name
+    /// nests with `component` (one is a segment-prefix of the other): resolution prefers the
+    /// longest registered name, so either would make paths ambiguous.
     ///
     /// The name is the component's namespace path, with its segments joined by `::`.
     pub fn reject_component_shadowing(&self, component: SymbolName) -> Result<(), Report> {
+        self.reject_nested_components(component)?;
         let mut segments = SymbolPath::segments_of(component).into_iter();
         let Some(mut module) =
             segments.next().and_then(|first| self.get(first)).and_then(as_module)
@@ -119,6 +121,36 @@ impl World {
             module = next;
         }
         Err(shadowing_error(component, component, component))
+    }
+
+    /// Returns an error when a world-level component other than `component` has a name that is a
+    /// segment-prefix of `component`, or extends it.
+    fn reject_nested_components(&self, component: SymbolName) -> Result<(), Report> {
+        let body = self.body();
+        if body.is_empty() {
+            return Ok(());
+        }
+        for op in body.entry().body() {
+            let Some(existing) = op.downcast_ref::<Component>().map(Symbol::name) else {
+                continue;
+            };
+            let (shorter, longer) = if existing.as_str().len() < component.as_str().len() {
+                (existing, component)
+            } else {
+                (component, existing)
+            };
+            let nests = longer
+                .as_str()
+                .strip_prefix(shorter.as_str())
+                .is_some_and(|rest| rest.starts_with("::"));
+            if nests {
+                return Err(Report::msg(format!(
+                    "component `{component}` and component `{existing}` nest (`{shorter}` is a \
+                     prefix of `{longer}`); component namespaces must not nest"
+                )));
+            }
+        }
+        Ok(())
     }
 }
 

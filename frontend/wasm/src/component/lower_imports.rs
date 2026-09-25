@@ -52,6 +52,9 @@ pub struct ComponentImportPath {
     /// The core-import path of the first import of the component that lowers to `path`; names
     /// the other side of a clash in diagnostics.
     pub first_cm_path: SymbolPath,
+    /// The name (the `::`-joined namespace) of the component being translated; `path` must lie
+    /// outside of that namespace.
+    pub namespace: SymbolName,
 }
 
 /// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import
@@ -1011,7 +1014,8 @@ fn generate_direct_lowering(
 /// component named by the path's parent.
 ///
 /// When an earlier import already declared that path, its declaration is returned if the
-/// signatures agree, and an error is reported otherwise.
+/// signatures agree, and an error is reported otherwise. An import path inside the namespace of
+/// the component being translated is rejected: its stub component would nest in that namespace.
 fn declare_import_function(
     world_builder: &mut WorldBuilder,
     import: &ComponentImportPath,
@@ -1019,6 +1023,16 @@ fn declare_import_function(
 ) -> WasmResult<FunctionRef> {
     let import_path = &import.path;
     let component_name = import_path.without_leaf().to_symbol_name();
+    let inside_namespace = component_name
+        .as_str()
+        .strip_prefix(import.namespace.as_str())
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with("::"));
+    if inside_namespace {
+        let namespace = SymbolPath::from_masm_module_id(import.namespace.as_str());
+        return Err(Report::msg(format!(
+            "import `{import_path}` lies inside this component's own namespace `{namespace}`"
+        )));
+    }
     let component_ref = match world_builder.find_component(component_name) {
         Some(component_ref) => component_ref,
         None => world_builder.define_component(Ident::with_empty_span(component_name))?,
@@ -1578,6 +1592,7 @@ mod tests {
             first_cm_path: cm_path.clone(),
             cm_path,
             path,
+            namespace: SymbolName::intern("miden::test::app"),
         }
     }
 
