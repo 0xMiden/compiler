@@ -538,6 +538,28 @@ builtin.world {
     );
 }
 
+/// A parsed module is held to the rule the builders enforce: a module name has no `::`.
+#[test]
+fn a_module_named_by_a_path_is_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.module public @\"a::b\" {
+    };
+};";
+    let err = test
+        .parse_any("module_path.hir", source)
+        .expect_err("a module named by a path must not parse")
+        .to_string();
+    assert!(
+        err.contains(
+            "module `a::b`: a module name cannot contain `::` (only components are named by \
+             `::`-joined paths)"
+        ),
+        "unexpected diagnostic: {err}"
+    );
+}
+
 #[test]
 fn nested_component_names_are_reported() {
     let test = ParserTest::default();

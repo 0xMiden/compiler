@@ -179,8 +179,8 @@ impl SymbolPath {
 
     /// Returns the `::`-separated segments of the name of a symbol-table op.
     ///
-    /// A symbol path segment never contains `::`. A symbol-table op (in practice, a component)
-    /// may be *named* by a `::`-joined path; such a name occupies one entry in its parent's
+    /// A symbol path segment never contains `::`. A component may be *named* by a `::`-joined
+    /// path (module names cannot contain `::`); such a name occupies one entry in its parent's
     /// symbol table, but contributes one [SymbolNameComponent::Component] per segment to every
     /// [SymbolPath] that passes through it. Leaf symbol names (functions, globals) are opaque and
     /// must never be split with this function.
