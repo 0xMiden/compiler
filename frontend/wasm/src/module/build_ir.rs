@@ -84,6 +84,7 @@ pub fn translate_module_as_component(
         &mut world_builder,
         &module_types,
         FxHashMap::default(),
+        &FxHashMap::default(),
         context.diagnostics(),
     )?;
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context)?;
@@ -207,11 +208,14 @@ pub fn build_ir_module(
         }
 
         let func_index = parsed_module.module.func_index(defined_func_idx);
-        let func_name = parsed_module.module.func_name(func_index).as_str();
-
+        // The function may be defined under a name other than its Wasm name (see
+        // `ModuleTranslationState::new`), so it is found by index.
         let function_ref =
-            module_state.module_builder.get_function(func_name).unwrap_or_else(|| {
-                panic!("cannot build {func_name} function, since it is not defined in the module.")
+            module_state.get_direct_func(func_index)?.function_ref().unwrap_or_else(|| {
+                panic!(
+                    "cannot build {} function, since it is not defined in the module.",
+                    parsed_module.module.func_name(func_index)
+                )
             });
 
         // If this is a linker stub that needs a synthesized body (function-type intrinsics,
