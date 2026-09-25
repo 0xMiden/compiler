@@ -10,7 +10,10 @@ use cranelift_entity::PrimaryMap;
 use gimli::Section;
 use indexmap::IndexMap;
 use midenc_hir::{FxBuildHasher, FxHashMap};
-use midenc_session::{Session, diagnostics::IntoDiagnostic};
+use midenc_session::{
+    Session,
+    diagnostics::{IntoDiagnostic, Report},
+};
 use wasmparser::{
     Chunk, ComponentExternName, Encoding, Parser, Payload, Validator,
     component_types::{
@@ -355,7 +358,11 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
 
             match self.parse_payload(payload, component)? {
                 Action::KeepGoing => {}
-                Action::Skip(n) => remaining = &remaining[n..],
+                Action::Skip(n) => {
+                    remaining = remaining
+                        .get(n..)
+                        .ok_or_else(|| Report::msg("module range exceeds component size"))?;
+                }
                 Action::Done => break,
             }
         }
@@ -439,7 +446,8 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 unchecked_range: range,
             } => {
                 self.module_section(range.clone(), parser, component)?;
-                return Ok(Action::Skip((range.end - range.start) as usize));
+                let len = usize::try_from(range.end - range.start).into_diagnostic()?;
+                return Ok(Action::Skip(len));
             }
             Payload::ComponentSection {
                 parser,
@@ -586,48 +594,10 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     core_func_index += 1;
                     LocalInitializer::ResourceRep(resource, ty)
                 }
-                wasmparser::CanonicalFunction::ErrorContextNew { .. }
-                | wasmparser::CanonicalFunction::ErrorContextDrop
-                | wasmparser::CanonicalFunction::ErrorContextDebugMessage { .. }
-                | wasmparser::CanonicalFunction::ThreadSpawnRef { .. }
-                | wasmparser::CanonicalFunction::ThreadSpawnIndirect { .. }
-                | wasmparser::CanonicalFunction::ThreadNewIndirect { .. }
-                | wasmparser::CanonicalFunction::ThreadAvailableParallelism
-                | wasmparser::CanonicalFunction::ThreadIndex
-                | wasmparser::CanonicalFunction::ThreadResumeLater
-                | wasmparser::CanonicalFunction::ThreadSuspend
-                | wasmparser::CanonicalFunction::ThreadSuspendThenResume
-                | wasmparser::CanonicalFunction::ThreadYieldThenResume
-                | wasmparser::CanonicalFunction::ThreadSuspendThenPromote
-                | wasmparser::CanonicalFunction::ThreadYieldThenPromote
-                | wasmparser::CanonicalFunction::ThreadYield
-                | wasmparser::CanonicalFunction::BackpressureInc
-                | wasmparser::CanonicalFunction::BackpressureDec
-                | wasmparser::CanonicalFunction::WaitableJoin
-                | wasmparser::CanonicalFunction::WaitableSetNew
-                | wasmparser::CanonicalFunction::WaitableSetDrop
-                | wasmparser::CanonicalFunction::WaitableSetPoll { .. }
-                | wasmparser::CanonicalFunction::WaitableSetWait { .. }
-                | wasmparser::CanonicalFunction::FutureNew { .. }
-                | wasmparser::CanonicalFunction::FutureRead { .. }
-                | wasmparser::CanonicalFunction::FutureWrite { .. }
-                | wasmparser::CanonicalFunction::FutureCancelRead { .. }
-                | wasmparser::CanonicalFunction::FutureCancelWrite { .. }
-                | wasmparser::CanonicalFunction::FutureDropWritable { .. }
-                | wasmparser::CanonicalFunction::FutureDropReadable { .. }
-                | wasmparser::CanonicalFunction::SubtaskDrop
-                | wasmparser::CanonicalFunction::SubtaskCancel { .. }
-                | wasmparser::CanonicalFunction::ContextGet { .. }
-                | wasmparser::CanonicalFunction::ContextSet { .. }
-                | wasmparser::CanonicalFunction::TaskCancel
-                | wasmparser::CanonicalFunction::TaskReturn { .. }
-                | wasmparser::CanonicalFunction::StreamNew { .. }
-                | wasmparser::CanonicalFunction::StreamRead { .. }
-                | wasmparser::CanonicalFunction::StreamWrite { .. }
-                | wasmparser::CanonicalFunction::StreamCancelRead { .. }
-                | wasmparser::CanonicalFunction::StreamCancelWrite { .. }
-                | wasmparser::CanonicalFunction::StreamDropWritable { .. }
-                | wasmparser::CanonicalFunction::StreamDropReadable { .. } => unimplemented!(),
+                other => unsupported_diag!(
+                    &self.session.diagnostics,
+                    "canonical function is not supported: {other:?}"
+                ),
             };
             log::debug!(target: "component-parser", "Adding canonical initializer: {init:?}");
             self.result.initializers.push(init);
@@ -662,11 +632,13 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             self.validator,
             self.types.module_types_builder_mut(),
         );
-        let parsed_module = module_environment.parse(
-            parser,
-            &component[range.start as usize..range.end as usize],
-            &self.session.diagnostics,
-        )?;
+        let start = usize::try_from(range.start).into_diagnostic()?;
+        let end = usize::try_from(range.end).into_diagnostic()?;
+        let module_bytes = component
+            .get(start..end)
+            .ok_or_else(|| Report::msg("module range exceeds component size"))?;
+        let parsed_module =
+            module_environment.parse(parser, module_bytes, &self.session.diagnostics)?;
         let static_idx = self.static_modules.push(parsed_module);
         self.result.initializers.push(LocalInitializer::ModuleStatic(static_idx));
         // Set a fallback name for the newly added parsed module to be used if
@@ -989,6 +961,38 @@ mod tests {
 
     use super::*;
     use crate::supported_component_model_features;
+
+    /// Parses `component` with a validator enabling `features`, returning the diagnostic.
+    fn parse_error(component: &[u8], features: wasmparser::WasmFeatures) -> String {
+        let context = Context::default();
+        let config = WasmTranslationConfig::default();
+        let mut validator = Validator::new_with_features(features);
+        let mut types = ComponentTypesBuilder::default();
+        let parser = ComponentParser::new(&config, context.session(), &mut validator, &mut types);
+        match parser.parse(component) {
+            Ok(_) => panic!("parsing should fail"),
+            Err(err) => err.to_string(),
+        }
+    }
+
+    #[test]
+    fn an_unsupported_canonical_function_is_a_diagnostic() {
+        let component = wat::parse_str("(component (core func (canon task.cancel)))")
+            .expect("component wat should compile");
+
+        // The validator rejects async canonical functions, since the frontend does not enable
+        // the async component-model feature.
+        let err = parse_error(&component, supported_component_model_features());
+        assert!(err.contains("requires the component model async feature"), "unexpected: {err}");
+
+        // Past the validator, the parser reports the construct instead of panicking.
+        let features = supported_component_model_features() | wasmparser::WasmFeatures::CM_ASYNC;
+        let err = parse_error(&component, features);
+        assert!(
+            err.contains("canonical function is not supported: TaskCancel"),
+            "unexpected: {err}"
+        );
+    }
 
     #[test]
     fn injects_component_level_dwarf_into_first_module() {
