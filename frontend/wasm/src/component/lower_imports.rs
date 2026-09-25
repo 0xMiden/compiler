@@ -6,6 +6,7 @@ use core::cell::RefCell;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{ExecFpi, HirOpBuilder};
+use midenc_frontend_wasm_metadata::FPI_IMPORT_PREFIX;
 use midenc_hir::{
     Builder, FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolName, SymbolPath,
     SymbolTable, Type, ValueRef, Visibility,
@@ -36,7 +37,6 @@ use crate::{
     },
 };
 
-const FPI_IMPORT_PREFIX: &str = "fpi-";
 /// The attribute recording, on a declared import function, the component-model path of the
 /// import that declared it, so a later clashing import can name it. Its value is a `StringAttr`.
 const COMPONENT_IMPORT_PATH_ATTR: &str = "wasm_component_import_path";

@@ -40,6 +40,13 @@ pub const WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME: &str = "rodata,miden_wit";
 /// `<namespace>::init` is therefore reserved and no export may use it.
 pub const COMPONENT_INIT_PROCEDURE: &str = "init";
 
+/// Prefix of the component-model function names of the foreign procedure invocation (FPI) imports
+/// the SDK generates.
+///
+/// The frontend lowers an import carrying it to a foreign procedure call rather than declaring a
+/// stub for a dependency component, so its Miden path is exempt from the import nesting rule.
+pub const FPI_IMPORT_PREFIX: &str = "fpi-";
+
 /// Name of the Miden package (`.masp`) section that carries the component's public WIT source.
 pub const PACKAGE_WIT_SECTION_ID: &str = "wit";
 

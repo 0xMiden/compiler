@@ -281,7 +281,7 @@ requires a `miden-project.toml` next to the crate's `Cargo.toml`: storage slot n
 `[lib].namespace`. ``
 
 **Caveat (toolchain-version dependent)**: this naming is a property of the Rust SDK contract macros
-in the `miden-base-macros` crate, which ships at published `0.14.0` alongside `miden`, `miden-base`,
+in the `miden-base-macros` crate, which ships at `0.15.0-rc.2` alongside `miden`, `miden-base`,
 `miden-base-sys`, `miden-stdlib-sys` and `miden-sdk-alloc`. The separate compiler / `midenc` /
 `cargo-miden` workspace is `0.10.0`. Neither is the protocol/network version: protocol,
 `miden-standards` and `miden-testing` resolve to `0.16.0-rc.6`, `miden-client` resolves to
@@ -316,8 +316,8 @@ use alloc::vec::Vec;
 
 **Toolchain**: current project-template contract crates use `nightly-2026-09-01` with target
 `wasm32-wasip2`; the published SDK and `cargo-miden` line require Rust 1.99. Local contract
-`Cargo.toml` files use `edition = "2021"`, `crate-type = ["cdylib"]`, `miden = { version = "0.14" }`,
-and matching `miden-sdk-build-script-support = { version = "0.14" }`.
+`Cargo.toml` files use `edition = "2021"`, `crate-type = ["cdylib"]`, `miden = { version = "0.15.0-rc.2" }`,
+and matching `miden-sdk-build-script-support = { version = "0.15.0-rc.2" }`.
 
 ## P7: Rust SDK `Asset` Is Two Words (ID + Value)
 
@@ -696,12 +696,12 @@ Sources: `protocol:v0.16.0-rc.6:crates/miden-protocol/src/transaction/tx_summary
 
 **Severity**: High - mixing lower bounds, resolved lockfile versions, and build tools creates false migrations
 
-The current project-template uses published final contract SDK crates and release-candidate host crates. Copy the local manifests and lockfile before changing versions:
+The current project-template uses release-candidate contract SDK and host crates. Copy the local manifests and lockfile before changing versions:
 
 ```toml
 # contracts/<name>/Cargo.toml
-miden = { version = "0.14" }
-miden-sdk-build-script-support = { version = "0.14" }
+miden = { version = "0.15.0-rc.2" }
+miden-sdk-build-script-support = { version = "0.15.0-rc.2" }
 
 # integration/Cargo.toml
 miden-client = { version = "0.17.0-rc.5", features = ["tonic"] }
@@ -761,7 +761,7 @@ authoritative: a `wit` override is rejected when the package embeds WIT, and is 
 for packages without embedded WIT.
 
 For plain Cargo checks, builds, and IDE analysis with source dependencies, the **consuming crate**
-must have `miden-sdk-build-script-support = { version = "0.14" }` under `[build-dependencies]` and
+must have `miden-sdk-build-script-support = { version = "0.15.0-rc.2" }` under `[build-dependencies]` and
 call `miden_sdk_build_script_support::prepare_package_cache()` from its own `build.rs`. This
 prepares `MIDENC_PACKAGE_CACHE` for that crate's macro expansion; the dependency crate's hook
 does not configure its consumers. `cargo miden build`, a direct `.masp` dependency, or an already
