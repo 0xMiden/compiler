@@ -402,7 +402,7 @@ if err.flag { assert_eq!(felt!(0), felt!(1)); }"#;
             "generated WIT did not define result-field-payload record:\n{wit}"
         );
         assert!(
-            wit.contains("outcome: result<felt, u32>,"),
+            wit.contains("%outcome: result<felt, u32>,"),
             "generated WIT did not use result<felt, u32> for the record field:\n{wit}"
         );
         assert!(
