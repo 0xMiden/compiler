@@ -8,6 +8,7 @@ mod module;
 mod segment;
 mod world;
 
+pub(crate) use self::world::shadowing_error;
 pub use self::{
     cast::UnrealizedConversionCast,
     component::{

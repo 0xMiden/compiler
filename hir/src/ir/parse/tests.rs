@@ -511,6 +511,33 @@ builtin.module public @t {
     assert!(test.parse_any("dup.hir", source).is_err(), "a duplicate symbol must not parse");
 }
 
+/// A parsed world is held to the rule `WorldBuilder` enforces: a component name must not shadow
+/// a module tree.
+#[test]
+fn a_component_shadowing_a_module_tree_is_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.module public @miden {
+        builtin.module public @a {
+        };
+    };
+    builtin.component private @miden::@a {
+    };
+};";
+    let err = test
+        .parse_any("shadowing.hir", source)
+        .expect_err("a component shadowing a module tree must not parse")
+        .to_string();
+    assert!(
+        err.contains(
+            "component `miden::a` and module path `miden::a` share the prefix `miden::a`; a \
+             component name must not shadow a module tree"
+        ),
+        "unexpected diagnostic: {err}"
+    );
+}
+
 /// A component prints its name as a symbol path, one segment per `::`-separated segment of the
 /// name, quoting a segment that is not a bare identifier, and that text parses back to the same
 /// name.
