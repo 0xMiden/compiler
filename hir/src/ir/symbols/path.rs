@@ -192,6 +192,17 @@ impl SymbolPath {
         s.split("::").map(SymbolName::intern).collect()
     }
 
+    /// Returns true when the `::`-joined name `inner` nests in the `::`-joined name `outer`, i.e.
+    /// when `outer` is a strict segment-prefix of `inner`: `a::bc` nests in `a` but not in `a::b`,
+    /// and no name nests in itself.
+    pub fn nests_in(inner: SymbolName, outer: SymbolName) -> bool {
+        inner
+            .as_str()
+            .strip_prefix(outer.as_str())
+            .and_then(|rest| rest.strip_prefix("::"))
+            .is_some_and(|rest| !rest.is_empty())
+    }
+
     /// Returns all non-root components of this path (leaf included) joined with `::`.
     ///
     /// This is the symbol-table key of a component named by this path, and the inverse of
@@ -516,5 +527,18 @@ mod tests {
         let relative = SymbolPath::from_library_path(Path::new("miden::a"));
         assert!(!relative.is_absolute());
         assert_eq!(relative.to_string(), "miden::a");
+    }
+
+    #[test]
+    fn nests_in_requires_a_strict_segment_prefix() {
+        let nests = |inner: &str, outer: &str| {
+            SymbolPath::nests_in(SymbolName::intern(inner), SymbolName::intern(outer))
+        };
+        assert!(nests("a::b", "a"));
+        assert!(nests("a::b::c", "a::b"));
+        assert!(!nests("a::b", "a::b"));
+        assert!(!nests("a", "a::b"));
+        assert!(!nests("a::bc", "a::b"));
+        assert!(!nests("ab", "a"));
     }
 }

@@ -67,8 +67,9 @@ pub fn translate_module_as_component(
         .namespace
         .clone()
         .unwrap_or_else(|| SymbolPath::from_masm_module_id(module_name));
+    let component_name = namespace.to_symbol_name();
     let mut component_ref =
-        world_builder.define_component(Ident::with_empty_span(namespace.to_symbol_name()))?;
+        world_builder.define_component(Ident::with_empty_span(component_name))?;
 
     // Mark this as the compiler's wrapper: nothing downstream should have to infer it by
     // comparing the name, which an author may legitimately use.
@@ -84,6 +85,7 @@ pub fn translate_module_as_component(
         &mut world_builder,
         &module_types,
         FxHashMap::default(),
+        component_name,
         &FxHashMap::default(),
         context.diagnostics(),
     )?;

@@ -1,4 +1,4 @@
-use midenc_hir::{SymbolName, SymbolPath};
+use midenc_hir::SymbolPath;
 
 use crate::component::ComponentFunctionType;
 
@@ -15,9 +15,6 @@ pub enum ModuleArgument {
         path: SymbolPath,
         /// The core-import path of the first import of the component that lowers to `path`.
         first_cm_path: SymbolPath,
-        /// The name (the `::`-joined namespace) of the component being translated, which `path`
-        /// must lie outside of.
-        namespace: SymbolName,
     },
     /// Represents table exported from another module.
     Table,

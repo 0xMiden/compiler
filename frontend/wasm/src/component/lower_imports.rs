@@ -1023,10 +1023,8 @@ fn declare_import_function(
 ) -> WasmResult<FunctionRef> {
     let import_path = &import.path;
     let component_name = import_path.without_leaf().to_symbol_name();
-    let inside_namespace = component_name
-        .as_str()
-        .strip_prefix(import.namespace.as_str())
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with("::"));
+    let inside_namespace = component_name == import.namespace
+        || SymbolPath::nests_in(component_name, import.namespace);
     if inside_namespace {
         let namespace = SymbolPath::from_masm_module_id(import.namespace.as_str());
         return Err(Report::msg(format!(

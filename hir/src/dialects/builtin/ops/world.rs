@@ -123,6 +123,25 @@ impl World {
         Err(shadowing_error(component, component, component))
     }
 
+    /// Returns the name of the world-level component named by the `::`-joined module path `path`
+    /// or by a segment-prefix of it, i.e. the component that would shadow a module tree reaching
+    /// `path`.
+    pub(crate) fn component_shadowing(&self, path: SymbolName) -> Option<SymbolName> {
+        let body = self.body();
+        if body.is_empty() {
+            return None;
+        }
+        for op in body.entry().body() {
+            let Some(name) = op.downcast_ref::<Component>().map(Symbol::name) else {
+                continue;
+            };
+            if name == path || SymbolPath::nests_in(path, name) {
+                return Some(name);
+            }
+        }
+        None
+    }
+
     /// Returns an error when a world-level component other than `component` has a name that is a
     /// segment-prefix of `component`, or extends it.
     fn reject_nested_components(&self, component: SymbolName) -> Result<(), Report> {
@@ -139,11 +158,7 @@ impl World {
             } else {
                 (component, existing)
             };
-            let nests = longer
-                .as_str()
-                .strip_prefix(shorter.as_str())
-                .is_some_and(|rest| rest.starts_with("::"));
-            if nests {
+            if SymbolPath::nests_in(longer, shorter) {
                 return Err(Report::msg(format!(
                     "component `{component}` and component `{existing}` nest (`{shorter}` is a \
                      prefix of `{longer}`); component namespaces must not nest"

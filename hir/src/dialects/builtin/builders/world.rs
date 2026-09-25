@@ -97,12 +97,10 @@ impl WorldBuilder {
             .components()
             .filter(|component| matches!(component, SymbolNameComponent::Component(_)))
             .collect::<SmallVec<[_; 4]>>();
-        for len in 1..=modules.len() {
-            let prefix = SymbolPath::join_components(&modules[..len]);
-            if self.find_component(prefix).is_some() {
-                let module_path = SymbolPath::join_components(&modules);
-                return Err(shadowing_error(prefix, module_path, prefix));
-            }
+        let module_path = SymbolPath::join_components(&modules);
+        let shadowing = self.world.borrow().component_shadowing(module_path);
+        if let Some(component) = shadowing {
+            return Err(shadowing_error(component, module_path, component));
         }
 
         let mut parts = path.components().peekable();
