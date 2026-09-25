@@ -92,3 +92,36 @@ fn component_frontend_metadata_reports_missing_account_procedure_export() {
         "unexpected error: {err:?}"
     );
 }
+
+/// Imports of every kind share one list in declaration order, so a function import is found by
+/// its entity index, not by its position.
+#[test]
+fn function_imports_are_looked_up_past_other_imports() {
+    let wasm = wat::parse_str(
+        r#"
+        (module
+            (import "env" "memory" (memory 1))
+            (import "env" "first" (func (result i32)))
+            (import "env" "second" (func (result i32)))
+        )
+        "#,
+    )
+    .expect("module WAT should compile");
+    let config = WasmTranslationConfig::default();
+    let mut validator = Validator::new_with_features(crate::supported_features());
+    let mut types = ModuleTypesBuilder::default();
+    let context = midenc_hir::Context::default();
+    let parsed = ModuleEnvironment::new(&config, &mut validator, &mut types)
+        .parse(Parser::new(0), &wasm, context.diagnostics())
+        .expect("module should parse");
+    let module = &parsed.module;
+
+    let field_of = |index: u32| {
+        module
+            .function_import(FuncIndex::from_u32(index))
+            .map(|import| import.field.as_str())
+    };
+    assert_eq!(field_of(0), Some("first"));
+    assert_eq!(field_of(1), Some("second"));
+    assert_eq!(field_of(2), None);
+}

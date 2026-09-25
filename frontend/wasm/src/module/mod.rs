@@ -196,6 +196,17 @@ impl Module {
         index.index() < self.num_imported_funcs
     }
 
+    /// Returns the import declaring the function `index`, or `None` if it is not imported.
+    ///
+    /// [Module::imports] holds the imports of every kind in declaration order, so it is not
+    /// indexed by function index.
+    pub fn function_import(&self, index: FuncIndex) -> Option<&ModuleImport> {
+        if !self.is_imported_function(index) {
+            return None;
+        }
+        self.imports.iter().find(|import| import.index == EntityIndex::Function(index))
+    }
+
     pub fn is_exported(&self, entity: EntityIndex) -> bool {
         self.exports.values().any(|export| *export == entity)
     }

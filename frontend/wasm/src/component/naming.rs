@@ -104,6 +104,13 @@ pub(crate) fn world_level_function_export(name: &str) -> Report {
     ))
 }
 
+/// The error for the function import `name` of the root component, which no interface carries.
+pub(crate) fn world_level_function_import(name: &str) -> Report {
+    Report::msg(format!(
+        "world-level function import `{name}` is not supported; import it through an interface"
+    ))
+}
+
 /// Names the interface a nested component's exports go through, for diagnostics.
 ///
 /// The root component exports the instances of its nested components under their interface
@@ -371,6 +378,42 @@ mod tests {
         assert!(err.contains(expected), "unexpected diagnostic: {err}");
         let err = declared_namespace(&wasm).expect_err("the scan should fail").to_string();
         assert!(err.contains(expected), "unexpected scan diagnostic: {err}");
+    }
+
+    #[test]
+    fn a_world_level_function_import_is_rejected() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (import "read" (func $read (result u32)))
+                (core func $lowered (canon lower (func $read)))
+                (core instance $args (export "read" (func $lowered)))
+                (core module $m
+                    (import "host" "read" (func $read (result i32)))
+                    (func (export "get-count") (result i32) call $read)
+                )
+                (core instance $i (instantiate $m (with "host" (instance $args))))
+                (func $lifted (result u32) (canon lift (core func $i "get-count")))
+                (component $shim
+                    (import "import-func-get-count" (func $f (result u32)))
+                    (export "get-count" (external-id "miden::counter::counter::get_count")
+                        (func $f))
+                )
+                (instance $exports
+                    (instantiate $shim (with "import-func-get-count" (func $lifted))))
+                (export "miden:counter/counter@0.1.0" (instance $exports))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let err = error_of(&wasm, None);
+        assert!(
+            err.contains(
+                "world-level function import `read` is not supported; import it through an \
+                 interface"
+            ),
+            "unexpected diagnostic: {err}"
+        );
     }
 
     /// A linker stub lifted as an export is defined under the export's leaf and still lowered to

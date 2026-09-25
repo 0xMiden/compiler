@@ -92,9 +92,7 @@ impl<'a> ModuleTranslationState<'a> {
                 Visibility::Private
             };
             let sig = sig_from_func_type(&ir_func_type, CallConv::C);
-            if module.is_imported_function(index) {
-                assert!((index.as_u32() as usize) < module.num_imported_funcs);
-                let import = &module.imports[index.as_u32() as usize];
+            if let Some(import) = module.function_import(index) {
                 let func = process_import(
                     module_builder,
                     world_builder,
