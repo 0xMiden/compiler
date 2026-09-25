@@ -235,6 +235,52 @@ mod tests {
         assert!(world_builder.find_component("miden::a::b".into()) == Some(component));
     }
 
+    /// A function whose opaque name spells a joined path does not capture the resolution of a
+    /// longer path through the module tree of the same name.
+    #[test]
+    fn joined_function_name_does_not_capture_module_tree_path() {
+        use crate::{
+            FunctionIdent, Visibility,
+            dialects::builtin::{Function, attributes::Signature},
+        };
+
+        let context = Rc::new(Context::default());
+        let mut builder = OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+
+        // `top` holds both the module tree `a` > `b` (function `g`) and a function named `a::b`
+        let top = world_builder.declare_module(Ident::from("top")).expect("failed to declare top");
+        let a = ModuleBuilder::new(top)
+            .declare_module(Ident::from("a"))
+            .expect("failed to declare a");
+        let b = ModuleBuilder::new(a)
+            .declare_module(Ident::from("b"))
+            .expect("failed to declare b");
+        let g = ModuleBuilder::new(b)
+            .define_function(Ident::from("g"), Visibility::Public, Signature::new(&context, [], []))
+            .expect("failed to define g");
+        ModuleBuilder::new(top)
+            .define_function(
+                Ident::from("a::b"),
+                Visibility::Public,
+                Signature::new(&context, [], []),
+            )
+            .expect("failed to define a::b");
+
+        let id = "top::a::b::g".parse::<FunctionIdent>().expect("valid function id");
+        let resolved = world
+            .borrow()
+            .resolve(&SymbolPath::from_masm_function_id(id))
+            .expect("'top::a::b::g' should resolve");
+        assert!(resolved.borrow().as_symbol_operation().is::<Function>());
+        assert_eq!(
+            resolved.borrow().as_symbol_operation().as_operation_ref(),
+            g.as_operation_ref()
+        );
+    }
+
     /// A world with the kernel-like module tree `miden::protocol::note` declared.
     fn world_with_module_tree() -> (WorldRef, WorldBuilder) {
         let context = Rc::new(Context::default());
