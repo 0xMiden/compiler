@@ -2003,6 +2003,78 @@ interface api {
         assert_eq!(foreign.functions.len(), native.functions.len());
     }
 
+    /// Pairs the FPI variant of a keyword-named dependency function with its native binding.
+    #[test]
+    fn synthetic_fpi_interface_pairs_keyword_named_functions() {
+        const SOURCE_IMPORT: &str = "miden:keyword-dependency/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "keyword-dependency.wit",
+            r#"
+package miden:keyword-dependency@1.0.0;
+
+interface api {
+    @external-id("miden::keyword_dependency::api::type")
+    %type: func() -> u32;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
+        let inline = fpi::import_world_wit("fpi-keyword-test", &specs);
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+        resolve.assert_valid();
+
+        let mut opts = Opts {
+            generate_all: true,
+            runtime_path: Some("::miden::wit_bindgen::rt".to_string()),
+            default_bindings_module: Some("bindings".to_string()),
+            ..Opts::default()
+        };
+        push_default_with_entries(&mut opts);
+
+        let mut generated_files = wit_bindgen_core::Files::default();
+        opts.build().generate(&mut resolve, world, &mut generated_files).unwrap();
+        let (_, source) = generated_files.iter().next().unwrap();
+        let file: syn::File = syn::parse_str(std::str::from_utf8(source).unwrap()).unwrap();
+        let native_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_plain_import_function).unwrap();
+        let foreign_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_fpi_import_function).unwrap();
+        let native = native_modules
+            .iter()
+            .find(|module| module.path_string == "miden::keyword_dependency::api")
+            .expect("native keyword bindings");
+        let foreign = foreign_modules
+            .iter()
+            .find(|module| module.path_string == specs[0].synthetic_module_path())
+            .expect("synthetic keyword bindings");
+
+        let native_names = native
+            .functions
+            .iter()
+            .map(|function| function.sig.ident.to_string())
+            .collect::<Vec<_>>();
+        let foreign_names = foreign
+            .functions
+            .iter()
+            .map(|function| function.sig.ident.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(native_names, ["type_"]);
+        assert_eq!(foreign_names, ["fpi_type"]);
+        assert_eq!(fpi::native_ident("type", proc_macro2::Span::call_site()), "type_");
+    }
+
     /// Preserves aliases imported from a sibling WIT interface.
     #[test]
     fn synthetic_fpi_interface_preserves_cross_interface_use_aliases() {
