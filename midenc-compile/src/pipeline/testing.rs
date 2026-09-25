@@ -245,7 +245,7 @@ pub struct VirtualProject {
     profile: Profile,
     dependency_graph: ProjectDependencyGraph,
     store: NoPackageStore,
-    source_manager: Arc<dyn SourceManager>,
+    source_manager: Arc<dyn SourceManager + Send + Sync>,
 }
 
 impl VirtualProject {
@@ -298,7 +298,8 @@ impl VirtualProject {
 
     /// Resolve `package`'s dependency graph and wrap it up with its `targets`.
     fn assemble(package: Arc<ProjectPackage>, targets: Vec<Target>) -> CompilerResult<Self> {
-        let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
+        let source_manager: Arc<dyn SourceManager + Send + Sync> =
+            Arc::new(DefaultSourceManager::default());
         let store = NoPackageStore;
         let dependency_graph = ProjectDependencyGraphBuilder::new(&store)
             .with_source_manager(source_manager.clone())
@@ -353,7 +354,7 @@ impl VirtualProject {
     }
 
     /// The canonical source manager.
-    pub fn source_manager(&self) -> Arc<dyn SourceManager> {
+    pub fn source_manager(&self) -> Arc<dyn SourceManager + Send + Sync> {
         self.source_manager.clone()
     }
 

@@ -43,6 +43,7 @@ midenc-frontend-wasm-metadata.workspace = true
 midenc-frontend-masm.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-hir.workspace = true
+midenc-hir-analysis.workspace = true
 midenc-hir.workspace = true
 midenc-hir-transform.workspace = true
 midenc-session.workspace = true

@@ -8,7 +8,7 @@ use miden_assembly::{
 use midenc_frontend_masm::{DisassembledWorld, DisassemblerConfig};
 use midenc_session::{
     FileName, InputType, OutputMode, Session,
-    diagnostics::{IntoDiagnostic, Report},
+    diagnostics::{IntoDiagnostic, Report, Severity},
 };
 
 use crate::{
@@ -18,6 +18,8 @@ use crate::{
         FrontendRegistration, TargetContext,
     },
 };
+
+const MASM_LINT_WORKLIST_BUDGET: usize = 10_000;
 
 /// Declares the frontend that handles targets rooted at a `.masm` file.
 pub const MASM_FRONTEND: FrontendRegistration = FrontendRegistration::new(
@@ -145,17 +147,28 @@ fn render_masm_sources(artifact: &Artifact, session: &Session) -> CompilerResult
 pub struct MasmProjectFrontend {
     /// The assembler's own MASM source provider, which every source read delegates to.
     sources: MasmSourceProvider,
+    /// Maximum number of queued dataflow analyses the advice-taint lint may process.
+    lint_worklist_budget: usize,
 }
 
 impl Default for MasmProjectFrontend {
     fn default() -> Self {
         Self {
             sources: MasmSourceProvider,
+            lint_worklist_budget: MASM_LINT_WORKLIST_BUDGET,
         }
     }
 }
 
 impl MasmProjectFrontend {
+    #[cfg(test)]
+    fn with_lint_worklist_budget(lint_worklist_budget: usize) -> Self {
+        Self {
+            sources: MasmSourceProvider,
+            lint_worklist_budget,
+        }
+    }
+
     /// Read this target's Miden Assembly sources.
     ///
     /// Almost always [`MasmSourceProvider`]'s job, and the type doc says why it must stay that
@@ -308,7 +321,7 @@ impl MasmProjectFrontend {
         let config = DisassemblerConfig {
             infer_missing_signatures: true,
         };
-        let world = midenc_frontend_masm::disassemble_project_target_with_sources(
+        let world = midenc_frontend_masm::disassemble_project_target_for_lint(
             // Cloned, because `masm.lowered` must publish the very sources `masm.parsed`
             // did, unchanged. This mirrors the clone the legacy stage made.
             ProjectSourceInputs {
@@ -320,14 +333,40 @@ impl MasmProjectFrontend {
             context.clone(),
         )?;
         crate::emit_hir_if_requested(world.world.borrow().as_operation(), context.clone())?;
+        for skipped in &world.skipped_procedures {
+            session
+                .diagnostics
+                .diagnostic(Severity::Warning)
+                .with_message(format!(
+                    "MASM lint skipped procedure '{}': {}",
+                    skipped.path, skipped.reason
+                ))
+                .with_primary_label(skipped.span, "procedure skipped here")
+                .emit();
+        }
 
         let analysis_manager =
             midenc_hir::pass::AnalysisManager::new(world.world.as_operation_ref(), None);
-        let analysis =
-            analysis_manager.get_analysis::<midenc_dialect_hir::analyses::AdviceTaintAnalysis>()?;
+        let mut dataflow_config = midenc_hir_analysis::DataFlowConfig::new();
+        dataflow_config
+            .set_interprocedural(true)
+            .set_max_worklist_iterations(Some(self.lint_worklist_budget));
+        let analysis_result =
+            midenc_dialect_hir::analyses::AdviceTaintAnalysis::run_with_config_allow_partial(
+                world.world.borrow().as_operation(),
+                analysis_manager,
+                dataflow_config,
+            )?;
         let source_manager = context.source_manager();
-        for diagnostic in analysis.diagnostics(&source_manager) {
+        for diagnostic in analysis_result.analysis.diagnostics(&source_manager) {
             session.diagnostics.emit(diagnostic);
+        }
+        if let Some(reason) = analysis_result.incomplete_reason {
+            session
+                .diagnostics
+                .diagnostic(Severity::Warning)
+                .with_message(format!("MASM advice taint analysis incomplete: {reason}"))
+                .emit();
         }
         if session.diagnostics.has_errors() {
             return Err(Report::msg(crate::pipeline::lint_errors_reported(&session.options)));
@@ -430,7 +469,7 @@ mod tests {
     use midenc_hir::Context;
     use midenc_session::{
         InputFile, Options, OutputFile, OutputType, OutputTypeSpec, OutputTypes, Session,
-        diagnostics::{DefaultSourceManager, SourceManager},
+        diagnostics::{CaptureEmitter, DefaultSourceManager, SourceManager},
         miden_project::TargetType,
     };
 
@@ -473,6 +512,56 @@ mod tests {
     /// The submodule [`DIRTY_ROOT`] taints.
     const DIRTY_SUPPORT: &str = "pub proc consume\n    push.1\n    u32wrapping_add\nend\n";
 
+    /// A root with one analyzable taint finding and one procedure lint mode must skip.
+    const PARTIAL_ROOT: &str = r#"
+pub proc entry() -> u32
+    adv_push
+    push.1
+    u32wrapping_add
+end
+
+pub proc bad
+    push.1
+    if.true
+        push.1
+    else
+        push.1
+        push.2
+    end
+end
+"#;
+
+    /// A root with one clean procedure and one procedure lint mode must skip.
+    const SKIP_ONLY_ROOT: &str = r#"
+pub proc entry() -> u32
+    push.1
+end
+
+pub proc bad
+    push.1
+    if.true
+        push.1
+    else
+        push.1
+        push.2
+    end
+end
+"#;
+
+    /// A root that yields a finding during initialization and queues interprocedural solver work.
+    const BUDGET_ROOT: &str = r#"
+proc duplicate(value: u32) -> (u32, u32)
+    dup
+end
+
+pub proc entry(rhs: u32) -> u32
+    adv_push
+    exec.duplicate
+    drop
+    u32wrapping_add
+end
+"#;
+
     /// The root module the standard-input fixtures are handed as bytes.
     ///
     /// Deliberately unlike [`ROOT`]: it declares no submodule, and its procedure has a name
@@ -503,6 +592,24 @@ mod tests {
     fn dirty_project(name: &str) -> VirtualProject {
         let root = testing::fixture_source(name, "lib.masm", DIRTY_ROOT);
         testing::fixture_source(name, "support.masm", DIRTY_SUPPORT);
+        VirtualProject::new(name, &root, TargetType::Library).expect("should build project")
+    }
+
+    /// Materialize a project that can only be analyzed through partial lint disassembly.
+    fn partial_project(name: &str) -> VirtualProject {
+        let root = testing::fixture_source(name, "lib.masm", PARTIAL_ROOT);
+        VirtualProject::new(name, &root, TargetType::Library).expect("should build project")
+    }
+
+    /// Materialize a project whose only warning is a skipped procedure.
+    fn skip_only_project(name: &str) -> VirtualProject {
+        let root = testing::fixture_source(name, "lib.masm", SKIP_ONLY_ROOT);
+        VirtualProject::new(name, &root, TargetType::Library).expect("should build project")
+    }
+
+    /// Materialize a project that exhausts a small advice-taint worklist budget.
+    fn budget_project(name: &str) -> VirtualProject {
+        let root = testing::fixture_source(name, "lib.masm", BUDGET_ROOT);
         VirtualProject::new(name, &root, TargetType::Library).expect("should build project")
     }
 
@@ -585,6 +692,153 @@ mod tests {
         let session = Session::new(InputFile::empty(), options, None, source_manager)
             .expect("should build a session");
         Rc::new(Context::new(Rc::new(session)))
+    }
+
+    /// A context whose rendered diagnostics can be inspected by the caller.
+    fn capturing_context(
+        project: &VirtualProject,
+        configure: impl FnOnce(&mut Options),
+    ) -> (Rc<Context>, Arc<CaptureEmitter>) {
+        let mut options = Box::new(Options::default());
+        configure(&mut options);
+        let emitter = Arc::new(CaptureEmitter::new());
+        let session = Session::new(
+            InputFile::empty(),
+            options,
+            Some(emitter.clone()),
+            project.source_manager(),
+        )
+        .expect("should build a session");
+        (Rc::new(Context::new(Rc::new(session))), emitter)
+    }
+
+    /// Remove the renderer's SGR styling from captured diagnostic output.
+    fn unstyle_diagnostics(rendered: &str) -> String {
+        let mut plain = String::with_capacity(rendered.len());
+        let mut parts = rendered.split('\u{1b}');
+        plain.push_str(parts.next().expect("split always yields the text before the first match"));
+        for styled in parts {
+            let (_, text) = styled
+                .split_once('m')
+                .expect("captured diagnostic styling must use SGR escape sequences");
+            plain.push_str(text);
+        }
+        plain
+    }
+
+    /// Extract the complete messages of warning diagnostics from rendered output.
+    fn warning_messages(rendered: &str) -> Vec<String> {
+        let plain = unstyle_diagnostics(rendered);
+        let mut messages = Vec::<String>::new();
+        for line in plain.lines() {
+            let line = line.trim_start();
+            if let Some(message) = line.strip_prefix("! ") {
+                messages.push(message.to_string());
+            } else if let (Some(message), Some(continuation)) =
+                (messages.last_mut(), line.strip_prefix("| "))
+            {
+                if !message.ends_with(['-', '/']) {
+                    message.push(' ');
+                }
+                message.push_str(continuation);
+            }
+        }
+        messages
+    }
+
+    /// Normalize one promoted warning into a stable snapshot of every rendered field.
+    fn promoted_warning_snapshot(rendered: &str, source_path: Option<&str>) -> String {
+        fn append_wrapped(message: &mut String, continuation: &str) {
+            if !message.ends_with(['-', '/']) {
+                message.push(' ');
+            }
+            message.push_str(continuation);
+        }
+
+        fn normalize_path(text: String, source_path: Option<&str>) -> String {
+            match source_path {
+                Some(path) => text.replace(path, "$SOURCE"),
+                None => text,
+            }
+        }
+
+        let plain = unstyle_diagnostics(rendered);
+        let mut lines = plain.lines().peekable();
+        let first = lines.next().expect("a rendered diagnostic has a header").trim_start();
+        let mut message = first
+            .strip_prefix("x ")
+            .expect("a promoted warning renders as an error")
+            .to_string();
+        while !lines
+            .peek()
+            .expect("a promoted warning has a related diagnostic")
+            .trim_start()
+            .starts_with("`->")
+        {
+            let continuation = lines
+                .next()
+                .expect("peeked line exists")
+                .trim_start()
+                .strip_prefix("| ")
+                .expect("a wrapped error message uses the error continuation marker");
+            append_wrapped(&mut message, continuation);
+        }
+
+        let related_header =
+            lines.next().expect("a promoted warning has a related diagnostic").trim_start();
+        let mut related = related_header
+            .strip_prefix("`->")
+            .expect("the related diagnostic follows the error")
+            .trim_start()
+            .strip_prefix("! ")
+            .expect("the related diagnostic retains warning severity")
+            .to_string();
+        while let Some(line) = lines.peek() {
+            let line = line.trim_start();
+            if line.is_empty() || line.starts_with(",-[") || line.starts_with("help: ") {
+                break;
+            }
+            let continuation = lines.next().expect("peeked line exists").trim_start();
+            append_wrapped(&mut related, continuation.strip_prefix("| ").unwrap_or(continuation));
+        }
+
+        let mut source = Vec::new();
+        if lines.peek().is_some_and(|line| line.trim_start().starts_with(",-[")) {
+            loop {
+                let line =
+                    lines.next().expect("a source excerpt has a closing border").trim_start();
+                let is_last = line == "`----";
+                source.push(normalize_path(line.to_string(), source_path));
+                if is_last {
+                    break;
+                }
+            }
+        }
+        while lines.peek().is_some_and(|line| line.trim().is_empty()) {
+            lines.next();
+        }
+        let help = lines
+            .next()
+            .expect("a promoted warning explains the promotion")
+            .trim_start()
+            .strip_prefix("help: ")
+            .expect("a promoted warning has help text");
+        assert!(
+            lines.all(|line| line.trim().is_empty()),
+            "the snapshot must account for every rendered diagnostic"
+        );
+
+        let message = normalize_path(message, source_path);
+        let related = normalize_path(related, source_path);
+        let source = if source.is_empty() {
+            "none".to_string()
+        } else {
+            source.join("\n")
+        };
+        format!(
+            "diagnostics: 1\nseverity: error\nmessage: {message}\nrelated severity: \
+             warning\nrelated message: {related}\nsource:\n{source}\nhelp: {help}"
+        )
     }
 
     /// A context whose session writes `--emit=masm` into `out_dir`.
@@ -802,6 +1056,158 @@ mod tests {
         assert!(
             !world.module.borrow().body().is_empty(),
             "the lifted root module must hold the fixture's procedures"
+        );
+    }
+
+    /// A procedure that cannot be lifted must not suppress findings from the rest of the target.
+    #[test]
+    fn lint_reports_findings_when_another_procedure_is_skipped() {
+        let project = partial_project("masm_frontend_partial_lint");
+        let (context, diagnostics) = capturing_context(&project, |options| options.lint = true);
+        let run = run(&project, context, Goal::at(CheckpointId::HIR_ANALYZED));
+
+        assert!(run.stopped, "the partial HIR world must reach hir.analyzed");
+        let world = run
+            .captured
+            .expect("stopping at hir.analyzed must capture")
+            .downcast::<DisassembledWorld>()
+            .expect("the analyzed artifact is the partial HIR world");
+        assert_eq!(world.skipped_procedures.len(), 1);
+        assert_eq!(world.skipped_procedures[0].path.as_str(), "::masm_frontend_partial_lint::bad");
+
+        let diagnostics = diagnostics.captured();
+        let root = project
+            .assembly_context()
+            .expect("assembly context")
+            .resolved_target_root
+            .display()
+            .to_string();
+        assert_eq!(
+            warning_messages(&diagnostics),
+            vec![
+                format!(
+                    "MASM lint skipped procedure '::masm_frontend_partial_lint::bad': if branches \
+                     leave different inferred stack depths at [{root}@10:5]: then=1, else=2"
+                ),
+                "unconstrained advice value reaches operation requiring a constrained value in \
+                 function 'entry'"
+                    .to_string(),
+            ],
+            "{diagnostics:?}"
+        );
+        assert_eq!(diagnostics.matches("procedure skipped here").count(), 1);
+        assert_eq!(diagnostics.matches("pub proc bad").count(), 1);
+    }
+
+    /// Budget exhaustion keeps findings reached before the cutoff and reports incomplete coverage.
+    #[test]
+    fn lint_reports_partial_findings_when_the_worklist_budget_is_exhausted() {
+        let project = budget_project("masm_frontend_partial_budget");
+        let (context, diagnostics) = capturing_context(&project, |options| options.lint = true);
+        let assembly = project.assembly_context().expect("assembly context");
+        let state = RequestState::new(Goal::at(CheckpointId::HIR_ANALYZED), vec![]);
+        let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
+        let frontend = MasmProjectFrontend::with_lint_worklist_budget(12);
+
+        let flow = frontend.compile(&cx).expect("budget exhaustion must return a partial result");
+
+        assert!(flow.is_break(), "the partial HIR world must reach hir.analyzed");
+        let diagnostics = diagnostics.captured();
+        assert_eq!(
+            warning_messages(&diagnostics),
+            vec![
+                "unconstrained advice value reaches operation requiring a constrained value in \
+                 function 'entry'"
+                    .to_string(),
+                "MASM advice taint analysis incomplete: dataflow solver exceeded worklist \
+                 iteration budget of 12; next analysis would run sparse-constant-propagation at \
+                 after(arith.add in ^block3) in function 'entry', with 2 queued item(s) \
+                 remaining; queued analyses: sparse-constant-propagation=1, \
+                 unconstrained-advice-taint=1; queued functions: entry=2"
+                    .to_string(),
+            ]
+        );
+    }
+
+    /// Coverage warnings use the session diagnostics policy and fail under `-Dwarnings`.
+    #[test]
+    fn lint_coverage_warnings_follow_warnings_as_errors() {
+        use midenc_session::Warnings;
+
+        fn compile(
+            project: &VirtualProject,
+            context: Rc<Context>,
+            frontend: &MasmProjectFrontend,
+        ) -> CompilerResult<Flow<ProjectSourceInputs>> {
+            let assembly = project.assembly_context().expect("assembly context");
+            let state = RequestState::new(Goal::at(CheckpointId::HIR_ANALYZED), vec![]);
+            let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
+            frontend.compile(&cx)
+        }
+
+        let skip_project = skip_only_project("masm_frontend_skip_warning_error");
+        let skip_source = skip_project
+            .assembly_context()
+            .expect("assembly context")
+            .resolved_target_root
+            .display()
+            .to_string();
+        let (context, diagnostics) = capturing_context(&skip_project, |options| {
+            options.lint = true;
+            options.diagnostics.warnings = Warnings::Error;
+        });
+        let result = compile(&skip_project, context, &MasmProjectFrontend::default());
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("a promoted skipped-procedure warning must fail the lint"),
+        };
+        assert_eq!(
+            error.to_string(),
+            "aborting due to errors reported by lint analysis (-Zlint); see the diagnostics above"
+        );
+        let diagnostics = diagnostics.captured();
+        assert_eq!(
+            promoted_warning_snapshot(&diagnostics, Some(&skip_source)),
+            "diagnostics: 1\nseverity: error\nmessage: MASM lint skipped procedure \
+             '::masm_frontend_skip_warning_error::bad': if branches leave different inferred \
+             stack depths at [$SOURCE@8:5]: then=1, else=2\nrelated severity: warning\nrelated \
+             message: MASM lint skipped procedure '::masm_frontend_skip_warning_error::bad': if \
+             branches leave different inferred stack depths at [$SOURCE@8:5]: then=1, \
+             else=2\nsource:\n,-[$SOURCE:6:1]\n5 |\n6 | ,-> pub proc bad\n7 | |       push.1\n8 | \
+             |       if.true\n9 | |           push.1\n10 | |       else\n11 | |           \
+             push.1\n12 | |           push.2\n13 | |       end\n14 | |-> end\n: `---- procedure \
+             skipped here\n`----\nhelp: this warning was promoted to an error via \
+             --warnings-as-errors"
+        );
+
+        let budget_project = budget_project("masm_frontend_budget_warning_error");
+        let (context, diagnostics) = capturing_context(&budget_project, |options| {
+            options.lint = true;
+            options.diagnostics.warnings = Warnings::Error;
+        });
+        let result =
+            compile(&budget_project, context, &MasmProjectFrontend::with_lint_worklist_budget(0));
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("a promoted incomplete-analysis warning must fail the lint"),
+        };
+        assert_eq!(
+            error.to_string(),
+            "aborting due to errors reported by lint analysis (-Zlint); see the diagnostics above"
+        );
+        let diagnostics = diagnostics.captured();
+        assert_eq!(
+            promoted_warning_snapshot(&diagnostics, None),
+            "diagnostics: 1\nseverity: error\nmessage: MASM advice taint analysis incomplete: \
+             dataflow solver exceeded worklist iteration budget of 0; next analysis would run \
+             dead-code at after(builtin.function in ^block1) in function 'duplicate', with 1 \
+             queued item(s) remaining; queued analyses: dead-code=1; queued functions: \
+             duplicate=1\nrelated severity: warning\nrelated message: MASM advice taint analysis \
+             incomplete: dataflow solver exceeded worklist iteration budget of 0; next analysis \
+             would run dead-code at after(builtin.function in ^block1) in function 'duplicate', \
+             with 1 queued item(s) remaining; queued analyses: dead-code=1; queued functions: \
+             duplicate=1\nsource:\nnone\nhelp: this warning was promoted to an error via \
+             --warnings-as-errors"
         );
     }
 
