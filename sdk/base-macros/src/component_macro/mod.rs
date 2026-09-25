@@ -1567,8 +1567,8 @@ mod tests {
     fn exported_types_render_fields_and_cases_in_explicit_form() {
         let point: syn::ItemStruct = parse_quote! {
             struct Point {
-                r#type: Felt,
-                getURL: u32,
+                record: Felt,
+                item_count: u32,
             }
         };
         let shape: syn::ItemEnum = parse_quote! {
@@ -1594,7 +1594,7 @@ mod tests {
 
         for expected in [
             "use core-types.{felt, word};",
-            "record point {\n        %type: felt,\n        %get-url: u32,\n    }",
+            "record point {\n        %record: felt,\n        %item-count: u32,\n    }",
             "variant shape {\n        %record,\n        %circle(word),\n    }",
         ] {
             assert!(wit.contains(expected), "missing `{expected}` in:\n{wit}");

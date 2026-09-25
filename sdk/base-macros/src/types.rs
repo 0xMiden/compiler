@@ -7,11 +7,13 @@ static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
 
 use heck::ToKebabCase;
 use proc_macro2::Span;
-use syn::{ItemStruct, Type, spanned::Spanned};
+use syn::{ItemStruct, Type, ext::IdentExt, spanned::Spanned};
 use wit_bindgen_core::wit_parser::Type as WitType;
 
 use crate::{
-    manifest_paths::SDK_WIT_SOURCE, namespace::WIT_KEYWORDS, wit_names::rust_ident_to_wit_name,
+    manifest_paths::SDK_WIT_SOURCE,
+    namespace::WIT_KEYWORDS,
+    wit_names::{rust_ident_to_wit_name, wit_bindgen_guest_ident},
 };
 
 #[derive(Clone, Debug)]
@@ -41,7 +43,7 @@ impl TypeRef {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedField {
-    /// Canonical WIT name of the field.
+    /// Canonical WIT name of the field; wit-bindgen maps it back to the Rust field name.
     pub(crate) wit_name: String,
     pub(crate) ty: TypeRef,
 }
@@ -386,6 +388,31 @@ fn exported_type_wit_name(ident: &syn::Ident) -> Result<String, syn::Error> {
     Ok(wit_name)
 }
 
+/// Derives the canonical WIT name of a field of the exported record `type_ident`.
+///
+/// Returns an error at the field's span unless the field is spelled the way the generated
+/// bindings access it, i.e. the snake_case Rust spelling of its WIT name, which is not a Rust
+/// keyword.
+fn exported_field_wit_name(
+    field_ident: &syn::Ident,
+    type_ident: &syn::Ident,
+) -> Result<String, syn::Error> {
+    let wit_name = rust_ident_to_wit_name(field_ident)?;
+    // The generated lowering code reads the user's struct fields by wit-bindgen's own Rust
+    // spelling of the WIT name, so any other spelling fails to compile inside the bindings.
+    let rust_ident = wit_bindgen_guest_ident(&wit_name, field_ident.span());
+    if rust_ident != field_ident.unraw() {
+        return Err(syn::Error::new(
+            field_ident.span(),
+            format!(
+                "field `{field_ident}` of exported type `{type_ident}` would be accessed as \
+                 `{rust_ident}` by the generated bindings; rename it to `{rust_ident}`"
+            ),
+        ));
+    }
+    Ok(wit_name)
+}
+
 pub(crate) fn exported_type_from_struct(
     item_struct: &ItemStruct,
 ) -> Result<ExportedTypeDef, syn::Error> {
@@ -399,7 +426,7 @@ pub(crate) fn exported_type_from_struct(
                 })?;
                 let field_ty = map_type_to_type_ref(&field.ty, &known_exported)?;
                 fields.push(ExportedField {
-                    wit_name: rust_ident_to_wit_name(field_ident)?,
+                    wit_name: exported_field_wit_name(field_ident, &item_struct.ident)?,
                     ty: field_ty,
                 });
             }

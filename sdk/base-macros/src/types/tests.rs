@@ -381,8 +381,8 @@ fn field_and_case_names_use_canonical_wit_names() {
     reset_export_type_registry_for_tests();
     let item: syn::ItemStruct = parse_quote! {
         struct Payload {
-            r#type: u32,
-            getURL: u32,
+            record: u32,
+            item_count: u32,
         }
     };
     let def = exported_type_from_struct(&item).expect("struct definition should parse");
@@ -390,7 +390,7 @@ fn field_and_case_names_use_canonical_wit_names() {
         panic!("expected record kind");
     };
     let names = fields.iter().map(|field| field.wit_name.as_str()).collect::<Vec<_>>();
-    assert_eq!(names, ["type", "get-url"]);
+    assert_eq!(names, ["record", "item-count"]);
 
     let item: syn::ItemEnum = parse_quote! {
         enum Shape {
@@ -416,4 +416,25 @@ fn field_names_without_a_wit_name_are_rejected() {
     };
     let err = exported_type_from_struct(&item).expect_err("`naïve` has no WIT name");
     assert!(err.to_string().contains("`naïve` has no valid WIT name"), "{err}");
+}
+
+#[test]
+fn field_names_the_bindings_spell_differently_are_rejected() {
+    for (item, field, rust_ident) in [
+        (parse_quote! { struct Payload { r#type: u32 } }, "r#type", "type_"),
+        (parse_quote! { struct Payload { getURL: u32 } }, "getURL", "get_url"),
+    ] {
+        reset_export_type_registry_for_tests();
+        let item: syn::ItemStruct = item;
+        let err = exported_type_from_struct(&item)
+            .expect_err("a field the bindings cannot access must be rejected")
+            .to_string();
+        assert!(
+            err.contains(&format!(
+                "field `{field}` of exported type `Payload` would be accessed as `{rust_ident}`"
+            )),
+            "{err}"
+        );
+        assert!(err.contains(&format!("rename it to `{rust_ident}`")), "{err}");
+    }
 }
