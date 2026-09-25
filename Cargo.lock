@@ -4627,6 +4627,7 @@ dependencies = [
  "wasmi",
  "wat",
  "wit-bindgen-core",
+ "wit-parser 0.259.0",
 ]
 
 [[package]]

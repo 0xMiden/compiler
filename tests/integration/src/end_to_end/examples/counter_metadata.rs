@@ -25,6 +25,14 @@ fn counter_contract() {
             == "::miden::counter_contract::counter_contract::get_count"),
         "expected the counter contract to export `get_count` at its namespace"
     );
+    let project_toml =
+        std::fs::read_to_string("../../examples/counter-contract/miden-project.toml").unwrap();
+    let namespace = project_toml
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("namespace = \""))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .expect("the example must declare `[lib].namespace`");
+    crate::sdk::assert_exports_match_wit(&package, namespace);
     let account_component_metadata_bytes = package
         .as_ref()
         .sections
