@@ -5,7 +5,7 @@ use crate::{
     SymbolNameComponent, SymbolPath, SymbolTable,
     dialects::builtin::{
         Component, ComponentRef, Module, ModuleBuilder, ModuleRef, PrimComponentBuilder,
-        PrimModuleBuilder, World, WorldRef,
+        PrimModuleBuilder, World, WorldRef, ops::shadowing_error,
     },
 };
 
@@ -47,30 +47,7 @@ impl WorldBuilder {
     /// Returns an error when the world declares a module tree reaching the path the name spells,
     /// which the component would shadow: resolution prefers the longest registered name.
     pub fn define_component(&mut self, name: Ident) -> Result<ComponentRef, Report> {
-        let segments = SymbolPath::segments_of(name.name);
-        let mut symbol_table = self.world.as_operation_ref();
-        let mut shadowed = true;
-        for segment in segments.iter() {
-            let module = symbol_table.borrow().as_symbol_table().unwrap().get(*segment).and_then(
-                |symbol_ref| {
-                    symbol_ref
-                        .borrow()
-                        .as_symbol_operation()
-                        .downcast_ref::<Module>()
-                        .map(|m| m.as_module_ref())
-                },
-            );
-            match module {
-                Some(module) => symbol_table = module.as_operation_ref(),
-                None => {
-                    shadowed = false;
-                    break;
-                }
-            }
-        }
-        if shadowed {
-            return Err(shadowing_error(name.name, name.name, name.name));
-        }
+        self.world.borrow().reject_component_shadowing(name.name)?;
         let builder = PrimComponentBuilder::new(&mut self.builder, name.span());
         let component_ref = builder(name)?;
         Ok(component_ref)
@@ -172,15 +149,6 @@ impl WorldBuilder {
 
         Ok(leaf_module.expect("invalid empty module path"))
     }
-}
-
-/// The error for a component named `component` that shadows the module path `module_path`, the
-/// two sharing the prefix `prefix`.
-fn shadowing_error(component: SymbolName, module_path: SymbolName, prefix: SymbolName) -> Report {
-    Report::msg(format!(
-        "component `{component}` and module path `{module_path}` share the prefix `{prefix}`; a \
-         component name must not shadow a module tree"
-    ))
 }
 
 #[cfg(test)]
