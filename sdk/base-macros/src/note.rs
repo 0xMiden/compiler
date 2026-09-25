@@ -411,11 +411,12 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     };
     let guest_trait_path = namespace.guest_trait_path();
     let runtime_boilerplate = runtime_boilerplate();
-    let frontend_metadata = note_script_frontend_metadata(
-        &note_ty,
-        entrypoint_ident,
-        export_path(&namespace, entrypoint_ident),
-    );
+    let entrypoint_path = match export_path(&namespace, entrypoint_ident) {
+        Ok(path) => path,
+        Err(err) => return err.into_compile_error(),
+    };
+    let frontend_metadata =
+        note_script_frontend_metadata(&note_ty, entrypoint_ident, entrypoint_path);
     let frontend_link_section = generate_frontend_link_section(&[frontend_metadata]);
     let constructor_guest_methods: Vec<TokenStream2> = constructors
         .iter()
@@ -1058,6 +1059,11 @@ fn build_note_script_wit(
     dependency_imports: &[String],
 ) -> syn::Result<String> {
     let entrypoint_name = rust_ident_to_wit_name(entrypoint_ident)?;
+    let entrypoint_path = export_path(namespace, entrypoint_ident)?;
+    let constructor_paths = constructors
+        .iter()
+        .map(|constructor| export_path(namespace, &constructor.fn_ident))
+        .collect::<syn::Result<Vec<_>>>()?;
     let interface_name = namespace.wit_interface();
     let world_name = format!("{interface_name}-world");
     // `word` is always required by the entrypoint's `arg` parameter
@@ -1078,14 +1084,11 @@ fn build_note_script_wit(
         interface.blank_line();
         // The entrypoint's `arg` parameter is macro-controlled and never needs escaping.
         interface.function(
-            &export_path(namespace, entrypoint_ident),
+            &entrypoint_path,
             &wit_func_line(&entrypoint_name, &["arg: word".to_string()], None),
         );
-        for constructor in constructors {
-            interface.function(
-                &export_path(namespace, &constructor.fn_ident),
-                &constructor_wit_signature(constructor),
-            );
+        for (constructor, path) in constructors.iter().zip(&constructor_paths) {
+            interface.function(path, &constructor_wit_signature(constructor));
         }
     }))
 }
@@ -1747,6 +1750,34 @@ fn main() {{}}
             Err(err) => err,
         };
         assert!(err.to_string().contains("already used by another export"));
+    }
+
+    #[test]
+    fn note_constructors_reject_the_initializer_path() {
+        let mut item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[note_constructor]
+                pub fn init(serial_num: Word) {}
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+        let entrypoint_ident = format_ident!("execute");
+        let (constructors, type_imports) =
+            collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute").unwrap();
+
+        let err = build_note_script_wit(
+            &test_namespace(),
+            &semver::Version::new(1, 0, 0),
+            &entrypoint_ident,
+            &constructors,
+            &type_imports,
+            &[],
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("reserved for the compiler's component initializer"),
+            "{err}"
+        );
     }
 
     #[test]
