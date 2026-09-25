@@ -1032,6 +1032,19 @@ pub(crate) fn exported_type_from_enum(
     let mut variants = Vec::new();
     for variant in &item_enum.variants {
         let wit_name = rust_ident_to_wit_name(&variant.ident)?;
+        // The generated bindings name the user's enum cases by wit-bindgen's UpperCamelCase
+        // spelling of the WIT name, so any other spelling fails to compile inside the bindings.
+        let expected = wit_name.to_upper_camel_case();
+        if variant.ident.unraw() != expected {
+            return Err(syn::Error::new(
+                variant.ident.span(),
+                format!(
+                    "case `{}` of exported type `{}` would be accessed as `{expected}` by the \
+                     generated bindings; rename it to `{expected}`",
+                    variant.ident, item_enum.ident
+                ),
+            ));
+        }
         let payload = match &variant.fields {
             syn::Fields::Unit => None,
             syn::Fields::Unnamed(fields) => {
