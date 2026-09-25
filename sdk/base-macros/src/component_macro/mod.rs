@@ -1224,6 +1224,27 @@ fn reject_duplicate_method_wit_names(methods: &[ComponentMethod]) -> Result<(), 
     Ok(())
 }
 
+/// Rejects component methods whose WIT name is also the name of a type of the component's WIT
+/// interface, `type_names`: an imported core type or an exported custom type. WIT interfaces share
+/// one namespace between types and functions.
+fn reject_method_type_name_collisions<'a>(
+    methods: &[ComponentMethod],
+    type_names: impl IntoIterator<Item = &'a String>,
+) -> Result<(), syn::Error> {
+    let type_names = type_names.into_iter().collect::<BTreeSet<_>>();
+    match methods.iter().find(|method| type_names.contains(&method.wit_name)) {
+        Some(method) => Err(syn::Error::new(
+            method.fn_ident.span(),
+            format!(
+                "component method `{}` produces the WIT name `{}`, which collides with the type \
+                 `{}` of the component's WIT interface; rename the method",
+                method.fn_ident, method.wit_name, method.wit_name
+            ),
+        )),
+        None => Ok(()),
+    }
+}
+
 /// Builds the diagnostic for a component `kind` (method or parameter) `ident` whose WIT name
 /// `wit_name` is already used by `previous`, pointing at both declarations.
 fn duplicate_wit_name_error(
@@ -1558,6 +1579,25 @@ mod tests {
             assert!(message.contains(expected), "{message}");
         }
         assert_eq!(error.into_iter().count(), 2, "diagnostic must point at both methods");
+    }
+
+    #[test]
+    fn component_methods_reject_the_name_of_an_interface_type() {
+        let methods = parse_methods(&[parse_quote!(fn felt(&self) -> Felt)]);
+        let error = build_component_wit(ComponentWitSpec {
+            namespace: &test_namespace(),
+            component_version: &semver::Version::new(1, 0, 0),
+            dependency_imports: &[],
+            type_imports: &BTreeSet::from(["felt".to_string()]),
+            methods: &methods,
+            exported_types: &[],
+        })
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "component method `felt` produces the WIT name `felt`, which collides with the type \
+             `felt` of the component's WIT interface; rename the method"
+        );
     }
 
     #[test]
