@@ -229,6 +229,7 @@ pub fn build_ir_module(
         // module-context stubs, or Miden ABI calls), handle it here.
         if maybe_lower_linker_stub(
             function_ref,
+            parsed_module.module.func_name(func_index).as_str(),
             &body_data.body,
             module_state,
             parsed_module.component_frontend_metadata.as_ref(),
