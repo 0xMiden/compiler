@@ -438,3 +438,41 @@ fn field_names_the_bindings_spell_differently_are_rejected() {
         assert!(err.contains(&format!("rename it to `{rust_ident}`")), "{err}");
     }
 }
+
+#[test]
+fn case_names_the_bindings_spell_differently_are_rejected() {
+    for (item, case, expected) in [
+        (parse_quote! { enum AssetKind { NFT, Fungible } }, "NFT", "Nft"),
+        (parse_quote! { enum AssetKind { HTTPError } }, "HTTPError", "HttpError"),
+    ] {
+        reset_export_type_registry_for_tests();
+        let item: syn::ItemEnum = item;
+        let err = exported_type_from_enum(&item)
+            .expect_err("a case the bindings cannot access must be rejected")
+            .to_string();
+        assert_eq!(
+            err,
+            format!(
+                "case `{case}` of exported type `AssetKind` would be accessed as `{expected}` by \
+                 the generated bindings; rename it to `{expected}`"
+            )
+        );
+    }
+}
+
+#[test]
+fn case_names_the_bindings_spell_identically_are_accepted() {
+    reset_export_type_registry_for_tests();
+    let item: syn::ItemEnum = parse_quote! {
+        enum Shape {
+            Fungible,
+            Circle2D(u32),
+        }
+    };
+    let def = exported_type_from_enum(&item).expect("enum definition should parse");
+    let ExportedTypeKind::Variant { variants } = &def.kind else {
+        panic!("expected variant kind");
+    };
+    let names = variants.iter().map(|variant| variant.wit_name.as_str()).collect::<Vec<_>>();
+    assert_eq!(names, ["fungible", "circle2-d"]);
+}
