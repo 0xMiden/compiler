@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 
-use proc_macro::Span;
+use proc_macro2::Span;
 use semver::Version;
 use syn::spanned::Spanned;
 
@@ -40,11 +40,7 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
         match &exported.kind {
             ExportedTypeKind::Record { fields } => {
                 for field in fields {
-                    ensure_custom_type_defined(
-                        &field.ty,
-                        &exported_type_names,
-                        Span::call_site().into(),
-                    )?;
+                    ensure_custom_type_defined(&field.ty, &exported_type_names, Span::call_site())?;
                     field.ty.add_required_core_type_imports(&mut combined_core_imports);
                 }
             }
@@ -54,7 +50,7 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
                         ensure_custom_type_defined(
                             payload,
                             &exported_type_names,
-                            Span::call_site().into(),
+                            Span::call_site(),
                         )?;
                         payload.add_required_core_type_imports(&mut combined_core_imports);
                     }
