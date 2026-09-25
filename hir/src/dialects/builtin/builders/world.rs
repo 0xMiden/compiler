@@ -66,7 +66,10 @@ impl WorldBuilder {
     }
 
     /// Declare a new world-level module `name`
+    ///
+    /// Returns an error when `name` contains `::`, see [Module::validate_name].
     pub fn declare_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
+        Module::validate_name(name.name)?;
         let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
         let module_ref = builder(name)?;
         Ok(module_ref)
@@ -359,6 +362,35 @@ mod tests {
             world_builder
                 .define_component(Ident::from(name))
                 .unwrap_or_else(|err| panic!("`{name}` does not nest: {err}"));
+        }
+    }
+
+    #[test]
+    fn a_module_name_containing_a_path_separator_is_rejected() {
+        use alloc::string::{String, ToString};
+
+        use crate::dialects::builtin::ComponentBuilder;
+
+        let context = Rc::new(Context::default());
+        let mut builder = OpBuilder::new(context);
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let component = world_builder
+            .define_component(Ident::from("acme::app::app"))
+            .expect("failed to define component");
+        let top = world_builder.declare_module(Ident::from("top")).expect("failed to declare top");
+
+        let expected = "module `a::b`: a module name cannot contain `::` (only components are \
+                        named by `::`-joined paths)";
+        let errors: [(&str, Result<ModuleRef, Report>); 3] = [
+            ("world", world_builder.declare_module(Ident::from("a::b"))),
+            ("component", ComponentBuilder::new(component).define_module(Ident::from("a::b"))),
+            ("module", ModuleBuilder::new(top).declare_module(Ident::from("a::b"))),
+        ];
+        for (parent, result) in errors {
+            let err = result.map(|_| ()).map_err(|err| err.to_string());
+            assert_eq!(err, Err(String::from(expected)), "in a {parent}");
         }
     }
 
