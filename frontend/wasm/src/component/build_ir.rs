@@ -5,7 +5,10 @@ use midenc_session::{Session, diagnostics::Report};
 
 use super::{
     ComponentItem, ComponentTypesBuilder, ParsedRootComponent,
-    naming::{ExportPaths, exports_namespace, external_id_path, interface_hint},
+    naming::{
+        ExportPaths, exports_namespace, external_id_path, interface_hint,
+        world_level_function_export,
+    },
     translator::ComponentTranslator,
 };
 use crate::{
@@ -59,14 +62,14 @@ fn component_namespace<'data>(
     parsed: &ParsedRootComponent<'data>,
     config: &WasmTranslationConfig,
 ) -> WasmResult<(SymbolPath, ExportPaths<'data>)> {
-    let root_instance_exports: Vec<&str> = parsed
-        .root_component
-        .exports
-        .iter()
-        .filter_map(|(name, item)| {
-            matches!(item, ComponentItem::ComponentInstance(_)).then_some(*name)
-        })
-        .collect();
+    let mut root_instance_exports: Vec<&str> = Vec::new();
+    for (name, item) in parsed.root_component.exports.iter() {
+        match item {
+            ComponentItem::ComponentInstance(_) => root_instance_exports.push(*name),
+            ComponentItem::Func(_) => return Err(world_level_function_export(name)),
+            _ => {}
+        }
+    }
     let mut exports = Vec::new();
     for (index, component) in parsed.static_components.iter() {
         let interface = interface_hint(&root_instance_exports, index.as_u32());

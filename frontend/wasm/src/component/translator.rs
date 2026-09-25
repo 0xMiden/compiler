@@ -120,6 +120,8 @@ struct PendingExport {
     core_func: (StaticModuleIndex, FuncIndex),
     /// The Miden path of the export.
     path: SymbolPath,
+    /// The interface the root component exports the export's component instance as.
+    interface: String,
     /// The component-level type of the export.
     func_ty: ComponentFunctionType,
     /// The parameter names of the export.
@@ -188,9 +190,7 @@ impl<'a> ComponentTranslator<'a> {
         };
         let mut world_builder = WorldBuilder::new(world_ref);
 
-        let raw_entity_ref = world_builder
-            .define_component(hir2::Ident::with_empty_span(name))
-            .expect("failed to define component");
+        let raw_entity_ref = world_builder.define_component(hir2::Ident::with_empty_span(name))?;
         let result = ComponentBuilder::new(raw_entity_ref);
 
         Ok(Self {
@@ -515,10 +515,21 @@ impl<'a> ComponentTranslator<'a> {
                             ))
                         },
                     )?;
+                // The pre-scan sees each nested component's exports once, so a component
+                // instantiated twice and exported as two interfaces is only caught here.
+                if let Some(previous) =
+                    self.pending_exports.iter().find(|export| export.path == path)
+                {
+                    return Err(Report::msg(format!(
+                        "component instances `{}` and `{interface}` both export `{path}`",
+                        previous.interface
+                    )));
+                }
                 self.define_component_export_lift_func(
                     frame,
                     types,
                     component_instance_idx,
+                    interface,
                     &path,
                     f,
                 )?;
@@ -546,12 +557,14 @@ impl<'a> ComponentTranslator<'a> {
     }
 
     /// Records the lifted function of a component export at its Miden path `path`, which is
-    /// `<component namespace>::<leaf>`, to be defined once the core modules are translated.
+    /// `<component namespace>::<leaf>`, exported through the interface `interface`, to be
+    /// defined once the core modules are translated.
     fn define_component_export_lift_func(
         &mut self,
         frame: &ComponentFrame<'a>,
         types: &mut ComponentTypesBuilder,
         component_instance_idx: ComponentInstanceIndex,
+        interface: &str,
         path: &SymbolPath,
         f: &ComponentFuncIndex,
     ) -> WasmResult<()> {
@@ -573,6 +586,7 @@ impl<'a> ComponentTranslator<'a> {
         self.pending_exports.push(PendingExport {
             core_func,
             path: path.clone(),
+            interface: interface.to_string(),
             func_ty,
             param_names,
             protocol_export_kind,
@@ -656,6 +670,7 @@ impl<'a> ComponentTranslator<'a> {
         for PendingExport {
             core_func,
             path,
+            interface: _,
             func_ty,
             param_names,
             protocol_export_kind,
@@ -685,7 +700,8 @@ impl<'a> ComponentTranslator<'a> {
     /// Reports an error when the component already holds a symbol named by the leaf of the
     /// export path `path`, i.e. when the export clashes with the core module of the same name.
     ///
-    /// Two exports sharing one path are rejected earlier, by the export pre-scan.
+    /// Two exports sharing one path are rejected earlier, by the export pre-scan or, for one
+    /// component exported through two interfaces, when the exports are recorded.
     fn ensure_export_leaf_is_free(&self, path: &SymbolPath) -> WasmResult<()> {
         let leaf = path.name();
         let component = self.result.component.borrow();
@@ -698,11 +714,10 @@ impl<'a> ComponentTranslator<'a> {
                 component.namespace_path()
             )
         } else {
-            // Internal error: the export pre-scan (`exports_namespace`) rejects two exports of
-            // one path before any export is lifted.
+            // Internal error: two exports of one path are rejected before any export is lifted.
             format!(
                 "export `{path}` clashes with the component symbol `{leaf}` (two exports of one \
-                 path are rejected by the export pre-scan)"
+                 path are rejected before lifting)"
             )
         };
         Err(Report::msg(message))
