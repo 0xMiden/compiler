@@ -7,12 +7,12 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{Dyncall, ExecFpi, HirOpBuilder};
 use midenc_hir::{
-    Builder, Context, FunctionType, Ident, Op, SmallVec, SourceSpan, SymbolName, SymbolPath,
+    Builder, Context, FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolName, SymbolPath,
     SymbolTable, Type, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, Function, FunctionRef, ModuleBuilder, WorldBuilder,
-        attributes::{AbiParam, Signature},
+        attributes::{AbiParam, Signature, StringAttr},
     },
 };
 use midenc_session::diagnostics::Report;
@@ -40,6 +40,9 @@ const FPI_IMPORT_PREFIX: &str = "fpi-";
 /// Name prefix marking a synthesized import that dispatches to a procedure root passed as its
 /// leading `word` parameter, lowered to `hir.dyncall` instead of a declared `hir.call` target.
 const DYNCALL_IMPORT_PREFIX: &str = "dyncall-";
+/// The attribute recording, on a declared import function, the component-model path of the
+/// import that declared it, so a later clashing import can name it. Its value is a `StringAttr`.
+const COMPONENT_IMPORT_PATH_ATTR: &str = "wasm_component_import_path";
 const FPI_ABI_PREFIX_ARGS: usize = ExecFpi::PREFIX_FELTS;
 /// Field elements the callee's procedure root occupies, both as the leading flat parameters of a
 /// dyncall import's lowering function and as the root operand of the `hir.dyncall` it emits.
@@ -65,9 +68,6 @@ pub struct ComponentImportPath {
     /// The Miden path from the import's `external-id`; names the imported function, which is
     /// declared in the stub component at the path's parent.
     pub path: SymbolPath,
-    /// The core-import path of the first import of the component that lowers to `path`; names
-    /// the other side of a clash in diagnostics.
-    pub first_cm_path: SymbolPath,
     /// The name (the `::`-joined namespace) of the component being translated; `path` must lie
     /// outside of that namespace.
     pub namespace: SymbolName,
@@ -1256,7 +1256,8 @@ fn generate_direct_lowering(
 /// component named by the path's parent.
 ///
 /// When an earlier import already declared that path, its declaration is returned if the
-/// signatures agree, and an error is reported otherwise. An import path inside the namespace of
+/// signatures agree, and an error is reported otherwise; a new declaration records the import's
+/// component-model path for that diagnostic. An import path inside the namespace of
 /// the component being translated is rejected: its stub component would nest in that namespace.
 fn declare_import_function(
     world_builder: &mut WorldBuilder,
@@ -1280,22 +1281,42 @@ fn declare_import_function(
     let existing = component_ref.borrow().get(import_path.name());
     if let Some(existing) = existing {
         let existing = existing.borrow();
-        let declared = existing
-            .as_symbol_operation()
-            .downcast_ref::<Function>()
-            .filter(|function| *function.get_signature() == *signature);
-        return declared.map(|function| function.as_function_ref()).ok_or_else(|| {
-            Report::msg(format!(
-                "imports `{}` and `{}` both lower to `{import_path}` with different signatures",
-                import.first_cm_path, import.cm_path
-            ))
-        });
+        let Some(function) = existing.as_symbol_operation().downcast_ref::<Function>() else {
+            return Err(Report::msg(format!(
+                "`{import_path}` is already declared as a non-function symbol"
+            )));
+        };
+        if *function.get_signature() == *signature {
+            return Ok(function.as_function_ref());
+        }
+        let first_cm_path = function
+            .as_operation()
+            .get_typed_attribute::<StringAttr>(COMPONENT_IMPORT_PATH_ATTR)
+            .map(|attr| (**attr.borrow()).clone())
+            .filter(|first| first.as_str() != import.cm_path.to_string());
+        return Err(Report::msg(match first_cm_path {
+            Some(first) => format!(
+                "imports `{first}` and `{}` both lower to `{import_path}` with different \
+                 signatures",
+                import.cm_path
+            ),
+            // Declared by an earlier translation into the same world, or not by an import
+            None => format!(
+                "import `{}` lowers to `{import_path}`, which is already declared with a \
+                 different signature",
+                import.cm_path
+            ),
+        }));
     }
-    ComponentBuilder::new(component_ref).define_function(
+    let context = world_builder.context_rc();
+    let mut function_ref = ComponentBuilder::new(component_ref).define_function(
         import_path.name().into(),
         Visibility::Internal,
         signature.clone(),
-    )
+    )?;
+    let cm_path = context.create_attribute::<StringAttr, _>(import.cm_path.to_string());
+    function_ref.borrow_mut().set_attribute(COMPONENT_IMPORT_PATH_ATTR, cm_path);
+    Ok(function_ref)
 }
 
 /// Rejects component import signatures containing unsupported canonical ABI shapes.
@@ -1897,7 +1918,6 @@ mod tests {
         let mut path = SymbolPath::from_masm_module_id("miden::test::test");
         path.path.push(SymbolNameComponent::Leaf(SymbolName::intern(leaf)));
         ComponentImportPath {
-            first_cm_path: cm_path.clone(),
             cm_path,
             path,
             namespace: SymbolName::intern("miden::test::app"),
