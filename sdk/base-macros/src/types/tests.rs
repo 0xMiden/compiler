@@ -476,3 +476,23 @@ fn case_names_the_bindings_spell_identically_are_accepted() {
     let names = variants.iter().map(|variant| variant.wit_name.as_str()).collect::<Vec<_>>();
     assert_eq!(names, ["fungible", "circle2-d"]);
 }
+
+#[test]
+fn raw_identifier_exported_types_resolve_at_their_uses() {
+    reset_export_type_registry_for_tests();
+    let item: syn::ItemStruct = parse_quote! {
+        struct r#match {
+            value: u32,
+        }
+    };
+    let def = exported_type_from_struct(&item).expect("struct definition should parse");
+    assert_eq!(def.wit_name, "match");
+
+    let ty: Type = parse_quote!(r#match);
+    let exported = HashMap::from([(def.rust_name.clone(), def.clone())]);
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("type use should resolve");
+    assert_eq!(type_ref.wit_name, "match");
+    let exported_names = HashSet::from([def.wit_name.clone()]);
+    ensure_custom_type_defined(&type_ref, &exported_names, Span::call_site())
+        .expect("the use must name the exported definition");
+}

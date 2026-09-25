@@ -5,7 +5,7 @@ use std::{
 
 static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
 
-use heck::{ToKebabCase, ToUpperCamelCase};
+use heck::ToUpperCamelCase;
 use midenc_frontend_wasm_metadata::namespace::WIT_KEYWORDS;
 use proc_macro2::Span;
 use syn::{ItemStruct, Type, ext::IdentExt, spanned::Spanned};
@@ -163,8 +163,6 @@ pub(crate) fn map_type_to_type_ref(
                 ));
             }
 
-            let wit_name = ident.to_kebab_case();
-
             if let Some(wit_type) = rust_type_to_wit_type(&ident) {
                 return Ok(TypeRef {
                     wit_name: wit_type_name(wit_type).to_string(),
@@ -173,6 +171,9 @@ pub(crate) fn map_type_to_type_ref(
                     dependencies: Vec::new(),
                 });
             }
+
+            // Must agree with the name `#[export_type]` registers for the definition.
+            let wit_name = rust_ident_to_wit_name(&last.ident)?;
 
             if exported_types.contains_key(&ident) {
                 return Ok(TypeRef {
