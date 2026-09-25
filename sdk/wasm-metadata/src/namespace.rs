@@ -68,11 +68,18 @@ pub const RUST_KEYWORDS: &[&str] = &[
     "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
 ];
 
+/// The name of the SDK's WIT interface, in the `miden:base` package, that defines the core types
+/// (`felt`, `word`, ...).
+pub const CORE_TYPES_INTERFACE: &str = "core-types";
+
+/// The namespace segment whose WIT spelling is [`CORE_TYPES_INTERFACE`].
+pub const CORE_TYPES_SEGMENT: &str = "core_types";
+
 /// Segments that cannot name the interface (third segment) of a namespace.
 ///
-/// Every generated WIT package `use`s the SDK's `core-types` interface at package level, so an
+/// Every generated WIT package `use`s the SDK's [`CORE_TYPES_INTERFACE`] at package level, so an
 /// interface of the same name collides with it.
-pub const RESERVED_INTERFACE_SEGMENTS: &[&str] = &["core_types"];
+pub const RESERVED_INTERFACE_SEGMENTS: &[&str] = &[CORE_TYPES_SEGMENT];
 
 /// The library roots a component namespace must neither equal nor nest under, as `::`-separated
 /// paths.
@@ -314,5 +321,10 @@ mod tests {
         for position in [SegmentPosition::Namespace, SegmentPosition::Package] {
             assert_eq!(validate_namespace_segment("core_types", position), Ok(()));
         }
+    }
+
+    #[test]
+    fn core_types_segment_is_spelled_like_the_interface() {
+        assert_eq!(CORE_TYPES_SEGMENT.replace('_', "-"), CORE_TYPES_INTERFACE);
     }
 }

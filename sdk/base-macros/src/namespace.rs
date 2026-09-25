@@ -4,10 +4,8 @@
 //! the exported procedures (carried by WIT `@external-id` attributes), the WIT package and
 //! interface ids, the guest trait path of the generated bindings, and the storage slot names.
 
-use miden_assembly_syntax::ast::{Path, PathComponent};
-use midenc_frontend_wasm_metadata::namespace::{
-    NamespaceSegmentError, SegmentPosition, validate_namespace_segment,
-};
+use miden_assembly_syntax::ast::Path;
+use midenc_frontend_wasm_metadata::namespace::{NamespaceError, validate_namespace};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 
@@ -28,20 +26,20 @@ pub(crate) struct ComponentNamespace {
 impl ComponentNamespace {
     /// Parses a `[lib].namespace` value given as an assembler path.
     ///
-    /// The path must consist of exactly three unquoted segments (a leading `::` is tolerated),
-    /// each valid in its position (see [`validate_namespace_segment`]).
+    /// The path must be a component namespace by the rule of [`validate_namespace`]: exactly three
+    /// unquoted segments (a leading `::` is tolerated), each valid in its position, outside the
+    /// reserved library namespaces.
     pub(crate) fn from_path(path: &Path, span: Span) -> syn::Result<Self> {
         // The manifest loader absolutizes the path; show it the way the user wrote it.
         let raw = path.as_str().strip_prefix("::").unwrap_or(path.as_str());
-        let mut segments = Vec::new();
-        for component in path.components() {
-            match component {
-                Ok(PathComponent::Root) => {}
-                Ok(PathComponent::Normal(segment)) => segments.push(segment.to_owned()),
-                Err(_) => return Err(invalid_namespace(raw, span, None)),
-            }
-        }
-        Self::from_segments(raw, segments, span)
+        validate_namespace(raw).map_err(|err| invalid_namespace(raw, span, err))?;
+        let mut segments = raw.split("::").map(str::to_owned);
+        let (Some(ns), Some(pkg), Some(iface)) =
+            (segments.next(), segments.next(), segments.next())
+        else {
+            unreachable!("a validated namespace has three segments");
+        };
+        Ok(Self { ns, pkg, iface })
     }
 
     /// Parses a namespace written as a plain string (`miden::pkg::iface`, optionally with a
@@ -49,17 +47,6 @@ impl ComponentNamespace {
     #[cfg(test)]
     pub(crate) fn parse(value: &str, span: Span) -> syn::Result<Self> {
         Self::from_path(Path::new(value), span)
-    }
-
-    /// Validates the segments of the namespace `raw` and builds the namespace.
-    fn from_segments(raw: &str, segments: Vec<String>, span: Span) -> syn::Result<Self> {
-        let [ns, pkg, iface]: [String; 3] =
-            segments.try_into().map_err(|_| invalid_namespace(raw, span, None))?;
-        for (segment, position) in [&ns, &pkg, &iface].into_iter().zip(SegmentPosition::ALL) {
-            validate_namespace_segment(segment, position)
-                .map_err(|reason| invalid_namespace(raw, span, Some((segment, reason))))?;
-        }
-        Ok(Self { ns, pkg, iface })
     }
 
     /// The Miden path of the namespace, e.g. `miden::counter_contract::counter_contract`.
@@ -106,16 +93,14 @@ fn kebab(segment: &str) -> String {
     segment.replace('_', "-")
 }
 
-/// Builds the diagnostic for an invalid `[lib].namespace` value, naming the offending segment
-/// and the reason when a single segment is at fault.
-fn invalid_namespace(
-    raw: &str,
-    span: Span,
-    invalid_segment: Option<(&str, NamespaceSegmentError)>,
-) -> syn::Error {
-    let reason = invalid_segment
-        .map(|(segment, reason)| format!("the segment `{segment}` {reason}; "))
-        .unwrap_or_default();
+/// Builds the diagnostic for an invalid `[lib].namespace` value, naming the reason unless the
+/// segment count is at fault.
+fn invalid_namespace(raw: &str, span: Span, err: NamespaceError) -> syn::Error {
+    let reason = match err {
+        NamespaceError::SegmentCount => String::new(),
+        NamespaceError::Segment { .. } => format!("{err}; "),
+        NamespaceError::Reserved { .. } => format!("the namespace {err}; "),
+    };
     syn::Error::new(
         span,
         format!(
@@ -130,6 +115,8 @@ fn invalid_namespace(
 
 #[cfg(test)]
 mod tests {
+    use midenc_frontend_wasm_metadata::namespace::NamespaceSegmentError;
+
     use super::*;
 
     fn parse(value: &str) -> syn::Result<ComponentNamespace> {
@@ -235,5 +222,15 @@ mod tests {
         let err = parse("miden::wallet::core_types").unwrap_err().to_string();
         assert!(err.contains("the segment `core_types` is reserved"), "{err}");
         assert!(parse("miden::core_types::wallet").is_ok());
+    }
+
+    #[test]
+    fn rejects_library_namespaces() {
+        let err = parse("miden::protocol::wallet").unwrap_err().to_string();
+        assert!(
+            err.contains("the namespace is reserved for the `miden::protocol` library; expected"),
+            "{err}"
+        );
+        assert!(parse("miden::protocol_x::wallet").is_ok());
     }
 }
