@@ -524,9 +524,8 @@ const HIR_MODULE_OP: &str = "builtin.module";
 ///   inside a component, or a module inside a module, is counted here and is not there. Such a
 ///   file falls back to the artifact name.
 /// - **A declaration split across lines**, one whose visibility is joined to its name without
-///   whitespace (`private@"a:b"`, which the lexer does tokenize), and **a name containing an
-///   escaped quote or the sequence `//`** — being line-oriented and delimiter-driven where the
-///   lexer is neither.
+///   whitespace (`private@"a:b"`, which the lexer does tokenize), and **a name containing the
+///   sequence `//` or an escaped line break** — being line-oriented where the lexer is not.
 ///
 /// All of these **fail closed**, in the same sense [`masm_namespace_declaration`]'s misses do:
 /// the namespace this returns is compared against what codegen produces from the same file, so
@@ -603,27 +602,44 @@ fn hir_declared_name(rest: &str) -> Option<String> {
         })?
         .trim_start();
 
-    let (first, mut rest) = hir_symbol_name(rest)?;
-    let mut name = first.to_string();
+    let (mut name, mut rest) = hir_symbol_name(rest)?;
     while let Some((segment, tail)) = rest.strip_prefix("::").and_then(hir_symbol_name) {
         name.push_str("::");
-        name.push_str(segment);
+        name.push_str(&segment);
         rest = tail;
     }
     Some(name)
 }
 
-/// The `@`-prefixed symbol name at the start of `rest`, and the text following it.
-fn hir_symbol_name(rest: &str) -> Option<(&str, &str)> {
+/// The `@`-prefixed symbol name at the start of `rest`, unescaped, and the text following it.
+fn hir_symbol_name(rest: &str) -> Option<(String, &str)> {
     // `symbol-ref-id ::= '@' (bare-id | string-literal)`, which is what the lexer accepts.
     let name = rest.strip_prefix('@')?;
     match name.strip_prefix('"') {
-        Some(quoted) => quoted.split_once('"'),
+        Some(quoted) => hir_quoted_name(quoted),
         None => {
             let end = name.find(|c| !is_hir_identifier_char(c)).unwrap_or(name.len());
-            (end > 0).then(|| name.split_at(end))
+            (end > 0).then(|| (name[..end].to_string(), &name[end..]))
         }
     }
+}
+
+/// The unescaped name of the quoted symbol name whose opening quote precedes `quoted`, and the
+/// text following its closing quote.
+///
+/// A `\` takes the character after it literally, as the lexer's unescaping does
+/// (`lex_at_identifier`); the printer escapes `"` and `\` that way.
+fn hir_quoted_name(quoted: &str) -> Option<(String, &str)> {
+    let mut name = String::new();
+    let mut chars = quoted.char_indices();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            '"' => return Some((name, &quoted[at + 1..])),
+            '\\' => name.push(chars.next()?.1),
+            c => name.push(c),
+        }
+    }
+    None
 }
 
 /// Whether `c` may appear in a HIR identifier, and so cannot end one thing and begin another.
@@ -2559,6 +2575,10 @@ namespace = "miden::prepare_fixture::prepare_fixture"
                  private @inner {\n    };\n  };\n};\n",
                 Some("\"a:b@2.1.0\""),
             ),
+            // A quoted name is read unescaped, as the lexer reads it: an escaped `"` does not end
+            // it, and `\\` stands for one backslash. (It renders as codegen renders it; a `"` has
+            // no Miden Assembly spelling, so preparation then rejects the namespace.)
+            ("builtin.component private @\"a\\\"b\\\\c\" {\n};\n", Some("\"a\"b\\c\"")),
             // No version is invented: the name is the namespace.
             ("builtin.component internal @\"a:b\" {\n};\n", Some("\"a:b\"")),
             // A file declaring no component is rooted at the module it does declare, bare name
@@ -2628,6 +2648,12 @@ namespace = "miden::prepare_fixture::prepare_fixture"
         for (dir, contents) in [
             ("prepare_standalone_hir_oracle_world", WORLD.to_string()),
             ("prepare_standalone_hir_oracle_component", COMPONENT.to_string()),
+            // A quoted segment holding an escaped `\`, which the scan must read unescaped, as
+            // the lexer does.
+            (
+                "prepare_standalone_hir_oracle_escaped",
+                COMPONENT.replace("@hir_ns::@test", r#"@hir_ns::@"te\\st""#),
+            ),
             ("prepare_standalone_hir_oracle_module", MODULE.replace("@lib", "@renamed")),
         ] {
             let prepared =
