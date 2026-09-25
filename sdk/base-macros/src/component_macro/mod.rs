@@ -1564,6 +1564,44 @@ mod tests {
     }
 
     #[test]
+    fn exported_types_render_fields_and_cases_in_explicit_form() {
+        let point: syn::ItemStruct = parse_quote! {
+            struct Point {
+                r#type: Felt,
+                getURL: u32,
+            }
+        };
+        let shape: syn::ItemEnum = parse_quote! {
+            enum Shape {
+                Record,
+                Circle(Word),
+            }
+        };
+        let exported_types = [
+            crate::types::exported_type_from_struct(&point).unwrap(),
+            crate::types::exported_type_from_enum(&shape).unwrap(),
+        ];
+
+        let wit = build_component_wit(ComponentWitSpec {
+            namespace: &test_namespace(),
+            component_version: &semver::Version::new(1, 0, 0),
+            dependency_imports: &[],
+            type_imports: &BTreeSet::new(),
+            methods: &[],
+            exported_types: &exported_types,
+        })
+        .unwrap();
+
+        for expected in [
+            "use core-types.{felt, word};",
+            "record point {\n        %type: felt,\n        %get-url: u32,\n    }",
+            "variant shape {\n        %record,\n        %circle(word),\n    }",
+        ] {
+            assert!(wit.contains(expected), "missing `{expected}` in:\n{wit}");
+        }
+    }
+
+    #[test]
     fn component_methods_reject_colliding_wit_names() {
         let methods =
             parse_methods(&[parse_quote!(fn getURL(&self)), parse_quote!(fn get_url(&self))]);
