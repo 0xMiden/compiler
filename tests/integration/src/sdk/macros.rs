@@ -1743,3 +1743,40 @@ mod exports {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn component_method_named_init_is_rejected() {
+    // Codegen emits the component initializer as `<namespace>::init`, so an exported procedure
+    // with that name would collide with it.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component]
+trait TestComponent {
+    #[account_procedure]
+    fn init(&self);
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn init(&self) {}
+}
+"#;
+
+    let cargo_proj = account_component_project("component_method_named_init_is_rejected", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected a component method named `init` to be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("reserved for the compiler's component initializer"),
+        "unexpected stderr: {stderr}"
+    );
+}

@@ -60,6 +60,8 @@ takes part in naming, and the WIT package and interface ids derive from the name
   name works, e.g. `getURL` or `r#type`. The
   generated WIT spells Rust-derived method and parameter names in explicit `%` form
   (`%get-url: func(%type: u32) -> u32;`).
+- `<namespace>::init` is reserved for the compiler's component initializer; rename any exported
+  procedure, note entrypoint or note constructor called `init`.
 
 ### Hand-written WIT needs `@external-id` on every function
 

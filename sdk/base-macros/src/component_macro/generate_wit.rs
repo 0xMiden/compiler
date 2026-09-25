@@ -113,7 +113,7 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
 
             for method in spec.methods {
                 let signature = component_method_signature(method, &exported_type_names)?;
-                interface.function(&export_path(spec.namespace, &method.fn_ident), &signature);
+                interface.function(&export_path(spec.namespace, &method.fn_ident)?, &signature);
             }
 
             Ok::<(), syn::Error>(())

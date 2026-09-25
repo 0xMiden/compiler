@@ -369,38 +369,45 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         Err(err) => return err.to_compile_error(),
     };
 
-    let inline_wit = build_note_script_wit(
+    let inline_wit = match build_note_script_wit(
         &namespace,
         manifest.component_version(),
         entrypoint_ident,
         &constructors,
         &constructor_type_imports,
         &dependency_imports,
-    );
+    ) {
+        Ok(wit) => wit,
+        Err(err) => return err.into_compile_error(),
+    };
     let inline_literal = Literal::string(&inline_wit);
     // The public WIT is embedded in the compiled package, so a dependent crate that imports
     // this note's constructors reads the interface from the `.masp` itself. It stays
     // export-only (no dependency imports), so it is self-contained for the consumer's
     // resolver, which parses dependency WIT against the bundled SDK WIT alone.
-    let public_wit = build_note_script_wit(
+    let public_wit = match build_note_script_wit(
         &namespace,
         manifest.component_version(),
         entrypoint_ident,
         &constructors,
         &constructor_type_imports,
         &[],
-    );
+    ) {
+        Ok(wit) => wit,
+        Err(err) => return err.into_compile_error(),
+    };
     let wit_link_section = match generate_wit_link_section(&public_wit) {
         Ok(tokens) => tokens,
         Err(err) => return err.into_compile_error(),
     };
     let guest_trait_path = namespace.guest_trait_path();
     let runtime_boilerplate = runtime_boilerplate();
-    let frontend_metadata = note_script_frontend_metadata(
-        &note_ty,
-        entrypoint_ident,
-        export_path(&namespace, entrypoint_ident),
-    );
+    let entrypoint_path = match export_path(&namespace, entrypoint_ident) {
+        Ok(path) => path,
+        Err(err) => return err.into_compile_error(),
+    };
+    let frontend_metadata =
+        note_script_frontend_metadata(&note_ty, entrypoint_ident, entrypoint_path);
     let frontend_link_section = generate_frontend_link_section(&[frontend_metadata]);
     let constructor_guest_methods: Vec<TokenStream2> = constructors
         .iter()
@@ -1059,8 +1066,8 @@ fn build_note_script_wit(
     constructors: &[NoteConstructor],
     constructor_type_imports: &BTreeSet<String>,
     dependency_imports: &[String],
-) -> String {
-    let (wit, ()) = WitBuilder::exported_interface(
+) -> syn::Result<String> {
+    let (wit, result) = WitBuilder::exported_interface(
         "#[note]",
         namespace,
         component_version,
@@ -1073,7 +1080,7 @@ fn build_note_script_wit(
             interface.line(&format!("use core-types.{{{imports}}};"));
             interface.blank_line();
             interface.function(
-                &export_path(namespace, entrypoint_ident),
+                &export_path(namespace, entrypoint_ident)?,
                 &format!(
                     "{}: func(arg: word);",
                     explicit_wit_identifier(&rust_ident_to_wit_name(entrypoint_ident)?)
@@ -1081,13 +1088,15 @@ fn build_note_script_wit(
             );
             for constructor in constructors {
                 interface.function(
-                    &export_path(namespace, &constructor.fn_ident),
+                    &export_path(namespace, &constructor.fn_ident)?,
                     &constructor_wit_signature(constructor),
                 );
             }
+            Ok::<(), syn::Error>(())
         },
     );
-    wit
+    result?;
+    Ok(wit)
 }
 
 /// Builds frontend metadata for the `#[note_script]` method exported by a note at `path`.
@@ -1299,7 +1308,8 @@ mod tests {
             &[],
             &BTreeSet::new(),
             &[],
-        );
+        )
+        .unwrap();
 
         assert!(wit.contains("package miden:my-note@1.0.0;"), "unexpected WIT: {wit}");
         assert!(wit.contains("interface my-note {"), "unexpected WIT: {wit}");
@@ -1345,7 +1355,8 @@ mod tests {
             &constructors,
             &type_imports,
             &[],
-        );
+        )
+        .unwrap();
 
         assert!(wit.contains(
             "@external-id(\"miden::my_note::my_note::create\")\n    %create: func(%target: \
@@ -1392,7 +1403,8 @@ mod tests {
             &constructors,
             &type_imports,
             &[],
-        );
+        )
+        .unwrap();
 
         assert!(wit.contains("%result: func(arg: word);"), "unexpected WIT: {wit}");
         assert!(
@@ -1531,6 +1543,34 @@ mod tests {
     }
 
     #[test]
+    fn note_constructors_reject_the_initializer_path() {
+        let mut item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[note_constructor]
+                pub fn init(serial_num: Word) {}
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+        let entrypoint_ident = format_ident!("execute");
+        let (constructors, type_imports) =
+            collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute").unwrap();
+
+        let err = build_note_script_wit(
+            &test_namespace(),
+            &semver::Version::new(1, 0, 0),
+            &entrypoint_ident,
+            &constructors,
+            &type_imports,
+            &[],
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("reserved for the compiler's component initializer"),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn note_constructors_accept_non_snake_case_names() {
         let mut item_impl: ItemImpl = parse_quote! {
             impl MyNote {
@@ -1554,7 +1594,8 @@ mod tests {
             &constructors,
             &type_imports,
             &[],
-        );
+        )
+        .unwrap();
         assert!(
             wit.contains("@external-id(\"miden::my_note::my_note::makeNote\")"),
             "the export path must keep the Rust identifier: {wit}"

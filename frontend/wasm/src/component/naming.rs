@@ -59,7 +59,8 @@ pub(crate) type ExportPaths<'a> = FxHashMap<(StaticComponentIndex, &'a str), Sym
 /// Returns the namespace shared by `exports`, the component-model names of the component's
 /// function exports paired with their Miden paths, or `None` when there are none.
 ///
-/// Fails when two functions share a path, or when the functions are not all under the same
+/// Fails when two functions share a path, when a function takes the path of the compiler's
+/// component initializer (`<namespace>::init`), or when the functions are not all under the same
 /// namespace.
 pub(crate) fn exports_namespace<'a>(
     exports: impl IntoIterator<Item = (&'a str, &'a SymbolPath)>,
@@ -70,6 +71,14 @@ pub(crate) fn exports_namespace<'a>(
         if let Some(previous) = seen.insert(path, name) {
             return Err(Report::msg(format!(
                 "component functions `{previous}` and `{name}` share the Miden path `{path}`"
+            )));
+        }
+        // Codegen emits the component initializer as the public `init` procedure next to the
+        // exports, so an export with that leaf would silently collide with it.
+        if path.name().as_str() == "init" {
+            return Err(Report::msg(format!(
+                "export `{name}` uses the path `{path}`, which is reserved for the compiler's \
+                 component initializer"
             )));
         }
         let namespace = path.without_leaf().into_owned();
@@ -490,6 +499,19 @@ mod tests {
             err.contains(
                 "export `m` of `::miden::counter::counter` clashes with the core module `m` of \
                  the same name"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    #[test]
+    fn an_export_at_the_initializer_path_is_rejected() {
+        let wasm = counter_component(r#"(external-id "miden::counter::counter::init")"#);
+        let err = error_of(&wasm, None);
+        assert!(
+            err.contains(
+                "export `get-count` uses the path `::miden::counter::counter::init`, which is \
+                 reserved for the compiler's component initializer"
             ),
             "unexpected diagnostic: {err}"
         );

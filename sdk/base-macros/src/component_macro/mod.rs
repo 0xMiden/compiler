@@ -543,14 +543,14 @@ fn expand_component_trait(
             &namespace,
             &trait_ident,
             auth_ident,
-        ));
+        )?);
     }
     for account_ident in &account_procedure_idents {
         frontend_metadata_entries.push(account_procedure_frontend_metadata(
             &namespace,
             &trait_ident,
             account_ident,
-        ));
+        )?);
     }
     let frontend_link_section = if frontend_metadata_entries.is_empty() {
         quote! {}
@@ -1316,11 +1316,11 @@ fn auth_script_frontend_metadata(
     namespace: &ComponentNamespace,
     trait_ident: &syn::Ident,
     auth_method_ident: &syn::Ident,
-) -> FrontendMetadata {
-    FrontendMetadata::AuthScript {
+) -> syn::Result<FrontendMetadata> {
+    Ok(FrontendMetadata::AuthScript {
         method_path: format!("{trait_ident}::{auth_method_ident}"),
-        path: export_path(namespace, auth_method_ident),
-    }
+        path: export_path(namespace, auth_method_ident)?,
+    })
 }
 
 /// Builds frontend metadata for a single `#[account_procedure]` method exported by a component.
@@ -1331,17 +1331,34 @@ fn account_procedure_frontend_metadata(
     namespace: &ComponentNamespace,
     trait_ident: &syn::Ident,
     account_method_ident: &syn::Ident,
-) -> FrontendMetadata {
-    FrontendMetadata::AccountProcedure {
+) -> syn::Result<FrontendMetadata> {
+    Ok(FrontendMetadata::AccountProcedure {
         method_path: format!("{trait_ident}::{account_method_ident}"),
-        path: export_path(namespace, account_method_ident),
-    }
+        path: export_path(namespace, account_method_ident)?,
+    })
 }
 
 /// Returns the Miden path of the export generated for the method `method_ident`: the namespace
 /// followed by the method's Rust identifier (without any `r#` prefix).
-pub(crate) fn export_path(namespace: &ComponentNamespace, method_ident: &syn::Ident) -> String {
-    namespace.procedure_path(&method_ident.unraw().to_string())
+///
+/// Fails for `init`, whose path belongs to the compiler's component initializer.
+pub(crate) fn export_path(
+    namespace: &ComponentNamespace,
+    method_ident: &syn::Ident,
+) -> syn::Result<String> {
+    let ident = method_ident.unraw().to_string();
+    let path = namespace.procedure_path(&ident);
+    // Codegen emits the component initializer as the public `init` procedure next to the exports.
+    if ident == "init" {
+        return Err(syn::Error::new(
+            method_ident.span(),
+            format!(
+                "`{ident}` would be exported at the path `{path}`, which is reserved for the \
+                 compiler's component initializer; rename it"
+            ),
+        ));
+    }
+    Ok(path)
 }
 
 /// Emits the static metadata blob inside the account-component metadata link section.
@@ -1431,7 +1448,8 @@ mod tests {
         let trait_ident = format_ident!("Wallet");
         let method_ident: syn::Ident = parse_quote!(r#type);
         let metadata =
-            account_procedure_frontend_metadata(&test_namespace(), &trait_ident, &method_ident);
+            account_procedure_frontend_metadata(&test_namespace(), &trait_ident, &method_ident)
+                .unwrap();
 
         assert_eq!(metadata.path(), "miden::test_pkg::test_iface::type");
     }
@@ -1540,6 +1558,30 @@ mod tests {
             assert!(message.contains(expected), "{message}");
         }
         assert_eq!(error.into_iter().count(), 2, "diagnostic must point at both methods");
+    }
+
+    #[test]
+    fn component_methods_reject_the_initializer_path() {
+        let methods = parse_methods(&[parse_quote!(fn r#init(&self))]);
+        let error = export_path(&test_namespace(), &methods[0].fn_ident).unwrap_err();
+        assert!(
+            error.to_string().contains(
+                "`init` would be exported at the path `miden::test_pkg::test_iface::init`, which \
+                 is reserved for the compiler's component initializer"
+            ),
+            "{error}"
+        );
+
+        let error = build_component_wit(ComponentWitSpec {
+            namespace: &test_namespace(),
+            component_version: &semver::Version::new(1, 0, 0),
+            dependency_imports: &[],
+            type_imports: &BTreeSet::new(),
+            methods: &methods,
+            exported_types: &[],
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("reserved for the compiler's component initializer"));
     }
 
     #[test]
@@ -1688,7 +1730,8 @@ mod tests {
         validate_auth_script_signature(&method.sig, &args).unwrap();
         let trait_ident = format_ident!("AuthComponent");
         let metadata =
-            auth_script_frontend_metadata(&test_namespace(), &trait_ident, &method.sig.ident);
+            auth_script_frontend_metadata(&test_namespace(), &trait_ident, &method.sig.ident)
+                .unwrap();
 
         assert!(matches!(
             metadata,
@@ -1730,7 +1773,7 @@ mod tests {
         let trait_ident = format_ident!("AuthComponent");
         let method_ident = format_ident!("whatever_name");
         let metadata =
-            auth_script_frontend_metadata(&test_namespace(), &trait_ident, &method_ident);
+            auth_script_frontend_metadata(&test_namespace(), &trait_ident, &method_ident).unwrap();
         let tokens = generate_frontend_link_section(&[metadata]).to_string();
 
         assert!(tokens.contains(crate::util::FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL));
@@ -1741,7 +1784,7 @@ mod tests {
         let trait_ident = format_ident!("AuthComponent");
         let method_ident = format_ident!("whatever_name");
         let metadata =
-            auth_script_frontend_metadata(&test_namespace(), &trait_ident, &method_ident);
+            auth_script_frontend_metadata(&test_namespace(), &trait_ident, &method_ident).unwrap();
 
         assert_eq!(
             metadata,
@@ -1757,7 +1800,8 @@ mod tests {
         let trait_ident = format_ident!("BasicWallet");
         let method_ident = format_ident!("receive_asset");
         let metadata =
-            account_procedure_frontend_metadata(&test_namespace(), &trait_ident, &method_ident);
+            account_procedure_frontend_metadata(&test_namespace(), &trait_ident, &method_ident)
+                .unwrap();
 
         assert_eq!(
             metadata,
