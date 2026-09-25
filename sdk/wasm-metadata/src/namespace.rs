@@ -74,6 +74,16 @@ pub const RUST_KEYWORDS: &[&str] = &[
 /// interface of the same name collides with it.
 pub const RESERVED_INTERFACE_SEGMENTS: &[&str] = &["core_types"];
 
+/// The library roots a component namespace must neither equal nor nest under, as `::`-separated
+/// paths.
+///
+/// These are the module trees every component links against: the SDK's own WIT package
+/// (`miden::base`), the protocol and core libraries, and the compiler intrinsics (plus the legacy
+/// standard-library root `std`). A component rooted inside one of them would shadow, or be
+/// shadowed by, that library's modules.
+pub const RESERVED_NAMESPACE_PREFIXES: &[&str] =
+    &["miden::base", "miden::protocol", "miden::core", "intrinsics", "std"];
+
 /// The position of a segment in a three-segment namespace `ns::pkg::iface`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SegmentPosition {
@@ -161,6 +171,11 @@ pub enum NamespaceError {
         /// Why the segment is invalid.
         reason: NamespaceSegmentError,
     },
+    /// The namespace equals or nests under one of [`RESERVED_NAMESPACE_PREFIXES`].
+    Reserved {
+        /// The reserved library root.
+        prefix: &'static str,
+    },
 }
 
 impl fmt::Display for NamespaceError {
@@ -170,12 +185,14 @@ impl fmt::Display for NamespaceError {
                 f.write_str("does not have exactly three `::`-separated segments")
             }
             Self::Segment { segment, reason } => write!(f, "the segment `{segment}` {reason}"),
+            Self::Reserved { prefix } => write!(f, "is reserved for the `{prefix}` library"),
         }
     }
 }
 
 /// Checks that `namespace` is a component namespace: an optional leading `::` followed by exactly
-/// three `::`-separated segments, each valid at its position (see [`validate_namespace_segment`]).
+/// three `::`-separated segments, each valid at its position (see [`validate_namespace_segment`]),
+/// that neither equals nor nests under one of [`RESERVED_NAMESPACE_PREFIXES`].
 pub fn validate_namespace(namespace: &str) -> Result<(), NamespaceError> {
     let namespace = namespace.strip_prefix("::").unwrap_or(namespace);
     let mut segments = namespace.split("::");
@@ -191,6 +208,15 @@ pub fn validate_namespace(namespace: &str) -> Result<(), NamespaceError> {
                 reason,
             }
         })?;
+    }
+    let segments = [ns, pkg, iface];
+    // Compare segment-wise so that `miden::protocol_x` does not match `miden::protocol`.
+    if let Some(prefix) = RESERVED_NAMESPACE_PREFIXES.iter().copied().find(|prefix| {
+        let prefix_segments = prefix.split("::");
+        prefix_segments.clone().count() <= segments.len()
+            && prefix_segments.zip(segments).all(|(reserved, segment)| reserved == segment)
+    }) {
+        return Err(NamespaceError::Reserved { prefix });
     }
     Ok(())
 }
@@ -221,6 +247,30 @@ mod tests {
             validate_namespace("miden::match::main").unwrap_err().to_string(),
             "the segment `match` is a Rust keyword"
         );
+    }
+
+    #[test]
+    fn rejects_namespaces_in_the_library_trees() {
+        for (namespace, prefix) in [
+            ("miden::base::x", "miden::base"),
+            ("miden::protocol::wallet", "miden::protocol"),
+            ("::miden::core::x", "miden::core"),
+            ("std::x::y", "std"),
+            ("intrinsics::a::b", "intrinsics"),
+        ] {
+            assert_eq!(
+                validate_namespace(namespace),
+                Err(NamespaceError::Reserved { prefix }),
+                "`{namespace}`"
+            );
+        }
+        assert_eq!(
+            validate_namespace("miden::protocol::wallet").unwrap_err().to_string(),
+            "is reserved for the `miden::protocol` library"
+        );
+        for namespace in ["miden::protocol_x::y", "miden::basic::x", "stdx::a::b"] {
+            assert_eq!(validate_namespace(namespace), Ok(()), "`{namespace}`");
+        }
     }
 
     fn validate(segment: &str) -> Result<(), NamespaceSegmentError> {
