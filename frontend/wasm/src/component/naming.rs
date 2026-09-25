@@ -20,8 +20,8 @@ use crate::{component::StaticComponentIndex, error::WasmResult};
 /// Returns the Miden path carried by the `external_id` of the component function `cm_name` of the
 /// component-model interface `cm_iface`.
 ///
-/// Fails when the attribute is missing, or when its value is not an absolute Miden path with a
-/// module and a function name whose segments are bare identifiers (a leading `::` is accepted).
+/// Fails when the attribute is missing, or when its value is not a Miden path with a module and a
+/// function name whose segments are bare identifiers (a leading `::` is optional).
 pub(crate) fn external_id_path(
     cm_iface: &str,
     cm_name: &str,
@@ -42,8 +42,8 @@ pub(crate) fn external_id_path(
     else {
         return Err(Report::msg(format!(
             "the `@external-id` of function `{cm_name}` of interface `{cm_iface}` is \
-             `{external_id}`, which is not an absolute Miden path with a module and a function \
-             name whose segments are ASCII letters, digits and `_`, e.g. \
+             `{external_id}`, which is not a Miden path with a module and a function name (a \
+             leading `::` is optional) whose segments are ASCII letters, digits and `_`, e.g. \
              `miden::counter_contract::counter_contract::get_count`"
         )));
     };
@@ -636,7 +636,8 @@ mod tests {
     fn an_external_id_without_a_module_is_rejected() {
         let err = error_of(&counter_component(r#"(external-id "no-double-colon")"#), None);
         assert!(
-            err.contains("`no-double-colon`") && err.contains("not an absolute Miden path"),
+            err.contains("`no-double-colon`")
+                && err.contains("not a Miden path with a module and a function name"),
             "unexpected diagnostic: {err}"
         );
     }

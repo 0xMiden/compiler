@@ -502,7 +502,7 @@ const HIR_MODULE_OP: &str = "builtin.module";
 /// # A component name is a run of symbol names
 ///
 /// A component is printed as `@a::@b::@c`, one `@`-name per segment, each either bare or quoted
-/// (a segment that is not a bare identifier, e.g. `hir_ns:test@1.0.0`, is quoted). The whole run
+/// (a segment that is not a bare identifier is quoted, e.g. `@"a b"`). The whole run
 /// is scanned and joined with `::`, exactly as the op's parser joins it.
 ///
 /// # What it does not accept
