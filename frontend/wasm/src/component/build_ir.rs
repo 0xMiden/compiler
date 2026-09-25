@@ -52,6 +52,22 @@ pub fn translate_component(
     translator.translate2(&parsed_root_component.root_component, &mut component_types_builder)
 }
 
+/// Returns the namespace declared by the function exports of the Wasm component `wasm`, i.e. the
+/// namespace the frontend roots the component at when the build does not provide one.
+///
+/// Returns `Ok(None)` for a core module or a component without function exports.
+pub fn declared_namespace(wasm: &[u8], session: &Session) -> WasmResult<Option<SymbolPath>> {
+    if !wasmparser::Parser::is_component(wasm) {
+        return Ok(None);
+    }
+    let config = WasmTranslationConfig {
+        parse_wasm_debuginfo: false,
+        ..Default::default()
+    };
+    let (_, parsed) = parse(&config, wasm, session)?;
+    Ok(declared_exports(&parsed)?.0)
+}
+
 /// Decides the namespace the component is rooted at, and returns it with the Miden paths of the
 /// function exports of the nested components.
 ///
@@ -62,6 +78,35 @@ fn component_namespace<'data>(
     parsed: &ParsedRootComponent<'data>,
     config: &WasmTranslationConfig,
 ) -> WasmResult<(SymbolPath, ExportPaths<'data>)> {
+    let (declared, export_paths) = declared_exports(parsed)?;
+    let namespace = match (declared, &config.namespace) {
+        (Some(declared), Some(expected)) if declared != *expected => {
+            return Err(Report::msg(format!(
+                "the target namespace `{expected}` (from the project manifest or `--name`) does \
+                 not match the component's exports, which are under `{declared}`"
+            )));
+        }
+        (Some(declared), _) => declared,
+        (None, Some(expected)) => expected.clone(),
+        (None, None) => {
+            return Err(Report::msg(format!(
+                "component `{}` exports no functions and no namespace was given; declare \
+                 `[lib].namespace` or export a function with `@external-id`",
+                config.source_name
+            )));
+        }
+    };
+    Ok((namespace, export_paths))
+}
+
+/// Returns the namespace shared by the function exports of the nested components of `parsed`,
+/// or `None` when there are none, with the Miden paths of those exports.
+///
+/// Fails when the root component exports a function itself, or as [`exports_namespace`] and
+/// [`external_id_path`] do.
+fn declared_exports<'data>(
+    parsed: &ParsedRootComponent<'data>,
+) -> WasmResult<(Option<SymbolPath>, ExportPaths<'data>)> {
     let mut root_instance_exports: Vec<&str> = Vec::new();
     for (name, item) in parsed.root_component.exports.iter() {
         match item {
@@ -80,25 +125,6 @@ fn component_namespace<'data>(
             }
         }
     }
-    let namespace = match (
-        exports_namespace(exports.iter().map(|((_, name), path)| (*name, path)))?,
-        &config.namespace,
-    ) {
-        (Some(declared), Some(expected)) if declared != *expected => {
-            return Err(Report::msg(format!(
-                "the target namespace `{expected}` (from the project manifest or `--name`) does \
-                 not match the component's exports, which are under `{declared}`"
-            )));
-        }
-        (Some(declared), _) => declared,
-        (None, Some(expected)) => expected.clone(),
-        (None, None) => {
-            return Err(Report::msg(format!(
-                "component `{}` exports no functions and no namespace was given; declare \
-                 `[lib].namespace` or export a function with `@external-id`",
-                config.source_name
-            )));
-        }
-    };
-    Ok((namespace, exports.into_iter().collect()))
+    let declared = exports_namespace(exports.iter().map(|((_, name), path)| (*name, path)))?;
+    Ok((declared, exports.into_iter().collect()))
 }
