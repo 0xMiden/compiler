@@ -120,13 +120,10 @@ fn invalid_namespace(
         span,
         format!(
             "invalid `[lib].namespace` `{raw}` in `miden-project.toml`: {reason}expected a Miden \
-             path of exactly three segments, each a snake_case identifier (lowercase ASCII \
-             letters and digits in words joined by single `_`, starting with a letter, and not a \
-             WIT or Rust keyword such as `list` or `match`, and the last not `core_types`), e.g. \
-             `{EXAMPLE_NAMESPACE}`. The segments name the exported procedures and become the \
-             components of the storage slot names; the first two (`ns::pkg`) form the WIT package \
-             id, so the `pkg` segment identifies the crate and must not be shared by two crates a \
-             consumer links."
+             path of exactly three segments, e.g. `{EXAMPLE_NAMESPACE}`. The segments name the \
+             exported procedures and become the components of the storage slot names; the first \
+             two (`ns::pkg`) form the WIT package id, so the `pkg` segment identifies the crate \
+             and must not be shared by two crates a consumer links."
         ),
     )
 }
@@ -200,10 +197,24 @@ mod tests {
 
     #[test]
     fn rejects_segments_without_a_valid_wit_spelling() {
-        for segment in ["Wallet2", "a__b", "a_", "_a", "2a", "list", "error_context", "match"] {
+        let not_snake_case = NamespaceSegmentError::NotSnakeCase;
+        for (segment, reason) in [
+            ("Wallet2", not_snake_case),
+            ("a__b", not_snake_case),
+            ("a_", not_snake_case),
+            ("_a", not_snake_case),
+            ("2a", not_snake_case),
+            ("list", NamespaceSegmentError::WitKeyword),
+            ("error_context", NamespaceSegmentError::WitKeyword),
+            ("match", NamespaceSegmentError::RustKeyword),
+        ] {
             let value = format!("miden::{segment}::main");
             let err = parse(&value).expect_err("the segment must be rejected").to_string();
-            assert!(err.contains("snake_case"), "`{value}`: {err}");
+            assert!(
+                err.contains(&format!("the segment `{segment}` {reason}; expected")),
+                "`{value}`: {err}"
+            );
+            assert_eq!(err.matches("snake_case").count(), usize::from(reason == not_snake_case));
         }
     }
 

@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     env, fs,
     path::PathBuf,
+    sync::LazyLock,
 };
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -640,13 +641,17 @@ type PackageOwners = HashMap<(String, String), (PackageName, String)>;
 
 /// The owners map with the packages of the bundled SDK WIT registered as owned by the Miden SDK.
 fn sdk_package_owners() -> PackageOwners {
-    let mut owners = PackageOwners::new();
-    let sdk = UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE)
-        .expect("the bundled SDK WIT parses");
-    for package in core::iter::once(&sdk.main).chain(&sdk.nested) {
-        record_package_owner(&mut owners, &package.name, "the Miden SDK");
-    }
-    owners
+    // Parsed once per compiler process rather than on every macro expansion.
+    static SDK_OWNERS: LazyLock<PackageOwners> = LazyLock::new(|| {
+        let mut owners = PackageOwners::new();
+        let sdk = UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE)
+            .expect("the bundled SDK WIT parses");
+        for package in core::iter::once(&sdk.main).chain(&sdk.nested) {
+            record_package_owner(&mut owners, &package.name, "the Miden SDK");
+        }
+        owners
+    });
+    SDK_OWNERS.clone()
 }
 
 /// Records `owner` as the source of the package `name`, unless it already has one.
