@@ -790,6 +790,38 @@ mod tests {
     }
 
     #[test]
+    fn a_core_module_named_by_a_path_is_rejected() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $a::b
+                    (func (export "get-count") (result i32) i32.const 0)
+                )
+                (core instance $i (instantiate $a::b))
+                (func $lifted (result u32) (canon lift (core func $i "get-count")))
+                (component $shim
+                    (import "import-func-get-count" (func $f (result u32)))
+                    (export "get-count" (external-id "miden::counter::counter::get_count")
+                        (func $f))
+                )
+                (instance $exports
+                    (instantiate $shim (with "import-func-get-count" (func $lifted))))
+                (export "miden:counter/counter@0.1.0" (instance $exports))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let err = error_of(&wasm, None);
+        assert!(
+            err.contains(
+                "module `a::b`: a module name cannot contain `::` (only components are named by \
+                 `::`-joined paths)"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    #[test]
     fn an_export_at_the_initializer_path_is_rejected() {
         let wasm = counter_component(r#"(external-id "miden::counter::counter::init")"#);
         let err = error_of(&wasm, None);

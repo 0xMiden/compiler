@@ -75,7 +75,7 @@ pub fn translate_module_as_component(
     component_ref.borrow_mut().mark_synthetic_wrapper();
 
     let mut cb = ComponentBuilder::new(component_ref);
-    let module_ref = cb.define_module(Ident::from(module_name)).unwrap();
+    let module_ref = cb.define_module(Ident::from(module_name))?;
 
     let mut module_builder = ModuleBuilder::new(module_ref);
     let mut module_state = ModuleTranslationState::new(

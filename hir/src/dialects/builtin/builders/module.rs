@@ -196,7 +196,10 @@ impl ModuleBuilder {
     }
 
     /// Declare a new nested module `name`
+    ///
+    /// Returns an error when `name` contains `::`, see [Module::validate_name].
     pub fn declare_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
+        Module::validate_name(name.name)?;
         let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
         let module_ref = builder(name)?;
         Ok(module_ref)

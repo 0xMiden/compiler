@@ -32,7 +32,11 @@ impl ComponentBuilder {
         self.builder.create_interface(name)
     }
 
+    /// Define a new module `name` in this component.
+    ///
+    /// Returns an error when `name` contains `::`, see [Module::validate_name].
     pub fn define_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
+        Module::validate_name(name.name)?;
         let module_ref = self.builder.create_module(name)?;
         Ok(module_ref)
     }

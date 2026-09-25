@@ -640,7 +640,7 @@ impl<'a> ComponentTranslator<'a> {
 
             let module_types = types.module_types_builder();
             let module_name = module.name().as_str();
-            let module_ref = self.result.define_module(Ident::from(module_name)).unwrap();
+            let module_ref = self.result.define_module(Ident::from(module_name))?;
             let mut module_builder = ModuleBuilder::new(module_ref);
             let mut module_state = ModuleTranslationState::new(
                 module,
