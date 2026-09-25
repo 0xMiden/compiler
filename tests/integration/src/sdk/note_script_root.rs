@@ -98,10 +98,9 @@ impl ProbeNote {
 
 /// Rebuilds an executable program from the lifted component export with the given leaf name.
 ///
-/// A package manifest exposes two exports per component function under the same leaf name: the
-/// core-Wasm function (under the nested `<namespace>::<crate>` module) and the compiler-lifted
-/// component export (directly under the component namespace). They have different digests and
-/// calling conventions; execution must target the lifted export at `<namespace>::<name>`.
+/// A package manifest exports exactly the WIT-declared procedures, directly under the component
+/// namespace, plus the component's `init`; the core-Wasm functions they lift are internal.
+/// Execution targets the lifted export at `<namespace>::<name>`.
 fn export_program(package: &Package, name: &str) -> Arc<Package> {
     let expected = format!("::miden::note_script_root_probe::note_script_root_probe::{name}");
     let procedure = super::find_manifest_procedure(
