@@ -1,6 +1,6 @@
 //! Function-call boundaries: sret aggregates, at-limit signatures, call placement.
 
-use super::super::harness::run_case;
+use super::super::harness::{run_case, run_case_with_flags, run_case_with_inputs};
 
 /// Non-inlined helper calls (multi-arg, u64, bool) plus reused selects —
 /// exercises call translation/lowering and select emitter variants.
@@ -38,4 +38,454 @@ fn call_mix() {
 #[test]
 fn call_indirect() {
     run_case("call_indirect", include_str!("../cases/case_call_indirect.rs"));
+}
+
+/// Two fn-pointer arrays of different fn types dispatched at runtime — the one
+/// funcref table holds entries with two distinct signature tags, so each
+/// `hir.exec_indirect` call site must tag-filter the other signature's entries
+/// (verifier/possible_callees skip arms) and the runtime tag check passes only
+/// for its own; also the first u64-carrying indirect signature.
+#[test]
+fn indirect_sigs() {
+    run_case("indirect_sigs", include_str!("../cases/case_indirect_sigs.rs"));
+}
+
+/// A user `#[no_mangle]` function named exactly `__indirect_function_table_0`
+/// collides with the symbol the frontend generates for the lowered funcref
+/// table, forcing the collision-rename (counter-bump) path in
+/// `get_or_build_table` while dispatch still works through the renamed table.
+#[test]
+fn indirect_collision() {
+    run_case("indirect_collision", include_str!("../cases/case_indirect_collision.rs"));
+}
+
+/// `dyn Trait` dispatch through runtime-selected trait objects: vtables are
+/// `.rodata` arrays of funcref-table indices, each method call loads its
+/// vtable slot and dispatches via `call_indirect` — a dispatch shape (vtable
+/// slot load + receiver pointer argument) no fn-pointer-array sibling covers.
+#[test]
+fn dyn_trait() {
+    run_case("dyn_trait", include_str!("../cases/case_dyn_trait.rs"));
+}
+
+/// Function pointers as first-class values: returned from / passed to
+/// `#[inline(never)]` helpers, a loop-carried fn-pointer state machine, a
+/// non-capturing closure coerced to `fn` (anonymous table entry), and fn-ptr
+/// `==` (funcref-index comparison) — table-index data flow no sibling covers.
+#[test]
+fn fnptr_value() {
+    run_case("fnptr_value", include_str!("../cases/case_fnptr_value.rs"));
+}
+
+/// Chained indirect dispatch — an indirect callee that itself dispatches
+/// through a second fn-pointer array (nested `dynexec` frames) — plus
+/// dispatch inside a loop and in a single branch arm.
+#[test]
+fn indirect_chain() {
+    run_case("indirect_chain", include_str!("../cases/case_indirect_chain.rs"));
+}
+
+/// The widest accepted indirect signature — 7 u64 parameters (14 felts) plus
+/// the table index fills 15 of the 16-element operand-stack window — dynexec
+/// with a full argument window and u64 values crossing the dispatch boundary.
+#[test]
+fn indirect_wide() {
+    run_case("indirect_wide", include_str!("../cases/case_indirect_wide.rs"));
+}
+
+/// Mixed-width signatures at and near the 16-felt limit (campaign 14): seven
+/// u64 plus two u32, 14 u32 + 1 u64, a u128-returning helper whose hidden return-area
+/// pointer is the sixteenth felt (7 u64 + u32 + sret), and 15-felt helpers
+/// taking three u128 parameters (scalarized to i64 pairs) with a u64 and a
+/// `(u64, u64)` return area — four u64 values live across every call.
+#[test]
+fn call_sigs16() {
+    run_case("call_sigs16", include_str!("../cases/case_call_sigs16.rs"));
+}
+
+/// Wide results returned by value through return-area pointers: a padded
+/// `repr(C)` record with a word-aligned u128 field, a `repr(C, packed)`
+/// record with its u128 at byte offset 1, a 13-byte array, a `(u64, u64)`
+/// tuple, `Option<u128>` / `Result<u64, u32>`, a per-trip u128 helper result
+/// in a loop (one return area reused per iteration) and a helper that
+/// forwards its own return-area pointer to its callee.
+#[test]
+fn ret_area() {
+    run_case("ret_area", include_str!("../cases/case_ret_area.rs"));
+}
+
+/// Calls inside loops with loop-carried values across them: four u64 and
+/// two u32 carried across two pinned calls per trip of a zero-trip-capable
+/// loop (call arguments reused after the call), a call in one `match` arm
+/// only beside a `continue` arm, a call result deciding an early `return`,
+/// a bottom-test inner loop calling a helper on the carried state, and a
+/// call result deciding the outer break.
+#[test]
+fn loop_calls() {
+    run_case("loop_calls", include_str!("../cases/case_loop_calls.rs"));
+}
+
+/// Pinned exit / 0-trip / 1-trip inputs for `loop_calls`: the outer loop
+/// skipped (input2 % 41 == 0), single trips, the `return` from the `match`
+/// arm and the call-decided `break`.
+#[test]
+fn loop_calls_edges() {
+    run_case_with_inputs(
+        "loop_calls_edges",
+        include_str!("../cases/case_loop_calls.rs"),
+        &[
+            (0, 0),
+            (41, 41),
+            (1, 1),
+            (3, 2),
+            (0x7fff_ffff, 0xffff_ffff),
+            (7, 40),
+            (0, 29),
+            (1, 10),
+        ],
+    );
+}
+
+/// Indirect dispatch under operand pressure: a runtime-indexed table of
+/// 7-u64 fn pointers (15 of the 16 window felts with the table index)
+/// dispatched inside a loop whose index is loop-carried while SIX u64
+/// locals stay live across the dispatch (each is an argument and is used
+/// again afterwards), then `dyn Trait` methods returning a u128 (return
+/// area + receiver + four u64) under the same live state. Six is the
+/// largest live-local count that compiles; seven is the `indirect_spill`
+/// panic below.
+#[test]
+fn dispatch_pressure() {
+    run_case("dispatch_pressure", include_str!("../cases/case_dispatch_pressure.rs"));
+}
+
+/// Formerly `#[ignore]`d as the LOOP form of the `hir.exec_indirect`
+/// argument-blindness class (campaign 14). It compiles and matches native at
+/// every configuration since the guest toolchain bump to nightly-2026-09-01 —
+/// but the COMPILER BUG IS NOT FIXED: at the default level, `-Oz` and `-O3`
+/// LLVM devirtualizes a plain read of a constant fn-pointer table, so the
+/// guest wasm contains ZERO `call_indirect` and the case never reaches
+/// `hir.exec_indirect` at all. Arbitrated 2026-09-17 by rebuilding the guest
+/// with nightly-2026-04-30, which reproduces the original `NoSolution` at
+/// codegen/masm/src/lower/lowering.rs:109 verbatim. The class keeps a
+/// default-level reproducer in `indirect_spill_bb`, which reads the table
+/// through `core::hint::black_box(&WIDES)` and stays indirect at every level;
+/// `--optimize=basic` does not devirtualize either, which is why
+/// `indirect_spill_args` and `indirect_spill_line` still panic there. This
+/// test stays as the devirtualized-dispatch guard. What it used to do:
+///
+/// building it panicked with `NoSolution` at
+/// codegen/masm/src/lower/lowering.rs:109 while scheduling the loop body's
+/// `arith.bxor` `[Move, Copy]` over a SEVENTEEN-felt operand stack (eight
+/// u64 + the loaded fn pointer). Shape: seven loop-invariant u64 locals are
+/// the arguments of a 7-u64 fn-pointer dispatch inside a loop with a
+/// loop-carried table index, and a u64 accumulator is carried across the
+/// dispatch (one local more than the passing `dispatch_pressure`). Root
+/// cause (`MIDENC_TRACE='analysis:spills=trace'`): the spill analysis takes
+/// an operation's inputs from operand group 0 only
+/// (hir-analysis/src/analyses/spills.rs, `op.operands().group(0)` at the
+/// generic scheduling site ~2291 and at ~993/~2470), but `hir.exec_indirect`
+/// keeps only the u32 table index in group 0 and its ARGUMENTS in group 1
+/// (dialects/hir/src/ops/invoke.rs, `#[operand] index` + `#[operands]
+/// arguments`). In the loop body the seven argument loads (`hir.load_local`
+/// of the DWARF-kept wasm locals) plus the accumulator and the table-index
+/// math exceed the window, so the analysis spills four of the arguments
+/// and, blind to their use at the dispatch, never reloads them ("required
+/// by reloads = 0", "freed by op = 1", four arguments in S^entry at the
+/// dispatch). Spills materialize as `store_local` copies, so the emitter
+/// keeps the four values physically until the dispatch consumes them and
+/// the body is scheduled over 17 felts. No "unused phi" warning (not F1),
+/// no edge split needed (not F6), out-of-contract stack (not the arity-2 F2
+/// gap). Panic-only: the emitter schedules the real values and every spill
+/// slot holds the correct value, so no silent miscompile is possible.
+/// Bounded by `dispatch_pressure` (six such locals, passes), `direct_loop`
+/// (the SAME loop with eight locals and a DIRECT 7-u64 call: `hir.exec`
+/// keeps its arguments in group 0, passes) and `indirect_args` (eight
+/// locals across two straight-line dispatches, passes: the argument loads
+/// happen right before each dispatch with nothing else live).
+#[test]
+fn indirect_spill() {
+    run_case("indirect_spill", include_str!("../cases/case_indirect_spill.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC, the `indirect_spill` class re-armed for the
+/// nightly-2026-09-01 guest toolchain (campaign 31, 2026-09-17): the same
+/// seven-live-u64 loop dispatch, with the table read as
+/// `core::hint::black_box(&WIDES)[idx]` so LLVM cannot devirtualize it and the
+/// wasm keeps its `call_indirect`. The spill analysis still reads operand
+/// group 0 only (hir-analysis/src/analyses/spills.rs), and `hir.exec_indirect`
+/// still keeps its arguments in group 1 (dialects/hir/src/ops/invoke.rs), so
+/// spilled dispatch arguments are never reloaded and the call is budgeted as
+/// one felt while the emitter still holds them. Bounded exactly as
+/// `indirect_spill` was. Compile-time — no inputs involved. Un-ignore when the
+/// spill analysis counts every operand group of `hir.exec_indirect`.
+#[test]
+#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 — \
+            the spill analysis reads only operand group 0 and so never sees the arguments of \
+            hir.exec_indirect (group 1): spilled dispatch arguments are never reloaded and the \
+            call is budgeted as one felt (compile-time, no inputs involved)"]
+fn indirect_spill_bb() {
+    run_case("indirect_spill_bb", include_str!("../cases/case_indirect_spill_bb.rs"));
+}
+
+/// Straight-line twin of `indirect_spill`: eight u64 locals used by two
+/// fn-pointer dispatches with no loop — every argument is loaded right
+/// before its dispatch with nothing else live, so no spill is needed and
+/// the group-0-only accounting is harmless here (twelve such locals pass
+/// too; probe deleted).
+#[test]
+fn indirect_args() {
+    run_case("indirect_args", include_str!("../cases/case_indirect_args.rs"));
+}
+
+/// Caller pressure meeting callee pressure: six u64 values live across
+/// pinned calls whose callees spill internally (a 20-felt right-leaning
+/// tree returning a `(u64, u64)` pair, and a 16-felt-signature helper using
+/// every parameter twice) — frames and spill slots across the boundary.
+#[test]
+fn callee_pressure() {
+    run_case("callee_pressure", include_str!("../cases/case_callee_pressure.rs"));
+}
+
+/// Campaign-12 lead check: u128/i128 `checked_add`/`overflowing_add`/
+/// `saturating_sub`/`checked_sub`/`overflowing_sub` (`i64.add128` /
+/// `i64.sub128` on this toolchain) in `#[inline(never)]` helpers and a loop
+/// — the forms that exposed the F9 guest-LLVM defect for `mul_wide_s` — with
+/// both limbs at their boundaries. The defect reached the 128-bit add/sub
+/// instructions in other shapes too (`sat_add_u128` / `sat_sub_u128`, this
+/// `checked_add` loop at `--optimize=basic`, and both-limb value uses masked
+/// by DWARF — all in tests/wide.rs); every one of them was fixed by the
+/// nightly-2026-09-01 guest toolchain, so this case now passes at every
+/// optimization level, `-Oz` included (`add128_checked_oz` below).
+#[test]
+fn add128_checked() {
+    run_case("add128_checked", include_str!("../cases/case_add128_checked.rs"));
+}
+
+/// Formerly `#[ignore]`d (F9) under `--optimize=size-min` only (2026-09-03,
+/// campaign 16): the `add128_checked` case built by the harness at -Oz
+/// returned 36400036 for (972208690, 972208690) where native returns the
+/// checked-add fold, because the `checked`/`signed` helpers read an
+/// `i64.add128` result local before the op defined it (RegStackify sink; not
+/// masked by DWARF). The same source passed at O2 and O3.
+///
+/// Fixed by the guest toolchain bump to nightly-2026-09-01; re-verified
+/// 2026-09-17: `wasmtime -W wide-arithmetic=y` on the harness-built -Oz wasm
+/// now returns 164380801 — the native answer — instead of the MASM one, and
+/// the wasm still carries four `i64.add128` and three `i64.sub128`, so the -Oz
+/// build of this shape is still the wide-op guard it was meant to be.
+#[test]
+fn add128_checked_oz() {
+    run_case_with_flags(
+        "add128_checked_oz",
+        include_str!("../cases/case_add128_checked.rs"),
+        &["--optimize=size-min"],
+    );
+}
+
+/// Helpers taking `&mut` stack arrays and runtime-bounded slices (fat
+/// pointers): a 15-felt pointer+scalar signature writing through two
+/// arrays, an in-place `swap` permutation, shared-reference reads, with u64
+/// scalars live between the calls and elements read back at runtime indexes.
+#[test]
+fn mut_arrays() {
+    run_case("mut_arrays", include_str!("../cases/case_mut_arrays.rs"));
+}
+
+/// Bounded recursion THROUGH A FUNCTION-POINTER TABLE (depth `input1 % 6`,
+/// non-tail, per-frame state): no direct call edge closes the cycle, so the
+/// linker's call-graph cycle check does not fire, each frame dispatches its
+/// callee with `call_indirect` (`dynexec`), and the recursion executes
+/// correctly on the VM — direct or mutual recursion is still a clean "found
+/// a cycle in the call graph" linker error (campaign-14 probe, deleted).
+/// The table is read through `black_box`: nightly-2026-09-01's LLVM
+/// devirtualizes a runtime index into a constant fn-pointer table into a
+/// switch of direct calls (the wasm lost every `call_indirect`), which
+/// closed the cycle and made the linker reject the case.
+#[test]
+fn recursion_indirect() {
+    run_case("recursion_indirect", include_str!("../cases/case_recursion_indirect.rs"));
+}
+
+/// Pinned depths 0..5 and every table index for `recursion_indirect`.
+#[test]
+fn recursion_indirect_edges() {
+    run_case_with_inputs(
+        "recursion_indirect_edges",
+        include_str!("../cases/case_recursion_indirect.rs"),
+        &[
+            (0, 0),
+            (1, 1),
+            (2, 2),
+            (3, 0),
+            (4, 1),
+            (5, 2),
+            (11, 4),
+            (0xffff_ffff, 0xffff_ffff),
+        ],
+    );
+}
+
+/// Direct-call loop twin of `indirect_spill`: the same bottom-test loop with
+/// EIGHT loop-invariant u64 locals as the arguments of a pinned direct 7-u64
+/// call and a u64 accumulator carried across it — `hir.exec` keeps its
+/// arguments in operand group 0, so the spill analysis reloads them and the
+/// shape compiles and passes (seven pass as well; probe deleted).
+#[test]
+fn direct_loop() {
+    run_case("direct_loop", include_str!("../cases/case_direct_loop.rs"));
+}
+
+/// Formerly `#[ignore]`d as the loop-free minimal form of the
+/// `indirect_spill` class. Passes at the DEFAULT level since the
+/// nightly-2026-09-01 bump for the same reason as `indirect_spill` — the table
+/// read is devirtualized and the wasm has no `call_indirect` — and reproduces
+/// verbatim with nightly-2026-04-30 guests. It is NOT fixed: at
+/// `--optimize=basic` the wasm keeps its `call_indirect` and the same
+/// `NoSolution` at codegen/masm/src/lower/lowering.rs:109 `for inst
+/// 'hir.exec_indirect'`, constraints all `Move`, fires again (measured
+/// 2026-09-17); `--optimize=max`, `--optimize=size-min` and the no-DWARF build
+/// devirtualize like the default level. The class's default-level reproducer
+/// is `indirect_spill_bb`. What it used to do (campaign 14 attempt 2,
+/// 2026-09-03): a
+/// straight-line 7-u64 fn-pointer dispatch with two single-use u64 helper
+/// results computed before it and consumed after it (LLVM stackifies them
+/// UNDER the dispatch, so they are SSA values live across
+/// `hir.exec_indirect` in one block: 14 argument felts + the table index +
+/// 4 felts live-through = 19). The spill analysis, reading operand group 0
+/// only, spills two of the arguments ("required by reloads = 0", "freed by
+/// op = 1", two argument limbs in S^entry) and never reloads them; the
+/// emitter still holds them and the dispatch ITSELF is scheduled over a
+/// 17-felt stack: `NoSolution` at codegen/masm/src/lower/lowering.rs:109
+/// `for inst 'hir.exec_indirect'`, constraints all `Move`. Bounded by
+/// `direct_line` (the same shape with a pinned direct call, passes) and
+/// `indirect_wide` (the same 7-u64 dispatch with nothing live across it,
+/// passes); one live-through u64 still fits (probe deleted).
+#[test]
+fn indirect_spill_line() {
+    run_case("indirect_spill_line", include_str!("../cases/case_indirect_spill_line.rs"));
+}
+
+/// Direct-call twin of `indirect_spill_line`: the same two single-use helper
+/// results stackified under a pinned direct 7-u64 call — passes.
+#[test]
+fn direct_line() {
+    run_case("direct_line", include_str!("../cases/case_direct_line.rs"));
+}
+
+/// Formerly `#[ignore]`d as the third signature of the `indirect_spill`
+/// class. Passes at the DEFAULT level since the nightly-2026-09-01 bump only
+/// because the table read is devirtualized (zero `call_indirect` in the wasm);
+/// nightly-2026-04-30 guests still abort at emit/mod.rs:623 index 10, and so
+/// does `--optimize=basic` with the current toolchain (measured 2026-09-17 —
+/// -O1 does not devirtualize). The class's default-level reproducer is
+/// `indirect_spill_bb`. What it used to do (campaign 14 attempt 2,
+/// 2026-09-03): a loop-free 7-u64 fn-pointer
+/// dispatch whose fourth and sixth arguments are rotated IN PLACE from two
+/// more u64 locals by runtime counts, so the argument setup alone loads
+/// nine u64 (18 felts) before the dispatch. The spill analysis (blind to the
+/// group-1 arguments) spills four of them and never reloads them; the
+/// emitter keeps them physically and the first arity-1 `arith.trunc` of a
+/// Copy-constrained deep u64 aborts in the EMITTER rather than the solver:
+/// `invalid operand stack index (10): requires access to more than 16
+/// elements` at codegen/masm/src/emit/mod.rs:623 (`copy_operand_to_position`
+/// → `dup`). The same class also surfaces as `invalid stack offset for
+/// movup: 17 is out of range` (emit/mod.rs:758) for a `dyn Trait` method
+/// dispatch with two in-place-computed u64 arguments (probe deleted) and as
+/// a 17-felt `arith.shl` `NoSolution` for fn pointers taking three u128
+/// parameters in a loop (see `indirect_u128`). Bounded by `direct_args`
+/// (the same in-place arguments through a pinned direct call, passes) and
+/// `bands_calls` (tests/compose.rs: the dispatch takes plain locals only,
+/// passes).
+#[test]
+fn indirect_spill_args() {
+    run_case("indirect_spill_args", include_str!("../cases/case_indirect_spill_args.rs"));
+}
+
+/// Direct-call twin of `indirect_spill_args`: the same seven u64 locals, two
+/// of them rotated in place by runtime counts, passed to a pinned direct
+/// 7-u64 call — passes.
+#[test]
+fn direct_args() {
+    run_case("direct_args", include_str!("../cases/case_direct_args.rs"));
+}
+
+/// recursion_indirect x indirect_wide: bounded recursion THROUGH a
+/// fn-pointer table with a five-u64 signature (ten argument felts + the
+/// table index), depth `input1 % 6`, every frame keeping two u64 of state
+/// live across its dispatch (non-tail), the callee chosen per frame from
+/// the frame's own state, and two independent recursions whose depths come
+/// from both inputs.
+#[test]
+fn recursion_wide() {
+    run_case("recursion_wide", include_str!("../cases/case_recursion_wide.rs"));
+}
+
+/// narrow64 x ret_area x lane_bytes: helpers return records with u8 / u16 /
+/// u32 / u64 fields by value (i64.store8 / store16 / store32 of truncated
+/// values into the return area), a padded `repr(C)` record and a `repr(C,
+/// packed)` one with its u64 at byte offset 1, collected into stack arrays
+/// filled in a loop, read back at runtime indexes and folded by a helper
+/// taking slices of both arrays.
+#[test]
+fn narrow_ret() {
+    run_case("narrow_ret", include_str!("../cases/case_narrow_ret.rs"));
+}
+
+/// ret_area x call_indirect: fn pointers whose signatures RETURN wide values
+/// by value — `fn(u64, u64) -> u128`, `fn(u32, u64) -> (u64, u64)`,
+/// `fn(u64) -> Option<u128>` — dispatched from runtime-indexed tables, so
+/// the hidden return-area pointer is the first argument of
+/// `hir.exec_indirect` and the callee writes through it; dispatched in a
+/// loop with the u128 result feeding the next trip's index and arguments.
+#[test]
+fn sret_dispatch() {
+    run_case("sret_dispatch", include_str!("../cases/case_sret_dispatch.rs"));
+}
+
+/// recursion_indirect x mut_arrays: bounded recursion THROUGH a fn-pointer
+/// table (depth `input1 % 6`) where every frame owns a `[u64; 6]` that
+/// escapes by `&mut` into the callee frame (address-taken locals in
+/// recursive frames: each dynexec level pushes its own shadow-stack frame
+/// while the caller's array stays live), the callee writes it and the frame
+/// reads it back after the call together with its own state.
+#[test]
+fn recursion_frames() {
+    run_case("recursion_frames", include_str!("../cases/case_recursion_frames.rs"));
+}
+
+/// div128_guards x indirect_wide: fn pointers taking TWO u128 parameters
+/// (four i64 limbs, eight felts) and returning a u128 through a return area,
+/// dispatched in a loop whose carried state is three u128s, with u128 / i128
+/// `checked_div` / `checked_rem` against divisors reaching 0 / -1 / MIN and
+/// 128-bit shifts by runtime counts in the callees. Two plain u128 locals is
+/// the boundary: three u128 parameters, or two with one argument computed
+/// in place, hit the `indirect_spill` class (17-felt `arith.shl`
+/// `NoSolution` while the limbs are loaded for the dispatch; probes deleted).
+#[test]
+fn indirect_u128() {
+    run_case("indirect_u128", include_str!("../cases/case_indirect_u128.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC (safe Rust, campaign 22, 2026-09-09): a helper
+/// taking one u32 and eight u64s BY VALUE — seventeen felts, one over the
+/// 16-felt call-signature limit — called from a loop. Building it panics with
+/// `unable to spill sufficient capacity to hold all operands on stack at one
+/// time at hir.exec ...` at hir-analysis/src/analyses/spills.rs:2366: the spill
+/// analysis excludes the call's own operands from its spill candidates, so on
+/// an over-wide argument list it runs out of candidates and panics instead of
+/// reporting the signature width. The limit itself is by design; the panic in
+/// place of a diagnostic is the finding. Surfaced by the campaign-22
+/// workaround map (`prog_*_wa`): moving a hot loop into an `#[inline(never)]`
+/// helper rescues the F6 programs only when the wide state is passed by
+/// reference. Bounded by the same helper with the state behind a `&[u64; 8]`
+/// (the `prog_tlv_wa` shape) and by the sixteen-felt signatures of
+/// `call_sigs16`. Compile-time — no inputs involved.
+/// Un-ignore when an over-wide signature is rejected with a diagnostic.
+#[test]
+#[ignore = "compiler panic: 'unable to spill sufficient capacity to hold all operands on stack at \
+            one time at hir.exec ...' at hir-analysis/src/analyses/spills.rs:2366 on a \
+            seventeen-felt by-value call signature; compile-time, no inputs involved"]
+fn sig17() {
+    run_case("sig17", include_str!("../cases/case_sig17.rs"));
 }
