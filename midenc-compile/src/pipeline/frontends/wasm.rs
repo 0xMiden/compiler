@@ -188,6 +188,9 @@ pub(crate) fn translate_wasm_input(
 /// Executables have none: their namespace is a reserved sentinel, not a name the component's
 /// exports could be under. A kernel is rooted at the kernel namespace its procedures are
 /// assembled under.
+///
+/// The returned path is always absolute, whether or not the target's namespace is spelled with
+/// a leading `::`.
 pub(crate) fn target_namespace(
     target: &midenc_session::miden_project::Target,
 ) -> Option<midenc_hir::SymbolPath> {

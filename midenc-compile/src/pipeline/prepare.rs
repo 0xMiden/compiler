@@ -618,8 +618,15 @@ fn hir_symbol_name(rest: &str) -> Option<(String, &str)> {
     match name.strip_prefix('"') {
         Some(quoted) => hir_quoted_name(quoted),
         None => {
-            let end = name.find(|c| !is_hir_identifier_char(c)).unwrap_or(name.len());
-            (end > 0).then(|| (name[..end].to_string(), &name[end..]))
+            // The lexer's bare symbol name (`lex_identifier`): a letter or `_`, then letters,
+            // digits, `_`, `$` and `.`; unlike a keyword, no `-`.
+            if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+                return None;
+            }
+            let end = name
+                .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '$' | '.')))
+                .unwrap_or(name.len());
+            Some((name[..end].to_string(), &name[end..]))
         }
     }
 }
@@ -2621,6 +2628,10 @@ namespace = "miden::prepare_fixture::prepare_fixture"
                  {\n  };\n};\n",
                 None,
             ),
+            // A bare name is what the lexer reads as one: `.` and `$` continue it (and make the
+            // library path quote it), a digit cannot begin it.
+            ("builtin.component private @a.b$c {\n};\n", Some("\"a.b$c\"")),
+            ("builtin.component private @1st {\n};\n", None),
             // Nothing to find at all.
             ("", None),
             ("builtin.world {\n};\n", None),

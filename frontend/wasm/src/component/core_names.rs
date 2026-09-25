@@ -21,8 +21,10 @@ use crate::{
 /// function named once keeps that name (two exports lifting one function, or an export of an
 /// imported function). Otherwise the name is the first free candidate among the path's leaf and
 /// the leaf prefixed by progressively more of its parent segments (`read`, `api_read`,
-/// `second_api_read`, ...). A name is free when no function outside the named set, no global and
-/// no already named function holds it. Fails when every candidate is taken.
+/// `second_api_read`, ...). A name is free when no defined function outside the named set, no
+/// global and no already named function holds it. Imported functions outside the named set do
+/// not block a name: they define no HIR function in the module, as every reachable import is a
+/// lowered component import, and thus in the named set. Fails when every candidate is taken.
 pub(crate) fn assign<'p>(
     module: &Module,
     exports: impl IntoIterator<Item = (FuncIndex, &'p SymbolPath)>,
