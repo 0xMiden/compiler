@@ -7,8 +7,8 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{ExecFpi, HirOpBuilder};
 use midenc_hir::{
-    Builder, FunctionType, Ident, Op, SmallVec, SourceSpan, SymbolName, SymbolNameComponent,
-    SymbolPath, SymbolTable, Type, ValueRef, Visibility,
+    Builder, FunctionType, Ident, Op, SmallVec, SourceSpan, SymbolName, SymbolPath, SymbolTable,
+    Type, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, Function, FunctionRef, ModuleBuilder, WorldBuilder,
@@ -52,36 +52,6 @@ pub struct ComponentImportPath {
     /// The core-import path of the first import of the component that lowers to `path`; names
     /// the other side of a clash in diagnostics.
     pub first_cm_path: SymbolPath,
-}
-
-/// Chooses the name of the core function that lowers the import at the Miden path `import_path`.
-///
-/// Returns the first name `is_free` accepts among the path's leaf (`receive_asset`), the leaf
-/// prefixed by the last segment of the path's parent (`basic_wallet_receive_asset`), and
-/// `core_name`, the core import's own name, or an error when all of them are taken.
-pub fn import_stub_name(
-    import_path: &SymbolPath,
-    core_name: SymbolName,
-    is_free: impl Fn(SymbolName) -> bool,
-) -> WasmResult<SymbolName> {
-    let leaf = import_path.name();
-    let qualified =
-        import_path.without_leaf().components().last().and_then(|parent| match parent {
-            SymbolNameComponent::Component(parent) => {
-                Some(SymbolName::intern(format!("{parent}_{leaf}")))
-            }
-            _ => None,
-        });
-    let candidates: SmallVec<[SymbolName; 3]> =
-        [Some(leaf), qualified, Some(core_name)].into_iter().flatten().collect();
-    candidates.iter().copied().find(|name| is_free(*name)).ok_or_else(|| {
-        let taken = candidates.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>();
-        let (last, rest) = taken.split_last().expect("the leaf is always a candidate");
-        Report::msg(format!(
-            "cannot name the import stub for `{import_path}`: {} and {last} are all taken",
-            rest.join(", ")
-        ))
-    })
 }
 
 /// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import
@@ -2080,7 +2050,7 @@ mod tests {
     }
 
     #[test]
-    fn import_stub_is_named_by_miden_leaf_with_collision_fallbacks() {
+    fn import_stub_is_defined_under_the_given_name() {
         let (context, mut world_builder, mut module_builder) = world_with_core_module();
 
         let variant_ty = unit_only_variant_type();
@@ -2095,47 +2065,18 @@ mod tests {
         };
 
         // `::miden::test::test::roundtrip`
-        let import = component_import_path("roundtrip");
-        let import_path = import.path.clone();
-        let core_name = SymbolName::intern("miden:test@1.0.0#roundtrip");
-        let stub_name = import_stub_name(&import_path, core_name, |name| {
-            module_builder.get_function(name.as_str()).is_none()
-        })
-        .expect("the leaf is free");
-        assert_eq!(stub_name.as_str(), "roundtrip");
-
         let lowered = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            import,
+            component_import_path("roundtrip"),
             &import_func_ty,
             core_function_path("miden:test@1.0.0#roundtrip"),
-            stub_name,
+            SymbolName::intern("test_roundtrip"),
             core_func_sig,
         )
         .expect("import lowering should build");
         let function_ref = lowered.function_ref().expect("expected function lowering");
-        assert_eq!(function_ref.borrow().name().as_str(), "roundtrip");
-
-        // The leaf is now taken, so the next choice is qualified by the parent's last segment.
-        let stub_name = import_stub_name(&import_path, core_name, |name| {
-            module_builder.get_function(name.as_str()).is_none()
-        })
-        .expect("the qualified leaf is free");
-        assert_eq!(stub_name.as_str(), "test_roundtrip");
-
-        // With both Miden-derived names taken, the core import's own name is kept.
-        let stub_name = import_stub_name(&import_path, core_name, |name| name == core_name)
-            .expect("the core name is free");
-        assert_eq!(stub_name, core_name);
-
-        // With every candidate taken, the stub cannot be named.
-        let err = import_stub_name(&import_path, core_name, |_| false)
-            .expect_err("every candidate is taken");
-        assert_eq!(
-            err.to_string(),
-            "cannot name the import stub for `::miden::test::test::roundtrip`: `roundtrip`, \
-             `test_roundtrip` and `miden:test@1.0.0#roundtrip` are all taken"
-        );
+        assert_eq!(function_ref.borrow().name().as_str(), "test_roundtrip");
+        assert!(module_builder.get_function("miden:test@1.0.0#roundtrip").is_none());
     }
 }

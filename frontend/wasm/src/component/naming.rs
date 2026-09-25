@@ -311,6 +311,113 @@ mod tests {
                 && hir.contains("hir.call ::@acme::@second::@api::@read()"),
             "each import must call the procedure of its own interface:\n{hir}"
         );
+        // Two imports with one leaf: the second import stub takes the parent-qualified name.
+        assert!(
+            hir.contains(r#"extern("C") @read()"#) && hir.contains(r#"extern("C") @api_read()"#),
+            "the import stubs are named `read` and `api_read`:\n{hir}"
+        );
+    }
+
+    #[test]
+    fn an_export_whose_leaf_names_another_core_function_takes_a_qualified_name() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $m
+                    (func $get_count (result i32) i32.const 1)
+                    (func $miden:counter/counter@0.1.0#get-count
+                        (export "miden:counter/counter@0.1.0#get-count") (result i32)
+                        call $get_count)
+                )
+                (core instance $i (instantiate $m))
+                (func $lifted (result u32)
+                    (canon lift (core func $i "miden:counter/counter@0.1.0#get-count")))
+                (component $shim
+                    (import "import-func-get-count" (func $f (result u32)))
+                    (export "get-count" (external-id "miden::counter::counter::get_count")
+                        (func $f))
+                )
+                (instance $exports
+                    (instantiate $shim (with "import-func-get-count" (func $lifted))))
+                (export "miden:counter/counter@0.1.0" (instance $exports))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let context = Rc::default();
+        let output = translate_with(&context, &wasm, None).expect("component should translate");
+        let hir = core_modules_of(&output);
+        assert!(
+            hir.contains(r#"extern("C") @counter_get_count()"#)
+                && hir.contains(r#"extern("C") @get_count()"#),
+            "the export's core function takes the parent-qualified name:\n{hir}"
+        );
+        assert!(!hir.contains("get-count"), "no component-model name in the core module:\n{hir}");
+    }
+
+    #[test]
+    fn an_export_keeps_its_leaf_against_an_import_of_the_same_leaf() {
+        let wasm = import_and_export_component("acme::first::api::read", "sum", "read");
+        let context = Rc::default();
+        let output = translate_with(&context, &wasm, None).expect("component should translate");
+        let hir = core_modules_of(&output);
+        assert!(
+            hir.contains(r#"extern("C") @read()"#)
+                && hir.contains(r#"extern("C") @api_read()"#)
+                && !hir.contains("@sum("),
+            "the export's core function is `read` and the import stub `api_read`:\n{hir}"
+        );
+    }
+
+    #[test]
+    fn exports_of_two_interfaces_lifted_after_each_other_are_all_lifted() {
+        // wit-component order: the lift of the second interface follows the export of the first.
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $m
+                    (func (export "acme:app/one#a") (result i32) i32.const 1)
+                    (func (export "acme:app/two#b") (result i32) i32.const 2)
+                )
+                (core instance $i (instantiate $m))
+                (alias core export $i "acme:app/one#a" (core func $core-a))
+                (func $a (result u32) (canon lift (core func $core-a)))
+                (component $c1
+                    (import "import-func-a" (func $f (result u32)))
+                    (export "a" (external-id "miden::app::app::a") (func $f))
+                )
+                (instance $one (instantiate $c1 (with "import-func-a" (func $a))))
+                (export "acme:app/one" (instance $one))
+                (alias core export $i "acme:app/two#b" (core func $core-b))
+                (func $b (result u32) (canon lift (core func $core-b)))
+                (component $c2
+                    (import "import-func-b" (func $f (result u32)))
+                    (export "b" (external-id "miden::app::app::b") (func $f))
+                )
+                (instance $two (instantiate $c2 (with "import-func-b" (func $b))))
+                (export "acme:app/two" (instance $two))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let context = Rc::default();
+        let output = translate_with(&context, &wasm, None).expect("component should translate");
+        {
+            let component = output.component.borrow();
+            for leaf in ["a", "b"] {
+                assert!(
+                    component.get(SymbolName::intern(leaf)).is_some(),
+                    "the lifted export `{leaf}` is defined"
+                );
+            }
+        }
+        let hir = core_modules_of(&output);
+        assert!(
+            hir.contains(r#"extern("C") @a()"#)
+                && hir.contains(r#"extern("C") @b()"#)
+                && !hir.contains("acme:app"),
+            "both core functions are named after their exports:\n{hir}"
+        );
     }
 
     #[test]
@@ -483,13 +590,21 @@ mod tests {
         .expect("component WAT should compile");
         let context = Rc::default();
         let output = translate_with(&context, &wasm, None).expect("component should translate");
-        let component = output.component.borrow();
-        for leaf in ["get_count", "read_count"] {
-            assert!(
-                component.get(SymbolName::intern(leaf)).is_some(),
-                "the lifted export `{leaf}` is defined"
-            );
+        {
+            let component = output.component.borrow();
+            for leaf in ["get_count", "read_count"] {
+                assert!(
+                    component.get(SymbolName::intern(leaf)).is_some(),
+                    "the lifted export `{leaf}` is defined"
+                );
+            }
         }
+        let hir = core_modules_of(&output);
+        assert!(
+            hir.contains(r#"extern("C") @get_count()"#)
+                && !hir.contains(r#"extern("C") @read_count()"#),
+            "the first export names the shared core function:\n{hir}"
+        );
     }
 
     #[test]
@@ -525,7 +640,7 @@ mod tests {
         let output = translate_with(&context, &wasm, None).expect("component should translate");
         let hir = core_modules_of(&output);
         assert!(
-            hir.contains("@api_read()") && hir.contains("@read"),
+            hir.contains(r#"extern("C") @api_read()"#) && hir.contains("@read"),
             "the import stub takes the parent-qualified name next to the global `read`:\n{hir}"
         );
     }
