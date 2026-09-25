@@ -55,7 +55,11 @@ takes part in naming, and the WIT package and interface ids derive from the name
   becomes the script's own namespace (e.g. `miden::p2id_tx_script::p2id_tx_script`), and the
   entrypoint is `<namespace>::run`. The SDK WIT no longer defines the `transaction-script`
   interface or the `base-world` world.
-- `#[note_script]` entrypoints and `#[note_constructor]` methods no longer need snake_case names.
+- `#[component]` methods, `#[note_script]` entrypoints and `#[note_constructor]` methods no
+  longer need snake_case names: any ASCII Rust identifier whose kebab-case form is a valid WIT
+  name works, e.g. `getURL` or `r#type`. The
+  generated WIT spells Rust-derived method and parameter names in explicit `%` form
+  (`%get-url: func(%type: u32) -> u32;`).
 
 ### Hand-written WIT needs `@external-id` on every function
 

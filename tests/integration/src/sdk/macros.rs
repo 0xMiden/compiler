@@ -611,9 +611,9 @@ interface test-sibling {
     use core-types.{felt};
 
     @external-id("miden::test_sibling::test_sibling::get_value")
-    get-value: func() -> felt;
+    %get-value: func() -> felt;
     @external-id("miden::test_sibling::test_sibling::bump_value")
-    bump-value: func(delta: felt) -> felt;
+    %bump-value: func(%delta: felt) -> felt;
 }
 
 world test-sibling-world {
@@ -638,7 +638,7 @@ interface test-sibling {
     }
 
     @external-id("miden::test_sibling::test_sibling::echo_point")
-    echo-point: func(p: point) -> point;
+    %echo-point: func(%p: point) -> point;
 }
 
 world test-sibling-world {
@@ -1649,4 +1649,58 @@ impl PlainAuth {
         !stderr.contains("cannot find attribute `miden_auth_script_requires_component`"),
         "unexpected stderr: {stderr}"
     );
+}
+
+#[test]
+fn component_methods_with_non_snake_case_names_export_at_their_rust_names() {
+    // wit-bindgen names the guest trait methods after the kebab-case WIT names (`get_url`,
+    // `type_`), while the exports keep the Rust identifiers as their Miden path leaves.
+    let name = "component_methods_with_non_snake_case_names";
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component]
+#[allow(non_snake_case)]
+trait TestComponent {
+    #[account_procedure]
+    fn getURL(&self) -> Felt;
+    #[account_procedure]
+    fn r#type(&self) -> Felt;
+}
+
+#[component]
+#[allow(non_snake_case)]
+impl TestComponent for TestComponentStorage {
+    fn getURL(&self) -> Felt {
+        felt!(1)
+    }
+
+    fn r#type(&self) -> Felt {
+        felt!(2)
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project(name, lib_rs);
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        cargo_proj.root(),
+        WasmTranslationConfig::default(),
+        [],
+    );
+    let package = test.compile_package();
+    let exports = package
+        .manifest
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
+    let namespace = base::account_component_namespace(name, "test-component");
+    for leaf in ["getURL", "type"] {
+        let expected = format!("::{namespace}::{leaf}");
+        assert!(exports.contains(&expected), "expected export `{expected}`, got {exports:?}");
+    }
 }

@@ -85,6 +85,7 @@ mod test_support;
 mod types;
 mod util;
 mod wit_builder;
+mod wit_names;
 mod wit_world;
 
 /// Defines an account component's API and generates the WIT interface.

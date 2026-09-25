@@ -31,6 +31,7 @@ use crate::{
         ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
     },
     util::{generate_frontend_link_section, generate_wit_link_section, is_type_named},
+    wit_names::{rust_ident_to_wit_name, wit_bindgen_guest_ident},
 };
 
 pub(crate) mod generate_wit;
@@ -99,8 +100,10 @@ struct ComponentMethod {
     receiver_kind: ReceiverKind,
     /// Return type metadata.
     return_info: MethodReturn,
-    /// Method name rendered in kebab-case for WIT output.
+    /// Canonical WIT name of the method.
     wit_name: String,
+    /// Identifier of the guest trait method wit-bindgen generates for `wit_name`.
+    guest_fn_ident: syn::Ident,
 }
 
 /// Expands the `#[component]` attribute applied to either a component trait declaration or a trait
@@ -670,6 +673,7 @@ fn expand_component_trait_impl(
             "Component `impl` is missing methods. A component cannot have empty exports.",
         ));
     }
+    reject_duplicate_method_wit_names(&methods)?;
 
     let dependency_imports = metadata.collect_miden_dependency_imports(Span2::call_site())?;
     let inline_wit_source = build_component_wit(ComponentWitSpec {
@@ -873,9 +877,12 @@ fn render_guest_method(
         }
     };
 
+    // wit-bindgen names the guest trait method after the WIT name, which may differ from the
+    // user's identifier (`getURL` -> `get_url`, `r#type` -> `type_`).
+    let guest_fn_ident = &method.guest_fn_ident;
     quote! {
         #(#doc_attrs)*
-        fn #fn_ident(#fn_inputs) #output {
+        fn #guest_fn_ident(#fn_inputs) #output {
             #body
         }
     }
@@ -1139,15 +1146,27 @@ fn parse_component_signature(
 ) -> Result<(ComponentMethod, BTreeSet<String>), syn::Error> {
     let (receiver_kind, args) = validate_signature_shape(sig)?;
 
-    let mut params = Vec::new();
+    let mut params: Vec<MethodParam> = Vec::new();
     let mut type_imports = BTreeSet::new();
 
     for (ident, user_ty) in args {
         let type_ref = map_type_to_type_ref(&user_ty, exported_types)?;
         type_ref.add_required_core_type_imports(&mut type_imports);
 
+        // Distinct Rust identifiers can normalize to one WIT name; catch that here instead of
+        // surfacing a WIT parse error from the generated bindings.
+        let wit_param_name = rust_ident_to_wit_name(&ident)?;
+        if let Some(previous) = params.iter().find(|param| param.wit_param_name == wit_param_name) {
+            return Err(duplicate_wit_name_error(
+                "parameter",
+                &ident,
+                &previous.ident,
+                &wit_param_name,
+            ));
+        }
+
         params.push(MethodParam {
-            wit_param_name: to_kebab_case(&ident.to_string()),
+            wit_param_name,
             ident,
             user_ty,
             type_ref,
@@ -1169,16 +1188,54 @@ fn parse_component_signature(
 
     let doc_attrs = attrs.iter().filter(|attr| attr.path().is_ident("doc")).cloned().collect();
 
+    let wit_name = rust_ident_to_wit_name(&sig.ident)?;
     let component_method = ComponentMethod {
         fn_ident: sig.ident.clone(),
         doc_attrs,
         params,
         receiver_kind,
         return_info,
-        wit_name: to_kebab_case(&sig.ident.to_string()),
+        guest_fn_ident: wit_bindgen_guest_ident(&wit_name, sig.ident.span()),
+        wit_name,
     };
 
     Ok((component_method, type_imports))
+}
+
+/// Rejects component methods whose Rust identifiers normalize to one WIT name.
+fn reject_duplicate_method_wit_names(methods: &[ComponentMethod]) -> Result<(), syn::Error> {
+    for (index, method) in methods.iter().enumerate() {
+        if let Some(previous) =
+            methods[..index].iter().find(|previous| previous.wit_name == method.wit_name)
+        {
+            return Err(duplicate_wit_name_error(
+                "method",
+                &method.fn_ident,
+                &previous.fn_ident,
+                &method.wit_name,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Builds the diagnostic for a component `kind` (method or parameter) `ident` whose WIT name
+/// `wit_name` is already used by `previous`, pointing at both declarations.
+fn duplicate_wit_name_error(
+    kind: &str,
+    ident: &syn::Ident,
+    previous: &syn::Ident,
+    wit_name: &str,
+) -> syn::Error {
+    let mut error = syn::Error::new(
+        ident.span(),
+        format!(
+            "component {kind} `{ident}` produces the WIT name `{wit_name}`, which is already used \
+             by {kind} `{previous}`"
+        ),
+    );
+    error.combine(syn::Error::new(previous.span(), format!("first {kind} with this WIT name")));
+    error
 }
 
 /// Attempts to recover the final identifier from a type path for use with `bindings::export!`.
@@ -1371,6 +1428,156 @@ mod tests {
             account_procedure_frontend_metadata(&test_namespace(), &trait_ident, &method_ident);
 
         assert_eq!(metadata.path(), "miden::test_pkg::test_iface::type");
+    }
+
+    /// Parses component method signatures the way the impl expansion does.
+    fn parse_methods(signatures: &[syn::Signature]) -> Vec<ComponentMethod> {
+        signatures
+            .iter()
+            .map(|signature| parse_component_signature(signature, &[], &HashMap::new()).unwrap().0)
+            .collect()
+    }
+
+    /// Renders the component WIT for `methods` under the test namespace.
+    fn method_wit_fixture(methods: &[ComponentMethod]) -> String {
+        build_component_wit(ComponentWitSpec {
+            namespace: &test_namespace(),
+            component_version: &semver::Version::new(1, 0, 0),
+            dependency_imports: &[],
+            type_imports: &BTreeSet::new(),
+            methods,
+            exported_types: &[],
+        })
+        .unwrap()
+    }
+
+    /// Locates wit-bindgen's generated `Guest` trait inside its module hierarchy.
+    fn generated_guest_trait(items: &[syn::Item]) -> Option<&syn::ItemTrait> {
+        items.iter().find_map(|item| match item {
+            syn::Item::Trait(item) if item.ident == "Guest" => Some(item),
+            syn::Item::Mod(module) => {
+                module.content.as_ref().and_then(|(_, items)| generated_guest_trait(items))
+            }
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn component_methods_match_wit_bindgen_names_and_call_original_rust_methods() {
+        use wit_bindgen_core::{WorldGenerator, wit_parser::Resolve};
+
+        let methods = parse_methods(&[
+            parse_quote!(fn getURL(&self, r#type: u32) -> u32),
+            parse_quote!(fn r#type(&self, r#record: u32)),
+            parse_quote!(fn get_count(&self) -> u32),
+        ]);
+        let wit = method_wit_fixture(&methods);
+        assert!(wit.contains("%type: func(%record: u32)"), "{wit}");
+        assert!(wit.contains("%get-url: func(%type: u32)"), "{wit}");
+
+        let mut resolve = Resolve::default();
+        resolve.push_str("miden.wit", crate::manifest_paths::SDK_WIT_SOURCE).unwrap();
+        let package = resolve.push_str("test.wit", &wit).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+        let interface_name = test_namespace().wit_interface();
+        let interface = resolve
+            .interfaces
+            .iter()
+            .find(|(_, interface)| interface.name.as_deref() == Some(interface_name.as_str()))
+            .unwrap()
+            .1;
+        assert_eq!(
+            interface.functions.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["get-url", "type", "get-count"]
+        );
+        assert_eq!(interface.functions["get-url"].params[0].name, "type");
+
+        let mut files = wit_bindgen_core::Files::default();
+        wit_bindgen_rust::Opts {
+            generate_all: true,
+            ..Default::default()
+        }
+        .build()
+        .generate(&mut resolve, world, &mut files)
+        .unwrap();
+        let generated =
+            syn::parse_file(std::str::from_utf8(files.iter().next().unwrap().1).unwrap()).unwrap();
+        let guest =
+            generated_guest_trait(&generated.items).expect("wit-bindgen must generate Guest");
+        let guest_names = guest
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                TraitItem::Fn(method) => Some(method.sig.ident.to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        for (method, expected) in methods.iter().zip(["get_url", "type_", "get_count"]) {
+            let wrapper = render_guest_method(method, &parse_quote!(Storage), &parse_quote!(Api));
+            let function: syn::ItemFn = syn::parse2(wrapper.clone()).unwrap();
+            assert_eq!(function.sig.ident, expected);
+            assert!(guest_names.iter().any(|name| name == expected), "{guest_names:?}");
+            let original = &method.fn_ident;
+            let call = quote!(<Storage as Api>::#original).to_string();
+            assert!(wrapper.to_string().contains(&call), "{wrapper}");
+        }
+    }
+
+    #[test]
+    fn component_methods_reject_colliding_wit_names() {
+        let methods =
+            parse_methods(&[parse_quote!(fn getURL(&self)), parse_quote!(fn get_url(&self))]);
+        let error = reject_duplicate_method_wit_names(&methods).unwrap_err();
+        let message = error.to_string();
+        for expected in ["getURL", "get_url", "get-url"] {
+            assert!(message.contains(expected), "{message}");
+        }
+        assert_eq!(error.into_iter().count(), 2, "diagnostic must point at both methods");
+    }
+
+    #[test]
+    fn component_parameters_reject_colliding_wit_names() {
+        let signature = parse_quote!(fn get(&self, foo__bar: u32, foo_bar: u32));
+        let error = parse_component_signature(&signature, &[], &HashMap::new())
+            .err()
+            .expect("colliding parameter names must fail");
+        let message = error.to_string();
+        assert!(message.contains("foo__bar") && message.contains("foo_bar"), "{message}");
+        assert_eq!(error.into_iter().count(), 2, "diagnostic must point at both parameters");
+    }
+
+    #[test]
+    fn component_methods_reject_identifiers_without_a_wit_name() {
+        let signatures: [syn::Signature; 3] = [
+            parse_quote!(fn _1(&self)),
+            parse_quote!(fn __(&self)),
+            parse_quote!(fn größe(&self)),
+        ];
+        for signature in signatures {
+            let error = parse_component_signature(&signature, &[], &HashMap::new())
+                .err()
+                .expect("a method without a valid WIT name must fail");
+            let message = error.to_string();
+            let ident = signature.ident.to_string();
+            assert!(message.contains(&ident) && message.contains("WIT name"), "{message}");
+        }
+    }
+
+    #[test]
+    fn component_parameters_reject_identifiers_without_a_wit_name() {
+        let signatures: [syn::Signature; 3] = [
+            parse_quote!(fn get(&self, _1: u32)),
+            parse_quote!(fn get(&self, __: u32)),
+            parse_quote!(fn get(&self, größe: u32)),
+        ];
+        for (signature, ident) in signatures.iter().zip(["_1", "__", "größe"]) {
+            let error = parse_component_signature(signature, &[], &HashMap::new())
+                .err()
+                .expect("a parameter without a valid WIT name must fail");
+            let message = error.to_string();
+            assert!(message.contains(ident) && message.contains("WIT name"), "{message}");
+        }
     }
 
     #[test]
