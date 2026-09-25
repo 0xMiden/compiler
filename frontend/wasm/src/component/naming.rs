@@ -98,6 +98,13 @@ pub(crate) fn exports_namespace<'a>(
     }
 }
 
+/// The error for the function export `name` of the root component, which no interface carries.
+pub(crate) fn world_level_function_export(name: &str) -> Report {
+    Report::msg(format!(
+        "world-level function export `{name}` is not supported; export it from an interface"
+    ))
+}
+
 /// Names the interface a nested component's exports go through, for diagnostics.
 ///
 /// The root component exports the instances of its nested components under their interface
@@ -145,6 +152,9 @@ pub fn declared_namespace(wasm: &[u8]) -> WasmResult<Option<SymbolPath>> {
                     match (stack.len(), export.kind) {
                         (1, ComponentExternalKind::Instance) => {
                             root_instance_exports.push(export.name.name)
+                        }
+                        (1, ComponentExternalKind::Func) => {
+                            return Err(world_level_function_export(export.name.name));
                         }
                         // `depth > 1`: a function export of a nested component.
                         (depth, ComponentExternalKind::Func) if depth > 1 => functions.push((
@@ -356,6 +366,68 @@ mod tests {
             "the export's core function takes the parent-qualified name:\n{hir}"
         );
         assert!(!hir.contains("get-count"), "no component-model name in the core module:\n{hir}");
+    }
+
+    /// One nested component instantiated twice and exported as two interfaces lifts its export
+    /// path twice.
+    #[test]
+    fn one_component_exported_as_two_interfaces_is_rejected() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $m
+                    (func (export "get-count") (result i32) i32.const 0)
+                )
+                (core instance $i (instantiate $m))
+                (func $lifted (result u32) (canon lift (core func $i "get-count")))
+                (component $shim
+                    (import "import-func-get-count" (func $f (result u32)))
+                    (export "get-count" (external-id "miden::counter::counter::get_count")
+                        (func $f))
+                )
+                (instance $first
+                    (instantiate $shim (with "import-func-get-count" (func $lifted))))
+                (instance $second
+                    (instantiate $shim (with "import-func-get-count" (func $lifted))))
+                (export "miden:counter/first@0.1.0" (instance $first))
+                (export "miden:counter/second@0.1.0" (instance $second))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let err = error_of(&wasm, None);
+        assert!(
+            err.contains(
+                "component instances `miden:counter/first@0.1.0` and `miden:counter/second@0.1.0` \
+                 both export `::miden::counter::counter::get_count`"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// A function exported by the root component itself, rather than through an interface, is
+    /// rejected by the frontend and by the namespace scan.
+    #[test]
+    fn a_world_level_function_export_is_rejected() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $m
+                    (func (export "get-count") (result i32) i32.const 0)
+                )
+                (core instance $i (instantiate $m))
+                (func $lifted (result u32) (canon lift (core func $i "get-count")))
+                (export "get-count" (func $lifted))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let expected =
+            "world-level function export `get-count` is not supported; export it from an interface";
+        let err = error_of(&wasm, Some("miden::counter::counter"));
+        assert!(err.contains(expected), "unexpected diagnostic: {err}");
+        let err = declared_namespace(&wasm).expect_err("the scan should fail").to_string();
+        assert!(err.contains(expected), "unexpected scan diagnostic: {err}");
     }
 
     /// A linker stub lifted as an export is defined under the export's leaf and still lowered to
