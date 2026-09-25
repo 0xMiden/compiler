@@ -178,14 +178,16 @@ mod tests {
     use super::*;
     use crate::{WasmTranslationConfig, translate};
 
-    /// A component lifting one core function and exporting it as `get-count` through the
-    /// interface `miden:counter/counter@0.1.0`, with `attribute` on the nested export.
+    /// A component lifting one core function, named `miden:counter/counter@0.1.0#get-count` in the
+    /// name section, and exporting it as `get-count` through the interface
+    /// `miden:counter/counter@0.1.0`, with `attribute` on the nested export.
     fn counter_component(attribute: &str) -> Vec<u8> {
         wat::parse_str(format!(
             r#"
             (component
                 (core module $m
-                    (func (export "get-count") (result i32) i32.const 0)
+                    (func $miden:counter/counter@0.1.0#get-count (export "get-count")
+                        (result i32) i32.const 0)
                 )
                 (core instance $i (instantiate $m))
                 (func $lifted (result u32) (canon lift (core func $i "get-count")))
@@ -435,6 +437,56 @@ mod tests {
         assert_eq!(
             declared_namespace(&wasm).unwrap().map(|ns| ns.to_string()).as_deref(),
             Some("::miden::counter::counter")
+        );
+    }
+
+    #[test]
+    fn debug_info_links_subprograms_by_the_hir_functions() {
+        use alloc::{boxed::Box, sync::Arc, vec::Vec};
+
+        use midenc_hir::dialects::{builtin::Function, debuginfo::attributes::SubprogramAttr};
+        use midenc_session::{
+            DebugInfo, InputFile, Options, Session, diagnostics::DefaultSourceManager,
+        };
+
+        let options = Box::new(Options::default())
+            .with_output_types(Default::default(), None)
+            .with_debug_info(DebugInfo::Full);
+        let session = Session::new(
+            InputFile::empty(),
+            options,
+            None,
+            Arc::new(DefaultSourceManager::default()),
+        )
+        .unwrap();
+        let context = Rc::new(Context::new(Rc::new(session)));
+        let wasm = counter_component(r#"(external-id "miden::counter::counter::get_count")"#);
+        let output = translate_with(&context, &wasm, None).expect("component should translate");
+
+        let mut subprograms = Vec::new();
+        output.component.borrow().as_operation().prewalk_all(|op: &Operation| {
+            let Some(function) = op.downcast_ref::<Function>() else {
+                return;
+            };
+            if let Some(attr) = op.get_attribute("di.subprogram") {
+                let subprogram = attr.try_downcast_attr::<SubprogramAttr>().unwrap();
+                let subprogram = subprogram.borrow();
+                let linkage = subprogram.linkage_name.unwrap_or(subprogram.name);
+                subprograms.push((function.name().as_str(), linkage.as_str().to_owned()));
+            }
+        });
+        // The core function carries `miden:counter/counter@0.1.0#get-count` in the name section,
+        // which stays the subprogram's source name; it is linked by its HIR function name.
+        assert!(
+            !subprograms.is_empty()
+                && subprograms
+                    .iter()
+                    .all(|(function, linkage)| { function == linkage && !linkage.contains('#') }),
+            "every subprogram is linked by its HIR function: {subprograms:?}"
+        );
+        assert!(
+            subprograms.iter().any(|(_, subprogram)| subprogram == "get_count"),
+            "{subprograms:?}"
         );
     }
 
