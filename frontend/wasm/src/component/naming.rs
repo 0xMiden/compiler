@@ -13,8 +13,7 @@ use alloc::{
 
 use midenc_frontend_wasm_metadata::COMPONENT_INIT_PROCEDURE;
 use midenc_hir::{FxHashMap, SymbolName, SymbolNameComponent, SymbolPath};
-use midenc_session::diagnostics::{IntoDiagnostic, Report};
-use wasmparser::{ComponentExternalKind, Encoding, Parser, Payload};
+use midenc_session::diagnostics::Report;
 
 use crate::{component::StaticComponentIndex, error::WasmResult};
 
@@ -108,75 +107,13 @@ pub(crate) fn world_level_function_export(name: &str) -> Report {
 /// Names the interface a nested component's exports go through, for diagnostics.
 ///
 /// The root component exports the instances of its nested components under their interface
-/// names; with a single one it is unambiguous, otherwise the nested component index is used.
+/// names; with a single one it is unambiguous, otherwise the nested component's
+/// `StaticComponentIndex` is used.
 pub(crate) fn interface_hint(root_instance_exports: &[&str], nested_component: u32) -> String {
     match root_instance_exports {
         [single] => single.to_string(),
         _ => format!("<nested component {nested_component}>"),
     }
-}
-
-/// Returns the namespace declared by the function exports of the Wasm component `wasm`, i.e. the
-/// namespace the frontend roots the component at when the build does not provide one.
-///
-/// Returns `Ok(None)` for a core module or a component without function exports.
-pub fn declared_namespace(wasm: &[u8]) -> WasmResult<Option<SymbolPath>> {
-    if !Parser::is_component(wasm) {
-        return Ok(None);
-    }
-    // The encodings of the (nested) modules and components being parsed, innermost last.
-    let mut stack: Vec<Encoding> = Vec::new();
-    // `(nested component ordinal, name, external-id)` of every nested component function export.
-    let mut functions: Vec<(u32, &str, Option<&str>)> = Vec::new();
-    let mut root_instance_exports: Vec<&str> = Vec::new();
-    let mut nested_components = 0u32;
-    for payload in Parser::new(0).parse_all(wasm) {
-        match payload.into_diagnostic()? {
-            Payload::Version { encoding, .. } => {
-                // Counts the nested components in the order their headers appear, which is the
-                // order the component parser assigns `StaticComponentIndex`es in, so
-                // `nested_components - 1` is the index of the most recently entered nested
-                // component: the one whose exports are being read, as long as nested components
-                // do not nest further.
-                if encoding == Encoding::Component && !stack.is_empty() {
-                    nested_components += 1;
-                }
-                stack.push(encoding);
-            }
-            Payload::End(_) => {
-                stack.pop();
-            }
-            Payload::ComponentExportSection(reader) => {
-                for export in reader {
-                    let export = export.into_diagnostic()?;
-                    match (stack.len(), export.kind) {
-                        (1, ComponentExternalKind::Instance) => {
-                            root_instance_exports.push(export.name.name)
-                        }
-                        (1, ComponentExternalKind::Func) => {
-                            return Err(world_level_function_export(export.name.name));
-                        }
-                        // `depth > 1`: a function export of a nested component.
-                        (depth, ComponentExternalKind::Func) if depth > 1 => functions.push((
-                            nested_components - 1,
-                            export.name.name,
-                            export.name.external_id,
-                        )),
-                        _ => {}
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    let paths = functions
-        .into_iter()
-        .map(|(component, name, external_id)| {
-            let interface = interface_hint(&root_instance_exports, component);
-            Ok((name, external_id_path(&interface, name, external_id)?))
-        })
-        .collect::<WasmResult<Vec<_>>>()?;
-    exports_namespace(paths.iter().map(|(name, path)| (*name, path)))
 }
 
 #[cfg(test)]
@@ -226,6 +163,12 @@ mod tests {
             ..Default::default()
         };
         translate(wasm, &config, context.clone())
+    }
+
+    /// Returns the namespace the exports of `wasm` declare, as the compiler scans it before
+    /// translation.
+    fn declared_namespace(wasm: &[u8]) -> WasmResult<Option<SymbolPath>> {
+        crate::declared_namespace(wasm, Context::default().session())
     }
 
     /// Returns the diagnostic of translating `wasm` (rooted at `namespace` when given), which

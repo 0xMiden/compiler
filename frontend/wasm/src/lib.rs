@@ -34,7 +34,9 @@ use wasmparser::WasmFeatures;
 
 #[cfg(feature = "std")]
 pub use self::emit::wasm_to_wat;
-pub use self::{component::naming::declared_namespace, config::*, emit::WatEmit, error::WasmError};
+pub use self::{
+    component::build_ir::declared_namespace, config::*, emit::WatEmit, error::WasmError,
+};
 
 /// The output of the frontend Wasm translation stage
 pub struct FrontendOutput {
