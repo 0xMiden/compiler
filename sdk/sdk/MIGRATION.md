@@ -51,7 +51,8 @@ takes part in naming, and the WIT package and interface ids derive from the name
   need a migration, and host code that builds `StorageSlotName`s must use the new names.
 - Notes lose the accidental `miden-` interface prefix: a note that used
   `miden:p2id/miden-p2id@0.1.0` now declares `miden::p2id::p2id` and exports
-  `::miden::p2id::p2id::<entrypoint>`.
+  `::miden::p2id::p2id::<entrypoint>`. The binding module a consumer generates for the note
+  changes with it: `bindings::miden::p2id::miden_p2id` becomes `bindings::miden::p2id::p2id`.
 - Transaction scripts export their own interface: `namespace = "miden:base/transaction-script@1.0.0"`
   becomes the script's own namespace (e.g. `miden::p2id_tx_script::p2id_tx_script`), and the
   entrypoint is `<namespace>::run`. The SDK WIT no longer defines the `transaction-script`
@@ -87,6 +88,14 @@ interface foo {
     get-asset-qty: func(asset: asset) -> asset-amount;
 }
 ```
+
+The parent of an imported function's path names a dependency component, so the parents of a
+component's imports must not nest in one another or in the component's own namespace: importing
+both `acme::math::add` and `acme::math::u64::add` is rejected.
+
+The core Wasm module of a component, named after the crate, now gives way to an export of the same
+name (a crate `swap` exporting `swap`): the module is renamed `<name>_core`, which only appears in
+the package's internal MASM paths.
 
 `midenc-frontend-wasm-metadata` follows the same naming: the `FrontendMetadata` variants carry the
 export's full Miden path in `path` instead of `export_name`, `FrontendMetadata::export_name()` is

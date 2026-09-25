@@ -711,11 +711,12 @@ impl<'a> ComponentTranslator<'a> {
         Ok(())
     }
 
-    /// Reports an error when the component already holds a symbol named by the leaf of the
-    /// export path `path`, i.e. when the export clashes with the core module of the same name.
+    /// Reports an internal error when the component already holds a symbol named by the leaf of
+    /// the export path `path`.
     ///
-    /// Two exports sharing one path are rejected earlier, by the export pre-scan or, for one
-    /// component exported through two interfaces, when the exports are recorded.
+    /// Neither clash is expected: a core module named like an export is renamed before it is
+    /// defined, and two exports sharing one path are rejected earlier, by the export pre-scan or,
+    /// for one component exported through two interfaces, when the exports are recorded.
     fn ensure_export_leaf_is_free(&self, path: &SymbolPath) -> WasmResult<()> {
         let leaf = path.name();
         let component = self.result.component.borrow();
