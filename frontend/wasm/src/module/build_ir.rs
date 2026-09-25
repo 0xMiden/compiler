@@ -138,10 +138,17 @@ pub fn build_ir_module(
     .into_diagnostic()?;
     parsed_module.function_debug =
         if context.session().options.debug == midenc_session::DebugInfo::Full {
+            // A function may be defined under a name other than its Wasm name (see
+            // `ModuleTranslationState::new`); its subprogram is named after the HIR function.
+            let function_names = module_state
+                .defined_functions()
+                .map(|(index, function)| (index, function.borrow().name().as_symbol()))
+                .collect();
             collect_function_debug_info(
                 parsed_module,
                 module_types,
                 &parsed_module.module,
+                &function_names,
                 &addr2line,
                 context.diagnostics(),
             )
