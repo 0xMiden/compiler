@@ -15,6 +15,7 @@ use midenc_hir::{
     diagnostics::IntoDiagnostic,
     dialects::{builtin, debuginfo::attributes::SubprogramAttr},
     pass::AnalysisManager,
+    reserved_names::{EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC, FUNCTION_TABLE_INIT_PROC},
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{Report, Spanned, WrapErr};
@@ -27,20 +28,6 @@ use crate::{
     linker::{FunctionTableLayout, LinkInfo, Linker},
     masm,
 };
-
-/// The generated procedure each module uses to fill the function-table slots whose callees it
-/// defines.
-///
-/// One procedure per module, rather than one for the component, because `procref` on a private
-/// procedure is only legal within its defining module — and a callee's visibility is its
-/// author's decision, not something initialization gets to widen. A module's procedure also
-/// invokes the procedures of the modules nested within it, so the component's `init` only has
-/// to reach the top-level ones; that is the shape a single component-global table would want.
-const FUNCTION_TABLE_INIT_PROC: &str = "__init_function_table";
-
-/// The private canonical-ABI entry body generated only for executable dispatch after `main` has
-/// already initialized the component.
-const EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC: &str = "__midenc_entrypoint_without_init";
 
 /// This trait represents a conversion pass from some HIR entity to a Miden Assembly component.
 pub trait ToMasmComponent {

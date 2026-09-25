@@ -2,7 +2,9 @@ use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
 use midenc_dialect_hir::WASM_COMPONENT_START_ATTR;
-use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
+use midenc_frontend_wasm_metadata::{
+    COMPONENT_INIT_PROCEDURE, FrontendMetadata, ProtocolExportKind,
+};
 use midenc_hir::{
     self as hir2, BuilderExt, Context, FxHashMap, FxHashSet, Ident, OpExt, SymbolName,
     SymbolNameComponent, SymbolPath, SymbolTable,
@@ -607,23 +609,38 @@ impl<'a> ComponentTranslator<'a> {
     fn translate_pending(&mut self, types: &ComponentTypesBuilder) -> WasmResult<()> {
         let mut core_funcs: FxHashMap<(StaticModuleIndex, FuncIndex), FunctionRef> =
             FxHashMap::default();
-        for PendingModule {
-            static_module_idx,
-            import_canon_lower_args,
-        } in core::mem::take(&mut self.pending_modules)
-        {
-            let parsed_module = self.nested_modules.get_mut(static_module_idx).unwrap();
+        let pending_modules = core::mem::take(&mut self.pending_modules);
+        // Name every module up front, so a module that gives way below also avoids the names of
+        // the modules defined after it.
+        let mut module_names = Vec::with_capacity(pending_modules.len());
+        for pending in &pending_modules {
+            let parsed_module = self.nested_modules.get_mut(pending.static_module_idx).unwrap();
             parsed_module.module.set_name_fallback(self.config.source_name.clone());
             if let Some(name_override) = self.config.override_name.as_ref() {
                 parsed_module.module.set_name_override(name_override.clone());
             }
-            // The core module and the lifted exports share the component's symbol table. The
-            // module's name is internal while an export's is its contract, so the module gives
-            // way; renaming it before its functions are named keeps every derived path in sync.
+            module_names.push(parsed_module.module.name().name);
+        }
+        for PendingModule {
+            static_module_idx,
+            import_canon_lower_args,
+        } in pending_modules
+        {
+            let parsed_module = self.nested_modules.get_mut(static_module_idx).unwrap();
+            // The core module shares the component's symbol table with the lifted exports and
+            // the generated `init` procedure. The module's name is internal while theirs are the
+            // component's contract, so the module gives way; renaming it before its functions are
+            // named keeps every derived path in sync.
             let module_name = parsed_module.module.name().name;
-            if self.pending_exports.iter().any(|export| export.path.name() == module_name) {
-                let free_name =
-                    free_core_module_name(&self.pending_exports, &self.result, module_name);
+            if module_name == COMPONENT_INIT_PROCEDURE
+                || self.pending_exports.iter().any(|export| export.path.name() == module_name)
+            {
+                let free_name = free_core_module_name(
+                    &self.pending_exports,
+                    &module_names,
+                    &self.result,
+                    module_name,
+                );
                 parsed_module.module.set_name_override(free_name.into());
             }
 
@@ -1570,9 +1587,11 @@ impl<'a> ComponentFrame<'a> {
 }
 
 /// Returns the first of `<name>_core`, `<name>_core2`, `<name>_core3`, ... that is neither the
-/// leaf of one of `pending_exports` nor a symbol already defined in `component`.
+/// leaf of one of `pending_exports`, nor the name of one of the `module_names` of the component's
+/// core modules, nor a symbol already defined in `component`.
 fn free_core_module_name(
     pending_exports: &[PendingExport],
+    module_names: &[SymbolName],
     component: &ComponentBuilder,
     name: SymbolName,
 ) -> String {
@@ -1580,6 +1599,7 @@ fn free_core_module_name(
     let is_free = |candidate: &str| {
         let candidate = SymbolName::intern(candidate);
         !pending_exports.iter().any(|export| export.path.name() == candidate)
+            && !module_names.contains(&candidate)
             && component.get(candidate).is_none()
     };
     let base = format!("{name}_core");

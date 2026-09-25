@@ -6,7 +6,10 @@
 
 use alloc::{format, string::String, vec::Vec};
 
-use midenc_hir::{FxHashMap, FxHashSet, SmallVec, SymbolName, SymbolNameComponent, SymbolPath};
+use midenc_hir::{
+    FxHashMap, FxHashSet, SmallVec, SymbolName, SymbolNameComponent, SymbolPath,
+    reserved_names::RESERVED_PROCEDURE_NAMES,
+};
 use midenc_session::diagnostics::Report;
 
 use crate::{
@@ -22,7 +25,8 @@ use crate::{
 /// imported function). Otherwise the name is the first free candidate among the path's leaf and
 /// the leaf prefixed by progressively more of its parent segments (`read`, `api_read`,
 /// `second_api_read`, ...). A name is free when no defined function outside the named set, no
-/// global and no already named function holds it. Imported functions outside the named set do
+/// global and no already named function holds it, and it is not one of the procedure names the
+/// backend generates ([`RESERVED_PROCEDURE_NAMES`]). Imported functions outside the named set do
 /// not block a name: they define no HIR function in the module, as every reachable import is a
 /// lowered component import, and thus in the named set. Fails when every candidate is taken.
 pub(crate) fn assign<'p>(
@@ -42,6 +46,7 @@ pub(crate) fn assign<'p>(
         .filter(|index| !module.is_imported_function(*index) && !named.contains(index))
         .map(|index| module.func_name(index))
         .chain(module.globals.keys().map(|index| module.global_name(index)))
+        .chain(RESERVED_PROCEDURE_NAMES.iter().copied().map(SymbolName::intern))
         .collect();
     let mut names = FxHashMap::default();
 
@@ -197,6 +202,16 @@ mod tests {
         // A re-exported import keeps the export's name.
         let names = assign(&module, [(func(0), &export)], [(func(0), &import)]).unwrap();
         assert_eq!(names[&func(0)].as_str(), "read");
+    }
+
+    #[test]
+    fn the_generated_procedure_names_are_reserved() {
+        let module = module_of(MODULE);
+        let init_table = path("acme::app::app::__init_function_table");
+        let entry = path("acme::first::api::__midenc_entrypoint_without_init");
+        let names = assign(&module, [(func(1), &init_table)], [(func(0), &entry)]).unwrap();
+        assert_eq!(names[&func(1)].as_str(), "app___init_function_table");
+        assert_eq!(names[&func(0)].as_str(), "api___midenc_entrypoint_without_init");
     }
 
     #[test]

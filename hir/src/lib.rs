@@ -76,6 +76,7 @@ pub mod matchers;
 pub mod pass;
 pub mod patterns;
 mod program_point;
+pub mod reserved_names;
 pub mod testing;
 
 pub use midenc_session::diagnostics;
