@@ -601,6 +601,10 @@ fn load_wit_sources(
     // Load the crate's own `wit/` directory last so it can reference the dependency packages.
     if let Some(local_wit_root) = &config.local_wit_root {
         let owner = format!("this crate's WIT directory '{}'", local_wit_root.display());
+        // Parsed here only to name the owner of a duplicate package before resolving it. The
+        // directory is loaded through `push_path`, which also resolves its `deps/` directory and
+        // reports the files it read, so it cannot reuse this group; it re-parses the directory
+        // and reports any parse error, which is therefore safe to ignore here.
         if let Ok(group) = UnresolvedPackageGroup::parse_dir(manifest_dir.join(local_wit_root)) {
             ensure_new_packages(&owners, &group, &owner)?;
         }
