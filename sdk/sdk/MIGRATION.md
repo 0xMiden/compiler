@@ -67,7 +67,9 @@ takes part in naming, and the WIT package and interface ids derive from the name
   snake_case and not a Rust keyword (the generated bindings access them by that spelling), so
   fields such as `r#type` or `getURL` are rejected with the name to use instead. Likewise,
   variant cases must be the UpperCamelCase of their WIT name (`Nft`, not `NFT`), and other
-  spellings are rejected with the name to use.
+  spellings are rejected with the name to use. Methods, parameters and record fields named
+  `r#gen` are rejected: wit-bindgen does not escape this Rust 2024 keyword in the generated
+  bindings.
 - `<namespace>::init` is reserved for the compiler's component initializer; rename any exported
   procedure, note entrypoint or note constructor called `init`.
 

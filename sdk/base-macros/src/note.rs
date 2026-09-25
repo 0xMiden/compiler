@@ -308,7 +308,10 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         Ok(val) => val,
         Err(err) => return err.into_compile_error(),
     };
-    let guest_entrypoint_ident = wit_bindgen_guest_ident(&export_name, entrypoint_ident.span());
+    let guest_entrypoint_ident = match wit_bindgen_guest_ident(&export_name, entrypoint_ident) {
+        Ok(val) => val,
+        Err(err) => return err.into_compile_error(),
+    };
     let (constructors, constructor_type_imports) =
         match collect_note_constructors(&mut item_impl, entrypoint_ident, &export_name) {
             Ok(val) => val,
@@ -635,6 +638,8 @@ fn collect_note_constructors(
             // WIT parameter names are kebab-cased, so distinct Rust identifiers can collide;
             // catch that here instead of surfacing a WIT parse error from the generated bindings.
             let wit_param_name = rust_ident_to_wit_name(&pat_ident.ident)?;
+            // The generated bindings name the parameter by wit-bindgen's spelling.
+            wit_bindgen_guest_ident(&wit_param_name, &pat_ident.ident)?;
             if !wit_param_names.insert(wit_param_name.clone()) {
                 return Err(syn::Error::new(
                     pat_ident.ident.span(),
@@ -692,7 +697,7 @@ fn collect_note_constructors(
         }
 
         constructors.push(NoteConstructor {
-            guest_fn_ident: wit_bindgen_guest_ident(&wit_name, sig.ident.span()),
+            guest_fn_ident: wit_bindgen_guest_ident(&wit_name, &sig.ident)?,
             wit_name,
             fn_ident: sig.ident.clone(),
             doc_attrs,

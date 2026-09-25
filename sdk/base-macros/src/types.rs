@@ -961,7 +961,7 @@ fn exported_field_wit_name(
     let wit_name = rust_ident_to_wit_name(field_ident)?;
     // The generated lowering code reads the user's struct fields by wit-bindgen's own Rust
     // spelling of the WIT name, so any other spelling fails to compile inside the bindings.
-    let rust_ident = wit_bindgen_guest_ident(&wit_name, field_ident.span());
+    let rust_ident = wit_bindgen_guest_ident(&wit_name, field_ident)?;
     if rust_ident != field_ident.unraw() {
         return Err(syn::Error::new(
             field_ident.span(),
