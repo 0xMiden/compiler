@@ -35,14 +35,13 @@ pub(crate) fn external_id_path(
              component function needs its Miden path"
         )));
     };
-    let Ok((module, function)) = validate_procedure_path(external_id) else {
-        return Err(Report::msg(format!(
+    let (module, function) = validate_procedure_path(external_id).map_err(|err| {
+        Report::msg(format!(
             "the `@external-id` of function `{cm_name}` of interface `{cm_iface}` is \
-             `{external_id}`, which is not a Miden path with a module and a function name (a \
-             leading `::` is optional) whose segments are ASCII letters, digits and `_`, e.g. \
+             `{external_id}`, which {err}, e.g. \
              `miden::counter_contract::counter_contract::get_count`"
-        )));
-    };
+        ))
+    })?;
     let mut path = SymbolPath::from_masm_module_id(module);
     path.path.push(SymbolNameComponent::Leaf(SymbolName::intern(function)));
     Ok(path)
@@ -635,7 +634,7 @@ mod tests {
         let err = error_of(&counter_component(r#"(external-id "no-double-colon")"#), None);
         assert!(
             err.contains("`no-double-colon`")
-                && err.contains("not a Miden path with a module and a function name"),
+                && err.contains("not a Miden procedure path with a module and a function name"),
             "unexpected diagnostic: {err}"
         );
     }
@@ -681,6 +680,37 @@ mod tests {
         }
         let path = external_id_path("i", "f", Some("::miden::x::y::get_count")).expect("valid");
         assert_eq!(path.to_string(), "::miden::x::y::get_count");
+    }
+
+    /// The segments `validate_procedure_path` accepts are exactly those MASM prints unquoted, so
+    /// every accepted path is also a bare MASM path.
+    #[test]
+    fn procedure_path_segments_are_the_unquoted_masm_identifiers() {
+        use midenc_session::miden_assembly_syntax::ast::Ident;
+
+        for segment in [
+            "a",
+            "Z",
+            "get_count",
+            "_",
+            "_1",
+            "1",
+            "42abc",
+            "a-b",
+            "a.b",
+            "a$b",
+            "$x",
+            "naïve",
+            "ünï",
+            "a b",
+            "a:b",
+            "",
+        ] {
+            let accepted = validate_procedure_path(&format!("m::{segment}")).is_ok();
+            // An empty segment is no identifier at all, though it needs no quoting.
+            let unquoted = !segment.is_empty() && !Ident::requires_quoting(segment);
+            assert_eq!(accepted, unquoted, "`{segment}`");
+        }
     }
 
     #[test]

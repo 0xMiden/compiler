@@ -522,7 +522,6 @@ fn process_module_arg(
         ModuleArgument::ComponentImport {
             signature,
             path: import_path,
-            first_cm_path,
         } => {
             let Some(stub_name) = stub_name else {
                 return Err(Report::msg(format!(
@@ -536,7 +535,6 @@ fn process_module_arg(
                 ComponentImportPath {
                     cm_path: wasm_import_path,
                     path: import_path.clone(),
-                    first_cm_path: first_cm_path.clone(),
                     namespace,
                 },
                 signature,

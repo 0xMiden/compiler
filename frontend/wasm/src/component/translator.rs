@@ -104,10 +104,6 @@ pub struct ComponentTranslator<'a> {
     /// translated.
     pending_start: Option<(StaticModuleIndex, FuncIndex)>,
 
-    /// For each Miden path of a lowered import, the core-import path of the first import that
-    /// lowers to it.
-    import_cm_paths: FxHashMap<SymbolPath, SymbolPath>,
-
     /// Information about shim modules to bypass
     shim_bypass_info: ShimBypassInfo,
 }
@@ -214,7 +210,6 @@ impl<'a> ComponentTranslator<'a> {
             pending_modules: Vec::new(),
             pending_exports: Vec::new(),
             pending_start: None,
-            import_cm_paths: FxHashMap::default(),
         })
     }
 
@@ -900,18 +895,9 @@ impl<'a> ComponentTranslator<'a> {
                                      at path '{cm_path}' (Miden path '{path}')"
                                     , signature.ir
                                 );
-                                let first_cm_path = self
-                                    .import_cm_paths
-                                    .entry(path.clone())
-                                    .or_insert_with(|| cm_path.clone())
-                                    .clone();
                                 import_canon_lower_args.insert(
                                     cm_path,
-                                    ModuleArgument::ComponentImport {
-                                        signature,
-                                        path,
-                                        first_cm_path,
-                                    },
+                                    ModuleArgument::ComponentImport { signature, path },
                                 );
                             }
                         }
