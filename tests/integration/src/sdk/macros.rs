@@ -1704,3 +1704,42 @@ impl TestComponent for TestComponentStorage {
         assert!(exports.contains(&expected), "expected export `{expected}`, got {exports:?}");
     }
 }
+
+#[test]
+fn component_impl_accepts_a_storage_alias_in_a_relocated_impl() {
+    // `bindings::export!` accepts only an identifier, so the macro must not hand it the impl's
+    // module-qualified self type.
+    let name = "component_impl_accepts_a_storage_alias_in_a_relocated_impl";
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+pub mod wallet {
+    #[miden::component_storage]
+    pub struct TestComponentStorage;
+}
+
+#[miden::component]
+pub trait TestComponent {
+    fn value(&self) -> miden::Felt;
+}
+
+mod exports {
+    use crate::TestComponent;
+    type StorageAlias = crate::wallet::TestComponentStorage;
+
+    #[miden::component]
+    impl TestComponent for self::StorageAlias {
+        fn value(&self) -> miden::Felt {
+            miden::felt!(1)
+        }
+    }
+}
+"#;
+    let cargo_proj = account_component_project(name, lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        output.status.success(),
+        "expected a local storage alias and relocated impl to compile: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

@@ -600,7 +600,7 @@ fn expand_component_trait_impl(
     reject_generics(&impl_block.generics, "component trait implementations cannot be generic")?;
 
     let component_type = (*impl_block.self_ty).clone();
-    if extract_type_ident(&component_type).is_none() {
+    if !is_path_type(&component_type) {
         return Err(syn::Error::new(
             impl_block.self_ty.span(),
             "Failed to determine the storage type targeted by this implementation.",
@@ -737,9 +737,14 @@ fn expand_component_trait_impl(
         }
         #marker_check
         #storage_marker_check
-        // Use the fully-qualified component type here so the export macro works even when
-        // the impl block was declared through a module-qualified path (e.g. `impl Foo for super::Bar`).
-        self::bindings::export!(#component_type);
+        // wit-bindgen's `export!` accepts only an identifier, while the impl's self type may be a
+        // qualified path (e.g. `impl Foo for super::Bar`). A local alias hands the macro an
+        // identifier that resolves to the full type; the anonymous const keeps the alias private,
+        // and the generated `export_name` items keep their global linkage inside the block.
+        const _: () = {
+            type __MidenComponentExport = #component_type;
+            self::bindings::export!(__MidenComponentExport);
+        };
         #wit_link_section
     })
 }
@@ -1238,13 +1243,14 @@ fn duplicate_wit_name_error(
     error
 }
 
-/// Attempts to recover the final identifier from a type path for use with `bindings::export!`.
-fn extract_type_ident(ty: &Type) -> Option<syn::Ident> {
+/// Returns true if `ty` names a type through a path, the only shape a component storage type
+/// can take.
+fn is_path_type(ty: &Type) -> bool {
     match ty {
-        Type::Path(path) => path.path.segments.last().map(|segment| segment.ident.clone()),
-        Type::Group(group) => extract_type_ident(&group.elem),
-        Type::Paren(paren) => extract_type_ident(&paren.elem),
-        _ => None,
+        Type::Path(path) => !path.path.segments.is_empty(),
+        Type::Group(group) => is_path_type(&group.elem),
+        Type::Paren(paren) => is_path_type(&paren.elem),
+        _ => false,
     }
 }
 
