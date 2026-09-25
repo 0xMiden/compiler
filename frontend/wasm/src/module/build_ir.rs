@@ -1,9 +1,10 @@
 use core::{mem, str::FromStr};
 use std::rc::Rc;
 
+use midenc_frontend_wasm_metadata::namespace::RESERVED_NAMESPACE_PREFIXES;
 use midenc_hir::{
-    Builder, BuilderExt, Context, FunctionIdent, FxHashMap, Ident, Op, OpBuilder, SymbolPath,
-    Visibility,
+    Builder, BuilderExt, Context, FunctionIdent, FxHashMap, Ident, Op, OpBuilder, SymbolName,
+    SymbolPath, SymbolTable, Visibility,
     constants::ConstantData,
     dialects::builtin::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
@@ -63,10 +64,9 @@ pub fn translate_module_as_component(
 
     // The wrapper is rooted at the target namespace, or at the module's name when there is none
     let module_name = parsed_module.module.name().as_str();
-    let namespace = config
-        .namespace
-        .clone()
-        .unwrap_or_else(|| SymbolPath::from_masm_module_id(module_name));
+    let namespace = config.namespace.clone().unwrap_or_else(|| {
+        SymbolPath::from_masm_module_id(&program_wrapper_name(module_name, &world_ref.borrow()))
+    });
     let component_name = namespace.to_symbol_name();
     let mut component_ref =
         world_builder.define_component(Ident::with_empty_span(component_name))?;
@@ -95,6 +95,36 @@ pub fn translate_module_as_component(
         component: component_ref,
         sections,
     })
+}
+
+/// Returns the name of the wrapper component of a program without a target namespace: the core
+/// module's name, unless it would nest with one of the library trees in
+/// [`RESERVED_NAMESPACE_PREFIXES`], in which case the first of `<module>_program`,
+/// `<module>_program2`, … that `world` does not define yet.
+fn program_wrapper_name(module_name: &str, world: &World) -> String {
+    // `zip` stops at the shorter path, so this holds when either path is a segment-prefix of the
+    // other.
+    let nests_with_library = RESERVED_NAMESPACE_PREFIXES.iter().any(|prefix| {
+        prefix
+            .split("::")
+            .zip(module_name.split("::"))
+            .all(|(reserved, segment)| reserved == segment)
+    });
+    if !nests_with_library {
+        return module_name.to_string();
+    }
+    let name = (1..)
+        .map(|n| match n {
+            1 => format!("{module_name}_program"),
+            n => format!("{module_name}_program{n}"),
+        })
+        .find(|candidate| world.get(SymbolName::intern(candidate)).is_none())
+        .expect("the candidate names are unbounded");
+    log::debug!(
+        "program module `{module_name}` is named like a library root, naming its wrapper \
+         component `{name}`"
+    );
+    name
 }
 
 pub fn build_ir_module(
@@ -326,4 +356,38 @@ fn build_data_segments(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use midenc_hir::Context;
+
+    use crate::{WasmTranslationConfig, translate};
+
+    /// A program module named like a library root (here `intrinsics`, which declares the
+    /// `intrinsics::crypto` stub tree it calls into) gets a wrapper name that does not nest with
+    /// that library.
+    #[test]
+    fn a_program_named_like_a_library_root_gets_a_distinct_wrapper() {
+        let wasm = wat::parse_str(
+            r#"
+            (module $intrinsics
+                (memory (;0;) 16384)
+                (func $intrinsics::crypto::hmerge (param i32 i32)
+                    unreachable)
+                (func $entrypoint (param i32 i32)
+                    local.get 0
+                    local.get 1
+                    call $intrinsics::crypto::hmerge)
+                (export "entrypoint" (func $entrypoint))
+            )"#,
+        )
+        .unwrap();
+        let context = Rc::new(Context::default());
+        let output = translate(&wasm, &WasmTranslationConfig::default(), context)
+            .unwrap_or_else(|err| panic!("translation failed: {err}"));
+        assert_eq!(output.component.borrow().name().as_str(), "intrinsics_program");
+    }
 }
