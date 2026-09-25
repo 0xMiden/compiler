@@ -8,11 +8,11 @@ use midenc_dialect_hir::{
 };
 use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
-    FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolName, SymbolPath, SymbolTable, Type,
-    ValueRange, ValueRef, Visibility,
+    FunctionType, Ident, Op, OpExt, SmallVec, Spanned, Symbol, SymbolPath, Type, ValueRange,
+    ValueRef, Visibility,
     dialects::{
         builtin::{
-            BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, ModuleRef,
+            BuiltinOpBuilder, ComponentBuilder, FunctionRef, Module, ModuleBuilder,
             attributes::{AbiParam, Signature, UnitAttr},
         },
         debuginfo::attributes::{CompileUnit, CompileUnitAttr, Subprogram, SubprogramAttr},
@@ -44,22 +44,21 @@ struct ComponentExportMetadata<'a> {
     param_names: &'a [String],
 }
 
-/// Generates a lifted component export wrapper around a lowered core Wasm export.
+/// Generates a lifted component export wrapper around the lowered core Wasm export
+/// `core_export_func_ref`.
 ///
 /// The wrapper is defined in the component as `export_func_name`, the leaf of the export's Miden
-/// path. The core function at `core_export_func_path` becomes internal and takes the same leaf
-/// name when the core module has no other symbol by that name.
-///
-/// Returns the name of the core function after this renaming.
+/// path. The core function becomes internal, so only the wrapper is exported by the component.
 pub fn generate_export_lifting_function(
     component_builder: &mut ComponentBuilder,
+    mut core_export_func_ref: FunctionRef,
     export_func_name: &str,
     export_func_ty: ComponentFunctionType,
     export_param_names: &[String],
-    core_export_func_path: SymbolPath,
     protocol_export_kind: Option<ProtocolExportKind>,
     diagnostics: &DiagnosticsHandler,
-) -> WasmResult<SymbolName> {
+) -> WasmResult<()> {
+    let core_export_func_path = core_export_func_ref.borrow().path();
     reject_unsupported_export_canonical_abi_types(&core_export_func_path, &export_func_ty)?;
     let context = { component_builder.component.borrow().as_operation().context_rc() };
     let cross_ctx_export_sig_flat =
@@ -93,25 +92,18 @@ pub fn generate_export_lifting_function(
         param_names: export_param_names,
     };
 
-    let core_export_module_path = core_export_func_path.without_leaf();
-    let core_module_ref = component_builder
-        .resolve_module(&core_export_module_path)
-        .expect("failed to find the core module");
-
-    let mut core_module_builder = ModuleBuilder::new(core_module_ref);
-    let core_export_func_ref = core_module_builder
-        .get_function(core_export_func_path.name().as_str())
-        .expect("failed to find the core module export function");
+    let core_module_ref = core_export_func_ref
+        .borrow()
+        .nearest_parent_op::<Module>()
+        .expect("a core function is defined in a core module");
+    let core_module_builder = ModuleBuilder::new(core_module_ref);
     let export_func_span = core_export_func_ref.borrow().span();
     let export_func_ident =
         Ident::new(midenc_hir::interner::Symbol::intern(export_func_name), export_func_span);
     // Make the lowered core WASM export internal so only the lifted wrapper is
     // publicly exported from the component, while still allowing the wrapper to
     // call across the nested core module symbol table boundary.
-    core_module_builder
-        .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Internal);
-    let core_func_name =
-        name_core_export_by_leaf(core_module_ref, &core_export_func_path, export_func_ident.name)?;
+    *core_export_func_ref.borrow_mut().get_linkage_mut() = Visibility::Internal;
     let core_export_func_sig = core_export_func_ref.borrow().get_signature().clone();
 
     let export_func_ref = if transformation.is_needed() {
@@ -141,34 +133,7 @@ pub fn generate_export_lifting_function(
         retarget_note_script_root_ops(&core_module_builder, export_func_ref);
     }
 
-    Ok(core_func_name)
-}
-
-/// Renames the core function at `core_export_func_path` (named by its component-model core
-/// export, `<interface id>#<function>`) to `leaf`, the leaf of the export's Miden path, unless the
-/// core module already defines a symbol named `leaf`.
-///
-/// Returns the name the core function has afterwards.
-fn name_core_export_by_leaf(
-    mut core_module_ref: ModuleRef,
-    core_export_func_path: &SymbolPath,
-    leaf: SymbolName,
-) -> WasmResult<SymbolName> {
-    let core_name = core_export_func_path.name();
-    if core_name == leaf {
-        return Ok(core_name);
-    }
-    let mut core_module = core_module_ref.borrow_mut();
-    if core_module.get(leaf).is_some() {
-        log::warn!(
-            target: "component-translator",
-            "keeping the core function name `{core_name}` of export `{leaf}`: the core module \
-             already defines `{leaf}`"
-        );
-        return Ok(core_name);
-    }
-    core_module.rename(core_name, leaf)?;
-    Ok(leaf)
+    Ok(())
 }
 
 /// Generates a lifting function for component exports that require transformation.
@@ -580,8 +545,7 @@ mod tests {
     use alloc::sync::Arc;
 
     use midenc_hir::{
-        CallConv, FunctionType, Ident, SymbolName, SymbolNameComponent, SymbolPath, Type,
-        Visibility,
+        CallConv, FunctionType, Ident, Type, Visibility,
         dialects::builtin::attributes::{AbiParam, Signature},
     };
     use midenc_session::DiagnosticsHandler;
@@ -591,13 +555,6 @@ mod tests {
         component_function, component_with_core_module, count_validation_ops,
         two_field_record_type, unit_only_variant_type,
     };
-
-    fn component_export_path(function: &str) -> SymbolPath {
-        SymbolPath::from_iter([
-            SymbolNameComponent::Component(SymbolName::intern("core")),
-            SymbolNameComponent::Leaf(SymbolName::intern(function)),
-        ])
-    }
 
     fn scalar_u64_type() -> Type {
         Type::U64
@@ -618,7 +575,7 @@ mod tests {
             results: vec![AbiParam::new(Type::I32)],
             cc: CallConv::ComponentModel,
         };
-        module_builder
+        let core_func = module_builder
             .define_function(
                 Ident::with_empty_span("roundtrip_core".into()),
                 Visibility::Public,
@@ -628,10 +585,10 @@ mod tests {
 
         generate_export_lifting_function(
             &mut component_builder,
+            core_func,
             "roundtrip",
             export_func_ty,
             &["value".to_string()],
-            component_export_path("roundtrip_core"),
             None,
             &DiagnosticsHandler::default(),
         )
@@ -647,7 +604,7 @@ mod tests {
     }
 
     #[test]
-    fn core_export_is_renamed_to_miden_leaf_unless_taken() {
+    fn lifted_core_function_keeps_its_name_and_becomes_internal() {
         let (_context, mut component_builder, mut module_builder) = component_with_core_module();
 
         let mut ir = FunctionType::new(CallConv::Fast, vec![Type::Felt], vec![Type::Felt]);
@@ -657,36 +614,28 @@ mod tests {
             results: vec![AbiParam::new(Type::Felt)],
             cc: CallConv::ComponentModel,
         };
-        for name in ["miden:test/x@1.0.0#get-count", "miden:test/x@1.0.0#taken", "taken"] {
-            module_builder
-                .define_function(
-                    Ident::with_empty_span(name.into()),
-                    Visibility::Public,
-                    core_sig.clone(),
-                )
-                .expect("failed to define core function");
-        }
-
-        for (leaf, core_name) in [
-            ("get_count", "miden:test/x@1.0.0#get-count"),
-            ("taken", "miden:test/x@1.0.0#taken"),
-        ] {
-            generate_export_lifting_function(
-                &mut component_builder,
-                leaf,
-                ComponentFunctionType { ir: ir.clone() },
-                &["value".to_string()],
-                component_export_path(core_name),
-                None,
-                &DiagnosticsHandler::default(),
+        let core_func = module_builder
+            .define_function(
+                Ident::with_empty_span("get_count".into()),
+                Visibility::Public,
+                core_sig,
             )
-            .expect("export lifting should build");
-        }
+            .expect("failed to define core function");
 
-        assert!(module_builder.get_function("get_count").is_some());
-        assert!(module_builder.get_function("miden:test/x@1.0.0#get-count").is_none());
-        // `taken` already names another core function, so the export shim keeps its name.
-        assert!(module_builder.get_function("miden:test/x@1.0.0#taken").is_some());
+        generate_export_lifting_function(
+            &mut component_builder,
+            core_func,
+            "get_count",
+            ComponentFunctionType { ir },
+            &["value".to_string()],
+            None,
+            &DiagnosticsHandler::default(),
+        )
+        .expect("export lifting should build");
+
+        let core_func = module_builder.get_function("get_count").expect("core function exists");
+        assert_eq!(core_func.borrow().visibility(), Visibility::Internal);
+        component_function(&component_builder, "get_count");
     }
 
     #[test]
@@ -703,7 +652,7 @@ mod tests {
             results: vec![AbiParam::new(Type::I32)],
             cc: CallConv::ComponentModel,
         };
-        module_builder
+        let core_func = module_builder
             .define_function(
                 Ident::with_empty_span("mismatched_core".into()),
                 Visibility::Public,
@@ -713,10 +662,10 @@ mod tests {
 
         let result = generate_export_lifting_function(
             &mut component_builder,
+            core_func,
             "mismatched",
             export_func_ty,
             &[],
-            component_export_path("mismatched_core"),
             None,
             &DiagnosticsHandler::default(),
         );
@@ -748,7 +697,7 @@ mod tests {
             results: vec![AbiParam::new(Type::I32)],
             cc: CallConv::ComponentModel,
         };
-        module_builder
+        let core_func = module_builder
             .define_function(
                 Ident::with_empty_span("mismatched_core".into()),
                 Visibility::Public,
@@ -758,10 +707,10 @@ mod tests {
 
         let result = generate_export_lifting_function(
             &mut component_builder,
+            core_func,
             "mismatched",
             export_func_ty,
             &["value".to_string()],
-            component_export_path("mismatched_core"),
             None,
             &DiagnosticsHandler::default(),
         );
@@ -790,7 +739,7 @@ mod tests {
             results: vec![],
             cc: CallConv::ComponentModel,
         };
-        module_builder
+        let core_func = module_builder
             .define_function(
                 Ident::with_empty_span("list_core".into()),
                 Visibility::Public,
@@ -800,10 +749,10 @@ mod tests {
 
         let result = generate_export_lifting_function(
             &mut component_builder,
+            core_func,
             "list_param",
             export_func_ty,
             &["value".to_string()],
-            component_export_path("list_core"),
             None,
             &DiagnosticsHandler::default(),
         );

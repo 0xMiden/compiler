@@ -4,11 +4,12 @@ use cranelift_entity::PrimaryMap;
 use midenc_dialect_hir::WASM_COMPONENT_START_ATTR;
 use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
 use midenc_hir::{
-    self as hir2, BuilderExt, CallConv, Context, FxHashMap, FxHashSet, Ident, OpExt, Symbol as _,
-    SymbolName, SymbolNameComponent, SymbolPath, SymbolTable,
+    self as hir2, BuilderExt, Context, FxHashMap, FxHashSet, Ident, OpExt, SymbolName,
+    SymbolNameComponent, SymbolPath, SymbolTable,
     diagnostics::Report,
     dialects::builtin::{
-        ComponentBuilder, Module, ModuleBuilder, World, WorldBuilder, attributes::UnitAttr,
+        ComponentBuilder, FunctionRef, Module, ModuleBuilder, World, WorldBuilder,
+        attributes::UnitAttr,
     },
     formatter::DisplayValues,
     interner::Symbol,
@@ -29,7 +30,7 @@ use super::{
 use crate::{
     FrontendOutput, WasmTranslationConfig,
     component::{
-        ComponentItem, LocalInitializer, StaticComponentIndex,
+        ComponentItem, LocalInitializer, StaticComponentIndex, core_names,
         lift_exports::generate_export_lifting_function,
         naming::{ExportPaths, external_id_path},
     },
@@ -41,7 +42,7 @@ use crate::{
             ParsedModule, collect_package_sections, merge_frontend_metadata,
             validate_lifted_frontend_metadata_exports,
         },
-        module_translation_state::ModuleTranslationState,
+        module_translation_state::{ModuleTranslationState, core_import_path},
         types::{EntityIndex, FuncIndex},
     },
     unsupported_diag,
@@ -83,10 +84,19 @@ pub struct ComponentTranslator<'a> {
     /// Miden paths of the component exports for which a lifting shim was emitted.
     lifted_export_paths: FxHashSet<String>,
 
-    /// The current HIR names of the core functions whose name differs from the parsed one: the
-    /// import stubs named by their Miden paths, and the functions renamed after the exports they
-    /// back.
-    core_func_names: FxHashMap<(StaticModuleIndex, FuncIndex), SymbolName>,
+    /// The core module instances to translate, in instantiation order.
+    ///
+    /// Their HIR is built after the initializer walk: the core functions are named after the
+    /// exports they back, and wit-component lifts an interface's functions only after the core
+    /// module is instantiated (and after the exports of the preceding interfaces).
+    pending_modules: Vec<PendingModule>,
+
+    /// The component exports to lift once the core modules are translated, in export order.
+    pending_exports: Vec<PendingExport>,
+
+    /// The core function a folded startup adapter runs, marked once the core modules are
+    /// translated.
+    pending_start: Option<(StaticModuleIndex, FuncIndex)>,
 
     /// For each Miden path of a lowered import, the core-import path of the first import that
     /// lowers to it.
@@ -94,9 +104,28 @@ pub struct ComponentTranslator<'a> {
 
     /// Information about shim modules to bypass
     shim_bypass_info: ShimBypassInfo,
+}
 
-    /// Whether this component has already folded a supported core Wasm startup adapter.
-    has_component_start: bool,
+/// A core module instance whose translation waits for the end of the initializer walk.
+struct PendingModule {
+    /// The instantiated module.
+    static_module_idx: StaticModuleIndex,
+    /// The instantiation arguments filling the module's imports, keyed by core-import path.
+    import_canon_lower_args: FxHashMap<SymbolPath, ModuleArgument>,
+}
+
+/// A component export whose lifting waits for the translation of the core modules.
+struct PendingExport {
+    /// The core function the export lifts.
+    core_func: (StaticModuleIndex, FuncIndex),
+    /// The Miden path of the export.
+    path: SymbolPath,
+    /// The component-level type of the export.
+    func_ty: ComponentFunctionType,
+    /// The parameter names of the export.
+    param_names: Box<[String]>,
+    /// The protocol role of the export, if any.
+    protocol_export_kind: Option<ProtocolExportKind>,
 }
 
 impl<'a> ComponentTranslator<'a> {
@@ -175,9 +204,10 @@ impl<'a> ComponentTranslator<'a> {
             component_frontend_metadata,
             export_paths,
             lifted_export_paths: FxHashSet::default(),
-            core_func_names: FxHashMap::default(),
+            pending_modules: Vec::new(),
+            pending_exports: Vec::new(),
+            pending_start: None,
             import_cm_paths: FxHashMap::default(),
-            has_component_start: false,
         })
     }
 
@@ -194,6 +224,7 @@ impl<'a> ComponentTranslator<'a> {
         for init in &root_component.initializers {
             self.initializer(&mut frame, types, init)?;
         }
+        self.translate_pending(types)?;
 
         validate_lifted_frontend_metadata_exports(
             &self.component_frontend_metadata,
@@ -514,8 +545,8 @@ impl<'a> ComponentTranslator<'a> {
         Ok(())
     }
 
-    /// Defines the lifted function of a component export at its Miden path `path`, which is
-    /// `<component namespace>::<leaf>`.
+    /// Records the lifted function of a component export at its Miden path `path`, which is
+    /// `<component namespace>::<leaf>`, to be defined once the core modules are translated.
     fn define_component_export_lift_func(
         &mut self,
         frame: &ComponentFrame<'a>,
@@ -529,29 +560,125 @@ impl<'a> ComponentTranslator<'a> {
         let type_func_idx = types.convert_component_func_type(frame.types, canon_lift.ty).unwrap();
 
         let component_types = types.resources_mut_and_types().1;
-        let type_func = component_types[type_func_idx].clone();
+        let param_names = component_types[type_func_idx].param_names.clone();
         let func_ty =
             convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
-        let (core_func, core_export_func_path) =
-            self.core_module_export_func_path(frame, canon_lift);
-        self.ensure_export_leaf_is_free(path)?;
+        let core_func = self.core_func_of_lift(frame, canon_lift);
         let path_name = path.to_string();
         let protocol_export_kind: Option<ProtocolExportKind> = self
             .component_frontend_metadata
             .iter()
             .find_map(|metadata| metadata.protocol_export_kind_for(&path_name));
 
-        let core_func_name = generate_export_lifting_function(
-            &mut self.result,
-            path.name().as_str(),
+        self.pending_exports.push(PendingExport {
+            core_func,
+            path: path.clone(),
             func_ty,
-            &type_func.param_names,
-            core_export_func_path,
+            param_names,
             protocol_export_kind,
-            self.context.diagnostics(),
-        )?;
-        self.core_func_names.insert(core_func, core_func_name);
-        self.lifted_export_paths.insert(path_name);
+        });
+        Ok(())
+    }
+
+    /// Translates the recorded core modules, marks the startup function and lifts the recorded
+    /// exports.
+    fn translate_pending(&mut self, types: &ComponentTypesBuilder) -> WasmResult<()> {
+        let mut core_funcs: FxHashMap<(StaticModuleIndex, FuncIndex), FunctionRef> =
+            FxHashMap::default();
+        for PendingModule {
+            static_module_idx,
+            import_canon_lower_args,
+        } in core::mem::take(&mut self.pending_modules)
+        {
+            let parsed_module = self.nested_modules.get_mut(static_module_idx).unwrap();
+            parsed_module.module.set_name_fallback(self.config.source_name.clone());
+            if let Some(name_override) = self.config.override_name.as_ref() {
+                parsed_module.module.set_name_override(name_override.clone());
+            }
+
+            let module = &parsed_module.module;
+            let exports = self
+                .pending_exports
+                .iter()
+                .filter(|export| export.core_func.0 == static_module_idx)
+                .map(|export| (export.core_func.1, &export.path));
+            let imports = module
+                .functions
+                .keys()
+                .filter(|index| module.is_imported_function(*index))
+                .filter_map(|index| {
+                    let import = &module.imports[index.as_u32() as usize];
+                    match import_canon_lower_args.get(&core_import_path(import)) {
+                        Some(ModuleArgument::ComponentImport { path, .. }) => Some((index, path)),
+                        _ => None,
+                    }
+                });
+            let names = core_names::assign(module, exports, imports)?;
+
+            let module_types = types.module_types_builder();
+            let module_name = module.name().as_str();
+            let module_ref = self.result.define_module(Ident::from(module_name)).unwrap();
+            let mut module_builder = ModuleBuilder::new(module_ref);
+            let mut module_state = ModuleTranslationState::new(
+                module,
+                &mut module_builder,
+                &mut self.world_builder,
+                module_types,
+                import_canon_lower_args,
+                &names,
+                self.context.diagnostics(),
+            )?;
+            build_ir_module(
+                parsed_module,
+                module_types,
+                &mut module_state,
+                self.config,
+                self.context.clone(),
+            )?;
+            core_funcs.extend(
+                module_state
+                    .defined_functions()
+                    .map(|(func_idx, function_ref)| ((static_module_idx, func_idx), function_ref)),
+            );
+        }
+
+        if let Some(start) = self.pending_start {
+            let Some(mut function_ref) = core_funcs.get(&start).copied() else {
+                unsupported_diag!(
+                    self.context.diagnostics(),
+                    "failed to resolve the core Wasm startup adapter target function"
+                )
+            };
+            let marker = self.context.create_attribute::<UnitAttr, _>(());
+            function_ref.borrow_mut().set_attribute(WASM_COMPONENT_START_ATTR, marker);
+        }
+
+        for PendingExport {
+            core_func,
+            path,
+            func_ty,
+            param_names,
+            protocol_export_kind,
+        } in core::mem::take(&mut self.pending_exports)
+        {
+            self.ensure_export_leaf_is_free(&path)?;
+            let Some(core_func_ref) = core_funcs.get(&core_func).copied() else {
+                return Err(Report::msg(format!(
+                    "the core function lifted as `{path}` is not defined by a translated core \
+                     module"
+                )));
+            };
+            generate_export_lifting_function(
+                &mut self.result,
+                core_func_ref,
+                path.name().as_str(),
+                func_ty,
+                &param_names,
+                protocol_export_kind,
+                self.context.diagnostics(),
+            )?;
+            self.lifted_export_paths.insert(path.to_string());
+        }
         Ok(())
     }
 
@@ -581,13 +708,12 @@ impl<'a> ComponentTranslator<'a> {
         Err(Report::msg(message))
     }
 
-    /// Returns the core function `canon_lift` lifts, identified by its static module and index,
-    /// with its current path in the component.
-    fn core_module_export_func_path(
+    /// Returns the core function `canon_lift` lifts, identified by its static module and index.
+    fn core_func_of_lift(
         &self,
         frame: &ComponentFrame<'a>,
         canon_lift: &CanonLift,
-    ) -> ((StaticModuleIndex, FuncIndex), SymbolPath) {
+    ) -> (StaticModuleIndex, FuncIndex) {
         match &frame.funcs[canon_lift.func] {
             CoreDef::Export(module_instance_idx, name) => {
                 match &frame.module_instances[*module_instance_idx] {
@@ -598,21 +724,7 @@ impl<'a> ComponentTranslator<'a> {
                         ModuleDef::Static(static_module_idx) => {
                             let parsed_module = &self.nested_modules[static_module_idx];
                             let func_idx = parsed_module.module.exports[*name].unwrap_func();
-                            let core_func = (static_module_idx, func_idx);
-                            // An earlier lift of the same core function may have renamed it.
-                            let func_name = self
-                                .core_func_names
-                                .get(&core_func)
-                                .copied()
-                                .unwrap_or_else(|| parsed_module.module.func_name(func_idx));
-                            let module_ident = parsed_module.module.name();
-                            let path = SymbolPath {
-                                path: smallvec![
-                                    SymbolNameComponent::Component(module_ident.as_symbol()),
-                                    SymbolNameComponent::Leaf(func_name)
-                                ],
-                            };
-                            (core_func, path)
+                            (static_module_idx, func_idx)
                         }
                         ModuleDef::Import(_) => {
                             panic!("expected static module")
@@ -654,7 +766,7 @@ impl<'a> ComponentTranslator<'a> {
             ModuleDef::Import(_) => None,
         };
         if let Some(adapter) = startup_adapter {
-            return self.fold_startup_adapter(frame, module_idx, args, adapter);
+            return self.fold_startup_adapter(frame, types, module_idx, args, adapter);
         }
 
         // Check if this module instantiation should be skipped (shim or fixup)
@@ -694,7 +806,6 @@ impl<'a> ComponentTranslator<'a> {
             FxHashMap::default();
         match frame.modules[*module_idx] {
             ModuleDef::Static(static_module_idx) => {
-                let parsed_module = self.nested_modules.get_mut(static_module_idx).unwrap();
                 for module_arg in args {
                     let arg_module_name = module_arg.0;
                     let module_path = SymbolPath {
@@ -759,41 +870,10 @@ impl<'a> ComponentTranslator<'a> {
                     }
                 }
 
-                let module_types = types.module_types_builder();
-                parsed_module.module.set_name_fallback(self.config.source_name.clone());
-                if let Some(name_override) = self.config.override_name.as_ref() {
-                    parsed_module.module.set_name_override(name_override.clone());
-                }
-
-                let module_name = parsed_module.module.name().as_str();
-                let module_ref = self.result.define_module(Ident::from(module_name)).unwrap();
-                let mut module_builder = ModuleBuilder::new(module_ref);
-                let mut module_state = ModuleTranslationState::new(
-                    &parsed_module.module,
-                    &mut module_builder,
-                    &mut self.world_builder,
-                    module_types,
+                self.pending_modules.push(PendingModule {
+                    static_module_idx,
                     import_canon_lower_args,
-                    self.context.diagnostics(),
-                )?;
-
-                build_ir_module(
-                    parsed_module,
-                    module_types,
-                    &mut module_state,
-                    self.config,
-                    self.context.clone(),
-                )?;
-                // Import stubs are named by their Miden paths, so a lift of a core export that
-                // re-exports an import must find the stub under that name.
-                let stub_names: Vec<_> =
-                    module_state.import_stub_names(&parsed_module.module).collect();
-                drop(module_state);
-                self.core_func_names.extend(
-                    stub_names
-                        .into_iter()
-                        .map(|(func_idx, name)| ((static_module_idx, func_idx), name)),
-                );
+                });
             }
             ModuleDef::Import(_) => {
                 panic!("Module import instantiation is not supported yet")
@@ -802,15 +882,17 @@ impl<'a> ComponentTranslator<'a> {
         Ok(())
     }
 
-    /// Fold a supported startup adapter and mark the defined function it resolves to.
+    /// Fold a supported startup adapter and record the defined function it resolves to, which is
+    /// marked once the core modules are translated.
     fn fold_startup_adapter(
         &mut self,
         frame: &mut ComponentFrame<'a>,
+        types: &ComponentTypesBuilder,
         module_idx: &ModuleIndex,
         args: &'a FxHashMap<&str, ModuleInstanceIndex>,
         adapter: StartupAdapter,
     ) -> Result<(), Report> {
-        if self.has_component_start {
+        if self.pending_start.is_some() {
             unsupported_diag!(
                 self.context.diagnostics(),
                 "multiple core Wasm startup adapters in one component are not supported"
@@ -884,46 +966,18 @@ impl<'a> ComponentTranslator<'a> {
             )
         }
 
-        let module_name = target_module.name();
-        let function_name = target_module.func_name(target_func_idx);
-        let module_path = SymbolPath {
-            path: smallvec![SymbolNameComponent::Component(module_name.as_symbol())],
-        };
-        let Some(module_ref) = self.result.resolve_module(&module_path) else {
+        // Core functions are translated with the `C` calling convention, so the Wasm signature
+        // decides whether the target fits.
+        let signature =
+            &types.module_types_builder()[target_module.functions[target_func_idx].signature];
+        if !signature.params().is_empty() || !signature.returns().is_empty() {
             unsupported_diag!(
                 self.context.diagnostics(),
-                "failed to resolve core Wasm startup adapter target module '{module_name}'"
+                "core Wasm startup adapter target must be a defined `C` function with signature \
+                 `() -> ()`"
             )
-        };
-        let Some(mut function_ref) =
-            ModuleBuilder::new(module_ref).get_function(function_name.as_str())
-        else {
-            unsupported_diag!(
-                self.context.diagnostics(),
-                "failed to resolve core Wasm startup adapter target function \
-                 '{module_name}::{function_name}'"
-            )
-        };
-
-        {
-            let function = function_ref.borrow();
-            let signature = function.get_signature();
-            if function.is_declaration()
-                || signature.calling_convention() != CallConv::C
-                || !signature.params().is_empty()
-                || !signature.results().is_empty()
-            {
-                unsupported_diag!(
-                    self.context.diagnostics(),
-                    "core Wasm startup adapter target must be a defined `C` function with \
-                     signature `() -> ()`"
-                )
-            }
         }
-
-        let marker = self.context.create_attribute::<UnitAttr, _>(());
-        function_ref.borrow_mut().set_attribute(WASM_COMPONENT_START_ATTR, marker);
-        self.has_component_start = true;
+        self.pending_start = Some((target_static_module_idx, target_func_idx));
 
         // Preserve component-model instance index numbering without emitting HIR for the adapter.
         frame.module_instances.push(ModuleInstanceDef::Instantiated {

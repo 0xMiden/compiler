@@ -5,6 +5,7 @@
 
 pub(crate) mod build_ir;
 mod canon_abi_utils;
+mod core_names;
 mod flat;
 mod lift_exports;
 pub(crate) mod lower_imports;
