@@ -831,6 +831,55 @@ mod tests {
         );
     }
 
+    /// The module giving way to an export also avoids the name of another core module.
+    #[test]
+    fn a_core_module_giving_way_avoids_the_other_modules() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $swap
+                    (func (export "swap") (result i32) i32.const 0)
+                )
+                (core module $swap_core
+                    (func (export "other") (result i32) i32.const 1)
+                )
+                (core instance $i (instantiate $swap))
+                (core instance $j (instantiate $swap_core))
+                (func $lifted (result u32) (canon lift (core func $i "swap")))
+                (func $other (result u32) (canon lift (core func $j "other")))
+                (component $shim
+                    (import "import-func-swap" (func $f (result u32)))
+                    (import "import-func-other" (func $g (result u32)))
+                    (export "swap" (external-id "miden::swap::swap::swap") (func $f))
+                    (export "other" (external-id "miden::swap::swap::other") (func $g))
+                )
+                (instance $exports (instantiate $shim
+                    (with "import-func-swap" (func $lifted))
+                    (with "import-func-other" (func $other))
+                ))
+                (export "miden:swap/swap@0.1.0" (instance $exports))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let context = Rc::default();
+        let output = translate_with(&context, &wasm, None).expect("component should translate");
+        let component = output.component.borrow();
+        for module in ["swap_core", "swap_core2"] {
+            assert!(
+                component
+                    .get(SymbolName::intern(module))
+                    .is_some_and(|module| module.borrow().as_symbol_operation().is::<Module>()),
+                "the core module `{module}` is defined"
+            );
+        }
+        let hir = component.as_operation().to_string();
+        assert!(
+            hir.contains("hir.exec ::@miden::@swap::@swap::@swap_core2::@swap"),
+            "the first core module is renamed to `swap_core2`:\n{hir}"
+        );
+    }
+
     #[test]
     fn a_core_module_named_by_a_path_is_rejected() {
         let wasm = wat::parse_str(
