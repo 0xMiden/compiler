@@ -1,6 +1,7 @@
 //! Shared definitions for the out-of-band metadata exchanged between the Miden SDK macros and
 //! the compiler: Wasm custom-section names and encodings, and the package-section payloads
-//! carried through the compiler pipeline into the compiled Miden package (`.masp`).
+//! carried through the compiler pipeline into the compiled Miden package (`.masp`), and the
+//! component namespace rule the SDK and its tooling share.
 
 #![deny(warnings)]
 #![deny(missing_docs)]
@@ -8,6 +9,8 @@
 #![no_std]
 
 extern crate alloc;
+
+pub mod namespace;
 
 use alloc::{string::String, vec::Vec};
 

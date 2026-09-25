@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn a_component_project_name_yielding_an_invalid_namespace_is_refused() {
         let scratch = tempfile::tempdir().expect("create scratch directory");
-        for name in ["123abc", "list"] {
+        for name in ["123abc", "list", "gen"] {
             let path = scratch.path().join(name);
             let err = NewCommand {
                 path: path.clone(),

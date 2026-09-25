@@ -40,8 +40,9 @@ pub(crate) fn wit_bindgen_guest_ident(wit_name: &str, span: Span) -> syn::Ident 
 /// Renders WIT's explicit identifier form.
 ///
 /// Explicit identifiers are valid for both keywords and ordinary identifiers. Using this form for
-/// every Rust-derived name keeps generated interfaces valid without duplicating WIT's evolving
-/// keyword list in the macro.
+/// every Rust-derived function, parameter, field and case name keeps them valid without checking
+/// them against WIT's keyword list; type, package and interface names are rendered bare and
+/// still are.
 pub(crate) fn explicit_wit_identifier(name: &str) -> String {
     format!("%{name}")
 }
