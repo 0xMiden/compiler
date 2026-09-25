@@ -301,10 +301,11 @@ impl SymbolMap {
     ///
     /// A leading `Leaf` is looked up as-is: leaf names are opaque, even when they contain `::`.
     /// Otherwise, the lookup matches the **longest run of leading `Component`s whose `::`-join is
-    /// a registered name**, since a symbol-table op may be named by a `::`-joined path (see
-    /// [SymbolPath::segments_of]). For example, a component named `miden::a::b` coexists with a
-    /// module tree rooted at `miden` in the same table; the path `miden::a::b::m::f` resolves
-    /// through the component, because the longest registered name wins.
+    /// the registered name of a symbol table**, since a symbol-table op may be named by a
+    /// `::`-joined path (see [SymbolPath::segments_of]). For example, a component named
+    /// `miden::a::b` coexists with a module tree rooted at `miden` in the same table; the path
+    /// `miden::a::b::m::f` resolves through the component, because the longest registered name
+    /// wins.
     fn lookup_prefix<'a>(
         &self,
         components: &'a [SymbolNameComponent],
@@ -320,7 +321,12 @@ impl SymbolMap {
                 // lookup of `first` below, which also covers a run of one `Component`.
                 for len in (2..=run.min(self.max_name_segments)).rev() {
                     let name = SymbolPath::join_components(&components[..len]);
-                    if let Some(op) = self.get_op(name) {
+                    // Only a symbol table can have the remaining components resolved inside
+                    // it; any other symbol whose opaque name happens to spell the joined path
+                    // must not capture the lookup.
+                    if let Some(op) = self.get_op(name)
+                        && op.borrow().implements::<dyn SymbolTable>()
+                    {
                         return Some((op, &components[len..]));
                     }
                 }
