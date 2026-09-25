@@ -72,6 +72,10 @@ pub struct ComponentTranslator<'a> {
     world_builder: WorldBuilder,
     result: ComponentBuilder,
 
+    /// The name of the component being translated (its `::`-joined namespace path), which every
+    /// import must lie outside of.
+    namespace: SymbolName,
+
     context: Rc<Context>,
 
     /// Frontend metadata entries merged across all core modules that feed this component
@@ -200,6 +204,7 @@ impl<'a> ComponentTranslator<'a> {
             nested_components,
             world_builder,
             result,
+            namespace: name,
             shim_bypass_info: ShimBypassInfo::default(),
             component_frontend_metadata,
             export_paths,
@@ -647,6 +652,7 @@ impl<'a> ComponentTranslator<'a> {
                 &mut self.world_builder,
                 module_types,
                 import_canon_lower_args,
+                self.namespace,
                 &names,
                 self.context.diagnostics(),
             )?;
@@ -887,12 +893,6 @@ impl<'a> ComponentTranslator<'a> {
                                         signature,
                                         path,
                                         first_cm_path,
-                                        namespace: self
-                                            .result
-                                            .component
-                                            .borrow()
-                                            .namespace_path()
-                                            .to_symbol_name(),
                                     },
                                 );
                             }
