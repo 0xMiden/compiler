@@ -7,7 +7,6 @@ use syn::spanned::Spanned;
 use crate::{
     component_macro::{
         ComponentMethod, MethodReturn, export_path, reject_method_type_name_collisions,
-        to_kebab_case,
     },
     namespace::ComponentNamespace,
     types::{ExportedTypeDef, ExportedTypeKind, ensure_custom_type_defined},
@@ -89,7 +88,7 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
                     ExportedTypeKind::Record { fields } => {
                         interface.block(&format!("record {} {{", exported.wit_name), |record| {
                             for field in fields {
-                                let field_name = to_kebab_case(&field.name);
+                                let field_name = explicit_wit_identifier(&field.wit_name);
                                 record.line(&format!("{field_name}: {},", field.ty.wit_name));
                             }
                         });
@@ -99,13 +98,12 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
                             &format!("variant {} {{", exported.wit_name),
                             |variant_block| {
                                 for variant in variants {
+                                    let case_name = explicit_wit_identifier(&variant.wit_name);
                                     if let Some(payload) = &variant.payload {
-                                        variant_block.line(&format!(
-                                            "{}({}),",
-                                            variant.wit_name, payload.wit_name
-                                        ));
+                                        variant_block
+                                            .line(&format!("{case_name}({}),", payload.wit_name));
                                     } else {
-                                        variant_block.line(&format!("{},", variant.wit_name));
+                                        variant_block.line(&format!("{case_name},"));
                                     }
                                 }
                             },

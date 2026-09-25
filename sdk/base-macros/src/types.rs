@@ -10,7 +10,9 @@ use proc_macro2::Span;
 use syn::{ItemStruct, Type, spanned::Spanned};
 use wit_bindgen_core::wit_parser::Type as WitType;
 
-use crate::{manifest_paths::SDK_WIT_SOURCE, namespace::WIT_KEYWORDS};
+use crate::{
+    manifest_paths::SDK_WIT_SOURCE, namespace::WIT_KEYWORDS, wit_names::rust_ident_to_wit_name,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct TypeRef {
@@ -39,12 +41,14 @@ impl TypeRef {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedField {
-    pub(crate) name: String,
+    /// Canonical WIT name of the field.
+    pub(crate) wit_name: String,
     pub(crate) ty: TypeRef,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedVariant {
+    /// Canonical WIT name of the variant case.
     pub(crate) wit_name: String,
     pub(crate) payload: Option<TypeRef>,
 }
@@ -395,7 +399,7 @@ pub(crate) fn exported_type_from_struct(
                 })?;
                 let field_ty = map_type_to_type_ref(&field.ty, &known_exported)?;
                 fields.push(ExportedField {
-                    name: field_ident.to_string(),
+                    wit_name: rust_ident_to_wit_name(field_ident)?,
                     ty: field_ty,
                 });
             }
@@ -427,7 +431,7 @@ pub(crate) fn exported_type_from_enum(
     let known_exported = registered_export_type_map();
     let mut variants = Vec::new();
     for variant in &item_enum.variants {
-        let wit_name = variant.ident.to_string().to_kebab_case();
+        let wit_name = rust_ident_to_wit_name(&variant.ident)?;
         let payload = match &variant.fields {
             syn::Fields::Unit => None,
             syn::Fields::Unnamed(fields) => {

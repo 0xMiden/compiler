@@ -283,7 +283,7 @@ if none.flag { assert_eq!(felt!(0), felt!(1)); }"#;
             "generated WIT did not define option-field-payload record:\n{wit}"
         );
         assert!(
-            wit.contains("maybe: option<felt>,"),
+            wit.contains("%maybe: option<felt>,"),
             "generated WIT did not use option<felt> for the record field:\n{wit}"
         );
         assert!(

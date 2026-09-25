@@ -3,7 +3,6 @@ use std::{
     env,
 };
 
-use heck::ToKebabCase;
 use miden_project::TargetType;
 use miden_protocol::utils::serde::Serializable;
 use midenc_frontend_wasm_metadata::{
@@ -1279,11 +1278,6 @@ fn is_path_type(ty: &Type) -> bool {
 /// Determines whether a type represents the unit type `()`.
 fn is_unit_type(ty: &Type) -> bool {
     matches!(ty, Type::Tuple(tuple) if tuple.elems.is_empty())
-}
-
-/// Converts a snake_case identifier into kebab-case.
-fn to_kebab_case(name: &str) -> String {
-    name.to_kebab_case()
 }
 
 /// Synthesizes the `Default` implementation for the component struct using the collected storage
