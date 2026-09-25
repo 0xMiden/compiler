@@ -278,4 +278,61 @@ mod tests {
             assert!(err.contains("Rust keyword"), "`{value}`: {err}");
         }
     }
+
+    /// `cargo miden new` keeps its own copy of the keyword rule (a proc-macro crate cannot be its
+    /// dependency): it must hold exactly the WIT keywords plus Rust keywords.
+    #[test]
+    fn cargo_miden_namespace_keywords_follow_the_wit_keywords() {
+        let source = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tools/cargo-miden/src/template.rs"
+        ));
+        let start = source
+            .find("const NAMESPACE_KEYWORDS: &[&str] = &[")
+            .expect("cargo-miden declares `NAMESPACE_KEYWORDS`");
+        let list = &source[start..];
+        let list = &list[list.find("&[").unwrap() + 2..list.find("];").unwrap()];
+        let namespace_keywords: Vec<&str> = list
+            .split(',')
+            .map(str::trim)
+            .filter_map(|entry| entry.strip_prefix('"')?.strip_suffix('"'))
+            .collect();
+        assert!(!namespace_keywords.is_empty(), "no keywords found in cargo-miden's list");
+        // Keywords are snake_case segments (`error_context`); anything else would pass the `syn`
+        // check below without being a keyword.
+        let malformed: Vec<&str> = namespace_keywords
+            .iter()
+            .copied()
+            .filter(|kw| {
+                !kw.starts_with(|c: char| c.is_ascii_lowercase())
+                    || !kw.split('_').all(|word| {
+                        !word.is_empty()
+                            && word.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+                    })
+            })
+            .collect();
+        assert!(
+            malformed.is_empty(),
+            "cargo-miden's `NAMESPACE_KEYWORDS` has entries that are not \
+             `[a-z][a-z0-9]*(_[a-z0-9]+)*`: {malformed:?}"
+        );
+
+        let missing: Vec<&str> = WIT_KEYWORDS
+            .iter()
+            .copied()
+            .filter(|kw| !namespace_keywords.contains(kw))
+            .collect();
+        assert!(missing.is_empty(), "cargo-miden's `NAMESPACE_KEYWORDS` lacks {missing:?}");
+        // The rest must be Rust keywords, which the macros reject through `syn`.
+        let extra: Vec<&str> = namespace_keywords
+            .iter()
+            .copied()
+            .filter(|kw| !WIT_KEYWORDS.contains(kw) && syn::parse_str::<syn::Ident>(kw).is_ok())
+            .collect();
+        assert!(
+            extra.is_empty(),
+            "cargo-miden's `NAMESPACE_KEYWORDS` has entries that are neither WIT nor Rust \
+             keywords: {extra:?}"
+        );
+    }
 }

@@ -267,7 +267,8 @@ pub(crate) fn validated_component_namespace(project_name: &str) -> Result<String
 /// The WIT and Rust keywords a namespace segment may not be.
 ///
 /// Mirrors `WIT_KEYWORDS` and the Rust identifier check of `is_valid_segment` in
-/// `sdk/base-macros/src/namespace.rs` (lowercase keywords only: segments are lowercase).
+/// `sdk/base-macros/src/namespace.rs` (lowercase keywords only: segments are lowercase). A test
+/// there reads this list and fails when it drifts from `WIT_KEYWORDS`.
 const NAMESPACE_KEYWORDS: &[&str] = &[
     "abstract",
     "as",
