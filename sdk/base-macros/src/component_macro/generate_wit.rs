@@ -5,7 +5,10 @@ use semver::Version;
 use syn::spanned::Spanned;
 
 use crate::{
-    component_macro::{ComponentMethod, MethodReturn, export_path, to_kebab_case},
+    component_macro::{
+        ComponentMethod, MethodReturn, export_path, reject_method_type_name_collisions,
+        to_kebab_case,
+    },
     namespace::ComponentNamespace,
     types::{ExportedTypeDef, ExportedTypeKind, ensure_custom_type_defined},
     wit_builder::WitBuilder,
@@ -60,6 +63,10 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
             }
         }
     }
+
+    // Types and functions share the interface's namespace.
+    let interface_type_names = combined_core_imports.iter().chain(&exported_type_names);
+    reject_method_type_name_collisions(spec.methods, interface_type_names)?;
 
     let (wit, result) = WitBuilder::exported_interface(
         "#[component]",
