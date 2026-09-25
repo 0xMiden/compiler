@@ -4270,6 +4270,7 @@ dependencies = [
  "syn 2.0.119",
  "wasmi",
  "wat",
+ "wit-parser",
 ]
 
 [[package]]
