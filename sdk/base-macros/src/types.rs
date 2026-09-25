@@ -365,17 +365,7 @@ fn extract_wit_type_name(line: &str, keyword: &str) -> Option<String> {
 /// Type declarations are rendered bare in the generated WIT, so the name must be a valid WIT
 /// identifier that is not a WIT keyword.
 fn exported_type_wit_name(ident: &syn::Ident) -> Result<String, syn::Error> {
-    let wit_name = ident.to_string().to_kebab_case();
-    if wit_bindgen_core::wit_parser::validate_id(&wit_name).is_err() {
-        return Err(syn::Error::new(
-            ident.span(),
-            format!(
-                "exported type `{ident}` has no valid WIT name (derived `{wit_name}`): WIT names \
-                 are ASCII words `[a-z][a-z0-9]*` joined by `-`, the first starting with a \
-                 letter; rename the type"
-            ),
-        ));
-    }
+    let wit_name = rust_ident_to_wit_name(ident)?;
     if WIT_KEYWORDS.contains(&wit_name.replace('-', "_").as_str()) {
         return Err(syn::Error::new(
             ident.span(),

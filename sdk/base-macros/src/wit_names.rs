@@ -18,7 +18,8 @@ pub(crate) fn rust_ident_to_wit_name(ident: &syn::Ident) -> syn::Result<String> 
             ident.span(),
             format!(
                 "`{ident}` has no valid WIT name (derived `{wit_name}`): WIT names are ASCII \
-                 words `[a-z][a-z0-9]*` joined by `-`, the first starting with a letter; rename it"
+                 kebab-case words of lowercase letters and digits, the first starting with a \
+                 letter; rename it"
             ),
         ));
     }
