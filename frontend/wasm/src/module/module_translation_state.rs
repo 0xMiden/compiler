@@ -63,14 +63,18 @@ impl<'a> ModuleTranslationState<'a> {
     /// `world_builder` - the Miden IR World builder
     /// `mod_types` - the Miden IR module types builder
     /// `module_args` - the module instantiation arguments, i.e. entities to "fill" module imports
+    /// `namespace` - the name of the component being translated (its `::`-joined namespace path),
+    ///   which every component import must lie outside of
     /// `names` - the names of the functions backing component exports and lowering component
     ///   imports; every other function keeps its Wasm name
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         module: &Module,
         module_builder: &'a mut ModuleBuilder,
         world_builder: &'a mut WorldBuilder,
         mod_types: &ModuleTypesBuilder,
         module_args: FxHashMap<SymbolPath, ModuleArgument>,
+        namespace: SymbolName,
         names: &FxHashMap<FuncIndex, SymbolName>,
         diagnostics: &DiagnosticsHandler,
     ) -> WasmResult<Self> {
@@ -97,6 +101,7 @@ impl<'a> ModuleTranslationState<'a> {
                     module_builder,
                     world_builder,
                     &module_args,
+                    namespace,
                     path,
                     names.get(&index).copied(),
                     sig,
@@ -458,12 +463,14 @@ pub(crate) fn core_import_path(import: &super::ModuleImport) -> SymbolPath {
 
 /// Returns [`CallableFunction`] translated from the core Wasm module import.
 ///
-/// `stub_name` is the name assigned to the import when it lowers a component import.
+/// `stub_name` is the name assigned to the import when it lowers a component import, which must
+/// lie outside of the namespace `namespace` of the component being translated.
 #[allow(clippy::too_many_arguments)]
 fn process_import(
     module_builder: &mut ModuleBuilder,
     world_builder: &mut WorldBuilder,
     module_args: &FxHashMap<SymbolPath, ModuleArgument>,
+    namespace: SymbolName,
     core_func_id: SymbolPath,
     stub_name: Option<SymbolName>,
     core_func_sig: Signature,
@@ -477,6 +484,7 @@ fn process_import(
     process_module_arg(
         module_builder,
         world_builder,
+        namespace,
         core_func_id,
         stub_name,
         core_func_sig,
@@ -489,11 +497,13 @@ fn process_import(
 /// Returns [`CallableFunction`] for the core import at `path` (with signature `sig`), filled by
 /// the instantiation argument `module_arg` matched by the core import path `wasm_import_path`.
 ///
-/// A component import is lowered by an import stub defined in `module_builder` as `stub_name`.
+/// A component import is lowered by an import stub defined in `module_builder` as `stub_name`;
+/// it must lie outside of the namespace `namespace` of the component being translated.
 #[allow(clippy::too_many_arguments)]
 fn process_module_arg(
     module_builder: &mut ModuleBuilder,
     world_builder: &mut WorldBuilder,
+    namespace: SymbolName,
     path: SymbolPath,
     stub_name: Option<SymbolName>,
     sig: Signature,
@@ -513,7 +523,6 @@ fn process_module_arg(
             signature,
             path: import_path,
             first_cm_path,
-            namespace,
         } => {
             let Some(stub_name) = stub_name else {
                 return Err(Report::msg(format!(
@@ -528,7 +537,7 @@ fn process_module_arg(
                     cm_path: wasm_import_path,
                     path: import_path.clone(),
                     first_cm_path: first_cm_path.clone(),
-                    namespace: *namespace,
+                    namespace,
                 },
                 signature,
                 path,
