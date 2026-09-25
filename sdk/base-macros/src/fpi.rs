@@ -1,7 +1,7 @@
 //! Foreign procedure invocation support for generated SDK bindings.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     fmt::Write as _,
     path::PathBuf,
 };
@@ -9,6 +9,7 @@ use std::{
 use heck::{ToKebabCase, ToSnakeCase};
 use miden_assembly_syntax::ast::{Path as MasmPath, PathBuf as MasmPathBuf};
 use miden_mast_package::PackageExport;
+use midenc_frontend_wasm_metadata::procedure_path::validate_procedure_path;
 use miden_protocol::crypto::hash::blake::Blake3_256;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
@@ -386,39 +387,89 @@ struct Dependency {
     package_path: PathBuf,
     /// Fully-qualified WIT import path.
     import: String,
-    /// Miden paths of the interface's functions (their `@external-id`), keyed by WIT name.
-    function_paths: BTreeMap<String, Option<String>>,
+    /// The interface's functions, keyed by the Rust identifier wit-bindgen generates for their
+    /// FPI variant.
+    functions: HashMap<String, DependencyFunction>,
     /// Procedure roots of the package exports, keyed by canonical absolute Miden path.
     roots: HashMap<MasmPathBuf, ProcedureRoot>,
 }
 
+/// A function of a dependency interface.
+#[derive(Clone, Debug)]
+struct DependencyFunction {
+    /// The WIT name of the function.
+    wit_name: String,
+    /// The function's `@external-id`, `None` when absent.
+    external_id: Option<String>,
+}
+
 /// Lookups of the dependency functions' Miden paths.
 impl Dependency {
-    /// Returns the canonical Miden path of the dependency function `wit_name`, read from its WIT
-    /// `@external-id`.
-    fn function_path(&self, wit_name: &str, span: Span) -> syn::Result<MasmPathBuf> {
-        let external_id =
-            self.function_paths.get(wit_name).cloned().flatten().ok_or_else(|| {
-                Error::new(
-                    span,
-                    format!(
-                        "dependency WIT function `{wit_name}` of `{}` carries no `@external-id`; \
-                         rebuild the dependency with the current SDK",
-                        self.import
-                    ),
-                )
-            })?;
-        canonical_procedure_path(MasmPath::new(&external_id)).ok_or_else(|| {
+    /// Returns the WIT name and the canonical Miden path, read from its WIT `@external-id`, of the
+    /// dependency function whose generated FPI variant is `foreign_ident`.
+    fn function_path(&self, foreign_ident: &syn::Ident) -> syn::Result<(&str, MasmPathBuf)> {
+        let span = foreign_ident.span();
+        let function = self.functions.get(&foreign_ident.to_string()).ok_or_else(|| {
             Error::new(
                 span,
                 format!(
-                    "dependency WIT function `{wit_name}` of `{}` has an invalid `@external-id` \
-                     `{external_id}`; expected a Miden path",
+                    "generated private FPI function `{foreign_ident}` has no dependency WIT \
+                     function in `{}`",
                     self.import
                 ),
             )
-        })
+        })?;
+        let wit_name = function.wit_name.as_str();
+        let (external_id, _) = dependency_procedure_path(
+            wit_name,
+            &self.import,
+            function.external_id.as_deref(),
+            span,
+        )?;
+        let path = canonical_procedure_path(MasmPath::new(external_id)).ok_or_else(|| {
+            Error::new(
+                span,
+                format!(
+                    "dependency WIT function `{wit_name}` of `{}` carries the `@external-id` \
+                     `{external_id}`, which has no canonical Miden path",
+                    self.import
+                ),
+            )
+        })?;
+        Ok((wit_name, path))
     }
+}
+
+/// Returns the `@external-id` of the dependency WIT function `wit_name` of the interface `import`
+/// and the function name it ends in.
+///
+/// Fails when the attribute is missing or its value is not a Miden procedure path, by the rule the
+/// compiler applies to it.
+fn dependency_procedure_path<'a>(
+    wit_name: &str,
+    import: &str,
+    external_id: Option<&'a str>,
+    span: Span,
+) -> syn::Result<(&'a str, &'a str)> {
+    let external_id = external_id.ok_or_else(|| {
+        Error::new(
+            span,
+            format!(
+                "dependency WIT function `{wit_name}` of `{import}` carries no `@external-id`; \
+                 rebuild the dependency with the current SDK"
+            ),
+        )
+    })?;
+    let (_, function) = validate_procedure_path(external_id).map_err(|err| {
+        Error::new(
+            span,
+            format!(
+                "dependency WIT function `{wit_name}` of `{import}` carries the `@external-id` \
+                 `{external_id}`, which {err}"
+            ),
+        )
+    })?;
+    Ok((external_id, function))
 }
 
 /// Four field elements that make up a foreign procedure root.
@@ -501,26 +552,18 @@ fn inject_functions_into_synthetic_interface(
         ));
     }
 
+    let source_import = resolve.id_of(source_id).unwrap_or_default();
     let mut aliases = HashMap::new();
     let mut interface_types = Vec::new();
     let mut fpi_functions = Vec::with_capacity(functions.len());
     for function in functions {
         let fpi_name = format!("{WIT_FUNCTION_PREFIX}{}", function.name);
-        let leaf = function
-            .external_id
-            .as_deref()
-            .and_then(|external_id| external_id.rsplit_once("::"))
-            .map(|(_, leaf)| leaf.to_owned())
-            .ok_or_else(|| {
-                Error::new(
-                    Span::call_site(),
-                    format!(
-                        "dependency WIT function `{}` carries no `@external-id` with a Miden \
-                         path; rebuild the dependency with the current SDK",
-                        function.name
-                    ),
-                )
-            })?;
+        let (_, leaf) = dependency_procedure_path(
+            &function.name,
+            &source_import,
+            function.external_id.as_deref(),
+            Span::call_site(),
+        )?;
         let external_id = format!("{external_id_prefix}::{leaf}");
         let mut function =
             build_import_function(function, fpi_name.clone(), core_types, external_id);
@@ -1175,8 +1218,7 @@ pub(crate) fn augment_foreign_account_bindings(
                         ),
                     )
                 })?;
-            let wit_name = function_wit_name(foreign_func)?;
-            let path = dependency.function_path(&wit_name, foreign_func.sig.ident.span())?;
+            let (wit_name, path) = dependency.function_path(&foreign_func.sig.ident)?;
             let root = dependency.roots.get(&path).ok_or_else(|| {
                 Error::new(
                     foreign_func.sig.ident.span(),
@@ -1531,11 +1573,6 @@ fn method_ident(func: &ItemFn) -> syn::Result<syn::Ident> {
     Ok(syn::Ident::new(method_name, func.sig.ident.span()))
 }
 
-/// Returns the original WIT function name represented by a generated FPI free function.
-fn function_wit_name(func: &ItemFn) -> syn::Result<String> {
-    Ok(method_ident(func)?.to_string().to_kebab_case())
-}
-
 /// Converts a procedure root into SDK `Word` construction tokens.
 fn procedure_root_tokens(root: ProcedureRoot) -> TokenStream2 {
     let felts = root.felts.into_iter().map(|value| quote!(::miden::felt!(#value)));
@@ -1574,9 +1611,30 @@ fn load_dependency(
         trait_ident,
         package_path,
         import,
-        function_paths: interface.function_paths,
+        functions: dependency_functions(interface.function_paths),
         roots,
     })
+}
+
+/// Keys the `@external-id`s of a dependency interface's functions, given by WIT name, by the Rust
+/// identifier wit-bindgen generates for each function's FPI variant.
+fn dependency_functions(
+    function_paths: impl IntoIterator<Item = (String, Option<String>)>,
+) -> HashMap<String, DependencyFunction> {
+    function_paths
+        .into_iter()
+        .map(|(wit_name, external_id)| {
+            let foreign_ident =
+                wit_bindgen_rust::to_rust_ident(&format!("{WIT_FUNCTION_PREFIX}{wit_name}"));
+            (
+                foreign_ident,
+                DependencyFunction {
+                    wit_name,
+                    external_id,
+                },
+            )
+        })
+        .collect()
 }
 
 /// Maps dependency-defined WIT types to the normal bindings module generated by component/note.
@@ -1617,6 +1675,8 @@ pub(crate) fn import_module_path(import: &str) -> String {
 
 /// Returns the canonical absolute form of a Miden procedure path, so that WIT external-ids and
 /// package manifest export paths compare equal regardless of a leading `::` or quoting.
+///
+/// Only compares paths; an `@external-id` is validated with [`validate_procedure_path`].
 fn canonical_procedure_path(path: &MasmPath) -> Option<MasmPathBuf> {
     path.to_absolute().ok()?.canonicalize().ok()
 }
@@ -1821,6 +1881,56 @@ interface api {
                 "miden::acme::acme::fpi::miden::wallet::admin",
                 "miden::acme::acme::fpi::miden::wallet::api",
             ]
+        );
+    }
+
+    /// Builds a dependency whose interface has the given functions and `@external-id`s.
+    fn test_dependency(functions: &[(&str, &str)]) -> Dependency {
+        Dependency {
+            module_path: "miden::counter::counter".to_string(),
+            trait_ident: syn::Ident::new("Counter", Span::call_site()),
+            package_path: PathBuf::from("counter.masp"),
+            import: "miden:counter/counter@0.1.0".to_string(),
+            functions: dependency_functions(functions.iter().map(|(wit_name, external_id)| {
+                (wit_name.to_string(), Some(external_id.to_string()))
+            })),
+            roots: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn dependency_functions_are_found_by_their_generated_identifier() {
+        let dependency = test_dependency(&[("HTTP-get", "miden::counter::counter::http_get")]);
+        let foreign_ident = syn::Ident::new(
+            &wit_bindgen_rust::to_rust_ident("fpi-HTTP-get"),
+            Span::call_site(),
+        );
+
+        let (wit_name, path) = dependency
+            .function_path(&foreign_ident)
+            .expect("the dependency function must be found");
+        assert_eq!(wit_name, "HTTP-get");
+        assert_eq!(
+            Some(path),
+            canonical_procedure_path(MasmPath::new("miden::counter::counter::http_get"))
+        );
+    }
+
+    #[test]
+    fn dependency_external_ids_follow_the_compilers_procedure_path_rule() {
+        let dependency =
+            test_dependency(&[("get-count", "miden::counter::counter::\"get-count\"")]);
+        let foreign_ident = syn::Ident::new("fpi_get_count", Span::call_site());
+
+        let err = dependency
+            .function_path(&foreign_ident)
+            .expect_err("a quoted segment is not a procedure path");
+        assert_eq!(
+            err.to_string(),
+            "dependency WIT function `get-count` of `miden:counter/counter@0.1.0` carries the \
+             `@external-id` `miden::counter::counter::\"get-count\"`, which is not a Miden \
+             procedure path with a module and a function name (a leading `::` is optional) whose \
+             segments are ASCII letters, digits and `_`"
         );
     }
 
