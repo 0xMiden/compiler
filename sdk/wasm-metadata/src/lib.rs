@@ -23,6 +23,10 @@ pub const WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME: &str = "rodata,mi
 /// Name of the Wasm custom section used to store the component's public WIT source.
 pub const WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME: &str = "rodata,miden_wit";
 
+/// Name of the procedure codegen emits into a component's root module to initialize it;
+/// `<namespace>::init` is therefore reserved and no export may use it.
+pub const COMPONENT_INIT_PROCEDURE: &str = "init";
+
 /// Name of the Miden package (`.masp`) section that carries the component's public WIT source.
 pub const PACKAGE_WIT_SECTION_ID: &str = "wit";
 

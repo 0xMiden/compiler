@@ -9,6 +9,7 @@ use alloc::{
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
+use midenc_frontend_wasm_metadata::COMPONENT_INIT_PROCEDURE;
 use midenc_hir::{
     FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, SymbolPath, TraceTarget, Type, ValueRef,
     diagnostics::IntoDiagnostic,
@@ -463,7 +464,7 @@ fn world_body_to_masm_component(
         })
         .collect::<Vec<_>>();
     let init = if requires_init {
-        let name = masm::ProcedureName::new("init").unwrap();
+        let name = masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap();
         let qualified = match toplevel_namespaces.len() {
             1 => {
                 let namespace = toplevel_namespaces[0].borrow().symbol_name_if_symbol().unwrap();
@@ -630,7 +631,7 @@ fn component_to_masm_component(
     // functions such as init
     let requires_init = link_info.requires_init();
     let init = if requires_init {
-        let name = masm::ProcedureName::new("init").unwrap();
+        let name = masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap();
         let qualified = masm::QualifiedProcedureName::new(&component_path, name);
         Some(masm::InvocationTarget::Path(Span::new(
             SourceSpan::default(),
@@ -1023,7 +1024,7 @@ impl MasmComponentBuilder<'_> {
             let module =
                 Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
 
-            let init_name = masm::ProcedureName::new("init").unwrap();
+            let init_name = masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap();
             let init_body = core::mem::take(&mut self.init_body);
             let mut init = masm::Procedure::new(
                 Default::default(),
@@ -1675,7 +1676,7 @@ impl MasmFunctionBuilder {
             // qualified path instead. A user-exported method named `init` collides with the
             // generated procedure at definition time ("symbol conflict: found duplicate
             // definitions"), so it cannot silently shadow this target.
-            let init = InvocationTarget::Symbol("init".parse().unwrap());
+            let init = InvocationTarget::Symbol(COMPONENT_INIT_PROCEDURE.parse().unwrap());
             // Add init call to the emitter's target before emitting the function body; `emit`
             // also registers the invocation so the assembler can resolve the symbolic target.
             emitter.emitter().emit(masm::Instruction::Exec(init), SourceSpan::default());

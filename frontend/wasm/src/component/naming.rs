@@ -11,6 +11,7 @@ use alloc::{
     vec::Vec,
 };
 
+use midenc_frontend_wasm_metadata::COMPONENT_INIT_PROCEDURE;
 use midenc_hir::{FxHashMap, SymbolName, SymbolNameComponent, SymbolPath};
 use midenc_session::diagnostics::{IntoDiagnostic, Report};
 use wasmparser::{ComponentExternalKind, Encoding, Parser, Payload};
@@ -75,7 +76,7 @@ pub(crate) fn exports_namespace<'a>(
         }
         // Codegen emits the component initializer as the public `init` procedure next to the
         // exports, so an export with that leaf would silently collide with it.
-        if path.name().as_str() == "init" {
+        if path.name().as_str() == COMPONENT_INIT_PROCEDURE {
             return Err(Report::msg(format!(
                 "export `{name}` uses the path `{path}`, which is reserved for the compiler's \
                  component initializer"

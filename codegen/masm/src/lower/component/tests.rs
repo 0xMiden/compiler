@@ -493,7 +493,7 @@ fn exec_paths(block: &masm::Block) -> Vec<String> {
 fn component_init(component: &MasmComponent) -> &masm::Procedure {
     component.modules[0]
         .procedures()
-        .find(|procedure| procedure.name().as_str() == "init")
+        .find(|procedure| procedure.name().as_str() == COMPONENT_INIT_PROCEDURE)
         .expect("a marked component must define `init`")
 }
 
@@ -711,7 +711,7 @@ fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
         .expect("the public canonical wrapper must remain defined");
     assert_eq!(
         exec_paths(public_entry.body()).first().map(String::as_str),
-        Some("init"),
+        Some(COMPONENT_INIT_PROCEDURE),
         "fresh-context calls through the public wrapper must still initialize"
     );
     let private_entry = lowered
@@ -721,7 +721,9 @@ fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
     assert_eq!(private_entry.name().as_str(), EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC);
     assert_eq!(private_entry.visibility(), masm::Visibility::Private);
     assert!(
-        !exec_paths(private_entry.body()).iter().any(|target| target == "init"),
+        !exec_paths(private_entry.body())
+            .iter()
+            .any(|target| target == COMPONENT_INIT_PROCEDURE),
         "the executable-only entry body must not repeat component initialization"
     );
 
@@ -2261,7 +2263,10 @@ fn every_module_defining_a_table_callee_is_initialized_exactly_once() {
     let mut invoked = Vec::new();
     for module in lowered.modules.iter() {
         for procedure in module.procedures() {
-            if matches!(procedure.name().as_str(), "init" | super::FUNCTION_TABLE_INIT_PROC) {
+            if matches!(
+                procedure.name().as_str(),
+                COMPONENT_INIT_PROCEDURE | super::FUNCTION_TABLE_INIT_PROC
+            ) {
                 invoked.extend(function_table_initializers_invoked(procedure.body()));
             }
         }
@@ -2288,7 +2293,7 @@ fn every_module_defining_a_table_callee_is_initialized_exactly_once() {
     };
 
     assert_eq!(
-        invoked_by("::hir_ns::test", "init"),
+        invoked_by("::hir_ns::test", COMPONENT_INIT_PROCEDURE),
         vec!["::hir_ns::test::a", "::hir_ns::test::outer"],
         "`init` reaches the outermost initializers, and only those"
     );

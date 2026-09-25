@@ -409,7 +409,10 @@ pub(crate) fn expected_exports_from_wit(package: &Package, namespace: &str) -> B
     let wit = core::str::from_utf8(wit).expect("embedded WIT must be UTF-8");
     let parsed = wit_parser::UnresolvedPackageGroup::parse("package.wit", wit)
         .unwrap_or_else(|(map, err)| panic!("embedded WIT must parse: {}", err.render(&map)));
-    let mut expected = BTreeSet::from([absolute(&format!("{namespace}::init"))]);
+    let mut expected = BTreeSet::from([absolute(&format!(
+        "{namespace}::{}",
+        midenc_frontend_wasm_metadata::COMPONENT_INIT_PROCEDURE
+    ))]);
     for (_, world) in parsed.main.worlds.iter() {
         for export in world.exports.values() {
             match export {

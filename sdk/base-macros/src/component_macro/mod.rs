@@ -6,7 +6,7 @@ use std::{
 use miden_project::TargetType;
 use miden_protocol::utils::serde::Serializable;
 use midenc_frontend_wasm_metadata::{
-    FrontendMetadata, WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
+    COMPONENT_INIT_PROCEDURE, FrontendMetadata, WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
 };
 use proc_macro::Span;
 use proc_macro2::{Ident, Literal, Span as Span2, TokenStream as TokenStream2};
@@ -1364,7 +1364,7 @@ pub(crate) fn export_path(
     let ident = method_ident.unraw().to_string();
     let path = namespace.procedure_path(&ident);
     // Codegen emits the component initializer as the public `init` procedure next to the exports.
-    if ident == "init" {
+    if ident == COMPONENT_INIT_PROCEDURE {
         return Err(syn::Error::new(
             method_ident.span(),
             format!(
