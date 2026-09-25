@@ -48,13 +48,7 @@ impl ComponentNamespace {
     /// leading `::`).
     #[cfg(test)]
     pub(crate) fn parse(value: &str, span: Span) -> syn::Result<Self> {
-        let segments = value
-            .strip_prefix("::")
-            .unwrap_or(value)
-            .split("::")
-            .map(str::to_owned)
-            .collect();
-        Self::from_segments(value, segments, span)
+        Self::from_path(Path::new(value), span)
     }
 
     /// Validates the segments of the namespace `raw` and builds the namespace.
