@@ -1176,6 +1176,8 @@ fn parse_component_signature(
         // Distinct Rust identifiers can normalize to one WIT name; catch that here instead of
         // surfacing a WIT parse error from the generated bindings.
         let wit_param_name = rust_ident_to_wit_name(&ident)?;
+        // The generated guest trait names the parameter by wit-bindgen's spelling.
+        wit_bindgen_guest_ident(&wit_param_name, &ident)?;
         if let Some(previous) = params.iter().find(|param| param.wit_param_name == wit_param_name) {
             return Err(duplicate_wit_name_error(
                 "parameter",
@@ -1217,7 +1219,7 @@ fn parse_component_signature(
         params,
         receiver_kind,
         return_info,
-        guest_fn_ident: wit_bindgen_guest_ident(&wit_name, sig.ident.span()),
+        guest_fn_ident: wit_bindgen_guest_ident(&wit_name, &sig.ident)?,
         wit_name,
     };
 
@@ -1616,6 +1618,22 @@ mod tests {
             "variant shape {\n        %record,\n        %circle(word),\n    }",
         ] {
             assert!(wit.contains(expected), "missing `{expected}` in:\n{wit}");
+        }
+    }
+
+    #[test]
+    fn component_methods_reject_names_wit_bindgen_cannot_escape() {
+        for signature in
+            [parse_quote!(fn r#gen(&self)), parse_quote!(fn generate(&self, r#gen: u32))]
+        {
+            let Err(error) = parse_component_signature(&signature, &[], &HashMap::new()) else {
+                panic!("`r#gen` must be rejected");
+            };
+            assert_eq!(
+                error.to_string(),
+                "`r#gen` would be named `gen` in the generated bindings, which is a Rust keyword \
+                 wit-bindgen does not escape; rename it"
+            );
         }
     }
 

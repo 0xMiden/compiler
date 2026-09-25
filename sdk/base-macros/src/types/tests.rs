@@ -1066,6 +1066,22 @@ fn field_names_the_bindings_spell_differently_are_rejected() {
 }
 
 #[test]
+fn field_names_wit_bindgen_cannot_escape_are_rejected() {
+    reset_export_type_registry_for_tests();
+    let item: syn::ItemStruct = parse_quote! {
+        struct Payload {
+            r#gen: u32,
+        }
+    };
+    let err = exported_type_from_struct(&item).expect_err("`r#gen` must be rejected");
+    assert_eq!(
+        err.to_string(),
+        "`r#gen` would be named `gen` in the generated bindings, which is a Rust keyword \
+         wit-bindgen does not escape; rename it"
+    );
+}
+
+#[test]
 fn case_names_the_bindings_spell_differently_are_rejected() {
     for (item, case, expected) in [
         (parse_quote! { enum AssetKind { NFT, Fungible } }, "NFT", "Nft"),
