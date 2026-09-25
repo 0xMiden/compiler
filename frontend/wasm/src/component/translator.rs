@@ -851,7 +851,6 @@ impl<'a> ComponentTranslator<'a> {
                                      at path '{cm_path}' (Miden path '{path}')"
                                     , signature.ir
                                 );
-                                ensure_import_outside_own_namespace(&self.result, &path)?;
                                 let first_cm_path = self
                                     .import_cm_paths
                                     .entry(path.clone())
@@ -863,6 +862,12 @@ impl<'a> ComponentTranslator<'a> {
                                         signature,
                                         path,
                                         first_cm_path,
+                                        namespace: self
+                                            .result
+                                            .component
+                                            .borrow()
+                                            .namespace_path()
+                                            .to_symbol_name(),
                                     },
                                 );
                             }
@@ -1139,21 +1144,6 @@ impl<'a> ComponentTranslator<'a> {
 
         Ok(())
     }
-}
-
-/// Reports an error when the Miden path `import_path` of an import lies inside the namespace of
-/// `component`, the component being translated, where it would be declared among its own symbols.
-fn ensure_import_outside_own_namespace(
-    component: &ComponentBuilder,
-    import_path: &SymbolPath,
-) -> WasmResult<()> {
-    let namespace = component.component.borrow().namespace_path();
-    if *import_path.without_leaf() == namespace {
-        return Err(Report::msg(format!(
-            "import `{import_path}` lies inside this component's own namespace `{namespace}`"
-        )));
-    }
-    Ok(())
 }
 
 fn convert_lifted_func_ty(

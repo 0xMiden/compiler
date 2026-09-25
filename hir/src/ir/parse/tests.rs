@@ -538,6 +538,29 @@ builtin.world {
     );
 }
 
+#[test]
+fn nested_component_names_are_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.component private @acme::@app {
+    };
+    builtin.component private @acme::@app::@main {
+    };
+};";
+    let err = test
+        .parse_any("nesting.hir", source)
+        .expect_err("components with nesting names must not parse")
+        .to_string();
+    assert!(
+        err.contains(
+            "component `acme::app` and component `acme::app::main` nest (`acme::app` is a prefix \
+             of `acme::app::main`); component namespaces must not nest"
+        ),
+        "unexpected diagnostic: {err}"
+    );
+}
+
 /// A component prints its name as a symbol path, one segment per `::`-separated segment of the
 /// name, quoting a segment that is not a bare identifier, and that text parses back to the same
 /// name.

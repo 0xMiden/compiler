@@ -515,6 +515,7 @@ fn process_module_arg(
             signature,
             path: import_path,
             first_cm_path,
+            namespace,
         } => {
             let Some(stub_name) = stub_name else {
                 return Err(Report::msg(format!(
@@ -529,6 +530,7 @@ fn process_module_arg(
                     cm_path: wasm_import_path,
                     path: import_path.clone(),
                     first_cm_path: first_cm_path.clone(),
+                    namespace: *namespace,
                 },
                 signature,
                 path,

@@ -826,17 +826,25 @@ mod tests {
         .expect("component WAT should compile")
     }
 
+    /// An import anywhere under the component's namespace is rejected, including under the path
+    /// of its own core module `main`.
     #[test]
     fn an_import_inside_the_components_own_namespace_is_rejected() {
-        let wasm = import_and_export_component("acme::app::app::read", "sum", "sum");
-        let err = error_of(&wasm, None);
-        assert!(
-            err.contains(
-                "import `::acme::app::app::read` lies inside this component's own namespace \
-                 `::acme::app::app`"
-            ),
-            "unexpected diagnostic: {err}"
-        );
+        for read_id in [
+            "acme::app::app::read",
+            "acme::app::app::main::read",
+            "acme::app::app::sub::read",
+        ] {
+            let wasm = import_and_export_component(read_id, "sum", "sum");
+            let err = error_of(&wasm, None);
+            assert!(
+                err.contains(&format!(
+                    "import `::{read_id}` lies inside this component's own namespace \
+                     `::acme::app::app`"
+                )),
+                "unexpected diagnostic for `{read_id}`: {err}"
+            );
+        }
     }
 
     #[test]
