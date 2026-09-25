@@ -11,7 +11,9 @@ use alloc::{
     vec::Vec,
 };
 
-use midenc_frontend_wasm_metadata::COMPONENT_INIT_PROCEDURE;
+use midenc_frontend_wasm_metadata::{
+    COMPONENT_INIT_PROCEDURE, procedure_path::validate_procedure_path,
+};
 use midenc_hir::{FxHashMap, SymbolName, SymbolNameComponent, SymbolPath};
 use midenc_session::diagnostics::Report;
 
@@ -33,13 +35,7 @@ pub(crate) fn external_id_path(
              component function needs its Miden path"
         )));
     };
-    let value = external_id.strip_prefix("::").unwrap_or(external_id);
-    let is_bare_identifier = |segment: &str| {
-        !segment.is_empty() && segment.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-    };
-    let Some((module, function)) =
-        value.rsplit_once("::").filter(|_| value.split("::").all(is_bare_identifier))
-    else {
+    let Ok((module, function)) = validate_procedure_path(external_id) else {
         return Err(Report::msg(format!(
             "the `@external-id` of function `{cm_name}` of interface `{cm_iface}` is \
              `{external_id}`, which is not a Miden path with a module and a function name (a \
