@@ -53,8 +53,8 @@ pub(super) fn build_fpi_test_packages(
 /// `first_interface` / `second_interface` are the kebab-case WIT interface names each component
 /// exports; passing the same name for both (disambiguated by `as Alias` in the caller) exercises
 /// the alias path, while distinct names exercise the plain multi-interface path. Storage slot names
-/// derive from the interface segment, so two same-interface packages still get distinct slots via
-/// their (distinct) package namespaces.
+/// are `<namespace>::<field>`, so two same-interface packages still get distinct slots via their
+/// distinct package segments.
 pub(super) fn build_multi_package_fpi_test_packages(
     test_name: &str,
     first_interface: &str,

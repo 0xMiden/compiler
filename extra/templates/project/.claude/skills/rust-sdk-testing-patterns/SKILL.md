@@ -412,8 +412,8 @@ miden-testing = "0.16.0-rc.4"
 miden-mast-package = { version = "0.29", default-features = false }
 ```
 
-The contracts a test builds depend on the guest SDK `miden = { version = "0.14" }` and matching
-`miden-sdk-build-script-support = { version = "0.14" }`, built on `nightly-2026-09-01` with target
+The contracts a test builds depend on the guest SDK `miden = { version = "0.15.0-rc.2" }` and matching
+`miden-sdk-build-script-support = { version = "0.15.0-rc.2" }`, built on `nightly-2026-09-01` with target
 `wasm32-wasip2`. See Step 4 for why `cargo-miden` must not be a library dependency of the test crate;
 `build_project_in_dir(...)` invokes midenup / `CARGO_MIDEN` / `cargo miden` out of process.
 

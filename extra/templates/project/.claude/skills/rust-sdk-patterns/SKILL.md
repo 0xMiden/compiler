@@ -87,7 +87,7 @@ supported-types = ["RegularAccountImmutableCode"]
 
 `supported-types` also accepts `"RegularAccountUpdatableCode"` and the faucet kinds `["FungibleFaucet", "NonFungibleFaucet"]`.
 
-The project-template contract `Cargo.toml` files currently use `edition = "2021"`, `crate-type = ["cdylib"]`, and published `miden` / `miden-sdk-build-script-support` `0.14` dependencies. Copy the local manifests unless intentionally changing the template line:
+The project-template contract `Cargo.toml` files currently use `edition = "2021"`, `crate-type = ["cdylib"]`, and `miden` / `miden-sdk-build-script-support` `0.15.0-rc.2` dependencies. Copy the local manifests unless intentionally changing the template line:
 
 ```toml
 [package]
@@ -99,10 +99,10 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-miden = { version = "0.14" }
+miden = { version = "0.15.0-rc.2" }
 
 [build-dependencies]
-miden-sdk-build-script-support = { version = "0.14" }
+miden-sdk-build-script-support = { version = "0.15.0-rc.2" }
 ```
 
 Contracts build on `nightly-2026-09-01` with target `wasm32-wasip2`. Use the midenup / cargo-miden command documented in this repository's `README.md` and `CLAUDE.md`; the local `build.rs` calls `miden_sdk_build_script_support::prepare_package_cache()` so source dependencies are available to the SDK macros during Cargo checks and IDE analysis.
@@ -294,7 +294,7 @@ The `[dependencies]` entry is required. A component's WIT is embedded in its com
 
 ```toml
 [build-dependencies]
-miden-sdk-build-script-support = { version = "0.14" }
+miden-sdk-build-script-support = { version = "0.15.0-rc.2" }
 ```
 
 ```rust
@@ -409,7 +409,7 @@ Note side (`examples/p2id-note/src/lib.rs`): the note declares `#[account(basic_
 - [ ] Every externally-callable trait method carries `#[account_procedure]`, on the **trait**, not the impl
 - [ ] `#[account_procedure]` and `#[auth_script]` are not combined in one component
 - [ ] The `#[account(...)]` wrapper struct name differs from every generated trait name
-- [ ] Contract `Cargo.toml` matches the local template shape: `edition = "2021"`, `crate-type = ["cdylib"]`, `miden = { version = "0.14" }`, and matching `miden-sdk-build-script-support = { version = "0.14" }`
+- [ ] Contract `Cargo.toml` matches the local template shape: `edition = "2021"`, `crate-type = ["cdylib"]`, `miden = { version = "0.15.0-rc.2" }`, and matching `miden-sdk-build-script-support = { version = "0.15.0-rc.2" }`
 - [ ] `[lib]` in `miden-project.toml` has `kind` (`account-component` / `note` / `tx-script`), `namespace`, **and `path`**
 - [ ] `[dependencies]` in `miden-project.toml` carries `miden-core = "*"` and `miden-protocol = "*"`
 - [ ] Typed storage uses `StorageValue<T>` / `StorageMap<K, V>` with `get()` / `set()`; slot names derive from `<[lib].namespace>::<field>`

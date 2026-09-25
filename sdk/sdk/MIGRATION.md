@@ -127,12 +127,14 @@ needs `#![cfg_attr(all(target_family = "wasm", miden), feature(linkage))]`.
 `<namespace>::<package>::<interface>`, each a snake_case identifier: lowercase ASCII letters and
 digits in words joined by single `_`, starting with a letter (`[a-z][a-z0-9]*(_[a-z0-9]+)*`), and
 not a WIT or Rust 2024 keyword such as `list`, `type`, `match` or `gen`; the interface segment
-cannot be `core_types`, which names the SDK's own WIT interface. The component-model id used before is
+cannot be `core_types`, which names the SDK's own WIT interface. The namespace must neither be nor
+lie under a library that components link against: `miden::base` (the SDK's own WIT package),
+`miden::protocol`, `miden::core`, `intrinsics` and `std`. The component-model id used before is
 rejected by the SDK macros with an error that shows the expected shape. `cargo miden new` writes
 `miden::<package>::<package>` (package name snake-cased) for account, note and
 transaction-script projects, and refuses a project name that yields an invalid namespace. The
 first two segments form the WIT package id, so they must be unique among all crates a consumer
-links, whatever their versions, and must not be `miden::base`, which the SDK's own WIT uses.
+links, whatever their versions.
 
 ```toml
 # before
@@ -186,7 +188,10 @@ takes part in naming, and the WIT package and interface ids derive from the name
 
 Crates that call `miden::generate!()` over a hand-written WIT interface must annotate every
 function with its full Miden path, `<[lib].namespace>::<function>`; the compiler rejects a
-component function without one, and an export outside the namespace.
+component function without one, and an export outside the namespace. The same holds for a
+dependency's WIT supplied through a `wit = ...` override file
+(`[package.metadata.miden.dependencies.<name>]`): annotate each function with its full Miden path
+in the dependency, or `#[account(...)]` bindings to that dependency are rejected.
 
 ```wit
 // before
@@ -202,7 +207,9 @@ interface foo {
 
 The parent of an imported function's path names a dependency component, so the parents of a
 component's imports must not nest in one another or in the component's own namespace: importing
-both `acme::math::add` and `acme::math::u64::add` is rejected.
+both `acme::math::add` and `acme::math::u64::add` is rejected. The FPI imports `#[account(...)]`
+generates (`<namespace>::fpi::<dependency path>::<function>`) nest in the component's namespace by
+design and are exempt, since they declare no dependency component.
 
 The core Wasm module of a component, named after the crate, now gives way to an export of the same
 name (a crate `swap` exporting `swap`): the module is renamed `<name>_core`, which only appears in
