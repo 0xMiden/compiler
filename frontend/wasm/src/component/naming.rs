@@ -358,6 +358,42 @@ mod tests {
         assert!(!hir.contains("get-count"), "no component-model name in the core module:\n{hir}");
     }
 
+    /// A linker stub lifted as an export is defined under the export's leaf and still lowered to
+    /// its intrinsic, which is recognized by the stub's Wasm name.
+    #[test]
+    fn a_lifted_linker_stub_is_lowered_to_its_intrinsic() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $m
+                    (func $intrinsics::mem::heap_base (export "get-count") (result i32)
+                        unreachable)
+                )
+                (core instance $i (instantiate $m))
+                (func $lifted (result u32) (canon lift (core func $i "get-count")))
+                (component $shim
+                    (import "import-func-get-count" (func $f (result u32)))
+                    (export "get-count" (external-id "miden::counter::counter::get_count")
+                        (func $f))
+                )
+                (instance $exports
+                    (instantiate $shim (with "import-func-get-count" (func $lifted))))
+                (export "miden:counter/counter@0.1.0" (instance $exports))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let context = Rc::default();
+        let output = translate_with(&context, &wasm, None).expect("component should translate");
+        let hir = core_modules_of(&output);
+        assert!(
+            hir.contains(r#"extern("C") @get_count()"#),
+            "the stub is defined under the export's leaf:\n{hir}"
+        );
+        assert!(hir.contains("heap_base"), "the stub calls its intrinsic:\n{hir}");
+        assert!(!hir.contains("unreachable"), "the stub body is not translated:\n{hir}");
+    }
+
     #[test]
     fn an_export_keeps_its_leaf_against_an_import_of_the_same_leaf() {
         let wasm = import_and_export_component("acme::first::api::read", "sum", "read");
