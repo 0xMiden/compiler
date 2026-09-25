@@ -351,3 +351,27 @@ fn forward_reference_between_export_types_is_allowed() {
         panic!("expected record kind");
     }
 }
+
+#[test]
+fn exported_types_reject_wit_keyword_names() {
+    reset_export_type_registry_for_tests();
+    let item: syn::ItemStruct = parse_quote! {
+        struct Flags {
+            value: u32,
+        }
+    };
+    let err = exported_type_from_struct(&item).expect_err("a WIT keyword must be rejected");
+    assert_eq!(
+        err.to_string(),
+        "exported type `Flags` produces the WIT name `flags`, which is a WIT keyword; rename the \
+         type"
+    );
+
+    let item: syn::ItemEnum = parse_quote! {
+        enum ErrorContext {
+            First,
+        }
+    };
+    let err = exported_type_from_enum(&item).expect_err("a WIT keyword must be rejected");
+    assert!(err.to_string().contains("`error-context`, which is a WIT keyword"), "{err}");
+}
