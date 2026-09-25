@@ -211,61 +211,23 @@ pub(crate) fn validate_lifted_frontend_metadata_exports(
     lifted_exports: &FxHashSet<String>,
 ) -> WasmResult<()> {
     for entry in metadata {
-        match entry {
-            FrontendMetadata::AuthScript {
-                method_path,
-                export_name,
-            } => validate_lifted_export(
-                method_path,
-                export_name,
-                "`#[auth_script]`",
-                lifted_exports,
-            )?,
-            FrontendMetadata::AccountProcedure {
-                method_path,
-                export_name,
-            } => validate_lifted_export(
-                method_path,
-                export_name,
-                "`#[account_procedure]`",
-                lifted_exports,
-            )?,
-            FrontendMetadata::NoteScript {
-                method_path,
-                export_name,
-            } => validate_lifted_export(
-                method_path,
-                export_name,
-                "`#[note_script]`",
-                lifted_exports,
-            )?,
-            FrontendMetadata::TxScript {
-                method_path,
-                export_name,
-            } => {
-                validate_lifted_export(method_path, export_name, "`#[tx_script]`", lifted_exports)?
-            }
+        let attribute = match entry {
+            FrontendMetadata::AuthScript { .. } => "`#[auth_script]`",
+            FrontendMetadata::AccountProcedure { .. } => "`#[account_procedure]`",
+            FrontendMetadata::NoteScript { .. } => "`#[note_script]`",
+            FrontendMetadata::TxScript { .. } => "`#[tx_script]`",
+        };
+        if !lifted_exports.iter().any(|path| entry.matches_path(path)) {
+            return Err(Report::from(WasmError::MissingExportMetadata(format!(
+                "failed to find the component export marked with {attribute}: `{}` (expected \
+                 lifted export `{}`)",
+                entry.method_path(),
+                entry.path()
+            ))));
         }
     }
 
     Ok(())
-}
-
-/// Validates that a metadata-selected export name was seen among the lifted component exports.
-fn validate_lifted_export(
-    method_path: &str,
-    export_name: &str,
-    attribute: &str,
-    lifted_exports: &FxHashSet<String>,
-) -> WasmResult<()> {
-    if lifted_exports.contains(export_name) {
-        return Ok(());
-    }
-
-    Err(Report::from(WasmError::MissingExportMetadata(format!(
-        "failed to find the component export marked with {attribute}: `{method_path}` (expected \
-         lifted export `{export_name}`)"
-    ))))
 }
 
 /// Contains function data: byte code and its offset in the module.
@@ -491,7 +453,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         Ok(())
     }
 
-    fn payload_end(&mut self, offset: usize) -> Result<(), Report> {
+    fn payload_end(&mut self, offset: u64) -> Result<(), Report> {
         self.validator.end(offset).into_diagnostic()?;
         self.result.exported_signatures = self
             .result
@@ -704,7 +666,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         Ok(())
     }
 
-    fn start_section(&mut self, func: u32, range: Range<usize>) -> Result<(), Report> {
+    fn start_section(&mut self, func: u32, range: Range<u64>) -> Result<(), Report> {
         self.validator.start_section(func, &range).into_diagnostic()?;
         let func_index = FuncIndex::from_u32(func);
         self.flag_func_escaped(func_index);
@@ -813,11 +775,11 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         Ok(())
     }
 
-    fn code_section_start(&mut self, count: u32, range: Range<usize>) -> Result<(), Report> {
+    fn code_section_start(&mut self, count: u32, range: Range<u64>) -> Result<(), Report> {
         self.validator.code_section_start(&range).into_diagnostic()?;
         let cnt = usize::try_from(count).unwrap();
         self.result.function_body_inputs.reserve_exact(cnt);
-        self.result.wasm_file.code_section_offset = range.start as u64;
+        self.result.wasm_file.code_section_offset = range.start;
         Ok(())
     }
 
@@ -839,7 +801,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 params: sig.params().into(),
             });
         }
-        let body_offset = body.range().start as u64;
+        let body_offset = body.range().start;
         self.result.function_body_inputs.push(FunctionBodyData {
             validator,
             body,

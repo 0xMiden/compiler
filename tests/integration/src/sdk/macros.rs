@@ -396,8 +396,8 @@ impl MyNote {
     );
 }
 
-/// Builds a generated account-component project whose component trait is named `TestComponent`
-/// (WIT interface `test-component`, matching the generated `[lib].namespace`).
+/// Builds a generated account-component project with the `[lib].namespace`
+/// `miden::<name>::test_component`.
 fn account_component_project(name: &str, lib_rs: &str) -> crate::cargo_proj::Project {
     let sdk_path = sdk_crate_path();
     let namespace = base::account_component_namespace(name, "test-component");
@@ -610,8 +610,10 @@ use miden:base/core-types@1.0.0;
 interface test-sibling {
     use core-types.{felt};
 
-    get-value: func() -> felt;
-    bump-value: func(delta: felt) -> felt;
+    @external-id("miden::test_sibling::test_sibling::get_value")
+    %get-value: func() -> felt;
+    @external-id("miden::test_sibling::test_sibling::bump_value")
+    %bump-value: func(%delta: felt) -> felt;
 }
 
 world test-sibling-world {
@@ -635,7 +637,8 @@ interface test-sibling {
         y: felt,
     }
 
-    echo-point: func(p: point) -> point;
+    @external-id("miden::test_sibling::test_sibling::echo_point")
+    %echo-point: func(%p: point) -> point;
 }
 
 world test-sibling-world {
@@ -1315,10 +1318,9 @@ impl TestComponent for TestComponentStorage {
 }
 
 #[test]
-fn component_impl_rejects_a_trait_alias_mismatching_the_namespace() {
-    // The WIT interface is named after the trait as spelled in the impl, so an alias would
-    // silently generate an interface named after the alias; the impl-side namespace validation
-    // must reject it even though the declared trait name validates fine.
+fn component_impl_accepts_a_trait_alias() {
+    // Every generated name derives from `[lib].namespace`, so implementing the component trait
+    // through an alias generates the same interface as the declared trait name.
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
@@ -1346,18 +1348,13 @@ impl Alias for TestComponentStorage {
 }
 "#;
 
-    let cargo_proj = account_component_project(
-        "component_impl_rejects_a_trait_alias_mismatching_the_namespace",
-        lib_rs,
-    );
+    let cargo_proj = account_component_project("component_impl_accepts_a_trait_alias", lib_rs);
     let output = cargo_check_miden_target(&cargo_proj);
     assert!(
-        !output.status.success(),
-        "expected an aliased component trait impl to fail namespace validation"
+        output.status.success(),
+        "expected an aliased component trait impl to compile: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    assert!(stderr.contains("produces WIT interface `alias`"), "unexpected stderr: {stderr}");
 }
 
 #[test]
@@ -1405,9 +1402,8 @@ impl TestComponent for TestComponentStorage {
 
 #[test]
 fn component_storage_fields_require_a_miden_project_manifest() {
-    // Storage slot names derive from the `[lib].namespace` interface segment; without a
-    // `miden-project.toml` they would silently be derived from placeholder metadata
-    // (`empty::empty::<field>`).
+    // Storage slot names derive from the `[lib].namespace`; without a `miden-project.toml` there
+    // is no namespace to derive them from.
     let name = "component_storage_fields_require_a_miden_project_manifest";
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
@@ -1431,7 +1427,7 @@ struct TestComponentStorage {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
-        stderr.contains("storage slot names derive from the `[lib].namespace`"),
+        stderr.contains("storage slot names derive from its `[lib].namespace`"),
         "unexpected stderr: {stderr}"
     );
 }
@@ -1492,8 +1488,7 @@ supported-types = ["RegularAccountUpdatableCode"]
         .build()
 }
 
-/// Component source whose trait yields WIT interface `test-component`, shared by the namespace
-/// negative tests.
+/// Component source shared by the namespace negative tests.
 const NAMESPACE_TEST_COMPONENT: &str = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
@@ -1516,41 +1511,40 @@ impl TestComponent for TestComponentStorage {
 "#;
 
 #[test]
-fn component_namespace_rejects_a_mismatching_package() {
-    // The interface segment matches the trait, but the package segment diverges from the
-    // manifest's package name; only full namespace equality catches it.
-    let name = "component_namespace_rejects_a_mismatching_package";
-    let namespace = "miden:wrong-package/test-component@0.0.1";
+fn component_namespace_rejects_two_segments() {
+    let name = "component_namespace_rejects_two_segments";
+    let namespace = "miden::test_component";
     let cargo_proj =
         account_component_project_with_namespace(name, namespace, NAMESPACE_TEST_COMPONENT);
 
     let output = cargo_check_miden_target(&cargo_proj);
-    assert!(!output.status.success(), "expected a wrong package segment to be rejected");
+    assert!(!output.status.success(), "expected a two-segment namespace to be rejected");
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(stderr.contains("declares `miden:wrong-package/"), "unexpected stderr: {stderr}");
     assert!(
-        stderr.contains(&format!(
-            "Update `[lib].namespace` to `miden:{}/test-component@0.0.1`",
-            name.replace('_', "-")
-        )),
+        stderr.contains("invalid `[lib].namespace` `miden::test_component`"),
+        "unexpected stderr: {stderr}"
+    );
+    assert!(stderr.contains("exactly three segments"), "unexpected stderr: {stderr}");
+    assert!(
+        stderr.contains("miden::counter_contract::counter_contract"),
         "unexpected stderr: {stderr}"
     );
 }
 
 #[test]
-fn component_namespace_rejects_a_mismatching_version() {
-    let name = "component_namespace_rejects_a_mismatching_version";
-    let namespace = format!("miden:{}/test-component@9.9.9", name.replace('_', "-"));
+fn component_namespace_rejects_a_component_model_id() {
+    let name = "component_namespace_rejects_a_component_model_id";
+    let namespace = format!("miden:{}/test-component@0.0.1", name.replace('_', "-"));
     let cargo_proj =
         account_component_project_with_namespace(name, &namespace, NAMESPACE_TEST_COMPONENT);
 
     let output = cargo_check_miden_target(&cargo_proj);
-    assert!(!output.status.success(), "expected a wrong namespace version to be rejected");
+    assert!(!output.status.success(), "expected a component-model id to be rejected");
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(stderr.contains("@9.9.9`"), "unexpected stderr: {stderr}");
-    assert!(stderr.contains("Update `[lib].namespace` to"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains("invalid `[lib].namespace`"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains(&namespace), "unexpected stderr: {stderr}");
 }
 
 #[test]
@@ -1653,6 +1647,136 @@ impl PlainAuth {
     assert!(stderr.contains("not the implementation block"), "unexpected stderr: {stderr}");
     assert!(
         !stderr.contains("cannot find attribute `miden_auth_script_requires_component`"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn component_methods_with_non_snake_case_names_export_at_their_rust_names() {
+    // wit-bindgen names the guest trait methods after the kebab-case WIT names (`get_url`,
+    // `type_`), while the exports keep the Rust identifiers as their Miden path leaves.
+    let name = "component_methods_with_non_snake_case_names";
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component]
+#[allow(non_snake_case)]
+trait TestComponent {
+    #[account_procedure]
+    fn getURL(&self) -> Felt;
+    #[account_procedure]
+    fn r#type(&self) -> Felt;
+}
+
+#[component]
+#[allow(non_snake_case)]
+impl TestComponent for TestComponentStorage {
+    fn getURL(&self) -> Felt {
+        felt!(1)
+    }
+
+    fn r#type(&self) -> Felt {
+        felt!(2)
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project(name, lib_rs);
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        cargo_proj.root(),
+        WasmTranslationConfig::default(),
+        [],
+    );
+    let package = test.compile_package();
+    let exports = package
+        .manifest
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
+    let namespace = base::account_component_namespace(name, "test-component");
+    for leaf in ["getURL", "type"] {
+        let expected = format!("::{namespace}::{leaf}");
+        assert!(exports.contains(&expected), "expected export `{expected}`, got {exports:?}");
+    }
+}
+
+#[test]
+fn component_impl_accepts_a_storage_alias_in_a_relocated_impl() {
+    // `bindings::export!` accepts only an identifier, so the macro must not hand it the impl's
+    // module-qualified self type.
+    let name = "component_impl_accepts_a_storage_alias_in_a_relocated_impl";
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+pub mod wallet {
+    #[miden::component_storage]
+    pub struct TestComponentStorage;
+}
+
+#[miden::component]
+pub trait TestComponent {
+    fn value(&self) -> miden::Felt;
+}
+
+mod exports {
+    use crate::TestComponent;
+    type StorageAlias = crate::wallet::TestComponentStorage;
+
+    #[miden::component]
+    impl TestComponent for self::StorageAlias {
+        fn value(&self) -> miden::Felt {
+            miden::felt!(1)
+        }
+    }
+}
+"#;
+    let cargo_proj = account_component_project(name, lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        output.status.success(),
+        "expected a local storage alias and relocated impl to compile: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn component_method_named_init_is_rejected() {
+    // Codegen emits the component initializer as `<namespace>::init`, so an exported procedure
+    // with that name would collide with it.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component]
+trait TestComponent {
+    #[account_procedure]
+    fn init(&self);
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn init(&self) {}
+}
+"#;
+
+    let cargo_proj = account_component_project("component_method_named_init_is_rejected", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected a component method named `init` to be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("reserved for the compiler's component initializer"),
         "unexpected stderr: {stderr}"
     );
 }

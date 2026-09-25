@@ -1,4 +1,4 @@
-use std::{fs, path::Path, sync::Arc};
+use std::{collections::BTreeSet, fs, path::Path, sync::Arc};
 
 use miden_assembly::ast::types::{FunctionType, Type};
 use miden_core::serde::Serializable;
@@ -99,8 +99,7 @@ fn assert_struct_field_types(ty: &Type, expected_fields: &[&str]) {
 fn assert_component_export_signatures_match_wit(package: &miden_mast_package::Package) {
     let component_export =
         find_manifest_procedure(package, "component export process-mixed", |name| {
-            name.starts_with("::\"miden:cross-ctx-account-word/foo@1.0.0\"::")
-                && name.ends_with("::\"process-mixed\"")
+            name == "::miden::cross_ctx_account_word::foo::process_mixed"
         });
     assert_eq!(
         component_export
@@ -237,7 +236,7 @@ version = "0.1.0"
 
 [lib]
 kind = "note"
-namespace = "miden:swapp-note/miden-swapp-note@0.1.0"
+namespace = "miden::swapp_note::swapp_note"
 path = "src/lib.rs"
 
 [dependencies]
@@ -385,8 +384,66 @@ fn build_consumer_wat_with_package_cache(
 }
 
 fn component_namespace(name: &str) -> String {
-    let package = name.replace('_', "-");
-    format!("miden:{package}/miden-{package}@0.0.1")
+    let package = name.replace('-', "_");
+    format!("miden::{package}::{package}")
+}
+
+/// Returns the Miden paths the package's embedded WIT declares as exports, plus the
+/// compiler's `<namespace>::init` initializer: the exact set a manifest must expose.
+pub(crate) fn expected_exports_from_wit(package: &Package, namespace: &str) -> BTreeSet<String> {
+    // Manifest paths are absolute.
+    let absolute = |path: &str| {
+        if path.starts_with("::") {
+            path.to_string()
+        } else {
+            format!("::{path}")
+        }
+    };
+    let external_id = |function: &wit_parser::Function| {
+        absolute(function.external_id.as_deref().unwrap_or_else(|| {
+            panic!("exported WIT function `{}` carries no external-id", function.name)
+        }))
+    };
+    let wit =
+        midenc_frontend_wasm_metadata::package_wit(package).expect("package must embed its WIT");
+    let wit = core::str::from_utf8(wit).expect("embedded WIT must be UTF-8");
+    let parsed = wit_parser::UnresolvedPackageGroup::parse("package.wit", wit)
+        .unwrap_or_else(|(map, err)| panic!("embedded WIT must parse: {}", err.render(&map)));
+    let mut expected = BTreeSet::from([absolute(&format!(
+        "{namespace}::{}",
+        midenc_frontend_wasm_metadata::COMPONENT_INIT_PROCEDURE
+    ))]);
+    for (_, world) in parsed.main.worlds.iter() {
+        for export in world.exports.values() {
+            match export {
+                wit_parser::WorldItem::Interface { id, .. } => {
+                    for function in parsed.main.interfaces[*id].functions.values() {
+                        expected.insert(external_id(function));
+                    }
+                }
+                wit_parser::WorldItem::Function(function) => {
+                    expected.insert(external_id(function));
+                }
+                wit_parser::WorldItem::Type { .. } => {}
+            }
+        }
+    }
+    expected
+}
+
+/// Asserts that the manifest of `package` exports exactly [`expected_exports_from_wit`].
+pub(crate) fn assert_exports_match_wit(package: &Package, namespace: &str) {
+    let actual = package
+        .manifest
+        .exports()
+        .filter_map(|export| export.as_procedure())
+        .map(|export| export.path.as_str().to_string())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        actual,
+        expected_exports_from_wit(package, namespace),
+        "the manifest must export exactly the WIT-declared procedures and init"
+    );
 }
 
 #[test]
@@ -473,7 +530,8 @@ impl Note {
     .build();
 
     // Ensure the crate compiles all the way to a package, exercising the bindings.
-    test.compile_package();
+    let package = test.compile_package();
+    assert_exports_match_wit(&package, &namespace);
 }
 
 /// Compiles a note script that calls every `ActiveNote` trait method on `self`.
@@ -642,8 +700,8 @@ fn rust_sdk_cross_ctx_account_and_note() {
             .starts_with("intrinsics")),
         "expected no intrinsics in the exports"
     );
-    let expected_module_prefix = "::\"miden:cross-ctx-account/";
-    let expected_function_suffix = "\"process-felt\"";
+    let expected_module_prefix = "::miden::cross_ctx_account::foo::";
+    let expected_function_suffix = "::process_felt";
     assert!(
         exports.iter().any(|export| export.starts_with(expected_module_prefix)
             && export.ends_with(expected_function_suffix)),
@@ -682,8 +740,8 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     let account_package = test.compile_package();
     assert!(account_package.is_library());
     assert_component_export_signatures_match_wit(account_package.as_ref());
-    let expected_module_prefix = "::\"miden:cross-ctx-account-word/";
-    let expected_function_suffix = "\"process-word\"";
+    let expected_module_prefix = "::miden::cross_ctx_account_word::foo::";
+    let expected_function_suffix = "::process_word";
     let exports = account_package
         .manifest
         .exports()
@@ -782,7 +840,7 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
     let first_dependency = read_cached_dependency_package(&first_build, "basic-wallet");
     let first_export =
         find_manifest_procedure(&first_dependency, "basic-wallet receive-asset export", |path| {
-            path.ends_with("::\"receive-asset\"")
+            path == "::miden::basic_wallet::basic_wallet::receive_asset"
         });
     let first_root = first_export.digest;
     assert!(
@@ -811,7 +869,7 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
     let second_dependency = read_cached_dependency_package(&second_build, "basic-wallet");
     let second_export =
         find_manifest_procedure(&second_dependency, "basic-wallet receive-asset export", |path| {
-            path.ends_with("::\"receive-asset\"")
+            path == "::miden::basic_wallet::basic_wallet::receive_asset"
         });
     let second_root = second_export.digest;
 
@@ -840,17 +898,9 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
             "expected exactly one package-version field in {}",
             manifest_path.display()
         );
-        let mut changed_manifest =
+        // The namespace carries no version, so only the package version changes.
+        let changed_manifest =
             original_manifest.replacen("version = \"0.1.0\"", "version = \"0.1.1\"", 1);
-        if manifest_path == &dependency_miden_manifest {
-            assert_eq!(
-                changed_manifest.matches("@0.1.0").count(),
-                1,
-                "expected exactly one namespace version in {}",
-                manifest_path.display()
-            );
-            changed_manifest = changed_manifest.replacen("@0.1.0", "@0.1.1", 1);
-        }
         fs::write(manifest_path, changed_manifest).unwrap();
     }
 
@@ -859,7 +909,7 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
     let third_dependency = read_cached_dependency_package(&third_build, "basic-wallet");
     let third_export =
         find_manifest_procedure(&third_dependency, "basic-wallet receive-asset export", |path| {
-            path.ends_with("::\"receive-asset\"")
+            path == "::miden::basic_wallet::basic_wallet::receive_asset"
         });
     let third_root = third_export.digest;
 
@@ -894,7 +944,7 @@ fn rust_sdk_fpi_reexpands_after_only_package_cache_env_changes() {
     let first_root = find_manifest_procedure(
         &first_package,
         "original basic-wallet receive-asset export",
-        |path| path.ends_with("::\"receive-asset\""),
+        |path| path == "::miden::basic_wallet::basic_wallet::receive_asset",
     )
     .digest;
 
@@ -918,7 +968,7 @@ fn rust_sdk_fpi_reexpands_after_only_package_cache_env_changes() {
     let second_root = find_manifest_procedure(
         &second_package,
         "changed basic-wallet receive-asset export",
-        |path| path.ends_with("::\"receive-asset\""),
+        |path| path == "::miden::basic_wallet::basic_wallet::receive_asset",
     )
     .digest;
     assert_ne!(first_root, second_root, "the prepopulated packages must embed different roots");
@@ -975,8 +1025,8 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     );
     let account_package = test.compile_package();
     assert!(account_package.is_library());
-    let expected_module_prefix = "::\"miden:cross-ctx-account-word-arg/";
-    let expected_function_suffix = "\"process-word\"";
+    let expected_module_prefix = "::miden::cross_ctx_account_word_arg::foo::";
+    let expected_function_suffix = "::process_word";
     let exports = account_package
         .manifest
         .exports()

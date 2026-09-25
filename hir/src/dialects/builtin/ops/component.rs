@@ -1,12 +1,10 @@
 mod interface;
 
-pub use self::interface::{
-    ComponentExport, ComponentId, ComponentInterface, ModuleExport, ModuleInterface,
-};
+pub use self::interface::{ComponentExport, ComponentInterface, ModuleExport, ModuleInterface};
 use crate::{
     Ident, IdentAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol,
-    SymbolManager, SymbolManagerMut, SymbolMap, SymbolRef, SymbolTable, SymbolUseList,
-    UnsafeIntrusiveEntityRef, Usable, Visibility,
+    SymbolManager, SymbolManagerMut, SymbolMap, SymbolNameComponent, SymbolPath, SymbolRef,
+    SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable, Visibility,
     derive::operation,
     dialects::builtin::{BuiltinDialect, attributes::VisibilityAttr},
     interner,
@@ -15,7 +13,6 @@ use crate::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
     },
-    version::VersionAttr,
 };
 
 pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
@@ -45,7 +42,10 @@ pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
 ///
 /// Components are linked into Miden Assembly according to the following rules:
 ///
-/// * A [Component] corresponds to a Miden Assembly namespace, and a Miden package
+/// * A [Component] corresponds to a Miden Assembly namespace, and a Miden package. The name of the
+///   component IS that namespace path, e.g. `miden::counter_contract::counter_contract`: its
+///   `::`-separated segments are the leading components of the path of every symbol inside it
+///   (see [Component::namespace_path]).
 /// * Component-level functions are emitted to a MASM module corresponding to the root of the
 ///   namespace, i.e. as if defined in `mod.masm` at the root of a MASM source project.
 /// * Each [super::Interface] of a component is emitted to a MASM module of the same name
@@ -77,11 +77,7 @@ pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
 )]
 pub struct Component {
     #[attr]
-    namespace: IdentAttr,
-    #[attr]
     name: IdentAttr,
-    #[attr]
-    version: VersionAttr,
     #[attr]
     #[default]
     visibility: VisibilityAttr,
@@ -94,30 +90,18 @@ pub struct Component {
 }
 
 impl OpPrinter for Component {
-    /// TODO(hir): what this prints does not parse back.
-    ///
-    /// A [ComponentId] renders as `<namespace>:<name>@<version>`, which is **one** symbol-path
-    /// component — the `:` and the `@` are part of the name, and `ComponentId::try_from` splits
-    /// them back out itself. `print_symbol_name` emits it bare, so a printed component reads
-    /// `@hir_ns:test@1.0.0`, while [`Component`]'s parser requires the quoted form
-    /// `@"hir_ns:test@1.0.0"` and rejects the bare one with "invalid component id: missing
-    /// namespace identifier".
-    ///
-    /// The consequence is concrete: `midenc --emit=hir` output for anything holding a component
-    /// cannot be fed back to `midenc`, which is the one thing the `.hir` input route exists for.
-    /// A world of plain modules round-trips; a world holding a component does not, for this
-    /// reason alone. See the fixture notes on `WORLD` in
-    /// `midenc-compile/src/pipeline/frontends/hir.rs`, which is hand-quoted because of this.
-    ///
-    /// Fixing it means quoting here when the id is not a bare identifier — not relaxing the
-    /// parser, which is right to insist the name be one component.
     fn print(&self, printer: &mut AsmPrinter<'_>) {
-        use alloc::string::ToString;
-
         printer.print_space();
         printer.print_keyword(self.get_visibility().as_str());
         printer.print_space();
-        printer.print_symbol_name(interner::Symbol::intern(self.id().to_string()));
+        // Printed one `@`-prefixed segment per `::`-separated segment of the name
+        // (`@miden::@a::@b`), the symbol-path form the parser reads back and re-joins.
+        let path = SymbolPath::from_iter(
+            SymbolPath::segments_of(Symbol::name(self))
+                .into_iter()
+                .map(SymbolNameComponent::Component),
+        );
+        printer.print_symbol_path(&path);
         printer.print_space();
         printer.print_region(&self.body());
     }
@@ -128,12 +112,7 @@ impl OpParser for Component {
         state: &mut crate::OperationState,
         parser: &mut dyn crate::OpAsmParser<'_>,
     ) -> crate::ParseResult {
-        use alloc::{format, string::ToString, vec};
-
-        use crate::{
-            diagnostics::{LabeledSpan, RelatedError, Report, Severity, miette::diagnostic},
-            parse::{ParserError, Token},
-        };
+        use crate::parse::Token;
 
         let context = parser.context_rc();
         let visibility = parser
@@ -148,27 +127,12 @@ impl OpParser for Component {
         state
             .add_attribute("visibility", context.create_attribute::<VisibilityAttr, _>(visibility));
 
-        let name = parser.parse_symbol_name()?;
-        let name_span = name.span;
-        let component_id = name.as_str().parse::<ComponentId>().map_err(|err| {
-            ParserError::Report(RelatedError::new(Report::from(diagnostic!(
-                severity = Severity::Error,
-                labels = vec![LabeledSpan::at(name_span, err.to_string())],
-                "invalid component name"
-            ))))
-        })?;
-
-        state.add_attribute(
-            "namespace",
-            context.create_attribute::<IdentAttr, _>(Ident::new(component_id.namespace, name_span)),
-        );
+        // The name is the whole (possibly multi-segment) path, joined with `::`
+        let (span, path) = parser.parse_symbol_path()?.into_parts();
+        let name = path.to_symbol_name();
         state.add_attribute(
             "name",
-            context.create_attribute::<IdentAttr, _>(Ident::new(component_id.name, name_span)),
-        );
-        state.add_attribute(
-            "version",
-            context.create_attribute::<VersionAttr, _>(component_id.version),
+            context.create_attribute::<IdentAttr, _>(Ident::new(name, span)),
         );
 
         let region = parser.context().create_region();
@@ -180,8 +144,9 @@ impl OpParser for Component {
 }
 
 impl midenc_session::Emit for Component {
+    /// The last segment of the component name, which is file-name friendly.
     fn name(&self) -> Option<midenc_hir_symbol::Symbol> {
-        Some(self.name().as_symbol())
+        SymbolPath::segments_of(self.get_name().as_symbol()).last().copied()
     }
 
     fn output_type(&self, _mode: midenc_session::OutputMode) -> midenc_session::OutputType {
@@ -235,23 +200,11 @@ impl Symbol for Component {
     }
 
     fn name(&self) -> interner::Symbol {
-        let id = ComponentId {
-            namespace: self.get_namespace().as_symbol(),
-            name: self.get_name().as_symbol(),
-            version: self.get_version().clone(),
-        };
-        interner::Symbol::intern(id)
+        self.get_name().as_symbol()
     }
 
     fn set_name(&mut self, name: interner::Symbol) {
-        let ComponentId {
-            name,
-            namespace,
-            version,
-        } = name.as_str().parse::<ComponentId>().expect("invalid component identifier");
         self.name_mut().name = name;
-        self.namespace_mut().name = namespace;
-        *self.get_version_mut() = version;
     }
 
     fn visibility(&self) -> Visibility {
@@ -292,14 +245,19 @@ impl Component {
     /// Name of the optional operation attribute (a `BoolAttr`) marking a component the compiler
     /// invented to wrap a bare core module, rather than one an author wrote.
     ///
-    /// This is a marker rather than an id comparison because the id is not the compiler's to
-    /// reserve: `root_ns:root@1.0.0` is a name an author may write, and a component carrying it
-    /// is theirs, with the module visibility they declared.
+    /// This is a marker rather than a name comparison because the wrapper has no name of its own:
+    /// it is named by the target namespace (or by the wrapped module when there is none), which is
+    /// a name an author may equally give a component of theirs, with the module visibility they
+    /// declared.
     pub const SYNTHETIC_WRAPPER_ATTR: &'static str = "synthetic_wrapper";
 
-    #[inline]
-    pub fn id(&self) -> ComponentId {
-        ComponentId::from(self)
+    /// Returns the absolute path this component is rooted at, with one component per `::`-separated
+    /// segment of its name; every symbol inside the component has it as a prefix.
+    ///
+    /// Note that `Symbol::path()` of the component itself ends in a single `Leaf` holding its
+    /// whole name instead.
+    pub fn namespace_path(&self) -> SymbolPath {
+        SymbolPath::from_masm_module_id(Symbol::name(self).as_str())
     }
 
     /// Mark this component as the compiler's wrapper around a bare core module.

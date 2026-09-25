@@ -311,14 +311,18 @@ fn make_rust_standalone(_session: Rc<Session>) -> Rc<dyn Frontend> {
 /// gap: a dependency's checkpoints are precisely what must *not* reach this request's observers
 /// or its goal, so the type system holding it here is the guard. The **root** target does not
 /// come through here at all; see [`RustProjectFrontend::compile`].
+///
+/// `namespace` is the namespace of the dependency target being built, which its component is
+/// rooted at.
 pub fn compile_manifest(
     manifest_path: &Path,
     filesystem_cache_dir: Option<&Path>,
+    namespace: Option<midenc_hir::SymbolPath>,
     context: Rc<Context>,
 ) -> CompilerResult<CodegenOutput> {
     let session = context.session_rc();
     let wasm = build_manifest_to_wasm(manifest_path, filesystem_cache_dir, &session)?;
-    lower_wasm_artifact(wasm, context)
+    lower_wasm_artifact(wasm, namespace, context)
 }
 
 /// Run `cargo` over the project the manifest at `manifest_path` declares, and hand back the
@@ -386,8 +390,12 @@ pub fn build_manifest_to_wasm(
 ///
 /// Named rather than inlined so that the half of the entry point which does *not* require a
 /// multi-minute `cargo build -Z build-std` against the SDK is assertable on its own.
-fn lower_wasm_artifact(wasm: InputFile, context: Rc<Context>) -> CompilerResult<CodegenOutput> {
-    super::wasm::lower_wasm_input(&wasm, context)
+fn lower_wasm_artifact(
+    wasm: InputFile,
+    namespace: Option<midenc_hir::SymbolPath>,
+    context: Rc<Context>,
+) -> CompilerResult<CodegenOutput> {
+    super::wasm::lower_wasm_input(&wasm, namespace, context)
 }
 
 /// Compile the Rust source `input` to WebAssembly, and hand back the file it produced.
@@ -3517,7 +3525,7 @@ path = "lib.rs"
         let dir = manifest_fixture("rust_manifest_kernel", KERNEL_MANIFEST);
 
         let msg = manifest_error(
-            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {})),
+            compile_manifest(&dir.join("miden-project.toml"), None, None, manifest_context(|_| {})),
             "a kernel cannot be built through this route",
         );
         assert!(
@@ -3534,6 +3542,7 @@ path = "lib.rs"
         let msg = manifest_error(
             compile_manifest(
                 &dir.join("miden-project.toml"),
+                None,
                 None,
                 manifest_context(|options| options.target = Some("three".to_string())),
             ),
@@ -3562,7 +3571,7 @@ path = "lib.rs"
             .expect("should write the Cargo manifest");
 
         let from_manifest_build = manifest_error(
-            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {})),
+            compile_manifest(&dir.join("miden-project.toml"), None, None, manifest_context(|_| {})),
             "a project declaring two executables cannot be built without a selection",
         );
         let from_session = Session::new(
@@ -3600,7 +3609,7 @@ path = "lib.rs"
         assert!(!dir.join("Cargo.toml").exists(), "the Cargo manifest must not exist");
 
         let msg = manifest_error(
-            compile_manifest(&dir.join("Cargo.toml"), None, manifest_context(|_| {})),
+            compile_manifest(&dir.join("Cargo.toml"), None, None, manifest_context(|_| {})),
             "a workspace manifest cannot be built without a selection",
         );
         assert!(
@@ -3618,7 +3627,7 @@ path = "lib.rs"
         let dir = manifest_fixture("rust_manifest_direct", WORKSPACE_MANIFEST);
 
         let msg = manifest_error(
-            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {})),
+            compile_manifest(&dir.join("miden-project.toml"), None, None, manifest_context(|_| {})),
             "a workspace manifest cannot be built without a selection",
         );
         assert!(
@@ -3639,7 +3648,12 @@ path = "lib.rs"
         let manifest = dir.join("miden-project.toml");
 
         let msg = manifest_error(
-            compile_manifest(&manifest, None, manifest_context(|options| options.workspace = true)),
+            compile_manifest(
+                &manifest,
+                None,
+                None,
+                manifest_context(|options| options.workspace = true),
+            ),
             "this workspace has no members to build",
         );
         assert!(
@@ -3650,6 +3664,7 @@ path = "lib.rs"
         let msg = manifest_error(
             compile_manifest(
                 &manifest,
+                None,
                 None,
                 manifest_context(|options| options.packages = vec!["absent".to_string()]),
             ),
@@ -3687,6 +3702,7 @@ path = "lib.rs"
         let msg = manifest_error(
             compile_manifest(
                 &dir.join("miden-project.toml"),
+                None,
                 None,
                 manifest_context(|options| options.packages = vec!["other".to_string()]),
             ),
@@ -3883,7 +3899,7 @@ path = "lib.rs"
         let wasm = testing::fixture_source("rust_manifest_lowering", "lib.wat", MANIFEST_WAT);
         let input = InputFile::from_path(wasm).expect("a `.wat` file is a valid compiler input");
 
-        let output = lower_wasm_artifact(input, manifest_context(|_| {}))
+        let output = lower_wasm_artifact(input, None, manifest_context(|_| {}))
             .expect("the module a manifest build produces must lower to Miden Assembly");
 
         // Two weaker assertions this deliberately avoids. A module *count* is satisfied by a
@@ -3905,5 +3921,20 @@ path = "lib.rs"
             masm.contains("pub proc add(i32, i32) -> i32"),
             "the lowered Miden Assembly must export the fixture's own procedure: {masm}"
         );
+    }
+
+    /// A dependency's core module is rooted at the namespace of the dependency target, which
+    /// is where the assembler looks for the target's procedures.
+    #[test]
+    fn a_dependency_core_module_is_rooted_at_its_target_namespace() {
+        let wasm = testing::fixture_source("rust_manifest_namespace", "lib.wat", MANIFEST_WAT);
+        let input = InputFile::from_path(wasm).expect("a `.wat` file is a valid compiler input");
+        let namespace = midenc_hir::SymbolPath::from_masm_module_id("acme::math::math");
+
+        let output = lower_wasm_artifact(input, Some(namespace.clone()), manifest_context(|_| {}))
+            .expect("the module a manifest build produces must lower to Miden Assembly");
+
+        assert_eq!(output.component.id, Some(namespace));
+        assert_eq!(output.component.root.as_str(), "::acme::math::math");
     }
 }

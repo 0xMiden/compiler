@@ -320,25 +320,26 @@ pub(crate) fn require_input_path_for_seed(input: &InputFile) -> CompilerResult<(
 /// # The rule is shared across formats; the reading is not
 ///
 /// "The file says what it is" is also how a standalone `.hir` input is handled: a `.hir` file
-/// declares its own component id, codegen roots the Miden Assembly at
-/// `ComponentId::to_library_path()`, and no name-derived library namespace can ever equal
-/// that. Only the *extraction* differs by format — a `namespace` declaration in Miden Assembly,
-/// a component id in HIR — which is why [`declared_namespace`] dispatches on the input's file
-/// type and each format gets its own reader: [`masm_namespace_declaration`] and
-/// [`hir_declared_namespace`].
+/// declares its own component name, codegen roots the Miden Assembly at
+/// `Component::namespace_path().to_library_path()`, and no name-derived library namespace can
+/// ever equal that. Only the *extraction* differs by format — a `namespace` declaration in Miden
+/// Assembly, a component name in HIR, the namespace of the function exports' Miden paths in a
+/// WebAssembly component — which is why [`declared_namespace`] dispatches on the input's file
+/// type and each format gets its own reader: [`masm_namespace_declaration`],
+/// [`hir_declared_namespace`] and [`wasm_declared_namespace`].
 ///
-/// The complementary mechanism is codegen's re-rooting (`MasmComponent::source_inputs` in
-/// `codegen/masm`), and the line between the two is *whether the source named its own root*, not
-/// which format it is written in. Re-rooting covers the roots nobody wrote: the synthetic wrapper
-/// the Wasm frontend builds around every core Wasm module, and a world declaring no component at
+/// The complementary mechanisms cover the roots nobody wrote, and the line is *whether the source
+/// named its own root*, not which format it is written in. The Wasm frontend roots the synthetic
+/// wrapper it builds around a core Wasm module at the target namespace, and codegen's re-rooting
+/// (`MasmComponent::source_inputs` in `codegen/masm`) moves a world declaring no component at
 /// all, whose root code generation has to invent. Those need no declaration read out of them,
-/// because they are moved to whatever namespace the target ends up with.
+/// because they end up at whatever namespace the target ends up with.
 ///
-/// What re-rooting deliberately does *not* cover is an authored component id, which is the code's
-/// own identity — moving it would rename the procedures every dependent addresses. So for a `.hir`
-/// file declaring a component, this scan is the only thing that can make the two namespaces agree,
-/// which is why [`hir_declared_namespace`] re-renders the id through `ComponentId` rather than
-/// echoing the token it found.
+/// What re-rooting deliberately does *not* cover is an authored component name, which is the
+/// code's own identity — moving it would rename the procedures every dependent addresses. So for a
+/// `.hir` file declaring a component, this scan is the only thing that can make the two namespaces
+/// agree, which is why [`hir_declared_namespace`] re-renders the name through `SymbolPath` rather
+/// than echoing the token it found.
 ///
 /// Two mechanisms, and no third: either the file names its root, and the target is derived from
 /// it here, or it does not, and codegen puts the root wherever the target says.
@@ -372,10 +373,30 @@ fn declared_namespace(input: &InputFile) -> Option<String> {
     match input.file_type() {
         FileType::Masm => masm_namespace_declaration(&root_source_text(input)?),
         FileType::Hir => hir_declared_namespace(&root_source_text(input)?),
-        // Every other format — WebAssembly, Rust — has nothing to declare, and keeps the
+        FileType::Wasm | FileType::Wat => {
+            wasm_declared_namespace(&super::frontends::WasmFrontend::read_binary(input).ok()?)
+        }
+        // Every other format — Rust, packages, manifests — has nothing to declare, and keeps the
         // artifact name.
         _ => None,
     }
+}
+
+/// The namespace a WebAssembly component declares: the one shared by the Miden paths of its
+/// function exports, rendered relative (`a::b::c`) like [`hir_declared_namespace`] does.
+///
+/// A core module, a component without function exports, and a component the frontend is going to
+/// reject (a missing or malformed `external-id`, or exports under different namespaces) declare
+/// nothing here; the frontend reports the latter with its own diagnostic.
+fn wasm_declared_namespace(wasm: &[u8]) -> Option<String> {
+    use midenc_hir::{SymbolNameComponent, SymbolPath};
+
+    let namespace = midenc_frontend_wasm::declared_namespace(wasm).ok()??;
+    let relative = namespace
+        .components()
+        .filter(|component| !matches!(component, SymbolNameComponent::Root))
+        .collect::<SymbolPath>();
+    Some(relative.to_library_path().to_string())
 }
 
 /// The text of `input`'s root source, however the input carries it.
@@ -447,7 +468,7 @@ const HIR_MODULE_OP: &str = "builtin.module";
 /// Assembly at, because `load_target_sources` rejects a root module that does not sit exactly at
 /// its target's namespace. Codegen decides that in one of two places, and this mirrors both:
 ///
-/// - **A file declaring a component** is rooted at that component's *id*
+/// - **A file declaring a component** is rooted at that component's *name*
 ///   (`ToMasmComponent for builtin::Component`). This is the case whether the component stands
 ///   alone or is nested in a `builtin.world`, because a world holding one component is lowered by
 ///   lowering that component.
@@ -465,32 +486,29 @@ const HIR_MODULE_OP: &str = "builtin.module";
 ///
 /// # The names are re-rendered, not echoed
 ///
-/// A component's id is handed to the very same
-/// [`ComponentId`](midenc_hir::dialects::builtin::ComponentId) parser the
-/// [`Component`](midenc_hir::dialects::builtin::Component) op uses, and rendered by the very same
-/// `to_library_path` codegen calls. That is not cosmetic: a component id may omit its version,
-/// and `ComponentId` supplies `1.0.0`, so `@"a:b"` must become `"a:b@1.0.0"` — echoing the token
-/// would produce a namespace codegen never roots anything at. A module's name needs no such
-/// interpretation, and both sides normalize it identically: [`synthesize_target`] absolutizes it
-/// through `Path::to_absolute` while codegen builds `PathBuf::new("::{module}")`, and both route
-/// every component through `PathBuf::push_component`, which decides quoting.
+/// A component's name is a Miden namespace path: its `::`-separated segments (see
+/// [`SymbolPath::segments_of`](midenc_hir::SymbolPath::segments_of)) become one path component
+/// each, rendered by the very same `SymbolPath::to_library_path` codegen calls, which quotes a
+/// segment that is not a bare identifier. So `@miden::@a::@b` becomes `miden::a::b`, and
+/// `@"a:b"` becomes `"a:b"`. A module's name needs no such interpretation, and both sides
+/// normalize it identically: [`synthesize_target`] absolutizes it through `Path::to_absolute`
+/// while codegen builds `PathBuf::new("::{module}")`, and both route every component through
+/// `PathBuf::push_component`, which decides quoting.
 ///
 /// This leaves the scan responsible for exactly one thing: *locating* the name. Everything after
 /// that is shared code, which is what makes a mis-scan fail rather than mislead.
 ///
-/// # A component id is always quoted; a module name need not be
+/// # A component name is a run of symbol names
 ///
-/// `namespace:name@version` is **one** symbol-path component, and neither `:` nor `@` is an
-/// identifier character — so the lexer only produces such a name from a string literal, and the
-/// op's parser rejects a bare `@name` with "invalid component id: missing namespace identifier".
-/// Both spellings are therefore scanned and the difference is left to `ComponentId`: a component
-/// declaring a bare name is rejected here because it is rejected there.
+/// A component is printed as `@a::@b::@c`, one `@`-name per segment, each either bare or quoted
+/// (a segment that is not a bare identifier, e.g. `hir_ns:test@1.0.0`, is quoted). The whole run
+/// is scanned and joined with `::`, exactly as the op's parser joins it.
 ///
 /// # What it does not accept
 ///
 /// - **A file declaring neither a component nor a module** — nothing was declared, so the
-///   artifact name stands, as it does for a `.wasm`.
-/// - **A file declaring more than one component.** There is no single id to be rooted at, and
+///   artifact name stands, as it does for a core Wasm module.
+/// - **A file declaring more than one component.** There is no single name to be rooted at, and
 ///   picking one would be an invention. Saying nothing agrees with codegen, which rejects such a
 ///   world outright naming the package-metadata limitation (`too_many_components` in
 ///   `codegen/masm`), so the build fails on the limitation rather than on a namespace this
@@ -506,30 +524,33 @@ const HIR_MODULE_OP: &str = "builtin.module";
 ///   inside a component, or a module inside a module, is counted here and is not there. Such a
 ///   file falls back to the artifact name.
 /// - **A declaration split across lines**, one whose visibility is joined to its name without
-///   whitespace (`private@"a:b"`, which the lexer does tokenize), and **a name containing an
-///   escaped quote or the sequence `//`** — being line-oriented and delimiter-driven where the
-///   lexer is neither.
+///   whitespace (`private@"a:b"`, which the lexer does tokenize), and **a name containing the
+///   sequence `//` or an escaped line break** — being line-oriented where the lexer is not.
 ///
 /// All of these **fail closed**, in the same sense [`masm_namespace_declaration`]'s misses do:
 /// the namespace this returns is compared against what codegen produces from the same file, so
 /// anything mis-scanned is a build that fails rather than one that assembles under a namespace
 /// the source never claimed. What is lost is the quality of the message, not the outcome.
 fn hir_declared_namespace(source: &str) -> Option<String> {
-    use midenc_hir::dialects::builtin::ComponentId;
+    use midenc_hir::{SymbolNameComponent, SymbolPath, interner::Symbol};
 
     let components = hir_declarations(source, HIR_COMPONENT_OP)?;
     if !components.is_empty() {
-        let [id] = components[..] else {
+        let [name] = &components[..] else {
             return None;
         };
-        let id = id.parse::<ComponentId>().ok()?;
-        return Some(id.to_library_path().to_string());
+        let path = SymbolPath::from_iter(
+            SymbolPath::segments_of(Symbol::intern(name))
+                .into_iter()
+                .map(SymbolNameComponent::Component),
+        );
+        return Some(path.to_library_path().to_string());
     }
 
-    let [module] = hir_declarations(source, HIR_MODULE_OP)?[..] else {
+    let [module] = &hir_declarations(source, HIR_MODULE_OP)?[..] else {
         return None;
     };
-    Some(module.to_string())
+    Some(module.clone())
 }
 
 /// The names declared by every `op_name` declaration in `source`, in order.
@@ -537,7 +558,7 @@ fn hir_declared_namespace(source: &str) -> Option<String> {
 /// `None` — rather than a shorter list — when any occurrence of `op_name` cannot be read as a
 /// declaration, because a scan that skipped what it could not understand would report a *count*
 /// the file does not have, and the count is what decides whether anything is declared at all.
-fn hir_declarations<'a>(source: &'a str, op_name: &str) -> Option<Vec<&'a str>> {
+fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<String>> {
     let mut declared = Vec::new();
     for line in source.lines() {
         // `//` runs to the end of the line, so everything after it is trivia — as it is to the
@@ -567,8 +588,9 @@ fn hir_declarations<'a>(source: &'a str, op_name: &str) -> Option<Vec<&'a str>> 
 /// The symbol name declared by `rest`, the text following an operation name.
 ///
 /// One function for both operations because they are written alike: `builtin.component` and
-/// `builtin.module` each parse a visibility keyword and then a symbol name, in that order.
-fn hir_declared_name(rest: &str) -> Option<&str> {
+/// `builtin.module` each parse a visibility keyword and then a symbol name, in that order. A
+/// component's name may be a run `@a::@b::@c` of symbol names, which is returned joined with `::`.
+fn hir_declared_name(rest: &str) -> Option<String> {
     // A keyword only when a separator follows it, exactly as in Miden Assembly.
     let rest = rest.strip_prefix(char::is_whitespace)?.trim_start();
     // The visibility is not optional in either grammar, so it is not optional here.
@@ -580,15 +602,44 @@ fn hir_declared_name(rest: &str) -> Option<&str> {
         })?
         .trim_start();
 
+    let (mut name, mut rest) = hir_symbol_name(rest)?;
+    while let Some((segment, tail)) = rest.strip_prefix("::").and_then(hir_symbol_name) {
+        name.push_str("::");
+        name.push_str(&segment);
+        rest = tail;
+    }
+    Some(name)
+}
+
+/// The `@`-prefixed symbol name at the start of `rest`, unescaped, and the text following it.
+fn hir_symbol_name(rest: &str) -> Option<(String, &str)> {
     // `symbol-ref-id ::= '@' (bare-id | string-literal)`, which is what the lexer accepts.
     let name = rest.strip_prefix('@')?;
     match name.strip_prefix('"') {
-        Some(quoted) => quoted.split_once('"').map(|(name, _rest)| name),
+        Some(quoted) => hir_quoted_name(quoted),
         None => {
             let end = name.find(|c| !is_hir_identifier_char(c)).unwrap_or(name.len());
-            Some(&name[..end]).filter(|name| !name.is_empty())
+            (end > 0).then(|| (name[..end].to_string(), &name[end..]))
         }
     }
+}
+
+/// The unescaped name of the quoted symbol name whose opening quote precedes `quoted`, and the
+/// text following its closing quote.
+///
+/// A `\` takes the character after it literally, as the lexer's unescaping does
+/// (`lex_at_identifier`); the printer escapes `"` and `\` that way.
+fn hir_quoted_name(quoted: &str) -> Option<(String, &str)> {
+    let mut name = String::new();
+    let mut chars = quoted.char_indices();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            '"' => return Some((name, &quoted[at + 1..])),
+            '\\' => name.push(chars.next()?.1),
+            c => name.push(c),
+        }
+    }
+    None
 }
 
 /// Whether `c` may appear in a HIR identifier, and so cannot end one thing and begin another.
@@ -889,6 +940,9 @@ mod tests {
         // short of running both can show that they do.
         frontends::{
             HIR_FRONTEND,
+            // The shipped WebAssembly frontend, run for the same reason on the `.wasm` and
+            // `.wat` half.
+            WASM_FRONTEND,
             // And its own fixtures, so that the scan cannot be tested against HIR text the
             // frontend has never been asked to compile.
             hir::tests::{COMPONENT, MODULE, WORLD},
@@ -1089,8 +1143,8 @@ path = "other.rs"
 
     /// A transaction script whose library target is rooted at Rust.
     ///
-    /// A transaction script's entrypoint is a fixed name, not one derived from the target — so
-    /// this and [`SINGLE_EXECUTABLE_MANIFEST`] pin the two halves of the inference.
+    /// A transaction script's entrypoint is `run` under the library namespace — so this and
+    /// [`SINGLE_EXECUTABLE_MANIFEST`] pin the two halves of the inference.
     const SINGLE_TX_SCRIPT_MANIFEST: &str = r#"
 [package]
 name = "prepare_fixture"
@@ -1099,7 +1153,7 @@ version = "0.1.0"
 [lib]
 kind = "tx-script"
 path = "src/lib.rs"
-namespace = "miden:base/transaction-script@1.0.0"
+namespace = "miden::prepare_fixture::prepare_fixture"
 "#;
 
     /// The same transaction script, rooted at hand-written Miden Assembly instead of Rust.
@@ -1111,7 +1165,7 @@ version = "0.1.0"
 [lib]
 kind = "tx-script"
 path = "src/lib.masm"
-namespace = "miden:base/transaction-script@1.0.0"
+namespace = "miden::prepare_fixture::prepare_fixture"
 "#;
 
     /// A registry that handles `.wasm` and `.wat` target roots, and nothing else.
@@ -1507,7 +1561,7 @@ namespace = "miden:base/transaction-script@1.0.0"
     }
 
     #[test]
-    fn a_rust_rooted_transaction_script_infers_the_fixed_entrypoint() {
+    fn a_rust_rooted_transaction_script_infers_run_under_its_namespace() {
         let manifest = fixture_source(
             "prepare_session_entrypoint_tx_script",
             "miden-project.toml",
@@ -1519,9 +1573,8 @@ namespace = "miden:base/transaction-script@1.0.0"
         assert_eq!(session.options.target_type, Some(TargetType::TransactionScript));
         assert_eq!(
             session.options.entrypoint.as_deref(),
-            Some("miden:base/transaction-script@1.0.0::run"),
-            "a transaction script's entrypoint is the protocol's fixed name, not one derived from \
-             the target"
+            Some("::miden::prepare_fixture::prepare_fixture::run"),
+            "a transaction script's entrypoint is `run` under its library namespace"
         );
     }
 
@@ -2266,11 +2319,11 @@ namespace = "miden:base/transaction-script@1.0.0"
 
     /// The namespace a target rooted at [`WORLD`] or [`COMPONENT`] must be given.
     ///
-    /// One **quoted** path component, because that is what `ComponentId::to_library_path`
-    /// produces and therefore where codegen roots the Miden Assembly: the `:` and the `@` are
-    /// part of the name, not path separators. Preparation absolutizes what it scanned, so the
-    /// target's namespace carries the `::` prefix that codegen's own `to_absolute` adds.
-    const COMPONENT_NAMESPACE: &str = "::\"hir_ns:test@1.0.0\"";
+    /// One path component per segment of the component name `hir_ns::test`, rendered by
+    /// `SymbolPath::to_library_path`, which is where codegen roots the Miden Assembly.
+    /// Preparation absolutizes what it scanned, so the target's namespace carries the `::`
+    /// prefix that codegen's own `to_absolute` adds.
+    const COMPONENT_NAMESPACE: &str = "::hir_ns::test";
 
     /// A registry that also dispatches `.hir` target roots, to the shipped HIR frontend.
     fn registry_with_hir() -> FrontendRegistry {
@@ -2297,7 +2350,7 @@ namespace = "miden:base/transaction-script@1.0.0"
         format!(
             "builtin.world {{{}{}}};\n",
             COMPONENT,
-            COMPONENT.replace("hir_ns:test", "hir_ns:other")
+            COMPONENT.replace("@hir_ns::@test", "@hir_ns::@other")
         )
     }
 
@@ -2307,6 +2360,15 @@ namespace = "miden:base/transaction-script@1.0.0"
     /// therefore where its **root module's path** — the value `load_target_sources` compares
     /// against the target's namespace — is decided.
     fn lower_prepared_hir(prepared: &PreparedProject) -> CompilerResult<ProjectSourceInputs> {
+        lower_prepared(prepared, &HIR_FRONTEND)
+    }
+
+    /// Lower the target `prepared` synthesized, with the shipped `frontend`, up to
+    /// `masm.lowered`; see [`lower_prepared_hir`].
+    fn lower_prepared(
+        prepared: &PreparedProject,
+        frontend: &FrontendRegistration,
+    ) -> CompilerResult<ProjectSourceInputs> {
         let project = VirtualProject::for_prepared_target(prepared)?;
         let assembly = project.assembly_context()?;
         let state = RequestState::new(Goal::at(CheckpointId::MASM_LOWERED), Vec::new());
@@ -2319,7 +2381,7 @@ namespace = "miden:base/transaction-script@1.0.0"
 
         // The returned `ControlFlow` is dropped rather than asserted on: it is not `Debug`, and
         // what this needs is the artifact captured at the goal.
-        let _ = HIR_FRONTEND.instantiate(cx.session()).compile(&cx)?;
+        let _ = frontend.instantiate(cx.session()).compile(&cx)?;
         Ok(state
             .take_outcome()
             .expect("stopping at masm.lowered must capture the lowered sources")
@@ -2339,8 +2401,8 @@ namespace = "miden:base/transaction-script@1.0.0"
             assert_eq!(
                 hir_namespace(dir, contents, |_| {}),
                 COMPONENT_NAMESPACE,
-                "a `.hir` root declares its own component id, and codegen roots the Miden \
-                 Assembly at that id — so no name-derived namespace can ever be right for one"
+                "a `.hir` root declares its own component name, and codegen roots the Miden \
+                 Assembly at that name — so no name-derived namespace can ever be right for one"
             );
         }
     }
@@ -2432,8 +2494,8 @@ namespace = "miden:base/transaction-script@1.0.0"
 
     #[test]
     fn a_hir_root_declaring_more_than_one_component_declares_no_namespace() {
-        // Not "the first component's id": a world with two components has no single id to be
-        // rooted at, and choosing one would be an invention. Codegen rejects such a world
+        // Not "the first component's namespace": a world with two components has no single
+        // namespace to be rooted at, and choosing one would be an invention. Codegen rejects such a world
         // outright — see `too_many_components` in `codegen/masm` — which is the answer the user
         // gets either way, so the scan says nothing rather than disagreeing with it.
         assert_eq!(
@@ -2450,10 +2512,10 @@ namespace = "miden:base/transaction-script@1.0.0"
         // user cannot act on.
         //
         // Be precise about what this test can and cannot carry. It would pass just as well if
-        // the scan had picked the *first* component's id, because codegen refuses before any
-        // namespace is compared — so it does not discriminate the scan's answer at all. That is
-        // its sibling's job: `…_declares_no_namespace` pins the answer, and this pins that the
-        // answer costs nothing, because the diagnostic the user sees is the same either way.
+        // the scan had picked the *first* component's namespace, because codegen refuses before
+        // any namespace is compared — so it does not discriminate the scan's answer at all. That
+        // is its sibling's job: `…_declares_no_namespace` pins the answer, and this pins that
+        // the answer costs nothing, because the diagnostic the user sees is the same either way.
         // The pair is what settles the decision; neither test settles it alone.
         let prepared = prepare_standalone_source(
             "prepare_standalone_hir_two_lowered",
@@ -2476,9 +2538,9 @@ namespace = "miden:base/transaction-script@1.0.0"
     }
 
     #[test]
-    fn an_explicit_name_is_passed_through_over_the_hir_roots_component_id() {
+    fn an_explicit_name_is_passed_through_over_the_hir_roots_component_namespace() {
         // As for `.masm`: `--name` asserts rather than overrides. The namespace it names is what
-        // the target gets, and a root whose component id says otherwise then fails the
+        // the target gets, and a root whose component name says otherwise then fails the
         // assembler's root-module check. What must not happen is the flag being quietly ignored.
         assert_eq!(
             hir_namespace("prepare_standalone_hir_named", WORLD, |options| {
@@ -2493,36 +2555,43 @@ namespace = "miden:base/transaction-script@1.0.0"
     fn what_counts_as_a_hir_namespace_declaration() {
         // The scan stands in for a parse, so what it accepts has to be what the grammar
         // accepts. Every row here is a claim about the *parser*: a name this rejects is one the
-        // parser rejects too, and an id it renders differently from the source spelling is one
-        // `ComponentId` itself renders that way.
+        // parser rejects too, and a name renders one path component per `::`-separated segment,
+        // exactly as codegen roots the component.
         for (source, declared) in [
             (
                 "builtin.component private @\"hir_ns:test@1.0.0\" {\n};\n",
                 Some("\"hir_ns:test@1.0.0\""),
             ),
+            // A component named by a multi-segment path, as the printer writes it.
+            (
+                "builtin.component private @miden::@counter_contract::@counter_contract {\n};\n",
+                Some("miden::counter_contract::counter_contract"),
+            ),
             // Nested in a world and holding a module, which is the shape `--emit=hir` writes —
-            // and the shape that decides the *order* of the two scans: the component's id wins,
+            // and the shape that decides the *order* of the two scans: the component's name wins,
             // and the module inside it is never read as a top-level one.
             (
                 "builtin.world {\n  builtin.component public @\"a:b@2.1.0\" {\n    builtin.module \
                  private @inner {\n    };\n  };\n};\n",
                 Some("\"a:b@2.1.0\""),
             ),
-            // A component id may omit the version, and `ComponentId` supplies `1.0.0` — so the
-            // namespace is *not* the text that was scanned.
-            ("builtin.component internal @\"a:b\" {\n};\n", Some("\"a:b@1.0.0\"")),
+            // A quoted name is read unescaped, as the lexer reads it: an escaped `"` does not end
+            // it, and `\\` stands for one backslash. (It renders as codegen renders it; a `"` has
+            // no Miden Assembly spelling, so preparation then rejects the namespace.)
+            ("builtin.component private @\"a\\\"b\\\\c\" {\n};\n", Some("\"a\"b\\c\"")),
+            // No version is invented: the name is the namespace.
+            ("builtin.component internal @\"a:b\" {\n};\n", Some("\"a:b\"")),
             // A file declaring no component is rooted at the module it does declare, bare name
             // or quoted: `synthesize_target` and codegen both normalize it the same way.
             ("builtin.module public @lib {\n};\n", Some("lib")),
             ("builtin.world {\n  builtin.module public @lib {\n  };\n};\n", Some("lib")),
             ("builtin.module public @\"lib.rs\" {\n};\n", Some("lib.rs")),
-            // Not a declaration: `ComponentId` requires a namespace, and the parser rejects a
-            // bare name with "invalid component id: missing namespace identifier". The module
-            // inside it must *not* be read instead — a component was declared, so its id is the
-            // only answer, and there is no fall-through to the second scan.
+            // A single bare segment is a valid component name. The module inside it must *not*
+            // be read instead — a component was declared, so its name is the only answer, and
+            // there is no fall-through to the second scan.
             (
                 "builtin.component private @test {\n  builtin.module public @m {\n  };\n};\n",
-                None,
+                Some("test"),
             ),
             // Not a declaration: nothing separates the operation name from what follows it, so
             // this is some other operation whose name merely begins the same way. What that
@@ -2539,7 +2608,7 @@ namespace = "miden:base/transaction-script@1.0.0"
             // whether the comment is the whole line or follows something on it.
             ("// builtin.component private @\"a:b@1.0.0\" {\n", None),
             ("builtin.world {\n}; // builtin.component private @\"a:b@1.0.0\"\n", None),
-            // Two components: no single id to be rooted at.
+            // Two components: no single name to be rooted at.
             (
                 "builtin.world {\n  builtin.component private @\"a:b@1.0.0\" {\n  };\n  \
                  builtin.component private @\"c:d@1.0.0\" {\n  };\n};\n",
@@ -2570,14 +2639,21 @@ namespace = "miden:base/transaction-script@1.0.0"
         // standalone `.hir` build of that shape would assemble at all.
         //
         // Every shape a `.hir` file can declare a namespace in, and each is rooted by different
-        // code: a component's id (`ToMasmComponent for builtin::Component`) whether or not it is
-        // nested in a world, and a module's own name (`world_body_to_masm_component`). The
-        // module row is renamed away from the file stem deliberately — with a module called
+        // code: a component's namespace path (`ToMasmComponent for builtin::Component`) whether
+        // or not it is nested in a world, and a module's own name
+        // (`world_body_to_masm_component`). The module row is renamed away from the file stem
+        // deliberately — with a module called
         // `lib` in `lib.hir`, both a working scan and a scan that read nothing produce `::lib`,
         // and the test would pass either way.
         for (dir, contents) in [
             ("prepare_standalone_hir_oracle_world", WORLD.to_string()),
             ("prepare_standalone_hir_oracle_component", COMPONENT.to_string()),
+            // A quoted segment holding an escaped `\`, which the scan must read unescaped, as
+            // the lexer does.
+            (
+                "prepare_standalone_hir_oracle_escaped",
+                COMPONENT.replace("@hir_ns::@test", r#"@hir_ns::@"te\\st""#),
+            ),
             ("prepare_standalone_hir_oracle_module", MODULE.replace("@lib", "@renamed")),
         ] {
             let prepared =
@@ -2597,6 +2673,53 @@ namespace = "miden:base/transaction-script@1.0.0"
                 "the namespace preparation synthesized is where codegen roots this target's Miden \
                  Assembly, or the assembler rejects the build"
             );
+        }
+    }
+
+    /// A WebAssembly component whose one function export carries the Miden path
+    /// `miden::counter::counter::get_count`.
+    const COUNTER_COMPONENT_WAT: &str = r#"
+(component
+  (core module $m
+    (func (export "get-count") (result i32) i32.const 0))
+  (core instance $i (instantiate $m))
+  (func $lifted (result u32) (canon lift (core func $i "get-count")))
+  (component $exports
+    (import "import-func-get-count" (func $f (result u32)))
+    (export "get-count" (external-id "miden::counter::counter::get_count") (func $f)))
+  (instance $counter
+    (instantiate $exports (with "import-func-get-count" (func $lifted))))
+  (export "miden:counter/counter@0.1.0" (instance $counter))
+)
+"#;
+
+    #[test]
+    fn a_standalone_webassembly_component_is_rooted_at_the_namespace_of_its_exports() {
+        // The binary and the text spelling of one component take the same route: both are
+        // decoded the way the frontend decodes them, and scanned for their exports' namespace.
+        let wasm = wat::parse_str(COUNTER_COMPONENT_WAT).expect("the fixture is valid text");
+        for (dir, file, bytes) in [
+            ("prepare_standalone_component_wasm", "lib.wasm", wasm.as_slice()),
+            ("prepare_standalone_component_wat", "lib.wat", COUNTER_COMPONENT_WAT.as_bytes()),
+        ] {
+            let root = fixture_source(dir, file, "");
+            std::fs::write(&root, bytes).expect("should write the fixture");
+            let input = input(&root);
+            let source_manager: Arc<dyn SourceManager + Send + Sync> =
+                Arc::new(DefaultSourceManager::default());
+            let session = Session::new(input.clone(), Box::default(), None, source_manager)
+                .expect("a source file input should open a compiler session");
+            let prepared = prepare_standalone(&input, &session, &registry())
+                .expect("a WebAssembly file is a standalone input this registry handles");
+            assert_eq!(
+                prepared.target.namespace.inner().as_str(),
+                "::miden::counter::counter",
+                "`{file}` is rooted at the namespace its exports declare"
+            );
+
+            let inputs = lower_prepared(&prepared, &WASM_FRONTEND)
+                .unwrap_or_else(|err| panic!("`{file}` should lower: {err}"));
+            assert_eq!(inputs.root.path(), prepared.target.namespace.inner().as_ref());
         }
     }
 

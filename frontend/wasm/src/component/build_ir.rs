@@ -1,9 +1,13 @@
 use std::rc::Rc;
 
-use midenc_hir::{Context, dialects::builtin::BuiltinDialect};
+use midenc_hir::{Context, SymbolPath, dialects::builtin::BuiltinDialect};
 use midenc_session::{Session, diagnostics::Report};
 
-use super::{ComponentTypesBuilder, ParsedRootComponent, translator::ComponentTranslator};
+use super::{
+    ComponentItem, ComponentTypesBuilder, ParsedRootComponent,
+    naming::{ExportPaths, exports_namespace, external_id_path, interface_hint},
+    translator::ComponentTranslator,
+};
 use crate::{
     FrontendOutput, WasmTranslationConfig, component::ComponentParser, error::WasmResult,
     supported_component_model_features,
@@ -33,28 +37,65 @@ pub fn translate_component(
         parse(config, wasm, context.session())?;
     let dialect = context.get_or_register_dialect::<BuiltinDialect>();
     dialect.expect_registered_name::<midenc_hir::dialects::builtin::Component>();
-    // Extract component name from exported component instance
-    let id = {
-        let instance = parsed_root_component
-            .root_component
-            .exports
-            .iter()
-            .find_map(|(name, c)| match c {
-                super::ComponentItem::ComponentInstance(_) => Some((*name).to_string()),
-                _ => None,
-            })
-            .expect("expected at least one component instance to be exported");
-
-        instance
-            .parse()
-            .expect("failed to parse ComponentId from Wasm component instance name")
-    };
+    let (namespace, export_paths) = component_namespace(&parsed_root_component, config)?;
     let translator = ComponentTranslator::new(
-        id,
+        namespace.to_symbol_name(),
+        export_paths,
         &mut parsed_root_component.static_modules,
         &parsed_root_component.static_components,
         config,
         context,
     )?;
     translator.translate2(&parsed_root_component.root_component, &mut component_types_builder)
+}
+
+/// Decides the namespace the component is rooted at, and returns it with the Miden paths of the
+/// function exports of the nested components.
+///
+/// The Miden paths of the component's function exports must all be `<namespace>::<name>` for one
+/// namespace, which must equal the target namespace when the build provides one. A component
+/// without function exports takes the target namespace.
+fn component_namespace<'data>(
+    parsed: &ParsedRootComponent<'data>,
+    config: &WasmTranslationConfig,
+) -> WasmResult<(SymbolPath, ExportPaths<'data>)> {
+    let root_instance_exports: Vec<&str> = parsed
+        .root_component
+        .exports
+        .iter()
+        .filter_map(|(name, item)| {
+            matches!(item, ComponentItem::ComponentInstance(_)).then_some(*name)
+        })
+        .collect();
+    let mut exports = Vec::new();
+    for (index, component) in parsed.static_components.iter() {
+        let interface = interface_hint(&root_instance_exports, index.as_u32());
+        for (name, item) in component.exports.iter() {
+            if matches!(item, ComponentItem::Func(_)) {
+                let external_id = component.export_external_ids.get(name).copied();
+                exports.push(((index, *name), external_id_path(&interface, name, external_id)?));
+            }
+        }
+    }
+    let namespace = match (
+        exports_namespace(exports.iter().map(|((_, name), path)| (*name, path)))?,
+        &config.namespace,
+    ) {
+        (Some(declared), Some(expected)) if declared != *expected => {
+            return Err(Report::msg(format!(
+                "the target namespace `{expected}` (from the project manifest or `--name`) does \
+                 not match the component's exports, which are under `{declared}`"
+            )));
+        }
+        (Some(declared), _) => declared,
+        (None, Some(expected)) => expected.clone(),
+        (None, None) => {
+            return Err(Report::msg(format!(
+                "component `{}` exports no functions and no namespace was given; declare \
+                 `[lib].namespace` or export a function with `@external-id`",
+                config.source_name
+            )));
+        }
+    };
+    Ok((namespace, exports.into_iter().collect()))
 }

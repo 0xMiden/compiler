@@ -2,7 +2,7 @@ use cranelift_entity::packed_option::ReservedValue;
 use midenc_hir::{
     CallConv, FunctionType, FxHashMap, Ident, SourceSpan, SymbolName, SymbolNameComponent,
     SymbolPath, SymbolTable, Visibility,
-    diagnostics::WrapErr,
+    diagnostics::{Report, WrapErr},
     dialects::builtin::{
         FunctionRef, FunctionTableRef, ModuleBuilder, WorldBuilder, attributes::Signature,
     },
@@ -19,7 +19,10 @@ use super::{
 };
 use crate::{
     callable::CallableFunction,
-    component::{SignatureIndex, lower_imports::generate_import_lowering_function},
+    component::{
+        SignatureIndex,
+        lower_imports::{ComponentImportPath, generate_import_lowering_function},
+    },
     error::WasmResult,
     intrinsics::{Intrinsic, IntrinsicsConversionResult, attach_effects_to_function},
     translation_utils::sig_from_func_type,
@@ -60,19 +63,22 @@ impl<'a> ModuleTranslationState<'a> {
     /// `world_builder` - the Miden IR World builder
     /// `mod_types` - the Miden IR module types builder
     /// `module_args` - the module instantiation arguments, i.e. entities to "fill" module imports
+    /// `names` - the names of the functions backing component exports and lowering component
+    ///   imports; every other function keeps its Wasm name
     pub fn new(
         module: &Module,
         module_builder: &'a mut ModuleBuilder,
         world_builder: &'a mut WorldBuilder,
         mod_types: &ModuleTypesBuilder,
         module_args: FxHashMap<SymbolPath, ModuleArgument>,
+        names: &FxHashMap<FuncIndex, SymbolName>,
         diagnostics: &DiagnosticsHandler,
     ) -> WasmResult<Self> {
         let mut functions = FxHashMap::default();
         for (index, func_type) in &module.functions {
             let wasm_func_type = mod_types[func_type.signature].clone();
             let ir_func_type = ir_func_type(&wasm_func_type, diagnostics)?;
-            let func_name = module.func_name(index);
+            let func_name = names.get(&index).copied().unwrap_or_else(|| module.func_name(index));
             let path = SymbolPath {
                 path: smallvec![
                     SymbolNameComponent::Root,
@@ -94,6 +100,7 @@ impl<'a> ModuleTranslationState<'a> {
                     world_builder,
                     &module_args,
                     path,
+                    names.get(&index).copied(),
                     sig,
                     import,
                     diagnostics,
@@ -124,6 +131,15 @@ impl<'a> ModuleTranslationState<'a> {
             tables: FxHashMap::default(),
             module_builder,
             world_builder,
+        })
+    }
+
+    /// Returns the HIR functions defined in the module for its Wasm functions, i.e. the functions
+    /// and import stubs that are not replaced by intrinsics.
+    pub(crate) fn defined_functions(&self) -> impl Iterator<Item = (FuncIndex, FunctionRef)> + '_ {
+        self.functions.iter().filter_map(|(index, func)| match func {
+            CallableFunction::Function { function_ref, .. } => Some((*index, *function_ref)),
+            _ => None,
         })
     }
 
@@ -430,23 +446,33 @@ fn collect_table_image(
     Ok(image)
 }
 
-/// Returns [`CallableFunction`] translated from the core Wasm module import
-fn process_import(
-    module_builder: &mut ModuleBuilder,
-    world_builder: &mut WorldBuilder,
-    module_args: &FxHashMap<SymbolPath, ModuleArgument>,
-    core_func_id: SymbolPath,
-    core_func_sig: Signature,
-    import: &super::ModuleImport,
-    diagnostics: &DiagnosticsHandler,
-) -> WasmResult<CallableFunction> {
-    let import_path = SymbolPath {
+/// Returns the core-import path `::<module>::<field>` of `import`, which keys the instantiation
+/// argument that fills it.
+pub(crate) fn core_import_path(import: &super::ModuleImport) -> SymbolPath {
+    SymbolPath {
         path: smallvec![
             SymbolNameComponent::Root,
             SymbolNameComponent::Component(Symbol::intern(&import.module)),
             SymbolNameComponent::Leaf(Symbol::intern(&import.field))
         ],
-    };
+    }
+}
+
+/// Returns [`CallableFunction`] translated from the core Wasm module import.
+///
+/// `stub_name` is the name assigned to the import when it lowers a component import.
+#[allow(clippy::too_many_arguments)]
+fn process_import(
+    module_builder: &mut ModuleBuilder,
+    world_builder: &mut WorldBuilder,
+    module_args: &FxHashMap<SymbolPath, ModuleArgument>,
+    core_func_id: SymbolPath,
+    stub_name: Option<SymbolName>,
+    core_func_sig: Signature,
+    import: &super::ModuleImport,
+    diagnostics: &DiagnosticsHandler,
+) -> WasmResult<CallableFunction> {
+    let import_path = core_import_path(import);
     let Some(module_arg) = module_args.get(&import_path) else {
         crate::unsupported_diag!(diagnostics, "unexpected import '{import_path:?}'");
     };
@@ -454,6 +480,7 @@ fn process_import(
         module_builder,
         world_builder,
         core_func_id,
+        stub_name,
         core_func_sig,
         import_path,
         module_arg,
@@ -461,10 +488,16 @@ fn process_import(
     )
 }
 
+/// Returns [`CallableFunction`] for the core import at `path` (with signature `sig`), filled by
+/// the instantiation argument `module_arg` matched by the core import path `wasm_import_path`.
+///
+/// A component import is lowered by an import stub defined in `module_builder` as `stub_name`.
+#[allow(clippy::too_many_arguments)]
 fn process_module_arg(
     module_builder: &mut ModuleBuilder,
     world_builder: &mut WorldBuilder,
     path: SymbolPath,
+    stub_name: Option<SymbolName>,
     sig: Signature,
     wasm_import_path: SymbolPath,
     module_arg: &ModuleArgument,
@@ -478,14 +511,31 @@ fn process_module_arg(
                 "core Wasm function imports are not supported yet"
             );
         }
-        ModuleArgument::ComponentImport(signature) => generate_import_lowering_function(
-            world_builder,
-            module_builder,
-            wasm_import_path,
+        ModuleArgument::ComponentImport {
             signature,
-            path,
-            sig,
-        )?,
+            path: import_path,
+            first_cm_path,
+        } => {
+            let Some(stub_name) = stub_name else {
+                return Err(Report::msg(format!(
+                    "internal error: the core import `{wasm_import_path}` of component import \
+                     `{import_path}` has no assigned name"
+                )));
+            };
+            generate_import_lowering_function(
+                world_builder,
+                module_builder,
+                ComponentImportPath {
+                    cm_path: wasm_import_path,
+                    path: import_path.clone(),
+                    first_cm_path: first_cm_path.clone(),
+                },
+                signature,
+                path,
+                stub_name,
+                sig,
+            )?
+        }
         ModuleArgument::Table => {
             crate::unsupported_diag!(diagnostics, "imported tables are not supported yet");
         }

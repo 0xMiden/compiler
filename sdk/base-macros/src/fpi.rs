@@ -1,13 +1,13 @@
 //! Foreign procedure invocation support for generated SDK bindings.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Write as _,
     path::PathBuf,
 };
 
 use heck::{ToKebabCase, ToSnakeCase};
-use miden_assembly_syntax::ast::{Path as MasmPath, PathComponent};
+use miden_assembly_syntax::ast::{Path as MasmPath, PathBuf as MasmPathBuf};
 use miden_mast_package::PackageExport;
 use miden_protocol::crypto::hash::blake::Blake3_256;
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -29,6 +29,7 @@ use crate::{
         CORE_TYPES_INTERFACE, collect_arg_idents, format_module_path, qualify_signature_types,
         should_generate_struct,
     },
+    namespace::ComponentNamespace,
     wit_world::{self, SelectedDependency},
 };
 
@@ -62,12 +63,25 @@ pub(crate) struct FpiImportSpec {
     synthetic_interface: String,
     /// Fully-qualified private synthetic interface identity.
     synthetic_import: String,
+    /// Miden path prefix of the generated FPI functions,
+    /// `<consumer namespace>::fpi::<dependency ns>::<dependency pkg>::<dependency iface>`, each
+    /// dependency segment the snake_case form of the dependency's WIT id, so that functions of
+    /// two dependency interfaces never share a path.
+    external_id_prefix: String,
 }
 
 impl FpiImportSpec {
-    /// Creates a deterministic FPI import specification for `source_import`.
-    fn new(source_import: String) -> syn::Result<Self> {
+    /// Creates a deterministic FPI import specification for `source_import` imported by the
+    /// component named `consumer`.
+    fn new(source_import: String, consumer: &ComponentNamespace) -> syn::Result<Self> {
         let (source_package, synthetic_interface) = parse_interface_id(&source_import)?;
+        let external_id_prefix = format!(
+            "{}::fpi::{}::{}::{}",
+            consumer.path(),
+            source_package.namespace.to_snake_case(),
+            source_package.name.to_snake_case(),
+            synthetic_interface.to_snake_case()
+        );
         let synthetic_package = PackageName {
             namespace: source_package.namespace,
             name: format!("{FPI_PACKAGE_PREFIX}-{FPI_ABI_VERSION}-{}", source_package.name),
@@ -79,6 +93,7 @@ impl FpiImportSpec {
             synthetic_package,
             synthetic_interface,
             synthetic_import,
+            external_id_prefix,
         })
     }
 
@@ -134,12 +149,15 @@ fn parse_interface_id(import: &str) -> syn::Result<(PackageName, String)> {
     ))
 }
 
-/// Builds sorted, deduplicated FPI import specifications.
-pub(crate) fn import_specs(imports: &[String]) -> syn::Result<Vec<FpiImportSpec>> {
+/// Builds sorted, deduplicated FPI import specifications for the component named `consumer`.
+pub(crate) fn import_specs(
+    imports: &[String],
+    consumer: &ComponentNamespace,
+) -> syn::Result<Vec<FpiImportSpec>> {
     let mut imports = imports.to_vec();
     imports.sort_unstable();
     imports.dedup();
-    imports.into_iter().map(FpiImportSpec::new).collect()
+    imports.into_iter().map(|import| FpiImportSpec::new(import, consumer)).collect()
 }
 
 /// Derives a stable binding-world name from its canonical imports and FPI ABI version.
@@ -198,6 +216,7 @@ pub(crate) fn inject_imports(
                 source_id,
                 synthetic_id,
                 core_types,
+                &import.external_id_prefix,
             )?;
         }
         validate_synthetic_interface(resolve, source_id, synthetic_id, core_types)?;
@@ -302,6 +321,8 @@ fn import_synthetic_interface(
         WorldItem::Interface {
             id: synthetic_id,
             stability: Default::default(),
+            external_id: None,
+            docs: Docs::default(),
             span: WitSpan::default(),
         },
     );
@@ -365,33 +386,45 @@ struct Dependency {
     package_path: PathBuf,
     /// Fully-qualified WIT import path.
     import: String,
-    /// Procedure roots keyed by full WIT interface path and function name.
-    roots: HashMap<ProcedureRootKey, ProcedureRoot>,
+    /// Miden paths of the interface's functions (their `@external-id`), keyed by WIT name.
+    function_paths: BTreeMap<String, Option<String>>,
+    /// Procedure roots of the package exports, keyed by canonical absolute Miden path.
+    roots: HashMap<MasmPathBuf, ProcedureRoot>,
 }
 
-/// Identifies a WIT procedure export in a dependency package.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct ProcedureRootKey {
-    /// Fully-qualified WIT interface path, including package version.
-    interface: String,
-    /// WIT function name.
-    function: String,
+/// Lookups of the dependency functions' Miden paths.
+impl Dependency {
+    /// Returns the canonical Miden path of the dependency function `wit_name`, read from its WIT
+    /// `@external-id`.
+    fn function_path(&self, wit_name: &str, span: Span) -> syn::Result<MasmPathBuf> {
+        let external_id =
+            self.function_paths.get(wit_name).cloned().flatten().ok_or_else(|| {
+                Error::new(
+                    span,
+                    format!(
+                        "dependency WIT function `{wit_name}` of `{}` carries no `@external-id`; \
+                         rebuild the dependency with the current SDK",
+                        self.import
+                    ),
+                )
+            })?;
+        canonical_procedure_path(MasmPath::new(&external_id)).ok_or_else(|| {
+            Error::new(
+                span,
+                format!(
+                    "dependency WIT function `{wit_name}` of `{}` has an invalid `@external-id` \
+                     `{external_id}`; expected a Miden path",
+                    self.import
+                ),
+            )
+        })
+    }
 }
 
 /// Four field elements that make up a foreign procedure root.
 #[derive(Debug, Clone, Copy)]
 struct ProcedureRoot {
     felts: [u64; 4],
-}
-
-impl ProcedureRootKey {
-    /// Creates a root key for one WIT interface function.
-    fn new(interface: impl Into<String>, function: impl Into<String>) -> Self {
-        Self {
-            interface: interface.into(),
-            function: function.into(),
-        }
-    }
 }
 
 /// Returns the fully-qualified import path used for a resolved interface.
@@ -443,12 +476,15 @@ fn is_fpi_source_function(function: &Function) -> bool {
         && !function.name.starts_with(WIT_FUNCTION_PREFIX)
 }
 
-/// Copies FPI variants of source functions into an empty private synthetic interface.
+/// Copies FPI variants of source functions into an empty private synthetic interface, each at
+/// the Miden path `<external_id_prefix>::<leaf>`, `<leaf>` being the leaf of the source
+/// function's own `@external-id`.
 fn inject_functions_into_synthetic_interface(
     resolve: &mut Resolve,
     source_id: InterfaceId,
     synthetic_id: InterfaceId,
     core_types: CoreTypes,
+    external_id_prefix: &str,
 ) -> syn::Result<()> {
     let functions = resolve.interfaces[source_id]
         .functions
@@ -470,7 +506,24 @@ fn inject_functions_into_synthetic_interface(
     let mut fpi_functions = Vec::with_capacity(functions.len());
     for function in functions {
         let fpi_name = format!("{WIT_FUNCTION_PREFIX}{}", function.name);
-        let mut function = build_import_function(function, fpi_name.clone(), core_types);
+        let leaf = function
+            .external_id
+            .as_deref()
+            .and_then(|external_id| external_id.rsplit_once("::"))
+            .map(|(_, leaf)| leaf.to_owned())
+            .ok_or_else(|| {
+                Error::new(
+                    Span::call_site(),
+                    format!(
+                        "dependency WIT function `{}` carries no `@external-id` with a Miden \
+                         path; rebuild the dependency with the current SDK",
+                        function.name
+                    ),
+                )
+            })?;
+        let external_id = format!("{external_id_prefix}::{leaf}");
+        let mut function =
+            build_import_function(function, fpi_name.clone(), core_types, external_id);
         alias_function_types(
             resolve,
             synthetic_id,
@@ -794,6 +847,7 @@ fn alias_wit_type(
             owner: TypeOwner::None,
             docs: source_type.docs,
             stability: source_type.stability,
+            external_id: source_type.external_id,
             span: source_type.span,
         });
         aliases.insert(source_id_value, clone_id);
@@ -808,6 +862,7 @@ fn alias_wit_type(
         owner: TypeOwner::Interface(synthetic_id),
         docs: Docs::default(),
         stability: Default::default(),
+        external_id: None,
         span: WitSpan::default(),
     });
     aliases.insert(source_id_value, alias_id);
@@ -913,8 +968,14 @@ fn validate_reserved_fpi_namespace<'a>(
     Ok(())
 }
 
-/// Builds the caller-side WIT import that forwards through `execute_foreign_procedure`.
-fn build_import_function(function: Function, fpi_name: String, core_types: CoreTypes) -> Function {
+/// Builds the caller-side WIT import at the Miden path `external_id` that forwards through
+/// `execute_foreign_procedure`.
+fn build_import_function(
+    function: Function,
+    fpi_name: String,
+    core_types: CoreTypes,
+    external_id: String,
+) -> Function {
     let mut params = Vec::with_capacity(function.params.len() + FPI_ABI_PARAM_COUNT);
     params.extend(fpi_abi_params(core_types).map(|(name, ty)| Param {
         name: name.to_string(),
@@ -932,6 +993,7 @@ fn build_import_function(function: Function, fpi_name: String, core_types: CoreT
         // The generated function belongs to a private synthetic package, so source-package
         // feature metadata cannot be copied across package ownership boundaries.
         stability: Default::default(),
+        external_id: Some(external_id),
         span: WitSpan::default(),
     }
 }
@@ -1114,12 +1176,13 @@ pub(crate) fn augment_foreign_account_bindings(
                     )
                 })?;
             let wit_name = function_wit_name(foreign_func)?;
-            let root_key = ProcedureRootKey::new(dependency.import.as_str(), wit_name.as_str());
-            let root = dependency.roots.get(&root_key).ok_or_else(|| {
+            let path = dependency.function_path(&wit_name, foreign_func.sig.ident.span())?;
+            let root = dependency.roots.get(&path).ok_or_else(|| {
                 Error::new(
                     foreign_func.sig.ident.span(),
                     format!(
-                        "failed to find procedure root for `{}#{wit_name}` in package '{}'",
+                        "failed to find procedure root for `{path}` (`{}#{wit_name}`) in package \
+                         '{}'",
                         dependency.import,
                         dependency.package_path.display()
                     ),
@@ -1500,14 +1563,10 @@ fn load_dependency(
         let PackageExport::Procedure(proc_export) = export else {
             continue;
         };
-        let Some(root_key) = procedure_root_key_from_export_path(proc_export.path.as_ref()) else {
+        let Some(path) = canonical_procedure_path(proc_export.path.as_ref()) else {
             continue;
         };
-
-        if root_key.interface != import {
-            continue;
-        }
-        roots.insert(root_key, procedure_root_from_digest(&proc_export.digest));
+        roots.insert(path, procedure_root_from_digest(&proc_export.digest));
     }
 
     Ok(Dependency {
@@ -1515,6 +1574,7 @@ fn load_dependency(
         trait_ident,
         package_path,
         import,
+        function_paths: interface.function_paths,
         roots,
     })
 }
@@ -1555,30 +1615,10 @@ pub(crate) fn import_module_path(import: &str) -> String {
         .join("::")
 }
 
-/// Extracts the WIT interface/function key encoded in a package procedure export path.
-fn procedure_root_key_from_export_path(path: &MasmPath) -> Option<ProcedureRootKey> {
-    let interface = single_non_root_path_component(path.parent()?)?;
-    let function = path.last()?;
-    Some(ProcedureRootKey::new(interface, function))
-}
-
-/// Returns the only non-root path component if `path` has exactly one.
-fn single_non_root_path_component(path: &MasmPath) -> Option<&str> {
-    let mut component = None;
-
-    for next in path.components() {
-        let next = next.ok()?;
-        match next {
-            PathComponent::Root => continue,
-            PathComponent::Normal(_) => {
-                if component.replace(next.as_str()).is_some() {
-                    return None;
-                }
-            }
-        }
-    }
-
-    component
+/// Returns the canonical absolute form of a Miden procedure path, so that WIT external-ids and
+/// package manifest export paths compare equal regardless of a leading `::` or quoting.
+fn canonical_procedure_path(path: &MasmPath) -> Option<MasmPathBuf> {
+    path.to_absolute().ok()?.canonicalize().ok()
 }
 
 /// Converts a MAST digest word into literal field elements.
@@ -1598,6 +1638,11 @@ fn procedure_root_from_digest(digest: &miden_protocol::Word) -> ProcedureRoot {
 mod tests {
     use super::*;
 
+    /// Namespace of the component importing the FPI dependencies in these tests.
+    fn test_consumer() -> ComponentNamespace {
+        ComponentNamespace::parse("miden::acme::acme", Span::call_site()).unwrap()
+    }
+
     /// Builds readable canonical FPI identities without conflating packages or versions.
     #[test]
     fn fpi_import_specs_are_sorted_readable_injective_and_versioned() {
@@ -1608,7 +1653,7 @@ mod tests {
             "miden:shared/api@1.0.0".to_string(),
         ];
 
-        let specs = import_specs(&imports).unwrap();
+        let specs = import_specs(&imports, &test_consumer()).unwrap();
         let sources = specs.iter().map(FpiImportSpec::source_import).collect::<Vec<_>>();
         assert_eq!(
             sources,
@@ -1626,7 +1671,10 @@ mod tests {
             ]
         );
 
-        assert_eq!(import_specs(&["miden:shared/api@1.0.0".to_string()]).unwrap()[0], specs[0]);
+        assert_eq!(
+            import_specs(&["miden:shared/api@1.0.0".to_string()], &test_consumer()).unwrap()[0],
+            specs[0]
+        );
         assert_ne!(specs[0].synthetic_import(), specs[1].synthetic_import());
         assert_ne!(specs[0].synthetic_import(), specs[2].synthetic_import());
     }
@@ -1634,13 +1682,14 @@ mod tests {
     /// Keeps binding-world identity stable for equal imports and distinct for different imports.
     #[test]
     fn fpi_import_world_names_follow_the_canonical_import_set() {
-        let first = import_specs(&["miden:first/api@1.0.0".to_string()]).unwrap();
-        let first_repeated = import_specs(&[
-            "miden:first/api@1.0.0".to_string(),
-            "miden:first/api@1.0.0".to_string(),
-        ])
+        let first = import_specs(&["miden:first/api@1.0.0".to_string()], &test_consumer()).unwrap();
+        let first_repeated = import_specs(
+            &["miden:first/api@1.0.0".to_string(), "miden:first/api@1.0.0".to_string()],
+            &test_consumer(),
+        )
         .unwrap();
-        let second = import_specs(&["miden:second/api@1.0.0".to_string()]).unwrap();
+        let second =
+            import_specs(&["miden:second/api@1.0.0".to_string()], &test_consumer()).unwrap();
 
         let first_name = import_world_name("foreign-account-bindings", &first);
         assert_eq!(first_name, import_world_name("foreign-account-bindings", &first_repeated));
@@ -1651,10 +1700,10 @@ mod tests {
     /// Keeps canonical source imports in WIT while synthetic packages are injected after resolve.
     #[test]
     fn fpi_import_world_keeps_real_imports_separate_from_private_interfaces() {
-        let specs = import_specs(&[
-            "miden:zebra/api@1.0.0".to_string(),
-            "miden:alpha/api@1.0.0".to_string(),
-        ])
+        let specs = import_specs(
+            &["miden:zebra/api@1.0.0".to_string(), "miden:alpha/api@1.0.0".to_string()],
+            &test_consumer(),
+        )
         .unwrap();
 
         let wit = import_world_wit("foreign-account-bindings", &specs);
@@ -1672,7 +1721,7 @@ mod tests {
     /// Rejects dependency identifiers which cannot define a canonical synthetic package.
     #[test]
     fn fpi_import_specs_reject_noncanonical_interfaces() {
-        let error = import_specs(&["miden:wallet/api".to_string()]).unwrap_err();
+        let error = import_specs(&["miden:wallet/api".to_string()], &test_consumer()).unwrap_err();
         assert!(error.to_string().contains("namespace:package/interface@version"));
     }
 
@@ -1713,7 +1762,7 @@ interface api {
             resolve.push_group(group).unwrap();
         }
 
-        let specs = import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let world_name = import_world_name("collision-test", &specs);
         let inline = import_world_wit(&world_name, &specs);
         let group =
@@ -1727,36 +1776,52 @@ interface api {
     }
 
     #[test]
-    fn procedure_root_key_uses_full_wit_interface_component() {
-        let path =
-            MasmPath::validate(r#"::"miden:no-arg-account/no-arg-account@0.0.1"::"get-count""#)
-                .expect("fixture path must be valid");
+    fn canonical_procedure_path_matches_external_ids_against_export_paths() {
+        let export = MasmPath::validate("::miden::basic_wallet::basic_wallet::receive_asset")
+            .expect("fixture path must be valid");
+        let external_id = MasmPath::new("miden::basic_wallet::basic_wallet::receive_asset");
 
-        let key = procedure_root_key_from_export_path(path)
-            .expect("WIT export path must produce a procedure root key");
+        assert_eq!(canonical_procedure_path(export), canonical_procedure_path(external_id));
+    }
+
+    #[test]
+    fn canonical_procedure_path_separates_same_function_in_different_components() {
+        let first = MasmPath::new("miden::foo::account::get_count");
+        let second = MasmPath::new("miden::foo::account_admin::get_count");
+
+        assert_ne!(canonical_procedure_path(first), canonical_procedure_path(second));
+    }
+
+    #[test]
+    fn fpi_import_specs_derive_external_id_prefix_from_consumer_and_dependency() {
+        let specs =
+            import_specs(&["miden:basic-wallet/basic-wallet@0.1.0".to_string()], &test_consumer())
+                .unwrap();
 
         assert_eq!(
-            key,
-            ProcedureRootKey::new("miden:no-arg-account/no-arg-account@0.0.1", "get-count")
+            specs[0].external_id_prefix,
+            "miden::acme::acme::fpi::miden::basic_wallet::basic_wallet"
         );
     }
 
     #[test]
-    fn procedure_root_key_rejects_nested_non_wit_export_path() {
-        let path = MasmPath::validate(
-            r#"::"miden:no-arg-note/no-arg-note@0.0.1"::no_arg_note::cabi_realloc"#,
-        )
-        .expect("fixture path must be valid");
-
-        assert_eq!(procedure_root_key_from_export_path(path), None);
-    }
-
-    #[test]
-    fn procedure_root_key_separates_same_function_in_different_interfaces() {
-        let first = ProcedureRootKey::new("miden:foo/account@0.0.1", "get-count");
-        let second = ProcedureRootKey::new("miden:foo/account-admin@0.0.1", "get-count");
-
-        assert_ne!(first, second);
+    fn fpi_external_id_prefixes_separate_dependency_namespaces_and_interfaces() {
+        let imports = [
+            "miden:wallet/api@0.1.0".to_string(),
+            "acme:wallet/api@0.1.0".to_string(),
+            "miden:wallet/admin@0.1.0".to_string(),
+        ];
+        let specs = import_specs(&imports, &test_consumer()).unwrap();
+        let prefixes =
+            specs.iter().map(|spec| spec.external_id_prefix.as_str()).collect::<Vec<_>>();
+        assert_eq!(
+            prefixes,
+            [
+                "miden::acme::acme::fpi::acme::wallet::api",
+                "miden::acme::acme::fpi::miden::wallet::admin",
+                "miden::acme::acme::fpi::miden::wallet::api",
+            ]
+        );
     }
 
     #[test]
@@ -2011,6 +2076,7 @@ interface api {
             result: None,
             docs: Docs::default(),
             stability: Default::default(),
+            external_id: None,
             span: WitSpan::default(),
         }
     }

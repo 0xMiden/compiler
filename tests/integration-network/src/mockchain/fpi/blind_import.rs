@@ -164,22 +164,14 @@ fn compile_debug_note(note_project: &Project) {
 fn use_regression_version(manifest: String) -> String {
     const ORIGINAL_PACKAGE_VERSION: &str = "version = \"0.0.1\"";
     const REPLACEMENT_PACKAGE_VERSION: &str = "version = \"0.1.0\"";
-    const ORIGINAL_NAMESPACE_VERSION: &str = "@0.0.1\"";
-    const REPLACEMENT_NAMESPACE_VERSION: &str = "@0.1.0\"";
 
     assert_eq!(
         manifest.matches(ORIGINAL_PACKAGE_VERSION).count(),
         1,
         "fixture manifest must contain exactly one default package version"
     );
-    assert!(
-        manifest.matches(ORIGINAL_NAMESPACE_VERSION).count() <= 1,
-        "fixture manifest must contain at most one component namespace version"
-    );
 
-    manifest
-        .replacen(ORIGINAL_PACKAGE_VERSION, REPLACEMENT_PACKAGE_VERSION, 1)
-        .replacen(ORIGINAL_NAMESPACE_VERSION, REPLACEMENT_NAMESPACE_VERSION, 1)
+    manifest.replacen(ORIGINAL_PACKAGE_VERSION, REPLACEMENT_PACKAGE_VERSION, 1)
 }
 
 /// Account component source used to produce the canonical basic-wallet interface.

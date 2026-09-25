@@ -1,8 +1,11 @@
+use alloc::format;
+
 use crate::{
-    OpPrinter, Operation, RegionKind, RegionKindInterface, SymbolManager, SymbolManagerMut,
-    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
+    Context, OpPrinter, Operation, RegionKind, RegionKindInterface, Report, Symbol, SymbolManager,
+    SymbolManagerMut, SymbolMap, SymbolName, SymbolPath, SymbolRef, SymbolTable, SymbolUseList,
+    UnsafeIntrusiveEntityRef, Usable, Verify,
     derive::{OpParser, OpPrinter, operation},
-    dialects::builtin::BuiltinDialect,
+    dialects::builtin::{BuiltinDialect, Component, Module, ModuleRef},
     traits::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
@@ -94,4 +97,66 @@ impl SymbolTable for World {
     fn get(&self, name: SymbolName) -> Option<SymbolRef> {
         self.symbols.get(name)
     }
+}
+
+impl World {
+    /// Returns an error when the world declares a module tree reaching the path the component name
+    /// `component` spells, which the component would shadow: resolution prefers the longest
+    /// registered name.
+    ///
+    /// The name is the component's namespace path, with its segments joined by `::`.
+    pub fn reject_component_shadowing(&self, component: SymbolName) -> Result<(), Report> {
+        let mut segments = SymbolPath::segments_of(component).into_iter();
+        let Some(mut module) =
+            segments.next().and_then(|first| self.get(first)).and_then(as_module)
+        else {
+            return Ok(());
+        };
+        for segment in segments {
+            let Some(next) = module.borrow().get(segment).and_then(as_module) else {
+                return Ok(());
+            };
+            module = next;
+        }
+        Err(shadowing_error(component, component, component))
+    }
+}
+
+/// A world is built through `WorldBuilder`, which enforces the shadowing rule as it goes; parsed
+/// input is not, so the rule is checked here as well.
+impl Verify<dyn SymbolTable> for World {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        let body = self.body();
+        if body.is_empty() {
+            return Ok(());
+        }
+        for op in body.entry().body() {
+            if let Some(component) = op.downcast_ref::<Component>() {
+                self.reject_component_shadowing(Symbol::name(component))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The module `symbol` refers to, if it is one.
+fn as_module(symbol: SymbolRef) -> Option<ModuleRef> {
+    symbol
+        .borrow()
+        .as_symbol_operation()
+        .downcast_ref::<Module>()
+        .map(|m| m.as_module_ref())
+}
+
+/// The error for a component named `component` that shadows the module path `module_path`, the
+/// two sharing the prefix `prefix`.
+pub(crate) fn shadowing_error(
+    component: SymbolName,
+    module_path: SymbolName,
+    prefix: SymbolName,
+) -> Report {
+    Report::msg(format!(
+        "component `{component}` and module path `{module_path}` share the prefix `{prefix}`; a \
+         component name must not shadow a module tree"
+    ))
 }

@@ -19,7 +19,7 @@ fn component_frontend_metadata_collects_account_procedures() {
         ParsedModule {
             component_frontend_metadata: vec![FrontendMetadata::AccountProcedure {
                 method_path: "crate::wallet::BasicWallet::receive_asset".to_string(),
-                export_name: "receive-asset".to_string(),
+                path: "miden::basic_wallet::basic_wallet::receive_asset".to_string(),
             }],
             ..Default::default()
         },
@@ -27,11 +27,11 @@ fn component_frontend_metadata_collects_account_procedures() {
             component_frontend_metadata: vec![
                 FrontendMetadata::AccountProcedure {
                     method_path: "crate::wallet::BasicWallet::move_asset_to_note".to_string(),
-                    export_name: "move-asset-to-note".to_string(),
+                    path: "miden::basic_wallet::basic_wallet::move_asset_to_note".to_string(),
                 },
                 FrontendMetadata::AccountProcedure {
                     method_path: "crate::wallet::BasicWallet::create_note".to_string(),
-                    export_name: "create-note".to_string(),
+                    path: "miden::basic_wallet::basic_wallet::create_note".to_string(),
                 },
             ],
             ..Default::default()
@@ -49,7 +49,7 @@ fn component_frontend_metadata_collects_account_procedures() {
 fn component_frontend_metadata_reports_missing_lifted_exports() {
     let metadata = [FrontendMetadata::AuthScript {
         method_path: "crate::auth::AuthComponent::authenticate".to_string(),
-        export_name: "auth".to_string(),
+        path: "miden::auth::auth::auth".to_string(),
     }];
     let lifted_exports = FxHashSet::default();
 
@@ -63,7 +63,7 @@ fn component_frontend_metadata_reports_missing_lifted_exports() {
         "unexpected error: {err:?}"
     );
     assert!(
-        err.to_string().contains("expected lifted export `auth`"),
+        err.to_string().contains("expected lifted export `miden::auth::auth::auth`"),
         "unexpected error: {err:?}"
     );
 }
@@ -73,7 +73,7 @@ fn component_frontend_metadata_reports_missing_lifted_exports() {
 fn component_frontend_metadata_reports_missing_account_procedure_export() {
     let metadata = [FrontendMetadata::AccountProcedure {
         method_path: "crate::wallet::BasicWallet::receive_asset".to_string(),
-        export_name: "receive-asset".to_string(),
+        path: "miden::basic_wallet::basic_wallet::receive_asset".to_string(),
     }];
     let lifted_exports = FxHashSet::default();
 
@@ -87,7 +87,8 @@ fn component_frontend_metadata_reports_missing_account_procedure_export() {
         "unexpected error: {err:?}"
     );
     assert!(
-        err.to_string().contains("expected lifted export `receive-asset`"),
+        err.to_string()
+            .contains("expected lifted export `miden::basic_wallet::basic_wallet::receive_asset`"),
         "unexpected error: {err:?}"
     );
 }

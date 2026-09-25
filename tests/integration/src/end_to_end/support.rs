@@ -177,8 +177,9 @@ pub(super) fn miden_project_toml(name: &str) -> String {
                 version = "0.0.1"
 
                 [lib]
-                # Core Wasm modules use the frontend's synthetic wrapper component identity.
-                namespace = "root_ns:root@1.0.0"
+                # The namespace the frontend roots the core Wasm module's wrapper component at;
+                # any namespace that does not shadow a kernel or standard-library module path.
+                namespace = "root"
                 path = "src/lib.rs"
 
                 [dependencies]

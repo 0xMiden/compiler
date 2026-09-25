@@ -1,136 +1,8 @@
-use alloc::format;
-use core::fmt;
-
 use super::Component;
 use crate::{
-    FxHashMap, Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolTable, Type, Visibility,
-    diagnostics::{Diagnostic, miette},
+    FxHashMap, Symbol, SymbolName, SymbolTable, Type, Visibility,
     dialects::builtin::{Function, Module, attributes::Signature},
-    version::Version,
 };
-
-/// The fully-qualfied identifier of a component
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ComponentId {
-    /// The namespace in which the component is defined
-    pub namespace: SymbolName,
-    /// The name of this component
-    pub name: SymbolName,
-    /// The semantic version number of this component
-    pub version: Version,
-}
-
-impl fmt::Display for ComponentId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}@{}", self.namespace, self.name, self.version)
-    }
-}
-
-impl ComponentId {
-    /// Returns true if `self` and `other` are equal according to semantic versioning rules:
-    ///
-    /// * Namespace and name are identical
-    /// * Version numbers are considered equal according to semantic versioning (i.e. if the version
-    ///   strings differ only in build metadata, then they are considered equal).
-    pub fn is_match(&self, other: &Self) -> bool {
-        self.namespace == other.namespace
-            && self.name == other.name
-            && self.version.cmp_precedence(&other.version).is_eq()
-    }
-
-    /// Get the Miden Assembly [`midenc_session::LibraryPath`] that uniquely identifies this
-    /// interface.
-    ///
-    /// The returned path is a single quoted component so that `:` and `@` are preserved.
-    pub fn to_library_path(&self) -> midenc_session::LibraryPath {
-        use midenc_session::LibraryPath;
-
-        let ns = format!("{}:{}@{}", self.namespace, self.name, self.version);
-        let mut path = LibraryPath::default();
-        path.push_component(&ns);
-        path
-    }
-}
-
-#[derive(thiserror::Error, Debug, Diagnostic)]
-pub enum InvalidComponentIdError {
-    #[error("invalid component id: missing namespace identifier")]
-    #[diagnostic()]
-    MissingNamespace,
-    #[error("invalid component id: missing component name")]
-    #[diagnostic()]
-    MissingName,
-    #[error("invalid component id: missing version")]
-    #[diagnostic()]
-    MissingVersion,
-    #[error("invalid component version: {0}")]
-    #[diagnostic()]
-    InvalidVersion(#[from] crate::version::semver::Error),
-}
-
-impl TryFrom<&SymbolPath> for ComponentId {
-    type Error = InvalidComponentIdError;
-
-    fn try_from(path: &SymbolPath) -> Result<Self, Self::Error> {
-        let mut components = path.components().peekable();
-        components.next_if_eq(&SymbolNameComponent::Root);
-
-        let (ns, name, version) = match components.next().map(|c| c.as_symbol_name()) {
-            None => return Err(InvalidComponentIdError::MissingNamespace),
-            Some(name) => match name.as_str().split_once(':') {
-                Some((ns, name)) => match name.split_once('@') {
-                    Some((name, version)) => (
-                        SymbolName::intern(ns),
-                        SymbolName::intern(name),
-                        Version::parse(version).map_err(InvalidComponentIdError::InvalidVersion)?,
-                    ),
-                    None => return Err(InvalidComponentIdError::MissingVersion),
-                },
-                None => return Err(InvalidComponentIdError::MissingNamespace),
-            },
-        };
-
-        Ok(Self {
-            namespace: ns,
-            name,
-            version,
-        })
-    }
-}
-
-impl core::str::FromStr for ComponentId {
-    type Err = InvalidComponentIdError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (version, rest) = match s.rsplit_once('@') {
-            None => (Version::new(1, 0, 0), s),
-            Some((rest, version)) => (version.parse::<Version>()?, rest),
-        };
-        let (ns, name) = match rest.split_once(':') {
-            Some((ns, name)) => (SymbolName::intern(ns), SymbolName::intern(name)),
-            None => return Err(InvalidComponentIdError::MissingNamespace),
-        };
-        Ok(Self {
-            namespace: ns,
-            name,
-            version,
-        })
-    }
-}
-
-impl From<&Component> for ComponentId {
-    fn from(value: &Component) -> Self {
-        let namespace = value.namespace().as_symbol();
-        let name = value.name().as_symbol();
-        let version = value.get_version().clone();
-
-        Self {
-            namespace,
-            name,
-            version,
-        }
-    }
-}
 
 /// A [ComponentInterface] is a description of the "skeleton" of a component, i.e.:
 ///
@@ -143,7 +15,8 @@ impl From<&Component> for ComponentId {
 /// instead, this is used by the compiler to reason about what components are available, what is
 /// required, and whether or not all requirements can be met.
 pub struct ComponentInterface {
-    id: ComponentId,
+    /// The name of the component, i.e. its `::`-joined namespace path
+    name: SymbolName,
     /// The visibility of this component in the interface (public or internal)
     visibility: Visibility,
     /// This flag is set to `true` if the interface is completely abstract (no definitions)
@@ -160,7 +33,7 @@ pub struct ComponentInterface {
     /// In the Wasm Component Model, such explicit instantiations are provided for us, so wiring
     /// up the component hierarchy derived from a Wasm component should be straightforward. It
     /// remains to be seen if there are non-Wasm sources where this is more problematic.
-    imports: FxHashMap<ComponentId, ComponentInterface>,
+    imports: FxHashMap<SymbolName, ComponentInterface>,
     /// The set of items which form the interface of this component, and can be referenced from
     /// other components.
     ///
@@ -176,7 +49,7 @@ impl ComponentInterface {
         let mut exports = FxHashMap::default();
         let mut is_externally_defined = true;
 
-        let id = ComponentId::from(component);
+        let component_name = Symbol::name(component);
 
         let symbol_manager = component.symbol_manager();
         for symbol_ref in symbol_manager.symbols().symbols() {
@@ -220,8 +93,7 @@ impl ComponentInterface {
                 let visibility = interface.visibility;
                 if interface.is_externally_defined {
                     // This is an import of an externally-defined component
-                    let import_id = interface.id.clone();
-                    imports.insert(import_id, interface);
+                    imports.insert(interface.name, interface);
                 } else {
                     if !visibility.is_private() {
                         // This is an exported component definition (either internally or globally)
@@ -240,7 +112,7 @@ impl ComponentInterface {
         }
 
         Self {
-            id,
+            name: component_name,
             is_externally_defined,
             visibility: *component.get_visibility(),
             imports,
@@ -248,8 +120,9 @@ impl ComponentInterface {
         }
     }
 
-    pub fn id(&self) -> &ComponentId {
-        &self.id
+    /// Returns the name of the component, i.e. its `::`-joined namespace path
+    pub fn name(&self) -> SymbolName {
+        self.name
     }
 
     /// Returns true if this interface describes a component for which we do not have a definition.
@@ -323,7 +196,7 @@ impl ComponentInterface {
 
         self.exports
             // Do we export a symbol with the given name
-            .get(&interface.id.name)
+            .get(&interface.name)
             // The symbol must be a component
             .and_then(|export| match export {
                 ComponentExport::Component(definition) => Some(definition),
@@ -338,13 +211,13 @@ impl ComponentInterface {
     /// Returns true if `self` provides a superset of the imports required by `other`, or put
     /// another way - `self` matches the component import described by `other`.
     pub fn matches(&self, other: &Self) -> bool {
-        if !self.id.is_match(&other.id) {
+        if self.name != other.name {
             return false;
         }
 
-        other.imports.iter().all(|(imported_id, import)| {
+        other.imports.iter().all(|(imported_name, import)| {
             self.exports
-                .get(&imported_id.name)
+                .get(imported_name)
                 .is_some_and(|export| export.matches_component(import))
         })
     }

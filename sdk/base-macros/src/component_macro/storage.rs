@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
-use heck::ToSnakeCase;
 use quote::quote;
 use syn::{Field, Type, spanned::Spanned};
 
-use crate::{account_component_metadata::AccountComponentMetadataBuilder, types::StorageFieldType};
+use crate::{
+    account_component_metadata::AccountComponentMetadataBuilder, namespace::ComponentNamespace,
+    types::StorageFieldType,
+};
 
 /// Normalizes a storage slot name component into a valid identifier-like segment.
 ///
@@ -35,22 +37,11 @@ fn sanitize_slot_name_component(component: &str) -> String {
 
 /// Derives the full storage slot name for a component field.
 ///
-/// Slot names are part of the on-chain storage ABI, so this intentionally ignores any optional
-/// version suffix in `storage_namespace` and keeps the format stable as
-/// `component_package_or_name::component_interface::field_name`. The middle segment is the
-/// component's `[lib].namespace` interface segment, so private Rust renames cannot change
-/// deployed slot names.
-fn derive_storage_slot_name(
-    storage_namespace: &str,
-    component_interface: &str,
-    field_name: &str,
-) -> String {
-    let storage_namespace = storage_namespace.split('@').next().unwrap_or(storage_namespace);
-    let namespace = sanitize_slot_name_component(storage_namespace);
-    let interface_component = sanitize_slot_name_component(&component_interface.to_snake_case());
-    let field_component = sanitize_slot_name_component(field_name);
-
-    format!("{namespace}::{interface_component}::{field_component}")
+/// Slot names are part of the on-chain storage ABI: they are `<namespace>::<field_name>`, where
+/// the namespace is the component's `[lib].namespace`, so private Rust renames of the storage
+/// struct cannot change deployed slot names.
+fn derive_storage_slot_name(namespace: &ComponentNamespace, field_name: &str) -> String {
+    namespace.storage_slot_name(&sanitize_slot_name_component(field_name))
 }
 
 /// Parsed arguments collected from a `#[storage(...)]` attribute.
@@ -119,8 +110,7 @@ fn slot_id_tokens(id: miden_protocol::account::StorageSlotId) -> proc_macro2::To
 pub fn process_storage_fields(
     fields: &mut syn::FieldsNamed,
     builder: &mut AccountComponentMetadataBuilder,
-    storage_namespace: &str,
-    component_interface: &str,
+    namespace: Option<&ComponentNamespace>,
 ) -> Result<Vec<proc_macro2::TokenStream>, syn::Error> {
     let mut field_infos = Vec::new();
     let mut errors = Vec::new();
@@ -156,9 +146,13 @@ pub fn process_storage_fields(
         }
 
         if let Some(args) = storage_args {
+            // Without a project manifest there is no namespace; the caller reports that once
+            // field validation is done.
+            let Some(namespace) = namespace else {
+                continue;
+            };
             // `StorageSlotId` values are derived from slot names, so keep this format stable.
-            let slot_name_str =
-                derive_storage_slot_name(storage_namespace, component_interface, &field_name_str);
+            let slot_name_str = derive_storage_slot_name(namespace, &field_name_str);
             if let Some(existing_field) = slot_names.get(&slot_name_str) {
                 errors.push(syn::Error::new(
                     field.span(),
@@ -271,25 +265,29 @@ pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType,
 
 #[cfg(test)]
 mod tests {
+    use proc_macro2::Span;
+
     use super::derive_storage_slot_name;
+    use crate::namespace::ComponentNamespace;
+
+    fn counter_namespace() -> ComponentNamespace {
+        ComponentNamespace::parse("miden::counter_contract::counter_contract", Span::call_site())
+            .unwrap()
+    }
 
     #[test]
-    fn derives_slot_name_from_component_package_interface_and_field() {
+    fn derives_slot_name_from_namespace_and_field() {
         assert_eq!(
-            derive_storage_slot_name("miden:counter-contract", "counter-contract", "count_map"),
-            "miden_counter_contract::counter_contract::count_map"
+            derive_storage_slot_name(&counter_namespace(), "count_map"),
+            "miden::counter_contract::counter_contract::count_map"
         );
     }
 
     #[test]
-    fn ignores_component_package_version_when_deriving_slot_name() {
+    fn sanitizes_leading_underscore_field_names() {
         assert_eq!(
-            derive_storage_slot_name(
-                "miden:counter-contract@1.2.3",
-                "counter-contract",
-                "count_map"
-            ),
-            "miden_counter_contract::counter_contract::count_map"
+            derive_storage_slot_name(&counter_namespace(), "_count_map"),
+            "miden::counter_contract::counter_contract::x_count_map"
         );
     }
 }

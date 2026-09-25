@@ -119,12 +119,28 @@ impl dyn SymbolTable {
 /// In most circumstances, you will want to interact with this via [SymbolManager] or
 /// [SymbolManagerMut], as the operations provided here are mostly low-level plumbing, and thus
 /// incomplete without functionality provided by higher-level abstractions.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct SymbolMap {
     /// A low-level mapping of symbols to operations found in this table
     symbols: FxHashMap<SymbolName, SymbolRef>,
     /// Used to unique symbol names when conflicts are detected
     uniquing_count: usize,
+    /// The largest number of `::`-separated segments of any name registered in this map.
+    ///
+    /// This is only an upper bound (it never decreases on removal) that keeps the common case of
+    /// single-segment names at one lookup per path component in [SymbolMap::lookup_prefix].
+    max_name_segments: usize,
+}
+/// An empty map, whose `max_name_segments` starts at 1: every name has at least one segment, so
+/// [SymbolMap::lookup_prefix] tries no multi-segment names until one is registered.
+impl Default for SymbolMap {
+    fn default() -> Self {
+        Self {
+            symbols: Default::default(),
+            uniquing_count: 0,
+            max_name_segments: 1,
+        }
+    }
 }
 impl SymbolMap {
     /// Build a [SymbolMap] on the fly from the given operation.
@@ -142,29 +158,30 @@ impl SymbolMap {
     /// wrote, not a broken invariant. An operation with no region, or whose region has no blocks,
     /// defines no symbols and yields an empty map.
     pub fn try_build(op: &Operation) -> Result<Self, SymbolName> {
-        let mut symbols = FxHashMap::default();
+        let mut map = Self::default();
 
         let Some(region) = op.regions().front().get() else {
-            return Ok(Self {
-                symbols,
-                uniquing_count: 0,
-            });
+            return Ok(map);
         };
         if !region.is_empty() {
             for op in region.entry().body() {
                 if let Some(symbol_ref) = op.as_symbol_ref() {
                     let name = symbol_ref.borrow().name();
-                    if symbols.try_insert(name, symbol_ref).is_err() {
+                    if !map.insert_new(name, symbol_ref) {
                         return Err(name);
                     }
                 }
             }
         }
 
-        Ok(Self {
-            symbols,
-            uniquing_count: 0,
-        })
+        Ok(map)
+    }
+
+    /// Records that `name` is registered in this map, see [SymbolMap::max_name_segments].
+    fn note_name(&mut self, name: SymbolName) {
+        // Counts the segments `SymbolPath::segments_of` would produce, without interning them
+        let segments = name.as_str().matches("::").count() + 1;
+        self.max_name_segments = self.max_name_segments.max(segments);
     }
 
     /// Get the symbol named `name`, or `None` if undefined.
@@ -193,15 +210,18 @@ impl SymbolMap {
     /// it is presumed that what we have found is not the absolute root which represents the global
     /// namespace, but rather a symbol defined in the global namespace. This means that only
     /// children of that symbol are possibly resolvable (as we have no way to reach other symbols
-    /// defined in the global namespace). In short, we only attempt to resolve absolute paths where
-    /// the first component matches the root symbol. If it matches, then the symbol is resolved
-    /// normally from there, otherwise `None` is returned.
+    /// defined in the global namespace). In short, we only attempt to resolve absolute paths whose
+    /// leading components spell the `::`-separated segments of the root symbol's name. If they do,
+    /// then the symbol is resolved normally from there, otherwise `None` is returned.
+    ///
+    /// Path components are matched against symbol names as described in
+    /// [SymbolMap::lookup_prefix].
     pub fn resolve(&self, symbol_table: &Operation, attr: &SymbolPath) -> Option<OperationRef> {
-        let mut components = attr.components();
+        let components = attr.components().collect::<SmallVec<[SymbolNameComponent; 4]>>();
 
         // Resolve absolute paths via the root symbol table
         if attr.is_absolute() {
-            let _ = components.next();
+            let mut components = &components[1..];
 
             // Locate the root operation
             let root = if let Some(mut root) = symbol_table.parent_op() {
@@ -220,21 +240,27 @@ impl SymbolMap {
             // absolute symbol paths which are children of `root`, as we cannot reach any other
             // symbols in the root namespace.
             if let Some(root_symbol) = root_op.as_trait::<dyn Symbol>() {
-                match components.next()? {
-                    SymbolNameComponent::Leaf(name) => {
-                        return if name == root_symbol.name() {
-                            Some(root)
-                        } else {
-                            None
-                        };
-                    }
-                    SymbolNameComponent::Component(name) => {
-                        if name != root_symbol.name() {
-                            return None;
-                        }
-                    }
-                    SymbolNameComponent::Root => unreachable!(),
+                let root_name = root_symbol.name();
+                // The root symbol itself, as spelled by `Symbol::path`
+                if let [SymbolNameComponent::Leaf(name)] = components {
+                    return (*name == root_name).then_some(root);
                 }
+                let segments = SymbolPath::segments_of(root_name);
+                for (i, segment) in segments.iter().enumerate() {
+                    match components.get(i)? {
+                        SymbolNameComponent::Component(name) if name == segment => {}
+                        // The path ends at the root symbol, spelled segment by segment
+                        SymbolNameComponent::Leaf(name)
+                            if name == segment
+                                && i + 1 == segments.len()
+                                && i + 1 == components.len() =>
+                        {
+                            return Some(root);
+                        }
+                        _ => return None,
+                    }
+                }
+                components = &components[segments.len()..];
             }
 
             // Resolve the symbol from `root`
@@ -242,7 +268,7 @@ impl SymbolMap {
             let symbol_manager = root_symbol_table.symbol_manager();
             symbol_manager.symbols().resolve_components(components)
         } else {
-            self.resolve_components(components)
+            self.resolve_components(&components)
         }
     }
 
@@ -255,33 +281,52 @@ impl SymbolMap {
         todo!()
     }
 
-    fn resolve_components(
+    /// Resolves the relative path `components` starting from this map, descending one nested
+    /// symbol table per [SymbolMap::lookup_prefix] match.
+    fn resolve_components(&self, components: &[SymbolNameComponent]) -> Option<OperationRef> {
+        let (mut found, mut rest) = self.lookup_prefix(components)?;
+        while !rest.is_empty() {
+            let next = {
+                let op = found.borrow();
+                let symbol_table = op.as_trait::<dyn SymbolTable>()?;
+                symbol_table.symbol_manager().symbols().lookup_prefix(rest)?
+            };
+            (found, rest) = next;
+        }
+        Some(found)
+    }
+
+    /// Looks up the symbol named by the leading components of `components` in this map, and
+    /// returns it together with the components that remain to be resolved inside it.
+    ///
+    /// A leading `Leaf` is looked up as-is: leaf names are opaque, even when they contain `::`.
+    /// Otherwise, the lookup matches the **longest run of leading `Component`s whose `::`-join is
+    /// a registered name**, since a symbol-table op may be named by a `::`-joined path (see
+    /// [SymbolPath::segments_of]). For example, a component named `miden::a::b` coexists with a
+    /// module tree rooted at `miden` in the same table; the path `miden::a::b::m::f` resolves
+    /// through the component, because the longest registered name wins.
+    fn lookup_prefix<'a>(
         &self,
-        mut components: impl ExactSizeIterator<Item = SymbolNameComponent>,
-    ) -> Option<OperationRef> {
-        match components.next()? {
-            super::SymbolNameComponent::Component(name) => {
-                let mut found = self.get_op(name);
-                loop {
-                    let op_ref = found.take()?;
-                    let op = op_ref.borrow();
-                    let symbol_table = op.as_trait::<dyn SymbolTable>()?;
-                    let manager = symbol_table.symbol_manager();
-                    match components.next() {
-                        None => return Some(op_ref),
-                        Some(super::SymbolNameComponent::Component(name)) => {
-                            found = manager.lookup_op(name);
-                        }
-                        Some(super::SymbolNameComponent::Leaf(name)) => {
-                            assert_eq!(components.next(), None);
-                            break manager.lookup_op(name);
-                        }
-                        Some(super::SymbolNameComponent::Root) => unreachable!(),
+        components: &'a [SymbolNameComponent],
+    ) -> Option<(OperationRef, &'a [SymbolNameComponent])> {
+        match components.first()? {
+            SymbolNameComponent::Leaf(name) => Some((self.get_op(*name)?, &components[1..])),
+            SymbolNameComponent::Component(first) => {
+                let run = components
+                    .iter()
+                    .take_while(|c| matches!(c, SymbolNameComponent::Component(_)))
+                    .count();
+                // Multi-segment names first, longest first; a one-segment name is the plain
+                // lookup of `first` below, which also covers a run of one `Component`.
+                for len in (2..=run.min(self.max_name_segments)).rev() {
+                    let name = SymbolPath::join_components(&components[..len]);
+                    if let Some(op) = self.get_op(name) {
+                        return Some((op, &components[len..]));
                     }
                 }
+                Some((self.get_op(*first)?, &components[1..]))
             }
-            super::SymbolNameComponent::Leaf(name) => self.get_op(name),
-            super::SymbolNameComponent::Root => {
+            SymbolNameComponent::Root => {
                 unreachable!("root component should have already been consumed")
             }
         }
@@ -305,7 +350,11 @@ impl SymbolMap {
     /// Inserts `symbol` in the map, as `name`, so long as `name` is not already in the map.
     #[inline]
     pub fn insert_new(&mut self, name: SymbolName, symbol: SymbolRef) -> bool {
-        self.symbols.try_insert(name, symbol).is_ok()
+        let inserted = self.symbols.try_insert(name, symbol).is_ok();
+        if inserted {
+            self.note_name(name);
+        }
+        inserted
     }
 
     /// Inserts `symbol` in the map, with `name` if that name is not already registered in the map.
@@ -323,6 +372,7 @@ impl SymbolMap {
         match self.symbols.try_insert(name, symbol) {
             Ok(_) => {
                 symbol.borrow_mut().set_name(name);
+                self.note_name(name);
                 name
             }
             Err(err) => {
@@ -344,6 +394,7 @@ impl SymbolMap {
                 symbol.borrow_mut().set_name(uniqued);
                 // TODO: visit uses? symbol should be unused AFAICT
                 self.symbols.insert(uniqued, symbol);
+                self.note_name(uniqued);
                 uniqued
             }
         }

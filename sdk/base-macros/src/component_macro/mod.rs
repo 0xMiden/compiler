@@ -3,18 +3,17 @@ use std::{
     env,
 };
 
-use heck::{ToKebabCase, ToSnakeCase};
 use miden_project::TargetType;
 use miden_protocol::utils::serde::Serializable;
 use midenc_frontend_wasm_metadata::{
-    FrontendMetadata, WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
+    COMPONENT_INIT_PROCEDURE, FrontendMetadata, WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
 };
 use proc_macro::Span;
 use proc_macro2::{Ident, Literal, Span as Span2, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
     Attribute, FnArg, ImplItem, ImplItemFn, ItemImpl, ItemStruct, ItemTrait, PathArguments,
-    ReturnType, TraitItem, TraitItemFn, Type, spanned::Spanned,
+    ReturnType, TraitItem, TraitItemFn, Type, ext::IdentExt as _, spanned::Spanned,
 };
 
 pub(crate) use crate::component_macro::storage::typecheck_storage_field;
@@ -26,18 +25,18 @@ use crate::{
         storage::process_storage_fields,
     },
     dependency_ref::{DependencyRef, DependencyRefArgs},
+    namespace::ComponentNamespace,
     types::{
         ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
     },
     util::{generate_frontend_link_section, generate_wit_link_section, is_type_named},
+    wit_names::{rust_ident_to_wit_name, wit_bindgen_guest_ident},
 };
 
 pub(crate) mod generate_wit;
 mod sibling;
 mod storage;
 
-/// Fully-qualified identifier for the core types package used by exported component interfaces.
-const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 /// Attribute name used to mark the authentication procedure on a component method.
 const AUTH_SCRIPT_ATTR: &str = "auth_script";
 /// Helper attribute preserved by `#[auth_script]` so `#[component]` can recognize the method.
@@ -100,8 +99,10 @@ struct ComponentMethod {
     receiver_kind: ReceiverKind,
     /// Return type metadata.
     return_info: MethodReturn,
-    /// Method name rendered in kebab-case for WIT output.
+    /// Canonical WIT name of the method.
     wit_name: String,
+    /// Identifier of the guest trait method wit-bindgen generates for `wit_name`.
+    guest_fn_ident: syn::Ident,
 }
 
 /// Expands the `#[component]` attribute applied to either a component trait declaration or a trait
@@ -360,25 +361,22 @@ fn expand_component_storage(
 
     let default_impl = match &mut input_struct.fields {
         syn::Fields::Named(fields) => {
-            let storage_namespace = metadata.package.name().into_inner();
-            // Slot names derive from the component's public identity (the `[lib].namespace`
-            // interface segment) rather than the storage struct name, so renaming the private
-            // struct cannot change deployed storage slot names.
-            let component_interface = namespace_interface_segment(&metadata).to_string();
-            let field_inits = process_storage_fields(
-                fields,
-                &mut acc_builder,
-                &storage_namespace,
-                &component_interface,
-            )?;
-            // Checked after field validation so type errors take priority; slot names derived
-            // from the synthesized placeholder metadata must never reach a build.
-            if !fields.named.is_empty() && !metadata.has_miden_project_toml {
+            // Slot names derive from the component's public identity (the `[lib].namespace`)
+            // rather than the storage struct name, so renaming the private struct cannot change
+            // deployed storage slot names.
+            let namespace = if metadata.has_miden_project_toml {
+                Some(metadata.namespace(struct_name.span())?)
+            } else {
+                None
+            };
+            let field_inits = process_storage_fields(fields, &mut acc_builder, namespace.as_ref())?;
+            // Checked after field validation so type errors take priority.
+            if !fields.named.is_empty() && namespace.is_none() {
                 return Err(syn::Error::new(
                     struct_name.span(),
                     "`#[component_storage]` with `#[storage]` fields requires a \
                      `miden-project.toml` next to the crate's `Cargo.toml`: storage slot names \
-                     derive from the `[lib].namespace` interface segment",
+                     derive from its `[lib].namespace`",
                 ));
             }
             generate_default_impl(struct_name, &field_inits)
@@ -427,9 +425,10 @@ fn expand_component_storage(
 
 /// Expands the `#[component]` attribute applied to a component trait declaration.
 ///
-/// The trait declares the component's API: its name yields the WIT interface name and its methods
-/// yield the exported functions. This expansion validates the declaration and emits only
-/// API-derived metadata (the `#[auth_script]` frontend link section) — the WIT interface and
+/// The trait declares the component's API: its methods yield the exported functions, named
+/// `<[lib].namespace>::<method>`; the WIT package and interface derive from `[lib].namespace`.
+/// This expansion validates the declaration and emits only API-derived metadata (the
+/// `#[auth_script]` frontend link section) — the WIT interface and
 /// guest bindings are generated by the `impl Trait for Storage` expansion, which re-derives
 /// everything it needs from the implementation block (whose signatures rustc checks against this
 /// trait), so the two expansions need no shared state.
@@ -450,22 +449,17 @@ fn expand_component_trait(
 
     let metadata = crate::wit_world::ManifestPackage::load_or_default(call_site_span.into())?;
     // Without a project manifest the synthesized metadata would fail the namespace validation
-    // below with a baffling message about an interface named `empty`; name the real problem.
+    // below with a baffling message about a namespace named `empty`; name the real problem.
     if !metadata.has_miden_project_toml {
         return Err(syn::Error::new(
             trait_ident.span(),
             "`#[component]` requires a `miden-project.toml` next to the crate's `Cargo.toml`, \
              with `kind = \"account-component\"` and a `[lib].namespace` declaring the \
-             component's interface",
+             component's Miden path",
         ));
     }
-    let package_name = format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
-    // The WIT interface name is derived from the component trait name, and `[lib].namespace` in
-    // `miden-project.toml` must equal the full `miden:<package>/<interface>@<version>` id built
-    // from it — that namespace is the library identity the project assembler uses to resolve
-    // component-level procedures (e.g. `init`) during linking.
-    let interface_name = trait_ident.to_string().to_kebab_case();
-    validate_namespace_matches_interface(&metadata, &package_name, &interface_name, &trait_ident)?;
+    // `[lib].namespace` names every exported procedure (`<namespace>::<method>`).
+    let namespace = metadata.namespace(trait_ident.span())?;
 
     let mut auth_method_idents = Vec::new();
     let mut account_procedure_idents = Vec::new();
@@ -544,11 +538,18 @@ fn expand_component_trait(
     // generated at the impl expansion.
     let mut frontend_metadata_entries = Vec::new();
     if let Some(auth_ident) = auth_method_idents.first() {
-        frontend_metadata_entries.push(auth_script_frontend_metadata(&trait_ident, auth_ident));
+        frontend_metadata_entries.push(auth_script_frontend_metadata(
+            &namespace,
+            &trait_ident,
+            auth_ident,
+        )?);
     }
     for account_ident in &account_procedure_idents {
-        frontend_metadata_entries
-            .push(account_procedure_frontend_metadata(&trait_ident, account_ident));
+        frontend_metadata_entries.push(account_procedure_frontend_metadata(
+            &namespace,
+            &trait_ident,
+            account_ident,
+        )?);
     }
     let frontend_link_section = if frontend_metadata_entries.is_empty() {
         quote! {}
@@ -598,7 +599,7 @@ fn expand_component_trait_impl(
     reject_generics(&impl_block.generics, "component trait implementations cannot be generic")?;
 
     let component_type = (*impl_block.self_ty).clone();
-    if extract_type_ident(&component_type).is_none() {
+    if !is_path_type(&component_type) {
         return Err(syn::Error::new(
             impl_block.self_ty.span(),
             "Failed to determine the storage type targeted by this implementation.",
@@ -618,25 +619,18 @@ fn expand_component_trait_impl(
 
     let metadata = crate::wit_world::ManifestPackage::load_or_default(call_site_span.into())?;
     // Without a project manifest the namespace validation below would run against synthesized
-    // placeholder metadata and recommend `miden:empty/...@0.0.0` as the fix; name the real
-    // problem instead, mirroring the trait-side guard.
+    // placeholder metadata; name the real problem instead, mirroring the trait-side guard.
     if !metadata.has_miden_project_toml {
         return Err(syn::Error::new(
             trait_ident.span(),
             "`#[component]` requires a `miden-project.toml` next to the crate's `Cargo.toml`, \
              with `kind = \"account-component\"` and a `[lib].namespace` declaring the \
-             component's interface",
+             component's Miden path",
         ));
     }
-    let package_name = format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
-    // The generated WIT interface is named after the trait *as spelled here*. The trait-side
-    // validation only covers the declared trait name, so an impl that spells the trait through an
-    // alias (`use api::Foo as Bar; impl Bar for ...`) would silently generate an interface named
-    // after the alias — validate the impl-side spelling against `[lib].namespace` as well.
-    let interface_name = trait_ident.to_string().to_kebab_case();
-    validate_namespace_matches_interface(&metadata, &package_name, &interface_name, &trait_ident)?;
-    let interface_module = interface_name.to_snake_case();
-    let world_name = format!("{interface_name}-world");
+    // The WIT package, interface and every export path derive from `[lib].namespace`; the trait
+    // name takes no part in naming.
+    let namespace = metadata.namespace(trait_ident.span())?;
 
     let mut exported_types = registered_export_types();
     exported_types.sort_by(|a, b| a.wit_name.cmp(&b.wit_name));
@@ -678,13 +672,12 @@ fn expand_component_trait_impl(
             "Component `impl` is missing methods. A component cannot have empty exports.",
         ));
     }
+    reject_duplicate_method_wit_names(&methods)?;
 
     let dependency_imports = metadata.collect_miden_dependency_imports(Span2::call_site())?;
     let inline_wit_source = build_component_wit(ComponentWitSpec {
-        component_package: &package_name,
+        namespace: &namespace,
         component_version: metadata.package.version().inner(),
-        interface_name: &interface_name,
-        world_name: &world_name,
         dependency_imports: &dependency_imports,
         type_imports: &type_imports,
         methods: &methods,
@@ -694,10 +687,8 @@ fn expand_component_trait_impl(
     // stays export-only so downstream crates can depend on this account without also
     // materializing all of its transitive FPI dependencies.
     let public_wit_source = build_component_wit(ComponentWitSpec {
-        component_package: &package_name,
+        namespace: &namespace,
         component_version: metadata.package.version().inner(),
-        interface_name: &interface_name,
-        world_name: &world_name,
         dependency_imports: &[],
         type_imports: &type_imports,
         methods: &methods,
@@ -708,8 +699,7 @@ fn expand_component_trait_impl(
     let wit_link_section = generate_wit_link_section(&public_wit_source)?;
     let inline_literal = Literal::string(&inline_wit_source);
 
-    let interface_path =
-        format!("{}/{}@{}", package_name, interface_name, metadata.package.version());
+    let interface_path = namespace.wit_id(metadata.package.version());
     // Custom types are resolved relative to the crate root using the paths written in the
     // implementation's method signatures.
     let custom_type_paths = collect_custom_type_paths(&exported_types, &methods, None);
@@ -719,12 +709,12 @@ fn expand_component_trait_impl(
 
     if env::var_os("MIDEN_COMPONENT_DEBUG_WITH").is_some() {
         eprintln!(
-            "[miden::component] with mappings for {package_name}: {}",
+            "[miden::component] with mappings for {interface_path}: {}",
             debug_with_entries.join(", ")
         );
     }
 
-    let guest_trait_path = build_guest_trait_path(&package_name, &interface_module)?;
+    let guest_trait_path = namespace.guest_trait_path();
     let guest_methods: Vec<TokenStream2> = methods
         .iter()
         .map(|method| render_guest_method(method, &component_type, &trait_path))
@@ -746,9 +736,14 @@ fn expand_component_trait_impl(
         }
         #marker_check
         #storage_marker_check
-        // Use the fully-qualified component type here so the export macro works even when
-        // the impl block was declared through a module-qualified path (e.g. `impl Foo for super::Bar`).
-        self::bindings::export!(#component_type);
+        // wit-bindgen's `export!` accepts only an identifier, while the impl's self type may be a
+        // qualified path (e.g. `impl Foo for super::Bar`). A local alias hands the macro an
+        // identifier that resolves to the full type; the anonymous const keeps the alias private,
+        // and the generated `export_name` items keep their global linkage inside the block.
+        const _: () = {
+            type __MidenComponentExport = #component_type;
+            self::bindings::export!(__MidenComponentExport);
+        };
         #wit_link_section
     })
 }
@@ -778,58 +773,6 @@ fn render_storage_marker_check(component_type: &Type) -> TokenStream2 {
     }
 }
 
-/// Validates that `[lib].namespace` in `miden-project.toml` equals the full component id derived
-/// from the manifest and the trait: `miden:<package>/<interface>@<version>` (package from the
-/// kebab-cased `[package].name`, interface from the kebab-cased trait name, version from the
-/// manifest).
-///
-/// The project assembler ties the component's library identity to `[lib].namespace`, overriding the
-/// component root module's path with it during assembly. A mismatch otherwise surfaces only as a
-/// cryptic linker error about an undefined component `init` procedure, so we catch it here with an
-/// actionable message.
-fn validate_namespace_matches_interface(
-    metadata: &crate::wit_world::ManifestPackage,
-    package_name: &str,
-    interface_name: &str,
-    trait_ident: &syn::Ident,
-) -> Result<(), syn::Error> {
-    let namespace = declared_namespace(metadata);
-    // Require full equality, not just the interface segment: the generated WIT and `with`
-    // mappings use the manifest's package name and version, so a namespace with a divergent
-    // package or version would let the declared library identity drift from the generated WIT
-    // paths even though the interface segment matches.
-    let version = metadata.package.version();
-    let expected_namespace = format!("{package_name}/{interface_name}@{version}");
-
-    if namespace != expected_namespace {
-        return Err(syn::Error::new(
-            trait_ident.span(),
-            format!(
-                "component trait `{trait_ident}` produces WIT interface `{interface_name}` in \
-                 package `{package_name}` version `{version}`, but `[lib].namespace` in \
-                 `miden-project.toml` declares `{namespace}`. Update `[lib].namespace` to \
-                 `{expected_namespace}`. WARNING: storage slot ids derive from the namespace's \
-                 interface segment — changing it re-keys the storage of an already-deployed \
-                 component."
-            ),
-        ));
-    }
-
-    Ok(())
-}
-
-/// Returns the component id declared in `[lib].namespace` without the assembler path decoration
-/// (the leading `::` root marker and the component quoting).
-fn declared_namespace(metadata: &crate::wit_world::ManifestPackage) -> &str {
-    metadata
-        .target
-        .namespace
-        .inner()
-        .as_str()
-        .trim_start_matches("::")
-        .trim_matches('"')
-}
-
 /// Rejects any generic parameters or `where` clause on a component item.
 ///
 /// Shared by the trait, trait-impl, and storage expansions, which all generate code that cannot
@@ -841,17 +784,6 @@ fn reject_generics(generics: &syn::Generics, message: &str) -> Result<(), syn::E
     }
 
     Ok(())
-}
-
-/// Extracts the interface segment of the fully-qualified component id declared in
-/// `[lib].namespace` (`namespace:package/interface@version`); the interface segment sits between
-/// the last `/` and the `@`.
-fn namespace_interface_segment(metadata: &crate::wit_world::ManifestPackage) -> &str {
-    declared_namespace(metadata)
-        .rsplit('/')
-        .next()
-        .and_then(|segment| segment.split('@').next())
-        .unwrap_or_default()
 }
 
 /// Validates how many methods may be annotated with `#[auth_script]` for the current project kind.
@@ -878,33 +810,6 @@ fn validate_auth_script_count(
         )),
         _ => Ok(()),
     }
-}
-
-/// Synthesizes the guest trait path exposed by `wit-bindgen` for the generated interface.
-fn build_guest_trait_path(
-    package_name: &str,
-    interface_module: &str,
-) -> Result<TokenStream2, syn::Error> {
-    let package_without_version = package_name.split('@').next().unwrap_or(package_name).trim();
-
-    let segments: Vec<_> = package_without_version
-        .split([':', '/'])
-        .filter(|segment| !segment.is_empty())
-        .map(to_snake_case)
-        .collect();
-
-    if segments.is_empty() {
-        return Err(syn::Error::new(
-            Span::call_site().into(),
-            "Invalid component package identifier provided in manifest metadata.",
-        ));
-    }
-
-    let module_idents: Vec<_> =
-        segments.iter().map(|segment| format_ident!("{}", segment)).collect();
-    let interface_ident = format_ident!("{}", to_snake_case(interface_module));
-
-    Ok(quote! { self::bindings::exports #( :: #module_idents)* :: #interface_ident :: Guest })
 }
 
 /// Emits the guest trait method forwarding logic invoking the user-defined implementation.
@@ -976,9 +881,12 @@ fn render_guest_method(
         }
     };
 
+    // wit-bindgen names the guest trait method after the WIT name, which may differ from the
+    // user's identifier (`getURL` -> `get_url`, `r#type` -> `type_`).
+    let guest_fn_ident = &method.guest_fn_ident;
     quote! {
         #(#doc_attrs)*
-        fn #fn_ident(#fn_inputs) #output {
+        fn #guest_fn_ident(#fn_inputs) #output {
             #body
         }
     }
@@ -1242,15 +1150,27 @@ fn parse_component_signature(
 ) -> Result<(ComponentMethod, BTreeSet<String>), syn::Error> {
     let (receiver_kind, args) = validate_signature_shape(sig)?;
 
-    let mut params = Vec::new();
+    let mut params: Vec<MethodParam> = Vec::new();
     let mut type_imports = BTreeSet::new();
 
     for (ident, user_ty) in args {
         let type_ref = map_type_to_type_ref(&user_ty, exported_types)?;
         type_ref.add_required_core_type_imports(&mut type_imports);
 
+        // Distinct Rust identifiers can normalize to one WIT name; catch that here instead of
+        // surfacing a WIT parse error from the generated bindings.
+        let wit_param_name = rust_ident_to_wit_name(&ident)?;
+        if let Some(previous) = params.iter().find(|param| param.wit_param_name == wit_param_name) {
+            return Err(duplicate_wit_name_error(
+                "parameter",
+                &ident,
+                &previous.ident,
+                &wit_param_name,
+            ));
+        }
+
         params.push(MethodParam {
-            wit_param_name: to_kebab_case(&ident.to_string()),
+            wit_param_name,
             ident,
             user_ty,
             type_ref,
@@ -1272,25 +1192,85 @@ fn parse_component_signature(
 
     let doc_attrs = attrs.iter().filter(|attr| attr.path().is_ident("doc")).cloned().collect();
 
+    let wit_name = rust_ident_to_wit_name(&sig.ident)?;
     let component_method = ComponentMethod {
         fn_ident: sig.ident.clone(),
         doc_attrs,
         params,
         receiver_kind,
         return_info,
-        wit_name: to_kebab_case(&sig.ident.to_string()),
+        guest_fn_ident: wit_bindgen_guest_ident(&wit_name, sig.ident.span()),
+        wit_name,
     };
 
     Ok((component_method, type_imports))
 }
 
-/// Attempts to recover the final identifier from a type path for use with `bindings::export!`.
-fn extract_type_ident(ty: &Type) -> Option<syn::Ident> {
+/// Rejects component methods whose Rust identifiers normalize to one WIT name.
+fn reject_duplicate_method_wit_names(methods: &[ComponentMethod]) -> Result<(), syn::Error> {
+    for (index, method) in methods.iter().enumerate() {
+        if let Some(previous) =
+            methods[..index].iter().find(|previous| previous.wit_name == method.wit_name)
+        {
+            return Err(duplicate_wit_name_error(
+                "method",
+                &method.fn_ident,
+                &previous.fn_ident,
+                &method.wit_name,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Rejects component methods whose WIT name is also the name of a type of the component's WIT
+/// interface, `type_names`: an imported core type or an exported custom type. WIT interfaces share
+/// one namespace between types and functions.
+fn reject_method_type_name_collisions<'a>(
+    methods: &[ComponentMethod],
+    type_names: impl IntoIterator<Item = &'a String>,
+) -> Result<(), syn::Error> {
+    let type_names = type_names.into_iter().collect::<BTreeSet<_>>();
+    match methods.iter().find(|method| type_names.contains(&method.wit_name)) {
+        Some(method) => Err(syn::Error::new(
+            method.fn_ident.span(),
+            format!(
+                "component method `{}` produces the WIT name `{}`, which collides with the type \
+                 `{}` of the component's WIT interface; rename the method",
+                method.fn_ident, method.wit_name, method.wit_name
+            ),
+        )),
+        None => Ok(()),
+    }
+}
+
+/// Builds the diagnostic for a component `kind` (method or parameter) `ident` whose WIT name
+/// `wit_name` is already used by `previous`, pointing at both declarations.
+fn duplicate_wit_name_error(
+    kind: &str,
+    ident: &syn::Ident,
+    previous: &syn::Ident,
+    wit_name: &str,
+) -> syn::Error {
+    let mut error = syn::Error::new(
+        ident.span(),
+        format!(
+            "component {kind} `{ident}` produces the WIT name `{wit_name}`, which is already used \
+             by {kind} `{previous}`"
+        ),
+    );
+    error.combine(syn::Error::new(previous.span(), format!("first {kind} with this WIT name")));
+    error
+}
+
+/// Returns true if `ty` names a type through a path, the only shape a component storage type
+/// can take.
+fn is_path_type(ty: &Type) -> bool {
     match ty {
-        Type::Path(path) => path.path.segments.last().map(|segment| segment.ident.clone()),
-        Type::Group(group) => extract_type_ident(&group.elem),
-        Type::Paren(paren) => extract_type_ident(&paren.elem),
-        _ => None,
+        Type::Path(path) => !path.path.segments.is_empty(),
+        Type::Group(group) => is_path_type(&group.elem),
+        Type::Paren(paren) => is_path_type(&paren.elem),
+        _ => false,
     }
 }
 
@@ -1298,16 +1278,6 @@ fn extract_type_ident(ty: &Type) -> Option<syn::Ident> {
 /// Determines whether a type represents the unit type `()`.
 fn is_unit_type(ty: &Type) -> bool {
     matches!(ty, Type::Tuple(tuple) if tuple.elems.is_empty())
-}
-
-/// Converts a snake_case identifier into kebab-case.
-fn to_kebab_case(name: &str) -> String {
-    name.to_kebab_case()
-}
-
-/// Converts a kebab-case identifier into snake_case.
-fn to_snake_case(name: &str) -> String {
-    name.to_snake_case()
 }
 
 /// Synthesizes the `Default` implementation for the component struct using the collected storage
@@ -1356,29 +1326,54 @@ fn validate_auth_script_signature(
 /// Builds frontend metadata for the single `#[auth_script]` method exported by a component.
 ///
 /// `method_path` is diagnostic-only (used in error messages), so the trait-qualified path is
-/// sufficient; `export_name` is the WIT export name matched against the lifted component export.
+/// sufficient; `path` is the Miden path of the export, matched against its WIT `@external-id`.
 fn auth_script_frontend_metadata(
+    namespace: &ComponentNamespace,
     trait_ident: &syn::Ident,
     auth_method_ident: &syn::Ident,
-) -> FrontendMetadata {
-    FrontendMetadata::AuthScript {
+) -> syn::Result<FrontendMetadata> {
+    Ok(FrontendMetadata::AuthScript {
         method_path: format!("{trait_ident}::{auth_method_ident}"),
-        export_name: to_kebab_case(&auth_method_ident.to_string()),
-    }
+        path: export_path(namespace, auth_method_ident)?,
+    })
 }
 
 /// Builds frontend metadata for a single `#[account_procedure]` method exported by a component.
 ///
 /// `method_path` is diagnostic-only (used in error messages), so the trait-qualified path is
-/// sufficient; `export_name` is the WIT export name matched against the lifted component export.
+/// sufficient; `path` is the Miden path of the export, matched against its WIT `@external-id`.
 fn account_procedure_frontend_metadata(
+    namespace: &ComponentNamespace,
     trait_ident: &syn::Ident,
     account_method_ident: &syn::Ident,
-) -> FrontendMetadata {
-    FrontendMetadata::AccountProcedure {
+) -> syn::Result<FrontendMetadata> {
+    Ok(FrontendMetadata::AccountProcedure {
         method_path: format!("{trait_ident}::{account_method_ident}"),
-        export_name: to_kebab_case(&account_method_ident.to_string()),
+        path: export_path(namespace, account_method_ident)?,
+    })
+}
+
+/// Returns the Miden path of the export generated for the method `method_ident`: the namespace
+/// followed by the method's Rust identifier (without any `r#` prefix).
+///
+/// Fails for `init`, whose path belongs to the compiler's component initializer.
+pub(crate) fn export_path(
+    namespace: &ComponentNamespace,
+    method_ident: &syn::Ident,
+) -> syn::Result<String> {
+    let ident = method_ident.unraw().to_string();
+    let path = namespace.procedure_path(&ident);
+    // Codegen emits the component initializer as the public `init` procedure next to the exports.
+    if ident == COMPONENT_INIT_PROCEDURE {
+        return Err(syn::Error::new(
+            method_ident.span(),
+            format!(
+                "`{ident}` would be exported at the path `{path}`, which is reserved for the \
+                 compiler's component initializer; rename it"
+            ),
+        ));
     }
+    Ok(path)
 }
 
 /// Emits the static metadata blob inside the account-component metadata link section.
@@ -1457,6 +1452,253 @@ mod tests {
     use syn::parse_quote;
 
     use super::*;
+
+    /// Namespace used by the frontend-metadata tests.
+    fn test_namespace() -> ComponentNamespace {
+        ComponentNamespace::parse("miden::test_pkg::test_iface", Span2::call_site()).unwrap()
+    }
+
+    #[test]
+    fn frontend_metadata_path_uses_unraw_rust_identifier() {
+        let trait_ident = format_ident!("Wallet");
+        let method_ident: syn::Ident = parse_quote!(r#type);
+        let metadata =
+            account_procedure_frontend_metadata(&test_namespace(), &trait_ident, &method_ident)
+                .unwrap();
+
+        assert_eq!(metadata.path(), "miden::test_pkg::test_iface::type");
+    }
+
+    /// Parses component method signatures the way the impl expansion does.
+    fn parse_methods(signatures: &[syn::Signature]) -> Vec<ComponentMethod> {
+        signatures
+            .iter()
+            .map(|signature| parse_component_signature(signature, &[], &HashMap::new()).unwrap().0)
+            .collect()
+    }
+
+    /// Renders the component WIT for `methods` under the test namespace.
+    fn method_wit_fixture(methods: &[ComponentMethod]) -> String {
+        build_component_wit(ComponentWitSpec {
+            namespace: &test_namespace(),
+            component_version: &semver::Version::new(1, 0, 0),
+            dependency_imports: &[],
+            type_imports: &BTreeSet::new(),
+            methods,
+            exported_types: &[],
+        })
+        .unwrap()
+    }
+
+    /// Locates wit-bindgen's generated `Guest` trait inside its module hierarchy.
+    fn generated_guest_trait(items: &[syn::Item]) -> Option<&syn::ItemTrait> {
+        items.iter().find_map(|item| match item {
+            syn::Item::Trait(item) if item.ident == "Guest" => Some(item),
+            syn::Item::Mod(module) => {
+                module.content.as_ref().and_then(|(_, items)| generated_guest_trait(items))
+            }
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn component_methods_match_wit_bindgen_names_and_call_original_rust_methods() {
+        use wit_bindgen_core::{WorldGenerator, wit_parser::Resolve};
+
+        let methods = parse_methods(&[
+            parse_quote!(fn getURL(&self, r#type: u32) -> u32),
+            parse_quote!(fn r#type(&self, r#record: u32)),
+            parse_quote!(fn get_count(&self) -> u32),
+        ]);
+        let wit = method_wit_fixture(&methods);
+        assert!(wit.contains("%type: func(%record: u32)"), "{wit}");
+        assert!(wit.contains("%get-url: func(%type: u32)"), "{wit}");
+
+        let mut resolve = Resolve::default();
+        resolve.push_str("miden.wit", crate::manifest_paths::SDK_WIT_SOURCE).unwrap();
+        let package = resolve.push_str("test.wit", &wit).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+        let interface_name = test_namespace().wit_interface();
+        let interface = resolve
+            .interfaces
+            .iter()
+            .find(|(_, interface)| interface.name.as_deref() == Some(interface_name.as_str()))
+            .unwrap()
+            .1;
+        assert_eq!(
+            interface.functions.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["get-url", "type", "get-count"]
+        );
+        assert_eq!(interface.functions["get-url"].params[0].name, "type");
+
+        let mut files = wit_bindgen_core::Files::default();
+        wit_bindgen_rust::Opts {
+            generate_all: true,
+            ..Default::default()
+        }
+        .build()
+        .generate(&mut resolve, world, &mut files)
+        .unwrap();
+        let generated =
+            syn::parse_file(std::str::from_utf8(files.iter().next().unwrap().1).unwrap()).unwrap();
+        let guest =
+            generated_guest_trait(&generated.items).expect("wit-bindgen must generate Guest");
+        let guest_names = guest
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                TraitItem::Fn(method) => Some(method.sig.ident.to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        for (method, expected) in methods.iter().zip(["get_url", "type_", "get_count"]) {
+            let wrapper = render_guest_method(method, &parse_quote!(Storage), &parse_quote!(Api));
+            let function: syn::ItemFn = syn::parse2(wrapper.clone()).unwrap();
+            assert_eq!(function.sig.ident, expected);
+            assert!(guest_names.iter().any(|name| name == expected), "{guest_names:?}");
+            let original = &method.fn_ident;
+            let call = quote!(<Storage as Api>::#original).to_string();
+            assert!(wrapper.to_string().contains(&call), "{wrapper}");
+        }
+    }
+
+    #[test]
+    fn exported_types_render_fields_and_cases_in_explicit_form() {
+        let point: syn::ItemStruct = parse_quote! {
+            struct Point {
+                record: Felt,
+                item_count: u32,
+            }
+        };
+        let shape: syn::ItemEnum = parse_quote! {
+            enum Shape {
+                Record,
+                Circle(Word),
+            }
+        };
+        let exported_types = [
+            crate::types::exported_type_from_struct(&point).unwrap(),
+            crate::types::exported_type_from_enum(&shape).unwrap(),
+        ];
+
+        let wit = build_component_wit(ComponentWitSpec {
+            namespace: &test_namespace(),
+            component_version: &semver::Version::new(1, 0, 0),
+            dependency_imports: &[],
+            type_imports: &BTreeSet::new(),
+            methods: &[],
+            exported_types: &exported_types,
+        })
+        .unwrap();
+
+        for expected in [
+            "use core-types.{felt, word};",
+            "record point {\n        %record: felt,\n        %item-count: u32,\n    }",
+            "variant shape {\n        %record,\n        %circle(word),\n    }",
+        ] {
+            assert!(wit.contains(expected), "missing `{expected}` in:\n{wit}");
+        }
+    }
+
+    #[test]
+    fn component_methods_reject_colliding_wit_names() {
+        let methods =
+            parse_methods(&[parse_quote!(fn getURL(&self)), parse_quote!(fn get_url(&self))]);
+        let error = reject_duplicate_method_wit_names(&methods).unwrap_err();
+        let message = error.to_string();
+        for expected in ["getURL", "get_url", "get-url"] {
+            assert!(message.contains(expected), "{message}");
+        }
+        assert_eq!(error.into_iter().count(), 2, "diagnostic must point at both methods");
+    }
+
+    #[test]
+    fn component_methods_reject_the_name_of_an_interface_type() {
+        let methods = parse_methods(&[parse_quote!(fn felt(&self) -> Felt)]);
+        let error = build_component_wit(ComponentWitSpec {
+            namespace: &test_namespace(),
+            component_version: &semver::Version::new(1, 0, 0),
+            dependency_imports: &[],
+            type_imports: &BTreeSet::from(["felt".to_string()]),
+            methods: &methods,
+            exported_types: &[],
+        })
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "component method `felt` produces the WIT name `felt`, which collides with the type \
+             `felt` of the component's WIT interface; rename the method"
+        );
+    }
+
+    #[test]
+    fn component_methods_reject_the_initializer_path() {
+        let methods = parse_methods(&[parse_quote!(fn r#init(&self))]);
+        let error = export_path(&test_namespace(), &methods[0].fn_ident).unwrap_err();
+        assert!(
+            error.to_string().contains(
+                "`init` would be exported at the path `miden::test_pkg::test_iface::init`, which \
+                 is reserved for the compiler's component initializer"
+            ),
+            "{error}"
+        );
+
+        let error = build_component_wit(ComponentWitSpec {
+            namespace: &test_namespace(),
+            component_version: &semver::Version::new(1, 0, 0),
+            dependency_imports: &[],
+            type_imports: &BTreeSet::new(),
+            methods: &methods,
+            exported_types: &[],
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("reserved for the compiler's component initializer"));
+    }
+
+    #[test]
+    fn component_parameters_reject_colliding_wit_names() {
+        let signature = parse_quote!(fn get(&self, foo__bar: u32, foo_bar: u32));
+        let error = parse_component_signature(&signature, &[], &HashMap::new())
+            .err()
+            .expect("colliding parameter names must fail");
+        let message = error.to_string();
+        assert!(message.contains("foo__bar") && message.contains("foo_bar"), "{message}");
+        assert_eq!(error.into_iter().count(), 2, "diagnostic must point at both parameters");
+    }
+
+    #[test]
+    fn component_methods_reject_identifiers_without_a_wit_name() {
+        let signatures: [syn::Signature; 3] = [
+            parse_quote!(fn _1(&self)),
+            parse_quote!(fn __(&self)),
+            parse_quote!(fn größe(&self)),
+        ];
+        for signature in signatures {
+            let error = parse_component_signature(&signature, &[], &HashMap::new())
+                .err()
+                .expect("a method without a valid WIT name must fail");
+            let message = error.to_string();
+            let ident = signature.ident.to_string();
+            assert!(message.contains(&ident) && message.contains("WIT name"), "{message}");
+        }
+    }
+
+    #[test]
+    fn component_parameters_reject_identifiers_without_a_wit_name() {
+        let signatures: [syn::Signature; 3] = [
+            parse_quote!(fn get(&self, _1: u32)),
+            parse_quote!(fn get(&self, __: u32)),
+            parse_quote!(fn get(&self, größe: u32)),
+        ];
+        for (signature, ident) in signatures.iter().zip(["_1", "__", "größe"]) {
+            let error = parse_component_signature(signature, &[], &HashMap::new())
+                .err()
+                .expect("a parameter without a valid WIT name must fail");
+            let message = error.to_string();
+            assert!(message.contains(ident) && message.contains("WIT name"), "{message}");
+        }
+    }
 
     #[test]
     fn record_type_path_defaults_to_crate_root() {
@@ -1559,11 +1801,14 @@ mod tests {
         let (_, args) = validate_signature_shape(&method.sig).unwrap();
         validate_auth_script_signature(&method.sig, &args).unwrap();
         let trait_ident = format_ident!("AuthComponent");
-        let metadata = auth_script_frontend_metadata(&trait_ident, &method.sig.ident);
+        let metadata =
+            auth_script_frontend_metadata(&test_namespace(), &trait_ident, &method.sig.ident)
+                .unwrap();
 
         assert!(matches!(
             metadata,
-            FrontendMetadata::AuthScript { export_name, .. } if export_name == "whatever-name"
+            FrontendMetadata::AuthScript { path, .. }
+                if path == "miden::test_pkg::test_iface::whatever_name"
         ));
     }
 
@@ -1599,7 +1844,8 @@ mod tests {
     fn auth_script_frontend_metadata_emits_project_wide_uniqueness_guard() {
         let trait_ident = format_ident!("AuthComponent");
         let method_ident = format_ident!("whatever_name");
-        let metadata = auth_script_frontend_metadata(&trait_ident, &method_ident);
+        let metadata =
+            auth_script_frontend_metadata(&test_namespace(), &trait_ident, &method_ident).unwrap();
         let tokens = generate_frontend_link_section(&[metadata]).to_string();
 
         assert!(tokens.contains(crate::util::FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL));
@@ -1609,13 +1855,14 @@ mod tests {
     fn auth_script_frontend_metadata_stores_method_path() {
         let trait_ident = format_ident!("AuthComponent");
         let method_ident = format_ident!("whatever_name");
-        let metadata = auth_script_frontend_metadata(&trait_ident, &method_ident);
+        let metadata =
+            auth_script_frontend_metadata(&test_namespace(), &trait_ident, &method_ident).unwrap();
 
         assert_eq!(
             metadata,
             FrontendMetadata::AuthScript {
                 method_path: "AuthComponent::whatever_name".into(),
-                export_name: "whatever-name".into(),
+                path: "miden::test_pkg::test_iface::whatever_name".into(),
             }
         );
     }
@@ -1624,13 +1871,15 @@ mod tests {
     fn account_procedure_frontend_metadata_stores_method_path() {
         let trait_ident = format_ident!("BasicWallet");
         let method_ident = format_ident!("receive_asset");
-        let metadata = account_procedure_frontend_metadata(&trait_ident, &method_ident);
+        let metadata =
+            account_procedure_frontend_metadata(&test_namespace(), &trait_ident, &method_ident)
+                .unwrap();
 
         assert_eq!(
             metadata,
             FrontendMetadata::AccountProcedure {
                 method_path: "BasicWallet::receive_asset".into(),
-                export_name: "receive-asset".into(),
+                path: "miden::test_pkg::test_iface::receive_asset".into(),
             }
         );
     }

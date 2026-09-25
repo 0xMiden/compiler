@@ -137,9 +137,8 @@ fn write_local_test_templates(templates_root: &Path) -> anyhow::Result<()> {
 /// Local stand-ins for the rust-templates repository, rendered by `cargo miden new` in tests:
 /// `(template name, Cargo.toml, lib.rs)` triples.
 fn local_template_files() -> Vec<(&'static str, String, &'static str)> {
-    // The component trait must be named after the project: the default `[lib].namespace` written
-    // by `cargo miden new` uses the package name as the WIT interface segment, and the
-    // `#[component]` macro requires the trait name (kebab-case) to match it.
+    // The default `[lib].namespace` written by `cargo miden new` is `miden::<pkg>::<pkg>`; it names
+    // the WIT interface and every export, independently of the component trait name.
     vec![
         (
             "account",
@@ -247,8 +246,7 @@ pub fn entrypoint(value: u32) -> u32 {
 
 fn cargo_toml(project_kind: &str, component: bool) -> String {
     // Component projects must NOT override `[package.metadata.component].package`: the project's
-    // identity (and so the `[lib].namespace` interface segment) must follow the crate name, which
-    // is what the project-named component trait in the template kebab-matches.
+    // identity (and so the default `[lib].namespace`) must follow the crate name.
     let component_metadata = if component {
         "\n[package.metadata.component]\n"
     } else {

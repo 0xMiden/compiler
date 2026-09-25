@@ -3,7 +3,7 @@ use core::{fmt, ops::ControlFlow};
 
 use miden_assembly::{Path, ProjectSourceInputs, ast::InvocationTarget};
 use miden_core::Word;
-use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
+use midenc_hir::{SymbolPath, constants::ConstantData, interner::Symbol};
 use midenc_session::{
     Emit, OutputMode, OutputType, Session, Writer,
     diagnostics::{IntoDiagnostic, Report, SourceSpan, Span, WrapErr},
@@ -12,10 +12,11 @@ use midenc_session::{
 use crate::{Event, lower::NativePtr, masm};
 
 pub struct MasmComponent {
-    pub id: Option<builtin::ComponentId>,
+    /// The namespace path of the component, see [`Component::namespace_path`](midenc_hir::dialects::builtin::Component::namespace_path)
+    pub id: Option<SymbolPath>,
     /// True if [`Self::id`] belongs to a component the compiler invented to wrap a bare core
     /// module, rather than one an author wrote — see
-    /// [`builtin::Component::SYNTHETIC_WRAPPER_ATTR`], which is where this comes from.
+    /// [`Component::SYNTHETIC_WRAPPER_ATTR`](midenc_hir::dialects::builtin::Component::SYNTHETIC_WRAPPER_ATTR), which is where this comes from.
     pub synthetic_wrapper: bool,
     /// The path of the root module for this component
     ///
@@ -75,7 +76,7 @@ impl Emit for MasmComponent {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Rodata {
     /// The component to which this read-only data segment belongs
-    pub component: builtin::ComponentId,
+    pub component: SymbolPath,
     /// The content digest computed for `data`
     pub digest: Word,
     /// The address at which the data for this segment begins
@@ -194,17 +195,18 @@ impl MasmComponent {
         let mut root = root.expect("components must always have a root module");
 
         // A library-like target's root module must sit exactly at the target's namespace, or
-        // the assembler rejects the whole target (`load_target_sources`). Two of the shapes that
-        // reach here can never satisfy that on their own, and both for the same reason: the root
-        // code generation gave them is not a name any source declares, so no namespace derived
-        // from the source can equal it. See [`Self::has_no_authored_identity`].
+        // the assembler rejects the whole target (`load_target_sources`). A component-less world
+        // can never satisfy that on its own: the root code generation gave it is not a name any
+        // source declares, so no namespace derived from the source can equal it. See
+        // [`Self::has_no_authored_identity`].
         //
         // Re-rooting is correct rather than merely expedient, for that same reason. The target's
         // namespace is the name the author *did* choose, and is where they expect this library's
         // procedures to be addressable from; the root being replaced is one the compiler picked
-        // on their behalf and never told them about. A component whose id its author wrote is
-        // left exactly where it is: that id is part of the code's own identity, and moving it
-        // would silently rename the procedures every dependent addresses.
+        // on their behalf and never told them about. A component is left exactly where it is:
+        // its path is part of the code's own identity (the frontend roots it at the target
+        // namespace in the first place), and moving it would silently rename the procedures every
+        // dependent addresses.
         //
         // Nothing is done here for an executable, which is handled above: its root is discarded
         // in favor of the generated `$exec` module, so its namespace already agrees.
@@ -212,9 +214,7 @@ impl MasmComponent {
         // The equality check is what keeps a target that *already* agrees from being rewritten to
         // itself. That is the ordinary case for a component-less world with one top-level module,
         // whose root is that module's name and whose synthesized namespace is read from the very
-        // same declaration; it is also the case for a manifest that declares
-        // `namespace = "root_ns:root@1.0.0"`, which is how projects worked around the wrapper
-        // before it was fixed.
+        // same declaration.
         //
         // Only the modules handed to the assembler move. `MasmComponent`'s own `root`, `init` and
         // `entrypoint` still name the old root afterwards, which is why a library's `--emit=masm`
@@ -238,24 +238,19 @@ impl MasmComponent {
         Ok(ProjectSourceInputs { root, support })
     }
 
-    /// Returns true if this component declares no identity its author chose, and so belongs
-    /// wherever its target says rather than where code generation put it.
+    /// Returns true if this component declares no identity of its own, and so belongs wherever
+    /// its target says rather than where code generation put it.
     ///
-    /// Two shapes qualify:
+    /// Only **a world declaring no component** qualifies, which has no id at all. Its modules
+    /// "belong to one logical component, which has no identity beyond the namespace those
+    /// modules sit in" (`world_body_to_masm_component`), so lowering has to invent a root: the
+    /// placeholder constant `::init` for zero or several top-level modules, and that module's own
+    /// name for exactly one.
     ///
-    /// - **The synthetic wrapper** the Wasm frontend builds around every *core* Wasm module
-    ///   (`frontend/wasm`'s `build_ir_component`). Its identity is the same for every such build
-    ///   and carries no information about this one, and `ComponentId::to_library_path` renders it
-    ///   as the single quoted component `"root_ns:root@1.0.0"` — a spelling no target is named.
-    /// - **A world declaring no component**, which has no id at all. Its modules "belong to one
-    ///   logical component, which has no identity beyond the namespace those modules sit in"
-    ///   (`world_body_to_masm_component`), so lowering has to invent a root: the placeholder
-    ///   constant `::init` for zero or several top-level modules, and that module's own name for
-    ///   exactly one.
-    ///
-    /// A component whose id its author wrote is the complement, and is left where it is: that id
-    /// is part of the code's identity, and moving it would rename the procedures every dependent
-    /// addresses.
+    /// Every component is the complement, and is left where it is: its path is part of the
+    /// code's identity, and moving it would rename the procedures every dependent addresses. This
+    /// includes the synthetic wrapper the Wasm frontend builds around a *core* Wasm module, which
+    /// the frontend already roots at the target namespace.
     ///
     /// # Why one top-level module is not carved out
     ///
@@ -271,9 +266,9 @@ impl MasmComponent {
     /// preparation refused, or threading a flag down from lowering for a case that is a no-op.
     /// Third, a world is not a component: a module's name says where its procedures sit *within*
     /// a namespace, not what that namespace is, so a target that names a different one is not
-    /// contradicting the file the way a component id would be.
+    /// contradicting the file the way a component's namespace path would be.
     fn has_no_authored_identity(&self) -> bool {
-        self.id.is_none() || self.synthetic_wrapper
+        self.id.is_none()
     }
 
     /// Generate an executable module which when run expects the raw data segment data to be
@@ -412,6 +407,9 @@ impl MasmComponent {
 }
 
 /// Moves a component's modules from one root path to another, in place.
+///
+/// Only a component-less world's modules are moved, see
+/// [`MasmComponent::has_no_authored_identity`].
 ///
 /// A component's modules are *nested under* its root — code generation defines them relative to
 /// it (`MasmComponentBuilder::define_module`) — and the calls between them are emitted as
@@ -599,37 +597,27 @@ mod tests {
     mod rooting {
         use alloc::rc::Rc;
 
-        use midenc_hir::{Context, version::Version};
+        use midenc_hir::Context;
         use midenc_session::miden_project::{Target, Uri};
 
         use super::*;
 
         /// The identity a real Wasm *component* carries, which its author chose.
-        fn authored_id() -> builtin::ComponentId {
-            builtin::ComponentId {
-                namespace: Symbol::intern("miden:example"),
-                name: Symbol::intern("example"),
-                version: Version::new(1, 0, 0),
-            }
+        fn authored_id() -> SymbolPath {
+            SymbolPath::from_masm_module_id("miden::example::example")
         }
 
-        /// The component `frontend/wasm` wraps around a core Wasm module: the identity it gives
-        /// that wrapper, plus the marker saying the compiler invented it — which is what
-        /// [`MasmComponent::has_no_authored_identity`] reads. The id alone is a name an author
-        /// may write, and says nothing on its own.
+        /// The component `frontend/wasm` wraps around a core Wasm module built for an executable:
+        /// named after the wrapped module, plus the marker saying the compiler invented it.
         fn wrapper_component() -> MasmComponent {
-            let id = builtin::ComponentId {
-                namespace: Symbol::intern("root_ns"),
-                name: Symbol::intern("root"),
-                version: Version::new(1, 0, 0),
-            };
+            let id = SymbolPath::from_masm_module_id("lib");
             let mut component = component(id);
             component.synthetic_wrapper = true;
             component
         }
 
         /// A component of `id` whose author wrote that id, rooted at the path it renders to.
-        fn component(id: builtin::ComponentId) -> MasmComponent {
+        fn component(id: SymbolPath) -> MasmComponent {
             let root_path: Arc<Path> = Arc::from(
                 id.to_library_path()
                     .to_absolute()
@@ -660,10 +648,7 @@ mod tests {
         /// shape code generation produces: the submodule is nested under the component's path,
         /// the root declares it, and the submodule's exported procedure calls one of its own by
         /// absolute path as well as an intrinsic that lives outside the component.
-        fn rooted_component(
-            id: Option<builtin::ComponentId>,
-            root_path: Arc<Path>,
-        ) -> MasmComponent {
+        fn rooted_component(id: Option<SymbolPath>, root_path: Arc<Path>) -> MasmComponent {
             let child_path = root_path.join(masm::Path::new("child"));
 
             let mut root = masm::Module::new(masm::ModuleKind::Library, &root_path);
@@ -861,91 +846,11 @@ mod tests {
                     .all(|(before, after)| Arc::ptr_eq(before, after))
         }
 
-        /// A synthetic wrapper compiled for a library target is rooted at the target's namespace,
-        /// and its whole module tree moves with it.
+        /// A component whose namespace its author chose is left exactly where it is.
         ///
-        /// The wrapper's id renders as the single quoted component `::"root_ns:root@1.0.0"`, so
-        /// it can never equal a target namespace; re-rooting is the only way such a target
-        /// satisfies the assembler. Everything that named the old root has to move too — module
-        /// paths, call targets, and the callee set each procedure carries — or the root declares
-        /// submodules that are not there and the linker fails to resolve the calls.
-        #[test]
-        fn a_synthetic_wrappers_library_is_rooted_at_the_target_namespace() {
-            let context = context();
-            let target = library_target("::example");
-            let component = wrapper_component();
-            let decorated = decorations(&component.modules[1], "caller");
-
-            let sources = component.source_inputs(&target, context.session()).unwrap();
-
-            assert_eq!(sources.root.path(), target.namespace.inner().as_ref());
-            assert_eq!(sources.support.len(), 1, "the component's one submodule");
-            assert_eq!(
-                paths(&sources.support[0]),
-                vec![
-                    "::example::child",
-                    "::example::child::callee",
-                    // The intrinsic is outside the component, so it stays where it is; the two
-                    // call targets appear twice because each is both written in the body and
-                    // recorded on the procedure, and the linker resolves both.
-                    "::intrinsics::mem::heap_init",
-                    "::example::child::callee",
-                    "::intrinsics::mem::heap_init",
-                ],
-                "nothing may be left addressing the wrapper's id"
-            );
-            assert_eq!(
-                decorations(&sources.support[0], "caller"),
-                decorated,
-                "a procedure whose callees moved is rebuilt, and must come back whole"
-            );
-        }
-
-        /// A library target already named after the wrapper comes back untouched.
-        ///
-        /// A manifest may declare `namespace = "root_ns:root@1.0.0"`, which is how projects worked
-        /// around this defect before it was fixed, and which parses to exactly the path
-        /// `ComponentId::to_library_path` produces. Such a target needs no re-rooting, and the
-        /// equality guard in [`MasmComponent::source_inputs`] is what keeps it from being rewritten
-        /// to itself — which is what lets those existing projects be said to be unaffected by this
-        /// change.
-        ///
-        /// The last assertion is what pins the *guard* rather than merely the outcome. Deleting
-        /// the guard degenerates the rewrite into an identity mapping, which every value-based
-        /// assertion above survives — rebuilding a procedure is lossless by design, so equal paths
-        /// and equal decorations come back either way. [`target_allocations`] compares identity
-        /// instead, which a rewrite cannot preserve however little it changes.
-        #[test]
-        fn a_library_target_named_after_the_wrapper_is_left_alone() {
-            let context = context();
-            let component = wrapper_component();
-            let expected = paths(&component.modules[1]);
-            let decorated = decorations(&component.modules[1], "caller");
-            let allocations = target_allocations(&component.modules[1]);
-            let target = library_target("root_ns:root@1.0.0");
-            assert_eq!(
-                target.namespace.inner().as_ref(),
-                component.root.as_ref(),
-                "the manifest namespace and the wrapper's id must really be the same path, or \
-                 this test is about some other case"
-            );
-
-            let sources = component.source_inputs(&target, context.session()).unwrap();
-
-            assert_eq!(sources.root.path(), component.root.as_ref());
-            assert_eq!(paths(&sources.support[0]), expected);
-            assert_eq!(decorations(&sources.support[0], "caller"), decorated);
-            assert!(
-                targets_are_untouched(&allocations, &sources.support[0]),
-                "the rewrite must not have run at all, not merely have produced the same paths"
-            );
-        }
-
-        /// A component whose id its author chose is left exactly where it is.
-        ///
-        /// Re-rooting is justified only by the wrapper being invisible to whoever wrote the code.
-        /// An authored component id is part of the code's own identity, and moving it would
-        /// silently rename the procedures every dependent addresses.
+        /// Re-rooting is justified only by a component-less world having no identity at all.
+        /// An authored component namespace is part of the code's own identity, and moving it
+        /// would silently rename the procedures every dependent addresses.
         #[test]
         fn an_authored_components_library_keeps_its_own_path() {
             let context = context();
@@ -966,12 +871,13 @@ mod tests {
 
         /// A component-less world's library is rooted at the target's namespace too.
         ///
-        /// The second half of the same rule the wrapper is the first half of: a world declaring
-        /// no component has no identity of its own, so lowering has to invent a root. With
-        /// several top-level modules — or none — that root is the constant `::init`, which no
-        /// source declares and which therefore no synthesized namespace can equal, so such a
-        /// target could never satisfy `load_target_sources` at all. The whole module tree moves
-        /// with the root here for the same reason it does for the wrapper.
+        /// A world declaring no component has no identity of its own, so lowering has to invent
+        /// a root. With several top-level modules — or none — that root is the constant `::init`,
+        /// which no source declares and which therefore no synthesized namespace can equal, so
+        /// such a target could never satisfy `load_target_sources` at all. Everything that named
+        /// the old root has to move too — module paths, call targets, and the callee set each
+        /// procedure carries — or the root declares submodules that are not there and the linker
+        /// fails to resolve the calls.
         #[test]
         fn a_component_less_worlds_library_is_rooted_at_the_target_namespace() {
             let context = context();
@@ -1035,10 +941,10 @@ mod tests {
         /// An executable target is untouched: its root is the generated `$exec` module, and the
         /// component's own modules keep the paths that module calls them by.
         ///
-        /// Both shapes that re-rooting applies to are checked, because the early return for an
-        /// executable is what keeps either from reaching it: the synthetic wrapper, and a
-        /// component-less world, which is the shape a bare-module `.hir` or a disassembled
-        /// `.masm` program takes.
+        /// Both the synthetic wrapper and a component-less world (the shape a bare-module `.hir`
+        /// or a disassembled `.masm` program takes, and the one re-rooting applies to) are
+        /// checked, because the early return for an executable is what keeps either from being
+        /// moved.
         #[test]
         fn an_executable_target_still_gets_the_generated_main_module() {
             for component in [wrapper_component(), component_less("::init")] {

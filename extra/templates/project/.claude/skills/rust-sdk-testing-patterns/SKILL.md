@@ -93,22 +93,18 @@ version `[6, 0, 0]`, MAST wire version `[0, 0, 4]`. There is no `.masl`.
 
 **Storage slot naming convention** (CRITICAL):
 ```
-<package_name>::<interface_segment>::<field_name>
+<[lib].namespace>::<field_name>
 ```
 
 The slot name is part of the on-chain storage ABI and is derived by the compiler's
 `#[component_storage]` macro, **not** from the Rust struct name:
-- `<package_name>` is the **bare** package name (`[package].name` in `miden-project.toml`), with no
-  `miden:` org prefix.
-- `<interface_segment>` is the `[lib].namespace` **interface** segment — the text between the last
-  `/` and the `@` in the namespace — snake_cased. Because it comes from the declared namespace,
+- `<[lib].namespace>` is the three-segment Miden path declared in `miden-project.toml`, e.g.
+  `miden::counter_contract::counter_contract`. Because it comes from the declared namespace,
   renaming the Rust struct cannot change the deployed slot name.
 - `<field_name>` is the Rust storage field's identifier (not its `description`).
 
-Characters outside `[A-Za-z0-9_]` are replaced with `_` in each segment.
-
-Live values from the pinned compiler examples: `counter_contract::counter_contract::count_map`,
-`auth_component_rpo_falcon512::auth_component::owner_public_key`.
+Live values from the compiler examples: `miden::counter_contract::counter_contract::count_map`,
+`miden::auth_component_rpo_falcon512::auth_component::owner_public_key`.
 
 The component's storage is declared with the three-part component macro (`#[component_storage]`
 struct + `#[component]` trait + `#[component]` impl); the storage struct, not the trait, carries the
@@ -426,7 +422,7 @@ The contracts a test builds depend on the guest SDK `miden = { version = "0.14" 
 - [ ] `miden-testing` is available as a direct dependency, or through `miden_client::testing` only when that optional client feature is enabled
 - [ ] Auth uses `AuthSchemeId::Falcon512Poseidon2` (or the equivalent `AuthScheme::Falcon512Poseidon2`)
 - [ ] `AccountBuilder` uses `.account_type(..)`, and no `.storage_mode(..)` and no `.with_auth_component(..)` — auth goes through `.with_component(..)`
-- [ ] Storage slot names follow `<package_name>::<interface_segment>::<field_name>`
+- [ ] Storage slot names follow `<[lib].namespace>::<field_name>`, where `[lib].namespace` is the three-segment Miden path from `miden-project.toml`
 - [ ] Value slots without a schema default are seeded via `InitStorageData::insert_value(StorageValueName::from_slot_name(&slot), ..)`; `StorageValue<Word>` slots get a `Word`, not a bare integer
 - [ ] Contracts are built out of process with `build_project_in_dir(...)` / midenup / `CARGO_MIDEN` / `cargo miden`, not by depending on `cargo-miden`
 - [ ] `NoteScript::root()` converted with `Word::from(..)` before seeding `RandomCoin`

@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use heck::ToUpperCamelCase;
+use heck::{ToSnakeCase, ToUpperCamelCase};
 use liquid::{Object, Parser, model::Value};
 use liquid_core::{Display_filter, Filter, FilterReflection, ParseFilter, Runtime, ValueView};
 use tempfile::TempDir;
@@ -80,7 +80,8 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
     prepare_destination(&project_dir, args.force)?;
 
     let crate_name = sanitize_crate_name(&project_name);
-    let mut variables = build_variable_map(crate_name, &args.define)?;
+    let namespace = component_namespace(&project_name);
+    let mut variables = build_variable_map(crate_name, namespace.clone(), &args.define)?;
     // Expose the original project name as well.
     variables.insert("project_name".into(), Value::scalar(project_name.clone()));
     variables.insert("project-name".into(), Value::scalar(project_name.clone()));
@@ -111,7 +112,12 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
                 .unwrap_or(Path::new("src/lib.rs"));
             fs::write(
                 &miden_project_toml,
-                render_miden_project_manifest(&project_name, root_path, &cargo_manifest),
+                render_miden_project_manifest(
+                    &project_name,
+                    &namespace,
+                    root_path,
+                    &cargo_manifest,
+                ),
             )?;
         }
     }
@@ -129,8 +135,11 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
     Ok(project_dir)
 }
 
+/// Renders the `miden-project.toml` of a generated project whose template has none, giving a
+/// component project the `[lib].namespace` `namespace`.
 fn render_miden_project_manifest(
     project_name: &str,
+    namespace: &str,
     root_path: &Path,
     cargo_manifest: &DocumentMut,
 ) -> String {
@@ -158,25 +167,19 @@ version = \"{}\"
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"account-component\"\n");
             manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
-            manifest.push_str(&format!(
-                "namespace = \"{}\"\n\n",
-                account_component_namespace(package_name, package_version)
-            ));
+            manifest.push_str(&format!("namespace = \"{namespace}\"\n\n"));
         }
         "note" | "note-script" => {
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"note\"\n");
             manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
-            manifest.push_str(&format!(
-                "namespace = \"{}\"\n\n",
-                component_namespace(package_name, package_version)
-            ));
+            manifest.push_str(&format!("namespace = \"{namespace}\"\n\n"));
         }
         "tx-script" | "transaction-script" => {
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"tx-script\"\n");
-            manifest.push_str("namespace = \"miden:base/transaction-script@1.0.0\"\n\n");
             manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
+            manifest.push_str(&format!("namespace = \"{namespace}\"\n\n"));
         }
         "library" => {
             manifest.push_str("[lib]\n");
@@ -237,23 +240,137 @@ fn toml_str<'a>(document: &'a DocumentMut, path: &[&str]) -> Option<&'a str> {
     item.as_str()
 }
 
-/// Builds the default `[lib].namespace` for a note/note-script project.
+/// Builds the default `[lib].namespace` for an account, note or tx-script project:
+/// `miden::<package>::<package>` with the package (project) name snake-cased.
 ///
-/// Notes export a package-derived interface (`miden-<package>`), matching the `#[note]` macro.
-fn component_namespace(package_name: &str, version: &str) -> String {
-    let package = package_name.replace('_', "-");
-    format!("miden:{package}/miden-{package}@{}", toml_escape(version))
+/// The namespace names every exported procedure and storage slot of the project. It is the one
+/// derivation of the namespace: the bundled templates receive it as the `namespace` variable.
+fn component_namespace(package_name: &str) -> String {
+    let package = package_name.to_snake_case();
+    format!("miden::{package}::{package}")
 }
 
-/// Builds the default `[lib].namespace` for an account-component project.
+/// Returns the default `[lib].namespace` of the project `project_name` (see
+/// [`component_namespace`]), or an error naming the project name when that namespace is invalid.
+pub(crate) fn validated_component_namespace(project_name: &str) -> Result<String> {
+    let namespace = component_namespace(project_name);
+    if !namespace.split("::").all(is_valid_namespace_segment) {
+        bail!(
+            "the project name `{project_name}` yields the invalid component namespace \
+             `{namespace}`: each namespace segment must be a snake_case identifier starting with \
+             a letter that is not a WIT or Rust keyword; choose another project name"
+        );
+    }
+    Ok(namespace)
+}
+
+/// The WIT and Rust keywords a namespace segment may not be.
 ///
-/// The exported WIT interface is derived from the component trait name. By default the trait is
-/// expected to share the package name (kebab-case), so the interface segment defaults to the
-/// package name. Projects whose trait uses a different name should commit a `miden-project.toml`
-/// with a matching `[lib].namespace`.
-fn account_component_namespace(package_name: &str, version: &str) -> String {
-    let package = package_name.replace('_', "-");
-    format!("miden:{package}/{package}@{}", toml_escape(version))
+/// Mirrors `WIT_KEYWORDS` and the Rust identifier check of `is_valid_segment` in
+/// `sdk/base-macros/src/namespace.rs` (lowercase keywords only: segments are lowercase). A test
+/// there reads this list and fails when it drifts from `WIT_KEYWORDS`.
+const NAMESPACE_KEYWORDS: &[&str] = &[
+    "abstract",
+    "as",
+    "async",
+    "await",
+    "become",
+    "bool",
+    "borrow",
+    "box",
+    "break",
+    "char",
+    "const",
+    "constructor",
+    "continue",
+    "crate",
+    "do",
+    "dyn",
+    "else",
+    "enum",
+    "error_context",
+    "export",
+    "extern",
+    "f32",
+    "f64",
+    "false",
+    "final",
+    "flags",
+    "fn",
+    "for",
+    "from",
+    "func",
+    "future",
+    "if",
+    "impl",
+    "import",
+    "in",
+    "include",
+    "interface",
+    "let",
+    "list",
+    "loop",
+    "macro",
+    "map",
+    "match",
+    "mod",
+    "move",
+    "mut",
+    "option",
+    "override",
+    "own",
+    "package",
+    "priv",
+    "pub",
+    "record",
+    "ref",
+    "resource",
+    "result",
+    "return",
+    "s16",
+    "s32",
+    "s64",
+    "s8",
+    "self",
+    "static",
+    "stream",
+    "string",
+    "struct",
+    "super",
+    "trait",
+    "true",
+    "try",
+    "tuple",
+    "type",
+    "typeof",
+    "u16",
+    "u32",
+    "u64",
+    "u8",
+    "unsafe",
+    "unsized",
+    "use",
+    "variant",
+    "virtual",
+    "where",
+    "while",
+    "with",
+    "world",
+    "yield",
+];
+
+/// Returns true if `segment` is a valid `[lib].namespace` segment: a snake_case identifier,
+/// `[a-z][a-z0-9]*(_[a-z0-9]+)*`, that is not a keyword.
+///
+/// A local copy of `is_valid_segment` in `sdk/base-macros/src/namespace.rs`, which the SDK
+/// macros enforce; keep the two in sync.
+fn is_valid_namespace_segment(segment: &str) -> bool {
+    segment.starts_with(|ch: char| ch.is_ascii_lowercase())
+        && segment.split('_').all(|word| {
+            !word.is_empty()
+                && word.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
+        })
+        && !NAMESPACE_KEYWORDS.contains(&segment)
 }
 
 fn component_package_name(package: &str) -> Option<&str> {
@@ -392,9 +509,12 @@ fn is_empty_directory(path: &Path) -> Result<bool> {
     Ok(entries.next().is_none())
 }
 
-fn build_variable_map(crate_name: String, define: &[String]) -> Result<Object> {
+/// Builds the template variables: `crate_name`, the default component `namespace` of the
+/// project, and the `define`d ones.
+fn build_variable_map(crate_name: String, namespace: String, define: &[String]) -> Result<Object> {
     let mut variables = Object::new();
     variables.insert("crate_name".into(), Value::scalar(crate_name));
+    variables.insert("namespace".into(), Value::scalar(namespace));
 
     for define_arg in define {
         let (key, value) = parse_define(define_arg)?;
@@ -645,8 +765,8 @@ fn render_file(
 
 /// Liquid `upper_camel_case` filter matching cargo-generate's filter of the same name.
 ///
-/// Templates use it to derive Rust type names from the project name — in particular the component
-/// trait name, which must kebab-match the interface segment of the generated `[lib].namespace`.
+/// Templates use it to derive Rust type names from the project name, e.g. the component trait
+/// name.
 #[derive(Clone, ParseFilter, FilterReflection)]
 #[filter(
     name = "upper_camel_case",
@@ -761,6 +881,75 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn component_namespace_snake_cases_the_package_name() {
+        assert_eq!(component_namespace("my-account"), "miden::my_account::my_account");
+        assert_eq!(component_namespace("MyAccount"), "miden::my_account::my_account");
+        assert_eq!(
+            component_namespace("counter_contract"),
+            "miden::counter_contract::counter_contract"
+        );
+    }
+
+    #[test]
+    fn project_names_yielding_an_invalid_namespace_are_refused() {
+        assert_eq!(
+            validated_component_namespace("HelloWorld").unwrap(),
+            "miden::hello_world::hello_world"
+        );
+        for name in ["123abc", "list", "match"] {
+            let err = validated_component_namespace(name)
+                .expect_err("the derived namespace is invalid")
+                .to_string();
+            assert!(
+                err.contains(&format!("`{name}`")) && err.contains("choose another project name"),
+                "unexpected diagnostic: {err}"
+            );
+        }
+    }
+
+    /// The namespace a template renders through the `namespace` variable and the one the
+    /// generated manifest of a template without one carries are the same derivation.
+    #[test]
+    fn templates_and_generated_manifests_share_the_namespace() -> Result<()> {
+        let rendered_namespace = |files: &[(&str, &str)]| -> Result<String> {
+            let template_dir = tempdir()?;
+            let template_root = template_dir.path().join("template");
+            fs::create_dir_all(&template_root)?;
+            for (file, contents) in files {
+                fs::write(template_root.join(file), contents)?;
+            }
+            let destination_dir = tempdir()?;
+            let project_dir = generate(GenerateArgs {
+                template_path: TemplatePath {
+                    path: Some(template_dir.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+                destination: Some(destination_dir.path().to_path_buf()),
+                name: Some("HelloWorld".into()),
+                force: true,
+                ..Default::default()
+            })?;
+            let manifest = fs::read_to_string(project_dir.join("miden-project.toml"))?;
+            let manifest = manifest.parse::<DocumentMut>()?;
+            Ok(manifest["lib"]["namespace"].as_str().unwrap_or_default().to_string())
+        };
+
+        let from_template = rendered_namespace(&[(
+            "miden-project.toml",
+            "[package]\nname = \"{{crate_name}}\"\nversion = \"0.1.0\"\n\n[lib]\npath = \
+             \"src/lib.rs\"\nnamespace = \"{{ namespace }}\"\n",
+        )])?;
+        let from_generated_manifest = rendered_namespace(&[(
+            "Cargo.toml",
+            "[package]\nname = \"{{crate_name}}\"\nversion = \
+             \"0.1.0\"\n\n[package.metadata.miden]\nproject-kind = \"account\"\n",
+        )])?;
+        assert_eq!(from_template, "miden::hello_world::hello_world");
+        assert_eq!(from_generated_manifest, from_template);
+        Ok(())
+    }
 
     #[test]
     fn crate_name_is_sanitized() {

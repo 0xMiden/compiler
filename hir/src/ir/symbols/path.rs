@@ -1,4 +1,4 @@
-use alloc::{borrow::Cow, collections::VecDeque, format};
+use alloc::{borrow::Cow, string::String};
 use core::fmt;
 
 use crate::{
@@ -11,23 +11,6 @@ use crate::{
 pub enum InvalidSymbolPathError {
     #[error("invalid symbol path: cannot be empty")]
     Empty,
-    #[error("invalid symbol path: invalid format")]
-    #[diagnostic(help(
-        "The grammar for symbols is `<namespace>:<package>[/<export>]*[@<version>]"
-    ))]
-    InvalidFormat,
-    #[error("invalid symbol path: missing package")]
-    #[diagnostic(help(
-        "A fully-qualified symbol must namespace packages, i.e. `<namespace>:<package>`, but \
-         you've only provided one of these"
-    ))]
-    MissingPackage,
-    #[error("invalid symbol path: only fully-qualified symbols can be versioned")]
-    UnexpectedVersion,
-    #[error("invalid symbol path: unexpected character '{token}' at byte {pos}")]
-    UnexpectedToken { token: char, pos: usize },
-    #[error("invalid symbol path: no leaf component was provided")]
-    MissingLeaf,
     #[error("invalid symbol path: unexpected components found after leaf")]
     UnexpectedTrailingComponents,
     #[error("invalid symbol path: only one root component is allowed, and it must come first")]
@@ -194,6 +177,52 @@ impl SymbolPath {
         )
     }
 
+    /// Returns the `::`-separated segments of the name of a symbol-table op.
+    ///
+    /// A symbol path segment never contains `::`. A symbol-table op (in practice, a component)
+    /// may be *named* by a `::`-joined path; such a name occupies one entry in its parent's
+    /// symbol table, but contributes one [SymbolNameComponent::Component] per segment to every
+    /// [SymbolPath] that passes through it. Leaf symbol names (functions, globals) are opaque and
+    /// must never be split with this function.
+    pub fn segments_of(name: SymbolName) -> SmallVec<[SymbolName; 3]> {
+        let s = name.as_str();
+        if !s.contains("::") {
+            return smallvec![name];
+        }
+        s.split("::").map(SymbolName::intern).collect()
+    }
+
+    /// Returns all non-root components of this path (leaf included) joined with `::`.
+    ///
+    /// This is the symbol-table key of a component named by this path, and the inverse of
+    /// [SymbolPath::segments_of].
+    pub fn to_symbol_name(&self) -> SymbolName {
+        let components = self
+            .path
+            .iter()
+            .filter(|c| !c.is_root())
+            .copied()
+            .collect::<SmallVec<[SymbolNameComponent; 4]>>();
+        Self::join_components(&components)
+    }
+
+    /// Joins the names of `components` with `::`.
+    pub(crate) fn join_components(components: &[SymbolNameComponent]) -> SymbolName {
+        match components {
+            [single] => single.as_symbol_name(),
+            _ => {
+                let mut joined = String::new();
+                for (i, component) in components.iter().enumerate() {
+                    if i > 0 {
+                        joined.push_str("::");
+                    }
+                    joined.push_str(component.as_symbol_name().as_str());
+                }
+                SymbolName::intern(joined)
+            }
+        }
+    }
+
     /// Returns the leaf component of the symbol path
     pub fn name(&self) -> SymbolName {
         match self.path.last().expect("expected non-empty symbol path") {
@@ -245,6 +274,24 @@ impl SymbolPath {
         }
 
         path
+    }
+
+    /// Derive a symbol path from the Miden Assembly path `path`, the inverse of
+    /// [SymbolPath::to_library_path]: one [SymbolNameComponent::Component] per segment of the
+    /// path, rooted when the path is absolute.
+    ///
+    /// A quoted segment stays one component. Segments that fail to parse are skipped; a valid
+    /// path has none.
+    pub fn from_library_path(path: &midenc_session::miden_assembly_syntax::Path) -> SymbolPath {
+        use midenc_session::miden_assembly_syntax::PathComponent;
+
+        path.components()
+            .filter_map(|component| component.ok())
+            .map(|component| match component {
+                PathComponent::Root => SymbolNameComponent::Root,
+                component => SymbolNameComponent::Component(SymbolName::intern(component.as_str())),
+            })
+            .collect()
     }
 
     /// Returns true if this symbol name is fully-qualified
@@ -317,29 +364,15 @@ impl SymbolPath {
     }
 }
 
-/// Print symbol path according to Wasm Component Model rules, i.e.:
-///
-/// ```text,ignore
-/// PATH ::= NAMESPACE ":" PACKAGE PACKAGE_PATH? VERSION?
-///
-/// NAMESPACE ::= SYMBOL
-/// PACKAGE ::= SYMBOL (":" SYMBOL)*
-/// PACKAGE_PATH ::= ("/" SYMBOL)+
-/// VERSION ::= "@" VERSION_STRING
-/// ```
-///
-/// The first component of an absolute path (ignoring the `Root` node) is expected to be the package
-/// name, i.e. the `NAMESPACE ":" PACKAGE` part as a single symbol.
-///
-/// The first component of a relative path is expected to be either `Component` or `Leaf`
+/// Prints the path Miden Assembly style: segments joined by `::`, with a leading `::` when the
+/// path is absolute.
 impl fmt::Display for SymbolPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use core::fmt::Write;
-
         let mut components = self.path.iter();
 
         if self.is_absolute() {
             let _ = components.next();
+            f.write_str("::")?;
         }
 
         match components.next() {
@@ -347,7 +380,7 @@ impl fmt::Display for SymbolPath {
             None => return Ok(()),
         }
         for component in components {
-            f.write_char('/')?;
+            f.write_str("::")?;
             f.write_str(component.as_symbol_name().as_str())?;
         }
         Ok(())
@@ -466,322 +499,22 @@ impl PartialOrd for SymbolNameComponent {
     }
 }
 
-/// An iterator over [SymbolNameComponent] derived from a path symbol and leaf symbol.
-pub struct SymbolNameComponents {
-    parts: VecDeque<&'static str>,
-    name: SymbolName,
-    absolute: bool,
-    done: bool,
-}
-
-impl SymbolNameComponents {
-    /// Construct a new [SymbolNameComponents] iterator from a Wasm Component Model symbol.
-    ///
-    /// The syntax for such symbols are described by the following EBNF-style grammar:
-    ///
-    /// ```text,ignore
-    /// SYMBOL ::= ID
-    /// QUALIFIED_SYMBOL ::= NAMESPACE ("/" ID)* ("@" VERSION)?
-    /// NAMESPACE ::= (ID ":")+ ID
-    /// ID ::= ID_CHAR+
-    /// ID_CHAR ::= 'A'..'Z'
-    ///           | 'a'..'z'
-    ///           | '0'..'z'
-    ///           | '-'
-    /// ```text,ignore
-    ///
-    /// This corresponds to identifiers of the form:
-    ///
-    /// * `foo` (referencing `foo` in the current scope)
-    /// * `miden:base/foo` (importing `foo` from the `miden:base` package)
-    /// * `miden:base/foo/bar` (importing `bar` from the `foo` interface of `miden:base`)
-    /// * `miden:base/foo/bar@1.0.0` (same as above, but specifying an exact package version)
-    ///
-    /// The following are not permitted:
-    ///
-    /// * `foo@1.0.0` (cannot reference a different version of the current package)
-    /// * `miden/foo` (packages must be namespaced, i.e. `<namespace>:<package>`)
-    pub fn from_component_model_symbol(symbol: SymbolName) -> Result<Self, crate::Report> {
-        use core::{iter::Peekable, str::CharIndices};
-
-        let mut parts = VecDeque::default();
-        if symbol == interner::symbols::Empty {
-            let done = symbol == interner::symbols::Empty;
-            return Ok(Self {
-                parts,
-                name: symbol,
-                done,
-                absolute: false,
-            });
-        }
-
-        #[inline(always)]
-        fn is_valid_id_char(c: char) -> bool {
-            c.is_ascii_alphanumeric() || c == '-'
-        }
-
-        fn lex_id<'a>(
-            s: &'a str,
-            start: usize,
-            lexer: &mut Peekable<CharIndices<'a>>,
-        ) -> Option<(usize, &'a str)> {
-            let mut end = start;
-            while let Some((i, c)) = lexer.next_if(|(_, c)| is_valid_id_char(*c)) {
-                end = i + c.len_utf8();
-            }
-            if end == start {
-                return None;
-            }
-            Some((end, unsafe { core::str::from_utf8_unchecked(&s.as_bytes()[start..end]) }))
-        }
-
-        let input = symbol.as_str();
-        let mut chars = input.char_indices().peekable();
-        let mut pos = 0;
-
-        // Parse the package name
-        let mut absolute = false;
-        let package_end = loop {
-            let (new_pos, _) = lex_id(input, pos, &mut chars).ok_or_else(|| {
-                crate::Report::msg(format!(
-                    "invalid component model symbol: '{symbol}' contains invalid characters"
-                ))
-            })?;
-            pos = new_pos;
-
-            if let Some((new_pos, c)) = chars.next_if(|(_, c)| *c == ':') {
-                pos = new_pos + c.len_utf8();
-                absolute = true;
-            } else {
-                break pos;
-            }
-        };
-
-        // Check if this is just a local symbol or package name
-        if chars.peek().is_none() {
-            let symbol =
-                unsafe { core::str::from_utf8_unchecked(&input.as_bytes()[pos..package_end]) };
-            return Ok(Self {
-                parts,
-                name: SymbolName::intern(symbol),
-                done: false,
-                absolute,
-            });
-        }
-
-        // Push the package name to `parts`
-        let package_name =
-            unsafe { core::str::from_utf8_unchecked(&input.as_bytes()[pos..package_end]) };
-        parts.push_back(package_name);
-
-        // The next character may be either a version (if absolute), or "/"
-        //
-        // Advance the lexer as appropriate
-        match chars.next_if(|(_, c)| *c == '/') {
-            None => {
-                // If the next char is not '@', the format is invalid
-                // If the char is '@', but the path is not absolute, the format is invalid
-                if chars.next_if(|(_, c)| *c == '@').is_some() {
-                    if !absolute {
-                        return Err(crate::Report::msg(
-                            "invalid component model symbol: unqualified symbols cannot be \
-                             versioned",
-                        ));
-                    }
-                    // TODO(pauls): Add support for version component
-                    //
-                    // For now we drop it
-                    parts.clear();
-                    return Ok(Self {
-                        parts,
-                        name: SymbolName::intern(package_name),
-                        done: false,
-                        absolute,
-                    });
-                } else {
-                    return Err(crate::Report::msg(format!(
-                        "invalid component model symbol: unexpected character in '{symbol}' \
-                         starting at byte {pos}"
-                    )));
-                }
-            }
-            Some((new_pos, c)) => {
-                pos = new_pos + c.len_utf8();
-            }
-        }
-
-        // Parse `ID ("/" ID)*+` until we reach end of input, or `"@"`
-        loop {
-            let (new_pos, id) = lex_id(input, pos, &mut chars).ok_or_else(|| {
-                crate::Report::msg(format!(
-                    "invalid component model symbol: '{symbol}' contains invalid characters"
-                ))
-            })?;
-            pos = new_pos;
-
-            if let Some((new_pos, c)) = chars.next_if(|(_, c)| *c == '/') {
-                pos = new_pos + c.len_utf8();
-                parts.push_back(id);
-            } else {
-                break;
-            }
-        }
-
-        // If the next char is '@', we have a version
-        //
-        // TODO(pauls): Add support for version component
-        //
-        // For now, ignore it
-        if chars.next_if(|(_, c)| *c == '@').is_some() {
-            let name = SymbolName::intern(parts.pop_back().unwrap());
-            return Ok(Self {
-                parts,
-                name,
-                done: false,
-                absolute,
-            });
-        }
-
-        // We should be at the end now, or the format is invalid
-        if chars.peek().is_none() {
-            let name = SymbolName::intern(parts.pop_back().unwrap());
-            Ok(Self {
-                parts,
-                name,
-                done: false,
-                absolute,
-            })
-        } else {
-            Err(crate::Report::msg(format!(
-                "invalid component model symbol: '{symbol}' contains invalid character starting \
-                 at byte {pos}"
-            )))
-        }
-    }
-
-    /// Convert this iterator into a single [super::Symbol] consisting of all components.
-    ///
-    /// Returns `None` if the input is empty.
-    pub fn into_symbol_name(self) -> Option<SymbolName> {
-        let attr = self.into_symbol_path()?;
-
-        Some(SymbolName::intern(attr))
-    }
-
-    /// Convert this iterator into a [SymbolPath].
-    ///
-    ///
-    /// Returns `None` if the input is empty.
-    pub fn into_symbol_path(self) -> Option<SymbolPath> {
-        if self.name == interner::symbols::Empty {
-            return None;
-        }
-
-        if self.parts.is_empty() {
-            return Some(SymbolPath {
-                path: smallvec![SymbolNameComponent::Leaf(self.name)],
-            });
-        }
-
-        // Pre-allocate the storage for the internal SymbolPath path
-        let mut path = SmallVec::<[_; 3]>::with_capacity(self.parts.len() + 1);
-
-        // Handle the first path component which tells us whether or not the path is rooted
-        let mut parts = self.parts.into_iter();
-        if let Some(part) = parts.next() {
-            if part == "::" {
-                path.push(SymbolNameComponent::Root);
-            } else {
-                path.push(SymbolNameComponent::Component(SymbolName::intern(part)));
-            }
-        }
-
-        // Append the remaining parts as intermediate path components
-        path.extend(parts.map(SymbolName::intern).map(SymbolNameComponent::Component));
-
-        // Finish up with the leaf symbol
-        path.push(SymbolNameComponent::Leaf(self.name));
-
-        Some(SymbolPath { path })
-    }
-}
-
-impl core::iter::FusedIterator for SymbolNameComponents {}
-impl Iterator for SymbolNameComponents {
-    type Item = SymbolNameComponent;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
-            return None;
-        }
-        if self.absolute {
-            self.absolute = false;
-            return Some(SymbolNameComponent::Root);
-        }
-        if let Some(part) = self.parts.pop_front() {
-            return Some(SymbolNameComponent::Component(part.into()));
-        }
-        self.done = true;
-        Some(SymbolNameComponent::Leaf(self.name))
-    }
-}
-impl ExactSizeIterator for SymbolNameComponents {
-    fn len(&self) -> usize {
-        if self.done || self.name == interner::symbols::Empty {
-            0
-        } else {
-            self.parts.len() + 1 + usize::from(self.absolute)
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
+
     use super::*;
 
     #[test]
-    fn symbol_name_components_len_matches_iteration_count() {
-        // Test case: absolute path with parts
-        let iter = SymbolNameComponents {
-            parts: alloc::collections::VecDeque::from(["foo", "bar"]),
-            name: SymbolName::intern("baz"),
-            absolute: true,
-            done: false,
-        };
-        assert_eq!(iter.len(), 4); // Root + foo + bar + baz
+    fn from_library_path_inverts_to_library_path() {
+        use midenc_session::miden_assembly_syntax::Path;
 
-        // Test case: relative path (no Root)
-        let iter = SymbolNameComponents {
-            parts: alloc::collections::VecDeque::from(["foo"]),
-            name: SymbolName::intern("bar"),
-            absolute: false,
-            done: false,
-        };
-        assert_eq!(iter.len(), 2); // foo + bar
+        let path = SymbolPath::from_library_path(Path::new("::miden::a::b"));
+        assert_eq!(path, SymbolPath::from_masm_module_id("miden::a::b"));
+        assert_eq!(path.to_library_path().to_string(), "::miden::a::b");
 
-        // Test case: done iterator returns 0
-        let iter = SymbolNameComponents {
-            parts: alloc::collections::VecDeque::new(),
-            name: SymbolName::intern("x"),
-            absolute: false,
-            done: true,
-        };
-        assert_eq!(iter.len(), 0);
-
-        // Test case: len decreases correctly during iteration
-        let mut iter = SymbolNameComponents {
-            parts: alloc::collections::VecDeque::from(["a"]),
-            name: SymbolName::intern("b"),
-            absolute: true,
-            done: false,
-        };
-        assert_eq!(iter.len(), 3); // Root + a + b
-        iter.next();
-        assert_eq!(iter.len(), 2); // a + b
-        iter.next();
-        assert_eq!(iter.len(), 1); // b
-        iter.next();
-        assert_eq!(iter.len(), 0); // done
-        assert!(iter.next().is_none());
+        let relative = SymbolPath::from_library_path(Path::new("miden::a"));
+        assert!(!relative.is_absolute());
+        assert_eq!(relative.to_string(), "miden::a");
     }
 }

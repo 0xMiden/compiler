@@ -9,11 +9,11 @@ use alloc::{
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
+use midenc_frontend_wasm_metadata::COMPONENT_INIT_PROCEDURE;
 use midenc_hir::{
-    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, Type, ValueRef,
+    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, SymbolPath, TraceTarget, Type, ValueRef,
     diagnostics::IntoDiagnostic,
     dialects::{builtin, debuginfo::attributes::SubprogramAttr},
-    interner,
     pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
@@ -464,7 +464,7 @@ fn world_body_to_masm_component(
         })
         .collect::<Vec<_>>();
     let init = if requires_init {
-        let name = masm::ProcedureName::new("init").unwrap();
+        let name = masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap();
         let qualified = match toplevel_namespaces.len() {
             1 => {
                 let namespace = toplevel_namespaces[0].borrow().symbol_name_if_symbol().unwrap();
@@ -561,12 +561,12 @@ fn component_to_masm_component(
     let context = component.as_operation().context_rc();
 
     // Whether this component is one the compiler invented to wrap a bare core module, which it
-    // says by carrying a marker the frontend set rather than by its id — see
+    // says by carrying a marker the frontend set rather than by its name — see
     // `builtin::Component::SYNTHETIC_WRAPPER_ATTR`.
     let synthetic_wrapper = component.is_synthetic_wrapper();
 
     // Run the linker for this component in order to compute its data layout
-    let id = component.id();
+    let id = component.namespace_path();
     let link_info = Linker::default()
         .link(Some(id.clone()), component.as_operation())
         .map_err(Report::msg)?;
@@ -602,8 +602,8 @@ fn component_to_masm_component(
             let path = if synthetic_wrapper {
                 component_path.join(entry_id.module.as_str())
             } else {
-                // We're compiling a Wasm component and the component id is included
-                // in the entrypoint.
+                // We're compiling a Wasm component and the component's namespace path is
+                // included in the entrypoint.
                 LibraryPath::new(entry_id.module.as_str()).into_diagnostic()?
             };
             let qualified = masm::QualifiedProcedureName::new(path.as_path(), name);
@@ -631,7 +631,7 @@ fn component_to_masm_component(
     // functions such as init
     let requires_init = link_info.requires_init();
     let init = if requires_init {
-        let name = masm::ProcedureName::new("init").unwrap();
+        let name = masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap();
         let qualified = masm::QualifiedProcedureName::new(&component_path, name);
         Some(masm::InvocationTarget::Path(Span::new(
             SourceSpan::default(),
@@ -698,11 +698,10 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
             let felts = crate::Rodata::bytes_to_elements(data.as_slice());
             let digest = miden_core::crypto::hash::Poseidon2::hash_elements(&felts);
             alloc::vec![crate::Rodata {
-                component: link_info.component().cloned().unwrap_or(builtin::ComponentId {
-                    namespace: interner::Symbol::intern("root_ns"),
-                    name: interner::Symbol::intern("root"),
-                    version: midenc_hir::version::Version::new(1, 0, 0)
-                }),
+                component: link_info
+                    .component()
+                    .cloned()
+                    .unwrap_or_else(|| SymbolPath::from_masm_module_id("root")),
                 digest,
                 start: super::NativePtr::from_ptr(merged.offset),
                 data,
@@ -1025,7 +1024,7 @@ impl MasmComponentBuilder<'_> {
             let module =
                 Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
 
-            let init_name = masm::ProcedureName::new("init").unwrap();
+            let init_name = masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap();
             let init_body = core::mem::take(&mut self.init_body);
             let mut init = masm::Procedure::new(
                 Default::default(),
@@ -1103,7 +1102,7 @@ impl MasmComponentBuilder<'_> {
         //
         // Two of the shapes reaching here have no component boundary to speak of, and in both
         // the modules *are* the artifact's interface, so they keep public submodules. A world
-        // lowered without a component id is one. The other is the wrapper the compiler invents
+        // lowered without a component namespace is one. The other is the wrapper the compiler invents
         // around a bare core module, which is not a real boundary either: the wrapped module is
         // the artifact's own interface (the entrypoint of an executable, or the exports of a
         // bare library), and the generated executable `main` module lives outside the wrapper's
@@ -1222,10 +1221,9 @@ impl MasmComponentBuilder<'_> {
 
         let module =
             Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
-        let expected_path_len = if module.path().is_absolute() { 2 } else { 1 };
         assert_eq!(
-            module.path().len(),
-            expected_path_len,
+            module.path(),
+            &*self.component.root,
             "expected top-level namespace module, but one has not been defined (in '{}' of '{}')",
             module.path(),
             function.path()
@@ -1678,7 +1676,7 @@ impl MasmFunctionBuilder {
             // qualified path instead. A user-exported method named `init` collides with the
             // generated procedure at definition time ("symbol conflict: found duplicate
             // definitions"), so it cannot silently shadow this target.
-            let init = InvocationTarget::Symbol("init".parse().unwrap());
+            let init = InvocationTarget::Symbol(COMPONENT_INIT_PROCEDURE.parse().unwrap());
             // Add init call to the emitter's target before emitting the function body; `emit`
             // also registers the invocation so the assembler can resolve the symbolic target.
             emitter.emitter().emit(masm::Instruction::Exec(init), SourceSpan::default());

@@ -5,7 +5,7 @@ version = "0.1.0"
 [lib]
 kind = "tx-script"
 path = "src/lib.rs"
-namespace = "miden:base/transaction-script@1.0.0"
+namespace = "miden::p2id_tx_script::p2id_tx_script"
 
 [dependencies]
 miden-core = "*"

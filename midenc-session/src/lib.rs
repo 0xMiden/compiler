@@ -855,7 +855,8 @@ impl ProjectManifest {
 ///
 /// What the compiler is asked to build decides which name: an executable's entrypoint is the
 /// `entrypoint` of the selected executable target's module, and a transaction script's is the
-/// `run` of the interface every transaction script implements. Anything else names no entrypoint.
+/// `run` procedure under the library target's namespace (`<namespace>::run`). Anything else names
+/// no entrypoint.
 ///
 /// Nothing is inferred for a target rooted at something other than Rust — see [`is_rust_root`] —
 /// nor for a run that already named an entrypoint. The executable is the one
@@ -875,10 +876,10 @@ fn infer_rust_entrypoint(manifest: &ProjectManifest, options: &mut Options) -> R
                 options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
             }
         }
-        Some(miden_project::TargetType::TransactionScript)
-            if manifest.library.as_ref().is_some_and(is_rust_root) =>
-        {
-            options.entrypoint = Some("miden:base/transaction-script@1.0.0::run".to_string());
+        Some(miden_project::TargetType::TransactionScript) => {
+            if let Some(library) = manifest.library.as_ref().filter(|target| is_rust_root(target)) {
+                options.entrypoint = Some(format!("{}::run", library.namespace.inner()));
+            }
         }
         _ => (),
     }

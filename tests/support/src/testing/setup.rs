@@ -12,7 +12,6 @@ use midenc_hir::{
         self, ComponentBuilder, FunctionBuilder, FunctionRef, ModuleBuilder, WorldBuilder,
         attributes::Signature,
     },
-    version::Version,
 };
 use midenc_session::{InputFile, Session};
 
@@ -59,7 +58,7 @@ where
     Rc::new(session)
 }
 
-/// Create a [LinkOutput] representing an empty component named `root:root@1.0.0`.
+/// Create a [LinkOutput] representing an empty component named `root`.
 ///
 /// Callers may then populate the world/component as they see fit for a particular test.
 ///
@@ -67,8 +66,8 @@ where
 /// carries the same marker the frontend sets ([`builtin::Component::SYNTHETIC_WRAPPER_ATTR`]) —
 /// which is what makes code generation treat the wrapped module as the artifact's own
 /// interface, and what lets a test name its entrypoint `test::main` without spelling out the
-/// wrapper's id. Without it this builds an *authored* component that happens to share the
-/// wrapper's id, which is a different thing entirely.
+/// wrapper's name. Without it this builds an *authored* component that happens to share the
+/// wrapper's name, which is a different thing entirely.
 pub fn build_empty_component_for_test(context: Rc<Context>) -> MidenComponent {
     let mut builder = OpBuilder::new(context.clone());
     let world = {
@@ -76,10 +75,8 @@ pub fn build_empty_component_for_test(context: Rc<Context>) -> MidenComponent {
         builder().unwrap_or_else(|err| panic!("failed to create world:\n{}", format_report(err)))
     };
     let mut world_builder = WorldBuilder::new(world);
-    let name = Ident::with_empty_span("root".into());
-    let ns_name = Ident::with_empty_span("root_ns".into());
     let mut component = world_builder
-        .define_component(ns_name, name, Version::new(1, 0, 0))
+        .define_component(Ident::with_empty_span("root".into()))
         .unwrap_or_else(|err| panic!("failed to define component:\n{}", format_report(err)));
     component.borrow_mut().mark_synthetic_wrapper();
 

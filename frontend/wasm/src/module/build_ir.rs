@@ -9,7 +9,6 @@ use midenc_hir::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
         attributes::U64Attr,
     },
-    version::Version,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
 use wasmparser::Validator;
@@ -62,17 +61,20 @@ pub fn translate_module_as_component(
     };
     let mut world_builder = WorldBuilder::new(world_ref);
 
-    let ns = Ident::from("root_ns");
-    let name = Ident::from("root");
-    let ver = Version::parse("1.0.0").unwrap();
-    let mut component_ref = world_builder.define_component(ns, name, ver)?;
+    // The wrapper is rooted at the target namespace, or at the module's name when there is none
+    let module_name = parsed_module.module.name().as_str();
+    let namespace = config
+        .namespace
+        .clone()
+        .unwrap_or_else(|| SymbolPath::from_masm_module_id(module_name));
+    let mut component_ref =
+        world_builder.define_component(Ident::with_empty_span(namespace.to_symbol_name()))?;
 
     // Mark this as the compiler's wrapper: nothing downstream should have to infer it by
-    // comparing the id, which an author may legitimately use.
+    // comparing the name, which an author may legitimately use.
     component_ref.borrow_mut().mark_synthetic_wrapper();
 
     let mut cb = ComponentBuilder::new(component_ref);
-    let module_name = parsed_module.module.name().as_str();
     let module_ref = cb.define_module(Ident::from(module_name)).unwrap();
 
     let mut module_builder = ModuleBuilder::new(module_ref);
@@ -82,6 +84,7 @@ pub fn translate_module_as_component(
         &mut world_builder,
         &module_types,
         FxHashMap::default(),
+        &FxHashMap::default(),
         context.diagnostics(),
     )?;
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context)?;
@@ -135,10 +138,17 @@ pub fn build_ir_module(
     .into_diagnostic()?;
     parsed_module.function_debug =
         if context.session().options.debug == midenc_session::DebugInfo::Full {
+            // A function may be defined under a name other than its Wasm name (see
+            // `ModuleTranslationState::new`); its subprogram is named after the HIR function.
+            let function_names = module_state
+                .defined_functions()
+                .map(|(index, function)| (index, function.borrow().name().as_symbol()))
+                .collect();
             collect_function_debug_info(
                 parsed_module,
                 module_types,
                 &parsed_module.module,
+                &function_names,
                 &addr2line,
                 context.diagnostics(),
             )
@@ -205,11 +215,14 @@ pub fn build_ir_module(
         }
 
         let func_index = parsed_module.module.func_index(defined_func_idx);
-        let func_name = parsed_module.module.func_name(func_index).as_str();
-
+        // The function may be defined under a name other than its Wasm name (see
+        // `ModuleTranslationState::new`), so it is found by index.
         let function_ref =
-            module_state.module_builder.get_function(func_name).unwrap_or_else(|| {
-                panic!("cannot build {func_name} function, since it is not defined in the module.")
+            module_state.get_direct_func(func_index)?.function_ref().unwrap_or_else(|| {
+                panic!(
+                    "cannot build {} function, since it is not defined in the module.",
+                    parsed_module.module.func_name(func_index)
+                )
             });
 
         // If this is a linker stub that needs a synthesized body (function-type intrinsics,

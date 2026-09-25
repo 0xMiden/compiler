@@ -1,5 +1,5 @@
 use midenc_hir::{
-    FxHashMap, Op, Symbol, WalkResult,
+    FxHashMap, Op, Symbol, SymbolPath, WalkResult,
     dialects::builtin::{
         self, DataSegmentError, SegmentRef,
         attributes::{U64Attr, UnitAttr},
@@ -18,7 +18,7 @@ const DEFAULT_PAGE_SIZE: u32 = 2u32.pow(16);
 const DEFAULT_RESERVATION: u32 = 17;
 
 pub struct LinkInfo {
-    component: Option<builtin::ComponentId>,
+    component: Option<SymbolPath>,
     globals_layout: GlobalVariableLayout,
     segment_layout: builtin::DataSegmentLayout,
     function_tables: FunctionTableLayout,
@@ -27,8 +27,9 @@ pub struct LinkInfo {
 }
 
 impl LinkInfo {
+    /// Creates empty link information for the op rooted at the namespace path `id`, if any.
     #[cfg(test)]
-    pub fn new(id: Option<builtin::ComponentId>) -> Self {
+    pub fn new(id: Option<SymbolPath>) -> Self {
         Self {
             component: id,
             globals_layout: Default::default(),
@@ -39,8 +40,9 @@ impl LinkInfo {
         }
     }
 
+    /// Returns the namespace path the linked op is rooted at, if it was linked with one.
     #[inline]
-    pub fn component(&self) -> Option<&builtin::ComponentId> {
+    pub fn component(&self) -> Option<&SymbolPath> {
         self.component.as_ref()
     }
 
@@ -131,9 +133,11 @@ impl Linker {
         }
     }
 
+    /// Computes the memory layout of `component`, the component or world being linked, which is
+    /// rooted at the namespace path `id` when it has one.
     pub fn link(
         mut self,
-        id: Option<builtin::ComponentId>,
+        id: Option<SymbolPath>,
         component: &midenc_hir::Operation,
     ) -> Result<LinkInfo, LinkerError> {
         // Gather information needed to compute component data layout
@@ -430,7 +434,7 @@ impl Linker {
         &mut self,
         module: &builtin::Module,
         declared_reserved_memory: &mut u64,
-        id: Option<&builtin::ComponentId>,
+        id: Option<&SymbolPath>,
     ) -> Result<(), LinkerError> {
         if let Some(reserved) = module
             .as_operation()
@@ -502,7 +506,7 @@ pub enum LinkerError {
     /// Multiple segments were defined in the same component with the same offset
     #[error("invalid component: '{id}' has invalid data segment: {err}")]
     InvalidComponentDataSegment {
-        id: builtin::ComponentId,
+        id: SymbolPath,
         #[source]
         err: DataSegmentError,
     },
@@ -735,7 +739,6 @@ mod tests {
             World, WorldBuilder,
             attributes::{BoolAttr, Signature, U64Attr, UnitAttr},
         },
-        version::Version,
     };
 
     use super::*;
@@ -758,13 +761,7 @@ mod tests {
         let world_ref =
             context.clone().builder().create::<World, ()>(Default::default())().unwrap();
         let mut world_builder = WorldBuilder::new(world_ref);
-        let component = world_builder
-            .define_component(
-                Ident::from("test_ns"),
-                Ident::from("test"),
-                Version::parse("1.0.0").unwrap(),
-            )
-            .unwrap();
+        let component = world_builder.define_component(Ident::from("test_ns::test")).unwrap();
         let mut component_builder = ComponentBuilder::new(component);
         let module = component_builder.define_module(Ident::from("core")).unwrap();
         let signature = Signature::with_convention(&context, call_conv, params, results);
@@ -813,13 +810,7 @@ mod tests {
         let world_ref =
             context.clone().builder().create::<World, ()>(Default::default())().unwrap();
         let mut world_builder = WorldBuilder::new(world_ref);
-        let component_ref = world_builder
-            .define_component(
-                Ident::from("test_ns"),
-                Ident::from("test"),
-                Version::parse("1.0.0").unwrap(),
-            )
-            .unwrap();
+        let component_ref = world_builder.define_component(Ident::from("test_ns::test")).unwrap();
         let mut component_builder = ComponentBuilder::new(component_ref);
         let mut module_ref = component_builder.define_module(Ident::from("m")).unwrap();
         if reserved_bytes > 0 {
@@ -862,13 +853,7 @@ mod tests {
         let world_ref =
             context.clone().builder().create::<World, ()>(Default::default())().unwrap();
         let mut world_builder = WorldBuilder::new(world_ref);
-        let component_ref = world_builder
-            .define_component(
-                Ident::from("test_ns"),
-                Ident::from("test"),
-                Version::parse("1.0.0").unwrap(),
-            )
-            .unwrap();
+        let component_ref = world_builder.define_component(Ident::from("test_ns::test")).unwrap();
         let mut component_builder = ComponentBuilder::new(component_ref);
         let module_ref = component_builder.define_module(Ident::from("m")).unwrap();
         let mut module_builder = ModuleBuilder::new(module_ref);
@@ -901,13 +886,7 @@ mod tests {
         let world_ref =
             context.clone().builder().create::<World, ()>(Default::default())().unwrap();
         let mut world_builder = WorldBuilder::new(world_ref);
-        let component_ref = world_builder
-            .define_component(
-                Ident::from("test_ns"),
-                Ident::from("test"),
-                Version::parse("1.0.0").unwrap(),
-            )
-            .unwrap();
+        let component_ref = world_builder.define_component(Ident::from("test_ns::test")).unwrap();
         let mut component_builder = ComponentBuilder::new(component_ref);
         let outer = component_builder.define_module(Ident::from("outer")).unwrap();
         let inner = ModuleBuilder::new(outer).declare_module(Ident::from("inner")).unwrap();

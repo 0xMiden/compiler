@@ -16,15 +16,13 @@ use super::*;
 // Fixtures.
 //
 // Task 7's, copied from `midenc-compile/src/pipeline/frontends/hir.rs` rather than shared:
-// `midenc-compile` depends on this crate, so nothing here can import from it. Its report
-// records which shapes parse — in particular that a component id is *one quoted*
-// symbol-path component, because `ComponentId::try_from` splits the `:` and the `@` back
-// out of it itself.
+// `midenc-compile` depends on this crate, so nothing here can import from it. The component
+// name `hir_ns::test` is a two-segment path, printed one `@`-name per segment.
 // -------------------------------------------------------------------------------------
 
 /// A component, written on its own — the other half of the equivalence [`WORLD`] pins.
 const COMPONENT: &str = r#"
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
 builtin.module private @test {
     builtin.function public extern("C") @main() {
         builtin.ret;
@@ -35,14 +33,9 @@ builtin.module private @test {
 
 /// [`COMPONENT`] inside the world that declares it — the *shape* `--emit=hir` writes, and so
 /// the shape a whole-world `.hir` file has.
-///
-/// Not its literal text, though: `OpPrinter for builtin::Component` prints the id **bare**
-/// (`@hir_ns:test@1.0.0`) while the parser requires it **quoted**, so `--emit=hir` output
-/// holding a component does not re-parse. The quoting here works around that; the defect
-/// is recorded as a `TODO(hir)` on that printer.
 const WORLD: &str = r#"
 builtin.world {
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module private @test {
         builtin.function public extern("C") @main() {
             builtin.ret;
@@ -64,7 +57,7 @@ builtin.component private @"hir_ns:test@1.0.0" {
 /// `is_declaration` means.
 const WORLD_WITH_DECLARATION_ONLY_SIBLING: &str = r#"
 builtin.world {
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module private @test {
         builtin.function public extern("C") @main() {
             builtin.ret;
@@ -85,7 +78,7 @@ builtin.module public @external_dep {
 /// and owns no memory, the fixture every "translated beside the component" assertion rests on.
 const WORLD_WITH_SUPPORTING_SIBLING: &str = r#"
 builtin.world {
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module private @test {
         builtin.function public extern("C") @main() {
             builtin.ret;
@@ -110,7 +103,7 @@ builtin.module public @supporting {
 /// here would leave the library with no exports at all.
 const WORLD_CALLING_ITS_SUPPORTING_SIBLING: &str = r#"
 builtin.world {
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module public @test {
         builtin.function public extern("C") @main() {
             hir.exec ::@supporting::@sibling() : extern("C") () -> ();
@@ -150,35 +143,6 @@ fn world_with_a_sibling_declaring_a_global() -> String {
         "builtin.module public @supporting {",
         "builtin.module public @supporting {\n        builtin.global_variable public @g : i32;",
     )
-}
-
-/// [`WORLD_WITH_SUPPORTING_SIBLING`] with the identity `frontend/wasm` gives the component it
-/// wraps around a core Wasm module.
-///
-/// The id alone does not make it the wrapper — see [`mark_as_synthetic_wrapper`], which is what
-/// a fixture standing in for the wrapper has to be put through as well.
-fn wrapper_world_with_a_supporting_sibling() -> String {
-    WORLD_WITH_SUPPORTING_SIBLING.replace("hir_ns:test@1.0.0", "root_ns:root@1.0.0")
-}
-
-/// Mark `world`'s component as one the compiler invented, the way `frontend/wasm` marks the
-/// wrapper it builds around a bare core Wasm module.
-///
-/// This cannot be written into a fixture: `builtin.component`'s textual form carries no
-/// attributes, so the marker has to be set on the parsed IR — which is where the frontend sets
-/// it too, rather than on any text.
-fn mark_as_synthetic_wrapper(world: builtin::WorldRef) {
-    let mut component = {
-        let world = world.borrow();
-        let body = world.body();
-        let component = body
-            .entry()
-            .body()
-            .iter()
-            .find_map(|op| op.as_operation_ref().try_downcast_op::<builtin::Component>().ok());
-        component.expect("the fixture must declare a component to mark")
-    };
-    component.borrow_mut().mark_synthetic_wrapper();
 }
 
 /// [`WORLD_WITH_SUPPORTING_SIBLING`] whose supporting module also holds a function with **no
@@ -269,14 +233,14 @@ fn module_paths(component: &MasmComponent) -> Vec<String> {
 /// A world declaring two components, which is what this crate does not implement.
 const TWO_COMPONENT_WORLD: &str = r#"
 builtin.world {
-builtin.component private @"hir_ns:first@1.0.0" {
+builtin.component private @hir_ns::@first {
     builtin.module private @first {
         builtin.function public extern("C") @main() {
             builtin.ret;
         };
     };
 };
-builtin.component private @"hir_ns:second@1.0.0" {
+builtin.component private @hir_ns::@second {
     builtin.module private @second {
         builtin.function public extern("C") @other() {
             builtin.ret;
@@ -529,7 +493,7 @@ fn exec_paths(block: &masm::Block) -> Vec<String> {
 fn component_init(component: &MasmComponent) -> &masm::Procedure {
     component.modules[0]
         .procedures()
-        .find(|procedure| procedure.name().as_str() == "init")
+        .find(|procedure| procedure.name().as_str() == COMPONENT_INIT_PROCEDURE)
         .expect("a marked component must define `init`")
 }
 
@@ -546,8 +510,7 @@ fn component_init(component: &MasmComponent) -> &masm::Procedure {
 /// the answer.
 ///
 /// The world here is parsed from `.hir` text rather than taken from the parser's anchor, so
-/// the world under test is the one the file declares — the shape `--emit=hir` writes. See
-/// [`WORLD`] for why the id is quoted here but is not in what `--emit=hir` actually prints.
+/// the world under test is the one the file declares — the shape `--emit=hir` writes.
 #[test]
 fn a_world_holding_one_component_lowers_as_that_component() {
     let context = Rc::new(Context::default());
@@ -592,11 +555,11 @@ fn a_component_lowers_rooted_at_its_own_id() {
         .expect("the component lowers");
 
     let id = lowered.id.as_ref().expect("a component knows its own id");
-    assert_eq!(id.to_string(), "hir_ns:test@1.0.0");
+    assert_eq!(id.to_string(), "::hir_ns::test");
     assert_eq!(
         lowered.root.to_string(),
-        "::\"hir_ns:test@1.0.0\"",
-        "a component's Miden Assembly is rooted at its id, as one quoted path component"
+        "::hir_ns::test",
+        "a component's Miden Assembly is rooted at its namespace path"
     );
     assert!(
         format!("{lowered}").contains("main"),
@@ -624,13 +587,13 @@ fn a_marked_start_is_the_final_component_initialization_step() {
     let execs = exec_paths(init.body());
     assert_eq!(
         execs.last().map(String::as_str),
-        Some("::\"hir_ns:test@1.0.0\"::test::main"),
+        Some("::hir_ns::test::test::main"),
         "the start function must be the final `exec` in `init`: {execs:?}"
     );
     assert!(
         init.invoked().any(|invoke| {
             invoke.kind == masm::InvokeKind::Exec
-                && invoke.target.unwrap_path().as_str() == "::\"hir_ns:test@1.0.0\"::test::main"
+                && invoke.target.unwrap_path().as_str() == "::hir_ns::test::test::main"
         }),
         "the start edge must be present in `init`'s invocation metadata"
     );
@@ -638,7 +601,7 @@ fn a_marked_start_is_the_final_component_initialization_step() {
     let lowered_start = lowered
         .modules
         .iter()
-        .find(|module| module.path().as_str().ends_with("::test"))
+        .find(|module| module.path().as_str() == "::hir_ns::test::test")
         .and_then(|module| {
             module.procedures().find(|procedure| procedure.name().as_str() == "main")
         })
@@ -650,7 +613,7 @@ fn a_marked_start_is_the_final_component_initialization_step() {
 }
 
 #[test]
-fn a_marked_start_remains_resolvable_when_a_synthetic_wrapper_is_rebased() {
+fn a_marked_start_remains_resolvable_in_a_synthetic_wrapper() {
     let context = Rc::new(Context::default());
     let op = parse(&context, COMPONENT);
     let mut component = op
@@ -664,17 +627,17 @@ fn a_marked_start_remains_resolvable_when_a_synthetic_wrapper_is_rebased() {
         .to_masm_component(analysis_manager)
         .expect("a marked synthetic wrapper must lower");
 
-    let target = library_target("rebased");
+    let target = library_target("hir_ns::test");
     let sources = lowered
         .source_inputs(&target, context.session())
-        .expect("the marked wrapper must produce rebased assembler inputs");
+        .expect("the marked wrapper must produce assembler inputs");
     let mut assembler = miden_assembly::Assembler::new(context.session().source_manager.clone());
     assembler
         .link_package(crate::intrinsics::load(), miden_assembly::Linkage::Static)
         .expect("the compiler intrinsics should link");
     assembler
-        .assemble_library("rebased", sources.root, sources.support)
-        .expect("rebasing must update the start target recorded in `init`");
+        .assemble_library("hir_ns::test", sources.root, sources.support)
+        .expect("the start target recorded in `init` must resolve");
 }
 
 /// Add a global and table to the marked component so the start's position is tested against both
@@ -707,7 +670,7 @@ fn component_start_runs_after_globals_and_function_tables() {
 }
 
 const COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START: &str = r#"
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.function public extern("component-model") @entry() {
         builtin.ret;
     };
@@ -729,7 +692,7 @@ builtin.component private @"hir_ns:test@1.0.0" {
 /// fresh-context prologue. Only the selected marked executable gets a private no-init body.
 #[test]
 fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
-    let context = context_with_entrypoint_and_test_harness("\"hir_ns:test@1.0.0\"::entry");
+    let context = context_with_entrypoint_and_test_harness("hir_ns::test::entry");
     let op = parse(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START);
     mark_start_function(&context, op, "component_start");
     let component = op
@@ -748,7 +711,7 @@ fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
         .expect("the public canonical wrapper must remain defined");
     assert_eq!(
         exec_paths(public_entry.body()).first().map(String::as_str),
-        Some("init"),
+        Some(COMPONENT_INIT_PROCEDURE),
         "fresh-context calls through the public wrapper must still initialize"
     );
     let private_entry = lowered
@@ -758,7 +721,9 @@ fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
     assert_eq!(private_entry.name().as_str(), EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC);
     assert_eq!(private_entry.visibility(), masm::Visibility::Private);
     assert!(
-        !exec_paths(private_entry.body()).iter().any(|target| target == "init"),
+        !exec_paths(private_entry.body())
+            .iter()
+            .any(|target| target == COMPONENT_INIT_PROCEDURE),
         "the executable-only entry body must not repeat component initialization"
     );
 
@@ -790,7 +755,7 @@ fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
                     if matches!(
                         inst.inner(),
                         masm::Instruction::Exec(masm::InvocationTarget::Path(path))
-                            if path.inner().as_str() == "::\"hir_ns:test@1.0.0\"::init"
+                            if path.inner().as_str() == "::hir_ns::test::init"
                     )
             )
         })
@@ -828,7 +793,7 @@ fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
 
 #[test]
 fn unmarked_canonical_executable_keeps_the_existing_entrypoint_path() {
-    let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::entry");
+    let context = context_with_entrypoint("hir_ns::test::entry");
     let lowered = lower_component(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START)
         .expect("the unmarked canonical executable must remain supported");
     assert!(lowered.executable_entrypoint_without_init.is_none());
@@ -846,7 +811,7 @@ fn unmarked_canonical_executable_keeps_the_existing_entrypoint_path() {
 }
 
 const COMPONENT_WITH_NESTED_CANONICAL_ENTRYPOINT_AND_START: &str = r#"
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module public @api {
         builtin.function public extern("component-model") @entry() {
             builtin.ret;
@@ -862,7 +827,7 @@ builtin.component private @"hir_ns:test@1.0.0" {
 
 #[test]
 fn nested_canonical_entrypoint_cannot_bypass_marked_component_rejection() {
-    let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::api::entry");
+    let context = context_with_entrypoint("hir_ns::test::api::entry");
     let op = parse(&context, COMPONENT_WITH_NESTED_CANONICAL_ENTRYPOINT_AND_START);
     mark_start_function(&context, op, "component_start");
     let component = op
@@ -879,7 +844,7 @@ fn nested_canonical_entrypoint_cannot_bypass_marked_component_rejection() {
 
 const WORLD_WITH_SUPPORTING_CANONICAL_ENTRYPOINT_AND_START: &str = r#"
 builtin.world {
-    builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.component private @hir_ns::@test {
         builtin.module private @core {
             builtin.function public extern("C") @component_start() {
                 builtin.ret;
@@ -911,7 +876,7 @@ fn supporting_canonical_entrypoint_cannot_bypass_marked_component_rejection() {
 
 #[test]
 fn generated_executable_main_owns_marked_core_entrypoint_initialization_once() {
-    let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::core::core_entry");
+    let context = context_with_entrypoint("hir_ns::test::core::core_entry");
     let op = parse(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START);
     let component = op
         .try_downcast_op::<builtin::Component>()
@@ -936,8 +901,8 @@ fn generated_executable_main_owns_marked_core_entrypoint_initialization_once() {
         .find(|procedure| procedure.name().is_main())
         .expect("the executable root should define main");
     let execs = exec_paths(main.body());
-    let init = "::\"hir_ns:test@1.0.0\"::init";
-    let entry = "\"hir_ns:test@1.0.0\"::core::core_entry";
+    let init = "::hir_ns::test::init";
+    let entry = "hir_ns::test::core::core_entry";
     assert_eq!(execs.iter().filter(|target| target.as_str() == init).count(), 1);
     let init = execs
         .iter()
@@ -1031,15 +996,12 @@ fn a_sibling_module_owning_no_memory_is_translated_beside_the_component() {
     );
 
     // The component itself is untouched by the sibling beside it.
-    assert_eq!(
-        lowered.id.as_ref().map(|id| id.to_string()).as_deref(),
-        Some("hir_ns:test@1.0.0")
-    );
-    assert_eq!(lowered.root.to_string(), "::\"hir_ns:test@1.0.0\"");
+    assert_eq!(lowered.id.as_ref().map(|id| id.to_string()).as_deref(), Some("::hir_ns::test"));
+    assert_eq!(lowered.root.to_string(), "::hir_ns::test");
 
     assert_eq!(
         module_paths(&lowered),
-        vec!["::\"hir_ns:test@1.0.0\"", "::\"hir_ns:test@1.0.0\"::test", "::supporting"],
+        vec!["::hir_ns::test", "::hir_ns::test::test", "::supporting"],
         "the sibling is a top-level module of its own, not a child of the component"
     );
     assert!(
@@ -1048,18 +1010,18 @@ fn a_sibling_module_owning_no_memory_is_translated_beside_the_component() {
     );
 
     // And it reaches the assembler as a support module, which is what makes it linkable.
-    let target = library_target("hir_ns:test@1.0.0");
+    let target = library_target("hir_ns::test");
     let sources = lowered
         .source_inputs(&target, context.session())
         .expect("its source inputs are what the assembler is handed");
-    assert_eq!(sources.root.path().to_string(), "::\"hir_ns:test@1.0.0\"");
+    assert_eq!(sources.root.path().to_string(), "::hir_ns::test");
     assert_eq!(
         sources
             .support
             .iter()
             .map(|module| module.path().to_string())
             .collect::<Vec<_>>(),
-        vec!["::\"hir_ns:test@1.0.0\"::test", "::supporting"],
+        vec!["::hir_ns::test::test", "::supporting"],
     );
 }
 
@@ -1096,7 +1058,7 @@ fn a_sibling_module_defining_a_global_variable_is_diagnosed() {
 
     assert_eq!(
         module_paths(&lowered),
-        vec!["::\"hir_ns:test@1.0.0\"", "::\"hir_ns:test@1.0.0\"::test"],
+        vec!["::hir_ns::test", "::hir_ns::test::test"],
         "a module that owns memory is left out of the generated package: {lowered}"
     );
 }
@@ -1120,10 +1082,7 @@ fn a_sibling_module_declaring_a_global_variable_is_diagnosed() {
         "a declared global is still a global a component owns: {}",
         emitter.captured()
     );
-    assert_eq!(
-        module_paths(&lowered),
-        vec!["::\"hir_ns:test@1.0.0\"", "::\"hir_ns:test@1.0.0\"::test"],
-    );
+    assert_eq!(module_paths(&lowered), vec!["::hir_ns::test", "::hir_ns::test::test"],);
 }
 
 /// A sibling module declaring a data segment is diagnosed, for the same reason.
@@ -1148,50 +1107,8 @@ fn a_sibling_module_declaring_a_data_segment_is_diagnosed() {
 
     assert_eq!(
         module_paths(&lowered),
-        vec!["::\"hir_ns:test@1.0.0\"", "::\"hir_ns:test@1.0.0\"::test"],
+        vec!["::hir_ns::test", "::hir_ns::test::test"],
         "a module that owns memory is left out of the generated package: {lowered}"
-    );
-}
-
-/// A supporting sibling does **not** move when the component beside it is re-rooted.
-///
-/// A component-less world is re-rooted at its target's namespace, and so is a world holding
-/// the synthetic wrapper `frontend/wasm` builds — see
-/// [`MasmComponent::has_no_authored_identity`]. That rewrite replaces a root *the compiler
-/// invented*, and it applies to the modules nested under it. A top-level sibling is not one of
-/// them: its path is a name the source declares, and lowering defines it top-level rather than
-/// under the component's root, so `Rebase` leaves it exactly where it is.
-///
-/// What must move with the root is anything the sibling *calls* inside the component, which is
-/// the same walk and needs nothing extra here; this fixture has no such call, so the assertion
-/// is about the sibling's own path.
-#[test]
-fn a_supporting_sibling_does_not_move_when_the_component_is_re_rooted() {
-    let context = Rc::new(Context::default());
-    let world = parse_world(&context, &wrapper_world_with_a_supporting_sibling());
-    mark_as_synthetic_wrapper(world);
-    let lowered = lower_world(world).expect("a wrapper world with a sibling lowers");
-    assert_eq!(
-        lowered.root.to_string(),
-        "::\"root_ns:root@1.0.0\"",
-        "the fixture must really be the wrapper, or this test is about some other case"
-    );
-
-    let target = library_target("::example");
-    let sources = lowered
-        .source_inputs(&target, context.session())
-        .expect("its source inputs are what the assembler is handed");
-
-    assert_eq!(sources.root.path(), target.namespace.inner().as_ref());
-    assert_eq!(
-        sources
-            .support
-            .iter()
-            .map(|module| module.path().to_string())
-            .collect::<Vec<_>>(),
-        vec!["::example::test", "::supporting"],
-        "the component's own modules move with its root; the sibling, whose name the source \
-         declares and which was never under that root, does not"
     );
 }
 
@@ -1223,7 +1140,7 @@ fn a_component_and_its_supporting_sibling_assemble() {
     let context = Rc::new(Context::default());
     let world = parse_world(&context, WORLD_CALLING_ITS_SUPPORTING_SIBLING);
     let lowered = lower_world(world).expect("a supporting module beside a component lowers");
-    let target = library_target("hir_ns:test@1.0.0");
+    let target = library_target("hir_ns::test");
 
     let sources = lowered
         .source_inputs(&target, context.session())
@@ -1233,7 +1150,7 @@ fn a_component_and_its_supporting_sibling_assemble() {
         "the supporting module must be among the sources, or neither half proves anything"
     );
     assembler(context.session())
-        .assemble_library("hir_ns:test@1.0.0", sources.root, sources.support)
+        .assemble_library("hir_ns::test", sources.root, sources.support)
         .unwrap_or_else(|err| {
             panic!("a component and its supporting sibling should assemble: {err}")
         });
@@ -1248,7 +1165,7 @@ fn a_component_and_its_supporting_sibling_assemble() {
         .filter(|module| module.path() != "::supporting")
         .collect::<Vec<_>>();
     let err = assembler(context.session())
-        .assemble_library("hir_ns:test@1.0.0", sources.root, withheld)
+        .assemble_library("hir_ns::test", sources.root, withheld)
         .expect_err("without the supporting module, the component's call cannot resolve");
     assert!(
         format!("{err}").contains("undefined"),
@@ -1376,7 +1293,7 @@ fn a_world_of_modules_still_lowers_as_a_component_body() {
     let lowered =
         lower_world(anchoring_world(module)).expect("a world of modules lowers as it always did");
 
-    assert!(lowered.id.is_none(), "a world declares no component id of its own");
+    assert!(lowered.id.is_none(), "a world declares no component namespace of its own");
     assert_eq!(
         lowered.root.to_string(),
         "::lib",
@@ -1480,15 +1397,15 @@ fn a_world_of_one_module_already_at_its_targets_namespace_is_left_alone() {
     assert_eq!(format!("{}", sources.root), emitted, "and nothing in it moved");
 }
 
-/// A world holding a component keeps that component's id, whatever its target is called.
+/// A world holding a component keeps that component's namespace, whatever its target is called.
 ///
 /// The discriminating half of the two above, at the seam that decides it: re-rooting is
 /// justified only for a component-less world, whose modules have no identity beyond the
-/// namespace they sit in. An authored component id *is* the code's identity — every dependent
-/// addresses its procedures through it — so a target named something else must not silently
-/// rename them, and this is the shape every Wasm and Rust build produces.
+/// namespace they sit in. An authored component namespace *is* the code's identity — every
+/// dependent addresses its procedures through it — so a target named something else must not
+/// silently rename them, and this is the shape every Wasm and Rust build produces.
 #[test]
-fn a_world_holding_one_component_keeps_that_components_id() {
+fn a_world_holding_one_component_keeps_that_components_namespace() {
     let context = Rc::new(Context::default());
     let lowered =
         lower_world(parse_world(&context, WORLD)).expect("a single-component world lowers");
@@ -1500,7 +1417,7 @@ fn a_world_holding_one_component_keeps_that_components_id() {
 
     assert_eq!(
         sources.root.path().to_string(),
-        "::\"hir_ns:test@1.0.0\"",
+        "::hir_ns::test",
         "an authored component's root is its own library path, and a target named otherwise must \
          fail the assembler's root-module check rather than be quietly accommodated"
     );
@@ -1543,7 +1460,7 @@ fn component_with_cross_module_procedure_root(
     }};"#
     );
     let caller_function = r#"builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
-        %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@callee_mod::@callee;
+        %r0, %r1, %r2, %r3 = hir.procedure_root ::@hir_ns::@test::@callee_mod::@callee;
         builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
     };"#;
     let caller = match caller_owner {
@@ -1566,7 +1483,7 @@ fn component_with_cross_module_procedure_root(
     };
 
     format!(
-        r#"builtin.component private @"hir_ns:test@1.0.0" {{
+        r#"builtin.component private @hir_ns::@test {{
 {first}
 {second}
 }};
@@ -1610,7 +1527,7 @@ fn component_with_same_owner_private_procedure_root(
     };
 
     format!(
-        r#"builtin.component private @"hir_ns:test@1.0.0" {{
+        r#"builtin.component private @hir_ns::@test {{
 {owner}
 }};
 "#
@@ -1634,7 +1551,7 @@ fn cross_module_private_procedure_roots_are_rejected_for_every_owner_in_both_ord
             let message = err.to_string();
             assert!(
                 message.contains("private callee")
-                    && message.contains("callee_mod/callee")
+                    && message.contains("callee_mod::callee")
                     && message.contains("not linkable from another Miden Assembly module"),
                 "owner: {caller_owner:?}, callee_first: {callee_first}, error: {message}"
             );
@@ -1678,9 +1595,9 @@ fn direct_lowering_reports_both_sides_of_a_private_cross_module_procedure_root()
 }
 
 const COMPONENT_WITH_PRIVATE_NESTED_PROCEDURE_ROOT_TARGET: &str = r#"
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
-        %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@outer::@hidden::@callee;
+        %r0, %r1, %r2, %r3 = hir.procedure_root ::@hir_ns::@test::@outer::@hidden::@callee;
         builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
     };
     builtin.module public @outer {
@@ -1723,7 +1640,7 @@ fn synthetic_wrapper_procedure_roots_use_effective_module_visibility() {
         .to_masm_component(analysis_manager)
         .expect("a synthetic wrapper exposes its nested module path");
 
-    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns::test");
     assert!(exports.iter().any(|export| export.ends_with("root")), "exports: {exports:?}");
     assert!(exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
 }
@@ -1785,7 +1702,7 @@ fn component_less_world_procedure_roots_use_effective_module_visibility() {
 }
 
 const COMPONENT_WITH_DEEP_CALLER_AND_PRIVATE_SIBLING_CALLEE_MODULE: &str = r#"
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module private @internal {
         builtin.function internal extern("C") @callee() {
             builtin.ret;
@@ -1794,7 +1711,7 @@ builtin.component private @"hir_ns:test@1.0.0" {
     builtin.module public @api {
         builtin.module public @deep {
             builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
-                %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@internal::@callee;
+                %r0, %r1, %r2, %r3 = hir.procedure_root ::@hir_ns::@test::@internal::@callee;
                 builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
             };
         };
@@ -1810,14 +1727,14 @@ fn a_deep_procedure_root_caller_can_reach_its_ancestors_private_child() {
         COMPONENT_WITH_DEEP_CALLER_AND_PRIVATE_SIBLING_CALLEE_MODULE,
     )
     .expect("a private child is visible to every descendant of its parent");
-    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns::test");
     assert_eq!(exports.len(), 1, "only the public root should be exported: {exports:?}");
     assert!(exports[0].ends_with("root"), "unexpected package surface: {exports:?}");
 }
 
 const WORLD_WITH_OMITTED_INVALID_PROCEDURE_ROOT_USER: &str = r#"
 builtin.world {
-    builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.component private @hir_ns::@test {
         builtin.module public @api {
             builtin.function private extern("C") @callee() {
                 builtin.ret;
@@ -1826,7 +1743,7 @@ builtin.world {
     };
     builtin.interface @omitted {
         builtin.function public extern("C") @unused() -> (felt, felt, felt, felt) {
-            %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@api::@callee;
+            %r0, %r1, %r2, %r3 = hir.procedure_root ::@hir_ns::@test::@api::@callee;
             builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
         };
     };
@@ -1856,7 +1773,7 @@ fn cross_module_internal_procedure_roots_assemble_in_both_module_orders() {
         );
         let lowered = legalize_and_lower_component(&context, &source)
             .expect("an explicitly internal cross-module procedure_root target must lower");
-        let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+        let exports = assembled_library_exports(&context, &lowered, "hir_ns::test");
         assert_eq!(exports.len(), 1, "only the public root should be exported: {exports:?}");
         assert!(exports[0].ends_with("root"), "unexpected package surface: {exports:?}");
     }
@@ -1870,7 +1787,7 @@ fn same_owner_private_procedure_roots_stay_private_in_both_orders() {
             let source = component_with_same_owner_private_procedure_root(owner, callee_first);
             let lowered = legalize_and_lower_component(&context, &source)
                 .expect("a procedure_root may target a private callee in its own MASM module");
-            let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+            let exports = assembled_library_exports(&context, &lowered, "hir_ns::test");
             assert_eq!(
                 exports.len(),
                 1,
@@ -1892,9 +1809,9 @@ fn same_owner_private_procedure_roots_stay_private_in_both_orders() {
 /// private submodule.
 const WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE: &str = r#"
 builtin.world {
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.function public extern("C") @entry() {
-        hir.exec ::@"hir_ns:test@1.0.0"::@test::@helper() : extern("C") () -> ();
+        hir.exec ::@hir_ns::@test::@test::@helper() : extern("C") () -> ();
         builtin.ret;
     };
     builtin.module private @test {
@@ -1914,13 +1831,13 @@ fn a_private_module_is_not_part_of_the_package_surface() {
     let context = Rc::new(Context::default());
     let world = parse_world(&context, WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE);
     let lowered = lower_world(world).expect("a component with a private module lowers");
-    let target = library_target("hir_ns:test@1.0.0");
+    let target = library_target("hir_ns::test");
 
     let sources = lowered
         .source_inputs(&target, context.session())
         .expect("its source inputs are what the assembler is handed");
     let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
-        .assemble_library("hir_ns:test@1.0.0", sources.root, sources.support)
+        .assemble_library("hir_ns::test", sources.root, sources.support)
         .expect("a public interface calling into a private module assembles");
 
     let exports = package
@@ -1938,60 +1855,12 @@ fn a_private_module_is_not_part_of_the_package_surface() {
     );
 }
 
-/// [`WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE`] carrying the id `frontend/wasm` gives
-/// the wrapper it invents around a bare core module — written by an author here, rather than
-/// invented, which is the whole point: nothing marks this component synthetic.
-///
-/// Derived from the shared fixture rather than written out, so the component id is the only
-/// thing that differs from the case beside it.
-fn world_with_an_authored_root_id() -> String {
-    WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE
-        .replace("hir_ns:test@1.0.0", "root_ns:root@1.0.0")
-}
-
-/// The compiler's wrapper around a bare core module is recognized by a marker the frontend
-/// sets, not by its id: an author may legitimately name a component `root_ns:root@1.0.0`, and
-/// theirs keeps the module visibility they declared.
-///
-/// The discriminating half of [`a_private_module_is_not_part_of_the_package_surface`]: the same
-/// fixture and the same assertion, with only the id changed. Recognizing the wrapper by
-/// comparing the id forces this component's modules public, which puts `helper` — a procedure
-/// its author put behind a private module — on the assembled package's export surface.
-#[test]
-fn an_authored_component_named_like_the_wrapper_keeps_private_modules_private() {
-    let context = Rc::new(Context::default());
-    let world = parse_world(&context, &world_with_an_authored_root_id());
-    let lowered = lower_world(world).expect("an authored root-named component lowers");
-    let target = library_target("root_ns:root@1.0.0");
-
-    let sources = lowered
-        .source_inputs(&target, context.session())
-        .expect("its source inputs are what the assembler is handed");
-    let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
-        .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
-        .expect("it assembles");
-
-    let exports = package
-        .manifest
-        .exports()
-        .map(|export| export.path().as_ref().as_str().to_string())
-        .collect::<Vec<_>>();
-    assert!(
-        exports.iter().any(|export| export.ends_with("entry")),
-        "the component-level function is still the public surface, got exports: {exports:?}"
-    );
-    assert!(
-        !exports.iter().any(|export| export.contains("helper")),
-        "a private module of an authored component must not be exported, got: {exports:?}"
-    );
-}
-
 /// `builtin.Module` permits nesting, and a nested module's procedures belong to the component
 /// as much as a top-level module's. Lowering must place them at their own path rather than
 /// panicking on a module it did not expect to find in a module body.
 const WORLD_WITH_A_NESTED_MODULE: &str = r#"
 builtin.world {
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module public @outer {
         builtin.function public extern("C") @entry() {
             builtin.ret;
@@ -2050,13 +1919,13 @@ fn a_private_nested_module_is_not_part_of_the_package_surface() {
     let context = Rc::new(Context::default());
     let world = parse_world(&context, &world_with_a_private_nested_module());
     let lowered = lower_world(world).expect("a component with a private nested module lowers");
-    let target = library_target("hir_ns:test@1.0.0");
+    let target = library_target("hir_ns::test");
 
     let sources = lowered
         .source_inputs(&target, context.session())
         .expect("its source inputs are what the assembler is handed");
     let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
-        .assemble_library("hir_ns:test@1.0.0", sources.root, sources.support)
+        .assemble_library("hir_ns::test", sources.root, sources.support)
         .expect("a public module holding a private one assembles");
 
     let exports = package
@@ -2078,7 +1947,7 @@ fn a_private_nested_module_is_not_part_of_the_package_surface() {
 /// holding a private, address-taken function in a function table.
 const WORLD_WITH_A_PRIVATE_TABLE_CALLEE: &str = r#"
 builtin.world {
-builtin.component private @"root_ns:root@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module public @wasm {
         builtin.function private extern("C") @private_callee() {
             builtin.ret;
@@ -2106,7 +1975,7 @@ fn a_private_table_callee_is_not_part_of_the_package_surface() {
     let context = Rc::new(Context::default());
     let world = parse_world(&context, WORLD_WITH_A_PRIVATE_TABLE_CALLEE);
     let lowered = lower_world(world).expect("a component with a private table callee lowers");
-    let target = library_target("root_ns:root@1.0.0");
+    let target = library_target("hir_ns::test");
 
     let sources = lowered
         .source_inputs(&target, context.session())
@@ -2118,7 +1987,7 @@ fn a_private_table_callee_is_not_part_of_the_package_surface() {
         .link_package(crate::intrinsics::load(), miden_assembly::Linkage::Static)
         .expect("the compiler intrinsics should link");
     let package = assembler
-        .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
+        .assemble_library("hir_ns::test", sources.root, sources.support)
         .expect("a table initialized from its callee's own module assembles");
 
     let mut exports = package
@@ -2137,9 +2006,9 @@ fn a_private_table_callee_is_not_part_of_the_package_surface() {
     assert_eq!(
         exports,
         vec![
-            "::\"root_ns:root@1.0.0\"::init",
-            "::\"root_ns:root@1.0.0\"::wasm::__init_function_table",
-            "::\"root_ns:root@1.0.0\"::wasm::dispatch",
+            "::hir_ns::test::init",
+            "::hir_ns::test::wasm::__init_function_table",
+            "::hir_ns::test::wasm::dispatch",
         ],
         "the public surface is the author's `dispatch` plus the compiler's own initializers"
     );
@@ -2153,7 +2022,7 @@ fn a_private_table_callee_is_not_part_of_the_package_surface() {
 /// legalization both accept this: it reaches code generation intact.
 const WORLD_WITH_A_TABLE_CALLEE_IN_A_DECLARATION_ONLY_SIBLING: &str = r#"
 builtin.world {
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module public @wasm {
         builtin.function_table private @tbl : 1 {
             builtin.function_table_entry 0 ::@external_dep::@sibling tag 1;
@@ -2207,7 +2076,7 @@ fn a_table_callee_in_an_unlowered_module_is_invalid_input() {
 /// to reach it.
 const WORLD_WITH_TABLE_CALLEES_ACROSS_MODULES: &str = r#"
 builtin.world {
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module public @a {
         builtin.function private extern("C") @callee_a() {
             builtin.ret;
@@ -2215,8 +2084,8 @@ builtin.component private @"hir_ns:test@1.0.0" {
 
         builtin.function_table private @tbl : 3 {
             builtin.function_table_entry 0 @callee_a tag 1;
-            builtin.function_table_entry 1 ::@"hir_ns:test@1.0.0"::@outer::@callee_b tag 1;
-            builtin.function_table_entry 2 ::@"hir_ns:test@1.0.0"::@outer::@inner::@callee_c tag 1;
+            builtin.function_table_entry 1 ::@hir_ns::@test::@outer::@callee_b tag 1;
+            builtin.function_table_entry 2 ::@hir_ns::@test::@outer::@inner::@callee_c tag 1;
         };
 
         builtin.function public extern("C") @dispatch(%index: u32) {
@@ -2250,14 +2119,14 @@ builtin.component private @"hir_ns:test@1.0.0" {
 /// `hir.exec_indirect` verifier never looked at, with a signature it never checked.
 const WORLD_WITH_AN_OVERWRITTEN_TABLE_SLOT: &str = r#"
 builtin.world {
-builtin.component private @"hir_ns:test@1.0.0" {
+builtin.component private @hir_ns::@test {
     builtin.module public @a {
         builtin.function private extern("C") @live() {
             builtin.ret;
         };
 
         builtin.function_table private @tbl : 1 {
-            builtin.function_table_entry 0 ::@"hir_ns:test@1.0.0"::@z::@dead tag 1;
+            builtin.function_table_entry 0 ::@hir_ns::@test::@z::@dead tag 1;
             builtin.function_table_entry 0 @live tag 1;
         };
 
@@ -2316,7 +2185,7 @@ fn a_dead_table_entry_is_not_written_to_its_slot() {
 
     assert_eq!(
         procrefs,
-        vec!["::\"hir_ns:test@1.0.0\"::a::live"],
+        vec!["::hir_ns::test::a::live"],
         "only the entry that wins the slot may be written to it"
     );
 
@@ -2334,7 +2203,7 @@ fn a_dead_table_entry_is_not_written_to_its_slot() {
         .collect::<Vec<_>>();
     assert_eq!(
         owners,
-        vec!["::\"hir_ns:test@1.0.0\"::a"],
+        vec!["::hir_ns::test::a"],
         "a module whose only table entry is dead defines no initializer"
     );
 }
@@ -2386,11 +2255,7 @@ fn every_module_defining_a_table_callee_is_initialized_exactly_once() {
     owners.sort();
     assert_eq!(
         owners,
-        vec![
-            "::\"hir_ns:test@1.0.0\"::a",
-            "::\"hir_ns:test@1.0.0\"::outer",
-            "::\"hir_ns:test@1.0.0\"::outer::inner",
-        ],
+        vec!["::hir_ns::test::a", "::hir_ns::test::outer", "::hir_ns::test::outer::inner",],
         "a module defines an initializer if and only if it defines a table callee"
     );
 
@@ -2398,7 +2263,10 @@ fn every_module_defining_a_table_callee_is_initialized_exactly_once() {
     let mut invoked = Vec::new();
     for module in lowered.modules.iter() {
         for procedure in module.procedures() {
-            if matches!(procedure.name().as_str(), "init" | super::FUNCTION_TABLE_INIT_PROC) {
+            if matches!(
+                procedure.name().as_str(),
+                COMPONENT_INIT_PROCEDURE | super::FUNCTION_TABLE_INIT_PROC
+            ) {
                 invoked.extend(function_table_initializers_invoked(procedure.body()));
             }
         }
@@ -2425,16 +2293,16 @@ fn every_module_defining_a_table_callee_is_initialized_exactly_once() {
     };
 
     assert_eq!(
-        invoked_by("::\"hir_ns:test@1.0.0\"", "init"),
-        vec!["::\"hir_ns:test@1.0.0\"::a", "::\"hir_ns:test@1.0.0\"::outer"],
+        invoked_by("::hir_ns::test", COMPONENT_INIT_PROCEDURE),
+        vec!["::hir_ns::test::a", "::hir_ns::test::outer"],
         "`init` reaches the outermost initializers, and only those"
     );
     assert_eq!(
-        invoked_by("::\"hir_ns:test@1.0.0\"::outer", super::FUNCTION_TABLE_INIT_PROC),
-        vec!["::\"hir_ns:test@1.0.0\"::outer::inner"],
+        invoked_by("::hir_ns::test::outer", super::FUNCTION_TABLE_INIT_PROC),
+        vec!["::hir_ns::test::outer::inner"],
         "a module's initializer reaches the initializers of the modules nested within it"
     );
-    for leaf in ["::\"hir_ns:test@1.0.0\"::a", "::\"hir_ns:test@1.0.0\"::outer::inner"] {
+    for leaf in ["::hir_ns::test::a", "::hir_ns::test::outer::inner"] {
         assert!(
             invoked_by(leaf, super::FUNCTION_TABLE_INIT_PROC).is_empty(),
             "an initializer with nothing nested within it reaches no other, but '{leaf}' did"

@@ -5,8 +5,9 @@
 //! An account component is written in three parts:
 //!
 //! 1. A `#[component_storage]` struct declaring the component's `#[storage(...)]` fields.
-//! 2. A `#[component]` `trait` declaring the component's API. The trait name yields the WIT
-//!    interface name and its methods yield the exported functions.
+//! 2. A `#[component]` `trait` declaring the component's API. Its methods yield the exported
+//!    functions, each at the Miden path `<[lib].namespace>::<method>`; the WIT package and
+//!    interface names derive from `[lib].namespace`.
 //! 3. A `#[component]` `impl Trait for Storage` block providing the behavior.
 //!
 //! Add `#[export_type]` on every type that is used in an exported method signature.
@@ -59,8 +60,10 @@
 //! - Put the WIT file in the `wit` folder;
 //! - call `miden::generate!();` and `bindings::export!(MyAccountStorage);`
 //! - implement `impl Guest for MyAccountStorage`;
-
-use crate::script::ScriptConfig;
+//!
+//! Every function of a hand-written WIT interface must carry an `@external-id` attribute with
+//! its full Miden path, `<[lib].namespace>::<function>`, e.g.
+//! `@external-id("miden::my_account::my_account::get_count")`.
 
 extern crate proc_macro;
 
@@ -74,6 +77,7 @@ mod foreign_account;
 mod fpi;
 mod generate;
 mod manifest_paths;
+mod namespace;
 mod note;
 mod script;
 #[cfg(test)]
@@ -81,13 +85,17 @@ mod test_support;
 mod types;
 mod util;
 mod wit_builder;
+mod wit_names;
 mod wit_world;
 
 /// Defines an account component's API and generates the WIT interface.
 ///
-/// Apply `#[component]` to a `trait` (the API, and the source of the WIT interface — its name yields
-/// the interface name) and to the matching `impl Trait for Storage` block (the behavior). Storage
-/// lives on a separate `#[component_storage]` struct.
+/// Apply `#[component]` to a `trait` (the API, and the source of the WIT interface functions) and
+/// to the matching `impl Trait for Storage` block (the behavior). Storage lives on a separate
+/// `#[component_storage]` struct. The WIT package and interface, the Miden path of every export
+/// (`<namespace>::<method>`) and the storage slot names (`<namespace>::<field>`) derive from the
+/// three-segment `[lib].namespace` in `miden-project.toml`, e.g.
+/// `miden::counter_contract::counter_contract`.
 ///
 /// Both the trait and the implementation block must carry `#[component]`, and the storage struct
 /// must carry `#[component_storage]`. A missing trait annotation surfaces as a missing-item error
@@ -375,7 +383,7 @@ pub fn export_type(
 /// ```
 ///
 /// The caller turns the returned recipient into an output note through an account procedure
-/// (e.g. the basic wallet's `create-note`), because `output_note::create` requires the
+/// (e.g. the basic wallet's `create_note`), because `output_note::create` requires the
 /// account-component context.
 ///
 /// # Note constructors
@@ -412,7 +420,8 @@ pub fn note(
 ///
 /// The method must be contained within an inherent `impl` block annotated with `#[note]`.
 /// At most one method in a crate may be annotated with `#[note_script]`.
-/// The exported component procedure keeps the annotated method name (converted to WIT kebab-case).
+/// The exported procedure is `<namespace>::<method>`, where `<namespace>` is `[lib].namespace`
+/// from `miden-project.toml`.
 ///
 /// # Supported entrypoint signature
 ///
@@ -435,7 +444,7 @@ pub fn note_script(
 /// Marks a method as an exported note constructor (`#[note_constructor]`).
 ///
 /// The method must be contained within an inherent `impl` block annotated with `#[note]`. It is
-/// exported through the note's WIT interface (named by the kebab-cased method name), so other
+/// exported through the note's WIT interface as the procedure `<namespace>::<method>`, so other
 /// Miden packages — e.g. transaction scripts — can declare the note package as a dependency and
 /// call the constructor to compute the note's recipient. The caller turns the recipient into an
 /// output note through an account procedure, because `output_note::create` requires the
@@ -508,14 +517,7 @@ pub fn tx_script(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    script::expand(
-        attr,
-        item,
-        ScriptConfig {
-            export_interface: "miden:base/transaction-script@1.0.0",
-            guest_trait_path: "self::bindings::exports::miden::base::transaction_script::Guest",
-        },
-    )
+    script::expand(attr, item)
 }
 
 /// Generate bindings for an input WIT document.

@@ -284,6 +284,7 @@ mod tests {
                 name: "pausable".to_string(),
                 import: "miden:pausable/pausable@0.1.0".to_string(),
                 types: Vec::new(),
+                function_paths: Default::default(),
             },
         }
     }

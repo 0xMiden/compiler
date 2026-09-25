@@ -3,6 +3,10 @@
 use miden_formatting::prettier::{Document, indent, nl, text};
 use semver::Version;
 
+use crate::{
+    generate::CORE_TYPES_INTERFACE, namespace::ComponentNamespace, wit_world::write_world_block,
+};
+
 /// Builds inline WIT documents shared by the SDK macros.
 pub(crate) struct WitBuilder {
     source: Document,
@@ -21,6 +25,28 @@ impl WitBuilder {
         builder.push_line(format!("package {package_with_version};"));
         builder.blank_line();
         builder
+    }
+
+    /// Renders the WIT of a component exporting the one interface its `namespace` names, from a
+    /// world `<interface>-world` that also imports `dependency_imports`.
+    ///
+    /// `build` writes the interface body; its result is returned alongside the rendered WIT.
+    pub(crate) fn exported_interface<T>(
+        generated_by: &str,
+        namespace: &ComponentNamespace,
+        package_version: &Version,
+        dependency_imports: &[String],
+        build: impl FnOnce(&mut WitBody) -> T,
+    ) -> (String, T) {
+        let interface_name = namespace.wit_interface();
+        let mut wit = Self::new(generated_by, &namespace.wit_package(), package_version);
+        wit.use_path(CORE_TYPES_INTERFACE);
+        wit.blank_line();
+        let result = wit.interface(&interface_name, build);
+        wit.blank_line();
+        let world_name = format!("{interface_name}-world");
+        write_world_block(&mut wit, &world_name, dependency_imports, &[interface_name]);
+        (wit.finish(), result)
     }
 
     /// Writes a top-level `use` directive.
@@ -93,6 +119,12 @@ impl WitBody {
             self.source += nl();
         }
         self.source += text(line);
+    }
+
+    /// Writes a function line preceded by the `@external-id` attribute carrying its Miden path.
+    pub(crate) fn function(&mut self, external_id: &str, signature: &str) {
+        self.line(&format!("@external-id(\"{external_id}\")"));
+        self.line(signature);
     }
 
     /// Inserts a blank line inside the current WIT block.

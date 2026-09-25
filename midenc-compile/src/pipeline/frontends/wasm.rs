@@ -142,11 +142,14 @@ fn make_wasm(_session: Rc<Session>) -> Rc<dyn Frontend> {
 /// four `-C*-only` stops, which are stop policy and belong to the request's goal — and a nested
 /// dependency build never sets them, because `cargo::cargo_build` constructs its nested
 /// `Options` from scratch rather than inheriting the parent's.
+///
+/// `namespace` is the dependency target's namespace (see [`target_namespace`]).
 pub(crate) fn lower_wasm_input(
     input: &midenc_session::InputFile,
+    namespace: Option<midenc_hir::SymbolPath>,
     context: Rc<midenc_hir::Context>,
 ) -> CompilerResult<CodegenOutput> {
-    let hir = translate_wasm_input(input, context.clone())?;
+    let hir = translate_wasm_input(input, namespace, context.clone())?;
     let hir = backend::analyze(hir, context.clone())?;
     backend::apply_rewrites(hir.world.as_operation_ref(), context.clone())?;
     backend::codegen(hir, context)
@@ -159,8 +162,11 @@ pub(crate) fn lower_wasm_input(
 /// bytes, write `--emit=wat`, record the provenance, translate, write the pre-rewrite
 /// `--emit=hir`. Separated from [`lower_wasm_input`] so that the translation is reachable
 /// without the backend, which is what a caller holding WebAssembly and no assembler needs.
+///
+/// `namespace` is the namespace the component must be rooted at, when the caller knows it.
 pub(crate) fn translate_wasm_input(
     input: &midenc_session::InputFile,
+    namespace: Option<midenc_hir::SymbolPath>,
     context: Rc<midenc_hir::Context>,
 ) -> CompilerResult<MidenComponent> {
     let source = WasmFrontend::read_input(input)?;
@@ -174,7 +180,26 @@ pub(crate) fn translate_wasm_input(
     }
     .to_inputs();
 
-    WasmFrontend::translate(context, &source, provenance)
+    WasmFrontend::translate(context, &source, provenance, namespace)
+}
+
+/// The namespace the component of `target` must be rooted at.
+///
+/// Executables have none: their namespace is a reserved sentinel, not a name the component's
+/// exports could be under. A kernel is rooted at the kernel namespace its procedures are
+/// assembled under.
+pub(crate) fn target_namespace(
+    target: &midenc_session::miden_project::Target,
+) -> Option<midenc_hir::SymbolPath> {
+    use midenc_hir::{SymbolNameComponent, SymbolPath};
+    use midenc_session::miden_project::TargetType;
+
+    if matches!(target.ty, TargetType::Executable) {
+        return None;
+    }
+    let namespace = SymbolPath::from_library_path(target.namespace.inner());
+    let segments = namespace.components().filter(|component| !component.is_root());
+    Some(core::iter::once(SymbolNameComponent::Root).chain(segments).collect())
 }
 
 /// A renderer for the checkpoints on this route, every one of which something else writes.
@@ -340,6 +365,11 @@ impl WasmFrontend {
         }
     }
 
+    /// The WebAssembly binary `input` holds, decoded from text when it is `.wat`.
+    pub(crate) fn read_binary(input: &midenc_session::InputFile) -> CompilerResult<Vec<u8>> {
+        Self::read_input(input).map(|source| source.wasm)
+    }
+
     /// The WebAssembly binary at `path`, decoded from text when `file_type` says it is `.wat`.
     fn read_file(path: &Path, file_type: FileType) -> CompilerResult<Vec<u8>> {
         match file_type {
@@ -433,17 +463,22 @@ impl WasmFrontend {
     ///
     /// The module is named after the source's file stem, which is what the legacy stage passed
     /// and therefore what every fixture's HIR is named after today. Note that it names the
-    /// *module*: the enclosing component's id is the frontend's own, so this does not decide
-    /// the namespace the target is lowered into.
+    /// *module*: the enclosing component is rooted at `namespace`, or at the namespace its
+    /// exports declare, so the file stem does not decide the namespace the target is lowered
+    /// into.
     ///
     /// `noname` is the fallback for a root with no file stem, or one that is not valid UTF-8 —
     /// which the legacy stage handled by unwrapping, i.e. by panicking. It is not invented here:
     /// it is what [`WasmTranslationConfig::default`] already uses for a source it cannot name,
     /// so an unnameable root is translated exactly as an unnamed one is.
+    ///
+    /// `namespace` is the target namespace the component must be rooted at, when the build
+    /// knows it (see [`target_namespace`]).
     fn translate(
         context: Rc<midenc_hir::Context>,
         source: &WasmSource,
         source_provenance: ProjectSourceProvenanceInputs,
+        namespace: Option<midenc_hir::SymbolPath>,
     ) -> CompilerResult<MidenComponent> {
         use midenc_hir::{BuilderExt, Op, OpBuilder, SourceSpan, dialects::builtin};
 
@@ -464,6 +499,7 @@ impl WasmFrontend {
             remap_path_prefixes: session.options.remap_path_prefixes.clone(),
             world: Some(world),
             generate_native_debuginfo: session.options.emit_source_locations(),
+            namespace,
             ..Default::default()
         };
 
@@ -472,8 +508,8 @@ impl WasmFrontend {
             sections,
         } = midenc_frontend_wasm::translate(&source.wasm, &config, context.clone())?;
         log::debug!(
-            "parsed hir component from wasm bytes with first module name: {}",
-            component.borrow().id()
+            "parsed hir component `{}` from wasm bytes",
+            component.borrow().get_name().as_symbol()
         );
 
         crate::emit_hir_if_requested(component.borrow().as_operation(), context)?;
@@ -514,7 +550,8 @@ impl WasmFrontend {
         let source = WasmSource { path, wasm };
 
         let provenance = self.provenance_of(cx, &source)?;
-        let hir = Self::translate(cx.context(), &source, provenance)?;
+        let namespace = target_namespace(cx.assembly().target);
+        let hir = Self::translate(cx.context(), &source, provenance, namespace)?;
         let hir = match cx.checkpoint(CheckpointId::HIR_INITIAL, ArtifactId::HIR, hir)? {
             Flow::Continue(hir) => hir,
             Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
@@ -942,15 +979,13 @@ mod tests {
         );
     }
 
-    /// A library target's root module is the target's namespace too, and its whole module tree
-    /// moves there with it.
+    /// A library target's root module is the target's namespace too.
     ///
-    /// A core Wasm module is translated into a component whose id is always the synthetic
-    /// wrapper `root_ns:root@1.0.0`, and code generation would otherwise root the target's Miden
-    /// Assembly at that id. `assemble_source_package` rejects a root module whose path is not
-    /// exactly `target.namespace`, and the two can never agree — the id renders as the single
-    /// quoted component `::"root_ns:root@1.0.0"`, which no target is named — so
-    /// `MasmComponent::source_inputs` re-roots the wrapper at the target's namespace instead.
+    /// A core Wasm module is translated into a synthetic wrapper component, which the frontend
+    /// names after the target namespace it is handed, and code generation roots the target's
+    /// Miden Assembly at that name. `assemble_source_package` rejects a root module whose path is
+    /// not exactly `target.namespace`, so this pins that the pipeline hands the frontend the
+    /// target's namespace.
     ///
     /// Asserted against `project.target()`'s namespace rather than a literal, so that it is the
     /// agreement between the two that is pinned, not one particular fixture name.
@@ -1320,5 +1355,22 @@ mod tests {
             msg.contains("expected '.wasm' or '.wat'"),
             "the report must say which file types this frontend handles: {msg}"
         );
+    }
+
+    /// Libraries and kernels are rooted at their target namespace; executables at none.
+    #[test]
+    fn target_namespace_roots_every_target_but_an_executable() {
+        use miden_assembly_syntax::Path;
+        use midenc_session::{diagnostics::Uri, miden_project::Target};
+
+        let uri = || Uri::new("lib.wat");
+        let library = Target::library(Path::new("acme::math::math"), uri());
+        let kernel = Target::new(TargetType::Kernel, "kernel", Path::kernel_path(), uri());
+        let executable = Target::executable("app", uri());
+
+        let rendered = |target: &Target| target_namespace(target).map(|ns| ns.to_string());
+        assert_eq!(rendered(&library).as_deref(), Some("::acme::math::math"));
+        assert_eq!(rendered(&kernel).as_deref(), Some("::$kernel"));
+        assert_eq!(rendered(&executable), None);
     }
 }
