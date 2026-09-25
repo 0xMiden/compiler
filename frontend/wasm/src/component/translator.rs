@@ -32,7 +32,7 @@ use crate::{
     component::{
         ComponentItem, LocalInitializer, StaticComponentIndex, core_names,
         lift_exports::generate_export_lifting_function,
-        naming::{ExportPaths, external_id_path},
+        naming::{ExportPaths, external_id_path, world_level_function_import},
     },
     error::WasmResult,
     module::{
@@ -263,6 +263,9 @@ impl<'a> ComponentTranslator<'a> {
                         match ty {
                             ComponentEntityType::Instance(_) => {
                                 self.component_import(frame, types, name, ty)?;
+                            }
+                            ComponentEntityType::Func(_) => {
+                                return Err(world_level_function_import(name.name));
                             }
                             _ => {
                                 unsupported_diag!(
@@ -625,17 +628,13 @@ impl<'a> ComponentTranslator<'a> {
                 .iter()
                 .filter(|export| export.core_func.0 == static_module_idx)
                 .map(|export| (export.core_func.1, &export.path));
-            let imports = module
-                .functions
-                .keys()
-                .filter(|index| module.is_imported_function(*index))
-                .filter_map(|index| {
-                    let import = &module.imports[index.as_u32() as usize];
-                    match import_canon_lower_args.get(&core_import_path(import)) {
-                        Some(ModuleArgument::ComponentImport { path, .. }) => Some((index, path)),
-                        _ => None,
-                    }
-                });
+            let imports = module.functions.keys().filter_map(|index| {
+                let import = module.function_import(index)?;
+                match import_canon_lower_args.get(&core_import_path(import)) {
+                    Some(ModuleArgument::ComponentImport { path, .. }) => Some((index, path)),
+                    _ => None,
+                }
+            });
             let names = core_names::assign(module, exports, imports)?;
 
             let module_types = types.module_types_builder();
