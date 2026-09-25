@@ -609,6 +609,15 @@ impl<'a> ComponentTranslator<'a> {
             if let Some(name_override) = self.config.override_name.as_ref() {
                 parsed_module.module.set_name_override(name_override.clone());
             }
+            // The core module and the lifted exports share the component's symbol table. The
+            // module's name is internal while an export's is its contract, so the module gives
+            // way; renaming it before its functions are named keeps every derived path in sync.
+            let module_name = parsed_module.module.name().name;
+            if self.pending_exports.iter().any(|export| export.path.name() == module_name) {
+                let free_name =
+                    free_core_module_name(&self.pending_exports, &self.result, module_name);
+                parsed_module.module.set_name_override(free_name.into());
+            }
 
             let module = &parsed_module.module;
             let exports = self
@@ -709,8 +718,10 @@ impl<'a> ComponentTranslator<'a> {
             return Ok(());
         };
         let message = if symbol.borrow().as_symbol_operation().is::<Module>() {
+            // Internal error: a core module named like an export is renamed before it is defined.
             format!(
-                "export `{leaf}` of `{}` clashes with the core module `{leaf}` of the same name",
+                "export `{leaf}` of `{}` clashes with the core module `{leaf}` of the same name \
+                 (the core module should have been renamed)",
                 component.namespace_path()
             )
         } else {
@@ -1556,6 +1567,29 @@ impl<'a> ComponentFrame<'a> {
             ComponentItemDef::Type(_ty) => {}
         }
     }
+}
+
+/// Returns the first of `<name>_core`, `<name>_core2`, `<name>_core3`, ... that is neither the
+/// leaf of one of `pending_exports` nor a symbol already defined in `component`.
+fn free_core_module_name(
+    pending_exports: &[PendingExport],
+    component: &ComponentBuilder,
+    name: SymbolName,
+) -> String {
+    let component = component.component.borrow();
+    let is_free = |candidate: &str| {
+        let candidate = SymbolName::intern(candidate);
+        !pending_exports.iter().any(|export| export.path.name() == candidate)
+            && component.get(candidate).is_none()
+    };
+    let base = format!("{name}_core");
+    if is_free(&base) {
+        return base;
+    }
+    (2u32..)
+        .map(|suffix| format!("{base}{suffix}"))
+        .find(|candidate| is_free(candidate))
+        .expect("the candidate names are unbounded")
 }
 
 #[cfg(test)]

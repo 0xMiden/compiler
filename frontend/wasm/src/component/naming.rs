@@ -748,15 +748,44 @@ mod tests {
     }
 
     #[test]
-    fn an_export_named_like_the_core_module_is_rejected() {
-        let wasm = counter_component(r#"(external-id "miden::counter::counter::m")"#);
-        let err = error_of(&wasm, None);
+    fn a_core_module_named_like_an_export_gives_way() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $swap
+                    (func (export "swap") (result i32) i32.const 0)
+                )
+                (core instance $i (instantiate $swap))
+                (func $lifted (result u32) (canon lift (core func $i "swap")))
+                (component $shim
+                    (import "import-func-swap" (func $f (result u32)))
+                    (export "swap" (external-id "miden::swap::swap::swap") (func $f))
+                )
+                (instance $exports
+                    (instantiate $shim (with "import-func-swap" (func $lifted))))
+                (export "miden:swap/swap@0.1.0" (instance $exports))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let context = Rc::default();
+        let output = translate_with(&context, &wasm, None).expect("component should translate");
+        let component = output.component.borrow();
+        let swap = component.get(SymbolName::intern("swap")).expect("the export is lifted");
         assert!(
-            err.contains(
-                "export `m` of `::miden::counter::counter` clashes with the core module `m` of \
-                 the same name"
-            ),
-            "unexpected diagnostic: {err}"
+            !swap.borrow().as_symbol_operation().is::<Module>(),
+            "`swap` names the lifted export, not the core module"
+        );
+        assert!(
+            component
+                .get(SymbolName::intern("swap_core"))
+                .is_some_and(|module| module.borrow().as_symbol_operation().is::<Module>()),
+            "the core module is renamed to `swap_core`"
+        );
+        let hir = component.as_operation().to_string();
+        assert!(
+            hir.contains("hir.exec ::@miden::@swap::@swap::@swap_core::@swap"),
+            "the lifted export calls into the renamed core module:\n{hir}"
         );
     }
 
