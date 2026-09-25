@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0-rc.3]
+
+- Target protocol `0.17.0-rc.7` on Miden VM `0.33.0`. The transaction kernel is unchanged from
+  `0.17.0-rc.6`, so guest code needs no migration.
+
 ## [0.15.0-rc.2]
 
 - Target protocol `0.17.0-rc.6` on Miden VM `0.33.0`.
