@@ -11,7 +11,7 @@ use quote::quote_spanned;
 use syn::{Attribute, ItemStruct, Type, ext::IdentExt, spanned::Spanned};
 use wit_bindgen_core::wit_parser::Type as WitType;
 
-use crate::manifest_paths::SDK_WIT_SOURCE;
+use crate::{manifest_paths::SDK_WIT_SOURCE, namespace::WIT_KEYWORDS};
 
 /// Exported types grouped by the crate currently being expanded.
 static EXPORTED_TYPES: OnceLock<Mutex<HashMap<String, Vec<RegisteredExportType>>>> =
@@ -925,6 +925,34 @@ fn extract_wit_type_name(line: &str, keyword: &str) -> Option<String> {
     if name.is_empty() { None } else { Some(name) }
 }
 
+/// Returns the WIT name of the exported type `ident`.
+///
+/// Type declarations are rendered bare in the generated WIT, so the name must be a valid WIT
+/// identifier that is not a WIT keyword.
+fn exported_type_wit_name(ident: &syn::Ident) -> Result<String, syn::Error> {
+    let wit_name = ident.to_string().to_kebab_case();
+    if wit_bindgen_core::wit_parser::validate_id(&wit_name).is_err() {
+        return Err(syn::Error::new(
+            ident.span(),
+            format!(
+                "exported type `{ident}` has no valid WIT name (derived `{wit_name}`): WIT names \
+                 are ASCII words `[a-z][a-z0-9]*` joined by `-`, the first starting with a \
+                 letter; rename the type"
+            ),
+        ));
+    }
+    if WIT_KEYWORDS.contains(&wit_name.replace('-', "_").as_str()) {
+        return Err(syn::Error::new(
+            ident.span(),
+            format!(
+                "exported type `{ident}` produces the WIT name `{wit_name}`, which is a WIT \
+                 keyword; rename the type"
+            ),
+        ));
+    }
+    Ok(wit_name)
+}
+
 pub(crate) fn exported_type_from_struct(
     item_struct: &ItemStruct,
 ) -> Result<ExportedTypeDef, syn::Error> {
@@ -947,14 +975,14 @@ pub(crate) fn exported_type_from_struct(
             Ok(ExportedTypeDef {
                 docs: doc_comments(&item_struct.attrs),
                 rust_name: item_struct.ident.to_string(),
-                wit_name: item_struct.ident.to_string().to_kebab_case(),
+                wit_name: exported_type_wit_name(&item_struct.ident)?,
                 kind: ExportedTypeKind::Record { fields },
             })
         }
         syn::Fields::Unit => Ok(ExportedTypeDef {
             docs: doc_comments(&item_struct.attrs),
             rust_name: item_struct.ident.to_string(),
-            wit_name: item_struct.ident.to_string().to_kebab_case(),
+            wit_name: exported_type_wit_name(&item_struct.ident)?,
             kind: ExportedTypeKind::Record { fields: Vec::new() },
         }),
         syn::Fields::Unnamed(_) => Err(syn::Error::new(
@@ -1005,7 +1033,7 @@ pub(crate) fn exported_type_from_enum(
     Ok(ExportedTypeDef {
         docs: doc_comments(&item_enum.attrs),
         rust_name: item_enum.ident.to_string(),
-        wit_name: item_enum.ident.to_string().to_kebab_case(),
+        wit_name: exported_type_wit_name(&item_enum.ident)?,
         kind: ExportedTypeKind::Variant { variants },
     })
 }

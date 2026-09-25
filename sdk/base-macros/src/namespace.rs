@@ -104,12 +104,12 @@ impl ComponentNamespace {
     }
 }
 
-/// The WIT keywords, spelled as snake_case segments; a keyword cannot name a WIT package or
-/// interface.
+/// The WIT keywords, spelled as snake_case segments; a keyword cannot name a WIT package,
+/// interface or exported type.
 ///
 /// This mirrors the keywords of the lexer of wit-parser 0.259 (`src/ast/lex.rs`) and must be
 /// updated together with that dependency.
-const WIT_KEYWORDS: &[&str] = &[
+pub(crate) const WIT_KEYWORDS: &[&str] = &[
     "as",
     "async",
     "bool",
