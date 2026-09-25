@@ -20,6 +20,7 @@ use crate::{
     },
     util::NOTE_NAMED_FIELDS_ERROR,
     wit_builder::{WitBody, WitBuilder},
+    wit_names::{explicit_wit_identifier, rust_ident_to_wit_name},
     wit_world::ManifestPackage,
 };
 
@@ -239,7 +240,7 @@ fn note_root_type(
         validate_note_storage_type_ref(&ty, field.ty.span(), &context)?;
         fields.push(ExportedField {
             docs: doc_comments(&field.attrs),
-            name: ident.to_string(),
+            wit_name: rust_ident_to_wit_name(ident)?,
             ty,
         });
     }
@@ -263,7 +264,7 @@ fn validate_note_storage_definition(
                 validate_note_storage_type_ref(
                     &field.ty,
                     span,
-                    &format!("field `{}` in type `{}`", field.name, definition.rust_name),
+                    &format!("field `{}` in type `{}`", field.wit_name, definition.rust_name),
                 )?;
             }
         }
@@ -367,13 +368,13 @@ fn rendered_schema_error_context(
         match &definition.kind {
             ExportedTypeKind::Record { fields } => {
                 for field in fields {
-                    let field_prefix = format!("{}:", field.name.to_kebab_case());
+                    let field_prefix = format!("{}:", explicit_wit_identifier(&field.wit_name));
                     if error_line.starts_with(&field_prefix) {
                         return (
                             rendered.span,
                             format!(
                                 "field `{}` of type `{}` in type `{}`",
-                                field.name, field.ty.wit_name, definition.rust_name
+                                field.wit_name, field.ty.wit_name, definition.rust_name
                             ),
                         );
                     }
@@ -381,7 +382,7 @@ fn rendered_schema_error_context(
             }
             ExportedTypeKind::Variant { variants } => {
                 for variant in variants {
-                    if error_line.starts_with(&variant.wit_name) {
+                    if error_line.starts_with(&explicit_wit_identifier(&variant.wit_name)) {
                         let payload = variant
                             .payload
                             .as_ref()
@@ -567,7 +568,11 @@ fn render_type_definition(interface: &mut WitBody, definition: &ExportedTypeDef)
             interface.block(&format!("record {} {{", definition.wit_name), |record| {
                 for field in fields {
                     render_docs(record, &field.docs);
-                    record.line(&format!("{}: {},", field.name.to_kebab_case(), field.ty.wit_name));
+                    record.line(&format!(
+                        "{}: {},",
+                        explicit_wit_identifier(&field.wit_name),
+                        field.ty.wit_name
+                    ));
                 }
             });
         }
@@ -576,9 +581,13 @@ fn render_type_definition(interface: &mut WitBody, definition: &ExportedTypeDef)
                 for variant in variants {
                     render_docs(variant_body, &variant.docs);
                     match &variant.payload {
-                        Some(payload) => variant_body
-                            .line(&format!("{}({}),", variant.wit_name, payload.wit_name)),
-                        None => variant_body.line(&format!("{},", variant.wit_name)),
+                        Some(payload) => variant_body.line(&format!(
+                            "{}({}),",
+                            explicit_wit_identifier(&variant.wit_name),
+                            payload.wit_name
+                        )),
+                        None => variant_body
+                            .line(&format!("{},", explicit_wit_identifier(&variant.wit_name))),
                     }
                 }
             });
@@ -775,7 +784,7 @@ mod tests {
                 use core-types.{account-id};
 
                 record p2id-note {
-                    target-account-id: account-id,
+                    %target-account-id: account-id,
                 }
 
                 type storage = p2id-note;
@@ -984,21 +993,21 @@ mod tests {
                 /// Destination details.
                 record destination {
                     /// Destination account.
-                    account-id: account-id,
+                    %account-id: account-id,
                 }
 
                 /// Route selection.
                 variant route {
                     /// Send directly.
-                    direct,
+                    %direct,
                     /// Send through a destination.
-                    via(destination),
+                    %via(destination),
                 }
 
                 /// A routed note.
                 record routed-note {
                     /// Selected route.
-                    route: route,
+                    %route: route,
                 }
 
                 type storage = routed-note;
@@ -1245,20 +1254,20 @@ mod tests {
     }
 
     #[test]
-    fn expansion_surfaces_wit_parser_errors_with_field_context() {
+    fn keyword_field_names_render_in_explicit_form() {
         let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let note: ItemStruct = parse_quote! {
-            struct InvalidFieldNote {
+            struct KeywordFieldNote {
                 type_: u64,
             }
         };
-        let err = expand_note_storage_schema(&note)
-            .expect_err("a WIT keyword cannot be used as a field name");
+        expand_note_storage_schema(&note).expect("a keyword field name resolves in `%` form");
 
-        let message = err.to_string();
-        assert!(message.contains("failed to resolve note storage schema"));
-        assert!(message.contains("field `type_` of type `u64`"), "message is {message}");
+        let source =
+            render_note_storage_schema(&note, "miden:keyword-field-note", &Version::new(1, 0, 0))
+                .expect("the schema renders");
+        assert!(source.contains("%type: u64,"), "source is {source}");
     }
 
     #[test]

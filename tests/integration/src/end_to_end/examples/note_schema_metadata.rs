@@ -195,7 +195,7 @@ fn note_packages_carry_resolvable_storage_schema_metadata() {
                 use core-types.{account-id};
 
                 record p2id-note {
-                    target-account-id: account-id,
+                    %target-account-id: account-id,
                 }
 
                 type storage = p2id-note;
@@ -225,18 +225,18 @@ fn note_packages_carry_resolvable_storage_schema_metadata() {
                 /// from the storage elements in declaration order.
                 record swapp-note {
                     /// Asset id of the requested asset (faucet id, class, composition rule).
-                    requested-asset-id: word,
+                    %requested-asset-id: word,
                     /// Total requested asset amount for the full offer.
-                    requested-total: felt,
+                    %requested-total: felt,
                     /// The account that created the swap offer and receives the requested asset.
-                    creator: account-id,
+                    %creator: account-id,
                     /// Note type used for the notes created by this script (P2ID routing note and remainder
                     /// SWAPP note).
-                    output-note-type: felt,
+                    %output-note-type: felt,
                     /// Tag routing the P2ID note to the creator.
-                    p2id-tag: felt,
+                    %p2id-tag: felt,
                     /// Script root of the P2ID note script used for the routing note.
-                    p2id-script-root: word,
+                    %p2id-script-root: word,
                 }
 
                 type storage = swapp-note;

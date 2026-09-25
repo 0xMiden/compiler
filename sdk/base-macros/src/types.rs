@@ -11,7 +11,9 @@ use quote::quote_spanned;
 use syn::{Attribute, ItemStruct, Type, spanned::Spanned};
 use wit_bindgen_core::wit_parser::Type as WitType;
 
-use crate::{manifest_paths::SDK_WIT_SOURCE, namespace::WIT_KEYWORDS};
+use crate::{
+    manifest_paths::SDK_WIT_SOURCE, namespace::WIT_KEYWORDS, wit_names::rust_ident_to_wit_name,
+};
 
 /// Exported types grouped by the crate currently being expanded.
 static EXPORTED_TYPES: OnceLock<Mutex<HashMap<String, Vec<RegisteredExportType>>>> =
@@ -57,13 +59,15 @@ impl TypeRef {
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedField {
     pub(crate) docs: Vec<String>,
-    pub(crate) name: String,
+    /// Canonical WIT name of the field.
+    pub(crate) wit_name: String,
     pub(crate) ty: TypeRef,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedVariant {
     pub(crate) docs: Vec<String>,
+    /// Canonical WIT name of the variant case.
     pub(crate) wit_name: String,
     pub(crate) payload: Option<TypeRef>,
 }
@@ -213,8 +217,7 @@ fn exported_type_shapes_match(left: &ExportedTypeDef, right: &ExportedTypeDef) -
         ) => {
             left_fields.len() == right_fields.len()
                 && left_fields.iter().zip(right_fields).all(|(left, right)| {
-                    left.name.to_kebab_case() == right.name.to_kebab_case()
-                        && type_ref_shapes_match(&left.ty, &right.ty)
+                    left.wit_name == right.wit_name && type_ref_shapes_match(&left.ty, &right.ty)
                 })
         }
         (
@@ -262,7 +265,7 @@ pub(crate) fn describe_exported_type_shape(def: &ExportedTypeDef) -> String {
             def.wit_name,
             fields
                 .iter()
-                .map(|field| format!("{}: {}", field.name.to_kebab_case(), field.ty.wit_name))
+                .map(|field| format!("{}: {}", field.wit_name, field.ty.wit_name))
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
@@ -967,7 +970,7 @@ pub(crate) fn exported_type_from_struct(
                 let field_ty = map_type_to_type_ref(&field.ty, &known_exported)?;
                 fields.push(ExportedField {
                     docs: doc_comments(&field.attrs),
-                    name: field_ident.to_string(),
+                    wit_name: rust_ident_to_wit_name(field_ident)?,
                     ty: field_ty,
                 });
             }
@@ -1001,7 +1004,7 @@ pub(crate) fn exported_type_from_enum(
     let known_exported = registered_export_type_map();
     let mut variants = Vec::new();
     for variant in &item_enum.variants {
-        let wit_name = variant.ident.to_string().to_kebab_case();
+        let wit_name = rust_ident_to_wit_name(&variant.ident)?;
         let payload = match &variant.fields {
             syn::Fields::Unit => None,
             syn::Fields::Unnamed(fields) => {
