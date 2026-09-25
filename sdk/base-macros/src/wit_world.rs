@@ -19,7 +19,7 @@ use wit_bindgen_core::wit_parser::{
 
 use crate::{
     dependency_package::{DependencyWitSource, collect_dependency_wit_sources},
-    generate::CORE_TYPES_INTERFACE,
+    generate::CORE_TYPES_INTERFACE_ID,
     namespace::ComponentNamespace,
     types::explicit_wit_identifier,
     wit_builder::{WitBody, WitBuilder},
@@ -417,7 +417,7 @@ impl InlineInterfaceWorld<'_> {
         body: impl FnOnce(&mut WitBody),
     ) -> String {
         let mut wit = WitBuilder::new(self.generated_by, self.package, self.version);
-        wit.use_path(CORE_TYPES_INTERFACE);
+        wit.use_path(&CORE_TYPES_INTERFACE_ID);
         wit.blank_line();
         wit.interface(self.interface_name, |interface| {
             let core_types = core_types.iter().cloned().collect::<Vec<_>>().join(", ");

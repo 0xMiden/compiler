@@ -4,7 +4,7 @@ use miden_formatting::prettier::{Document, indent, nl, text};
 use semver::Version;
 
 use crate::{
-    generate::CORE_TYPES_INTERFACE, namespace::ComponentNamespace, wit_world::write_world_block,
+    generate::CORE_TYPES_INTERFACE_ID, namespace::ComponentNamespace, wit_world::write_world_block,
 };
 
 /// Builds inline WIT documents shared by the SDK macros.
@@ -40,7 +40,7 @@ impl WitBuilder {
     ) -> (String, T) {
         let interface_name = namespace.wit_interface();
         let mut wit = Self::new(generated_by, &namespace.wit_package(), package_version);
-        wit.use_path(CORE_TYPES_INTERFACE);
+        wit.use_path(&CORE_TYPES_INTERFACE_ID);
         wit.blank_line();
         let result = wit.interface(&interface_name, build);
         wit.blank_line();

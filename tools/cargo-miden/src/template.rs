@@ -170,30 +170,18 @@ version = \"{}\"
         toml_escape(package_version)
     );
 
-    match project_kind {
-        "account" | "account-component" | "authentication-component" => {
+    match lib_kind(project_kind) {
+        Some(lib_kind) => {
             manifest.push_str("[lib]\n");
-            manifest.push_str("kind = \"account-component\"\n");
+            manifest.push_str(&format!("kind = \"{lib_kind}\"\n"));
             manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
             manifest.push_str(&format!("namespace = \"{namespace}\"\n\n"));
         }
-        "note" | "note-script" => {
-            manifest.push_str("[lib]\n");
-            manifest.push_str("kind = \"note\"\n");
-            manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
-            manifest.push_str(&format!("namespace = \"{namespace}\"\n\n"));
-        }
-        "tx-script" | "transaction-script" => {
-            manifest.push_str("[lib]\n");
-            manifest.push_str("kind = \"tx-script\"\n");
-            manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
-            manifest.push_str(&format!("namespace = \"{namespace}\"\n\n"));
-        }
-        "library" => {
+        None if project_kind == "library" => {
             manifest.push_str("[lib]\n");
             manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
         }
-        _ => {
+        None => {
             manifest.push_str("[[bin]]\n");
             manifest.push_str(&format!("name = \"{}\"\n", toml_escape(package_name)));
             manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
@@ -289,18 +277,21 @@ fn template_declares_namespace(source_root: &Path) -> bool {
     }
 }
 
-/// Returns whether the manifest generated for `project_kind` declares a `[lib].namespace`.
-fn project_kind_has_namespace(project_kind: &str) -> bool {
-    matches!(
-        project_kind,
-        "account"
-            | "account-component"
-            | "authentication-component"
-            | "note"
-            | "note-script"
-            | "tx-script"
-            | "transaction-script"
-    )
+/// Returns the `[lib].kind` of the component manifest generated for the Cargo `project-kind`
+/// `project_kind`, or `None` for a project that is not a component (a program or a library).
+fn lib_kind(project_kind: &str) -> Option<&'static str> {
+    match project_kind {
+        "account" | "account-component" | "authentication-component" => Some("account-component"),
+        "note" | "note-script" => Some("note"),
+        "tx-script" | "transaction-script" => Some("tx-script"),
+        _ => None,
+    }
+}
+
+/// Returns whether the project of the Cargo `project-kind` `project_kind` declares a
+/// `[lib].namespace`, i.e. whether it is a component.
+pub(crate) fn project_kind_has_namespace(project_kind: &str) -> bool {
+    lib_kind(project_kind).is_some()
 }
 
 /// Returns whether the Liquid template `source` outputs the variable `name` (`{{ name }}`,
@@ -956,6 +947,47 @@ mod tests {
         assert_eq!(from_template, "miden::hello_world::hello_world");
         assert_eq!(from_generated_manifest, from_template);
         Ok(())
+    }
+
+    /// The generated manifest declares a namespace for exactly the project kinds classified as
+    /// components, so every such kind is validated before rendering.
+    #[test]
+    fn every_project_kind_is_classified() {
+        let namespace = "miden::hello_world::hello_world";
+        for (project_kind, expected_lib_kind) in [
+            ("account", Some("account-component")),
+            ("account-component", Some("account-component")),
+            ("authentication-component", Some("account-component")),
+            ("note", Some("note")),
+            ("note-script", Some("note")),
+            ("tx-script", Some("tx-script")),
+            ("transaction-script", Some("tx-script")),
+            ("library", None),
+            ("program", None),
+        ] {
+            assert_eq!(lib_kind(project_kind), expected_lib_kind, "`{project_kind}`");
+            let cargo_manifest = format!(
+                "[package]\nname = \"hello_world\"\n\n[package.metadata.miden]\nproject-kind = \
+                 \"{project_kind}\"\n"
+            )
+            .parse::<DocumentMut>()
+            .unwrap();
+            let manifest = render_miden_project_manifest(
+                "hello_world",
+                namespace,
+                Path::new("src/lib.rs"),
+                &cargo_manifest,
+            )
+            .parse::<DocumentMut>()
+            .unwrap();
+            let declared = manifest.get("lib").and_then(|lib| lib.get("namespace"));
+            assert_eq!(
+                declared.and_then(|namespace| namespace.as_str()),
+                expected_lib_kind.map(|_| namespace),
+                "`{project_kind}`"
+            );
+            assert_eq!(project_kind_has_namespace(project_kind), declared.is_some());
+        }
     }
 
     #[test]

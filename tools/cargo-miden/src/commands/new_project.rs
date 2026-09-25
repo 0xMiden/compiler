@@ -7,7 +7,9 @@ use anyhow::{Context, anyhow};
 use clap::Args;
 use toml_edit::{DocumentMut, Item, Value};
 
-use crate::template::{GenerateArgs, TemplatePath, generate, validated_component_namespace};
+use crate::template::{
+    GenerateArgs, TemplatePath, generate, project_kind_has_namespace, validated_component_namespace,
+};
 
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
@@ -79,6 +81,26 @@ impl ProjectTemplate {
             note: false,
             tx_script: false,
             auth_component: true,
+        }
+    }
+}
+
+/// Classification of the project templates.
+impl ProjectTemplate {
+    /// Returns the Cargo `project-kind` of the projects generated from this template.
+    fn project_kind(&self) -> &'static str {
+        if self.program {
+            "program"
+        } else if self.account {
+            "account"
+        } else if self.note {
+            "note"
+        } else if self.tx_script {
+            "tx-script"
+        } else if self.auth_component {
+            "authentication-component"
+        } else {
+            panic!("Invalid project template, at least one variant must be set")
         }
     }
 }
@@ -159,9 +181,13 @@ impl NewCommand {
             .to_string();
 
         // The component templates name their exports after a namespace derived from the project
-        // name, which must be one the SDK macros accept.
+        // name, which must be one the SDK macros accept. `generate` checks it as well, but only
+        // once the template is fetched; checking the kind here avoids a pointless download.
         if self.template_path.is_none()
-            && self.template.as_ref().is_some_and(|template| !template.program)
+            && self
+                .template
+                .as_ref()
+                .is_some_and(|template| project_kind_has_namespace(template.project_kind()))
         {
             validated_component_namespace(&name)?;
         }
@@ -386,6 +412,20 @@ fn add_to_workspace_if_exists(project_path: &Path) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every template except the program generates a component, which declares a namespace.
+    #[test]
+    fn component_templates_are_classified_as_components() {
+        for template in [
+            ProjectTemplate::account(),
+            ProjectTemplate::note(),
+            ProjectTemplate::tx_script(),
+            ProjectTemplate::auth_component(),
+        ] {
+            assert!(project_kind_has_namespace(template.project_kind()), "{template}");
+        }
+        assert!(!project_kind_has_namespace(ProjectTemplate::program().project_kind()));
+    }
 
     /// A component project whose name yields an invalid namespace is refused before anything is
     /// generated.

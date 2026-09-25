@@ -5,6 +5,7 @@ use std::{
     sync::LazyLock,
 };
 
+use midenc_frontend_wasm_metadata::namespace::CORE_TYPES_INTERFACE;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use syn::{
@@ -31,8 +32,9 @@ pub(crate) const STORED_PROCEDURE_BINDINGS_PACKAGE: &str = "miden:stored-procedu
 /// WIT function-name prefix the Wasm frontend reserves for stored-procedure dispatch imports.
 pub(crate) const DYNCALL_WIT_PREFIX: &str = "dyncall-";
 
-/// Fully-qualified WIT interface path for Miden SDK core types.
-pub(crate) const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
+/// Fully-qualified WIT interface path for Miden SDK core types, `miden:base/core-types@1.0.0`.
+pub(crate) static CORE_TYPES_INTERFACE_ID: LazyLock<String> =
+    LazyLock::new(|| format!("miden:base/{CORE_TYPES_INTERFACE}@1.0.0"));
 
 /// Whether the world being generated may declare imports named with the reserved `dyncall-`
 /// prefix.
@@ -752,20 +754,21 @@ fn push_custom_with_entries(opts: &mut Opts, entries: &[(String, WithOption)]) {
 
 /// Pushes default `with` entries that map Miden base types to SDK types.
 fn push_default_with_entries(opts: &mut Opts) {
-    opts.with.push((CORE_TYPES_INTERFACE.to_string(), WithOption::Generate));
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/felt"), "::miden::Felt");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/word"), "::miden::Word");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/digest"), "::miden::Digest");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset-id"), "::miden::AssetId");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset"), "::miden::Asset");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset-amount"), "::miden::AssetAmount");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/account-id"), "::miden::AccountId");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/tag"), "::miden::Tag");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/note-type"), "::miden::NoteType");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/recipient"), "::miden::Recipient");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/note-idx"), "::miden::NoteIdx");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/nonce"), "::miden::Nonce");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/block-number"), "::miden::BlockNumber");
+    let core_types = CORE_TYPES_INTERFACE_ID.as_str();
+    opts.with.push((core_types.to_string(), WithOption::Generate));
+    push_path_entry(opts, &format!("{core_types}/felt"), "::miden::Felt");
+    push_path_entry(opts, &format!("{core_types}/word"), "::miden::Word");
+    push_path_entry(opts, &format!("{core_types}/digest"), "::miden::Digest");
+    push_path_entry(opts, &format!("{core_types}/asset-id"), "::miden::AssetId");
+    push_path_entry(opts, &format!("{core_types}/asset"), "::miden::Asset");
+    push_path_entry(opts, &format!("{core_types}/asset-amount"), "::miden::AssetAmount");
+    push_path_entry(opts, &format!("{core_types}/account-id"), "::miden::AccountId");
+    push_path_entry(opts, &format!("{core_types}/tag"), "::miden::Tag");
+    push_path_entry(opts, &format!("{core_types}/note-type"), "::miden::NoteType");
+    push_path_entry(opts, &format!("{core_types}/recipient"), "::miden::Recipient");
+    push_path_entry(opts, &format!("{core_types}/note-idx"), "::miden::NoteIdx");
+    push_path_entry(opts, &format!("{core_types}/nonce"), "::miden::Nonce");
+    push_path_entry(opts, &format!("{core_types}/block-number"), "::miden::BlockNumber");
 }
 
 fn push_path_entry(opts: &mut Opts, key: &str, value: &str) {
@@ -862,7 +865,7 @@ fn world_uses_miden_core_types(resolve: &Resolve, world_id: WorldId) -> bool {
         .imports
         .values()
         .chain(world.exports.values())
-        .any(|item| world_item_uses_interface(resolve, item, CORE_TYPES_INTERFACE))
+        .any(|item| world_item_uses_interface(resolve, item, &CORE_TYPES_INTERFACE_ID))
 }
 
 /// Returns true when a world item references a type from `interface_path`.

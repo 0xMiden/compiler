@@ -10,7 +10,9 @@ use heck::{ToKebabCase, ToSnakeCase};
 use miden_assembly_syntax::ast::{Path as MasmPath, PathBuf as MasmPathBuf};
 use miden_mast_package::PackageExport;
 use miden_protocol::crypto::hash::blake::Blake3_256;
-use midenc_frontend_wasm_metadata::procedure_path::validate_procedure_path;
+use midenc_frontend_wasm_metadata::{
+    namespace::CORE_TYPES_INTERFACE, procedure_path::validate_procedure_path,
+};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use semver::Version;
@@ -27,7 +29,7 @@ use wit_bindgen_core::wit_parser::{
 use crate::{
     dependency_ref::DependencyRef,
     generate::{
-        CORE_TYPES_INTERFACE, collect_arg_idents, format_module_path, qualify_signature_types,
+        CORE_TYPES_INTERFACE_ID, collect_arg_idents, format_module_path, qualify_signature_types,
         should_generate_struct,
     },
     namespace::ComponentNamespace,
@@ -181,9 +183,9 @@ pub(crate) fn import_world_name(name: &str, imports: &[FpiImportSpec]) -> String
 pub(crate) fn import_world_wit(name: &str, imports: &[FpiImportSpec]) -> String {
     // The prefix added after WIT resolution references these types directly. Importing the owner
     // up front keeps the world's dependency closure complete without mutating or re-elaborating it.
-    let mut source_imports = vec![CORE_TYPES_INTERFACE.to_string()];
+    let mut source_imports = vec![CORE_TYPES_INTERFACE_ID.to_string()];
     for import in imports {
-        if import.source_import() != CORE_TYPES_INTERFACE {
+        if import.source_import() != CORE_TYPES_INTERFACE_ID.as_str() {
             source_imports.push(import.source_import().to_string());
         }
     }
@@ -499,7 +501,7 @@ fn resolve_core_types(resolve: &Resolve) -> syn::Result<CoreTypes> {
                 return None;
             }
 
-            package.interfaces.get("core-types").map(|interface_id| {
+            package.interfaces.get(CORE_TYPES_INTERFACE).map(|interface_id| {
                 let interface = &resolve.interfaces[*interface_id];
                 (interface.types.get("felt").copied(), interface.types.get("word").copied())
             })
@@ -1759,7 +1761,7 @@ mod tests {
 
         let wit = import_world_wit("foreign-account-bindings", &specs);
 
-        assert_eq!(wit.matches(&format!("import {CORE_TYPES_INTERFACE};")).count(), 1);
+        assert_eq!(wit.matches(&format!("import {};", *CORE_TYPES_INTERFACE_ID)).count(), 1);
         let alpha = wit.find("import miden:alpha/api@1.0.0;").unwrap();
         let zebra = wit.find("import miden:zebra/api@1.0.0;").unwrap();
         assert!(alpha < zebra, "world imports must be deterministic: {wit}");
