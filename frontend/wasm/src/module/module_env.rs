@@ -358,6 +358,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         for payload in parser.parse_all(data) {
             self.parse_payload(payload.into_diagnostic()?, diagnostics)?;
         }
+        self.result.module.resolve_func_symbols(diagnostics)?;
         Ok(self.result)
     }
 
