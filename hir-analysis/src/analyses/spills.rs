@@ -1,4 +1,4 @@
-use alloc::{collections::VecDeque, rc::Rc, vec::Vec};
+use alloc::{collections::VecDeque, format, rc::Rc, vec::Vec};
 
 use midenc_hir::{
     AttributeRef, Block, BlockRef, FxHashMap, FxHashSet, LoopLikeOpInterface, Op, Operation,
@@ -7,6 +7,7 @@ use midenc_hir::{
     TraceTarget, Value, ValueOrAlias, ValueRange, ValueRef,
     adt::{SmallOrdMap, SmallSet},
     cfg::Graph,
+    diagnostics::Severity,
     dialects::builtin::Function,
     dominance::{DominanceInfo, DominanceTree},
     formatter::DisplayValues,
@@ -448,6 +449,36 @@ impl core::fmt::Display for Placement {
 
 /// The maximum number of operand stack slots which can be assigned without spills.
 const K: usize = 16;
+
+/// Report an operation whose operands cannot all be made reachable at once.
+///
+/// Spilling frees operand stack space by evicting values the current operation does not use, so
+/// once every such value is spilled, what is left is the operation's own demand: `required` is
+/// how many elements that is, and it exceeds the addressable window. A call site whose arguments
+/// and callee selector do not fit together is the shape that gets here.
+///
+/// This is a diagnostic rather than a panic because such an operation can be handed to the
+/// compiler as input. MASM legalization states the same bound for indirect calls, but it runs
+/// *after* the spills transform in the backend pipeline; the Wasm frontend states it earlier
+/// still, but IR arriving as `.hir` text never passes through a frontend. Either way, this
+/// analysis is what meets the operation first.
+fn operand_stack_overflow(op: &Operation, required: usize, demand: &str) -> Report {
+    op.context()
+        .diagnostics()
+        .diagnostic(Severity::Error)
+        .with_message(format!(
+            "operation '{}' needs {required} operand stack elements at once for {demand}, but \
+             only {K} are addressable",
+            op.name()
+        ))
+        .with_primary_label(op.span(), "this operation's operands do not fit the operand stack")
+        .with_help(
+            "spills can only evict values the operation does not itself use, so its own operands \
+             and results must fit the window; an indirect call must fit its arguments and the \
+             operands selecting its callee together",
+        )
+        .into_report()
+}
 
 impl Analysis for SpillAnalysis {
     type Target = Function;
@@ -917,7 +948,7 @@ impl SpillAnalysis {
                     analysis_manager.nest(op.as_operation_ref()),
                 )?;
             } else {
-                self.min(&op, &mut w, &mut s, liveness);
+                self.min(&op, &mut w, &mut s, liveness)?;
             }
         }
 
@@ -990,6 +1021,10 @@ impl SpillAnalysis {
         let place = Placement::At(before_op);
         let span = op.span();
 
+        // Like an unstructured branch, and unlike ordinary operations (see `min`), only group 0
+        // holds the inputs needed to begin evaluating `branch`. Operands in groups >= 1 are
+        // successor operands forwarded into a region, and are handled in phase 2 below, when we
+        // propagate W and S across the edge into that region.
         let args = ValueRange::<2>::from(op.operands().group(0));
         let mut to_reload = args.iter().map(ValueOrAlias::new).collect::<SmallVec<[_; 2]>>();
 
@@ -1046,12 +1081,11 @@ impl SpillAnalysis {
             });
             // Spill until we have made enough room
             while must_spill > 0 {
-                let candidate = candidates.pop().unwrap_or_else(|| {
-                    panic!(
-                        "unable to spill sufficient capacity to hold all operands on stack at one \
-                         time at {op}"
-                    )
-                });
+                let Some(candidate) = candidates.pop() else {
+                    // Every value that is not an operand of this operation has been spilled, so
+                    // what remains is what the operation itself demands.
+                    return Err(operand_stack_overflow(op, K + must_spill, "its operands"));
+                };
                 must_spill = must_spill.saturating_sub(candidate.stack_size());
                 to_spill.insert(candidate);
             }
@@ -2216,13 +2250,16 @@ impl SpillAnalysis {
     /// of which predecessor edge was used to reach the block. This is handled earlier during analysis
     /// by computing the necessary spills and reloads to be inserted along each control flow edge, as
     /// required.
+    ///
+    /// Fails when no set of spills can make room for an operation's own operands; see
+    /// [`operand_stack_overflow`].
     fn min(
         &mut self,
         op: &Operation,
         w: &mut SmallSet<ValueOrAlias, 4>,
         s: &mut SmallSet<ValueOrAlias, 4>,
         liveness: &LivenessAnalysis,
-    ) {
+    ) -> Result<(), Report> {
         let before_op = ProgramPoint::before(op);
         let place = Placement::At(before_op);
         let span = op.span();
@@ -2252,7 +2289,7 @@ impl SpillAnalysis {
 
             log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  W^exit = {w:?}");
             log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  S^exit = {s:?}");
-            return;
+            return Ok(());
         }
 
         let is_terminator =
@@ -2277,7 +2314,7 @@ impl SpillAnalysis {
 
             log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  W^exit = {w:?}");
             log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  S^exit = {s:?}");
-            return;
+            return Ok(());
         }
 
         // All other instructions are handled more or less identically according to the effects
@@ -2288,7 +2325,19 @@ impl SpillAnalysis {
         // independently, as if they occur on exit from this instruction. The result is that
         // we may or may not have all successor arguments in W on exit from I, but by the time
         // each successor block is reached, all block parameters are guaranteed to be in W
-        let args = ValueRange::<4>::from(op.operands().group(0));
+        //
+        // Of the operations reaching this point, only branches reserve operand groups for
+        // something other than their own inputs, so every other operation must be modeled using
+        // _all_ of its operands: ops such as `hir.exec_indirect` and `hir.dyncall` split their
+        // inputs across groups (the callee selector in group 0, the call arguments in group 1),
+        // and modeling only group 0 would both fail to reload arguments that were spilled
+        // earlier, and treat arguments consumed by the op as live across it - the latter making
+        // them eligible for a spill immediately before the very op that consumes them.
+        let args = if op.implements::<dyn BranchOpInterface>() {
+            ValueRange::<4>::from(op.operands().group(0))
+        } else {
+            ValueRange::<4>::from(op.operands().all())
+        };
         let mut to_reload = args.iter().map(ValueOrAlias::new).collect::<SmallVec<[_; 2]>>();
 
         // Remove the first occurrance of any operand already in W, remaining uses
@@ -2362,12 +2411,11 @@ impl SpillAnalysis {
             });
             // Spill until we have made enough room
             while must_spill > 0 {
-                let candidate = candidates.pop().unwrap_or_else(|| {
-                    panic!(
-                        "unable to spill sufficient capacity to hold all operands on stack at one \
-                         time at {op}"
-                    )
-                });
+                let Some(candidate) = candidates.pop() else {
+                    // Every value that is not an operand of this operation has been spilled, so
+                    // what remains is what the operation itself demands.
+                    return Err(operand_stack_overflow(op, K + must_spill, "its operands"));
+                };
                 must_spill = must_spill.saturating_sub(candidate.stack_size());
                 to_spill.insert(candidate);
             }
@@ -2412,12 +2460,14 @@ impl SpillAnalysis {
                 a_dist.cmp(&b_dist).then(a.stack_size().cmp(&b.stack_size()))
             });
             while must_spill > 0 {
-                let candidate = candidates.pop().unwrap_or_else(|| {
-                    panic!(
-                        "unable to spill sufficient capacity to hold all operands on stack at one \
-                         time at {op}"
-                    )
-                });
+                let Some(candidate) = candidates.pop() else {
+                    // As above, but the results now compete with the operands for the window.
+                    return Err(operand_stack_overflow(
+                        op,
+                        K + must_spill,
+                        "its operands and results",
+                    ));
+                };
                 // If we're spilling an operand of I, we can multiple the amount of space
                 // freed by the spill by the number of uses of the spilled value in I
                 let num_uses =
@@ -2526,5 +2576,7 @@ impl SpillAnalysis {
 
         log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  W^exit = {w:?}");
         log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  S^exit = {s:?}");
+
+        Ok(())
     }
 }

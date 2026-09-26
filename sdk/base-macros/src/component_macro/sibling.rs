@@ -229,10 +229,7 @@ fn build_sibling_trait_method(
     generate::qualify_signature_types(&mut sig, &signature_module_path);
 
     let fn_ident = &func.sig.ident;
-    let mut call_path = quote!(#hidden_module_ident);
-    for ident in call_module_path {
-        call_path = quote!(#call_path::#ident);
-    }
+    let call_path = fpi::append_module_path(quote!(#hidden_module_ident), call_module_path);
     let call = quote!(#call_path::#fn_ident(#(#arg_idents),*));
     let body = match &sig.output {
         ReturnType::Default => quote!({ #call; }),

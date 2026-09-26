@@ -171,6 +171,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::ProcedureRoot, dyn HirLowering>();
     info.register_operation_trait::<hir::ExecFpi, dyn HirLowering>();
     info.register_operation_trait::<hir::Call, dyn HirLowering>();
+    info.register_operation_trait::<hir::Dyncall, dyn HirLowering>();
     info.register_operation_trait::<hir::Syscall, dyn HirLowering>();
     info.register_operation_trait::<hir::Store, dyn HirLowering>();
     info.register_operation_trait::<hir::StoreLocal, dyn HirLowering>();

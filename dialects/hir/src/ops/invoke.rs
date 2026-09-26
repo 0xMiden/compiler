@@ -4,7 +4,7 @@ use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::{
         FunctionTable,
-        attributes::{LocalVariableArrayAttr, SignatureAttr, U32Attr},
+        attributes::{LocalVariableArrayAttr, Signature, SignatureAttr, U32Attr},
     },
     effects::*,
     interner::symbols,
@@ -14,6 +14,139 @@ use midenc_hir::{
 };
 
 use crate::HirDialect;
+
+/// Declare one result per result of `signature` on `op`, in signature order.
+///
+/// Call ops carry the callee signature as an attribute, so this is what inferring their result
+/// types amounts to.
+fn infer_results_from_signature(
+    op: &mut Operation,
+    signature: &Signature,
+    context: &Context,
+) -> Result<(), Report> {
+    let span = op.span;
+    let owner = op.as_operation_ref();
+    for (i, result) in signature.results().iter().enumerate() {
+        let value = context.make_result(span, result.ty.clone(), owner, i as u8);
+        op.results.push(value);
+    }
+    Ok(())
+}
+
+/// Verify that `arguments` agrees with the parameters of `signature` in count and type, naming
+/// the op as `op_name` in the diagnostics.
+///
+/// The indirect call ops carry their callee's signature as an attribute rather than deriving it
+/// from a resolved callee, so nothing but this ties their operands to it.
+fn verify_arguments_against_signature(
+    op_name: &str,
+    arguments: OpOperandRange<'_>,
+    signature: &Signature,
+) -> Result<(), Report> {
+    let arguments = arguments
+        .iter()
+        .map(|operand| operand.borrow().as_value_ref())
+        .collect::<SmallVec<[_; 4]>>();
+
+    if arguments.len() != signature.params.len() {
+        return Err(Report::msg(format!(
+            "invalid {op_name}: the call signature declares {} parameter(s), but {} argument(s) \
+             were given",
+            signature.params.len(),
+            arguments.len()
+        )));
+    }
+
+    for (index, (argument, param)) in arguments.iter().zip(signature.params.iter()).enumerate() {
+        let argument_ty = argument.borrow().ty().clone();
+        if argument_ty != param.ty {
+            return Err(Report::msg(format!(
+                "invalid {op_name}: parameter {index} has type '{}', but the argument given has \
+                 type '{argument_ty}'",
+                param.ty
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// The `(arguments) : signature` tail as [parse_arguments_and_signature] returns it: the
+/// unresolved arguments, and the parameter types to resolve them against.
+type ParsedArgumentsAndSignature = (SmallVec<[parse::UnresolvedOperand; 2]>, SmallVec<[Type; 2]>);
+
+/// Parse the `(arguments) : signature` tail shared by the call ops, recording the parsed
+/// signature as the `signature` attribute of `state`.
+///
+/// Returns the unresolved arguments along with the parameter types to resolve them against,
+/// having checked that the two agree in count. The caller resolves them, so that ops with
+/// further operand groups can push those groups in their declared order.
+fn parse_arguments_and_signature(
+    state: &mut OperationState,
+    parser: &mut dyn OpAsmParser<'_>,
+) -> ParseResult<ParsedArgumentsAndSignature> {
+    use midenc_hir::parse::ParserError;
+
+    let mut operands = SmallVec::default();
+    parser.parse_operand_list(
+        &mut operands,
+        parse::Delimiter::OptionalParen,
+        /*allow_result_number=*/ true,
+        None,
+    )?;
+
+    parser.parse_colon()?;
+    let sig_attr = <SignatureAttr as midenc_hir::attributes::AttrParser>::parse(parser)?;
+    state.attrs.push(NamedAttribute::new("signature", sig_attr));
+
+    let span = SourceSpan::new(
+        state.span.source_id(),
+        state.span.start()..parser.current_location().end(),
+    );
+    let sig_attribute = sig_attr.borrow();
+    let Some(signature) = sig_attribute.downcast_ref::<SignatureAttr>() else {
+        return Err(ParserError::InvalidAttributeValue {
+            span,
+            reason: format!(
+                "expected 'signature' property to be of type #builtin.signature, got '{}' instead",
+                sig_attribute.name()
+            ),
+        });
+    };
+    if operands.len() != signature.arity() {
+        return Err(ParserError::MismatchedValueAndTypeLists {
+            span,
+            num_values: operands.len(),
+            num_types: signature.arity(),
+        });
+    }
+
+    let type_params =
+        signature.params().iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
+    Ok((operands, type_params))
+}
+
+/// Print the `(arguments) : signature` suffix shared by the call ops.
+fn print_arguments_and_signature(
+    printer: &mut AsmPrinter<'_>,
+    arguments: OpOperandRange<'_>,
+    signature: &SignatureAttr,
+) {
+    printer.print_operand_list(arguments);
+    *printer += formatter::const_text(" : ");
+    signature.print(printer);
+}
+
+/// Print the trailing `attributes { .. }` dictionary of `op`, if it has any attributes.
+fn print_optional_attributes(printer: &mut AsmPrinter<'_>, op: &Operation) {
+    if op.has_attributes() {
+        printer.print_space();
+        *printer += formatter::const_text(" attributes ");
+        printer.print_attribute_dictionary(
+            op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+        );
+    }
+}
 
 #[operation(
     dialect = HirDialect,
@@ -35,14 +168,8 @@ pub struct Exec {
 
 impl InferTypeOpInterface for Exec {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let span = self.span();
-        let sig = self.signature.borrow();
-        let owner = self.as_operation_ref();
-        for (i, result) in sig.results().iter().enumerate() {
-            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
-            self.op.results.push(value);
-        }
-        Ok(())
+        let signature = self.signature.borrow();
+        infer_results_from_signature(&mut self.op, &signature, context)
     }
 }
 
@@ -54,77 +181,24 @@ impl OperandRangeRequirementOpInterface for Exec {
 
 impl OpPrinter for Exec {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
-        use formatter::*;
-
         let callee = self.callee();
         printer.print_space();
         printer.print_symbol_path(callee.path());
-        printer.print_operand_list(self.arguments());
-        let callee_sig = self.signature();
-        *printer += const_text(" : ");
-        callee_sig.print(printer);
-        if self.op.has_attributes() {
-            printer.print_space();
-            *printer += const_text(" attributes ");
-            printer.print_attribute_dictionary(
-                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
+        print_arguments_and_signature(printer, self.arguments(), &self.signature());
+        print_optional_attributes(printer, &self.op);
     }
 }
 
 impl OpParser for Exec {
     fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
-        use midenc_hir::parse::ParserError;
-
         let callee = parser.parse_symbol_ref()?;
 
         state.attrs.push(NamedAttribute::new("callee", callee.into_inner()));
 
-        let mut operands = SmallVec::default();
-        parser.parse_operand_list(
-            &mut operands,
-            parse::Delimiter::OptionalParen,
-            /*allow_result_number=*/ true,
-            None,
-        )?;
-
-        parser.parse_colon()?;
-        let sig_attr = <SignatureAttr as midenc_hir::attributes::AttrParser>::parse(parser)?;
-        state.attrs.push(NamedAttribute::new("signature", sig_attr));
-
-        let span = SourceSpan::new(
-            state.span.source_id(),
-            state.span.start()..parser.current_location().end(),
-        );
-        let sig_attribute = sig_attr.borrow();
-        let Some(signature) = sig_attribute.downcast_ref::<SignatureAttr>() else {
-            return Err(ParserError::InvalidAttributeValue {
-                span,
-                reason: format!(
-                    "expected 'signature' property to be of type #builtin.signature, got '{}' \
-                     instead",
-                    sig_attribute.name()
-                ),
-            });
-        };
-
-        let span = SourceSpan::new(
-            state.span.source_id(),
-            state.span.start()..parser.current_location().end(),
-        );
-        if operands.len() != signature.arity() {
-            return Err(ParserError::MismatchedValueAndTypeLists {
-                span,
-                num_values: operands.len(),
-                num_types: signature.arity(),
-            });
-        }
+        let (operands, type_params) = parse_arguments_and_signature(state, parser)?;
 
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 
-        let type_params =
-            signature.params().iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
         let mut operand_values = SmallVec::default();
         parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
 
@@ -288,18 +362,10 @@ impl InferTypeOpInterface for ProcedureRoot {
 
 impl OpPrinter for ProcedureRoot {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
-        use formatter::*;
-
         printer.print_space();
         let callee = self.callee();
         printer.print_symbol_path(callee.path());
-        if self.op.has_attributes() {
-            printer.print_space();
-            *printer += const_text(" attributes ");
-            printer.print_attribute_dictionary(
-                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
+        print_optional_attributes(printer, &self.op);
     }
 }
 
@@ -350,14 +416,8 @@ pub struct ExecIndirect {
 
 impl InferTypeOpInterface for ExecIndirect {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let span = self.span();
-        let sig = self.signature.borrow();
-        let owner = self.as_operation_ref();
-        for (i, result) in sig.results().iter().enumerate() {
-            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
-            self.op.results.push(value);
-        }
-        Ok(())
+        let signature = self.signature.borrow();
+        infer_results_from_signature(&mut self.op, &signature, context)
     }
 }
 
@@ -378,24 +438,15 @@ impl OpPrinter for ExecIndirect {
             let index = index.borrow();
             *printer += const_text("[") + display(index.id()) + const_text("]");
         }
-        printer.print_operand_list(self.arguments());
-        let callee_sig = self.signature();
-        *printer += const_text(" : ");
-        callee_sig.print(printer);
+        print_arguments_and_signature(printer, self.arguments(), &self.signature());
         *printer += const_text(" tag ") + display(*self.get_type_tag());
-        if self.op.has_attributes() {
-            printer.print_space();
-            *printer += const_text(" attributes ");
-            printer.print_attribute_dictionary(
-                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
+        print_optional_attributes(printer, &self.op);
     }
 }
 
 impl OpParser for ExecIndirect {
     fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
-        use midenc_hir::parse::{ParserError, ParserExt, Token};
+        use midenc_hir::parse::{ParserExt, Token};
 
         let table = parser.parse_symbol_ref()?;
         state.attrs.push(NamedAttribute::new("table", table.into_inner()));
@@ -405,40 +456,7 @@ impl OpParser for ExecIndirect {
         let index = parser.parse_operand(/*allow_result_number=*/ true)?;
         parser.token_stream_mut().expect(Token::Rbracket)?;
 
-        let mut operands = SmallVec::default();
-        parser.parse_operand_list(
-            &mut operands,
-            parse::Delimiter::OptionalParen,
-            /*allow_result_number=*/ true,
-            None,
-        )?;
-
-        parser.parse_colon()?;
-        let sig_attr = <SignatureAttr as midenc_hir::attributes::AttrParser>::parse(parser)?;
-        state.attrs.push(NamedAttribute::new("signature", sig_attr));
-
-        let span = SourceSpan::new(
-            state.span.source_id(),
-            state.span.start()..parser.current_location().end(),
-        );
-        let sig_attribute = sig_attr.borrow();
-        let Some(signature) = sig_attribute.downcast_ref::<SignatureAttr>() else {
-            return Err(ParserError::InvalidAttributeValue {
-                span,
-                reason: format!(
-                    "expected 'signature' property to be of type #builtin.signature, got '{}' \
-                     instead",
-                    sig_attribute.name()
-                ),
-            });
-        };
-        if operands.len() != signature.arity() {
-            return Err(ParserError::MismatchedValueAndTypeLists {
-                span,
-                num_values: operands.len(),
-                num_types: signature.arity(),
-            });
-        }
+        let (operands, type_params) = parse_arguments_and_signature(state, parser)?;
 
         parser.parse_custom_keyword("tag")?;
         let type_tag = parser.parse_decimal_integer::<u32>()?.into_inner();
@@ -460,8 +478,6 @@ impl OpParser for ExecIndirect {
         state.operands.push(index_values);
 
         // Operand group 1: the callee arguments, typed per the signature
-        let type_params =
-            signature.params().iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
         let mut operand_values = SmallVec::default();
         parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
         state.operands.push(operand_values);
@@ -558,32 +574,7 @@ impl CallOpInterface for ExecIndirect {
 impl Verify<dyn CallOpInterface> for ExecIndirect {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
         let signature = self.get_signature();
-        let arguments = self
-            .arguments()
-            .iter()
-            .map(|operand| operand.borrow().as_value_ref())
-            .collect::<SmallVec<[_; 4]>>();
-
-        if arguments.len() != signature.params.len() {
-            return Err(Report::msg(format!(
-                "invalid hir.exec_indirect: the call signature declares {} parameter(s), but {} \
-                 argument(s) were given",
-                signature.params.len(),
-                arguments.len()
-            )));
-        }
-
-        for (index, (argument, param)) in arguments.iter().zip(signature.params.iter()).enumerate()
-        {
-            let argument_ty = argument.borrow().ty().clone();
-            if argument_ty != param.ty {
-                return Err(Report::msg(format!(
-                    "invalid hir.exec_indirect: parameter {index} has type '{}', but the argument \
-                     given has type '{argument_ty}'",
-                    param.ty
-                )));
-            }
-        }
+        verify_arguments_against_signature("hir.exec_indirect", self.arguments(), &signature)?;
 
         // The tag is what the runtime check compares, and it is a producer-supplied integer:
         // nothing else ties it to a signature. If a table entry claims this call's tag while
@@ -739,14 +730,8 @@ pub struct Call {
 
 impl InferTypeOpInterface for Call {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let span = self.span();
         let signature = self.signature.borrow();
-        let owner = self.as_operation_ref();
-        for (i, result) in signature.results().iter().enumerate() {
-            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
-            self.op.results.push(value);
-        }
-        Ok(())
+        infer_results_from_signature(&mut self.op, &signature, context)
     }
 }
 
@@ -767,18 +752,12 @@ impl OpPrinter for Call {
         *printer += const_text(" <");
         printer.print_attribute_dictionary(self.op.properties().filter(|p| p.name == "signature"));
         *printer += const_text(" >");
-        if self.op.has_attributes() {
-            printer.print_space();
-            *printer += const_text(" attributes ");
-            printer.print_attribute_dictionary(
-                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
+        print_optional_attributes(printer, &self.op);
     }
 }
 
-// NOTE: should a cross-context indirect call ever be needed, model it as a `CallIndirect` twin
-// of `ExecIndirect` (table symbol + signature + u32 index operand), lowered via `dyncall`.
+// The cross-context indirect twin of this op is `Dyncall` below: the callee is a runtime MAST
+// root rather than a symbol, lowered via `dyncall`.
 impl CallOpInterface for Call {
     #[inline(always)]
     fn callable_for_callee(&self) -> Callable {
@@ -827,6 +806,195 @@ impl CallOpInterface for Call {
     }
 }
 
+/// Invoke the procedure whose MAST root is `root` in a new execution context (`dyncall`).
+///
+/// This is the twin of [`Call`] whose callee is a runtime value rather than a symbol: `root` holds
+/// the callee's MAST root as four felts, element 0 first, typically read from an account storage
+/// slot populated off-chain with a sibling component's procedure root. As with `hir.call`, the
+/// callee runs in a fresh context under `signature`, which must use the component-model calling
+/// convention: arguments are passed and results returned on the operand stack only. The MASM
+/// lowering spills the root to memory before placing the arguments, so the emitted code never
+/// holds both at once — but the root word and the arguments are still operands of the same
+/// operation, and all of them must be reachable within the 16-element operand stack window at
+/// once. That caps the flattened arguments at twelve felts, three fewer than [`ExecIndirect`]
+/// gets from its single-element table index; MASM legalization enforces the bound.
+///
+/// The signature is the contract the lowering emits against, exactly as for [`ExecIndirect`];
+/// nothing ties it to the procedure the root names. A root that names no procedure of the
+/// assembled program, or one with a different stack contract, traps in the VM or yields wrong
+/// results, but cannot corrupt the caller's context. The callee set is unknown to analyses, which
+/// treat the op as an external call.
+#[operation(
+    dialect = HirDialect,
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
+)]
+pub struct Dyncall {
+    /// The signature the call site expects of the callee
+    #[attr(hidden)]
+    signature: SignatureAttr,
+    /// The callee's MAST root, element 0 first
+    #[operands]
+    root: IntFelt,
+    /// The arguments to pass to the callee, one per parameter of `signature`
+    #[operands]
+    arguments: AnyType,
+}
+
+impl Dyncall {
+    /// Number of felt operands forming the callee's MAST root: one digest word.
+    pub const ROOT_FELTS: usize = ProcedureRoot::DIGEST_FELTS;
+}
+
+impl InferTypeOpInterface for Dyncall {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        let signature = self.signature.borrow();
+        infer_results_from_signature(&mut self.op, &signature, context)
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Dyncall {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
+    }
+}
+
+impl OpPrinter for Dyncall {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use formatter::*;
+
+        printer.print_space();
+        *printer += const_text("[");
+        printer.print_value_uses(self.root().as_value_range());
+        *printer += const_text("]");
+        print_arguments_and_signature(printer, self.arguments(), &self.signature());
+        print_optional_attributes(printer, &self.op);
+    }
+}
+
+impl OpParser for Dyncall {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        use midenc_hir::parse::ParserError;
+
+        // The bracketed root word
+        let mut root = SmallVec::default();
+        parser.parse_operand_list(
+            &mut root,
+            parse::Delimiter::Bracket,
+            /*allow_result_number=*/ true,
+            None,
+        )?;
+
+        let (operands, type_params) = parse_arguments_and_signature(state, parser)?;
+
+        // The root word is fixed-size; like the argument arity checked above, a mismatch is
+        // reported against the op parsed so far
+        if root.len() != Self::ROOT_FELTS {
+            let span = SourceSpan::new(
+                state.span.source_id(),
+                state.span.start()..parser.current_location().end(),
+            );
+            return Err(ParserError::MismatchedValueAndTypeLists {
+                span,
+                num_values: root.len(),
+                num_types: Self::ROOT_FELTS,
+            });
+        }
+
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
+
+        // Operand group 0: the root word
+        let mut root_values = SmallVec::default();
+        let root_types = [const { Type::Felt }; Self::ROOT_FELTS];
+        parser.resolve_operands(state.span, &root, &root_types, &mut root_values)?;
+        state.operands.push(root_values);
+
+        // Operand group 1: the callee arguments, typed per the signature
+        let mut operand_values = SmallVec::default();
+        parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
+        state.operands.push(operand_values);
+
+        Ok(())
+    }
+}
+
+impl CallOpInterface for Dyncall {
+    /// The callee is the root word: the procedure it names is only known at runtime. The first
+    /// root felt stands in for the word, as a callable can name a single value.
+    #[inline(always)]
+    fn callable_for_callee(&self) -> Callable {
+        Callable::Value(self.root()[0].borrow().as_value_ref())
+    }
+
+    /// The callee of a dynamic call is its root operand; rewriting it to a resolved symbol
+    /// requires replacing the op (e.g. with `hir.call`), which no pass does today.
+    fn set_callee(&mut self, _callable: Callable) {
+        unimplemented!("hir.dyncall does not support replacing its callee")
+    }
+
+    #[inline(always)]
+    fn arguments(&self) -> OpOperandRange<'_> {
+        self.operands().group(1)
+    }
+
+    #[inline(always)]
+    fn arguments_mut(&mut self) -> OpOperandRangeMut<'_> {
+        self.operands_mut().group_mut(1)
+    }
+
+    fn resolve(&self) -> Option<SymbolRef> {
+        None
+    }
+
+    fn resolve_in_symbol_table(&self, _symbols: &dyn SymbolTable) -> Option<SymbolRef> {
+        None
+    }
+
+    /// The signature is the contract the lowering emits against — the stack shape pushed before
+    /// `dyncall` and popped after — so it is the call site's answer even though no callee is
+    /// known.
+    fn callee_signature(&self) -> Option<midenc_hir::dialects::builtin::attributes::Signature> {
+        Some(self.get_signature().clone())
+    }
+
+    /// The root is runtime data (it need not even name a procedure of this program), so the
+    /// callee set is unknown: analyses must treat this op as an external call.
+    fn possible_callees(&self) -> Option<SmallVec<[SymbolRef; 2]>> {
+        None
+    }
+}
+
+/// `hir.dyncall` carries its callee's signature as an attribute rather than deriving it from a
+/// resolved callee, so nothing but this verifier ties the operands to it. The emitter consumes one
+/// operand per parameter and asserts each type, and its lowering cannot recover from a mismatch.
+impl Verify<dyn CallOpInterface> for Dyncall {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        let num_root_felts = self.root().len();
+        if num_root_felts != Self::ROOT_FELTS {
+            return Err(Report::msg(format!(
+                "invalid hir.dyncall: expected {} root felt operand(s), but got {num_root_felts}",
+                Self::ROOT_FELTS
+            )));
+        }
+
+        let signature = self.get_signature();
+        // The callee runs in a new context, where only operand-stack arguments and results can
+        // cross; the component-model convention is the one that guarantees that shape.
+        if signature.cc != CallConv::ComponentModel {
+            return Err(Report::msg(format!(
+                "invalid hir.dyncall: the call signature must use the component-model calling \
+                 convention, but uses '{}'",
+                signature.cc
+            )));
+        }
+        verify_arguments_against_signature("hir.dyncall", self.arguments(), &signature)
+    }
+}
+
 // TODO(pauls): Validate that the arguments/results of the callee of this operation do not contain
 // any types which are invalid for syscalls
 #[operation(
@@ -849,14 +1017,8 @@ pub struct Syscall {
 
 impl InferTypeOpInterface for Syscall {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let span = self.span();
         let signature = self.signature.borrow();
-        let owner = self.as_operation_ref();
-        for (i, result) in signature.results().iter().enumerate() {
-            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
-            self.op.results.push(value);
-        }
-        Ok(())
+        infer_results_from_signature(&mut self.op, &signature, context)
     }
 }
 
@@ -877,13 +1039,7 @@ impl OpPrinter for Syscall {
         *printer += const_text(" <");
         printer.print_attribute_dictionary(self.op.properties().filter(|p| p.name == "signature"));
         *printer += const_text(" >");
-        if self.op.has_attributes() {
-            printer.print_space();
-            *printer += const_text(" attributes ");
-            printer.print_attribute_dictionary(
-                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
+        print_optional_attributes(printer, &self.op);
     }
 }
 
@@ -944,7 +1100,8 @@ mod tests {
 
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        CallOpInterface, Operation, SourceSpan, Symbol, SymbolTable, Type, Usable,
+        CallConv, CallOpInterface, Operation, SourceSpan, Symbol, SymbolTable, Type,
+        UnsafeIntrusiveEntityRef, Usable,
         conversion::{
             TypeConversion, TypeConverter, converted_resolved_call_signature_1_to_1,
             verify_call_signature_operands_and_results,
@@ -955,7 +1112,7 @@ mod tests {
         testing::Test,
     };
 
-    use super::ExecIndirect;
+    use super::{Dyncall, ExecIndirect};
     use crate::HirOpBuilder;
 
     /// Build a module with a one-slot table and a `dispatch` function whose `hir.exec_indirect`
@@ -1013,6 +1170,158 @@ mod tests {
         let message = format!("{err}");
         assert!(message.contains("hir.exec_indirect"), "{message}");
         assert!(message.contains("parameter 0"), "{message}");
+    }
+
+    /// Build a `dispatch` function whose `hir.dyncall` declares `signature_params` under calling
+    /// convention `cc` but passes `argument_count` `u32` constants, hand the built op and the
+    /// context to `mutate`, then verify the module.
+    ///
+    /// Every argument is a `u32` constant, so a `signature_params` entry of any other type is how
+    /// the mistyped case is built — no other constant builder is needed. `mutate` is how the cases
+    /// the builder's fixed-size root array makes unreachable are built.
+    fn verify_dyncall_with(
+        cc: CallConv,
+        signature_params: &[Type],
+        argument_count: usize,
+        mutate: impl FnOnce(&alloc::rc::Rc<midenc_hir::Context>, UnsafeIntrusiveEntityRef<Dyncall>),
+    ) -> Result<(), midenc_hir::Report> {
+        use midenc_hir::{Felt, Op, ValueRef};
+
+        let mut test = Test::named("verify_dyncall").in_module("m");
+        test.with_function("dispatch", &[], &[]);
+        let context = test.context_rc();
+        let signature = Signature::with_convention(
+            &context,
+            cc,
+            signature_params.to_vec(),
+            core::iter::empty(),
+        );
+        let dyncall = {
+            let mut builder = test.function_builder();
+            let root: [ValueRef; Dyncall::ROOT_FELTS] = core::array::from_fn(|element| {
+                builder
+                    .felt(Felt::new(element as u64 + 1).expect("a small felt"), SourceSpan::UNKNOWN)
+            });
+            let args = (0..argument_count)
+                .map(|_| builder.u32(0, SourceSpan::UNKNOWN))
+                .collect::<alloc::vec::Vec<_>>();
+            let dyncall = builder.dyncall(root, signature, args, SourceSpan::UNKNOWN).unwrap();
+            builder.ret(None, SourceSpan::UNKNOWN).unwrap();
+            dyncall
+        };
+        mutate(&context, dyncall);
+
+        test.module().borrow().as_operation().recursively_verify()
+    }
+
+    /// A signature declaring a parameter the call does not pass would pop an empty operand stack
+    /// in the emitter; verification must reject it first.
+    #[test]
+    fn dyncall_with_too_few_arguments_fails_verification() {
+        let err = verify_dyncall_with(CallConv::ComponentModel, &[Type::U32], 0, |_, _| {})
+            .expect_err("a missing argument must fail verification");
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("1 parameter"), "{message}");
+    }
+
+    /// An argument whose type differs from its parameter reaches an `assert_eq!` in the emitter;
+    /// verification must reject it first.
+    #[test]
+    fn dyncall_with_mistyped_argument_fails_verification() {
+        let err = verify_dyncall_with(CallConv::ComponentModel, &[Type::I32], 1, |_, _| {})
+            .expect_err("a mistyped argument must fail verification");
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("parameter 0"), "{message}");
+    }
+
+    /// The callee runs in a fresh context, which only operand-stack arguments and results can
+    /// cross; a signature under any other convention promises a transfer through caller memory or
+    /// a return pointer that the callee cannot reach.
+    #[test]
+    fn dyncall_under_another_calling_convention_fails_verification() {
+        let err = verify_dyncall_with(CallConv::C, &[Type::U32], 1, |_, _| {})
+            .expect_err("only the component-model convention crosses a context switch");
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("component-model calling convention"), "{message}");
+    }
+
+    /// A MAST root is a whole word, and the lowering spills exactly one word to the address the
+    /// VM reads the `dyncall` target from. The builder's fixed-size root array and the parser's
+    /// arity guard both rule a partial word out, which leaves the verifier answering for IR a
+    /// transform mangled — so it is rebuilt here by rewriting the operand group directly.
+    #[test]
+    fn dyncall_with_a_partial_root_word_fails_verification() {
+        let err = verify_dyncall_with(
+            CallConv::ComponentModel,
+            &[Type::U32],
+            1,
+            |context, mut dyncall| {
+                use midenc_hir::Op;
+
+                let root = dyncall
+                    .borrow()
+                    .root()
+                    .iter()
+                    .take(Dyncall::ROOT_FELTS - 1)
+                    .map(|operand| operand.borrow().as_value_ref())
+                    .collect::<alloc::vec::Vec<_>>();
+                let mut dyncall = dyncall.borrow_mut();
+                let owner = dyncall.as_operation_ref();
+                dyncall
+                    .as_operation_mut()
+                    .operands_mut()
+                    .group_mut(0)
+                    .set_operands(root, owner, context);
+            },
+        )
+        .expect_err("a root operand group narrower than a word must be rejected");
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("expected 4 root felt operand(s), but got 3"), "{message}");
+    }
+
+    /// The bracketed root word and the `(arguments) : signature` tail have to survive a print and
+    /// re-parse, as `midenc compile --emit=hir | midenc compile` reads back what the printer
+    /// wrote.
+    #[test]
+    fn dyncall_prints_and_reparses() {
+        let source = r#"
+builtin.world {
+builtin.module public @m {
+    builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt, %a: felt, %b: u32) -> u32 {
+        %result = hir.dyncall [%r0, %r1, %r2, %r3](%a, %b) : extern("component-model") (felt, u32) -> (u32);
+        builtin.ret %result : (u32);
+    };
+};
+};"#;
+
+        let test = Test::default();
+        let world = parse::parse_any(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("dyncall_prints_and_reparses.hir"),
+            source,
+        )
+        .expect("a hir.dyncall must parse and verify");
+        let printed = format!("{}", world.borrow());
+        assert!(printed.contains("hir.dyncall ["), "expected the root word to print: {printed}");
+
+        // Re-parse in a fresh context: the printing context already owns the `@m` symbols. The
+        // handle is kept here so the context outlives the parsed operation's destruction.
+        let reparse_context = Test::default().context_rc();
+        let reparsed = parse::parse_any(
+            ParserConfig::new(reparse_context.clone()),
+            Uri::new("dyncall_prints_and_reparses.reparsed.hir"),
+            printed.as_str(),
+        )
+        .expect("the printed hir.dyncall must re-parse");
+        assert_eq!(
+            printed,
+            format!("{}", reparsed.borrow()),
+            "printing a hir.dyncall is not a parse/print fixpoint"
+        );
     }
 
     #[test]

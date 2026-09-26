@@ -1,7 +1,7 @@
 //! Shared manifest and WIT world helpers used by script-like SDK proc macros.
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeSet, HashSet},
     env, fs,
     path::{Path, PathBuf},
     sync::Arc,
@@ -12,6 +12,7 @@ use miden_assembly_syntax::ast;
 use miden_debug_types::DefaultSourceManager;
 use miden_project::Uri;
 use proc_macro2::Span;
+use semver::Version;
 use toml::{Value, value::Table};
 use wit_bindgen_core::wit_parser::{
     InterfaceId, PackageId, Resolve, Type as WitType, TypeDefKind, TypeOwner, WorldItem,
@@ -19,8 +20,12 @@ use wit_bindgen_core::wit_parser::{
 
 use crate::{
     dependency_package::{DependencyWitSource, collect_dependency_wit_sources},
-    wit_builder::WitBuilder,
+    types::explicit_wit_identifier,
+    wit_builder::{WitBody, WitBuilder},
 };
+
+/// WIT package declaring the SDK core types, used by every inline world the macros render.
+pub(crate) const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 
 /// Parsed package metadata from the consuming crate's manifest.
 pub struct ManifestPackage {
@@ -387,6 +392,71 @@ pub(crate) fn write_world_block(
             world.line(&format!("export {export};"));
         }
     });
+}
+
+/// An inline WIT package holding a single interface and the world that carries it.
+///
+/// Shared by the macros that render such a package from Rust declarations — `#[note]` for its
+/// note script, `#[component_storage]` for its stored-procedure imports — so the two agree on the
+/// package layout: the core-types `use`, the interface, then the world block.
+pub(crate) struct InlineInterfaceWorld<'a> {
+    /// Macro named in the generated-file banner, e.g. `"#[note]"`.
+    pub(crate) generated_by: &'a str,
+    /// WIT package name of the rendered package.
+    pub(crate) package: &'a str,
+    /// Version of the rendered package.
+    pub(crate) version: &'a Version,
+    /// Name of the single interface, escaped when it needs to be.
+    pub(crate) interface_name: &'a str,
+    /// Name of the world carrying the interface.
+    pub(crate) world_name: &'a str,
+    /// Interfaces the world imports.
+    pub(crate) imports: &'a [String],
+    /// Interfaces the world exports.
+    pub(crate) exports: &'a [String],
+}
+
+impl InlineInterfaceWorld<'_> {
+    /// Renders the package.
+    ///
+    /// The interface opens with the `use core-types.{..}` line naming `core_types` and continues
+    /// with the lines `body` writes.
+    pub(crate) fn render(
+        &self,
+        core_types: &BTreeSet<String>,
+        body: impl FnOnce(&mut WitBody),
+    ) -> String {
+        let mut wit = WitBuilder::new(self.generated_by, self.package, self.version);
+        wit.use_path(CORE_TYPES_PACKAGE);
+        wit.blank_line();
+        wit.interface(self.interface_name, |interface| {
+            let core_types = core_types.iter().cloned().collect::<Vec<_>>().join(", ");
+            interface.line(&format!("use core-types.{{{core_types}}};"));
+            body(interface);
+        });
+        wit.blank_line();
+        write_world_block(&mut wit, self.world_name, self.imports, self.exports);
+
+        wit.finish()
+    }
+}
+
+/// Renders one function declaration of a WIT interface body.
+///
+/// The function name is escaped as an explicit WIT identifier; `params` are the already rendered
+/// `name: type` fragments in declaration order, and `result` is the WIT type of the return value.
+pub(crate) fn wit_func_line(fn_name: &str, params: &[String], result: Option<&str>) -> String {
+    let fn_name = explicit_wit_identifier(fn_name);
+    let params = params.join(", ");
+    match result {
+        Some(wit_type) => format!("{fn_name}: func({params}) -> {wit_type};"),
+        None => format!("{fn_name}: func({params});"),
+    }
+}
+
+/// Renders one `name: type` parameter fragment of a WIT function declaration, escaping the name.
+pub(crate) fn wit_param(name: &str, wit_type: &str) -> String {
+    format!("{}: {wit_type}", explicit_wit_identifier(name))
 }
 
 /// Collects dependency metadata needed for SDK-generated dependency imports.
