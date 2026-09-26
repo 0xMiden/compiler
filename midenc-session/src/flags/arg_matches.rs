@@ -55,7 +55,7 @@ mod fallback {
         }
     }
 
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     pub struct ArgMatches {
         #[cfg(debug_assertions)]
         valid_args: Vec<&'static str>,

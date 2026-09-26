@@ -24,7 +24,7 @@ alloc = ["clap/help", "clap/usage", "clap/error-context", "clap/suggestions"]
 
 [dependencies]
 clap.workspace = true
-log.workspace = true
+log = { workspace = true, features = ["std"] }
 midenc-hir.workspace = true
 midenc-session.workspace = true
 midenc-compile.workspace = true

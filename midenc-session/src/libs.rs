@@ -4,15 +4,12 @@ use alloc::{boxed::Box, string::ToString};
 
 pub use miden_assembly_syntax::{PathBuf as LibraryPath, PathComponent as LibraryPathComponent};
 use miden_core_lib::CoreLibrary;
-#[cfg(feature = "std")]
 use miden_mast_package::Package;
 use miden_project::Linkage;
-#[cfg(not(feature = "std"))]
-use smallvec::SmallVec;
 
+use crate::{Options, PathBuf, diagnostics::Report};
 #[cfg(feature = "std")]
-use crate::{Options, Path, diagnostics::IntoDiagnostic};
-use crate::{PathBuf, diagnostics::Report};
+use crate::{Path, diagnostics::IntoDiagnostic};
 
 /// A library requested by the user to be linked against during compilation
 #[derive(Debug, Clone, PartialEq, Eq)]

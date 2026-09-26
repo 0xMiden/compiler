@@ -7237,3 +7237,72 @@ impl PackageRegistry for TestRegistry {
         self.packages.get(package)
     }
 }
+
+#[test]
+fn lint_prepares_procedures_before_declaring_hir() -> Result<()> {
+    // Each fixture has a valid stack effect, so signature inference alone accepts it.
+    for infer_missing_signatures in [false, true] {
+        for (body, reason) in [
+            ("loc_load.1", "invalid local index 1"),
+            ("push.7 drop loc_load.1", "invalid local index 1"),
+            ("push.1 if.true loc_load.1 else push.0 end", "invalid local index 1"),
+            ("repeat.2 push.7 drop end loc_load.1", "invalid local index 1"),
+            ("loc_loadw_le.0 dropw push.0", "invalid local index 1"),
+            ("loc_loadw_le.1 dropw push.0", "local word index 1 is not word-aligned"),
+            ("padw mem_loadw_be.1 dropw push.0", "memory word address 1 is not word-aligned"),
+        ] {
+            let source = format!(
+                r#"
+pub proc caller() -> felt
+    exec.bad
+end
+
+pub proc outer() -> felt
+    exec.caller
+end
+
+@locals(1)
+pub proc bad() -> felt
+    {body}
+end
+
+pub proc good() -> felt
+    push.42
+end
+"#
+            );
+            let source = if infer_missing_signatures {
+                source.replace("() -> felt", "")
+            } else {
+                source
+            };
+            let config = DisassemblerConfig {
+                infer_missing_signatures,
+            };
+            let output =
+                disassemble_source_for_lint(&source, "test", &config, Rc::new(Context::default()))?;
+            assert!(module_has_function(output.module, "good"));
+            for name in ["bad", "caller", "outer"] {
+                assert!(!module_has_function(output.module, name), "{name} survived {body}");
+            }
+            assert_eq!(output.skipped_procedures.len(), 3);
+            for (name, expected) in [
+                ("::test::bad", reason),
+                ("::test::caller", "depends on skipped procedure '::test::bad'"),
+                ("::test::outer", "depends on skipped procedure '::test::caller'"),
+            ] {
+                let skipped =
+                    output.skipped_procedures.iter().find(|p| p.path.as_str() == name).unwrap();
+                assert!(skipped.reason.contains(expected), "{}", skipped.reason);
+                assert_ne!(skipped.span, SourceSpan::UNKNOWN);
+            }
+            let err =
+                match disassemble_source(&source, "test", &config, Rc::new(Context::default())) {
+                    Ok(_) => panic!("strict disassembly accepted {body}"),
+                    Err(err) => err,
+                };
+            assert!(err.to_string().contains(reason), "{err}");
+        }
+    }
+    Ok(())
+}

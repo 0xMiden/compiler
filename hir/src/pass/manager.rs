@@ -232,6 +232,7 @@ impl PassManager {
         self
     }
 
+    #[cfg(feature = "std")]
     fn dump_statistics(&mut self, out: &mut dyn core::fmt::Write) -> core::fmt::Result {
         self.pm.print_statistics(out, self.statistics.unwrap_or_default())
     }

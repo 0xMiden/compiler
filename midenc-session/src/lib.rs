@@ -1,11 +1,12 @@
 #![no_std]
 #![feature(debug_closure_helpers)]
 #![feature(specialization)]
+#![cfg_attr(not(feature = "std"), feature(slice_split_once))]
 // Specialization
 #![allow(incomplete_features)]
 #![deny(warnings)]
 
-#[macro_use]
+#[cfg_attr(feature = "std", macro_use)]
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
@@ -201,6 +202,7 @@ impl Session {
         // to where the source came from, so that debug information names the file the user wrote.
         // Only for a source-file input: a project is built by `cargo` in place, and is never
         // copied anywhere.
+        #[cfg(feature = "std")]
         if !matches!(input.file_type(), FileType::Toml)
             && let InputType::Real(path) = &input.file
         {
@@ -362,13 +364,13 @@ impl Session {
     pub fn package_registry(&self) -> Result<Box<registry::HybridPackageRegistry>, Report> {
         #[cfg(feature = "std")]
         let filesystem_cache = self.filesystem_package_cache_dir()?;
-        #[cfg(not(feature = "std"))]
-        let filesystem_cache = None;
-        #[allow(unused_mut)]
+        #[cfg(feature = "std")]
         let mut registry = registry::HybridPackageRegistry::new_with_filesystem_cache(
             &self.options,
             filesystem_cache,
         )?;
+        #[cfg(not(feature = "std"))]
+        let registry = registry::HybridPackageRegistry::new(&self.options)?;
         // The registry publishes into the leased directory and may outlive every clone of
         // this session; retaining the shared lease keeps the directory alive for as long
         // as the registry is.
