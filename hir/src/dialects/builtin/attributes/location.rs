@@ -152,7 +152,6 @@ impl Location {
 
     #[cfg(not(feature = "std"))]
     pub fn try_into_span(&self, context: &crate::Context) -> Option<SourceSpan> {
-        use crate::diagnostics::SourceManagerExt;
         match self {
             Self::Unknown => Some(SourceSpan::UNKNOWN),
             Self::Synthetic => Some(SourceSpan::SYNTHETIC),

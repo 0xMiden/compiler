@@ -1,9 +1,11 @@
 use alloc::{collections::BTreeMap, format, sync::Arc};
 
+#[cfg(any(test, feature = "std"))]
 use anyhow::anyhow;
-#[cfg(feature = "std")]
-use miden_assembly_syntax::Report;
-use miden_assembly_syntax::diagnostics::{Diagnostic, miette};
+use miden_assembly_syntax::{
+    Report,
+    diagnostics::{Diagnostic, miette},
+};
 use miden_mast_package::Package;
 use miden_package_registry::{
     PackageCache, PackageId, PackageIndex, PackageProvider, PackageRecord, PackageRegistry,
@@ -73,6 +75,7 @@ impl HybridPackageRegistry {
         Self {
             packages: Default::default(),
             artifacts: Default::default(),
+            #[cfg(any(test, feature = "std"))]
             filesystem_cache: None,
             #[cfg(feature = "std")]
             _filesystem_cache_lease: None,
@@ -154,7 +157,7 @@ impl HybridPackageRegistry {
 
     /// Get a new instance of the registry, using the current compiler options
     #[cfg(not(any(test, feature = "std")))]
-    pub fn new(options: &crate::Options) -> Result<Self, Report> {
+    pub fn new(_options: &crate::Options) -> Result<Self, Report> {
         Ok(Self::empty())
     }
 
@@ -242,7 +245,7 @@ impl HybridPackageRegistry {
     fn install_if_missing_as(
         &mut self,
         package: Arc<Package>,
-        published_file_name: Option<&str>,
+        _published_file_name: Option<&str>,
     ) -> Result<miden_project::Version, InstallPackageError> {
         // The commitment is hashed on every call, so it is computed once for both uses.
         let dependency_commitment = package.dependency_commitment();
@@ -269,7 +272,7 @@ impl HybridPackageRegistry {
         // above, which returns before reaching here.
         #[cfg(any(test, feature = "std"))]
         if let Some(filesystem_cache) = self.filesystem_cache.as_deref() {
-            write_package_atomically_as(&package, filesystem_cache, published_file_name).map_err(
+            write_package_atomically_as(&package, filesystem_cache, _published_file_name).map_err(
                 |err| InstallPackageError::FilesystemCacheInsertion {
                     package: package.name.clone(),
                     err,

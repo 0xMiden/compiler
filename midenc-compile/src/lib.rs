@@ -22,9 +22,7 @@ pub use midenc_hir::Context;
 use midenc_hir::Op;
 use midenc_session::diagnostics::{Diagnostic, Report, miette};
 #[cfg(feature = "std")]
-use midenc_session::{OutputFile, OutputType};
-#[cfg(feature = "std")]
-use midenc_session::{OutputMode, PathBuf, diagnostics::WrapErr};
+use midenc_session::{OutputFile, OutputMode, OutputType, PathBuf, diagnostics::WrapErr};
 
 pub use self::compiler::Compiler;
 #[cfg(feature = "std")]
