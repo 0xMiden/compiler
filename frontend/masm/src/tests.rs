@@ -7283,6 +7283,12 @@ fn lint_prepares_procedures_before_declaring_hir() -> Result<()> {
                 "invalid assert_eq left operand: expected an integral type, got ptr<element, felt>",
             ),
             (
+                "push.0 locaddr.0 assert_eq push.0",
+                "assert_eq",
+                "invalid assert_eq right operand: expected an integral type, got ptr<element, \
+                 felt>",
+            ),
+            (
                 "locaddr.0 u32assert",
                 "u32assert",
                 "invalid assert_u32 operand: expected an integral type, got ptr<element, felt>",
