@@ -36,3 +36,10 @@ tools/fuzza-agent/__pycache__/
 __pycache__/
 
 *.lit_test_times.txt*
+
+# Ignore personalized agent configuration or state
+.superpowers
+AGENTS.md
+AGENTS.local.md
+.claude/*
+CLAUDE.local.md
