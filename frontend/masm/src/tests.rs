@@ -1005,6 +1005,10 @@ fn instruction_inventory_classifies_all_masm_instruction_variants() {
     );
     assert_eq!(instruction_semantics(&Instruction::Nop), InstructionSemantics::LiftAndInfer);
     assert_eq!(
+        instruction_semantics(&Instruction::DebugInlineCallClear),
+        InstructionSemantics::LiftAndInfer
+    );
+    assert_eq!(
         instruction_semantics(&Instruction::ProcRef(
             miden_assembly_syntax::ast::InvocationTarget::Symbol("foo".parse().unwrap())
         )),

@@ -23,7 +23,7 @@ use smallvec::SmallVec;
 use crate::{
     Event, OperandStack,
     artifact::MasmComponent,
-    emitter::{BlockEmitter, FrameLayout},
+    emitter::{BlockEmitter, FrameLayout, has_inline_call_chain},
     linker::{FunctionTableLayout, LinkInfo, Linker},
     masm,
 };
@@ -1516,6 +1516,7 @@ impl MasmModuleBuilder<'_> {
         let mut block_emitter = BlockEmitter {
             frame: Default::default(),
             liveness: &liveness,
+            emit_inline_calls: has_inline_call_chain(gv.as_operation()),
             link_info: self.link_info,
             invoked: self.invoked_from_init,
             target: Default::default(),
@@ -1653,6 +1654,7 @@ impl MasmFunctionBuilder {
         let mut emitter = BlockEmitter {
             frame: FrameLayout::new(&local_offsets, self.num_locals),
             liveness: &liveness,
+            emit_inline_calls: has_inline_call_chain(function.as_operation()),
             link_info,
             invoked: &mut invoked,
             target: Default::default(),
@@ -1776,7 +1778,12 @@ fn semantic_debug_signature(function: &builtin::Function) -> Option<masm::Functi
 /// body contains only DebugVar ops, the assembler will reject it.
 fn block_has_real_instructions(block: &masm::Block) -> bool {
     block.iter().any(|op| match op {
-        masm::Op::Inst(inst) => !matches!(inst.inner(), masm::Instruction::DebugVar(_)),
+        masm::Op::Inst(inst) => !matches!(
+            inst.inner(),
+            masm::Instruction::DebugVar(_)
+                | masm::Instruction::DebugInlineCall(_)
+                | masm::Instruction::DebugInlineCallClear
+        ),
         masm::Op::If {
             then_blk, else_blk, ..
         } => block_has_real_instructions(then_blk) || block_has_real_instructions(else_blk),

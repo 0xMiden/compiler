@@ -3,7 +3,10 @@ use alloc::collections::BTreeSet;
 use miden_assembly::diagnostics::WrapErr;
 use midenc_hir::{
     Block, Operation, ProgramPoint, TraceTarget, ValueRange, ValueRef,
-    dialects::builtin::{Function, attributes::LocalVariable},
+    dialects::{
+        builtin::{Function, attributes::LocalVariable},
+        debuginfo::attributes::{INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChainAttr},
+    },
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{SourceSpan, Spanned};
@@ -71,8 +74,17 @@ pub(crate) fn local_offsets(function: &Function) -> Vec<u32> {
         .collect()
 }
 
+pub(crate) fn has_inline_call_chain(operation: &Operation) -> bool {
+    let mut has_inline_call_chain = false;
+    operation.prewalk_all(|op| {
+        has_inline_call_chain |= op.has_attribute(INLINE_CALL_CHAIN_ATTR_NAME);
+    });
+    has_inline_call_chain
+}
+
 pub(crate) struct BlockEmitter<'b> {
     pub liveness: &'b LivenessAnalysis,
+    pub emit_inline_calls: bool,
     /// Layout of the current procedure's locals frame.
     pub frame: FrameLayout<'b>,
     pub link_info: &'b LinkInfo,
@@ -86,6 +98,7 @@ impl BlockEmitter<'_> {
     pub fn nest<'nested, 'current: 'nested>(&'current mut self) -> BlockEmitter<'nested> {
         BlockEmitter {
             liveness: self.liveness,
+            emit_inline_calls: self.emit_inline_calls,
             frame: self.frame,
             link_info: self.link_info,
             invoked: self.invoked,
@@ -171,6 +184,10 @@ impl BlockEmitter<'_> {
     fn emit_inst(&mut self, op: &Operation) {
         use crate::HirLowering;
 
+        if self.emit_inline_calls {
+            self.emit_inline_call_chain(op);
+        }
+
         // If any values on the operand stack are no longer live, drop them now to avoid wasting
         // operand stack space on operands that will never be used.
         //self.drop_unused_operands_at(op);
@@ -190,6 +207,47 @@ impl BlockEmitter<'_> {
             .emit(self)
             .wrap_err("failed while emitting instruction lowering")
             .unwrap_or_else(|err| panic!("{err}"));
+    }
+
+    fn emit_inline_call_chain(&mut self, op: &Operation) {
+        use miden_assembly::{
+            ast::DebugInlineCallInfo,
+            debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri},
+        };
+
+        self.target.push(masm::Op::Inst(midenc_hir::Span::new(
+            op.span(),
+            masm::Instruction::DebugInlineCallClear,
+        )));
+
+        let Some(attr) = op
+            .get_attribute(INLINE_CALL_CHAIN_ATTR_NAME)
+            .and_then(|attr| attr.try_downcast_attr::<InlineCallChainAttr>().ok())
+        else {
+            return;
+        };
+        let attr = attr.borrow();
+        for frame in &attr.frames {
+            let declaration = FileLineCol::new(
+                Uri::new(frame.file.as_str()),
+                LineNumber::new(frame.line).unwrap_or_default(),
+                ColumnNumber::new(frame.column).unwrap_or_default(),
+            );
+            let call_site = FileLineCol::new(
+                Uri::new(frame.call_file.as_str()),
+                LineNumber::new(frame.call_line).unwrap_or_default(),
+                ColumnNumber::new(frame.call_column).unwrap_or_default(),
+            );
+            let inline_call = DebugInlineCallInfo::new(frame.name.as_str(), declaration, call_site);
+            let inline_call = match frame.linkage_name {
+                Some(linkage_name) => inline_call.with_linkage_name(linkage_name.as_str()),
+                None => inline_call,
+            };
+            self.target.push(masm::Op::Inst(midenc_hir::Span::new(
+                op.span(),
+                masm::Instruction::DebugInlineCall(inline_call),
+            )));
+        }
     }
 
     /// Drop the operands on the stack which are no longer live upon entry into
