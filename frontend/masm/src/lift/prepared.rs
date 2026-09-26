@@ -100,7 +100,7 @@ pub(super) struct PreparationBuilder {
 macro_rules! unary {
     ($constraint:ty; $($name:ident => $ty:expr),* $(,)?) => {$ (
         pub(super) fn $name(&mut self, value: Value, span: SourceSpan) -> Result<Value> {
-            self.require_type::<$constraint>(self.ty(value), stringify!($name), span)?;
+            self.require_type::<$constraint>(self.ty(value), stringify!($name), "operand", span)?;
             let ty = ($ty)(self.ty(value));
             Ok(self.record(vec![value], vec![ty], move |b, v| Ok(vec![b.$name(v[0], span)?]))[0])
         }
@@ -170,6 +170,7 @@ impl PreparationBuilder {
         &self,
         ty: &Type,
         operation: &str,
+        role: &str,
         span: SourceSpan,
     ) -> Result<()> {
         let constraint = C::get();
@@ -177,7 +178,7 @@ impl PreparationBuilder {
             Ok(())
         } else {
             Err(Report::msg(format!(
-                "{operation} requires {} at {span:?}",
+                "invalid {operation} {role}: expected {}, got {ty} at {span:?}",
                 constraint.description()
             )))
         }
@@ -241,32 +242,32 @@ impl PreparationBuilder {
     }
 
     pub(super) fn cast(&mut self, value: Value, ty: Type, span: SourceSpan) -> Result<Value> {
-        self.require_type::<AnyInteger>(self.ty(value), "cast", span)?;
-        self.require_type::<AnyInteger>(&ty, "cast", span)?;
+        self.require_type::<AnyInteger>(self.ty(value), "cast", "operand", span)?;
+        self.require_type::<AnyInteger>(&ty, "cast", "result", span)?;
         Ok(self
             .record(vec![value], vec![ty.clone()], move |b, v| Ok(vec![b.cast(v[0], ty, span)?]))
             [0])
     }
 
     pub(super) fn trunc(&mut self, value: Value, ty: Type, span: SourceSpan) -> Result<Value> {
-        self.require_type::<AnyInteger>(self.ty(value), "trunc", span)?;
-        self.require_type::<AnyInteger>(&ty, "trunc", span)?;
+        self.require_type::<AnyInteger>(self.ty(value), "trunc", "operand", span)?;
+        self.require_type::<AnyInteger>(&ty, "trunc", "result", span)?;
         Ok(self
             .record(vec![value], vec![ty.clone()], move |b, v| Ok(vec![b.trunc(v[0], ty, span)?]))
             [0])
     }
 
     pub(super) fn zext(&mut self, value: Value, ty: Type, span: SourceSpan) -> Result<Value> {
-        self.require_type::<AnyUnsignedInteger>(self.ty(value), "zext", span)?;
-        self.require_type::<AnyUnsignedInteger>(&ty, "zext", span)?;
+        self.require_type::<AnyUnsignedInteger>(self.ty(value), "zext", "operand", span)?;
+        self.require_type::<AnyUnsignedInteger>(&ty, "zext", "result", span)?;
         Ok(self
             .record(vec![value], vec![ty.clone()], move |b, v| Ok(vec![b.zext(v[0], ty, span)?]))
             [0])
     }
 
     pub(super) fn inttoptr(&mut self, value: Value, ty: Type, span: SourceSpan) -> Result<Value> {
-        self.require_type::<AnyInteger>(self.ty(value), "inttoptr", span)?;
-        self.require_type::<AnyPointer>(&ty, "inttoptr", span)?;
+        self.require_type::<AnyInteger>(self.ty(value), "inttoptr", "operand", span)?;
+        self.require_type::<AnyPointer>(&ty, "inttoptr", "result", span)?;
         Ok(self.record(vec![value], vec![ty.clone()], move |b, v| {
             Ok(vec![b.inttoptr(v[0], ty, span)?])
         })[0])
@@ -510,7 +511,7 @@ impl PreparationBuilder {
     }
 
     pub(super) fn assert(&mut self, v0: Value, span: SourceSpan) -> Result<()> {
-        self.require_type::<AnyInteger>(self.ty(v0), "assert", span)?;
+        self.require_type::<AnyInteger>(self.ty(v0), "assert", "operand", span)?;
         self.record(vec![v0], vec![], move |b, v| {
             b.assert(v[0], span)?;
             Ok(vec![])
@@ -519,7 +520,7 @@ impl PreparationBuilder {
     }
 
     pub(super) fn assertz(&mut self, v0: Value, span: SourceSpan) -> Result<()> {
-        self.require_type::<AnyInteger>(self.ty(v0), "assertz", span)?;
+        self.require_type::<AnyInteger>(self.ty(v0), "assertz", "operand", span)?;
         self.record(vec![v0], vec![], move |b, v| {
             b.assertz(v[0], span)?;
             Ok(vec![])
@@ -528,8 +529,8 @@ impl PreparationBuilder {
     }
 
     pub(super) fn assert_eq(&mut self, v0: Value, v1: Value, span: SourceSpan) -> Result<()> {
-        self.require_type::<AnyInteger>(self.ty(v0), "assert_eq", span)?;
-        self.require_type::<AnyInteger>(self.ty(v1), "assert_eq", span)?;
+        self.require_type::<AnyInteger>(self.ty(v0), "assert_eq", "left operand", span)?;
+        self.require_type::<AnyInteger>(self.ty(v1), "assert_eq", "right operand", span)?;
         self.record(vec![v0, v1], vec![], move |b, v| {
             b.assert_eq(v[0], v[1], span)?;
             Ok(vec![])
@@ -543,7 +544,7 @@ impl PreparationBuilder {
         message: CompactString,
         span: SourceSpan,
     ) -> Result<()> {
-        self.require_type::<AnyInteger>(self.ty(v0), "assert", span)?;
+        self.require_type::<AnyInteger>(self.ty(v0), "assert", "operand", span)?;
         self.record(vec![v0], vec![], move |b, v| {
             b.assert_with_message(v[0], message, span)?;
             Ok(vec![])
@@ -557,7 +558,7 @@ impl PreparationBuilder {
         message: CompactString,
         span: SourceSpan,
     ) -> Result<()> {
-        self.require_type::<AnyInteger>(self.ty(v0), "assertz", span)?;
+        self.require_type::<AnyInteger>(self.ty(v0), "assertz", "operand", span)?;
         self.record(vec![v0], vec![], move |b, v| {
             b.assertz_with_message(v[0], message, span)?;
             Ok(vec![])
@@ -572,8 +573,8 @@ impl PreparationBuilder {
         message: CompactString,
         span: SourceSpan,
     ) -> Result<()> {
-        self.require_type::<AnyInteger>(self.ty(v0), "assert_eq", span)?;
-        self.require_type::<AnyInteger>(self.ty(v1), "assert_eq", span)?;
+        self.require_type::<AnyInteger>(self.ty(v0), "assert_eq", "left operand", span)?;
+        self.require_type::<AnyInteger>(self.ty(v1), "assert_eq", "right operand", span)?;
         self.record(vec![v0, v1], vec![], move |b, v| {
             b.assert_eq_with_message(v[0], v[1], message, span)?;
             Ok(vec![])
@@ -621,7 +622,7 @@ impl PreparationBuilder {
         message: CompactString,
         span: SourceSpan,
     ) -> Result<Value> {
-        self.require_type::<AnyInteger>(self.ty(value), "assert_u32", span)?;
+        self.require_type::<AnyInteger>(self.ty(value), "assert_u32", "operand", span)?;
         Ok(self.record(vec![value], vec![Type::U32], move |b, v| {
             Ok(vec![b.assert_u32_with_message(v[0], message, span)?])
         })[0])

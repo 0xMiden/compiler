@@ -7262,15 +7262,31 @@ fn lint_prepares_procedures_before_declaring_hir() -> Result<()> {
                 "mem_loadw_be.1",
                 "memory word address 1 is not word-aligned",
             ),
-            ("locaddr.0 u32cast", "u32cast", "cast requires an integral type"),
-            ("locaddr.0 assert push.0", "assert", "assert requires an integral type"),
-            ("locaddr.0 assertz push.0", "assertz", "assertz requires an integral type"),
+            (
+                "locaddr.0 u32cast",
+                "u32cast",
+                "invalid cast operand: expected an integral type, got ptr<element, felt>",
+            ),
+            (
+                "locaddr.0 assert push.0",
+                "assert",
+                "invalid assert operand: expected an integral type, got ptr<element, felt>",
+            ),
+            (
+                "locaddr.0 assertz push.0",
+                "assertz",
+                "invalid assertz operand: expected an integral type, got ptr<element, felt>",
+            ),
             (
                 "locaddr.0 push.0 assert_eq push.0",
                 "assert_eq",
-                "assert_eq requires an integral type",
+                "invalid assert_eq left operand: expected an integral type, got ptr<element, felt>",
             ),
-            ("locaddr.0 u32assert", "u32assert", "assert_u32 requires an integral type"),
+            (
+                "locaddr.0 u32assert",
+                "u32assert",
+                "invalid assert_u32 operand: expected an integral type, got ptr<element, felt>",
+            ),
         ] {
             let source = format!(
                 r#"
