@@ -300,7 +300,16 @@ impl Pass for Local2Reg {
                 // 1. The load and store are in the same block
                 // 2. There is no control flow between the store and load, including function calls
                 let load = loads[0];
-                let (store, stored_value) = stores.last().unwrap();
+                let (store, _) = stores.last().unwrap();
+                // Read the stored value from the store op rather than from the walk above.
+                // Promoting an earlier local replaces the operands of the later stores, which
+                // makes the value recorded during the walk stale, and its defining op is gone.
+                let stored_value = store
+                    .borrow()
+                    .downcast_ref::<StoreLocal>()
+                    .expect("expected a store to a local")
+                    .value()
+                    .as_value_ref();
 
                 // 1.
                 if load.parent() != store.parent() {
@@ -350,7 +359,7 @@ impl Pass for Local2Reg {
                     &mut rewriter,
                     op,
                     &local,
-                    &[(*store, *stored_value)],
+                    &[(*store, stored_value)],
                 ) {
                     log::trace!(
                         target: &trace_target,
@@ -360,7 +369,7 @@ impl Pass for Local2Reg {
                     continue;
                 }
                 rewriter.erase_op(*store);
-                rewriter.replace_all_op_uses_with_values(load, &[Some(*stored_value)]);
+                rewriter.replace_all_op_uses_with_values(load, &[Some(stored_value)]);
                 rewriter.erase_op(load);
                 changed = PostPassStatus::Changed;
             } else if let Some(stores) = stored.get(&local) {
@@ -455,6 +464,55 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
     // CHECK-NEXT: builtin.ret [[V4]] : (i32);
     builtin.ret %4 : (i32);
 };
+            "#
+        );
+    }
+
+    /// A frontend that keeps values in slots emits chains of slot-to-slot copies, where the load of
+    /// one local is the value stored to the next local. The pass promotes locals in ascending index
+    /// order, so the promotion of the first local rewrites the operand of the store to the second
+    /// local. The second promotion must use the operand of that store, and not the value seen
+    /// before the rewrite, whose defining op is now erased.
+    ///
+    /// The chain must collapse to the value that entered it, and no op must refer to an erased
+    /// value.
+    #[test]
+    fn promotes_chained_local_copies() {
+        let mut test = Test::new("promotes_chained_copies", &[Type::I32], &[Type::I32]);
+
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let local1 = builder.alloc_local(Type::I32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            builder.store_local(local0, v0, SourceSpan::UNKNOWN).unwrap();
+            let v1 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local1, v1, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.load_local(local1, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v2], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
+        let output = format!("{}", printer.finish());
+        std::println!("output: {output}");
+        filecheck!(
+            output,
+            r#"
+builtin.function public extern("C") @promotes_chained_copies(%0: i32) -> i32 {
+// CHECK-LABEL: builtin.function public extern("C") @promotes_chained_copies
+    hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+    %1 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+    %2 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+    // CHECK-NEXT: builtin.ret %0 : (i32);
+    builtin.ret %2 : (i32);
+};
+// CHECK-NOT: hir.store_local
+// CHECK-NOT: hir.load_local
             "#
         );
     }
