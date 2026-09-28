@@ -955,11 +955,12 @@ impl<'a> ProcedurePreparer<'a> {
                     else_blk,
                 } => self.lift_if(then_blk, else_blk, *span, builder)?,
                 Op::While { span, body } => self.lift_while(body, *span, builder)?,
-                Op::DoWhile {
-                    span,
-                    body,
-                    condition,
-                } => self.lift_do_while(body, condition, *span, builder)?,
+                Op::DoWhile { span, .. } => {
+                    return Err(Report::msg(format!(
+                        "MASM do-while control flow is not supported during disassembly at \
+                         {span:?}"
+                    )));
+                }
                 Op::Repeat { count, body, .. } => {
                     let count = immediate_u32(count)?;
                     for _ in 0..count {
@@ -1436,7 +1437,7 @@ impl<'a> ProcedurePreparer<'a> {
             LocStore(id) => {
                 let local = self.local(immediate_value(id)?, span)?;
                 let value = self.pop(span)?;
-                let value = self.cast(builder, value.value, local.ty(), span)?;
+                let value = self.cast(builder, value.value, Type::Felt, span)?;
                 builder.store_local(local, value, span)?;
                 Ok(())
             }
@@ -1722,18 +1723,6 @@ impl<'a> ProcedurePreparer<'a> {
         builder.after(if_ref);
         self.stack = results;
         Ok(())
-    }
-
-    fn lift_do_while(
-        &mut self,
-        _body: &Block,
-        _condition: &Block,
-        span: SourceSpan,
-        _builder: &mut PreparationBuilder,
-    ) -> Result<()> {
-        Err(Report::msg(format!(
-            "MASM do-while control flow is not supported during disassembly at {span:?}"
-        )))
     }
 
     fn lift_while(
@@ -2217,45 +2206,21 @@ impl<'a> ProcedurePreparer<'a> {
 
     fn hash(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(4, span, builder)?;
-        let results = builder.hash(operands[0], operands[1], operands[2], operands[3], span)?;
+        let results = builder.hash(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
     fn hmerge(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(8, span, builder)?;
-        let results = builder.hmerge(
-            operands[0],
-            operands[1],
-            operands[2],
-            operands[3],
-            operands[4],
-            operands[5],
-            operands[6],
-            operands[7],
-            span,
-        )?;
+        let results = builder.hmerge(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
     fn hperm(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(12, span, builder)?;
-        let results = builder.hperm(
-            operands[0],
-            operands[1],
-            operands[2],
-            operands[3],
-            operands[4],
-            operands[5],
-            operands[6],
-            operands[7],
-            operands[8],
-            operands[9],
-            operands[10],
-            operands[11],
-            span,
-        )?;
+        let results = builder.hperm(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
@@ -2494,7 +2459,7 @@ impl<'a> ProcedurePreparer<'a> {
                 WordEndian::Big => locals[offset],
                 WordEndian::Little => locals[3 - offset],
             };
-            let value = self.cast(builder, value.value, local.ty(), span)?;
+            let value = self.cast(builder, value.value, Type::Felt, span)?;
             builder.store_local(local, value, span)?;
             casted_values.push(value);
         }
