@@ -11,10 +11,11 @@ use alloc::{
     vec::Vec,
 };
 
-use midenc_frontend_wasm_metadata::{
-    COMPONENT_INIT_PROCEDURE, procedure_path::validate_procedure_path,
+use midenc_frontend_wasm_metadata::procedure_path::validate_procedure_path;
+use midenc_hir::{
+    FxHashMap, SymbolName, SymbolNameComponent, SymbolPath,
+    reserved_names::COMPONENT_INIT_PROCEDURE,
 };
-use midenc_hir::{FxHashMap, SymbolName, SymbolNameComponent, SymbolPath};
 use midenc_session::diagnostics::Report;
 
 use crate::{component::StaticComponentIndex, error::WasmResult};
@@ -711,6 +712,15 @@ mod tests {
             let unquoted = !segment.is_empty() && !Ident::requires_quoting(segment);
             assert_eq!(accepted, unquoted, "`{segment}`");
         }
+    }
+
+    /// The SDK macros cannot depend on `midenc-hir`, so they read a copy of the initializer name.
+    #[test]
+    fn the_sdk_copy_of_the_initializer_name_matches_codegen() {
+        assert_eq!(
+            COMPONENT_INIT_PROCEDURE,
+            midenc_frontend_wasm_metadata::COMPONENT_INIT_PROCEDURE
+        );
     }
 
     #[test]

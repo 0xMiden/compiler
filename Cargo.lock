@@ -4271,7 +4271,6 @@ dependencies = [
  "midenc-dialect-ub",
  "midenc-dialect-wasm",
  "midenc-expect-test",
- "midenc-frontend-wasm-metadata",
  "midenc-hir",
  "midenc-hir-analysis",
  "midenc-session",

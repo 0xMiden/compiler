@@ -38,6 +38,9 @@ pub const WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME: &str = "rodata,miden_wit";
 
 /// Name of the procedure codegen emits into a component's root module to initialize it;
 /// `<namespace>::init` is therefore reserved and no export may use it.
+///
+/// Mirrors `midenc_hir::reserved_names::COMPONENT_INIT_PROCEDURE` for the SDK macros, which cannot
+/// depend on `midenc-hir`; a `midenc-frontend-wasm` test keeps the two equal.
 pub const COMPONENT_INIT_PROCEDURE: &str = "init";
 
 /// Prefix of the component-model function names of the foreign procedure invocation (FPI) imports
