@@ -16,6 +16,9 @@ the agent-facing tooling that grows the case set:
   [`CORPUS-MAP.md`](CORPUS-MAP.md) (open classes, reproducers, guards, dead
   ends).
 - `cov.py` — renders the llvm-cov JSON into the agent-readable `report.md`.
+- `check_facts.py` — checks the fact files: every cited `module::test` and
+  source path exists, every `#[ignore]`d differential test is in
+  `CORPUS-MAP.md`.
 - `scratch/` — per-run agent notes (gitignored, machine-local).
 
 ## How the differential tests work

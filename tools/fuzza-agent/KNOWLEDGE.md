@@ -132,6 +132,16 @@ build the masked-index control before calling a trap-edge variant new.
   regions; re-render with `cov.py ... --area '<paths>'`; ignored cases add
   nothing after `fuzza-cov-clean`; rerun a step that reports 0 tests. Agent
   shells lose `export`s: prefix `FUZZA_AREA='...'` on every call.
+- Coverage bookkeeping: `fuzza-cov-step` rotates `report.json` into
+  `report.prev.json` and overwrites that on the next step, so copy a
+  baseline aside right after producing it; the rendered tables cap at 30
+  rows, so extract an area's full per-function list from `report.json`;
+  measure what a lever opened with a per-function set diff between two
+  `report.json` snapshots, never with the rendered "newly-exercised" count
+  (a test-crate-rebuild artifact).
+- The fact files are checked with `python3 tools/fuzza-agent/check_facts.py`
+  (every cited `module::test` and path exists, every ignored test is in
+  `CORPUS-MAP.md`).
 
 ## Writing cases
 
