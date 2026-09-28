@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against `next` and retaining replay snapshots and cycle-weighted flamegraphs.
 - The MASM frontend now reports advice taint findings from supported procedures even when it skips
   other procedures or reaches the lint work limit ([#1412](https://github.com/0xMiden/compiler/pull/1412)).
+- Check MASM procedures before declaring or emitting HIR. Lint skips invalid procedures and
+  their callers while keeping valid procedures for analysis. Strict mode reports the error
+  ([#1423](https://github.com/0xMiden/compiler/pull/1423)).
+- Fix `no_std` build errors in the HIR and session crates. Without `std`, create package
+  registries with `HybridPackageRegistry::empty`.
 
 ## [0.11.0]
 
@@ -131,7 +136,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directory; the flag was previously ignored.
 - Rust programs and transaction scripts build under plain `midenc`; they previously failed with
   `requested target type is executable, but root module provided to assembler is library`.
-- `--target` selects the executable that is assembled, not only its entrypoint.
+- `--target` selects which executable to assemble. Previously it selected only the entrypoint.
 
 ### `cargo-miden`
 
@@ -215,11 +220,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Note packages can export constructors alongside their script entrypoint, and constructors can
   obtain the note script's MAST root in the VM to build a recipient committing to that script.
 - Added support for the component initialization emitted by `nightly-2026-09-01`. The component
-  start runs after memory, globals, and function tables are initialized in each fresh context.
+  start runs in each fresh context after memory and globals are initialized. Function tables
+  are also initialized before it runs.
 - Manifest-backed Rust builds accept `--stop-after=dependencies` to resolve and assemble dependency
   packages without compiling the consuming crate. Set `MIDENC_PACKAGE_CACHE` to retain the staged
   packages after the command exits. Dependency consumers receive the compiler's selected artifacts,
-  including workspace, path, git, and registry dependencies.
+  including dependencies from the workspace or a path, and from Git or a registry.
 - Compilation now supports HIR modules nested inside other modules, including their globals and
   data segments. Invalid memory layouts and unsupported indirect-call targets report errors instead
   of panicking.
@@ -244,11 +250,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Libraries and public APIs
 
-- Added MASM `disassemble_*_for_lint` APIs that return the procedures they could lift together with
-  the paths, spans, and reasons for skipped procedures. Bounded advice-taint analysis can return
-  partial results with an explanation when its work limit is reached.
+- Added MASM `disassemble_*_for_lint` APIs that return the procedures they could lift. Each skipped
+  procedure is reported with its path and span, plus the reason. Bounded advice-taint analysis
+  can return partial results with an explanation when its work limit is reached.
 - Added `Operation::reachability` and `reachability_cached` for classifying whether execution can
-  reach another operation across blocks, loops, and nested regions.
+  reach another operation in nested regions or through blocks and loops.
 - HIR builders can define function tables, perform same-context indirect calls with
   `hir.exec_indirect`, and obtain procedure digests with `hir.procedure_root`.
 - `cargo_miden::bundle` now exposes released-or-embedded template resolution and the selected
@@ -309,8 +315,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   function tables, and the heap, preventing overlap with zero-initialized Wasm memory. Values kept
   across branches and loop iterations are also preserved correctly when spilled to locals. Layouts
   that leave no representable heap address in the 32-bit address space now fail compilation instead
-  of wrapping. Rebuild affected programs and update memory-layout, generated-code, and commitment
-  baselines.
+  of wrapping. Rebuild affected programs and update memory-layout and generated-code baselines.
+  Refresh commitment baselines too.
 - Checked and overflowing integer operations now test the intended result or converted value rather
   than another stack operand, correcting range checks for small unsigned integers. Signed 1-bit
   and unsigned 32-bit conversion masks no longer overflow during compilation. The HIR evaluator's
@@ -374,7 +380,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directory.
 - Manifest-backed Rust projects now use the same checkpoint pipeline as standalone Rust, Wasm,
   HIR, and MASM inputs. Requested `--emit` artifacts are written instead of being silently
-  discarded, including intermediate WAT, HIR, and MASM output.
+  discarded, including intermediate WAT output and the HIR and MASM artifacts.
 - Fixed target isolation for Rust packages that declare both library and executable targets, so
   one target can no longer reuse another target's compiled output, read-only data, or account
   metadata.
@@ -407,9 +413,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### `miden-objtool`
 
-- `miden-objtool dump debug-info` now displays VM v0.25 package debug information, including the
-  unified string, type, function, source-file, source-node, variable, inline-call, and location
-  data.
+- `miden-objtool dump debug-info` now displays VM v0.25 package debug information. This includes
+  unified string and type data, along with functions and source files. Source nodes, variables,
+  inline calls, and locations are included too.
 
 ### Libraries and public APIs
 
@@ -436,14 +442,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--release` now selects the release assembler profile; it previously assembled with the `dev`
   profile. Manifest-backed Rust roots and Rust dependencies compiled from source in release builds
   now derive Cargo's `profile.release.opt-level` from `--optimize`: `basic` uses `1`, `max` uses
-  `3`, `size` uses `s`, `size-min` uses `z`, and `none` or `balanced` uses `2`. Update size,
-  cycle-count, digest, and package-byte baselines where these settings change generated artifacts.
+  `3`, `size` uses `s`, `size-min` uses `z`, and `none` or `balanced` uses `2`. Where these settings
+  change generated artifacts, update size and cycle counts in the baselines. Refresh their digests
+  and package bytes as well.
 - Compiled dependency packages moved from each dependency's profile-specific target directory to
   `<project>/target/miden/packages`. Update scripts that read the previous paths directly; nested
   builds receive the new location through `MIDENC_PACKAGE_CACHE`.
 - Note and transaction-script packages now embed the transaction-kernel package when it is not
-  already present. This changes package dependencies, bytes, and digests; update artifact baselines
-  and package-dependency inspection accordingly.
+  already present. Package dependencies change along with package bytes and digests. Update
+  artifact baselines and package-dependency inspection accordingly.
 - `midenc-compile` removed the public `Stage` trait and `stages` module, along with
   `compile_to_memory_with_pre_assembly_stage`, `compile_to_optimized_hir`,
   `compile_to_unoptimized_hir`, and `compile_link_output_to_masm`. Use `pipeline::Pipeline`,
@@ -467,9 +474,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manager between threads must retain an appropriately typed handle itself.
 - `MasmComponent` no longer has a `kernel` field or the `assemble` and `assemble_with_registry`
   methods. Use `source_inputs(target, session)` with the VM project assembler, or use the
-  high-level compilation pipeline so metadata, read-only data, provenance, and kernel embedding
-  are retained. Direct `MidenComponent` and `CodegenOutput` struct literals must initialize the
-  new `source_provenance` field.
+  high-level compilation pipeline to retain metadata and read-only data. It also preserves
+  provenance and embeds the kernel. Direct `MidenComponent` and `CodegenOutput` struct literals
+  must initialize the new `source_provenance` field.
 - Compiler events moved from raw trace codes to VM v0.25 event IDs: replace `TraceEvent` with
   `Event`, `TRACE_FRAME_START`/`TRACE_FRAME_END`/`TRACE_PRINT_LN` with
   `FRAME_START_EVENT`/`FRAME_END_EVENT`/`PRINT_LN_EVENT`, and `as_u32()` with `as_event_id()`.

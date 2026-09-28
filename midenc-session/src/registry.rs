@@ -35,9 +35,8 @@ enum InstallPackageError {
 ///
 /// This is initialized per-session, or on an as-needed basis.
 ///
-/// It can be constructed in various ways, but the recommended way to use it is
-/// [HybridPackageRegistry::new], which loads packages from the local filesystem registry (if
-/// available), and adds in any libraries requested explicitly via `-l`.
+/// Use [crate::Session::package_registry] to create a registry from the session options.
+/// Use [HybridPackageRegistry::empty] for an empty registry.
 pub struct HybridPackageRegistry {
     packages: FxHashMap<PackageId, PackageVersions>,
     artifacts: FxHashMap<PackageId, BTreeMap<miden_package_registry::Version, Arc<Package>>>,
@@ -153,12 +152,6 @@ impl HybridPackageRegistry {
         }
 
         Ok(registry)
-    }
-
-    /// Get a new instance of the registry, using the current compiler options
-    #[cfg(not(any(test, feature = "std")))]
-    pub fn new(_options: &crate::Options) -> Result<Self, Report> {
-        Ok(Self::empty())
     }
 
     /// Get a new instance of the registry seeded with packages available in the local filesystem-

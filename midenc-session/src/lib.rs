@@ -380,7 +380,7 @@ impl Session {
             filesystem_cache,
         )?;
         #[cfg(not(feature = "std"))]
-        let registry = registry::HybridPackageRegistry::new(&self.options)?;
+        let registry = registry::HybridPackageRegistry::empty();
         // The registry publishes into the leased directory and may outlive every clone of
         // this session; retaining the shared lease keeps the directory alive for as long
         // as the registry is.
