@@ -3,8 +3,8 @@
 `AGENT-PROMPT.md` is the inner loop: one agent runs one campaign in one area.
 This file is the outer loop: a director session that chooses campaigns,
 launches one inner-loop agent per campaign, verifies and commits each result,
-and keeps the fact base current (`KNOWLEDGE.md`, `PIPELINE-FACTS.md`,
-`CORPUS-MAP.md`). Recipes and commands live in `KNOWLEDGE.md`; this file only
+and keeps the fact base current (`KNOWLEDGE.md`, `PIPELINE-FACTS.md`, and
+the issue tags on the `#[ignore]` attributes). Recipes and commands live in `KNOWLEDGE.md`; this file only
 says who does what, in which order, and how to choose.
 
 ## Roles
@@ -42,7 +42,8 @@ Heuristics:
 - Save well-exercised areas for late gap-check passes with a small case
   budget and a bias toward the unreachability exit.
 - An area blocked by a known class is a re-run candidate once the fix lands,
-  not a dead area; `CORPUS-MAP.md` names the reproducers to un-ignore.
+  not a dead area; its issue tag on the `#[ignore]` attributes lists the
+  reproducers to un-ignore (`KNOWLEDGE.md`, "Corpus map on demand").
 
 Campaign types, in the order they tend to pay off:
 1. **Pressure ladders** per fragile subsystem: a parametric family climbed
@@ -133,7 +134,7 @@ and keep it complete; thin briefs make agents re-derive known facts. Blocks:
 - Refresh the ledger's decisions for the user (what to file, what to push);
   the director never files, pushes or opens a PR on its own.
 - Promote every remaining durable discovery from scratch logs into the fact
-  files, rewriting in place, and check the citations with
-  `python3 tools/fuzza-agent/check_facts.py`.
+  files, rewriting in place, and run the completeness check of
+  `KNOWLEDGE.md`, "Corpus map on demand" (every `#[ignore]` carries a tag).
 - Summarize the block for whoever triages: campaigns, cases, findings with
   their reproducers, what moved between classes.

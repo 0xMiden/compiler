@@ -516,8 +516,8 @@ fn prog_vm_table_edges() {
 /// mechanism; verified 2026-09-17 to still pass with
 /// `RUSTUP_TOOLCHAIN=nightly-2026-04-30` guests).
 #[test]
-#[ignore = "F6: emit/mod.rs:623 stack index 16 at the default level with nightly-2026-09-01 guests \
-            (2 split edges, 6 erased reloads); compiled on nightly-2026-04-30"]
+#[ignore = "#1420: F6: emit/mod.rs:623 stack index 16 at the default level with nightly-2026-09-01 \
+            guests (2 split edges, 6 erased reloads); compiled on nightly-2026-04-30"]
 fn prog_iters() {
     run_case("prog_iters", include_str!("../cases/case_prog_iters.rs"));
 }
@@ -526,7 +526,7 @@ fn prog_iters() {
 /// overflowing `checked_pow`, the zero-length `cycle`, the last index,
 /// zero / all-ones / equal pairs.
 #[test]
-#[ignore = "F6: emit/mod.rs:623 stack index 16 at the default level with nightly-2026-09-01 \
+#[ignore = "#1420: F6: emit/mod.rs:623 stack index 16 at the default level with nightly-2026-09-01 \
             guests; see prog_iters"]
 fn prog_iters_edges() {
     run_case_with_inputs(
@@ -575,10 +575,10 @@ fn prog_iters_edges() {
 /// `fir_cordic_o3` below (the same signature; the ladder is in its doc
 /// comment). Un-ignore together with the F6 reproducers.
 #[test]
-#[ignore = "compiler panic at --optimize=max: 'invalid operand stack index (11): requires access \
-            to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 (OperandStack::dup from \
-            StoreLocal::schedule_operands) — F6 class: the four reloads on the FIR loop's split \
-            backedge are erased as unused; compile-time, no inputs involved"]
+#[ignore = "#1420: compiler panic at --optimize=max: 'invalid operand stack index (11): requires \
+            access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 \
+            (OperandStack::dup from StoreLocal::schedule_operands) — F6 class: the four reloads on \
+            the FIR loop's split backedge are erased as unused; compile-time, no inputs involved"]
 fn prog_fixedpoint_o3() {
     run_case_with_flags(
         "prog_fixedpoint_o3",
@@ -616,10 +616,10 @@ fn fir_cordic() {
 /// level, passes; 512-pair-clean sibling `prog_fixedpoint`). Compile-time
 /// — no inputs involved. Un-ignore together with the F6 reproducers.
 #[test]
-#[ignore = "compiler panic at --optimize=max: 'invalid operand stack index (11): requires access \
-            to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 class (erased \
-            split-backedge reloads) at the emitter's window assert; compile-time, no inputs \
-            involved"]
+#[ignore = "#1420: compiler panic at --optimize=max: 'invalid operand stack index (11): requires \
+            access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 class \
+            (erased split-backedge reloads) at the emitter's window assert; compile-time, no \
+            inputs involved"]
 fn fir_cordic_o3() {
     run_case_with_flags(
         "fir_cordic_o3",
@@ -856,7 +856,7 @@ fn prog_scanchain_edges() {
 /// first. It is the only program in the corpus whose panic class depends on
 /// the debug level.
 #[test]
-#[ignore = "compiler panic at the DEFAULT configuration: 'invalid operand stack index (9): \
+#[ignore = "#1420: compiler panic at the DEFAULT configuration: 'invalid operand stack index (9): \
             requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
             class (26 erased split-edge reloads in the spills trace); WITHOUT guest DWARF it is \
             the F12 class instead (rewriter.rs:335); compile-time, no inputs involved"]
@@ -926,11 +926,11 @@ fn prog_rkscan_guard_edges() {
 /// `--optimize=size-min`, which compiles and passes even at `debug = 0`.
 /// Compile-time — no inputs involved. Un-ignore with `invariant_args_min`.
 #[test]
-#[ignore = "compiler panic WITHOUT full guest DWARF (guest debug 0 and 1, i.e. an ordinary release \
-            build) at the DEFAULT optimization level: 'AliasingViolationError { kind: Mutable, \
-            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
-            matching 'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no \
-            inputs involved"]
+#[ignore = "#1419: compiler panic WITHOUT full guest DWARF (guest debug 0 and 1, i.e. an ordinary \
+            release build) at the DEFAULT optimization level: 'AliasingViolationError { kind: \
+            Mutable, location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 \
+            while matching 'remove-loop-invariant-args-from-before-block' — F12 class; \
+            compile-time, no inputs involved"]
 fn prog_rkscan_guard_nodwarf() {
     run_case_with_flags(
         "prog_rkscan_guard_nodwarf",
@@ -953,10 +953,10 @@ fn prog_rkscan_guard_nodwarf() {
 /// Kept as the counter-example to `prog_rkscan_wa`'s "pass the fingerprint
 /// words by reference" note. Compile-time — no inputs involved.
 #[test]
-#[ignore = "compiler panic WITHOUT full guest DWARF: 'AliasingViolationError { kind: Mutable, \
-            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
-            matching 'remove-loop-invariant-args-from-before-block' — F12 class; the same source \
-            compiles and passes with DWARF; compile-time, no inputs involved"]
+#[ignore = "#1419: compiler panic WITHOUT full guest DWARF: 'AliasingViolationError { kind: \
+            Mutable, location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 \
+            while matching 'remove-loop-invariant-args-from-before-block' — F12 class; the same \
+            source compiles and passes with DWARF; compile-time, no inputs involved"]
 fn prog_rkscan_ref_nodwarf() {
     run_case_with_flags(
         "prog_rkscan_ref_nodwarf",
@@ -972,8 +972,8 @@ fn prog_rkscan_ref_nodwarf() {
 /// Kept so a corpus-wide `--optimize=basic` sweep does not rediscover it as a
 /// new finding. Compile-time — no inputs involved.
 #[test]
-#[ignore = "compiler panic at --optimize=basic: 'invalid operand stack index (10): requires access \
-            to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 class; \
+#[ignore = "#1420: compiler panic at --optimize=basic: 'invalid operand stack index (10): requires \
+            access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 class; \
             compile-time, no inputs involved"]
 fn prog_rkscan_guard_o1() {
     run_case_with_flags(
@@ -1055,10 +1055,10 @@ fn prog_rkscan_wa_edges() {
 /// involved. Un-ignore when the rewriter stops taking a mutable borrow of an
 /// operation it is already borrowing.
 #[test]
-#[ignore = "compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: Mutable, \
-            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
-            matching 'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no \
-            inputs involved"]
+#[ignore = "#1419: compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: \
+            Mutable, location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 \
+            while matching 'remove-loop-invariant-args-from-before-block' — F12 class; \
+            compile-time, no inputs involved"]
 fn prog_varint() {
     run_case("prog_varint", include_str!("../cases/case_prog_varint.rs"));
 }
@@ -1101,7 +1101,7 @@ fn prog_varint_guard_edges() {
 /// does not depend on how much u64 state the loop carries. Compile-time — no
 /// inputs involved.
 #[test]
-#[ignore = "compiler panic at --optimize=size-min: 'AliasingViolationError { kind: Mutable, \
+#[ignore = "#1419: compiler panic at --optimize=size-min: 'AliasingViolationError { kind: Mutable, \
             location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 — F12 \
             class; compile-time, no inputs involved"]
 fn prog_varint_guard_oz() {
@@ -1168,8 +1168,8 @@ fn prog_varint_wa_edges() {
 /// reduced program) panics at `-Oz` with DWARF too — that one is
 /// [`prog_varint_guard_oz`]. Compile-time — no inputs involved.
 #[test]
-#[ignore = "compiler panic at --optimize=size-min WITHOUT full guest DWARF (either configuration \
-            alone compiles): 'AliasingViolationError { kind: Mutable, location: \
+#[ignore = "#1419: compiler panic at --optimize=size-min WITHOUT full guest DWARF (either \
+            configuration alone compiles): 'AliasingViolationError { kind: Mutable, location: \
             hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while matching \
             'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no inputs \
             involved"]
@@ -1202,8 +1202,8 @@ fn prog_varint_wa_oz_nodwarf() {
 /// Compile-time — no inputs involved. Un-ignore together with the other F6
 /// reproducers.
 #[test]
-#[ignore = "compiler panic at every optimization level: 'failed to schedule operands ... with \
-            error: NoSolution' on 'arith.rotl' [Copy, Move] over a 19-felt operand stack at \
+#[ignore = "#1420: compiler panic at every optimization level: 'failed to schedule operands ... \
+            with error: NoSolution' on 'arith.rotl' [Copy, Move] over a 19-felt operand stack at \
             codegen/masm/src/lower/lowering.rs:109 — F6 class (six erased split-edge reloads); \
             compile-time, no inputs involved"]
 fn prog_feistel() {
@@ -1293,10 +1293,10 @@ fn prog_feistel_wa_edges() {
 /// encoder with three statistics — compiles at all four levels. Compile-time
 /// — no inputs involved.
 #[test]
-#[ignore = "compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: Mutable, \
-            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
-            matching 'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no \
-            inputs involved"]
+#[ignore = "#1419: compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: \
+            Mutable, location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 \
+            while matching 'remove-loop-invariant-args-from-before-block' — F12 class; \
+            compile-time, no inputs involved"]
 fn prog_rle() {
     run_case("prog_rle", include_str!("../cases/case_prog_rle.rs"));
 }
@@ -1385,8 +1385,8 @@ fn prog_rle_wa_edges() {
 /// passes with SIX distinct shift constants instead of eight — compiles and
 /// matches native at all four levels. Compile-time — no inputs involved.
 #[test]
-#[ignore = "compiler panic at the DEFAULT configuration: 'failed to schedule operands ... with \
-            error: NoSolution' on 'arith.rotl' [Copy, Move] at \
+#[ignore = "#1420: compiler panic at the DEFAULT configuration: 'failed to schedule operands ... \
+            with error: NoSolution' on 'arith.rotl' [Copy, Move] at \
             codegen/masm/src/lower/lowering.rs:109 — F6 class; compile-time, no inputs involved"]
 fn prog_histogram() {
     run_case("prog_histogram", include_str!("../cases/case_prog_histogram.rs"));
@@ -1472,7 +1472,7 @@ fn prog_histogram_wa_edges() {
 /// levels, so it is the number of distinct rotation constants, not the number
 /// of lanes, that decides. Compile-time — no inputs involved.
 #[test]
-#[ignore = "compiler panic at the DEFAULT configuration: 'invalid operand stack index (14): \
+#[ignore = "#1420: compiler panic at the DEFAULT configuration: 'invalid operand stack index (14): \
             requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
             class; compile-time, no inputs involved"]
 fn prog_sponge() {
@@ -1560,8 +1560,8 @@ fn prog_sponge_wa_edges() {
 /// Compile-time — no inputs involved. Un-ignore when the spill transform
 /// recomputes dominance after splitting edges.
 #[test]
-#[ignore = "compiler panic at every optimization level: 'called `Option::unwrap()` on a `None` \
-            value' at hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
+#[ignore = "#1420: compiler panic at every optimization level: 'called `Option::unwrap()` on a \
+            `None` value' at hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
             spill::rewrite_cfg_spills) — F6 class; compile-time, no inputs involved"]
 fn prog_tlv() {
     run_case("prog_tlv", include_str!("../cases/case_prog_tlv.rs"));

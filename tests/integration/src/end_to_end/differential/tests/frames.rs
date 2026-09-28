@@ -292,8 +292,8 @@ fn deep_frames() {
 /// rung up (2 MiB of frames) overflows it and aborts the whole test process,
 /// which is why the ladder stops here.
 #[test]
-#[ignore = "F16 (shadow-stack overrun undiagnosed): nightly-2026-09-01 guests fail the first frame \
-            store with 'operation expected u32 values, but got values: [4295098224]' where \
+#[ignore = "gap: F16 (shadow-stack overrun undiagnosed): nightly-2026-09-01 guests fail the first \
+            frame store with 'operation expected u32 values, but got values: [4295098224]' where \
             wasmtime traps out of bounds; nightly-2026-04-30 guests executed silently"]
 fn deep_overrun() {
     run_case("deep_overrun", include_str!("../cases/case_deep_overrun.rs"));

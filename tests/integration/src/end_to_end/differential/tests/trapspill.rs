@@ -200,9 +200,9 @@ fn body_assert_edges() {
 /// edge converts two reloads into two spills. Compile-time — no inputs
 /// involved. Un-ignore when this case compiles.
 #[test]
-#[ignore = "compiler panic: 'invalid operand stack index (11): requires access to more than 16 \
-            elements' at codegen/masm/src/emit/mod.rs:623 with the trapping edge placed above the \
-            cluster-consuming expression; the same file with the index masked into range \
+#[ignore = "#1420: compiler panic: 'invalid operand stack index (11): requires access to more than \
+            16 elements' at codegen/masm/src/emit/mod.rs:623 with the trapping edge placed above \
+            the cluster-consuming expression; the same file with the index masked into range \
             (guard_above_masked) compiles (compile-time, no inputs involved)"]
 fn guard_above() {
     run_case_traps("ts_guard_above", include_str!("../cases/case_ts_guard_above.rs"));
@@ -331,11 +331,11 @@ fn cascade_cont() {
 /// compile-time panic described above, kept in-repo. Un-ignore when the case
 /// compiles at that level.
 #[test]
-#[ignore = "compiler panic at --optimize=max: 'called `Option::unwrap()` on a `None` value' at \
-            hir/src/ir/dominance/frontier.rs:123 (the F6 site) inside the first spill transform, \
-            caused by the trapping edge alone — interact::cascade_spill, the same file without the \
-            assert! in the continue arm, compiles at --optimize=max (director re-ran both \
-            2026-09-17)"]
+#[ignore = "#1420: compiler panic at --optimize=max: 'called `Option::unwrap()` on a `None` value' \
+            at hir/src/ir/dominance/frontier.rs:123 (the F6 site) inside the first spill \
+            transform, caused by the trapping edge alone — interact::cascade_spill, the same file \
+            without the assert! in the continue arm, compiles at --optimize=max (director re-ran \
+            both 2026-09-17)"]
 fn cascade_cont_max() {
     run_case_traps_with_flags(
         "ts_cascade_cont_max",

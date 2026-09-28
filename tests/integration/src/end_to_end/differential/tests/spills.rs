@@ -63,9 +63,10 @@ fn spill_loop_mix() {
 /// Un-ignore when `rotl_window` compiles (binary problems get a
 /// window-aware fallback tactic).
 #[test]
-#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
-            scheduling an arity-2 arith.rotl under --optimize=size-min (rotl_window bug class: \
-            TwoArgs-only tactic list, no window-aware fallback; compile-time, no inputs involved)"]
+#[ignore = "#1422: compiler panic: 'with error: NoSolution' at \
+            codegen/masm/src/lower/lowering.rs:109 scheduling an arity-2 arith.rotl under \
+            --optimize=size-min (rotl_window bug class: TwoArgs-only tactic list, no window-aware \
+            fallback; compile-time, no inputs involved)"]
 fn spill_loop_mix_oz() {
     run_case_with_flags(
         "spill_loop_mix_oz",
@@ -93,7 +94,7 @@ fn spill_loop_mix_oz() {
 /// the arity-2 symptom (`unroll_chain`, NoSolution at lowering.rs:109).
 /// Compile-time — no inputs involved. Un-ignore when this case compiles.
 #[test]
-#[ignore = "compiler panic: 'attempt to subtract with overflow' in Stack::movdn at \
+#[ignore = "#1422: compiler panic: 'attempt to subtract with overflow' in Stack::movdn at \
             codegen/masm/src/opt/operands/stack.rs:80 while applying the scheduler solution for \
             the 4x-unrolled mul-xor-rotl loop chain (compile-time, no inputs involved)"]
 fn unroll_rotmix() {
@@ -142,10 +143,10 @@ fn spill_switch() {
 /// window, again with no fallback tactic. Same site, same root cause — a
 /// window-aware fallback fixes all four arms.
 #[test]
-#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
-            scheduling an arity-2 arith.rotl with a Copy-constrained count at the bottom of a full \
-            15-felt window (TwoArgs-only tactic list, no window-aware fallback; compile-time, no \
-            inputs involved)"]
+#[ignore = "#1422: compiler panic: 'with error: NoSolution' at \
+            codegen/masm/src/lower/lowering.rs:109 scheduling an arity-2 arith.rotl with a \
+            Copy-constrained count at the bottom of a full 15-felt window (TwoArgs-only tactic \
+            list, no window-aware fallback; compile-time, no inputs involved)"]
 fn rotl_window() {
     run_case("rotl_window", include_str!("../cases/case_rotl_window.rs"));
 }

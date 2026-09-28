@@ -240,10 +240,11 @@ fn indirect_spill() {
 /// `indirect_spill` was. Compile-time — no inputs involved. Un-ignore when the
 /// spill analysis counts every operand group of `hir.exec_indirect`.
 #[test]
-#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 — \
-            the spill analysis reads only operand group 0 and so never sees the arguments of \
-            hir.exec_indirect (group 1): spilled dispatch arguments are never reloaded and the \
-            call is budgeted as one felt (compile-time, no inputs involved)"]
+#[ignore = "#1421: compiler panic: 'with error: NoSolution' at \
+            codegen/masm/src/lower/lowering.rs:109 — the spill analysis reads only operand group 0 \
+            and so never sees the arguments of hir.exec_indirect (group 1): spilled dispatch \
+            arguments are never reloaded and the call is budgeted as one felt (compile-time, no \
+            inputs involved)"]
 fn indirect_spill_bb() {
     run_case("indirect_spill_bb", include_str!("../cases/case_indirect_spill_bb.rs"));
 }
@@ -515,8 +516,8 @@ fn indirect_u128() {
 /// `call_sigs16`. Compile-time — no inputs involved.
 /// Un-ignore when an over-wide signature is rejected with a diagnostic.
 #[test]
-#[ignore = "compiler panic: 'unable to spill sufficient capacity to hold all operands on stack at \
-            one time at hir.exec ...' at hir-analysis/src/analyses/spills.rs:2366 on a \
+#[ignore = "#1421: compiler panic: 'unable to spill sufficient capacity to hold all operands on \
+            stack at one time at hir.exec ...' at hir-analysis/src/analyses/spills.rs:2366 on a \
             seventeen-felt by-value call signature; compile-time, no inputs involved"]
 fn sig17() {
     run_case("sig17", include_str!("../cases/case_sig17.rs"));

@@ -19,8 +19,8 @@ fn mem_copy() {
 /// Overlapping `copy_within` (dst > src) — wasm `memory.copy` memmove
 /// semantics vs forward-copying MASM lowering.
 #[test]
-#[ignore = "native/MASM divergence: memory.copy with overlapping dst > src ranges; the VM now \
-            hard-aborts via the miden-core-lib memcopy overlap assert (hash-coded error \
+#[ignore = "#1418: native/MASM divergence: memory.copy with overlapping dst > src ranges; the VM \
+            now hard-aborts via the miden-core-lib memcopy overlap assert (hash-coded error \
             14467508661128000855, re-verified 2026-08-27; e.g. inputs (4294967295, 194795201) — \
             original repro (91264998, 3811523388) in pre-split mem_copy). Un-ignore when the \
             lowering handles overlapping copies with memmove semantics"]
@@ -226,8 +226,8 @@ fn ptr_table() {
 /// the core-lib assert accepts) `src == dst`, or when memcpy gains memmove
 /// semantics (which fixes `mem_overlap` too).
 #[test]
-#[ignore = "MASM-only trap: identical-range copy_within (src == dst, n > 0) on 4-aligned u32 \
-            ranges takes the memcpy element fast path and aborts in miden-core-lib \
+#[ignore = "#1418: MASM-only trap: identical-range copy_within (src == dst, n > 0) on 4-aligned \
+            u32 ranges takes the memcpy element fast path and aborts in miden-core-lib \
             memcopy_elements with 'source and destination ranges must not overlap' (mem.masm:100), \
             natively a no-op memmove; e.g. inputs (2340168019, 3869789317) and (0, 0). Un-ignore \
             when src == dst is accepted by the fast path or memcpy gains memmove semantics"]
@@ -238,9 +238,9 @@ fn copy_same_pos() {
 /// Pinned twin of `copy_same_pos`: the smallest identical-range pair (0, 0)
 /// (src 0, dst 0, one element) plus the first random failing pair.
 #[test]
-#[ignore = "MASM-only trap on pinned inputs (0, 0) and (2340168019, 3869789317): miden-core-lib \
-            memcopy_elements 'source and destination ranges must not overlap' for an \
-            identical-range copy_within; see copy_same_pos"]
+#[ignore = "#1418: MASM-only trap on pinned inputs (0, 0) and (2340168019, 3869789317): \
+            miden-core-lib memcopy_elements 'source and destination ranges must not overlap' for \
+            an identical-range copy_within; see copy_same_pos"]
 fn copy_same_pos_repro() {
     run_case_with_inputs(
         "copy_same_pos",

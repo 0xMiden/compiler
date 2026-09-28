@@ -653,10 +653,10 @@ fn wide_exits_edges() {
 /// nightly-2026-09-01 guests (the block label moved from `^block76` to
 /// `^block82`; the site and the mechanism are unchanged).
 #[test]
-#[ignore = "compiler panic: 'implicit operand stack overflow along incoming control flow edges of \
-            after(scf.if in ^block82)' at hir-analysis/src/analyses/spills.rs:1533 — cfg-to-scf \
-            exit-dispatch result columns of a nine-deep loop nest exceed the 16-felt budget \
-            (compile-time, no inputs involved)"]
+#[ignore = "#1422: compiler panic: 'implicit operand stack overflow along incoming control flow \
+            edges of after(scf.if in ^block82)' at hir-analysis/src/analyses/spills.rs:1533 — \
+            cfg-to-scf exit-dispatch result columns of a nine-deep loop nest exceed the 16-felt \
+            budget (compile-time, no inputs involved)"]
 fn deep_nest_overflow() {
     run_case("deep_nest_overflow", include_str!("../cases/case_deep_nest_overflow.rs"));
 }
@@ -690,7 +690,7 @@ fn switch255() {
 /// involved. Un-ignore when this case compiles (wider group index, or the
 /// frontend splitting oversized switches).
 #[test]
-#[ignore = "compiler panic: 'too many operand groups: TryFromIntError(PosOverflow)' at \
+#[ignore = "#1421: compiler panic: 'too many operand groups: TryFromIntError(PosOverflow)' at \
             hir/src/ir/operation/builder.rs:224 — a br_table with 256 targets overflows the u8 \
             successor operand-group index (compile-time, no inputs involved)"]
 fn switch256() {
@@ -720,8 +720,9 @@ fn switch256() {
 /// this case compiles (after a spills fix it may still hit the rotl_window
 /// gap — then re-triage).
 #[test]
-#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
-            while scheduling the 8x-unrolled mul-xor loop chain (compile-time, no inputs involved)"]
+#[ignore = "#1422: compiler panic: 'with error: NoSolution' at \
+            codegen/masm/src/lower/lowering.rs:109 while scheduling the 8x-unrolled mul-xor loop \
+            chain (compile-time, no inputs involved)"]
 fn unroll_chain() {
     run_case("unroll_chain", include_str!("../cases/case_unroll_chain.rs"));
 }

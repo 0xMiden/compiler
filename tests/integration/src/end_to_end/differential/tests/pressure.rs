@@ -128,7 +128,7 @@ fn zero_trip_guard_repro() {
 /// shapes are now kept as runnable minimal reproducers of their own,
 /// `frontier_dispatch` and `frontier_seq` below (campaign 21).
 #[test]
-#[ignore = "compiler panic: 'called Option::unwrap() on a None value' at \
+#[ignore = "#1420: compiler panic: 'called Option::unwrap() on a None value' at \
             hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
             spill::rewrite_cfg_spills) — the spill transform rebuilds SSA form from a dominator \
             tree cached before its own edge splits (compile-time, no inputs involved)"]
@@ -165,10 +165,10 @@ fn zero_trip_frontier() {
 /// `arith.bxor`), five pass. Compile-time — no inputs involved. Un-ignore
 /// when this case compiles.
 #[test]
-#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 on \
-            an 18-felt operand stack — the spill transform erases its split-edge reloads (stale \
-            dominator tree), so spilled counts stay live past a zero-trip-capable loop \
-            (compile-time, no inputs involved)"]
+#[ignore = "#1420: compiler panic: 'with error: NoSolution' at \
+            codegen/masm/src/lower/lowering.rs:109 on an 18-felt operand stack — the spill \
+            transform erases its split-edge reloads (stale dominator tree), so spilled counts stay \
+            live past a zero-trip-capable loop (compile-time, no inputs involved)"]
 fn zero_trip_overflow() {
     run_case("zero_trip_overflow", include_str!("../cases/case_zero_trip_overflow.rs"));
 }
@@ -224,7 +224,7 @@ fn select_chain() {
 /// ingredient is necessary at this size. Compile-time — no inputs involved.
 /// Un-ignore when the transform recomputes dominance after splitting edges.
 #[test]
-#[ignore = "compiler panic: 'called `Option::unwrap()` on a `None` value' at \
+#[ignore = "#1420: compiler panic: 'called `Option::unwrap()` on a `None` value' at \
             hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
             spill::rewrite_cfg_spills) — a 16-arm dispatch with three impossible arms and nine \
             crossing count bands in a bottom-tested loop, no zero-trip loop involved; \
@@ -247,7 +247,7 @@ fn frontier_dispatch() {
 /// cross a loop before reaching the region that uses them. Compile-time — no
 /// inputs involved.
 #[test]
-#[ignore = "compiler panic: 'called `Option::unwrap()` on a `None` value' at \
+#[ignore = "#1420: compiler panic: 'called `Option::unwrap()` on a `None` value' at \
             hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
             spill::rewrite_cfg_spills) — two sequential bottom-tested loops with four count bands \
             used before the first and only inside the second; DEFAULT-level only (compiles at \
@@ -281,8 +281,8 @@ fn frontier_seq() {
 /// Compile-time — no inputs involved. Un-ignore when the transform recomputes
 /// dominance after splitting edges.
 #[test]
-#[ignore = "compiler panic: 'invalid operand stack index (10): requires access to more than 16 \
-            elements' at codegen/masm/src/emit/mod.rs:623 — F6 (edges to split = 1, six erased \
+#[ignore = "#1420: compiler panic: 'invalid operand stack index (10): requires access to more than \
+            16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 (edges to split = 1, six erased \
             split reloads): four u64 values live across a bottom-tested loop plus one crossing \
             count band; all four optimization levels, compile-time, no inputs"]
 fn window_erased_min() {
@@ -341,11 +341,11 @@ fn window_erased_guard_edges() {
 /// value ids move with the toolchain, which is why they are not pinned).
 /// Un-ignore when the transform recomputes dominance after splitting edges.
 #[test]
-#[ignore = "compiler panic: 'failed to schedule operands ... for inst arith.rotl with error: \
-            NoSolution' at codegen/masm/src/lower/lowering.rs:109 over a 17-felt stack — F6 (edges \
-            to split = 1, six erased split reloads): five u64 values live across a bottom-tested \
-            loop, no zero-trip loop and no count band; all four optimization levels, compile-time, \
-            no inputs"]
+#[ignore = "#1420: compiler panic: 'failed to schedule operands ... for inst arith.rotl with \
+            error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 over a 17-felt stack — F6 \
+            (edges to split = 1, six erased split reloads): five u64 values live across a \
+            bottom-tested loop, no zero-trip loop and no count band; all four optimization levels, \
+            compile-time, no inputs"]
 fn overflow_cluster_min() {
     run_case("overflow_cluster_min", include_str!("../cases/case_overflow_cluster_min.rs"));
 }

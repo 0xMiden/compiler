@@ -66,9 +66,9 @@ fn chain_sm_edges() {
 /// taking a mutable borrow of an operation it is already borrowing (same fix
 /// as `invariant_args_min`).
 #[test]
-#[ignore = "compiler panic WITHOUT full guest DWARF (guest debug 0 and 1, i.e. an ordinary release \
-            build): 'AliasingViolationError { kind: Mutable, location: hir/src/ir/operation.rs:877 \
-            }' at hir/src/patterns/rewriter.rs:335 while matching \
+#[ignore = "#1419: compiler panic WITHOUT full guest DWARF (guest debug 0 and 1, i.e. an ordinary \
+            release build): 'AliasingViolationError { kind: Mutable, location: \
+            hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while matching \
             'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no inputs \
             involved"]
 fn chain_sm_nodwarf() {
@@ -464,10 +464,10 @@ fn nest_continue_inline() {
 /// Compile-time — no inputs involved. Un-ignore when the rewriter stops taking
 /// a mutable borrow of an operation it is already borrowing.
 #[test]
-#[ignore = "compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: Mutable, \
-            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
-            matching 'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no \
-            inputs involved"]
+#[ignore = "#1419: compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: \
+            Mutable, location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 \
+            while matching 'remove-loop-invariant-args-from-before-block' — F12 class; \
+            compile-time, no inputs involved"]
 fn invariant_args_min() {
     run_case("invariant_args_min", include_str!("../cases/case_invariant_args_min.rs"));
 }

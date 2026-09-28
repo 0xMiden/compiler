@@ -3,7 +3,10 @@
 One verified fact per bullet, with its proof: a differential test
 (`module::test`) or a source path and function. Panic sites are quoted as the
 ignore texts quote them; only `frontier.rs:123` and `stack.rs:80` were
-re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
+re-checked against the current tree. A `Dead end:` bullet or sentence is a
+shape or lever verified to produce nothing; do not retry it. Open classes and
+their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
+"Corpus map on demand").
 
 ## Guest toolchain
 
@@ -12,7 +15,8 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   `+bulk-memory,+wide-arithmetic`, NO `+multivalue`
   (`midenc-compile/src/pipeline/frontends/rust.rs`, `MANDATORY_RUST_FLAGS`).
   Tuple/struct/array/u128 returns are sret pointers, u128 parameters two i64
-  (`calls::ret_area`, `calls::sret_shapes`).
+  (`calls::ret_area`, `calls::sret_shapes`). Dead end: multi-value returns
+  and block parameters.
 - `-Cpanic=immediate-abort`: every panic is a wasm `unreachable`, lowered to
   `push.0 assert` "entered unreachable code"; `#[panic_handler]` never runs on
   wasm (`control_flow::trap_branch`). No overflow checks, no `debug_assert!`:
@@ -78,13 +82,16 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   multi-site helpers, and turns 48+-byte constant copies into `memory.copy`
   (`opt_levels::loop_keep_oz`, `opt_levels::helper_calls_oz`,
   `opt_levels::mem_libcalls_oz`).
+- Dead end: -Oz as a coverage source; it opens no new compiler function
+  (`opt_levels::loop_keep_oz`).
 
 ## Frontend routing (Rust → wasm → HIR)
 
 - Rust `as` casts become `trunc`/`zext`/`sext`/`bitcast`, never `hir.cast`;
   `wasm.SignExtend` is `trunc` + `sext` (`signed::sext_widths`). Unsigned
   translators bitcast U32/U64 to I32/I64 around every op; U8/U16/U32-typed
-  values come only from widening loads (`memory::loadwiden`).
+  values come only from widening loads (`memory::loadwiden`). Dead end:
+  `hir.cast` / `OpEmitter::cast`.
 - Division: `arith.div` → `checked_div`, `arith.mod` → `checked_mod`,
   `wasm.i32_rem_s` → `wrapping_mod`, `i64.rem_s` has its own lowering
   (`signed::i64_srem`); `arith.divmod` comes only from `prepare_addr`
@@ -93,6 +100,7 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   bitcasts to u64 first; a constant multiplicand is the only constant-operand
   `sext`/`zext`, and each widening multiply gets its own extension pair
   (`wide::sext_const_shared`, `wide::zext_const_shared`, `signed::mulwide_dyn`).
+  Dead end: a multi-use 4-felt operand from widening multiplies.
 - Every shift and rotate count is wrapped in `arith.band(trunc(count),
   width - 1)` (`mask_movement_count`, `frontend/wasm/src/code_translator/mod.rs`):
   the count band of the spill section.
@@ -120,6 +128,8 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   pointers and a runtime count, `memory.fill` becomes `hir.mem_set`; `alloc`
   code has no `memcpy`/`memmove`/`memset` libcalls (`heap::heap_btree`,
   `memory::copy_ladder`).
+- Dead end: the data-segment insert/overlap arms; wasm-ld emits sorted
+  disjoint segments (`memory::segment_mix`).
 - Declared memory effects are complete and conservative: `hir.load`/
   `load_local` Read, `hir.store`/`store_local` Write, `hir.mem_cpy`
   Read(src)+Write(dst), `hir.mem_set` Write, `hir.mem_grow` Read+Write,
@@ -134,7 +144,9 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   check + `dynexec`; tag = interned signature index + 1 (`signature_type_tag`)
   (`calls::call_indirect`, `calls::indirect_sigs`, `calls::dyn_trait`,
   `calls::fnptr_value`, `calls::indirect_collision`). At most 15 argument
-  felts; one more is a clean diagnostic (`calls::indirect_wide`).
+  felts; one more is a clean diagnostic (`calls::indirect_wide`). Dead end:
+  funcref tables beyond one contiguous table (PIC base, holes, multi-table,
+  intrinsic entries).
 - Recursion compiles only through a `black_box`ed table: the assembler's
   cycle check sees direct `exec` edges only (`calls::recursion_indirect`,
   `frames::rec_mutual`).
@@ -145,23 +157,38 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   (`midenc-compile/src/pipeline/backend.rs`): Canonicalizer → CSE → SCCP →
   SinkOperandDefs → Local2Reg → TransformSpills → LiftControlFlowToSCF →
   Canonicalizer → SinkOperandDefs → TransformSpills. `ControlFlowSink` and
-  DCE are commented out; there is no middle-end knob.
+  DCE are commented out; there is no middle-end knob: `--optimize` sets only
+  the guest LLVM level (`cargo_profile_opt_level`,
+  `midenc-compile/src/pipeline/frontends/rust.rs`). Dead end: middle-end
+  knobs (`Aggressive` simplification, `ControlFlowSink`, DCE, per-pass flags)
+  and the advice-taint and postdominance analyses need a source change or
+  `-Zlint`.
 - CSE and SCCP see only pre-lift bodies, which hold zero region ops
   (`cse::twin_if`). CSE merges same-block `hir.load_local`s with no store
   between (the strongest Copy-constraint lever), and heap loads only 1 byte
   wide: for 2+ bytes the second load's alignment `hir.assertz` (a Write) sits
-  between them (`memorder::cse_widths`, `cse::reload_write`).
+  between them (`memorder::cse_widths`, `cse::reload_write`). Dead end: CSE
+  region equivalence and non-dominance paths.
 - Commutative add, mul, band, bor, bxor, eq, neq merge with their swapped
   twin, nested trees in one pass; {a, a} vs {a, b} and eq vs neq do not
   (`cse::comm_arith`, `cse::comm_cmp`, `cse::nested_swap`, `cse::multiset`,
   `cse::noncomm_arith`). Swapped operands reach HIR only via two volatile reads
   of one address issued in opposite order (`cse::comm_bits`).
+- Dead end: a positive `{a, a}` merge needs a `local.tee` per square
+  (`cse::multiset`); commutative twins split with `black_box` or pointer math
+  are re-merged by LLVM (`cse::comm_arith`); a load, bulk write and load in
+  one block are split by LLVM's `len != 0` guard (`memorder::cse_bulk`).
 - SCCP is a no-op on plain-Rust guests: identical op histograms before and
   after, it only re-uniques existing `arith.constant`s, never sees a block
   argument or successor operand, and never folds a `static` through a load
   (`sccp::if_merge`, `sccp::nested_merge`, `memorder::static_write`). The
   folder keys constants by (dialect, value, type) (`UniquedConstant`,
   `hir/src/folder.rs`; `sccp::const_ops`, `sccp::const_wide`).
+- Dead end: SCCP folding or dead-arm deletion (`sccp::dead_flag`,
+  `sccp::dead_arm`); `OperationFolder::try_fold` and the sparse `meet` have no
+  caller (`hir/src/folder.rs`, `hir-analysis/src/sparse/backward.rs`);
+  removing DWARF does not turn local merges into block results
+  (`sccp::if_merge`).
 - Canonicalization producers (default level unless noted):
   `SimplifySwitchFallbackOverlap` fires once per switch however many arms
   merge (`canon::arms_merge`); `SimplifyCondBrLikeSwitch` needs a
@@ -184,6 +211,18 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   `RemoveLoopInvariantArgsFromBeforeBlock` panics on every match (#1419).
   `SplitCriticalEdges` shares the greedy fixpoint, so a critical-edge guard
   can become satisfiable mid-run.
+- Dead end: `CanonicalizeI64RotateBy32ToSwap` (the count band hides the 32,
+  `mask_movement_count`); `SimplifyBrToReturn` (claimed first by
+  `SimplifyBrToBlockWithSinglePred`, `control_flow::cf_shapes`);
+  `WhileConditionTruth` (LLVM folds in-body reads of the condition,
+  `control_flow::do_while`); `FoldConstantIndexSwitch` and `cf.Select::fold`
+  (selectors are never constant post-lift, `control_flow::switch_forms`).
+- Dead end: pattern variants beyond the producers above:
+  `WhileRemoveDuplicatedResults` fires only on the three-level triangle
+  (`control_flow::triangle`), the column cascade needs an EMPTY `continue`
+  (`canon::col_cascade`), duplicate `match` arms do not reach
+  `SimplifyCondBrLikeSwitch` (`control_flow::sm16`), and six return sites stop
+  `SimplifyPassthroughCondBr` (`canon::passthru_frame`).
 - `RemoveUnusedSinglePredBlockArgs` reads `successors()[0]` for both
   destinations, so else-successor arguments are never removed
   (`dialects/cf/src/canonicalization/simplify_successor_arguments.rs`).
@@ -204,6 +243,9 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   `debug_info::l2r_livecall`). Full DWARF blocks most conversions
   (`convert_debug_references_for_local`), not the candidates: 4 promoted vs 27
   over the `l2r` cases of `debug_info`. Dead-store erasure is not debug-gated.
+- Dead end: Local2Reg declare conversion, poison arm and `is_declaration`:
+  no single-op `[WasmLocal]` location, no read-before-write local, no imports
+  (`debug_info::dbg_byval`).
 
 ## Spills, the operand window and the scheduler
 
@@ -259,6 +301,10 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   (`pressure::unary_window`); arity 2 has only `TwoArgs`, and a Copy operand
   near the bottom of a full window needs index 16: a chain passes at 18 shared
   counts, fails at 20 (`pressure::chain_window`, `spills::rotl_window`).
+- Dead end: solver interiors (`CopyAll`, `SwapAndMoveUp`, the first evict of
+  `MoveDownAndSwap`, fuel exhaustion): operands stay adjacent to their op
+  (`scale::chain300`). Terminator reloads, splits carrying successor
+  arguments and pre-lift live-through are never reached (`spills::spill_loop`).
 - At -Oz bands stay un-hoisted: with N bands dying in the loop and M live
   after it, N + M <= 11 compiles and M = 0 has no boundary
   (`opt_levels::band_guard_oz`, `opt_levels::drop_batch_oz`,
@@ -290,6 +336,10 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   individually safe configurations can compose into a panic
   (`programs::prog_varint_wa_oz_nodwarf`). Opt level is not a safety ladder
   either way (`programs_oz::prog_sha512`, `programs_oz::prog_threefish_o3`).
+- Dead end: user fixes that fail: fewer distinct rotation constants
+  (non-monotone, `programs_oz::prog_threefish_oz_guard`), `[u64; N]` state,
+  hand-written rotates, flattening or splitting the program for the frontier
+  panic (`programs::prog_tlv_guard`), another `-O` (`programs_oz::prog_sha512`).
 - Callee pressure is independent of caller pressure; wide by-value results
   cross calls in every layout (`calls::callee_pressure`, `compose::sret_exits`).
 
@@ -297,7 +347,7 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
 
 - Every payload column is a 1-felt u32 discriminator or a `ub.poison`
   placeholder; user state crosses regions in locals (`control_flow::nest8`,
-  `control_flow::exit_values`).
+  `control_flow::exit_values`). Dead end: multi-felt cfg-to-scf columns.
 - Region-op result columns grow about two per nesting level; exit
   multiplicity does not matter (`control_flow::wide_exits`). The 16-felt
   region-exit budget is hit at depth 9 at O2 and depth 7 at -Oz and below O2
@@ -322,6 +372,10 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   (`ReturnLikeOpKey`, `hir-transform/src/cfg_to_scf/transform.rs`) never
   combines two (`trapspill::both_kinds`, `trapspill::helper_arg`). Exit kinds
   are exactly `builtin.ret` and `ub.unreachable` (`control_flow::ret_args`).
+- Dead end: two `ub.unreachable`s for `combine_exit` (LLVM merges traps, a
+  helper only moves the one), and one case per panic kind under freight (all
+  kinds are the same `unreachable`: `trapspill::body_get`,
+  `trapspill::body_div`).
 - Scale is free below the switch-width cap: about 800 blocks, 64 arms, 16
   loop-carried variables, 12 nesting levels (`control_flow::blocks_max`,
   `scale::match64`, `control_flow::sm16`, `scale::deep_nest`). A 255-target
@@ -341,6 +395,14 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   `heap::heap_vec_remove_u8`, `memorder::copy_fwd`).
 - `OpEmitter::memset` is a per-byte loop, about 25 cycles per byte
   (`memory::frame_1m`).
+- Dead end: emitter arms with no producer. The `_imm` load/store and
+  quad-word arms serve only unit tests and the `__stack_pointer` initializer;
+  constant user addresses still go through `prepare_addr`
+  (`memory::mem_globals`). Unchecked division, U64 `checked_divmod` and int32
+  N-bit normalization have no frontend caller
+  (`codegen/masm/src/emit/int32.rs`; `arith::div_const_forms`). Felt memory
+  ops, `mem_stream`, `store_array` and word-sized `memcopy_words` have no
+  producer (`memory::copy_ladder`).
 - The emitter pushes a constant from its IMMEDIATE while IR dumps print the
   result type, so an attribute/type mismatch shows only in the MASM
   (`wide::parse_i64_hand`).
@@ -349,7 +411,9 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   all-unused batch (`opt_levels::drop_batch_oz`), solver
   (`opt_levels::drop_solver_oz`). The dead-result drop fires only at index 0,
   from the unused low half of `mul_wide` in a `mulhi`
-  (`opt_levels::mulhi_dead_oz`).
+  (`opt_levels::mulhi_dead_oz`). Dead end: block-entry interleave drops
+  (entry liveness is uniform) and a dead HIGH half of `mul_wide` (LLVM emits a
+  narrow `i64.mul`).
 - The only `assertz` producer is `prepare_addr`'s alignment check; `assert`/
   `assert_eq` come only from felt intrinsics (`memory::packed2_fields`).
 
@@ -367,7 +431,8 @@ re-checked against the current tree. Classes and dead ends: `CORPUS-MAP.md`.
   capped at `HEAP_END = (2^30 - 1) * 4` bytes, returning the old page count or
   -1; `memory.size` counts only that heap, so only flags and deltas compare
   (`heap::heap_grow`, `codegen/masm/intrinsics/mem.masm`). So a
-  `memory_grow(0, k) * 65536` base points at the data segments.
+  `memory_grow(0, k) * 65536` base points at the data segments. Dead end:
+  the dynamic heap base; only the SDK intrinsic knows it.
 - Trap parity holds for every Rust panic family at every configuration,
   allocator exhaustion included; statically present, dynamically dead panics
   stay dead (`traps::trap_index`, `traps::trap_slice_range`,

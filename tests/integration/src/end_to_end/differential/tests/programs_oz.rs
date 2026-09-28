@@ -126,7 +126,7 @@ fn prog_sha512_oz_edges() {
 /// Compile-time — no inputs involved. Un-ignore together with the other F6
 /// reproducers (`pressure::zero_trip_frontier`, `programs::prog_rkscan`).
 #[test]
-#[ignore = "compiler panic at the DEFAULT configuration: 'invalid operand stack index (9): \
+#[ignore = "#1420: compiler panic at the DEFAULT configuration: 'invalid operand stack index (9): \
             requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
             class (4 split edges, 14 erased split reloads in the spills trace); also panics at \
             --optimize=max (index 12) and --optimize=basic (index 10); compiles and passes at \
@@ -190,11 +190,11 @@ fn prog_xxh64_oz_edges() {
 /// payload column. Compile-time — no inputs involved. Un-ignore with
 /// `compose::invariant_args_min`.
 #[test]
-#[ignore = "compiler panic at --optimize=basic: 'AliasingViolationError { kind: Mutable, location: \
-            hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while matching \
-            'remove-loop-invariant-args-from-before-block' — F12 class; the same source compiles \
-            at size-min (prog_xxh64_oz), at the default level and at max; compile-time, no inputs \
-            involved"]
+#[ignore = "#1419: compiler panic at --optimize=basic: 'AliasingViolationError { kind: Mutable, \
+            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
+            matching 'remove-loop-invariant-args-from-before-block' — F12 class; the same source \
+            compiles at size-min (prog_xxh64_oz), at the default level and at max; compile-time, \
+            no inputs involved"]
 fn prog_xxh64_o1() {
     run_case_with_flags(
         "prog_xxh64_o1",
@@ -234,10 +234,10 @@ fn prog_blake2b_oz() {
 /// Compile-time — no inputs involved. Un-ignore with
 /// `compose::invariant_args_min`.
 #[test]
-#[ignore = "compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: Mutable, \
-            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
-            matching 'remove-loop-invariant-args-from-before-block' — F12 class; also panics at \
-            --optimize=max and --optimize=basic; compiles and passes at --optimize=size-min \
+#[ignore = "#1419: compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: \
+            Mutable, location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 \
+            while matching 'remove-loop-invariant-args-from-before-block' — F12 class; also panics \
+            at --optimize=max and --optimize=basic; compiles and passes at --optimize=size-min \
             (prog_blake2b_oz); compile-time, no inputs involved"]
 fn prog_blake2b() {
     run_case("prog_blake2b", include_str!("../cases/case_prog_blake2b.rs"));
@@ -284,8 +284,8 @@ fn prog_blake2b() {
 /// places its spills where the spilled value is still inside the window (or
 /// the emitter spills from below it).
 #[test]
-#[ignore = "compiler panic at --optimize=size-min (with AND without guest DWARF): 'invalid operand \
-            stack index (11): requires access to more than 16 elements' at \
+#[ignore = "#1422: compiler panic at --optimize=size-min (with AND without guest DWARF): 'invalid \
+            operand stack index (11): requires access to more than 16 elements' at \
             codegen/masm/src/emit/mod.rs:623 while emitting a spill store — over-window pressure \
             with the spill analysis run, no edge splits, no erased reloads (ledger F17; not F6, \
             not F2); the default level and --optimize=basic compile the same source; compile-time, \
@@ -313,7 +313,7 @@ fn prog_threefish_oz() {
 /// not rediscover it as a new finding. Compile-time — no inputs involved.
 /// Un-ignore with `spills::rotl_window`.
 #[test]
-#[ignore = "compiler panic at --optimize=max: 'failed to schedule operands ... for inst \
+#[ignore = "#1422: compiler panic at --optimize=max: 'failed to schedule operands ... for inst \
             'arith.rotl' with error: NoSolution, constraints: [Move, Copy]' at \
             codegen/masm/src/lower/lowering.rs:109 over an in-window 15-felt stack — the arity-2 \
             solver gap (F2, rotl_window class; no edge splits in the spills trace); compile-time, \

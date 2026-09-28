@@ -1,10 +1,10 @@
 # fuzza operational reference
 
-What an agent needs to run a campaign. Companions:
+What an agent needs to run a campaign. Companion:
 [`PIPELINE-FACTS.md`](PIPELINE-FACTS.md) (what the compiler does with plain
-Rust, stage by stage) and [`CORPUS-MAP.md`](CORPUS-MAP.md) (open classes,
-reproducers, guards, dead ends). Read all three before writing a case. Bug
-detail lives only at the `#[ignore]`d test and in the filed issue. A fact
+Rust, stage by stage, and the dead ends). Read both before writing a case and
+rebuild the corpus map with grep (below). Bug detail lives only at the
+`#[ignore]`d test and in the filed issue. A fact
 goes in only with a proof pointer (`module::test` or source path + function);
 when a fact changes, rewrite it in place.
 
@@ -139,9 +139,19 @@ build the masked-index control before calling a trap-edge variant new.
   measure what a lever opened with a per-function set diff between two
   `report.json` snapshots, never with the rendered "newly-exercised" count
   (a test-crate-rebuild artifact).
-- The fact files are checked with `python3 tools/fuzza-agent/check_facts.py`
-  (every cited `module::test` and path exists, every ignored test is in
-  `CORPUS-MAP.md`).
+- Corpus map on demand: every `#[ignore = "..."]` string starts with its
+  filed issue (`#1418`: ...) or `gap: ` (diagnostic gaps and link limits, not
+  filed as bugs). A class's reproducers, i.e. the un-ignore list of its fix
+  PR: `grep -rn -A3 '#\[ignore'
+  tests/integration/src/end_to_end/differential/tests/ | grep '#1420'`.
+  Completeness check (must print nothing): `grep -rn '^#\[ignore'
+  tests/integration/src/end_to_end/differential/tests/ | grep -v
+  '"\(#1[0-9]\{3\}\|gap\): '`. Twins follow the naming convention (`_repro`,
+  `_edges`, `_guard`, `_oz`, `_o1`, `_basic`, `_max`, `_nodwarf`, `_min`);
+  guards are named in the reproducers' doc comments ("Bounded by"). Closed
+  classes kept as guards are found by their markers in the doc comments
+  (`ef358e356`, `nightly-2026-09-01`) or by a doc link to a test that
+  carries one.
 
 ## Writing cases
 
@@ -182,7 +192,7 @@ Tricks that work:
 - Remainders need an operand pair with no matching division; `<=`/`>=`/`ge_u`
   need a bool materialized in an `#[inline(never)]` helper.
 
-LLVM pre-cleaning: `PIPELINE-FACTS.md`; fruitless shapes: `CORPUS-MAP.md`.
+LLVM pre-cleaning and fruitless shapes (`Dead end:`): `PIPELINE-FACTS.md`.
 
 ## Out-of-scope surfaces
 

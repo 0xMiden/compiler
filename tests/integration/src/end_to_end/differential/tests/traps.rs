@@ -675,8 +675,8 @@ fn trap_deep_nest_edges() {
 /// oracle cannot pass until Miden bounds-checks linear memory, and no other
 /// case in this module depends on it.
 #[test]
-#[ignore = "Miden does not bounds-check linear memory: native trap (signal 11) / wasmtime `out of \
-            bounds memory access` vs masm value 5 for inputs (0, 1)"]
+#[ignore = "gap: Miden does not bounds-check linear memory: native trap (signal 11) / wasmtime \
+            `out of bounds memory access` vs masm value 5 for inputs (0, 1)"]
 fn trap_oob_read() {
     run_case_traps_with_inputs(
         "trap_oob_read",

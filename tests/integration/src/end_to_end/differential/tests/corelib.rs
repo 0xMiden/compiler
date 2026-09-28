@@ -102,8 +102,8 @@ fn core_sorts() {
 /// and index, or write the selection by hand. Un-ignore when the assembler
 /// tolerates recursion, or when `core` stops recursing here.
 #[test]
-#[ignore = "F13: select_nth_unstable reaches the recursive median_of_medians; assembler: found a \
-            cycle in the call graph"]
+#[ignore = "gap: F13: select_nth_unstable reaches the recursive median_of_medians; assembler: \
+            found a cycle in the call graph"]
 fn core_select_nth_nolink() {
     run_case("core_select_nth_nolink", include_str!("../cases/case_core_selectnth.rs"));
 }
@@ -121,7 +121,7 @@ fn core_select_nth_nolink() {
 /// process (`midenc-compile` calls `process::exit` on a failed `cargo
 /// build`), so this stays ignored rather than failing.
 #[test]
-#[ignore = "F13: constant-size array `==` becomes a memcmp libcall at the default level on \
+#[ignore = "gap: F13: constant-size array `==` becomes a memcmp libcall at the default level on \
             nightly-2026-09-01 (it did only at -Oz on nightly-2026-04-30); rust-lld: undefined \
             symbol: memcmp"]
 fn core_eq_reach() {
@@ -135,8 +135,8 @@ fn core_eq_reach() {
 /// libcall — replace it with `iter().eq(..)` or a byte loop. Un-ignore when
 /// the guest links against a `memcmp` implementation.
 #[test]
-#[ignore = "F13: constant-size array `==` becomes a memcmp libcall at -Oz; rust-lld: undefined \
-            symbol: memcmp"]
+#[ignore = "gap: F13: constant-size array `==` becomes a memcmp libcall at -Oz; rust-lld: \
+            undefined symbol: memcmp"]
 fn core_eq_reach_oz() {
     run_case_with_flags(
         "core_eq_reach_oz",
@@ -170,8 +170,8 @@ fn core_str_patterns() {
 /// memcmp`. Workaround: scan with `char_indices` and slice by hand (see
 /// `prog_expr_wa`). Un-ignore when the guest links against a `memcmp`.
 #[test]
-#[ignore = "F13: str::split(char) keeps an outlined memcmp at -O1; rust-lld: undefined symbol: \
-            memcmp"]
+#[ignore = "gap: F13: str::split(char) keeps an outlined memcmp at -O1; rust-lld: undefined \
+            symbol: memcmp"]
 fn core_str_patterns_basic() {
     run_case_with_flags(
         "core_str_patterns_basic",
@@ -194,8 +194,8 @@ fn core_str_find() {
 /// Workaround: `s.as_bytes().iter().position(|&b| b == c as u8)` for an
 /// ASCII pattern. Un-ignore when the guest links against a `memcmp`.
 #[test]
-#[ignore = "F13: str::find(char) keeps an outlined memcmp at -Oz (and at -O1); rust-lld: undefined \
-            symbol: memcmp"]
+#[ignore = "gap: F13: str::find(char) keeps an outlined memcmp at -Oz (and at -O1); rust-lld: \
+            undefined symbol: memcmp"]
 fn core_str_find_oz() {
     run_case_with_flags(
         "core_str_find_oz",
@@ -211,7 +211,7 @@ fn core_str_find_oz() {
 /// (which inlines everywhere except `-Oz`). Un-ignore when the guest links
 /// against a `memcmp` implementation.
 #[test]
-#[ignore = "F13: slice ==/!=/< lowers to memcmp; rust-lld: undefined symbol: memcmp"]
+#[ignore = "gap: F13: slice ==/!=/< lowers to memcmp; rust-lld: undefined symbol: memcmp"]
 fn core_slice_eq_nolink() {
     run_case("core_slice_eq_nolink", include_str!("../cases/case_core_sliceeq.rs"));
 }
@@ -222,7 +222,7 @@ fn core_slice_eq_nolink() {
 /// `as_bytes().iter().eq(..)`, or a byte loop. Un-ignore when the guest
 /// links against a `memcmp` implementation.
 #[test]
-#[ignore = "F13: str equality lowers to memcmp; rust-lld: undefined symbol: memcmp"]
+#[ignore = "gap: F13: str equality lowers to memcmp; rust-lld: undefined symbol: memcmp"]
 fn core_str_eq_nolink() {
     run_case("core_str_eq_nolink", include_str!("../cases/case_core_streq.rs"));
 }
@@ -233,7 +233,7 @@ fn core_str_eq_nolink() {
 /// `a.iter().zip(prefix).all(|(x, y)| x == y)`, or `starts_with(char)` for a
 /// one-character prefix. Un-ignore when the guest links against a `memcmp`.
 #[test]
-#[ignore = "F13: starts_with/ends_with lower to memcmp; rust-lld: undefined symbol: memcmp"]
+#[ignore = "gap: F13: starts_with/ends_with lower to memcmp; rust-lld: undefined symbol: memcmp"]
 fn core_starts_with_nolink() {
     run_case("core_starts_with_nolink", include_str!("../cases/case_core_startswith.rs"));
 }
@@ -244,7 +244,7 @@ fn core_starts_with_nolink() {
 /// over `as_bytes()`, or a single-`char` search ([`core_str_find`]).
 /// Un-ignore when the guest links against a `memcmp` implementation.
 #[test]
-#[ignore = "F13: the two-way substring searcher lowers to memcmp; rust-lld: undefined symbol: \
+#[ignore = "gap: F13: the two-way substring searcher lowers to memcmp; rust-lld: undefined symbol: \
             memcmp"]
 fn core_str_search_nolink() {
     run_case("core_str_search_nolink", include_str!("../cases/case_core_strsearch.rs"));
@@ -360,8 +360,8 @@ fn core_chkmul_i64() {
 /// links everywhere and computes the identical answer on the whole 1225-pair
 /// native grid. Un-ignore when the guest links against a `memcmp`.
 #[test]
-#[ignore = "F13: two nested str::split(char) loops keep an outlined memcmp; rust-lld: undefined \
-            symbol: memcmp"]
+#[ignore = "gap: F13: two nested str::split(char) loops keep an outlined memcmp; rust-lld: \
+            undefined symbol: memcmp"]
 fn prog_expr() {
     run_case("prog_expr", include_str!("../cases/case_prog_expr.rs"));
 }
@@ -618,7 +618,7 @@ fn prog_numeric_edges() {
 /// over narrow integer accumulators, no `return` / `break` / `continue` in
 /// it at all. Un-ignore when F12 is fixed.
 #[test]
-#[ignore = "F12: rewriter.rs:335 AliasingViolationError without guest DWARF (last pattern: \
+#[ignore = "#1419: F12: rewriter.rs:335 AliasingViolationError without guest DWARF (last pattern: \
             remove-loop-invariant-args-from-before-block)"]
 fn prog_numeric_nodwarf() {
     run_case_with_flags(
@@ -652,10 +652,10 @@ fn prog_numeric_nodwarf() {
 /// one makes the default level compile. Un-ignore with the other F6
 /// reproducers.
 #[test]
-#[ignore = "F6 (erased split-edge reloads in the spills trace): lowering.rs:109 NoSolution [Move, \
-            Copy] over an in-window 16-felt stack at the default level and --optimize=max (the \
-            failing op is arith.gt on nightly-2026-09-01 guests, arith.shr on nightly-2026-04-30); \
-            frontier.rs:123 at --optimize=basic"]
+#[ignore = "#1420: F6 (erased split-edge reloads in the spills trace): lowering.rs:109 NoSolution \
+            [Move, Copy] over an in-window 16-felt stack at the default level and --optimize=max \
+            (the failing op is arith.gt on nightly-2026-09-01 guests, arith.shr on \
+            nightly-2026-04-30); frontier.rs:123 at --optimize=basic"]
 fn prog_numeric_full() {
     run_case("prog_numeric_full", include_str!("../cases/case_prog_numeric.rs"));
 }
@@ -744,7 +744,7 @@ fn prog_records_edges() {
 /// query — the F6 stale-dominator-tree mechanism; verified 2026-09-17 to
 /// still pass with `RUSTUP_TOOLCHAIN=nightly-2026-04-30` guests).
 #[test]
-#[ignore = "F6: frontier.rs:123 Option::unwrap on None at the default level with \
+#[ignore = "#1420: F6: frontier.rs:123 Option::unwrap on None at the default level with \
             nightly-2026-09-01 guests (8 split edges in the spills trace); compiled on \
             nightly-2026-04-30"]
 fn prog_ordkeys() {
@@ -755,7 +755,7 @@ fn prog_ordkeys() {
 /// (`input1 % 12`, `input2 % 12`), a clamp range whose ends are equal, all
 /// three `Class` variants present, zero / all-ones / equal pairs.
 #[test]
-#[ignore = "F6: frontier.rs:123 Option::unwrap on None at the default level with \
+#[ignore = "#1420: F6: frontier.rs:123 Option::unwrap on None at the default level with \
             nightly-2026-09-01 guests; see prog_ordkeys"]
 fn prog_ordkeys_edges() {
     run_case_with_inputs(
@@ -783,7 +783,7 @@ fn prog_ordkeys_edges() {
 /// compiled at the other three levels; since nightly-2026-09-01 the default
 /// level fails too ([`prog_ordkeys`]). Un-ignore when F6 is fixed.
 #[test]
-#[ignore = "F6: frontier.rs:123 Option::unwrap on None at --optimize=max"]
+#[ignore = "#1420: F6: frontier.rs:123 Option::unwrap on None at --optimize=max"]
 fn prog_ordkeys_max() {
     run_case_with_flags("prog_ordkeys_max", include_str!("../cases/case_prog_ordkeys.rs"), MAX);
 }

@@ -12,13 +12,10 @@ the agent-facing tooling that grows the case set:
 - [`KNOWLEDGE.md`](KNOWLEDGE.md) — the committed fact base every run must read
   first: the operational reference (running, evidence, classification,
   gotchas, case-writing tricks), with [`PIPELINE-FACTS.md`](PIPELINE-FACTS.md)
-  (verified reachability facts by pipeline stage) and
-  [`CORPUS-MAP.md`](CORPUS-MAP.md) (open classes, reproducers, guards, dead
-  ends).
+  (verified reachability facts and dead ends by pipeline stage). Open
+  classes, reproducers and guards are rebuilt with grep from the tagged
+  `#[ignore]` attributes (`KNOWLEDGE.md`, "Corpus map on demand").
 - `cov.py` — renders the llvm-cov JSON into the agent-readable `report.md`.
-- `check_facts.py` — checks the fact files: every cited `module::test` and
-  source path exists, every `#[ignore]`d differential test is in
-  `CORPUS-MAP.md`.
 - `scratch/` — per-run agent notes (gitignored, machine-local).
 
 ## How the differential tests work

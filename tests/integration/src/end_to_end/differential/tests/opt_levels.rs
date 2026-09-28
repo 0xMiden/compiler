@@ -111,10 +111,10 @@ fn switch_loop_oz() {
 /// block label moved from `^block129` to `^block137`; site and mechanism
 /// unchanged). Un-ignore together with `deep_nest_overflow`.
 #[test]
-#[ignore = "compiler panic: 'implicit operand stack overflow along incoming control flow edges of \
-            after(scf.if in ^block137)' at hir-analysis/src/analyses/spills.rs:1533 at -Oz — \
-            cfg-to-scf exit-dispatch result columns of the eight-deep nest exceed the 16-felt \
-            budget (compile-time, no inputs involved)"]
+#[ignore = "#1422: compiler panic: 'implicit operand stack overflow along incoming control flow \
+            edges of after(scf.if in ^block137)' at hir-analysis/src/analyses/spills.rs:1533 at \
+            -Oz — cfg-to-scf exit-dispatch result columns of the eight-deep nest exceed the \
+            16-felt budget (compile-time, no inputs involved)"]
 fn nest8_oz() {
     run_case_with_flags("nest8_oz", include_str!("../cases/case_nest8.rs"), SIZE_MIN);
 }
@@ -241,10 +241,11 @@ fn deadfall_oz_edges() {
 /// matches native at -Oz). Compile-time — no inputs involved. Un-ignore when
 /// the spill placement keeps the spilled value inside the window.
 #[test]
-#[ignore = "compiler panic at --optimize=size-min: 'invalid operand stack index (10): requires \
-            access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F17 (seven \
-            'additional spills required', edges to split = 0, no erased reloads; the failing op is \
-            the spill store hir.store_local into slot 12); compile-time, no inputs involved"]
+#[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F17 \
+            (seven 'additional spills required', edges to split = 0, no erased reloads; the \
+            failing op is the spill store hir.store_local into slot 12); compile-time, no inputs \
+            involved"]
 fn spill_store_min() {
     run_case_with_flags(
         "spill_store_min",

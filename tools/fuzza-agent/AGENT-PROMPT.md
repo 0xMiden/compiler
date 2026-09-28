@@ -8,9 +8,9 @@ Before touching anything, read (in this order):
 1. [`README.md`](README.md) — how the harness and the coverage loop work.
 2. [`KNOWLEDGE.md`](KNOWLEDGE.md) — the accumulated fact base: operational
    gotchas and case-writing tricks, with [`PIPELINE-FACTS.md`](PIPELINE-FACTS.md)
-   (compiler reachability facts, LLVM pre-cleaning traps) and
-   [`CORPUS-MAP.md`](CORPUS-MAP.md) (known classes and dead ends). Do **not**
-   re-derive anything recorded there.
+   (compiler reachability facts, LLVM pre-cleaning traps, dead ends); known
+   classes are the issue tags on the `#[ignore]` attributes (`KNOWLEDGE.md`,
+   "Corpus map on demand"). Do **not** re-derive anything recorded there.
 3. The test modules under `tests/integration/src/end_to_end/differential/tests/`
    and the case files they reference — do not duplicate constructs existing
    cases already cover.
@@ -63,8 +63,9 @@ fuzza harness. **Stop when any of these holds:**
   reading the remaining cold functions and explaining why each is out of reach
   beats grinding five ritual zero-delta cases). Record the full argument in the
   scratch log, and distill the durable parts — new reachability facts, verified
-  dead ends — into [`KNOWLEDGE.md`](KNOWLEDGE.md): scratch logs are gitignored
-  and machine-local; `KNOWLEDGE.md` is what future runs actually see.
+  dead ends — into [`PIPELINE-FACTS.md`](PIPELINE-FACTS.md) (operational
+  lessons into [`KNOWLEDGE.md`](KNOWLEDGE.md)): scratch logs are gitignored
+  and machine-local; the fact files are what future runs actually see.
 
 ## Case constraints
 
@@ -139,8 +140,8 @@ fn <name>() {
      a literal; getting to an `_imm` arm usually requires HIR-level
      canonicalization (e.g. arith constant folding), not raw user code.
 
-   `PIPELINE-FACTS.md`'s "Frontend routing" section and `CORPUS-MAP.md`'s
-   "Dead ends" record many verified chains and dead ends — check them before
+   `PIPELINE-FACTS.md`'s "Frontend routing" section and its `Dead end:`
+   bullets record many verified chains and dead ends — check them before
    spending a probe.
 3. **Write** `case_<name>.rs` designed to exercise that construct through the
    `(u32, u32) -> u32` entrypoint. Keep it minimal — the less incidental code,
@@ -220,7 +221,7 @@ fn <name>() {
      panic's class, take the spills trace and the pattern trace (see
      "Reference commands") — the crash site alone does not identify the
      mechanism (`KNOWLEDGE.md`, "Classifying a compile-time panic";
-     `CORPUS-MAP.md`, "Open classes"). If the case
+     the open classes: `KNOWLEDGE.md`, "Corpus map on demand"). If the case
      mixes several constructs,
      split it so each divergence gets its own minimal reproducer — the passing
      siblings *bound* the bug for free. The test's doc comment and ignore

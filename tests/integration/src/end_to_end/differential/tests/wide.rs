@@ -1021,9 +1021,9 @@ fn wide_limbs_freight() {
 /// Compile-time — no inputs involved. Un-ignore with the other F6
 /// reproducers.
 #[test]
-#[ignore = "compiler panic at --optimize=size-min: 'invalid operand stack index (10): requires \
-            access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 (edges to \
-            split = 1, the erased reload %55 is the operand of the failing spill store); \
+#[ignore = "#1420: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
+            (edges to split = 1, the erased reload %55 is the operand of the failing spill store); \
             compile-time, no inputs involved"]
 fn wide_limbs_freight_oz() {
     run_case_with_flags(
