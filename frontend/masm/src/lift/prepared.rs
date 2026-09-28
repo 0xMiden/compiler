@@ -6,7 +6,7 @@ use midenc_hir::traits::{AnyInteger, AnyPointer, AnyUnsignedInteger, TypeConstra
 
 use super::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct Value(usize);
 
 #[derive(Clone, Copy)]
@@ -420,15 +420,15 @@ impl PreparationBuilder {
         Ok((results[0], results[1], results[2], results[3]))
     }
 
-    pub(super) fn hash(&mut self, values: Vec<Value>, span: SourceSpan) -> Result<Vec<Value>> {
-        let results = self.record(values, vec![Type::Felt; 4], move |b, v| {
+    pub(super) fn hash(&mut self, values: [Value; 4], span: SourceSpan) -> Result<Vec<Value>> {
+        let results = self.record(values.into(), vec![Type::Felt; 4], move |b, v| {
             Ok(b.hash(v[0], v[1], v[2], v[3], span)?.into_iter().collect())
         });
         Ok(results)
     }
 
-    pub(super) fn hmerge(&mut self, values: Vec<Value>, span: SourceSpan) -> Result<Vec<Value>> {
-        let results = self.record(values, vec![Type::Felt; 4], move |b, v| {
+    pub(super) fn hmerge(&mut self, values: [Value; 8], span: SourceSpan) -> Result<Vec<Value>> {
+        let results = self.record(values.into(), vec![Type::Felt; 4], move |b, v| {
             Ok(b.hmerge(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], span)?
                 .into_iter()
                 .collect())
@@ -436,8 +436,8 @@ impl PreparationBuilder {
         Ok(results)
     }
 
-    pub(super) fn hperm(&mut self, values: Vec<Value>, span: SourceSpan) -> Result<Vec<Value>> {
-        let results = self.record(values, vec![Type::Felt; 12], move |b, v| {
+    pub(super) fn hperm(&mut self, values: [Value; 12], span: SourceSpan) -> Result<Vec<Value>> {
+        let results = self.record(values.into(), vec![Type::Felt; 12], move |b, v| {
             Ok(b.hperm(
                 v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], span,
             )?

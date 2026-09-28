@@ -2205,21 +2205,30 @@ impl<'a> ProcedurePreparer<'a> {
     }
 
     fn hash(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
-        let operands = self.pop_cast_felt_window(4, span, builder)?;
+        let operands = self
+            .pop_cast_felt_window(4, span, builder)?
+            .try_into()
+            .expect("hash window has four values");
         let results = builder.hash(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
     fn hmerge(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
-        let operands = self.pop_cast_felt_window(8, span, builder)?;
+        let operands = self
+            .pop_cast_felt_window(8, span, builder)?
+            .try_into()
+            .expect("hmerge window has eight values");
         let results = builder.hmerge(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
     fn hperm(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
-        let operands = self.pop_cast_felt_window(12, span, builder)?;
+        let operands = self
+            .pop_cast_felt_window(12, span, builder)?
+            .try_into()
+            .expect("hperm window has twelve values");
         let results = builder.hperm(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
