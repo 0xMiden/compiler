@@ -6,9 +6,11 @@
 Before touching anything, read (in this order):
 
 1. [`README.md`](README.md) — how the harness and the coverage loop work.
-2. [`KNOWLEDGE.md`](KNOWLEDGE.md) — the accumulated fact base: compiler
-   reachability facts, LLVM pre-cleaning traps, case-writing tricks, and
-   operational gotchas. Do **not** re-derive anything recorded there.
+2. [`KNOWLEDGE.md`](KNOWLEDGE.md) — the accumulated fact base: operational
+   gotchas and case-writing tricks, with [`PIPELINE-FACTS.md`](PIPELINE-FACTS.md)
+   (compiler reachability facts, LLVM pre-cleaning traps) and
+   [`CORPUS-MAP.md`](CORPUS-MAP.md) (known classes and dead ends). Do **not**
+   re-derive anything recorded there.
 3. The test modules under `tests/integration/src/end_to_end/differential/tests/`
    and the case files they reference — do not duplicate constructs existing
    cases already cover.
@@ -87,10 +89,10 @@ Each new case is a single `.rs` file at
   determinism unless you restore it before returning. (Statics are still a
   useful tool: non-zero initializers are how you reach the data-segment code.)
 - Stay away from known compile-breakers unless they are your target: flat
-  signatures over 16 stack felts and recursion (see `KNOWLEDGE.md`), plus
+  signatures over 16 stack felts and recursion (see `PIPELINE-FACTS.md`), plus
   the shapes behind the `#[ignore]`d compiler-panic reproducers in the test
   modules. (Function pointers / `dyn` dispatch are supported and covered —
-  see KNOWLEDGE.md's indirect-calls section.)
+  see `PIPELINE-FACTS.md`, "Frontend routing".)
 
 Wire the new case into the thematic module under
 `tests/integration/src/end_to_end/differential/tests/` that matches what the
@@ -137,8 +139,9 @@ fn <name>() {
      a literal; getting to an `_imm` arm usually requires HIR-level
      canonicalization (e.g. arith constant folding), not raw user code.
 
-   `KNOWLEDGE.md`'s routing-facts section records many verified chains and
-   dead ends — check it before spending a probe.
+   `PIPELINE-FACTS.md`'s "Frontend routing" section and `CORPUS-MAP.md`'s
+   "Dead ends" record many verified chains and dead ends — check them before
+   spending a probe.
 3. **Write** `case_<name>.rs` designed to exercise that construct through the
    `(u32, u32) -> u32` entrypoint. Keep it minimal — the less incidental code,
    the easier to interpret failures.
@@ -216,7 +219,8 @@ fn <name>() {
      toolchain is wrong, not the compiler. Before you name a compile-time
      panic's class, take the spills trace and the pattern trace (see
      "Reference commands") — the crash site alone does not identify the
-     mechanism (`KNOWLEDGE.md`, "Minimal reproducers per class"). If the case
+     mechanism (`KNOWLEDGE.md`, "Classifying a compile-time panic";
+     `CORPUS-MAP.md`, "Open classes"). If the case
      mixes several constructs,
      split it so each divergence gets its own minimal reproducer — the passing
      siblings *bound* the bug for free. The test's doc comment and ignore

@@ -10,8 +10,11 @@ the agent-facing tooling that grows the case set:
 - [`OUTER-LOOP.md`](OUTER-LOOP.md) — the director playbook for running many
   areas as a campaign.
 - [`KNOWLEDGE.md`](KNOWLEDGE.md) — the committed fact base every run must read
-  first: verified reachability facts, case-writing tricks, and operational
-  gotchas.
+  first: the operational reference (running, evidence, classification,
+  gotchas, case-writing tricks), with [`PIPELINE-FACTS.md`](PIPELINE-FACTS.md)
+  (verified reachability facts by pipeline stage) and
+  [`CORPUS-MAP.md`](CORPUS-MAP.md) (open classes, reproducers, guards, dead
+  ends).
 - `cov.py` — renders the llvm-cov JSON into the agent-readable `report.md`.
 - `scratch/` — per-run agent notes (gitignored, machine-local).
 
