@@ -9,13 +9,14 @@ use alloc::{
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
-use midenc_frontend_wasm_metadata::COMPONENT_INIT_PROCEDURE;
 use midenc_hir::{
     FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, SymbolPath, TraceTarget, Type, ValueRef,
     diagnostics::IntoDiagnostic,
     dialects::{builtin, debuginfo::attributes::SubprogramAttr},
     pass::AnalysisManager,
-    reserved_names::{EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC, FUNCTION_TABLE_INIT_PROC},
+    reserved_names::{
+        COMPONENT_INIT_PROCEDURE, EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC, FUNCTION_TABLE_INIT_PROC,
+    },
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{Report, Spanned, WrapErr};

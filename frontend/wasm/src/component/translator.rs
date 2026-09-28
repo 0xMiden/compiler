@@ -2,9 +2,7 @@ use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
 use midenc_dialect_hir::WASM_COMPONENT_START_ATTR;
-use midenc_frontend_wasm_metadata::{
-    COMPONENT_INIT_PROCEDURE, FrontendMetadata, ProtocolExportKind,
-};
+use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
 use midenc_hir::{
     self as hir2, BuilderExt, Context, FxHashMap, FxHashSet, Ident, OpExt, SymbolName,
     SymbolNameComponent, SymbolPath, SymbolTable,
@@ -15,6 +13,7 @@ use midenc_hir::{
     },
     formatter::DisplayValues,
     interner::Symbol,
+    reserved_names::COMPONENT_INIT_PROCEDURE,
     smallvec,
 };
 use wasmparser::{component_types::ComponentEntityType, types::TypesRef};
