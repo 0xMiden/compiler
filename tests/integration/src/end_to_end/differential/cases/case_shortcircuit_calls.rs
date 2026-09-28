@@ -4,6 +4,11 @@
 // compares, negations and a `match` on the lattice result inside a loop
 // with a `continue`; the log order and the final booleans are folded into
 // the result so any evaluation-order or short-circuit defect shows up.
+// Every table read goes through `black_box`: since nightly-2026-09-01, LLVM
+// devirtualizes an index into a constant fn-pointer table into a switch of
+// direct calls, which would leave the case without a single `call_indirect`.
+use core::hint::black_box;
+
 #[inline(never)]
 fn probe(log: &mut [u32; 8], slot: usize, v: u32) -> bool {
     let s = slot & 7;
@@ -34,10 +39,10 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let mut log = [0u32; 8];
     let x = (input1 as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ input2 as u64;
     let y = (input2 as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9) ^ input1 as u64;
-    let c1 = probe(&mut log, 0, input1) && PREDS[(input2 & 1) as usize](&mut log, 1, input2)
+    let c1 = probe(&mut log, 0, input1) && black_box(&PREDS)[(input2 & 1) as usize](&mut log, 1, input2)
         || probe(&mut log, 2, input1 ^ input2);
     let c2 = (input1 > input2 || heavy(&mut log, x, y))
-        && !(probe(&mut log, 3, input1 >> 3) || PREDS[((input1 >> 2) & 1) as usize](&mut log, 4, input2 >> 5));
+        && !(probe(&mut log, 3, input1 >> 3) || black_box(&PREDS)[((input1 >> 2) & 1) as usize](&mut log, 4, input2 >> 5));
     let mut acc = (c1 as u32) | ((c2 as u32) << 1);
     let mut i = 0u32;
     let n = input2 % 9;
@@ -49,7 +54,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
             continue;
         }
         let d = match (
-            PREDS[(i & 1) as usize](&mut log, s + 2, input2.wrapping_sub(i)),
+            black_box(&PREDS)[(i & 1) as usize](&mut log, s + 2, input2.wrapping_sub(i)),
             input1 & (1 << (i & 31)) != 0 || probe_hi(&mut log, s + 3, input1.rotate_left(i)),
         ) {
             (true, true) => 3,

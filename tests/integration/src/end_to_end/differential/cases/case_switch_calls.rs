@@ -4,8 +4,14 @@
 // eight-u64 signature, a `(u64, u64)` return area, a fn-pointer dispatch —
 // or `continue` / `break` / `return`, with two u64 and the selector
 // carried across the loop; a second holey `match` with a hot default
-// re-selects the next arm from a call result.
-use core::sync::atomic::{AtomicU32, Ordering};
+// re-selects the next arm from a call result. Every table read goes through
+// `black_box`: since nightly-2026-09-01, LLVM devirtualizes an index into a
+// constant fn-pointer table into a switch of direct calls, which would leave
+// the case without a single `call_indirect`.
+use core::{
+    hint::black_box,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 static PIN: AtomicU32 = AtomicU32::new(0);
 
@@ -64,7 +70,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
                 let (p, q) = pair(a, input2.wrapping_add(i));
                 p ^ q
             }
-            4 => OPS[(a & 1) as usize](a, b),
+            4 => black_box(&OPS)[(a & 1) as usize](a, b),
             5 => {
                 tag |= 1;
                 sel = (sel + 7) % 24;
@@ -87,7 +93,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
                 let (p, _) = pair(b, i);
                 p
             }
-            11 => OPS[((b >> 5) & 1) as usize](b, a),
+            11 => black_box(&OPS)[((b >> 5) & 1) as usize](b, a),
             12 => a.rotate_left(3),
             13 => b.rotate_right(5),
             14 => a.wrapping_add(b),

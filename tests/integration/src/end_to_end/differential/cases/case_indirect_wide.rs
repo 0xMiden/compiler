@@ -3,6 +3,10 @@
 // window (16 argument felts + the index would be diagnosed at translation).
 // Dispatching it exercises `dynexec` with a full argument window and u64
 // (two-felt) values crossing the dispatch boundary in both directions.
+// The table is read through `black_box`: since nightly-2026-09-01, LLVM
+// devirtualizes an index into a constant fn-pointer table into a switch of
+// direct calls, which would leave the case without a single `call_indirect`.
+use core::hint::black_box;
 
 type Wide = fn(u64, u64, u64, u64, u64, u64, u64) -> u64;
 
@@ -30,7 +34,7 @@ static WIDES: [Wide; 2] = [w_fold, w_zip];
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let x = ((input1 as u64) << 32) | input2 as u64;
     let y = ((input2 as u64) << 32) | input1 as u64;
-    let f = WIDES[(input1 & 1) as usize];
+    let f = black_box(&WIDES)[(input1 & 1) as usize];
     let r = f(
         x,
         y,

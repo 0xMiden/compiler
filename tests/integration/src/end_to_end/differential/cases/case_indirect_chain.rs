@@ -3,6 +3,10 @@
 // another `dynexec` (nested dispatch frames on the VM). The outer dispatch
 // also sits inside a loop, and one arm of a conditional dispatches while the
 // other computes directly — call_indirect in every control-flow position.
+// Every table read goes through `black_box`: since nightly-2026-09-01, LLVM
+// devirtualizes an index into a constant fn-pointer table into a switch of
+// direct calls, which would leave the case without a single `call_indirect`.
+use core::hint::black_box;
 
 type Leaf = fn(u32) -> u32;
 
@@ -22,12 +26,12 @@ static LEAVES: [Leaf; 2] = [leaf_gray, leaf_spread];
 // callee that itself calls indirectly.
 #[inline(never)]
 fn stage_mask(x: u32) -> u32 {
-    LEAVES[(x & 1) as usize](x).wrapping_add(0x5a5a)
+    black_box(&LEAVES)[(x & 1) as usize](x).wrapping_add(0x5a5a)
 }
 
 #[inline(never)]
 fn stage_swap(x: u32) -> u32 {
-    LEAVES[((x >> 2) & 1) as usize](x.swap_bytes())
+    black_box(&LEAVES)[((x >> 2) & 1) as usize](x.swap_bytes())
 }
 
 type Stage = fn(u32) -> u32;
@@ -39,12 +43,12 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     // Indirect dispatch inside a loop, index depending on the loop-carried value
     let mut k = 0u32;
     while k < 3 {
-        acc = STAGES[((acc ^ k) & 1) as usize](acc.wrapping_add(input2));
+        acc = black_box(&STAGES)[((acc ^ k) & 1) as usize](acc.wrapping_add(input2));
         k += 1;
     }
     // Indirect dispatch in one branch arm only
     if input2 & 4 == 0 {
-        acc = LEAVES[(acc & 1) as usize](acc);
+        acc = black_box(&LEAVES)[(acc & 1) as usize](acc);
     } else {
         acc = acc.wrapping_mul(3).wrapping_sub(input1);
     }

@@ -35,6 +35,10 @@ fn call_mix() {
 }
 
 /// Exercises wasm `call_indirect` (funcref table dispatch through function pointers).
+///
+/// Since 2026-09-28 the table is read through `black_box`, because the guest
+/// toolchain devirtualizes constant fn-pointer tables; the wasm has 2
+/// `call_indirect`.
 #[test]
 fn call_indirect() {
     run_case("call_indirect", include_str!("../cases/case_call_indirect.rs"));
@@ -45,6 +49,10 @@ fn call_indirect() {
 /// `hir.exec_indirect` call site must tag-filter the other signature's entries
 /// (verifier/possible_callees skip arms) and the runtime tag check passes only
 /// for its own; also the first u64-carrying indirect signature.
+///
+/// Since 2026-09-28 both tables are read through `black_box`, because the
+/// guest toolchain devirtualizes constant fn-pointer tables; the wasm has 2
+/// `call_indirect`, with type indices 0 and 1.
 #[test]
 fn indirect_sigs() {
     run_case("indirect_sigs", include_str!("../cases/case_indirect_sigs.rs"));
@@ -54,6 +62,10 @@ fn indirect_sigs() {
 /// collides with the symbol the frontend generates for the lowered funcref
 /// table, forcing the collision-rename (counter-bump) path in
 /// `get_or_build_table` while dispatch still works through the renamed table.
+///
+/// Since 2026-09-28 the table is read through `black_box`, because the guest
+/// toolchain devirtualizes constant fn-pointer tables; the wasm has 1
+/// `call_indirect`.
 #[test]
 fn indirect_collision() {
     run_case("indirect_collision", include_str!("../cases/case_indirect_collision.rs"));
@@ -80,6 +92,10 @@ fn fnptr_value() {
 /// Chained indirect dispatch — an indirect callee that itself dispatches
 /// through a second fn-pointer array (nested `dynexec` frames) — plus
 /// dispatch inside a loop and in a single branch arm.
+///
+/// Since 2026-09-28 both tables are read through `black_box`, because the
+/// guest toolchain devirtualizes constant fn-pointer tables; the wasm has 6
+/// `call_indirect`.
 #[test]
 fn indirect_chain() {
     run_case("indirect_chain", include_str!("../cases/case_indirect_chain.rs"));
@@ -88,6 +104,10 @@ fn indirect_chain() {
 /// The widest accepted indirect signature — 7 u64 parameters (14 felts) plus
 /// the table index fills 15 of the 16-element operand-stack window — dynexec
 /// with a full argument window and u64 values crossing the dispatch boundary.
+///
+/// Since 2026-09-28 the table is read through `black_box`, because the guest
+/// toolchain devirtualizes constant fn-pointer tables; the wasm has 1
+/// `call_indirect`.
 #[test]
 fn indirect_wide() {
     run_case("indirect_wide", include_str!("../cases/case_indirect_wide.rs"));
@@ -233,6 +253,10 @@ fn indirect_spill_bb() {
 /// before its dispatch with nothing else live, so no spill is needed and
 /// the group-0-only accounting is harmless here (twelve such locals pass
 /// too; probe deleted).
+///
+/// Since 2026-09-28 the table is read through `black_box`, because the guest
+/// toolchain devirtualizes constant fn-pointer tables; the wasm has 2
+/// `call_indirect`.
 #[test]
 fn indirect_args() {
     run_case("indirect_args", include_str!("../cases/case_indirect_args.rs"));
@@ -438,6 +462,10 @@ fn narrow_ret() {
 /// the hidden return-area pointer is the first argument of
 /// `hir.exec_indirect` and the callee writes through it; dispatched in a
 /// loop with the u128 result feeding the next trip's index and arguments.
+///
+/// Since 2026-09-28 every table is read through `black_box`, because the
+/// guest toolchain devirtualizes constant fn-pointer tables; the wasm has 3
+/// `call_indirect`.
 #[test]
 fn sret_dispatch() {
     run_case("sret_dispatch", include_str!("../cases/case_sret_dispatch.rs"));
@@ -462,6 +490,10 @@ fn recursion_frames() {
 /// the boundary: three u128 parameters, or two with one argument computed
 /// in place, hit the `indirect_spill` class (17-felt `arith.shl`
 /// `NoSolution` while the limbs are loaded for the dispatch; probes deleted).
+///
+/// Since 2026-09-28 the table is read through `black_box`, because the guest
+/// toolchain devirtualizes constant fn-pointer tables; the wasm has 5
+/// `call_indirect`.
 #[test]
 fn indirect_u128() {
     run_case("indirect_u128", include_str!("../cases/case_indirect_u128.rs"));

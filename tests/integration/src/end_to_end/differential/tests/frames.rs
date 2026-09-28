@@ -232,6 +232,10 @@ fn fill_spills_edges() {
 /// `(u64, u64, u64)`), whose callees write into the caller's frame while its
 /// eight-u64 cluster is spilled. The heaviest spiller in the module: 44 spills
 /// / 55 reloads / 43 spill-slot `load_local`s / 2 split edges.
+///
+/// Since 2026-09-28 the table is read through `black_box`, because the guest
+/// toolchain devirtualizes constant fn-pointer tables; the wasm has 1
+/// `call_indirect`.
 #[test]
 fn spill_sret() {
     run_case("spill_sret", include_str!("../cases/case_spill_sret.rs"));

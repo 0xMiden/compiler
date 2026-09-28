@@ -3,7 +3,12 @@
 // pointer: address + length) through fn-pointer dispatch into helpers that
 // fill it, copy a runtime-length prefix onto its (disjoint) suffix and xor-fold it, with a u64
 // carried across the dispatches in a loop; the window position and length
-// are input-driven and the result is read back at runtime indexes.
+// are input-driven and the result is read back at runtime indexes. The table
+// is read through `black_box`: since nightly-2026-09-01, LLVM devirtualizes
+// an index into a constant fn-pointer table into a switch of direct calls,
+// which would leave the case without a single `call_indirect`.
+use core::hint::black_box;
+
 type Op = fn(&mut [u32], u32, u64) -> u64;
 
 #[inline(never)]
@@ -48,7 +53,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let mut i = 0u32;
     let trips = input1 % 5 + 2;
     while i < trips {
-        let f = OPS[sel];
+        let f = black_box(&OPS)[sel];
         let r = f(&mut frame[lo..lo + len], input1.wrapping_add(i), k);
         k = k.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ r;
         sel = (r % 3) as usize;

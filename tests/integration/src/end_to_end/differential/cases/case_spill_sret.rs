@@ -5,7 +5,12 @@
 // wide record through a hidden return-area pointer (`[u64; 4]` and
 // `(u64, u64, u64)`), whose callees write four/three words into the caller's
 // frame while the caller's eight-u64 cluster is spilled. The cluster is
-// reloaded after both, together with the returned words.
+// reloaded after both, together with the returned words. The table is read
+// through `black_box`: since nightly-2026-09-01, LLVM devirtualizes an index
+// into a constant fn-pointer table into a switch of direct calls, which would
+// leave the case without a single `call_indirect`.
+use core::hint::black_box;
+
 type Step = fn(u32, u64) -> u64;
 
 #[inline(never)]
@@ -63,7 +68,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
         i = i.wrapping_add(1);
     }
     // Dispatch with the whole cluster live across it.
-    let f = STEPS[((acc >> 5) % 2) as usize];
+    let f = black_box(&STEPS)[((acc >> 5) % 2) as usize];
     let d = f(input1 % 5, acc | 1);
     // Two return-area calls, still with the cluster live.
     let w = quad(acc ^ d, v3 ^ v6);

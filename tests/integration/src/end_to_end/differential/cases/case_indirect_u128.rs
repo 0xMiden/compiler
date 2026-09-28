@@ -8,7 +8,12 @@
 // felts), or two u128s with one argument computed in place, hits the
 // `indirect_spill` class in the same loop (17-felt `arith.shl`
 // `NoSolution` while the limbs are loaded for the dispatch; probes
-// deleted).
+// deleted). The table is read through `black_box`: since nightly-2026-09-01,
+// LLVM devirtualizes an index into a constant fn-pointer table into a switch
+// of direct calls, which would leave the case without a single
+// `call_indirect`.
+use core::hint::black_box;
+
 type Duo = fn(u128, u128) -> u128;
 
 #[inline(never)]
@@ -59,7 +64,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
         // dispatch takes plain locals (an argument computed in place is the
         // `indirect_spill_args` panic).
         let ac = a ^ c;
-        let f = DUOS[((a as u32).wrapping_add(i) % 3) as usize];
+        let f = black_box(&DUOS)[((a as u32).wrapping_add(i) % 3) as usize];
         let r = f(ac, b);
         c = ac.rotate_left(9) ^ r;
         a = r.wrapping_add(b);

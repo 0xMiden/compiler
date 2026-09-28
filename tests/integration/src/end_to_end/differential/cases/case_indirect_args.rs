@@ -6,6 +6,11 @@
 // spill a dispatch argument and its group-0-only operand accounting (see
 // the ignored `indirect_spill` test in tests/calls.rs) does no harm: the
 // case compiles and passes, bounding the reproducer to the loop shape.
+// The table is read through `black_box`: since nightly-2026-09-01, LLVM
+// devirtualizes an index into a constant fn-pointer table into a switch of
+// direct calls, which would leave the case without a single `call_indirect`.
+use core::hint::black_box;
+
 type Wide = fn(u64, u64, u64, u64, u64, u64, u64) -> u64;
 
 #[inline(never)]
@@ -40,9 +45,9 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let v5 = y.wrapping_mul(0x5895_58cb_3521_e49d) ^ x.rotate_left(31);
     let v6 = x.wrapping_mul(0x2545_f491_4f6c_dd1d) ^ y.rotate_left(33);
     let v7 = y.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ x.rotate_left(35);
-    let f = WIDES[(input1 & 1) as usize];
+    let f = black_box(&WIDES)[(input1 & 1) as usize];
     let r = f(v0, v1, v2, v3, v4, v5, v6);
-    let g = WIDES[((r >> 5) & 1) as usize];
+    let g = black_box(&WIDES)[((r >> 5) & 1) as usize];
     let s = g(v7, v6, v5, v4, v3 ^ r, v2, v1);
     let z = v0
         ^ v1.rotate_left(2)

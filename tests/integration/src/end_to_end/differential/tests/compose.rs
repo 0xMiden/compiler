@@ -264,6 +264,10 @@ fn sret_exits_edges() {
 /// disjoint suffix (an overlapping `copy_within` is the known `mem_overlap`
 /// trap) and xor-fold it, with a u64 carried across the dispatches in a
 /// loop and the result read back at runtime indexes.
+///
+/// Since 2026-09-28 the table is read through `black_box`, because the guest
+/// toolchain devirtualizes constant fn-pointer tables; the wasm has 1
+/// `call_indirect`.
 #[test]
 fn frame_dispatch() {
     run_case("frame_dispatch", include_str!("../cases/case_frame_dispatch.rs"));
@@ -274,6 +278,10 @@ fn frame_dispatch() {
 /// evaluation log through a `&mut [u32; 8]`, mixed with plain compares,
 /// negations and a `match` on two lattice results inside a loop with a
 /// `continue`; the log order and the booleans are folded into the result.
+///
+/// Since 2026-09-28 the table is read through `black_box`, because the guest
+/// toolchain devirtualizes constant fn-pointer tables; the wasm has 3
+/// `call_indirect`.
 #[test]
 fn shortcircuit_calls() {
     run_case("shortcircuit_calls", include_str!("../cases/case_shortcircuit_calls.rs"));
@@ -285,6 +293,10 @@ fn shortcircuit_calls() {
 /// across direct and indirect call boundaries. The dispatch takes plain
 /// locals only: computing two of its arguments in place is the
 /// `indirect_spill_args` panic (tests/calls.rs).
+///
+/// Since 2026-09-28 the table is read through `black_box`, because the guest
+/// toolchain devirtualizes constant fn-pointer tables; the wasm has 1
+/// `call_indirect`.
 #[test]
 fn bands_calls() {
     run_case("bands_calls", include_str!("../cases/case_bands_calls.rs"));
@@ -295,7 +307,10 @@ fn bands_calls() {
 /// extension, truncation on return), chained through a loop whose carried
 /// values are narrow, with MIN / -1 / MAX parameters reached from the
 /// inputs, `as` widenings of every result and a narrow-typed fn-pointer
-/// dispatch.
+/// dispatch. The table is read through `black_box` (2026-09-28): the
+/// nightly-2026-09-01 toolchain devirtualizes a constant fn-pointer table
+/// into direct calls, which had left this case with no `call_indirect`;
+/// re-armed it carries one.
 #[test]
 fn narrow_sigs() {
     run_case("narrow_sigs", include_str!("../cases/case_narrow_sigs.rs"));
@@ -505,6 +520,10 @@ fn sret_indexed() {
 /// `break` / `return`, with two u64 and the selector carried across the
 /// loop and a holey `match` with a hot default re-selecting the next arm
 /// from a call result.
+///
+/// Since 2026-09-28 the table is read through `black_box`, because the guest
+/// toolchain devirtualizes constant fn-pointer tables; the wasm has 2
+/// `call_indirect`.
 #[test]
 fn switch_calls() {
     run_case("switch_calls", include_str!("../cases/case_switch_calls.rs"));

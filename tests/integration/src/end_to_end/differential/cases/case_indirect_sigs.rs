@@ -3,7 +3,11 @@
 // carry distinct signature type indices — so the lowered `builtin.function_table`
 // holds entries with two different signature tags, and each `hir.exec_indirect`
 // call site must skip (tag-filter) the other signature's entries while the
-// runtime tag check accepts only its own.
+// runtime tag check accepts only its own. Both tables are read through
+// `black_box`: since nightly-2026-09-01, LLVM devirtualizes an index into a
+// constant fn-pointer table into a switch of direct calls, which would leave
+// the case without a single `call_indirect`.
+use core::hint::black_box;
 
 #[inline(never)]
 fn un_not(a: u32) -> u32 {
@@ -25,16 +29,13 @@ fn wi_shear(a: u64, b: u32) -> u64 {
     (a ^ ((b as u64) << 17)).rotate_right(23)
 }
 
-// Runtime-indexed loads of fn pointers from static arrays are not
-// devirtualized by LLVM without PGO, so both dispatches survive as
-// `call_indirect` with distinct type indices.
 static UNARY: [fn(u32) -> u32; 2] = [un_not, un_rev];
 static WIDE: [fn(u64, u32) -> u64; 2] = [wi_fold, wi_shear];
 
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
-    let u = UNARY[(input1 & 1) as usize];
-    let w = WIDE[((input2 >> 1) & 1) as usize];
+    let u = black_box(&UNARY)[(input1 & 1) as usize];
+    let w = black_box(&WIDE)[((input2 >> 1) & 1) as usize];
     let narrow = u(input1.wrapping_add(input2));
     let wide = w(((input1 as u64) << 32) | input2 as u64, narrow);
     (wide as u32).wrapping_add((wide >> 32) as u32)

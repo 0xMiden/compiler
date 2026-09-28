@@ -5,7 +5,12 @@
 // boundaries (Copy-constrained u32 operands under the callee's argument
 // window). The dispatch takes plain locals only: computing two of its
 // arguments in place (`w.rotate_left(c5)`, `x.rotate_right(c0)`) is the
-// `indirect_spill_args` panic (tests/calls.rs).
+// `indirect_spill_args` panic (tests/calls.rs). The table is read through
+// `black_box`: since nightly-2026-09-01, LLVM devirtualizes an index into a
+// constant fn-pointer table into a switch of direct calls, which would leave
+// the case without a single `call_indirect`.
+use core::hint::black_box;
+
 type Wide = fn(u64, u64, u64, u64, u64, u64, u64) -> u64;
 
 #[inline(never)]
@@ -40,7 +45,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let r = w_fold(v, w, x, y, v ^ w, x.rotate_left(c0), y.rotate_left(c1));
     let s = counts(r, c0, c1, c2, c3, c4, c5);
     let t = s.rotate_left(c2) ^ r.rotate_right(c3) ^ v.rotate_left(c4);
-    let f = WIDES[((s >> 9) & 1) as usize];
+    let f = black_box(&WIDES)[((s >> 9) & 1) as usize];
     let u = f(t, s, r, w, v, x, y);
     let z = u.rotate_left(c1) ^ t.rotate_right(c2) ^ s.rotate_left(c3) ^ r.rotate_left(c4) ^ u.rotate_right(c5) ^ v.rotate_left(c0);
     (z as u32) ^ ((z >> 32) as u32)

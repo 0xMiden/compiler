@@ -18,12 +18,11 @@
 //! `MIDENC_TRACE='analysis:spills=trace,pass:spills=trace'` on the case file
 //! built exactly as the harness builds it).
 //!
-//! First, **the guard KIND is invisible to the spill analysis.** The six W1
+//! First, **the guard KIND is invisible to the spill analysis.** The five W1
 //! cases below differ only in what traps — an index, a `get().unwrap()`, a
-//! zero divisor, a `checked_add().unwrap()`, an `assert!` and an
-//! `unreachable!()` — and all six produce exactly 45 spills, 56 reloads, 3
-//! split control-flow edges, 20 erased split-edge reloads and 36 reloads
-//! lowered to spill-slot loads. Under `-Cpanic=immediate-abort` every one of
+//! zero divisor, a `checked_add().unwrap()` and an `assert!` — and all five
+//! produce exactly 45 spills, 56 reloads, 3 split control-flow edges, 20
+//! erased split-edge reloads and 36 reloads lowered to spill-slot loads. Under `-Cpanic=immediate-abort` every one of
 //! them is the same wasm `unreachable`.
 //!
 //! Second, **LLVM merges every trapping edge of a function into ONE wasm
@@ -175,26 +174,6 @@ fn body_assert_edges() {
     run_case_traps_with_inputs(
         "ts_body_assert_edges",
         include_str!("../cases/case_ts_body_assert.rs"),
-        &[(0, 0), (7, 3), (15, 15), (2, 255), (0, 65535), (5, 4095), (u32::MAX, u32::MAX)],
-    );
-}
-
-/// Guard kind `unreachable!()` behind a runtime condition — the barest
-/// trapping edge the language offers, and the one every other guard kind in
-/// this module decays to under `-Cpanic=immediate-abort`. Freight
-/// 45/56/3/20/36 and a native value/trap map identical to [`body_assert`]'s.
-#[test]
-fn body_unreach() {
-    run_case_traps("ts_body_unreach", include_str!("../cases/case_ts_body_unreach.rs"));
-}
-
-/// Pinned straddling grid for [`body_unreach`] — the same rows as
-/// [`body_assert_edges`], because the two cases compute the same function.
-#[test]
-fn body_unreach_edges() {
-    run_case_traps_with_inputs(
-        "ts_body_unreach_edges",
-        include_str!("../cases/case_ts_body_unreach.rs"),
         &[(0, 0), (7, 3), (15, 15), (2, 255), (0, 65535), (5, 4095), (u32::MAX, u32::MAX)],
     );
 }

@@ -4,7 +4,12 @@
 // runtime-indexed tables, so the hidden return-area pointer travels as the
 // first argument of `hir.exec_indirect` and the callee writes the result
 // through it; dispatched in a loop with the u128 result feeding the next
-// trip's table index and arguments, under low live pressure.
+// trip's table index and arguments, under low live pressure. Every table
+// read goes through `black_box`: since nightly-2026-09-01, LLVM
+// devirtualizes an index into a constant fn-pointer table into a switch of
+// direct calls, which would leave the case without a single `call_indirect`.
+use core::hint::black_box;
+
 type Wide = fn(u64, u64) -> u128;
 type Pair = fn(u32, u64) -> (u64, u64);
 type Opt = fn(u64) -> Option<u128>;
@@ -52,9 +57,9 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let n = input2 % 6 + 1;
     let mut i = 0u32;
     while i < n {
-        let w = WIDES[sel](a, b);
-        let (p, q) = PAIRS[((w >> 64) as usize) & 1](input1.wrapping_add(i), w as u64);
-        match OPTS[(p as usize) & 1](q ^ p) {
+        let w = black_box(&WIDES)[sel](a, b);
+        let (p, q) = black_box(&PAIRS)[((w >> 64) as usize) & 1](input1.wrapping_add(i), w as u64);
+        match black_box(&OPTS)[(p as usize) & 1](q ^ p) {
             Some(s) => {
                 a = (s as u64) ^ p;
                 b = ((s >> 64) as u64).wrapping_add(q);

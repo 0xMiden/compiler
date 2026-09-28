@@ -4,7 +4,10 @@
 // zero-extension at the caller, truncation on return), chained through a
 // loop whose carried values are narrow, with parameters at MIN / -1 / MAX
 // reached from the inputs and `as` widenings to i32 / i64 / u64 of every
-// result, plus a narrow-typed fn-pointer dispatch.
+// result, plus a narrow-typed fn-pointer dispatch. The table is read
+// through `black_box`: since nightly-2026-09-01, LLVM devirtualizes an
+// index into a constant fn-pointer table into a switch of direct calls,
+// which would leave no `call_indirect` in the wasm.
 #[inline(never)]
 fn s8(a: i8, b: u8, c: i16) -> i8 {
     a.wrapping_add((b >> 1) as i8) ^ (c >> 8) as i8
@@ -59,7 +62,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
         let r16 = s16(c, r8, d, cmp(a, c, input1 as i32));
         let ru8 = u8f(b, a, d);
         let ru16 = u16f(d, r16, ru8, (i & 1) == 1);
-        let f = NARROWS[(ru8 & 1) as usize];
+        let f = core::hint::black_box(&NARROWS)[(ru8 & 1) as usize];
         let rd = f(r8.wrapping_add(i as i8), ru8, r16);
         acc = acc
             .wrapping_add(r8 as i64)

@@ -3,6 +3,10 @@
 // module symbol is a producer-controlled string, so the table-lowering probes
 // the symbol table and bumps a counter until the generated name is free; this
 // case forces that collision-rename path while still dispatching indirectly.
+// The table is read through `black_box`: since nightly-2026-09-01, LLVM
+// devirtualizes an index into a constant fn-pointer table into a switch of
+// direct calls, which would leave no `call_indirect` to lower the table.
+use core::hint::black_box;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn __indirect_function_table_0(x: u32) -> u32 {
@@ -25,7 +29,7 @@ static OPS: [fn(u32, u32) -> u32; 2] = [op_gray, op_lerp];
 
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
-    let f = OPS[(input1 & 1) as usize];
+    let f = black_box(&OPS)[(input1 & 1) as usize];
     let mixed = f(input1, input2);
     mixed.wrapping_add(__indirect_function_table_0(input2))
 }

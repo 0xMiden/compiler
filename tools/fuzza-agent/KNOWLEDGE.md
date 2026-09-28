@@ -609,7 +609,9 @@ region-verified.
 - **Tag interning**: tag = structurally-interned wasm signature index + 1
   (`signature_type_tag`; 0 reserved for null slots). Structurally-equal fn
   types share one tag; distinct fn-ptr types in one program produce distinct
-  tags inside the ONE shared table (`case_indirect_sigs`, entries tag 1 + 2).
+  tags inside the ONE shared table (`case_indirect_sigs`, entries tag 1 + 2;
+  its two dispatch sites survive as `call_indirect` only because both tables
+  are read through `black_box` — see the devirtualization bullet below).
   A multi-tag table is also what reaches the tag-mismatch skip arms of
   `ExecIndirect::verify` and `possible_callees`.
 - **Toolchain shape**: rustc + wasm-ld emit exactly one funcref table
@@ -620,12 +622,18 @@ region-verified.
   Null-image, global-relative(PIC)-base, and null-hole arms, plus every
   multi-table shape, are toolchain-unproducible.
 - **Devirtualization** (the enemy): a provably-single-target fn ptr or a
-  constant table index is devirtualized to a direct call. What survives as
-  `call_indirect`: runtime-indexed loads from a `static` fn-ptr array
-  (`OPS[(x & 3) as usize]`), runtime-indexed `[&dyn Trait; N]` selection, and
+  constant table index is devirtualized to a direct call. Since the guest
+  toolchain nightly-2026-09-01, a RUNTIME index into a constant `static`
+  fn-ptr array is devirtualized too (a switch of direct calls; see "Guest
+  toolchain nightly-2026-09-01" below), so a case that needs a
+  table-dispatched `call_indirect` must read its table through
+  `core::hint::black_box(&OPS)[i]` at every read; the fourteen cases in
+  `calls.rs`, `compose.rs` and `frames.rs` whose docs claim table-dispatched
+  `call_indirect` coverage were re-armed that way on 2026-09-28 (check a new case with `wasm-tools print
+  <wasm> | grep -c call_indirect`). What survives as `call_indirect`:
+  `black_box`ed table reads, runtime-indexed `[&dyn Trait; N]` selection, and
   fn-ptr values crossing `#[inline(never)]` boundaries (returned from or
-  passed to noinline helpers, incl. loop-carried fn-ptr state machines) —
-  LLVM does not do indirect-call promotion without PGO.
+  passed to noinline helpers, incl. loop-carried fn-ptr state machines).
 - **dyn Trait**: vtables are `.rodata` arrays of funcref-table indices; each
   method dispatch loads its vtable slot and `call_indirect`s with the
   method's own wasm signature (receiver pointer + args → its own tag)
@@ -3249,17 +3257,16 @@ intrinsic), so this could not be turned into a differential case.
 ## Trap edges under spill freight (campaign 35, 2026-09-17)
 
 Crossing campaign 29's trap oracle with the spill/edge-split/cfg-to-scf
-machinery of campaigns 18/20/21: seventeen cases in `tests/trapspill.rs`, each
+machinery of campaigns 18/20/21: sixteen cases in `tests/trapspill.rs`, each
 a committed `interact.rs` freight shape plus ONE trapping edge, every one
 trace-verified for its freight and its lift and native-grid-checked (1225
 boundary pairs, `repeat stable`) before the harness run. ZERO wrong
 trap-or-value decisions and zero wrong values, in the default env and at
 `--optimize=size-min`, `--optimize=basic` and `FUZZA_GUEST_DEBUG=0`.
 
-- **The guard KIND is invisible to the spill analysis.** Six cases differing
+- **The guard KIND is invisible to the spill analysis.** Five cases differing
   only in what panics — an array index, `get(..).unwrap()`, a zero divisor, a
-  `checked_add(..).unwrap()`, an `assert!` and an `unreachable!()`, all on the
-  same five-bit slice of the same loop-carried accumulator — produce byte-equal
+  `checked_add(..).unwrap()` and an `assert!`, all on the same five-bit slice of the same loop-carried accumulator — produce byte-equal
   freight: 45 spills / 56 reloads / 3 split edges / 20 erased split reloads /
   36 `convert reload to load` / 0 unused phi. Under `-Cpanic=immediate-abort`
   they are the same wasm `unreachable`, and nothing below the frontend can tell
