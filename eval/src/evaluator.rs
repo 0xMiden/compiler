@@ -391,6 +391,15 @@ impl HirEvaluator {
         self.current_context_mut().write_memory(addr, value, at)
     }
 
+    /// Write `bytes` to memory starting at `addr`.
+    ///
+    /// Returns an error if `addr` is invalid or the write would be out of bounds, in which case
+    /// nothing is written.
+    pub fn write_memory_bytes(&mut self, addr: u32, bytes: &[u8]) -> Result<(), Report> {
+        let at = self.current_span();
+        self.current_context_mut().write_memory_bytes(addr, bytes, at)
+    }
+
     /// Read the value of the given local variable in the current symbol, if present.
     ///
     /// See `CallFrame::read_local` for details on correct usage.

@@ -748,20 +748,11 @@ impl Eval for hir::MemCpy {
         if len == 0 {
             return Ok(ControlFlowEffect::None);
         }
-        if dest_value.checked_add(len).is_none() {
-            return Err(evaluator.report(
-                "evaluation failed",
-                self.span(),
-                format!("invalid memcpy: {len} bytes at {dest_value} are out of bounds"),
-            ));
-        }
 
         // The ranges may overlap, so the whole source range is read before it is written to the
         // destination
         let bytes = evaluator.read_memory_bytes(source_value, len)?;
-        for (offset, byte) in (0..len).zip(bytes) {
-            evaluator.write_memory(dest_value + offset, Immediate::U8(byte))?;
-        }
+        evaluator.write_memory_bytes(dest_value, &bytes)?;
 
         Ok(ControlFlowEffect::None)
     }

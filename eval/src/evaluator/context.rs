@@ -161,6 +161,40 @@ impl ExecutionContext {
 
         Ok(())
     }
+
+    /// Write `bytes` to memory starting at `addr`.
+    ///
+    /// Returns an error if `addr` or the end address is out of bounds, in which case nothing is
+    /// written.
+    pub fn write_memory_bytes(
+        &mut self,
+        addr: u32,
+        bytes: &[u8],
+        at: SourceSpan,
+    ) -> Result<(), Report> {
+        let addr = addr as usize;
+        if addr > MAX_ADDRESSABLE_HEAP {
+            return Err(WriteFailed::AddressOutOfBounds {
+                addr: addr as u32,
+                at,
+            })
+            .wrap_err("invalid memory write");
+        }
+
+        let end_addr = addr.checked_add(bytes.len());
+        if end_addr.is_none_or(|addr| addr > MAX_ADDRESSABLE_HEAP) {
+            return Err(WriteFailed::SizeOutOfBounds {
+                addr: addr as u32,
+                size: bytes.len() as u32,
+                at,
+            })
+            .wrap_err("invalid memory write");
+        }
+
+        memory::write_bytes(addr, bytes, &mut self.memory);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
