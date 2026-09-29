@@ -313,9 +313,9 @@ fn parse_function_body<B: ?Sized + Builder>(
     Ok(())
 }
 
-struct ResolvedSourceLocation {
+#[derive(Default)]
+struct FrameLocation {
     path: PathBuf,
-    span: SourceSpan,
     line: u32,
     column: u32,
 }
@@ -329,7 +329,7 @@ struct ResolvedFrame {
     name: String,
     linkage_name: Option<String>,
     declaration: FunctionDeclaration,
-    location: ResolvedSourceLocation,
+    location: FrameLocation,
 }
 
 fn resolve_instruction_debug_context(
@@ -344,25 +344,40 @@ fn resolve_instruction_debug_context(
     let mut span = SourceSpan::UNKNOWN;
 
     while let Some(frame) = frames.next().into_diagnostic()? {
-        let Some(location) = frame.location else {
-            continue;
-        };
-        let Some(resolved) = resolve_source_location(&location, session, config)? else {
-            continue;
-        };
-        if span.is_unknown() {
-            span = resolved.span;
+        // Source availability affects instruction spans, never frame identity or adjacency.
+        if let Some(location) = &frame.location {
+            let resolved_span = resolve_source_span(location, session, config);
+            if span.is_unknown() {
+                span = resolved_span;
+            }
         }
-        let Some(function) = frame.function else {
+        // addr2line also returns location-only records when no function DIE is available.
+        if frame.dw_die_offset.is_none() {
             continue;
-        };
-        let linkage_name = function.raw_name().ok().map(|name| name.into_owned());
-        let name = function
-            .demangle()
-            .ok()
+        }
+        let linkage_name = frame
+            .function
+            .as_ref()
+            .and_then(|function| function.raw_name().ok())
+            .map(|name| name.into_owned());
+        let name = frame
+            .function
+            .as_ref()
+            .and_then(|function| function.demangle().ok())
             .map(|name| name.into_owned())
             .or_else(|| linkage_name.clone())
             .unwrap_or_else(|| "<unknown>".to_string());
+        let location = frame
+            .location
+            .map(|location| FrameLocation {
+                path: location
+                    .file
+                    .map(|file| remap_source_path(Path::new(file), config))
+                    .unwrap_or_default(),
+                line: location.line.unwrap_or_default(),
+                column: location.column.unwrap_or_default(),
+            })
+            .unwrap_or_default();
         let mut declaration = match (unit, frame.dw_die_offset) {
             (Some(unit), Some(offset)) => {
                 FunctionDeclaration::resolve(unit, offset).into_diagnostic()?
@@ -379,7 +394,7 @@ fn resolve_instruction_debug_context(
             name,
             linkage_name,
             declaration,
-            location: resolved,
+            location,
         });
     }
 
@@ -408,19 +423,19 @@ fn inline_call_chain(resolved_frames: &[ResolvedFrame]) -> Vec<InlineCallFrame> 
         .collect()
 }
 
-fn resolve_source_location(
+fn resolve_source_span(
     loc: &addr2line::Location<'_>,
     session: &Session,
     config: &crate::WasmTranslationConfig,
-) -> WasmResult<Option<ResolvedSourceLocation>> {
+) -> SourceSpan {
     let Some(file) = loc.file else {
-        return Ok(None);
+        return SourceSpan::UNKNOWN;
     };
 
     let path = Path::new(file);
     let Some(absolute_path) = resolve_source_path(path, session, config) else {
         log::debug!(target: "module-parser", "failed to resolve source path '{file}'");
-        return Ok(None);
+        return SourceSpan::UNKNOWN;
     };
 
     debug_assert!(
@@ -434,19 +449,13 @@ fn resolve_source_location(
         absolute_path.display()
     );
 
-    // A line number of 0 in DWARF line programs means "this instruction has no source line";
-    // treat such rows as unresolved instead of defaulting to line 1, so that an outer inline
-    // frame (the call site) or the last valid span provides the location, rather than a bogus
-    // `file:1:1` span polluting the line table.
-    let raw_line = loc.line.unwrap_or_default();
-    let Some(line) = LineNumber::new(raw_line) else {
-        return Ok(None);
+    let source_file = match session.source_manager.load_file(&absolute_path) {
+        Ok(source) => source,
+        Err(error) => {
+            log::debug!(target: "module-parser", "failed to load source '{file}': {error}");
+            return SourceSpan::UNKNOWN;
+        }
     };
-
-    let source_file = session.source_manager.load_file(&absolute_path).into_diagnostic()?;
-    let raw_column = loc.column.unwrap_or_default();
-    let column = ColumnNumber::new(raw_column).unwrap_or_default();
-    let span = source_file.line_column_to_span(line, column).unwrap_or(SourceSpan::UNKNOWN);
 
     let path = remap_source_path(path, config);
     let remapped_uri = Uri::from(path.as_path());
@@ -465,12 +474,13 @@ fn resolve_source_location(
         session.source_manager.load_from_raw_parts(remapped_uri, content);
     }
 
-    Ok((!span.is_unknown()).then_some(ResolvedSourceLocation {
-        path,
-        span,
-        line: raw_line,
-        column: raw_column,
-    }))
+    // Register available source even when this particular location has no line.
+    // Other frames may refer to valid positions in the same file.
+    let Some(line) = LineNumber::new(loc.line.unwrap_or_default()) else {
+        return SourceSpan::UNKNOWN;
+    };
+    let column = ColumnNumber::new(loc.column.unwrap_or_default()).unwrap_or_default();
+    source_file.line_column_to_span(line, column).unwrap_or(SourceSpan::UNKNOWN)
 }
 
 /// Remap metadata paths without requiring the source file to be installed locally.

@@ -292,6 +292,30 @@ fn inline_declaration_is_independent_of_instruction_and_call_site() {
 
 #[test]
 fn inline_declaration_interns_one_assembled_function_across_call_sites() {
+    check_assembled_inline_functions(inline_dwarf(), 1);
+}
+
+#[test]
+fn unavailable_inline_call_sources_are_compatible_with_current_assembler() {
+    let mut dwarf = inline_dwarf();
+    let (id, unit) = dwarf.units.iter().next().unwrap();
+    let physical = *unit.get(unit.root()).children().nth(1).unwrap();
+    let inlines = unit.get(physical).children().copied().collect::<Vec<_>>();
+    let unit = dwarf.units.get_mut(id);
+    let missing = unit.line_program.add_file(
+        LineString::String(b"unavailable/caller.rs".to_vec()),
+        unit.line_program.default_directory(),
+        None,
+    );
+    for inline in inlines {
+        unit.get_mut(inline)
+            .set(gimli::DW_AT_call_file, AttributeValue::FileIndex(Some(missing)));
+    }
+    // HIR still contains every frame, but assembler 0.33 discards unresolved call sites.
+    check_assembled_inline_functions(dwarf, 0);
+}
+
+fn check_assembled_inline_functions(dwarf: Dwarf, expected_functions: usize) {
     use std::sync::Arc;
 
     use midenc_codegen_masm::{ToMasmComponent, masm};
@@ -333,7 +357,7 @@ fn inline_declaration_interns_one_assembled_function_across_call_sites() {
     });
     assert_eq!(returns.len(), 4);
 
-    let sections = write_dwarf(inline_dwarf());
+    let sections = write_dwarf(dwarf);
     let addr2line = addr2line::Context::from_dwarf(read_dwarf(&sections)).unwrap();
     for (mut ret, offset) in returns.into_iter().zip([0x1000, 0x1001, 0x1010, 0x1011]) {
         let resolved = resolve_instruction_debug_context(
@@ -343,6 +367,7 @@ fn inline_declaration_interns_one_assembled_function_across_call_sites() {
             &crate::WasmTranslationConfig::default(),
         )
         .unwrap();
+        assert_eq!(resolved.inline_calls.len(), 1);
         let attr = context
             .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(resolved.inline_calls))
             .as_attribute_ref();
@@ -372,9 +397,11 @@ fn inline_declaration_interns_one_assembled_function_across_call_sites() {
         .iter()
         .filter(|function| debug_info.get_string(function.name_idx).as_deref() == Some("inlined"))
         .collect::<Vec<_>>();
-    assert_eq!(functions.len(), 1, "one declaration must produce one function record");
-    assert_eq!(functions[0].line.to_u32(), 6);
-    assert_eq!(functions[0].column.to_u32(), 2);
+    assert_eq!(functions.len(), expected_functions);
+    for function in functions {
+        assert_eq!(function.line.to_u32(), 6);
+        assert_eq!(function.column.to_u32(), 2);
+    }
 }
 
 fn frame(name: &str, path: &str, line: u32, column: u32) -> ResolvedFrame {
@@ -386,9 +413,8 @@ fn frame(name: &str, path: &str, line: u32, column: u32) -> ResolvedFrame {
             line: Some(1),
             column: Some(1),
         },
-        location: ResolvedSourceLocation {
+        location: FrameLocation {
             path: PathBuf::from(path),
-            span: SourceSpan::UNKNOWN,
             line,
             column,
         },
@@ -413,4 +439,99 @@ fn inline_call_chain_uses_caller_locations_as_call_sites() {
     assert_eq!(chain[1].name.as_str(), "outer");
     assert_eq!(chain[1].call_file.as_str(), "src/lib.rs");
     assert_eq!((chain[1].call_line, chain[1].call_column), (10, 3));
+}
+
+#[test]
+fn inline_frames_survive_missing_middle_source_and_name() {
+    for unknown_line in [false, true] {
+        let mut dwarf = inline_dwarf();
+        let (id, unit) = dwarf.units.iter().next().unwrap();
+        let children = unit.get(unit.root()).children().copied().collect::<Vec<_>>();
+        let outer = *unit.get(children[1]).children().next().unwrap();
+        let unit = dwarf.units.get_mut(id);
+        unit.get_mut(children[0]).delete(gimli::DW_AT_name);
+        let missing = unit.line_program.add_file(
+            LineString::String(b"unavailable/caller.rs".to_vec()),
+            unit.line_program.default_directory(),
+            None,
+        );
+        let inner = unit.add(outer, gimli::DW_TAG_inlined_subroutine);
+        let entry = unit.get_mut(inner);
+        entry.set(gimli::DW_AT_name, AttributeValue::String(b"inner".to_vec()));
+        entry.set(gimli::DW_AT_low_pc, AttributeValue::Address(Address::Constant(0x1000)));
+        entry.set(gimli::DW_AT_high_pc, AttributeValue::Udata(1));
+        entry.set(gimli::DW_AT_call_file, AttributeValue::FileIndex(Some(missing)));
+        entry.set(gimli::DW_AT_call_line, AttributeValue::Udata(if unknown_line { 0 } else { 42 }));
+        let sections = write_dwarf(dwarf);
+        let addr2line = addr2line::Context::from_dwarf(read_dwarf(&sections)).unwrap();
+        let context = Context::default();
+        let resolved = resolve_instruction_debug_context(
+            &addr2line,
+            0x1000,
+            context.session(),
+            &crate::WasmTranslationConfig::default(),
+        )
+        .unwrap();
+        assert!(!resolved.span.is_unknown());
+        assert_eq!(resolved.inline_calls.len(), 2);
+        let inner = &resolved.inline_calls[0];
+        assert_eq!(inner.name.as_str(), "inner");
+        assert!(inner.call_file.as_str().ends_with("unavailable/caller.rs"));
+        assert_eq!(inner.call_line, if unknown_line { 0 } else { 42 });
+        let outer = &resolved.inline_calls[1];
+        assert_eq!(outer.name.as_str(), "<unknown>");
+        assert_eq!(outer.call_line, 20);
+    }
+}
+
+#[test]
+fn inline_frame_without_outer_location_is_retained() {
+    let mut dwarf = inline_dwarf();
+    let (id, unit) = dwarf.units.iter().next().unwrap();
+    let physical = *unit.get(unit.root()).children().nth(1).unwrap();
+    let inline = *unit.get(physical).children().next().unwrap();
+    let entry = dwarf.units.get_mut(id).get_mut(inline);
+    entry.delete(gimli::DW_AT_call_file);
+    entry.delete(gimli::DW_AT_call_line);
+    entry.delete(gimli::DW_AT_call_column);
+    let frame = resolve_inline(dwarf, &crate::WasmTranslationConfig::default());
+    assert_eq!(frame.name.as_str(), "inlined");
+    assert_eq!(frame.call_file.as_str(), "");
+    assert_eq!((frame.call_line, frame.call_column), (0, 0));
+}
+
+#[test]
+fn location_only_record_does_not_create_inline_frames() {
+    let mut dwarf = inline_dwarf();
+    let (id, unit) = dwarf.units.iter().next().unwrap();
+    let physical = *unit.get(unit.root()).children().nth(1).unwrap();
+    let unit = dwarf.units.get_mut(id);
+    unit.get_mut(physical).delete(gimli::DW_AT_low_pc);
+    unit.get_mut(physical).delete(gimli::DW_AT_high_pc);
+    let sections = write_dwarf(dwarf);
+    let addr2line = addr2line::Context::from_dwarf(read_dwarf(&sections)).unwrap();
+    let context = Context::default();
+    let resolved = resolve_instruction_debug_context(
+        &addr2line,
+        0x1000,
+        context.session(),
+        &crate::WasmTranslationConfig::default(),
+    )
+    .unwrap();
+    assert!(!resolved.span.is_unknown());
+    assert!(resolved.inline_calls.is_empty());
+}
+
+#[test]
+fn unreadable_source_has_unknown_span() {
+    let context = Context::default();
+    // A directory is an existing path which cannot be loaded as source text.
+    let location = addr2line::Location {
+        file: Some(env!("CARGO_MANIFEST_DIR")),
+        line: Some(1),
+        column: Some(1),
+    };
+    assert!(resolve_source_span(
+        &location, context.session(), &crate::WasmTranslationConfig::default(),
+    ).is_unknown());
 }

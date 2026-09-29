@@ -606,6 +606,15 @@ fn a_component_lowers_rooted_at_its_own_id() {
 
 #[test]
 fn inline_call_metadata_enables_markers_for_its_procedure() {
+    check_inline_call_marker(2);
+}
+
+#[test]
+fn unknown_inline_call_line_does_not_fabricate_a_marker() {
+    check_inline_call_marker(0);
+}
+
+fn check_inline_call_marker(call_line: u32) {
     use midenc_hir::dialects::debuginfo::attributes::{
         INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain, InlineCallChainAttr, InlineCallFrame,
     };
@@ -628,7 +637,7 @@ fn inline_call_metadata_enables_markers_for_its_procedure() {
         line: 1,
         column: 1,
         call_file: "source.rs".into(),
-        call_line: 2,
+        call_line,
         call_column: 1,
     };
     let attr = context
@@ -645,9 +654,14 @@ fn inline_call_metadata_enables_markers_for_its_procedure() {
         .find(|procedure| procedure.name().as_str() == "main")
         .unwrap()
         .body();
-    assert!(body.iter().any(|op| matches!(op, masm::Op::Inst(inst) if matches!(
-        inst.inner(), masm::Instruction::DebugInlineCall(_)
-    ))));
+    assert_eq!(
+        body.iter()
+            .filter(|op| matches!(op, masm::Op::Inst(inst) if matches!(
+                inst.inner(), masm::Instruction::DebugInlineCall(_)
+            )))
+            .count(),
+        usize::from(call_line != 0)
+    );
 }
 
 /// A start marker is sufficient to create component `init`, and the marked function is its final

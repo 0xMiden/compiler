@@ -228,6 +228,11 @@ impl BlockEmitter<'_> {
         };
         let attr = attr.borrow();
         for frame in &attr.frames {
+            // TODO: Emit unknown call-site lines once the assembler can represent them.
+            // Keep the original zero in HIR rather than inventing a call at line 1.
+            let Some(call_line) = LineNumber::new(frame.call_line) else {
+                continue;
+            };
             let declaration = FileLineCol::new(
                 Uri::new(frame.file.as_str()),
                 LineNumber::new(frame.line).unwrap_or_default(),
@@ -235,7 +240,7 @@ impl BlockEmitter<'_> {
             );
             let call_site = FileLineCol::new(
                 Uri::new(frame.call_file.as_str()),
-                LineNumber::new(frame.call_line).unwrap_or_default(),
+                call_line,
                 ColumnNumber::new(frame.call_column).unwrap_or_default(),
             );
             let inline_call = DebugInlineCallInfo::new(frame.name.as_str(), declaration, call_site);
