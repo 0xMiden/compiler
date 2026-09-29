@@ -22,6 +22,7 @@ mod load_sw;
 mod load_u16;
 mod load_u64_unaligned;
 mod load_u8;
+mod mem_cpy;
 mod regressions;
 mod store_qw;
 mod store_u16;

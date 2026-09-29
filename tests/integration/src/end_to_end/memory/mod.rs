@@ -1,6 +1,8 @@
 mod copy_aligned_addresses_misaligned_count;
 mod copy_aligned_bytes;
 mod copy_multiword_fast_path;
+mod copy_overlapping_aligned;
+mod copy_overlapping_unaligned;
 mod copy_u128_fast_path;
 mod copy_unaligned;
 mod copy_unaligned_dst;
