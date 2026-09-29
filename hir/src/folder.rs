@@ -4,7 +4,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::{
     AttributeRef, BlockRef, Builder, Context, Dialect, FoldResult, FxHashMap, OpFoldResult,
-    OperationRef, ProgramPoint, RegionRef, Rewriter, SourceSpan, Spanned, Type, Value, ValueRef,
+    OperationRef, ProgramPoint, RegionRef, Rewriter, SourceSpan, Type, Value, ValueRef,
     adt::SmallDenseMap,
     matchers::Matcher,
     patterns::{RewriterImpl, RewriterListener},
@@ -95,7 +95,7 @@ impl OperationFolder {
             {
                 let mut op = op.borrow_mut();
                 op.move_to(ProgramPoint::at_start_of(block));
-                op.set_span(self.erased_folded_location);
+                erase_constant_location(&mut op, self.erased_folded_location);
             }
             return FoldResult::Failed;
         }
@@ -258,7 +258,7 @@ impl OperationFolder {
             {
                 let mut op = op.borrow_mut();
                 op.move_to(ProgramPoint::at_start_of(block));
-                op.set_span(self.erased_folded_location);
+                erase_constant_location(&mut op, self.erased_folded_location);
             }
             return true;
         }
@@ -284,7 +284,7 @@ impl OperationFolder {
         if !is_new {
             self.notify_removal(op);
             self.rewriter.replace_op(op, folder_const_op);
-            folder_const_op.borrow_mut().set_span(self.erased_folded_location);
+            erase_constant_location(&mut folder_const_op.borrow_mut(), self.erased_folded_location);
             return false;
         }
 
@@ -299,7 +299,7 @@ impl OperationFolder {
         {
             let mut op = op.borrow_mut();
             op.move_to(ProgramPoint::at_start_of(insert_block));
-            op.set_span(self.erased_folded_location);
+            erase_constant_location(&mut op, self.erased_folded_location);
         }
 
         let referenced_dialects = self.referenced_dialects.entry(op).or_default();
@@ -358,12 +358,7 @@ impl OperationFolder {
             ty,
         };
         if let Some(mut const_op) = uniqued_constants.get(&uniqued_constant).cloned() {
-            {
-                let mut const_op = const_op.borrow_mut();
-                if const_op.span() != span {
-                    const_op.set_span(span);
-                }
-            }
+            erase_constant_location(&mut const_op.borrow_mut(), span);
             return Some(const_op);
         }
 
@@ -399,10 +394,7 @@ impl OperationFolder {
                 .get_mut(&existing_op)
                 .unwrap()
                 .push(new_uniqued_constant.dialect.clone());
-            let mut existing = existing_op.borrow_mut();
-            if existing.span() != span {
-                existing.set_span(span);
-            }
+            erase_constant_location(&mut existing_op.borrow_mut(), span);
             Some(existing_op)
         } else {
             self.referenced_dialects.insert(const_op, smallvec![dialect, new_dialect]);
@@ -417,6 +409,13 @@ impl OperationFolder {
     fn is_folder_owned_constant(&self, op: &OperationRef) -> bool {
         self.referenced_dialects.contains_key(op)
     }
+}
+
+/// A shared or hoisted constant no longer represents one original instruction location.
+/// Erase its inline context together with its span, even if the span was already unknown.
+fn erase_constant_location(op: &mut crate::Operation, span: SourceSpan) {
+    op.set_span(span);
+    op.remove_attribute(crate::dialects::debuginfo::attributes::INLINE_CALL_CHAIN_ATTR_NAME);
 }
 
 /// Materialize a constant for a given attribute and type.
@@ -465,3 +464,6 @@ fn get_insertion_region(insertion_block: BlockRef) -> RegionRef {
 
     unreachable!("expected valid insertion region")
 }
+
+#[cfg(test)]
+mod tests;
