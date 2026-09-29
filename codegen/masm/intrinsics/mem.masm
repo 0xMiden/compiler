@@ -677,10 +677,8 @@ end
 # The source and destination ranges may overlap, the destination receives the elements the source
 # range held before the copy.
 #
-# All three operands must be u32 values.
-#
 # Stack transition: [n, read_ptr, write_ptr] -> []
-pub proc memmove_elements # [n, read_ptr, write_ptr]
+pub proc memmove_elements(n: u32, read_ptr: ptr<felt, addrspace(felt)>, write_ptr: ptr<felt, addrspace(felt)>)
     # In both loops the counter is negated, so that it is updated with `add.1`, which takes one
     # cycle less than `sub.1`
     dup.2 dup.2 u32gt # [write_ptr > read_ptr, n, read_ptr, write_ptr]
@@ -695,7 +693,7 @@ pub proc memmove_elements # [n, read_ptr, write_ptr]
             dup.1 mem_load      # [value, -n, read_last, write_last]
             dup.3 mem_store     # [-n, read_last, write_last]
             add.1 movup.2 sub.1 movup.2 sub.1 movup.2 # [-n + 1, read_last - 1, write_last - 1]
-            dup.0 neq.0
+            dup.0 neq.0         # [-n + 1 != 0, -n + 1, read_last - 1, write_last - 1]
         end
     else
         # The destination does not start above the source, so an ascending copy never overwrites
@@ -706,7 +704,7 @@ pub proc memmove_elements # [n, read_ptr, write_ptr]
             dup.1 mem_load      # [value, -n, read_ptr, write_ptr]
             dup.3 mem_store     # [-n, read_ptr, write_ptr]
             add.1 movup.2 add.1 movup.2 add.1 movup.2 # [-n + 1, read_ptr + 1, write_ptr + 1]
-            dup.0 neq.0
+            dup.0 neq.0         # [-n + 1 != 0, -n + 1, read_ptr + 1, write_ptr + 1]
         end
     end
     drop drop drop

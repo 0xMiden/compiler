@@ -102,7 +102,8 @@ pub struct MemSet {
 /// `destination`.
 ///
 /// The unit of `count` is the pointee type of `source`, i.e. `count * size_of(pointee)` bytes are
-/// copied. A `count` of zero leaves the memory unchanged.
+/// copied. A `count` of zero leaves the memory unchanged, and a byte length which does not fit in
+/// a `u32` is an error.
 ///
 /// The source and destination ranges may overlap, the destination receives the values the source
 /// range held before the copy.

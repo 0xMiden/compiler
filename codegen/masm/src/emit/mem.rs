@@ -805,6 +805,7 @@ impl OpEmitter<'_> {
                 [
                     // [src, dst, count]
                     masm::Instruction::MovUp2,
+                    // `u32widening_mul` leaves `[lo, hi]` on the stack; assert on `hi` and keep `lo`.
                     masm::Instruction::U32WideningMulImm(value_size.into()),
                     masm::Instruction::Swap1,
                     Self::assertz_with_message_inst("memcpy byte length overflowed", span),
