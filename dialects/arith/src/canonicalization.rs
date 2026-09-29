@@ -150,7 +150,7 @@ mod tests {
     use alloc::rc::Rc;
 
     use midenc_hir::{
-        Report, SourceSpan, Type,
+        Op, Report, SourceSpan, Type,
         dialects::builtin::{BuiltinOpBuilder, Function},
         patterns::{
             FrozenRewritePatternSet, GreedyRewriteConfig, RegionSimplificationLevel,
@@ -283,6 +283,114 @@ mod tests {
         assert!(apply_rotate_canonicalization(&test));
         assert_rotate_by_32_rewritten(test.function().as_operation_ref(), Type::I64);
 
+        Ok(())
+    }
+
+    #[test]
+    fn inline_metadata_survives_rotate_rewrite() -> Result<(), Report> {
+        check_inline_metadata_survives_rotate_rewrite(false)
+    }
+
+    #[test]
+    fn standalone_pattern_application_inherits_inline_metadata() -> Result<(), Report> {
+        check_inline_metadata_survives_rotate_rewrite(true)
+    }
+
+    fn check_inline_metadata_survives_rotate_rewrite(standalone: bool) -> Result<(), Report> {
+        use midenc_hir::dialects::debuginfo::attributes::{
+            INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain, InlineCallChainAttr, InlineCallFrame,
+        };
+        let mut test = Test::named("inline_metadata_survives_rotate_rewrite");
+        build_rotate_by_32(&mut test, Type::U64, false)?;
+        let function = test.function().as_operation_ref();
+        let mut rotate = None;
+        function.borrow().prewalk_all(|op| {
+            if op.is::<Rotl>() {
+                rotate = Some(op.as_operation_ref());
+            }
+        });
+        let attr = test
+            .context_rc()
+            .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(alloc::vec![
+                InlineCallFrame {
+                    name: "inline_rotate".into(),
+                    linkage_name: None,
+                    file: "source.rs".into(),
+                    line: 1,
+                    column: 1,
+                    call_file: "source.rs".into(),
+                    call_line: 2,
+                    call_column: 1,
+                }
+            ]))
+            .as_attribute_ref();
+        let mut rotate = rotate.unwrap();
+        rotate.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, attr);
+        if standalone {
+            use midenc_hir::patterns::{NoopRewriterListener, PatternApplicator, RewriterImpl};
+            let context = test.context_rc();
+            let mut patterns = RewritePatternSet::new(context.clone());
+            Rotl::get_canonicalization_patterns(&mut patterns, context.clone());
+            let mut applicator =
+                PatternApplicator::new(Rc::new(FrozenRewritePatternSet::new(patterns)));
+            applicator.apply_cost_model(|pattern| *pattern.benefit());
+            let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(context);
+            assert!(
+                applicator
+                    .match_and_rewrite(rotate, &mut rewriter, |_| true, |_| {}, |_| Ok(()))
+                    .is_ok()
+            );
+        } else {
+            assert!(apply_rotate_canonicalization(&test));
+        }
+        let mut marked_replacements = 0;
+        function.borrow().prewalk_all(|op| {
+            if op.is::<Split>() || op.is::<Join>() {
+                assert_eq!(op.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME), Some(attr));
+                marked_replacements += 1;
+            }
+        });
+        assert_eq!(marked_replacements, 2, "both replacement ops must retain their inline frame");
+        Ok(())
+    }
+
+    #[test]
+    fn inline_metadata_survives_constant_folding() -> Result<(), Report> {
+        use midenc_hir::dialects::debuginfo::attributes::{
+            INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain, InlineCallChainAttr,
+        };
+        let mut test = Test::new("inline_metadata_survives_constant_folding", &[], &[Type::U32]);
+        let chain = test
+            .context_rc()
+            .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::default())
+            .as_attribute_ref();
+        {
+            let mut builder = test.function_builder();
+            let input = builder.u64(33, SourceSpan::UNKNOWN);
+            let truncated = builder.trunc(input, Type::U32, SourceSpan::UNKNOWN)?;
+            truncated
+                .borrow()
+                .get_defining_op()
+                .unwrap()
+                .borrow_mut()
+                .set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
+            builder.ret(Some(truncated), SourceSpan::UNKNOWN)?;
+        }
+        assert!(apply_rotate_canonicalization(&test));
+        let mut returns = 0;
+        test.function().borrow().as_operation().prewalk_all(|op| {
+            if op.is::<midenc_hir::dialects::builtin::Ret>() {
+                let value = op.operands().all()[0].borrow().as_value_ref();
+                let constant = value.borrow().get_defining_op().unwrap();
+                assert!(constant.borrow().implements::<dyn midenc_hir::traits::ConstantLike>());
+                assert_eq!(
+                    constant.borrow().get_attribute(INLINE_CALL_CHAIN_ATTR_NAME),
+                    Some(chain)
+                );
+                returns += 1;
+            }
+        });
+        assert_eq!(returns, 1);
         Ok(())
     }
 }
