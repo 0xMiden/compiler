@@ -15,7 +15,7 @@
 //
 // Bulk-op evidence: 3 `memory.copy`, 0 `memory.fill`, no libcall — the
 // segment joins are `copy_nonoverlapping` between disjoint halves of a fresh
-// buffer, so they never hit the overlap path `heap_vec_shift` pins.
+// buffer, so they never take the overlapping shape `heap_vec_shift` pins.
 // Arena: 64 KiB.
 
 extern crate alloc;

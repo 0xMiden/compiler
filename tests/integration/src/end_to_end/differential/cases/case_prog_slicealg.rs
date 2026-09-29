@@ -29,8 +29,8 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
         hi[..16].copy_from_slice(&lo[16..]);
         lo[..8].fill(input1 ^ 0x5a5a_5a5a);
     }
-    // Distinct source and destination ranges (`src == dst` traps in MASM —
-    // the known `copy_same_pos` class — so the offset is forced non-zero).
+    // Distinct source and destination ranges: the offset is forced non-zero
+    // (the identical-range copy is `copy_same_pos`).
     let src = k % 24;
     a.copy_within(src..src + 8, src + 24);
     for c in a.chunks_exact_mut(8) {

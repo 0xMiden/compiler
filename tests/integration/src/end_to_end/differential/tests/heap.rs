@@ -78,38 +78,30 @@ fn heap_vec_kinds() {
 }
 
 /// The non-shifting edit surface: `swap_remove`, `pop`, `resize`,
-/// `truncate`, `retain`, `dedup` — the passing sibling that bounds the
-/// shift findings to overlapping bulk moves.
+/// `truncate`, `retain`, `dedup` — the same container with no overlapping
+/// bulk move.
 #[test]
 fn heap_vec_edit() {
     run_case("heap_vec_edit", include_str!("../cases/case_heap_vec_edit.rs"));
 }
 
-/// `Vec<u32>::insert(i, v)` — an upward overlapping `memory.copy` whose
-/// operands are all 4-aligned, so it takes the element fast path.
+/// `Vec<u32>::insert(i, v)` — shifts the tail up by one element with an
+/// overlapping `memory.copy` whose operands are all 4-aligned, so the
+/// element path copies it in descending order.
 ///
 /// `Vec::insert` is the plainest producer of the `memory::mem_overlap`
-/// defect there is: no `unsafe`, no `copy_within`, just the container method
-/// every Rust program uses. Bounded by `heap_vec_edit` (same container, same
-/// allocator, non-overlapping moves only — passes) and by
-/// `heap_vec_remove_u8` (same overlapping copy, byte-loop arm, downward —
-/// passes).
+/// shape there is: no `unsafe`, no `copy_within`, just the container method
+/// every Rust program uses. `heap_vec_drain` is the downward direction and
+/// `heap_vec_shift_u8` the byte-loop arm. Regression test for #1418.
 #[test]
-#[ignore = "#1418: MASM-only abort, same defect as memory::mem_overlap: Vec<u32>::insert shifts \
-            the tail up by one element with an overlapping memory.copy whose src/dst/count are all \
-            4-aligned, so it takes the ::miden::core::mem::memcopy_elements fast path and the VM \
-            stops with 'assertion failed with error message: source and destination ranges must \
-            not overlap' (mem.masm:100); natively the shift is a memmove and returns a value. e.g. \
-            inputs (4, 1) — see heap_vec_shift_repro. Un-ignore when hir.mem_cpy gets memmove \
-            semantics (which fixes memory::mem_overlap and heap_vec_drain too)"]
 fn heap_vec_shift() {
     run_case("heap_vec_shift", include_str!("../cases/case_heap_vec_shift.rs"));
 }
 
 /// Pinned twin of [`heap_vec_shift`]: `insert` in the middle of an 8-element
 /// buffer (4, 1), at the front (4, 0), and one pair from a random run.
+/// Regression test for #1418.
 #[test]
-#[ignore = "#1418: pinned reproducer of heap_vec_shift (memcopy_elements overlap abort)"]
 fn heap_vec_shift_repro() {
     run_case_with_inputs(
         "heap_vec_shift_repro",
@@ -119,25 +111,17 @@ fn heap_vec_shift_repro() {
 }
 
 /// `Vec<u32>::remove(j)` + `drain(a..b)` — the same 4-aligned overlapping
-/// copy in the DOWNWARD direction, which a forward copy loop would serve
-/// correctly. The element fast path refuses it anyway, which is what makes
-/// this the complement of [`heap_vec_shift`].
+/// copy in the DOWNWARD direction, which the element path copies in
+/// ascending order: the complement of [`heap_vec_shift`].
+/// `heap_vec_remove_u8` is the same downward overlap on the byte-loop arm.
+/// Regression test for #1418.
 #[test]
-#[ignore = "#1418: MASM-only abort, same defect as memory::mem_overlap and heap_vec_shift, other \
-            direction: Vec<u32>::remove / drain shift the tail DOWN with a 4-aligned overlapping \
-            memory.copy, and ::miden::core::mem::memcopy_elements rejects overlap in both \
-            directions — 'assertion failed with error message: source and destination ranges must \
-            not overlap' (mem.masm:100) — even though a forward copy is correct for dst < src. \
-            e.g. inputs (4, 1) — see heap_vec_drain_repro. Bounded by heap_vec_remove_u8, the same \
-            downward overlap on the byte-loop arm, which passes. Un-ignore when the fast path \
-            accepts dst < src overlap, or when hir.mem_cpy gets memmove semantics"]
 fn heap_vec_drain() {
     run_case("heap_vec_drain", include_str!("../cases/case_heap_vec_drain.rs"));
 }
 
-/// Pinned twin of [`heap_vec_drain`].
+/// Pinned twin of [`heap_vec_drain`]. Regression test for #1418.
 #[test]
-#[ignore = "#1418: pinned reproducer of heap_vec_drain (memcopy_elements overlap abort, dst < src)"]
 fn heap_vec_drain_repro() {
     run_case_with_inputs(
         "heap_vec_drain_repro",
@@ -147,34 +131,22 @@ fn heap_vec_drain_repro() {
 }
 
 /// `Vec<u8>::insert(i, b)` — an upward overlapping `memory.copy` one byte
-/// wide, which can never take the element fast path and so hits the byte
+/// wide, which can never take the element path and so hits the byte
 /// fallback loop instead.
 ///
-/// The byte loop copies UPWARD, so shifting a range up re-reads bytes it has
-/// already overwritten: this is the SILENT half of the overlap defect —
-/// wrong values, no abort, no diagnostic. `memorder::copy_fwd` pins that the
-/// same loop is correct for `dst < src`, and `heap_vec_remove_u8` pins it for
-/// this exact container and allocator, so direction is the only variable.
+/// With `dst > src` the byte loop copies in descending order, so no byte is
+/// overwritten before it is read. `memorder::copy_fwd` and
+/// `heap_vec_remove_u8` pin the same loop for `dst < src` (ascending order),
+/// the latter on this exact container and allocator. Regression test for
+/// #1418.
 #[test]
-#[ignore = "#1418: native/MASM value divergence (SILENT, no abort): Vec<u8>::insert shifts the \
-            tail up by one byte with an overlapping memory.copy that can never be 4-aligned, so \
-            codegen takes the memcpy byte fallback loop, which copies UPWARD and re-reads bytes it \
-            has already overwritten; wasm memory.copy has memmove semantics. Inputs (7, 0): native \
-            3483233431, masm 2893074715; wasmtime on the harness-built wasm returns -811733865 = \
-            3483233431, i.e. wasmtime == native, so the compiler is wrong, not the guest \
-            toolchain. Same root as memory::mem_overlap / heap_vec_shift but the byte arm has no \
-            overlap assert at all. Bounded by heap_vec_remove_u8 (same loop, dst < src, passes). \
-            Un-ignore when the memcpy byte loop copies downward when dst > src (or hir.mem_cpy \
-            gets memmove semantics)"]
 fn heap_vec_shift_u8() {
     run_case("heap_vec_shift_u8", include_str!("../cases/case_heap_vec_shift_u8.rs"));
 }
 
-/// Pinned twin of [`heap_vec_shift_u8`]: the first random failing pair plus
-/// an insert at the front of the buffer.
+/// Pinned twin of [`heap_vec_shift_u8`]: an insert in the middle (7, 0) plus
+/// an insert at the front of the buffer. Regression test for #1418.
 #[test]
-#[ignore = "#1418: pinned reproducer of heap_vec_shift_u8 (silent byte-loop overlap corruption): \
-            inputs (7, 0) give native 3483233431, masm 2893074715"]
 fn heap_vec_shift_u8_repro() {
     run_case_with_inputs(
         "heap_vec_shift_u8_repro",
@@ -183,9 +155,10 @@ fn heap_vec_shift_u8_repro() {
     );
 }
 
-/// `Vec<u8>::remove(j)` — the same byte-wide overlapping copy DOWNWARD, the
-/// control of the direction/alignment matrix: it passes, so what breaks
-/// `heap_vec_shift_u8` is the direction and nothing else.
+/// `Vec<u8>::remove(j)` — the same byte-wide overlapping copy DOWNWARD, which
+/// the byte fallback loop copies in ascending order; with `heap_vec_shift_u8`,
+/// `heap_vec_shift` and `heap_vec_drain` it completes the direction/alignment
+/// matrix.
 #[test]
 fn heap_vec_remove_u8() {
     run_case("heap_vec_remove_u8", include_str!("../cases/case_heap_vec_remove_u8.rs"));
@@ -291,29 +264,20 @@ fn heap_bheap() {
 ///
 /// `BTreeMap` keeps each node's keys and values in sorted arrays, so an
 /// insert anywhere but at the end shifts the tail of those arrays UP with an
-/// overlapping `ptr::copy`, and a remove shifts it back DOWN — the same
-/// `heap_vec_shift` / `heap_vec_drain` defect, reached without the program
-/// ever naming a bulk operation. Bounded by `heap_vec_edit` (heap container,
-/// no overlapping move, passes) on one side and by `heap_bheap` (a container
-/// that reorders by SWAPS rather than shifts, passes) on the other.
+/// overlapping `ptr::copy`, and a remove shifts it back DOWN — the
+/// `heap_vec_shift` / `heap_vec_drain` shapes, reached without the program
+/// ever naming a bulk operation. For 4-byte keys and values those copies
+/// are 4-aligned and take the element path. `heap_bheap` is the container
+/// that reorders by SWAPS rather than shifts. Regression test for #1418.
 #[test]
-#[ignore = "#1418: MASM-only abort, same defect as memory::mem_overlap / heap_vec_shift: BTreeMap \
-            (and BTreeSet) shift a node's key and value arrays with an overlapping ptr::copy on \
-            every insert or remove that is not at the end of the node, and for 4-byte keys/values \
-            that copy is 4-aligned, so ::miden::core::mem::memcopy_elements aborts with 'source \
-            and destination ranges must not overlap' (mem.masm:100). Inputs (3, 1) — three inserts \
-            into one leaf, see heap_btree_repro; no split is needed. Un-ignore when hir.mem_cpy \
-            gets memmove semantics"]
 fn heap_btree() {
     run_case("heap_btree", include_str!("../cases/case_heap_btree.rs"));
 }
 
 /// Pinned twin of [`heap_btree`]: three inserts into a single leaf — the
 /// smallest BTreeMap that shifts a key array — plus the first leaf split
-/// (12 keys) and a height-2 tree (132 keys).
+/// (12 keys) and a height-2 tree (132 keys). Regression test for #1418.
 #[test]
-#[ignore = "#1418: pinned reproducer of heap_btree (memcopy_elements overlap abort inside a B-tree \
-            node)"]
 fn heap_btree_repro() {
     run_case_with_inputs(
         "heap_btree_repro",
@@ -385,25 +349,17 @@ fn heap_string() {
 }
 
 /// `String::insert(idx, ch)` — the third container that shifts a buffer up
-/// with an overlapping copy, on the byte-loop arm like `heap_vec_shift_u8`.
+/// with an overlapping copy, on the byte-loop arm like `heap_vec_shift_u8`:
+/// the byte count is never a multiple of 4 and the loop copies in descending
+/// order. `heap_string` covers the same `String` surface with appends only.
+/// Regression test for #1418.
 #[test]
-#[ignore = "#1418: native/MASM value divergence (SILENT, no abort), same defect as \
-            heap_vec_shift_u8: String::insert shifts the tail up by one byte with an overlapping \
-            memory.copy that can never be 4-aligned, so codegen takes the memcpy byte fallback \
-            loop, which copies UPWARD. Inputs (4, 1): native 2160629743, masm 3266568672; wasmtime \
-            on the harness-built wasm returns -2134337553 = 2160629743, i.e. wasmtime == native, \
-            so the compiler is wrong, not the guest toolchain. First caught inside heap_string \
-            (inputs (32767, 128): native 2890095206, masm 3656259449), which now excludes insert; \
-            pinned here — see heap_string_insert_repro. Bounded by heap_string (the same String \
-            surface with appends only, passes). Un-ignore when the memcpy byte loop copies \
-            downward when dst > src"]
 fn heap_string_insert() {
     run_case("heap_string_insert", include_str!("../cases/case_heap_string_insert.rs"));
 }
 
-/// Pinned twin of [`heap_string_insert`].
+/// Pinned twin of [`heap_string_insert`]. Regression test for #1418.
 #[test]
-#[ignore = "#1418: pinned reproducer of heap_string_insert (silent byte-loop overlap corruption)"]
 fn heap_string_insert_repro() {
     run_case_with_inputs(
         "heap_string_insert_repro",

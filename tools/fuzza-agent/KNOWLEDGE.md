@@ -140,7 +140,7 @@ build the masked-index control before calling a trap-edge variant new.
   `report.json` snapshots, never with the rendered "newly-exercised" count
   (a test-crate-rebuild artifact).
 - Corpus map on demand: every `#[ignore = "..."]` string starts with its
-  filed issue (`#1418`: ...) or `gap: ` (diagnostic gaps and link limits, not
+  filed issue (`#1420`: ...) or `gap: ` (diagnostic gaps and link limits, not
   filed as bugs). A class's reproducers, i.e. the un-ignore list of its fix
   PR: `grep -rn -A3 '#\[ignore'
   tests/integration/src/end_to_end/differential/tests/ | grep '#1420'`.

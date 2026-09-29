@@ -3,7 +3,7 @@
 // destination offsets covering all sixteen combinations of (src % 4, dst % 4)
 // and lengths 0..=17, which is the full input space of the memcpy lowering's
 // element fast path (`src % 4 == dst % 4 == count % 4 == 0` ->
-// `memcopy_elements`) and of its byte fallback loop. A u32-element copy of
+// `memmove_elements`) and of its byte fallback loop. A u32-element copy of
 // the same region exercises the non-byte-pointer arm. The buffer is
 // `#[repr(C, align(4))]` so both targets agree on which combinations are
 // element-aligned; the whole buffer is hashed, so a copy of the wrong

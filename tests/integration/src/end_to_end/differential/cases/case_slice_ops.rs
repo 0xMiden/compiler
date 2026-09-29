@@ -2,9 +2,7 @@
 // table: runtime start/length sub-slices (`&buf[a..a + len]`), iteration
 // over `chunks_exact(3)` and `windows(5)`, `split_at` at a runtime point,
 // reversed in-place iteration writing back, element `swap`s, and
-// `binary_search` over the static table. Slice rotation is deliberately
-// absent: core's `ptr_rotate` moves overlapping ranges with `memmove`,
-// which is the known overlapping `memory.copy` bug.
+// `binary_search` over the static table.
 static SORTED: [u32; 24] = [
     2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584, 4181, 6765, 10946, 17711,
     28657, 46368, 75025, 121393,

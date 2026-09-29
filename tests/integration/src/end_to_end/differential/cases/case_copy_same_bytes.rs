@@ -1,8 +1,8 @@
-// Passing sibling of `copy_same_pos`: the same identical-range `copy_within`
-// (runtime shift that can be 0) on a BYTE buffer with an odd length and an
-// odd start, so the byte count is never a multiple of 4 and the MASM memcpy
-// lowering takes its byte fallback loop instead of `memcopy_elements`. The
-// loop copies each byte onto itself, which is harmless, so the identical
+// Byte-loop sibling of `copy_same_pos`: the same identical-range
+// `copy_within` (runtime shift that can be 0) on a BYTE buffer with an odd
+// length and an odd start, so the byte count is never a multiple of 4 and
+// the MASM memcpy lowering takes its byte fallback loop instead of the
+// element path. The loop copies each byte onto itself, so the identical
 // range agrees with the native no-op memmove; the odd shift selects a
 // disjoint destination 20 bytes away.
 #[unsafe(no_mangle)]

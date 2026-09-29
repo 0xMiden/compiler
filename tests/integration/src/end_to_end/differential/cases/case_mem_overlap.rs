@@ -1,8 +1,10 @@
 // Overlapping `copy_within` with dst > src. LLVM emits wasm `memory.copy`,
-// which has memmove semantics (overlap must behave as-if buffered), but the
-// MASM memcpy lowering appears to copy forward, overwriting source elements
-// before they are read. The whole-array sum makes any corruption visible
-// for every input pair (n >= 4, so the ranges always overlap).
+// which has memmove semantics (overlap must behave as-if buffered). The u32
+// ranges keep both addresses and the byte count 4-aligned, so the MASM
+// memcpy lowering takes its element path, which copies in descending order
+// when dst > src. The whole-array sum makes any source element overwritten
+// before it is read visible for every input pair (n >= 4, so the ranges
+// always overlap).
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let mut a = [0u32; 16];

@@ -290,18 +290,10 @@ fn copy_grid_edges() {
 
 /// W4: forward-overlapping `copy_within` (dst < src) at overlap distances
 /// 1..=8 with an odd length, so the lowering always takes the byte fallback
-/// loop, which copies upward — the correct direction for this overlap, and
-/// it agrees with native at every distance.
-///
-/// Every length here is odd ON PURPOSE. The first draft of this case had a
-/// second copy of length `len + 1`, and the pinned grid's `(0x20, 0x38)` rung
-/// (distance 4, 16 bytes, 4-aligned on both ends) aborted in
-/// `miden-core-lib memcopy_elements` with "source and destination ranges must
-/// not overlap" (mem.masm:100, operand stack `[0, 4, 262137, 262136, ..]` =
-/// n 4 elements, rp one element above wp). That is the known
-/// `memory::mem_overlap` / `memory::copy_same_pos` class — the element fast
-/// path has no memmove semantics — and it shows the assert rejects overlap in
-/// BOTH directions, not just `dst > src`. Not retried here.
+/// loop, which copies in ascending order because the destination is below
+/// the source, and it agrees with native at every distance. The 4-aligned
+/// overlapping shapes on the element path are `heap::heap_vec_drain` (dst <
+/// src) and `memory::mem_overlap` (dst > src).
 #[test]
 fn copy_fwd() {
     run_case("mo_copy_fwd", include_str!("../cases/case_mo_copy_fwd.rs"));

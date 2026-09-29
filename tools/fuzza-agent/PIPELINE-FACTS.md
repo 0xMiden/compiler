@@ -124,7 +124,7 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   `memarg.align > 0`; no constant-address canonicalization exists. 128-bit
   memory traffic is i64 pairs; I128 loads/stores come only from spill and sret
   slots (`memory::straddle_wide`, `memory::packed2_fields`).
-- `memory.copy` becomes `hir.mem_cpy %dst, %src, %count` with byte-typed
+- `memory.copy` becomes `hir.mem_cpy %src, %dst, %count` with byte-typed
   pointers and a runtime count, `memory.fill` becomes `hir.mem_set`; `alloc`
   code has no `memcpy`/`memmove`/`memset` libcalls (`heap::heap_btree`,
   `memory::copy_ladder`).
@@ -385,14 +385,21 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 
 ## Codegen and the emitter
 
-- `OpEmitter::memcpy` (`codegen/masm/src/emit/mem.rs:816`) tests src, dst and
-  count for 4-alignment at runtime. The element arm calls
-  `::miden::core::mem::memcopy_elements`, which asserts non-overlap in EITHER
-  direction, identical ranges included (n = 0 is accepted)
-  (`memory::mem_overlap`, `memory::copy_same_pos`, `boundaries::memnoop_same`).
-  The byte fallback loop copies forward with no check, so an upward overlap is
-  silently corrupted and a downward one is correct (`heap::heap_vec_shift_u8`,
-  `heap::heap_vec_remove_u8`, `memorder::copy_fwd`).
+- `hir.mem_cpy` has memmove semantics: the ranges may overlap, the destination
+  receives the values the source range held before the copy, and `count == 0`
+  is a no-op. `OpEmitter::memcpy` (`codegen/masm/src/emit/mem.rs`) tests src,
+  dst and count for 4-alignment at runtime for byte pointers. The element arm
+  calls the compiler intrinsic `::intrinsics::mem::memmove_elements`
+  (`codegen/masm/intrinsics/mem.masm`), which copies in descending address
+  order when `write_ptr > read_ptr` and ascending otherwise (overlap up
+  `heap::heap_vec_shift`, `memory::mem_overlap`, `heap::heap_btree`; down
+  `heap::heap_vec_drain`; identical ranges `memory::copy_same_pos`; zero length
+  `boundaries::memnoop_same`). The fallback loop (`emit_memcpy_fallback_loop`)
+  follows the same rule, descending when `dst > src`, and serves the unaligned
+  byte copies and every non-byte pointee (up `heap::heap_vec_shift_u8`,
+  `heap::heap_string_insert`; down `heap::heap_vec_remove_u8`,
+  `memorder::copy_fwd`; identical ranges `memory::copy_same_bytes`). No core-lib
+  copy routine is called.
 - `OpEmitter::memset` is a per-byte loop, about 25 cycles per byte
   (`memory::frame_1m`).
 - Dead end: emitter arms with no producer. The `_imm` load/store and
@@ -401,8 +408,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   (`memory::mem_globals`). Unchecked division, U64 `checked_divmod` and int32
   N-bit normalization have no frontend caller
   (`codegen/masm/src/emit/int32.rs`; `arith::div_const_forms`). Felt memory
-  ops, `mem_stream`, `store_array` and word-sized `memcopy_words` have no
-  producer (`memory::copy_ladder`).
+  ops, `mem_stream` and `store_array` (a `todo!()`) have no producer
+  (`codegen/masm/src/emit/mem.rs`; `memory::copy_ladder`).
 - The emitter pushes a constant from its IMMEDIATE while IR dumps print the
   result type, so an attribute/type mismatch shows only in the MASM
   (`wide::parse_i64_hand`).
@@ -485,6 +492,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 - `alloc` links and assembles: `Vec`, `Box`, `Box<dyn Trait>`, `Rc`/`RefCell`,
   `VecDeque`, `BinaryHeap`, `BTreeMap`/`BTreeSet`, `String`, `format!`,
   `collect` (`heap::heap_vec_kinds`, `heap::heap_dyn`, `heap::heap_rc`,
-  `heap::heap_bheap`, `heap::heap_fmt`, `heap::heap_iters`). Every
-  overlapping shift in them (`Vec::insert`/`remove`/`drain`,
-  `String::insert`, B-tree nodes) hits #1418.
+  `heap::heap_bheap`, `heap::heap_fmt`, `heap::heap_iters`). Their
+  overlapping shifts (`Vec::insert`/`remove`/`drain`, `String::insert`,
+  B-tree nodes) compile and match native (`heap::heap_vec_shift`,
+  `heap::heap_vec_drain`, `heap::heap_vec_shift_u8`,
+  `heap::heap_string_insert`, `heap::heap_btree`).

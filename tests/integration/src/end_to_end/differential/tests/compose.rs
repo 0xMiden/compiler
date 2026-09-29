@@ -261,8 +261,8 @@ fn sret_exits_edges() {
 /// big_frame x mut_arrays x dispatch: a 2 KiB `[u32; 512]` frame escapes as
 /// a runtime-bounded `&mut [u32]` sub-slice (fat pointer) through fn-pointer
 /// dispatch into helpers that fill it, copy a runtime-length prefix onto its
-/// disjoint suffix (an overlapping `copy_within` is the known `mem_overlap`
-/// trap) and xor-fold it, with a u64 carried across the dispatches in a
+/// disjoint suffix (the overlapping `copy_within` is `memory::mem_overlap`)
+/// and xor-fold it, with a u64 carried across the dispatches in a
 /// loop and the result read back at runtime indexes.
 ///
 /// Since 2026-09-28 the table is read through `black_box`, because the guest

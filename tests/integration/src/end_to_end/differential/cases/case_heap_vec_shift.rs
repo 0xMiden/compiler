@@ -7,8 +7,8 @@
 //
 // For a 4-byte element type the three operands of that copy are all
 // 4-aligned (`src % 4 == dst % 4 == count % 4 == 0`), so codegen takes the
-// element fast path `::miden::core::mem::memcopy_elements`, whose overlap
-// assertion is direction-independent.
+// element path `::intrinsics::mem::memmove_elements`, which copies in
+// descending order because the destination is above the source.
 //
 // Bulk-op evidence: 2 `memory.copy` in the wasm (realloc + the shift), each a
 // `hir.mem_cpy` over `ptr<u8, byte>` with a runtime count. Arena: 64 KiB.

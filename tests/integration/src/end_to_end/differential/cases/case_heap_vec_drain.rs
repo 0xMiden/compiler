@@ -4,10 +4,8 @@
 // (memmove) inside a single buffer with the destination BELOW the source.
 //
 // As in `heap_vec_shift` all three operands are 4-aligned, so codegen takes
-// `::miden::core::mem::memcopy_elements`. A downward overlapping copy is what
-// a forward copy loop would get RIGHT, which is exactly what makes this the
-// interesting half: the core-lib assertion rejects overlap in both
-// directions, so the direction the hardware could serve is refused too.
+// the element path `::intrinsics::mem::memmove_elements`, which copies in
+// ascending order because the destination is below the source.
 //
 // Bulk-op evidence: 3 `memory.copy` in the wasm (realloc, remove, and the
 // drain's tail move), each a `hir.mem_cpy` over `ptr<u8, byte>` with a

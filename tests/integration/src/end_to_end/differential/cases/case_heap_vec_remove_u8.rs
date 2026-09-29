@@ -1,10 +1,10 @@
 // W1 — the DOWNWARD overlapping in-buffer move on a `Vec<u8>`: `remove(j)`
 // shifts the tail down by ONE BYTE. Source and destination are one byte
 // apart, so they never share a residue mod 4 and the copy always takes the
-// byte fallback loop, which copies upward — the correct direction for a
-// downward shift.
+// byte fallback loop, which copies in ascending order because the
+// destination is below the source.
 //
-// This is the control of the 2x2 matrix: same container, same allocator and
+// This is the fourth cell of the 2x2 matrix: same container, same allocator and
 // the same overlapping `memory.copy` as `heap_vec_shift_u8`, differing only
 // in the direction of the move. `drain` is deliberately NOT used here — a
 // multi-byte drain distance can make source, destination and count all

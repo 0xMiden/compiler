@@ -17,13 +17,9 @@ fn mem_copy() {
 }
 
 /// Overlapping `copy_within` (dst > src) — wasm `memory.copy` memmove
-/// semantics vs forward-copying MASM lowering.
+/// semantics: the destination receives the values the source range held
+/// before the copy. Regression test for #1418.
 #[test]
-#[ignore = "#1418: native/MASM divergence: memory.copy with overlapping dst > src ranges; the VM \
-            now hard-aborts via the miden-core-lib memcopy overlap assert (hash-coded error \
-            14467508661128000855, re-verified 2026-08-27; e.g. inputs (4294967295, 194795201) — \
-            original repro (91264998, 3811523388) in pre-split mem_copy). Un-ignore when the \
-            lowering handles overlapping copies with memmove semantics"]
 fn mem_overlap() {
     run_case("mem_overlap", include_str!("../cases/case_mem_overlap.rs"));
 }
@@ -151,9 +147,7 @@ fn big_frame() {
 
 /// Slicing and pointer arithmetic (campaign 13): runtime sub-slices,
 /// `chunks_exact(3)`, `windows(5)`, `split_at_mut`, reversed in-place
-/// rewrite, element swaps, and `binary_search` over a static sorted table
-/// (slice rotation excluded: its overlapping memmove is the known
-/// `mem_overlap` bug).
+/// rewrite, element swaps, and `binary_search` over a static sorted table.
 #[test]
 fn slice_ops() {
     run_case("slice_ops", include_str!("../cases/case_slice_ops.rs"));
@@ -207,40 +201,24 @@ fn ptr_table() {
     run_case("ptr_table", include_str!("../cases/case_ptr_table.rs"));
 }
 
-/// MASM-ONLY TRAP (campaign 13, 2026-09-02): `copy_within` whose runtime
-/// destination coincides EXACTLY with its source (shift 0) on u32 element
-/// ranges. Natively `memmove(p, p, n)` is a no-op; LLVM keeps the
-/// `memory.copy` because the destination is a runtime value. The byte
-/// addresses and byte count are 4-aligned, so `OpEmitter::memcpy` takes its
-/// element fast path and execs miden-core-lib `memcopy_elements`, whose
-/// overlap assert (`wp >= rp + n || rp >= wp + n`) rejects `wp == rp` with
-/// `n > 0`: "assertion failed with error message: source and destination
-/// ranges must not overlap" (miden-core mem.masm:100), operand stack
-/// `[0, 2, 262116, 262116, ..]` = n 2, rp == wp. First random failure:
-/// inputs (2340168019, 3869789317); the pinned twin also uses (0, 0)
-/// (src 0, n 1). Distinct from `mem_overlap` (dst > src, data must move):
-/// here NO byte needs to move, and the byte fallback arm already handles
-/// the identical range (`copy_same_bytes` passes by copying each byte onto
-/// itself). Bounded by `copy_same_pos_disjoint` (same fast path, disjoint
-/// ranges) and `copy_same_bytes`. Un-ignore when the fast path skips (or
-/// the core-lib assert accepts) `src == dst`, or when memcpy gains memmove
-/// semantics (which fixes `mem_overlap` too).
+/// `copy_within` whose runtime destination coincides EXACTLY with its source
+/// (shift 0) on u32 element ranges (campaign 13). Natively
+/// `memmove(p, p, n)` is a no-op; LLVM keeps the `memory.copy` because the
+/// destination is a runtime value. The byte addresses and byte count are
+/// 4-aligned, so `OpEmitter::memcpy` takes its element path
+/// (`memmove_elements`), which copies the identical range onto itself.
+/// Distinct from `mem_overlap` (dst > src, data must move): here NO element
+/// needs to move. `copy_same_bytes` is the byte-loop sibling. Regression
+/// test for #1418.
 #[test]
-#[ignore = "#1418: MASM-only trap: identical-range copy_within (src == dst, n > 0) on 4-aligned \
-            u32 ranges takes the memcpy element fast path and aborts in miden-core-lib \
-            memcopy_elements with 'source and destination ranges must not overlap' (mem.masm:100), \
-            natively a no-op memmove; e.g. inputs (2340168019, 3869789317) and (0, 0). Un-ignore \
-            when src == dst is accepted by the fast path or memcpy gains memmove semantics"]
 fn copy_same_pos() {
     run_case("copy_same_pos", include_str!("../cases/case_copy_same_pos.rs"));
 }
 
 /// Pinned twin of `copy_same_pos`: the smallest identical-range pair (0, 0)
-/// (src 0, dst 0, one element) plus the first random failing pair.
+/// (src 0, dst 0, one element) plus (2340168019, 3869789317) (n 2).
+/// Regression test for #1418.
 #[test]
-#[ignore = "#1418: MASM-only trap on pinned inputs (0, 0) and (2340168019, 3869789317): \
-            miden-core-lib memcopy_elements 'source and destination ranges must not overlap' for \
-            an identical-range copy_within; see copy_same_pos"]
 fn copy_same_pos_repro() {
     run_case_with_inputs(
         "copy_same_pos",
@@ -249,10 +227,10 @@ fn copy_same_pos_repro() {
     );
 }
 
-/// Passing bound for `copy_same_pos`: the same case on inputs whose shift
+/// Disjoint half of `copy_same_pos`: the same case on inputs whose shift
 /// bit is set (`input1 >> 2` odd), so the destination is 16 elements past
-/// the source — the element fast path with disjoint ranges, every source
-/// start (0/4/8) and every length (1..=4 elements).
+/// the source — the element path with disjoint ranges, every source start
+/// (0/4/8) and every length (1..=4 elements).
 #[test]
 fn copy_same_pos_disjoint() {
     run_case_with_inputs(
@@ -271,7 +249,7 @@ fn copy_same_pos_disjoint() {
     );
 }
 
-/// Passing sibling of `copy_same_pos`: the identical-range `copy_within` on
+/// Byte-loop sibling of `copy_same_pos`: the identical-range `copy_within` on
 /// a byte buffer with odd length/start takes the memcpy byte fallback loop
 /// (each byte copied onto itself), which agrees with the native no-op.
 #[test]

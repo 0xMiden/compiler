@@ -78,7 +78,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     }
 
     // `String::insert` lives in its own case (`heap_string_insert`): it is a
-    // byte-granular UPWARD overlapping copy and diverges. Appending does not.
+    // byte-granular UPWARD overlapping copy. Appending is not.
     let at = (input2 % ((s.len() as u32) + 1)) as usize;
     if at == s.len() {
         s.push('#');

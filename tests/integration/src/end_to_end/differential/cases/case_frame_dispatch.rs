@@ -24,7 +24,7 @@ fn op_fill(buf: &mut [u32], seed: u32, k: u64) -> u64 {
 #[inline(never)]
 fn op_shift(buf: &mut [u32], n: u32, k: u64) -> u64 {
     // Runtime-length copy of a prefix onto the suffix, always disjoint
-    // (h <= len / 2): an overlapping copy_within is the known mem_overlap trap.
+    // (h <= len / 2); the overlapping copy_within is `mem_overlap`.
     let len = buf.len();
     let h = 1 + (n as usize) % (len / 2);
     buf.copy_within(0..h, len - h);

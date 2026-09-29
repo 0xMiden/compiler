@@ -1,13 +1,12 @@
 // W1 — the UPWARD overlapping in-buffer move on a `Vec<u8>`: `insert(i, b)`
 // shifts the tail up by ONE BYTE. Source and destination are one byte apart,
 // so they can never share a residue mod 4 and the copy NEVER takes the
-// element fast path — it takes the byte fallback loop, which copies upward.
+// element path — it takes the byte fallback loop, which copies in descending
+// order because the destination is above the source.
 //
-// Copying upward is correct only when the destination is BELOW the source; an
-// upward loop shifting a range up re-reads bytes it has already overwritten.
-// `heap_vec_remove_u8` is the same byte loop in the other direction and pins
-// that it is correct there, so the two together separate direction from
-// alignment (`heap_vec_shift` / `heap_vec_drain` are the 4-aligned pair).
+// `heap_vec_remove_u8` is the same byte loop in the other direction
+// (ascending order), so the two together separate direction from alignment
+// (`heap_vec_shift` / `heap_vec_drain` are the 4-aligned pair).
 //
 // Bulk-op evidence: 2 `memory.copy` in the wasm, each a `hir.mem_cpy` over
 // `ptr<u8, byte>` with a runtime count. Arena: 64 KiB.

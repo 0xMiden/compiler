@@ -4,10 +4,9 @@
 // with a shift of at least one element, so source and destination never
 // overlap) and `pop`. Every index is a runtime value taken from the inputs.
 //
-// This is the passing sibling of `heap_vec_shift`/`heap_vec_shift_u8`: it
-// bounds those findings to the OVERLAPPING bulk moves (`insert`/`remove`/
-// `drain`) by showing the same container, allocator and element type agree
-// with native when no copy overlaps.
+// This is the non-overlapping sibling of `heap_vec_shift`/`heap_vec_shift_u8`,
+// which cover the OVERLAPPING bulk moves (`insert`/`remove`/`drain`) of the
+// same container, allocator and element type.
 //
 // Bulk-op evidence: the realloc `memory.copy`s only; the per-element moves of
 // `retain`/`dedup` are constant-size (4 bytes) and become plain loads/stores.
