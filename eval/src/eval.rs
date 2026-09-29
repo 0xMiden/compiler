@@ -731,12 +731,36 @@ impl Eval for hir::MemCpy {
             ));
         }
 
-        // Perform memcpy
-        for offset in 0..count {
-            let src = source_value + offset;
-            let dst = dest_value + offset;
-            let value = evaluator.read_memory(src, &source_ty)?;
-            evaluator.write_memory(dst, value)?;
+        let value_size = source_ty
+            .pointee()
+            .expect("expected pointer type to have been verified already")
+            .size_in_bytes();
+        let len = u32::try_from(value_size).ok().and_then(|size| count.checked_mul(size));
+        let Some(len) = len else {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!(
+                    "invalid memcpy: the size of {count} values of {value_size} bytes overflows"
+                ),
+            ));
+        };
+        if len == 0 {
+            return Ok(ControlFlowEffect::None);
+        }
+        if dest_value.checked_add(len).is_none() {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("invalid memcpy: {len} bytes at {dest_value} are out of bounds"),
+            ));
+        }
+
+        // The ranges may overlap, so the whole source range is read before it is written to the
+        // destination
+        let bytes = evaluator.read_memory_bytes(source_value, len)?;
+        for (offset, byte) in (0..len).zip(bytes) {
+            evaluator.write_memory(dest_value + offset, Immediate::U8(byte))?;
         }
 
         Ok(ControlFlowEffect::None)

@@ -307,3 +307,86 @@ fn wasm_i64_remainder() -> Result<(), Report> {
     assert!(test.evaluator.eval_callable(&*callable, [1i64.into(), 0i64.into()]).is_err());
     Ok(())
 }
+
+/// The byte address of the first of the four u32 slots used by the `mem_cpy` tests.
+const MEM_CPY_BASE_ADDR: u32 = 64;
+
+/// Evaluates a function which stores `[1, 2, 3, 4]` into four consecutive u32 slots and then
+/// performs `hir.mem_cpy` on `ptr<u32>` operands pointing at slots `src_slot` and `dst_slot`,
+/// returning the contents of the four slots afterwards.
+fn eval_mem_cpy_u32(
+    name: &'static str,
+    src_slot: u32,
+    dst_slot: u32,
+    count: u32,
+) -> Result<[Value; 4], Report> {
+    let mut test = EvalTest::named(name);
+    test.with_function(&[], &[]);
+
+    {
+        let span = SourceSpan::default();
+        let mut builder = test.function_builder();
+        let ptr_ty = Type::from(PointerType::new(Type::U32));
+        let slot_ptr = |builder: &mut FunctionBuilder<'_, _>, slot: u32| {
+            let addr = builder.u32(MEM_CPY_BASE_ADDR + slot * 4, span);
+            builder.inttoptr(addr, ptr_ty.clone(), span)
+        };
+
+        for slot in 0..4u32 {
+            let ptr = slot_ptr(&mut builder, slot)?;
+            let value = builder.u32(slot + 1, span);
+            builder.store(ptr, value, span)?;
+        }
+
+        let src = slot_ptr(&mut builder, src_slot)?;
+        let dst = slot_ptr(&mut builder, dst_slot)?;
+        let count = builder.u32(count, span);
+        builder.memcpy(src, dst, count, span)?;
+        builder.ret(None, span)?;
+    }
+
+    let callable = test.function().borrow();
+    let results = test.evaluator.eval_callable(&*callable, [])?;
+    assert!(results.is_empty());
+
+    let mut slots = [Value::Immediate(0u32.into()); 4];
+    for (slot, value) in (0u32..).zip(slots.iter_mut()) {
+        *value = test.evaluator.read_memory(MEM_CPY_BASE_ADDR + slot * 4, &Type::U32)?;
+    }
+    Ok(slots)
+}
+
+/// Returns the expected contents of the four u32 slots of the `mem_cpy` tests.
+fn u32_slots(values: [u32; 4]) -> [Value; 4] {
+    values.map(|value| Value::Immediate(value.into()))
+}
+
+/// Checks that `hir.mem_cpy` with a destination one value above an overlapping source copies the
+/// original source values.
+///
+/// Regression test for #1418.
+#[test]
+fn mem_cpy_overlapping_destination_above_source() -> Result<(), Report> {
+    let slots = eval_mem_cpy_u32("mem_cpy_overlapping_destination_above_source", 0, 1, 3)?;
+    assert_eq!(slots, u32_slots([1, 1, 2, 3]));
+    Ok(())
+}
+
+/// Checks that `hir.mem_cpy` with a destination one value below an overlapping source copies the
+/// original source values.
+///
+/// Regression test for #1418.
+#[test]
+fn mem_cpy_overlapping_destination_below_source() -> Result<(), Report> {
+    let slots = eval_mem_cpy_u32("mem_cpy_overlapping_destination_below_source", 1, 0, 3)?;
+    assert_eq!(slots, u32_slots([2, 3, 4, 4]));
+    Ok(())
+}
+
+/// Checks that `hir.mem_cpy` with a zero count leaves memory unchanged.
+#[test]
+fn mem_cpy_zero_count_is_a_noop() -> Result<(), Report> {
+    let slots = eval_mem_cpy_u32("mem_cpy_zero_count_is_a_noop", 0, 1, 0)?;
+    assert_eq!(slots, u32_slots([1, 2, 3, 4]));
+    Ok(())
+}
