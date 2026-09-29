@@ -23,7 +23,6 @@ impl OpEmitter<'_> {
     /// For example:
     ///
     /// - `memset`: `[dst, count, value..] -> [count > 0, i = 0, dst, count, value..]`
-    /// - `memcpy`: `[src, dst, count] -> [count > 0, i = 0, src, dst, count]`
     fn emit_counted_loop_header(&mut self, count_dup: masm::Instruction, span: SourceSpan) {
         self.emit_push(0u32, span);
         self.emit(count_dup, span);
@@ -45,7 +44,6 @@ impl OpEmitter<'_> {
     /// For example:
     ///
     /// - `memset`: `[i, dst, count, value..] -> [i + 1 < count, i + 1, dst, count, value..]`
-    /// - `memcpy`: `[i, src, dst, count] -> [i + 1 < count, i + 1, src, dst, count]`
     fn emit_counted_loop_next_condition(&mut self, count_dup: masm::Instruction, span: SourceSpan) {
         self.emit_all(
             [
@@ -53,29 +51,6 @@ impl OpEmitter<'_> {
                 masm::Instruction::Dup0,
                 count_dup,
                 masm::Instruction::U32Lt,
-            ],
-            span,
-        );
-    }
-
-    /// Convert the byte pointer on top of the stack to a word-aligned element address.
-    ///
-    /// This traps unless the input byte address is aligned to a 16-byte Miden word boundary.
-    fn emit_word_aligned_element_addr_from_byte_ptr(&mut self, span: SourceSpan) {
-        self.emit_all(
-            [
-                masm::Instruction::U32DivModImm(16.into()),
-                Self::assertz_with_message_inst(
-                    "expected a 16-byte-aligned byte pointer for the word-copy fast path",
-                    span,
-                ),
-                // `u32widening_mul` leaves `[lo, hi]` on the stack; assert on `hi` and keep `lo`.
-                masm::Instruction::U32WideningMulImm(4.into()),
-                masm::Instruction::Swap1,
-                Self::assertz_with_message_inst(
-                    "word-copy fast path element address conversion overflowed",
-                    span,
-                ),
             ],
             span,
         );
@@ -809,10 +784,10 @@ impl OpEmitter<'_> {
     /// * `count` is expressed in units of the pointee type, not bytes
     /// * the effective byte length is `count * size_of(*src)`
     /// * `count == 0` leaves memory unchanged and performs no copy
+    /// * the source and destination ranges may overlap, the destination receives the values the
+    ///   source range held before the copy
     /// * source and destination pointers are interpreted in the address space described by their
     ///   pointer type
-    /// * optimized word-copy fast paths are only used for byte-addressable pointers; native
-    ///   pointers fall back to the generic loop
     pub fn memcpy(&mut self, span: SourceSpan) {
         let src = self.stack.pop().expect("operand stack is empty");
         let dst = self.stack.pop().expect("operand stack is empty");
@@ -823,149 +798,104 @@ impl OpEmitter<'_> {
         assert_eq!(ty, dst.ty(), "expected src and dst operands to have the same type");
         let value_ty = ty.pointee().unwrap().clone();
         let value_size = u32::try_from(value_ty.size_in_bytes()).expect("invalid value size");
-        let is_byte_pointer = match &ty {
-            Type::Ptr(ptr_ty) => ptr_ty.is_byte_pointer(),
-            _ => unreachable!("memcpy expects pointer operands"),
-        };
 
-        // Use optimized intrinsics when available
-        match value_size {
-            // Byte copies (Wasm `memory.copy`) can often be performed more efficiently by copying
-            // whole felt elements when the source, destination, and length are all
-            // element-aligned.
-            1 => {
-                // Compute: use_elements = (src % 4 == 0) && (dst % 4 == 0) && (count % 4 == 0)
-                //
-                // Stack: [src, dst, count]
-                self.emit_all(
+        // Byte copies can often be performed more efficiently by copying whole felt elements when
+        // the source, destination, and length are all element-aligned.
+        if value_size == 1 {
+            // Compute: use_elements = (src % 4 == 0) && (dst % 4 == 0) && (count % 4 == 0)
+            //
+            // Stack: [src, dst, count]
+            self.emit_all(
+                [
+                    // src % 4 == 0
+                    masm::Instruction::Dup0,
+                    masm::Instruction::U32DivModImm(4.into()),
+                    masm::Instruction::Swap1,
+                    masm::Instruction::Drop,
+                    masm::Instruction::EqImm(Felt::ZERO.into()),
+                    // dst % 4 == 0
+                    masm::Instruction::Dup2,
+                    masm::Instruction::U32DivModImm(4.into()),
+                    masm::Instruction::Swap1,
+                    masm::Instruction::Drop,
+                    masm::Instruction::EqImm(Felt::ZERO.into()),
+                    masm::Instruction::And,
+                    // count % 4 == 0
+                    masm::Instruction::Dup3,
+                    masm::Instruction::U32DivModImm(4.into()),
+                    masm::Instruction::Swap1,
+                    masm::Instruction::Drop,
+                    masm::Instruction::EqImm(Felt::ZERO.into()),
+                    masm::Instruction::And,
+                ],
+                span,
+            );
+
+            // then: convert byte addresses/count to element units and copy whole elements
+            let then_blk = self.build_masm_block(span, |then_emitter| {
+                then_emitter.emit_all(
                     [
-                        // src % 4 == 0
-                        masm::Instruction::Dup0,
+                        // Convert `src` to element address
                         masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Swap1,
-                        masm::Instruction::Drop,
-                        masm::Instruction::EqImm(Felt::ZERO.into()),
-                        // dst % 4 == 0
-                        masm::Instruction::Dup2,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Swap1,
-                        masm::Instruction::Drop,
-                        masm::Instruction::EqImm(Felt::ZERO.into()),
-                        masm::Instruction::And,
-                        // count % 4 == 0
-                        masm::Instruction::Dup3,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Swap1,
-                        masm::Instruction::Drop,
-                        masm::Instruction::EqImm(Felt::ZERO.into()),
-                        masm::Instruction::And,
-                    ],
-                    span,
-                );
-
-                // then: convert byte addresses/count to element units and delegate to core
-                let then_blk = self.build_masm_block(span, |then_emitter| {
-                    then_emitter.emit_all(
-                        [
-                            // Convert `src` to element address
-                            masm::Instruction::U32DivModImm(4.into()),
-                            Self::assertz_with_message_inst(
-                                "memcpy byte-copy fast path expected the source pointer to be \
-                                 4-byte aligned",
-                                span,
-                            ),
-                            // Convert `dst` to an element address
-                            masm::Instruction::Swap1,
-                            masm::Instruction::U32DivModImm(4.into()),
-                            Self::assertz_with_message_inst(
-                                "memcpy byte-copy fast path expected the destination pointer to \
-                                 be 4-byte aligned",
-                                span,
-                            ),
-                            // Bring `count` to top to convert to element count
-                            masm::Instruction::Swap2,
-                            masm::Instruction::U32DivModImm(4.into()),
-                            Self::assertz_with_message_inst(
-                                "memcpy byte-copy fast path expected the byte count to be \
-                                 divisible by 4",
-                                span,
-                            ),
-                        ],
-                        span,
-                    );
-                    then_emitter.raw_exec("::miden::core::mem::memcopy_elements", span);
-                });
-
-                let else_blk = self.build_masm_block(span, |else_emitter| {
-                    else_emitter.emit_memcpy_fallback_loop(
-                        src.clone(),
-                        dst.clone(),
-                        count.clone(),
-                        value_ty.clone(),
-                        value_size,
-                        span,
-                    );
-                });
-
-                self.current_block.push(masm::Op::If {
-                    span,
-                    then_blk,
-                    else_blk,
-                });
-                return;
-            }
-            // Word-sized values have an optimized intrinsic we can lean on
-            16 if is_byte_pointer => {
-                // Convert `src` to a word-aligned element address.
-                self.emit_word_aligned_element_addr_from_byte_ptr(span);
-                // Convert `dst` to an element address the same way.
-                self.emit(masm::Instruction::Swap1, span);
-                self.emit_word_aligned_element_addr_from_byte_ptr(span);
-                // Swap with `count` to get us into the correct ordering: [count, src, dst].
-                self.emit(masm::Instruction::Swap2, span);
-                self.raw_exec("::miden::core::mem::memcopy_words", span);
-                return;
-            }
-            // Values which can be broken up into word-sized chunks can piggy-back on the
-            // intrinsic for word-sized values, but we have to compute a new `count` by
-            // multiplying `count` by the number of words in each value
-            size if is_byte_pointer && size > 16 && size.is_multiple_of(16) => {
-                let factor = size / 16;
-                // Convert `src` to a word-aligned element address.
-                self.emit_word_aligned_element_addr_from_byte_ptr(span);
-                // Convert `dst` to an element address the same way.
-                self.emit(masm::Instruction::Swap1, span);
-                self.emit_word_aligned_element_addr_from_byte_ptr(span);
-                self.emit_all(
-                    [
-                        // Swap with `count` to get us into the correct ordering: [count, src, dst]
-                        masm::Instruction::Swap2,
-                        // Compute the corrected count
-                        masm::Instruction::U32WideningMulImm(factor.into()),
-                        masm::Instruction::Swap1,
                         Self::assertz_with_message_inst(
-                            "memcpy word-copy fast path element count overflowed",
+                            "memcpy byte-copy fast path expected the source pointer to be 4-byte \
+                             aligned",
                             span,
-                        ), // [count * (size / 16), src, dst]
+                        ),
+                        // Convert `dst` to an element address
+                        masm::Instruction::Swap1,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        Self::assertz_with_message_inst(
+                            "memcpy byte-copy fast path expected the destination pointer to be \
+                             4-byte aligned",
+                            span,
+                        ),
+                        // Bring `count` to top to convert to element count
+                        masm::Instruction::Swap2,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        Self::assertz_with_message_inst(
+                            "memcpy byte-copy fast path expected the byte count to be divisible \
+                             by 4",
+                            span,
+                        ),
                     ],
                     span,
                 );
-                self.raw_exec("::miden::core::mem::memcopy_words", span);
-                return;
-            }
-            // For now, all other values fallback to the default implementation
-            _ => (),
+                then_emitter.raw_exec("::intrinsics::mem::memmove_elements", span);
+            });
+
+            let else_blk = self.build_masm_block(span, |else_emitter| {
+                else_emitter.emit_memcpy_fallback_loop(
+                    src.clone(),
+                    dst.clone(),
+                    value_ty.clone(),
+                    value_size,
+                    span,
+                );
+            });
+
+            self.current_block.push(masm::Op::If {
+                span,
+                then_blk,
+                else_blk,
+            });
+            return;
         }
 
-        self.emit_memcpy_fallback_loop(src, dst, count, value_ty, value_size, span);
+        self.emit_memcpy_fallback_loop(src, dst, value_ty, value_size, span);
     }
 
     /// Emit the default memcpy loop for types which do not have a specialized intrinsic.
+    ///
+    /// The values are copied in ascending address order, unless the destination starts above the
+    /// source, in which case they are copied in descending order. This way a value of an
+    /// overlapping source range is never read after it was overwritten.
+    ///
+    /// Expects `[src, dst, count]` on the MASM operand stack, and consumes all three.
     fn emit_memcpy_fallback_loop(
         &mut self,
         src: crate::Operand,
         dst: crate::Operand,
-        count: crate::Operand,
         value_ty: Type,
         value_size: u32,
         span: SourceSpan,
@@ -978,13 +908,13 @@ impl OpEmitter<'_> {
         // Compute the source and destination addresses
         body_emitter.emit_all(
             [
-                // [i, src, dst, count]
-                masm::Instruction::Dup2, // [dst, i, src, dst, count]
-                masm::Instruction::Dup1, // [i, dst, i, src, dst, count]
+                // [i, src, dst, end, step]
+                masm::Instruction::Dup2, // [dst, i, src, dst, end, step]
+                masm::Instruction::Dup1, // [i, dst, i, src, dst, end, step]
             ],
             span,
         );
-        body_emitter.emit_push(value_size, span); // [offset, i, dst, i, src, dst, count]
+        body_emitter.emit_push(value_size, span); // [offset, i, dst, i, src, dst, end, step]
         body_emitter.emit_all(
             [
                 masm::Instruction::U32WideningMadd,
@@ -992,13 +922,13 @@ impl OpEmitter<'_> {
                 Self::assertz_with_message_inst(
                     "memcpy destination address computation overflowed",
                     span,
-                ), // [new_dst := i * offset + dst, i, src, dst, count]
-                masm::Instruction::Dup2, // [src, new_dst, i, src, dst, count]
-                masm::Instruction::Dup2, // [i, src, new_dst, i, src, dst, count]
+                ), // [new_dst := i * offset + dst, i, src, dst, end, step]
+                masm::Instruction::Dup2, // [src, new_dst, i, src, dst, end, step]
+                masm::Instruction::Dup2, // [i, src, new_dst, i, src, dst, end, step]
             ],
             span,
         );
-        body_emitter.emit_push(value_size, span); // [offset, i, src, new_dst, i, src, dst, count]
+        body_emitter.emit_push(value_size, span); // [offset, i, src, new_dst, i, src, dst, end, step]
         body_emitter.emit_all(
             [
                 masm::Instruction::U32WideningMadd,
@@ -1006,42 +936,94 @@ impl OpEmitter<'_> {
                 Self::assertz_with_message_inst(
                     "memcpy source address computation overflowed",
                     span,
-                ), // [new_src := i * offset + src, new_dst, i, src, dst, count]
+                ), // [new_src := i * offset + src, new_dst, i, src, dst, end, step]
             ],
             span,
         );
 
         // Load the source value
-        body_emitter.push(count.clone());
+        body_emitter.push(Type::U32);
+        body_emitter.push(Type::U32);
         body_emitter.push(dst.clone());
         body_emitter.push(src.clone());
         body_emitter.push(Type::U32);
         body_emitter.push(dst.clone());
         body_emitter.push(src.clone());
-        body_emitter.load(value_ty.clone(), span); // [value, new_dst, i, src, dst, count]
+        body_emitter.load(value_ty.clone(), span); // [value, new_dst, i, src, dst, end, step]
 
         // Write to the destination
-        body_emitter.swap(1, span); // [new_dst, value, i, src, dst, count]
-        body_emitter.store(span); // [i, src, dst, count]
+        body_emitter.swap(1, span); // [new_dst, value, i, src, dst, end, step]
+        body_emitter.store(span); // [i, src, dst, end, step]
 
-        // Increment iteration count, determine whether to continue loop
-        body_emitter.emit_counted_loop_next_condition(masm::Instruction::Dup4, span);
-        // [i++ < count, i++, src, dst, count]
+        // Move on to the next index, determine whether to continue loop
+        body_emitter.emit_all(
+            [
+                masm::Instruction::Dup4,           // [step, i, src, dst, end, step]
+                masm::Instruction::U32WrappingAdd, // [i + step, src, dst, end, step]
+                masm::Instruction::Dup0,
+                masm::Instruction::Dup4,
+                masm::Instruction::Neq, // [i + step != end, i + step, src, dst, end, step]
+            ],
+            span,
+        );
 
         // Switch back to original block and emit loop header and 'while.true' instruction
         //
-        // Loop header - prepare to loop until `count` iterations have been performed
+        // Loop header - the direction of the copy is carried by the loop state, so that both
+        // directions share the loop body: the index starts at `i`, is advanced by the wrapping
+        // addition of `step`, and the loop is over once the index reaches `end`.
+        //
+        // In both directions `i == end` when `count` is zero.
 
         // [src, dst, count]
-        self.emit_counted_loop_header(masm::Instruction::Dup3, span);
-        // [count > 0, i, src, dst, count]
+        self.emit_all(
+            [
+                masm::Instruction::Dup1,
+                masm::Instruction::Dup1,
+                masm::Instruction::U32Gt, // [dst > src, src, dst, count]
+            ],
+            span,
+        );
+        // Descending: `count - 1` down to `0`, the index wraps around to `u32::MAX` past `0`
+        let then_blk = self.build_masm_block(span, |then_emitter| {
+            then_emitter.emit_all(
+                [
+                    masm::Instruction::MovUp2,
+                    masm::Instruction::U32WrappingSubImm(1.into()), // [count - 1, src, dst]
+                ],
+                span,
+            );
+            then_emitter.emit_push(u32::MAX, span);
+            then_emitter.emit(masm::Instruction::MovDn3, span); // [i, src, dst, end]
+            then_emitter.emit_push(u32::MAX, span);
+            then_emitter.emit(masm::Instruction::MovDn4, span); // [i, src, dst, end, step]
+        });
+        // Ascending: `0` up to `count - 1`
+        let else_blk = self.build_masm_block(span, |else_emitter| {
+            else_emitter.emit_push(1u32, span);
+            else_emitter.emit(masm::Instruction::MovDn3, span); // [src, dst, end, step]
+            else_emitter.emit_push(0u32, span); // [i, src, dst, end, step]
+        });
+        self.current_block.push(masm::Op::If {
+            span,
+            then_blk,
+            else_blk,
+        });
+        self.emit_all(
+            [
+                masm::Instruction::Dup0,
+                masm::Instruction::Dup4,
+                masm::Instruction::Neq, // [i != end, i, src, dst, end, step]
+            ],
+            span,
+        );
         self.current_block.push(masm::Op::While {
             span,
             body: masm::Block::new(span, body),
         });
 
-        // Cleanup - at end of 'while' loop, drop the 4 operands remaining on the stack
-        self.dropn(4, span);
+        // Cleanup - at end of 'while' loop, drop the 5 operands remaining on the stack
+        self.dropn(5, span);
     }
 
     /// Store a quartet of machine words (32-bit elements) to the operand stack

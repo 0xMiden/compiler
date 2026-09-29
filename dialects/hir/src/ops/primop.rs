@@ -98,6 +98,14 @@ pub struct MemSet {
     value: AnyType,
 }
 
+/// Copies `count` values from the memory at address `source`, to the memory at address
+/// `destination`.
+///
+/// The unit of `count` is the pointee type of `source`, i.e. `count * size_of(pointee)` bytes are
+/// copied.
+///
+/// The source and destination ranges may overlap, the destination receives the values the source
+/// range held before the copy.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,

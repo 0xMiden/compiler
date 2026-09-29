@@ -819,6 +819,9 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     /// The unit size for `count` is determined by the `src` pointer type, i.e. a pointer to u8
     /// will copy one `count` bytes, a pointer to u16 will copy `count * 2` bytes, and so on.
     ///
+    /// The source and destination ranges may overlap, the destination receives the values the
+    /// source range held before the copy.
+    ///
     /// NOTE: The source and destination pointer types must match, or this function will panic.
     fn memcpy(
         &mut self,

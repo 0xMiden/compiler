@@ -671,3 +671,37 @@ pub proc store_qw # [addr, offset, value_0, value_1, value_2, value_3]
         swap.1 push.4 u32overflowing_add assertz mem_store # []
     end
 end
+
+# Copy `n` elements from the element address `read_ptr` to the element address `write_ptr`.
+#
+# The source and destination ranges may overlap, the destination receives the elements the source
+# range held before the copy.
+pub proc memmove_elements # [n, read_ptr, write_ptr]
+    dup.2 dup.2 u32gt # [write_ptr > read_ptr, n, read_ptr, write_ptr]
+    if.true
+        # The destination starts above the source, so an ascending copy could overwrite the
+        # elements it has yet to read. Copy in descending order, from the last element down.
+        movup.2 dup.1 add sub.1 # [write_ptr + n - 1, n, read_ptr]
+        movup.2 dup.2 add sub.1 # [read_ptr + n - 1, write_ptr + n - 1, n]
+        # The counter is negated, so that it is updated with `add.1`, which takes one cycle less
+        # than `sub.1`
+        movup.2 neg             # [-n, read_ptr, write_ptr]
+        dup.0 neq.0             # [n != 0, -n, read_ptr, write_ptr]
+        while.true
+            dup.1 mem_load      # [value, -n, read_ptr, write_ptr]
+            dup.3 mem_store     # [-n, read_ptr, write_ptr]
+            add.1 movup.2 sub.1 movup.2 sub.1 movup.2 # [-n + 1, read_ptr - 1, write_ptr - 1]
+            dup.0 neq.0
+        end
+    else
+        neg                     # [-n, read_ptr, write_ptr]
+        dup.0 neq.0             # [n != 0, -n, read_ptr, write_ptr]
+        while.true
+            dup.1 mem_load      # [value, -n, read_ptr, write_ptr]
+            dup.3 mem_store     # [-n, read_ptr, write_ptr]
+            add.1 movup.2 add.1 movup.2 add.1 movup.2 # [-n + 1, read_ptr + 1, write_ptr + 1]
+            dup.0 neq.0
+        end
+    end
+    drop drop drop
+end
