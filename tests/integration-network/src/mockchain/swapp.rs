@@ -354,7 +354,7 @@ fn swapp_note_full_fill_transfers_assets() {
         vec![p2id_note.id()],
         "full fill must create exactly the P2ID routing note"
     );
-    expect!["12876"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["12889"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 50);
@@ -444,7 +444,7 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
         vec![first_p2id_note.id(), remainder_note.id()],
         "partial fill must create the P2ID routing note and the remainder note"
     );
-    expect!["17949"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["17975"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 3);
