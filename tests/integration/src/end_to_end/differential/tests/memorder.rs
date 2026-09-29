@@ -259,7 +259,8 @@ fn seq_freight() {
 /// one 4-aligned buffer at all sixteen combinations of (src % 4, dst % 4) and
 /// lengths 0..=17 — the whole input space of the memcpy element fast path
 /// (`src % 4 == dst % 4 == count % 4 == 0`) and its byte fallback loop — plus
-/// a u32-element copy for the non-byte-pointer arm.
+/// a u32-element copy, which the Wasm frontend emits as a `hir.mem_cpy` on
+/// `ptr<u8>` with 4-aligned operands, so it takes the element path.
 #[test]
 fn copy_grid() {
     run_case("mo_copy_grid", include_str!("../cases/case_mo_copy_grid.rs"));

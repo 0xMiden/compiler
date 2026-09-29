@@ -11,7 +11,7 @@
 //
 // Bulk-op evidence: 0 `memory.copy`, 0 `memory.fill`, no libcall — a linked
 // list only ever moves one node at a time, so this case isolates the
-// allocator and the pointer traffic from the bulk-copy findings.
+// allocator and the pointer traffic from the bulk-copy cases.
 // Arena: 64 KiB.
 
 extern crate alloc;

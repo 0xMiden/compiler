@@ -7,9 +7,9 @@
 // the same region reaches the lowering as a byte copy (the Wasm frontend
 // always emits `hir.mem_cpy` on `ptr<u8>`) with 4-aligned operands, so it
 // takes the element path. The buffer is `#[repr(C, align(4))]` so both
-// targets agree on which combinations are element-aligned; the whole buffer
-// is hashed, so a copy of the wrong
-// length, direction or offset changes the answer.
+// targets agree on which combinations are element-aligned; the whole
+// buffer is hashed, so a copy of the wrong length, direction or offset
+// changes the answer.
 #[repr(C, align(4))]
 struct Buf([u8; 128]);
 

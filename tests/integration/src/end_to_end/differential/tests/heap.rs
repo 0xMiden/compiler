@@ -181,7 +181,7 @@ fn heap_rc() {
 /// A `Box`-linked list built, traversed, reversed by re-linking and dropped
 /// ITERATIVELY (`Option::take` loop) — the automatic drop glue would be a
 /// recursive call graph, which the assembler rejects. 0 `memory.copy`, so it
-/// isolates pointer traffic from the bulk-copy findings.
+/// isolates pointer traffic from the bulk-copy cases.
 #[test]
 fn heap_list() {
     run_case("heap_list", include_str!("../cases/case_heap_list.rs"));
