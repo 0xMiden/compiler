@@ -106,6 +106,12 @@ unsafe extern "C" {
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::compute_note_id"]
     fn extern_output_note_compute_note_id(note_idx: Felt, ptr: *mut NoteId);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::output_note::seal"]
+    fn extern_output_note_seal(note_index: Felt);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::output_note::is_sealed"]
+    fn extern_output_note_is_sealed(note_index: Felt) -> Felt;
 }
 
 /// Creates a new output note and returns its index.
@@ -232,6 +238,29 @@ pub fn add_asset(asset: Asset, note_idx: NoteIdx) {
             note_idx,
         );
     }
+}
+
+/// Seals the output note at `note_index`, so that its assets and attachments can no longer be
+/// changed for the rest of the transaction.
+///
+/// Sealing an already sealed note has no effect.
+///
+/// # Panics
+///
+/// Panics if the active account is not the native account, or if `note_index` is out of bounds
+/// for the transaction's output notes.
+pub fn seal(note_index: NoteIdx) {
+    unsafe { extern_output_note_seal(note_index.inner) }
+}
+
+/// Returns `true` if the output note at `note_index` is sealed against asset and attachment
+/// changes.
+///
+/// # Panics
+///
+/// Panics if `note_index` is out of bounds for the transaction's output notes.
+pub fn is_sealed(note_index: NoteIdx) -> bool {
+    unsafe { extern_output_note_is_sealed(note_index.inner) != Felt::new(0).unwrap() }
 }
 
 /// Contains summary information about the assets of an output note.
