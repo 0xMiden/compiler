@@ -274,4 +274,26 @@ mod tests {
         context.reset();
         assert_eq!(context.memory_size(), initial_size);
     }
+
+    /// Checks that `write_memory_bytes` writes every byte of the range it is given.
+    #[test]
+    fn write_memory_bytes_writes_the_whole_range() {
+        let mut context = ExecutionContext::default();
+        let bytes = [1u8, 2, 3, 4, 5, 6, 7];
+        context.write_memory_bytes(13, &bytes, SourceSpan::UNKNOWN).unwrap();
+        assert_eq!(
+            context.read_memory_bytes(13, bytes.len() as u32, SourceSpan::UNKNOWN).unwrap(),
+            bytes
+        );
+    }
+
+    /// Checks that a `write_memory_bytes` range crossing the end of the addressable heap is
+    /// rejected without writing any of its bytes.
+    #[test]
+    fn write_memory_bytes_out_of_bounds_writes_nothing() {
+        let mut context = ExecutionContext::default();
+        let addr = (MAX_ADDRESSABLE_HEAP - 2) as u32;
+        assert!(context.write_memory_bytes(addr, &[0xab; 8], SourceSpan::UNKNOWN).is_err());
+        assert!(context.memory.is_empty());
+    }
 }

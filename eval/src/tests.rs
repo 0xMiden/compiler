@@ -5,7 +5,7 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_hir::{
-    Builder, Op, PointerType, Report, SourceSpan, Type, ValueRef,
+    Builder, Immediate, Op, PointerType, Report, SourceSpan, Type, ValueRef,
     dialects::builtin::{BuiltinOpBuilder, FunctionBuilder},
     testing::Test,
 };
@@ -308,33 +308,36 @@ fn wasm_i64_remainder() -> Result<(), Report> {
     Ok(())
 }
 
-/// The byte address of the first of the four u32 slots used by the `mem_cpy` tests.
+/// The byte address of the first of the slots used by the `mem_cpy` tests.
 const MEM_CPY_BASE_ADDR: u32 = 64;
 
-/// Evaluates a function which stores `[1, 2, 3, 4]` into four consecutive u32 slots and then
-/// performs `hir.mem_cpy` on `ptr<u32>` operands pointing at slots `src_slot` and `dst_slot`,
-/// returning the contents of the four slots afterwards.
-fn eval_mem_cpy_u32(
+/// Evaluates a function which stores `values` into consecutive slots of their type and then
+/// performs `hir.mem_cpy` on pointers to that type pointing at slots `src_slot` and `dst_slot`,
+/// returning the contents of the slots afterwards.
+fn eval_mem_cpy<const N: usize>(
     name: &'static str,
+    values: [Immediate; N],
     src_slot: u32,
     dst_slot: u32,
     count: u32,
-) -> Result<[Value; 4], Report> {
+) -> Result<[Value; N], Report> {
+    let value_ty = values[0].ty();
+    let value_size = value_ty.size_in_bytes() as u32;
     let mut test = EvalTest::named(name);
     test.with_function(&[], &[]);
 
     {
         let span = SourceSpan::default();
         let mut builder = test.function_builder();
-        let ptr_ty = Type::from(PointerType::new(Type::U32));
+        let ptr_ty = Type::from(PointerType::new(value_ty.clone()));
         let slot_ptr = |builder: &mut FunctionBuilder<'_, _>, slot: u32| {
-            let addr = builder.u32(MEM_CPY_BASE_ADDR + slot * 4, span);
+            let addr = builder.u32(MEM_CPY_BASE_ADDR + slot * value_size, span);
             builder.inttoptr(addr, ptr_ty.clone(), span)
         };
 
-        for slot in 0..4u32 {
+        for (slot, value) in (0u32..).zip(values) {
             let ptr = slot_ptr(&mut builder, slot)?;
-            let value = builder.u32(slot + 1, span);
+            let value = builder.imm(value, span);
             builder.store(ptr, value, span)?;
         }
 
@@ -349,11 +352,21 @@ fn eval_mem_cpy_u32(
     let results = test.evaluator.eval_callable(&*callable, [])?;
     assert!(results.is_empty());
 
-    let mut slots = [Value::Immediate(0u32.into()); 4];
+    let mut slots = values.map(Value::Immediate);
     for (slot, value) in (0u32..).zip(slots.iter_mut()) {
-        *value = test.evaluator.read_memory(MEM_CPY_BASE_ADDR + slot * 4, &Type::U32)?;
+        *value = test.evaluator.read_memory(MEM_CPY_BASE_ADDR + slot * value_size, &value_ty)?;
     }
     Ok(slots)
+}
+
+/// Evaluates [eval_mem_cpy] on four u32 slots holding `[1, 2, 3, 4]`.
+fn eval_mem_cpy_u32(
+    name: &'static str,
+    src_slot: u32,
+    dst_slot: u32,
+    count: u32,
+) -> Result<[Value; 4], Report> {
+    eval_mem_cpy(name, [1u32, 2, 3, 4].map(Immediate::U32), src_slot, dst_slot, count)
 }
 
 /// Returns the expected contents of the four u32 slots of the `mem_cpy` tests.
@@ -389,4 +402,30 @@ fn mem_cpy_zero_count_is_a_noop() -> Result<(), Report> {
     let slots = eval_mem_cpy_u32("mem_cpy_zero_count_is_a_noop", 0, 1, 0)?;
     assert_eq!(slots, u32_slots([1, 2, 3, 4]));
     Ok(())
+}
+
+/// Checks that `hir.mem_cpy` on `ptr<u8>` operands with a destination one byte above an
+/// overlapping source copies the original source bytes.
+#[test]
+fn mem_cpy_bytes_overlapping() -> Result<(), Report> {
+    let bytes = [0x11u8, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+    let slots = eval_mem_cpy("mem_cpy_bytes_overlapping", bytes.map(Immediate::U8), 0, 1, 7)?;
+    let mut expected = bytes;
+    expected.copy_within(0..7, 1);
+    assert_eq!(slots, expected.map(|byte| Value::Immediate(byte.into())));
+    Ok(())
+}
+
+/// Checks that `hir.mem_cpy` whose byte length `count * size_of(pointee)` does not fit in `u32`
+/// is an error.
+#[test]
+fn mem_cpy_byte_length_overflow_is_an_error() {
+    let err = eval_mem_cpy_u32("mem_cpy_byte_length_overflow_is_an_error", 0, 1, 0x4000_0000)
+        .expect_err("expected the byte length overflow to be an error");
+    let overflow_label = err
+        .labels()
+        .into_iter()
+        .flatten()
+        .any(|label| label.label().is_some_and(|label| label.contains("overflows")));
+    assert!(overflow_label, "unexpected error: {err:?}");
 }
