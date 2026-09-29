@@ -275,26 +275,62 @@ fn mem_cpy_u128_elements() {
     );
 }
 
-/// Checks that an aggregate pointee (`[u32; 4]`) is copied as `count * size_of(pointee)` bytes.
+/// Checks that an aggregate pointee whose size is not a power of two (`[u8; 3]`) is copied as
+/// `count * size_of(pointee)` bytes, on both the element path and the byte loop.
 #[test]
 fn mem_cpy_array_elements() {
     check_table(
-        Type::from(ArrayType::new(Type::U32, 4)),
+        Type::from(ArrayType::new(Type::U8, 3)),
         &[
-            // Overlap, destination above source by one value
-            case(0, 16, 3),
-            // Overlap, destination below source by one value
-            case(16, 0, 3),
-            // Identical ranges
-            case(16, 16, 2),
-            // Disjoint, destination above source
-            case(0, 32, 2),
-            // Disjoint, destination below source
-            case(32, 0, 2),
+            // Element path, overlap, destination above source by 4 bytes
+            case(0, 4, 8),
+            // Element path, overlap, destination below source by 4 bytes
+            case(4, 0, 8),
+            // Element path, identical ranges
+            case(8, 8, 4),
+            // Element path, disjoint, destination above source
+            case(0, 32, 8),
+            // Element path, disjoint, destination below source
+            case(32, 0, 8),
+            // Byte loop (length not a multiple of 4), overlap, destination above source by one
+            // value
+            case(0, 3, 7),
+            // Byte loop (length not a multiple of 4), overlap, destination below source by one
+            // value
+            case(3, 0, 7),
+            // Byte loop, unaligned addresses, overlap, destination above source by 1 byte
+            case(1, 2, 5),
+            // Byte loop, unaligned addresses, overlap, destination below source by 1 byte
+            case(2, 1, 5),
             // Zero count
             case(4, 8, 0),
         ],
     );
+}
+
+/// Checks that a `ptr<u32>` copy whose byte length `count * 4` does not fit in `u32` traps with
+/// the byte length overflow assertion.
+#[test]
+fn mem_cpy_byte_length_overflow_traps() {
+    const OVERFLOW_TRAP: &str = "memcpy byte length overflowed";
+
+    setup::enable_compiler_instrumentation();
+    let (package, context) = compile_mem_cpy(Type::U32);
+    let args = [
+        Felt::new_unchecked(FIXED_BASE as u64),
+        Felt::new_unchecked((FIXED_BASE + 32) as u64),
+        Felt::new_unchecked(0x4000_0000),
+    ];
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        eval_package::<u32, _, _>(package.clone(), None, &args, context.session(), |_| Ok(()))
+    }))
+    .expect_err("a byte length overflow should trap");
+    let err = panic
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
+        .unwrap_or_else(|| "opaque panic".to_string());
+    assert!(err.contains(OVERFLOW_TRAP), "unexpected byte length overflow failure: {err}");
 }
 
 /// Checks random byte copies (possibly overlapping, aligned or not) against `copy_within`; about
