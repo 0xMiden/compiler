@@ -4,9 +4,11 @@
 // and lengths 0..=17, which is the full input space of the memcpy lowering's
 // element fast path (`src % 4 == dst % 4 == count % 4 == 0` ->
 // `memmove_elements`) and of its byte fallback loop. A u32-element copy of
-// the same region exercises the non-byte-pointer arm. The buffer is
-// `#[repr(C, align(4))]` so both targets agree on which combinations are
-// element-aligned; the whole buffer is hashed, so a copy of the wrong
+// the same region reaches the lowering as a byte copy (the Wasm frontend
+// always emits `hir.mem_cpy` on `ptr<u8>`) with 4-aligned operands, so it
+// takes the element path. The buffer is `#[repr(C, align(4))]` so both
+// targets agree on which combinations are element-aligned; the whole buffer
+// is hashed, so a copy of the wrong
 // length, direction or offset changes the answer.
 #[repr(C, align(4))]
 struct Buf([u8; 128]);
@@ -37,8 +39,9 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
         core::ptr::copy_nonoverlapping(base.add(32 + doff), base.add(96 + so), len);
     }
 
-    // The same data through a u32-element copy (the non-byte-pointer arm of
-    // `OpEmitter::memcpy`), element count derived from the byte length.
+    // The same data through a u32-element copy (a 4-aligned byte copy, so the
+    // element path of `OpEmitter::memcpy`), element count derived from the
+    // byte length.
     let words = len / 4;
     unsafe {
         let wp = b.0.as_mut_ptr() as *mut u32;

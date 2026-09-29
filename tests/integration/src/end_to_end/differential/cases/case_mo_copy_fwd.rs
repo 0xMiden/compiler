@@ -3,8 +3,9 @@
 // `count % 4 != 0` always and the memcpy lowering always takes its byte
 // fallback loop. With `dst < src` that loop copies in ascending order, so
 // these ranges must agree with native even though they overlap. (The other
-// direction, `dst > src`, is `memory::mem_overlap`, and overlapping 4-aligned
-// ranges are `heap::heap_vec_shift` / `heap::heap_vec_drain`.) A disjoint
+// direction of the byte loop, `dst > src`, is `heap::heap_vec_shift_u8`, and
+// overlapping 4-aligned ranges are `memory::mem_overlap`,
+// `heap::heap_vec_shift` / `heap::heap_vec_drain`.) A disjoint
 // 4-aligned copy in the same case keeps the element path covered.
 #[repr(C, align(4))]
 struct Buf([u8; 96]);

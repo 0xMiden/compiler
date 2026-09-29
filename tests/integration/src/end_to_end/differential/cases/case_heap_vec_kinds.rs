@@ -5,7 +5,8 @@
 // 3-byte padding hole, so the copy moves uninitialised padding too).
 //
 // Only growth-by-push and reads: no `insert`/`remove`/`drain`, so every bulk
-// copy is between two DISJOINT buffers and the element fast path is legal.
+// copy is between two DISJOINT buffers, on the element path whenever the
+// addresses and the byte count are 4-aligned and on the byte loop otherwise.
 // Result: one rolling hash over all four vectors plus their lengths.
 //
 // Bulk-op evidence: 2 `memory.copy` in the wasm (LLVM shares the realloc
