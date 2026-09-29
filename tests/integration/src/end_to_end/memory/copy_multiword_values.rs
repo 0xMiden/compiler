@@ -1,7 +1,9 @@
 use super::support::assert_memory_test_returns_zero;
 
+/// Checks that `copy_nonoverlapping` of one 32-byte `[u128; 2]` struct from element 1 of a
+/// two-element array into a one-element array copies the whole value.
 #[test]
-fn memory_copy_multiword_fast_path() {
+fn memory_copy_multiword_values() {
     let main_fn = r#"() -> Felt {
         struct Chunk([u128; 2]);
 
@@ -41,5 +43,5 @@ fn memory_copy_multiword_fast_path() {
         Felt::from_u32(mismatches)
     }"#;
 
-    assert_memory_test_returns_zero("memory_copy_multiword_fast_path", main_fn);
+    assert_memory_test_returns_zero("memory_copy_multiword_values", main_fn);
 }
