@@ -28,8 +28,10 @@ use midenc_session::{
 use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
 use super::{
-    debug_info::FunctionDebugInfo, function_builder_ext::SSABuilderListener,
-    module_env::ParsedModule, module_translation_state::ModuleTranslationState,
+    debug_info::{FunctionDebugInfo, FunctionDeclaration},
+    function_builder_ext::SSABuilderListener,
+    module_env::ParsedModule,
+    module_translation_state::ModuleTranslationState,
     types::ModuleTypesBuilder,
 };
 use crate::{
@@ -326,6 +328,7 @@ struct ResolvedInstructionDebugContext {
 struct ResolvedFrame {
     name: String,
     linkage_name: Option<String>,
+    declaration: FunctionDeclaration,
     location: ResolvedSourceLocation,
 }
 
@@ -336,6 +339,7 @@ fn resolve_instruction_debug_context(
     config: &crate::WasmTranslationConfig,
 ) -> WasmResult<ResolvedInstructionDebugContext> {
     let mut frames = addr2line.find_frames(offset).skip_all_loads().into_diagnostic()?;
+    let unit = addr2line.find_dwarf_and_unit(offset).skip_all_loads();
     let mut resolved_frames = Vec::new();
     let mut span = SourceSpan::UNKNOWN;
 
@@ -359,9 +363,22 @@ fn resolve_instruction_debug_context(
             .map(|name| name.into_owned())
             .or_else(|| linkage_name.clone())
             .unwrap_or_else(|| "<unknown>".to_string());
+        let mut declaration = match (unit, frame.dw_die_offset) {
+            (Some(unit), Some(offset)) => {
+                FunctionDeclaration::resolve(unit, offset).into_diagnostic()?
+            }
+            _ => FunctionDeclaration::default(),
+        };
+        declaration.file = declaration.file.map(|file| {
+            remap_source_path(Path::new(file.as_str()), config)
+                .to_string_lossy()
+                .into_owned()
+                .into()
+        });
         resolved_frames.push(ResolvedFrame {
             name,
             linkage_name,
+            declaration,
             location: resolved,
         });
     }
@@ -380,9 +397,9 @@ fn inline_call_chain(resolved_frames: &[ResolvedFrame]) -> Vec<InlineCallFrame> 
             InlineCallFrame {
                 name: callee.name.clone().into(),
                 linkage_name: callee.linkage_name.clone().map(Into::into),
-                file: callee.location.path.to_string_lossy().into_owned().into(),
-                line: callee.location.line,
-                column: callee.location.column,
+                file: callee.declaration.file.unwrap_or(midenc_hir::interner::symbols::Empty),
+                line: callee.declaration.line.unwrap_or_default(),
+                column: callee.declaration.column.unwrap_or_default(),
                 call_file: caller.location.path.to_string_lossy().into_owned().into(),
                 call_line: caller.location.line,
                 call_column: caller.location.column,
@@ -431,23 +448,7 @@ fn resolve_source_location(
     let column = ColumnNumber::new(raw_column).unwrap_or_default();
     let span = source_file.line_column_to_span(line, column).unwrap_or(SourceSpan::UNKNOWN);
 
-    let path = if path.is_absolute() {
-        config
-            .remap_path_prefixes
-            .iter()
-            .filter_map(|remap_prefix| {
-                path.strip_prefix(remap_prefix.source_prefix()).ok().map(|p| {
-                    match remap_prefix.to.as_deref() {
-                        Some(parent) => parent.join(p),
-                        None => p.to_path_buf(),
-                    }
-                })
-            })
-            .max_by_key(|p| p.components().count())
-            .unwrap_or(path.to_path_buf())
-    } else {
-        path.to_path_buf()
-    };
+    let path = remap_source_path(path, config);
     let remapped_uri = Uri::from(path.as_path());
     let register_remapped_source = source_file.uri() != &remapped_uri
         && session
@@ -470,6 +471,26 @@ fn resolve_source_location(
         line: raw_line,
         column: raw_column,
     }))
+}
+
+/// Remap metadata paths without requiring the source file to be installed locally.
+fn remap_source_path(path: &Path, config: &crate::WasmTranslationConfig) -> PathBuf {
+    if !path.is_absolute() {
+        return path.to_path_buf();
+    }
+    config
+        .remap_path_prefixes
+        .iter()
+        .filter_map(|prefix| {
+            path.strip_prefix(prefix.source_prefix()).ok().map(|suffix| {
+                match prefix.to.as_deref() {
+                    Some(parent) => parent.join(suffix),
+                    None => suffix.to_path_buf(),
+                }
+            })
+        })
+        .max_by_key(|path| path.components().count())
+        .unwrap_or_else(|| path.to_path_buf())
 }
 
 fn resolve_source_path(
@@ -505,39 +526,4 @@ fn resolve_source_path(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn frame(name: &str, path: &str, line: u32, column: u32) -> ResolvedFrame {
-        ResolvedFrame {
-            name: name.to_string(),
-            linkage_name: Some(format!("_{name}")),
-            location: ResolvedSourceLocation {
-                path: PathBuf::from(path),
-                span: SourceSpan::UNKNOWN,
-                line,
-                column,
-            },
-        }
-    }
-
-    #[test]
-    fn inline_call_chain_uses_caller_locations_as_call_sites() {
-        let frames = [
-            frame("inner", "src/inner.rs", 30, 7),
-            frame("outer", "src/outer.rs", 20, 5),
-            frame("physical", "src/lib.rs", 10, 3),
-        ];
-
-        let chain = inline_call_chain(&frames);
-
-        assert_eq!(chain.len(), 2);
-        assert_eq!(chain[0].name.as_str(), "inner");
-        assert_eq!(chain[0].file.as_str(), "src/inner.rs");
-        assert_eq!(chain[0].call_file.as_str(), "src/outer.rs");
-        assert_eq!((chain[0].call_line, chain[0].call_column), (20, 5));
-        assert_eq!(chain[1].name.as_str(), "outer");
-        assert_eq!(chain[1].call_file.as_str(), "src/lib.rs");
-        assert_eq!((chain[1].call_line, chain[1].call_column), (10, 3));
-    }
-}
+mod tests;

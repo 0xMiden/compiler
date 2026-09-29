@@ -11,9 +11,13 @@ pub const INLINE_CALL_CHAIN_ATTR_NAME: &str = "di.inline_call_chain";
 pub struct InlineCallFrame {
     pub name: Symbol,
     pub linkage_name: Option<Symbol>,
+    /// Declaration file, or the empty symbol if unknown. This is not an instruction location.
     pub file: Symbol,
+    /// Declaration line, or zero if unknown.
     pub line: u32,
+    /// Declaration column, or zero if unknown.
     pub column: u32,
+    /// Location of this inline invocation in its caller.
     pub call_file: Symbol,
     pub call_line: u32,
     pub call_column: u32,
