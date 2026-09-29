@@ -272,7 +272,7 @@ fn batch_kernel() {
     let package = test.compile_package();
 
     // The serialized size of the compiled kernel's MAST forest, with debug info stripped.
-    expect!["116232"].assert_eq(&stripped_mast_size_str(&package));
+    expect!["116227"].assert_eq(&stripped_mast_size_str(&package));
 
     // The reference block commitment is dropped by the kernel (verification is still a TODO
     // there), so any word will do.

@@ -387,16 +387,18 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 
 - `hir.mem_cpy` has memmove semantics: the ranges may overlap, the destination
   receives the values the source range held before the copy, and `count == 0`
-  is a no-op. `OpEmitter::memcpy` (`codegen/masm/src/emit/mem.rs`) tests src,
-  dst and count for 4-alignment at runtime for byte pointers. The element arm
-  calls the compiler intrinsic `::intrinsics::mem::memmove_elements`
-  (`codegen/masm/intrinsics/mem.masm`), which copies in descending address
-  order when `write_ptr > read_ptr` and ascending otherwise (overlap up
-  `heap::heap_vec_shift`, `memory::mem_overlap`, `heap::heap_btree`; down
-  `heap::heap_vec_drain`; identical ranges `memory::copy_same_pos`; zero length
-  `boundaries::memnoop_same`). The fallback loop (`emit_memcpy_fallback_loop`)
-  follows the same rule, descending when `dst > src`, and serves the unaligned
-  byte copies and every non-byte pointee (up `heap::heap_vec_shift_u8`,
+  is a no-op. `OpEmitter::memcpy` (`codegen/masm/src/emit/mem.rs`) lowers it
+  as a byte range of `count * size_of(pointee)` bytes whatever the pointee
+  type is, for pointers in the byte address space only
+  (`codegen::memory::mem_cpy`), and tests src, dst and the byte length for
+  4-alignment at runtime. The element arm calls the compiler intrinsic
+  `::intrinsics::mem::memmove_elements` (`codegen/masm/intrinsics/mem.masm`),
+  which copies in descending address order when `write_ptr > read_ptr` and
+  ascending otherwise (overlap up `heap::heap_vec_shift`, `memory::mem_overlap`,
+  `heap::heap_btree`; down `heap::heap_vec_drain`; identical ranges
+  `memory::copy_same_pos`; zero length `boundaries::memnoop_same`). The byte
+  loop (`emit_memcpy_byte_loop`) follows the same rule, descending when
+  `dst > src`, and serves every other copy (up `heap::heap_vec_shift_u8`,
   `heap::heap_string_insert`; down `heap::heap_vec_remove_u8`,
   `memorder::copy_fwd`; identical ranges `memory::copy_same_bytes`). No core-lib
   copy routine is called.

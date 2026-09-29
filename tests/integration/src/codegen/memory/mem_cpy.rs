@@ -4,6 +4,8 @@
 
 use std::{rc::Rc, sync::Arc};
 
+use midenc_hir::ArrayType;
+
 use super::*;
 
 /// The size in bytes of the memory region each test case initializes and checks.
@@ -44,10 +46,13 @@ fn compile_mem_cpy(elem: Type) -> (Arc<miden_mast_package::Package>, Rc<midenc_h
 
 /// Runs `case` against `package` on a region at `base` initialized with `region`, and checks that
 /// the whole region afterwards equals the result of `copy_within` over the same bytes.
+///
+/// `elem` is the pointee type `package` was compiled for; it gives the size of one unit of
+/// `case.count`.
 fn check_mem_cpy(
     package: &Arc<miden_mast_package::Package>,
     context: &Rc<midenc_hir::Context>,
-    elem_size: u32,
+    elem: &Type,
     base: u32,
     region: [u8; REGION_LEN],
     case: Case,
@@ -57,6 +62,7 @@ fn check_mem_cpy(
         dst_off,
         count,
     } = case;
+    let elem_size = u32::try_from(elem.size_in_bytes()).expect("pointee size fits in u32");
     let len_bytes = (count * elem_size) as usize;
     let mut expected = region;
     expected.copy_within(src_off as usize..src_off as usize + len_bytes, dst_off as usize);
@@ -99,12 +105,12 @@ fn check_mem_cpy(
 }
 
 /// Runs every case of a table-driven test on the fixed base address with the patterned region.
-fn check_table(elem: Type, elem_size: u32, cases: &[Case]) {
+fn check_table(elem: Type, cases: &[Case]) {
     setup::enable_compiler_instrumentation();
-    let (package, context) = compile_mem_cpy(elem);
+    let (package, context) = compile_mem_cpy(elem.clone());
     for &case in cases {
         if let Err(err) =
-            check_mem_cpy(&package, &context, elem_size, FIXED_BASE, patterned_region(), case)
+            check_mem_cpy(&package, &context, &elem, FIXED_BASE, patterned_region(), case)
         {
             panic!("FAILURE for {case:?}: {err}");
         }
@@ -126,7 +132,6 @@ const fn case(src_off: u32, dst_off: u32, count: u32) -> Case {
 fn mem_cpy_bytes_unaligned() {
     check_table(
         Type::U8,
-        1,
         &[
             // Overlap, destination above source by 1 byte
             case(3, 4, 21),
@@ -142,7 +147,9 @@ fn mem_cpy_bytes_unaligned() {
             case(1, 40, 17),
             // Disjoint, destination below source
             case(40, 1, 17),
+            // Zero count
             case(3, 7, 0),
+            // Single byte
             case(3, 7, 1),
         ],
     );
@@ -154,7 +161,6 @@ fn mem_cpy_bytes_unaligned() {
 fn mem_cpy_bytes_element_aligned() {
     check_table(
         Type::U8,
-        1,
         &[
             // Overlap, destination above source by one element
             case(4, 8, 40),
@@ -170,49 +176,151 @@ fn mem_cpy_bytes_element_aligned() {
             case(0, 32, 24),
             // Disjoint, destination below source
             case(32, 0, 24),
+            // Zero count
             case(4, 8, 0),
+            // Single element
             case(4, 8, 4),
         ],
     );
 }
 
-/// Checks `ptr<u32>` copies, where `count` is a number of u32 values rather than bytes.
+/// Checks `ptr<u32>` copies, where `count` is a number of u32 values rather than bytes, on both
+/// element-aligned and unaligned addresses.
 #[test]
 fn mem_cpy_u32_elements() {
     check_table(
         Type::U32,
-        4,
         &[
             // Overlap, destination above source by one value
             case(4, 8, 10),
             // Overlap, destination below source by one value
             case(8, 4, 10),
+            // Overlap, destination above source by 2 bytes
+            case(4, 6, 5),
+            // Overlap, destination below source by 2 bytes
+            case(6, 4, 5),
+            // Overlap, unaligned addresses, destination above source by 1 byte
+            case(1, 2, 7),
+            // Overlap, unaligned addresses, destination below source by 1 byte
+            case(2, 1, 7),
             // Identical ranges
             case(8, 8, 6),
             // Disjoint
             case(0, 32, 6),
+            // Zero count
             case(4, 8, 0),
         ],
     );
 }
 
-/// Checks random byte copies (possibly overlapping, aligned or not) against `copy_within`.
+/// Checks `ptr<u64>` copies, where `count` is a number of u64 values rather than bytes, including
+/// overlaps whose byte distance is not a multiple of the value size.
+#[test]
+fn mem_cpy_u64_elements() {
+    check_table(
+        Type::U64,
+        &[
+            // Overlap, destination above source by one value
+            case(0, 8, 6),
+            // Overlap, destination above source by 4 bytes
+            case(4, 8, 5),
+            // Overlap, unaligned addresses, destination above source by 3 bytes
+            case(1, 4, 6),
+            // Overlap, destination below source by one value
+            case(8, 0, 6),
+            // Overlap, destination below source by 4 bytes
+            case(8, 4, 5),
+            // Overlap, unaligned addresses, destination below source by 3 bytes
+            case(4, 1, 6),
+            // Identical ranges
+            case(8, 8, 4),
+            // Disjoint, destination above source
+            case(0, 32, 4),
+            // Disjoint, destination below source
+            case(32, 0, 4),
+            // Zero count
+            case(4, 8, 0),
+        ],
+    );
+}
+
+/// Checks `ptr<u128>` copies, where `count` is a number of u128 values rather than bytes,
+/// including overlaps whose byte distance is not a multiple of the value size.
+#[test]
+fn mem_cpy_u128_elements() {
+    check_table(
+        Type::U128,
+        &[
+            // Overlap, destination above source by one value
+            case(0, 16, 3),
+            // Overlap, destination above source by 4 bytes
+            case(4, 8, 3),
+            // Overlap, unaligned addresses, destination above source by 3 bytes
+            case(1, 4, 3),
+            // Overlap, destination below source by one value
+            case(16, 0, 3),
+            // Overlap, destination below source by 4 bytes
+            case(8, 4, 3),
+            // Overlap, unaligned addresses, destination below source by 3 bytes
+            case(4, 1, 3),
+            // Identical ranges
+            case(16, 16, 2),
+            // Disjoint, destination above source
+            case(0, 32, 2),
+            // Disjoint, destination below source
+            case(32, 0, 2),
+            // Zero count
+            case(4, 8, 0),
+        ],
+    );
+}
+
+/// Checks that an aggregate pointee (`[u32; 4]`) is copied as `count * size_of(pointee)` bytes.
+#[test]
+fn mem_cpy_array_elements() {
+    check_table(
+        Type::from(ArrayType::new(Type::U32, 4)),
+        &[
+            // Overlap, destination above source by one value
+            case(0, 16, 3),
+            // Overlap, destination below source by one value
+            case(16, 0, 3),
+            // Identical ranges
+            case(16, 16, 2),
+            // Disjoint, destination above source
+            case(0, 32, 2),
+            // Disjoint, destination below source
+            case(32, 0, 2),
+            // Zero count
+            case(4, 8, 0),
+        ],
+    );
+}
+
+/// Checks random byte copies (possibly overlapping, aligned or not) against `copy_within`; about
+/// half of the cases have both offsets and the count a multiple of 4.
 #[test]
 fn mem_cpy_bytes_matches_copy_within() {
     setup::enable_compiler_instrumentation();
     let (package, context) = compile_mem_cpy(Type::U8);
 
-    let config = proptest::test_runner::Config::with_cases(32);
+    let config = proptest::test_runner::Config::with_cases(64);
     let res = TestRunner::new(config).run(
         &(
             any::<[u8; REGION_LEN]>(),
             random_word_aligned_addr(),
+            any::<bool>(),
             0u32..32,
             0u32..32,
             0u32..=32,
         ),
-        move |(region, base, src_off, dst_off, count)| {
-            check_mem_cpy(&package, &context, 1, base, region, case(src_off, dst_off, count))
+        move |(region, base, element_aligned, src_off, dst_off, count)| {
+            let copy = if element_aligned {
+                case(4 * (src_off / 4), 4 * (dst_off / 4), 4 * (count / 4))
+            } else {
+                case(src_off, dst_off, count)
+            };
+            check_mem_cpy(&package, &context, &Type::U8, base, region, copy)
         },
     );
 
