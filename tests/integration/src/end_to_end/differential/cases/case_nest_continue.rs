@@ -6,7 +6,7 @@
 // aborted with an `AliasingViolationError` at hir/src/patterns/rewriter.rs:335
 // (it inlined the after region while its own borrow of the new while's
 // region was alive). See the test in tests/compose.rs;
-// `case_nest_continue_inline.rs` is the passing inlined twin.
+// `case_nest_continue_inline.rs` is the inlined twin.
 #[inline(never)]
 fn probe(v: u64, i: u32) -> u32 {
     (v.wrapping_mul(0x9e37_79b9_7f4a_7c15).rotate_left(i & 63) >> 59) as u32

@@ -941,8 +941,8 @@ fn prog_rkscan_guard_nodwarf() {
 /// expression moves into an
 /// `#[inline(never)] fn(&[u64; 4], u64)`, so the four fingerprint words live
 /// in the shadow stack instead of crossing the search loop as scheduled
-/// operands. That is the shape that rescues `prog_tlv` and `prog_rle` from
-/// their F6/F12 panics, and it compiles and passes here WITH guest DWARF —
+/// operands. That is the shape that rescues `prog_tlv` from its F6 panic (and
+/// rescued `prog_rle` from F12 before #1419), and it compiles and passes here WITH guest DWARF —
 /// but at `debug = 0` it still panicked at hir/src/patterns/rewriter.rs:335,
 /// because moving the words out of the window does nothing about the four
 /// `return`s that leave the function from inside the two-level nest. Computes

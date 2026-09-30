@@ -209,7 +209,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   `ConvertTrivialIfToSelect` and `SplitCriticalEdges` routinely
   (`control_flow::sm16`, `control_flow::wide_exits`);
   `RemoveLoopInvariantArgsFromBeforeBlock` matches and rewrites
-  (`compose::invariant_args_min`).
+  (`compose::invariant_args_min`; directly pinned by
+  `tests/lit/hir-opt/canonicalizer-remove-loop-invariant-args-from-before-block.hir`).
   `SplitCriticalEdges` shares the greedy fixpoint, so a critical-edge guard
   can become satisfiable mid-run.
 - Dead end: `CanonicalizeI64RotateBy32ToSwap` (the count band hides the 32,
@@ -355,12 +356,16 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   initialize every `scf.while` column, so
   `RemoveLoopInvariantArgsFromBeforeBlock` matches as soon as a column still
   carries poison at the `scf.condition`. Producers: a `return` leaving the
-  function from inside a two-level nest (`compose::invariant_args_min`) and an
-  inner counted loop's merged exit dispatch with no early exit
-  (`programs_oz::prog_blake2b`). The same nests with a labeled
-  `break`/`continue`, one loop, or an unrolled inner loop do not match
-  (`compose::invariant_args_guard`, `compose::invariant_args_noreturn_guard`,
-  and `compose::nest_continue_inline` at the default level).
+  function from inside a two-level nest (`compose::invariant_args_min`,
+  `programs::prog_varint`) and an inner counted loop's merged exit dispatch
+  with no early exit (`compose::invariant_args_noreturn`, measured on
+  nightly-2026-04-30 guests; nightly-2026-09-01 guests no longer produce
+  that nest). The same
+  nest with the `return` moved below the `break`, an unrolled inner loop, or
+  an inlined helper does not match (`compose::invariant_args_guard`,
+  `compose::invariant_args_noreturn_guard`, and `compose::nest_continue_inline`
+  at the default level). Labeled `break`/`continue` and one-loop variants
+  did not match either, but no test pins them.
 - Without DWARF, Local2Reg promotions create more producers of that pattern
   (`compose::chain_sm_nodwarf`, `corelib::prog_numeric_nodwarf`).
 - An in-loop trapping edge becomes one extra u32 exit column plus a top-level
