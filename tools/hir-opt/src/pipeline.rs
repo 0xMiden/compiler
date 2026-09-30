@@ -3,7 +3,7 @@
 //! ```text
 //! pipeline          ::= op-anchor `(` pipeline-element (`,` pipeline-element)* `)`
 //! pipeline-element  ::= pipeline | (pass-name | pass-pipeline-name) options?
-//! options           ::= '{' (key ('=' value)?)+ '}'
+//! options           ::= '{' (key '=' value)* '}'
 //! ```
 //!
 //! * `op-anchor` is the operation name that anchors execution of the pass manager, this must be
@@ -11,7 +11,10 @@
 //! * `pass-name` and `pass-pipeline-name` correspond to the argument name of a registered pass or
 //!   pass pipeline, e.g. `cse` or `canonicalizer`
 //! * `options` are specific key/value pairs representing options defined by a pass or pass pipeline,
-//!   as described in the _Instance Specific Pass Options_ section below.
+//!   as described in the _Instance Specific Pass Options_ section below. Pairs are separated by
+//!   whitespace, a key may appear at most once, and a value is a bare identifier, a number or a
+//!   quoted string (needed for values with characters such as `;`). Values must not contain `,`,
+//!   which separates the pairs when they are handed to the pass.
 //!
 //!
 //! ## Examples
@@ -29,7 +32,7 @@ use core::fmt;
 use std::{rc::Rc, str::FromStr};
 
 use midenc_hir::{
-    Context, FxHashMap,
+    Context,
     diagnostics::{LabeledSpan, PrintDiagnostic, Report, Severity, SourceId, miette::diagnostic},
     formatter::DisplayValues,
     interner::Symbol,
@@ -107,7 +110,8 @@ impl fmt::Display for PipelineElement {
 #[derive(Debug, Clone)]
 pub struct SelectedPass {
     pub name: Symbol,
-    pub options: FxHashMap<Symbol, String>,
+    /// The options of the pass, in source order; keys are unique.
+    pub options: Vec<(Symbol, String)>,
 }
 
 impl SelectedPass {
@@ -132,22 +136,12 @@ impl fmt::Display for SelectedPass {
         if self.options.is_empty() {
             return Ok(());
         }
-        // A value that does not lex as a single bare token is quoted so that the printed form
-        // parses back (see `FromStr`).
-        let is_bare = |value: &str| {
-            !value.is_empty()
-                && value
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '$' | '.'))
-        };
+        // Values are always quoted so that the printed form parses back (see `FromStr`)
+        // whatever characters they contain.
         f.write_str("{")?;
         for (i, (k, v)) in self.options.iter().enumerate() {
             let sep = if i == 0 { "" } else { " " };
-            if is_bare(v) {
-                write!(f, "{sep}{k}={v}")?;
-            } else {
-                write!(f, "{sep}{k}=\"{v}\"")?;
-            }
+            write!(f, "{sep}{k}=\"{v}\"")?;
         }
         f.write_str("}")
     }
@@ -279,12 +273,23 @@ fn parse_pipeline_recursively(
                                 _ => None,
                             })?;
                         let key = key.into_inner();
-                        if pass.options.insert(key, value.into_inner()).is_some() {
+                        let value = value.into_inner();
+                        if pass.options.iter().any(|(k, _)| *k == key) {
                             return Err(Report::msg(format!(
                                 "duplicate option '{key}' for pass '{}'",
                                 pass.name
                             )));
                         }
+                        // The pairs are joined with `,` when handed to the pass, so a value
+                        // must not contain one.
+                        if value.contains(',') {
+                            return Err(Report::msg(format!(
+                                "invalid value for option '{key}' of pass '{}': values must not \
+                                 contain ','",
+                                pass.name
+                            )));
+                        }
+                        pass.options.push((key, value));
                     }
                     token_stream.expect(Token::Rbrace)?;
                 }
@@ -430,11 +435,37 @@ mod tests {
     #[test]
     fn example_pipeline() -> Result<(), Report> {
         let pipeline_str =
-            "builtin.module(builtin.function(cse, canonicalizer), convert-to-masm{key=value})";
+            "builtin.module(builtin.function(cse, canonicalizer), convert-to-masm{key=\"value\"})";
 
         let pipeline = pipeline_str.parse::<PassPipeline>()?;
         assert_eq!(pipeline.to_string(), pipeline_str);
 
+        Ok(())
+    }
+
+    #[test]
+    fn pass_options_roundtrip() -> Result<(), Report> {
+        // Bare, numeric and quoted values print quoted, in source order, and parse back.
+        let source = "builtin.module(canonicalizer{enable-patterns=\"a;b\" \
+                      disable-patterns=foo-bar depth=3})";
+        let printed = source.parse::<PassPipeline>()?.to_string();
+        assert_eq!(
+            printed,
+            "builtin.module(canonicalizer{enable-patterns=\"a;b\" disable-patterns=\"foo-bar\" \
+             depth=\"3\"})"
+        );
+        assert_eq!(printed.parse::<PassPipeline>()?.to_string(), printed);
+
+        for invalid in [
+            "builtin.module(canonicalizer{disable-patterns=a disable-patterns=b})",
+            "builtin.module(canonicalizer{enable-patterns=\"a,b\"})",
+            "builtin.module(canonicalizer{enable-patterns})",
+        ] {
+            assert!(
+                invalid.parse::<PassPipeline>().is_err(),
+                "expected '{invalid}' to be rejected"
+            );
+        }
         Ok(())
     }
 

@@ -22,8 +22,9 @@ use midenc_session::diagnostics::Severity;
 /// patterns are skipped). Both take a non-empty `;`-separated list of pattern names, which must
 /// be quoted in a pipeline string when it has more than one name, e.g.
 /// `canonicalizer{enable-patterns="fold-redundant-yields;while-unused-result"}`. A name that
-/// matches no registered pattern is an error. The greedy rewrite driver still folds operations,
-/// erases trivially dead ones and simplifies regions whatever the filter says.
+/// matches no registered pattern is an error, and so is a name that appears in both lists. The
+/// greedy rewrite driver still folds operations, erases trivially dead ones and, when the rewrite
+/// config asks for it, simplifies regions whatever the filter says.
 pub struct Canonicalizer {
     config: GreedyRewriteConfig,
     rewrites: Option<Rc<FrozenRewritePatternSet>>,
@@ -56,6 +57,8 @@ impl Default for Canonicalizer {
 impl Canonicalizer {
     const NAME: &str = "canonicalizer";
 
+    /// Creates an instance of this pass with the given rewrite config; `require_convergence`
+    /// turns a failure to reach a fixpoint into an error.
     pub fn new(config: GreedyRewriteConfig, require_convergence: bool) -> Self {
         Self {
             config,
@@ -104,9 +107,11 @@ impl Pass for Canonicalizer {
         true
     }
 
+    /// Parses `enable-patterns` and `disable-patterns` (see the [Canonicalizer] docs) from the
+    /// `key=value, key=value` string of the pass pipeline.
     fn initialize_options(&mut self, options: &str) -> Result<(), Report> {
         for option in options.split(',').map(str::trim).filter(|opt| !opt.is_empty()) {
-            let Some((key, value)) = option.split_once('=') else {
+            let Some((key, value)) = option.split_once('=').map(|(k, v)| (k.trim(), v)) else {
                 return Err(Report::msg(format!(
                     "invalid option '{option}' for pass '{}': expected 'key=value'",
                     Self::NAME
@@ -136,6 +141,15 @@ impl Pass for Canonicalizer {
                 )));
             }
             list.extend(names);
+        }
+        // A name in both lists is a contradiction rather than a filter.
+        if let Some(name) =
+            self.enabled_patterns.iter().find(|n| self.disabled_patterns.contains(n))
+        {
+            return Err(Report::msg(format!(
+                "pattern '{name}' is both enabled and disabled in the options of pass '{}'",
+                Self::NAME
+            )));
         }
         Ok(())
     }
