@@ -405,12 +405,34 @@ fn nest_calls_edges() {
 /// every level of a five-level nest with breaks, a return and a same-level
 /// `continue` — passes) and the corpus' labeled continues without a call in
 /// the inner loop (`cf_shapes`, `nest8`, `wide_exits`, `tree_nest`).
-/// Fixed in #1419: the rewrite drops the op borrow before moving blocks and
-/// merges the original before and after blocks into the entry blocks the
-/// `scf.while` builder pre-creates.
+/// Fixed in #1419: no borrow of the new while's region is held across the
+/// rewriter call; the original before and after blocks are merged into the
+/// entry blocks the `scf.while` builder pre-creates.
 #[test]
 fn nest_continue() {
     run_case("nest_continue", include_str!("../cases/case_nest_continue.rs"));
+}
+
+/// [`nest_continue`] at `--optimize=size-min`, a level at which it still
+/// panicked after the toolchain bump, before the #1419 fix.
+#[test]
+fn nest_continue_oz() {
+    run_case_with_flags(
+        "nest_continue_oz",
+        include_str!("../cases/case_nest_continue.rs"),
+        &["--optimize=size-min"],
+    );
+}
+
+/// [`nest_continue`] at `--optimize=basic`, a level at which it still
+/// panicked after the toolchain bump, before the #1419 fix.
+#[test]
+fn nest_continue_o1() {
+    run_case_with_flags(
+        "nest_continue_o1",
+        include_str!("../cases/case_nest_continue.rs"),
+        &["--optimize=basic"],
+    );
 }
 
 /// Inlined twin of `nest_continue`: the same two `for` loops and `continue
@@ -445,7 +467,7 @@ fn nest_continue_inline() {
 /// `scf.while` payload column, so the pattern's invariance test — "the i-th
 /// yield operand equals the i-th init", or "the yield operand is an argument
 /// of the loop's own after block and the condition operand at its index
-/// equals the i-th init" — is satisfied
+/// equals the i-th before-block argument or the i-th init" — is satisfied
 /// by ANY column that still carries that one poison value at the loop's back
 /// edge. Here the in-body `scf.if` yields poison in column 2 in every arm, the
 /// canonicalizer collapses it to the poison value itself, the `scf.condition`
