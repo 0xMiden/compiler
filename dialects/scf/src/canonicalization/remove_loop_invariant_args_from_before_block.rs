@@ -99,6 +99,7 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
         };
 
         let before_block = while_op.before().entry_block_ref().unwrap();
+        let after_block = while_op.after().entry_block_ref().unwrap();
         let before_args = before_block
             .borrow()
             .arguments()
@@ -119,36 +120,42 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             .into_iter()
             .map(|o| o.borrow().as_value_ref())
             .collect::<SmallVec<[_; 4]>>();
-
-        let mut can_simplify = false;
-        for (index, (init_value, yield_arg)) in while_op
+        let init_args = while_op
             .inits()
             .into_iter()
             .map(|o| o.borrow().as_value_ref())
-            .zip(yield_op_args.iter().copied())
-            .enumerate()
-        {
+            .collect::<SmallVec<[_; 4]>>();
+
+        // Returns true if the `index`-th before block argument is loop invariant, i.e. if the
+        // value fed back to it over the back edge is always its initial value.
+        let is_loop_invariant = |index: usize| -> bool {
+            let init_value = init_args[index];
+            let yield_arg = yield_op_args[index];
             // If i-th yield operand is equal to the i-th operand of the `scf.while`, the i-th
             // before block argument is loop invariant
             if yield_arg == init_value {
-                can_simplify = true;
-                break;
+                return true;
             }
 
             // If the i-th yield operand is k-th after block argument, then we check if the (k+1)-th
             // condition op operand is equal to either the i-th before block argument or the initial
             // value of i-th before block argument. If the comparison results `true`, i-th before
             // block argument is loop invariant.
-            if let Ok(yield_op_block_arg) = yield_arg.try_downcast_value::<BlockArgument>() {
-                let cond_op_arg = cond_op_args[yield_op_block_arg.borrow().index()];
-                if cond_op_arg == before_args[index] || cond_op_arg == init_value {
-                    can_simplify = true;
-                    break;
-                }
+            //
+            // Only after block arguments are mirrored by the condition operands; a block argument
+            // of any other block (e.g. the function entry block) says nothing about the back edge.
+            let Ok(yield_op_block_arg) = yield_arg.try_downcast_value::<BlockArgument>() else {
+                return false;
+            };
+            let yield_op_block_arg = yield_op_block_arg.borrow();
+            if yield_op_block_arg.owner() != after_block {
+                return false;
             }
-        }
+            let cond_op_arg = cond_op_args[yield_op_block_arg.index()];
+            cond_op_arg == before_args[index] || cond_op_arg == init_value
+        };
 
-        if !can_simplify {
+        if !(0..init_args.len()).any(is_loop_invariant) {
             return Ok(false);
         }
 
@@ -156,28 +163,15 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
         let mut new_yield_args = SmallVec::<[ValueRef; 4]>::default();
         let mut before_block_init_val_map = SmallVec::<[Option<ValueRef>; 8]>::default();
         before_block_init_val_map.resize(yield_op_args.len(), None);
-        for (index, (init_value, yield_arg)) in while_op
-            .inits()
-            .into_iter()
-            .map(|o| o.borrow().as_value_ref())
-            .zip(yield_op_args.iter().copied())
-            .enumerate()
+        for (index, (init_value, yield_arg)) in
+            init_args.iter().copied().zip(yield_op_args.iter().copied()).enumerate()
         {
-            if yield_arg == init_value {
+            if is_loop_invariant(index) {
                 before_block_init_val_map[index] = Some(init_value);
-                continue;
+            } else {
+                new_init_args.push(init_value);
+                new_yield_args.push(yield_arg);
             }
-
-            if let Ok(yield_op_block_arg) = yield_arg.try_downcast_value::<BlockArgument>() {
-                let cond_op_arg = cond_op_args[yield_op_block_arg.borrow().index()];
-                if cond_op_arg == before_args[index] || cond_op_arg == init_value {
-                    before_block_init_val_map[index] = Some(init_value);
-                    continue;
-                }
-            }
-
-            new_init_args.push(init_value);
-            new_yield_args.push(yield_arg);
         }
 
         {
@@ -188,7 +182,7 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             guard.replace_op(yield_op, new_yield.as_operation_ref());
         }
 
-        let mut result_types = while_op
+        let result_types = while_op
             .results()
             .iter()
             .map(|r| r.borrow().ty().clone())
@@ -196,10 +190,17 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
         let new_while =
             rewriter.r#while(new_init_args.iter().copied(), &result_types, while_op.span())?;
 
-        let new_before_region = new_while.borrow().before().as_region_ref();
-        result_types.clear();
-        result_types.extend(new_yield_args.iter().map(|arg| arg.borrow().ty().clone()));
-        let new_before_block = rewriter.create_block(new_before_region, None, &result_types);
+        // The builder populates both regions of the new op with an entry block: the before block
+        // already carries the arguments of the retained iter args, so it is reused below, while
+        // the after block is a placeholder that is replaced with the original after region.
+        let (new_before_block, new_after_region, new_after_block) = {
+            let new_while = new_while.borrow();
+            (
+                new_while.before().entry_block_ref().unwrap(),
+                new_while.after().as_region_ref(),
+                new_while.after().entry_block_ref().unwrap(),
+            )
+        };
         let num_before_block_args = before_block.borrow().num_arguments();
         let mut new_before_block_args = SmallVec::<[_; 4]>::with_capacity(num_before_block_args);
         new_before_block_args.resize(num_before_block_args, None);
@@ -230,7 +231,8 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
         drop(op);
 
         rewriter.merge_blocks(before_block, new_before_block, &new_before_block_args);
-        rewriter.inline_region_before(after_region, new_while.borrow().after().as_region_ref());
+        rewriter.inline_region_before(after_region, new_after_region);
+        rewriter.erase_block(new_after_block);
 
         let replacements = new_while
             .borrow()
