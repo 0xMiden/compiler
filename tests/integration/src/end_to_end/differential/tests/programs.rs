@@ -858,8 +858,8 @@ fn prog_scanchain_edges() {
 #[test]
 #[ignore = "#1420: compiler panic at the DEFAULT configuration: 'invalid operand stack index (9): \
             requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
-            class (26 erased split-edge reloads in the spills trace); WITHOUT guest DWARF it was \
-            the F12 class instead (rewriter.rs:335, #1419, fixed); compile-time, no inputs involved"]
+            class (26 erased split-edge reloads in the spills trace); compile-time, no inputs \
+            involved"]
 fn prog_rkscan() {
     run_case("prog_rkscan", include_str!("../cases/case_prog_rkscan.rs"));
 }
@@ -1103,13 +1103,14 @@ fn prog_varint_guard_oz() {
 
 /// Workaround for [`prog_varint`] (campaign 22): all six running values and
 /// all four error returns kept, with every use of the four shift constants
-/// wrapped in `core::hint::black_box`; the F12 aliasing panic
-/// (`rewriter.rs:335`) disappears at the default level. It is the ONLY
-/// workaround that rescued this program: the array-state rewrite, the manual
-/// shift spelling, moving the decode loop into an `#[inline(never)]` helper
-/// (by value or by `&mut`), the three-way function split, and even rewriting
-/// the four in-loop `return`s into a single exit through `break 'outer` all
-/// still panicked in the same pattern (#1419, fixed). Cost: 4399 MASM lines against 2904 for
+/// wrapped in `core::hint::black_box`. Before the #1419 fix this was the ONLY
+/// workaround that avoided the F12 aliasing panic (`rewriter.rs:335`) at the
+/// default level: the array-state rewrite, the manual shift spelling, moving
+/// the decode loop into an `#[inline(never)]` helper (by value or by `&mut`),
+/// the three-way function split, and even rewriting the four in-loop
+/// `return`s into a single exit through `break 'outer` all still panicked in
+/// the same pattern. [`prog_varint`] itself now compiles; this case pins that
+/// the black-boxed shape still compiles and matches native. Cost: 4399 MASM lines against 2904 for
 /// `prog_varint_guard` (two running values instead of six).
 /// Configuration note (campaign 24): the rescue holds at the default level
 /// with and without guest DWARF, but the two conditions COMPOSED — at
@@ -1313,13 +1314,16 @@ fn prog_rle_guard_edges() {
 
 /// Workaround for [`prog_rle`] (campaign 22): all five encoder statistics and
 /// all five rotate constants kept; only the escape arm's statistics update
-/// moves into an `#[inline(never)]` helper taking them as a `&mut [u64; 5]`,
-/// which clears the F12 aliasing panic (`rewriter.rs:335`) at the default
-/// level. Cost: 2493 MASM lines against 1850 for `prog_rle_guard` (three
-/// statistics instead of five). Moving the whole encode loop into a helper and
-/// the four-way function split work too; black-boxing the rotate constants,
-/// the array-state rewrite, the manual rotate spelling and making the common
-/// arm touch every statistic all still panicked.
+/// moves into an `#[inline(never)]` helper taking them as a `&mut [u64; 5]`.
+/// Before the #1419 fix this avoided the F12 aliasing panic
+/// (`rewriter.rs:335`) at the default level; [`prog_rle`] itself now compiles,
+/// and this case pins that the by-reference rescue shape still compiles and
+/// matches native. Cost: 2493 MASM lines against 1850 for `prog_rle_guard`
+/// (three statistics instead of five). Moving the whole encode loop into a
+/// helper and the four-way function split avoided the panic too;
+/// black-boxing the rotate constants, the array-state rewrite, the manual
+/// rotate spelling and making the common arm touch every statistic all still
+/// panicked.
 #[test]
 fn prog_rle_wa() {
     run_case("prog_rle_wa", include_str!("../cases/case_prog_rle_wa.rs"));
