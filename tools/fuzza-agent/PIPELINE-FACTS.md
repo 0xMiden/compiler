@@ -332,7 +332,7 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   constants (`programs::prog_sponge_wa`, `programs::prog_feistel_wa`,
   `programs_oz::prog_threefish_oz_wa`), or moving the deepest arm's expression
   into an `#[inline(never)]` helper taking state by reference
-  (`programs::prog_tlv_wa`, `programs::prog_rle_wa`). Opt level is not a
+  (`programs::prog_tlv_wa`). Opt level is not a
   safety ladder (`programs_oz::prog_sha512`, `programs_oz::prog_threefish_o3`).
 - Dead end: user fixes that fail: fewer distinct rotation constants
   (non-monotone, `programs_oz::prog_threefish_oz_guard`), `[u64; N]` state,
@@ -360,8 +360,7 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   (`programs_oz::prog_blake2b`). The same nests with a labeled
   `break`/`continue`, one loop, or an unrolled inner loop do not match
   (`compose::invariant_args_guard`, `compose::invariant_args_noreturn_guard`,
-  `compose::nest_continue_inline`). Ask "does cfg-to-scf still see a nested
-  loop with a merged exit"; reduce by removing features.
+  `compose::nest_continue_inline`).
 - Without DWARF, Local2Reg promotions create more producers of that pattern
   (`compose::chain_sm_nodwarf`, `corelib::prog_numeric_nodwarf`).
 - An in-loop trapping edge becomes one extra u32 exit column plus a top-level

@@ -389,12 +389,12 @@ fn nest_calls_edges() {
 /// outer `scf.while` carries a loop-invariant before-block argument, so
 /// `RemoveLoopInvariantArgsFromBeforeBlock`
 /// (dialects/scf/src/canonicalization/remove_loop_invariant_args_from_before_block.rs)
-/// matches for the first time in this corpus and, at the end of its
-/// rewrite, calls `rewriter.inline_region_before(after_region,
+/// matched for the first time in this corpus and, at the end of its
+/// rewrite, used to call `rewriter.inline_region_before(after_region,
 /// new_while.borrow().after().as_region_ref())`: the temporaries of that
 /// argument expression — the `EntityRef` of the new while op and the
 /// `EntityRef<Region>` created by `Operation::region` (operation.rs:877) —
-/// stay borrowed for the whole call, and `inline_region_before` then needs
+/// stayed borrowed for the whole call, and `inline_region_before` then needed
 /// the same region mutably (with the greedy driver's listener through
 /// `move_block_before` → `Block::insert_before`; without one through
 /// `ip.borrow_mut()` directly). The pattern therefore could not complete for
@@ -405,8 +405,9 @@ fn nest_calls_edges() {
 /// `continue` — passes) and the corpus' labeled continues without a call in
 /// the inner loop (`cf_shapes`, `nest8`, `wide_exits`, `tree_nest`).
 /// Fixed in #1419: the rewrite binds the new op's blocks and regions to locals
-/// (dropping the op borrow) before calling `inline_region_before`, and reuses
-/// the blocks the `scf.while` builder pre-creates.
+/// (dropping the op borrow) before calling `inline_region_before`, reuses
+/// the before block the `scf.while` builder pre-creates and erases its
+/// placeholder after block.
 #[test]
 fn nest_continue() {
     run_case("nest_continue", include_str!("../cases/case_nest_continue.rs"));
@@ -442,8 +443,9 @@ fn nest_continue_inline() {
 /// `-Z print-ir-after-pass=lift-control-flow`): cfg-to-scf materialises ONE
 /// `ub.poison<u32>` per function and uses it as the initializer of EVERY
 /// `scf.while` payload column, so the pattern's invariance test — "the i-th
-/// yield operand equals the i-th init", or "the condition operand at the
-/// yielded after-block argument's index equals the i-th init" — is satisfied
+/// yield operand equals the i-th init", or "the yield operand is an argument
+/// of the loop's own after block and the condition operand at its index
+/// equals the i-th init" — is satisfied
 /// by ANY column that still carries that one poison value at the loop's back
 /// edge. Here the in-body `scf.if` yields poison in column 2 in every arm, the
 /// canonicalizer collapses it to the poison value itself, the `scf.condition`
@@ -457,7 +459,7 @@ fn nest_continue_inline() {
 /// `continue`, and by the single-loop version, all of which compile.
 /// Compile-time — no inputs involved. It was `#[ignore]`d until #1419 was
 /// fixed by binding the new op's blocks to locals and reusing the builder's
-/// pre-created blocks.
+/// pre-created before block.
 #[test]
 fn invariant_args_min() {
     run_case("invariant_args_min", include_str!("../cases/case_invariant_args_min.rs"));
@@ -600,13 +602,10 @@ fn invariant_args_noreturn() {
     );
 }
 
-/// Passing sibling of [`invariant_args_noreturn`]: the same program with SIX
+/// Sibling of [`invariant_args_noreturn`]: the same program with SIX
 /// mixing steps instead of seven. LLVM unrolls the inner loop, so the lifted
 /// IR has ONE `scf.while` (four payload columns) instead of a nest, its
 /// `scf.condition` forwards four real values, and no column carries poison.
-/// This is the one-ingredient boundary of the return-free producer: what
-/// decides F12 is whether cfg-to-scf still sees a nested loop with a merged
-/// exit, not any source-level idiom.
 #[test]
 fn invariant_args_noreturn_guard() {
     run_case(
