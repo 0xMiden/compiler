@@ -34,7 +34,7 @@ use crate::*;
 ///     ^bb0(%arg1_after, %arg0_after_1, %arg2_after, %arg0_after_2,
 ///          ..., %argK_after):
 ///        ...
-///        scf.yield %arg0_after_2, %b, %arg1_after, ..., %argN
+///        scf.yield %arg0_after_2, %b, %arg1_after, ..., %argK_after
 ///   }
 /// ```
 ///
@@ -49,7 +49,7 @@ use crate::*;
 ///     ^bb0(%arg1_after, %arg0_after_1, %arg2_after, %arg0_after_2,
 ///          ..., %argK_after):
 ///        ...
-///        scf.yield %arg1_after, ..., %argN
+///        scf.yield %arg1_after, ..., %argK_after
 ///   }
 /// ```
 ///
@@ -57,13 +57,15 @@ use crate::*;
 ///
 /// We iterate over each yield operand.
 ///
-/// 1. 0-th yield operand %arg0_after_2 is the 3-rd after block argument, and the 3-rd forwarded
-///    operand of the condition is %arg0_before, the 0-th before block argument. So we remove the
-///    0-th before block argument and yield operand, and replace all uses of the 0-th before block
-///    argument with its initial value %a.
-/// 2. 1-th yield operand %b is equal to the 1-th iter arg's initial value. So we remove this
-///    operand and the corresponding before block argument and replace all uses of 1-th before
-///    block argument with its initial value %b.
+/// 1. Yield operand 0, %arg0_after_2, is the after block argument at index 3, and the forwarded
+///    condition operand at index 3 is %arg0_before, the before block argument of the same column.
+///    So we remove before block argument 0 and yield operand 0, and replace all uses of before
+///    block argument 0 with its initial value %a.
+/// 2. Yield operand 1, %b, is the initial value of column 1. So we remove before block argument 1
+///    and yield operand 1, and replace all uses of before block argument 1 with %b.
+/// 3. Yield operand 2, %arg1_after, is the after block argument at index 0, but the forwarded
+///    condition operand at index 0 is %arg1_before, the before block argument of column 1, not
+///    of column 2. So column 2 is not loop invariant and stays.
 ///
 pub struct RemoveLoopInvariantArgsFromBeforeBlock {
     info: PatternInfo,
@@ -210,8 +212,8 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
                 .collect::<SmallVec<[Option<ValueRef>; 4]>>()
         };
 
-        // The new op exists now, so the original loop can be taken apart, starting with the
-        // yield that must only feed the retained columns.
+        // Creating the new op is the step that can realistically fail, so the original loop is
+        // only taken apart now that it exists; the yield is narrowed to the columns that are kept.
         {
             let mut guard = InsertionGuard::new(rewriter);
             let yield_op = yield_op.as_operation_ref();
