@@ -11,7 +11,8 @@
 //      the i-th before-block argument or the i-th `scf.while` operand.
 // Such a column is dropped from the loop (`scf.while` operand, before-block argument, `scf.yield`
 // operand) and the uses of the before-block argument are replaced with the initial value. The
-// results of the loop, the after block and the `scf.condition` operands are left as they are.
+// results of the loop and the after block keep their arity, and the `scf.condition` operands keep
+// their count and positions (one that was the removed argument becomes the initial value).
 builtin.module private @remove_loop_invariant_args {
     // Case 1: the yield operand for column 0 is the loop operand `%0` itself.
     // CHECK: @yield_init(%[[A:\d+]]: u32, %[[B:\d+]]: u32)

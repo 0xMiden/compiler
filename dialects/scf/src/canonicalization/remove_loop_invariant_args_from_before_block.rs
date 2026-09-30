@@ -131,6 +131,11 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             .map(|o| o.borrow().as_value_ref())
             .collect::<SmallVec<[_; 4]>>();
 
+        // The columns are indexed by position below; leave a malformed loop to the verifier.
+        if before_args.len() != init_args.len() || yield_op_args.len() != init_args.len() {
+            return Ok(false);
+        }
+
         // Returns true if the `index`-th before block argument is loop invariant, i.e. if the
         // value fed back to it over the back edge is always its initial value.
         let is_loop_invariant = |index: usize| -> bool {
@@ -182,14 +187,15 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
         let new_while =
             rewriter.r#while(new_init_args.iter().copied(), &result_types, while_op.span())?;
 
-        // The builder populates both regions of the new op with an entry block: the before block
-        // already carries the arguments of the retained iter args, so it is reused below, while
-        // the after block is a placeholder that is replaced with the original after region.
-        let (new_before_block, new_after_region, new_after_block) = {
+        // The builder populates both regions of the new op with an entry block whose arguments
+        // match the retained iter args (before) and the results (after), so the original blocks
+        // are merged into them. The block refs are taken here, in a scope of their own: no borrow
+        // of `new_while` may be alive while the rewriter mutates its regions below, or the
+        // rewriter fails with an aliasing violation.
+        let (new_before_block, new_after_block) = {
             let new_while = new_while.borrow();
             (
                 new_while.before().entry_block_ref().unwrap(),
-                new_while.after().as_region_ref(),
                 new_while.after().entry_block_ref().unwrap(),
             )
         };
@@ -212,8 +218,17 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
                 .collect::<SmallVec<[Option<ValueRef>; 4]>>()
         };
 
-        // Creating the new op is the step that can realistically fail, so the original loop is
-        // only taken apart now that it exists; the yield is narrowed to the columns that are kept.
+        // The new after block keeps the original after block arguments one-to-one.
+        let new_after_block_args = new_after_block
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| Some(*arg as ValueRef))
+            .collect::<SmallVec<[Option<ValueRef>; 4]>>();
+
+        // The new op exists, so the original loop can be taken apart. Narrowing the yield to the
+        // kept columns is the one remaining fallible step; the loop is not consistent between
+        // here and the final replacement.
         {
             let mut guard = InsertionGuard::new(rewriter);
             let yield_op = yield_op.as_operation_ref();
@@ -222,12 +237,10 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             guard.replace_op(yield_op, new_yield.as_operation_ref());
         }
 
-        let after_region = while_op.after().as_region_ref();
         drop(op);
 
         rewriter.merge_blocks(before_block, new_before_block, &new_before_block_args);
-        rewriter.inline_region_before(after_region, new_after_region);
-        rewriter.erase_block(new_after_block);
+        rewriter.merge_blocks(after_block, new_after_block, &new_after_block_args);
 
         let replacements = new_while
             .borrow()
