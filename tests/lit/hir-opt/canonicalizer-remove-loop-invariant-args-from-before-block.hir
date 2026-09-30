@@ -146,6 +146,8 @@ builtin.module private @remove_loop_invariant_args {
 
     // Every column is invariant (column 0 by case 2, column 1 by case 1): the loop is left with
     // no operands, an argument-less before block and an empty yield, while its results survive.
+    // The printed zero-operand form `scf.while before {` is not accepted by the HIR parser (a
+    // pre-existing printer/parser gap), so this case pins the printed text only.
     // CHECK: @all_invariant(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
     // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
     // CHECK-NEXT: %[[R0:\d+]], %[[R1:\d+]] = scf.while before {
@@ -307,5 +309,88 @@ builtin.module private @remove_loop_invariant_args {
         } : (u32, u32) -> (u32, u32);
         %13 = arith.add %4, %5 <{ overflow = #builtin.overflow<unchecked> }>;
         builtin.ret %13 : (u32);
+    };
+
+    // Case 2 with a permuted condition: the condition forwards the before-block arguments in
+    // swapped order, so column 0 yields after-block argument 1, which carries before-block
+    // argument 0. Column 0 is invariant (the yielded index differs from the column), column 1 is
+    // computed.
+    // CHECK: @yield_forwarded_permuted(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R0:\d+]], %[[R1:\d+]] = scf.while %[[B]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[Y:\d+]]: u32):
+    // CHECK-NEXT: %[[C:\d+]] = arith.lt %[[Y]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[C]], %[[Y]], %[[A]] : (i1, u32, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32, %[[Q:\d+]]: u32):
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[P]], %[[Q]]
+    // CHECK-NEXT: scf.yield %[[S]] : (u32);
+    // CHECK-NEXT: } : (u32) -> (u32, u32);
+    // CHECK-NEXT: arith.add %[[R0]], %[[R1]]
+    builtin.function public extern("C") @yield_forwarded_permuted(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3, %4 = scf.while %0, %1 before {
+        ^block1(%5: u32, %6: u32):
+            %7 = arith.lt %6, %2;
+            scf.condition %7, %6, %5 : (i1, u32, u32);
+        } after {
+        ^block2(%8: u32, %9: u32):
+            %10 = arith.add %8, %9 <{ overflow = #builtin.overflow<unchecked> }>;
+            scf.yield %9, %10 : (u32, u32);
+        } : (u32, u32) -> (u32, u32);
+        %11 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %11 : (u32);
+    };
+
+    // Negative: an inner loop sits in the after block of an outer loop, and the inner column 0
+    // yields argument 0 of the OUTER after block while the inner condition forwards inner
+    // before-block argument 0 at index 0. A yielded block argument only mirrors a condition
+    // operand when it belongs to the loop's own after block, so inner column 0 is not invariant
+    // (its value is `1` on the first trip and the outer argument afterwards). Nothing changes.
+    // CHECK: @nested_after_arg(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[ONE:\d+]] = arith.constant 1 : u32;
+    // CHECK-NEXT: %[[R0:\d+]], %[[R1:\d+]] = scf.while %[[A]], %[[B]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32, %[[Y:\d+]]: u32):
+    // CHECK-NEXT: %[[C:\d+]] = arith.lt %[[Y]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[C]], %[[X]], %[[Y]] : (i1, u32, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32, %[[Q:\d+]]: u32):
+    // CHECK-NEXT: %[[I0:\d+]], %[[I1:\d+]] = scf.while %[[ONE]], %[[Q]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[U:\d+]]: u32, %[[V:\d+]]: u32):
+    // CHECK-NEXT: %[[IC:\d+]] = arith.lt %[[V]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[IC]], %[[U]], %[[V]] : (i1, u32, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[G:\d+]]: u32, %[[H:\d+]]: u32):
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[H]], %[[G]]
+    // CHECK-NEXT: scf.yield %[[P]], %[[S]] : (u32, u32);
+    // CHECK-NEXT: } : (u32, u32) -> (u32, u32);
+    // CHECK-NEXT: %[[T:\d+]] = arith.add %[[I0]], %[[I1]]
+    // CHECK-NEXT: scf.yield %[[T]], %[[T]] : (u32, u32);
+    // CHECK-NEXT: } : (u32, u32) -> (u32, u32);
+    // CHECK-NEXT: arith.add %[[R0]], %[[R1]]
+    builtin.function public extern("C") @nested_after_arg(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3 = arith.constant 1 : u32;
+        %4, %5 = scf.while %0, %1 before {
+        ^block1(%6: u32, %7: u32):
+            %8 = arith.lt %7, %2;
+            scf.condition %8, %6, %7 : (i1, u32, u32);
+        } after {
+        ^block2(%9: u32, %10: u32):
+            %11, %12 = scf.while %3, %10 before {
+            ^block3(%13: u32, %14: u32):
+                %15 = arith.lt %14, %2;
+                scf.condition %15, %13, %14 : (i1, u32, u32);
+            } after {
+            ^block4(%16: u32, %17: u32):
+                %18 = arith.add %17, %16 <{ overflow = #builtin.overflow<unchecked> }>;
+                scf.yield %9, %18 : (u32, u32);
+            } : (u32, u32) -> (u32, u32);
+            %19 = arith.add %11, %12 <{ overflow = #builtin.overflow<unchecked> }>;
+            scf.yield %19, %19 : (u32, u32);
+        } : (u32, u32) -> (u32, u32);
+        %20 = arith.add %4, %5 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %20 : (u32);
     };
 };
