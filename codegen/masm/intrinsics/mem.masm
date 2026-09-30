@@ -672,6 +672,52 @@ pub proc store_qw # [addr, offset, value_0, value_1, value_2, value_3]
     end
 end
 
+# Copy `n` words from the word-aligned element address `read_ptr` to the word-aligned element
+# address `write_ptr`.
+#
+# The source and destination ranges may overlap, the destination receives the words the source
+# range held before the copy.
+#
+# Stack transition: [n, read_ptr, write_ptr] -> []
+pub proc memmove_words(n: u32, read_ptr: ptr<word, addrspace(felt)>, write_ptr: ptr<word, addrspace(felt)>)
+    # In both loops the counter is negated, so that it is updated with `add.1`, which takes one
+    # cycle less than `sub.1`, and the stack is padded with a word for `mem_loadw_le` to overwrite
+    dup.2 dup.2 u32gt # [write_ptr > read_ptr, n, read_ptr, write_ptr]
+    if.true
+        # The destination starts above the source, so an ascending copy could overwrite the words
+        # it has yet to read. Copy in descending order, from the last word down.
+        movup.2 dup.1 mul.4 add sub.4 # [write_last, n, read_ptr], write_last = write_ptr + 4 * n - 4
+        movup.2 dup.2 mul.4 add sub.4 # [read_last, write_last, n], read_last = read_ptr + 4 * n - 4
+        movup.2 neg                   # [-n, read_last, write_last]
+        padw                          # [0, 0, 0, 0, -n, read_last, write_last]
+        dup.4 neq.0                   # [-n != 0, 0, 0, 0, 0, -n, read_last, write_last]
+        while.true
+            dup.5 mem_loadw_le        # [w0, w1, w2, w3, -n, read_last, write_last]
+            dup.6 mem_storew_le       # [w0, w1, w2, w3, -n, read_last, write_last]
+            # The loaded word is no longer needed and serves as the padding of the next iteration
+            swapw                     # [-n, read_last, write_last, x, w0, w1, w2, w3]
+            add.1 movup.3 movup.3 sub.4 movup.3 sub.4 movup.3 # [-n + 1, read_last - 4, write_last - 4, x, ..]
+            swapw                     # [w0, w1, w2, w3, -n + 1, read_last - 4, write_last - 4]
+            dup.4 neq.0               # [-n + 1 != 0, w0, w1, w2, w3, -n + 1, read_last - 4, write_last - 4]
+        end
+    else
+        # The destination does not start above the source, so an ascending copy never overwrites
+        # a word it has yet to read.
+        neg                           # [-n, read_ptr, write_ptr]
+        padw                          # [0, 0, 0, 0, -n, read_ptr, write_ptr]
+        dup.4 neq.0                   # [-n != 0, 0, 0, 0, 0, -n, read_ptr, write_ptr]
+        while.true
+            dup.5 mem_loadw_le        # [w0, w1, w2, w3, -n, read_ptr, write_ptr]
+            dup.6 mem_storew_le       # [w0, w1, w2, w3, -n, read_ptr, write_ptr]
+            swapw                     # [-n, read_ptr, write_ptr, x, w0, w1, w2, w3]
+            add.1 movup.3 movup.3 add.4 movup.3 add.4 movup.3 # [-n + 1, read_ptr + 4, write_ptr + 4, x, ..]
+            swapw                     # [w0, w1, w2, w3, -n + 1, read_ptr + 4, write_ptr + 4]
+            dup.4 neq.0               # [-n + 1 != 0, w0, w1, w2, w3, -n + 1, read_ptr + 4, write_ptr + 4]
+        end
+    end
+    dropw drop drop drop
+end
+
 # Copy `n` elements from the element address `read_ptr` to the element address `write_ptr`.
 #
 # The source and destination ranges may overlap, the destination receives the elements the source

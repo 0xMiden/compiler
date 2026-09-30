@@ -1,4 +1,5 @@
-//! Tests for the lowering of `hir.mem_cpy`, including overlapping source and destination ranges.
+//! Tests for the lowering of `hir.mem_cpy`, including overlapping source and destination ranges
+//! and the range and alignment traps.
 //!
 //! Regression tests for #1418.
 
@@ -11,7 +12,7 @@ use super::*;
 /// The size in bytes of the memory region each test case initializes and checks.
 const REGION_LEN: usize = 64;
 
-/// A word-aligned byte address above the pages reserved for the Rust stack.
+/// A 16-byte aligned byte address above the pages reserved for the Rust stack.
 const FIXED_BASE: u32 = 17 * 2u32.pow(16);
 
 /// A single `mem_cpy` case: the offsets are in bytes from the region base, `count` is in units of
@@ -244,8 +245,8 @@ fn mem_cpy_u64_elements() {
     );
 }
 
-/// Checks `ptr<u128>` copies, where `count` is a number of u128 values rather than bytes,
-/// including overlaps whose byte distance is not a multiple of the value size.
+/// Checks `ptr<u128>` copies, which go a word at a time and require 16-byte aligned addresses,
+/// including overlapping ranges in both directions.
 #[test]
 fn mem_cpy_u128_elements() {
     check_table(
@@ -253,16 +254,8 @@ fn mem_cpy_u128_elements() {
         &[
             // Overlap, destination above source by one value
             case(0, 16, 3),
-            // Overlap, destination above source by 4 bytes
-            case(4, 8, 3),
-            // Overlap, unaligned addresses, destination above source by 3 bytes
-            case(1, 4, 3),
             // Overlap, destination below source by one value
             case(16, 0, 3),
-            // Overlap, destination below source by 4 bytes
-            case(8, 4, 3),
-            // Overlap, unaligned addresses, destination below source by 3 bytes
-            case(4, 1, 3),
             // Identical ranges
             case(16, 16, 2),
             // Disjoint, destination above source
@@ -270,41 +263,82 @@ fn mem_cpy_u128_elements() {
             // Disjoint, destination below source
             case(32, 0, 2),
             // Zero count
-            case(4, 8, 0),
+            case(16, 32, 0),
         ],
     );
 }
 
-/// Checks that an aggregate pointee whose size is not a power of two (`[u8; 3]`) is copied as
-/// `count * size_of(pointee)` bytes, on both the element path and the byte loop.
+/// Checks that a 32-byte aggregate (`[u32; 8]`) is copied two words per value, overlapping ranges
+/// included.
 #[test]
-fn mem_cpy_array_elements() {
+fn mem_cpy_multiword_elements() {
     check_table(
-        Type::from(ArrayType::new(Type::U8, 3)),
+        Type::from(ArrayType::new(Type::U32, 8)),
         &[
-            // Element path, overlap, destination above source by 4 bytes
-            case(0, 4, 8),
-            // Element path, overlap, destination below source by 4 bytes
-            case(4, 0, 8),
-            // Element path, identical ranges
-            case(8, 8, 4),
-            // Element path, disjoint, destination above source
-            case(0, 32, 8),
-            // Element path, disjoint, destination below source
-            case(32, 0, 8),
-            // Byte loop (length not a multiple of 4), overlap, destination above source by one
-            // value
-            case(0, 3, 7),
-            // Byte loop (length not a multiple of 4), overlap, destination below source by one
-            // value
-            case(3, 0, 7),
-            // Byte loop, unaligned addresses, overlap, destination above source by 1 byte
-            case(1, 2, 5),
-            // Byte loop, unaligned addresses, overlap, destination below source by 1 byte
-            case(2, 1, 5),
+            // Overlap, destination above source by 16 bytes (half a value)
+            case(0, 16, 1),
+            // Overlap, destination below source by 16 bytes (half a value)
+            case(16, 0, 1),
+            // Identical ranges
+            case(16, 16, 1),
+            // Disjoint, destination above source
+            case(0, 32, 1),
+            // Disjoint, destination below source
+            case(32, 0, 1),
             // Zero count
-            case(4, 8, 0),
+            case(0, 16, 0),
         ],
+    );
+}
+
+/// Checks `ptr<u16>` copies, which go one sub-element value at a time, on both aligned and
+/// unaligned addresses, including overlapping ranges in both directions.
+#[test]
+fn mem_cpy_u16_elements() {
+    check_table(
+        Type::U16,
+        &[
+            // Overlap, destination above source by one value
+            case(0, 2, 10),
+            // Overlap, destination below source by one value
+            case(2, 0, 10),
+            // Overlap, unaligned source, destination above source by 3 bytes
+            case(1, 4, 9),
+            // Overlap, unaligned destination, destination below source by 3 bytes
+            case(4, 1, 9),
+            // Identical ranges
+            case(6, 6, 5),
+            // Disjoint
+            case(0, 32, 8),
+            // Zero count
+            case(2, 4, 0),
+        ],
+    );
+}
+
+/// Asserts that `hir.mem_cpy` over `ptr<elem>` with the raw byte addresses `src` and `dst` and the
+/// given `count` traps, with a failure message containing `message`.
+fn assert_mem_cpy_traps(elem: Type, src: u32, dst: u32, count: u32, message: &str) {
+    setup::enable_compiler_instrumentation();
+    let (package, context) = compile_mem_cpy(elem);
+    let args = [
+        Felt::new_unchecked(src as u64),
+        Felt::new_unchecked(dst as u64),
+        Felt::new_unchecked(count as u64),
+    ];
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        eval_package::<u32, _, _>(package.clone(), None, &args, context.session(), |_| Ok(()))
+    }))
+    .expect_err("mem_cpy should trap");
+    let err = panic
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
+        .unwrap_or_else(|| "opaque panic".to_string());
+    assert!(
+        err.contains(message),
+        "expected a trap containing {message:?} for src={src}, dst={dst}, count={count}, got: \
+         {err}"
     );
 }
 
@@ -312,25 +346,46 @@ fn mem_cpy_array_elements() {
 /// the byte length overflow assertion.
 #[test]
 fn mem_cpy_byte_length_overflow_traps() {
-    const OVERFLOW_TRAP: &str = "memcpy byte length overflowed";
+    assert_mem_cpy_traps(
+        Type::U32,
+        FIXED_BASE,
+        FIXED_BASE + 32,
+        0x4000_0000,
+        "memcpy byte length overflowed",
+    );
+}
 
-    setup::enable_compiler_instrumentation();
-    let (package, context) = compile_mem_cpy(Type::U32);
-    let args = [
-        Felt::new_unchecked(FIXED_BASE as u64),
-        Felt::new_unchecked((FIXED_BASE + 32) as u64),
-        Felt::new_unchecked(0x4000_0000),
-    ];
-    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        eval_package::<u32, _, _>(package.clone(), None, &args, context.session(), |_| Ok(()))
-    }))
-    .expect_err("a byte length overflow should trap");
-    let err = panic
-        .downcast_ref::<String>()
-        .cloned()
-        .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
-        .unwrap_or_else(|| "opaque panic".to_string());
-    assert!(err.contains(OVERFLOW_TRAP), "unexpected byte length overflow failure: {err}");
+/// Checks that a copy whose source or destination range extends past the end of the address
+/// space traps with the matching range assertion.
+#[test]
+fn mem_cpy_out_of_range_traps() {
+    assert_mem_cpy_traps(
+        Type::U8,
+        u32::MAX - 7,
+        FIXED_BASE,
+        16,
+        "memcpy source range is out of bounds",
+    );
+    assert_mem_cpy_traps(
+        Type::U8,
+        FIXED_BASE,
+        u32::MAX - 7,
+        16,
+        "memcpy destination range is out of bounds",
+    );
+}
+
+/// Checks that a word copy (`ptr<u128>`) from an address that is not 16-byte aligned traps with
+/// the word-copy alignment assertion.
+#[test]
+fn mem_cpy_word_copy_unaligned_traps() {
+    assert_mem_cpy_traps(
+        Type::U128,
+        FIXED_BASE + 4,
+        FIXED_BASE + 32,
+        1,
+        "expected a 16-byte-aligned byte pointer for the word-copy fast path",
+    );
 }
 
 /// Checks random byte copies (possibly overlapping, aligned or not) against `copy_within`; about

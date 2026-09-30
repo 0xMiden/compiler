@@ -387,21 +387,26 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 
 - `hir.mem_cpy` has memmove semantics: the ranges may overlap, the destination
   receives the values the source range held before the copy, and `count == 0`
-  is a no-op. `OpEmitter::memcpy` (`codegen/masm/src/emit/mem.rs`) lowers it
-  as a byte range of `count * size_of(pointee)` bytes whatever the pointee
-  type is, for pointers in the byte address space only
-  (`codegen::memory::mem_cpy`), and tests src, dst and the byte length for
-  4-alignment at runtime. The element arm calls the compiler intrinsic
+  is a no-op. `OpEmitter::memcpy` (`codegen/masm/src/emit/mem.rs`) accepts
+  pointers in the byte address space only, first traps unless the byte length
+  `count * size_of(pointee)` fits in a `u32` and both `src + len` and
+  `dst + len` do (`codegen::memory::mem_cpy`), then dispatches on the pointee
+  size. Byte pointees (every Wasm copy): src, dst and count tested for
+  4-alignment at runtime; the element arm calls the compiler intrinsic
   `::intrinsics::mem::memmove_elements` (`codegen/masm/intrinsics/mem.masm`),
   which copies in descending address order when `write_ptr > read_ptr` and
   ascending otherwise (overlap up `heap::heap_vec_shift`, `memory::mem_overlap`,
   `heap::heap_btree`; down `heap::heap_vec_drain`; identical ranges
-  `memory::copy_same_pos`; zero length `boundaries::memnoop_same`). The byte
-  loop (`emit_memcpy_byte_loop`) follows the same rule, descending when
-  `dst > src`, and serves every other copy (up `heap::heap_vec_shift_u8`,
-  `heap::heap_string_insert`; down `heap::heap_vec_remove_u8`,
-  `memorder::copy_fwd`; identical ranges `memory::copy_same_bytes`). No core-lib
-  copy routine is called.
+  `memory::copy_same_pos`; zero length `boundaries::memnoop_same`); the byte
+  loop follows the same rule, descending when `dst > src` (up
+  `heap::heap_vec_shift_u8`, `heap::heap_string_insert`; down
+  `heap::heap_vec_remove_u8`, `memorder::copy_fwd`; identical ranges
+  `memory::copy_same_bytes`). Pointees of 16 bytes or a multiple of 16 go a
+  word at a time through `::intrinsics::mem::memmove_words` (same direction
+  rule, traps unless src and dst are 16-byte aligned); every other pointee
+  size is copied one typed value at a time by the same direction-aware loop,
+  which cannot load or store aggregates. No core-lib copy routine is called.
+  Only the byte pointee arm has a frontend producer.
 - `OpEmitter::memset` is a per-byte loop, about 25 cycles per byte
   (`memory::frame_1m`).
 - Dead end: emitter arms with no producer. The `_imm` load/store and
