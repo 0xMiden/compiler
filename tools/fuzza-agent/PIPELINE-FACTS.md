@@ -360,7 +360,7 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   (`programs_oz::prog_blake2b`). The same nests with a labeled
   `break`/`continue`, one loop, or an unrolled inner loop do not match
   (`compose::invariant_args_guard`, `compose::invariant_args_noreturn_guard`,
-  `compose::nest_continue_inline`).
+  and `compose::nest_continue_inline` at the default level).
 - Without DWARF, Local2Reg promotions create more producers of that pattern
   (`compose::chain_sm_nodwarf`, `corelib::prog_numeric_nodwarf`).
 - An in-loop trapping edge becomes one extra u32 exit column plus a top-level

@@ -405,10 +405,9 @@ fn nest_calls_edges() {
 /// every level of a five-level nest with breaks, a return and a same-level
 /// `continue` — passes) and the corpus' labeled continues without a call in
 /// the inner loop (`cf_shapes`, `nest8`, `wide_exits`, `tree_nest`).
-/// Fixed in #1419: the rewrite binds the new op's blocks and regions to locals
-/// (dropping the op borrow) before calling `inline_region_before`, reuses
-/// the before block the `scf.while` builder pre-creates and erases its
-/// placeholder after block.
+/// Fixed in #1419: the rewrite drops the op borrow before moving blocks and
+/// merges the original before and after blocks into the entry blocks the
+/// `scf.while` builder pre-creates.
 #[test]
 fn nest_continue() {
     run_case("nest_continue", include_str!("../cases/case_nest_continue.rs"));
@@ -459,8 +458,8 @@ fn nest_continue_inline() {
 /// `break` — and by the same nest with a labeled `break`, with a labeled
 /// `continue`, and by the single-loop version, all of which compile.
 /// Compile-time — no inputs involved. It was `#[ignore]`d until #1419 was
-/// fixed by binding the new op's blocks to locals and reusing the builder's
-/// pre-created before block.
+/// fixed by merging the original before and after blocks into the entry
+/// blocks the `scf.while` builder pre-creates.
 #[test]
 fn invariant_args_min() {
     run_case("invariant_args_min", include_str!("../cases/case_invariant_args_min.rs"));
