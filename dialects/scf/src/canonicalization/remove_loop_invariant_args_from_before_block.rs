@@ -131,8 +131,21 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             .map(|o| o.borrow().as_value_ref())
             .collect::<SmallVec<[_; 4]>>();
 
-        // The columns are indexed by position below; leave a malformed loop to the verifier.
-        if before_args.len() != init_args.len() || yield_op_args.len() != init_args.len() {
+        let result_types = while_op
+            .results()
+            .iter()
+            .map(|r| r.borrow().ty().clone())
+            .collect::<SmallVec<[_; 4]>>();
+
+        // Everything below indexes columns by position (inits, before arguments and yield
+        // operands on one side; condition operands, after arguments and results on the other),
+        // so a loop whose arities disagree is left to the verifier.
+        let num_after_args = after_block.borrow().num_arguments();
+        if before_args.len() != init_args.len()
+            || yield_op_args.len() != init_args.len()
+            || cond_op_args.len() != num_after_args
+            || result_types.len() != num_after_args
+        {
             return Ok(false);
         }
 
@@ -179,19 +192,15 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             }
         }
 
-        let result_types = while_op
-            .results()
-            .iter()
-            .map(|r| r.borrow().ty().clone())
-            .collect::<SmallVec<[_; 4]>>();
+        // Creating the new op is the only fallible step; nothing has been modified before it.
         let new_while =
             rewriter.r#while(new_init_args.iter().copied(), &result_types, while_op.span())?;
 
         // The builder populates both regions of the new op with an entry block whose arguments
         // match the retained iter args (before) and the results (after), so the original blocks
-        // are merged into them. The block refs are taken here, in a scope of their own: no borrow
-        // of `new_while` may be alive while the rewriter mutates its regions below, or the
-        // rewriter fails with an aliasing violation.
+        // are merged into them. Only block refs are kept from here on: a borrow of an op or a
+        // region must not be alive while the rewriter moves blocks between them, which is why
+        // the borrow of the original op is dropped before the merges below.
         let (new_before_block, new_after_block) = {
             let new_while = new_while.borrow();
             (
@@ -226,15 +235,11 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             .map(|arg| Some(*arg as ValueRef))
             .collect::<SmallVec<[Option<ValueRef>; 4]>>();
 
-        // The new op exists, so the original loop can be taken apart. Narrowing the yield to the
-        // kept columns is the one remaining fallible step; the loop is not consistent between
-        // here and the final replacement.
+        // Narrow the yield to the kept columns in place.
         {
-            let mut guard = InsertionGuard::new(rewriter);
-            let yield_op = yield_op.as_operation_ref();
-            guard.set_insertion_point_before(yield_op);
-            let new_yield = guard.r#yield(new_yield_args.iter().copied(), yield_op.span())?;
-            guard.replace_op(yield_op, new_yield.as_operation_ref());
+            let mut yield_op = yield_op.as_operation_ref();
+            let _guard = rewriter.modify_op_in_place(yield_op);
+            yield_op.borrow_mut().set_operands(new_yield_args.iter().copied());
         }
 
         drop(op);
