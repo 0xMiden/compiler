@@ -893,7 +893,9 @@ impl OpEmitter<'_> {
                 });
 
                 let else_blk = self.build_masm_block(span, |else_emitter| {
-                    else_emitter.emit_memcpy_loop(ty.clone(), value_size, span);
+                    // The arm treats the values as raw bytes, whatever the 1-byte pointee is
+                    let byte_ptr_ty = Type::from(PointerType::new(Type::U8));
+                    else_emitter.emit_memcpy_loop(byte_ptr_ty, value_size, span);
                 });
 
                 self.current_block.push(masm::Op::If {
