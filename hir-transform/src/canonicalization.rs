@@ -140,7 +140,13 @@ impl Pass for Canonicalizer {
                     Self::NAME
                 )));
             }
-            list.extend(names);
+            if !list.is_empty() {
+                return Err(Report::msg(format!(
+                    "option '{key}' of pass '{}' is given more than once",
+                    Self::NAME
+                )));
+            }
+            *list = names;
         }
         // A name in both lists is a contradiction rather than a filter.
         if let Some(name) =
@@ -266,5 +272,53 @@ impl Pass for Canonicalizer {
         state.set_post_pass_status(ir_changed);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::string::ToString;
+
+    use super::*;
+
+    /// Renders a pass through [Pass::print_as_textual_pipeline].
+    struct Textual<'a>(&'a Canonicalizer);
+
+    impl fmt::Display for Textual<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            Pass::print_as_textual_pipeline(self.0, f)
+        }
+    }
+
+    #[test]
+    fn options_print_as_textual_pipeline() {
+        let mut pass = Canonicalizer::default();
+        assert_eq!(Textual(&pass).to_string(), "canonicalizer");
+
+        Pass::initialize_options(&mut pass, "enable-patterns=a;b, disable-patterns=c").unwrap();
+        assert_eq!(
+            Textual(&pass).to_string(),
+            "canonicalizer{enable-patterns=\"a;b\" disable-patterns=\"c\"}"
+        );
+        assert_eq!(pass.enabled_patterns, ["a", "b"]);
+        assert_eq!(pass.disabled_patterns, ["c"]);
+    }
+
+    #[test]
+    fn invalid_options_are_rejected() {
+        for options in [
+            "bogus=1",
+            "enable-patterns",
+            "enable-patterns=",
+            "enable-patterns=;",
+            "enable-patterns=a, disable-patterns=a",
+            "enable-patterns=a, enable-patterns=b",
+        ] {
+            let mut pass = Canonicalizer::default();
+            assert!(
+                Pass::initialize_options(&mut pass, options).is_err(),
+                "expected '{options}' to be rejected"
+            );
+        }
     }
 }
