@@ -47,6 +47,14 @@ impl RewritePatternSet {
     {
         self.patterns.extend(patterns);
     }
+
+    /// Retains only the patterns for which `predicate` returns true.
+    pub fn retain<F>(&mut self, mut predicate: F)
+    where
+        F: FnMut(&dyn RewritePattern) -> bool,
+    {
+        self.patterns.retain(|pattern| predicate(&**pattern));
+    }
 }
 
 pub struct FrozenRewritePatternSet {
