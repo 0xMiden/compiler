@@ -223,7 +223,7 @@ fn prog_blake2b_oz() {
 /// line `trying to match 'remove-loop-invariant-args-from-before-block'
 /// dialect=scf op=while`. It also panicked at `--optimize=max` and
 /// `--optimize=basic`, and compiled only at `--optimize=size-min`.
-/// TWO THINGS THIS PINS. First, F12 is not a count-band phenomenon: this
+/// Two things that panic showed. First, F12 is not a count-band phenomenon: this
 /// program has the FEWEST distinct rotation constants in the module (four).
 /// Second, its control flow contains no `return`, `break` or `continue`
 /// whatsoever — a three-level `while` nest over array-indexed state is
