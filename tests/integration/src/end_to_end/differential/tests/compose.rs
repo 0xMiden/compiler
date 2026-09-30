@@ -377,9 +377,8 @@ fn nest_calls_edges() {
 /// level with nightly-2026-04-30 guests. What
 /// LLVM changed is whether it leaves cfg-to-scf a loop-invariant before-block
 /// argument, not the pattern. The class's default-level reproducer is
-/// `invariant_args_min`. Not pinned as a `_oz` twin: the level-dependent F12
-/// panic of this exact source is already carried by `nest_continue_inline`.
-/// What it used to do:
+/// `invariant_args_min`. Never pinned as a `_oz` or `_o1` twin, so no test
+/// runs this source at the levels where it used to panic. What it used to do:
 ///
 /// two nested `for` loops, one `#[inline(never)]` call in the inner loop and a
 /// `continue 'outer` from the inner loop. Building it panicked in the
@@ -427,7 +426,7 @@ fn nest_continue_inline() {
     run_case("nest_continue_inline", include_str!("../cases/case_nest_continue_inline.rs"));
 }
 
-/// MINIMAL COMPILE-TIME COMPILER PANIC REPRODUCER for the F12 aliasing class
+/// FORMER MINIMAL COMPILE-TIME COMPILER PANIC REPRODUCER for the F12 aliasing class
 /// (safe Rust, campaign 22, 2026-09-09), reduced from `programs::prog_varint`
 /// to twenty-six lines: an inner `loop` whose FIRST statement is an early
 /// `return`, nested in an outer `while`, a two-step xorshift byte source, and

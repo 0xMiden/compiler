@@ -948,8 +948,9 @@ fn prog_rkscan_guard_nodwarf() {
 /// `return`s that leave the function from inside the two-level nest. Computes
 /// the same answer as `prog_rkscan_guard` on the 1225-pair native boundary
 /// grid (checksum 0x2168a1769f80256d), so it is a like-for-like substitution.
-/// Kept as the counter-example to `prog_rkscan_wa`'s "pass the fingerprint
-/// words by reference" note. Compile-time — no inputs involved.
+/// Kept to pin that `prog_rkscan_wa`'s "pass the fingerprint words by
+/// reference" rescue now also holds without DWARF. Compile-time — no inputs
+/// involved.
 #[test]
 fn prog_rkscan_ref_nodwarf() {
     run_case_with_flags(

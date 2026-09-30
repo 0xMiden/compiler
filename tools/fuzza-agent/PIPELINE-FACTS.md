@@ -208,8 +208,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   (`control_flow::switch_trap_arm`); `FoldRedundantYields`,
   `ConvertTrivialIfToSelect` and `SplitCriticalEdges` routinely
   (`control_flow::sm16`, `control_flow::wide_exits`);
-  `RemoveLoopInvariantArgsFromBeforeBlock` matches and rewrites (it panicked
-  on every match until #1419 was fixed) (`compose::invariant_args_min`).
+  `RemoveLoopInvariantArgsFromBeforeBlock` matches and rewrites
+  (`compose::invariant_args_min`).
   `SplitCriticalEdges` shares the greedy fixpoint, so a critical-edge guard
   can become satisfiable mid-run.
 - Dead end: `CanonicalizeI64RotateBy32ToSwap` (the count band hides the 32,
@@ -332,11 +332,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   constants (`programs::prog_sponge_wa`, `programs::prog_feistel_wa`,
   `programs_oz::prog_threefish_oz_wa`), or moving the deepest arm's expression
   into an `#[inline(never)]` helper taking state by reference
-  (`programs::prog_tlv_wa`, `programs::prog_rle_wa`). Without DWARF the same
-  rescues fell into #1419 (fixed; `programs::prog_rkscan_ref_nodwarf`), and two
-  individually safe configurations composed into a panic
-  (`programs::prog_varint_wa_oz_nodwarf`). Opt level is not a safety ladder
-  either way (`programs_oz::prog_sha512`, `programs_oz::prog_threefish_o3`).
+  (`programs::prog_tlv_wa`, `programs::prog_rle_wa`). Opt level is not a
+  safety ladder (`programs_oz::prog_sha512`, `programs_oz::prog_threefish_o3`).
 - Dead end: user fixes that fail: fewer distinct rotation constants
   (non-monotone, `programs_oz::prog_threefish_oz_guard`), `[u64; N]` state,
   hand-written rotates, flattening or splitting the program for the frontier

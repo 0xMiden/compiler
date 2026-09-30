@@ -1,4 +1,4 @@
-// MINIMAL COMPILE-TIME REPRODUCER of the F12 aliasing panic at the DEFAULT
+// FORMER MINIMAL COMPILE-TIME REPRODUCER of the F12 aliasing panic at the DEFAULT
 // optimization level (campaign 22, reduced from `prog_varint`): an inner
 // `loop` whose first statement is an early `return`, nested in an outer
 // `while`, a two-step xorshift byte source, and two rotate constants: 7 used
