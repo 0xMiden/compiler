@@ -822,8 +822,8 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     /// The source and destination ranges may overlap, the destination receives the values the
     /// source range held before the copy.
     ///
-    /// NOTE: The source and destination pointer types must match, a mismatch is rejected when the
-    /// operation is lowered or evaluated.
+    /// NOTE: The source and destination pointer types must match, a mismatch is rejected by the
+    /// verifier.
     fn memcpy(
         &mut self,
         src: ValueRef,
