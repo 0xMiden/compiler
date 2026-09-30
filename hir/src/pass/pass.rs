@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, rc::Rc};
+use alloc::{boxed::Box, format, rc::Rc};
 use core::{any::Any, fmt};
 
 use super::*;
@@ -219,9 +219,13 @@ pub trait Pass: Sized + Any {
     /// as a comma-separated list of `key=value` pairs, e.g. `key1=value1, key2=value2`, so a
     /// value must not contain a comma and each key appears at most once.
     ///
-    /// By default, this is a no-op.
+    /// By default, a pass takes no options, so any option given is an error.
     fn initialize_options(&mut self, options: &str) -> Result<(), Report> {
-        Ok(())
+        if options.trim().is_empty() {
+            Ok(())
+        } else {
+            Err(Report::msg(format!("pass '{}' takes no options", self.name())))
+        }
     }
     /// Prints out the pass in the textual representation of pipelines.
     ///
