@@ -332,8 +332,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   constants (`programs::prog_sponge_wa`, `programs::prog_feistel_wa`,
   `programs_oz::prog_threefish_oz_wa`), or moving the deepest arm's expression
   into an `#[inline(never)]` helper taking state by reference
-  (`programs::prog_tlv_wa`). Opt level is not a
-  safety ladder (`programs_oz::prog_sha512`, `programs_oz::prog_threefish_o3`).
+  (`programs::prog_tlv_wa`). Opt level is not a safety ladder
+  (`programs_oz::prog_sha512`, `programs_oz::prog_threefish_o3`).
 - Dead end: user fixes that fail: fewer distinct rotation constants
   (non-monotone, `programs_oz::prog_threefish_oz_guard`), `[u64; N]` state,
   hand-written rotates, flattening or splitting the program for the frontier

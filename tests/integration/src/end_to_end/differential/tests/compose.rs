@@ -337,7 +337,8 @@ fn carried_wide_edges() {
 /// at level 5), so the lifted exit dispatch threads call results through
 /// five levels of region result columns with the carried u64 crossing every
 /// call. A `continue` of an OUTER level from an inner loop that contains a
-/// call is the `nest_continue` panic below.
+/// call is the `nest_continue` shape below, which panicked before the #1419
+/// fix.
 /// Configuration note (campaign 16): at `--optimize=size-min` and
 /// `--optimize=basic` LLVM keeps the helper out of line inside the loops and
 /// the case hit the F12 aliasing panic (#1419, fixed; `nest_continue` class);
@@ -439,7 +440,7 @@ fn nest_continue_inline() {
 /// hir/src/ir/operation.rs:877 }` at hir/src/patterns/rewriter.rs:335, the
 /// driver's last line being `trying to match
 /// 'remove-loop-invariant-args-from-before-block' dialect=scf op=while`.
-/// MECHANISM (post-lift IR dumps of this case and of its passing sibling,
+/// MECHANISM (post-lift IR dumps of this case and of its sibling,
 /// `-Z print-ir-after-pass=lift-control-flow`): cfg-to-scf materialises ONE
 /// `ub.poison<u32>` per function and uses it as the initializer of EVERY
 /// `scf.while` payload column, so the pattern's invariance test — "the i-th
@@ -449,7 +450,7 @@ fn nest_continue_inline() {
 /// by ANY column that still carries that one poison value at the loop's back
 /// edge. Here the in-body `scf.if` yields poison in column 2 in every arm, the
 /// canonicalizer collapses it to the poison value itself, the `scf.condition`
-/// forwards it, and the pattern matches. The passing sibling's in-body `if`
+/// forwards it, and the pattern matches. The sibling's in-body `if`
 /// has no all-arms-poison column, so the pattern never matches.
 /// Per level before the fix: default PANIC, `--optimize=max` PANIC,
 /// `--optimize=basic` PANIC, `--optimize=size-min` PASSES; identical with and without guest
@@ -465,7 +466,7 @@ fn invariant_args_min() {
     run_case("invariant_args_min", include_str!("../cases/case_invariant_args_min.rs"));
 }
 
-/// Passing sibling of [`invariant_args_min`]: the same nest, the same answer
+/// Sibling of [`invariant_args_min`]: the same nest, the same answer
 /// on every input, with the inner loop's early `return` moved BELOW the
 /// `break`. One statement moved is the whole diff, and it is enough for the
 /// lifted `scf.while` to have no all-arms-poison payload column, so
