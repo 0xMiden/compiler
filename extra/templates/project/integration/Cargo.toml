@@ -6,8 +6,8 @@ edition.workspace = true
 [dependencies]
 miden-client = { path = "/home/green/src/miden/rust-sdk/crates/rust-client", features = ["tonic"] }
 miden-client-sqlite-store = { path = "/home/green/src/miden/rust-sdk/crates/sqlite-store", package = "miden-client-sqlite-store" }
-miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "d028d70ac2528b4cc87985870a4a9457b539d9de", features = ["testing"] }
-miden-testing = { git = "https://github.com/0xMiden/protocol", rev = "d028d70ac2528b4cc87985870a4a9457b539d9de" }
+miden-standards = { version = "=0.17.0-rc.8", features = ["testing"] }
+miden-testing = "=0.17.0-rc.8"
 miden-mast-package = { version = "0.34.0", default-features = false }
 tokio = { version = "1.48", features = ["rt-multi-thread", "net", "macros", "fs"] }
 rand = { version = "0.10" }
