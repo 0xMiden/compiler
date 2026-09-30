@@ -10,11 +10,11 @@
 //!   either a concrete operation name, or `any`, to apply against any operation type.
 //! * `pass-name` and `pass-pipeline-name` correspond to the argument name of a registered pass or
 //!   pass pipeline, e.g. `cse` or `canonicalizer`
-//! * `options` are specific key/value pairs representing options defined by a pass or pass pipeline,
-//!   as described in the _Instance Specific Pass Options_ section below. Pairs are separated by
-//!   whitespace, a key may appear at most once, and a value is a bare identifier, a number or a
-//!   quoted string (needed for values with characters such as `;`). Values must not contain `,`,
-//!   which separates the pairs when they are handed to the pass.
+//! * `options` are specific key/value pairs representing options defined by a pass or pass pipeline.
+//!   Pairs are separated by whitespace, a key is a bare identifier that may appear at most once,
+//!   and a value is a bare identifier, a number or a quoted string (needed for values with
+//!   characters such as `;`). Values must not contain `,`, which separates the pairs when they are
+//!   handed to the pass.
 //!
 //!
 //! ## Examples
@@ -107,8 +107,10 @@ impl fmt::Display for PipelineElement {
     }
 }
 
+/// A pass named in a pipeline string, with the options given for it.
 #[derive(Debug, Clone)]
 pub struct SelectedPass {
+    /// The argument name of the registered pass.
     pub name: Symbol,
     /// The options of the pass, in source order; keys are unique.
     pub options: Vec<(Symbol, String)>,
@@ -252,7 +254,7 @@ fn parse_pipeline_recursively(
                     // Parse options
                     while !token_stream.is_next(|tok| matches!(tok, Token::Rbrace)) {
                         let key = token_stream.expect_map("pass option key", |tok| match tok {
-                            Token::BareIdent(key) | Token::String(key) => Some(Symbol::intern(key)),
+                            Token::BareIdent(key) => Some(Symbol::intern(key)),
                             tok if tok.is_keyword() => {
                                 Some(Symbol::from(tok.into_compact_string()))
                             }
@@ -443,9 +445,10 @@ mod tests {
         Ok(())
     }
 
+    /// Bare, numeric and quoted option values print quoted, in source order, and parse back;
+    /// repeated keys, quoted keys, values with `,` and keys without a value are rejected.
     #[test]
     fn pass_options_roundtrip() -> Result<(), Report> {
-        // Bare, numeric and quoted values print quoted, in source order, and parse back.
         let source = "builtin.module(canonicalizer{enable-patterns=\"a;b\" \
                       disable-patterns=foo-bar depth=3})";
         let printed = source.parse::<PassPipeline>()?.to_string();
@@ -460,6 +463,7 @@ mod tests {
             "builtin.module(canonicalizer{disable-patterns=a disable-patterns=b})",
             "builtin.module(canonicalizer{enable-patterns=\"a,b\"})",
             "builtin.module(canonicalizer{enable-patterns})",
+            "builtin.module(canonicalizer{\"a b\"=c})",
         ] {
             assert!(
                 invalid.parse::<PassPipeline>().is_err(),

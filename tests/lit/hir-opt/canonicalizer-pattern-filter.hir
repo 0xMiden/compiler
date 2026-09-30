@@ -4,6 +4,7 @@
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=no-such-pattern}))' 2>&1 | filecheck %s --check-prefix=UNKNOWN
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=""}))' 2>&1 | filecheck %s --check-prefix=EMPTY
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{disable-patterns=a disable-patterns=b}))' 2>&1 | filecheck %s --check-prefix=DUP
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=while-unused-result disable-patterns=while-unused-result}))' 2>&1 | filecheck %s --check-prefix=BOTH
 
 // Coverage for the `enable-patterns` and `disable-patterns` options of the canonicalizer.
 //
@@ -52,6 +53,9 @@
 //
 // A repeated option key is rejected by the pipeline parser.
 // DUP: duplicate option 'disable-patterns'
+//
+// A pattern named in both lists is rejected.
+// BOTH: pattern 'while-unused-result' is both enabled and disabled
 builtin.module private @pattern_filter {
     builtin.function public extern("C") @unused_result(%0: u32, %1: u32) -> u32 {
         %2 = arith.constant 10 : u32;
