@@ -37,6 +37,10 @@ wit-bindgen-core = "0.57"
 wit-bindgen-rust = { version = "0.57", default-features = false }
 wit-component = { workspace = true, optional = true }
 
+[build-dependencies]
+# Constrain miden-protocol's build dependency for consumers without our lockfile.
+miden-protocol-build-utils.workspace = true
+
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 miden-assembly = { workspace = true, features = ["std"] }
@@ -44,6 +48,10 @@ miden-protocol = { workspace = true, features = ["std"] }
 miden-field.workspace = true
 miden-field-repr.workspace = true
 wit-component.workspace = true
+
+[package.metadata.cargo-shear]
+# This dependency constrains resolution and is not used directly.
+ignored = ["miden-protocol-build-utils"]
 
 [package.metadata.docs.rs]
 default-target = "x86_64-unknown-linux-gnu"
