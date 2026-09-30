@@ -12,6 +12,11 @@ use crate::{
 pub trait Builder: Listener {
     fn context(&self) -> &Context;
     fn context_rc(&self) -> Rc<Context>;
+
+    /// Apply inherited debug metadata to a newly built operation before verification/insertion.
+    /// Existing operations inserted or moved by the builder do not invoke this hook.
+    fn inherit_debug_info(&self, _op: &mut crate::Operation) {}
+
     /// Returns the current insertion point of the builder
     fn insertion_point(&self) -> &ProgramPoint;
     /// Clears the current insertion point
@@ -527,6 +532,10 @@ impl<B: ?Sized + Listener> Listener for InsertionGuard<'_, B> {
     }
 }
 impl<B: ?Sized + Builder> Builder for InsertionGuard<'_, B> {
+    fn inherit_debug_info(&self, op: &mut crate::Operation) {
+        self.builder.inherit_debug_info(op);
+    }
+
     fn context(&self) -> &Context {
         self.builder.context()
     }

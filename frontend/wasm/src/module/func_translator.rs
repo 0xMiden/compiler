@@ -15,8 +15,11 @@ use std::{
 use cranelift_entity::EntityRef;
 use midenc_hir::{
     BlockRef, Builder, Context, Op, Type,
-    diagnostics::{ColumnNumber, LineNumber},
-    dialects::builtin::{BuiltinOpBuilder, FunctionRef},
+    diagnostics::{ColumnNumber, LineNumber, SourceContent, Uri},
+    dialects::{
+        builtin::{BuiltinOpBuilder, FunctionRef},
+        debuginfo::attributes::InlineCallFrame,
+    },
 };
 use midenc_session::{
     Session,
@@ -25,8 +28,10 @@ use midenc_session::{
 use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
 use super::{
-    debug_info::FunctionDebugInfo, function_builder_ext::SSABuilderListener,
-    module_env::ParsedModule, module_translation_state::ModuleTranslationState,
+    debug_info::{FunctionDebugInfo, FunctionDeclaration},
+    function_builder_ext::SSABuilderListener,
+    module_env::ParsedModule,
+    module_translation_state::ModuleTranslationState,
     types::ModuleTypesBuilder,
 };
 use crate::{
@@ -244,7 +249,9 @@ fn parse_function_body<B: ?Sized + Builder>(
         func_validator.op(pos, &op).into_diagnostic()?;
 
         let dwarf_offset = module.wasm_file.dwarf_offset(offset as u64);
-        let span = resolve_instruction_span(addr2line, dwarf_offset, session, config)?;
+        let resolved = resolve_instruction_debug_context(addr2line, dwarf_offset, session, config)?;
+        let span = resolved.span;
+        builder.set_inline_calls(resolved.inline_calls);
         if !span.is_unknown() {
             last_valid_span = span;
         } else {
@@ -295,6 +302,7 @@ fn parse_function_body<B: ?Sized + Builder>(
     // If the exit block is unreachable, it may not have the correct arguments, so we would
     // generate a return instruction that doesn't match the signature.
     if state.reachable && !builder.is_unreachable() {
+        builder.set_inline_calls(Vec::new());
         builder.ret(state.stack.first().cloned(), end_span)?;
     }
 
@@ -305,53 +313,129 @@ fn parse_function_body<B: ?Sized + Builder>(
     Ok(())
 }
 
-struct ResolvedSourceLocation {
+#[derive(Default)]
+struct FrameLocation {
     path: PathBuf,
-    span: SourceSpan,
+    line: u32,
+    column: u32,
 }
 
-fn resolve_instruction_span(
+struct ResolvedInstructionDebugContext {
+    span: SourceSpan,
+    inline_calls: Vec<InlineCallFrame>,
+}
+
+struct ResolvedFrame {
+    name: String,
+    linkage_name: Option<String>,
+    declaration: FunctionDeclaration,
+    location: FrameLocation,
+}
+
+fn resolve_instruction_debug_context(
     addr2line: &addr2line::Context<DwarfReader<'_>>,
     offset: u64,
     session: &Session,
     config: &crate::WasmTranslationConfig,
-) -> WasmResult<SourceSpan> {
+) -> WasmResult<ResolvedInstructionDebugContext> {
     let mut frames = addr2line.find_frames(offset).skip_all_loads().into_diagnostic()?;
-    let mut fallback = SourceSpan::UNKNOWN;
+    let unit = addr2line.find_dwarf_and_unit(offset).skip_all_loads();
+    let mut resolved_frames = Vec::new();
+    let mut span = SourceSpan::UNKNOWN;
 
     while let Some(frame) = frames.next().into_diagnostic()? {
-        let Some(location) = frame.location else {
-            continue;
-        };
-        let Some(resolved) = resolve_source_location(&location, session, config)? else {
-            continue;
-        };
-
-        if fallback.is_unknown() {
-            fallback = resolved.span;
+        // Source availability affects instruction spans, never frame identity or adjacency.
+        if let Some(location) = &frame.location {
+            let resolved_span = resolve_source_span(location, session, config);
+            if span.is_unknown() {
+                span = resolved_span;
+            }
         }
-
-        if !is_internal_source_path(&resolved.path) {
-            return Ok(resolved.span);
+        // addr2line also returns location-only records when no function DIE is available.
+        if frame.dw_die_offset.is_none() {
+            continue;
         }
+        let linkage_name = frame
+            .function
+            .as_ref()
+            .and_then(|function| function.raw_name().ok())
+            .map(|name| name.into_owned());
+        let name = frame
+            .function
+            .as_ref()
+            .and_then(|function| function.demangle().ok())
+            .map(|name| name.into_owned())
+            .or_else(|| linkage_name.clone())
+            .unwrap_or_else(|| "<unknown>".to_string());
+        let location = frame
+            .location
+            .map(|location| FrameLocation {
+                path: location
+                    .file
+                    .map(|file| remap_source_path(Path::new(file), config))
+                    .unwrap_or_default(),
+                line: location.line.unwrap_or_default(),
+                column: location.column.unwrap_or_default(),
+            })
+            .unwrap_or_default();
+        let mut declaration = match (unit, frame.dw_die_offset) {
+            (Some(unit), Some(offset)) => {
+                FunctionDeclaration::resolve(unit, offset).into_diagnostic()?
+            }
+            _ => FunctionDeclaration::default(),
+        };
+        declaration.file = declaration.file.map(|file| {
+            remap_source_path(Path::new(file.as_str()), config)
+                .to_string_lossy()
+                .into_owned()
+                .into()
+        });
+        resolved_frames.push(ResolvedFrame {
+            name,
+            linkage_name,
+            declaration,
+            location,
+        });
     }
 
-    Ok(fallback)
+    let inline_calls = inline_call_chain(&resolved_frames);
+
+    Ok(ResolvedInstructionDebugContext { span, inline_calls })
 }
 
-fn resolve_source_location(
+fn inline_call_chain(resolved_frames: &[ResolvedFrame]) -> Vec<InlineCallFrame> {
+    resolved_frames
+        .windows(2)
+        .map(|frames| {
+            let callee = &frames[0];
+            let caller = &frames[1];
+            InlineCallFrame {
+                name: callee.name.clone().into(),
+                linkage_name: callee.linkage_name.clone().map(Into::into),
+                file: callee.declaration.file.unwrap_or(midenc_hir::interner::symbols::Empty),
+                line: callee.declaration.line.unwrap_or_default(),
+                column: callee.declaration.column.unwrap_or_default(),
+                call_file: caller.location.path.to_string_lossy().into_owned().into(),
+                call_line: caller.location.line,
+                call_column: caller.location.column,
+            }
+        })
+        .collect()
+}
+
+fn resolve_source_span(
     loc: &addr2line::Location<'_>,
     session: &Session,
     config: &crate::WasmTranslationConfig,
-) -> WasmResult<Option<ResolvedSourceLocation>> {
+) -> SourceSpan {
     let Some(file) = loc.file else {
-        return Ok(None);
+        return SourceSpan::UNKNOWN;
     };
 
     let path = Path::new(file);
     let Some(absolute_path) = resolve_source_path(path, session, config) else {
         log::debug!(target: "module-parser", "failed to resolve source path '{file}'");
-        return Ok(None);
+        return SourceSpan::UNKNOWN;
     };
 
     debug_assert!(
@@ -365,37 +449,58 @@ fn resolve_source_location(
         absolute_path.display()
     );
 
-    // A line number of 0 in DWARF line programs means "this instruction has no source line";
-    // treat such rows as unresolved instead of defaulting to line 1, so that an outer inline
-    // frame (the call site) or the last valid span provides the location, rather than a bogus
-    // `file:1:1` span polluting the line table.
-    let Some(line) = loc.line.and_then(LineNumber::new) else {
-        return Ok(None);
+    let source_file = match session.source_manager.load_file(&absolute_path) {
+        Ok(source) => source,
+        Err(error) => {
+            log::debug!(target: "module-parser", "failed to load source '{file}': {error}");
+            return SourceSpan::UNKNOWN;
+        }
     };
 
-    let source_file = session.source_manager.load_file(&absolute_path).into_diagnostic()?;
-    let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
-    let span = source_file.line_column_to_span(line, column).unwrap_or(SourceSpan::UNKNOWN);
+    let path = remap_source_path(path, config);
+    let remapped_uri = Uri::from(path.as_path());
+    let register_remapped_source = source_file.uri() != &remapped_uri
+        && session
+            .source_manager
+            .get_by_uri(&remapped_uri)
+            .is_none_or(|existing| existing.as_str() != source_file.as_str());
+    if register_remapped_source {
+        let mut content = SourceContent::new(
+            source_file.content().language(),
+            remapped_uri.clone(),
+            source_file.as_str(),
+        );
+        content.set_version(source_file.content().version());
+        session.source_manager.load_from_raw_parts(remapped_uri, content);
+    }
 
-    let path = if path.is_absolute() {
-        config
-            .remap_path_prefixes
-            .iter()
-            .filter_map(|remap_prefix| {
-                path.strip_prefix(remap_prefix.source_prefix()).ok().map(|p| {
-                    match remap_prefix.to.as_deref() {
-                        Some(parent) => parent.join(p),
-                        None => p.to_path_buf(),
-                    }
-                })
+    // Register available source even when this particular location has no line.
+    // Other frames may refer to valid positions in the same file.
+    let Some(line) = LineNumber::new(loc.line.unwrap_or_default()) else {
+        return SourceSpan::UNKNOWN;
+    };
+    let column = ColumnNumber::new(loc.column.unwrap_or_default()).unwrap_or_default();
+    source_file.line_column_to_span(line, column).unwrap_or(SourceSpan::UNKNOWN)
+}
+
+/// Remap metadata paths without requiring the source file to be installed locally.
+fn remap_source_path(path: &Path, config: &crate::WasmTranslationConfig) -> PathBuf {
+    if !path.is_absolute() {
+        return path.to_path_buf();
+    }
+    config
+        .remap_path_prefixes
+        .iter()
+        .filter_map(|prefix| {
+            path.strip_prefix(prefix.source_prefix()).ok().map(|suffix| {
+                match prefix.to.as_deref() {
+                    Some(parent) => parent.join(suffix),
+                    None => suffix.to_path_buf(),
+                }
             })
-            .max_by_key(|p| p.components().count())
-            .unwrap_or(path.to_path_buf())
-    } else {
-        path.to_path_buf()
-    };
-
-    Ok((!span.is_unknown()).then_some(ResolvedSourceLocation { path, span }))
+        })
+        .max_by_key(|path| path.components().count())
+        .unwrap_or_else(|| path.to_path_buf())
 }
 
 fn resolve_source_path(
@@ -430,10 +535,5 @@ fn resolve_source_path(
     }
 }
 
-fn is_internal_source_path(path: &Path) -> bool {
-    let path = path.to_string_lossy();
-    path.contains("/rust/library/")
-        || path.contains("/.cargo/registry/")
-        || path.contains("/registry/src/")
-        || path.contains("/compiler/sdk/")
-}
+#[cfg(test)]
+mod tests;

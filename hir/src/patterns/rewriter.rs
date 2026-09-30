@@ -5,9 +5,9 @@ use midenc_session::diagnostics::PrintDiagnostic;
 use smallvec::SmallVec;
 
 use crate::{
-    BlockRef, Builder, Context, InsertionGuard, Listener, ListenerType, OpBuilder, OpOperandImpl,
-    OperationRef, PostOrderBlockIter, ProgramPoint, RegionRef, Report, SourceSpan, Usable, Value,
-    ValueRef,
+    AttributeRef, BlockRef, Builder, Context, InsertionGuard, Listener, ListenerType, OpBuilder,
+    OpOperandImpl, OperationRef, PostOrderBlockIter, ProgramPoint, RegionRef, Report, SourceSpan,
+    Usable, Value, ValueRef,
     formatter::{DisplayOptional, DisplayValues},
     patterns::Pattern,
     traits::Transparent,
@@ -17,6 +17,9 @@ use crate::{
 /// rewriting the IR after it is initially constructed. It is the basis on which the pattern
 /// rewriter infrastructure is built.
 pub trait Rewriter: Builder + RewriterListener {
+    /// Replace the inline-call chain inherited by newly built operations, returning the old one.
+    fn replace_inline_call_chain(&mut self, chain: Option<AttributeRef>) -> Option<AttributeRef>;
+
     /// Returns true if this rewriter has a listener attached.
     ///
     /// When no listener is present, fast paths can be taken when rewriting the IR, whereas a
@@ -512,6 +515,19 @@ pub trait Rewriter: Builder + RewriterListener {
 /// This trait contains functionality that is not object safe, and would prevent using [Rewriter] as
 /// a trait object. It is automatically implemented for all [Rewriter] impls.
 pub trait RewriterExt: Rewriter {
+    /// Inherit the root's inline-call chain for the duration of this rewrite, including when
+    /// it has no chain. Nested scopes restore their predecessor on exit.
+    fn with_inline_call_chain(&mut self, root: OperationRef) -> InlineCallChainGuard<'_, Self> {
+        let chain = root
+            .borrow()
+            .get_attribute(crate::dialects::debuginfo::attributes::INLINE_CALL_CHAIN_ATTR_NAME);
+        let previous = self.replace_inline_call_chain(chain);
+        InlineCallChainGuard {
+            rewriter: self,
+            previous,
+        }
+    }
+
     /// This is a utility function that wraps an in-place modification of an operation, such that
     /// the rewriter is guaranteed to be notified when the modifications start and stop.
     fn modify_op_in_place(&mut self, op: OperationRef) -> InPlaceModificationGuard<'_, Self> {
@@ -1270,10 +1286,37 @@ impl<L> DerefMut for PatternRewriter<L> {
     }
 }
 
+/// Restores the enclosing rewrite's inline-call chain, including on early returns.
+pub struct InlineCallChainGuard<'a, R: ?Sized + Rewriter> {
+    rewriter: &'a mut R,
+    previous: Option<AttributeRef>,
+}
+
+impl<R: ?Sized + Rewriter> Deref for InlineCallChainGuard<'_, R> {
+    type Target = R;
+
+    fn deref(&self) -> &R {
+        self.rewriter
+    }
+}
+
+impl<R: ?Sized + Rewriter> DerefMut for InlineCallChainGuard<'_, R> {
+    fn deref_mut(&mut self) -> &mut R {
+        self.rewriter
+    }
+}
+
+impl<R: ?Sized + Rewriter> Drop for InlineCallChainGuard<'_, R> {
+    fn drop(&mut self) {
+        self.rewriter.replace_inline_call_chain(self.previous);
+    }
+}
+
 pub struct RewriterImpl<L = NoopRewriterListener> {
     context: Rc<Context>,
     listener: Option<L>,
     ip: ProgramPoint,
+    inline_call_chain: Option<AttributeRef>,
 }
 
 impl<L> RewriterImpl<L> {
@@ -1282,6 +1325,7 @@ impl<L> RewriterImpl<L> {
             context,
             listener: None,
             ip: ProgramPoint::default(),
+            inline_call_chain: None,
         }
     }
 
@@ -1293,6 +1337,7 @@ impl<L> RewriterImpl<L> {
             context: self.context,
             listener: Some(listener),
             ip: self.ip,
+            inline_call_chain: self.inline_call_chain,
         }
     }
 }
@@ -1305,11 +1350,21 @@ impl<L: RewriterListener> From<OpBuilder<L>> for RewriterImpl<L> {
             context,
             listener,
             ip,
+            inline_call_chain: None,
         }
     }
 }
 
 impl<L: Listener> Builder for RewriterImpl<L> {
+    fn inherit_debug_info(&self, op: &mut crate::Operation) {
+        use crate::dialects::debuginfo::attributes::INLINE_CALL_CHAIN_ATTR_NAME;
+        if let Some(chain) = self.inline_call_chain
+            && !op.has_attribute(INLINE_CALL_CHAIN_ATTR_NAME)
+        {
+            op.set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
+        }
+    }
+
     #[inline(always)]
     fn context(&self) -> &Context {
         &self.context
@@ -1344,6 +1399,10 @@ impl<L: Listener> Builder for RewriterImpl<L> {
 }
 
 impl<L: RewriterListener> Rewriter for RewriterImpl<L> {
+    fn replace_inline_call_chain(&mut self, chain: Option<AttributeRef>) -> Option<AttributeRef> {
+        core::mem::replace(&mut self.inline_call_chain, chain)
+    }
+
     #[inline(always)]
     fn has_listener(&self) -> bool {
         self.listener.is_some()
@@ -1457,6 +1516,79 @@ mod tests {
         dialects::{builtin::BuiltinOpBuilder, test::TestOpBuilder},
         testing::Test,
     };
+
+    #[test]
+    fn inline_call_scopes_restore_metadata_and_preserve_explicit_chains() {
+        use crate::{
+            OperationState,
+            dialects::debuginfo::attributes::{
+                INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain, InlineCallChainAttr, InlineCallFrame,
+            },
+        };
+        let mut test = Test::new("inline_call_scopes", &[], &[]);
+        let (mut root, unmarked) = {
+            let mut builder = test.function_builder();
+            let root =
+                builder.u32(1, SourceSpan::UNKNOWN).unwrap().borrow().get_defining_op().unwrap();
+            let unmarked =
+                builder.u32(2, SourceSpan::UNKNOWN).unwrap().borrow().get_defining_op().unwrap();
+            builder.ret([], SourceSpan::UNKNOWN).unwrap();
+            (root, unmarked)
+        };
+        let chain = test
+            .context_rc()
+            .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(alloc::vec![
+                InlineCallFrame {
+                    name: "callee".into(),
+                    linkage_name: None,
+                    file: "source.rs".into(),
+                    line: 1,
+                    column: 1,
+                    call_file: "caller.rs".into(),
+                    call_line: 2,
+                    call_column: 1,
+                }
+            ]))
+            .as_attribute_ref();
+        let empty = test
+            .context_rc()
+            .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::default())
+            .as_attribute_ref();
+        root.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
+        let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc());
+        {
+            let mut scope = rewriter.with_inline_call_chain(root);
+            let inherited =
+                scope.u32(3, SourceSpan::UNKNOWN).unwrap().borrow().get_defining_op().unwrap();
+            assert_eq!(inherited.borrow().get_attribute(INLINE_CALL_CHAIN_ATTR_NAME), Some(chain));
+            // Generic construction must preserve explicit metadata, including an empty chain.
+            let mut state = OperationState::new(SourceSpan::UNKNOWN, root.name());
+            state.results.push(Type::U32);
+            state.add_attribute("value", root.borrow().get_attribute("value").unwrap());
+            state.add_attribute(INLINE_CALL_CHAIN_ATTR_NAME, empty);
+            let explicit = scope.create_operation(&mut state).unwrap();
+            assert_eq!(explicit.borrow().get_attribute(INLINE_CALL_CHAIN_ATTR_NAME), Some(empty));
+            {
+                let mut nested = scope.with_inline_call_chain(unmarked);
+                let created =
+                    nested.u32(4, SourceSpan::UNKNOWN).unwrap().borrow().get_defining_op().unwrap();
+                assert!(!created.borrow().has_attribute(INLINE_CALL_CHAIN_ATTR_NAME));
+            }
+            let restored =
+                scope.u32(5, SourceSpan::UNKNOWN).unwrap().borrow().get_defining_op().unwrap();
+            assert_eq!(restored.borrow().get_attribute(INLINE_CALL_CHAIN_ATTR_NAME), Some(chain));
+            // Moving an existing, unmarked operation must not adopt the active scope.
+            scope.move_op_before(unmarked, root);
+            assert!(!unmarked.borrow().has_attribute(INLINE_CALL_CHAIN_ATTR_NAME));
+        }
+        let created = rewriter
+            .u32(6, SourceSpan::UNKNOWN)
+            .unwrap()
+            .borrow()
+            .get_defining_op()
+            .unwrap();
+        assert!(!created.borrow().has_attribute(INLINE_CALL_CHAIN_ATTR_NAME));
+    }
 
     #[test]
     fn conditional_value_replacement_updates_operand_payloads() {

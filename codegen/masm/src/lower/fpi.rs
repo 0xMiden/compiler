@@ -217,6 +217,7 @@ mod tests {
         let mut emitter = BlockEmitter {
             frame: crate::emitter::FrameLayout::new(&local_offsets, num_locals),
             liveness: &liveness,
+            emit_inline_calls: false,
             link_info: &link_info,
             invoked: &mut invoked,
             target: Default::default(),

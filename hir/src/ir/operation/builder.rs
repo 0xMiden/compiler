@@ -284,6 +284,8 @@ where
         {
             let mut op = self.op.borrow_mut();
 
+            self.builder.inherit_debug_info(&mut op);
+
             // Infer result types and apply any associated validation
             if let Some(interface) = op.as_trait_mut::<dyn crate::traits::InferTypeOpInterface>() {
                 interface.infer_return_types(self.builder.context())?;

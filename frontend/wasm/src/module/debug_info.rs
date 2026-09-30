@@ -22,6 +22,9 @@ use super::{
 };
 use crate::module::types::ModuleTypesBuilder;
 
+mod declaration;
+pub(crate) use declaration::FunctionDeclaration;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocationDescriptor {
     /// Inclusive start offset in the module's DWARF address space.
@@ -632,6 +635,9 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
 ) -> gimli::Result<()> {
     let entry = node.entry();
     let tag = entry.tag();
+    if tag == gimli::DW_TAG_inlined_subroutine {
+        return Ok(());
+    }
     match tag {
         gimli::DW_TAG_formal_parameter | gimli::DW_TAG_variable => {
             // For formal parameters, the WASM local index equals the parameter
@@ -897,6 +903,11 @@ fn resolve_decl_file<R: gimli::Reader<Offset = usize>>(
 ) -> Option<Symbol> {
     let line_program = unit.line_program.as_ref()?;
     let header = line_program.header();
+    // Before DWARF 5, declaration file 0 means unknown. gimli also accepts that index as
+    // the compilation-unit file for other uses, which is not a declaration fallback.
+    if header.version() <= 4 && file_index == 0 {
+        return None;
+    }
     let file = header.file(file_index)?;
     let raw = dwarf.attr_string(unit, file.path_name()).ok()?;
     let file_name = raw.to_string_lossy().ok()?;
