@@ -395,8 +395,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   4-alignment at runtime; the element arm calls the compiler intrinsic
   `::intrinsics::mem::memmove_elements` (`codegen/masm/intrinsics/mem.masm`),
   which copies in descending address order when `write_ptr > read_ptr` and
-  ascending otherwise (overlap up `heap::heap_vec_shift`, `memory::mem_overlap`,
-  `heap::heap_btree`; down `heap::heap_vec_drain`; identical ranges
+  ascending otherwise (overlap up `heap::heap_vec_shift`, `memory::mem_overlap`;
+  down `heap::heap_vec_drain`; both `heap::heap_btree`; identical ranges
   `memory::copy_same_pos`; zero length `boundaries::memnoop_same`); the byte
   loop follows the same rule, descending when `dst > src` (up
   `heap::heap_vec_shift_u8`, `heap::heap_string_insert`; down

@@ -702,7 +702,8 @@ pub proc memmove_words(n: u32, read_ptr: ptr<word, addrspace(felt)>, write_ptr: 
         end
     else
         # The destination does not start above the source, so an ascending copy never overwrites
-        # a word it has yet to read.
+        # a word it has yet to read. This is the loop of `::miden::core::mem::memcopy_words`
+        # without its overlap assert.
         neg                           # [-n, read_ptr, write_ptr]
         padw                          # [0, 0, 0, 0, -n, read_ptr, write_ptr]
         dup.4 neq.0                   # [-n != 0, 0, 0, 0, 0, -n, read_ptr, write_ptr]
@@ -743,7 +744,8 @@ pub proc memmove_elements(n: u32, read_ptr: ptr<felt, addrspace(felt)>, write_pt
         end
     else
         # The destination does not start above the source, so an ascending copy never overwrites
-        # an element it has yet to read.
+        # an element it has yet to read. This is the loop of
+        # `::miden::core::mem::memcopy_elements` without its overlap assert.
         neg                     # [-n, read_ptr, write_ptr]
         dup.0 neq.0             # [-n != 0, -n, read_ptr, write_ptr]
         while.true

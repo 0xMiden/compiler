@@ -65,13 +65,8 @@ impl OpEmitter<'_> {
                     "expected a 16-byte-aligned byte pointer for the word-copy fast path",
                     span,
                 ),
-                // `u32widening_mul` leaves `[lo, hi]` on the stack; assert on `hi` and keep `lo`.
-                masm::Instruction::U32WideningMulImm(4.into()),
-                masm::Instruction::Swap1,
-                Self::assertz_with_message_inst(
-                    "word-copy fast path element address conversion overflowed",
-                    span,
-                ),
+                // The quotient is below 2^28, so the element address cannot overflow
+                masm::Instruction::U32WrappingMulImm(4.into()),
             ],
             span,
         );
@@ -800,14 +795,15 @@ impl OpEmitter<'_> {
     ///
     /// * `count` is expressed in units of the pointee type, not bytes
     /// * the effective byte length is `count * size_of(*src)`
-    /// * the copy traps if the byte length does not fit in a `u32`, or if either range runs past
-    ///   the end of the address space
+    /// * the copy traps unless the byte length and the end addresses `src + len` and `dst + len`
+    ///   fit in a `u32`
     /// * `count == 0` leaves memory unchanged and performs no copy
     /// * the source and destination ranges may overlap, the destination receives the values the
     ///   source range held before the copy
     /// * only pointers in the IR's byte-addressable address space are supported
     /// * values of 16 bytes, or a multiple of 16, are copied a word at a time, which traps unless
-    ///   the source and destination addresses are 16-byte aligned
+    ///   the source and destination addresses are 16-byte aligned, also when `count` is zero
+    /// * other aggregate values are not supported, since they cannot be loaded or stored
     pub fn memcpy(&mut self, span: SourceSpan) {
         let src = self.stack.pop().expect("operand stack is empty");
         let dst = self.stack.pop().expect("operand stack is empty");
@@ -931,13 +927,10 @@ impl OpEmitter<'_> {
                     [
                         // Swap with `count` to get us into the correct ordering: [count, src, dst]
                         masm::Instruction::Swap2,
-                        // Compute the corrected count
-                        masm::Instruction::U32WideningMulImm(factor.into()),
-                        masm::Instruction::Swap1,
-                        Self::assertz_with_message_inst(
-                            "memcpy word-copy fast path element count overflowed",
-                            span,
-                        ), // [count * (size / 16), src, dst]
+                        // Compute the corrected count; the range check bounds `count * size`, so
+                        // the product cannot overflow
+                        masm::Instruction::U32WrappingMulImm(factor.into()),
+                        // [count * (size / 16), src, dst]
                     ],
                     span,
                 );
@@ -949,8 +942,8 @@ impl OpEmitter<'_> {
     }
 
     /// Emit a check that a copy of `count` values of `value_size` bytes has a byte length which
-    /// fits in a `u32`, and that neither its source nor its destination range runs past the end of
-    /// the address space, trapping otherwise.
+    /// fits in a `u32`, and that so do its end addresses `src + len` and `dst + len`, trapping
+    /// otherwise.
     ///
     /// Stack transition: `[src, dst, count] -> [src, dst, count]`
     fn emit_memcpy_range_check(&mut self, value_size: u32, span: SourceSpan) {
@@ -1030,7 +1023,8 @@ impl OpEmitter<'_> {
         );
         offset_by_index(&mut body_emitter); // [new_src := src + i * value_size, new_dst, i, ..]
 
-        // Describe the MASM operand stack to the typed one, and load the source value
+        // Mirror the MASM loop state on the typed operand stack, so that the typed `load` and
+        // `store` below can run; the five operands they leave are the ones dropped after the loop
         body_emitter.push(Type::U32);
         body_emitter.push(Type::U32);
         body_emitter.push(ptr_ty.clone());
