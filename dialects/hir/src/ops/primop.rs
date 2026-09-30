@@ -130,7 +130,7 @@ pub struct MemCpy {
 }
 
 /// The pointee type of the pointers is the unit of `count`, and the lowering and the evaluator
-/// take it from either pointer, so the two pointer types must agree.
+/// take it from the source pointer, so the destination pointer type must agree with it.
 impl Verify<dyn MemoryEffectOpInterface> for MemCpy {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
         let source_ty = self.source().ty();
@@ -163,6 +163,7 @@ pub struct PrintLn {
     len: UInt32,
 }
 
+/// Verifier tests of the memory primitives.
 #[cfg(test)]
 mod tests {
     use alloc::format;
