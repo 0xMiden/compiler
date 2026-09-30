@@ -1,8 +1,8 @@
 // RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=remove-loop-invariant-args-from-before-block}))' | filecheck %s
 
 // Coverage for the `remove-loop-invariant-args-from-before-block` canonicalization of `scf.while`
-// (#1419). The canonicalizer is restricted to that single pattern so that every rewrite (and
-// every unchanged loop) below is attributable to it.
+// (#1419). The canonicalizer is restricted to that single pattern so that no other pattern touches
+// the loops below (the greedy driver still folds and erases trivially dead operations).
 //
 // A before-block argument is loop invariant when the value fed back to it over the back edge is
 // always its initial value, i.e. when the i-th `scf.yield` operand
