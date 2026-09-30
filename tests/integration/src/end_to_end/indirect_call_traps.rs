@@ -7,7 +7,11 @@ use miden_core::Felt;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
 use super::differential::harness::{CASE_HEADER, cargo_toml, miden_project_toml};
-use crate::{CompilerTest, project, testing::executor_with_std};
+use crate::{
+    CompilerTest, project,
+    testing::executor_with_std,
+    trap_helpers::{panic_message, trap_matches},
+};
 
 /// Calls through the funcref table with a runtime-chosen index: `input1` is transmuted into a
 /// function pointer, and at the Wasm level a function pointer *is* its table index, so the
@@ -78,26 +82,12 @@ fn indirect_call_runtime_traps() {
             ]);
             exec.execute_into::<u32>(package, source_manager)
         }))
-        .map_err(|panic| {
-            panic
-                .downcast_ref::<String>()
-                .cloned()
-                .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
-                .unwrap_or_else(|| "opaque panic".to_string())
-        })
+        .map_err(panic_message)
     };
 
     const SIGNATURE_TRAP: &str =
         "indirect call: callee signature mismatch or null function reference";
     const BOUNDS_TRAP: &str = "indirect call: function table index out of bounds";
-
-    // The VM derives a hash-based error code from an assertion message, and reports only the
-    // code when the executed forest carries no code-to-message table; match either form, with
-    // the code tying the failure to the exact message text.
-    let trap_matches = |err: &str, message: &str| -> bool {
-        err.contains(message)
-            || err.contains(&miden_core::mast::error_code_from_msg(message).to_string())
-    };
 
     // Discover exact slots for a differently-signed callee and a matching-signature callee. The
     // optimizer is free to devirtualize `OPS`, so neither slot number nor adjacency is assumed.

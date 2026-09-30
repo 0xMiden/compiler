@@ -8,6 +8,7 @@ use std::{rc::Rc, sync::Arc};
 use midenc_hir::ArrayType;
 
 use super::*;
+use crate::trap_helpers::{panic_message, trap_matches};
 
 /// The size in bytes of the memory region each test case initializes and checks.
 const REGION_LEN: usize = 64;
@@ -317,7 +318,7 @@ fn mem_cpy_u16_elements() {
 }
 
 /// Asserts that `hir.mem_cpy` over `ptr<elem>` with the raw byte addresses `src` and `dst` and the
-/// given `count` traps, with a failure message containing `message`.
+/// given `count` traps with the assertion `message`, see [trap_matches].
 fn assert_mem_cpy_traps(elem: Type, src: u32, dst: u32, count: u32, message: &str) {
     setup::enable_compiler_instrumentation();
     let (package, context) = compile_mem_cpy(elem);
@@ -330,13 +331,9 @@ fn assert_mem_cpy_traps(elem: Type, src: u32, dst: u32, count: u32, message: &st
         eval_package::<u32, _, _>(package.clone(), None, &args, context.session(), |_| Ok(()))
     }))
     .expect_err("mem_cpy should trap");
-    let err = panic
-        .downcast_ref::<String>()
-        .cloned()
-        .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
-        .unwrap_or_else(|| "opaque panic".to_string());
+    let err = panic_message(panic);
     assert!(
-        err.contains(message),
+        trap_matches(&err, message),
         "expected a trap containing {message:?} for src={src}, dst={dst}, count={count}, got: \
          {err}"
     );
@@ -375,17 +372,13 @@ fn mem_cpy_out_of_range_traps() {
     );
 }
 
-/// Checks that a word copy (`ptr<u128>`) from an address that is not 16-byte aligned traps with
-/// the word-copy alignment assertion.
+/// Checks that a word copy (`ptr<u128>`) whose source or destination address is not 16-byte
+/// aligned traps with the word-copy alignment assertion.
 #[test]
 fn mem_cpy_word_copy_unaligned_traps() {
-    assert_mem_cpy_traps(
-        Type::U128,
-        FIXED_BASE + 4,
-        FIXED_BASE + 32,
-        1,
-        "expected a 16-byte-aligned byte pointer for the word-copy fast path",
-    );
+    const MESSAGE: &str = "expected a 16-byte-aligned byte pointer for the word-copy fast path";
+    assert_mem_cpy_traps(Type::U128, FIXED_BASE + 4, FIXED_BASE + 32, 1, MESSAGE);
+    assert_mem_cpy_traps(Type::U128, FIXED_BASE, FIXED_BASE + 4, 1, MESSAGE);
 }
 
 /// Checks random byte copies (possibly overlapping, aligned or not) against `copy_within`; about
