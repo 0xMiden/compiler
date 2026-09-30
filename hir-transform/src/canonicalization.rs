@@ -19,8 +19,9 @@ use midenc_session::diagnostics::Severity;
 ///
 /// The set of patterns applied by the pass can be narrowed from a pass pipeline string with
 /// `enable-patterns` (only the listed patterns are applied) and `disable-patterns` (the listed
-/// patterns are skipped). Both take a `;`-separated list of pattern names, e.g.
-/// `canonicalizer{enable-patterns="fold-redundant-yields;while-unused-result"}`; a name that
+/// patterns are skipped). Both take a non-empty `;`-separated list of pattern names, which must
+/// be quoted in a pipeline string when it has more than one name, e.g.
+/// `canonicalizer{enable-patterns="fold-redundant-yields;while-unused-result"}`. A name that
 /// matches no registered pattern is an error. The greedy rewrite driver still folds operations,
 /// erases trivially dead ones and simplifies regions whatever the filter says.
 pub struct Canonicalizer {
@@ -111,21 +112,36 @@ impl Pass for Canonicalizer {
                     Self::NAME
                 )));
             };
-            let names = value.split(';').map(str::trim).filter(|name| !name.is_empty());
-            match key {
-                "enable-patterns" => self.enabled_patterns.extend(names.map(String::from)),
-                "disable-patterns" => self.disabled_patterns.extend(names.map(String::from)),
+            let names = value
+                .split(';')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(String::from)
+                .collect::<Vec<_>>();
+            let list = match key {
+                "enable-patterns" => &mut self.enabled_patterns,
+                "disable-patterns" => &mut self.disabled_patterns,
                 _ => {
                     return Err(Report::msg(format!(
                         "invalid option '{key}' for pass '{}'",
                         Self::NAME
                     )));
                 }
+            };
+            // An empty list would silently mean "no filter", the opposite of what was asked.
+            if names.is_empty() {
+                return Err(Report::msg(format!(
+                    "option '{key}' of pass '{}' has no pattern names",
+                    Self::NAME
+                )));
             }
+            list.extend(names);
         }
         Ok(())
     }
 
+    /// Prints the pass with its pattern filter, the only state settable from pipeline options;
+    /// the rewrite config given to [Canonicalizer::new] has no textual form.
     fn print_as_textual_pipeline(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", Self::NAME)?;
         if self.enabled_patterns.is_empty() && self.disabled_patterns.is_empty() {
