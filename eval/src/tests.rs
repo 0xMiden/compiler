@@ -1,3 +1,4 @@
+use alloc::format;
 use core::ops::{Deref, DerefMut};
 
 use midenc_dialect_arith::ArithOpBuilder;
@@ -321,6 +322,21 @@ fn eval_mem_cpy<const N: usize>(
     dst_slot: u32,
     count: u32,
 ) -> Result<[Value; N], Report> {
+    let value_size = values[0].ty().size_in_bytes() as u32;
+    let slot_addr = |slot: u32| MEM_CPY_BASE_ADDR + slot * value_size;
+    eval_mem_cpy_at(name, values, slot_addr(src_slot), slot_addr(dst_slot), count)
+}
+
+/// Evaluates a function which stores `values` into consecutive slots of their type and then
+/// performs `hir.mem_cpy` on pointers to that type with the raw byte addresses `src_addr` and
+/// `dst_addr`, returning the contents of the slots afterwards.
+fn eval_mem_cpy_at<const N: usize>(
+    name: &'static str,
+    values: [Immediate; N],
+    src_addr: u32,
+    dst_addr: u32,
+    count: u32,
+) -> Result<[Value; N], Report> {
     let value_ty = values[0].ty();
     let value_size = value_ty.size_in_bytes() as u32;
     let mut test = EvalTest::named(name);
@@ -330,19 +346,19 @@ fn eval_mem_cpy<const N: usize>(
         let span = SourceSpan::default();
         let mut builder = test.function_builder();
         let ptr_ty = Type::from(PointerType::new(value_ty.clone()));
-        let slot_ptr = |builder: &mut FunctionBuilder<'_, _>, slot: u32| {
-            let addr = builder.u32(MEM_CPY_BASE_ADDR + slot * value_size, span);
+        let ptr_at = |builder: &mut FunctionBuilder<'_, _>, addr: u32| {
+            let addr = builder.u32(addr, span);
             builder.inttoptr(addr, ptr_ty.clone(), span)
         };
 
         for (slot, value) in (0u32..).zip(values) {
-            let ptr = slot_ptr(&mut builder, slot)?;
+            let ptr = ptr_at(&mut builder, MEM_CPY_BASE_ADDR + slot * value_size)?;
             let value = builder.imm(value, span);
             builder.store(ptr, value, span)?;
         }
 
-        let src = slot_ptr(&mut builder, src_slot)?;
-        let dst = slot_ptr(&mut builder, dst_slot)?;
+        let src = ptr_at(&mut builder, src_addr)?;
+        let dst = ptr_at(&mut builder, dst_addr)?;
         let count = builder.u32(count, span);
         builder.memcpy(src, dst, count, span)?;
         builder.ret(None, span)?;
@@ -428,4 +444,37 @@ fn mem_cpy_byte_length_overflow_is_an_error() {
         .flatten()
         .any(|label| label.label().is_some_and(|label| label.contains("overflows")));
     assert!(overflow_label, "unexpected error: {err:?}");
+}
+
+/// A byte address whose 16-byte range ends past the evaluator's addressable heap.
+const MEM_CPY_OUT_OF_BOUNDS_ADDR: u32 = u32::MAX - 7;
+
+/// Checks that a 16-byte `hir.mem_cpy` whose destination range ends past the addressable heap is
+/// an invalid memory write.
+#[test]
+fn mem_cpy_out_of_bounds_destination_is_an_error() {
+    let err = eval_mem_cpy_at(
+        "mem_cpy_out_of_bounds_destination_is_an_error",
+        [0u8; 16].map(Immediate::U8),
+        MEM_CPY_BASE_ADDR,
+        MEM_CPY_OUT_OF_BOUNDS_ADDR,
+        16,
+    )
+    .expect_err("expected the out-of-bounds destination to be an error");
+    assert!(format!("{err}").contains("invalid memory write"), "unexpected error: {err:?}");
+}
+
+/// Checks that a 16-byte `hir.mem_cpy` whose source range ends past the addressable heap is an
+/// invalid memory read.
+#[test]
+fn mem_cpy_out_of_bounds_source_is_an_error() {
+    let err = eval_mem_cpy_at(
+        "mem_cpy_out_of_bounds_source_is_an_error",
+        [0u8; 16].map(Immediate::U8),
+        MEM_CPY_OUT_OF_BOUNDS_ADDR,
+        MEM_CPY_BASE_ADDR,
+        16,
+    )
+    .expect_err("expected the out-of-bounds source to be an error");
+    assert!(format!("{err}").contains("invalid memory read"), "unexpected error: {err:?}");
 }

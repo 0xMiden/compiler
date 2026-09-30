@@ -750,7 +750,9 @@ impl Eval for hir::MemCpy {
         }
 
         // The ranges may overlap, so the whole source range is read before it is written to the
-        // destination
+        // destination; both ranges are checked before the source is read, so that a bogus length
+        // is rejected before it is allocated
+        evaluator.check_write_bounds(dest_value, len as usize)?;
         let bytes = evaluator.read_memory_bytes(source_value, len)?;
         evaluator.write_memory_bytes(dest_value, &bytes)?;
 

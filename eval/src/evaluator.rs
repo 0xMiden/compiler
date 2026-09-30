@@ -400,6 +400,13 @@ impl HirEvaluator {
         self.current_context_mut().write_memory_bytes(addr, bytes, at)
     }
 
+    /// Check that `len` bytes can be written to memory starting at `addr`.
+    ///
+    /// Returns an error if `addr` is invalid or the write would be out of bounds.
+    pub fn check_write_bounds(&self, addr: u32, len: usize) -> Result<(), Report> {
+        self.current_context().check_write_bounds(addr, len, self.current_span())
+    }
+
     /// Read the value of the given local variable in the current symbol, if present.
     ///
     /// See `CallFrame::read_local` for details on correct usage.
