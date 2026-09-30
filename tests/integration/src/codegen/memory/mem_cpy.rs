@@ -13,6 +13,17 @@ use crate::trap_helpers::{panic_message, trap_matches};
 /// The size in bytes of the memory region each test case initializes and checks.
 const REGION_LEN: usize = 64;
 
+/// The size in bytes of each guard band placed directly below and above the region; a multiple of
+/// 16, so the region keeps the alignment of the buffer.
+const GUARD: usize = 32;
+
+/// The size in bytes of the whole buffer each test case initializes and checks: the region between
+/// its two guard bands.
+const BUFFER_LEN: usize = GUARD + REGION_LEN + GUARD;
+
+/// The value of every guard band byte; it does not occur in [patterned_region].
+const GUARD_BYTE: u8 = 0xa5;
+
 /// A 16-byte aligned byte address above the pages reserved for the Rust stack.
 const FIXED_BASE: u32 = 17 * 2u32.pow(16);
 
@@ -46,9 +57,12 @@ fn compile_mem_cpy(elem: Type) -> (Arc<miden_mast_package::Package>, Rc<midenc_h
     })
 }
 
-/// Runs `case` against `package` on a region at `base` initialized with `region`, and checks that
-/// the whole region afterwards equals the result of `copy_within` over the same bytes.
+/// Runs `case` against `package` on a region initialized with `region`, and checks that the region
+/// afterwards equals the result of `copy_within` over the same bytes while the guard bands around
+/// it are left untouched.
 ///
+/// The buffer starts at `base` with a [GUARD]-byte band of [GUARD_BYTE], followed by the region and
+/// another such band; the offsets of `case` are relative to the region start `base + GUARD`.
 /// `elem` is the pointee type `package` was compiled for; it gives the size of one unit of
 /// `case.count`.
 fn check_mem_cpy(
@@ -66,17 +80,21 @@ fn check_mem_cpy(
     } = case;
     let elem_size = u32::try_from(elem.size_in_bytes()).expect("pointee size fits in u32");
     let len_bytes = (count * elem_size) as usize;
-    let mut expected = region;
-    expected.copy_within(src_off as usize..src_off as usize + len_bytes, dst_off as usize);
+    let mut buffer = [GUARD_BYTE; BUFFER_LEN];
+    buffer[GUARD..GUARD + REGION_LEN].copy_from_slice(&region);
+    let mut expected = buffer;
+    let (src, dst) = (GUARD + src_off as usize, GUARD + dst_off as usize);
+    expected.copy_within(src..src + len_bytes, dst);
 
     let initializers = [Initializer::MemoryBytes {
         addr: base,
-        bytes: &region,
+        bytes: &buffer,
     }];
+    let region_base = base + GUARD as u32;
     // C calling convention: first argument on top of the stack
     let args = [
-        Felt::new_unchecked((base + src_off) as u64),
-        Felt::new_unchecked((base + dst_off) as u64),
+        Felt::new_unchecked((region_base + src_off) as u64),
+        Felt::new_unchecked((region_base + dst_off) as u64),
         Felt::new_unchecked(count as u64),
     ];
     let output = eval_package::<u32, _, _>(
@@ -86,14 +104,14 @@ fn check_mem_cpy(
         context.session(),
         |trace| {
             let observed =
-                trace.read_from_rust_memory::<[u8; REGION_LEN]>(base).ok_or_else(|| {
+                trace.read_from_rust_memory::<[u8; BUFFER_LEN]>(base).ok_or_else(|| {
                     TestCaseError::fail(format!("failed to read from byte address {base}"))
                 })?;
             prop_assert_eq!(
                 observed,
                 expected,
-                "unexpected memory contents after mem_cpy with src_off={}, dst_off={}, count={}, \
-                 base={}",
+                "unexpected memory contents (region or guard bands) after mem_cpy with \
+                 src_off={}, dst_off={}, count={}, base={}",
                 src_off,
                 dst_off,
                 count,

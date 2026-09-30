@@ -3,7 +3,7 @@
 // copies and a 64-byte zero-init lower to `memory.copy` / `memory.fill`
 // with CONSTANT length operands (O2 expands them into i64 load/store
 // sequences), so the wasm `memory.copy` -> MemCpy lowering sees immediate
-// lengths and the miden-core-lib element/byte copy split runs on
+// lengths and the memcpy lowering's element/byte copy split runs on
 // stack-slot and `.rodata` source addresses. Copies of 12-24 bytes stay
 // inline even at -Oz (probe-verified), hence the wide records.
 #[derive(Clone, Copy)]

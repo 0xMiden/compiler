@@ -144,8 +144,9 @@ fn heap_vec_shift_u8() {
     run_case("heap_vec_shift_u8", include_str!("../cases/case_heap_vec_shift_u8.rs"));
 }
 
-/// Pinned twin of [`heap_vec_shift_u8`]: an insert in the middle (7, 0) plus
-/// an insert at the front of the buffer. Regression test for #1418.
+/// Pinned twin of [`heap_vec_shift_u8`]: inserts at the front of an 11-byte
+/// (7, 0) and an 8-byte (4, 0) buffer, and after the first byte of a 4-byte
+/// buffer (0, 1). Regression test for #1418.
 #[test]
 fn heap_vec_shift_u8_repro() {
     run_case_with_inputs(
@@ -350,8 +351,8 @@ fn heap_string() {
 
 /// `String::insert(idx, ch)` — the third container that shifts a buffer up
 /// with an overlapping copy, on the byte-loop arm like `heap_vec_shift_u8`:
-/// the byte count is never a multiple of 4 and the loop copies in descending
-/// order. `heap_string` covers the same `String` surface with appends only.
+/// source and destination are one byte apart, so they are never both 4-byte
+/// aligned, and the loop copies in descending order. `heap_string` covers the same `String` surface with appends only.
 /// Regression test for #1418.
 #[test]
 fn heap_string_insert() {
