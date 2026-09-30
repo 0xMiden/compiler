@@ -132,11 +132,24 @@ impl fmt::Display for SelectedPass {
         if self.options.is_empty() {
             return Ok(());
         }
-        write!(
-            f,
-            "{{{}}}",
-            DisplayValues::new(self.options.iter().map(|(k, v)| format!("{k}={v}")))
-        )
+        // A value that does not lex as a single bare token is quoted so that the printed form
+        // parses back (see `FromStr`).
+        let is_bare = |value: &str| {
+            !value.is_empty()
+                && value
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '$' | '.'))
+        };
+        f.write_str("{")?;
+        for (i, (k, v)) in self.options.iter().enumerate() {
+            let sep = if i == 0 { "" } else { " " };
+            if is_bare(v) {
+                write!(f, "{sep}{k}={v}")?;
+            } else {
+                write!(f, "{sep}{k}=\"{v}\"")?;
+            }
+        }
+        f.write_str("}")
     }
 }
 
@@ -265,7 +278,13 @@ fn parse_pipeline_recursively(
                                 }
                                 _ => None,
                             })?;
-                        pass.options.insert(key.into_inner(), value.into_inner());
+                        let key = key.into_inner();
+                        if pass.options.insert(key, value.into_inner()).is_some() {
+                            return Err(Report::msg(format!(
+                                "duplicate option '{key}' for pass '{}'",
+                                pass.name
+                            )));
+                        }
                     }
                     token_stream.expect(Token::Rbrace)?;
                 }
