@@ -131,20 +131,15 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             .map(|o| o.borrow().as_value_ref())
             .collect::<SmallVec<[_; 4]>>();
 
-        let result_types = while_op
-            .results()
-            .iter()
-            .map(|r| r.borrow().ty().clone())
-            .collect::<SmallVec<[_; 4]>>();
-
         // Everything below indexes columns by position (inits, before arguments and yield
         // operands on one side; condition operands, after arguments and results on the other),
-        // so a loop whose arities disagree is left to the verifier.
+        // so a loop whose arities disagree is left untouched (no verifier checks the arity of an
+        // `scf.while` today).
         let num_after_args = after_block.borrow().num_arguments();
         if before_args.len() != init_args.len()
             || yield_op_args.len() != init_args.len()
             || cond_op_args.len() != num_after_args
-            || result_types.len() != num_after_args
+            || while_op.num_results() != num_after_args
         {
             return Ok(false);
         }
@@ -192,15 +187,22 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             }
         }
 
+        let result_types = while_op
+            .results()
+            .iter()
+            .map(|r| r.borrow().ty().clone())
+            .collect::<SmallVec<[_; 4]>>();
+
         // Creating the new op is the only fallible step; nothing has been modified before it.
         let new_while =
             rewriter.r#while(new_init_args.iter().copied(), &result_types, while_op.span())?;
 
         // The builder populates both regions of the new op with an entry block whose arguments
         // match the retained iter args (before) and the results (after), so the original blocks
-        // are merged into them. Only block refs are kept from here on: a borrow of an op or a
-        // region must not be alive while the rewriter moves blocks between them, which is why
-        // the borrow of the original op is dropped before the merges below.
+        // are merged into them. Only `BlockRef`s are kept from here on: an `EntityRef` of a
+        // region or block, such as the temporary produced by `before()`/`after()` inside a
+        // rewriter call's argument list, must not be alive while the rewriter moves or erases
+        // blocks of that region, or it fails with an aliasing violation (#1419).
         let (new_before_block, new_after_block) = {
             let new_while = new_while.borrow();
             (
@@ -242,6 +244,7 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             yield_op.borrow_mut().set_operands(new_yield_args.iter().copied());
         }
 
+        // The original op is borrowed mutably by `replace_op_with_values` below.
         drop(op);
 
         rewriter.merge_blocks(before_block, new_before_block, &new_before_block_args);
