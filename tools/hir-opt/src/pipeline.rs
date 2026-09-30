@@ -10,11 +10,11 @@
 //!   either a concrete operation name, or `any`, to apply against any operation type.
 //! * `pass-name` and `pass-pipeline-name` correspond to the argument name of a registered pass or
 //!   pass pipeline, e.g. `cse` or `canonicalizer`
-//! * `options` are specific key/value pairs representing options defined by a pass or pass pipeline.
-//!   Pairs are separated by whitespace, a key is a bare identifier that may appear at most once,
-//!   and a value is a bare identifier, a number or a quoted string (needed for values with
-//!   characters such as `;`). Values must not contain `,`, which separates the pairs when they are
-//!   handed to the pass.
+//! * `options` are specific key/value pairs representing options defined by a pass or pass
+//!   pipeline. Pairs are separated by whitespace, a key is a bare identifier (or keyword) that may
+//!   appear at most once, and a value is a bare identifier (or keyword), a number or a quoted
+//!   string (needed for values with characters such as `;`). Values must not contain `,`, which
+//!   separates the pairs when they are handed to the pass.
 //!
 //!
 //! ## Examples
@@ -274,10 +274,12 @@ fn parse_pipeline_recursively(
                                 }
                                 _ => None,
                             })?;
-                        let key = key.into_inner();
-                        let value = value.into_inner();
+                        let (key_span, key) = (key.span(), key.into_inner());
+                        let (value_span, value) = (value.span(), value.into_inner());
                         if pass.options.iter().any(|(k, _)| *k == key) {
-                            return Err(Report::msg(format!(
+                            return Err(Report::from(diagnostic!(
+                                severity = Severity::Error,
+                                labels = vec![LabeledSpan::at(key_span, "given more than once")],
                                 "duplicate option '{key}' for pass '{}'",
                                 pass.name
                             )));
@@ -285,7 +287,9 @@ fn parse_pipeline_recursively(
                         // The pairs are joined with `,` when handed to the pass, so a value
                         // must not contain one.
                         if value.contains(',') {
-                            return Err(Report::msg(format!(
+                            return Err(Report::from(diagnostic!(
+                                severity = Severity::Error,
+                                labels = vec![LabeledSpan::at(value_span, "contains ','")],
                                 "invalid value for option '{key}' of pass '{}': values must not \
                                  contain ','",
                                 pass.name

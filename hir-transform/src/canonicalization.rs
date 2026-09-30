@@ -275,6 +275,7 @@ impl Pass for Canonicalizer {
     }
 }
 
+/// Tests of the option parsing and the textual pipeline form of [Canonicalizer].
 #[cfg(test)]
 mod tests {
     use alloc::string::ToString;
@@ -290,6 +291,7 @@ mod tests {
         }
     }
 
+    /// The pattern lists parse from the `key=value, key=value` form and print back quoted.
     #[test]
     fn options_print_as_textual_pipeline() {
         let mut pass = Canonicalizer::default();
@@ -304,6 +306,7 @@ mod tests {
         assert_eq!(pass.disabled_patterns, ["c"]);
     }
 
+    /// Unknown keys, missing or empty lists, a name in both lists and a repeated key are errors.
     #[test]
     fn invalid_options_are_rejected() {
         for options in [
