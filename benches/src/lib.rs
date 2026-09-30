@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 mod mockchain;
 
 pub const RESULTS_FILE: &str = "results.json";
+const SIZE_ONLY_EXAMPLES: &[&str] = &["storage-example"];
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub struct BenchmarkReport {
@@ -145,7 +146,10 @@ impl BenchmarkRunner {
         merge_transaction_benchmarks(&mut benchmarks, transactions)?;
         if !self.skip_failed_builds {
             ensure!(
-                benchmarks.iter().all(|benchmark| benchmark.cycles.is_some()),
+                benchmarks
+                    .iter()
+                    .filter(|benchmark| !SIZE_ONLY_EXAMPLES.contains(&benchmark.name.as_str()))
+                    .all(|benchmark| benchmark.cycles.is_some()),
                 "every benchmark must have an executable scenario"
             );
         }
@@ -165,7 +169,7 @@ impl BenchmarkRunner {
 
         let mut benchmarks = discover_cases(&self.workspace_root)?
             .into_iter()
-            .filter(|case| !case.execute)
+            .filter(|case| !case.execute && !SIZE_ONLY_EXAMPLES.contains(&case.name.as_str()))
             .map(|case| self.run_case(&case))
             .collect::<Result<Vec<_>>>()?;
         merge_transaction_benchmarks(&mut benchmarks, self.run_transaction_benchmarks()?)?;
@@ -585,12 +589,12 @@ mod tests {
     }
 
     #[test]
-    fn every_non_program_example_has_one_transaction_scenario() {
+    fn every_executed_contract_example_has_one_transaction_scenario() {
         let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let expected = discover_cases(workspace)
             .unwrap()
             .into_iter()
-            .filter(|case| !case.execute)
+            .filter(|case| !case.execute && !SIZE_ONLY_EXAMPLES.contains(&case.name.as_str()))
             .map(|case| case.name)
             .collect::<BTreeSet<_>>();
         let scenarios = mockchain::transaction_scenario_examples();
@@ -598,6 +602,13 @@ mod tests {
 
         assert_eq!(scenarios.len(), actual.len(), "an example has multiple scenarios");
         assert_eq!(actual, expected);
+        assert!(!actual.contains("storage-example"));
+        assert!(
+            discover_cases(workspace)
+                .unwrap()
+                .iter()
+                .any(|case| { case.name == "storage-example" && !case.execute })
+        );
     }
 
     #[test]

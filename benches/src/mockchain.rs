@@ -4,8 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::{Context, Result, anyhow, ensure};
-use miden_assembly::ast::{Attribute, Ident};
+use anyhow::{Context, Result, anyhow};
 use miden_core::{Felt, Word, crypto::hash::Poseidon2, mast::MastForest, serde::Serializable};
 use miden_debug::{ReplaySnapshot, clone_advice_mutations, flamegraph::FlamegraphProfile};
 use miden_field_repr::{FromFeltRepr, ToFeltRepr};
@@ -51,11 +50,7 @@ const COUNTER_NOTE: &str = "counter-note";
 const P2ID_NOTE: &str = "p2id-note";
 const P2ID_TX_SCRIPT: &str = "p2id-tx-script";
 const P2IDE_NOTE: &str = "p2ide-note";
-const STORAGE_EXAMPLE: &str = "storage-example";
-const STORAGE_TX_SCRIPT: &str = "storage-tx-script";
-const STORAGE_ACCOUNT_PROCEDURES: &[&str] = &["get-asset-qty", "set-asset-qty"];
 const COUNTER_STORAGE_KEY: Word = Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-const STORAGE_OWNER_KEY: Word = Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]);
 
 type ScenarioPackages = BTreeMap<&'static str, Arc<Package>>;
 
@@ -117,12 +112,6 @@ const TRANSACTION_SCENARIOS: &[TransactionScenario] = &[
         examples: &[P2IDE_NOTE],
         packages: &[BASIC_WALLET, P2IDE_NOTE],
         build: build_p2ide_consumption,
-    },
-    TransactionScenario {
-        name: STORAGE_EXAMPLE,
-        examples: &[STORAGE_EXAMPLE],
-        packages: &[BASIC_WALLET, STORAGE_EXAMPLE, STORAGE_TX_SCRIPT],
-        build: build_storage_transaction,
     },
 ];
 
@@ -245,11 +234,7 @@ impl BenchmarkRunner {
             return load_package(&saved);
         }
 
-        let project_dir = if name == STORAGE_TX_SCRIPT {
-            self.workspace_root.join("benches/fixtures/storage-tx-script")
-        } else {
-            self.workspace_root.join("examples").join(name)
-        };
+        let project_dir = self.workspace_root.join("examples").join(name);
         let compiled = self
             .compile(&project_dir, debug)
             .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
@@ -630,78 +615,6 @@ fn transaction_script_with_dependencies(
         .find_procedure_root(entrypoint_digest)
         .ok_or_else(|| anyhow!("transaction script entrypoint was removed while linking"))?;
     Ok(TransactionScript::from_parts(Arc::new(merged), entrypoint)?)
-}
-
-fn build_storage_transaction(packages: &ScenarioPackages) -> Result<MockTransaction> {
-    let mut storage = InitStorageData::default();
-    storage.insert_value("storage_example::foo::owner_public_key", STORAGE_OWNER_KEY)?;
-    let storage_package = with_account_procedure_exports(
-        required_package(packages, STORAGE_EXAMPLE)?,
-        STORAGE_ACCOUNT_PROCEDURES,
-    )?;
-    let component = AccountComponent::from_package(storage_package, &storage)?;
-    let wallet = AccountComponent::from_package(
-        (**required_package(packages, BASIC_WALLET)?).clone(),
-        &InitStorageData::default(),
-    )?;
-    let mut builder = MockChain::builder();
-    let account = builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        AccountBuilder::new([6_u8; 32])
-            .account_type(AccountType::Public)
-            .with_component(wallet)
-            .with_component(component),
-        AccountState::Exists,
-    )?;
-    let mut chain = builder.build()?;
-    chain.prove_next_block()?;
-    chain.prove_next_block()?;
-    let script = transaction_script_with_dependencies(
-        required_package(packages, STORAGE_TX_SCRIPT)?,
-        &[required_package(packages, STORAGE_EXAMPLE)?.as_ref()],
-    )?;
-    chain.build_transaction(account).tx_script(script).build()
-}
-
-fn with_account_procedure_exports(package: &Package, names: &[&str]) -> Result<Package> {
-    let marker = Attribute::Marker(
-        Ident::new("account_procedure").expect("account_procedure is a valid attribute name"),
-    );
-    let mut matched = 0;
-    let exports = package
-        .manifest
-        .exports()
-        .cloned()
-        .map(|mut export| {
-            if let PackageExport::Procedure(procedure) = &mut export
-                && procedure.path.last().is_some_and(|name| names.contains(&name))
-            {
-                procedure.attributes.insert(marker.clone());
-                matched += 1;
-            }
-            export
-        })
-        .collect::<Vec<_>>();
-    ensure!(
-        matched == names.len(),
-        "expected {} storage account procedures, found {matched}",
-        names.len()
-    );
-
-    let mut adapted = Package::create_with_modules(
-        package.name.clone(),
-        package.version.clone(),
-        package.kind,
-        package.mast_forest().clone(),
-        exports,
-        package.manifest.modules().cloned(),
-        package.manifest.dependencies().cloned(),
-    )?;
-    adapted.description.clone_from(&package.description);
-    adapted.sections.clone_from(&package.sections);
-    Ok(adapted)
 }
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
