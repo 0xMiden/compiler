@@ -12,8 +12,9 @@ use crate::*;
 /// A before block argument is considered loop invariant if:
 ///
 /// 1. i-th yield operand is equal to the i-th while operand.
-/// 2. i-th yield operand is k-th after block argument which is (k+1)-th condition operand AND this
-///    (k+1)-th condition operand is equal to i-th iter argument/while operand.
+/// 2. i-th yield operand is the k-th after block argument of this loop AND the k-th forwarded
+///    operand of the condition is equal to either the i-th before block argument or the i-th
+///    while operand.
 ///
 /// For the arguments which are removed, their uses inside [While] are replaced with their
 /// corresponding initial value.
@@ -23,7 +24,8 @@ use crate::*;
 /// INPUT:
 ///
 /// ```text,ignore
-/// res = scf.while <...> iter_args(%arg0_before = %a, %arg1_before = %b, ..., %argN_before = %N)
+/// res = scf.while <...> iter_args(%arg0_before = %a, %arg1_before = %b,
+///                                 %arg2_before = %c, ..., %argN_before = %N)
 ///   {
 ///        ...
 ///        scf.condition(%cond) %arg1_before, %arg0_before,
@@ -55,12 +57,13 @@ use crate::*;
 ///
 /// We iterate over each yield operand.
 ///
-/// 1. 0-th yield operand %arg0_after_2 is 4-th condition operand %arg0_before, which in turn is the
-///    0-th iter argument. So we remove 0-th before block argument and yield operand, and replace
-///    all uses of the 0-th before block argument with its initial value %a.
+/// 1. 0-th yield operand %arg0_after_2 is the 3-rd after block argument, and the 3-rd forwarded
+///    operand of the condition is %arg0_before, the 0-th before block argument. So we remove the
+///    0-th before block argument and yield operand, and replace all uses of the 0-th before block
+///    argument with its initial value %a.
 /// 2. 1-th yield operand %b is equal to the 1-th iter arg's initial value. So we remove this
-///    operand and the corresponding before block argument and replace all uses of 1-th before block
-///    argument
+///    operand and the corresponding before block argument and replace all uses of 1-th before
+///    block argument with its initial value %b.
 ///
 pub struct RemoveLoopInvariantArgsFromBeforeBlock {
     info: PatternInfo,
@@ -137,10 +140,10 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
                 return true;
             }
 
-            // If the i-th yield operand is k-th after block argument, then we check if the (k+1)-th
-            // condition op operand is equal to either the i-th before block argument or the initial
-            // value of i-th before block argument. If the comparison results `true`, i-th before
-            // block argument is loop invariant.
+            // If the i-th yield operand is the k-th after block argument, then we check if the
+            // k-th forwarded operand of the condition op is equal to either the i-th before block
+            // argument or the initial value of the i-th before block argument. If the comparison
+            // results `true`, the i-th before block argument is loop invariant.
             //
             // Only after block arguments are mirrored by the condition operands; a block argument
             // of any other block (e.g. the function entry block) says nothing about the back edge.
@@ -154,32 +157,19 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             let cond_op_arg = cond_op_args[yield_op_block_arg.index()];
             cond_op_arg == before_args[index] || cond_op_arg == init_value
         };
-
-        if !(0..init_args.len()).any(is_loop_invariant) {
+        let invariant =
+            (0..init_args.len()).map(is_loop_invariant).collect::<SmallVec<[bool; 8]>>();
+        if !invariant.contains(&true) {
             return Ok(false);
         }
 
         let mut new_init_args = SmallVec::<[ValueRef; 4]>::default();
         let mut new_yield_args = SmallVec::<[ValueRef; 4]>::default();
-        let mut before_block_init_val_map = SmallVec::<[Option<ValueRef>; 8]>::default();
-        before_block_init_val_map.resize(yield_op_args.len(), None);
-        for (index, (init_value, yield_arg)) in
-            init_args.iter().copied().zip(yield_op_args.iter().copied()).enumerate()
-        {
-            if is_loop_invariant(index) {
-                before_block_init_val_map[index] = Some(init_value);
-            } else {
-                new_init_args.push(init_value);
-                new_yield_args.push(yield_arg);
+        for (index, invariant) in invariant.iter().copied().enumerate() {
+            if !invariant {
+                new_init_args.push(init_args[index]);
+                new_yield_args.push(yield_op_args[index]);
             }
-        }
-
-        {
-            let mut guard = InsertionGuard::new(rewriter);
-            let yield_op = yield_op.as_operation_ref();
-            guard.set_insertion_point_before(yield_op);
-            let new_yield = guard.r#yield(new_yield_args.iter().copied(), yield_op.span())?;
-            guard.replace_op(yield_op, new_yield.as_operation_ref());
         }
 
         let result_types = while_op
@@ -201,30 +191,33 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
                 new_while.after().entry_block_ref().unwrap(),
             )
         };
-        let num_before_block_args = before_block.borrow().num_arguments();
-        let mut new_before_block_args = SmallVec::<[_; 4]>::with_capacity(num_before_block_args);
-        new_before_block_args.resize(num_before_block_args, None);
-        // For each i-th before block argument we find it's replacement value as:
-        //
-        // 1. If i-th before block argument is a loop invariant, we fetch it's initial value from
-        //    `before_block_init_val_map` by querying for key `i`.
-        // 2. Else we fetch j-th new before block argument as the replacement value of i-th before
-        //    block argument.
-        {
-            let mut next_new_before_block_argument = 0;
+
+        // Each before block argument is replaced with its initial value if it is loop invariant,
+        // and with the next argument of the new before block otherwise.
+        let new_before_block_args = {
             let new_before_block = new_before_block.borrow();
-            for i in 0..num_before_block_args {
-                // If the index 'i' argument was a loop invariant we fetch it's initial value from
-                // `before_block_init_val_map`.
-                if let Some(val) = before_block_init_val_map[i] {
-                    new_before_block_args[i] = Some(val);
-                } else {
-                    new_before_block_args[i] = Some(
-                        new_before_block.arguments()[next_new_before_block_argument] as ValueRef,
-                    );
-                    next_new_before_block_argument += 1;
-                }
-            }
+            let mut new_args = new_before_block.arguments().iter();
+            invariant
+                .iter()
+                .zip(init_args.iter())
+                .map(|(invariant, init_value)| {
+                    Some(if *invariant {
+                        *init_value
+                    } else {
+                        *new_args.next().expect("missing argument in new before block") as ValueRef
+                    })
+                })
+                .collect::<SmallVec<[Option<ValueRef>; 4]>>()
+        };
+
+        // The new op exists now, so the original loop can be taken apart, starting with the
+        // yield that must only feed the retained columns.
+        {
+            let mut guard = InsertionGuard::new(rewriter);
+            let yield_op = yield_op.as_operation_ref();
+            guard.set_insertion_point_before(yield_op);
+            let new_yield = guard.r#yield(new_yield_args.iter().copied(), yield_op.span())?;
+            guard.replace_op(yield_op, new_yield.as_operation_ref());
         }
 
         let after_region = while_op.after().as_region_ref();
