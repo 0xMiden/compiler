@@ -4,9 +4,9 @@
 // `while`, a two-step xorshift byte source, and two rotate constants: 7 used
 // before and inside the loop, and 13 used only in the post-loop fold but
 // shared with the xorshift's `<< 13` shift count.  Building it
-// panics with `AliasingViolationError { kind: Mutable, location:
+// panicked (#1419, fixed) with `AliasingViolationError { kind: Mutable, location:
 // hir/src/ir/operation.rs:877 }` at hir/src/patterns/rewriter.rs:335 while
-// `RemoveLoopInvariantArgsFromBeforeBlock` rewrites.  See the ignored test in
+// `RemoveLoopInvariantArgsFromBeforeBlock` rewrote.  See the test in
 // tests/compose.rs; `case_invariant_args_guard.rs` is the passing sibling
 // that only moves the `return` below the `break`.
 const S1: u32 = 7;

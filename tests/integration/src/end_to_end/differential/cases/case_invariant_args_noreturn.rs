@@ -1,4 +1,5 @@
-// MINIMAL RETURN-FREE REPRODUCER of the F12 aliasing panic (campaign 28, W4),
+// MINIMAL RETURN-FREE REPRODUCER of the F12 aliasing panic (#1419, fixed;
+// campaign 28, W4),
 // reduced from `case_prog_blake2b.rs`: a two-level `while` nest over
 // array-indexed state (an outer block loop and an inner seven-trip mixing
 // loop) with .rodata index tables and a message array.  There is no `return`,

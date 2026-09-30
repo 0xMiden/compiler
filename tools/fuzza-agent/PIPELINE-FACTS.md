@@ -208,7 +208,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   (`control_flow::switch_trap_arm`); `FoldRedundantYields`,
   `ConvertTrivialIfToSelect` and `SplitCriticalEdges` routinely
   (`control_flow::sm16`, `control_flow::wide_exits`);
-  `RemoveLoopInvariantArgsFromBeforeBlock` panics on every match (#1419).
+  `RemoveLoopInvariantArgsFromBeforeBlock` matches and rewrites (it panicked
+  on every match until #1419 was fixed) (`compose::invariant_args_min`).
   `SplitCriticalEdges` shares the greedy fixpoint, so a critical-edge guard
   can become satisfiable mid-run.
 - Dead end: `CanonicalizeI64RotateBy32ToSwap` (the count band hides the 32,
@@ -332,8 +333,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   `programs_oz::prog_threefish_oz_wa`), or moving the deepest arm's expression
   into an `#[inline(never)]` helper taking state by reference
   (`programs::prog_tlv_wa`, `programs::prog_rle_wa`). Without DWARF the same
-  rescues can fall into #1419 (`programs::prog_rkscan_ref_nodwarf`), and two
-  individually safe configurations can compose into a panic
+  rescues fell into #1419 (fixed; `programs::prog_rkscan_ref_nodwarf`), and two
+  individually safe configurations composed into a panic
   (`programs::prog_varint_wa_oz_nodwarf`). Opt level is not a safety ladder
   either way (`programs_oz::prog_sha512`, `programs_oz::prog_threefish_o3`).
 - Dead end: user fixes that fail: fewer distinct rotation constants
@@ -360,7 +361,7 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   function from inside a two-level nest (`compose::invariant_args_min`) and an
   inner counted loop's merged exit dispatch with no early exit
   (`programs_oz::prog_blake2b`). The same nests with a labeled
-  `break`/`continue`, one loop, or an unrolled inner loop compile
+  `break`/`continue`, one loop, or an unrolled inner loop do not match
   (`compose::invariant_args_guard`, `compose::invariant_args_noreturn_guard`,
   `compose::nest_continue_inline`). Ask "does cfg-to-scf still see a nested
   loop with a merged exit"; reduce by removing features.
