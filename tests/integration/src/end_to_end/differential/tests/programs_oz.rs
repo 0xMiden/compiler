@@ -147,7 +147,8 @@ fn prog_sha512() {
 /// [`prog_keccakf_oz`], whose permutation stays a call. Compiles and matches
 /// native at `-Oz` (with and without guest DWARF), at the default level and
 /// at max;
-/// `--optimize=basic` panics in the F12 class (see [`prog_xxh64_o1`]).
+/// `--optimize=basic` panicked in the F12 class until #1419 was fixed (see
+/// [`prog_xxh64_o1`]).
 #[test]
 fn prog_xxh64_oz() {
     run_case_with_flags("prog_xxh64_oz", include_str!("../cases/case_prog_xxh64.rs"), SIZE_MIN);
@@ -177,9 +178,10 @@ fn prog_xxh64_oz_edges() {
     );
 }
 
-/// CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC: the xxHash64 program
-/// above panics at `--optimize=basic` with `AliasingViolationError { kind:
-/// Mutable, location: hir/src/ir/operation.rs:877 }` at
+/// FORMER CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC (#1419, fixed):
+/// the xxHash64 program above panicked at `--optimize=basic` with
+/// `AliasingViolationError { kind: Mutable, location:
+/// hir/src/ir/operation.rs:877 }` at
 /// hir/src/patterns/rewriter.rs:335, the driver's last line under
 /// `MIDENC_TRACE='pattern-rewrite-driver=trace'` being `trying to match
 /// 'remove-loop-invariant-args-from-before-block' dialect=scf op=while` — the
@@ -187,14 +189,9 @@ fn prog_xxh64_oz_edges() {
 /// `return`, `break` or `continue` at all (campaign 22 derived the rule from
 /// a `return` leaving the function from a two-level nest), so plain `while`
 /// nests with an `if`-guarded tail branch reach the same poison-carrying
-/// payload column. Compile-time — no inputs involved. Un-ignore with
-/// `compose::invariant_args_min`.
+/// payload column. Compile-time — no inputs involved. It was `#[ignore]`d
+/// until the #1419 fix (see `compose::invariant_args_min`).
 #[test]
-#[ignore = "#1419: compiler panic at --optimize=basic: 'AliasingViolationError { kind: Mutable, \
-            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while \
-            matching 'remove-loop-invariant-args-from-before-block' — F12 class; the same source \
-            compiles at size-min (prog_xxh64_oz), at the default level and at max; compile-time, \
-            no inputs involved"]
 fn prog_xxh64_o1() {
     run_case_with_flags(
         "prog_xxh64_o1",
@@ -210,8 +207,9 @@ fn prog_xxh64_o1() {
 /// of the campaign — used in eight places per round, so the merged bands
 /// cross the G loop, the round loop, the block loop and the fold. Compiles
 /// and matches native at `-Oz` with and without guest DWARF; the default
-/// level, max and basic all panic in the F12 class (see [`prog_blake2b`]),
-/// which is why the passing case is pinned to `-Oz`.
+/// level, max and basic all panicked in the F12 class until #1419 was fixed,
+/// and all hit the arity-2 `NoSolution` gap (#1422) since (see
+/// [`prog_blake2b`]), which is why the passing case is pinned to `-Oz`.
 #[test]
 fn prog_blake2b_oz() {
     run_case_with_flags("prog_blake2b_oz", include_str!("../cases/case_prog_blake2b.rs"), SIZE_MIN);
@@ -219,26 +217,30 @@ fn prog_blake2b_oz() {
 
 /// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
 /// campaign 26): the BLAKE2b compression of [`prog_blake2b_oz`] built without
-/// pinned flags panics with `AliasingViolationError { kind: Mutable,
+/// pinned flags panicked with `AliasingViolationError { kind: Mutable,
 /// location: hir/src/ir/operation.rs:877 }` at
 /// hir/src/patterns/rewriter.rs:335 — F12, confirmed by the driver's last
 /// line `trying to match 'remove-loop-invariant-args-from-before-block'
-/// dialect=scf op=while`. It also panics at `--optimize=max` and
-/// `--optimize=basic`, and compiles only at `--optimize=size-min`.
+/// dialect=scf op=while`. It also panicked at `--optimize=max` and
+/// `--optimize=basic`, and compiled only at `--optimize=size-min`.
 /// TWO THINGS THIS PINS. First, F12 is not a count-band phenomenon: this
 /// program has the FEWEST distinct rotation constants in the module (four).
 /// Second, its control flow contains no `return`, `break` or `continue`
 /// whatsoever — a three-level `while` nest over array-indexed state is
 /// enough — so campaign 22's "a `return` that leaves the function from a
 /// two-level nest" is one producer, not the producer.
-/// Compile-time — no inputs involved. Un-ignore with
-/// `compose::invariant_args_min`.
+/// Since the #1419 fix it compiles past the pattern and panics with `failed
+/// to schedule operands: [%1916, %1352] for inst 'arith.rotl' with error:
+/// NoSolution, constraints: [Move, Copy]` at codegen/masm/src/lower/lowering.rs:113
+/// over a 9-operand / 15-felt stack instead, at the default level, max and
+/// basic alike. The spills trace has no split edges and no erased reloads, so
+/// this is the arity-2 gap, not F6. Compile-time — no inputs involved.
 #[test]
-#[ignore = "#1419: compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: \
-            Mutable, location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 \
-            while matching 'remove-loop-invariant-args-from-before-block' — F12 class; also panics \
-            at --optimize=max and --optimize=basic; compiles and passes at --optimize=size-min \
-            (prog_blake2b_oz); compile-time, no inputs involved"]
+#[ignore = "#1422: compiler panic at the DEFAULT configuration (and at --optimize=max and \
+            --optimize=basic): 'with error: NoSolution' on 'arith.rotl' [Move, Copy] at \
+            codegen/masm/src/lower/lowering.rs:113 over a 15-felt operand stack, no split edges or \
+            erased reloads; was the #1419 F12 panic before that fix; compile-time, no inputs \
+            involved"]
 fn prog_blake2b() {
     run_case("prog_blake2b", include_str!("../cases/case_prog_blake2b.rs"));
 }
@@ -373,7 +375,7 @@ fn prog_threefish_oz_guard_edges() {
 /// Computes the same answer as the unmodified program on the 1225-pair native
 /// boundary grid (checksum 0x01a9324cf6210b97), and — unlike the
 /// release-configuration result for `programs::prog_rkscan_wa`, where the
-/// same rescue falls into F12 — it holds in every configuration measured
+/// same rescue fell into F12 (#1419, fixed) — it holds in every configuration measured
 /// here: `-Oz` with DWARF, `-Oz` without DWARF, the default level, max and
 /// basic. Moving the round group into an `#[inline(never)]` helper taking
 /// `&mut [u64; 4]` (the campaign-22 by-reference rescue) also works in all
