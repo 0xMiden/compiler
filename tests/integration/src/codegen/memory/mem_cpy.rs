@@ -10,18 +10,15 @@ use midenc_hir::ArrayType;
 use super::*;
 use crate::trap_helpers::{panic_message, trap_matches};
 
-/// The size in bytes of the memory region each test case initializes and checks.
+/// The default size in bytes of the memory region a test case initializes and checks.
 const REGION_LEN: usize = 64;
 
 /// The size in bytes of each guard band placed directly below and above the region; a multiple of
 /// 16, so the region keeps the alignment of the buffer.
 const GUARD: usize = 32;
 
-/// The size in bytes of the whole buffer each test case initializes and checks: the region between
-/// its two guard bands.
-const BUFFER_LEN: usize = GUARD + REGION_LEN + GUARD;
-
-/// The value of every guard band byte; it does not occur in [patterned_region].
+/// The value of every guard band byte; it does not occur in the first 206 bytes of
+/// [patterned_region] or [felt_region].
 const GUARD_BYTE: u8 = 0xa5;
 
 /// A 16-byte aligned byte address above the pages reserved for the Rust stack.
@@ -36,9 +33,42 @@ struct Case {
     count: u32,
 }
 
-/// Returns the non-trivial region contents used by the table-driven tests.
-fn patterned_region() -> [u8; REGION_LEN] {
-    core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(3))
+/// Returns `len` bytes of non-trivial region contents for the table-driven tests.
+fn patterned_region(len: usize) -> Vec<u8> {
+    (0..len).map(|i| (i as u8).wrapping_mul(7).wrapping_add(3)).collect()
+}
+
+/// Returns [patterned_region] with the top bit of every 4th byte cleared, so that every 4-byte
+/// group, read as a little-endian `u32`, is a valid field element below 2^31.
+fn felt_region(len: usize) -> Vec<u8> {
+    let mut region = patterned_region(len);
+    for byte in region.iter_mut().skip(3).step_by(4) {
+        *byte &= 0x7f;
+    }
+    region
+}
+
+/// Reads `len` bytes of Rust memory starting at the element-aligned byte address `addr`, failing
+/// if an element holds a value that does not fit in a `u32`.
+fn read_rust_bytes(
+    trace: &impl DebugQuery,
+    addr: u32,
+    len: usize,
+) -> Result<Vec<u8>, TestCaseError> {
+    let mut bytes = Vec::with_capacity(len.next_multiple_of(4));
+    for index in 0..len.div_ceil(4) as u32 {
+        let elem_addr = addr / 4 + index;
+        // Untouched memory reads as zero in the VM
+        let elem = trace.read_memory_element(elem_addr).unwrap_or_default().as_canonical_u64();
+        let elem = u32::try_from(elem).map_err(|_| {
+            TestCaseError::fail(format!(
+                "element address {elem_addr} holds {elem}, which does not fit in u32"
+            ))
+        })?;
+        bytes.extend(elem.to_le_bytes());
+    }
+    bytes.truncate(len);
+    Ok(bytes)
 }
 
 /// Compiles a `main(src: ptr<elem>, dst: ptr<elem>, count: u32) -> u32` function which performs
@@ -70,7 +100,7 @@ fn check_mem_cpy(
     context: &Rc<midenc_hir::Context>,
     elem: &Type,
     base: u32,
-    region: [u8; REGION_LEN],
+    region: &[u8],
     case: Case,
 ) -> Result<(), TestCaseError> {
     let Case {
@@ -80,9 +110,10 @@ fn check_mem_cpy(
     } = case;
     let elem_size = u32::try_from(elem.size_in_bytes()).expect("pointee size fits in u32");
     let len_bytes = (count * elem_size) as usize;
-    let mut buffer = [GUARD_BYTE; BUFFER_LEN];
-    buffer[GUARD..GUARD + REGION_LEN].copy_from_slice(&region);
-    let mut expected = buffer;
+    let buffer_len = GUARD + region.len() + GUARD;
+    let mut buffer = vec![GUARD_BYTE; buffer_len];
+    buffer[GUARD..GUARD + region.len()].copy_from_slice(region);
+    let mut expected = buffer.clone();
     let (src, dst) = (GUARD + src_off as usize, GUARD + dst_off as usize);
     expected.copy_within(src..src + len_bytes, dst);
 
@@ -103,15 +134,13 @@ fn check_mem_cpy(
         &args,
         context.session(),
         |trace| {
-            let observed =
-                trace.read_from_rust_memory::<[u8; BUFFER_LEN]>(base).ok_or_else(|| {
-                    TestCaseError::fail(format!("failed to read from byte address {base}"))
-                })?;
+            let observed = read_rust_bytes(trace, base, buffer_len)?;
             prop_assert_eq!(
-                observed,
-                expected,
-                "unexpected memory contents (region or guard bands) after mem_cpy with \
+                &observed,
+                &expected,
+                "unexpected memory contents (region or guard bands) after mem_cpy of {} with \
                  src_off={}, dst_off={}, count={}, base={}",
+                elem,
                 src_off,
                 dst_off,
                 count,
@@ -124,14 +153,13 @@ fn check_mem_cpy(
     Ok(())
 }
 
-/// Runs every case of a table-driven test on the fixed base address with the patterned region.
-fn check_table(elem: Type, cases: &[Case]) {
+/// Runs every case of a table-driven test on the fixed base address with `region` as the initial
+/// region contents.
+fn check_table(elem: Type, region: &[u8], cases: &[Case]) {
     setup::enable_compiler_instrumentation();
     let (package, context) = compile_mem_cpy(elem.clone());
     for &case in cases {
-        if let Err(err) =
-            check_mem_cpy(&package, &context, &elem, FIXED_BASE, patterned_region(), case)
-        {
+        if let Err(err) = check_mem_cpy(&package, &context, &elem, FIXED_BASE, region, case) {
             panic!("FAILURE for {case:?}: {err}");
         }
     }
@@ -152,6 +180,7 @@ const fn case(src_off: u32, dst_off: u32, count: u32) -> Case {
 fn mem_cpy_bytes_unaligned() {
     check_table(
         Type::U8,
+        &patterned_region(REGION_LEN),
         &[
             // Overlap, destination above source by 1 byte
             case(3, 4, 21),
@@ -181,6 +210,7 @@ fn mem_cpy_bytes_unaligned() {
 fn mem_cpy_bytes_element_aligned() {
     check_table(
         Type::U8,
+        &patterned_region(REGION_LEN),
         &[
             // Overlap, destination above source by one element
             case(4, 8, 40),
@@ -210,6 +240,7 @@ fn mem_cpy_bytes_element_aligned() {
 fn mem_cpy_u32_elements() {
     check_table(
         Type::U32,
+        &patterned_region(REGION_LEN),
         &[
             // Overlap, destination above source by one value
             case(4, 8, 10),
@@ -239,6 +270,7 @@ fn mem_cpy_u32_elements() {
 fn mem_cpy_u64_elements() {
     check_table(
         Type::U64,
+        &patterned_region(REGION_LEN),
         &[
             // Overlap, destination above source by one value
             case(0, 8, 6),
@@ -270,6 +302,7 @@ fn mem_cpy_u64_elements() {
 fn mem_cpy_u128_elements() {
     check_table(
         Type::U128,
+        &patterned_region(REGION_LEN),
         &[
             // Overlap, destination above source by one value
             case(0, 16, 3),
@@ -287,25 +320,77 @@ fn mem_cpy_u128_elements() {
     );
 }
 
-/// Checks that a 32-byte aggregate (`[u32; 8]`) is copied two words per value, overlapping ranges
-/// included.
+/// Checks that 32-byte aggregates (`[u32; 8]`) are copied two words per value, several values per
+/// copy, overlapping ranges included.
 #[test]
 fn mem_cpy_multiword_elements() {
     check_table(
         Type::from(ArrayType::new(Type::U32, 8)),
+        &patterned_region(192),
         &[
+            // Overlap, destination above source by one value
+            case(0, 32, 4),
+            // Overlap, destination below source by one value
+            case(32, 0, 4),
             // Overlap, destination above source by 16 bytes (half a value)
-            case(0, 16, 1),
+            case(0, 16, 4),
             // Overlap, destination below source by 16 bytes (half a value)
-            case(16, 0, 1),
+            case(16, 0, 4),
             // Identical ranges
-            case(16, 16, 1),
+            case(32, 32, 3),
             // Disjoint, destination above source
-            case(0, 32, 1),
+            case(0, 96, 3),
             // Disjoint, destination below source
-            case(32, 0, 1),
+            case(96, 0, 3),
             // Zero count
-            case(0, 16, 0),
+            case(32, 64, 0),
+        ],
+    );
+}
+
+/// Checks that 1-byte pointees are copied as whole bytes on both the byte-loop and the element
+/// paths, whatever the pointee type: `i1` values holding bytes other than 0 and 1 survive the copy
+/// unchanged.
+#[test]
+fn mem_cpy_i1_elements() {
+    check_table(
+        Type::I1,
+        &patterned_region(REGION_LEN),
+        &[
+            // Byte loop, overlap, destination above source by 1 byte
+            case(3, 4, 21),
+            // Byte loop, overlap, destination below source by 1 byte
+            case(5, 4, 21),
+            // Element path, overlap, destination above source by two elements
+            case(0, 8, 16),
+            // Element path, overlap, destination below source by two elements
+            case(8, 0, 16),
+            // Identical ranges
+            case(5, 5, 23),
+            // Zero count
+            case(3, 7, 0),
+        ],
+    );
+}
+
+/// Checks `ptr<felt>` copies, which go one field element at a time, including overlapping ranges
+/// in both directions.
+#[test]
+fn mem_cpy_felt_elements() {
+    check_table(
+        Type::Felt,
+        &felt_region(REGION_LEN),
+        &[
+            // Overlap, destination above source by one value
+            case(0, 4, 8),
+            // Overlap, destination below source by one value
+            case(4, 0, 8),
+            // Identical ranges
+            case(8, 8, 6),
+            // Disjoint
+            case(0, 32, 6),
+            // Zero count
+            case(4, 8, 0),
         ],
     );
 }
@@ -316,6 +401,7 @@ fn mem_cpy_multiword_elements() {
 fn mem_cpy_u16_elements() {
     check_table(
         Type::U16,
+        &patterned_region(REGION_LEN),
         &[
             // Overlap, destination above source by one value
             case(0, 2, 10),
@@ -422,7 +508,53 @@ fn mem_cpy_bytes_matches_copy_within() {
             } else {
                 case(src_off, dst_off, count)
             };
-            check_mem_cpy(&package, &context, &Type::U8, base, region, copy)
+            check_mem_cpy(&package, &context, &Type::U8, base, &region, copy)
+        },
+    );
+
+    match res {
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {res:?}"),
+    }
+}
+
+/// Checks random copies of u16, u32, u64 and u128 values (possibly overlapping) against
+/// `copy_within`; the u16, u32 and u64 cases use arbitrary byte offsets, the u128 cases offsets
+/// that are multiples of 16.
+#[test]
+fn mem_cpy_values_match_copy_within() {
+    setup::enable_compiler_instrumentation();
+    let compiled = [Type::U16, Type::U32, Type::U64, Type::U128].map(|elem| {
+        let (package, context) = compile_mem_cpy(elem.clone());
+        (elem, package, context)
+    });
+
+    let config = proptest::test_runner::Config::with_cases(32);
+    let res = TestRunner::new(config).run(
+        &(
+            0..compiled.len(),
+            any::<[u8; REGION_LEN]>(),
+            random_word_aligned_addr(),
+            0u32..REGION_LEN as u32,
+            0u32..REGION_LEN as u32,
+            any::<u32>(),
+        ),
+        move |(index, region, base, src_off, dst_off, count)| {
+            let (elem, package, context) = &compiled[index];
+            let elem_size = elem.size_in_bytes() as u32;
+            // The word copy of u128 values requires 16-byte aligned addresses
+            let (src_off, dst_off) = if elem_size == 16 {
+                (16 * (src_off / 16), 16 * (dst_off / 16))
+            } else {
+                (src_off, dst_off)
+            };
+            // Keep both ranges inside the region
+            let max_count = (REGION_LEN as u32 - src_off.max(dst_off)) / elem_size;
+            let copy = case(src_off, dst_off, count % (max_count + 1));
+            check_mem_cpy(package, context, elem, base, &region, copy)
         },
     );
 
