@@ -1,4 +1,5 @@
 use alloc::{boxed::Box, format, rc::Rc, string::String, vec::Vec};
+use core::fmt;
 
 use midenc_hir::{
     Context, EntityMut, Operation, OperationName, Report, Spanned,
@@ -19,7 +20,9 @@ use midenc_session::diagnostics::Severity;
 /// The set of patterns applied by the pass can be narrowed from a pass pipeline string with
 /// `enable-patterns` (only the listed patterns are applied) and `disable-patterns` (the listed
 /// patterns are skipped). Both take a `;`-separated list of pattern names, e.g.
-/// `canonicalizer{enable-patterns="fold-redundant-yields;while-unused-result"}`.
+/// `canonicalizer{enable-patterns="fold-redundant-yields;while-unused-result"}`; a name that
+/// matches no registered pattern is an error. The greedy rewrite driver still folds operations,
+/// erases trivially dead ones and simplifies regions whatever the filter says.
 pub struct Canonicalizer {
     config: GreedyRewriteConfig,
     rewrites: Option<Rc<FrozenRewritePatternSet>>,
@@ -55,10 +58,8 @@ impl Canonicalizer {
     pub fn new(config: GreedyRewriteConfig, require_convergence: bool) -> Self {
         Self {
             config,
-            rewrites: None,
             require_convergence,
-            enabled_patterns: Vec::new(),
-            disabled_patterns: Vec::new(),
+            ..Self::default()
         }
     }
 
@@ -71,10 +72,7 @@ impl Canonicalizer {
     pub fn create_with_config(config: &GreedyRewriteConfig) -> Box<dyn OperationPass> {
         Box::new(Self {
             config: config.clone(),
-            rewrites: None,
-            require_convergence: false,
-            enabled_patterns: Vec::new(),
-            disabled_patterns: Vec::new(),
+            ..Self::default()
         })
     }
 
@@ -106,10 +104,13 @@ impl Pass for Canonicalizer {
     }
 
     fn initialize_options(&mut self, options: &str) -> Result<(), Report> {
-        // Options are given as a comma-separated list of `key=value` pairs, list values are
-        // `;`-separated.
         for option in options.split(',').map(str::trim).filter(|opt| !opt.is_empty()) {
-            let (key, value) = option.split_once('=').unwrap_or((option, ""));
+            let Some((key, value)) = option.split_once('=') else {
+                return Err(Report::msg(format!(
+                    "invalid option '{option}' for pass '{}': expected 'key=value'",
+                    Self::NAME
+                )));
+            };
             let names = value.split(';').map(str::trim).filter(|name| !name.is_empty());
             match key {
                 "enable-patterns" => self.enabled_patterns.extend(names.map(String::from)),
@@ -125,6 +126,25 @@ impl Pass for Canonicalizer {
         Ok(())
     }
 
+    fn print_as_textual_pipeline(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", Self::NAME)?;
+        if self.enabled_patterns.is_empty() && self.disabled_patterns.is_empty() {
+            return Ok(());
+        }
+        f.write_str("{")?;
+        let mut sep = "";
+        for (key, names) in [
+            ("enable-patterns", &self.enabled_patterns),
+            ("disable-patterns", &self.disabled_patterns),
+        ] {
+            if !names.is_empty() {
+                write!(f, "{sep}{key}=\"{}\"", names.join(";"))?;
+                sep = " ";
+            }
+        }
+        f.write_str("}")
+    }
+
     fn initialize(&mut self, context: Rc<Context>) -> Result<(), Report> {
         log::trace!(target: Self::NAME, "initializing canonicalizer pass");
         let mut rewrites = RewritePatternSet::new(context.clone());
@@ -133,6 +153,22 @@ impl Pass for Canonicalizer {
             for op in dialect.registered_ops().iter() {
                 op.populate_canonicalization_patterns(&mut rewrites, context.clone());
             }
+        }
+
+        // A filter naming a pattern that does not exist would silently apply no pattern at all,
+        // so reject it.
+        let is_registered =
+            |name: &String| rewrites.patterns().iter().any(|pattern| pattern.name() == name);
+        if let Some(name) = self
+            .enabled_patterns
+            .iter()
+            .chain(&self.disabled_patterns)
+            .find(|n| !is_registered(n))
+        {
+            return Err(Report::msg(format!(
+                "unknown canonicalization pattern '{name}' in the options of pass '{}'",
+                Self::NAME
+            )));
         }
         rewrites.retain(|pattern| self.is_pattern_enabled(pattern.name()));
 
