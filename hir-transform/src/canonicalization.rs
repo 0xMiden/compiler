@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, format, rc::Rc};
+use alloc::{boxed::Box, format, rc::Rc, string::String, vec::Vec};
 
 use midenc_hir::{
     Context, EntityMut, Operation, OperationName, Report, Spanned,
@@ -13,10 +13,21 @@ use midenc_session::diagnostics::Severity;
 /// does not guarantee that the entire IR is in a canonical form after running this pass.
 ///
 /// See the docs for [midenc_hir::traits::Canonicalizable] for more details.
+///
+/// # Options
+///
+/// The set of patterns applied by the pass can be narrowed from a pass pipeline string with
+/// `enable-patterns` (only the listed patterns are applied) and `disable-patterns` (the listed
+/// patterns are skipped). Both take a `;`-separated list of pattern names, e.g.
+/// `canonicalizer{enable-patterns="fold-redundant-yields;while-unused-result"}`.
 pub struct Canonicalizer {
     config: GreedyRewriteConfig,
     rewrites: Option<Rc<FrozenRewritePatternSet>>,
     require_convergence: bool,
+    /// If non-empty, only patterns with these names are applied.
+    enabled_patterns: Vec<String>,
+    /// Patterns with these names are never applied.
+    disabled_patterns: Vec<String>,
 }
 
 midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Canonicalizer>(
@@ -32,6 +43,8 @@ impl Default for Canonicalizer {
             config,
             rewrites: None,
             require_convergence: false,
+            enabled_patterns: Vec::new(),
+            disabled_patterns: Vec::new(),
         }
     }
 }
@@ -44,6 +57,8 @@ impl Canonicalizer {
             config,
             rewrites: None,
             require_convergence,
+            enabled_patterns: Vec::new(),
+            disabled_patterns: Vec::new(),
         }
     }
 
@@ -58,7 +73,16 @@ impl Canonicalizer {
             config: config.clone(),
             rewrites: None,
             require_convergence: false,
+            enabled_patterns: Vec::new(),
+            disabled_patterns: Vec::new(),
         })
+    }
+
+    /// Returns true if the pattern named `name` passes the `enable-patterns`/`disable-patterns`
+    /// filter.
+    fn is_pattern_enabled(&self, name: &str) -> bool {
+        (self.enabled_patterns.is_empty() || self.enabled_patterns.iter().any(|p| p == name))
+            && !self.disabled_patterns.iter().any(|p| p == name)
     }
 }
 
@@ -81,6 +105,26 @@ impl Pass for Canonicalizer {
         true
     }
 
+    fn initialize_options(&mut self, options: &str) -> Result<(), Report> {
+        // Options are given as a comma-separated list of `key=value` pairs, list values are
+        // `;`-separated.
+        for option in options.split(',').map(str::trim).filter(|opt| !opt.is_empty()) {
+            let (key, value) = option.split_once('=').unwrap_or((option, ""));
+            let names = value.split(';').map(str::trim).filter(|name| !name.is_empty());
+            match key {
+                "enable-patterns" => self.enabled_patterns.extend(names.map(String::from)),
+                "disable-patterns" => self.disabled_patterns.extend(names.map(String::from)),
+                _ => {
+                    return Err(Report::msg(format!(
+                        "invalid option '{key}' for pass '{}'",
+                        Self::NAME
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn initialize(&mut self, context: Rc<Context>) -> Result<(), Report> {
         log::trace!(target: Self::NAME, "initializing canonicalizer pass");
         let mut rewrites = RewritePatternSet::new(context.clone());
@@ -90,6 +134,7 @@ impl Pass for Canonicalizer {
                 op.populate_canonicalization_patterns(&mut rewrites, context.clone());
             }
         }
+        rewrites.retain(|pattern| self.is_pattern_enabled(pattern.name()));
 
         self.rewrites = Some(Rc::new(FrozenRewritePatternSet::new(rewrites)));
 
