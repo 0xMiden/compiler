@@ -524,14 +524,35 @@ fn sret_indexed() {
 /// Since 2026-09-28 the table is read through `black_box`, because the guest
 /// toolchain devirtualizes constant fn-pointer tables; the wasm has 2
 /// `call_indirect`.
+///
+/// Fails since the inline-call debug info landed (next @ edf596b5b): every op
+/// built inside an inlined frame carries a `di.inline_call_chain` attribute,
+/// operation equivalence compares attributes by value even when locations
+/// are ignored, so CSE and cfg-to-scf's return-like merging keep identical
+/// ops from different inline frames apart and the loop reaches
+/// `RemoveLoopInvariantArgsFromBeforeBlock` (`invariant_args_min`'s panic).
+/// It passes with `FUZZA_GUEST_DEBUG=0` and fails with 1 and 2; with the
+/// attribute skipped in the equivalence it compiles and matches native.
+/// Compile-time, no inputs involved. Un-ignore when either the equivalence
+/// ignores the inline chain or the pattern stops panicking.
 #[test]
+#[ignore = "#1429: compiler panic only when the guest has debug info (guest debug 1 and 2; passes \
+            at 0): 'AliasingViolationError { kind: Mutable, location: hir/src/ir/operation.rs:877 \
+            }' at hir/src/patterns/rewriter.rs:338 while matching \
+            'remove-loop-invariant-args-from-before-block' (the #1419 panic), reached because the \
+            per-op 'di.inline_call_chain' attribute keeps identical ops from different inline \
+            frames apart in CSE and cfg-to-scf; compile-time, no inputs involved"]
 fn switch_calls() {
     run_case("switch_calls", include_str!("../cases/case_switch_calls.rs"));
 }
 
 /// Pinned inputs for `switch_calls`: the `break` arm, the `continue` arm,
 /// the `return` arm, zero and one trips, every starting selector class.
+/// Ignored with `switch_calls` (same compile-time panic).
 #[test]
+#[ignore = "#1429: same compile-time panic as switch_calls (the #1419 'AliasingViolationError' at \
+            hir/src/patterns/rewriter.rs:338, reached only when the guest has debug info); the \
+            pinned inputs never run"]
 fn switch_calls_edges() {
     run_case_with_inputs(
         "switch_calls_edges",

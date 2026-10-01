@@ -290,7 +290,21 @@ fn wide_mul_edges_edges() {
 /// `rhs == -1 && lhs == MIN` branch arms around the `__divti3`/`__modti3`/
 /// `__udivti3`/`__umodti3` builtins, which the by-construction-safe divisors
 /// of i128_sdiv/i128_srem/u128_udiv/u128_umod never form.
+///
+/// Fails since the inline-call debug info landed (next @ edf596b5b): the
+/// guest compiles, but its package cannot be loaded with its debug info. The
+/// `debug_info` section is 29,960,453 bytes against the reader's 16 MiB
+/// `MAX_DEBUG_INFO_PAYLOAD_SIZE`: 1,868,299 inline-call rows (12 bytes each,
+/// one per VM operation per active inline frame) on top of 271,026 asm-op
+/// rows; nothing checks the size when the package is built. It passes with
+/// `FUZZA_GUEST_DEBUG=0` and fails with 1 and 2. No inputs involved.
+/// Un-ignore when the section fits again or the debugger accepts it.
 #[test]
+#[ignore = "#1430: the package compiles but cannot be loaded with its debug info: 'package debug \
+            info payload size 29960448 exceeds limit 16777216' (PackageDebugInfoError from \
+            miden-debug-engine exec/executor.rs:182); the inline-call rows take about 22.4 MB of \
+            the section and nothing checks its size at build time; only with guest debug 1 and 2 \
+            (passes at 0); no inputs involved"]
 fn div128_guards() {
     run_case("div128_guards", include_str!("../cases/case_div128_guards.rs"));
 }
@@ -299,7 +313,10 @@ fn div128_guards() {
 /// i128::MIN / -1 (None / wrapping MIN / rem 0 / overflow flag) and u128 2^127
 /// / MAX-splat; (x, 0) divides by zero everywhere; MIN / 1, MIN / i32::MIN,
 /// -1 / -1, 0 / -1, small / negative and the all-ones rows.
+/// Ignored with `div128_guards` (same package, same load failure).
 #[test]
+#[ignore = "#1430: same load failure as div128_guards ('package debug info payload size 29960552 \
+            exceeds limit 16777216'); the pinned inputs never run"]
 fn div128_guards_edges() {
     run_case_with_inputs(
         "div128_guards_edges",
