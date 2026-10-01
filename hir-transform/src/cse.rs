@@ -417,6 +417,8 @@ impl CSEDriver<'_> {
             }
         }
 
+        midenc_hir::dialects::debuginfo::transform::merge_inline_call_locations(existing, op);
+
         // If the existing operation has an unknown location and the current operation doesn't,
         // then set the existing op's location to that of the current op.
         let mut existing = existing.borrow_mut();
@@ -576,6 +578,115 @@ mod tests {
     };
 
     use super::*;
+
+    pub(super) fn inline_chain(
+        context: &Rc<midenc_hir::Context>,
+        call_line: u32,
+    ) -> midenc_hir::AttributeRef {
+        use midenc_hir::dialects::debuginfo::attributes::{
+            InlineCallChain, InlineCallChainAttr, InlineCallFrame,
+        };
+
+        context
+            .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(alloc::vec![
+                InlineCallFrame {
+                    name: "callee".into(),
+                    linkage_name: None,
+                    file: "callee.rs".into(),
+                    line: 1,
+                    column: 1,
+                    call_file: "caller.rs".into(),
+                    call_line,
+                    call_column: 1,
+                }
+            ]))
+            .as_attribute_ref()
+    }
+
+    #[test]
+    fn operation_equivalence_ignores_only_inline_locations_when_requested() {
+        use core::hash::Hash;
+
+        use midenc_hir::{
+            dialects::debuginfo::attributes::INLINE_CALL_CHAIN_ATTR_NAME,
+            equivalence::{IgnoreValueEquivalence, OperationEquivalenceFlags},
+        };
+
+        let mut test = Test::new("inline_equivalence", &[], &[Type::I32, Type::I32]);
+        let (mut first, mut second) = {
+            let mut builder = test.function_builder();
+            let first = builder.i32(1, SourceSpan::UNKNOWN);
+            let second = builder.i32(1, SourceSpan::UNKNOWN);
+            builder.ret([first, second], SourceSpan::UNKNOWN).unwrap();
+            (
+                first.borrow().get_defining_op().unwrap(),
+                second.borrow().get_defining_op().unwrap(),
+            )
+        };
+        let first_chain = inline_chain(&test.context_rc(), 10);
+        let second_chain = inline_chain(&test.context_rc(), 20);
+        first.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, first_chain);
+        second.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, second_chain);
+
+        let hash = |op| {
+            let mut hasher = midenc_hir::FxHasher::default();
+            OpKey(op).hash(&mut hasher);
+            core::hash::Hasher::finish(&hasher)
+        };
+        assert!(OpKey(first) == OpKey(second));
+        assert_eq!(hash(first), hash(second));
+        assert!(!first.borrow().is_equivalent_with_options(
+            &second.borrow(),
+            OperationEquivalenceFlags::NONE,
+            IgnoreValueEquivalence,
+        ));
+
+        second.borrow_mut().remove_attribute(INLINE_CALL_CHAIN_ATTR_NAME);
+        assert!(OpKey(first) == OpKey(second));
+        assert_eq!(hash(first), hash(second));
+
+        first.borrow_mut().set_attribute("semantic", first_chain);
+        second.borrow_mut().set_attribute("semantic", second_chain);
+        assert!(OpKey(first) != OpKey(second));
+        assert_ne!(hash(first), hash(second));
+    }
+
+    #[test]
+    fn cse_merges_inline_sites_and_retains_only_unambiguous_chains() {
+        use midenc_hir::dialects::debuginfo::attributes::INLINE_CALL_CHAIN_ATTR_NAME;
+
+        for second_line in [None, Some(10), Some(20)] {
+            let mut test = Test::new("inline_constants", &[], &[Type::I32, Type::I32]);
+            let (mut first, mut second) = {
+                let mut builder = test.function_builder();
+                let first = builder.i32(1, SourceSpan::UNKNOWN);
+                let second = builder.i32(1, SourceSpan::UNKNOWN);
+                builder.ret([first, second], SourceSpan::UNKNOWN).unwrap();
+                (
+                    first.borrow().get_defining_op().unwrap(),
+                    second.borrow().get_defining_op().unwrap(),
+                )
+            };
+            let chain = inline_chain(&test.context_rc(), 10);
+            first.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
+            if let Some(line) = second_line {
+                let chain = inline_chain(&test.context_rc(), line);
+                second.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
+            }
+            test.apply_pass::<CommonSubexpressionElimination>(true).expect("invalid ir");
+            let entry = test.entry_block();
+            let entry = entry.borrow();
+            assert_eq!(entry.body().len(), 2);
+            let ret = entry.terminator().unwrap();
+            let ret = ret.borrow();
+            let operands = ret.operands().all();
+            assert_eq!(operands[0].borrow().as_value_ref(), operands[1].borrow().as_value_ref());
+            assert_eq!(
+                first.borrow().get_attribute(INLINE_CALL_CHAIN_ATTR_NAME),
+                (second_line == Some(10)).then_some(chain),
+            );
+        }
+    }
 
     #[test]
     fn simple_constant() {

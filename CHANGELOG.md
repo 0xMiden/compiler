@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Compiler and `midenc`
+
+- Ignore inline-call chains in location-insensitive operation equivalence so debug metadata does
+  not prevent CSE or exit-block merging. Clear conflicting chains on shared operations (#1431).
+
 ## [0.11.0]
 
 ### Compiler and `midenc`

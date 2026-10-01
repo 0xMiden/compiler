@@ -207,6 +207,7 @@ impl<'a> TransformationContext<'a> {
                 }
 
                 let exit_block = *entry.get();
+                let retained = entry.key().0;
                 log::trace!(target: "cfg-to-scf", "found equivalent return-like exit in {exit_block}");
                 let mut builder = OpBuilder::new(self.context.clone());
                 builder.set_insertion_point_to_end(return_like_op_ref.parent().unwrap());
@@ -225,6 +226,10 @@ impl<'a> TransformationContext<'a> {
                     operands,
                 )?;
 
+                midenc_hir::dialects::debuginfo::transform::merge_inline_call_locations(
+                    retained,
+                    return_like_op_ref,
+                );
                 return_like_op_ref.borrow_mut().erase();
 
                 log::trace!(target: "cfg-to-scf", "return-like rewritten: {}", parent_region.borrow().print(self.context.clone(), &Default::default()));
