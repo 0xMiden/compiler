@@ -435,6 +435,64 @@ fn deep_schema_chain_fails_fast_at_depth_limit() {
 }
 
 #[test]
+fn deeply_nested_inline_types_are_rejected_without_aborting() {
+    let levels = 8_000;
+    let wit = format!(
+        "package example:deep-inline; interface note-storage {{ record root {{ value: {}u8{} }} \
+         type storage = root; }}",
+        "option<".repeat(levels),
+        ">".repeat(levels),
+    );
+    assert_parser_rejects_without_aborting(
+        "tests::deeply_nested_inline_types_are_rejected_without_aborting",
+        wit,
+    );
+}
+
+#[test]
+fn deeply_nested_packages_are_rejected_without_aborting() {
+    let levels = 1_500;
+    let mut wit = String::from("package example:deep-packages; ");
+    for level in 0..levels {
+        wit.push_str(&format!("package example:p{level} {{ "));
+    }
+    wit.push_str("interface note-storage { record root {} type storage = root; }");
+    wit.push_str(&"}".repeat(levels));
+    assert_parser_rejects_without_aborting(
+        "tests::deeply_nested_packages_are_rejected_without_aborting",
+        wit,
+    );
+}
+
+/// Isolates a parser regression so a stack overflow fails this test instead of the entire suite.
+fn assert_parser_rejects_without_aborting(test_name: &str, wit: String) {
+    const PROBE_ENV: &str = "MIDEN_NOTE_SCHEMA_PARSER_PROBE";
+    assert!(wit.len() < MAX_NOTE_STORAGE_SCHEMA_BYTES);
+    if std::env::var(PROBE_ENV).as_deref() == Ok(test_name) {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(move || {
+                assert!(NoteStorageSchema::from_wit_text(&wit).is_err());
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        return;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", test_name, "--nocapture"])
+        .env(PROBE_ENV, test_name)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "schema parsing must return an error without aborting the host:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
 fn memoized_subtree_reuse_still_enforces_the_depth_limit() {
     let error = NoteStorageSchema::from_wit_text(&memoized_reuse_depth_schema())
         .err()
