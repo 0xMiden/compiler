@@ -30,7 +30,7 @@ toml.workspace = true
 wasmparser.workspace = true
 # This reader accepts package-supplied WIT. Version 0.258 bounds recursive syntax parsing
 # before the schema model's own depth checks can run.
-wit-parser = "0.258"
+wit-parser.workspace = true
 wasmtime = { workspace = true, optional = true }
 
 [dev-dependencies]
