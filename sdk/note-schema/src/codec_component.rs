@@ -376,10 +376,13 @@ impl ComponentRuntime {
             ensure_returned_string_limit("type FQN", &fqn, self.limits.max_fqn_bytes)?;
             fqns.push(fqn.into_owned());
         }
-        // The typed-func API requires the post-return call once the results are read.
-        supported_types
-            .post_return(&mut store)
-            .map_err(|error| component_error("finish `supported-types`", error))?;
+        // Post-return executes guest cleanup under the same fuel and resource limits.
+        supported_types.post_return(&mut store).map_err(|error| {
+            Error::codec(
+                classify_failure(&store, &error),
+                format!("failed to finish `supported-types`: {error:#}"),
+            )
+        })?;
         Ok(fqns)
     }
 }
@@ -759,12 +762,22 @@ package miden:base@1.0.0 {
     /// function. The other three interface functions carry their real signatures, which the
     /// generated bindings check, and share one core function that is never called.
     fn codec_shaped_component(core_declarations: &str, supported_types_body: &str) -> Vec<u8> {
+        codec_shaped_component_with_post_return(core_declarations, supported_types_body, "")
+    }
+
+    /// Adds guest cleanup to the discovery call, including a no-op when the body is empty.
+    fn codec_shaped_component_with_post_return(
+        core_declarations: &str,
+        supported_types_body: &str,
+        post_return_body: &str,
+    ) -> Vec<u8> {
         let text = format!(
             r#"(component
                 (core module $m
                     (memory (export "memory") 1)
                     {core_declarations}
                     (func (export "supported-types") (result i32) {supported_types_body})
+                    (func (export "post-return") (param i32) {post_return_body})
                     (func (export "operation") (param i32 i32 i32 i32) (result i32)
                         (i32.const 1024))
                     (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32)
@@ -773,7 +786,8 @@ package miden:base@1.0.0 {
                 (func $supported (result (list string))
                     (canon lift (core func $i "supported-types")
                         (memory $i "memory")
-                        (realloc (func $i "cabi_realloc"))))
+                        (realloc (func $i "cabi_realloc"))
+                        (post-return (func $i "post-return"))))
                 (func $parse (param "type-fqn" string) (param "value" string)
                     (result (result (list u64) (error string)))
                     (canon lift (core func $i "operation")
@@ -868,6 +882,28 @@ package miden:base@1.0.0 {
             "unexpected error: {error}"
         );
         assert_eq!(error.codec_failure(), Some(CodecFailure::OutOfFuel));
+    }
+
+    #[test]
+    fn discovery_post_return_failures_are_classified() {
+        for (post_return_body, expected) in [
+            ("(loop $spin (br $spin))", CodecFailure::OutOfFuel),
+            ("(i32.const 256) (memory.grow) drop", CodecFailure::LimitExceeded),
+            ("unreachable", CodecFailure::Trapped),
+        ] {
+            let component =
+                codec_shaped_component_with_post_return("", "(i32.const 8)", post_return_body);
+            let error = ComponentRuntime::new(&component, CodecLimits::default())
+                .unwrap()
+                .supported_types()
+                .expect_err("a failing post-return must reject codec discovery");
+
+            assert!(
+                error.to_string().contains("finish `supported-types`"),
+                "unexpected error: {error}"
+            );
+            assert_eq!(error.codec_failure(), Some(expected), "unexpected error: {error}");
+        }
     }
 
     #[test]
