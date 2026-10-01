@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Compiler and `midenc`
+
+- Validate emitted package debug information against the VM reader before publishing the final
+  artifact. Oversized or invalid sections now fail compilation with a diagnostic (#1430).
+
 ## [0.11.0-rc.3]
 
 ### Compiler and `midenc`

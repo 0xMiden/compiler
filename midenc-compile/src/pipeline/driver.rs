@@ -10,7 +10,7 @@ use miden_mast_package::Package as MastPackage;
 use miden_package_registry::{PackageCache, PackageId};
 use midenc_session::{
     FileType, InputFile, Session,
-    diagnostics::Report,
+    diagnostics::{IntoDiagnostic, Report, WrapErr},
     miden_project::{Target, TargetType},
 };
 
@@ -494,6 +494,16 @@ fn prefer_render_error(assembly_error: Report, render_error: Option<Report>) -> 
     }
 }
 
+fn validate_emitted_debug_info(package: &MastPackage) -> CompilerResult<()> {
+    package.debug_info().map(|_| ()).into_diagnostic().wrap_err(format!(
+        "cannot emit package '{}': its debug information cannot be read by the VM; try rebuilding \
+         with --debug line to retain source locations with less detail, or disable debug \
+         information with --debug none (for project builds, also disable debug in the selected \
+         profile)",
+        package.name,
+    ))
+}
+
 /// Map the assembler's result onto this request's outcome.
 ///
 /// A completed assembly publishes [`CheckpointId::PACKAGE_ASSEMBLED`] here, because no
@@ -531,6 +541,7 @@ fn outcome_of(
                     selected.ty,
                 )));
             }
+            validate_emitted_debug_info(&package)?;
             let artifact = Artifact::new(ArtifactId::PACKAGE, package);
             state.notify(CheckpointId::PACKAGE_ASSEMBLED, TargetRole::Root, &artifact);
             Ok(Outcome::new(CheckpointId::PACKAGE_ASSEMBLED, artifact))
@@ -1140,6 +1151,46 @@ path = "{root}"
             "driver_fixture",
             "the package assembled must be the fixture project's"
         );
+    }
+
+    #[test]
+    fn emitted_debug_info_is_checked_against_the_vm_reader_limits() {
+        use miden_assembly::serde::ByteWriter;
+        use miden_mast_package::{
+            Section, SectionId,
+            debug_info::{DEBUG_INFO_VERSION, MAX_DEBUG_INFO_PAYLOAD_SIZE},
+        };
+
+        let (session, manifest) = session("driver_debug_info_limits");
+        let request = CompilationRequest::new(session, input(&manifest));
+        let outcome = pipeline().compile(request, &mut NoPackageStore).unwrap();
+        let mut package = (*outcome.into_package().unwrap()).clone();
+        validate_emitted_debug_info(&package).unwrap();
+        package.sections.clear();
+        validate_emitted_debug_info(&package).unwrap();
+
+        let mut bytes = Vec::new();
+        bytes.write_u8(DEBUG_INFO_VERSION);
+        bytes.write_usize(MAX_DEBUG_INFO_PAYLOAD_SIZE + 1);
+        bytes.resize(bytes.len() + MAX_DEBUG_INFO_PAYLOAD_SIZE + 1, 0);
+        package.sections.push(Section::new(SectionId::DEBUG_INFO, bytes));
+        let error = validate_emitted_debug_info(&package).unwrap_err();
+        let diagnostic = error.chain().map(ToString::to_string).collect::<Vec<_>>().join(": ");
+        assert!(diagnostic.contains("debug information cannot be read by the VM"));
+        assert!(diagnostic.contains("payload size"));
+        assert!(diagnostic.contains("exceeds limit"));
+        assert!(diagnostic.contains("--debug line"));
+        assert!(diagnostic.contains("retain source locations"));
+        assert!(diagnostic.contains("--debug none"));
+        assert!(diagnostic.contains("disable debug in the selected profile"));
+
+        let project = virtual_project("driver_reject_unreadable_debug_info");
+        let observer = recorder();
+        let state = recording_state(&observer);
+        assert!(
+            outcome_of(ControlFlow::Continue(Arc::new(package)), &state, project.target()).is_err()
+        );
+        assert!(trace(&observer).is_empty());
     }
 
     #[test]
