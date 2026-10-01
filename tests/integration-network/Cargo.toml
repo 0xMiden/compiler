@@ -20,7 +20,7 @@ doctest = false
 miden-field.workspace = true
 miden-field-repr.workspace = true
 miden-tx-script-args.workspace = true
-miden-client = { git = "https://github.com/0xMiden/rust-sdk", rev = "a1b18aec3163998fca181bb7a57eee084d875b37", features = ["std", "tonic", "testing"] }
+miden-client = { version = "0.17.0-rc.5", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std", "testing"] }
 miden-standards = { workspace = true, features = ["std", "testing"] }
