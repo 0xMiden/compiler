@@ -10,7 +10,7 @@ fn mem_indexed() {
 }
 
 /// Runtime-length `copy_from_slice`/`copy_within` — wasm `memory.copy` /
-/// HIR MemCpy lowering (element fast path + byte fallback loop).
+/// HIR MemMove lowering (element fast path + byte fallback loop).
 #[test]
 fn mem_copy() {
     run_case("mem_copy", include_str!("../cases/case_mem_copy.rs"));
@@ -205,7 +205,7 @@ fn ptr_table() {
 /// (shift 0) on u32 element ranges (campaign 13). Natively
 /// `memmove(p, p, n)` is a no-op; LLVM keeps the `memory.copy` because the
 /// destination is a runtime value. The byte addresses and byte count are
-/// 4-aligned, so `OpEmitter::memcpy` takes its element path
+/// 4-aligned, so `OpEmitter::memmove` takes its element path
 /// (`memmove_elements`), which copies the identical range onto itself.
 /// Distinct from `mem_overlap` (dst > src, data must move): here NO element
 /// needs to move. `copy_same_bytes` is the byte-loop sibling. Regression
@@ -250,7 +250,7 @@ fn copy_same_pos_disjoint() {
 }
 
 /// Byte-loop sibling of `copy_same_pos`: the identical-range `copy_within` on
-/// a byte buffer with odd length/start takes the memcpy byte fallback loop
+/// a byte buffer with odd length/start takes the memmove byte fallback loop
 /// (each byte copied onto itself), which agrees with the native no-op.
 #[test]
 fn copy_same_bytes() {

@@ -8,7 +8,7 @@
 // ascending order because the destination is below the source.
 //
 // Bulk-op evidence: 3 `memory.copy` in the wasm (realloc, remove, and the
-// drain's tail move), each a `hir.mem_cpy` over `ptr<u8, byte>` with a
+// drain's tail move), each a `hir.mem_move` over `ptr<u8, byte>` with a
 // runtime count. Arena: 64 KiB.
 
 extern crate alloc;

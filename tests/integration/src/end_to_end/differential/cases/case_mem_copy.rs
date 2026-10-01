@@ -1,6 +1,6 @@
 // Runtime-length slice copies. `copy_from_slice`/`copy_within` with a
 // length LLVM cannot constant-fold become wasm `memory.copy`, which lowers
-// to the HIR MemCpy op — exercising `OpEmitter::memcpy` (element-aligned
+// to the HIR MemMove op — exercising `OpEmitter::memmove` (element-aligned
 // fast path + byte fallback loop, both emitted at compile time) and the
 // MemoryCopy translation arm. The u8 copy at odd offsets also takes the
 // fallback loop at runtime; the u32 copies take the element fast path.

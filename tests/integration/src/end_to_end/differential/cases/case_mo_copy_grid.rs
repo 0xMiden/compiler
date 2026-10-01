@@ -1,11 +1,11 @@
 // Campaign 30 / W4: `copy_from_slice` and `ptr::copy_nonoverlapping` over
 // DISJOINT halves of one 4-aligned buffer with runtime source and
 // destination offsets covering all sixteen combinations of (src % 4, dst % 4)
-// and lengths 0..=17, which is the full input space of the memcpy lowering's
+// and lengths 0..=17, which is the full input space of the memmove lowering's
 // element fast path (`src % 4 == dst % 4 == count % 4 == 0` ->
 // `memmove_elements`) and of its byte fallback loop. A u32-element copy of
 // the same region reaches the lowering as a byte copy (the Wasm frontend
-// always emits `hir.mem_cpy` on `ptr<u8>`) with 4-aligned operands, so it
+// always emits `hir.mem_move` on `ptr<u8>`) with 4-aligned operands, so it
 // takes the element path. The buffer is `#[repr(C, align(4))]` so both
 // targets agree on which combinations are element-aligned; the whole
 // buffer is hashed, so a copy of the wrong length, direction or offset
@@ -40,7 +40,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     }
 
     // The same data through a u32-element copy (a 4-aligned byte copy, so the
-    // element path of `OpEmitter::memcpy`), element count derived from the
+    // element path of `OpEmitter::memmove`), element count derived from the
     // byte length.
     let words = len / 4;
     unsafe {

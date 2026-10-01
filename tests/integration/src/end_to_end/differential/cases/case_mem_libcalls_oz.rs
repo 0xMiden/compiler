@@ -2,8 +2,8 @@
 // inline-store threshold: at -Oz (`--optimize=size-min`) 48-byte struct
 // copies and a 64-byte zero-init lower to `memory.copy` / `memory.fill`
 // with CONSTANT length operands (O2 expands them into i64 load/store
-// sequences), so the wasm `memory.copy` -> MemCpy lowering sees immediate
-// lengths and the memcpy lowering's element/byte copy split runs on
+// sequences), so the wasm `memory.copy` -> MemMove lowering sees immediate
+// lengths and the memmove lowering's element/byte copy split runs on
 // stack-slot and `.rodata` source addresses. Copies of 12-24 bytes stay
 // inline even at -Oz (probe-verified), hence the wide records.
 #[derive(Clone, Copy)]

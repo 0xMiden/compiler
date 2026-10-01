@@ -1,7 +1,7 @@
 // Campaign 30 / W4: stores and loads immediately AROUND a bulk op. Each
 // probe writes a byte inside the source range, runs the copy, then reads the
 // same byte at the source and at the destination — so the copy must observe
-// the preceding store (a `hir.store` before a `hir.memcpy` whose Read effect
+// the preceding store (a `hir.store` before a `hir.mem_move` whose Read effect
 // is on the source operand) and the following loads must observe the copy's
 // write. The same sequence is repeated with a fill instead of a copy, with
 // an element-aligned copy, and with `barrier()` between the bulk op and the
@@ -54,7 +54,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let r5 = b.0[d + 32 + len] as u32;
     acc = acc.rotate_left(7) ^ r4.wrapping_mul(31) ^ r5;
 
-    // Element-aligned copy (the memcpy fast path) with a store just before
+    // Element-aligned copy (the memmove fast path) with a store just before
     // and a wide read just after.
     let ws = 64 + 4 * ((input2 >> 8) % 3) as usize;
     let wl = 4 * ((input1 >> 9) % 4) as usize; // 0/4/8/12 bytes

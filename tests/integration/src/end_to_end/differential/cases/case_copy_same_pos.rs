@@ -1,6 +1,6 @@
 // `copy_within` with a runtime destination that can coincide EXACTLY with
 // its source (shift 0) — a no-op memmove natively. The u32 element ranges
-// keep every byte address and byte count 4-aligned, so the MASM memcpy
+// keep every byte address and byte count 4-aligned, so the MASM memmove
 // lowering takes its element path (`memmove_elements`), which copies an
 // identical range in ascending order, each element onto itself. Odd
 // `input1 >> 2` selects a disjoint destination 16 elements away; even

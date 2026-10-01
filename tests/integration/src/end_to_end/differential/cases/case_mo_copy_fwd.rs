@@ -1,6 +1,6 @@
 // Campaign 30 / W4: FORWARD-overlapping `copy_within` (destination strictly
 // below the source) at every overlap distance 1..=8, with an odd length so
-// `count % 4 != 0` always and the memcpy lowering always takes its byte
+// `count % 4 != 0` always and the memmove lowering always takes its byte
 // fallback loop. With `dst < src` that loop copies in ascending order, so
 // these ranges must agree with native even though they overlap. (The other
 // direction of the byte loop, `dst > src`, is `heap::heap_vec_shift_u8`, and

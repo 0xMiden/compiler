@@ -9,8 +9,8 @@
 // the lengths, so a buffer copied short or to the wrong place shows.
 //
 // Bulk-op evidence: 3 `memory.copy`, 0 `memory.fill`, no libcall; each is one
-// `hir.mem_cpy %src, %dst, %count : (ptr<u8, byte>, ptr<u8, byte>, u32)`, i.e.
-// byte-typed pointers and a RUNTIME count, so codegen takes the runtime
+// `hir.mem_move %src, %dst, %count : (ptr<u8, byte>, ptr<u8, byte>, u32)`,
+// i.e. byte-typed pointers and a RUNTIME count, so codegen takes the runtime
 // 4-alignment test between the element path and the byte fallback loop.
 // Arena: 64 KiB of `.bss`.
 

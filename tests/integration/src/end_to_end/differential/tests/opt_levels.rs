@@ -73,7 +73,7 @@ fn helper_calls_oz() {
 /// threshold: 48-byte struct copies and a 64-byte zero-init lower to four
 /// `memory.copy` and one `memory.fill` with immediate lengths at -Oz (O2:
 /// inline i64 load/store pairs), read back at runtime indexes. Zero-delta
-/// guest-shape guard: the memcpy/memset lowerings treat the length as a
+/// guest-shape guard: the memmove/memset lowerings treat the length as a
 /// runtime operand, so no new emitter arm exists, but the inputs are new.
 #[test]
 fn mem_libcalls_oz() {

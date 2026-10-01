@@ -207,7 +207,7 @@ fn call_clobber_edges() {
 /// Spills live across the bulk frame operations that write the frame around
 /// them: a runtime-length `core::ptr::write_bytes` (`memory.fill` ->
 /// `memset`), a 40-byte `copy_from_slice` below the inline-copy threshold, a
-/// 200-byte one above it (`memory.copy` -> `memcpy`), and a 32-byte fill below
+/// 200-byte one above it (`memory.copy` -> `memmove`), and a 32-byte fill below
 /// the bulk-fill threshold, all inside the loop the cluster is spilled across.
 /// 13 spills / 14 reloads / 12 spill-slot `load_local`s, so the reloads that
 /// follow the fills really do read slots.

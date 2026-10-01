@@ -11,7 +11,7 @@
 // descending order because the destination is above the source.
 //
 // Bulk-op evidence: 2 `memory.copy` in the wasm (realloc + the shift), each a
-// `hir.mem_cpy` over `ptr<u8, byte>` with a runtime count. Arena: 64 KiB.
+// `hir.mem_move` over `ptr<u8, byte>` with a runtime count. Arena: 64 KiB.
 
 extern crate alloc;
 

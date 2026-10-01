@@ -2,7 +2,7 @@
 // Edge relations asserted by the pinned grid: u32-element copies of runtime
 // length 0 and 1 (memory.copy byte count 0/4 through the element fast path —
 // u32 arrays are always 4-aligned), byte copies of length 0..=5 crossing the
-// `count % 4` fastpath/byte-tail boundary of the memcpy lowering (0/4 may
+// `count % 4` fastpath/byte-tail boundary of the memmove lowering (0/4 may
 // take the element path, 1/2/3/5 take the byte fallback loop), and a byte
 // `fill` of runtime length 0 and 1 (memory.fill count 0). Fixed-index reads
 // of the destination cells assert that length-0 ops wrote NOTHING.

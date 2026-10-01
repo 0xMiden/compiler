@@ -88,7 +88,7 @@ fn cse_widths_edges() {
 /// `fill`/`write_bytes`, `copy_nonoverlapping`, a disjoint `copy_within`,
 /// and an opaquely zero-length `fill`, each between two loads of the same
 /// byte. IR evidence: after `cse` all ten `hir.load`s survive (10 -> 10) and
-/// the three `hir.mem_cpy` (Read on source, Write on destination) and three
+/// the three `hir.mem_move` (Read on source, Write on destination) and three
 /// `hir.mem_set` (Write on destination) are still there. Note what this case
 /// does NOT test: LLVM guards every runtime-length bulk op with its own
 /// `len != 0` branch, so the entrypoint has 27 blocks and each load pair
@@ -257,9 +257,9 @@ fn seq_freight() {
 
 /// W4: `copy_from_slice` / `copy_nonoverlapping` between disjoint halves of
 /// one 4-aligned buffer at all sixteen combinations of (src % 4, dst % 4) and
-/// lengths 0..=17 — the whole input space of the memcpy element fast path
+/// lengths 0..=17 — the whole input space of the memmove element fast path
 /// (`src % 4 == dst % 4 == count % 4 == 0`) and its byte fallback loop — plus
-/// a u32-element copy, which the Wasm frontend emits as a `hir.mem_cpy` on
+/// a u32-element copy, which the Wasm frontend emits as a `hir.mem_move` on
 /// `ptr<u8>` with 4-aligned operands, so it takes the element path.
 #[test]
 fn copy_grid() {

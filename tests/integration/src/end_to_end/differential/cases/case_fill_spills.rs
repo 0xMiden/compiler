@@ -3,7 +3,7 @@
 // loop, and inside that loop runs, on its own `[u8; 512]` locals: an explicit
 // `core::ptr::write_bytes` with a runtime length (`memory.fill` -> `memset`),
 // a short `copy_from_slice` below the 48-byte inline-copy threshold, a long
-// one above it (`memory.copy` -> `memcpy`, element fast path when the runtime
+// one above it (`memory.copy` -> `memmove`, element fast path when the runtime
 // offsets happen to agree mod 4), and a 32-byte fill below the 64-byte
 // bulk-fill threshold. The cluster is reloaded afterwards and the buffers are
 // checksummed, so both a slot written by a frame fill and a frame byte

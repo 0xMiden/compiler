@@ -1,7 +1,7 @@
 // Overlapping `copy_within` with dst > src. LLVM emits wasm `memory.copy`,
 // which has memmove semantics (overlap must behave as-if buffered). The u32
 // ranges keep both addresses and the byte count 4-aligned, so the MASM
-// memcpy lowering takes its element path, which copies in descending order
+// memmove lowering takes its element path, which copies in descending order
 // when dst > src. The whole-array sum makes any source element overwritten
 // before it is read visible for every input pair (n >= 4, so the ranges
 // always overlap).

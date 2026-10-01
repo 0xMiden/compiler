@@ -31,7 +31,7 @@ use super::super::harness::{
 /// Bring-up: a `Vec<u32>` grown by `input1 & 63` pushes over the bump
 /// allocator, hashed by content and length. The realloc path is one
 /// `memory.copy` (no `memcpy`/`memmove` libcall), which `midenc` sees as
-/// `hir.mem_cpy`.
+/// `hir.mem_move`.
 #[test]
 fn heap_vecsum() {
     run_case("heap_vecsum", include_str!("../cases/case_heap_vecsum.rs"));

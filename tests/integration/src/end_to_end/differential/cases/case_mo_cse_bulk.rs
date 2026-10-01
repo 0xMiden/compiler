@@ -1,7 +1,7 @@
 // Campaign 30 / W1: the opaque write between the two loads is a BULK op with
 // a runtime destination and a runtime length — `copy_from_slice` from a
 // static, a disjoint `copy_within`, `fill`, `ptr::write_bytes` and
-// `ptr::copy_nonoverlapping` — so the HIR gets a `hir.memcpy`
+// `ptr::copy_nonoverlapping` — so the HIR gets a `hir.mem_move`
 // (Read(source) + Write(destination)) or a `hir.memset` (Write(destination))
 // between two `hir.load`s of the same address. One probe uses an opaquely
 // zero length (the cross-modulus contradiction `h % 6 == 5 && h % 3 == 0`)
@@ -28,7 +28,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let zlen = ((input1 % 6 == 5 && input1 % 3 == 0) as usize) * ((input2 as usize) & 7);
     let mut acc = 0u32;
 
-    // copy_from_slice from a static (`hir.memcpy`, rodata source).
+    // copy_from_slice from a static (`hir.mem_move`, rodata source).
     let a1 = b[o];
     b[d..d + len].copy_from_slice(&SRC[..len]);
     let c1 = b[o];

@@ -3,7 +3,7 @@
 // runtime-length, misaligned `memory.copy`s (static -> stack, stack ->
 // stack, disjoint in-buffer `copy_within`; the destination never equals the
 // source) and a runtime-length `fill`, stay live across all of them (the
-// memcpy/memset intrinsic execs are scheduled under spilled state), and are
+// memmove/memset intrinsic execs are scheduled under spilled state), and are
 // consumed afterwards by a right-leaning 12-leaf u64 tree over the copied
 // words (24 felts in one block) and a walk over both buffers.
 use core::sync::atomic::{AtomicU32, Ordering};

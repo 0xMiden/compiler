@@ -8,7 +8,7 @@
 // (ascending order), so the two together separate direction from alignment
 // (`heap_vec_shift` / `heap_vec_drain` are the 4-aligned pair).
 //
-// Bulk-op evidence: 2 `memory.copy` in the wasm, each a `hir.mem_cpy` over
+// Bulk-op evidence: 2 `memory.copy` in the wasm, each a `hir.mem_move` over
 // `ptr<u8, byte>` with a runtime count. Arena: 64 KiB.
 
 extern crate alloc;

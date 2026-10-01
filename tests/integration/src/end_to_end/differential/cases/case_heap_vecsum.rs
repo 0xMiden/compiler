@@ -9,7 +9,7 @@
 //
 // Bulk-op evidence (wasm built exactly as the harness builds it): the realloc
 // path is `memory.copy` — 2 `memory.copy`, 0 `memory.fill`, no `memcpy`/
-// `memmove` libcall — and `midenc` represents each as one `hir.mem_cpy`.
+// `memmove` libcall — and `midenc` represents each as one `hir.mem_move`.
 // Arena: 64 KiB of `.bss`, 16-byte aligned (a `[u8; N]` static is only
 // byte-aligned, and the u32 loads carry `align=4` memargs).
 

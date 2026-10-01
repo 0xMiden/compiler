@@ -3,7 +3,7 @@
 // `heap_vec_shift_u8`) and `BTreeMap` (`heap_btree`). A `String` is a byte
 // buffer, so inserting a one-byte `char` moves the tail up by exactly one
 // byte — source and destination can never share a residue mod 4, so the copy
-// takes the memcpy BYTE fallback loop, which copies in descending order
+// takes the memmove BYTE fallback loop, which copies in descending order
 // because the destination is above the source.
 //
 // Only ASCII is pushed, so every index is a char boundary and the insert

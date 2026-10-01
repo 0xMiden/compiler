@@ -200,7 +200,7 @@ fn bitcnt_zero_edges() {
 }
 
 /// Zero- and boundary-length memory ops with disjoint ranges: element copies
-/// of length 0/1, byte copies of length 0..=5 across the memcpy `% 4`
+/// of length 0/1, byte copies of length 0..=5 across the memmove `% 4`
 /// fastpath boundary, and a byte fill of length 0 — with fixed-index reads
 /// asserting length-0 ops wrote nothing.
 #[test]

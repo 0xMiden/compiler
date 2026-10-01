@@ -1,6 +1,6 @@
 // Runtime-length copies and fills at misaligned offsets. The length comes
 // from a table indexed by the inputs (0, 1, 3, 4, 5, 7, 8, 9, 15, 16, 17,
-// 31, 32, 33, 2, 6 — every element-count boundary the memcpy/memset
+// 31, 32, 33, 2, 6 — every element-count boundary the memmove/memset
 // lowerings split on) and the source/destination byte offsets take all
 // values 0..3, so each `memory.copy` sees every (src%4, dst%4, len%4)
 // combination: static -> stack, stack -> stack into the middle of a

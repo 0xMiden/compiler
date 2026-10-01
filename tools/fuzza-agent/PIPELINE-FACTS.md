@@ -124,14 +124,14 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   `memarg.align > 0`; no constant-address canonicalization exists. 128-bit
   memory traffic is i64 pairs; I128 loads/stores come only from spill and sret
   slots (`memory::straddle_wide`, `memory::packed2_fields`).
-- `memory.copy` becomes `hir.mem_cpy %src, %dst, %count` with byte-typed
+- `memory.copy` becomes `hir.mem_move %src, %dst, %count` with byte-typed
   pointers and a runtime count, `memory.fill` becomes `hir.mem_set`; `alloc`
   code has no `memcpy`/`memmove`/`memset` libcalls (`heap::heap_btree`,
   `memory::copy_ladder`).
 - Dead end: the data-segment insert/overlap arms; wasm-ld emits sorted
   disjoint segments (`memory::segment_mix`).
 - Declared memory effects are complete and conservative: `hir.load`/
-  `load_local` Read, `hir.store`/`store_local` Write, `hir.mem_cpy`
+  `load_local` Read, `hir.store`/`store_local` Write, `hir.mem_move`/`mem_cpy`
   Read(src)+Write(dst), `hir.mem_set` Write, `hir.mem_grow` Read+Write,
   `hir.mem_size` Read, `hir.assert*` and `ub.unreachable` Write, the signed
   sub-word wasm loads Read on `addr`. `hir.exec`/`exec_indirect`/`call`/
@@ -385,28 +385,34 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 
 ## Codegen and the emitter
 
-- `hir.mem_cpy` has memmove semantics: the ranges may overlap, the destination
-  receives the values the source range held before the copy, and `count == 0`
-  is a no-op. `OpEmitter::memcpy` (`codegen/masm/src/emit/mem.rs`) accepts
-  pointers in the byte address space only, first traps unless the byte length
-  `count * size_of(pointee)` fits in a `u32` and both `src + len` and
-  `dst + len` do (`codegen::memory::mem_cpy`), then dispatches on the pointee
-  size. Byte pointees (every Wasm copy): src, dst and count tested for
-  4-alignment at runtime; the element arm calls the compiler intrinsic
-  `::intrinsics::mem::memmove_elements` (`codegen/masm/intrinsics/mem.masm`),
-  which copies in descending address order when `write_ptr > read_ptr` and
-  ascending otherwise (overlap up `heap::heap_vec_shift`, `memory::mem_overlap`;
-  down `heap::heap_vec_drain`; both `heap::heap_btree`; identical ranges
-  `memory::copy_same_pos`; zero length `boundaries::memnoop_same`); the byte
-  loop follows the same rule, descending when `dst > src` (up
-  `heap::heap_vec_shift_u8`, `heap::heap_string_insert`; down
+- `hir.mem_move` lets the ranges overlap: the destination receives the values
+  the source range held before the copy. `hir.mem_cpy` requires disjoint
+  ranges: a copy of a non-zero byte length between overlapping ranges traps
+  with "source and destination ranges must not overlap". For both `count == 0`
+  is a no-op. `OpEmitter::memmove` and `OpEmitter::memcpy`
+  (`codegen/masm/src/emit/mem.rs`) accept pointers in the byte address space
+  only, first trap unless the byte length `count * size_of(pointee)` fits in a
+  `u32` and both `src + len` and `dst + len` do (`codegen::memory::mem_move`,
+  `codegen::memory::mem_cpy`), then dispatch on the pointee size. Byte
+  pointees (every Wasm copy): src, dst and count tested for 4-alignment at
+  runtime; the element arm calls `::intrinsics::mem::memmove_elements`
+  (`codegen/masm/intrinsics/mem.masm`) for `hir.mem_move` and the core-lib
+  `::miden::core::mem::memcopy_elements` for `hir.mem_cpy`, the other arm is
+  a byte loop. Pointees of 16 bytes or a multiple of 16 go a word at a time
+  through `::intrinsics::mem::memmove_words` or
+  `::miden::core::mem::memcopy_words` (traps unless src and dst are 16-byte
+  aligned); every other pointee size is copied one typed value at a time by a
+  loop, which cannot load or store aggregates. Every `hir.mem_move` path
+  copies in descending address order when `dst > src` and ascending otherwise
+  (element arm: overlap up `heap::heap_vec_shift`, `memory::mem_overlap`; down
+  `heap::heap_vec_drain`; both `heap::heap_btree`; identical ranges
+  `memory::copy_same_pos`; zero length `boundaries::memnoop_same`; byte loop:
+  up `heap::heap_vec_shift_u8`, `heap::heap_string_insert`; down
   `heap::heap_vec_remove_u8`, `memorder::copy_fwd`; identical ranges
-  `memory::copy_same_bytes`). Pointees of 16 bytes or a multiple of 16 go a
-  word at a time through `::intrinsics::mem::memmove_words` (same direction
-  rule, traps unless src and dst are 16-byte aligned); every other pointee
-  size is copied one typed value at a time by the same direction-aware loop,
-  which cannot load or store aggregates. No core-lib copy routine is called.
-  Only the byte pointee arm has a frontend producer.
+  `memory::copy_same_bytes`). The `hir.mem_cpy` loops copy in ascending order
+  behind the overlap assert, the core-lib routines assert disjointness
+  themselves. Only the byte pointee arm of `hir.mem_move` has a frontend
+  producer; `hir.mem_cpy` has none.
 - `OpEmitter::memset` is a per-byte loop, about 25 cycles per byte
   (`memory::frame_1m`).
 - Dead end: emitter arms with no producer. The `_imm` load/store and
