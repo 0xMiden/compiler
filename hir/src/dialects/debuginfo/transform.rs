@@ -47,6 +47,41 @@ use midenc_hir::{
 
 use super::{DIBuilder, ops::DebugValue};
 
+/// Reconcile inline-call locations when structurally equivalent operations are merged.
+///
+/// Retain a chain only when both operations agree, including within corresponding regions.
+/// A shared operation cannot accurately describe two distinct inline call sites.
+pub fn merge_inline_call_locations(mut retained: OperationRef, discarded: OperationRef) {
+    use super::attributes::INLINE_CALL_CHAIN_ATTR_NAME;
+
+    if OperationRef::ptr_eq(&retained, &discarded) {
+        return;
+    }
+    let discarded = discarded.borrow();
+    let mut retained = retained.borrow_mut();
+    if retained.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME)
+        != discarded.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME)
+    {
+        retained.remove_attribute(INLINE_CALL_CHAIN_ATTR_NAME);
+    }
+    for (retained_region, discarded_region) in
+        retained.regions().iter().zip(discarded.regions().iter())
+    {
+        for (retained_block, discarded_block) in
+            retained_region.body().iter().zip(discarded_region.body().iter())
+        {
+            for (retained_op, discarded_op) in retained_block
+                .body()
+                .iter()
+                .map(|op| op.as_operation_ref())
+                .zip(discarded_block.body().iter().map(|op| op.as_operation_ref()))
+            {
+                merge_inline_call_locations(retained_op, discarded_op);
+            }
+        }
+    }
+}
+
 /// Describes how to recover the original source-level value after a transformation.
 ///
 /// When a transform changes a value's representation, it creates a [SalvageAction] describing the

@@ -394,6 +394,77 @@ mod tests {
     use super::*;
 
     #[test]
+    fn cfg_to_scf_combines_returns_from_distinct_inline_sites() -> Result<(), Report> {
+        use midenc_hir::dialects::debuginfo::attributes::{
+            INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain, InlineCallChainAttr, InlineCallFrame,
+        };
+
+        for second_line in [None, Some(10), Some(20)] {
+            let mut test = Test::new("inline_exits", &[Type::I1, Type::U32], &[Type::U32]);
+            let (mut first, mut second) = {
+                let mut builder = test.function_builder();
+                let first_block = builder.create_block();
+                let second_block = builder.create_block();
+                let entry = builder.current_block();
+                let condition = entry.borrow().arguments()[0].upcast();
+                let value = entry.borrow().arguments()[1].upcast();
+                builder.cond_br(
+                    condition,
+                    first_block,
+                    [],
+                    second_block,
+                    [],
+                    SourceSpan::UNKNOWN,
+                )?;
+                builder.switch_to_block(first_block);
+                builder.ret([value], SourceSpan::UNKNOWN)?;
+                builder.switch_to_block(second_block);
+                builder.ret([value], SourceSpan::UNKNOWN)?;
+                (
+                    first_block.borrow().terminator().unwrap(),
+                    second_block.borrow().terminator().unwrap(),
+                )
+            };
+            let chain = |call_line| {
+                test.context_rc()
+                    .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(alloc::vec![
+                        InlineCallFrame {
+                            name: "callee".into(),
+                            linkage_name: None,
+                            file: "callee.rs".into(),
+                            line: 1,
+                            column: 1,
+                            call_file: "caller.rs".into(),
+                            call_line,
+                            call_column: 1,
+                        }
+                    ]))
+                    .as_attribute_ref()
+            };
+            let first_chain = chain(10);
+            first.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, first_chain);
+            if let Some(line) = second_line {
+                second.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain(line));
+            }
+            test.apply_pass::<LiftControlFlowToSCF>(true)?;
+            let mut returns = alloc::vec::Vec::new();
+            test.function()
+                .as_operation_ref()
+                .raw_prewalk_all::<Forward, _>(|op: OperationRef| {
+                    if op.borrow().is::<builtin::Ret>() {
+                        returns.push(op);
+                    }
+                });
+            assert_eq!(returns.len(), 1);
+            assert_eq!(
+                returns[0].borrow().get_attribute(INLINE_CALL_CHAIN_ATTR_NAME),
+                (second_line == Some(10)).then_some(first_chain),
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn cfg_to_scf_lift_simple_conditional() -> Result<(), Report> {
         let mut test = Test::new("cfg_to_scf_lift_simple_conditional", &[Type::U32], &[Type::U32]);
 
