@@ -2,7 +2,7 @@
 // a runtime destination and a runtime length — `copy_from_slice` from a
 // static, a disjoint `copy_within`, `fill`, `ptr::write_bytes` and
 // `ptr::copy_nonoverlapping` — so the HIR gets a `hir.mem_move`
-// (Read(source) + Write(destination)) or a `hir.memset` (Write(destination))
+// (Read(source) + Write(destination)) or a `hir.mem_set` (Write(destination))
 // between two `hir.load`s of the same address. One probe uses an opaquely
 // zero length (the cross-modulus contradiction `h % 6 == 5 && h % 3 == 0`)
 // so a zero-length range reaches the VM instead of being folded away. Every
@@ -34,13 +34,13 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let c1 = b[o];
     acc = acc.rotate_left(3) ^ (a1 as u32).wrapping_mul(0x0100_0193) ^ (c1 as u32);
 
-    // fill over the same runtime range (`hir.memset`).
+    // fill over the same runtime range (`hir.mem_set`).
     let a2 = b[o];
     b[d..d + len].fill(fillv);
     let c2 = b[o];
     acc = acc.rotate_left(5) ^ (a2 as u32) ^ (c2 as u32).wrapping_mul(7);
 
-    // write_bytes through a raw pointer (`hir.memset` again, no slice bound).
+    // write_bytes through a raw pointer (`hir.mem_set` again, no slice bound).
     let a3 = b[o];
     unsafe { core::ptr::write_bytes(b.as_mut_ptr().add(d), fillv ^ 0x3c, len) };
     let c3 = b[o];

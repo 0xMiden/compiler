@@ -389,7 +389,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   the source range held before the copy. `hir.mem_cpy` requires disjoint
   ranges: a copy of a non-zero byte length between overlapping ranges traps
   with "source and destination ranges must not overlap". For both `count == 0`
-  is a no-op. `OpEmitter::memmove` and `OpEmitter::memcpy`
+  is a no-op, except that the word arms still trap on addresses that are not
+  16-byte aligned. `OpEmitter::memmove` and `OpEmitter::memcpy`
   (`codegen/masm/src/emit/mem.rs`) accept pointers in the byte address space
   only, first trap unless the byte length `count * size_of(pointee)` fits in a
   `u32` and both `src + len` and `dst + len` do (`codegen::memory::mem_move`,

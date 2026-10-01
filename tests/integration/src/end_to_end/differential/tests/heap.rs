@@ -352,7 +352,8 @@ fn heap_string() {
 /// `String::insert(idx, ch)` — the third container that shifts a buffer up
 /// with an overlapping copy, on the byte-loop arm like `heap_vec_shift_u8`:
 /// source and destination are one byte apart, so they are never both 4-byte
-/// aligned, and the loop copies in descending order. `heap_string` covers the same `String` surface with appends only.
+/// aligned, and the loop copies in descending order. `heap_string` covers the
+/// same `String` surface with appends only.
 /// Regression test for #1418.
 #[test]
 fn heap_string_insert() {
