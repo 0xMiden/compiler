@@ -203,6 +203,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::MemSize, dyn HirLowering>();
     info.register_operation_trait::<hir::MemSet, dyn HirLowering>();
     info.register_operation_trait::<hir::MemCpy, dyn HirLowering>();
+    info.register_operation_trait::<hir::MemMove, dyn HirLowering>();
     info.register_operation_trait::<hir::PrintLn, dyn HirLowering>();
 }
 

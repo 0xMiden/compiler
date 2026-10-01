@@ -12,7 +12,7 @@ use midenc_dialect_wasm::{self as wasm};
 use midenc_hir::{
     AttributeRef, Felt, Immediate, ImmediateAttr, Op, OperationRef, Overflow, RegionBranchPoint,
     RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorInfo, Type,
-    Value as _, ValueRange,
+    Value as _, ValueRange, ValueRef,
     dialects::{builtin, debuginfo},
 };
 use midenc_session::diagnostics::Severity;
@@ -685,79 +685,139 @@ impl Eval for hir::MemSet {
 
 impl Eval for hir::MemCpy {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        let source = self.source();
-        let source_value = evaluator.use_value(&source.as_value_ref())?;
-        let Immediate::U32(source_value) = source_value else {
-            return Err(evaluator.report(
-                "evaluation failed",
-                self.span(),
-                format!("expected source pointer to be a u32 immediate, got {}", source_value.ty()),
-            ));
-        };
-
-        let dest = self.destination();
-        let dest_value = evaluator.use_value(&dest.as_value_ref())?;
-        let Immediate::U32(dest_value) = dest_value else {
-            return Err(evaluator.report(
-                "evaluation failed",
-                self.span(),
-                format!(
-                    "expected destination pointer to be a u32 immediate, got {}",
-                    dest_value.ty()
-                ),
-            ));
-        };
-
-        let count = evaluator.use_value(&self.count().as_value_ref())?;
-        let Immediate::U32(count) = count else {
-            return Err(evaluator.report(
-                "evaluation failed",
-                self.span(),
-                format!("expected count to be a u32 immediate, got {}", count.ty()),
-            ));
-        };
-
-        // Verify that source and destination pointer types match
-        let source_ty = source.ty();
-        let dest_ty = dest.ty();
-        if source_ty != dest_ty {
-            return Err(evaluator.report(
-                "evaluation failed",
-                self.span(),
-                format!(
-                    "invalid memcpy: source and destination types do not match: {source_ty} vs \
-                     {dest_ty}"
-                ),
-            ));
-        }
-
-        let value_size = source_ty
-            .pointee()
-            .expect("expected pointer type to have been verified already")
-            .size_in_bytes();
-        let len = u32::try_from(value_size).ok().and_then(|size| count.checked_mul(size));
-        let Some(len) = len else {
-            return Err(evaluator.report(
-                "evaluation failed",
-                self.span(),
-                format!(
-                    "invalid memcpy: the size of {count} values of {value_size} bytes overflows"
-                ),
-            ));
-        };
-        if len == 0 {
-            return Ok(ControlFlowEffect::None);
-        }
-
-        // The ranges may overlap, so the whole source range is read before it is written to the
-        // destination; both ranges are checked before the source is read, so that a bogus length
-        // is rejected before it is allocated
-        evaluator.check_write_bounds(dest_value, len as usize)?;
-        let bytes = evaluator.read_memory_bytes(source_value, len)?;
-        evaluator.write_memory_bytes(dest_value, &bytes)?;
-
-        Ok(ControlFlowEffect::None)
+        eval_copy(
+            evaluator,
+            CopyOverlap::Rejected,
+            self.source().as_value_ref(),
+            self.destination().as_value_ref(),
+            self.count().as_value_ref(),
+            self.span(),
+        )
     }
+}
+
+impl Eval for hir::MemMove {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        eval_copy(
+            evaluator,
+            CopyOverlap::Allowed,
+            self.source().as_value_ref(),
+            self.destination().as_value_ref(),
+            self.count().as_value_ref(),
+            self.span(),
+        )
+    }
+}
+
+/// How a copy between two memory ranges treats ranges that overlap.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum CopyOverlap {
+    /// The ranges may overlap, the destination receives the values the source range held before
+    /// the copy.
+    Allowed,
+    /// The ranges must be disjoint, a copy between overlapping ranges is an error.
+    Rejected,
+}
+
+impl CopyOverlap {
+    /// The name of the copy in the error messages.
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Allowed => "memmove",
+            Self::Rejected => "memcpy",
+        }
+    }
+}
+
+/// Copy `count` values of the pointee type of `source` from the memory at `source` to the memory
+/// at `destination`, treating overlapping ranges as specified by `overlap`.
+fn eval_copy(
+    evaluator: &mut HirEvaluator,
+    overlap: CopyOverlap,
+    source: ValueRef,
+    destination: ValueRef,
+    count: ValueRef,
+    span: SourceSpan,
+) -> Result<ControlFlowEffect, Report> {
+    let name = overlap.name();
+
+    let source_value = evaluator.use_value(&source)?;
+    let Immediate::U32(source_value) = source_value else {
+        return Err(evaluator.report(
+            "evaluation failed",
+            span,
+            format!("expected source pointer to be a u32 immediate, got {}", source_value.ty()),
+        ));
+    };
+
+    let dest_value = evaluator.use_value(&destination)?;
+    let Immediate::U32(dest_value) = dest_value else {
+        return Err(evaluator.report(
+            "evaluation failed",
+            span,
+            format!("expected destination pointer to be a u32 immediate, got {}", dest_value.ty()),
+        ));
+    };
+
+    let count = evaluator.use_value(&count)?;
+    let Immediate::U32(count) = count else {
+        return Err(evaluator.report(
+            "evaluation failed",
+            span,
+            format!("expected count to be a u32 immediate, got {}", count.ty()),
+        ));
+    };
+
+    // Verify that source and destination pointer types match
+    let source_ty = source.borrow().ty().clone();
+    let dest_ty = destination.borrow().ty().clone();
+    if source_ty != dest_ty {
+        return Err(evaluator.report(
+            "evaluation failed",
+            span,
+            format!(
+                "invalid {name}: source and destination types do not match: {source_ty} vs \
+                 {dest_ty}"
+            ),
+        ));
+    }
+
+    let value_size = source_ty
+        .pointee()
+        .expect("expected pointer type to have been verified already")
+        .size_in_bytes();
+    let len = u32::try_from(value_size).ok().and_then(|size| count.checked_mul(size));
+    let Some(len) = len else {
+        return Err(evaluator.report(
+            "evaluation failed",
+            span,
+            format!("invalid {name}: the size of {count} values of {value_size} bytes overflows"),
+        ));
+    };
+    if len == 0 {
+        return Ok(ControlFlowEffect::None);
+    }
+
+    if overlap == CopyOverlap::Rejected {
+        let source_end = u64::from(source_value) + u64::from(len);
+        let dest_end = u64::from(dest_value) + u64::from(len);
+        if u64::from(source_value) < dest_end && u64::from(dest_value) < source_end {
+            return Err(evaluator.report(
+                "evaluation failed",
+                span,
+                format!("invalid {name}: source and destination ranges must not overlap"),
+            ));
+        }
+    }
+
+    // The ranges may overlap, so the whole source range is read before it is written to the
+    // destination; both ranges are checked before the source is read, so that a bogus length is
+    // rejected before it is allocated
+    evaluator.check_write_bounds(dest_value, len as usize)?;
+    let bytes = evaluator.read_memory_bytes(source_value, len)?;
+    evaluator.write_memory_bytes(dest_value, &bytes)?;
+
+    Ok(ControlFlowEffect::None)
 }
 
 impl Eval for hir::PrintLn {
