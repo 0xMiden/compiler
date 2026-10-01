@@ -18,6 +18,8 @@ use miden_assembly_syntax::{
     debuginfo::{SourceSpan, Spanned},
     parser::{IntValue, PushValue},
 };
+mod prepared;
+
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
@@ -32,6 +34,7 @@ use midenc_hir::{
     },
     formatter::DisplayValues,
 };
+use prepared::{Local, PreparationBuilder, PreparedProcedure, Value};
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -195,6 +198,7 @@ fn lift_modules(
         context.clone(),
     );
     registry.infer_missing_signatures(config)?;
+    let prepared = registry.prepare_bodies(config)?;
 
     let mut builder = OpBuilder::new(context.clone());
     let mut world = {
@@ -205,7 +209,7 @@ fn lift_modules(
     ensure_op_region(&context, &mut *world.borrow_mut());
 
     registry.declare_modules(world)?;
-    registry.lift_bodies()?;
+    registry.emit_bodies(prepared)?;
 
     let module = registry.modules[&root_index];
     let skipped_procedures = registry.skipped_procedures();
@@ -470,6 +474,8 @@ impl ModuleRegistry {
                                                 ));
                                             }
                                         }
+                                        // Keep unsupported control flow out of signature inference.
+                                        // Complete preparation still runs before any HIR is declared.
                                         validate_lint_liftability(p.body())?;
                                         let count = estimated_hir_operation_count(p.body());
                                         if count > LINT_ESTIMATED_HIR_OP_LIMIT {
@@ -651,46 +657,92 @@ impl ModuleRegistry {
         Ok(())
     }
 
-    fn lift_bodies(&self) -> Result<()> {
-        let mut builder = OpBuilder::new(self.context.clone());
-        // Lift in item order, like the declarations, so that neither the order bodies are created
-        // in nor the first error reported depends on hash table iteration order.
+    fn prepare_bodies(
+        &mut self,
+        config: &LiftConfig,
+    ) -> Result<BTreeMap<GlobalItemIndex, PreparedProcedure>> {
+        let mut prepared = BTreeMap::new();
         let mut gids = self.signatures.keys().copied().collect::<Vec<_>>();
         gids.sort_unstable();
         for gid in gids {
-            let module_path = self.linker[gid.module].path();
             if let SymbolItem::Procedure(p) = self.linker[gid].item() {
-                let p = p.borrow();
-                let path = module_path.join(p.name());
-                // We emit external signatures as empty procedures - leave them as declarations in
-                // HIR and do not attempt to lift/analyze them (instead, we rely on the type
-                // signature to tell us what we want to know)
-                if self.external_signatures.contains_key(path.as_path()) && p.body().is_empty() {
-                    continue;
+                let (span, result) = {
+                    let p = p.borrow();
+                    if self.external_signatures.contains_key(self.item_path(gid).as_ref())
+                        && p.body().is_empty()
+                    {
+                        continue;
+                    }
+                    (p.span(), ProcedurePreparer::new(gid, &p, self).prepare())
+                };
+                match result {
+                    Ok(procedure) => {
+                        prepared.insert(gid, procedure);
+                    }
+                    Err(err) if config.lint => self.skip_item(gid, span, err.to_string()),
+                    Err(err) => return Err(err),
                 }
-                let function = self.functions[&gid];
-                let mut function_builder = FunctionBuilder::new(function, &mut builder);
-                let mut lifter = ProcedureLifter::new(gid, &p, self);
-                lifter.lift(&mut function_builder)?;
             }
+        }
+
+        // Preparation can fail after signature inference succeeded. Propagate those failures
+        // before declaring any functions, including through already prepared callers.
+        if config.lint {
+            loop {
+                let mut newly_skipped = Vec::new();
+                for (&gid, procedure) in &prepared {
+                    if self.skipped_procedures.contains_key(&gid) {
+                        continue;
+                    }
+                    for (callee, span) in procedure.callees() {
+                        if let Some(skipped) = self.skipped_procedures.get(callee) {
+                            newly_skipped.push((
+                                gid,
+                                *span,
+                                skipped_dependency_reason(skipped.path.as_str()),
+                            ));
+                            break;
+                        }
+                    }
+                }
+                if newly_skipped.is_empty() {
+                    break;
+                }
+                for (gid, span, reason) in newly_skipped {
+                    self.skip_item(gid, span, reason);
+                }
+            }
+            for gid in self.skipped_procedures.keys() {
+                self.signatures.remove(gid);
+                prepared.remove(gid);
+            }
+        }
+        Ok(prepared)
+    }
+
+    fn emit_bodies(&self, prepared: BTreeMap<GlobalItemIndex, PreparedProcedure>) -> Result<()> {
+        let mut builder = OpBuilder::new(self.context.clone());
+        for (gid, procedure) in prepared {
+            let mut function_builder = FunctionBuilder::new(self.functions[&gid], &mut builder);
+            procedure.emit(&mut function_builder, self)?;
         }
         Ok(())
     }
 
-    fn resolve_function(
+    fn resolve_callee(
         &self,
         caller: GlobalItemIndex,
         target: &InvocationTarget,
         span: SourceSpan,
         kind: Option<ast::InvokeKind>,
-    ) -> Result<FunctionRef> {
+    ) -> Result<GlobalItemIndex> {
         let context = SymbolResolutionContext {
             span,
             module: caller.module,
             kind,
         };
         match self.linker.resolve_invoke_target(&context, target)? {
-            SymbolResolution::Exact { gid, .. } => Ok(self.functions[&gid]),
+            SymbolResolution::Exact { gid, .. } => Ok(gid),
             _ => {
                 let path = self.linker[caller.module].path().clone();
                 let path = path.join(self.linker[caller].name());
@@ -819,7 +871,7 @@ fn ensure_op_region(context: &Rc<Context>, op: &mut dyn HirOp) {
 
 #[derive(Clone, Copy)]
 struct StackValue {
-    value: ValueRef,
+    value: Value,
     #[allow(dead_code)]
     span: SourceSpan,
 }
@@ -837,28 +889,32 @@ enum WordEndian {
     Little,
 }
 
-struct ProcedureLifter<'a> {
+struct ProcedurePreparer<'a> {
     item: GlobalItemIndex,
     procedure: &'a Procedure,
     registry: &'a ModuleRegistry,
-    locals: BTreeMap<u16, LocalVariable>,
     stack: Vec<StackValue>,
 }
 
-impl<'a> ProcedureLifter<'a> {
+impl<'a> ProcedurePreparer<'a> {
     fn new(item: GlobalItemIndex, procedure: &'a Procedure, registry: &'a ModuleRegistry) -> Self {
         Self {
             item,
             procedure,
             registry,
-            locals: BTreeMap::new(),
             stack: Vec::new(),
         }
     }
 
-    fn lift(&mut self, builder: &mut FunctionBuilder<'_, OpBuilder>) -> Result<()> {
-        self.initialize_locals(builder);
-        self.initialize_stack(builder);
+    fn prepare(&mut self) -> Result<PreparedProcedure> {
+        let mut builder = PreparationBuilder::default();
+        self.stack =
+            builder.arguments(&self.registry.signatures[&self.item], self.procedure.span());
+        self.prepare_body(&mut builder)?;
+        Ok(builder.finish(self.procedure.num_locals()))
+    }
+
+    fn prepare_body(&mut self, builder: &mut PreparationBuilder) -> Result<()> {
         self.lift_block(self.procedure.body(), builder)?;
         let results = self.pop_results(builder, self.procedure.span())?;
         if !self.stack.is_empty() {
@@ -881,32 +937,7 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn initialize_locals(&mut self, builder: &mut FunctionBuilder<'_, OpBuilder>) {
-        for id in 0..self.procedure.num_locals() {
-            let local = builder.alloc_local(Type::Felt);
-            self.locals.insert(id, local);
-        }
-    }
-
-    fn initialize_stack(&mut self, builder: &mut FunctionBuilder<'_, OpBuilder>) {
-        self.stack = builder
-            .entry_block()
-            .borrow()
-            .arguments()
-            .iter()
-            .rev()
-            .map(|arg| StackValue {
-                value: *arg as ValueRef,
-                span: arg.borrow().span(),
-            })
-            .collect();
-    }
-
-    fn lift_block(
-        &mut self,
-        block: &Block,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn lift_block(&mut self, block: &Block, builder: &mut PreparationBuilder) -> Result<()> {
         let ops = block.iter().collect::<Vec<_>>();
         let mut index = 0;
         while index < ops.len() {
@@ -924,11 +955,12 @@ impl<'a> ProcedureLifter<'a> {
                     else_blk,
                 } => self.lift_if(then_blk, else_blk, *span, builder)?,
                 Op::While { span, body } => self.lift_while(body, *span, builder)?,
-                Op::DoWhile {
-                    span,
-                    body,
-                    condition,
-                } => self.lift_do_while(body, condition, *span, builder)?,
+                Op::DoWhile { span, .. } => {
+                    return Err(Report::msg(format!(
+                        "MASM do-while control flow is not supported during disassembly at \
+                         {span:?}"
+                    )));
+                }
                 Op::Repeat { count, body, .. } => {
                     let count = immediate_u32(count)?;
                     for _ in 0..count {
@@ -944,7 +976,7 @@ impl<'a> ProcedureLifter<'a> {
     fn try_lift_u32test_assert_sequence(
         &mut self,
         ops: &[&Op],
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<Option<usize>> {
         use Instruction::*;
 
@@ -1018,7 +1050,7 @@ impl<'a> ProcedureLifter<'a> {
         test_span: SourceSpan,
         assertion_span: SourceSpan,
         message: Option<CompactString>,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         match message {
             Some(message) => self.u32_assert_n_with_message(
@@ -1035,7 +1067,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         inst: &Instruction,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         use Instruction::*;
 
@@ -1405,7 +1437,7 @@ impl<'a> ProcedureLifter<'a> {
             LocStore(id) => {
                 let local = self.local(immediate_value(id)?, span)?;
                 let value = self.pop(span)?;
-                let value = self.cast(builder, value.value, local.ty(), span)?;
+                let value = self.cast(builder, value.value, Type::Felt, span)?;
                 builder.store_local(local, value, span)?;
                 Ok(())
             }
@@ -1652,25 +1684,18 @@ impl<'a> ProcedureLifter<'a> {
         then_blk: &Block,
         else_blk: &Block,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let cond = self.pop(span)?;
         let cond = self.cast(builder, cond.value, Type::I1, span)?;
         let input_stack = self.stack.clone();
 
-        let if_op = builder.r#if(cond, &[], span)?;
-        let if_ref = if_op.as_operation_ref();
-        builder.builder_mut().set_insertion_point_after(if_ref);
-
-        let then_region = { if_op.borrow().then_body().as_region_ref() };
-        let then_block = builder.create_block_in_region(then_region);
+        let (if_ref, then_block, else_block) = builder.begin_if(cond, span);
         builder.switch_to_block(then_block);
         self.stack = input_stack.clone();
         self.lift_block(then_blk, builder)?;
         let then_stack = self.stack.clone();
 
-        let else_region = { if_op.borrow().else_body().as_region_ref() };
-        let else_block = builder.create_block_in_region(else_region);
         builder.switch_to_block(else_block);
         self.stack = input_stack;
         self.lift_block(else_blk, builder)?;
@@ -1684,8 +1709,8 @@ impl<'a> ProcedureLifter<'a> {
             )));
         }
 
-        let result_types = stack_types(&then_stack);
-        append_results(builder, if_ref, &result_types, span);
+        let result_types = stack_types(builder, &then_stack);
+        let results = builder.append_results(if_ref, &result_types, span)?;
 
         builder.switch_to_block(then_block);
         let yielded = self.cast_stack_to_types(builder, &then_stack, &result_types, span)?;
@@ -1695,52 +1720,34 @@ impl<'a> ProcedureLifter<'a> {
         let yielded = self.cast_stack_to_types(builder, &else_stack, &result_types, span)?;
         builder.r#yield(yielded, span)?;
 
-        builder.builder_mut().set_insertion_point_after(if_ref);
-        self.stack = op_results_as_stack(if_ref, span);
+        builder.after(if_ref);
+        self.stack = results;
         Ok(())
-    }
-
-    fn lift_do_while(
-        &mut self,
-        _body: &Block,
-        _condition: &Block,
-        _span: SourceSpan,
-        _builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
-        todo!()
     }
 
     fn lift_while(
         &mut self,
         body: &Block,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         self.require_depth(0, span)?;
 
         let init_stack = self.stack.clone();
-        let init_types = stack_types(&init_stack);
+        let init_types = stack_types(builder, &init_stack);
         let result_types = init_types[..init_types.len() - 1].to_vec();
-        let inits = init_stack.iter().map(|value| value.value);
-
-        let while_op = builder.r#while(inits, &result_types, span)?;
-        let while_ref = while_op.as_operation_ref();
-        builder.builder_mut().set_insertion_point_after(while_ref);
-
-        let before_block =
-            { while_op.borrow().before().entry_block_ref().expect("scf.while before block") };
-        builder.switch_to_block(before_block);
-        self.stack = stack_from_block_args(before_block);
+        let inits = init_stack.iter().map(|value| value.value).collect();
+        let prepared_loop = builder.begin_while(inits, result_types.clone(), span)?;
+        builder.switch_to_block(prepared_loop.before);
+        self.stack = prepared_loop.before_args;
         let cond = self.pop(span)?;
         let cond = self.cast(builder, cond.value, Type::I1, span)?;
         let forwarded =
             self.cast_stack_to_types(builder, &self.stack.clone(), &result_types, span)?;
         builder.condition(cond, forwarded, span)?;
 
-        let after_block =
-            { while_op.borrow().after().entry_block_ref().expect("scf.while after block") };
-        builder.switch_to_block(after_block);
-        self.stack = stack_from_block_args(after_block);
+        builder.switch_to_block(prepared_loop.after);
+        self.stack = prepared_loop.after_args;
         self.lift_block(body, builder)?;
 
         if self.stack.len() != init_types.len() {
@@ -1754,8 +1761,8 @@ impl<'a> ProcedureLifter<'a> {
         let yielded = self.cast_stack_to_types(builder, &self.stack.clone(), &init_types, span)?;
         builder.r#yield(yielded, span)?;
 
-        builder.builder_mut().set_insertion_point_after(while_ref);
-        self.stack = op_results_as_stack(while_ref, span);
+        builder.after(prepared_loop.operation);
+        self.stack = prepared_loop.results;
         Ok(())
     }
 
@@ -1763,7 +1770,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         value: PushValue,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         match value {
             PushValue::Int(IntValue::U8(value)) => {
@@ -1787,7 +1794,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         value: miden_assembly_syntax::parser::WordValue,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) {
         for value in value.0.into_iter().rev() {
             self.push_value(builder.felt(value, span), span);
@@ -1799,7 +1806,7 @@ impl<'a> ProcedureLifter<'a> {
         value: miden_assembly_syntax::parser::WordValue,
         range: &std::ops::Range<usize>,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let Some(values) = value.0.get(range.clone()) else {
             return Err(Report::msg(format!(
@@ -1821,48 +1828,20 @@ impl<'a> ProcedureLifter<'a> {
 
     fn invoke(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         target: &InvocationTarget,
         span: SourceSpan,
         kind: ast::InvokeKind,
     ) -> Result<()> {
-        let function = self.registry.resolve_function(self.item, target, span, Some(kind))?;
-        let signature = function.borrow().get_signature().clone();
+        let function = self.registry.resolve_callee(self.item, target, span, Some(kind))?;
+        let signature = self.registry.signatures[&function].clone();
         let mut args = Vec::with_capacity(signature.arity());
         for param in signature.params().iter() {
             let arg = self.pop(span)?;
             args.push(self.cast(builder, arg.value, param.ty.clone(), span)?);
         }
 
-        let results: Vec<_> = match kind {
-            ast::InvokeKind::Exec => {
-                let op = builder.exec(function, signature, args, span)?;
-                op.borrow()
-                    .results()
-                    .iter()
-                    .map(|result| result.borrow().as_value_ref())
-                    .collect()
-            }
-            ast::InvokeKind::Call => {
-                let op = builder.call(function, signature, args, span)?;
-                op.borrow()
-                    .results()
-                    .iter()
-                    .map(|result| result.borrow().as_value_ref())
-                    .collect()
-            }
-            ast::InvokeKind::SysCall => {
-                let op = builder.syscall(function, signature, args, span)?;
-                op.borrow()
-                    .results()
-                    .iter()
-                    .map(|result| result.borrow().as_value_ref())
-                    .collect()
-            }
-            ast::InvokeKind::ProcRef => {
-                panic!("unexpected use of InvokeKind::ProcRef in ProcedureLifter::invoke")
-            }
-        };
+        let results = builder.invoke(function, kind, signature, args, span);
         for result in results.into_iter().rev() {
             self.push_value(result, span);
         }
@@ -1871,9 +1850,9 @@ impl<'a> ProcedureLifter<'a> {
 
     fn pop_results(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         span: SourceSpan,
-    ) -> Result<Vec<ValueRef>> {
+    ) -> Result<Vec<Value>> {
         let signature = &self.registry.signatures[&self.item];
         let result_types: Vec<_> =
             signature.results().iter().map(|result| result.ty.clone()).collect();
@@ -1887,18 +1866,13 @@ impl<'a> ProcedureLifter<'a> {
 
     fn binary_with_type<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         ty: Type,
         span: SourceSpan,
         f: F,
     ) -> Result<()>
     where
-        F: FnOnce(
-            &mut FunctionBuilder<'_, OpBuilder>,
-            ValueRef,
-            ValueRef,
-            SourceSpan,
-        ) -> Result<ValueRef>,
+        F: FnOnce(&mut PreparationBuilder, Value, Value, SourceSpan) -> Result<Value>,
     {
         let (lhs, rhs) = self.pop_binary(span)?;
         let lhs = self.cast(builder, lhs.value, ty.clone(), span)?;
@@ -1910,18 +1884,13 @@ impl<'a> ProcedureLifter<'a> {
 
     fn felt_binary_imm<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         immediate: &Immediate<Felt>,
         span: SourceSpan,
         f: F,
     ) -> Result<()>
     where
-        F: FnOnce(
-            &mut FunctionBuilder<'_, OpBuilder>,
-            ValueRef,
-            ValueRef,
-            SourceSpan,
-        ) -> Result<ValueRef>,
+        F: FnOnce(&mut PreparationBuilder, Value, Value, SourceSpan) -> Result<Value>,
     {
         let lhs = self.pop(span)?;
         let lhs = self.cast(builder, lhs.value, Type::Felt, span)?;
@@ -1933,19 +1902,19 @@ impl<'a> ProcedureLifter<'a> {
 
     fn ext2_binary<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         span: SourceSpan,
         f: F,
     ) -> Result<()>
     where
         F: FnOnce(
-            &mut FunctionBuilder<'_, OpBuilder>,
-            ValueRef,
-            ValueRef,
-            ValueRef,
-            ValueRef,
+            &mut PreparationBuilder,
+            Value,
+            Value,
+            Value,
+            Value,
             SourceSpan,
-        ) -> Result<(ValueRef, ValueRef)>,
+        ) -> Result<(Value, Value)>,
     {
         let (rhs0, rhs1) = self.pop_ext2(span)?;
         let (lhs0, lhs1) = self.pop_ext2(span)?;
@@ -1960,17 +1929,12 @@ impl<'a> ProcedureLifter<'a> {
 
     fn ext2_unary<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         span: SourceSpan,
         f: F,
     ) -> Result<()>
     where
-        F: FnOnce(
-            &mut FunctionBuilder<'_, OpBuilder>,
-            ValueRef,
-            ValueRef,
-            SourceSpan,
-        ) -> Result<(ValueRef, ValueRef)>,
+        F: FnOnce(&mut PreparationBuilder, Value, Value, SourceSpan) -> Result<(Value, Value)>,
     {
         let (operand0, operand1) = self.pop_ext2(span)?;
         let operand0 = self.cast(builder, operand0.value, Type::Felt, span)?;
@@ -1982,36 +1946,26 @@ impl<'a> ProcedureLifter<'a> {
 
     fn u32_binary_imm<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         immediate: &Immediate<u32>,
         span: SourceSpan,
         f: F,
     ) -> Result<()>
     where
-        F: FnOnce(
-            &mut FunctionBuilder<'_, OpBuilder>,
-            ValueRef,
-            ValueRef,
-            SourceSpan,
-        ) -> Result<ValueRef>,
+        F: FnOnce(&mut PreparationBuilder, Value, Value, SourceSpan) -> Result<Value>,
     {
         self.u32_binary_const(builder, immediate_value(immediate)?, span, f)
     }
 
     fn u32_binary_const<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         immediate: u32,
         span: SourceSpan,
         f: F,
     ) -> Result<()>
     where
-        F: FnOnce(
-            &mut FunctionBuilder<'_, OpBuilder>,
-            ValueRef,
-            ValueRef,
-            SourceSpan,
-        ) -> Result<ValueRef>,
+        F: FnOnce(&mut PreparationBuilder, Value, Value, SourceSpan) -> Result<Value>,
     {
         let lhs = self.pop(span)?;
         let lhs = self.cast(builder, lhs.value, Type::U32, span)?;
@@ -2023,17 +1977,12 @@ impl<'a> ProcedureLifter<'a> {
 
     fn u32_overflowing_binary<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         span: SourceSpan,
         f: F,
     ) -> Result<()>
     where
-        F: FnOnce(
-            &mut FunctionBuilder<'_, OpBuilder>,
-            ValueRef,
-            ValueRef,
-            SourceSpan,
-        ) -> Result<(ValueRef, ValueRef)>,
+        F: FnOnce(&mut PreparationBuilder, Value, Value, SourceSpan) -> Result<(Value, Value)>,
     {
         let (lhs, rhs) = self.pop_binary(span)?;
         let lhs = self.cast(builder, lhs.value, Type::U32, span)?;
@@ -2046,18 +1995,13 @@ impl<'a> ProcedureLifter<'a> {
 
     fn u32_overflowing_binary_imm<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         immediate: &Immediate<u32>,
         span: SourceSpan,
         f: F,
     ) -> Result<()>
     where
-        F: FnOnce(
-            &mut FunctionBuilder<'_, OpBuilder>,
-            ValueRef,
-            ValueRef,
-            SourceSpan,
-        ) -> Result<(ValueRef, ValueRef)>,
+        F: FnOnce(&mut PreparationBuilder, Value, Value, SourceSpan) -> Result<(Value, Value)>,
     {
         let lhs = self.pop(span)?;
         let lhs = self.cast(builder, lhs.value, Type::U32, span)?;
@@ -2070,17 +2014,12 @@ impl<'a> ProcedureLifter<'a> {
 
     fn u32_widening_binary<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         span: SourceSpan,
         f: F,
     ) -> Result<()>
     where
-        F: FnOnce(
-            &mut FunctionBuilder<'_, OpBuilder>,
-            ValueRef,
-            ValueRef,
-            SourceSpan,
-        ) -> Result<ValueRef>,
+        F: FnOnce(&mut PreparationBuilder, Value, Value, SourceSpan) -> Result<Value>,
     {
         let (lhs, rhs) = self.pop_binary(span)?;
         let lhs = self.cast(builder, lhs.value, Type::U32, span)?;
@@ -2091,18 +2030,13 @@ impl<'a> ProcedureLifter<'a> {
 
     fn u32_widening_binary_imm<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         immediate: &Immediate<u32>,
         span: SourceSpan,
         f: F,
     ) -> Result<()>
     where
-        F: FnOnce(
-            &mut FunctionBuilder<'_, OpBuilder>,
-            ValueRef,
-            ValueRef,
-            SourceSpan,
-        ) -> Result<ValueRef>,
+        F: FnOnce(&mut PreparationBuilder, Value, Value, SourceSpan) -> Result<Value>,
     {
         let lhs = self.pop(span)?;
         let lhs = self.cast(builder, lhs.value, Type::U32, span)?;
@@ -2113,19 +2047,14 @@ impl<'a> ProcedureLifter<'a> {
 
     fn u32_widened_binary_result<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-        lhs: ValueRef,
-        rhs: ValueRef,
+        builder: &mut PreparationBuilder,
+        lhs: Value,
+        rhs: Value,
         span: SourceSpan,
         f: F,
-    ) -> Result<ValueRef>
+    ) -> Result<Value>
     where
-        F: FnOnce(
-            &mut FunctionBuilder<'_, OpBuilder>,
-            ValueRef,
-            ValueRef,
-            SourceSpan,
-        ) -> Result<ValueRef>,
+        F: FnOnce(&mut PreparationBuilder, Value, Value, SourceSpan) -> Result<Value>,
     {
         let lhs = builder.zext(lhs, Type::U64, span)?;
         let rhs = builder.zext(rhs, Type::U64, span)?;
@@ -2134,7 +2063,7 @@ impl<'a> ProcedureLifter<'a> {
 
     fn u32_add3(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         span: SourceSpan,
         output: U32Add3Output,
     ) -> Result<()> {
@@ -2169,7 +2098,7 @@ impl<'a> ProcedureLifter<'a> {
 
     fn u32_madd(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         span: SourceSpan,
         output: U32Add3Output,
     ) -> Result<()> {
@@ -2201,8 +2130,8 @@ impl<'a> ProcedureLifter<'a> {
 
     fn push_u64_as_u32_widening_result(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-        result: ValueRef,
+        builder: &mut PreparationBuilder,
+        result: Value,
         span: SourceSpan,
     ) -> Result<()> {
         let (high, low) = builder.split2(result, Type::U32, span)?;
@@ -2211,11 +2140,7 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn stack_depth(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn stack_depth(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let depth = u64::try_from(self.stack.len()).map_err(|_| {
             Report::msg(format!("current stack depth does not fit in a felt at {span:?}"))
         })?;
@@ -2228,7 +2153,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         count: u8,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         validate_advice_read_count(count, span)?;
         for _ in 0..count {
@@ -2241,7 +2166,7 @@ impl<'a> ProcedureLifter<'a> {
     fn advice_load_word(
         &mut self,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let old = self.pop_word(span)?;
         let (result0, result1, result2, result3) = builder.advice_load_word(
@@ -2258,11 +2183,7 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn emit_event(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn emit_event(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let event_id = self.pop(span)?;
         let event_id = self.cast(builder, event_id.value, Type::Felt, span)?;
         let event_id = builder.emit_event(event_id, span)?;
@@ -2274,7 +2195,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         event: &miden_assembly_syntax::ast::SystemEventNode,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let read_count = system_event_read_count(event);
         let operands = self.pop_cast_felt_window(read_count, span, builder)?;
@@ -2283,90 +2204,51 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn hash(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
-        let operands = self.pop_cast_felt_window(4, span, builder)?;
-        let results = builder.hash(operands[0], operands[1], operands[2], operands[3], span)?;
+    fn hash(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
+        let operands = self
+            .pop_cast_felt_window(4, span, builder)?
+            .try_into()
+            .expect("hash window has four values");
+        let results = builder.hash(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn hmerge(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
-        let operands = self.pop_cast_felt_window(8, span, builder)?;
-        let results = builder.hmerge(
-            operands[0],
-            operands[1],
-            operands[2],
-            operands[3],
-            operands[4],
-            operands[5],
-            operands[6],
-            operands[7],
-            span,
-        )?;
+    fn hmerge(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
+        let operands = self
+            .pop_cast_felt_window(8, span, builder)?
+            .try_into()
+            .expect("hmerge window has eight values");
+        let results = builder.hmerge(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn hperm(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
-        let operands = self.pop_cast_felt_window(12, span, builder)?;
-        let results = builder.hperm(
-            operands[0],
-            operands[1],
-            operands[2],
-            operands[3],
-            operands[4],
-            operands[5],
-            operands[6],
-            operands[7],
-            operands[8],
-            operands[9],
-            operands[10],
-            operands[11],
-            span,
-        )?;
+    fn hperm(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
+        let operands = self
+            .pop_cast_felt_window(12, span, builder)?
+            .try_into()
+            .expect("hperm window has twelve values");
+        let results = builder.hperm(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn mtree_get(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn mtree_get(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(6, span, builder)?;
         let results = builder.mtree_get(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn mtree_set(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn mtree_set(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(10, span, builder)?;
         let results = builder.mtree_set(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn mtree_merge(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn mtree_merge(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(8, span, builder)?;
         let results = builder.mtree_merge(operands, span)?;
         self.push_results_top_to_bottom(results, span);
@@ -2377,7 +2259,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         message: Option<CompactString>,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let operands = self.pop_cast_felt_window(10, span, builder)?;
         let results = match message {
@@ -2388,88 +2270,56 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn crypto_stream(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn crypto_stream(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(14, span, builder)?;
         let results = builder.crypto_stream(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn fri_ext2fold4(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn fri_ext2fold4(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(17, span, builder)?;
         let results = builder.fri_ext2fold4(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn horner_base(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn horner_base(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(16, span, builder)?;
         let results = builder.horner_base(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn horner_ext(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn horner_ext(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(16, span, builder)?;
         let results = builder.horner_ext(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn eval_circuit(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn eval_circuit(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(3, span, builder)?;
         let results = builder.eval_circuit(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn log_deferred(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn log_deferred(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(12, span, builder)?;
         let results = builder.log_deferred(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn mem_stream(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn mem_stream(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(13, span, builder)?;
         let results = builder.mem_stream(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
-    fn advice_pipe(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn advice_pipe(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let operands = self.pop_cast_felt_window(13, span, builder)?;
         let results = builder.advice_pipe(operands, span)?;
         self.push_results_top_to_bottom(results, span);
@@ -2480,7 +2330,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         immediate_addr: Option<u32>,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let addr = self.memory_address(immediate_addr, span, builder)?;
         let ptr = self.memory_pointer_at(builder, addr, 0, span)?;
@@ -2494,7 +2344,7 @@ impl<'a> ProcedureLifter<'a> {
         immediate_addr: Option<u32>,
         endian: WordEndian,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         validate_memory_word_address(immediate_addr, span)?;
         let addr = self.memory_address(immediate_addr, span, builder)?;
@@ -2516,7 +2366,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         immediate_addr: Option<u32>,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let addr = self.memory_address(immediate_addr, span, builder)?;
         let ptr = self.memory_pointer_at(builder, addr, 0, span)?;
@@ -2531,7 +2381,7 @@ impl<'a> ProcedureLifter<'a> {
         immediate_addr: Option<u32>,
         endian: WordEndian,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         validate_memory_word_address(immediate_addr, span)?;
         let addr = self.memory_address(immediate_addr, span, builder)?;
@@ -2557,8 +2407,8 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         immediate_addr: Option<u32>,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<ValueRef> {
+        builder: &mut PreparationBuilder,
+    ) -> Result<Value> {
         match immediate_addr {
             Some(addr) => Ok(builder.u32(addr, span)),
             None => {
@@ -2570,11 +2420,11 @@ impl<'a> ProcedureLifter<'a> {
 
     fn memory_pointer_at(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-        base_addr: ValueRef,
+        builder: &mut PreparationBuilder,
+        base_addr: Value,
         offset: u32,
         span: SourceSpan,
-    ) -> Result<ValueRef> {
+    ) -> Result<Value> {
         let addr = if offset == 0 {
             base_addr
         } else {
@@ -2589,7 +2439,7 @@ impl<'a> ProcedureLifter<'a> {
         id: u16,
         endian: WordEndian,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let locals = self.local_word(id, span)?;
         let offsets = match endian {
@@ -2608,7 +2458,7 @@ impl<'a> ProcedureLifter<'a> {
         id: u16,
         endian: WordEndian,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let locals = self.local_word(id, span)?;
         let values = self.pop_word(span)?;
@@ -2618,7 +2468,7 @@ impl<'a> ProcedureLifter<'a> {
                 WordEndian::Big => locals[offset],
                 WordEndian::Little => locals[3 - offset],
             };
-            let value = self.cast(builder, value.value, local.ty(), span)?;
+            let value = self.cast(builder, value.value, Type::Felt, span)?;
             builder.store_local(local, value, span)?;
             casted_values.push(value);
         }
@@ -2630,13 +2480,13 @@ impl<'a> ProcedureLifter<'a> {
 
     fn unary_with_type<F>(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         ty: Type,
         span: SourceSpan,
         f: F,
     ) -> Result<()>
     where
-        F: FnOnce(&mut FunctionBuilder<'_, OpBuilder>, ValueRef, SourceSpan) -> Result<ValueRef>,
+        F: FnOnce(&mut PreparationBuilder, Value, SourceSpan) -> Result<Value>,
     {
         let value = self.pop(span)?;
         let value = self.cast(builder, value.value, ty, span)?;
@@ -2645,11 +2495,7 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn eq_word(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn eq_word(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let rhs = self.pop_word(span)?;
         let lhs = self.pop_word(span)?;
         let mut result = None;
@@ -2669,11 +2515,7 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn assert_eq_word(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn assert_eq_word(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let rhs = self.pop_word(span)?;
         let lhs = self.pop_word(span)?;
         for (lhs, rhs) in lhs.into_iter().zip(rhs) {
@@ -2688,7 +2530,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         message: CompactString,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let rhs = self.pop_word(span)?;
         let lhs = self.pop_word(span)?;
@@ -2704,13 +2546,13 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         chunk_len: usize,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let cond = self.pop_condition(span, builder)?;
         let if_true = self.pop_chunk(chunk_len, span)?;
         let if_false = self.pop_chunk(chunk_len, span)?;
         for (if_false, if_true) in if_false.into_iter().zip(if_true) {
-            let result_ty = if_false.value.borrow().ty().clone();
+            let result_ty = builder.ty(if_false.value).clone();
             let selected =
                 self.select_as_type(builder, cond, if_true.value, if_false.value, result_ty, span)?;
             self.push_value(selected, span);
@@ -2722,7 +2564,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         chunk_len: usize,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let cond = self.pop_condition(span, builder)?;
         let if_true = self.pop_chunk(chunk_len, span)?;
@@ -2731,8 +2573,8 @@ impl<'a> ProcedureLifter<'a> {
         let mut lower = Vec::with_capacity(chunk_len);
         let mut upper = Vec::with_capacity(chunk_len);
         for (if_false, if_true) in if_false.into_iter().zip(if_true) {
-            let lower_ty = if_false.value.borrow().ty().clone();
-            let upper_ty = if_true.value.borrow().ty().clone();
+            let lower_ty = builder.ty(if_false.value).clone();
+            let upper_ty = builder.ty(if_true.value).clone();
             lower.push(self.select_as_type(
                 builder,
                 cond,
@@ -2764,7 +2606,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         n: usize,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         self.u32_assert_n_with_message(n, None, span, builder)
     }
@@ -2774,7 +2616,7 @@ impl<'a> ProcedureLifter<'a> {
         n: usize,
         message: Option<CompactString>,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         self.require_depth(n - 1, span)?;
         let start = self.stack.len() - n;
@@ -2792,7 +2634,7 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         message: Option<CompactString>,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
     ) -> Result<()> {
         let value = self.pop(span)?;
         match message {
@@ -2802,11 +2644,7 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn u32_test(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn u32_test(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         self.require_depth(0, span)?;
         let value = self.stack.last().unwrap().value;
         let in_range = self.u32_range_check(value, span, builder)?;
@@ -2814,11 +2652,7 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn u32_testw(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn u32_testw(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         self.require_depth(3, span)?;
         let start = self.stack.len() - 4;
         let values: Vec<_> = self.stack[start..].iter().map(|value| value.value).collect();
@@ -2836,11 +2670,7 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn u32_split(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn u32_split(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let value = self.pop(span)?;
         let value = self.cast(builder, value.value, Type::U64, span)?;
         let (high, low) = builder.split2(value, Type::U32, span)?;
@@ -2849,13 +2679,9 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn u32_cast(
-        &mut self,
-        span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<()> {
+    fn u32_cast(&mut self, span: SourceSpan, builder: &mut PreparationBuilder) -> Result<()> {
         let value = self.pop(span)?.value;
-        let ty = value.borrow().ty().clone();
+        let ty = builder.ty(value).clone();
         let result = if ty == Type::U32 {
             value
         } else if ty == Type::Felt {
@@ -2869,10 +2695,10 @@ impl<'a> ProcedureLifter<'a> {
 
     fn u32_range_check(
         &mut self,
-        value: ValueRef,
+        value: Value,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<ValueRef> {
+        builder: &mut PreparationBuilder,
+    ) -> Result<Value> {
         let value = self.cast(builder, value, Type::U64, span)?;
         let (high, _low) = builder.split2(value, Type::U32, span)?;
         let zero = builder.u32(0, span);
@@ -2882,21 +2708,21 @@ impl<'a> ProcedureLifter<'a> {
     fn pop_condition(
         &mut self,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<ValueRef> {
+        builder: &mut PreparationBuilder,
+    ) -> Result<Value> {
         let cond = self.pop(span)?;
         self.cast(builder, cond.value, Type::I1, span)
     }
 
     fn select_as_type(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-        cond: ValueRef,
-        if_true: ValueRef,
-        if_false: ValueRef,
+        builder: &mut PreparationBuilder,
+        cond: Value,
+        if_true: Value,
+        if_false: Value,
         result_ty: Type,
         span: SourceSpan,
-    ) -> Result<ValueRef> {
+    ) -> Result<Value> {
         let if_true = self.cast(builder, if_true, result_ty.clone(), span)?;
         let if_false = self.cast(builder, if_false, result_ty, span)?;
         builder.select(cond, if_true, if_false, span)
@@ -2904,11 +2730,11 @@ impl<'a> ProcedureLifter<'a> {
 
     fn cast_stack_to_types(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        builder: &mut PreparationBuilder,
         stack: &[StackValue],
         types: &[Type],
         span: SourceSpan,
-    ) -> Result<Vec<ValueRef>> {
+    ) -> Result<Vec<Value>> {
         if stack.len() != types.len() {
             return Err(Report::msg(format!(
                 "cannot cast stack of depth {} to {} type(s) at {span:?}",
@@ -2926,25 +2752,26 @@ impl<'a> ProcedureLifter<'a> {
 
     fn cast(
         &mut self,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-        value: ValueRef,
+        builder: &mut PreparationBuilder,
+        value: Value,
         ty: Type,
         span: SourceSpan,
-    ) -> Result<ValueRef> {
-        if value.borrow().ty() == &ty {
+    ) -> Result<Value> {
+        if builder.ty(value) == &ty {
             return Ok(value);
         }
         builder.unrealized_conversion_cast(value, ty, span)
     }
 
-    fn local(&self, id: u16, span: SourceSpan) -> Result<LocalVariable> {
-        self.locals
-            .get(&id)
-            .copied()
-            .ok_or_else(|| Report::msg(format!("invalid local index {id} at {span:?}")))
+    fn local(&self, id: u16, span: SourceSpan) -> Result<Local> {
+        if id < self.procedure.num_locals() {
+            Ok(Local(id))
+        } else {
+            Err(Report::msg(format!("invalid local index {id} at {span:?}")))
+        }
     }
 
-    fn local_word(&self, id: u16, span: SourceSpan) -> Result<[LocalVariable; 4]> {
+    fn local_word(&self, id: u16, span: SourceSpan) -> Result<[Local; 4]> {
         if !id.is_multiple_of(4) {
             return Err(Report::msg(format!(
                 "local word index {id} is not word-aligned at {span:?}"
@@ -2958,7 +2785,7 @@ impl<'a> ProcedureLifter<'a> {
         ])
     }
 
-    fn push_value(&mut self, value: ValueRef, span: SourceSpan) {
+    fn push_value(&mut self, value: Value, span: SourceSpan) {
         self.stack.push(StackValue { value, span });
     }
 
@@ -3057,7 +2884,7 @@ impl<'a> ProcedureLifter<'a> {
         Ok((values[1], values[0]))
     }
 
-    fn push_ext2(&mut self, result0: ValueRef, result1: ValueRef, span: SourceSpan) {
+    fn push_ext2(&mut self, result0: Value, result1: Value, span: SourceSpan) {
         self.push_value(result1, span);
         self.push_value(result0, span);
     }
@@ -3066,8 +2893,8 @@ impl<'a> ProcedureLifter<'a> {
         &mut self,
         count: usize,
         span: SourceSpan,
-        builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<Vec<ValueRef>> {
+        builder: &mut PreparationBuilder,
+    ) -> Result<Vec<Value>> {
         self.require_depth(count - 1, span)?;
         let start = self.stack.len() - count;
         let stack_window = self.stack.split_off(start);
@@ -3080,7 +2907,7 @@ impl<'a> ProcedureLifter<'a> {
 
     fn push_results_top_to_bottom<I>(&mut self, results: I, span: SourceSpan)
     where
-        I: IntoIterator<Item = ValueRef>,
+        I: IntoIterator<Item = Value>,
     {
         let mut results = results.into_iter().collect::<Vec<_>>();
         while let Some(result) = results.pop() {
@@ -3266,45 +3093,6 @@ fn validate_advice_read_count(count: u8, span: SourceSpan) -> Result<()> {
     Ok(())
 }
 
-fn stack_types(stack: &[StackValue]) -> Vec<Type> {
-    stack.iter().map(|value| value.value.borrow().ty().clone()).collect()
-}
-
-fn stack_from_block_args(block: BlockRef) -> Vec<StackValue> {
-    block
-        .borrow()
-        .arguments()
-        .iter()
-        .map(|arg| StackValue {
-            value: *arg as ValueRef,
-            span: arg.borrow().span(),
-        })
-        .collect()
-}
-
-fn append_results(
-    builder: &mut FunctionBuilder<'_, OpBuilder>,
-    mut owner: OperationRef,
-    result_types: &[Type],
-    span: SourceSpan,
-) {
-    let context = builder.builder().context();
-    let mut owner_mut = owner.borrow_mut();
-    for (index, result_ty) in result_types.iter().enumerate() {
-        let result = context.make_result(span, result_ty.clone(), owner, index as u8);
-        owner_mut.results_mut().push(result);
-    }
-}
-
-fn op_results_as_stack(owner: OperationRef, span: SourceSpan) -> Vec<StackValue> {
-    owner
-        .borrow()
-        .results()
-        .all()
-        .iter()
-        .map(|result| StackValue {
-            value: result.borrow().as_value_ref(),
-            span,
-        })
-        .collect()
+fn stack_types(builder: &PreparationBuilder, stack: &[StackValue]) -> Vec<Type> {
+    stack.iter().map(|value| builder.ty(value.value).clone()).collect()
 }

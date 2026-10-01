@@ -1,5 +1,6 @@
 //! Utilities for emitting frontend-specific artifacts.
 
+#[cfg(feature = "std")]
 use alloc::string::String;
 
 use midenc_session::{Emit, OutputMode, OutputType, Session, Writer};

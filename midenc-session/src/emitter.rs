@@ -310,8 +310,7 @@ impl Buffer {
 #[cfg(not(feature = "std"))]
 impl core::fmt::Write for Buffer {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        use miden_assembly::utils::ByteWriter;
-        self.0.write_bytes(s.as_bytes());
+        self.0.extend_from_slice(s.as_bytes());
         Ok(())
     }
 }

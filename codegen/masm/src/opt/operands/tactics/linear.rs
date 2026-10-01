@@ -1,4 +1,4 @@
-use midenc_hir::adt::SmallSet;
+use midenc_hir::{FxBuildHasher, adt::SmallSet};
 use petgraph::prelude::{DiGraphMap, Direction};
 
 use super::*;
@@ -26,7 +26,7 @@ impl Tactic for Linear {
         while changed {
             changed = false;
 
-            let mut graph = DiGraphMap::<Operand, ()>::new();
+            let mut graph = DiGraphMap::<Operand, (), FxBuildHasher>::new();
 
             // Materialize copies
             let mut materialized = SmallSet::<ValueOrAlias, 4>::default();
