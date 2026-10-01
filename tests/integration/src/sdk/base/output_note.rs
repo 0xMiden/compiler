@@ -176,6 +176,33 @@ fn rust_sdk_output_note_compute_note_id_binding() {
     );
 }
 
+/// Checks that `output_note::seal` compiles against the protocol library.
+#[test]
+fn rust_sdk_output_note_seal_binding() {
+    run_output_note_binding_test(
+        "rust_sdk_output_note_seal_binding",
+        "pub fn binding(&self) -> Felt {
+        output_note::seal(NoteIdx { inner: Felt::new(0).unwrap() });
+        Felt::new(0).unwrap()
+    }",
+    );
+}
+
+/// Checks that `output_note::is_sealed` compiles against the protocol library.
+#[test]
+fn rust_sdk_output_note_is_sealed_binding() {
+    run_output_note_binding_test(
+        "rust_sdk_output_note_is_sealed_binding",
+        "pub fn binding(&self) -> Felt {
+        if output_note::is_sealed(NoteIdx { inner: Felt::new(0).unwrap() }) {
+            Felt::new(1).unwrap()
+        } else {
+            Felt::new(0).unwrap()
+        }
+    }",
+    );
+}
+
 #[test]
 fn rust_sdk_output_note_get_recipient_binding() {
     run_output_note_binding_test(

@@ -408,9 +408,9 @@ The faucet must be set up first (see Step 3) and the sender wallet must hold suf
 ## Key Dependencies
 
 ```toml
-miden-client = { version = "0.16.0-rc.1", features = ["tonic"] }
-miden-client-sqlite-store = { version = "0.16.0-rc.1", package = "miden-client-sqlite-store" }
-miden-standards = { version = "0.16.0-rc.4", features = ["testing"] }
+miden-client = { version = "0.17.0-rc.5", features = ["tonic"] }
+miden-client-sqlite-store = { version = "0.17.0-rc.5", package = "miden-client-sqlite-store" }
+miden-standards = { version = "0.17.0-rc.9", features = ["testing"] }
 miden-testing = "0.16.0-rc.4"
 miden-mast-package = { version = "0.29", default-features = false }
 ```

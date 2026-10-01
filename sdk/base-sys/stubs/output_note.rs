@@ -148,3 +148,17 @@ pub extern "C" fn output_note_write_attachment_to_memory_plain(
 pub extern "C" fn output_note_compute_note_id_plain(_note_idx: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
+
+#[unsafe(export_name = "miden::protocol::output_note::seal")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn output_note_seal_plain(_note_index: f32) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[unsafe(export_name = "miden::protocol::output_note::is_sealed")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn output_note_is_sealed_plain(_note_index: f32) -> f32 {
+    unsafe { core::hint::unreachable_unchecked() }
+}
