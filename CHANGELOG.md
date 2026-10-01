@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0-rc.3]
+
+### Compiler and `midenc`
+
+- Target protocol `0.17.0-rc.7` on Miden VM `0.33.0`. The transaction kernel and protocol API are
+  unchanged from `0.17.0-rc.6`, so compiled packages need no changes.
+
 ## [0.11.0-rc.2]
 
 ### Compiler and `midenc`

@@ -2,7 +2,7 @@ use alloc::{collections::BTreeMap, rc::Rc};
 
 use smallvec::SmallVec;
 
-use super::{FrozenRewritePatternSet, PatternBenefit, RewritePattern, Rewriter};
+use super::{FrozenRewritePatternSet, PatternBenefit, RewritePattern, Rewriter, RewriterExt};
 use crate::{OperationName, OperationRef, ProgramPoint, Report};
 
 pub enum PatternApplicationError {
@@ -214,7 +214,11 @@ impl PatternApplicator {
                 best_pattern.name()
             );
 
-            match best_pattern.match_and_rewrite(op, rewriter) {
+            let applied = {
+                let mut scope = rewriter.with_inline_call_chain(op);
+                best_pattern.match_and_rewrite(op, &mut *scope)
+            };
+            match applied {
                 Ok(matched) => {
                     if matched {
                         log::trace!(

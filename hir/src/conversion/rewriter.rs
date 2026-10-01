@@ -241,6 +241,14 @@ impl ConversionPatternRewriter {
         }
     }
 
+    /// Set the debug metadata inherited during this conversion attempt.
+    pub(super) fn inherit_inline_call_chain(&mut self, op: OperationRef) {
+        let chain = op
+            .borrow()
+            .get_attribute(crate::dialects::debuginfo::attributes::INLINE_CALL_CHAIN_ATTR_NAME);
+        self.inner.replace_inline_call_chain(chain);
+    }
+
     /// Set the insertion point before `op`.
     #[inline]
     pub fn set_insertion_point_before(&mut self, op: OperationRef) {

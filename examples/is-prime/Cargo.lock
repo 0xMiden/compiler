@@ -11,4 +11,4 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-build-script-support"
-version = "0.15.0-rc.2"
+version = "0.15.0-rc.3"

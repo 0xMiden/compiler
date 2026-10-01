@@ -1,4 +1,5 @@
 //! `cfg` and `cfg_attr` must be evaluated before the macros inspect type fields.
+#![allow(clippy::non_minimal_cfg)]
 
 use core::convert::TryFrom;
 
