@@ -25,7 +25,8 @@
 //! order of equal keys is not part of the contract. See `heap_sort`.
 
 use super::super::harness::{
-    run_case, run_case_traps, run_case_traps_with_inputs, run_case_with_flags, run_case_with_inputs,
+    run_case, run_case_traps, run_case_traps_with_inputs, run_case_with_flags,
+    run_case_with_flags_and_inputs, run_case_with_inputs,
 };
 
 /// Bring-up: a `Vec<u32>` grown by `input1 & 63` pushes over the bump
@@ -269,20 +270,73 @@ fn heap_bheap() {
 /// `heap_vec_shift` / `heap_vec_drain` shapes, reached without the program
 /// ever naming a bulk operation. For 4-byte keys and values those copies
 /// are 4-aligned and take the element path. `heap_bheap` is the container
-/// that reorders by SWAPS rather than shifts. Regression test for #1418.
+/// that reorders by SWAPS rather than shifts.
+///
+/// Fails since the inline-call debug info landed (next @ edf596b5b), for the
+/// reason `compose::switch_calls` does: every op built inside an inlined
+/// frame carries a `di.inline_call_chain` attribute, operation equivalence
+/// compares attributes by value even when locations are ignored, so CSE and
+/// cfg-to-scf's return-like merging keep identical ops from different inline
+/// frames apart. Here the symptom is a `cf.switch` that survives to the MASM
+/// lowering. It passes with `FUZZA_GUEST_DEBUG=0` and fails with 1 and 2;
+/// with the attribute skipped in the equivalence it compiles, and then the
+/// package cannot be loaded (#1430: its `debug_info` section is 44,544,032
+/// bytes against the reader's 16 MiB limit). Compile-time, no inputs
+/// involved. [`heap_btree_nodwarf`] runs the case without guest debug info.
+/// Un-ignore when the equivalence ignores the inline chain and the section
+/// fits again or the debugger accepts it.
 #[test]
+#[ignore = "#1429: compile error only when the guest has debug info (guest debug 1 and 2; passes \
+            at 0): \"failed to legalize operation 'cf.switch': no legalization path to target\", \
+            reached because the per-op 'di.inline_call_chain' attribute keeps identical ops from \
+            different inline frames apart in CSE and cfg-to-scf; behind it #1430 (debug_info \
+            section of 44.5 MB against the 16 MiB limit); compile-time, no inputs involved"]
 fn heap_btree() {
     run_case("heap_btree", include_str!("../cases/case_heap_btree.rs"));
 }
 
 /// Pinned twin of [`heap_btree`]: three inserts into a single leaf — the
 /// smallest BTreeMap that shifts a key array — plus the first leaf split
-/// (12 keys) and a height-2 tree (132 keys). Regression test for #1418.
+/// (12 keys) and a height-2 tree (132 keys).
+/// Ignored with `heap_btree` (same package, same compile error);
+/// [`heap_btree_repro_nodwarf`] runs the pinned inputs without guest debug
+/// info.
 #[test]
+#[ignore = "#1429: compile error only when the guest has debug info (guest debug 1 and 2; passes \
+            at 0): \"failed to legalize operation 'cf.switch': no legalization path to target\", \
+            reached because the per-op 'di.inline_call_chain' attribute keeps identical ops from \
+            different inline frames apart in CSE and cfg-to-scf; behind it #1430 (debug_info \
+            section of 44.5 MB against the 16 MiB limit); compile-time, no inputs involved"]
 fn heap_btree_repro() {
     run_case_with_inputs(
         "heap_btree_repro",
         include_str!("../cases/case_heap_btree.rs"),
+        &[(3, 1), (12, 1), (132, 1)],
+    );
+}
+
+/// [`heap_btree`] without guest debug info (`--guest-debug=0`), where the
+/// case compiles: the 4-aligned overlapping shifts of the node arrays, up on
+/// insert and down on remove, take the element path. Regression test for
+/// #1418.
+#[test]
+fn heap_btree_nodwarf() {
+    run_case_with_flags(
+        "heap_btree_nodwarf",
+        include_str!("../cases/case_heap_btree.rs"),
+        &["--guest-debug=0"],
+    );
+}
+
+/// [`heap_btree_repro`] without guest debug info (`--guest-debug=0`): the
+/// single-leaf shift, the first leaf split and the height-2 tree. Regression
+/// test for #1418.
+#[test]
+fn heap_btree_repro_nodwarf() {
+    run_case_with_flags_and_inputs(
+        "heap_btree_repro_nodwarf",
+        include_str!("../cases/case_heap_btree.rs"),
+        &["--guest-debug=0"],
         &[(3, 1), (12, 1), (132, 1)],
     );
 }

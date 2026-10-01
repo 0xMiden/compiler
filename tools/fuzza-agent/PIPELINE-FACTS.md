@@ -406,7 +406,7 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   loop, which cannot load or store aggregates. Every `hir.mem_move` path
   copies in descending address order when `dst > src` and ascending otherwise
   (element arm: overlap up `heap::heap_vec_shift`, `memory::mem_overlap`; down
-  `heap::heap_vec_drain`; both `heap::heap_btree`; identical ranges
+  `heap::heap_vec_drain`; both `heap::heap_btree_nodwarf`; identical ranges
   `memory::copy_same_pos`; zero length `boundaries::memnoop_same`; byte loop:
   up `heap::heap_vec_shift_u8`, `heap::heap_string_insert`; down
   `heap::heap_vec_remove_u8`, `memorder::copy_fwd`; identical ranges
@@ -510,4 +510,4 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   overlapping shifts (`Vec::insert`/`remove`/`drain`, `String::insert`,
   B-tree nodes) compile and match native (`heap::heap_vec_shift`,
   `heap::heap_vec_drain`, `heap::heap_vec_shift_u8`,
-  `heap::heap_string_insert`, `heap::heap_btree`).
+  `heap::heap_string_insert`, `heap::heap_btree_nodwarf`).
