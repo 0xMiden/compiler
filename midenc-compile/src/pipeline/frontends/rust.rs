@@ -3902,7 +3902,7 @@ path = "lib.rs"
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            masm.contains("pub proc add(i32, i32) -> i32"),
+            masm.contains("pub proc add(arg0: i32, arg1: i32) -> i32"),
             "the lowered Miden Assembly must export the fixture's own procedure: {masm}"
         );
     }

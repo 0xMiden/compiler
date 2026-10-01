@@ -27,6 +27,8 @@ pub const FIND_ATTACHMENT: &str = "find_attachment";
 pub const WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY: &str = "write_attachment_commitments_to_memory";
 pub const WRITE_ATTACHMENT_TO_MEMORY: &str = "write_attachment_to_memory";
 pub const COMPUTE_NOTE_ID: &str = "compute_note_id";
+pub const SEAL: &str = "seal";
+pub const IS_SEALED: &str = "is_sealed";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -126,6 +128,8 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         Symbol::from(COMPUTE_NOTE_ID),
         FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
     );
+    output_note.insert(Symbol::from(SEAL), FunctionType::new(CallConv::Wasm, [Felt], []));
+    output_note.insert(Symbol::from(IS_SEALED), FunctionType::new(CallConv::Wasm, [Felt], [Felt]));
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), output_note);
     m
 }

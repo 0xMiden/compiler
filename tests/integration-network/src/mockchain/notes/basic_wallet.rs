@@ -113,7 +113,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["3883"].assert_eq(prologue_cycles(&tx_measurements));
+    expect!["3882"].assert_eq(prologue_cycles(&tx_measurements));
     expect!["5008"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
@@ -134,7 +134,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         &mut note_rng,
     );
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["6431"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["6439"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
