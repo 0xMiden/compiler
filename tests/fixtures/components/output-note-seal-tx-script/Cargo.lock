@@ -1817,6 +1817,7 @@ dependencies = [
  "miden-mast-package",
  "miden-project",
  "miden-protocol",
+ "miden-protocol-build-utils",
  "midenc-frontend-wasm-metadata",
  "proc-macro2",
  "quote",
