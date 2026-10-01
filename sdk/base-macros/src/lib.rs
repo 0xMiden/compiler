@@ -301,6 +301,13 @@ pub fn export_type(
     export_type::expand(attr, item)
 }
 
+/// Implementation detail of `#[export_type]` for cfg-filtered types.
+#[doc(hidden)]
+#[proc_macro_derive(__MidenExportType)]
+pub fn derive_export_type(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    export_type::derive(item)
+}
+
 /// Marks a type/impl as a note script definition.
 ///
 /// This attribute is intended to be used on:
@@ -424,6 +431,13 @@ pub fn note(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     note::expand_note(attr, item)
+}
+
+/// Implementation detail of `#[note]` for cfg-filtered storage structs.
+#[doc(hidden)]
+#[proc_macro_derive(__MidenNoteStorage)]
+pub fn derive_note_storage(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    note::derive_note_struct(item)
 }
 
 /// Marks a method as the note script entrypoint (`#[note_script]`).

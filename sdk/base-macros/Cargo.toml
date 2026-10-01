@@ -21,6 +21,7 @@ internal-wit-emit = ["dep:wit-component"]
 
 [dependencies]
 proc-macro2 = { workspace = true, features = ["span-locations"] }
+proc-macro-crate = { workspace = true }
 quote.workspace = true
 miden-assembly-syntax.workspace = true
 miden-mast-package.workspace = true

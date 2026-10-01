@@ -16,8 +16,8 @@ use crate::{
     note_schema::{expand_note_storage_schema, note_storage_schema_uniqueness_guard},
     types::{TypeRef, map_type_to_type_ref, registered_export_type_map},
     util::{
-        NOTE_NAMED_FIELDS_ERROR, generate_frontend_link_section, generate_wit_link_section,
-        is_type_named, is_unit_return_type,
+        NOTE_NAMED_FIELDS_ERROR, base_macros_derive_path, generate_frontend_link_section,
+        generate_wit_link_section, is_type_named, is_unit_return_type,
     },
     wit_builder::WitBuilder,
     wit_world::{ManifestPackage, write_world_block},
@@ -45,7 +45,16 @@ pub(crate) fn expand_note(
 
     let item = parse_macro_input!(item as Item);
     match item {
-        Item::Struct(item_struct) => expand_note_struct(item_struct).into(),
+        Item::Struct(item_struct) => {
+            // Derives receive the item after rustc has applied cfg/cfg_attr to its fields.
+            // Storage encoding and the schema must describe that same filtered item.
+            let derive_crate = base_macros_derive_path();
+            quote! {
+                #[derive(#derive_crate::__MidenNoteStorage)]
+                #item_struct
+            }
+            .into()
+        }
         Item::Impl(item_impl) => expand_note_impl(item_impl).into(),
         other => syn::Error::new(
             other.span(),
@@ -54,6 +63,12 @@ pub(crate) fn expand_note(
         .into_compile_error()
         .into(),
     }
+}
+
+/// Emits note storage items from the cfg-filtered struct passed to the hidden derive.
+pub(crate) fn derive_note_struct(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let item_struct = parse_macro_input!(item as ItemStruct);
+    expand_note_struct(item_struct).into()
 }
 
 /// Expands `#[note_script]`.
@@ -195,7 +210,6 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
     };
 
     quote! {
-        #item_struct
         #from_impl
         #to_felt_repr_impl
 
@@ -1217,7 +1231,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_failure_keeps_the_note_struct_next_to_the_error() {
+    fn schema_failure_keeps_storage_items_next_to_the_error() {
         let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let item_struct: ItemStruct = parse_quote! {
@@ -1229,7 +1243,10 @@ mod tests {
         let tokens = expand_note_struct(item_struct).to_string();
 
         assert!(tokens.contains("compile_error"), "the schema error must be reported: {tokens}");
-        assert!(tokens.contains("struct VecNote"), "the struct must survive the error: {tokens}");
+        assert!(
+            tokens.contains("ActiveNote for VecNote"),
+            "storage items must survive the error: {tokens}"
+        );
         assert!(
             !tokens.contains("__MIDEN_NOTE_STORAGE_SCHEMA_BYTES"),
             "no schema metadata is generated for a failed schema: {tokens}"
@@ -1309,7 +1326,8 @@ pub mod active_note {
                 values: Vec<u64>,
             }
         };
-        let expansion = expand_note_struct(item_struct);
+        let expansion = expand_note_struct(item_struct.clone());
+        let item_definition = quote!(#item_struct);
         // The whole `#[note]` `impl` expansion cannot compile outside a real SDK crate, because it
         // calls the `miden::generate!` and `bindings::export!` proc macros. The note-script body
         // below is built with the same generator that the `impl` expansion uses, so the decoding
@@ -1322,6 +1340,7 @@ pub mod active_note {
 mod user {{
     use ::miden::active_note::ActiveNote as _;
 
+    {item_definition}
     {expansion}
 
     pub fn takes_note(_note: VecNote) {{}}

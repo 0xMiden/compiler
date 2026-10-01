@@ -5,10 +5,13 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{Item, parse_macro_input};
 
-use crate::types::{
-    ExportedTypeDef, export_type_shape_metadata, exported_type_from_enum,
-    exported_type_from_struct, known_custom_type_shape_assertions, nominal_type_identity_guards,
-    register_export_type, registered_export_type_map,
+use crate::{
+    types::{
+        ExportedTypeDef, export_type_shape_metadata, exported_type_from_enum,
+        exported_type_from_struct, known_custom_type_shape_assertions,
+        nominal_type_identity_guards, register_export_type, registered_export_type_map,
+    },
+    util::base_macros_derive_path,
 };
 
 /// Builds the guard and identity items emitted next to one exported type.
@@ -26,7 +29,7 @@ fn export_type_identity_items(
     Ok(quote! { #guards #shape_const #assertions })
 }
 
-/// Expands `#[export_type]` and registers the annotated record or enum for schema emission.
+/// Adds a derive so rustc filters conditional fields before type registration.
 pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     if !attr.is_empty() {
         return syn::Error::new_spanned(
@@ -38,6 +41,30 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     let item = parse_macro_input!(item as Item);
+    let derive_crate = base_macros_derive_path();
+
+    match item {
+        Item::Struct(item_struct) => quote! {
+            #[derive(#derive_crate::__MidenExportType)]
+            #item_struct
+        }
+        .into(),
+        Item::Enum(item_enum) => quote! {
+            #[derive(#derive_crate::__MidenExportType)]
+            #item_enum
+        }
+        .into(),
+        other => {
+            syn::Error::new_spanned(other, "#[export_type] may only be applied to structs or enums")
+                .into_compile_error()
+                .into()
+        }
+    }
+}
+
+/// Registers the cfg-filtered record or enum and emits its identity items.
+pub(crate) fn derive(item: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(item as Item);
 
     match item {
         Item::Struct(item_struct) => {
@@ -45,7 +72,7 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             match exported_type_from_struct(&item_struct)
                 .and_then(|def| export_type_identity_items(&def, &item_struct.generics, span))
             {
-                Ok(items) => quote! { #item_struct #items }.into(),
+                Ok(items) => items.into(),
                 Err(err) => err.to_compile_error().into(),
             }
         }
@@ -54,7 +81,7 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             match exported_type_from_enum(&item_enum)
                 .and_then(|def| export_type_identity_items(&def, &item_enum.generics, span))
             {
-                Ok(items) => quote! { #item_enum #items }.into(),
+                Ok(items) => items.into(),
                 Err(err) => err.to_compile_error().into(),
             }
         }

@@ -7,6 +7,7 @@ use midenc_frontend_wasm_metadata::{
     FrontendMetadata, WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
     WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME, encode_section,
 };
+use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::Error;
@@ -22,6 +23,20 @@ pub(crate) const FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL: &str =
 /// Diagnostic emitted when `#[note]` is applied to a tuple struct.
 pub(crate) const NOTE_NAMED_FIELDS_ERROR: &str =
     "#[note] requires named fields; tuple structs are no longer supported";
+
+/// Finds the hidden derives through a direct macro dependency or the SDK facade.
+pub(crate) fn base_macros_derive_path() -> TokenStream2 {
+    match crate_name("miden-base-macros") {
+        // Integration tests in this package invoke the proc macro as an external crate.
+        Ok(FoundCrate::Itself) => quote!(::miden_base_macros),
+        Ok(FoundCrate::Name(name)) => {
+            let ident = syn::Ident::new(&name, Span::call_site());
+            quote!(::#ident)
+        }
+        // Ordinary SDK users depend on `miden`, which re-exports the hidden derives.
+        Err(_) => quote!(::miden),
+    }
+}
 
 /// Returns true if a function's return type is unit.
 pub(crate) fn is_unit_return_type(output: &syn::ReturnType) -> bool {
