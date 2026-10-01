@@ -624,7 +624,8 @@ fn unregistered_same_named_type_fails_the_shape_check() {
     let root_def = exported_type_from_struct(&root).unwrap();
     let registry = HashMap::from([("Price".to_string(), registered_def.clone())]);
     let shape_const =
-        export_type_shape_const(&registered_def, &syn::Generics::default(), Span::call_site());
+        export_type_shape_metadata(&registered_def, &syn::Generics::default(), Span::call_site())
+            .unwrap();
     let assertions = custom_type_shape_assertions(&root_def, &registry, Span::call_site()).unwrap();
     let source = format!(
         r#"
@@ -647,7 +648,7 @@ fn main() {{}}
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("__MIDEN_EXPORT_TYPE_SHAPE"),
+        stderr.contains("__miden_validate_export_type_shape"),
         "the missing shape constant is not reported:
 {stderr}"
     );
@@ -675,9 +676,11 @@ fn same_named_type_with_a_different_shape_fails_the_shape_check() {
     let root_def = exported_type_from_struct(&root).unwrap();
     let registry = HashMap::from([("Price".to_string(), registered_def.clone())]);
     let registered_const =
-        export_type_shape_const(&registered_def, &syn::Generics::default(), Span::call_site());
+        export_type_shape_metadata(&registered_def, &syn::Generics::default(), Span::call_site())
+            .unwrap();
     let impostor_const =
-        export_type_shape_const(&impostor_def, &syn::Generics::default(), Span::call_site());
+        export_type_shape_metadata(&impostor_def, &syn::Generics::default(), Span::call_site())
+            .unwrap();
     let assertions = custom_type_shape_assertions(&root_def, &registry, Span::call_site()).unwrap();
     let source = format!(
         r#"
@@ -720,7 +723,8 @@ fn the_registered_type_passes_the_shape_check() {
     let root_def = exported_type_from_struct(&root).unwrap();
     let registry = HashMap::from([("Price".to_string(), registered_def.clone())]);
     let shape_const =
-        export_type_shape_const(&registered_def, &syn::Generics::default(), Span::call_site());
+        export_type_shape_metadata(&registered_def, &syn::Generics::default(), Span::call_site())
+            .unwrap();
     let assertions = custom_type_shape_assertions(&root_def, &registry, Span::call_site()).unwrap();
     let source = format!(
         r#"
@@ -740,6 +744,81 @@ fn main() {{}}
 {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+/// Compile the metadata emitted before Inner is registered, then the complete root check.
+fn compile_forward_custom_shape(
+    other_inner: Option<syn::ItemStruct>,
+    optional: bool,
+) -> std::process::Output {
+    let inner: syn::ItemStruct = parse_quote! { pub struct Inner { pub value: u64 } };
+    let outer: syn::ItemStruct = if optional {
+        parse_quote! { pub struct Outer { pub inner: Option<other::Inner> } }
+    } else {
+        parse_quote! { pub struct Outer { pub inner: other::Inner } }
+    };
+    let root: syn::ItemStruct = parse_quote! { struct Root { outer: Outer } };
+    let inner_def = exported_type_from_struct(&inner).unwrap();
+    let outer_def = exported_type_from_struct(&outer).unwrap();
+    let root_def = exported_type_from_struct(&root).unwrap();
+    // Simulate Outer expanding before Inner. This must not need the partial registry.
+    let outer_metadata =
+        export_type_shape_metadata(&outer_def, &outer.generics, Span::call_site()).unwrap();
+    let inner_metadata =
+        export_type_shape_metadata(&inner_def, &inner.generics, Span::call_site()).unwrap();
+    let registry =
+        HashMap::from([("Outer".to_string(), outer_def), ("Inner".to_string(), inner_def)]);
+    let checks = custom_type_shape_assertions(&root_def, &registry, Span::call_site()).unwrap();
+    let other = match other_inner {
+        Some(item) => {
+            let definition = exported_type_from_struct(&item).unwrap();
+            let metadata =
+                export_type_shape_metadata(&definition, &item.generics, Span::call_site()).unwrap();
+            quote::quote! { mod other { #item #metadata } }
+        }
+        None => quote::quote! { mod other { pub struct Inner { pub value: u32 } } },
+    };
+    compile_rust_source(&quote::quote! { #outer #outer_metadata #inner #inner_metadata #other #checks fn main() {} }.to_string())
+}
+
+#[test]
+fn forward_reference_to_unregistered_impostor_fails_shape_check() {
+    let output = compile_forward_custom_shape(None, false);
+    assert!(
+        !output.status.success(),
+        "the forward reference to an unregistered impostor compiled"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("__miden_validate_export_type_shape"));
+}
+
+#[test]
+fn forward_reference_to_registered_impostor_fails_recursively() {
+    for optional in [false, true] {
+        let output = compile_forward_custom_shape(
+            Some(parse_quote! { pub struct Inner { pub value: u32 } }),
+            optional,
+        );
+        assert!(!output.status.success(), "a nested impostor compiled (optional: {optional})");
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("does not match the #[export_type] registration")
+        );
+    }
+}
+
+#[test]
+fn forward_reference_with_matching_shape_passes_recursively() {
+    for optional in [false, true] {
+        let output = compile_forward_custom_shape(
+            Some(parse_quote! { pub struct Inner { pub value: u64 } }),
+            optional,
+        );
+        assert!(
+            output.status.success(),
+            "valid forward reference failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
 
 #[test]

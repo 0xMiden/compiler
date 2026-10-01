@@ -464,24 +464,94 @@ fn collect_sdk_core_type_identity_guard(
     Ok(())
 }
 
-/// Emits the hidden constant that records the structural shape of an exported type.
+/// Emits metadata and a deferred validator for an exported type and its custom children.
 ///
-/// Compile-time checks read this constant through a written type path, so a type that only
-/// shares the registered name cannot pass for the registered type.
-pub(crate) fn export_type_shape_const(
+/// Rust resolves child paths in their defining scope, including forward references. The
+/// schema consumer supplies its complete registry when it evaluates the validator.
+pub(crate) fn export_type_shape_metadata(
     def: &ExportedTypeDef,
     generics: &syn::Generics,
     span: Span,
-) -> TokenStream {
+) -> Result<TokenStream, syn::Error> {
     let ident = syn::Ident::new(&def.rust_name, span);
     let shape = describe_exported_type_shape(def);
+    let rust_name = &def.rust_name;
+    let message = format!(
+        "type `{rust_name}` does not match the #[export_type] registration; write the registered \
+         type here or rename one of the types"
+    );
+    let mut children = TokenStream::new();
+    let mut visited = HashSet::new();
+    visit_exported_type_refs(def, &mut |type_ref| {
+        if type_ref.is_custom && visited.insert(written_path(type_ref)) {
+            let path = parse_reconstructed_type(&written_path(type_ref), span)?;
+            children.extend(quote_spanned! {span=>
+                <#path>::__miden_validate_export_type_shape(registry);
+            });
+        }
+        Ok(())
+    })?;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    quote_spanned! {span=>
+    Ok(quote_spanned! {span=>
         impl #impl_generics #ident #ty_generics #where_clause {
             #[doc(hidden)]
             pub const __MIDEN_EXPORT_TYPE_SHAPE: &'static str = #shape;
+
+            #[doc(hidden)]
+            pub const fn __miden_validate_export_type_shape(registry: &[(&str, &str)]) {
+                const fn text_eq(left: &str, right: &str) -> bool {
+                    let (left, right) = (left.as_bytes(), right.as_bytes());
+                    if left.len() != right.len() { return false; }
+                    let mut index = 0;
+                    while index < left.len() {
+                        if left[index] != right[index] { return false; }
+                        index += 1;
+                    }
+                    true
+                }
+                let mut index = 0;
+                while index < registry.len() {
+                    if text_eq(registry[index].0, #rust_name) {
+                        assert!(text_eq(Self::__MIDEN_EXPORT_TYPE_SHAPE, registry[index].1), #message);
+                        #children
+                        return;
+                    }
+                    index += 1;
+                }
+                panic!(#message);
+            }
         }
-    }
+    })
+}
+
+/// Validates the complete custom type graph using paths resolved by Rust at each definition.
+pub(crate) fn custom_type_shape_assertions(
+    definition: &ExportedTypeDef,
+    registry: &HashMap<String, ExportedTypeDef>,
+    span: Span,
+) -> Result<TokenStream, syn::Error> {
+    let mut definitions: Vec<_> = registry.values().collect();
+    definitions.sort_by(|left, right| left.rust_name.cmp(&right.rust_name));
+    let entries: Vec<_> = definitions
+        .iter()
+        .map(|def| {
+            let name = &def.rust_name;
+            let shape = describe_exported_type_shape(def);
+            quote_spanned! {span=> (#name, #shape) }
+        })
+        .collect();
+    let mut visited = HashSet::new();
+    let mut checks = TokenStream::new();
+    visit_exported_type_refs(definition, &mut |type_ref| {
+        if type_ref.is_custom && visited.insert(written_path(type_ref)) {
+            let path = parse_reconstructed_type(&written_path(type_ref), span)?;
+            checks.extend(quote_spanned! {span=>
+                <#path>::__miden_validate_export_type_shape(&[#(#entries),*]);
+            });
+        }
+        Ok(())
+    })?;
+    Ok(quote_spanned! {span=> const _: () = { #checks }; })
 }
 
 /// Emits compile-time checks that pin written custom types to their registrations.
@@ -489,7 +559,7 @@ pub(crate) fn export_type_shape_const(
 /// Each check reads the shape constant through the type path as it is written at the
 /// expansion site. A type that is not the registered type fails to compile, either because
 /// it has no shape constant or because its shape text differs.
-pub(crate) fn custom_type_shape_assertions(
+pub(crate) fn known_custom_type_shape_assertions(
     definition: &ExportedTypeDef,
     registry: &HashMap<String, ExportedTypeDef>,
     span: Span,

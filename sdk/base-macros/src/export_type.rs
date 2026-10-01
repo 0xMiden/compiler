@@ -6,8 +6,8 @@ use quote::quote;
 use syn::{Item, parse_macro_input};
 
 use crate::types::{
-    ExportedTypeDef, custom_type_shape_assertions, export_type_shape_const,
-    exported_type_from_enum, exported_type_from_struct, nominal_type_identity_guards,
+    ExportedTypeDef, export_type_shape_metadata, exported_type_from_enum,
+    exported_type_from_struct, known_custom_type_shape_assertions, nominal_type_identity_guards,
     register_export_type, registered_export_type_map,
 };
 
@@ -21,8 +21,8 @@ fn export_type_identity_items(
     register_export_type(def.clone(), span)?;
     // The registry lookup runs after registration so a self-referential type sees itself.
     let registry = registered_export_type_map();
-    let assertions = custom_type_shape_assertions(def, &registry, span)?;
-    let shape_const = export_type_shape_const(def, generics, span);
+    let assertions = known_custom_type_shape_assertions(def, &registry, span)?;
+    let shape_const = export_type_shape_metadata(def, generics, span)?;
     Ok(quote! { #guards #shape_const #assertions })
 }
 
