@@ -449,6 +449,15 @@ fn mem_move_zero_count_is_a_noop() -> Result<(), Report> {
     Ok(())
 }
 
+/// Checks that `hir.mem_move` with identical source and destination ranges and a non-zero count
+/// leaves memory unchanged.
+#[test]
+fn mem_move_identical_ranges_is_a_noop() -> Result<(), Report> {
+    let slots = eval_copy_u32(CopyOp::MemMove, "mem_move_identical_ranges_is_a_noop", 1, 1, 2)?;
+    assert_eq!(slots, u32_slots([1, 2, 3, 4]));
+    Ok(())
+}
+
 /// Checks that `hir.mem_move` on `ptr<u8>` operands with a destination one byte above an
 /// overlapping source copies the original source bytes.
 #[test]
@@ -557,12 +566,40 @@ fn mem_cpy_adjacent_destination_below_source() -> Result<(), Report> {
     Ok(())
 }
 
+/// Checks that `hir.mem_cpy` on `ptr<u8>` operands with a destination above a disjoint source
+/// copies the source bytes.
+#[test]
+fn mem_cpy_bytes_disjoint() -> Result<(), Report> {
+    let bytes = [0x11u8, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+    let slots =
+        eval_copy(CopyOp::MemCpy, "mem_cpy_bytes_disjoint", bytes.map(Immediate::U8), 0, 5, 3)?;
+    let mut expected = bytes;
+    expected.copy_within(0..3, 5);
+    assert_eq!(slots, expected.map(|byte| Value::Immediate(byte.into())));
+    Ok(())
+}
+
 /// Checks that `hir.mem_cpy` with a zero count and identical source and destination pointers
 /// leaves memory unchanged.
 #[test]
 fn mem_cpy_zero_count_identical_pointers_is_a_noop() -> Result<(), Report> {
     let slots =
         eval_copy_u32(CopyOp::MemCpy, "mem_cpy_zero_count_identical_pointers_is_a_noop", 1, 1, 0)?;
+    assert_eq!(slots, u32_slots([1, 2, 3, 4]));
+    Ok(())
+}
+
+/// Checks that `hir.mem_cpy` with a zero count and a destination pointer one value above the
+/// source pointer leaves memory unchanged.
+#[test]
+fn mem_cpy_zero_count_overlapping_pointers_is_a_noop() -> Result<(), Report> {
+    let slots = eval_copy_u32(
+        CopyOp::MemCpy,
+        "mem_cpy_zero_count_overlapping_pointers_is_a_noop",
+        0,
+        1,
+        0,
+    )?;
     assert_eq!(slots, u32_slots([1, 2, 3, 4]));
     Ok(())
 }
@@ -627,4 +664,36 @@ fn mem_cpy_byte_length_overflow_is_an_error() {
     .expect_err("expected the byte length overflow to be an error");
     assert!(has_label(&err, "invalid memcpy"), "unexpected error: {err:?}");
     assert!(has_label(&err, "overflows"), "unexpected error: {err:?}");
+}
+
+/// Checks that a 16-byte `hir.mem_cpy` whose destination range, disjoint from the source range,
+/// ends past the addressable heap is an invalid memory write.
+#[test]
+fn mem_cpy_out_of_bounds_destination_is_an_error() {
+    let err = eval_copy_at(
+        CopyOp::MemCpy,
+        "mem_cpy_out_of_bounds_destination_is_an_error",
+        [0u8; 16].map(Immediate::U8),
+        COPY_BASE_ADDR,
+        COPY_OUT_OF_BOUNDS_ADDR,
+        16,
+    )
+    .expect_err("expected the out-of-bounds destination to be an error");
+    assert!(format!("{err}").contains("invalid memory write"), "unexpected error: {err:?}");
+}
+
+/// Checks that a 16-byte `hir.mem_cpy` whose source range, disjoint from the destination range,
+/// ends past the addressable heap is an invalid memory read.
+#[test]
+fn mem_cpy_out_of_bounds_source_is_an_error() {
+    let err = eval_copy_at(
+        CopyOp::MemCpy,
+        "mem_cpy_out_of_bounds_source_is_an_error",
+        [0u8; 16].map(Immediate::U8),
+        COPY_OUT_OF_BOUNDS_ADDR,
+        COPY_BASE_ADDR,
+        16,
+    )
+    .expect_err("expected the out-of-bounds source to be an error");
+    assert!(format!("{err}").contains("invalid memory read"), "unexpected error: {err:?}");
 }

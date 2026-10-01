@@ -218,9 +218,9 @@ fn mem_cpy_u64_elements() {
         &patterned_region(REGION_LEN),
         &[
             // Disjoint, destination above source
-            case(0, 32, 4),
+            case(0, 32, 3),
             // Disjoint, destination below source
-            case(32, 0, 4),
+            case(32, 0, 3),
             // Disjoint, unaligned addresses, destination above source
             case(1, 36, 3),
             // Disjoint, unaligned addresses, destination below source
@@ -342,22 +342,31 @@ fn mem_cpy_overlapping_i1_traps() {
     assert_overlap_traps(Type::I1, &[byte_loop, element_path].concat());
 }
 
-/// Checks that overlapping `ptr<u16>` copies trap.
+/// Checks that overlapping `ptr<u16>` copies trap, both with the ranges whole values apart and,
+/// at unaligned addresses, with the ranges one byte apart or sharing exactly one byte.
 #[test]
 fn mem_cpy_overlapping_u16_traps() {
-    assert_overlap_traps(Type::U16, &overlapping_cases(2, 2, 2, 10));
+    let whole_values = overlapping_cases(2, 2, 2, 10);
+    let single_bytes = overlapping_cases(3, 1, 2, 10);
+    assert_overlap_traps(Type::U16, &[whole_values, single_bytes].concat());
 }
 
-/// Checks that overlapping `ptr<u32>` copies trap.
+/// Checks that overlapping `ptr<u32>` copies trap, both with the ranges whole values apart and,
+/// at unaligned addresses, with the ranges one byte apart or sharing exactly one byte.
 #[test]
 fn mem_cpy_overlapping_u32_traps() {
-    assert_overlap_traps(Type::U32, &overlapping_cases(4, 4, 4, 6));
+    let whole_values = overlapping_cases(4, 4, 4, 6);
+    let single_bytes = overlapping_cases(3, 1, 4, 6);
+    assert_overlap_traps(Type::U32, &[whole_values, single_bytes].concat());
 }
 
-/// Checks that overlapping `ptr<u64>` copies trap.
+/// Checks that overlapping `ptr<u64>` copies trap, both with the ranges whole values apart and,
+/// at unaligned addresses, with the ranges one byte apart or sharing exactly one byte.
 #[test]
 fn mem_cpy_overlapping_u64_traps() {
-    assert_overlap_traps(Type::U64, &overlapping_cases(8, 8, 8, 4));
+    let whole_values = overlapping_cases(8, 8, 8, 4);
+    let single_bytes = overlapping_cases(3, 1, 8, 3);
+    assert_overlap_traps(Type::U64, &[whole_values, single_bytes].concat());
 }
 
 /// Checks that overlapping `ptr<felt>` copies trap.
@@ -431,7 +440,8 @@ fn mem_cpy_word_copy_unaligned_traps() {
 }
 
 /// Runs `case` against `package`, compiled for `hir.mem_cpy` over `ptr<elem>`: checks that it traps
-/// with [OVERLAP_MESSAGE] if its ranges overlap, and that it matches `copy_within` otherwise.
+/// with [OVERLAP_MESSAGE] if its ranges overlap, and that it matches `copy_within` otherwise. In
+/// both branches the offsets of `case` are relative to the region start of [check_copy].
 fn check_copy_or_overlap_trap(
     package: &std::sync::Arc<miden_mast_package::Package>,
     context: &std::rc::Rc<midenc_hir::Context>,
@@ -442,7 +452,7 @@ fn check_copy_or_overlap_trap(
 ) -> Result<(), TestCaseError> {
     let elem_size = elem.size_in_bytes() as u32;
     if ranges_overlap(case, elem_size) {
-        let (src, dst) = (base + case.src_off, base + case.dst_off);
+        let (src, dst) = (region_addr(base, case.src_off), region_addr(base, case.dst_off));
         check_copy_traps(CopyOp::MemCpy, package, context, src, dst, case.count, OVERLAP_MESSAGE)
     } else {
         check_copy(CopyOp::MemCpy, package, context, elem, base, region, case)

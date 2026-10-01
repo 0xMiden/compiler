@@ -121,6 +121,11 @@ pub(super) fn compile_copy(
     })
 }
 
+/// Returns the byte address of the region offset `off` in the buffer [check_copy] places at `base`.
+pub(super) const fn region_addr(base: u32, off: u32) -> u32 {
+    base + GUARD as u32 + off
+}
+
 /// Runs `case` against `package`, compiled for `op`, on a region initialized with `region`, and
 /// checks that the region afterwards equals the result of `copy_within` over the same bytes while
 /// the guard bands around it are left untouched.
@@ -156,11 +161,10 @@ pub(super) fn check_copy(
         addr: base,
         bytes: &buffer,
     }];
-    let region_base = base + GUARD as u32;
     // C calling convention: first argument on top of the stack
     let args = [
-        Felt::new_unchecked((region_base + src_off) as u64),
-        Felt::new_unchecked((region_base + dst_off) as u64),
+        Felt::new_unchecked(region_addr(base, src_off) as u64),
+        Felt::new_unchecked(region_addr(base, dst_off) as u64),
         Felt::new_unchecked(count as u64),
     ];
     let output = eval_package::<u32, _, _>(

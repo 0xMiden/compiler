@@ -123,9 +123,9 @@ fn mem_move_u64_elements() {
             case(4, 1, 6),
             // Identical ranges
             case(8, 8, 4),
-            // Disjoint, destination above source
+            // Adjacent, destination above source
             case(0, 32, 4),
-            // Disjoint, destination below source
+            // Adjacent, destination below source
             case(32, 0, 4),
             // Zero count
             case(4, 8, 0),
@@ -148,9 +148,9 @@ fn mem_move_u128_elements() {
             case(16, 0, 3),
             // Identical ranges
             case(16, 16, 2),
-            // Disjoint, destination above source
+            // Adjacent, destination above source
             case(0, 32, 2),
-            // Disjoint, destination below source
+            // Adjacent, destination below source
             case(32, 0, 2),
             // Zero count
             case(16, 32, 0),
@@ -177,9 +177,9 @@ fn mem_move_multiword_elements() {
             case(16, 0, 4),
             // Identical ranges
             case(32, 32, 3),
-            // Disjoint, destination above source
+            // Adjacent, destination above source
             case(0, 96, 3),
-            // Disjoint, destination below source
+            // Adjacent, destination below source
             case(96, 0, 3),
             // Zero count
             case(32, 64, 0),
@@ -300,12 +300,13 @@ fn mem_move_out_of_range_traps() {
 }
 
 /// Checks that a word copy (`ptr<u128>`) whose source or destination address is not 16-byte
-/// aligned traps with the word-copy alignment assertion.
+/// aligned traps with the word-copy alignment assertion, also when `count` is zero.
 #[test]
 fn mem_move_word_copy_unaligned_traps() {
     const MESSAGE: &str = "expected a 16-byte-aligned byte pointer for the word-copy fast path";
     assert_copy_traps(CopyOp::MemMove, Type::U128, FIXED_BASE + 4, FIXED_BASE + 32, 1, MESSAGE);
     assert_copy_traps(CopyOp::MemMove, Type::U128, FIXED_BASE, FIXED_BASE + 4, 1, MESSAGE);
+    assert_copy_traps(CopyOp::MemMove, Type::U128, FIXED_BASE + 4, FIXED_BASE + 32, 0, MESSAGE);
 }
 
 /// Checks random byte copies (possibly overlapping, aligned or not) against `copy_within`; about
