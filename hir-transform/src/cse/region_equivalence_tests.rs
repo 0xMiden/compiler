@@ -16,6 +16,70 @@ fn parse_function(context: &Rc<Context>, source: &str) -> Result<FunctionRef, Re
 }
 
 #[test]
+fn cse_reconciles_inline_locations_in_merged_regions() -> Result<(), Report> {
+    use midenc_hir::{
+        Forward, OperationRef, RawWalk,
+        dialects::debuginfo::attributes::INLINE_CALL_CHAIN_ATTR_NAME,
+    };
+
+    for second_line in [10, 20] {
+        let context = Rc::new(Context::default());
+        let function = parse_function(
+            &context,
+            r#"
+builtin.function public extern("C") @regions(%c: i1, %a: u32, %b: u32) -> (u32, u32) {
+    %x = scf.if %c then {
+        %sum = arith.add %a, %b <{ overflow = #builtin.overflow<unchecked> }>;
+        scf.yield %sum : (u32);
+    } else {
+        scf.yield %b : (u32);
+    } : (i1) -> (u32);
+    %y = scf.if %c then {
+        %sum2 = arith.add %a, %b <{ overflow = #builtin.overflow<unchecked> }>;
+        scf.yield %sum2 : (u32);
+    } else {
+        scf.yield %b : (u32);
+    } : (i1) -> (u32);
+    builtin.ret %x, %y : (u32, u32);
+};
+"#,
+        )?;
+        let regions = function
+            .borrow()
+            .body()
+            .entry()
+            .body()
+            .iter()
+            .filter(|op| op.is::<If>())
+            .map(|op| op.as_operation_ref())
+            .collect::<alloc::vec::Vec<_>>();
+        let chain = super::tests::inline_chain(&context, 10);
+        for (mut root, line) in regions.iter().copied().zip([10, second_line]) {
+            let chain = super::tests::inline_chain(&context, line);
+            root.raw_prewalk_all::<Forward, _>(|mut op: OperationRef| {
+                op.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
+            });
+            root.borrow_mut().remove_attribute(INLINE_CALL_CHAIN_ATTR_NAME);
+        }
+        let mut passes = PassManager::on::<Function>(context, Nesting::Implicit);
+        passes.add_pass(Box::<CommonSubexpressionElimination>::default());
+        passes.run(function.as_operation_ref())?;
+        function.as_operation_ref().borrow().recursively_verify()?;
+        let function = function.borrow();
+        let body = function.body();
+        let entry = body.entry();
+        assert_eq!(entry.body().iter().filter(|op| op.is::<If>()).count(), 1);
+        regions[0].raw_prewalk_all::<Forward, _>(|op: OperationRef| {
+            assert_eq!(
+                op.borrow().get_attribute(INLINE_CALL_CHAIN_ATTR_NAME),
+                (second_line == 10 && !OperationRef::ptr_eq(&op, &regions[0])).then_some(chain),
+            );
+        });
+    }
+    Ok(())
+}
+
+#[test]
 fn cse_eliminates_equivalent_regions() -> Result<(), Report> {
     let context = Rc::new(Context::default());
     let function = parse_function(

@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1423](https://github.com/0xMiden/compiler/pull/1423)).
 - Fix `no_std` build errors in the HIR and session crates. Without `std`, create package
   registries with `HybridPackageRegistry::empty`.
+- Ignore inline-call chains in location-insensitive operation equivalence so debug metadata does
+  not prevent CSE or exit-block merging. Clear conflicting chains on shared operations (#1431).
 
 ## [0.11.0]
 

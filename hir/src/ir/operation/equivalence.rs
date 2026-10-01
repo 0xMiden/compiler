@@ -13,6 +13,7 @@ bitflags! {
     #[derive(Copy, Clone)]
     pub struct OperationEquivalenceFlags : u8 {
         const NONE = 0;
+        /// Ignore source spans and inline-call chains, but retain semantic attributes.
         const IGNORE_LOCATIONS = 1;
     }
 }
@@ -185,6 +186,19 @@ impl ValueEquivalence for IgnoreValueEquivalence {
 }
 
 impl Operation {
+    fn equivalence_attributes(
+        &self,
+        flags: OperationEquivalenceFlags,
+    ) -> impl Iterator<Item = crate::NamedAttribute> + '_ {
+        self.attrs.iter().map(|attribute| *attribute.as_named_attribute()).filter(
+            move |attribute| {
+                !flags.contains(OperationEquivalenceFlags::IGNORE_LOCATIONS)
+                    || attribute.name.as_str()
+                        != crate::dialects::debuginfo::attributes::INLINE_CALL_CHAIN_ATTR_NAME
+            },
+        )
+    }
+
     pub fn hash_with_options<H>(
         &self,
         flags: OperationEquivalenceFlags,
@@ -208,7 +222,9 @@ impl Operation {
         for prop in self.properties() {
             prop.hash(hasher);
         }
-        self.attrs.hash(hasher);
+        for attribute in self.equivalence_attributes(flags) {
+            attribute.hash(hasher);
+        }
 
         if !flags.contains(OperationEquivalenceFlags::IGNORE_LOCATIONS) {
             self.span.hash(hasher);
@@ -289,7 +305,7 @@ impl Operation {
                 .map(|g| g.len())
                 .ne(rhs.successors().groups().map(|g| g.len()))
             || !self.properties().eq(rhs.properties())
-            || self.attributes() != rhs.attributes()
+            || !self.equivalence_attributes(flags).eq(rhs.equivalence_attributes(flags))
         {
             return false;
         }
