@@ -13,12 +13,12 @@ enum CopyOverlap {
     /// The ranges may overlap, the destination receives the values the source range held before
     /// the copy.
     Allowed,
-    /// The ranges must be disjoint, a copy between overlapping ranges traps.
-    Trap,
+    /// The ranges must be disjoint, a copy of a non-zero length between overlapping ranges traps.
+    Forbidden,
 }
 
 impl CopyOverlap {
-    /// The message of the trap raised when the ranges of a [CopyOverlap::Trap] copy overlap.
+    /// The message of the trap raised when the ranges of a [CopyOverlap::Forbidden] copy overlap.
     ///
     /// It is the message of the assertion in the `memcopy_*` procedures of the core library, so
     /// that the trap reads the same whichever routine performs the copy.
@@ -28,23 +28,29 @@ impl CopyOverlap {
     const fn name(self) -> &'static str {
         match self {
             Self::Allowed => "memmove",
-            Self::Trap => "memcpy",
+            Self::Forbidden => "memcpy",
         }
     }
 
     /// The procedure which copies `n` field elements between element addresses.
+    ///
+    /// The procedure of a [CopyOverlap::Forbidden] copy must itself trap on overlapping ranges:
+    /// its assertion is the overlap trap of the copies it performs.
     const fn elements_procedure(self) -> &'static str {
         match self {
             Self::Allowed => "::intrinsics::mem::memmove_elements",
-            Self::Trap => "::miden::core::mem::memcopy_elements",
+            Self::Forbidden => "::miden::core::mem::memcopy_elements",
         }
     }
 
     /// The procedure which copies `n` words between word-aligned element addresses.
+    ///
+    /// The procedure of a [CopyOverlap::Forbidden] copy must itself trap on overlapping ranges:
+    /// its assertion is the overlap trap of the copies it performs.
     const fn words_procedure(self) -> &'static str {
         match self {
             Self::Allowed => "::intrinsics::mem::memmove_words",
-            Self::Trap => "::miden::core::mem::memcopy_words",
+            Self::Forbidden => "::miden::core::mem::memcopy_words",
         }
     }
 }
@@ -847,7 +853,7 @@ impl OpEmitter<'_> {
     ///   the source and destination addresses are 16-byte aligned, also when `count` is zero
     /// * other aggregate values are not supported, since they cannot be loaded or stored
     pub fn memcpy(&mut self, span: SourceSpan) {
-        self.emit_copy(CopyOverlap::Trap, span);
+        self.emit_copy(CopyOverlap::Forbidden, span);
     }
 
     /// Copy `count` values of the pointee type from a source address to a destination address,
@@ -964,7 +970,7 @@ impl OpEmitter<'_> {
                 let else_blk = self.build_masm_block(span, |else_emitter| {
                     // The arm treats the values as raw bytes, whatever the 1-byte pointee is
                     let byte_ptr_ty = Type::from(PointerType::new(Type::U8));
-                    else_emitter.emit_copy_loop(overlap, byte_ptr_ty, value_size, span);
+                    else_emitter.emit_copy_loop(overlap, byte_ptr_ty, span);
                 });
 
                 self.current_block.push(masm::Op::If {
@@ -1008,7 +1014,7 @@ impl OpEmitter<'_> {
                 self.raw_exec(overlap.words_procedure(), span);
             }
             // All other values are copied one at a time
-            _ => self.emit_copy_loop(overlap, ty, value_size, span),
+            _ => self.emit_copy_loop(overlap, ty, span),
         }
     }
 
@@ -1101,14 +1107,9 @@ impl OpEmitter<'_> {
     /// The ranges must lie within the address space, see [Self::emit_copy_range_check].
     ///
     /// Expects `[src, dst, count]` on the MASM operand stack, and consumes all three.
-    fn emit_copy_loop(
-        &mut self,
-        overlap: CopyOverlap,
-        ptr_ty: Type,
-        value_size: u32,
-        span: SourceSpan,
-    ) {
+    fn emit_copy_loop(&mut self, overlap: CopyOverlap, ptr_ty: Type, span: SourceSpan) {
         let value_ty = ptr_ty.pointee().expect("expected a pointer type").clone();
+        let value_size = u32::try_from(value_ty.size_in_bytes()).expect("invalid value size");
 
         // Create new block for loop body and switch to it temporarily
         let mut body = Vec::default();
@@ -1188,7 +1189,7 @@ impl OpEmitter<'_> {
         };
         match overlap {
             // Disjoint ranges can be copied in any order
-            CopyOverlap::Trap => {
+            CopyOverlap::Forbidden => {
                 self.emit_copy_overlap_check(value_size, span);
                 emit_ascending(self);
             }

@@ -687,7 +687,7 @@ impl Eval for hir::MemCpy {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         eval_copy(
             evaluator,
-            CopyOverlap::Rejected,
+            CopyOverlap::Forbidden,
             self.source().as_value_ref(),
             self.destination().as_value_ref(),
             self.count().as_value_ref(),
@@ -715,8 +715,9 @@ enum CopyOverlap {
     /// The ranges may overlap, the destination receives the values the source range held before
     /// the copy.
     Allowed,
-    /// The ranges must be disjoint, a copy between overlapping ranges is an error.
-    Rejected,
+    /// The ranges must be disjoint, a copy of a non-zero length between overlapping ranges is an
+    /// error.
+    Forbidden,
 }
 
 impl CopyOverlap {
@@ -724,7 +725,7 @@ impl CopyOverlap {
     const fn name(self) -> &'static str {
         match self {
             Self::Allowed => "memmove",
-            Self::Rejected => "memcpy",
+            Self::Forbidden => "memcpy",
         }
     }
 }
@@ -798,7 +799,7 @@ fn eval_copy(
         return Ok(ControlFlowEffect::None);
     }
 
-    if overlap == CopyOverlap::Rejected {
+    if overlap == CopyOverlap::Forbidden {
         let source_end = u64::from(source_value) + u64::from(len);
         let dest_end = u64::from(dest_value) + u64::from(len);
         if u64::from(source_value) < dest_end && u64::from(dest_value) < source_end {

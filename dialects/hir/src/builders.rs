@@ -819,8 +819,8 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     /// The unit size for `count` is determined by the `src` pointer type, i.e. a pointer to u8
     /// will copy `count` bytes, a pointer to u16 will copy `count * 2` bytes, and so on.
     ///
-    /// The source and destination ranges must not overlap, a copy between overlapping ranges
-    /// traps. Use [Self::memmove] when the ranges may overlap.
+    /// The source and destination ranges must not overlap, a copy of a non-zero length between
+    /// overlapping ranges traps. Use [Self::memmove] when the ranges may overlap.
     ///
     /// NOTE: The source and destination pointer types must match, a mismatch is rejected by the
     /// verifier.
