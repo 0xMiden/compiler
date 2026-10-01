@@ -320,7 +320,7 @@ fn validate_rendered_note_storage_schema(
         .push_str(NOTE_STORAGE_SCHEMA_SOURCE_NAME, &rendered.source)
         .map(|_| ())
         .map_err(|error| {
-            let message = format!("{error:#}");
+            let message = resolve.render_error(&error);
             let (span, context) = rendered_schema_error_context(rendered, &message);
             syn::Error::new(
                 span,
@@ -1232,6 +1232,7 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("failed to resolve note storage schema"));
         assert!(message.contains("type `Type`"));
+        assert!(message.contains("note-storage-schema.wit:"), "message is {message}");
     }
 
     #[test]
@@ -1248,7 +1249,7 @@ mod tests {
 
         let message = err.to_string();
         assert!(message.contains("failed to resolve note storage schema"));
-        assert!(message.contains("field `type_` of type `u64`"));
+        assert!(message.contains("field `type_` of type `u64`"), "message is {message}");
     }
 
     #[test]
