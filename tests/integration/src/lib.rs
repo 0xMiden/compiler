@@ -16,3 +16,5 @@ mod end_to_end;
 mod harness;
 #[cfg(test)]
 mod sdk;
+#[cfg(test)]
+mod trap_helpers;

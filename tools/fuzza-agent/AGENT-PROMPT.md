@@ -6,9 +6,11 @@
 Before touching anything, read (in this order):
 
 1. [`README.md`](README.md) — how the harness and the coverage loop work.
-2. [`KNOWLEDGE.md`](KNOWLEDGE.md) — the accumulated fact base: compiler
-   reachability facts, LLVM pre-cleaning traps, case-writing tricks, and
-   operational gotchas. Do **not** re-derive anything recorded there.
+2. [`KNOWLEDGE.md`](KNOWLEDGE.md) — the accumulated fact base: operational
+   gotchas and case-writing tricks, with [`PIPELINE-FACTS.md`](PIPELINE-FACTS.md)
+   (compiler reachability facts, LLVM pre-cleaning traps, dead ends); known
+   classes are the issue tags on the `#[ignore]` attributes (`KNOWLEDGE.md`,
+   "Corpus map on demand"). Do **not** re-derive anything recorded there.
 3. The test modules under `tests/integration/src/end_to_end/differential/tests/`
    and the case files they reference — do not duplicate constructs existing
    cases already cover.
@@ -61,8 +63,9 @@ fuzza harness. **Stop when any of these holds:**
   reading the remaining cold functions and explaining why each is out of reach
   beats grinding five ritual zero-delta cases). Record the full argument in the
   scratch log, and distill the durable parts — new reachability facts, verified
-  dead ends — into [`KNOWLEDGE.md`](KNOWLEDGE.md): scratch logs are gitignored
-  and machine-local; `KNOWLEDGE.md` is what future runs actually see.
+  dead ends — into [`PIPELINE-FACTS.md`](PIPELINE-FACTS.md) (operational
+  lessons into [`KNOWLEDGE.md`](KNOWLEDGE.md)): scratch logs are gitignored
+  and machine-local; the fact files are what future runs actually see.
 
 ## Case constraints
 
@@ -87,9 +90,10 @@ Each new case is a single `.rs` file at
   determinism unless you restore it before returning. (Statics are still a
   useful tool: non-zero initializers are how you reach the data-segment code.)
 - Stay away from known compile-breakers unless they are your target: flat
-  signatures over 16 stack felts, function pointers, and recursion (see
-  `KNOWLEDGE.md`), plus the shapes behind the `#[ignore]`d compiler-panic
-  reproducers in the test modules.
+  signatures over 16 stack felts and recursion (see `PIPELINE-FACTS.md`), plus
+  the shapes behind the `#[ignore]`d compiler-panic reproducers in the test
+  modules. (Function pointers / `dyn` dispatch are supported and covered —
+  see `PIPELINE-FACTS.md`, "Frontend routing".)
 
 Wire the new case into the thematic module under
 `tests/integration/src/end_to_end/differential/tests/` that matches what the
@@ -136,8 +140,9 @@ fn <name>() {
      a literal; getting to an `_imm` arm usually requires HIR-level
      canonicalization (e.g. arith constant folding), not raw user code.
 
-   `KNOWLEDGE.md`'s routing-facts section records many verified chains and
-   dead ends — check it before spending a probe.
+   `PIPELINE-FACTS.md`'s "Frontend routing" section and its `Dead end:`
+   bullets record many verified chains and dead ends — check them before
+   spending a probe.
 3. **Write** `case_<name>.rs` designed to exercise that construct through the
    `(u32, u32) -> u32` entrypoint. Keep it minimal — the less incidental code,
    the easier to interpret failures.
@@ -197,7 +202,27 @@ fn <name>() {
      `<name>_repro` that calls `run_case_with_inputs` with the exact failing
      pair, so the bug reproduces deterministically instead of only when
      proptest happens to draw it (see `switch_shapes_repro` and
-     `sext_shapes_repro` in the test modules). If the case mixes several constructs,
+     `sext_shapes_repro` in the test modules). A finding that appears only
+     under a compiler configuration (a `MIDENC_DIFF_FLAGS` sweep) is pinned
+     the same way with `run_case_with_flags` and the flags in the twin (see
+     `spill_loop_mix_oz`), or with `run_case_with_flags_and_inputs` when the
+     configuration-dependent divergence has exact failing inputs to pin (see
+     `chk_add_u128_o1_repro`); a finding that exists only without guest DWARF
+     is pinned with the harness pseudo-flag `--guest-debug=0` in the same
+     way. A case that is MEANT to panic on some inputs uses `run_case_traps`
+     / `run_case_traps_with_inputs` (`tests/traps.rs`): both sides must agree
+     per input on value-or-trap, and a value-vs-trap mismatch is pinned like
+     any divergence; a configuration-dependent trap-case finding is pinned
+     with `run_case_traps_with_flags` (`tests/trapspill.rs`). Before you call a divergence a compiler bug, run wasmtime on the
+     harness-built wasm (`wasmtime run -W wide-arithmetic=y --invoke
+     entrypoint target/miden_test_shared/wasm32-wasip1/release/
+     differential_<case>.wasm a b`): if wasmtime agrees with MASM the guest
+     toolchain is wrong, not the compiler. Before you name a compile-time
+     panic's class, take the spills trace and the pattern trace (see
+     "Reference commands") — the crash site alone does not identify the
+     mechanism (`KNOWLEDGE.md`, "Classifying a compile-time panic";
+     the open classes: `KNOWLEDGE.md`, "Corpus map on demand"). If the case
+     mixes several constructs,
      split it so each divergence gets its own minimal reproducer — the passing
      siblings *bound* the bug for free. The test's doc comment and ignore
      reason are the bug's **only** documentation (nothing goes in README or
@@ -248,6 +273,21 @@ cargo make fuzza-probe <test-name> hir     # kinds: hir / wat / masm, or a,b lis
 # Nuke all coverage state and start over (also wipes target/fuzza-coverage, but
 # NOT your scratch log under tools/fuzza-agent/scratch/):
 cargo make fuzza-cov-clean
+
+# Evidence traces for one test (add `-- --exact <full::path> --nocapture`):
+#   which canonicalization patterns fired ("trying to match '<name>'" then
+#   "pattern matched successfully"):
+MIDENC_TRACE='pattern-rewrite-driver=trace' cargo test -p midenc-integration-tests <test> -- --exact <full::path> --nocapture
+#   spills, reloads, edge splits, erased split reloads, unused phis:
+MIDENC_TRACE='analysis:spills=trace,pass:spills=trace' cargo test ... --nocapture
+#   emitter operand drops:
+MIDENC_TRACE='codegen:operand-scheduling=trace' cargo test ... --nocapture
+#   the IR after one pass (pin the flag in the case via run_case_with_flags,
+#   or MIDENC_DIFF_FLAGS='-Z print-ir-after-pass=<pass>'; the printer logs
+#   through `pass:<pass>=trace`, so both are needed; pass names include
+#   local2reg, transform-spills, lift-control-flow, canonicalizer,
+#   sink-operand-defs, cse):
+MIDENC_DIFF_FLAGS='-Z print-ir-after-pass=lift-control-flow' MIDENC_TRACE='pass:lift-control-flow=trace' cargo test ... --nocapture
 ```
 
 Outputs live under `target/fuzza-coverage/`:
@@ -256,3 +296,10 @@ Outputs live under `target/fuzza-coverage/`:
 - `report.prev.json` — previous snapshot (used for the delta).
 - `html/html/index.html` — per-line highlighted source view for debugging
   which exact lines you hit.
+
+## Hard rules for process control
+
+- Never run `pkill`, `killall`, or any kill-by-pattern. Other sessions run
+  the same test binaries in sibling worktrees, and a pattern kill takes
+  their processes down too (this happened once). To stop a run you
+  started, kill only the PID your own shell spawned, or let it finish.

@@ -1,11 +1,10 @@
 // DELIBERATE PROBE: a zero-length copy at an IDENTICAL src == dst position.
-// Length-0 ranges cannot overlap, so native is a no-op; the copy still
-// reaches a runtime `memory.copy` because both the length and the dst offset
-// are opaquely zero (impossible cross-modulus guards LLVM cannot fold, and
-// src/dst stay syntactically distinct so the memmove is not elided). At
-// runtime the 4-aligned zero count takes the element fast path and execs
-// miden-core-lib `memcopy_elements` with count 0 and read_ptr == write_ptr —
-// asserting its range-overlap assert accepts the degenerate len-0 case.
+// Native is a no-op; the copy still reaches a runtime `memory.copy` because
+// both the length and the dst offset are opaquely zero (impossible
+// cross-modulus guards LLVM cannot fold, and src/dst stay syntactically
+// distinct so the memmove is not elided). At runtime the 4-aligned zero
+// count takes the element path and execs `::intrinsics::mem::memmove_elements`
+// with count 0 and read_ptr == write_ptr, which must copy nothing.
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let h = input1 ^ input2;

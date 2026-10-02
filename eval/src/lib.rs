@@ -26,7 +26,7 @@ use midenc_hir::{
 
 pub use self::{
     eval::{ControlFlowEffect, Eval, Initialize},
-    evaluator::HirEvaluator,
+    evaluator::{HirEvaluator, MemoryAddress},
     value::Value,
 };
 
@@ -150,6 +150,7 @@ fn eval_hir_dialect(info: &mut ::midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::MemSize, dyn Eval>();
     info.register_operation_trait::<hir::MemSet, dyn Eval>();
     info.register_operation_trait::<hir::MemCpy, dyn Eval>();
+    info.register_operation_trait::<hir::MemMove, dyn Eval>();
     info.register_operation_trait::<hir::PrintLn, dyn Eval>();
 }
 

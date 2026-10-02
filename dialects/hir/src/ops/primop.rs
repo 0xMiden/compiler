@@ -1,3 +1,5 @@
+use alloc::format;
+
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     effects::*,
@@ -98,6 +100,19 @@ pub struct MemSet {
     value: AnyType,
 }
 
+/// Copies `count` values from the memory at address `source`, to the memory at address
+/// `destination`.
+///
+/// The unit of `count` is the pointee type of `source`, i.e. `count * size_of(pointee)` bytes are
+/// copied. A `count` of zero leaves the memory unchanged. The byte length and the end addresses
+/// `source + len` and `destination + len` must fit in a `u32`.
+///
+/// The source and destination ranges must not overlap, a copy between overlapping ranges of a
+/// non-zero length traps. Use [MemMove] when the ranges may overlap.
+///
+/// The MASM lowering supports pointers in the byte address space only, copies values of 16 bytes
+/// or a multiple of 16 a word at a time, which requires 16-byte aligned addresses (also when
+/// `count` is zero), and cannot copy other aggregate values.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
@@ -112,6 +127,66 @@ pub struct MemCpy {
     destination: AnyPointer,
     #[operand]
     count: UInt32,
+}
+
+/// The pointee type of the pointers is the unit of `count`, and the lowering and the evaluator
+/// take it from the source pointer, so the destination pointer type must agree with it.
+impl Verify<dyn MemoryEffectOpInterface> for MemCpy {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        verify_copy_pointer_types("hir.mem_cpy", &self.source().ty(), &self.destination().ty())
+    }
+}
+
+/// Copies `count` values from the memory at address `source`, to the memory at address
+/// `destination`, where the two ranges may overlap.
+///
+/// The unit of `count` is the pointee type of `source`, i.e. `count * size_of(pointee)` bytes are
+/// copied. A `count` of zero leaves the memory unchanged. The byte length and the end addresses
+/// `source + len` and `destination + len` must fit in a `u32`.
+///
+/// The destination receives the values the source range held before the copy. Use [MemCpy] when
+/// the ranges are known to be disjoint.
+///
+/// The MASM lowering supports pointers in the byte address space only, copies values of 16 bytes
+/// or a multiple of 16 a word at a time, which requires 16-byte aligned addresses (also when
+/// `count` is zero), and cannot copy other aggregate values.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct MemMove {
+    #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read))]
+    source: AnyPointer,
+    #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Write))]
+    destination: AnyPointer,
+    #[operand]
+    count: UInt32,
+}
+
+/// The pointee type of the pointers is the unit of `count`, and the lowering and the evaluator
+/// take it from the source pointer, so the destination pointer type must agree with it.
+impl Verify<dyn MemoryEffectOpInterface> for MemMove {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        verify_copy_pointer_types("hir.mem_move", &self.source().ty(), &self.destination().ty())
+    }
+}
+
+/// Checks that the source and destination pointers of the copy operation `op` have the same type.
+fn verify_copy_pointer_types(
+    op: &str,
+    source_ty: &Type,
+    destination_ty: &Type,
+) -> Result<(), Report> {
+    if source_ty != destination_ty {
+        return Err(Report::msg(format!(
+            "invalid {op}: the source has type '{source_ty}', but the destination has type \
+             '{destination_ty}'"
+        )));
+    }
+    Ok(())
 }
 
 /// Prints a string to the debug output.
@@ -130,4 +205,95 @@ pub struct PrintLn {
     ptr: PointerOf<UInt8>,
     #[operand]
     len: UInt32,
+}
+
+/// Verifier tests of the memory primitives.
+#[cfg(test)]
+mod tests {
+    use alloc::format;
+
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{
+        Op, PointerType, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, testing::Test,
+    };
+
+    use crate::HirOpBuilder;
+
+    /// The copy operations under test.
+    #[derive(Copy, Clone)]
+    enum CopyOp {
+        MemCpy,
+        MemMove,
+    }
+
+    /// Build a function whose body is the copy operation `op` from a `src_pointee` pointer to a
+    /// `dst_pointee` pointer, then verify the module.
+    fn verify_copy_with(
+        op: CopyOp,
+        src_pointee: Type,
+        dst_pointee: Type,
+    ) -> Result<(), midenc_hir::Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::named("verify_copy").in_module("m");
+        test.with_function("copy", &[], &[]);
+        {
+            let mut builder = test.function_builder();
+            let src_addr = builder.u32(0, span);
+            let src = builder
+                .inttoptr(src_addr, Type::from(PointerType::new(src_pointee)), span)
+                .unwrap();
+            let dst_addr = builder.u32(16, span);
+            let dst = builder
+                .inttoptr(dst_addr, Type::from(PointerType::new(dst_pointee)), span)
+                .unwrap();
+            let count = builder.u32(1, span);
+            match op {
+                CopyOp::MemCpy => {
+                    builder.memcpy(src, dst, count, span).unwrap();
+                }
+                CopyOp::MemMove => {
+                    builder.memmove(src, dst, count, span).unwrap();
+                }
+            }
+            builder.ret(None, span).unwrap();
+        }
+
+        test.module().borrow().as_operation().recursively_verify()
+    }
+
+    /// Checks that a `hir.mem_cpy` whose source and destination pointer types differ fails
+    /// verification.
+    #[test]
+    fn mem_cpy_with_mismatched_pointer_types_fails_verification() {
+        let err = verify_copy_with(CopyOp::MemCpy, Type::U8, Type::U16)
+            .expect_err("mismatched pointer types must fail verification");
+        let message = format!("{err}");
+        assert!(message.contains("invalid hir.mem_cpy"), "{message}");
+    }
+
+    /// Checks that a `hir.mem_cpy` whose source and destination pointer types agree passes
+    /// verification.
+    #[test]
+    fn mem_cpy_with_matching_pointer_types_passes_verification() {
+        verify_copy_with(CopyOp::MemCpy, Type::U8, Type::U8)
+            .expect("matching pointer types must verify");
+    }
+
+    /// Checks that a `hir.mem_move` whose source and destination pointer types differ fails
+    /// verification.
+    #[test]
+    fn mem_move_with_mismatched_pointer_types_fails_verification() {
+        let err = verify_copy_with(CopyOp::MemMove, Type::U8, Type::U16)
+            .expect_err("mismatched pointer types must fail verification");
+        let message = format!("{err}");
+        assert!(message.contains("invalid hir.mem_move"), "{message}");
+    }
+
+    /// Checks that a `hir.mem_move` whose source and destination pointer types agree passes
+    /// verification.
+    #[test]
+    fn mem_move_with_matching_pointer_types_passes_verification() {
+        verify_copy_with(CopyOp::MemMove, Type::U8, Type::U8)
+            .expect("matching pointer types must verify");
+    }
 }

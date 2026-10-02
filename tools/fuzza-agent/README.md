@@ -10,8 +10,11 @@ the agent-facing tooling that grows the case set:
 - [`OUTER-LOOP.md`](OUTER-LOOP.md) — the director playbook for running many
   areas as a campaign.
 - [`KNOWLEDGE.md`](KNOWLEDGE.md) — the committed fact base every run must read
-  first: verified reachability facts, case-writing tricks, and operational
-  gotchas.
+  first: the operational reference (running, evidence, classification,
+  gotchas, case-writing tricks), with [`PIPELINE-FACTS.md`](PIPELINE-FACTS.md)
+  (verified reachability facts and dead ends by pipeline stage). Open
+  classes, reproducers and guards are rebuilt with grep from the tagged
+  `#[ignore]` attributes (`KNOWLEDGE.md`, "Corpus map on demand").
 - `cov.py` — renders the llvm-cov JSON into the agent-readable `report.md`.
 - `scratch/` — per-run agent notes (gitignored, machine-local).
 
@@ -69,9 +72,40 @@ cases come in three flavors:
   pins the exact failing input pair via `run_case_with_inputs`, so the bug
   fails reliably rather than only when proptest happens to draw the input.
 - **Compile-time compiler panics** — the case *is* the reproducer; the panic
-  message and source location are in the ignore reason.
+  message and source location are in the ignore reason. Realistic programs
+  that fail to compile (`programs.rs`, `prog_*`) sit next to their largest
+  compiling variant (`prog_*_guard`) and, where one exists, the smallest
+  source-level workaround (`prog_*_wa`), so the user impact and the escape
+  are documented together.
+- **Configuration-dependent findings** — a `<case>_<config>` twin (e.g.
+  `spill_loop_mix_oz`) pins the compiler flags via `run_case_with_flags`
+  (or `run_case_with_flags_and_inputs` when the divergence also needs its
+  exact inputs), so the finding reproduces without any environment setup.
 - **Out-of-scope artifacts** — kept for coverage/documentation (e.g.
   `mem_grow`); the ignore reason explains why they will not be "fixed".
+
+Every guest is built with full DWARF, and the whole corpus can be re-run
+under another compiler configuration with `MIDENC_DIFF_FLAGS='<midenc
+flags>'` (whitespace-split; e.g. `--optimize=size-min`). Only the MASM side
+changes — the native reference build is untouched — so the outputs must
+still match: a divergence that appears under one configuration only is a
+real compiler bug. `FUZZA_INPUT_PAIRS=N` scales the random input pairs per
+case (default 16; the RNG is freshly seeded per run) for a deep sweep of the
+whole corpus, and `FUZZA_GUEST_DEBUG=0|1|2` overrides the guests' debug-info
+level (default 2) — a no-DWARF sweep exposes the shapes that debug info
+happens to mask in the guest toolchain. A case pins that level for itself
+with the harness pseudo-flag `--guest-debug=0|1|2` in `run_case_with_flags`
+(it never reaches `midenc`; per-case flags win over the env).
+
+Cases in the strict corpus must never trap: the header's panic handler spins,
+so a native panic hangs the test and a VM error fails it. Trap parity is its
+own oracle — `run_case_traps` / `run_case_traps_with_inputs` /
+`run_case_traps_with_flags` (`tests/traps.rs`, `tests/trapspill.rs`)
+build the case with a panic handler that traps on both targets, run the host
+`entrypoint` in a forked child, catch VM execution errors, and require both
+sides to agree per input on *value or trap*. A trap on one side only is a
+finding in either direction (a missing bounds check on Miden, or a trap where
+native Rust returns).
 
 The specifics of each bug — the failure, the exact inputs, what passing
 sibling cases have *bounded*, and what would allow un-ignoring — live only

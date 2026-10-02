@@ -1,7 +1,9 @@
 use super::support::assert_memory_test_returns_zero;
 
+/// Checks that `copy_nonoverlapping` of two `u128` values from elements 1..3 of a three-element
+/// array into a two-element array copies both values.
 #[test]
-fn memory_copy_u128_fast_path() {
+fn memory_copy_u128_values() {
     let main_fn = r#"() -> Felt {
         #[inline(never)]
         fn do_copy(dst: &mut [u128; 2], src: &[u128; 3]) {
@@ -33,5 +35,5 @@ fn memory_copy_u128_fast_path() {
         Felt::from_u32(mismatches)
     }"#;
 
-    assert_memory_test_returns_zero("memory_copy_u128_fast_path", main_fn);
+    assert_memory_test_returns_zero("memory_copy_u128_values", main_fn);
 }

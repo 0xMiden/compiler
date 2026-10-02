@@ -1,11 +1,11 @@
 // Runtime-length slice copies. `copy_from_slice`/`copy_within` with a
 // length LLVM cannot constant-fold become wasm `memory.copy`, which lowers
-// to the HIR MemCpy op — exercising `OpEmitter::memcpy` (element-aligned
+// to the HIR MemMove op — exercising `OpEmitter::memmove` (element-aligned
 // fast path + byte fallback loop, both emitted at compile time) and the
 // MemoryCopy translation arm. The u8 copy at odd offsets also takes the
 // fallback loop at runtime; the u32 copies take the element fast path.
-// All copies are between disjoint ranges — overlapping copies diverge
-// (see case_mem_overlap) and are tracked as a separate ignored case.
+// All copies are between disjoint ranges — overlapping copies have their own
+// case (see case_mem_overlap).
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let mut a = [0u32; 16];
