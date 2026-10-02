@@ -30,5 +30,5 @@
 ;; MASM: pub mod export_name_test
 ;; MASM: pub proc foo_3
 ;; MASM: pub proc caller
-;; MASM: exec.::"root_ns:root@1.0.0"::export_name_test::foo_3
+;; MASM: exec.::export_name_test::export_name_test::foo_3
 ;; MASM-NOT: proc foo_2

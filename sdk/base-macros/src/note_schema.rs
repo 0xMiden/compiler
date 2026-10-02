@@ -4,7 +4,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use heck::ToKebabCase;
 use midenc_frontend_wasm_metadata::{
-    WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, pad_to_link_section_alignment,
+    WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, namespace::CORE_TYPES_INTERFACE,
+    pad_to_link_section_alignment,
 };
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::quote;
@@ -13,6 +14,7 @@ use syn::{ItemStruct, Type, spanned::Spanned};
 use wit_bindgen_core::wit_parser::Resolve;
 
 use crate::{
+    generate::CORE_TYPES_INTERFACE_ID,
     manifest_paths::SDK_WIT_SOURCE,
     types::{
         ExportedField, ExportedTypeDef, ExportedTypeKind, TypeRef, custom_type_shape_assertions,
@@ -24,12 +26,8 @@ use crate::{
     wit_world::ManifestPackage,
 };
 
-/// Fully qualified SDK core-types interface imported by generated schemas.
-const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 /// SDK core-types package name used for the embedded dependency package.
 const CORE_TYPES_PACKAGE_NAME: &str = "miden:base";
-/// SDK interface copied into generated schemas.
-const CORE_TYPES_INTERFACE: &str = "core-types";
 /// Component package of a crate without a `miden-project.toml`.
 const PLACEHOLDER_COMPONENT_PACKAGE: &str = "miden:empty";
 /// Source name reported for generated schema validation errors.
@@ -191,7 +189,7 @@ fn render_note_storage_schema_with_registry_model(
 
     let mut wit = WitBuilder::new("#[note]", &schema_package, component_version);
     if !core_imports.is_empty() {
-        wit.use_path(CORE_TYPES_PACKAGE);
+        wit.use_path(&CORE_TYPES_INTERFACE_ID);
         wit.blank_line();
     }
     wit.interface("note-storage", |interface| {

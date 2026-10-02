@@ -750,11 +750,12 @@ mod tests {
                 (core module $m
                     (func $count (result i32) i32.const 0)
                     (export "get-count" (func $count))
-                    (export "read-count" (func $count))
                 )
                 (core instance $i (instantiate $m))
+                ;; A core function exported under two names is rejected while parsing the core
+                ;; module, so both exports lift the same core export.
                 (func $get (result u32) (canon lift (core func $i "get-count")))
-                (func $read (result u32) (canon lift (core func $i "read-count")))
+                (func $read (result u32) (canon lift (core func $i "get-count")))
                 (component $shim
                     (import "import-func-get-count" (func $g (result u32)))
                     (import "import-func-read-count" (func $r (result u32)))
