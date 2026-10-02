@@ -1,12 +1,12 @@
-// COMPILE-TIME COMPILER PANIC REPRODUCER (campaign 14, 2026-09-03): two
-// nested `for` loops, one `#[inline(never)]` call in the inner loop and a
+// FORMER COMPILE-TIME COMPILER PANIC REPRODUCER (#1419, fixed; campaign 14,
+// 2026-09-03): two nested `for` loops, one `#[inline(never)]` call in the inner loop and a
 // `continue 'outer` from the inner loop. The lifted outer `scf.while`
 // carries a loop-invariant before-block argument, the
-// `RemoveLoopInvariantArgsFromBeforeBlock` canonicalization fires and
-// aborts with an `AliasingViolationError` at hir/src/patterns/rewriter.rs:335
-// (it inlines the after region while its own borrow of the new while's
-// region is alive). See the ignored test in tests/compose.rs;
-// `case_nest_continue_inline.rs` is the passing inlined twin.
+// `RemoveLoopInvariantArgsFromBeforeBlock` canonicalization fired and
+// aborted with an `AliasingViolationError` at hir/src/patterns/rewriter.rs:335
+// (it inlined the after region while its own borrow of the new while's
+// region was alive). See the test in tests/compose.rs;
+// `case_nest_continue_inline.rs` is the inlined twin.
 #[inline(never)]
 fn probe(v: u64, i: u32) -> u32 {
     (v.wrapping_mul(0x9e37_79b9_7f4a_7c15).rotate_left(i & 63) >> 59) as u32

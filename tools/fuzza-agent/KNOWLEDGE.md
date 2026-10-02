@@ -105,7 +105,7 @@ emitter panics) drop traces, then apply in order:
    no erasure, last drop-trace op a spill `hir.store_local`: spill placement
    past the window (#1422).
 4. `AliasingViolationError` at `rewriter.rs`: the last `trying to match` names
-   the pattern (`remove-loop-invariant-args-from-before-block` is #1419).
+   the pattern.
 
 A pass is not a fix. Before un-ignoring, tell a compiler fix (passes with the
 old guest toolchain too) from a guest-toolchain fix (wasmtime now returns

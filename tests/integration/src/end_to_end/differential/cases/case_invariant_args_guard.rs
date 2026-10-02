@@ -1,9 +1,8 @@
-// Passing sibling of `case_invariant_args_min.rs`: the same nest, the same
-// answer on every input, with the inner loop's early `return` moved BELOW the
-// `break` instead of above it.  The lifted `scf.while` then has no payload
-// column that is `ub.poison` on the continuing path, so
-// `RemoveLoopInvariantArgsFromBeforeBlock` does not match and the program
-// compiles.
+// Sibling of `case_invariant_args_min.rs`: the same nest, the same answer on
+// every input, with the inner loop's early `return` moved BELOW the `break`
+// instead of above it.  The lifted `scf.while` then has no payload column that
+// is `ub.poison` on the continuing path, so
+// `RemoveLoopInvariantArgsFromBeforeBlock` does not match.
 const S1: u32 = 7;
 const S2: u32 = 13;
 

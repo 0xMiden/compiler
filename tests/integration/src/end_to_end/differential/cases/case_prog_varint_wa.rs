@@ -1,7 +1,8 @@
 // Workaround variant of `case_prog_varint.rs` (campaign 22): identical
 // program, except that every use of the four shift constants goes through
 // `core::hint::black_box`.  Same answer on every input; compiles at the
-// default level where the original panics (F12, rewriter.rs:335).
+// default level where the original panicked (F12, rewriter.rs:335, #1419,
+// fixed).
 const S1: u32 = 7;
 const S2: u32 = 13;
 const S3: u32 = 23;

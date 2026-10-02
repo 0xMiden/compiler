@@ -5,7 +5,8 @@
 // level 4, `break` at level 5), so the lifted exit dispatch threads call
 // results through five levels of region result columns; the carried u64
 // crosses every call. A `continue` of an OUTER level from an inner loop
-// that contains a call is the `nest_continue` panic (tests/compose.rs).
+// that contains a call is the `nest_continue` shape (tests/compose.rs),
+// which panicked before the #1419 fix.
 #[inline(never)]
 fn probe(level: u32, v: u64, i: u32) -> u32 {
     let m = v.wrapping_mul(0x9e37_79b9_7f4a_7c15 ^ level as u64).rotate_left(i & 63);
