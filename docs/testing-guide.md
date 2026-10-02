@@ -45,5 +45,5 @@ When determining how to test your changes, or add tests to cover previously-unte
 * DO add tests when changing existing code that lacks adequate coverage
 * DO migrate old assertion-based tests which build IR manually to lit tests, if making changes to those tests. This makes those tests easier to maintain going forward.
 * DON'T change existing test expectations or semantics without justifying those changes explicitly in your pull request.
-* DON'T write tests directly in the SDK crates under `sdk/` - testing of these crates requires compilation to Miden Assembly, and thus require you to write an integration test that builds against the SDK and calls the functions you wish to test.
+* DON'T write tests in the SDK crates under `sdk/` targeting Miden - testing of these crates requires compilation to Miden Assembly, and thus require you to write an integration test that builds against the SDK and calls the functions you wish to test.
 * DON'T duplicate test setup boilerplate that has already been defined in the repo. Try to use the existing test helpers where possible. If a specific helper would be useful in reducing boilerplate, try to define it in a central place if possible.
