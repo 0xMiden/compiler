@@ -1,13 +1,13 @@
 # Miden Compiler
 
 > [!IMPORTANT]
-> This project is a work-in-progress, so if you encounter bugs or other
+> This project is rapidly evolving, so if you encounter bugs or other
 > things which are not covered in the issue tracker, there is a good chance we know
 > about them, but please do report them anyway so we can ensure they are tracked
 > publically as well.
 
 This repository contains the Miden compiler, which can be used both as a compiler backend
-for existing languages that wish to target Miden Assembly using a standard SSA-based IR;
+for existing languages that wish to target Miden Assembly, using a standard SSA-based IR;
 or as means of compiling WebAssembly (Wasm) produced by another compiler to Miden Assembly.
 
 This repo is broken into the following high-level components:
@@ -16,22 +16,31 @@ This repo is broken into the following high-level components:
   providing everything needed to build and compile IR for a program you want to
   emit Miden Assembly for.
 - The Wasm frontend; a library which can be used to convert a program compiled to `.wasm` to HIR
-- The `midenc` executable, which provides a command-line tool that provides a convenient way
-  to compile Wasm or HIR modules/programs to Miden Assembly. The separate `miden-debug`
-  tool executes and debugs compiled packages.
+- The `midenc` executable, which provides a command-line tool that provides a convenient way to compile Wasm or HIR modules/programs to Miden Assembly.
+- The `cargo-miden` executable, which provides a Cargo-native way of building Miden-based Rust projects.
+- The `hir-opt` executable, used in compiler testing and troubleshooting.
+- The `miden-objtool` executable, used for examining/analyzing compiled artifacts.
+
+## Installing
+
+You should install the compiler using [`midenup`](https://github.com/0xMiden/midenup), which is part of the default set of toolchain components it installs. You can invoke the compiler using `miden build`.
+
+Alternatively, you can download prebuilt binaries from the [latest GitHub release](https://github.com/0xMiden/compiler/releases/latest), and install them somewhere in your shell's `PATH`.
 
 > [!TIP]
-> We've published initial [documentation](https://0xMiden.github.io/compiler)
-> in mdBook format for easier reading, also accessible in the `docs` directory. This documentation
-> covers how to get started with the compiler, provides a couple guides for currently supported
-> use cases, and contains appendices that go into detail about various design aspects of the
-> toolchain.
+> Our prebuilt binaries have attached GitHub build attestations, which can be verified using the `gh` CLI, like so:
+>
+> ```
+> gh attestation verify midenc-aarch64-apple-darwin.tar.gz \
+>    --repo 0xMiden/compiler \
+>    --signer-workflow 0xMiden/compiler/.github/workflows/release.yml
+> ```
 
-## Building
+## Building from source
 
 You'll need to have Rust installed. This repository pins the toolchain in `rust-toolchain.toml` at the repo root (currently a nightly channel); use `rustup` to install that exact channel after cloning so local builds match CI.
 
-Additionally, you'll want to have [`cargo-make`](https://github.com/sagiegurari/cargo-make) installed:
+Additionally, you'll need to have [`cargo-make`](https://github.com/sagiegurari/cargo-make) installed:
 
     $ cargo install cargo-make
 
@@ -54,8 +63,7 @@ suite, run `cargo make test-all`.
 
 ## Debugging
 
-Use `miden-debug program.masp` to open a compiled program in the debugger. See the
-[debugger guide](docs/external/src/guides/debugger.md) for installation, inputs, and batch execution.
+The debugger is called [`miden-debug`](https://github.com/0xMiden/miden-debug), see more information on how to debug compiled programs there.
 
 ### Emitting internal sources/artifacts
 
@@ -77,6 +85,6 @@ Run `cargo make docs` to install the public documentation dependencies and start
 
 Internal compiler notes start at [docs/internal/src/index.md](docs/internal/src/index.md). These Markdown files are maintained separately from the public Docusaurus site; the public documentation build does not publish them.
 
-## Packaging
+## License
 
-TBD
+This project is dual-licensed under MIT and Apache 2.0, see [LICENSE](LICENSE.md) for details.
