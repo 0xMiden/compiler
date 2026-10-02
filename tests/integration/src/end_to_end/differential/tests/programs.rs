@@ -949,8 +949,8 @@ fn prog_rkscan_guard_nodwarf() {
 /// the same answer as `prog_rkscan_guard` on the 1225-pair native boundary
 /// grid (checksum 0x2168a1769f80256d), so it is a like-for-like substitution.
 /// Kept to pin that `prog_rkscan_wa`'s "pass the fingerprint words by
-/// reference" rescue now also holds without DWARF. Compile-time — no inputs
-/// involved.
+/// reference" rescue now also holds without DWARF. The former panic was
+/// compile-time — no inputs involved.
 #[test]
 fn prog_rkscan_ref_nodwarf() {
     run_case_with_flags(
@@ -996,8 +996,8 @@ fn prog_rkscan_guard_o1() {
 /// hir/src/patterns/rewriter.rs:335) — the Local2Reg promotion that DWARF
 /// blocks creates the poison-carrying payload column
 /// `compose::invariant_args_min` documents. Campaign 24: that also holds at
-/// guest `debug = 1`, and the by-reference-helper alternative fails the same
-/// way (see [`prog_rkscan_ref_nodwarf`]), so before the fix this program had
+/// guest `debug = 1`, and the by-reference-helper alternative failed the same
+/// way before the #1419 fix (see [`prog_rkscan_ref_nodwarf`]), so before the fix this program had
 /// NO source-level rescue in a release build — only `--optimize=size-min`
 /// compiled there.
 #[test]
@@ -1157,7 +1157,8 @@ fn prog_varint_wa_edges() {
 /// combined into a panic, so it is the reason a "workaround" must be validated
 /// at the exact configuration the user ships. `prog_varint_guard` (the
 /// reduced program) panicked at `-Oz` with DWARF too — that one is
-/// [`prog_varint_guard_oz`]. Compile-time — no inputs involved.
+/// [`prog_varint_guard_oz`]. The former panic was compile-time — no inputs
+/// involved.
 #[test]
 fn prog_varint_wa_oz_nodwarf() {
     run_case_with_flags(
@@ -1276,8 +1277,8 @@ fn prog_feistel_wa_edges() {
 /// again with no labeled `continue` and no call in the loop. Per level before
 /// the fix: default PANIC, `--optimize=size-min` PASSES, `--optimize=max` PANIC,
 /// `--optimize=basic` PASSES. Bounding sibling: `prog_rle_guard` — the same
-/// encoder with three statistics — compiles at all four levels. Compile-time
-/// — no inputs involved.
+/// encoder with three statistics — compiles at all four levels. The former
+/// panic was compile-time — no inputs involved.
 #[test]
 fn prog_rle() {
     run_case("prog_rle", include_str!("../cases/case_prog_rle.rs"));

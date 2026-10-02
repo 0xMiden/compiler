@@ -1,6 +1,7 @@
 // `prog_rkscan_guard` with the Bloom-probe expression moved into an
 // `#[inline(never)] fn(&[u64; 4], u64)` — the campaign-21/22 "state BY
-// REFERENCE helper" rescue, the one that saves `prog_tlv` and `prog_rle`.
+// REFERENCE helper" rescue, the one that rescues `prog_tlv` from its F6
+// panic (and rescued `prog_rle` from F12 before #1419).
 // The four fingerprint words live in the shadow stack because the array's
 // address escapes into the helper, so nothing about them can be
 // Copy-constrained in the search loop's window.

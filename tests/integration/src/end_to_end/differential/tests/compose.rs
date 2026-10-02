@@ -341,11 +341,33 @@ fn carried_wide_edges() {
 /// fix.
 /// Configuration note (campaign 16): at `--optimize=size-min` and
 /// `--optimize=basic` LLVM keeps the helper out of line inside the loops and
-/// the case hit the F12 aliasing panic (#1419, fixed; `nest_continue` class);
-/// O2 and O3 pass.
+/// the case hit the F12 aliasing panic (#1419, fixed; `nest_continue` class,
+/// see [`nest_calls_oz`] and [`nest_calls_o1`]); O2 and O3 pass.
 #[test]
 fn nest_calls() {
     run_case("nest_calls", include_str!("../cases/case_nest_calls.rs"));
+}
+
+/// [`nest_calls`] at `--optimize=size-min`, a level at which it panicked
+/// before the #1419 fix.
+#[test]
+fn nest_calls_oz() {
+    run_case_with_flags(
+        "nest_calls_oz",
+        include_str!("../cases/case_nest_calls.rs"),
+        &["--optimize=size-min"],
+    );
+}
+
+/// [`nest_calls`] at `--optimize=basic`, a level at which it panicked before
+/// the #1419 fix.
+#[test]
+fn nest_calls_o1() {
+    run_case_with_flags(
+        "nest_calls_o1",
+        include_str!("../cases/case_nest_calls.rs"),
+        &["--optimize=basic"],
+    );
 }
 
 /// Pinned inputs for every exit tag of `nest_calls` (all-zero-trip, the

@@ -207,17 +207,18 @@ fn prog_xxh64_o1() {
 /// of the campaign — used in eight places per round, so the merged bands
 /// cross the G loop, the round loop, the block loop and the fold. Compiles
 /// and matches native at `-Oz` with and without guest DWARF; the default
-/// level, max and basic all panicked in the F12 class until #1419 was fixed,
-/// and all hit the arity-2 `NoSolution` gap (#1422) since (see
-/// [`prog_blake2b`]), which is why the passing case is pinned to `-Oz`.
+/// level, max and basic all panicked in the F12 class until #1419 was fixed
+/// and pass with guest DWARF since (see [`prog_blake2b`]); without guest DWARF
+/// the default level hits the arity-2 `NoSolution` gap (#1422, see
+/// [`prog_blake2b_nodwarf`]).
 #[test]
 fn prog_blake2b_oz() {
     run_case_with_flags("prog_blake2b_oz", include_str!("../cases/case_prog_blake2b.rs"), SIZE_MIN);
 }
 
-/// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
-/// campaign 26): the BLAKE2b compression of [`prog_blake2b_oz`] built without
-/// pinned flags panicked with `AliasingViolationError { kind: Mutable,
+/// FORMER COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (#1419,
+/// fixed; safe Rust, campaign 26): the BLAKE2b compression of
+/// [`prog_blake2b_oz`] built without pinned flags panicked with `AliasingViolationError { kind: Mutable,
 /// location: hir/src/ir/operation.rs:877 }` at
 /// hir/src/patterns/rewriter.rs:335 — F12, confirmed by the driver's last
 /// line `trying to match 'remove-loop-invariant-args-from-before-block'
@@ -229,20 +230,31 @@ fn prog_blake2b_oz() {
 /// whatsoever — a three-level `while` nest over array-indexed state is
 /// enough — so campaign 22's "a `return` that leaves the function from a
 /// two-level nest" is one producer, not the producer.
-/// Since the #1419 fix it compiles past the pattern and panics with `failed
-/// to schedule operands: [%1916, %1352] for inst 'arith.rotl' with error:
-/// NoSolution, constraints: [Move, Copy]` at codegen/masm/src/lower/lowering.rs:113
-/// over a 9-operand / 15-felt stack instead, at the default level, max and
-/// basic alike. The spills trace has no split edges and no erased reloads, so
-/// this is the arity-2 gap, not F6. Compile-time — no inputs involved.
+/// Since the #1419 fix it compiles and matches native at the default level,
+/// max and basic, and with guest `debug = 1` as well as full DWARF. Without
+/// guest DWARF it hits the arity-2 gap instead (see [`prog_blake2b_nodwarf`]).
+/// The former panic was compile-time — no inputs involved.
 #[test]
-#[ignore = "#1422: compiler panic at the DEFAULT configuration (and at --optimize=max and \
-            --optimize=basic): 'with error: NoSolution' on 'arith.rotl' [Move, Copy] at \
-            codegen/masm/src/lower/lowering.rs:113 over a 15-felt operand stack, no split edges or \
-            erased reloads; was the #1419 F12 panic before that fix; compile-time, no inputs \
-            involved"]
 fn prog_blake2b() {
     run_case("prog_blake2b", include_str!("../cases/case_prog_blake2b.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC WITHOUT GUEST DWARF: [`prog_blake2b`] at the
+/// default level with guest `debug = 0` panics with `failed to schedule
+/// operands: [%1926, %1362] for inst 'arith.rotl' with error: NoSolution,
+/// constraints: [Move, Copy]` at codegen/masm/src/lower/lowering.rs:113 over a
+/// 9-operand / 15-felt stack — the arity-2 gap. Compile-time — no inputs
+/// involved.
+#[test]
+#[ignore = "#1422: compiler panic without guest DWARF: 'with error: NoSolution' on 'arith.rotl' \
+            [Move, Copy] at codegen/masm/src/lower/lowering.rs:113 over a 15-felt operand stack; \
+            compile-time, no inputs involved"]
+fn prog_blake2b_nodwarf() {
+    run_case_with_flags(
+        "prog_blake2b_nodwarf",
+        include_str!("../cases/case_prog_blake2b.rs"),
+        &["--guest-debug=0"],
+    );
 }
 
 /// THE -Oz ESCAPE HATCH CLOSING: Threefish-256 (the Skein block cipher)

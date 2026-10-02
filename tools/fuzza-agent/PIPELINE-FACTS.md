@@ -358,14 +358,11 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   carries poison at the `scf.condition`. Producers: a `return` leaving the
   function from inside a two-level nest (`compose::invariant_args_min`,
   `programs::prog_varint`) and an inner counted loop's merged exit dispatch
-  with no early exit (`compose::invariant_args_noreturn`, measured on
-  nightly-2026-04-30 guests; nightly-2026-09-01 guests no longer produce
-  that nest). The same
+  with no early exit (`compose::invariant_args_noreturn`). The same
   nest with the `return` moved below the `break`, an unrolled inner loop, or
   an inlined helper does not match (`compose::invariant_args_guard`,
   `compose::invariant_args_noreturn_guard`, and `compose::nest_continue_inline`
-  at the default level). Labeled `break`/`continue` and one-loop variants
-  did not match either, but no test pins them.
+  at the default level).
 - Without DWARF, Local2Reg promotions create more producers of that pattern
   (`compose::chain_sm_nodwarf`, `corelib::prog_numeric_nodwarf`).
 - An in-loop trapping edge becomes one extra u32 exit column plus a top-level
