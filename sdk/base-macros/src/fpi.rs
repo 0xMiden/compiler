@@ -1941,7 +1941,7 @@ interface api {
             "dependency WIT function `get-count` of `miden:counter/counter@0.1.0` carries the \
              `@external-id` `miden::counter::counter::\"get-count\"`, which is not a Miden \
              procedure path with a module and a function name (a leading `::` is optional) whose \
-             segments are ASCII letters, digits and `_`"
+             segments are ASCII letters, digits and `_`, not starting with a digit"
         );
     }
 

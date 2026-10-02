@@ -14,7 +14,7 @@ impl fmt::Display for ProcedurePathError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(
             "is not a Miden procedure path with a module and a function name (a leading `::` is \
-             optional) whose segments are ASCII letters, digits and `_`",
+             optional) whose segments are ASCII letters, digits and `_`, not starting with a digit",
         )
     }
 }
@@ -22,11 +22,14 @@ impl fmt::Display for ProcedurePathError {
 /// Checks that `path` is a Miden procedure path and returns its module path and function name.
 ///
 /// A procedure path is an optional leading `::` followed by at least two `::`-separated segments
-/// of ASCII letters, digits and `_`, the last of which names the function.
+/// of ASCII letters, digits and `_` that do not start with a digit (the identifiers MASM prints
+/// unquoted), the last of which names the function.
 pub fn validate_procedure_path(path: &str) -> Result<(&str, &str), ProcedurePathError> {
     let path = path.strip_prefix("::").unwrap_or(path);
     let is_bare_identifier = |segment: &str| {
-        !segment.is_empty() && segment.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        !segment.is_empty()
+            && !segment.starts_with(|ch: char| ch.is_ascii_digit())
+            && segment.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
     };
     if !path.split("::").all(is_bare_identifier) {
         return Err(ProcedurePathError);
@@ -58,6 +61,8 @@ mod tests {
             "miden::::get",
             "miden::x::\"first\"",
             "miden::x::get-count",
+            "miden::x::1st",
+            "miden::2x::get",
             "miden:x/get",
             ":::miden::x",
         ] {
