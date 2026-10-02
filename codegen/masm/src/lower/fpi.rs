@@ -91,12 +91,8 @@ mod tests {
 
     use midenc_dialect_hir::HirOpBuilder;
     use midenc_hir::{
-        TraceTarget, Type, ValueRef,
-        dialects::builtin::{self, BuiltinOpBuilder},
-        formatter::PrettyPrint,
-        pass::AnalysisManager,
-        testing::Test,
-        version::Version,
+        SymbolPath, TraceTarget, Type, ValueRef, dialects::builtin::BuiltinOpBuilder,
+        formatter::PrettyPrint, pass::AnalysisManager, testing::Test,
     };
     use midenc_hir_analysis::analyses::LivenessAnalysis;
 
@@ -192,11 +188,7 @@ mod tests {
 
         let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
-        let link_info = LinkInfo::new(Some(builtin::ComponentId {
-            namespace: "root".into(),
-            name: "root".into(),
-            version: Version::new(1, 0, 0),
-        }));
+        let link_info = LinkInfo::new(Some(SymbolPath::from_masm_module_id("root")));
         let mut invoked = BTreeSet::default();
         let mut stack = OperandStack::new(test.context_rc());
         for _ in 0..num_inputs {

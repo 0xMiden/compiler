@@ -37,17 +37,17 @@ fn storage_example() {
         version = "0.1.0"
 
         [[storage.slots]]
-        name = "storage_example::foo::asset_qty_map"
+        name = "miden::storage_example::foo::owner_public_key"
+        description = "owner public key"
+        type = "word"
+
+        [[storage.slots]]
+        name = "miden::storage_example::foo::asset_qty_map"
         description = "asset quantity map"
 
         [storage.slots.type]
         key = "word"
         value = "felt"
-
-        [[storage.slots]]
-        name = "storage_example::foo::owner_public_key"
-        description = "owner public key"
-        type = "word"
     "#]]
     .assert_eq(&toml);
 }

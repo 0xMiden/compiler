@@ -1,7 +1,9 @@
+use alloc::format;
+
 use crate::{
-    OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
-    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
-    UnsafeIntrusiveEntityRef, Usable, Visibility,
+    Context, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Report, Symbol,
+    SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
+    UnsafeIntrusiveEntityRef, Usable, Verify, Visibility,
     derive::operation,
     dialects::builtin::{
         BuiltinDialect,
@@ -94,6 +96,28 @@ impl Module {
     #[inline(always)]
     pub fn as_module_ref(&self) -> ModuleRef {
         unsafe { ModuleRef::from_raw(self) }
+    }
+
+    /// Returns an error when `name` cannot name a module because it contains `::`.
+    ///
+    /// Only components are named by `::`-joined paths: a module's name is a single segment of the
+    /// path of every symbol it contains.
+    pub fn validate_name(name: SymbolName) -> Result<(), Report> {
+        if name.as_str().contains("::") {
+            return Err(Report::msg(format!(
+                "module `{name}`: a module name cannot contain `::` (only components are named by \
+                 `::`-joined paths)"
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// Modules are built through the builtin builders, which validate their names; parsed input is
+/// not, so the name is checked here as well.
+impl Verify<dyn SymbolTable> for Module {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        Self::validate_name(Symbol::name(self))
     }
 }
 

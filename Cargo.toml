@@ -150,12 +150,12 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 heck = "0.5"
 prettyplease = "0.2"
 proc-macro-crate = "3.5"
-# Deliberate skew: WIT emission (wit-bindgen-core 0.57) and attach/consume validation
-# (workspace wit-parser/wit-component) parse with 0.247; 0.233 enters only through wasmtime's
+# WIT emission (wit-bindgen-core 0.62) and attach/consume validation (workspace
+# wit-parser/wit-component) both parse with 0.259; 0.233 enters only through wasmtime's
 # component bindgen macros on the codec-consumption path.
-wit-bindgen-core = "0.61"
-wit-bindgen-rust = { version = "0.61", default-features = false }
-wit-bindgen = { version = "0.61", default-features = false, features = ["macros"] }
+wit-bindgen-core = "0.62"
+wit-bindgen-rust = { version = "0.62", default-features = false }
+wit-bindgen = { version = "0.62", default-features = false, features = ["macros"] }
 smallvec = { version = "1.15", default-features = false, features = [
     "union",
     "const_generics",
@@ -168,16 +168,16 @@ thiserror = { package = "miden-thiserror", version = "1.0" }
 toml = { version = "^1.1.2", features = ["preserve_order"] }
 toml_edit = { version = "^0.25", features = ["serde"] }
 tokio = { version = "^1.39.2", features = ["rt", "time", "macros", "rt-multi-thread"] }
-wat = "^1.248"
-wasmprinter = "^0.248"
-wasmparser = { version = "^0.248", default-features = false, features = [
+wat = "^1.259"
+wasmprinter = "^0.259"
+wasmparser = { version = "^0.259", default-features = false, features = [
     "features",
     "component-model",
     "validate",
     "simd",
 ] }
-wit-component = "0.258"
-wit-parser = "0.258"
+wit-component = "0.259"
+wit-parser = "0.259"
 wasmtime = { version = "34.0.0", default-features = false, features = [
     "component-model",
     "cranelift",

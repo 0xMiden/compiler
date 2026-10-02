@@ -44,7 +44,7 @@ match some {
 
     run_canonabi_case("option_felt", account_source, note_body, |wit| {
         assert!(
-            wit.contains("roundtrip: func(value: option<felt>) -> option<felt>;"),
+            wit.contains("%roundtrip: func(%value: option<felt>) -> option<felt>;"),
             "generated WIT did not use option<felt>:\n{wit}"
         );
     });
@@ -107,7 +107,7 @@ match some {
             "generated WIT did not import word for option<word>:\n{wit}"
         );
         assert!(
-            wit.contains("roundtrip: func(value: option<word>) -> option<word>;"),
+            wit.contains("%roundtrip: func(%value: option<word>) -> option<word>;"),
             "generated WIT did not use option<word>:\n{wit}"
         );
     });
@@ -200,7 +200,7 @@ match some {
         );
         assert!(
             wit.contains(
-                "roundtrip: func(payload: option<option-payload>) -> option<option-payload>;"
+                "%roundtrip: func(%payload: option<option-payload>) -> option<option-payload>;"
             ),
             "generated WIT did not use option<option-payload>:\n{wit}"
         );
@@ -283,11 +283,13 @@ if none.flag { assert_eq!(felt!(0), felt!(1)); }"#;
             "generated WIT did not define option-field-payload record:\n{wit}"
         );
         assert!(
-            wit.contains("maybe: option<felt>,"),
+            wit.contains("%maybe: option<felt>,"),
             "generated WIT did not use option<felt> for the record field:\n{wit}"
         );
         assert!(
-            wit.contains("roundtrip: func(payload: option-field-payload) -> option-field-payload;"),
+            wit.contains(
+                "%roundtrip: func(%payload: option-field-payload) -> option-field-payload;"
+            ),
             "generated WIT did not use option-field-payload in roundtrip:\n{wit}"
         );
     });

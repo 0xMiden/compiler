@@ -52,7 +52,9 @@ fn expand_inner(
         .iter()
         .map(|dependency| dependency.import().to_owned())
         .collect::<Vec<_>>();
-    let fpi_imports = fpi::import_specs(&imports)?;
+    // The generated FPI functions are named under the consuming component's namespace.
+    let consumer = manifest.namespace(Span::call_site())?;
+    let fpi_imports = fpi::import_specs(&imports, &consumer)?;
     let with_entries = fpi::dependency_type_with_entries(&dependencies);
     let world_name = fpi::import_world_name(FOREIGN_ACCOUNT_WORLD, &fpi_imports);
     let inline_wit = fpi::import_world_wit(&world_name, &fpi_imports);

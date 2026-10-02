@@ -9,13 +9,11 @@ pub mod note;
 pub mod output_note;
 pub mod tx;
 
-/// Builds the `[lib].namespace` for an account-component binding test.
-///
-/// The interface segment must match the component trait name (kebab-case), since the project
-/// assembler ties the component's library identity to this namespace.
+/// Builds the three-segment `[lib].namespace` for an account-component binding test.
 pub(crate) fn account_component_namespace(name: &str, interface: &str) -> String {
-    let package = name.replace('_', "-");
-    format!("miden:{package}/{interface}@0.0.1")
+    let package = name.replace('-', "_");
+    let interface = interface.replace('-', "_");
+    format!("miden::{package}::{interface}")
 }
 
 /// Splits a method definition into its trait signature declaration and its (non-`pub`) impl

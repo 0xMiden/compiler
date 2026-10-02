@@ -5,8 +5,8 @@ version = "0.1.0"
 [lib]
 path = "src/lib.rs"
 kind = "note"
-# Notes export a package-derived interface (`miden-<package>`), matching the `#[note]` macro.
-namespace = "miden:increment-note/miden-increment-note@0.1.0"
+# Names the note's exported procedures, e.g. `miden::increment_note::increment_note::run`.
+namespace = "miden::increment_note::increment_note"
 
 [dependencies]
 miden-core = "*"

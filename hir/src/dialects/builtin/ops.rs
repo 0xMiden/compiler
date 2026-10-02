@@ -8,11 +8,12 @@ mod module;
 mod segment;
 mod world;
 
+pub(crate) use self::world::shadowing_error;
 pub use self::{
     cast::UnrealizedConversionCast,
     component::{
-        Component, ComponentBuilder as PrimComponentBuilder, ComponentExport, ComponentId,
-        ComponentInterface, ComponentRef, ModuleExport, ModuleInterface,
+        Component, ComponentBuilder as PrimComponentBuilder, ComponentExport, ComponentInterface,
+        ComponentRef, ModuleExport, ModuleInterface,
     },
     function::{Function, FunctionBuilder as PrimFunctionBuilder, FunctionRef, Ret, RetImm},
     function_table::*,

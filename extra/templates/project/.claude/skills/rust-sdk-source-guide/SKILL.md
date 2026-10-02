@@ -80,13 +80,13 @@ release lines:
 
 | Line | Crates | Version | MSRV |
 |---|---|---|---|
-| Contract SDK (guest) | `miden`, `miden-base`, `miden-base-macros`, `miden-base-sys`, `miden-stdlib-sys`, `miden-sdk-alloc` | project manifests use `0.14`, resolving to published `0.14.0` | Rust 1.99 + nightly `2026-09-01`, target `wasm32-wasip2` |
+| Contract SDK (guest) | `miden`, `miden-base`, `miden-base-macros`, `miden-base-sys`, `miden-stdlib-sys`, `miden-sdk-alloc` | project manifests use `0.15.0-rc.2` | Rust 1.99 + nightly `2026-09-01`, target `wasm32-wasip2` |
 | Compiler / build tool | compiler workspace, `midenc`, `cargo-miden` | `cargo-miden` `0.10.0`, usually installed through midenup / cargo-miden | Rust 1.99 |
 | Protocol | `miden-protocol`, `miden-standards`, `miden-testing`, `miden-tx`, `miden-tx-batch`, `miden-block-prover`, `miden-agglayer` | integration manifests lower-bound standards/testing at `0.16.0-rc.4`; `Cargo.lock` resolves protocol/standards/testing to `0.16.0-rc.6` | see each crate |
 | Client | `miden-client`, `miden-client-sqlite-store` | integration manifests lower-bound at `0.16.0-rc.1`; `Cargo.lock` resolves both to `0.16.0-rc.2` | see each crate |
 | VM / package crates | `miden-assembly`, `miden-assembly-syntax`, `miden-core`, `miden-core-lib`, `miden-crypto`, `miden-mast-package`, `miden-processor`, `miden-project`, `miden-prover` | `Cargo.lock` resolves package crates such as `miden-mast-package` to `0.29.4` | see each crate |
 
-For published final crates, follow the local manifests: contract crates use `miden = { version = "0.14" }` and matching `miden-sdk-build-script-support = { version = "0.14" }`. Full pre-release strings matter for release-candidate dependencies such as `miden-client = { version = "0.16.0-rc.1" }`, `miden-standards = { version = "0.16.0-rc.4" }`, and `miden-testing = "0.16.0-rc.4"`; read both `integration/Cargo.toml` and `Cargo.lock` before changing version requirements.
+Follow the local manifests: contract crates use `miden = { version = "0.15.0-rc.2" }` and matching `miden-sdk-build-script-support = { version = "0.15.0-rc.2" }`. Full pre-release strings matter for release-candidate dependencies such as these and `miden-client = { version = "0.16.0-rc.1" }`, `miden-standards = { version = "0.16.0-rc.4" }`, and `miden-testing = "0.16.0-rc.4"`; read both `integration/Cargo.toml` and `Cargo.lock` before changing version requirements.
 
 Keep the build tool out of the integration crate's dependency graph. The current project builds contracts out of process with midenup / cargo-miden via `build_project_in_dir(...)`, then tests those packages with the client, standards, and `miden-testing` libraries resolved in `Cargo.lock`.
 

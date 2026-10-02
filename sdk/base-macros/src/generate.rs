@@ -1,5 +1,11 @@
-use std::{collections::HashSet, env, fs, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    env, fs,
+    path::PathBuf,
+    sync::LazyLock,
+};
 
+use midenc_frontend_wasm_metadata::namespace::CORE_TYPES_INTERFACE;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use syn::{
@@ -12,16 +18,17 @@ use syn::{
 use wit_bindgen_core::{
     WorldGenerator,
     wit_parser::{
-        Function, Handle, InterfaceId, PackageId, Resolve, Type as WitType, TypeDefKind, TypeId,
-        TypeOwner, UnresolvedPackageGroup, WorldId, WorldItem,
+        Function, Handle, InterfaceId, PackageId, PackageName, Resolve, Type as WitType,
+        TypeDefKind, TypeId, TypeOwner, UnresolvedPackageGroup, WorldId, WorldItem,
     },
 };
 use wit_bindgen_rust::{Opts, WithOption};
 
 use crate::{fpi, manifest_paths};
 
-/// Fully-qualified WIT interface path for Miden SDK core types.
-pub(crate) const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
+/// Fully-qualified WIT interface path for Miden SDK core types, `miden:base/core-types@1.0.0`.
+pub(crate) static CORE_TYPES_INTERFACE_ID: LazyLock<String> =
+    LazyLock::new(|| format!("miden:base/{CORE_TYPES_INTERFACE}@1.0.0"));
 
 #[derive(Default)]
 struct GenerateArgs {
@@ -530,6 +537,8 @@ fn load_wit_sources(
     let mut resolve = Resolve::default();
     let mut packages = Vec::new();
     let mut files = Vec::new();
+    // The source that registered each WIT package, for the duplicate-package diagnostic.
+    let mut owners = sdk_package_owners();
 
     let push_path = |resolve: &mut Resolve,
                      packages: &mut Vec<PackageId>,
@@ -557,6 +566,7 @@ fn load_wit_sources(
     // resolver with type definitions those sources may depend on.
     if let Some(prelude_dir) = &config.prelude_dir {
         push_path(&mut resolve, &mut packages, &mut files, PathBuf::from(prelude_dir))?;
+        record_package_owners(&resolve, &mut owners, "the Miden SDK WIT");
     }
 
     // Load WIT definitions embedded in the compiled packages of Miden dependencies. The
@@ -568,7 +578,9 @@ fn load_wit_sources(
         files.push(map_path.clone());
     }
     for source in &config.dependency_sources {
-        let pkg = resolve.push_str(format!("{}.wit", source.name), &source.wit).map_err(|err| {
+        let owner =
+            format!("dependency `{}` (package '{}')", source.name, source.package_path.display());
+        let load_error = |err: String| {
             Error::new(
                 Span::call_site(),
                 format!(
@@ -576,7 +588,12 @@ fn load_wit_sources(
                     source.package_path.display()
                 ),
             )
-        })?;
+        };
+        let group = UnresolvedPackageGroup::parse(format!("{}.wit", source.name), &source.wit)
+            .map_err(|(map, err)| load_error(err.render(&map)))?;
+        ensure_new_packages(&owners, &group, &owner)?;
+        let pkg = resolve.push_group(group).map_err(|err| load_error(err.to_string()))?;
+        record_package_owners(&resolve, &mut owners, &owner);
         packages.push(pkg);
         files.push(source.package_path.clone());
         if let Some(wit_override_path) = &source.wit_override_path {
@@ -586,7 +603,16 @@ fn load_wit_sources(
 
     // Load the crate's own `wit/` directory last so it can reference the dependency packages.
     if let Some(local_wit_root) = &config.local_wit_root {
+        let owner = format!("this crate's WIT directory '{}'", local_wit_root.display());
+        // Parsed here only to name the owner of a duplicate package before resolving it. The
+        // directory is loaded through `push_path`, which also resolves its `deps/` directory and
+        // reports the files it read, so it cannot reuse this group; it re-parses the directory
+        // and reports any parse error, which is therefore safe to ignore here.
+        if let Ok(group) = UnresolvedPackageGroup::parse_dir(manifest_dir.join(local_wit_root)) {
+            ensure_new_packages(&owners, &group, &owner)?;
+        }
         push_path(&mut resolve, &mut packages, &mut files, local_wit_root.clone())?;
+        record_package_owners(&resolve, &mut owners, &owner);
     }
 
     if let Some(src) = inline_source {
@@ -597,6 +623,7 @@ fn load_wit_sources(
         packages.clear();
         let group = UnresolvedPackageGroup::parse("inline", src)
             .map_err(|(sm, err)| Error::new(Span::call_site(), err.render(&sm)))?;
+        ensure_new_packages(&owners, &group, "this crate (from its `[lib].namespace`)")?;
         let pkg = resolve
             .push_group(group)
             .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
@@ -610,6 +637,68 @@ fn load_wit_sources(
     })
 }
 
+/// The source that registered each WIT package, keyed by the package's `namespace:name`
+/// without its version, for the duplicate-package diagnostic.
+type PackageOwners = HashMap<(String, String), (PackageName, String)>;
+
+/// The owners map with the packages of the bundled SDK WIT registered as owned by the Miden SDK.
+fn sdk_package_owners() -> PackageOwners {
+    // Parsed once per compiler process rather than on every macro expansion.
+    static SDK_OWNERS: LazyLock<PackageOwners> = LazyLock::new(|| {
+        let mut owners = PackageOwners::new();
+        let sdk = UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE)
+            .expect("the bundled SDK WIT parses");
+        for package in core::iter::once(&sdk.main).chain(&sdk.nested) {
+            record_package_owner(&mut owners, &package.name, "the Miden SDK");
+        }
+        owners
+    });
+    SDK_OWNERS.clone()
+}
+
+/// Records `owner` as the source of the package `name`, unless it already has one.
+fn record_package_owner(owners: &mut PackageOwners, name: &PackageName, owner: &str) {
+    owners
+        .entry((name.namespace.clone(), name.name.clone()))
+        .or_insert_with(|| (name.clone(), owner.to_owned()));
+}
+
+/// Records `owner` as the source of every package of `resolve` without a recorded source.
+fn record_package_owners(resolve: &Resolve, owners: &mut PackageOwners, owner: &str) {
+    for name in resolve.package_names.keys() {
+        record_package_owner(owners, name, owner);
+    }
+}
+
+/// Fails when a package of `group`, loaded from `owner`, shares its `namespace:name` with a
+/// package another source registered, whatever the two versions.
+///
+/// The WIT package id of a crate is derived from the first two segments of its
+/// `[lib].namespace`, so two crates sharing them define packages of one `namespace:name`, which
+/// wit-bindgen tells apart only by mangling their module paths with the versions.
+fn ensure_new_packages(
+    owners: &PackageOwners,
+    group: &UnresolvedPackageGroup,
+    owner: &str,
+) -> Result<(), Error> {
+    let names = core::iter::once(&group.main).chain(&group.nested).map(|package| &package.name);
+    for name in names {
+        let key = (name.namespace.clone(), name.name.clone());
+        if let Some((previous_name, previous)) = owners.get(&key) {
+            return Err(Error::new(
+                Span::call_site(),
+                format!(
+                    "WIT package `{name}` of {owner} clashes with `{previous_name}` defined by \
+                     {previous}; the first two segments of `[lib].namespace` (`ns::pkg`) form the \
+                     WIT package id and must be unique among all linked crates regardless of \
+                     version"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Pushes user-provided `with` entries to the wit-bindgen options.
 fn push_custom_with_entries(opts: &mut Opts, entries: &[(String, WithOption)]) {
     opts.with.extend(entries.iter().cloned());
@@ -617,20 +706,21 @@ fn push_custom_with_entries(opts: &mut Opts, entries: &[(String, WithOption)]) {
 
 /// Pushes default `with` entries that map Miden base types to SDK types.
 fn push_default_with_entries(opts: &mut Opts) {
-    opts.with.push((CORE_TYPES_INTERFACE.to_string(), WithOption::Generate));
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/felt"), "::miden::Felt");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/word"), "::miden::Word");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/digest"), "::miden::Digest");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset-id"), "::miden::AssetId");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset"), "::miden::Asset");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset-amount"), "::miden::AssetAmount");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/account-id"), "::miden::AccountId");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/tag"), "::miden::Tag");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/note-type"), "::miden::NoteType");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/recipient"), "::miden::Recipient");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/note-idx"), "::miden::NoteIdx");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/nonce"), "::miden::Nonce");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/block-number"), "::miden::BlockNumber");
+    let core_types = CORE_TYPES_INTERFACE_ID.as_str();
+    opts.with.push((core_types.to_string(), WithOption::Generate));
+    push_path_entry(opts, &format!("{core_types}/felt"), "::miden::Felt");
+    push_path_entry(opts, &format!("{core_types}/word"), "::miden::Word");
+    push_path_entry(opts, &format!("{core_types}/digest"), "::miden::Digest");
+    push_path_entry(opts, &format!("{core_types}/asset-id"), "::miden::AssetId");
+    push_path_entry(opts, &format!("{core_types}/asset"), "::miden::Asset");
+    push_path_entry(opts, &format!("{core_types}/asset-amount"), "::miden::AssetAmount");
+    push_path_entry(opts, &format!("{core_types}/account-id"), "::miden::AccountId");
+    push_path_entry(opts, &format!("{core_types}/tag"), "::miden::Tag");
+    push_path_entry(opts, &format!("{core_types}/note-type"), "::miden::NoteType");
+    push_path_entry(opts, &format!("{core_types}/recipient"), "::miden::Recipient");
+    push_path_entry(opts, &format!("{core_types}/note-idx"), "::miden::NoteIdx");
+    push_path_entry(opts, &format!("{core_types}/nonce"), "::miden::Nonce");
+    push_path_entry(opts, &format!("{core_types}/block-number"), "::miden::BlockNumber");
 }
 
 fn push_path_entry(opts: &mut Opts, key: &str, value: &str) {
@@ -644,7 +734,7 @@ fn world_uses_miden_core_types(resolve: &Resolve, world_id: WorldId) -> bool {
         .imports
         .values()
         .chain(world.exports.values())
-        .any(|item| world_item_uses_interface(resolve, item, CORE_TYPES_INTERFACE))
+        .any(|item| world_item_uses_interface(resolve, item, &CORE_TYPES_INTERFACE_ID))
 }
 
 /// Returns true when a world item references a type from `interface_path`.
@@ -938,6 +1028,85 @@ pub(crate) fn format_module_path(path: &[syn::Ident]) -> String {
 mod tests {
     use super::*;
 
+    /// Namespace of the component importing the FPI dependencies in these tests.
+    fn test_consumer() -> crate::namespace::ComponentNamespace {
+        crate::namespace::ComponentNamespace::parse("miden::acme::acme", Span::call_site()).unwrap()
+    }
+
+    /// Parses a WIT package `package` with one interface `iface`.
+    fn package_group(package: &str, iface: &str) -> UnresolvedPackageGroup {
+        let wit = format!("package {package};\ninterface {iface} {{ ping: func(); }}\n");
+        UnresolvedPackageGroup::parse("dep.wit", &wit).unwrap()
+    }
+
+    /// Two crates sharing `ns::pkg` define the same WIT package; the second is reported with
+    /// both sources instead of reaching wit-parser's duplicate-package assertion.
+    #[test]
+    fn a_wit_package_defined_twice_is_reported_with_both_sources() {
+        let mut resolve = Resolve::default();
+        let mut owners = sdk_package_owners();
+        let wallet = || package_group("miden:my-account@0.1.0", "wallet");
+        ensure_new_packages(&owners, &wallet(), "dependency `wallet`").unwrap();
+        resolve.push_group(wallet()).unwrap();
+        record_package_owners(&resolve, &mut owners, "dependency `wallet`");
+
+        let err = ensure_new_packages(
+            &owners,
+            &package_group("miden:my-account@0.1.0", "auth"),
+            "dependency `auth`",
+        )
+        .expect_err("the second definition of the package must be rejected")
+        .to_string();
+        assert!(
+            err.contains("`miden:my-account@0.1.0`")
+                && err.contains("dependency `auth`")
+                && err.contains("dependency `wallet`")
+                && err.contains("must be unique among all linked crates regardless of version"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// Packages of one `namespace:name` at two versions clash too: wit-bindgen would mangle
+    /// their module paths with the versions, breaking the paths the macros generate.
+    #[test]
+    fn a_wit_package_at_another_version_is_rejected() {
+        let mut resolve = Resolve::default();
+        let mut owners = sdk_package_owners();
+        let core = || package_group("miden:wallet@0.1.0", "core");
+        resolve.push_group(core()).unwrap();
+        record_package_owners(&resolve, &mut owners, "dependency `wallet`");
+
+        let err = ensure_new_packages(
+            &owners,
+            &package_group("miden:wallet@0.2.0", "main"),
+            "this crate",
+        )
+        .expect_err("the package at another version must be rejected")
+        .to_string();
+        assert!(
+            err.contains("`miden:wallet@0.2.0` of this crate clashes with `miden:wallet@0.1.0`")
+                && err.contains("dependency `wallet`"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// The SDK's own packages are registered up front, so a crate namespace `miden::base::x`
+    /// cannot define a package that clashes with them.
+    #[test]
+    fn a_wit_package_of_the_sdk_is_rejected() {
+        let err = ensure_new_packages(
+            &sdk_package_owners(),
+            &package_group("miden:base@0.1.0", "x"),
+            "this crate",
+        )
+        .expect_err("the SDK package must not be redefined")
+        .to_string();
+        assert!(
+            err.contains("clashes with `miden:base@1.0.0` defined by the Miden SDK"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
     /// Produces portable, non-empty inline-WIT artifact names.
     #[test]
     fn inline_wit_filename_components_are_sanitized() {
@@ -984,14 +1153,17 @@ mod tests {
 package miden:wallet@1.0.0;
 
 interface api {
+    @external-id("miden::wallet::api::ping")
     ping: func(value: u32) -> u32;
+    @external-id("miden::wallet::api::type")
+    %type: func() -> u32;
 }
 "#,
         )
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("foreign-account-bindings-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1003,6 +1175,14 @@ interface api {
         assert!(rendered.contains("import miden:fpi-v1-wallet/api@1.0.0;"));
         assert!(rendered.contains("package miden:fpi-v1-wallet@1.0.0 {"));
         assert!(rendered.contains("fpi-ping: func("));
+        assert!(
+            rendered.contains("@external-id(\"miden::acme::acme::fpi::miden::wallet::api::ping\")"),
+            "the FPI function must carry its Miden path: {rendered}"
+        );
+        assert!(
+            rendered.contains("@external-id(\"miden::acme::acme::fpi::miden::wallet::api::type\")"),
+            "the FPI leaf is the leaf of the dependency function's own path: {rendered}"
+        );
         UnresolvedPackageGroup::parse("emitted.wit", &rendered).unwrap();
     }
 
@@ -1313,12 +1493,19 @@ interface api {
     type maybe-request = option<request>;
     type nested-result = result<payload, mode>;
 
+    @external-id("miden::typed_dependency::api::primitive_roundtrip")
     primitive-roundtrip: func(value: u64) -> u32;
+    @external-id("miden::typed_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
+    @external-id("miden::typed_dependency::api::choose")
     choose: func(value: request) -> request;
+    @external-id("miden::typed_dependency::api::set_mode")
     set-mode: func(value: mode) -> mode;
+    @external-id("miden::typed_dependency::api::set_permissions")
     set-permissions: func(value: permissions) -> permissions;
+    @external-id("miden::typed_dependency::api::core_roundtrip")
     core-roundtrip: func(value: word) -> felt;
+    @external-id("miden::typed_dependency::api::nested_roundtrip")
     nested-roundtrip: func(value: maybe-request) -> nested-result;
 }
 "#,
@@ -1326,7 +1513,7 @@ interface api {
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("fpi-type-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1467,10 +1654,15 @@ interface api {
         key: word,
     }
 
+    @external-id("miden::anonymous_dependency::api::many")
     many: func(values: list<payload>) -> list<payload>;
+    @external-id("miden::anonymous_dependency::api::find")
     find: func(key: word) -> option<payload>;
+    @external-id("miden::anonymous_dependency::api::try_get")
     try-get: func(flag: bool) -> result<payload, felt>;
+    @external-id("miden::anonymous_dependency::api::pair")
     pair: func() -> tuple<felt, payload>;
+    @external-id("miden::anonymous_dependency::api::words")
     words: func(values: list<word>) -> u32;
 }
 "#,
@@ -1478,7 +1670,7 @@ interface api {
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("fpi-anonymous-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1516,6 +1708,78 @@ interface api {
         assert_eq!(foreign.functions.len(), native.functions.len());
     }
 
+    /// Pairs the FPI variant of a keyword-named dependency function with its native binding.
+    #[test]
+    fn synthetic_fpi_interface_pairs_keyword_named_functions() {
+        const SOURCE_IMPORT: &str = "miden:keyword-dependency/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "keyword-dependency.wit",
+            r#"
+package miden:keyword-dependency@1.0.0;
+
+interface api {
+    @external-id("miden::keyword_dependency::api::type")
+    %type: func() -> u32;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
+        let inline = fpi::import_world_wit("fpi-keyword-test", &specs);
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+        resolve.assert_valid();
+
+        let mut opts = Opts {
+            generate_all: true,
+            runtime_path: Some("::miden::wit_bindgen::rt".to_string()),
+            default_bindings_module: Some("bindings".to_string()),
+            ..Opts::default()
+        };
+        push_default_with_entries(&mut opts);
+
+        let mut generated_files = wit_bindgen_core::Files::default();
+        opts.build().generate(&mut resolve, world, &mut generated_files).unwrap();
+        let (_, source) = generated_files.iter().next().unwrap();
+        let file: syn::File = syn::parse_str(std::str::from_utf8(source).unwrap()).unwrap();
+        let native_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_plain_import_function).unwrap();
+        let foreign_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_fpi_import_function).unwrap();
+        let native = native_modules
+            .iter()
+            .find(|module| module.path_string == "miden::keyword_dependency::api")
+            .expect("native keyword bindings");
+        let foreign = foreign_modules
+            .iter()
+            .find(|module| module.path_string == specs[0].synthetic_module_path())
+            .expect("synthetic keyword bindings");
+
+        let native_names = native
+            .functions
+            .iter()
+            .map(|function| function.sig.ident.to_string())
+            .collect::<Vec<_>>();
+        let foreign_names = foreign
+            .functions
+            .iter()
+            .map(|function| function.sig.ident.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(native_names, ["type_"]);
+        assert_eq!(foreign_names, ["fpi_type"]);
+        assert_eq!(fpi::native_ident("type", proc_macro2::Span::call_site()), "type_");
+    }
+
     /// Preserves aliases imported from a sibling WIT interface.
     #[test]
     fn synthetic_fpi_interface_preserves_cross_interface_use_aliases() {
@@ -1538,6 +1802,7 @@ interface types {
 
 interface api {
     use types.{payload};
+    @external-id("miden::shared_types_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1545,7 +1810,7 @@ interface api {
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("fpi-use-alias-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1673,6 +1938,7 @@ interface api {
 package miden:first-dependency@1.0.0;
 interface api {
     record payload { value: u32 }
+    @external-id("miden::first_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1683,6 +1949,7 @@ interface api {
 package miden:second-dependency@1.0.0;
 interface api {
     variant payload { none, value(u64) }
+    @external-id("miden::second_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1693,6 +1960,7 @@ interface api {
 package miden:versioned-dependency@1.0.0;
 interface api {
     record payload { value: u32 }
+    @external-id("miden::versioned_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1703,6 +1971,7 @@ interface api {
 package miden:versioned-dependency@2.0.0;
 interface api {
     record payload { value: u64 }
+    @external-id("miden::versioned_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1714,7 +1983,7 @@ interface api {
 
         let (source, specs) = match imports {
             Some(imports) => {
-                let specs = fpi::import_specs(imports).unwrap();
+                let specs = fpi::import_specs(imports, &test_consumer()).unwrap();
                 let world_name = fpi::import_world_name("foreign-account-bindings", &specs);
                 (fpi::import_world_wit(&world_name, &specs), Some(specs))
             }

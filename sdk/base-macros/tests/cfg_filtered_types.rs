@@ -18,7 +18,7 @@ pub mod active_note {
 }
 
 #[export_type]
-struct Record {
+struct Filtered {
     present: u32,
     #[cfg(any())]
     absent: MissingType,
@@ -50,10 +50,10 @@ struct NoteInputs {
 
 #[test]
 fn conditional_fields_are_absent_from_shapes_schema_and_encoding() {
-    assert_eq!(Record { present: 3 }.present, 3);
+    assert_eq!(Filtered { present: 3 }.present, 3);
     let encoded = miden_field_repr::ToFeltRepr::to_felt_repr(&Choice::Present);
     assert_eq!(encoded, vec![Felt::new(0).unwrap()]);
-    let record_shape = Record::__MIDEN_EXPORT_TYPE_SHAPE;
+    let record_shape = Filtered::__MIDEN_EXPORT_TYPE_SHAPE;
     let enum_shape = Choice::__MIDEN_EXPORT_TYPE_SHAPE;
     assert!(record_shape.contains("present"));
     assert!(!record_shape.contains("absent"));
@@ -61,7 +61,7 @@ fn conditional_fields_are_absent_from_shapes_schema_and_encoding() {
     assert!(!enum_shape.contains("absent"));
 
     let schema = core::str::from_utf8(&__MIDEN_NOTE_STORAGE_SCHEMA_BYTES).unwrap();
-    assert!(schema.contains("variant choice {\n        present,"));
+    assert!(schema.contains("variant choice {\n        %present,"));
     assert!(schema.contains("present: u32"));
     assert!(!schema.contains("absent"));
 

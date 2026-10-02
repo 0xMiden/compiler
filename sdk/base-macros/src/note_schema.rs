@@ -4,7 +4,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use heck::ToKebabCase;
 use midenc_frontend_wasm_metadata::{
-    WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, pad_to_link_section_alignment,
+    WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, namespace::CORE_TYPES_INTERFACE,
+    pad_to_link_section_alignment,
 };
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::quote;
@@ -13,6 +14,7 @@ use syn::{ItemStruct, Type, spanned::Spanned};
 use wit_bindgen_core::wit_parser::Resolve;
 
 use crate::{
+    generate::CORE_TYPES_INTERFACE_ID,
     manifest_paths::SDK_WIT_SOURCE,
     types::{
         ExportedField, ExportedTypeDef, ExportedTypeKind, TypeRef, custom_type_shape_assertions,
@@ -20,15 +22,14 @@ use crate::{
     },
     util::NOTE_NAMED_FIELDS_ERROR,
     wit_builder::{WitBody, WitBuilder},
+    wit_names::{explicit_wit_identifier, rust_ident_to_wit_name},
     wit_world::ManifestPackage,
 };
 
-/// Fully qualified SDK core-types interface imported by generated schemas.
-const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 /// SDK core-types package name used for the embedded dependency package.
 const CORE_TYPES_PACKAGE_NAME: &str = "miden:base";
-/// SDK interface copied into generated schemas.
-const CORE_TYPES_INTERFACE: &str = "core-types";
+/// Component package of a crate without a `miden-project.toml`.
+const PLACEHOLDER_COMPONENT_PACKAGE: &str = "miden:empty";
 /// Source name reported for generated schema validation errors.
 const NOTE_STORAGE_SCHEMA_SOURCE_NAME: &str = "note-storage-schema.wit";
 /// Storage types accepted by the note schema diagnostic.
@@ -51,10 +52,17 @@ pub(crate) fn expand_note_storage_schema(
     item_struct: &ItemStruct,
 ) -> Result<TokenStream2, syn::Error> {
     let package = ManifestPackage::load_or_default(item_struct.ident.span())?;
+    // The schema package derives from `[lib].namespace` like every other generated WIT id. A
+    // crate without a project manifest has no namespace and gets a placeholder package.
+    let component_package = if package.has_miden_project_toml {
+        package.namespace(item_struct.ident.span())?.wit_package()
+    } else {
+        PLACEHOLDER_COMPONENT_PACKAGE.to_owned()
+    };
     let registry = registered_export_types();
     let rendered = render_note_storage_schema_with_registry_model(
         item_struct,
-        &package.component_package(),
+        &component_package,
         package.component_version(),
         &registry,
     )?;
@@ -181,7 +189,7 @@ fn render_note_storage_schema_with_registry_model(
 
     let mut wit = WitBuilder::new("#[note]", &schema_package, component_version);
     if !core_imports.is_empty() {
-        wit.use_path(CORE_TYPES_PACKAGE);
+        wit.use_path(&CORE_TYPES_INTERFACE_ID);
         wit.blank_line();
     }
     wit.interface("note-storage", |interface| {
@@ -230,7 +238,7 @@ fn note_root_type(
         validate_note_storage_type_ref(&ty, field.ty.span(), &context)?;
         fields.push(ExportedField {
             docs: doc_comments(&field.attrs),
-            name: ident.to_string(),
+            wit_name: rust_ident_to_wit_name(ident)?,
             ty,
         });
     }
@@ -254,7 +262,7 @@ fn validate_note_storage_definition(
                 validate_note_storage_type_ref(
                     &field.ty,
                     span,
-                    &format!("field `{}` in type `{}`", field.name, definition.rust_name),
+                    &format!("field `{}` in type `{}`", field.wit_name, definition.rust_name),
                 )?;
             }
         }
@@ -358,13 +366,13 @@ fn rendered_schema_error_context(
         match &definition.kind {
             ExportedTypeKind::Record { fields } => {
                 for field in fields {
-                    let field_prefix = format!("{}:", field.name.to_kebab_case());
+                    let field_prefix = format!("{}:", explicit_wit_identifier(&field.wit_name));
                     if error_line.starts_with(&field_prefix) {
                         return (
                             rendered.span,
                             format!(
                                 "field `{}` of type `{}` in type `{}`",
-                                field.name, field.ty.wit_name, definition.rust_name
+                                field.wit_name, field.ty.wit_name, definition.rust_name
                             ),
                         );
                     }
@@ -372,7 +380,7 @@ fn rendered_schema_error_context(
             }
             ExportedTypeKind::Variant { variants } => {
                 for variant in variants {
-                    if error_line.starts_with(&variant.wit_name) {
+                    if error_line.starts_with(&explicit_wit_identifier(&variant.wit_name)) {
                         let payload = variant
                             .payload
                             .as_ref()
@@ -558,7 +566,11 @@ fn render_type_definition(interface: &mut WitBody, definition: &ExportedTypeDef)
             interface.block(&format!("record {} {{", definition.wit_name), |record| {
                 for field in fields {
                     render_docs(record, &field.docs);
-                    record.line(&format!("{}: {},", field.name.to_kebab_case(), field.ty.wit_name));
+                    record.line(&format!(
+                        "{}: {},",
+                        explicit_wit_identifier(&field.wit_name),
+                        field.ty.wit_name
+                    ));
                 }
             });
         }
@@ -567,9 +579,13 @@ fn render_type_definition(interface: &mut WitBody, definition: &ExportedTypeDef)
                 for variant in variants {
                     render_docs(variant_body, &variant.docs);
                     match &variant.payload {
-                        Some(payload) => variant_body
-                            .line(&format!("{}({}),", variant.wit_name, payload.wit_name)),
-                        None => variant_body.line(&format!("{},", variant.wit_name)),
+                        Some(payload) => variant_body.line(&format!(
+                            "{}({}),",
+                            explicit_wit_identifier(&variant.wit_name),
+                            payload.wit_name
+                        )),
+                        None => variant_body
+                            .line(&format!("{},", explicit_wit_identifier(&variant.wit_name))),
                     }
                 }
             });
@@ -766,7 +782,7 @@ mod tests {
                 use core-types.{account-id};
 
                 record p2id-note {
-                    target-account-id: account-id,
+                    %target-account-id: account-id,
                 }
 
                 type storage = p2id-note;
@@ -975,21 +991,21 @@ mod tests {
                 /// Destination details.
                 record destination {
                     /// Destination account.
-                    account-id: account-id,
+                    %account-id: account-id,
                 }
 
                 /// Route selection.
                 variant route {
                     /// Send directly.
-                    direct,
+                    %direct,
                     /// Send through a destination.
-                    via(destination),
+                    %via(destination),
                 }
 
                 /// A routed note.
                 record routed-note {
                     /// Selected route.
-                    route: route,
+                    %route: route,
                 }
 
                 type storage = routed-note;
@@ -1236,20 +1252,20 @@ mod tests {
     }
 
     #[test]
-    fn expansion_surfaces_wit_parser_errors_with_field_context() {
+    fn keyword_field_names_render_in_explicit_form() {
         let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let note: ItemStruct = parse_quote! {
-            struct InvalidFieldNote {
+            struct KeywordFieldNote {
                 type_: u64,
             }
         };
-        let err = expand_note_storage_schema(&note)
-            .expect_err("a WIT keyword cannot be used as a field name");
+        expand_note_storage_schema(&note).expect("a keyword field name resolves in `%` form");
 
-        let message = err.to_string();
-        assert!(message.contains("failed to resolve note storage schema"));
-        assert!(message.contains("field `type_` of type `u64`"), "message is {message}");
+        let source =
+            render_note_storage_schema(&note, "miden:keyword-field-note", &Version::new(1, 0, 0))
+                .expect("the schema renders");
+        assert!(source.contains("%type: u64,"), "source is {source}");
     }
 
     #[test]

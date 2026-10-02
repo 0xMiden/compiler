@@ -22,7 +22,7 @@ fn component_frontend_metadata_collects_account_procedures() {
         ParsedModule {
             component_frontend_metadata: vec![FrontendMetadata::AccountProcedure {
                 method_path: "crate::wallet::BasicWallet::receive_asset".to_string(),
-                export_name: "receive-asset".to_string(),
+                path: "miden::basic_wallet::basic_wallet::receive_asset".to_string(),
             }],
             ..Default::default()
         },
@@ -30,11 +30,11 @@ fn component_frontend_metadata_collects_account_procedures() {
             component_frontend_metadata: vec![
                 FrontendMetadata::AccountProcedure {
                     method_path: "crate::wallet::BasicWallet::move_asset_to_note".to_string(),
-                    export_name: "move-asset-to-note".to_string(),
+                    path: "miden::basic_wallet::basic_wallet::move_asset_to_note".to_string(),
                 },
                 FrontendMetadata::AccountProcedure {
                     method_path: "crate::wallet::BasicWallet::create_note".to_string(),
-                    export_name: "create-note".to_string(),
+                    path: "miden::basic_wallet::basic_wallet::create_note".to_string(),
                 },
             ],
             ..Default::default()
@@ -52,7 +52,7 @@ fn component_frontend_metadata_collects_account_procedures() {
 fn component_frontend_metadata_reports_missing_lifted_exports() {
     let metadata = [FrontendMetadata::AuthScript {
         method_path: "crate::auth::AuthComponent::authenticate".to_string(),
-        export_name: "auth".to_string(),
+        path: "miden::auth::auth::auth".to_string(),
     }];
     let lifted_exports = FxHashSet::default();
 
@@ -66,7 +66,7 @@ fn component_frontend_metadata_reports_missing_lifted_exports() {
         "unexpected error: {err:?}"
     );
     assert!(
-        err.to_string().contains("expected lifted export `auth`"),
+        err.to_string().contains("expected lifted export `miden::auth::auth::auth`"),
         "unexpected error: {err:?}"
     );
 }
@@ -76,7 +76,7 @@ fn component_frontend_metadata_reports_missing_lifted_exports() {
 fn component_frontend_metadata_reports_missing_account_procedure_export() {
     let metadata = [FrontendMetadata::AccountProcedure {
         method_path: "crate::wallet::BasicWallet::receive_asset".to_string(),
-        export_name: "receive-asset".to_string(),
+        path: "miden::basic_wallet::basic_wallet::receive_asset".to_string(),
     }];
     let lifted_exports = FxHashSet::default();
 
@@ -90,7 +90,8 @@ fn component_frontend_metadata_reports_missing_account_procedure_export() {
         "unexpected error: {err:?}"
     );
     assert!(
-        err.to_string().contains("expected lifted export `receive-asset`"),
+        err.to_string()
+            .contains("expected lifted export `miden::basic_wallet::basic_wallet::receive_asset`"),
         "unexpected error: {err:?}"
     );
 }
@@ -424,4 +425,37 @@ fn duplicate_source_names_with_one_member_exported() {
     // considers both duplicate (requiring low_pc fallback)
     assert!(module.is_duplicate_source_func_name(FuncIndex::new(0)));
     assert!(module.is_duplicate_source_func_name(FuncIndex::new(1)));
+}
+
+/// Imports of every kind share one list in declaration order, so a function import is found by
+/// its entity index, not by its position.
+#[test]
+fn function_imports_are_looked_up_past_other_imports() {
+    let wasm = wat::parse_str(
+        r#"
+        (module
+            (import "env" "memory" (memory 1))
+            (import "env" "first" (func (result i32)))
+            (import "env" "second" (func (result i32)))
+        )
+        "#,
+    )
+    .expect("module WAT should compile");
+    let config = WasmTranslationConfig::default();
+    let mut validator = Validator::new_with_features(crate::supported_features());
+    let mut types = ModuleTypesBuilder::default();
+    let context = midenc_hir::Context::default();
+    let parsed = ModuleEnvironment::new(&config, &mut validator, &mut types)
+        .parse(Parser::new(0), &wasm, context.diagnostics())
+        .expect("module should parse");
+    let module = &parsed.module;
+
+    let field_of = |index: u32| {
+        module
+            .function_import(FuncIndex::from_u32(index))
+            .map(|import| import.field.as_str())
+    };
+    assert_eq!(field_of(0), Some("first"));
+    assert_eq!(field_of(1), Some("second"));
+    assert_eq!(field_of(2), None);
 }

@@ -13,7 +13,7 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["base64/std", "compact_str/std", "rustc-demangle/std", "semver/std"]
+std = ["base64/std", "compact_str/std", "rustc-demangle/std"]
 debug_refcell = []
 logging = ["dep:midenc-log", "std"]
 
@@ -36,7 +36,6 @@ midenc-session.workspace = true
 paste.workspace = true
 rustc-hash.workspace = true
 rustc-demangle = "0.1.19"
-semver.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 

@@ -6,7 +6,7 @@ description: Critical pitfalls and safety rules for Miden Rust SDK development. 
 # Miden SDK Pitfalls
 
 Verified against project-template's current v16 line: contract SDK `miden` and
-`miden-sdk-build-script-support` `0.14` (published `0.14.0`) on `nightly-2026-09-01`,
+`miden-sdk-build-script-support` `0.15` (`0.15.0-rc.2`) on `nightly-2026-09-01`,
 `cargo-miden` `0.10.0` through midenup / cargo-miden, `Cargo.lock` resolving
 protocol/standards/testing `0.16.0-rc.6`, `miden-client` `0.16.0-rc.2`, and VM/package crates
 `0.29.4`.
@@ -259,32 +259,29 @@ If you need custom keys or values, implement `WordKey` / `WordValue` by converti
 
 Storage slot names follow a strict pattern. Getting it wrong often returns the default value silently.
 
-**Pattern**: `[package_name]::[namespace_interface_segment]::[field_name]`
+**Pattern**: `[lib namespace]::[field_name]`
 
 **Where the segments come from**: The `#[component_storage]` macro (NOT `#[component]`) processes the `#[storage]` fields and derives slot names. It loads `miden-project.toml` (next to your `Cargo.toml`, NOT `Cargo.toml` itself):
 
-- **First segment** = `[package] name` from `miden-project.toml`.
-- **Middle segment** = the *interface segment* of the `[lib] namespace` value. The namespace is a fully-qualified component id `namespace:package/interface@version`; the interface segment sits between the last `/` and the `@`. This is deliberately decoupled from the Rust storage-struct name, so renaming the private struct cannot change deployed slot names. The struct name (`CounterContractStorage`, `AuthComponentStorage`, …) does NOT appear in the slot name.
-- **Last segment** = the `#[storage]` field name.
+- **Prefix** = the `[lib] namespace` value, a Miden path of exactly three segments (`miden::<package>::<interface>`), each a snake_case identifier (lowercase ASCII letters and digits in words joined by single `_`, starting with a letter) that is not a WIT or Rust 2024 keyword (e.g. `list`, `type`, `match`, `gen`); the last segment must not be `core_types`, which the SDK's own WIT interface uses. Any other shape is a macro error. This is deliberately decoupled from the Rust storage-struct name, so renaming the private struct cannot change deployed slot names. The struct name (`CounterContractStorage`, `AuthComponentStorage`, …) does NOT appear in the slot name.
+- **Last segment** = the `#[storage]` field name (a leading `_` is prefixed with `x`).
 
-**Conversion rule**: All three segments are character-sanitized — any `@version` suffix is stripped, characters outside `[A-Za-z0-9_]` are replaced with `_`, and an empty or leading-`_` segment is prefixed with `x`. Only the **middle** segment additionally goes through `to_snake_case()`; the package name is *not* snake-cased, it is only character-sanitized (which is why the conventional kebab-case `counter-contract` still lands as `counter_contract`).
-
-| `[package] name` | `[lib] namespace` | Field | Storage Slot Name |
-|------------------|-------------------|-------|-------------------|
-| `counter-contract` | `miden:counter-contract/counter-contract@0.1.0` | `count_map` | `counter_contract::counter_contract::count_map` |
-| `auth-component-rpo-falcon512` | `miden:auth-component-rpo-falcon512/auth-component@0.1.0` | `owner_public_key` | `auth_component_rpo_falcon512::auth_component::owner_public_key` |
-| `storage-example` | `miden:storage-example/foo@1.0.0` | `asset_qty_map` | `storage_example::foo::asset_qty_map` |
+| `[lib] namespace` | Field | Storage Slot Name |
+|-------------------|-------|-------------------|
+| `miden::counter_contract::counter_contract` | `count_map` | `miden::counter_contract::counter_contract::count_map` |
+| `miden::auth_component_rpo_falcon512::auth_component` | `owner_public_key` | `miden::auth_component_rpo_falcon512::auth_component::owner_public_key` |
+| `miden::storage_example::foo` | `asset_qty_map` | `miden::storage_example::foo::asset_qty_map` |
 
 The first two rows are the exact strings the compiler's own MockChain tests assert against, so use
 them as the ground truth for the algorithm.
 
 Omitting the manifest is an error, not a fallback: a `#[component_storage]` struct with `#[storage]`
 fields and no `miden-project.toml` fails with `` `#[component_storage]` with `#[storage]` fields
-requires a `miden-project.toml` next to the crate's `Cargo.toml`: storage slot names derive from the
-`[lib].namespace` interface segment. ``
+requires a `miden-project.toml` next to the crate's `Cargo.toml`: storage slot names derive from its
+`[lib].namespace`. ``
 
 **Caveat (toolchain-version dependent)**: this naming is a property of the Rust SDK contract macros
-in the `miden-base-macros` crate, which ships at published `0.14.0` alongside `miden`, `miden-base`,
+in the `miden-base-macros` crate, which ships at `0.15.0-rc.2` alongside `miden`, `miden-base`,
 `miden-base-sys`, `miden-stdlib-sys` and `miden-sdk-alloc`. The separate compiler / `midenc` /
 `cargo-miden` workspace is `0.10.0`. Neither is the protocol/network version: protocol,
 `miden-standards` and `miden-testing` resolve to `0.16.0-rc.6`, `miden-client` resolves to
@@ -319,8 +316,8 @@ use alloc::vec::Vec;
 
 **Toolchain**: current project-template contract crates use `nightly-2026-09-01` with target
 `wasm32-wasip2`; the published SDK and `cargo-miden` line require Rust 1.99. Local contract
-`Cargo.toml` files use `edition = "2021"`, `crate-type = ["cdylib"]`, `miden = { version = "0.14" }`,
-and matching `miden-sdk-build-script-support = { version = "0.14" }`.
+`Cargo.toml` files use `edition = "2021"`, `crate-type = ["cdylib"]`, `miden = { version = "0.15.0-rc.2" }`,
+and matching `miden-sdk-build-script-support = { version = "0.15.0-rc.2" }`.
 
 ## P7: Rust SDK `Asset` Is Two Words (ID + Value)
 
@@ -699,12 +696,12 @@ Sources: `protocol:v0.16.0-rc.6:crates/miden-protocol/src/transaction/tx_summary
 
 **Severity**: High - mixing lower bounds, resolved lockfile versions, and build tools creates false migrations
 
-The current project-template uses published final contract SDK crates and release-candidate host crates. Copy the local manifests and lockfile before changing versions:
+The current project-template uses release-candidate contract SDK and host crates. Copy the local manifests and lockfile before changing versions:
 
 ```toml
 # contracts/<name>/Cargo.toml
-miden = { version = "0.14" }
-miden-sdk-build-script-support = { version = "0.14" }
+miden = { version = "0.15.0-rc.2" }
+miden-sdk-build-script-support = { version = "0.15.0-rc.2" }
 
 # integration/Cargo.toml
 miden-client = { version = "0.17.0-rc.5", features = ["tonic"] }
@@ -732,7 +729,7 @@ spellings: `lib` / `library`, `kernel`, `account` / `account-component`, `note`,
 a library`.
 
 Full account-component manifest, matching
-`compiler:sdk/v0.14.0:examples/counter-contract/miden-project.toml`:
+`compiler:examples/counter-contract/miden-project.toml`:
 
 ```toml
 [package]
@@ -741,7 +738,7 @@ version = "0.1.0"
 
 [lib]
 kind = "account-component"
-namespace = "miden:counter-contract/counter-contract@0.1.0"
+namespace = "miden::counter_contract::counter_contract"
 path = "src/lib.rs"          # mandatory
 
 [dependencies]
@@ -764,7 +761,7 @@ authoritative: a `wit` override is rejected when the package embeds WIT, and is 
 for packages without embedded WIT.
 
 For plain Cargo checks, builds, and IDE analysis with source dependencies, the **consuming crate**
-must have `miden-sdk-build-script-support = { version = "0.14" }` under `[build-dependencies]` and
+must have `miden-sdk-build-script-support = { version = "0.15.0-rc.2" }` under `[build-dependencies]` and
 call `miden_sdk_build_script_support::prepare_package_cache()` from its own `build.rs`. This
 prepares `MIDENC_PACKAGE_CACHE` for that crate's macro expansion; the dependency crate's hook
 does not configure its consumers. `cargo miden build`, a direct `.masp` dependency, or an already

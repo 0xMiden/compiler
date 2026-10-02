@@ -5,9 +5,11 @@
 
 pub(crate) mod build_ir;
 mod canon_abi_utils;
+mod core_names;
 mod flat;
 mod lift_exports;
 pub(crate) mod lower_imports;
+pub(crate) mod naming;
 mod parser;
 mod shim_bypass;
 mod start;
@@ -33,7 +35,6 @@ pub(super) mod test_support {
             BuiltinOpBuilder, ComponentBuilder, Function, FunctionRef, ModuleBuilder, World,
             WorldBuilder, attributes::Signature,
         },
-        version::Version,
     };
 
     use crate::module::function_builder_ext::{
@@ -178,12 +179,12 @@ pub(super) mod test_support {
         (context, world_builder, ModuleBuilder::new(module))
     }
 
-    /// Creates a world fixture with a "miden:test" component and its "core" module for export
+    /// Creates a world fixture with a `miden::test` component and its `core` module for export
     /// lifting tests.
     pub fn component_with_core_module() -> (Rc<Context>, ComponentBuilder, ModuleBuilder) {
         let (context, mut world_builder) = test_world();
         let component = world_builder
-            .define_component("miden".into(), "test".into(), Version::new(1, 0, 0))
+            .define_component("miden::test".into())
             .expect("failed to define component");
         let mut component_builder = ComponentBuilder::new(component);
         let core_module = component_builder
