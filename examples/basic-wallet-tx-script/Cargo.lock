@@ -1727,7 +1727,6 @@ dependencies = [
  "miden-mast-package",
  "miden-project",
  "miden-protocol",
- "miden-protocol-build-utils",
  "midenc-frontend-wasm-metadata",
  "proc-macro-crate",
  "proc-macro2",
@@ -2115,9 +2114,9 @@ dependencies = [
 
 [[package]]
 name = "miden-protocol"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "525a43808effad4b97de2db6d11efc1898a5762a0181a2a21baa4e7c02370c0f"
+checksum = "8d9e8eb8b0ff7edebbbd5ef959c0cf624f0e8f5033c45151856e728debe04d83"
 dependencies = [
  "bech32",
  "fs-err",
@@ -2142,9 +2141,9 @@ dependencies = [
 
 [[package]]
 name = "miden-protocol-build-utils"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "107bd48942e06ea09591101ae6f0dbeb7f568f41841712177c6d46c00c6b18b5"
+checksum = "74ab122a13dcdcb6bb0df76b521bfd36336bc29a4084c0ab8d4704c77c8abe19"
 dependencies = [
  "fs-err",
  "miden-assembly",
