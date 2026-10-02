@@ -4,7 +4,7 @@
 //! The op cannot be edited in place for that, so they all replace it with a new one built from
 //! the regions of the original. [rebuild_while] is the single implementation of that rewrite.
 
-use midenc_hir::{patterns::Rewriter, *};
+use midenc_hir::{dialects::debuginfo::transform::erase_debug_info_with, patterns::Rewriter, *};
 
 use crate::*;
 
@@ -15,7 +15,8 @@ pub(super) enum IterArg {
     /// The iteration argument is kept.
     Keep,
     /// The iteration argument is removed. The uses of its before block argument are replaced with
-    /// the given value; `None` leaves them alone, for an argument that has no uses to replace.
+    /// the given value. `None` is for an argument without real uses: the `di.debug_value`
+    /// operations that still use it become `di.debug_kill`.
     Remove(Option<ValueRef>),
 }
 
@@ -26,7 +27,9 @@ pub(super) enum IterArg {
 ///
 /// `results` has one entry per result of the original loop: the index of the result of the new
 /// loop that replaces it, or `None` if the result and the after block argument at the same
-/// position are dropped without replacement. Every result of the new loop must replace at least
+/// position are dropped without replacement, which requires that neither has real uses (the
+/// `di.debug_value` operations using them become `di.debug_kill`). Every result of the new loop
+/// must replace at least
 /// one result of the original one; when it replaces several, they must all be forwarded the same
 /// value by the `scf.condition`.
 ///
@@ -168,8 +171,32 @@ pub(super) fn rebuild_while(
         cond_op.forwarded_mut().set_operands(new_forwarded, cond_ref, &context);
     }
 
+    // The values that are dropped without a replacement.
+    let dropped = {
+        let before_block = before_block.borrow();
+        let after_block = after_block.borrow();
+        let dropped_before_args = iter_args
+            .iter()
+            .zip(before_block.arguments().iter())
+            .filter(|(iter_arg, _)| matches!(iter_arg, IterArg::Remove(None)))
+            .map(|(_, arg)| *arg as ValueRef);
+        let dropped_after_args_and_results = results
+            .iter()
+            .zip(after_block.arguments().iter().zip(while_op.results().iter()))
+            .filter(|(result, _)| result.is_none())
+            .flat_map(|(_, (arg, result))| [*arg as ValueRef, *result as ValueRef]);
+        dropped_before_args
+            .chain(dropped_after_args_and_results)
+            .collect::<SmallVec<[ValueRef; 4]>>()
+    };
+
     // The original op is borrowed mutably by `replace_op_with_values` below.
     drop(op);
+
+    // A dropped value has no real uses, but debug info may still describe a variable through it.
+    for value in dropped.iter() {
+        erase_debug_info_with(value, rewriter);
+    }
 
     rewriter.merge_blocks(before_block, new_before_block, &before_args);
     rewriter.merge_blocks(after_block, new_after_block, &after_args);

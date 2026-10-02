@@ -42,7 +42,7 @@ use alloc::vec::Vec;
 
 use midenc_hir::{
     Builder, DialectRegistration, OpBuilder, Operation, OperationRef, ProgramPoint, SmallVec,
-    Spanned, ValueRef, dialects::debuginfo::attributes::ExpressionOp,
+    Spanned, ValueRef, dialects::debuginfo::attributes::ExpressionOp, patterns::Rewriter,
 };
 
 use super::{DIBuilder, ops::DebugValue};
@@ -154,6 +154,25 @@ pub fn salvage_debug_info<B: ?Sized + Builder>(
 pub fn erase_debug_info(old_value: &ValueRef) {
     for debug_op in debug_value_users(old_value) {
         erase_debug_value(debug_op);
+    }
+}
+
+/// Like [`erase_debug_info`], for use by a rewrite pattern.
+///
+/// The `di.debug_kill` operations are created, and the `di.debug_value` operations erased, through
+/// `rewriter`, so that its listener learns about both.
+pub fn erase_debug_info_with<R: ?Sized + Rewriter>(old_value: &ValueRef, rewriter: &mut R) {
+    for debug_op in debug_value_users(old_value) {
+        let (variable, span) = {
+            let op = debug_op.borrow();
+            let dv = op.downcast_ref::<DebugValue>().expect("expected di.debug_value");
+            (dv.variable().as_value().clone(), op.span())
+        };
+        let ip = *rewriter.insertion_point();
+        rewriter.set_insertion_point(ProgramPoint::before(debug_op));
+        let _ = rewriter.debug_kill(variable, span);
+        rewriter.restore_insertion_point(ip);
+        rewriter.erase_op(debug_op);
     }
 }
 

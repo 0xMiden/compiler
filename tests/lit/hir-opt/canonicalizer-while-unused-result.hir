@@ -155,4 +155,37 @@ builtin.module private @while_unused_result {
         %11 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
         builtin.ret %11 : (u32);
     };
+
+    // Debug uses do not keep a column alive. Result 1 is only described by a `di.debug_value`
+    // after the loop and after-block argument 2 only by one in the after body; both columns are
+    // removed and each `di.debug_value` becomes a `di.debug_kill` of its variable in place.
+    // CHECK: @debug_uses(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R0:\d+]] = scf.while %[[A]], %[[B]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32, %{{\d+}}: u32):
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[X]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[X]] : (i1, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32):
+    // CHECK-NEXT: di.debug_kill <{ variable = #di.variable<{ name = "a", file = "test.rs", line = 3 }> }>;
+    // CHECK-NEXT: %[[N:\d+]] = arith.incr %[[P]];
+    // CHECK-NEXT: scf.yield %[[N]], %[[B]] : (u32, u32);
+    // CHECK-NEXT: } : (u32, u32) -> (u32);
+    // CHECK-NEXT: di.debug_kill <{ variable = #di.variable<{ name = "r", file = "test.rs", line = 5 }> }>;
+    // CHECK-NEXT: builtin.ret %[[R0]] : (u32);
+    builtin.function public extern("C") @debug_uses(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3, %4, %5 = scf.while %0, %1 before {
+        ^block1(%6: u32, %7: u32):
+            %8 = arith.lt %6, %2;
+            scf.condition %8, %6, %7, %6 : (i1, u32, u32, u32);
+        } after {
+        ^block2(%9: u32, %10: u32, %11: u32):
+            di.debug_value %11 <{ variable = #di.variable<{ name = "a", file = "test.rs", line = 3 }>, expression = #di.expression<[]> }> : (u32);
+            %12 = arith.incr %9;
+            scf.yield %12, %1 : (u32, u32);
+        } : (u32, u32) -> (u32, u32, u32);
+        di.debug_value %4 <{ variable = #di.variable<{ name = "r", file = "test.rs", line = 5 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %3 : (u32);
+    };
 };

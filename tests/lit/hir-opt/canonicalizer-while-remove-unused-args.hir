@@ -97,4 +97,35 @@ builtin.module private @while_remove_unused_args {
         %11 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
         builtin.ret %11 : (u32);
     };
+
+    // Debug uses do not keep an argument alive: before-block argument 1 is only described by a
+    // `di.debug_value`, so it is removed and the `di.debug_value` becomes a `di.debug_kill` of
+    // its variable in place.
+    // CHECK: @debug_use(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R:\d+]] = scf.while %[[A]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32):
+    // CHECK-NEXT: di.debug_kill <{ variable = #di.variable<{ name = "b", file = "test.rs", line = 2 }> }>;
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[X]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[X]] : (i1, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32):
+    // CHECK-NEXT: %[[N:\d+]] = arith.incr %[[P]];
+    // CHECK-NEXT: scf.yield %[[N]] : (u32);
+    // CHECK-NEXT: } : (u32) -> (u32);
+    // CHECK-NEXT: builtin.ret %[[R]] : (u32);
+    builtin.function public extern("C") @debug_use(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3 = scf.while %0, %1 before {
+        ^block1(%4: u32, %5: u32):
+            di.debug_value %5 <{ variable = #di.variable<{ name = "b", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+            %6 = arith.lt %4, %2;
+            scf.condition %6, %4 : (i1, u32);
+        } after {
+        ^block2(%7: u32):
+            %8 = arith.incr %7;
+            scf.yield %8, %7 : (u32, u32);
+        } : (u32, u32) -> (u32);
+        builtin.ret %3 : (u32);
+    };
 };
