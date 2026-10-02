@@ -10,6 +10,9 @@ unchanged, and no additional storage transaction fixture is needed. The optimize
 execution provides the cycle metric, while a debug build produces a replay snapshot and SVG
 flamegraph. Package metadata and instrumented debug builds are not measured.
 
+The `dex-note` scenario consumes a funded note into a basic wallet with target-account storage and
+a limit price of `3/2`, encoded using the SDK's felt representation.
+
 ## Running locally
 
 Build the compiler's Cargo frontend, then run the suite:
@@ -44,6 +47,14 @@ cargo run -p midenc-benchmark-runner --bin contract-benchmarks -- \
 Intermediate Cargo and compiler artifacts are isolated in `target/example-benchmark-build/`. Use
 `--output-dir`, `--build-dir`, `--workspace-root`, or `--commit` to override the corresponding
 defaults. When `--cargo-miden` is omitted, the runner invokes `cargo miden` from `PATH`.
+
+To check DEX execution, replay capture, and flamegraph generation specifically:
+
+```bash
+cargo build -p cargo-miden
+CARGO_MIDEN="$PWD/target/debug/cargo-miden" cargo test -p midenc-benchmark-runner \
+  dex_note_transaction_records_cycles_replay_and_flamegraph -- --ignored
+```
 
 ## Pull requests
 
