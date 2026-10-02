@@ -1,8 +1,9 @@
-//! Rebuilding an [While] operation with fewer iteration arguments or results.
+//! Rebuilding a [While] operation with fewer iteration arguments or results.
 //!
 //! Several canonicalization patterns remove iteration arguments or results of an `scf.while`.
-//! The op cannot be edited in place for that, so they all replace it with a new one built from
-//! the regions of the original. [rebuild_while] is the single implementation of that rewrite.
+//! They all do it by replacing the loop with a new one built from the regions of the original,
+//! which keeps the operands, block arguments, terminators and results of the loop consistent
+//! with each other at every step. [rebuild_while] is the single implementation of that rewrite.
 
 use midenc_hir::{dialects::debuginfo::transform::erase_debug_info_with, patterns::Rewriter, *};
 
@@ -29,9 +30,8 @@ pub(super) enum IterArg {
 /// loop that replaces it, or `None` if the result and the after block argument at the same
 /// position are dropped without replacement, which requires that neither has real uses (the
 /// `di.debug_value` operations using them become `di.debug_kill`). Every result of the new loop
-/// must replace at least
-/// one result of the original one; when it replaces several, they must all be forwarded the same
-/// value by the `scf.condition`.
+/// must replace at least one result of the original one; when it replaces several, they must all
+/// be forwarded the same value by the `scf.condition`.
 ///
 /// Returns `Ok(false)`, with nothing modified, if `operation` is not an `scf.while` or if the
 /// number of its operands, block arguments, terminator operands and results do not agree with
@@ -195,6 +195,7 @@ pub(super) fn rebuild_while(
 
     // A dropped value has no real uses, but debug info may still describe a variable through it.
     for value in dropped.iter() {
+        debug_assert!(!value.borrow().has_real_uses(), "cannot drop a value with real uses");
         erase_debug_info_with(value, rewriter);
     }
 

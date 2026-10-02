@@ -28,9 +28,7 @@ pub trait OperationPass {
     }
     /// The name of the operation that this pass operates on, or `None` if this is a generic pass.
     fn target_name(&self, context: &Context) -> Option<OperationName>;
-    fn initialize_options(&mut self, options: &str) -> Result<(), Report> {
-        Ok(())
-    }
+    fn initialize_options(&mut self, options: &str) -> Result<(), Report>;
     fn print_as_textual_pipeline(&self, f: &mut fmt::Formatter) -> fmt::Result;
     fn has_statistics(&self) -> bool {
         !self.statistics().is_empty()

@@ -5,6 +5,8 @@
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=""}))' 2>&1 | filecheck %s --check-prefix=EMPTY
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{disable-patterns=a disable-patterns=b}))' 2>&1 | filecheck %s --check-prefix=DUP
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=while-unused-result disable-patterns=while-unused-result}))' 2>&1 | filecheck %s --check-prefix=BOTH
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(dce{x=1}))' 2>&1 | filecheck %s --check-prefix=NOOPT
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(dce{}))' | filecheck %s --check-prefix=EMPTYOPTS
 
 // Coverage for the `enable-patterns` and `disable-patterns` options of the canonicalizer.
 //
@@ -56,6 +58,12 @@
 //
 // A pattern named in both lists is rejected.
 // BOTH: pattern 'while-unused-result' is both enabled and disabled
+//
+// An option given to a pass that takes none is rejected, naming the pass by its pipeline argument.
+// NOOPT: pass 'dce' takes no options
+//
+// An empty option list is accepted by a pass that takes no options.
+// EMPTYOPTS: @unused_result(
 builtin.module private @pattern_filter {
     builtin.function public extern("C") @unused_result(%0: u32, %1: u32) -> u32 {
         %2 = arith.constant 10 : u32;
