@@ -13,6 +13,8 @@ use midenc_hir::{
 
 use crate::*;
 
+mod memory;
+
 struct EvalTest {
     test: Test,
     evaluator: HirEvaluator,

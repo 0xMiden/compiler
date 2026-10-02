@@ -1,14 +1,13 @@
 use alloc::{format, vec};
 
 use midenc_hir::{
-    BlockRef, Context, EntityRef, Felt, FxHashMap, Immediate, Operation, OperationRef, Report,
-    SmallVec, SourceSpan, SymbolPath, ValueId, ValueRef,
+    AddressSpace, BlockRef, Context, EntityRef, Felt, FxHashMap, Immediate, Operation,
+    OperationRef, Report, SmallVec, SourceSpan, SymbolPath, ValueId, ValueRef,
     dialects::builtin::{self, attributes::LocalVariable},
-    formatter::DisplayHex,
 };
 use midenc_session::diagnostics::{Diagnostic, Severity, WrapErr, miette};
 
-use super::memory;
+use super::memory::{self, MemoryAddress};
 use crate::Value;
 
 #[derive(Debug, thiserror::Error, Diagnostic)]
@@ -40,7 +39,7 @@ pub struct CallFrame {
     /// Virtual registers used to map SSA values to their runtime value
     registers: FxHashMap<ValueRef, Value>,
     /// Function-local memory reserved as scratch space for local variables
-    locals: SmallVec<[u8; 64]>,
+    locals: SmallVec<[Felt; 8]>,
     /// The offset of each local variable in `locals`, in elements, indexed by local
     local_offsets: SmallVec<[usize; 8]>,
 }
@@ -54,9 +53,9 @@ impl CallFrame {
                 // whole frame: a local wider than one element occupies several of them.
                 let frame_elements =
                     function.locals().iter().map(|ty| ty.size_in_felts()).sum::<usize>();
-                let capacity = frame_elements * core::mem::size_of::<Felt>();
+                let capacity = frame_elements;
                 let mut buf = SmallVec::with_capacity(capacity);
-                buf.resize(capacity, 0);
+                buf.resize(capacity, Felt::ZERO);
                 (buf, function.local_offsets().collect())
             }
             None => Default::default(),
@@ -143,43 +142,44 @@ impl CallFrame {
         self.local_offsets[local.as_usize()]
     }
 
-    /// Read the value of the given local variable
-    ///
-    /// Returns an error if `local` is invalid, or a value of the defined type could not be read
-    /// from it (e.g. the encoding is not valid for the type).
+    fn checked_local_address(
+        &self,
+        local: &LocalVariable,
+        span: SourceSpan,
+        context: &Context,
+    ) -> Result<MemoryAddress, Report> {
+        let offset = self.local_offset(local);
+        let size = local.ty().size_in_felts();
+        if offset >= self.locals.len() || (offset + size) > self.locals.len() {
+            return Err(context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message("invalid access to local variable")
+                .with_primary_label(
+                    span,
+                    format!(
+                        "attempted to access {size} elements from offset {offset}, but only {} \
+                         are allocated",
+                        self.locals.len(),
+                    ),
+                )
+                .into_report());
+        }
+        Ok(MemoryAddress::new(offset as u32, AddressSpace::Element))
+    }
+
+    /// Read the value of the given local variable from its element-addressed buffer.
     pub fn read_local(
         &self,
         local: &LocalVariable,
         span: SourceSpan,
         context: &Context,
     ) -> Result<Value, Report> {
-        let offset = self.local_offset(local) * core::mem::size_of::<Felt>();
-        let ty = local.ty();
-        let size = ty.size_in_bytes();
-        if offset >= self.locals.len() || (offset + size) >= self.locals.len() {
-            return Err(context
-                .diagnostics()
-                .diagnostic(Severity::Error)
-                .with_message("invalid read of local variable")
-                .with_primary_label(
-                    span,
-                    format!(
-                        "attempted to read value of size {size} from offset {offset}, but only {} \
-                         are allocated",
-                        self.locals.len()
-                    ),
-                )
-                .into_report());
-        }
-
-        memory::read_value(offset, &ty, &self.locals).wrap_err("invalid memory read")
+        let addr = self.checked_local_address(local, span, context)?;
+        memory::read_value(addr, &local.ty(), &self.locals).wrap_err("invalid memory read")
     }
 
-    /// Write `value` to `local`.
-    ///
-    /// Returns an error if `local` is invalid, or `value` could not be written to `local` (e.g.
-    /// the write would go out of bounds, or `value` is not a valid instance of the type associated
-    /// with `local`).
+    /// Write a value of the local's declared type, rejecting mismatches before mutation.
     pub fn write_local(
         &mut self,
         local: &LocalVariable,
@@ -187,28 +187,20 @@ impl CallFrame {
         span: SourceSpan,
         context: &Context,
     ) -> Result<(), Report> {
-        let offset = self.local_offset(local) * core::mem::size_of::<Felt>();
         let ty = local.ty();
-        let size = ty.size_in_bytes();
-        if offset >= self.locals.len() || (offset + size) >= self.locals.len() {
+        if value.ty() != ty {
             return Err(context
                 .diagnostics()
                 .diagnostic(Severity::Error)
-                .with_message("invalid write of local variable")
+                .with_message("invalid write to local variable")
                 .with_primary_label(
                     span,
-                    format!(
-                        "attempted to write value of size {size} to offset {offset}, but only {} \
-                         are allocated",
-                        self.locals.len()
-                    ),
+                    format!("expected value of type {ty}, got {}", value.ty()),
                 )
                 .into_report());
         }
-
-        memory::write_value(offset, value, &mut self.locals);
-
-        Ok(())
+        let addr = self.checked_local_address(local, span, context)?;
+        memory::write_value(addr, value, &mut self.locals).wrap_err("invalid memory write")
     }
 }
 
@@ -230,7 +222,7 @@ impl core::fmt::Debug for CallFrame {
                 }
                 builder.finish()
             })
-            .field_with("locals", |f| write!(f, "{:0x}", DisplayHex::new(&self.locals)))
+            .field_with("locals", |f| write!(f, "{:?}", self.locals))
             .finish()
     }
 }
@@ -241,5 +233,27 @@ impl core::fmt::Display for CallFrame {
             Some(path) => write!(f, "{path}"),
             None => f.write_str("<anonymous>"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_hir::{Type, testing::Test};
+
+    use super::*;
+
+    #[test]
+    fn local_write_rejects_a_value_of_the_wrong_type() {
+        let mut test = Test::named("local_write_type");
+        test.with_function("local_write_type", &[], &[]);
+        let local = test.function().borrow_mut().alloc_local(Type::U8);
+        let mut frame = CallFrame::new(test.function().as_operation_ref());
+        let result = frame.write_local(
+            &local,
+            Value::Immediate(Immediate::U128(1)),
+            SourceSpan::UNKNOWN,
+            &test.context_rc(),
+        );
+        assert!(result.is_err());
     }
 }

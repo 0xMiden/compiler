@@ -26,7 +26,7 @@ use midenc_hir::{
 
 pub use self::{
     eval::{ControlFlowEffect, Eval, Initialize},
-    evaluator::HirEvaluator,
+    evaluator::{HirEvaluator, MemoryAddress},
     value::Value,
 };
 

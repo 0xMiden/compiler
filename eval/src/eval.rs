@@ -511,7 +511,7 @@ impl Eval for hir::Store {
             ));
         }
 
-        evaluator.write_memory(addr_value, value)?;
+        evaluator.write_memory(MemoryAddress::from_pointer(addr_value, &pointer_ty), value)?;
 
         Ok(ControlFlowEffect::None)
     }
@@ -566,7 +566,8 @@ impl Eval for hir::Load {
             ));
         }
 
-        let loaded = evaluator.read_memory(addr_value, ty)?;
+        let loaded =
+            evaluator.read_memory(MemoryAddress::from_pointer(addr_value, &pointer_ty), ty)?;
 
         evaluator.set_value(result.as_value_ref(), loaded);
 
@@ -673,9 +674,17 @@ impl Eval for hir::MemSet {
             ));
         }
 
-        // Perform memset
+        let addr = MemoryAddress::from_pointer(addr_value, &pointer_ty);
+        let size = value_ty.size_in_bytes() as u64;
+        let len = u64::from(count)
+            .checked_mul(size)
+            .and_then(|len| usize::try_from(len).ok())
+            .ok_or_else(|| {
+                evaluator.report("evaluation failed", self.span(), "memset byte length overflowed")
+            })?;
+        evaluator.check_write_bounds(addr, len)?;
         for offset in 0..count {
-            let addr = addr_value + offset;
+            let addr = addr.checked_add(u64::from(offset) * size).expect("range was checked");
             evaluator.write_memory(addr, value)?;
         }
 
@@ -783,10 +792,8 @@ fn eval_copy(
         ));
     }
 
-    let value_size = source_ty
-        .pointee()
-        .expect("expected pointer type to have been verified already")
-        .size_in_bytes();
+    let value_ty = source_ty.pointee().expect("expected verified pointer type");
+    let value_size = value_ty.size_in_bytes();
     let len = u32::try_from(value_size).ok().and_then(|size| count.checked_mul(size));
     let Some(len) = len else {
         return Err(evaluator.report(
@@ -795,28 +802,64 @@ fn eval_copy(
             format!("invalid {name}: the size of {count} values of {value_size} bytes overflows"),
         ));
     };
+    let src = MemoryAddress::from_pointer(source_value, &source_ty);
+    let dst = MemoryAddress::from_pointer(dest_value, &dest_ty);
+    // Both ranges must be valid before allocating a snapshot or writing any destination cells.
+    evaluator.check_read_bounds(src, len as usize)?;
+    evaluator.check_write_bounds(dst, len as usize)?;
+    // Preserve complete cells wherever MASM does: its element/word intrinsics and aligned
+    // dynamic scalar loads/stores. Partial-cell operations use the checked byte view.
+    let element_aligned = src.is_element_aligned() && dst.is_element_aligned();
+    let raw_elements = match value_size {
+        1 => element_aligned && len.is_multiple_of(4),
+        4 | 8 => element_aligned,
+        size if size >= 16 && size.is_multiple_of(16) => {
+            if !src.position().is_multiple_of(16) || !dst.position().is_multiple_of(16) {
+                return Err(evaluator.report(
+                    "evaluation failed",
+                    span,
+                    "expected a 16-byte-aligned pointer for the word-copy fast path",
+                ));
+            }
+            true
+        }
+        _ => false,
+    };
     if len == 0 {
         return Ok(ControlFlowEffect::None);
     }
-
-    if overlap == CopyOverlap::Forbidden {
-        let source_end = u64::from(source_value) + u64::from(len);
-        let dest_end = u64::from(dest_value) + u64::from(len);
-        if u64::from(source_value) < dest_end && u64::from(dest_value) < source_end {
-            return Err(evaluator.report(
-                "evaluation failed",
-                span,
-                format!("invalid {name}: source and destination ranges must not overlap"),
-            ));
-        }
+    if overlap == CopyOverlap::Forbidden
+        && src.position() < dst.position() + u64::from(len)
+        && dst.position() < src.position() + u64::from(len)
+    {
+        return Err(evaluator.report(
+            "evaluation failed",
+            span,
+            format!("invalid {name}: source and destination ranges must not overlap"),
+        ));
     }
 
-    // The ranges may overlap, so the whole source range is read before it is written to the
-    // destination; both ranges are checked before the source is read, so that a bogus length is
-    // rejected before it is allocated
-    evaluator.check_write_bounds(dest_value, len as usize)?;
-    let bytes = evaluator.read_memory_bytes(source_value, len)?;
-    evaluator.write_memory_bytes(dest_value, &bytes)?;
+    if raw_elements {
+        let elements = evaluator.read_memory_elements(src, len)?;
+        evaluator.write_memory_elements(dst, len, &elements)?;
+    } else if value_size == 1 {
+        // i1 and i8 pointees are copied as raw bytes, not decoded and re-encoded values.
+        let bytes = evaluator.read_memory_bytes(src, len)?;
+        evaluator.write_memory_bytes(dst, &bytes)?;
+    } else {
+        let mut values = alloc::vec::Vec::with_capacity(count as usize);
+        for index in 0..count {
+            let addr = src
+                .checked_add(u64::from(index) * value_size as u64)
+                .expect("range was checked");
+            values.push(evaluator.read_memory(addr, value_ty)?);
+        }
+        for (index, value) in values.into_iter().enumerate() {
+            let addr =
+                dst.checked_add(index as u64 * value_size as u64).expect("range was checked");
+            evaluator.write_memory(addr, value)?;
+        }
+    }
 
     Ok(ControlFlowEffect::None)
 }
@@ -853,7 +896,8 @@ impl Eval for hir::PrintLn {
             ));
         };
 
-        let bytes = evaluator.read_memory_bytes(ptr, len)?;
+        let bytes =
+            evaluator.read_memory_bytes(MemoryAddress::from_pointer(ptr, &pointer_ty), len)?;
         let line = String::from_utf8(bytes).map_err(|err| {
             evaluator.report(
                 "evaluation failed",
@@ -2260,7 +2304,10 @@ macro_rules! impl_eval_load_sext {
                 let pointee_ty = pointer_ty
                     .pointee()
                     .expect("expected pointer type to have been verified already");
-                let loaded = evaluator.read_memory(addr_value, pointee_ty)?;
+                let loaded = evaluator.read_memory(
+                    MemoryAddress::from_pointer(addr_value, &pointer_ty),
+                    pointee_ty,
+                )?;
 
                 let sign_extended = match loaded {
                     Value::Immediate(Immediate::$src_imm(x)) => {

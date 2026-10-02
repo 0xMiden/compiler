@@ -1,9 +1,9 @@
-use alloc::vec::Vec;
+use alloc::{collections::BTreeMap, vec::Vec};
 
-use midenc_hir::{Report, SourceSpan, Type, dialects::builtin::ComponentId};
+use midenc_hir::{AddressSpace, Felt, Report, SourceSpan, Type, dialects::builtin::ComponentId};
 use midenc_session::diagnostics::WrapErr;
 
-use super::memory::{self, ReadFailed, WriteFailed};
+use super::memory::{self, Cells, MemoryAddress, ReadFailed, WriteFailed};
 use crate::Value;
 
 const PAGE_SIZE: usize = 64 * 1024;
@@ -20,7 +20,7 @@ pub struct ExecutionContext {
     #[allow(unused)]
     id: Option<ComponentId>,
     /// Heap memory
-    memory: Vec<u8>,
+    memory: BTreeMap<u32, Felt>,
     /// Pages requested through memory_grow; independent of materialized bytes.
     pages: usize,
 }
@@ -59,148 +59,169 @@ impl ExecutionContext {
         self.pages = 0;
     }
 
-    /// Read a value of type `ty` from `addr`
-    ///
-    /// Returns an error if `addr` is invalid, `ty` is not a valid immediate type, or the specified
-    /// type could not be read from `addr` (either the encoding is invalid, or the read would be
-    /// out of bounds).
-    pub fn read_memory(&self, addr: u32, ty: &Type, at: SourceSpan) -> Result<Value, Report> {
-        let addr = addr as usize;
-        if addr > MAX_ADDRESSABLE_HEAP {
+    /// Bounds are expressed in the originating pointer's units. Native addresses span the full
+    /// VM cell space; the dynamic heap limit applies only to heap growth and byte pointers.
+    fn range_is_valid(addr: MemoryAddress, len: usize) -> bool {
+        let limit = match addr.space {
+            AddressSpace::Byte => MAX_ADDRESSABLE_HEAP as u64,
+            AddressSpace::Element => (u64::from(u32::MAX) + 1) * 4,
+        };
+        addr.position().checked_add(len as u64).is_some_and(|end| end <= limit)
+    }
+
+    pub fn check_read_bounds(
+        &self,
+        addr: MemoryAddress,
+        len: usize,
+        at: SourceSpan,
+    ) -> Result<(), Report> {
+        if !Self::range_is_valid(addr, 0) {
             return Err(ReadFailed::AddressOutOfBounds {
-                addr: addr as u32,
+                addr: addr.raw(),
                 at,
             })
             .wrap_err("invalid memory read");
         }
-
-        let size = ty.size_in_bytes();
-        let end_addr = addr.checked_add(size);
-        if end_addr.is_none_or(|addr| addr > MAX_ADDRESSABLE_HEAP) {
+        if !Self::range_is_valid(addr, len) {
             return Err(ReadFailed::SizeOutOfBounds {
-                addr: addr as u32,
-                size: size as u32,
+                addr: addr.raw(),
+                size: len as u32,
                 at,
             })
             .wrap_err("invalid memory read");
         }
+        Ok(())
+    }
 
+    pub fn check_write_bounds(
+        &self,
+        addr: impl Into<MemoryAddress>,
+        len: usize,
+        at: SourceSpan,
+    ) -> Result<(), Report> {
+        let addr = addr.into();
+        if !Self::range_is_valid(addr, 0) {
+            return Err(WriteFailed::AddressOutOfBounds {
+                addr: addr.raw(),
+                at,
+            })
+            .wrap_err("invalid memory write");
+        }
+        if !Self::range_is_valid(addr, len) {
+            return Err(WriteFailed::SizeOutOfBounds {
+                addr: addr.raw(),
+                size: len as u32,
+                at,
+            })
+            .wrap_err("invalid memory write");
+        }
+        Ok(())
+    }
+
+    /// Read a typed value, interpreting the address according to its pointer address space.
+    pub fn read_memory(
+        &self,
+        addr: impl Into<MemoryAddress>,
+        ty: &Type,
+        at: SourceSpan,
+    ) -> Result<Value, Report> {
+        let addr = addr.into();
+        self.check_read_bounds(addr, ty.size_in_bytes(), at)?;
         memory::read_value(addr, ty, &self.memory).wrap_err("invalid memory read")
     }
 
-    /// Read `len` bytes from memory starting at `addr`.
-    ///
-    /// Returns an error if `addr` or the end address is out of bounds.
+    /// Read bytes from the u32 view of memory, rejecting cells which do not fit that view.
     pub fn read_memory_bytes(
         &self,
-        addr: u32,
+        addr: impl Into<MemoryAddress>,
         len: u32,
         at: SourceSpan,
     ) -> Result<Vec<u8>, Report> {
-        let addr = addr as usize;
-        if addr > MAX_ADDRESSABLE_HEAP {
-            return Err(ReadFailed::AddressOutOfBounds {
-                addr: addr as u32,
-                at,
+        let addr = addr.into();
+        self.check_read_bounds(addr, len as usize, at)?;
+        (0..len)
+            .map(|offset| {
+                memory::read_byte(
+                    addr.checked_add(u64::from(offset)).expect("range was checked"),
+                    &self.memory,
+                )
+                .wrap_err("invalid memory read")
             })
-            .wrap_err("invalid memory read");
-        }
-
-        let len = len as usize;
-        let end_addr = addr.checked_add(len);
-        if end_addr.is_none_or(|addr| addr > MAX_ADDRESSABLE_HEAP) {
-            return Err(ReadFailed::SizeOutOfBounds {
-                addr: addr as u32,
-                size: len as u32,
-                at,
-            })
-            .wrap_err("invalid memory read");
-        }
-
-        let mut bytes = Vec::with_capacity(len);
-        for offset in 0..len {
-            bytes.push(memory::read_byte(addr + offset, &self.memory));
-        }
-
-        Ok(bytes)
+            .collect()
     }
 
-    /// Write `value` to `addr` in heap memory.
-    ///
-    /// Returns an error if `addr` is invalid, or `value` could not be written to `addr` (either the
-    /// value is poison, or the write would go out of bounds).
+    /// Write a typed value. A Felt replaces one complete cell; integers use little-endian limbs.
     pub fn write_memory(
         &mut self,
-        addr: u32,
+        addr: impl Into<MemoryAddress>,
         value: impl Into<Value>,
         at: SourceSpan,
     ) -> Result<(), Report> {
-        let addr = addr as usize;
-        if addr > MAX_ADDRESSABLE_HEAP {
-            return Err(WriteFailed::AddressOutOfBounds {
-                addr: addr as u32,
-                at,
-            })
-            .wrap_err("invalid memory write");
-        }
-
+        let addr = addr.into();
         let value = value.into();
-        let ty = value.ty();
-        let size = ty.size_in_bytes();
-        let end_addr = addr.checked_add(size);
-        if end_addr.is_none_or(|addr| addr > MAX_ADDRESSABLE_HEAP) {
-            return Err(WriteFailed::SizeOutOfBounds {
-                addr: addr as u32,
-                size: size as u32,
-                at,
-            })
-            .wrap_err("invalid memory write");
-        }
-
-        memory::write_value(addr, value, &mut self.memory);
-
-        Ok(())
+        self.check_write_bounds(addr, value.ty().size_in_bytes(), at)?;
+        memory::write_value(addr, value, &mut self.memory).wrap_err("invalid memory write")
     }
 
-    /// Write `bytes` to memory starting at `addr`.
-    ///
-    /// Returns an error if `addr` or the end address is out of bounds, in which case nothing is
-    /// written.
+    /// Write bytes without modifying neighboring bytes. Validate the whole write before mutation.
     pub fn write_memory_bytes(
         &mut self,
-        addr: u32,
+        addr: impl Into<MemoryAddress>,
         bytes: &[u8],
         at: SourceSpan,
     ) -> Result<(), Report> {
+        let addr = addr.into();
         self.check_write_bounds(addr, bytes.len(), at)?;
-        memory::write_bytes(addr as usize, bytes, &mut self.memory);
-
-        Ok(())
+        memory::write_bytes(addr, bytes, &mut self.memory).wrap_err("invalid memory write")
     }
 
-    /// Check that `len` bytes can be written to memory starting at `addr`.
-    ///
-    /// Returns an error if `addr` or the end address is out of bounds.
-    pub fn check_write_bounds(&self, addr: u32, len: usize, at: SourceSpan) -> Result<(), Report> {
-        let addr = addr as usize;
-        if addr > MAX_ADDRESSABLE_HEAP {
-            return Err(WriteFailed::AddressOutOfBounds {
-                addr: addr as u32,
-                at,
-            })
-            .wrap_err("invalid memory write");
+    /// Snapshot complete cells containing an element-aligned byte range, including hidden values.
+    pub fn read_memory_elements(
+        &self,
+        addr: MemoryAddress,
+        len: u32,
+        at: SourceSpan,
+    ) -> Result<Vec<Felt>, Report> {
+        self.check_read_bounds(addr, len as usize, at)?;
+        if addr.offset != 0 {
+            return Err(ReadFailed::UnalignedElement).wrap_err("invalid memory read");
         }
+        Ok((0..len.div_ceil(4))
+            .map(|offset| Cells::get(&self.memory, addr.element + offset))
+            .collect())
+    }
 
-        let end_addr = addr.checked_add(len);
-        if end_addr.is_none_or(|addr| addr > MAX_ADDRESSABLE_HEAP) {
-            return Err(WriteFailed::SizeOutOfBounds {
-                addr: addr as u32,
-                size: len as u32,
-                at,
-            })
-            .wrap_err("invalid memory write");
+    /// Write a snapshot to an element-aligned byte range. The exact length excludes snapshot
+    /// padding: complete cells are replaced, while a partial final cell preserves its other bytes.
+    pub fn write_memory_elements(
+        &mut self,
+        addr: MemoryAddress,
+        len: u32,
+        elements: &[Felt],
+        at: SourceSpan,
+    ) -> Result<(), Report> {
+        self.check_write_bounds(addr, len as usize, at)?;
+        if addr.offset != 0 {
+            return Err(WriteFailed::UnalignedElement).wrap_err("invalid memory write");
         }
-
+        if elements.len() != len.div_ceil(4) as usize {
+            return Err(WriteFailed::InvalidSnapshot).wrap_err("invalid memory write");
+        }
+        // Write the only fallible part first, so a bad boundary cell leaves the whole range intact.
+        let tail = (len % 4) as usize;
+        if tail != 0 {
+            let value = elements[elements.len() - 1].as_canonical_u64();
+            let bytes = u32::try_from(value)
+                .map_err(|_| WriteFailed::InvalidElement(value))
+                .wrap_err("invalid memory write")?
+                .to_le_bytes();
+            let tail_addr = addr.checked_add(u64::from(len - len % 4)).expect("range was checked");
+            memory::write_bytes(tail_addr, &bytes[..tail], &mut self.memory)
+                .wrap_err("invalid memory write")?;
+        }
+        for (offset, &element) in elements[..(len / 4) as usize].iter().enumerate() {
+            self.memory.set(addr.element + offset as u32, element);
+        }
         Ok(())
     }
 }
@@ -218,16 +239,22 @@ mod tests {
             .unwrap();
         context.memory_grow(0);
         assert_eq!(context.memory_size(), 2);
-        assert_eq!(context.memory[0], 17);
+        assert_eq!(Cells::get(&context.memory, 0), Felt::from(17u32));
         context.memory_grow(1);
         assert_eq!(context.memory_size(), 3);
-        assert_eq!(context.memory[0], 17);
+        assert_eq!(Cells::get(&context.memory, 0), Felt::from(17u32));
     }
 
     #[test]
     fn materialized_bytes_do_not_change_logical_pages() {
         let mut context = ExecutionContext::default();
-        context.memory.resize(2 * PAGE_SIZE, 0);
+        context
+            .write_memory(
+                (2 * PAGE_SIZE) as u32,
+                midenc_hir::Immediate::U8(17),
+                SourceSpan::UNKNOWN,
+            )
+            .unwrap();
         assert_eq!(context.memory_size(), 0);
     }
 
@@ -241,7 +268,7 @@ mod tests {
         assert!(!context.memory_grow(usize::MAX));
         assert!(!context.memory_grow(MAX_ADDRESSABLE_HEAP / PAGE_SIZE));
         assert_eq!(context.memory_size(), 1);
-        assert_eq!(context.memory[0], 17);
+        assert_eq!(Cells::get(&context.memory, 0), Felt::from(17u32));
     }
 
     #[test]

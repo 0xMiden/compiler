@@ -376,3 +376,41 @@ fn mem_move_values_match_copy_within() {
     );
     assert_proptest_passed(res);
 }
+
+/// Aligned dynamic loads/stores and the element/word intrinsics preserve the entire VM cell,
+/// including values above u32::MAX. These cases also pin the evaluator's copy-path selection.
+#[test]
+fn mem_move_preserves_full_width_cells() {
+    setup::enable_compiler_instrumentation();
+    let initial =
+        core::array::from_fn::<_, 12, _>(|index| Felt::new_unchecked((1u64 << 40) + index as u64));
+    for (elem, dst_offset, count, expected_lows) in [
+        (Type::U8, 4, 12, [0u64, 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11]),
+        (Type::U32, 4, 3, [0, 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11]),
+        (Type::Felt, 4, 3, [0, 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11]),
+        (Type::U64, 4, 2, [0, 0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11]),
+        (Type::U128, 16, 2, [0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]),
+    ] {
+        let (package, context) = compile_copy(CopyOp::MemMove, elem);
+        let output = eval_package::<u32, _, _>(
+            package,
+            [Initializer::MemoryFelts {
+                addr: FIXED_BASE / 4,
+                felts: initial.as_slice().into(),
+            }],
+            &[Felt::from(FIXED_BASE), Felt::from(FIXED_BASE + dst_offset), Felt::from(count)],
+            context.session(),
+            |trace| {
+                for (index, low) in expected_lows.iter().enumerate() {
+                    prop_assert_eq!(
+                        trace.read_memory_element(FIXED_BASE / 4 + index as u32),
+                        Some(Felt::new_unchecked((1u64 << 40) + low))
+                    );
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(output, count);
+    }
+}
