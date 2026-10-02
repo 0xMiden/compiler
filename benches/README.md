@@ -3,9 +3,15 @@
 This suite builds every project under `examples/` with maximum optimization, then records the
 serialized MAST forest size. Executable examples (`collatz`, `fibonacci`, and
 `is-prime`) are also executed with their checked-in `inputs.toml`; their exact VM cycle count is
-recorded and a debug build is used to generate an SVG flamegraph. The reported metrics always come
-from the optimized package's executable MAST; package metadata and the instrumented flamegraph
-build are not measured.
+recorded and a debug build is used to generate an SVG flamegraph. Account component, note,
+and transaction-script examples are exercised by deterministic transactions, except
+`storage-example`, which is compiled for size measurement only. Its custom WIT example is left
+unchanged, and no additional storage transaction fixture is needed. The optimized
+execution provides the cycle metric, while a debug build produces a replay snapshot and SVG
+flamegraph. Package metadata and instrumented debug builds are not measured.
+
+The `dex-note` scenario consumes a funded note into a basic wallet with target-account storage and
+a limit price of `3/2`, encoded using the SDK's felt representation.
 
 ## Running locally
 
@@ -16,29 +22,53 @@ cargo build -p cargo-miden
 cargo make bench -- --cargo-miden target/debug/cargo-miden
 ```
 
+For agent-friendly output without reports, packages, replays, or flamegraphs, run:
+
+```bash
+cargo make bench-agent
+```
+
+This task builds and uses the workspace's `cargo-miden` automatically.
+
 Results are written to `target/example-benchmarks/`:
 
 - `results.json` contains machine-readable MAST sizes and VM cycles.
 - `packages/` contains the optimized packages whose MAST forests were measured.
-- `flamegraphs/` contains cycle-weighted SVG flamegraphs for executable examples.
+- `flamegraphs/` contains cycle-weighted SVG flamegraphs for executed examples.
+- `replays/` contains self-contained transaction snapshots accepted by `miden-debug --replay`.
+
+To run only the MockChain-backed contract scenarios:
+
+```bash
+cargo run -p midenc-benchmark-runner --bin contract-benchmarks -- \
+  --cargo-miden target/debug/cargo-miden
+```
 
 Intermediate Cargo and compiler artifacts are isolated in `target/example-benchmark-build/`. Use
 `--output-dir`, `--build-dir`, `--workspace-root`, or `--commit` to override the corresponding
 defaults. When `--cargo-miden` is omitted, the runner invokes `cargo miden` from `PATH`.
 
+To check DEX execution, replay capture, and flamegraph generation specifically:
+
+```bash
+cargo build -p cargo-miden
+CARGO_MIDEN="$PWD/target/debug/cargo-miden" cargo test -p midenc-benchmark-runner \
+  dex_note_transaction_records_cycles_replay_and_flamegraph -- --ignored
+```
+
 ## Pull requests
 
-The `Examples benchmark` workflow builds `cargo-miden` from both the pull request and the current
-`origin/next` HEAD. Each compiler builds the examples and local SDK from its own checkout, so SDK,
-example, and input changes are included in the comparison. Each side is measured with the benchmark
-harness and VM executor built from its own checkout, so a VM upgrade that changes the package format
-does not stop the candidate from reading the baseline. The report therefore compares the two
-toolchains as wholes, and a change to the results schema must keep the comparison script able to
-read the baseline's output. The commit recorded in each result is read from that source checkout. A
+The `Examples and contracts benchmark` workflow builds `cargo-miden` from both the pull request
+and the current `origin/next` HEAD. Each compiler builds the examples and local SDK from its own
+checkout, so SDK, example, and input changes are included in the comparison. Each side is measured
+with the benchmark harness and VM executor built from its own checkout, so a VM upgrade that changes
+the package format does not stop the candidate from reading the baseline. The report therefore
+compares the two toolchains as wholes. Schema changes must keep the comparison script able to read
+the baseline's output. The commit recorded in each result is read from that source checkout. A
 sticky PR comment reports cycle and MAST-size changes. Lower values are marked as improvements;
 the job is informational and does not reject regressions automatically. Fork pull requests receive
 the same report in the job summary because their workflow token cannot write comments. Both result
-sets, compiled packages, and flamegraphs are retained as workflow artifacts.
+sets, compiled packages, replay snapshots, and flamegraphs are retained as workflow artifacts.
 
 Build failures on either side fail the workflow. Examples newly added by the candidate have no
 baseline measurement and are shown as `n/a` in the comparison.

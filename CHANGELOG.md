@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Honor Wasm function export names as primary HIR linkage symbols, exposing exported functions
   under their exact export name for linkage and CLI entrypoint resolution while retaining raw
   name-section names for source metadata and debug info.
+- Benchmark contract examples through deterministic MockChain transactions, comparing VM cycles
+  against `next` and retaining replay snapshots and cycle-weighted flamegraphs.
 
 ## [0.11.0-rc.3]
 
