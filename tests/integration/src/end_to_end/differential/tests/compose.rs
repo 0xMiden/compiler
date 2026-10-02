@@ -378,8 +378,8 @@ fn nest_calls_edges() {
 /// level with nightly-2026-04-30 guests. What
 /// LLVM changed is whether it leaves cfg-to-scf a loop-invariant before-block
 /// argument, not the pattern. The class's default-level reproducer is
-/// `invariant_args_min`. Never pinned as a `_oz` or `_o1` twin, so no test
-/// runs this source at the levels where it used to panic. What it used to do:
+/// `invariant_args_min`. [`nest_continue_oz`] and [`nest_continue_o1`] run
+/// this source at the levels where it used to panic. What it used to do:
 ///
 /// two nested `for` loops, one `#[inline(never)]` call in the inner loop and a
 /// `continue 'outer` from the inner loop. Building it panicked in the
@@ -545,16 +545,19 @@ fn sret_indexed() {
 /// operation equivalence compares attributes by value even when locations
 /// are ignored, so CSE and cfg-to-scf's return-like merging keep identical
 /// ops from different inline frames apart and the loop reaches
-/// `RemoveLoopInvariantArgsFromBeforeBlock` (`invariant_args_min`'s panic).
+/// `RemoveLoopInvariantArgsFromBeforeBlock`. It used to hit the #1419 panic
+/// there (`invariant_args_min`'s); since that fix it gets past the pattern and
+/// panics in `TransformSpills` with `missing liveness for block entry` at
+/// hir-analysis/src/analyses/spills.rs:1684 (`SpillAnalysis::compute_w_entry_loop_like`).
 /// It passes with `FUZZA_GUEST_DEBUG=0` and fails with 1 and 2; with the
 /// attribute skipped in the equivalence it compiles and matches native.
-/// Compile-time, no inputs involved. Un-ignore when either the equivalence
-/// ignores the inline chain or the pattern stops panicking.
+/// Compile-time, no inputs involved. Un-ignore when the equivalence ignores
+/// the inline chain.
 #[test]
 #[ignore = "#1429: compiler panic only when the guest has debug info (guest debug 1 and 2; passes \
-            at 0): 'AliasingViolationError { kind: Mutable, location: hir/src/ir/operation.rs:877 \
-            }' at hir/src/patterns/rewriter.rs:338 while matching \
-            'remove-loop-invariant-args-from-before-block' (the #1419 panic), reached because the \
+            at 0): 'missing liveness for block entry' at hir-analysis/src/analyses/spills.rs:1684 \
+            in TransformSpills (before the #1419 fix it was the #1419 'AliasingViolationError' \
+            while matching 'remove-loop-invariant-args-from-before-block'), reached because the \
             per-op 'di.inline_call_chain' attribute keeps identical ops from different inline \
             frames apart in CSE and cfg-to-scf; compile-time, no inputs involved"]
 fn switch_calls() {
@@ -565,9 +568,10 @@ fn switch_calls() {
 /// the `return` arm, zero and one trips, every starting selector class.
 /// Ignored with `switch_calls` (same compile-time panic).
 #[test]
-#[ignore = "#1429: same compile-time panic as switch_calls (the #1419 'AliasingViolationError' at \
-            hir/src/patterns/rewriter.rs:338, reached only when the guest has debug info); the \
-            pinned inputs never run"]
+#[ignore = "#1429: same compile-time panic as switch_calls ('missing liveness for block entry' at \
+            hir-analysis/src/analyses/spills.rs:1684 in TransformSpills, formerly the #1419 \
+            'AliasingViolationError', reached only when the guest has debug info); the pinned \
+            inputs never run"]
 fn switch_calls_edges() {
     run_case_with_inputs(
         "switch_calls_edges",

@@ -610,7 +610,7 @@ fn prog_numeric_edges() {
 /// panicked (#1419) with `AliasingViolationError { kind: Mutable, location: ...
 /// operation.rs:877 }` at `hir/src/patterns/rewriter.rs:335:32`, and the
 /// pattern driver's last attempt under
-/// `MIDENC_TRACE='pattern-rewrite-driver=trace'` is
+/// `MIDENC_TRACE='pattern-rewrite-driver=trace'` was
 /// `remove-loop-invariant-args-from-before-block` on `scf.while` — the F12
 /// cluster. With DWARF the same program compiles at all four optimization
 /// levels, so this is the campaign-24 rule (the release configuration moves

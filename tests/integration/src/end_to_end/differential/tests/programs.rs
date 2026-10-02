@@ -1041,7 +1041,7 @@ fn prog_rkscan_wa_edges() {
 /// 'remove-loop-invariant-args-from-before-block' dialect=scf op=while`. The
 /// documented F12 producer was a labeled `continue` over a loop containing a
 /// call, at `-Oz` where LLVM stops inlining it; this program has neither a
-/// labeled `continue` nor a call in the loop, and fails at the DEFAULT level.
+/// labeled `continue` nor a call in the loop, and failed at the DEFAULT level.
 /// Per level before the fix: default PANIC, `--optimize=size-min` PANIC,
 /// `--optimize=max` PASSES, `--optimize=basic` PANIC. Bounding sibling:
 /// `prog_varint_guard` — the same decoder with two running values — compiled
