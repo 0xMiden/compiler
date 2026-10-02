@@ -224,7 +224,12 @@ pub trait Pass: Sized + Any {
         if options.trim().is_empty() {
             Ok(())
         } else {
-            Err(Report::msg(format!("pass '{}' takes no options", self.name())))
+            // Name the pass the way it was written in the pipeline, when it has such a name
+            let name = match self.argument() {
+                "" => self.name(),
+                argument => argument,
+            };
+            Err(Report::msg(format!("pass '{name}' takes no options")))
         }
     }
     /// Prints out the pass in the textual representation of pipelines.

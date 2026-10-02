@@ -140,6 +140,7 @@ impl Pass for Canonicalizer {
                     Self::NAME
                 )));
             }
+            // The pipeline parser already rejects a repeated key; this covers a direct caller.
             if !list.is_empty() {
                 return Err(Report::msg(format!(
                     "option '{key}' of pass '{}' is given more than once",

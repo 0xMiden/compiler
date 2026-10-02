@@ -22,11 +22,12 @@
 //! For example, the following pipeline:
 //!
 //! ```text
-//! $ hir-opt foo.hir --pass-pipeline='builtin.module(builtin.function(cse,canonicalizer),convert-to-masm{key=value})'
+//! $ hir-opt foo.hir --pass-pipeline='builtin.module(cse,builtin.function(canonicalizer{enable-patterns="fold-redundant-yields;while-unused-result"}))'
 //! ```
 //!
-//! * Runs `cse` and `canonicalizer` passes on any functions in the provided module operation
-//! * Applies the `convert-to-masm` pass to the module, with option `key` set to `value`
+//! * Applies the `cse` pass to the provided module operation
+//! * Runs the `canonicalizer` pass on any functions in the module, with its `enable-patterns`
+//!   option restricting it to the two listed patterns
 
 use core::fmt;
 use std::{rc::Rc, str::FromStr};
@@ -441,7 +442,7 @@ mod tests {
     #[test]
     fn example_pipeline() -> Result<(), Report> {
         let pipeline_str =
-            "builtin.module(builtin.function(cse, canonicalizer), convert-to-masm{key=\"value\"})";
+            "builtin.module(cse, builtin.function(canonicalizer{enable-patterns=\"a;b\"}))";
 
         let pipeline = pipeline_str.parse::<PassPipeline>()?;
         assert_eq!(pipeline.to_string(), pipeline_str);
