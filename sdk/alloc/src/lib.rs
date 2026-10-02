@@ -17,9 +17,12 @@ const PAGE_SIZE: usize = 2usize.pow(16);
 /// Keep buffers word-aligned (16 bytes) so Rust/Miden FFI can pass them directly without copies.
 const MIN_ALIGN: usize = 16;
 
-/// Exclusive byte-address limit for allocations. Heap metadata starts at VM element
-/// address 2^30, beyond the 32-bit byte-addressable range. Using u32::MAX avoids
-/// representing the unaddressable 2^32 endpoint on wasm32.
+/// Exclusive byte-address limit for allocations. The compiler reserves the address band that
+/// begins at VM element address 2^30, beyond the 32-bit byte-addressable range: its word-aligned
+/// cells hold the heap metadata word and the scratch word a `dyncall` spills its callee's
+/// procedure root to (see the reserved band in `codegen/masm/src/linker.rs`), and procedure locals
+/// are framed upwards from 2^31, the VM's `FMP_INIT_VALUE`. Using u32::MAX avoids representing
+/// the unaddressable 2^32 endpoint on wasm32.
 const HEAP_END: usize = u32::MAX as usize;
 
 /// A very simple allocator for Miden SDK-based programs.

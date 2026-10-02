@@ -7,8 +7,8 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    Context, EntityMut, Op, Operation, OperationName, OperationRef, Report, Symbol, SymbolRef,
-    Visibility, WalkResult,
+    CallConv, Context, EntityMut, Op, Operation, OperationName, OperationRef, Report, Symbol,
+    SymbolRef, Visibility, WalkResult,
     conversion::{
         ConversionConfig, ConversionPatternSet, ConversionTarget, DynamicLegalityResult,
         apply_full_conversion,
@@ -18,13 +18,85 @@ use midenc_hir::{
 };
 use midenc_session::diagnostics::{Severity, Spanned};
 
-use crate::HirLowering;
+use crate::{HirLowering, opt::operands::MASM_STACK_WINDOW_FELTS};
 
-/// The number of operand stack elements addressable by Miden Assembly instructions.
+/// Legality of an indirect call's signature, shared by `hir.exec_indirect` and `hir.dyncall`.
 ///
-/// An indirect call schedules its arguments plus the table index inside this window, which
-/// bounds the argument size its lowering can support.
-const OPERAND_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
+/// The arguments must agree with the signature in count and type: the emitter consumes one operand
+/// per parameter and asserts each type, so a mismatch is unlowerable. The op verifiers check the
+/// same thing, but legalization must be self-sufficient — it also runs over IR the verifier never
+/// saw.
+///
+/// Both lowerings consume the arguments as-is while the callee's memory address sits on the stack
+/// top, so they cannot emit the widening instructions a direct call would: those operate on that
+/// occupied top. A parameter's extension is only a demand for them when the argument is actually
+/// narrower than the parameter. Canonical-ABI flattening marks the parameters it widened —
+/// `bool`/`u8`/`u16` as `zext`, `i8`/`i16` as `sext`, both to `i32` — while handing over an
+/// argument that already has the flat type, which makes the extension a no-op, exactly as
+/// `process_call_signature` treats it for a direct call.
+///
+/// Beyond that, the arguments and the operands selecting the callee must fit the addressable
+/// operand stack window together: the spill analysis requires every operand of a non-branch
+/// operation to be reachable at once. `selector_felts` is how many of the window those callee
+/// operands take — one element for `hir.exec_indirect`'s table index, a whole word for
+/// `hir.dyncall`'s procedure root — and `what` names them in diagnostics.
+fn indirect_call_signature_legality(
+    op: &Operation,
+    signature: &midenc_hir::dialects::builtin::attributes::Signature,
+    arg_types: &[midenc_hir::Type],
+    selector_felts: usize,
+    what: &str,
+) -> DynamicLegalityResult {
+    use midenc_hir::dialects::builtin::attributes::ArgumentExtension;
+
+    if arg_types.len() != signature.params.len() {
+        return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+            "operation '{}' passes {} argument(s), but its call signature declares {} parameter(s)",
+            op.name(),
+            arg_types.len(),
+            signature.params.len()
+        )));
+    }
+    for (index, (param, arg_ty)) in signature.params.iter().zip(arg_types.iter()).enumerate() {
+        if *arg_ty == param.ty {
+            continue;
+        }
+        if matches!(param.extension(), ArgumentExtension::None) {
+            return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                "operation '{}' passes an argument of type {arg_ty} for parameter {index} of type \
+                 {}; the lowering emits one operand per parameter and cannot convert between them",
+                op.name(),
+                param.ty
+            )));
+        }
+        return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+            "operation '{}' cannot extend the argument for parameter {index} from {arg_ty} to {}; \
+             extension is only supported when the argument already has the parameter type",
+            op.name(),
+            param.ty
+        )));
+    }
+    let arg_felts: usize = signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
+    if selector_felts + arg_felts > MASM_STACK_WINDOW_FELTS {
+        return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+            "operation '{}' schedules {arg_felts} argument field elements plus the \
+             {selector_felts}-element {what}, which exceeds the {MASM_STACK_WINDOW_FELTS}-element \
+             operand stack window",
+            op.name()
+        )));
+    }
+    DynamicLegalityResult::legal()
+}
+
+/// The types of an indirect call's arguments, which both `hir.exec_indirect` and `hir.dyncall`
+/// hold in operand group 1 — group 0 being the table index, respectively the root word.
+fn argument_types(op: &Operation) -> Vec<midenc_hir::Type> {
+    op.operands()
+        .group(1)
+        .iter()
+        .map(|operand| operand.borrow().as_value_ref().borrow().ty().clone())
+        .collect()
+}
 
 /// Validate every `hir.procedure_root` below `root` before MASM procedures begin snapshotting HIR
 /// visibility.
@@ -419,32 +491,62 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
             let exec = op
                 .downcast_ref::<hir::ExecIndirect>()
                 .expect("this legality rule is registered for hir.exec_indirect");
-            let signature = exec.get_signature();
-            // The lowering consumes the arguments as-is: an extension requirement would need
-            // instructions operating on the stack top, which the transient slot address holds
-            if let Some(index) = signature.params.iter().position(|param| {
-                !matches!(
-                    param.extension(),
-                    midenc_hir::dialects::builtin::attributes::ArgumentExtension::None
-                )
-            }) {
+            indirect_call_signature_legality(
+                op,
+                &exec.get_signature(),
+                &argument_types(op),
+                /*selector_felts=*/ 1,
+                "table index",
+            )
+        })
+        .add_dynamically_legal_op::<hir::Dyncall, _>(|op| {
+            let call = op
+                .downcast_ref::<hir::Dyncall>()
+                .expect("this legality rule is registered for hir.dyncall");
+            // The lowering spills the whole root word to the cell the VM reads the callee digest
+            // from, so anything but a full word would spill operands it does not own
+            let num_root_felts = call.root().len();
+            if num_root_felts != hir::Dyncall::ROOT_FELTS {
                 return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
-                    "operation '{}' does not support argument extension, which parameter {index} \
-                     requires",
+                    "operation '{}' selects its callee with {num_root_felts} root field \
+                     element(s), but the lowering spills exactly {} of them as the root word",
+                    op.name(),
+                    hir::Dyncall::ROOT_FELTS
+                )));
+            }
+            // The lowering pops one field element per root operand, which the emitter asserts,
+            // and it has no conversion to apply on the way: the root is spilled verbatim to the
+            // cell the VM reads the callee digest from
+            if let Some((index, ty)) = call
+                .root()
+                .iter()
+                .map(|operand| operand.borrow().as_value_ref().borrow().ty().clone())
+                .enumerate()
+                .find(|(_, ty)| *ty != midenc_hir::Type::Felt)
+            {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' selects its callee with root element {index} of type {ty}, \
+                     but the lowering spills the root word as field elements",
                     op.name()
                 )));
             }
-            let arg_felts: usize =
-                signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
-            if arg_felts + 1 > OPERAND_STACK_WINDOW_FELTS {
+            let signature = call.get_signature();
+            if signature.cc != CallConv::ComponentModel {
                 return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
-                    "operation '{}' schedules {arg_felts} argument field elements plus the table \
-                     index, which exceeds the {OPERAND_STACK_WINDOW_FELTS}-element operand stack \
-                     window",
-                    op.name()
+                    "operation '{}' uses the '{}' calling convention, but only the \
+                     component-model calling convention is supported: the lowering has no \
+                     return-pointer handling for the others",
+                    op.name(),
+                    signature.cc
                 )));
             }
-            DynamicLegalityResult::legal()
+            indirect_call_signature_legality(
+                op,
+                &signature,
+                &argument_types(op),
+                hir::Dyncall::ROOT_FELTS,
+                "procedure root",
+            )
         })
         .add_dynamically_legal_op::<builtin::UnrealizedConversionCast, _>(|op| {
             DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
@@ -492,7 +594,7 @@ mod tests {
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_dialect_hir::HirOpBuilder;
     use midenc_hir::{
-        Ident, SourceSpan, Type, ValueRef, Visibility,
+        CallConv, Felt, Ident, SourceSpan, Type, ValueRef, Visibility,
         dialects::builtin::{
             BuiltinOpBuilder, ModuleBuilder,
             attributes::{AbiParam, Signature},
@@ -636,6 +738,22 @@ mod tests {
         builder.ret(None, SourceSpan::UNKNOWN).unwrap();
     }
 
+    /// Build a `dispatch` function whose `hir.dyncall` uses `signature`, passing one u32 constant
+    /// per parameter and four felt constants as the callee root.
+    fn test_with_dyncall(test: &mut Test, signature: Signature) {
+        test.with_function("dispatch", &[], &[]);
+        let arity = signature.params.len();
+        let mut builder = test.function_builder();
+        let root: [ValueRef; hir::Dyncall::ROOT_FELTS] = core::array::from_fn(|element| {
+            builder.felt(Felt::new(element as u64 + 1).expect("a small felt"), SourceSpan::UNKNOWN)
+        });
+        let args = (0..arity)
+            .map(|_| builder.u32(0, SourceSpan::UNKNOWN))
+            .collect::<alloc::vec::Vec<_>>();
+        builder.dyncall(root, signature, args, SourceSpan::UNKNOWN).unwrap();
+        builder.ret(None, SourceSpan::UNKNOWN).unwrap();
+    }
+
     /// Arguments plus the table index must fit the addressable operand stack window; the wasm
     /// frontend diagnoses this at translation, but IR from any other producer reaches codegen
     /// unchecked.
@@ -651,18 +769,289 @@ mod tests {
         assert!(message.contains("operand stack window"), "{message}");
     }
 
+    /// The table index takes a single element of the window, so the widest legal call is the one
+    /// filling the remaining fifteen with argument field elements.
+    #[test]
+    fn exec_indirect_arguments_at_the_budget_pass_legalization() {
+        let mut test = Test::named("budgeted_exec_indirect").in_module("m");
+        let signature = Signature::new(&test.context_rc(), vec![Type::U32; 15], []);
+        test_with_exec_indirect(&mut test, signature);
+
+        test.apply_pass::<LegalizeForMasm>(true).unwrap();
+    }
+
+    /// A `hir.dyncall`'s callee root is a whole word, not one element, so it is bounded three
+    /// elements tighter than an `hir.exec_indirect`. Scheduling thirteen argument field elements
+    /// beside it would ask the spill analysis for seventeen reachable operands, which it cannot
+    /// deliver.
+    ///
+    /// That analysis runs *before* this pass in the backend pipeline, so it, not this rule, is
+    /// what such a call meets there — it reports one as a diagnostic of its own. This rule is what
+    /// makes the bound part of the IR contract codegen accepts, for the callers that legalize
+    /// without running the rewrites.
+    #[test]
+    fn oversized_dyncall_arguments_fail_legalization() {
+        let mut test = Test::named("oversized_dyncall").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            vec![Type::U32; 13],
+            [],
+        );
+        test_with_dyncall(&mut test, signature);
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("operand stack window"), "{message}");
+    }
+
+    /// The mirror of the above at the bound itself: twelve argument field elements share the
+    /// window with the root word exactly, which is the widest stored procedure the SDK frontend
+    /// can produce.
+    #[test]
+    fn dyncall_arguments_at_the_budget_pass_legalization() {
+        let mut test = Test::named("budgeted_dyncall").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            vec![Type::U32; 12],
+            [],
+        );
+        test_with_dyncall(&mut test, signature);
+
+        test.apply_pass::<LegalizeForMasm>(true).unwrap();
+    }
+
+    /// The emitter consumes one operand per parameter, so a signature declaring more parameters
+    /// than the call passes would pop an empty operand stack. The op verifier rejects this too,
+    /// but legalization runs with the verifier off in the pipeline's conversion driver.
+    #[test]
+    fn dyncall_with_too_few_arguments_fails_legalization() {
+        let mut test = Test::named("short_dyncall").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            vec![Type::U32; 2],
+            [],
+        );
+        test_with_dyncall(&mut test, signature.clone());
+        // Widen the signature behind the built op, as a producer that did not go through the
+        // builder could hand codegen
+        set_indirect_call_signature(
+            &test,
+            Signature::with_convention(
+                &test.context_rc(),
+                CallConv::ComponentModel,
+                vec![Type::U32; 3],
+                [],
+            ),
+        );
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("2 argument(s)"), "{message}");
+        assert!(message.contains("3 parameter(s)"), "{message}");
+    }
+
+    /// An argument whose type differs from its (unextended) parameter reaches an `assert_eq!` in
+    /// the emitter; legalization must reject it first, as the verifier is off here.
+    #[test]
+    fn mistyped_dyncall_argument_fails_legalization() {
+        let mut test = Test::named("mistyped_dyncall").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            [Type::U32],
+            [],
+        );
+        test_with_dyncall(&mut test, signature);
+        set_indirect_call_signature(
+            &test,
+            Signature::with_convention(
+                &test.context_rc(),
+                CallConv::ComponentModel,
+                [Type::Felt],
+                [],
+            ),
+        );
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("parameter 0"), "{message}");
+        assert!(message.contains("cannot convert"), "{message}");
+    }
+
+    /// The lowering spills a whole word to the cell the VM reads the callee digest from, so a
+    /// narrower root operand group would spill stack elements the call does not own. The op
+    /// verifier rejects this too, but legalization runs with the verifier off here.
+    #[test]
+    fn dyncall_with_a_partial_root_word_fails_legalization() {
+        let mut test = Test::named("partial_root_dyncall").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            [Type::U32],
+            [],
+        );
+        test_with_dyncall(&mut test, signature);
+        // The builder always passes a whole word, so drop one element afterwards to build the IR
+        // a producer that did not go through the builder could hand codegen
+        {
+            let context = test.context_rc();
+            let mut dyncall = find_dyncall(&test);
+            let root = {
+                let dyncall = dyncall.borrow();
+                dyncall
+                    .downcast_ref::<hir::Dyncall>()
+                    .expect("the walk selected a hir.dyncall")
+                    .root()
+                    .iter()
+                    .take(hir::Dyncall::ROOT_FELTS - 1)
+                    .map(|operand| operand.borrow().as_value_ref())
+                    .collect::<alloc::vec::Vec<_>>()
+            };
+            let mut dyncall = dyncall.borrow_mut();
+            let owner = dyncall.as_operation_ref();
+            dyncall.operands_mut().group_mut(0).set_operands(root, owner, &context);
+        }
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("3 root field element(s)"), "{message}");
+    }
+
+    /// The lowering pops the root word element by element as field elements, which the emitter
+    /// asserts, so a root element of any other type would reach that assertion. The op's operand
+    /// type constraint says the same thing, but legalization runs with the verifier off here.
+    #[test]
+    fn dyncall_with_a_mistyped_root_element_fails_legalization() {
+        let mut test = Test::named("mistyped_root_dyncall").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            [Type::U32],
+            [],
+        );
+        test_with_dyncall(&mut test, signature);
+        // The builder derives the root operands from felt values, so substitute the call's `u32`
+        // argument for one of them afterwards, as a producer that did not go through the builder
+        // could hand codegen
+        {
+            let context = test.context_rc();
+            let mut dyncall = find_dyncall(&test);
+            let root = {
+                let dyncall = dyncall.borrow();
+                let dyncall = dyncall
+                    .downcast_ref::<hir::Dyncall>()
+                    .expect("the walk selected a hir.dyncall");
+                let mut root = dyncall
+                    .root()
+                    .iter()
+                    .map(|operand| operand.borrow().as_value_ref())
+                    .collect::<alloc::vec::Vec<_>>();
+                root[hir::Dyncall::ROOT_FELTS - 1] = dyncall
+                    .arguments()
+                    .iter()
+                    .next()
+                    .expect("the call passes one argument")
+                    .borrow()
+                    .as_value_ref();
+                root
+            };
+            let mut dyncall = dyncall.borrow_mut();
+            let owner = dyncall.as_operation_ref();
+            dyncall.operands_mut().group_mut(0).set_operands(root, owner, &context);
+        }
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("root element 3 of type u32"), "{message}");
+    }
+
+    /// Only the component-model convention crosses the context switch on the operand stack alone;
+    /// the lowering has no return-pointer handling, so any other convention is unlowerable. The op
+    /// verifier rejects this too, but legalization runs with the verifier off here.
+    #[test]
+    fn dyncall_with_a_foreign_calling_convention_fails_legalization() {
+        let mut test = Test::named("wasm_cc_dyncall").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            [Type::U32],
+            [],
+        );
+        test_with_dyncall(&mut test, signature);
+        set_indirect_call_signature(
+            &test,
+            Signature::with_convention(&test.context_rc(), CallConv::Wasm, [Type::U32], []),
+        );
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("component-model calling convention is supported"), "{message}");
+    }
+
+    /// Replace the signature of the one `hir.dyncall` in `test`'s primary function.
+    ///
+    /// The op builder derives the operands from the signature, so a call disagreeing with its
+    /// signature can only be built by rewriting the signature afterwards — which is exactly the
+    /// IR another producer could hand codegen.
+    fn set_indirect_call_signature(test: &Test, signature: Signature) {
+        let mut dyncall = find_dyncall(test);
+        let mut dyncall = dyncall.borrow_mut();
+        dyncall
+            .downcast_mut::<hir::Dyncall>()
+            .expect("the walk selected a hir.dyncall")
+            .set_signature(signature);
+    }
+
+    /// The one `hir.dyncall` in `test`'s primary function.
+    fn find_dyncall(test: &Test) -> OperationRef {
+        let mut dyncall = None;
+        let function = test.function().as_operation_ref();
+        let function = function.borrow();
+        function.postwalk_all(|op| {
+            if op.downcast_ref::<hir::Dyncall>().is_some() {
+                dyncall = Some(op.as_operation_ref());
+            }
+        });
+        dyncall.expect("the test builds a hir.dyncall")
+    }
+
     /// The indirect-call lowering cannot apply argument extension, since the stack top holds the
-    /// transient slot address while arguments are consumed.
+    /// transient slot address while arguments are consumed. Only a parameter that would really
+    /// have to widen its argument demands it, so this passes a `u32` where an `i64` is expected.
     #[test]
     fn extension_requiring_exec_indirect_arguments_fail_legalization() {
         let mut test = Test::named("extension_exec_indirect").in_module("m");
-        let mut signature = Signature::new(&test.context_rc(), [Type::U32], []);
-        signature.params[0] = AbiParam::sext(Type::U32, &test.context_rc());
+        let mut signature = Signature::new(&test.context_rc(), [Type::I64], []);
+        signature.params[0] = AbiParam::sext(Type::I64, &test.context_rc());
         test_with_exec_indirect(&mut test, signature);
 
         let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
         let message = format!("{err}");
         assert!(message.contains("hir.exec_indirect"), "{message}");
-        assert!(message.contains("argument extension"), "{message}");
+        assert!(message.contains("cannot extend the argument for parameter 0"), "{message}");
+    }
+
+    /// Canonical-ABI flattening marks the parameters it widened and hands over an argument that
+    /// already has the flat type, so the extension is a no-op the lowering can serve — the same
+    /// conclusion a direct call reaches. Rejecting these outright would make every stored
+    /// procedure taking a `bool`, `u8`, `u16`, `i8` or `i16` unlowerable.
+    #[test]
+    fn no_op_extension_exec_indirect_arguments_pass_legalization() {
+        let mut test = Test::named("no_op_extension_exec_indirect").in_module("m");
+        let mut signature = Signature::new(&test.context_rc(), [Type::U32, Type::U32], []);
+        signature.params[0] = AbiParam::zext(Type::U32, &test.context_rc());
+        signature.params[1] = AbiParam::sext(Type::U32, &test.context_rc());
+        test_with_exec_indirect(&mut test, signature);
+
+        test.apply_pass::<LegalizeForMasm>(true).unwrap();
     }
 }

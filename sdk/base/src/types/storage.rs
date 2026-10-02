@@ -208,6 +208,103 @@ impl<T: WordValue> StorageValue<T> {
     }
 }
 
+/// Marker trait implemented by the signature types `#[component_storage]` generates for
+/// stored-procedure slots.
+///
+/// Each `StorageValue<StoredProcedure<fn(..) -> R>>` field expands to a dedicated marker type
+/// implementing this trait, so a [`StoredProcedure`] is always tied to exactly one call signature.
+/// The trait is sealed behind a hidden supertrait that only the macro expansion implements.
+pub trait ProcedureSignature: __stored_procedure_sealed::Sealed {}
+
+/// Hidden module holding the supertrait that seals [`ProcedureSignature`].
+#[doc(hidden)]
+pub mod __stored_procedure_sealed {
+    /// Supertrait sealing [`ProcedureSignature`](super::ProcedureSignature); implemented only by
+    /// `#[component_storage]` expansions.
+    pub trait Sealed {}
+}
+
+/// The MAST root of a sibling account component's procedure, stored in an account storage slot.
+///
+/// A slot of this type is declared as `StorageValue<StoredProcedure<fn(..) -> R>>` in a
+/// `#[component_storage]` struct, which generates a `call` method with exactly that signature
+/// (see the `#[component_storage]` documentation). Calling it invokes the procedure whose root is
+/// stored in the slot in a new VM context (`dyncall`), the same way a direct call into a sibling
+/// component works.
+///
+/// The arguments travel on the VM's operand stack next to the procedure root, which bounds the
+/// signature: at most 12 flat argument values, and at most 12 argument field elements — 11 when
+/// the result is returned through a pointer, which takes an element of its own.
+///
+/// Roots are expected to be written by the host at deployment or update time, taken from the
+/// sibling package's exports: the SDK offers no constructor for this type. The stored root is not
+/// validated by the compiler or the VM against the declared signature: the called procedure is
+/// trusted to honour it. A wrong or stale root — one that names no procedure of the account, or
+/// one with a different stack contract — fails the transaction or returns wrong values. A result
+/// of a variant type ([`Option`], [`Result`]) is lifted from the returned discriminant
+/// without validation, so a root returning an out-of-range discriminant is undefined behaviour in
+/// the caller, like any other canonical-ABI lift. Calling an unset slot (all-zero root) fails the
+/// transaction with a descriptive assertion.
+pub struct StoredProcedure<S: ProcedureSignature> {
+    /// MAST root of the procedure, all-zero while the slot is unset.
+    root: Word,
+    /// Ties the value to the one call signature `#[component_storage]` generated `S` for.
+    _sig: core::marker::PhantomData<S>,
+}
+
+impl<S: ProcedureSignature> StoredProcedure<S> {
+    /// Returns true when the slot holds a procedure root, i.e. is not all-zero.
+    #[inline(always)]
+    pub fn is_set(&self) -> bool {
+        self.root != Word::default()
+    }
+
+    /// Returns the stored procedure root.
+    ///
+    /// The root alone grants no way to call the procedure; it is exposed for inspection and
+    /// forwarding only.
+    #[inline(always)]
+    pub fn root(&self) -> Word {
+        self.root
+    }
+}
+
+impl<S: ProcedureSignature> WordValue for StoredProcedure<S> {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        Ok(self.root)
+    }
+
+    fn try_from_word(word: Word) -> Result<Self, &'static str> {
+        Ok(Self {
+            root: word,
+            _sig: core::marker::PhantomData,
+        })
+    }
+}
+
+// Manual impls: the derives would needlessly bound `S` on the derived traits.
+impl<S: ProcedureSignature> Clone for StoredProcedure<S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S: ProcedureSignature> Copy for StoredProcedure<S> {}
+
+impl<S: ProcedureSignature> PartialEq for StoredProcedure<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.root == other.root
+    }
+}
+
+impl<S: ProcedureSignature> Eq for StoredProcedure<S> {}
+
+impl<S: ProcedureSignature> core::fmt::Debug for StoredProcedure<S> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StoredProcedure").field("root", &self.root).finish()
+    }
+}
+
 /// Typed access to an account storage map.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct StorageMap<K: WordKey, V: WordValue> {
