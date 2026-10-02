@@ -5,6 +5,7 @@ use midenc_hir::{
     *,
 };
 
+use super::while_rebuild::{IterArg, rebuild_while};
 use crate::*;
 
 /// Remove loop invariant arguments from `before` block of a [While] operation.
@@ -178,87 +179,20 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             return Ok(false);
         }
 
-        let mut new_init_args = SmallVec::<[ValueRef; 4]>::default();
-        let mut new_yield_args = SmallVec::<[ValueRef; 4]>::default();
-        for (index, invariant) in invariant.iter().copied().enumerate() {
-            if !invariant {
-                new_init_args.push(init_args[index]);
-                new_yield_args.push(yield_op_args[index]);
-            }
-        }
-
-        let result_types = while_op
-            .results()
+        let iter_args = invariant
             .iter()
-            .map(|r| r.borrow().ty().clone())
+            .zip(init_args.iter())
+            .map(|(invariant, init_value)| {
+                if *invariant {
+                    IterArg::Remove(Some(*init_value))
+                } else {
+                    IterArg::Keep
+                }
+            })
             .collect::<SmallVec<[_; 4]>>();
-
-        // Creating the new op is the only fallible step; nothing has been modified before it.
-        let new_while =
-            rewriter.r#while(new_init_args.iter().copied(), &result_types, while_op.span())?;
-
-        // The builder populates both regions of the new op with an entry block whose arguments
-        // match the retained iter args (before) and the results (after), so the original blocks
-        // are merged into them. Only `BlockRef`s are kept from here on: an `EntityRef` of a
-        // region or block, such as the temporary produced by `before()`/`after()` inside a
-        // rewriter call's argument list, must not be alive while the rewriter moves or erases
-        // blocks of that region, or it fails with an aliasing violation (#1419).
-        let (new_before_block, new_after_block) = {
-            let new_while = new_while.borrow();
-            (
-                new_while.before().entry_block_ref().unwrap(),
-                new_while.after().entry_block_ref().unwrap(),
-            )
-        };
-
-        // Each before block argument is replaced with its initial value if it is loop invariant,
-        // and with the next argument of the new before block otherwise.
-        let new_before_block_args = {
-            let new_before_block = new_before_block.borrow();
-            let mut new_args = new_before_block.arguments().iter();
-            invariant
-                .iter()
-                .zip(init_args.iter())
-                .map(|(invariant, init_value)| {
-                    Some(if *invariant {
-                        *init_value
-                    } else {
-                        *new_args.next().expect("missing argument in new before block") as ValueRef
-                    })
-                })
-                .collect::<SmallVec<[Option<ValueRef>; 4]>>()
-        };
-
-        // The new after block keeps the original after block arguments one-to-one.
-        let new_after_block_args = new_after_block
-            .borrow()
-            .arguments()
-            .iter()
-            .map(|arg| Some(*arg as ValueRef))
-            .collect::<SmallVec<[Option<ValueRef>; 4]>>();
-
-        // Narrow the yield to the kept columns in place.
-        {
-            let mut yield_op = yield_op.as_operation_ref();
-            let _guard = rewriter.modify_op_in_place(yield_op);
-            yield_op.borrow_mut().set_operands(new_yield_args.iter().copied());
-        }
-
-        // The original op is borrowed mutably by `replace_op_with_values` below.
+        let results = (0..while_op.num_results()).map(Some).collect::<SmallVec<[_; 4]>>();
         drop(op);
 
-        rewriter.merge_blocks(before_block, new_before_block, &new_before_block_args);
-        rewriter.merge_blocks(after_block, new_after_block, &new_after_block_args);
-
-        let replacements = new_while
-            .borrow()
-            .results()
-            .all()
-            .into_iter()
-            .map(|r| Some(*r as ValueRef))
-            .collect::<SmallVec<[_; 4]>>();
-        rewriter.replace_op_with_values(operation, &replacements);
-
-        Ok(true)
+        rebuild_while(rewriter, operation, &iter_args, &results)
     }
 }
