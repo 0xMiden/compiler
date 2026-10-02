@@ -98,6 +98,38 @@ builtin.module private @while_condition_truth {
         builtin.ret %4 : (u32);
     };
 
+    // Negative: the condition is forwarded, but the after-block argument is only described by a
+    // `di.debug_value`, which is not a real use, so nothing is replaced and no constant is
+    // created. The `di.debug_value` still becomes a `di.debug_kill`: the greedy driver's region
+    // simplification does not count it as a use of the argument either and erases it.
+    // CHECK: @debug_only_forwarded_arg(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %{{\d+}}, %[[R:\d+]] = scf.while %[[A]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32):
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[X]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[CND]], %[[X]] : (i1, i1, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%{{\d+}}: i1, %[[P:\d+]]: u32):
+    // CHECK-NEXT: di.debug_kill <{ variable = #di.variable<{ name = "c", file = "test.rs", line = 3 }> }>;
+    // CHECK-NEXT: %[[N:\d+]] = arith.incr %[[P]];
+    // CHECK-NEXT: scf.yield %[[N]] : (u32);
+    // CHECK-NEXT: } : (u32) -> (i1, u32);
+    // CHECK-NEXT: builtin.ret %[[R]] : (u32);
+    builtin.function public extern("C") @debug_only_forwarded_arg(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3, %4 = scf.while %0 before {
+        ^block1(%5: u32):
+            %6 = arith.lt %5, %2;
+            scf.condition %6, %6, %5 : (i1, i1, u32);
+        } after {
+        ^block2(%7: i1, %8: u32):
+            di.debug_value %7 <{ variable = #di.variable<{ name = "c", file = "test.rs", line = 3 }>, expression = #di.expression<[]> }> : (i1);
+            %9 = arith.incr %8;
+            scf.yield %9 : (u32);
+        } : (u32) -> (i1, u32);
+        builtin.ret %4 : (u32);
+    };
+
     // Negative: the forwarded i1 value is not the condition, so its after-block argument keeps
     // its use.
     // CHECK: @other_value_forwarded(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
