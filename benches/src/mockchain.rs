@@ -47,6 +47,7 @@ const BASIC_WALLET: &str = "basic-wallet";
 const BASIC_WALLET_TX_SCRIPT: &str = "basic-wallet-tx-script";
 const COUNTER_CONTRACT: &str = "counter-contract";
 const COUNTER_NOTE: &str = "counter-note";
+const DEX_NOTE: &str = "dex-note";
 const P2ID_NOTE: &str = "p2id-note";
 const P2ID_TX_SCRIPT: &str = "p2id-tx-script";
 const P2IDE_NOTE: &str = "p2ide-note";
@@ -68,6 +69,12 @@ struct BasicWalletScriptArgs {
     recipient: miden_field::Word,
     asset_key: miden_field::Word,
     asset_value: miden_field::Word,
+}
+
+#[derive(ToFeltRepr)]
+struct DexLimitPrice {
+    numerator: u64,
+    denominator: u64,
 }
 
 const TRANSACTION_SCENARIOS: &[TransactionScenario] = &[
@@ -112,6 +119,12 @@ const TRANSACTION_SCENARIOS: &[TransactionScenario] = &[
         examples: &[P2IDE_NOTE],
         packages: &[BASIC_WALLET, P2IDE_NOTE],
         build: build_p2ide_consumption,
+    },
+    TransactionScenario {
+        name: DEX_NOTE,
+        examples: &[DEX_NOTE],
+        packages: &[BASIC_WALLET, DEX_NOTE],
+        build: build_dex_consumption,
     },
 ];
 
@@ -364,6 +377,18 @@ fn build_p2id_consumption(packages: &ScenarioPackages) -> Result<MockTransaction
 fn build_p2ide_consumption(packages: &ScenarioPackages) -> Result<MockTransaction> {
     build_note_consumption(packages, P2IDE_NOTE, |account_id| {
         vec![account_id.suffix(), account_id.prefix().as_felt(), Felt::ZERO, Felt::ZERO]
+    })
+}
+
+fn build_dex_consumption(packages: &ScenarioPackages) -> Result<MockTransaction> {
+    build_note_consumption(packages, DEX_NOTE, |account_id| {
+        let mut storage = vec![account_id.prefix().as_felt(), account_id.suffix()];
+        let price = DexLimitPrice {
+            numerator: 3,
+            denominator: 2,
+        };
+        storage.extend(from_field_felts(&price.to_felt_repr()));
+        storage
     })
 }
 
@@ -928,6 +953,47 @@ fn package_construction_error(error: impl ToString) -> ExecutionError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dex_limit_price_uses_the_note_storage_layout() {
+        let price = DexLimitPrice {
+            numerator: (1_u64 << 32) + 3,
+            denominator: 2,
+        };
+        assert_eq!(
+            from_field_felts(&price.to_felt_repr()),
+            vec![Felt::from(3_u32), Felt::ONE, Felt::from(2_u32), Felt::ZERO],
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a built cargo-miden binary supplied via CARGO_MIDEN"]
+    fn dex_note_transaction_records_cycles_replay_and_flamegraph() {
+        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let cargo_miden = std::env::var_os("CARGO_MIDEN").expect("set CARGO_MIDEN");
+        let runner = BenchmarkRunner::new(
+            workspace,
+            output.path().join("results"),
+            output.path().join("build"),
+            Some(cargo_miden.into()),
+            false,
+        )
+        .unwrap();
+        runner.prepare_output_dirs().unwrap();
+        let scenario =
+            TRANSACTION_SCENARIOS.iter().find(|scenario| scenario.name == DEX_NOTE).unwrap();
+        let results = runner
+            .run_transaction_scenario(scenario, &mut BTreeMap::new(), &mut BTreeMap::new())
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, DEX_NOTE);
+        assert!(results[0].cycles > 0);
+        for artifact in [&results[0].replay, &results[0].flamegraph] {
+            let path = runner.output_dir.join(artifact.as_ref().unwrap());
+            assert!(std::fs::metadata(path).unwrap().len() > 0);
+        }
+    }
 
     #[test]
     fn replay_capture_stack_is_scoped() {
