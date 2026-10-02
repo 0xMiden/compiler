@@ -7,7 +7,7 @@
 // line re-parses and verifies the rewritten IR, so every printed form must be valid input.
 //
 // A result is removed when neither the result nor the after-block argument at the same position
-// has uses. The result, the after-block argument and the `scf.condition` operand forwarded to
+// has real uses (a `di.debug_value` does not count). The result, the after-block argument and the `scf.condition` operand forwarded to
 // them go away; the iteration arguments (`scf.while` operands, before-block arguments and
 // `scf.yield` operands) are untouched.
 builtin.module private @while_unused_result {

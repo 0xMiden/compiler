@@ -42,7 +42,9 @@ use alloc::vec::Vec;
 
 use midenc_hir::{
     Builder, DialectRegistration, OpBuilder, Operation, OperationRef, ProgramPoint, SmallVec,
-    Spanned, ValueRef, dialects::debuginfo::attributes::ExpressionOp, patterns::Rewriter,
+    Spanned, ValueRef,
+    dialects::debuginfo::attributes::ExpressionOp,
+    patterns::{Rewriter, RewriterExt},
 };
 
 use super::{DIBuilder, ops::DebugValue};
@@ -163,17 +165,28 @@ pub fn erase_debug_info(old_value: &ValueRef) {
 /// `rewriter`, so that its listener learns about both.
 pub fn erase_debug_info_with<R: ?Sized + Rewriter>(old_value: &ValueRef, rewriter: &mut R) {
     for debug_op in debug_value_users(old_value) {
-        let (variable, span) = {
-            let op = debug_op.borrow();
-            let dv = op.downcast_ref::<DebugValue>().expect("expected di.debug_value");
-            (dv.variable().as_value().clone(), op.span())
-        };
-        let ip = *rewriter.insertion_point();
-        rewriter.set_insertion_point(ProgramPoint::before(debug_op));
-        let _ = rewriter.debug_kill(variable, span);
-        rewriter.restore_insertion_point(ip);
-        rewriter.erase_op(debug_op);
+        erase_debug_value_with(debug_op, rewriter);
     }
+}
+
+/// Like [`erase_debug_value`], for use by a rewrite pattern: the `di.debug_kill` is created, and
+/// the `di.debug_value` erased, through `rewriter`.
+pub fn erase_debug_value_with<R: ?Sized + Rewriter>(debug_op: OperationRef, rewriter: &mut R) {
+    let (variable, span) = {
+        let op = debug_op.borrow();
+        let dv = op.downcast_ref::<DebugValue>().expect("expected di.debug_value");
+        (dv.variable().as_value().clone(), op.span())
+    };
+    {
+        // The kill belongs to the inline frame of the debug value it replaces, which is not
+        // necessarily the frame of the operation being rewritten.
+        let mut scope = rewriter.with_inline_call_chain(debug_op);
+        let ip = *scope.insertion_point();
+        scope.set_insertion_point(ProgramPoint::before(debug_op));
+        let _ = scope.debug_kill(variable, span);
+        scope.restore_insertion_point(ip);
+    }
+    rewriter.erase_op(debug_op);
 }
 
 /// Replace one `di.debug_value` with a `di.debug_kill` at the same program point.
