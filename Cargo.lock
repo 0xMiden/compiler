@@ -4393,6 +4393,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-symbol",
  "midenc-session",
+ "wasm-encoder 0.248.0",
  "wasmparser 0.248.0",
  "wasmprinter 0.248.0",
  "wat",
@@ -7552,6 +7553,16 @@ checksum = "9679ae3cf7cfa2ca3a327f7fab97f27f3294d402fd1a76ca8ab514e17973e4d3"
 dependencies = [
  "leb128fmt",
  "wasmparser 0.233.0",
+]
+
+[[package]]
+name = "wasm-encoder"
+version = "0.248.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac92cf547bc18d27ecc521015c08c353b4f18b84ab388bb6d1b6b682c620d9b6"
+dependencies = [
+ "leb128fmt",
+ "wasmparser 0.248.0",
 ]
 
 [[package]]

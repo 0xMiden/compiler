@@ -46,3 +46,5 @@ miden-assembly.workspace = true
 midenc-codegen-masm = { path = "../../codegen/masm" }
 wat.workspace = true
 midenc-expect-test = { path = "../../tools/expect-test" }
+# Matching the wasmparser/wasmprinter pinned in the workspace
+wasm-encoder = "^0.248"

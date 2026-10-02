@@ -13,6 +13,7 @@ use midenc_hir::{
     FunctionType, Op, SmallVec, SymbolPath, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{BuiltinOpBuilder, FunctionRef, ModuleBuilder, attributes::Signature},
+    interner::Symbol,
 };
 use midenc_hir_symbol::symbols;
 use wasmparser::{FunctionBody, Operator};
@@ -59,13 +60,14 @@ pub fn is_unreachable_stub(body: &FunctionBody<'_>) -> bool {
 }
 
 /// If `body` looks like a linker stub, lowers `function_ref` to a call to the
-/// MASM callee derived from the function name and applies the appropriate
+/// MASM callee derived from the function source name and applies the appropriate
 /// TransformStrategy. Returns `true` if handled, `false` otherwise.
 ///
 /// `frontend_metadata` holds the parsed core module's frontend metadata entries; they are
 /// consulted by module-context stub intrinsics (note intrinsics).
 pub fn maybe_lower_linker_stub(
     function_ref: FunctionRef,
+    source_name: Symbol,
     body: &FunctionBody<'_>,
     module_state: &mut ModuleTranslationState,
     frontend_metadata: &[FrontendMetadata],
@@ -74,11 +76,8 @@ pub fn maybe_lower_linker_stub(
         return Ok(false);
     }
 
-    // Parse function name as MASM function ident: "ns::...::func"
-    let name_string = {
-        let borrowed = function_ref.borrow();
-        borrowed.name().as_str().to_string()
-    };
+    // Parse function source name as MASM function ident: "ns::...::func"
+    let name_string = source_name.as_str().to_string();
     // Expect stub export names to be fully-qualified MASM paths already (e.g. "intrinsics::felt::add").
     let func_ident = match midenc_hir::FunctionIdent::from_str(&name_string) {
         Ok(id) => id,
