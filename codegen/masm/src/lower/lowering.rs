@@ -1590,14 +1590,10 @@ impl HirLowering for arith::Join {
         let mut constraints = emitter.constraints_for(op, &args);
         let mut args = args.into_smallvec();
 
-        // For `i128`/`u128` we use a different stack order for 64-bit limbs.
-        //
         // The IR specifies limbs most-significant to least-significant, but the runtime stack
-        // representation for two 64-bit limbs is (lo, hi).
-        if args.len() == 2 && matches!(&*self.get_ty(), Type::I128 | Type::U128) {
-            args.swap(0, 1);
-            constraints.swap(0, 1);
-        }
+        // representation is little-endian (the least-significant limb is on top of the stack).
+        args.reverse();
+        constraints.reverse();
 
         emitter
             .schedule_operands(
@@ -1633,15 +1629,17 @@ impl HirLowering for arith::Join {
 
 impl HirLowering for arith::Split {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
-        inst_emitter.pop().expect("operand stack is empty");
+        // The results are bound to the stack here, rather than by an `InstOpEmitter`, which binds
+        // the first result to the top of the stack regardless of the order they are pushed in.
+        let mut op_emitter = emitter.emitter();
+        op_emitter.pop().expect("operand stack is empty");
         // `arith.split` defines results in most-significant to least-significant order, but the
         // underlying runtime stack representation is little-endian (least-significant parts are
         // closer to the top of the stack). Since `arith.split` does not emit runtime instructions,
         // we must update the operand stack to match the existing raw-part order, which means
         // leaving the least-significant limb on top.
         for limb in self.limbs().iter() {
-            inst_emitter.push(limb.borrow().as_value_ref());
+            op_emitter.push(limb.borrow().as_value_ref());
         }
         Ok(())
     }

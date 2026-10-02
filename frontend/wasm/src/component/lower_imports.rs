@@ -554,9 +554,10 @@ fn push_fpi_arg_felts(
 ) -> WasmResult<()> {
     match ty {
         Type::I64 | Type::U64 => {
+            // The low limb goes first, matching the operand stack order of a 64-bit value.
             let (high, low) = fb.split2(arg, Type::Felt, span)?;
-            fpi_args.push(high);
             fpi_args.push(low);
+            fpi_args.push(high);
         }
         Type::I1
         | Type::I8
@@ -604,8 +605,8 @@ fn push_fpi_result_value(
 ) -> WasmResult<()> {
     match ty {
         Type::I64 | Type::U64 => {
-            let high = take_value(fpi_results, next_result, "FPI result")?;
             let low = take_value(fpi_results, next_result, "FPI result")?;
+            let high = take_value(fpi_results, next_result, "FPI result")?;
             results.push(fb.join2(high, low, Type::I64, span)?);
         }
         Type::I1 | Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32 => {

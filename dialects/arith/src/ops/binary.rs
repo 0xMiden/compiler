@@ -507,6 +507,19 @@ pub struct Shr {
 
 infer_return_ty_for_binary_op!(Shr);
 
+impl Canonicalizable for Shr {
+    fn get_canonicalization_patterns(
+        rewrites: &mut patterns::RewritePatternSet,
+        context: Rc<Context>,
+    ) {
+        let name = context
+            .get_or_register_dialect::<ArithDialect>()
+            .expect_registered_name::<Self>();
+        rewrites
+            .push(crate::canonicalization::CanonicalizeU64ShrBy32ToLimbMove::for_op(context, name));
+    }
+}
+
 /// Arithmetic (signed) shift-right
 ///
 /// The result of shifts larger than the bitwidth of the value depend on the sign of the value;

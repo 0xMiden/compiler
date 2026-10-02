@@ -147,14 +147,18 @@ impl BlockEmitter<'_> {
             // Drop any dead instruction results immediately
             if op.has_results() {
                 let span = op.span();
-                index = 0;
                 let results = ValueRange::<2>::from(op.results().all());
                 for next_result in results {
                     if self.liveness.is_live_after(next_result, &op) {
-                        index += 1;
                         continue;
                     }
 
+                    // Results are not necessarily bound in result order, e.g. `arith.split` leaves
+                    // its last (least-significant) limb on top, so locate the result by value.
+                    let index = self
+                        .stack
+                        .find(&next_result)
+                        .expect("expected dead instruction result to be on the operand stack");
                     log::trace!(
                         target: &scheduling_target,
                         symbol = self.trace_target.relevant_symbol();
