@@ -99,10 +99,11 @@ impl quote::ToTokens for DeriveOpParser {
                         }
                     });
                 } else if is_first_parsed_group {
+                    // A leading variadic group is omitted entirely by the printer when empty.
                     operand_group_parsers.extend(quote! {
                         {
                             let operands = &mut gathered_operands[#group_index_lit];
-                            parser.parse_operand_list(operands, Delimiter::None, /*allow_result_number=*/true, None)?;
+                            parser.parse_optional_operand_list(operands)?;
                         }
                     });
                 } else {

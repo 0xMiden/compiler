@@ -148,8 +148,6 @@ builtin.module private @remove_loop_invariant_args {
 
     // Every column is invariant (column 0 by case 2, column 1 by case 1): the loop is left with
     // no operands, an argument-less before block and an empty yield, while its results survive.
-    // The printed zero-operand form `scf.while before {` is not accepted by the HIR parser (a
-    // pre-existing printer/parser gap), so this case pins the printed text only.
     // CHECK: @all_invariant(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
     // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
     // CHECK-NEXT: %[[R0:\d+]], %[[R1:\d+]] = scf.while before {
