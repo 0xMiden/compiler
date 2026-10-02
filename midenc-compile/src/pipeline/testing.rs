@@ -215,6 +215,7 @@ pub(crate) fn component_in_namespace(
         sections: midenc_frontend_wasm_metadata::PackageSections {
             account_component_metadata: metadata,
             component_wit: None,
+            note_storage_schema: None,
         },
         source_provenance: ProjectSourceProvenanceInputs {
             root: SourceFileProvenance {

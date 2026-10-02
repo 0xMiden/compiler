@@ -4,6 +4,8 @@
 pub mod debug;
 
 pub use miden_base::*;
+#[doc(hidden)]
+pub use miden_base_macros::{__MidenExportType, __MidenNoteStorage};
 pub use miden_base_macros::{
     account, account_procedure, auth_script, component, component_storage, export_type, generate,
     note, note_constructor, note_script, tx_script,

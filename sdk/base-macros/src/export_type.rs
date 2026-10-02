@@ -1,9 +1,35 @@
+//! Type export and identity guard expansion for `#[export_type]`.
+
 use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{Item, parse_macro_input};
 
-use crate::types::{exported_type_from_enum, exported_type_from_struct, register_export_type};
+use crate::{
+    types::{
+        ExportedTypeDef, export_type_shape_metadata, exported_type_from_enum,
+        exported_type_from_struct, known_custom_type_shape_assertions,
+        nominal_type_identity_guards, register_export_type, registered_export_type_map,
+    },
+    util::base_macros_derive_path,
+};
 
+/// Builds the guard and identity items emitted next to one exported type.
+fn export_type_identity_items(
+    def: &ExportedTypeDef,
+    generics: &syn::Generics,
+    span: proc_macro2::Span,
+) -> Result<TokenStream2, syn::Error> {
+    let guards = nominal_type_identity_guards(def, span)?;
+    register_export_type(def.clone(), span)?;
+    // The registry lookup runs after registration so a self-referential type sees itself.
+    let registry = registered_export_type_map();
+    let assertions = known_custom_type_shape_assertions(def, &registry, span)?;
+    let shape_const = export_type_shape_metadata(def, generics, span)?;
+    Ok(quote! { #guards #shape_const #assertions })
+}
+
+/// Adds a derive so rustc filters conditional fields before type registration.
 pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     if !attr.is_empty() {
         return syn::Error::new_spanned(
@@ -15,25 +41,47 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     let item = parse_macro_input!(item as Item);
+    let derive_crate = base_macros_derive_path();
+
+    match item {
+        Item::Struct(item_struct) => quote! {
+            #[derive(#derive_crate::__MidenExportType)]
+            #item_struct
+        }
+        .into(),
+        Item::Enum(item_enum) => quote! {
+            #[derive(#derive_crate::__MidenExportType)]
+            #item_enum
+        }
+        .into(),
+        other => {
+            syn::Error::new_spanned(other, "#[export_type] may only be applied to structs or enums")
+                .into_compile_error()
+                .into()
+        }
+    }
+}
+
+/// Registers the cfg-filtered record or enum and emits its identity items.
+pub(crate) fn derive(item: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(item as Item);
 
     match item {
         Item::Struct(item_struct) => {
             let span = item_struct.ident.span();
-            match exported_type_from_struct(&item_struct) {
-                Ok(def) => match register_export_type(def, span) {
-                    Ok(()) => quote! { #item_struct }.into(),
-                    Err(err) => err.to_compile_error().into(),
-                },
+            match exported_type_from_struct(&item_struct)
+                .and_then(|def| export_type_identity_items(&def, &item_struct.generics, span))
+            {
+                Ok(items) => items.into(),
                 Err(err) => err.to_compile_error().into(),
             }
         }
         Item::Enum(item_enum) => {
             let span = item_enum.ident.span();
-            match exported_type_from_enum(&item_enum) {
-                Ok(def) => match register_export_type(def, span) {
-                    Ok(()) => quote! { #item_enum }.into(),
-                    Err(err) => err.to_compile_error().into(),
-                },
+            match exported_type_from_enum(&item_enum)
+                .and_then(|def| export_type_identity_items(&def, &item_enum.generics, span))
+            {
+                Ok(items) => items.into(),
                 Err(err) => err.to_compile_error().into(),
             }
         }

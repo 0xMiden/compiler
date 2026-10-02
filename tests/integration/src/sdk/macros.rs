@@ -1,16 +1,19 @@
 use std::panic::{self, AssertUnwindSafe};
 
+use midenc_integration_test_support::scrub_nested_cargo_env;
+
 use super::*;
 
 fn cargo_check_miden_target(project: &crate::cargo_proj::Project) -> std::process::Output {
-    std::process::Command::new("cargo")
+    let mut command = std::process::Command::new("cargo");
+    // Scrub first: the helper also clears `RUSTFLAGS`, which this build sets below. Cargo prefers
+    // the encoded variable, so an inherited value would silently replace those flags.
+    scrub_nested_cargo_env(&mut command);
+    command
         .arg("check")
         .arg("--target")
         .arg("wasm32-wasip2")
         .env("RUSTFLAGS", "--cfg miden -C target-feature=+bulk-memory,+wide-arithmetic")
-        // Cargo prefers the encoded variable; an inherited value would silently replace the
-        // `RUSTFLAGS` set above.
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
         // The macros read dependency packages only from this directory, the way a driven build
         // or the contract build script exposes it.
         .env(

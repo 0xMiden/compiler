@@ -376,7 +376,7 @@ impl OpDefinition {
                     };
                     let symbol = Symbol {
                         name: field_name.clone(),
-                        ty: SymbolType::Concrete(field_ty),
+                        ty: SymbolType::Concrete(Box::new(field_ty)),
                     };
                     create_params.push(OpCreateParam {
                         param_ty: OpCreateParamType::Symbol(symbol.clone()),
@@ -2955,7 +2955,7 @@ pub enum SymbolType {
     /// Any `Symbol + CallableOpInterface` implementation can be used
     Callable,
     /// Only the specific concrete type can be used, it must implement `Op` and `Symbol` traits
-    Concrete(syn::Type),
+    Concrete(Box<syn::Type>),
     /// Any implementation of the provided trait can be used.
     ///
     /// The given trait type _must_ have `Symbol` as a supertrait.
