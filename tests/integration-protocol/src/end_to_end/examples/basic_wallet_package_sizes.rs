@@ -57,7 +57,16 @@ fn basic_wallet_and_p2id() {
     // `note::compute_storage_commitment` resolve from the protocol manifest, which types their
     // count parameter `u16`, so the frontend masks the `i32` the SDK passes
     // (`push.65535; u32and` plus stack shuffling) to declare the import with the callee's type.
-    expect!["21871"].assert_eq(stripped_mast_size_str(&note_package).as_str());
+    //
+    // 1326 bytes fewer (21871 before) since LLVM's store merging is off (the mandatory rustflag
+    // `-C llvm-args=-combiner-store-merging=false`). The `build-recipient` constructor copied two
+    // felt pairs with `i64.load`/`i64.store`, which were the package's only 64-bit memory
+    // accesses; it now copies the four felts one by one, as element loads and stores, so the
+    // package no longer links `intrinsics::mem::load_dw` and `store_dw`. Those two procedures are
+    // most of the saving: compiled without debug info, a Wasm module whose only 64-bit access is
+    // one such copy is 1147 bytes larger than with two felt copies in its place, and a second
+    // such copy adds 93 bytes where a second pair of felt copies adds 83.
+    expect!["20545"].assert_eq(stripped_mast_size_str(&note_package).as_str());
     // The note package exports both the note script and the `build-recipient` constructor; the
     // constructor must not interfere with the `@note_script`-attributed export selection.
     assert!(

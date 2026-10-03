@@ -39,6 +39,25 @@ Accesses that must preserve full field values need field-aware operations;
 reinterpreting an element as four ordinary integer bytes cannot preserve every
 field value. See [Wasm type translation](https://github.com/0xMiden/compiler/blob/main/frontend/wasm/src/module/types.rs).
 
+A field element must not pass through a 64-bit integer *operation*: `shl`, `or`,
+`shr` and the like work on 32-bit limbs with `u32` instructions, which trap on a
+field value above `u32::MAX`. (A 64-bit *copy* is safe: an aligned `i64.load` or
+`i64.store` moves its two elements without interpreting them.) LLVM can produce
+such an operation without the source asking for one: its IR-level passes may
+carry two adjacent field elements as one `i64`, assembled with
+`i64.extend_i32_u`, `i64.shl` and `i64.or` and taken apart with `i64.shr_u` and
+`i32.wrap_i64`.
+
+This hazard is narrowed, not closed. [MASM legalization](https://github.com/0xMiden/compiler/blob/main/codegen/masm/src/legalization.rs)
+splits a 64-bit store whose value is assembled that way, and a 64-bit load used
+only for its two halves, into 32-bit accesses — but only where the assembled
+value feeds the store directly. A pair that reaches its store through a join (a
+block argument, an `i64` local) is still assembled with trapping operations.
+The generated bindings avoid the shape by reading a felt-only result whole.
+Separately, every Rust build for Miden turns LLVM's store merging off
+(`-C llvm-args=-combiner-store-merging=false`); that removes 64-bit copies and
+constant pairs, a size and cycle saving, and does not bear on this hazard.
+
 ## Heap model
 
 The compiler's memory intrinsics manage a heap above a configured byte address.

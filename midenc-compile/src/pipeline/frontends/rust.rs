@@ -823,6 +823,8 @@ fn rustc(
         .arg("-g") // generate debug info
         .args(["-C", "opt-level=s"]) // optimize for size
         .args(["-C", "target-feature=+wide-arithmetic"])
+        // No 64-bit copies merged from two 32-bit ones, as for `MANDATORY_RUST_FLAGS`
+        .args(["-C", "llvm-args=-combiner-store-merging=false"])
         .args(rustc_flags)
         .arg("--target")
         .arg(target.as_deref().unwrap_or("wasm32-wasip1"))
@@ -1854,6 +1856,15 @@ pub(crate) mod manifest {
         // Build with panic=immediate-abort
         "-Zunstable-options",
         "-Cpanic=immediate-abort",
+        // LLVM's DAG combiner merges adjacent 32-bit stores of constants or of loaded values
+        // into one 64-bit store on wasm32: a copy of two `f32`s becomes `i64.load`/`i64.store`,
+        // a pair of constants one `i64.const`. On Miden a 64-bit access is two element accesses
+        // through the `load_dw`/`store_dw` intrinsics, so the merge only costs size and cycles.
+        // This is not what protects felts: a pair of felts *assembled* into an `i64` with
+        // `extend`/`shl`/`or` comes from LLVM's IR-level passes, which this option does not
+        // reach; see `midenc-codegen-masm`'s legalization for what is done about that shape.
+        "-C",
+        "llvm-args=-combiner-store-merging=false",
     ];
 
     /// Executes a Cargo-based build with the provided compiler options and package registry
@@ -3781,6 +3792,20 @@ path = "lib.rs"
         assert_eq!(
             manifest::nested_cargo_target_dir(std::path::Path::new("/project"), &custom, false),
             Some(custom.join("cargo"))
+        );
+    }
+
+    /// Both cargo routes build with LLVM's store merging off, so a copy of two adjacent 32-bit
+    /// values does not reach the backend as one 64-bit load and store. The `rustc` route passes
+    /// the same flag, which `tests/lit/midenc/rust-store-merging-off.rs` checks.
+    #[test]
+    fn the_mandatory_rust_flags_turn_off_llvm_store_merging() {
+        assert!(
+            manifest::MANDATORY_RUST_FLAGS
+                .windows(2)
+                .any(|flag| flag == ["-C", "llvm-args=-combiner-store-merging=false"]),
+            "{:?}",
+            manifest::MANDATORY_RUST_FLAGS
         );
     }
 

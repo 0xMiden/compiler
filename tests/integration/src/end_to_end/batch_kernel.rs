@@ -301,7 +301,16 @@ fn batch_kernel() {
     // `pipe_words_to_memory` stub a `swap.1`/`movup.2` pair where it stores the end pointer the
     // procedure returns. No address changes. The cycle counts below moved with these operations
     // and the basic-block padding they shift (the earlier counts are noted at each).
-    expect!["117098"].assert_eq(&stripped_mast_size_str(&package));
+    //
+    // 650 bytes fewer (117098 before) since LLVM's store merging is off (the mandatory rustflag
+    // `-C llvm-args=-combiner-store-merging=false`). `miden-stdlib-sys::pipe_words_to_memory`
+    // copies the `Word` it returns (`state.rate0`), which LLVM moved as two `i64` loads and
+    // stores: each was a byte-address alignment check and a call to `intrinsics::mem::load_dw` or
+    // `store_dw`, where the four felts it moves now are each an element load and store. And the
+    // entrypoint stores a constant pair of `i32`s (`0`, `4`) as two `i32` stores, not one `i64`.
+    // Other 64-bit accesses remain, so the kernel still links both intrinsics. The three cycle
+    // counts below that run past these stores fell by 459 each; scenario 3 traps before them.
+    expect!["116448"].assert_eq(&stripped_mast_size_str(&package));
 
     // The reference block commitment is dropped by the kernel (verification is still a TODO
     // there), so any word will do.
@@ -356,8 +365,8 @@ fn batch_kernel() {
 
         // The VM cycles consumed by the kernel for this two-transaction batch (32570 before the
         // generated core bindings, 33292 with the first ones, 32919 before the transitional table
-        // was deleted; see the size above).
-        expect!["32942"].assert_eq(&cycles.to_string());
+        // was deleted, 32942 before store merging was turned off; see the size above).
+        expect!["32483"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -409,8 +418,9 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed for a batch that erases a note (28683 before the generated core
-        // bindings, 29365 with the first ones, 29034 before the transitional table was deleted).
-        expect!["29055"].assert_eq(&cycles.to_string());
+        // bindings, 29365 with the first ones, 29034 before the transitional table was deleted,
+        // 29055 before store merging was turned off).
+        expect!["28596"].assert_eq(&cycles.to_string());
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");
@@ -490,8 +500,8 @@ fn batch_kernel() {
 
         // The cycle at which the consume-before-create ordering gate rejects the batch (15809
         // before the generated core bindings, 16362 with the first ones, 16140 before the
-        // transitional table was deleted).
-        expect!["16157"].assert_eq(&cycles.to_string());
+        // transitional table was deleted, 16157 before store merging was turned off).
+        expect!["15698"].assert_eq(&cycles.to_string());
     }
 }
 

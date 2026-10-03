@@ -1,3 +1,4 @@
+mod felt_pair_merged_store;
 mod func_arg_order;
 mod func_arg_same;
 mod invalid_stack_index_16_issue_872;

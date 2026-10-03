@@ -17,9 +17,11 @@
 //!
 //! A result that is one value made only of felts (a `Word`, a struct of felts) is read back from
 //! the return area whole, as that value, not felt by felt, as the hand-written bindings read a
-//! `WordAligned<Word>`. A felt moved as its own scalar can be retyped by LLVM to an `i32`, and
-//! several of them packed into an `i64` with shifts where values meet in a branch; a felt does not
-//! fit 32 bits, so the packed value fails the frontend's range check.
+//! `WordAligned<Word>`; it is the cheaper read, and it is also what keeps LLVM from carrying two
+//! of the felts as one `i64` assembled with `extend`/`shl`/`or`, which traps on a felt outside the
+//! `u32` range (it did so where two rebuilt `Word`s met at a branch). The backend splits such a
+//! value only where it feeds a store directly, so tuple results and the felt fields of mixed
+//! structs, which are still rebuilt felt by felt, remain exposed to that shape.
 //!
 //! Lines are broken where rustfmt, with the workspace's settings, breaks them (see [`Expr`] and
 //! [`write_message`]), so the text is what rustfmt would make of it.

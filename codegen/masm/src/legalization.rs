@@ -7,14 +7,17 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    Context, EntityMut, Op, Operation, OperationName, OperationRef, Report, Symbol, SymbolRef,
-    Visibility, WalkResult,
+    Context, EntityMut, Immediate, Op, Operation, OperationName, OperationRef, Overflow,
+    PointerType, Report, SmallVec, SourceSpan, Symbol, SymbolRef, Type, UnsafeIntrusiveEntityRef,
+    Usable, Value, ValueRef, Visibility, WalkResult,
     conversion::{
-        ConversionConfig, ConversionPatternSet, ConversionTarget, DynamicLegalityResult,
-        apply_full_conversion,
+        ConversionConfig, ConversionPattern, ConversionPatternRewriter, ConversionPatternSet,
+        ConversionTarget, ConvertedOperands, DynamicLegalityResult, apply_full_conversion,
     },
     dialects::{builtin, debuginfo},
     pass::{Pass, PassExecutionState, PostPassStatus},
+    patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind},
+    traits::Transparent,
 };
 use midenc_session::diagnostics::{Severity, Spanned};
 
@@ -272,7 +275,9 @@ midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Leg
 ));
 
 /// A dialect conversion pass that validates IR against the set of operations MASM codegen can
-/// lower.
+/// lower, and splits the 64-bit memory ops it would lower unsafely when their halves are felts: a
+/// 64-bit store of a value assembled from two 32-bit halves becomes two 32-bit stores, and a
+/// 64-bit load used only for its halves two 32-bit loads.
 ///
 /// This pass is intentionally owned by `midenc-codegen-masm`: it builds the MASM-specific
 /// legalization target, runs full dialect conversion, and fails before `ToMasmComponent` can
@@ -319,7 +324,9 @@ impl Pass for LegalizeForMasm {
         drop(op);
 
         let target = masm_legalization_target(context.clone());
-        let patterns = ConversionPatternSet::new(context);
+        let mut patterns = ConversionPatternSet::new(context.clone());
+        patterns.push(SplitWideStore::new(context.clone()));
+        patterns.push(SplitWideLoad::new(context));
         let result = apply_full_conversion(root, target, patterns, ConversionConfig::default())?;
 
         let changed = PostPassStatus::from(result.changed());
@@ -337,7 +344,8 @@ impl Pass for LegalizeForMasm {
 /// Structural builtin operations such as modules and functions are legal containers, but their
 /// nested operations are still checked. Leaf operations in explicitly supported dialects are legal
 /// only when they implement `HirLowering`. `builtin.unrealized_conversion_cast` is always illegal
-/// as a final operation.
+/// as a final operation, and so are the 64-bit stores and loads of two 32-bit halves that
+/// [`LegalizeForMasm`] splits.
 pub fn masm_legalization_target(context: Rc<Context>) -> ConversionTarget {
     register_masm_legalization_dialects(&context);
     let mut target = ConversionTarget::new(context);
@@ -453,6 +461,24 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
                 op.name()
             )))
         })
+        .add_dynamically_legal_op::<hir::Store, _>(|op| {
+            if StoreHalves::of(op).is_some() {
+                DynamicLegalityResult::illegal_with_reason(Report::msg(
+                    "a 64-bit store of two 32-bit halves must be split into two 32-bit stores",
+                ))
+            } else {
+                masm_lowerable_op(op)
+            }
+        })
+        .add_dynamically_legal_op::<hir::Load, _>(|op| {
+            if LoadHalves::of(op).is_some() {
+                DynamicLegalityResult::illegal_with_reason(Report::msg(
+                    "a 64-bit load used only as 32-bit halves must be split into two 32-bit loads",
+                ))
+            } else {
+                masm_lowerable_op(op)
+            }
+        })
         .add_dynamically_legal_dialect::<builtin::BuiltinDialect, _>(masm_lowerable_op)
         .add_dynamically_legal_dialect::<arith::ArithDialect, _>(masm_lowerable_op)
         .add_dynamically_legal_dialect::<cf::ControlFlowDialect, _>(masm_lowerable_op)
@@ -485,16 +511,417 @@ fn masm_lowerable_op(op: &Operation) -> DynamicLegalityResult {
     }
 }
 
+/// Splits a 64-bit integer store whose value is two 32-bit halves, `or(zext(lo), shl(zext(hi),
+/// 32))` with the `or`'s operands in either order, into a 32-bit store of each half.
+///
+/// LLVM's store merging produces this shape for two adjacent `i32` or `f32` stores on wasm32. On
+/// Miden the merge never pays: a 64-bit store is two element stores anyway, and the `zext`, `shl`
+/// and `or` that build its value are extra work. And when the halves are felts, which Rust
+/// carries in `f32` and reinterprets as `i32` with a bitcast that emits nothing, the merge is
+/// wrong: the 64-bit `shl` and `or` work on 32-bit limbs with `u32` instructions, which trap on a
+/// felt outside the `u32` range. Split, each half is stored as the element it is.
+///
+/// Only that exact shape is split: a 64-bit integer value, `u32` halves, `zext` rather than
+/// `sext`, a shift by the constant 32. The sign-only `hir.bitcast`s with which the Wasm frontend
+/// spells `i64.extend_i32_u`, and the `band` with which it masks every shift count, are looked
+/// through. The high half goes 4 bytes on, or one element on in element space, where
+/// `intrinsics::mem::store_dw` puts the high half of a 64-bit store.
+struct SplitWideStore {
+    info: PatternInfo,
+}
+
+impl SplitWideStore {
+    fn new(context: Rc<Context>) -> Self {
+        let hir = context.get_or_register_dialect::<hir::HirDialect>();
+        let mut info = PatternInfo::new(
+            context.clone(),
+            "split-wide-store",
+            PatternKind::Operation(hir.expect_registered_name::<hir::Store>()),
+            PatternBenefit::new(1),
+        );
+        info.with_generated_ops(
+            [hir.expect_registered_name::<hir::Store>()]
+                .into_iter()
+                .chain(half_address_ops(&context)),
+        );
+        Self { info }
+    }
+}
+
+impl Pattern for SplitWideStore {
+    fn info(&self) -> &PatternInfo {
+        &self.info
+    }
+}
+
+impl ConversionPattern for SplitWideStore {
+    fn match_and_rewrite(
+        &self,
+        op: OperationRef,
+        _operands: ConvertedOperands<'_>,
+        rewriter: &mut ConversionPatternRewriter,
+    ) -> Result<bool, Report> {
+        let Some(halves) = StoreHalves::of(&op.borrow()) else {
+            return Ok(false);
+        };
+        let (span, addr, value) = {
+            let op = op.borrow();
+            let store = op.downcast_ref::<hir::Store>().expect("the halves are a store's");
+            (op.span(), store.addr().as_value_ref(), store.value().as_value_ref())
+        };
+
+        let lo_addr = half_address(rewriter, addr, Half::Lo, Type::U32, span)?;
+        rewriter.create_op::<hir::Store, _>(span, (lo_addr, halves.lo))?;
+        let hi_addr = half_address(rewriter, addr, Half::Hi, Type::U32, span)?;
+        rewriter.create_op::<hir::Store, _>(span, (hi_addr, halves.hi))?;
+        rewriter.erase_op(op)?;
+        erase_dead_defs(rewriter, [value])?;
+        Ok(true)
+    }
+}
+
+/// The two `u32` halves of the value of a 64-bit store that [`SplitWideStore`] splits.
+struct StoreHalves {
+    lo: ValueRef,
+    hi: ValueRef,
+}
+
+impl StoreHalves {
+    fn of(op: &Operation) -> Option<Self> {
+        let store = op.downcast_ref::<hir::Store>()?;
+        let value = store.value().as_value_ref();
+        if !is_64bit_integer(value.borrow().ty()) {
+            return None;
+        }
+        let or = defined_by::<arith::Bor>(through_sign_casts(value))?;
+        let (lhs, rhs) = {
+            let or = or.borrow();
+            (or.lhs().as_value_ref(), or.rhs().as_value_ref())
+        };
+        let halves = |lo, shifted| {
+            Some(Self {
+                lo: zero_extended_u32(lo)?,
+                hi: zero_extended_u32(shifted_left_by_32(shifted)?)?,
+            })
+        };
+        halves(lhs, rhs).or_else(|| halves(rhs, lhs))
+    }
+}
+
+/// Splits a 64-bit integer load whose every use takes a 32-bit half of it, `trunc` for the low
+/// half and `trunc(shr(_, 32))` for the high half, into a 32-bit load of each half used.
+///
+/// The mirror of [`SplitWideStore`], for the same reasons: two 32-bit loads are never dearer on
+/// Miden than a 64-bit load and its `shr`, and that `shr` traps on the limbs of a felt pair. The
+/// `shr` must be logical (of a `u64`), and the same sign-only casts and masked shift count are
+/// looked through. Uses by debug info do not count, and go with the 64-bit value.
+struct SplitWideLoad {
+    info: PatternInfo,
+}
+
+impl SplitWideLoad {
+    fn new(context: Rc<Context>) -> Self {
+        let hir = context.get_or_register_dialect::<hir::HirDialect>();
+        let mut info = PatternInfo::new(
+            context.clone(),
+            "split-wide-load",
+            PatternKind::Operation(hir.expect_registered_name::<hir::Load>()),
+            PatternBenefit::new(1),
+        );
+        info.with_generated_ops(
+            [hir.expect_registered_name::<hir::Load>()]
+                .into_iter()
+                .chain(half_address_ops(&context)),
+        );
+        Self { info }
+    }
+}
+
+impl Pattern for SplitWideLoad {
+    fn info(&self) -> &PatternInfo {
+        &self.info
+    }
+}
+
+impl ConversionPattern for SplitWideLoad {
+    fn match_and_rewrite(
+        &self,
+        op: OperationRef,
+        _operands: ConvertedOperands<'_>,
+        rewriter: &mut ConversionPatternRewriter,
+    ) -> Result<bool, Report> {
+        let Some(halves) = LoadHalves::of(&op.borrow()) else {
+            return Ok(false);
+        };
+        let (span, addr) = {
+            let op = op.borrow();
+            let load = op.downcast_ref::<hir::Load>().expect("the halves are a load's");
+            (op.span(), load.addr().as_value_ref())
+        };
+
+        // What each `trunc` took its half of, for the ops left dead once it is replaced
+        let mut truncated = SmallVec::<[ValueRef; 4]>::new();
+        for (half, truncs) in [(Half::Lo, &halves.lo), (Half::Hi, &halves.hi)] {
+            let Some(&first) = truncs.first() else {
+                continue;
+            };
+            let half_ty = result_type(first);
+            let half_addr = half_address(rewriter, addr, half, half_ty.clone(), span)?;
+            let loaded = rewriter.create_op::<hir::Load, _>(span, (half_addr,))?;
+            let loaded = loaded.borrow().result().as_value_ref();
+            for &trunc in truncs {
+                let ty = result_type(trunc);
+                let replacement = if ty == half_ty {
+                    loaded
+                } else {
+                    let cast = rewriter.create_op::<hir::Bitcast, _>(span, (loaded, ty))?;
+                    cast.borrow().result().as_value_ref()
+                };
+                truncated.push(trunc.borrow().operands()[0].borrow().as_value_ref());
+                rewriter.replace_op(trunc, &[replacement])?;
+            }
+        }
+        // The `shr` and casts of the high half, and the 64-bit load itself, are dead now
+        erase_dead_defs(rewriter, truncated)?;
+        Ok(true)
+    }
+}
+
+/// The uses of a 64-bit load that [`SplitWideLoad`] feeds from 32-bit loads instead.
+#[derive(Default)]
+struct LoadHalves {
+    /// The `trunc`s of the low half
+    lo: SmallVec<[OperationRef; 1]>,
+    /// The `trunc`s of the high half, each of a `shr` by 32
+    hi: SmallVec<[OperationRef; 1]>,
+}
+
+impl LoadHalves {
+    fn of(op: &Operation) -> Option<Self> {
+        let load = op.downcast_ref::<hir::Load>()?;
+        let value = load.result().as_value_ref();
+        if !is_64bit_integer(value.borrow().ty()) {
+            return None;
+        }
+        let mut halves = Self::default();
+        halves.sort_uses(value, Half::Lo)?;
+        (!halves.lo.is_empty() || !halves.hi.is_empty()).then_some(halves)
+    }
+
+    /// Sort the uses of `value`, which holds `half` in its low 32 bits, into `trunc`s of either
+    /// half, failing on any other use.
+    fn sort_uses(&mut self, value: ValueRef, half: Half) -> Option<()> {
+        let (ty, users) = {
+            let value = value.borrow();
+            let users = value.iter_uses().map(|user| user.owner).collect::<SmallVec<[_; 4]>>();
+            (value.ty().clone(), users)
+        };
+        for user in users {
+            let op = user.borrow();
+            if op.implements::<dyn Transparent>() {
+                continue;
+            }
+            if let Some(cast) = op.downcast_ref::<hir::Bitcast>()
+                && differs_only_in_signedness(&ty, cast.result().ty())
+            {
+                self.sort_uses(cast.result().as_value_ref(), half)?;
+            } else if let Some(trunc) = op.downcast_ref::<arith::Trunc>()
+                && matches!(trunc.result().ty(), Type::I32 | Type::U32)
+            {
+                match half {
+                    Half::Lo => self.lo.push(user),
+                    Half::Hi => self.hi.push(user),
+                }
+            } else if let Some(shr) = op.downcast_ref::<arith::Shr>()
+                && half == Half::Lo
+                && ty == Type::U64
+                && constant_u32(shr.shift().as_value_ref()) == Some(32)
+            {
+                self.sort_uses(shr.result().as_value_ref(), Half::Hi)?;
+            } else {
+                return None;
+            }
+        }
+        Some(())
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum Half {
+    Lo,
+    Hi,
+}
+
+/// The ops [`half_address`] builds.
+fn half_address_ops(context: &Rc<Context>) -> [OperationName; 5] {
+    let hir = context.get_or_register_dialect::<hir::HirDialect>();
+    let arith = context.get_or_register_dialect::<arith::ArithDialect>();
+    [
+        hir.expect_registered_name::<hir::Bitcast>(),
+        hir.expect_registered_name::<hir::PtrToInt>(),
+        hir.expect_registered_name::<hir::IntToPtr>(),
+        arith.expect_registered_name::<arith::Constant>(),
+        arith.expect_registered_name::<arith::Add>(),
+    ]
+}
+
+/// The address of `half` of the 64-bit value `addr` points to, as a pointer to `half_ty` in the
+/// same address space: `addr` itself for the low half, and for the high half `addr` plus 4 bytes,
+/// or plus one element in element space, checked for overflow as `intrinsics::mem::store_dw` and
+/// `load_dw` check the address of the high half.
+fn half_address(
+    rewriter: &mut ConversionPatternRewriter,
+    addr: ValueRef,
+    half: Half,
+    half_ty: Type,
+    span: SourceSpan,
+) -> Result<ValueRef, Report> {
+    let (addrspace, stride) = match addr.borrow().ty() {
+        Type::Ptr(pointer) => (pointer.addrspace(), if pointer.is_byte_pointer() { 4 } else { 1 }),
+        ty => unreachable!("a memory op's address is a pointer, not {ty}"),
+    };
+    let half_ptr = Type::from(PointerType::new_with_address_space(half_ty, addrspace));
+    let half_addr = match half {
+        Half::Lo => rewriter
+            .create_op::<hir::Bitcast, _>(span, (addr, half_ptr))?
+            .as_operation_ref(),
+        Half::Hi => {
+            let base = rewriter.create_op::<hir::PtrToInt, _>(span, (addr, Type::U32))?;
+            let base = base.borrow().result().as_value_ref();
+            let stride =
+                rewriter.create_op::<arith::Constant, _>(span, (Immediate::U32(stride),))?;
+            let stride = stride.borrow().result().as_value_ref();
+            let sum =
+                rewriter.create_op::<arith::Add, _>(span, (base, stride, Overflow::Checked))?;
+            let sum = sum.borrow().result().as_value_ref();
+            rewriter
+                .create_op::<hir::IntToPtr, _>(span, (sum, half_ptr))?
+                .as_operation_ref()
+        }
+    };
+    Ok(half_addr.borrow().results()[0].borrow().as_value_ref())
+}
+
+/// Erase the ops defining `values` that a split left without uses, and in turn the ops defining
+/// their operands, so long as they have no effect but a read. As for region DCE, uses by debug
+/// info do not keep a value alive; they are erased with it.
+fn erase_dead_defs(
+    rewriter: &mut ConversionPatternRewriter,
+    values: impl IntoIterator<Item = ValueRef>,
+) -> Result<(), Report> {
+    let mut worklist = values.into_iter().collect::<SmallVec<[ValueRef; 4]>>();
+    while let Some(value) = worklist.pop() {
+        let Some(def) = value.borrow().get_defining_op() else {
+            continue;
+        };
+        // An op reached twice is erased the first time
+        if def.parent().is_none() {
+            continue;
+        }
+        let (operands, debug_users) = {
+            let op = def.borrow();
+            let dead = op.results().iter().all(|result| !result.borrow().has_real_uses())
+                && op.would_be_trivially_dead();
+            if !dead {
+                continue;
+            }
+            let operands = op
+                .operands()
+                .iter()
+                .map(|operand| operand.borrow().as_value_ref())
+                .collect::<SmallVec<[ValueRef; 2]>>();
+            let debug_users = op
+                .results()
+                .iter()
+                .flat_map(|result| {
+                    result.borrow().iter_uses().map(|user| user.owner).collect::<SmallVec<[_; 2]>>()
+                })
+                .collect::<SmallVec<[OperationRef; 2]>>();
+            (operands, debug_users)
+        };
+        // Erased one by one first: `erase_op` would erase them itself, but while it walks the use
+        // list that erasing them unlinks them from, which panics
+        for user in debug_users {
+            rewriter.erase_op(user)?;
+        }
+        rewriter.erase_op(def)?;
+        worklist.extend(operands);
+    }
+    Ok(())
+}
+
+fn is_64bit_integer(ty: &Type) -> bool {
+    matches!(ty, Type::I64 | Type::U64)
+}
+
+/// Whether a `hir.bitcast` from `from` to `to` changes nothing but the signedness of an integer
+/// of the widths the splits deal in.
+fn differs_only_in_signedness(from: &Type, to: &Type) -> bool {
+    matches!(
+        (from, to),
+        (Type::I32 | Type::U32, Type::I32 | Type::U32)
+            | (Type::I64 | Type::U64, Type::I64 | Type::U64)
+    )
+}
+
+/// The op of type `T` that defines `value`, if one does.
+fn defined_by<T: Op>(value: ValueRef) -> Option<UnsafeIntrusiveEntityRef<T>> {
+    value.borrow().get_defining_op()?.try_downcast_op::<T>().ok()
+}
+
+/// `value` with the sign-only `hir.bitcast`s that produced it looked through.
+fn through_sign_casts(mut value: ValueRef) -> ValueRef {
+    while let Some(cast) = defined_by::<hir::Bitcast>(value) {
+        let operand = cast.borrow().operand().as_value_ref();
+        if !differs_only_in_signedness(operand.borrow().ty(), value.borrow().ty()) {
+            break;
+        }
+        value = operand;
+    }
+    value
+}
+
+/// The `u32` that `value`, a 64-bit integer, zero-extends.
+fn zero_extended_u32(value: ValueRef) -> Option<ValueRef> {
+    let zext = defined_by::<arith::Zext>(through_sign_casts(value))?;
+    let half = zext.borrow().operand().as_value_ref();
+    let is_u32 = *half.borrow().ty() == Type::U32;
+    is_u32.then_some(half)
+}
+
+/// The value that `value` shifts left by 32 bits.
+fn shifted_left_by_32(value: ValueRef) -> Option<ValueRef> {
+    let shl = defined_by::<arith::Shl>(through_sign_casts(value))?;
+    let shl = shl.borrow();
+    (constant_u32(shl.shift().as_value_ref()) == Some(32)).then(|| shl.lhs().as_value_ref())
+}
+
+/// The value of `value` when it is a `u32` constant, or the `band` of two, which is how the Wasm
+/// frontend masks every shift count and nothing folds.
+fn constant_u32(value: ValueRef) -> Option<u32> {
+    if let Some(constant) = defined_by::<arith::Constant>(value) {
+        return constant.borrow().value().as_u32();
+    }
+    let band = defined_by::<arith::Band>(value)?;
+    let band = band.borrow();
+    Some(constant_u32(band.lhs().as_value_ref())? & constant_u32(band.rhs().as_value_ref())?)
+}
+
+fn result_type(op: OperationRef) -> Type {
+    op.borrow().results()[0].borrow().ty().clone()
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::{boxed::Box, format};
 
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_dialect_hir::HirOpBuilder;
+    use midenc_expect_test::{Expect, expect};
     use midenc_hir::{
-        Ident, SourceSpan, Type, ValueRef, Visibility,
+        AddressSpace, Ident, OpBuilder, PointerType, SourceSpan, Type, ValueRef, Visibility,
         dialects::builtin::{
-            BuiltinOpBuilder, ModuleBuilder,
+            BuiltinOpBuilder, FunctionBuilder, ModuleBuilder,
             attributes::{AbiParam, Signature},
         },
         testing::Test,
@@ -664,5 +1091,373 @@ mod tests {
         let message = format!("{err}");
         assert!(message.contains("hir.exec_indirect"), "{message}");
         assert!(message.contains("argument extension"), "{message}");
+    }
+
+    /// Run `LegalizeForMasm` over `test`'s function, pinning its HIR before and after.
+    fn assert_legalizes(test: &Test, before: Expect, after: Expect) {
+        before.assert_eq(&test.function().borrow().as_operation().to_string());
+        test.apply_pass::<LegalizeForMasm>(true).unwrap();
+        after.assert_eq(&test.function().borrow().as_operation().to_string());
+    }
+
+    /// Run `LegalizeForMasm` over `test`'s function, pinning its HIR, which must not change.
+    fn assert_left_alone(test: &Test, hir: Expect) {
+        let before = test.function().borrow().as_operation().to_string();
+        hir.assert_eq(&before);
+        test.apply_pass::<LegalizeForMasm>(true).unwrap();
+        assert_eq!(test.function().borrow().as_operation().to_string(), before);
+    }
+
+    fn pointer_to(pointee: Type, addrspace: AddressSpace) -> Type {
+        Type::from(PointerType::new_with_address_space(pointee, addrspace))
+    }
+
+    /// `i64.extend_i32_u` of the `i32` value `half`, as the Wasm frontend spells it.
+    fn wasm_extend_i32_u(builder: &mut FunctionBuilder<'_, OpBuilder>, half: ValueRef) -> ValueRef {
+        let span = SourceSpan::UNKNOWN;
+        let half = builder.bitcast(half, Type::U32, span).unwrap();
+        let half = builder.zext(half, Type::U64, span).unwrap();
+        builder.bitcast(half, Type::I64, span).unwrap()
+    }
+
+    /// The shift count 32 of an `i64` shift, masked to the shift width as the Wasm frontend
+    /// masks every shift count.
+    fn wasm_shift_count_32(builder: &mut FunctionBuilder<'_, OpBuilder>) -> ValueRef {
+        let span = SourceSpan::UNKNOWN;
+        let count = builder.u32(32, span);
+        let mask = builder.u32(63, span);
+        builder.band(count, mask, span).unwrap()
+    }
+
+    /// A 64-bit store of a value assembled from two 32-bit halves is two 32-bit stores: the
+    /// shape LLVM's store merging produces for two adjacent `i32`/`f32` stores on wasm32, as the
+    /// Wasm frontend translates it.
+    #[test]
+    fn a_store_of_two_merged_halves_is_split() {
+        let mut test = Test::new(
+            "a_store_of_two_merged_halves_is_split",
+            &[pointer_to(Type::I64, AddressSpace::Byte), Type::I32, Type::I32],
+            &[],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let args = builder.entry_block().borrow().arguments().to_vec();
+            let [addr, lo, hi] = [args[0], args[1], args[2]].map(|arg| arg as ValueRef);
+            let lo = wasm_extend_i32_u(&mut builder, lo);
+            let hi = wasm_extend_i32_u(&mut builder, hi);
+            let count = wasm_shift_count_32(&mut builder);
+            let hi = builder.shl(hi, count, span).unwrap();
+            let value = builder.bor(lo, hi, span).unwrap();
+            builder.store(addr, value, span).unwrap();
+            builder.ret(None, span).unwrap();
+        }
+
+        assert_legalizes(
+            &test,
+            expect![[r#"
+            builtin.function public extern("C") @a_store_of_two_merged_halves_is_split(%0: ptr<i64, byte>, %1: i32, %2: i32) {
+                %3 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
+                %4 = arith.zext %3 <{ ty = #builtin.type<u64> }>;
+                %5 = hir.bitcast %4 <{ ty = #builtin.type<i64> }>;
+                %6 = hir.bitcast %2 <{ ty = #builtin.type<u32> }>;
+                %7 = arith.zext %6 <{ ty = #builtin.type<u64> }>;
+                %8 = hir.bitcast %7 <{ ty = #builtin.type<i64> }>;
+                %9 = arith.constant 32 : u32;
+                %10 = arith.constant 63 : u32;
+                %11 = arith.band %9, %10;
+                %12 = arith.shl %8, %11;
+                %13 = arith.bor %5, %12;
+                hir.store %0, %13 : (ptr<i64, byte>, i64);
+                builtin.ret;
+            };"#]],
+            expect![[r#"
+                builtin.function public extern("C") @a_store_of_two_merged_halves_is_split(%0: ptr<i64, byte>, %1: i32, %2: i32) {
+                    %3 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
+                    %6 = hir.bitcast %2 <{ ty = #builtin.type<u32> }>;
+                    %14 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+                    hir.store %14, %3 : (ptr<u32, byte>, u32);
+                    %15 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+                    %16 = arith.constant 4 : u32;
+                    %17 = arith.add %15, %16 <{ overflow = #builtin.overflow<checked> }>;
+                    %18 = hir.int_to_ptr %17 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+                    hir.store %18, %6 : (ptr<u32, byte>, u32);
+                    builtin.ret;
+                };"#]],
+        );
+    }
+
+    /// The `or` is commutative, and the split addresses the high half one element on in element
+    /// space.
+    #[test]
+    fn the_halves_may_come_in_either_order() {
+        let mut test = Test::new(
+            "the_halves_may_come_in_either_order",
+            &[pointer_to(Type::U64, AddressSpace::Element), Type::U32, Type::U32],
+            &[],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let args = builder.entry_block().borrow().arguments().to_vec();
+            let [addr, lo, hi] = [args[0], args[1], args[2]].map(|arg| arg as ValueRef);
+            let lo = builder.zext(lo, Type::U64, span).unwrap();
+            let hi = builder.zext(hi, Type::U64, span).unwrap();
+            let count = builder.u32(32, span);
+            let hi = builder.shl(hi, count, span).unwrap();
+            let value = builder.bor(hi, lo, span).unwrap();
+            builder.store(addr, value, span).unwrap();
+            builder.ret(None, span).unwrap();
+        }
+
+        assert_legalizes(
+            &test,
+            expect![[r#"
+            builtin.function public extern("C") @the_halves_may_come_in_either_order(%0: ptr<u64, element>, %1: u32, %2: u32) {
+                %3 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+                %4 = arith.zext %2 <{ ty = #builtin.type<u64> }>;
+                %5 = arith.constant 32 : u32;
+                %6 = arith.shl %4, %5;
+                %7 = arith.bor %6, %3;
+                hir.store %0, %7 : (ptr<u64, element>, u64);
+                builtin.ret;
+            };"#]],
+            expect![[r#"
+                builtin.function public extern("C") @the_halves_may_come_in_either_order(%0: ptr<u64, element>, %1: u32, %2: u32) {
+                    %8 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %8, %1 : (ptr<u32, element>, u32);
+                    %9 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+                    %10 = arith.constant 1 : u32;
+                    %11 = arith.add %9, %10 <{ overflow = #builtin.overflow<checked> }>;
+                    %12 = hir.int_to_ptr %11 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %12, %2 : (ptr<u32, element>, u32);
+                    builtin.ret;
+                };"#]],
+        );
+    }
+
+    /// A 64-bit load whose every use takes one 32-bit half of it is two 32-bit loads.
+    #[test]
+    fn a_load_consumed_only_as_two_halves_is_split() {
+        let mut test = Test::new(
+            "a_load_consumed_only_as_two_halves_is_split",
+            &[pointer_to(Type::I64, AddressSpace::Byte)],
+            &[Type::I32, Type::I32],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let addr = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let value = builder.load(addr, span).unwrap();
+            let lo = builder.trunc(value, Type::I32, span).unwrap();
+            // `i64.shr_u` and `i32.wrap_i64`, as the Wasm frontend spells them
+            let unsigned = builder.bitcast(value, Type::U64, span).unwrap();
+            let count = wasm_shift_count_32(&mut builder);
+            let shifted = builder.shr(unsigned, count, span).unwrap();
+            let shifted = builder.bitcast(shifted, Type::I64, span).unwrap();
+            let hi = builder.trunc(shifted, Type::I32, span).unwrap();
+            builder.ret([lo, hi], span).unwrap();
+        }
+
+        assert_legalizes(
+            &test,
+            expect![[r#"
+            builtin.function public extern("C") @a_load_consumed_only_as_two_halves_is_split(%0: ptr<i64, byte>) -> (i32, i32) {
+                %1 = hir.load %0;
+                %2 = arith.trunc %1 <{ ty = #builtin.type<i32> }>;
+                %3 = hir.bitcast %1 <{ ty = #builtin.type<u64> }>;
+                %4 = arith.constant 32 : u32;
+                %5 = arith.constant 63 : u32;
+                %6 = arith.band %4, %5;
+                %7 = arith.shr %3, %6;
+                %8 = hir.bitcast %7 <{ ty = #builtin.type<i64> }>;
+                %9 = arith.trunc %8 <{ ty = #builtin.type<i32> }>;
+                builtin.ret %2, %9 : (i32, i32);
+            };"#]],
+            expect![[r#"
+                builtin.function public extern("C") @a_load_consumed_only_as_two_halves_is_split(%0: ptr<i64, byte>) -> (i32, i32) {
+                    %10 = hir.bitcast %0 <{ ty = #builtin.type<ptr<i32, byte>> }>;
+                    %11 = hir.load %10;
+                    %12 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+                    %13 = arith.constant 4 : u32;
+                    %14 = arith.add %12, %13 <{ overflow = #builtin.overflow<checked> }>;
+                    %15 = hir.int_to_ptr %14 <{ ty = #builtin.type<ptr<i32, byte>> }>;
+                    %16 = hir.load %15;
+                    builtin.ret %11, %16 : (i32, i32);
+                };"#]],
+        );
+    }
+
+    /// Debug info does not keep a 64-bit value the splits leave dead; it goes with the value.
+    #[test]
+    fn debug_uses_go_with_the_values_a_split_leaves_dead() {
+        use midenc_hir::{
+            dialects::debuginfo::{DIBuilder, DebugInfoDialect, attributes::Variable},
+            interner::Symbol,
+        };
+
+        let mut test = Test::new(
+            "debug_uses_go_with_the_values_a_split_leaves_dead",
+            &[pointer_to(Type::U64, AddressSpace::Element), Type::U32, Type::U32],
+            &[Type::U32],
+        );
+        test.context().get_or_register_dialect::<DebugInfoDialect>();
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let args = builder.entry_block().borrow().arguments().to_vec();
+            let [addr, lo, hi] = [args[0], args[1], args[2]].map(|arg| arg as ValueRef);
+            let lo = builder.zext(lo, Type::U64, span).unwrap();
+            let hi = builder.zext(hi, Type::U64, span).unwrap();
+            let count = builder.u32(32, span);
+            let hi = builder.shl(hi, count, span).unwrap();
+            let value = builder.bor(lo, hi, span).unwrap();
+            let variable =
+                Variable::new(Symbol::intern("pair"), Symbol::intern("test.rs"), 1, None);
+            BuiltinOpBuilder::builder_mut(&mut builder)
+                .debug_value(value, variable, span)
+                .unwrap();
+            builder.store(addr, value, span).unwrap();
+            let reloaded = builder.load(addr, span).unwrap();
+            let variable =
+                Variable::new(Symbol::intern("reloaded"), Symbol::intern("test.rs"), 2, None);
+            BuiltinOpBuilder::builder_mut(&mut builder)
+                .debug_value(reloaded, variable, span)
+                .unwrap();
+            let lo = builder.trunc(reloaded, Type::U32, span).unwrap();
+            builder.ret([lo], span).unwrap();
+        }
+
+        assert_legalizes(
+            &test,
+            expect![[r#"
+            builtin.function public extern("C") @debug_uses_go_with_the_values_a_split_leaves_dead(%0: ptr<u64, element>, %1: u32, %2: u32) -> u32 {
+                %3 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+                %4 = arith.zext %2 <{ ty = #builtin.type<u64> }>;
+                %5 = arith.constant 32 : u32;
+                %6 = arith.shl %4, %5;
+                %7 = arith.bor %3, %6;
+                di.debug_value %7 <{ variable = #di.variable<{ name = "pair", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u64);
+                hir.store %0, %7 : (ptr<u64, element>, u64);
+                %8 = hir.load %0;
+                di.debug_value %8 <{ variable = #di.variable<{ name = "reloaded", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u64);
+                %9 = arith.trunc %8 <{ ty = #builtin.type<u32> }>;
+                builtin.ret %9 : (u32);
+            };"#]],
+            expect![[r#"
+            builtin.function public extern("C") @debug_uses_go_with_the_values_a_split_leaves_dead(%0: ptr<u64, element>, %1: u32, %2: u32) -> u32 {
+                %10 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                hir.store %10, %1 : (ptr<u32, element>, u32);
+                %11 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+                %12 = arith.constant 1 : u32;
+                %13 = arith.add %11, %12 <{ overflow = #builtin.overflow<checked> }>;
+                %14 = hir.int_to_ptr %13 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                hir.store %14, %2 : (ptr<u32, element>, u32);
+                %15 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                %16 = hir.load %15;
+                builtin.ret %16 : (u32);
+            };"#]],
+        );
+    }
+
+    /// Only the exact shape is split: halves of 32 bits, zero-extended, shifted apart by 32.
+    #[test]
+    fn a_store_whose_value_is_not_two_halves_is_left_alone() {
+        let mut test = Test::new(
+            "a_store_whose_value_is_not_two_halves_is_left_alone",
+            &[pointer_to(Type::I64, AddressSpace::Byte), Type::I32, Type::I32, Type::U16],
+            &[],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let args = builder.entry_block().borrow().arguments().to_vec();
+            let [addr, lo, hi, short] =
+                [args[0], args[1], args[2], args[3]].map(|arg| arg as ValueRef);
+            // Shifted apart by 16
+            let lo_ext = wasm_extend_i32_u(&mut builder, lo);
+            let hi_ext = wasm_extend_i32_u(&mut builder, hi);
+            let count = builder.u32(16, span);
+            let shifted = builder.shl(hi_ext, count, span).unwrap();
+            let value = builder.bor(lo_ext, shifted, span).unwrap();
+            builder.store(addr, value, span).unwrap();
+            // Sign-extended
+            let lo_ext = builder.sext(lo, Type::I64, span).unwrap();
+            let hi_ext = builder.sext(hi, Type::I64, span).unwrap();
+            let count = builder.u32(32, span);
+            let shifted = builder.shl(hi_ext, count, span).unwrap();
+            let value = builder.bor(lo_ext, shifted, span).unwrap();
+            builder.store(addr, value, span).unwrap();
+            // A 16-bit half
+            let lo_ext = wasm_extend_i32_u(&mut builder, lo);
+            let hi_ext = builder.zext(short, Type::U64, span).unwrap();
+            let hi_ext = builder.bitcast(hi_ext, Type::I64, span).unwrap();
+            let count = builder.u32(32, span);
+            let shifted = builder.shl(hi_ext, count, span).unwrap();
+            let value = builder.bor(lo_ext, shifted, span).unwrap();
+            builder.store(addr, value, span).unwrap();
+            builder.ret(None, span).unwrap();
+        }
+
+        assert_left_alone(
+            &test,
+            expect![[r#"
+            builtin.function public extern("C") @a_store_whose_value_is_not_two_halves_is_left_alone(%0: ptr<i64, byte>, %1: i32, %2: i32, %3: u16) {
+                %4 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
+                %5 = arith.zext %4 <{ ty = #builtin.type<u64> }>;
+                %6 = hir.bitcast %5 <{ ty = #builtin.type<i64> }>;
+                %7 = hir.bitcast %2 <{ ty = #builtin.type<u32> }>;
+                %8 = arith.zext %7 <{ ty = #builtin.type<u64> }>;
+                %9 = hir.bitcast %8 <{ ty = #builtin.type<i64> }>;
+                %10 = arith.constant 16 : u32;
+                %11 = arith.shl %9, %10;
+                %12 = arith.bor %6, %11;
+                hir.store %0, %12 : (ptr<i64, byte>, i64);
+                %13 = arith.sext %1 <{ ty = #builtin.type<i64> }>;
+                %14 = arith.sext %2 <{ ty = #builtin.type<i64> }>;
+                %15 = arith.constant 32 : u32;
+                %16 = arith.shl %14, %15;
+                %17 = arith.bor %13, %16;
+                hir.store %0, %17 : (ptr<i64, byte>, i64);
+                %18 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
+                %19 = arith.zext %18 <{ ty = #builtin.type<u64> }>;
+                %20 = hir.bitcast %19 <{ ty = #builtin.type<i64> }>;
+                %21 = arith.zext %3 <{ ty = #builtin.type<u64> }>;
+                %22 = hir.bitcast %21 <{ ty = #builtin.type<i64> }>;
+                %23 = arith.constant 32 : u32;
+                %24 = arith.shl %22, %23;
+                %25 = arith.bor %20, %24;
+                hir.store %0, %25 : (ptr<i64, byte>, i64);
+                builtin.ret;
+            };"#]],
+        );
+    }
+
+    /// A load that is also used whole stays one 64-bit load.
+    #[test]
+    fn a_load_with_a_use_of_the_whole_value_is_left_alone() {
+        let mut test = Test::new(
+            "a_load_with_a_use_of_the_whole_value_is_left_alone",
+            &[pointer_to(Type::I64, AddressSpace::Byte)],
+            &[Type::I32, Type::I64],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let addr = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let value = builder.load(addr, span).unwrap();
+            let lo = builder.trunc(value, Type::I32, span).unwrap();
+            builder.ret([lo, value], span).unwrap();
+        }
+
+        assert_left_alone(
+            &test,
+            expect![[r#"
+            builtin.function public extern("C") @a_load_with_a_use_of_the_whole_value_is_left_alone(%0: ptr<i64, byte>) -> (i32, i64) {
+                %1 = hir.load %0;
+                %2 = arith.trunc %1 <{ ty = #builtin.type<i32> }>;
+                builtin.ret %2, %1 : (i32, i64);
+            };"#]],
+        );
     }
 }

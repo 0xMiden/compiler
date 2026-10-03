@@ -191,7 +191,13 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
     // calls the `p2id` constructor: the felt comparisons moved into the script, and LLVM holds
     // both converted values across the constructor call as canonical `u64`s in 64-bit locals
     // (`store_dw`/`load_dw`).
-    expect!["9402"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    //
+    // 86 cycles fewer (9402 before) since LLVM's store merging is off (the mandatory rustflag
+    // `-C llvm-args=-combiner-store-merging=false`): the `p2id` constructor, `build-recipient` in
+    // the note package, copied two felt pairs with `i64.load`/`i64.store`, each a call to
+    // `intrinsics::mem::load_dw` or `store_dw` behind a byte-address alignment check, and now
+    // copies the four felts with element loads and stores. The script itself is unchanged.
+    expect!["9316"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
