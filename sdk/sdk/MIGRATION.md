@@ -10,6 +10,67 @@ directly below this paragraph, above the previous one (newest first, like the
 
 <!-- Add the next migration section here, above the most recent one. -->
 
+## 0.15.0-rc.3 -> unreleased
+
+### The `extern_*` procedures are gone; the generated `miden::raw` modules replace them
+
+The bindings to the core library, the protocol and the standards are now generated from the
+packages' manifests (`miden::raw::{core, protocol, standards}`). The hand-written functions and
+traits keep their names and signatures; what went away is the layer underneath them: every
+`pub fn extern_*` of `miden-base-sys` (reached as `miden::active_account::extern_*`,
+`miden::tx::extern_*`, ...) and `miden-stdlib-sys`'s `extern_hash_elements`/`extern_hash_words`,
+with the `Raw*` structs they took.
+
+A caller of a raw extern calls the generated procedure of the same MASM name instead. The
+generated wrapper takes the manifest's types — a `u16` where the extern took a `Felt`, an
+`ElementPtr<T>` where it took a `*mut T` — and returns the manifest's result type:
+
+```rust
+// Before
+let nonce: Felt = unsafe { miden::active_account::extern_active_account_get_nonce() };
+
+// After: the generated procedure, typed as the manifest declares it
+let nonce: Felt = miden::raw::protocol::active_account::get_nonce();
+```
+
+Byte addresses convert with `miden::support::ElementPtr::from_ptr(ptr)` (the pointer must be
+4-byte aligned) and back with `.to_ptr()` (the address must be below 2^30 elements and aligned
+for the pointee); both panic otherwise. Manifest constants are `FeltConstant`/`WordConstant`
+carriers: call `.get()` for the `Felt`/`Word`.
+
+### Narrow arguments are range-checked
+
+Where the hand API converts a `Felt` to a `u8`/`u16`/`u32` the manifest declares (note indices,
+tags, note types, attachment schemes), an out-of-range value now panics in the wrapper instead of
+reaching the kernel. That includes the attachment lookups: `find_attachment` and
+`find_attachment_idx` used to compare a scheme above `u16::MAX` in the kernel and find nothing;
+they now panic on it, as every other narrowing does, and reach the kernel — and its own checks of
+the note index — only with a scheme that can be stored.
+
+### Binding a Miden Assembly dependency from Rust
+
+A Rust project that declares a MASM package in `miden-project.toml` can generate its bindings
+from `build.rs` with `miden-sdk-build-script-support`'s `generate_bindings` (feature `bindgen`):
+
+```toml
+# Cargo.toml
+[build-dependencies]
+miden-sdk-build-script-support = { version = "0.15.0-rc.3", features = ["bindgen"] }
+```
+
+```rust
+// build.rs
+use miden_sdk_build_script_support::{Bindings, generate_bindings, prepare_package_cache};
+
+fn main() {
+    prepare_package_cache();
+    generate_bindings(&Bindings { package: "my-lib", root: "", support: "::miden::support", with: &[] });
+}
+```
+
+and includes `concat!(env!("OUT_DIR"), "/my-lib.rs")` in a module of its own; the crate root
+needs `#![cfg_attr(all(target_family = "wasm", miden), feature(linkage))]`.
+
 ## 0.14.0 -> 0.15.0
 
 ### `compute_commitment` moved to `native_account` (protocol 0.17.0-rc.6)

@@ -249,6 +249,14 @@ unit = "sdk"
 name = "midenc-package-interface"
 unit = "sdk"
 
+[[packages]]
+name = "miden-sdk-bindgen"
+unit = "sdk"
+
+[[packages]]
+name = "miden-intrinsics-sys"
+unit = "sdk"
+
 # --- private: repository infrastructure, never published ----------------------
 
 [[packages]]

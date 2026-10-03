@@ -1786,3 +1786,131 @@ fn manifest_resolved_stub_widens_out_pointer_results_before_storing_them() {
         expect_file!("./expected/manifest_resolved_stub_out_pointer_carriers.hir"),
     )
 }
+
+/// Every callee resolved from a linked package is declared with the effects the compiler knows it
+/// to have (`miden_abi::effects`): a core `mem::pipe_*` procedure reads the advice provider and
+/// writes memory, which the advice-taint lint reads off the declaration, and any other export
+/// carries none.
+#[test]
+fn a_resolved_callee_is_declared_with_the_effects_the_compiler_knows() {
+    use midenc_hir::{
+        BuilderExt, CallConv, FunctionType, Symbol, Type,
+        dialects::builtin::attributes::AdviceResourceKind,
+        effects::{AdviceEffect, MemoryEffect},
+    };
+
+    // The imports are declared in the world the component is translated into, so the test
+    // supplies the world in order to walk it afterwards. `context` owns the IR and has to outlive
+    // the walk.
+    let context = Rc::new(midenc_hir::Context::default());
+    let world = context.clone().builder().create::<builtin::World, ()>(Default::default())();
+    let world = world.unwrap();
+    let library = config_with_library(vec![
+        (
+            "::miden::core::mem::pipe_preimage_to_memory",
+            FunctionType::new(
+                CallConv::Fast,
+                [Type::U32, Type::I32, Type::Felt, Type::Felt, Type::Felt, Type::Felt],
+                [Type::I32],
+            ),
+        ),
+        (
+            "::miden::core::mem::memcopy_words",
+            FunctionType::new(CallConv::Fast, [Type::U32, Type::I32, Type::I32], []),
+        ),
+    ]);
+    let config = WasmTranslationConfig {
+        world: Some(world),
+        ..library
+    };
+    let wasm = wat::parse_str(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"miden::core::mem::pipe_preimage_to_memory"
+                (param i32 i32 f32 f32 f32 f32) (result i32)
+                unreachable)
+            (func $"miden::core::mem::memcopy_words" (param i32 i32 i32)
+                unreachable)
+            (func $probe (param i32 i32 f32 f32 f32 f32) (result i32)
+                local.get 0
+                local.get 1
+                local.get 1
+                call $"miden::core::mem::memcopy_words"
+                local.get 0
+                local.get 1
+                local.get 2
+                local.get 3
+                local.get 4
+                local.get 5
+                call $"miden::core::mem::pipe_preimage_to_memory")
+            (export "probe" (func $probe))
+        )"#,
+    )
+    .unwrap();
+    translate(&wasm, &config, context.clone()).unwrap();
+
+    let mut declared = Vec::new();
+    world.borrow().as_operation().prewalk_all(|op: &Operation| {
+        if let Some(function) = op.downcast_ref::<builtin::Function>()
+            && function.is_declaration()
+        {
+            let advice: Vec<_> = function
+                .advice_effects()
+                .as_value()
+                .iter()
+                .map(|effect| (effect.effect, effect.resource))
+                .collect();
+            let memory: Vec<_> = function
+                .memory_effects()
+                .as_value()
+                .iter()
+                .map(|effect| effect.effect)
+                .collect();
+            declared.push((function.get_name().as_str(), advice, memory));
+        }
+    });
+    declared.sort_by_key(|(name, ..)| *name);
+
+    assert_eq!(
+        declared,
+        vec![
+            ("memcopy_words", vec![], vec![]),
+            (
+                "pipe_preimage_to_memory",
+                vec![(AdviceEffect::Read, AdviceResourceKind::Map)],
+                vec![MemoryEffect::Write]
+            ),
+        ]
+    );
+}
+
+/// A stub rooted in a namespace that MASM spells quoted — the default root module of a package
+/// named `my-lib` is `::"my-lib"` — resolves like any other. The frontend compares the identifier
+/// rather than its spelling (`names_a_linked_namespace`), and gives the local stub a linkage name
+/// without the quotes, since the assembler cannot read a quoted procedure name that nests them;
+/// the import it `exec`s keeps the MASM spelling.
+#[test]
+fn manifest_resolved_stub_in_a_quoted_namespace() {
+    use midenc_hir::{CallConv, FunctionType, Type};
+
+    let config = config_with_library(vec![(
+        "::\"my-lib\"::add",
+        FunctionType::new(CallConv::Fast, [Type::Felt, Type::Felt], [Type::Felt]),
+    )]);
+    check_module_with_config(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"\"my-lib\"::add" (param f32 f32) (result f32)
+                unreachable)
+            (func $probe (param f32 f32) (result f32)
+                local.get 0
+                local.get 1
+                call $"\"my-lib\"::add")
+            (export "probe" (func $probe))
+        )"#,
+        &config,
+        expect_file!("./expected/manifest_resolved_stub_in_a_quoted_namespace.hir"),
+    )
+}

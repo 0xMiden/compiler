@@ -176,7 +176,14 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, create_tx);
-    expect!["8977"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    // 8977 before the SDK's bindings were generated, 8984 after `miden-stdlib-sys` was (Tasks 6
+    // and 6b of the generator plan; this suite was not re-run then). 189 cycles more, as in
+    // `basic_wallet_p2id_transfers_asset_with_custom_tx_script`: the wallet's `create_note` and
+    // `move_asset_to_note` check the `Tag`, `NoteType` and `NoteIdx` against the protocol's
+    // integer types. 2 cycles more (9173 before), as in that test: the
+    // `mem::pipe_preimage_to_memory` stub's redundant `swap.1 swap.1`, since the procedure
+    // resolves from the core manifest instead of the deleted transitional table.
+    expect!["9175"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();

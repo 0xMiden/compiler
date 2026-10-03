@@ -1,0 +1,24 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "masm-dep-account"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../../../sdk/sdk" }
+
+[build-dependencies]
+# `build.rs` generates the bindings of the `masm-dep` package `miden-project.toml` declares.
+miden-sdk-build-script-support = { path = "../../../../sdk/build-script-support", features = ["bindgen"] }
+
+[profile.release]
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+trim-paths = ["diagnostics", "object"]

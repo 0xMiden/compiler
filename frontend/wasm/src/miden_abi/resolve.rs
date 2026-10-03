@@ -1,9 +1,9 @@
 //! Resolving a linker stub's name to the procedure it calls.
 //!
-//! Order: the transitional table (see `transitional.rs`), then the packages the session linked.
-//! The first package exporting the path wins. The stub's own Wasm signature is then checked
-//! against what the rule set derives from the export, so bindings generated against a different
-//! package version are rejected instead of miscompiled.
+//! The stub resolves against the packages the session linked, and nothing else: the first package
+//! exporting the path wins. The stub's own Wasm signature is then checked against what the rule
+//! set derives from the export, so bindings generated against a different package version are
+//! rejected instead of miscompiled.
 //!
 //! The conversions the rule set implies at the `exec` boundary also live here. The contract
 //! between the frontend and the SDK is in Wasm *carrier* types — `i32` for every integer of 32
@@ -27,45 +27,23 @@ use midenc_package_interface::{
     WasmScalar,
 };
 
-use super::transitional;
 use crate::{
     WasmTranslationConfig, error::WasmResult, module::function_builder_ext::FunctionBuilderExt,
 };
 
-/// What a linker stub's name resolved to.
-#[derive(Debug)]
-pub(crate) struct Resolved {
-    /// The shape the Miden ABI rule set derives for the callee.
-    pub lowered: LoweredSignature,
-    /// Whether the hit came from the transitional table rather than from a linked package.
-    ///
-    /// The transitional entries are compiler-owned data, so they still carry the effects the
-    /// deleted hand tables attached (see [`transitional::effects`]); a package export does not.
-    pub transitional: bool,
-}
-
 /// Resolve `path` and check `stub` against the derived signature.
+///
+/// Returns the shape the Miden ABI rule set derives for the callee.
 pub(crate) fn resolve_stub(
     path: &SymbolPath,
     stub: &Signature,
     config: &WasmTranslationConfig,
-) -> Result<Resolved, Report> {
+) -> Result<LoweredSignature, Report> {
     let masm_path = path.to_library_path();
-    let lookup = &masm_path;
     let linked: &[PackageInterface] = config.linked_packages.as_deref().unwrap_or(&[]);
 
-    let from_table =
-        transitional::interface().procedure(lookup).map(|procedure| ResolvedProcedure {
-            package: transitional::interface(),
-            procedure,
-        });
-    let transitional = from_table.is_some();
-    let resolved = from_table.or_else(|| linked.resolve_procedure(lookup));
-
-    let Some(ResolvedProcedure { package, procedure }) = resolved else {
-        // Only the linked packages are named: the transitional table is a compiler-internal
-        // pseudo-package, and listing it among the packages the user is told to link with `-l`
-        // would name something no `-l` can refer to.
+    let Some(ResolvedProcedure { package, procedure }) = linked.resolve_procedure(&masm_path)
+    else {
         let searched = if linked.is_empty() {
             String::from("no packages are linked")
         } else {
@@ -112,10 +90,7 @@ pub(crate) fn resolve_stub(
         )));
     }
 
-    Ok(Resolved {
-        lowered: lowered.clone(),
-        transitional,
-    })
+    Ok(lowered.clone())
 }
 
 /// A package as the diagnostics name it: `<name> <version>`.
@@ -197,9 +172,10 @@ fn convert_argument<B: ?Sized + Builder>(
 /// Convert the callee's results back to the Wasm carrier types the stub deals in.
 ///
 /// The inverse of [`convert_arguments`], and it must run *before* the results reach the stub's
-/// `return` or [`super::transform::store_results_to_pointer`]: the latter derives the layout of
-/// the return area from the result values' types, so a `u16` result has to be widened to its
-/// `i32` carrier first if it is to occupy the 4-byte slot the SDK wrapper reads back.
+/// `return` or [`super::transform::store_results_to_pointer`]: the latter stores each value in
+/// the slot [`LoweredSignature::return_area`] lays out for its carrier and writes as many bytes
+/// as the value's type has, so a `u16` result has to be widened to its `i32` carrier first if it
+/// is to fill the 4-byte slot the SDK wrapper reads back.
 ///
 /// A pointer result is cast to its `i32` carrier and nothing else: an element-space pointer
 /// reaches the stub as an element address. Scaling it to a byte address, and checking that the
@@ -333,14 +309,13 @@ mod tests {
         let context = Rc::new(Context::default());
         let sig = FunctionType::new(CallConv::Fast, [Type::Felt, Type::Felt], [Type::Felt]);
         let cfg = config(vec![package("lib", vec![item("::lib::add", Some(sig))])]);
-        let resolved = resolve_stub(
+        let lowered = resolve_stub(
             &path("lib::add"),
             &stub(&context, &[Type::Felt, Type::Felt], &[Type::Felt]),
             &cfg,
         )
         .unwrap();
-        assert_eq!(resolved.lowered.stub_signature().params(), &[Type::Felt, Type::Felt]);
-        assert!(!resolved.transitional);
+        assert_eq!(lowered.stub_signature().params(), &[Type::Felt, Type::Felt]);
     }
 
     #[test]
@@ -352,9 +327,6 @@ mod tests {
             .to_string();
         assert!(err.contains("lib::nope"), "{err}");
         assert!(err.contains("lib 1.2.3"), "{err}");
-        // The transitional table is a compiler-internal pseudo-package: naming it among the
-        // packages to link with `-l` would name something no `-l` can refer to.
-        assert!(!err.contains("midenc-transitional-signatures"), "{err}");
     }
 
     #[test]
@@ -365,7 +337,6 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("no packages are linked"), "{err}");
-        assert!(!err.contains("midenc-transitional-signatures"), "{err}");
     }
 
     #[test]
@@ -424,45 +395,26 @@ mod tests {
         assert!(err.contains("(felt, felt) -> (felt)"), "{err}");
     }
 
+    /// A `miden::…` path gets no special treatment: with no packages linked, even a procedure
+    /// the SDK binds does not resolve, and the diagnostic is the one any unknown export gets.
     #[test]
-    fn the_transitional_table_takes_precedence_over_the_manifest() {
-        // `tx::get_reference_block_number` is `-> u32` in the manifest; the SDK reads a felt.
-        // The table wins.
-        let context = Rc::new(Context::default());
-        let manifest_sig = FunctionType::new(CallConv::Fast, [], [Type::U32]);
-        let cfg = config(vec![package(
-            "miden-protocol",
-            vec![item("::miden::protocol::tx::get_reference_block_number", Some(manifest_sig))],
-        )]);
-        let resolved = resolve_stub(
-            &path("miden::protocol::tx::get_reference_block_number"),
-            &stub(&context, &[], &[Type::Felt]),
-            &cfg,
-        )
-        .unwrap();
-        assert_eq!(resolved.lowered.stub_signature().results(), &[Type::Felt]);
-        assert!(resolved.transitional);
-    }
-
-    #[test]
-    fn without_linked_packages_only_the_transitional_table_resolves() {
+    fn without_linked_packages_nothing_resolves() {
         let context = Rc::new(Context::default());
         let cfg = WasmTranslationConfig::default();
+        let err = resolve_stub(
+            &path("miden::protocol::tx::get_block_timestamp"),
+            &stub(&context, &[], &[Type::I32]),
+            &cfg,
+        )
+        .unwrap_err()
+        .to_string();
         assert!(
-            resolve_stub(
-                &path("miden::protocol::tx::get_block_timestamp"),
-                &stub(&context, &[], &[Type::Felt]),
-                &cfg
-            )
-            .is_ok()
+            err.contains(
+                "linker stub '::miden::protocol::tx::get_block_timestamp' does not name a \
+                 procedure exported by any linked package"
+            ),
+            "{err}"
         );
-        assert!(
-            resolve_stub(
-                &path("miden::protocol::active_account::get_id"),
-                &stub(&context, &[Type::I32], &[]),
-                &cfg
-            )
-            .is_err()
-        );
+        assert!(err.contains("no packages are linked"), "{err}");
     }
 }

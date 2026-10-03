@@ -17,13 +17,14 @@ pub mod abi;
 pub mod model;
 pub mod resolve;
 
-#[cfg(test)]
-pub(crate) mod testing;
+/// Test support: assemble a fixture library with the real assembler.
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 pub use self::{
     abi::{
-        FieldStep, Flattened, LoweredSignature, MAX_STACK_ELEMENTS, ReturnStrategy,
-        UnsupportedSignature, WasmParam, WasmScalar, flatten_type, lower_signature,
+        FieldStep, Flattened, LoweredSignature, MAX_STACK_ELEMENTS, ReturnArea, ReturnSlot,
+        ReturnStrategy, UnsupportedSignature, WasmParam, WasmScalar, flatten_type, lower_signature,
     },
     model::{
         ConstantItem, PackageInterface, ProcedureClass, ProcedureItem, ROLE_ATTRIBUTES, Role,

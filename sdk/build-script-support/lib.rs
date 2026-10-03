@@ -2,7 +2,21 @@
 //!
 //! Rust-based Miden projects call [`prepare_package_cache`] from their `build.rs` so plain Cargo
 //! builds and IDE analysis can resolve the compiled Miden packages consumed by SDK procedural
-//! macros.
+//! macros. A project that depends on a Miden package of its own, such as a Miden Assembly path
+//! dependency, generates that package's Rust bindings with `generate_bindings`, behind the
+//! `bindgen` feature. Crates that declare bindings to Miden procedures compile their linker stubs
+//! with [`stubs::compile_stub_archive`].
+//!
+//! # Dependencies
+//!
+//! Without the `bindgen` feature this crate carries no dependencies, and that is deliberate: it is
+//! compiled inside every Rust-based Miden project's build script, so everything it pulls in is
+//! paid for by every `cargo check` of every such project. The generator needs the package reader
+//! and with it most of the compiler's dependency graph — some two hundred crates — which is why
+//! it is opt-in. The one cost of staying dependency-free is that the spellings of the package
+//! cache contract (`MIDENC_PACKAGE_CACHE`, `miden-deps/build-inputs`) are carried here inline
+//! rather than taken from `midenc_frontend_wasm_metadata::package_cache`; a test under the feature
+//! checks they agree.
 
 // This crate carries no crate-level lint attribute, and that is deliberate in both directions.
 //
@@ -19,10 +33,30 @@ use std::{
     env, fs, io,
     path::{Path, PathBuf},
     process::{Command, Output},
+    sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(feature = "bindgen")]
+mod bindgen;
+#[cfg(feature = "bindgen")]
+pub use bindgen::{Bindings, generate_bindings};
+
+// The package cache contract, spelled inline: see the crate docs on dependencies.
+/// The environment variable naming the Miden package cache.
+const PACKAGE_CACHE_ENV: &str = "MIDENC_PACKAGE_CACHE";
+/// The directory, inside the cache, of the compiler's dependency resolution records.
+const DEPENDENCY_MANIFEST_DIR: &str = "miden-deps";
+/// The compiler's build-inputs record, inside [`DEPENDENCY_MANIFEST_DIR`].
+const BUILD_INPUTS_FILE: &str = "build-inputs";
+
 const BUILD_INPUTS_HEADER: &str = "miden-build-inputs\t1";
+
+/// The package cache [`prepare_package_cache`] selected in this build-script process.
+///
+/// The `cargo:rustc-env` directive that exports the cache reaches the compilation of the crate,
+/// not this process, so `generate_bindings` finds it here.
+static SELECTED_PACKAGE_CACHE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// Populates the Miden package cache for builds that `midenc` does not drive.
 ///
@@ -58,7 +92,7 @@ pub fn prepare_package_cache() {
     println!("cargo:rerun-if-changed=miden-project.toml");
     println!("cargo:rerun-if-changed=Cargo.toml");
     // Re-evaluate when the build mode or the tool selection changes.
-    println!("cargo:rerun-if-env-changed=MIDENC_PACKAGE_CACHE");
+    println!("cargo:rerun-if-env-changed={PACKAGE_CACHE_ENV}");
     println!("cargo:rerun-if-env-changed=CARGO_MIDEN");
     // These inputs shape the compiled packages. Cargo prefers the encoded rustflags variable
     // over the plain one, so both spellings are watched.
@@ -74,7 +108,8 @@ pub fn prepare_package_cache() {
     // Inside a midenc-driven build the compiler owns the package cache, macro expansion
     // already sees the variable, and a nested build would recurse into this script forever.
     // An empty value counts as unset, matching the compiler and the SDK macros.
-    if env::var_os("MIDENC_PACKAGE_CACHE").is_some_and(|value| !value.is_empty()) {
+    if let Some(adopted) = configured_package_cache() {
+        select_package_cache(&adopted);
         return;
     }
 
@@ -123,7 +158,33 @@ pub fn prepare_package_cache() {
     let published = staging.publish(&generations);
 
     emit_build_input_directives(&build_inputs, &out_dir, &staging_id);
-    println!("cargo:rustc-env=MIDENC_PACKAGE_CACHE={}", published.display());
+    println!("cargo:rustc-env={PACKAGE_CACHE_ENV}={}", published.display());
+    select_package_cache(&published);
+}
+
+/// The package cache the environment configures: `MIDENC_PACKAGE_CACHE`, absolutized as the
+/// compiler and the SDK macros do. An empty value counts as unset.
+fn configured_package_cache() -> Option<PathBuf> {
+    env::var_os(PACKAGE_CACHE_ENV).filter(|value| !value.is_empty()).map(|value| {
+        let path = PathBuf::from(value);
+        std::path::absolute(&path).unwrap_or(path)
+    })
+}
+
+/// Records `cache` as the package cache `generate_bindings` reads in this process.
+fn select_package_cache(cache: &Path) {
+    let mut selected =
+        SELECTED_PACKAGE_CACHE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    *selected = Some(cache.to_path_buf());
+}
+
+/// The package cache [`prepare_package_cache`] selected in this process, if it has run.
+#[cfg(feature = "bindgen")]
+fn selected_package_cache() -> Option<PathBuf> {
+    SELECTED_PACKAGE_CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
 }
 
 /// A private generation which removes itself unless publication succeeds.
@@ -353,7 +414,7 @@ fn unreadable_build_inputs() -> BuildInputs {
 /// all, and one that writes a schema this script does not know, both degrade to
 /// [`unreadable_build_inputs`] rather than failing the outer build.
 fn read_build_inputs(generation: &Path) -> BuildInputs {
-    let path = generation.join("miden-deps").join("build-inputs");
+    let path = generation.join(DEPENDENCY_MANIFEST_DIR).join(BUILD_INPUTS_FILE);
     let contents = match fs::read_to_string(&path) {
         Ok(contents) => contents,
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
@@ -461,7 +522,7 @@ fn run_cargo_miden_build(manifest_dir: &Path, cache_dir: &Path, nested_target: &
         // only ever read the dependencies, and the outer cargo build compiles the crate.
         .args(["miden", "build", "--release", "--stop-after=dependencies"])
         .current_dir(manifest_dir)
-        .env("MIDENC_PACKAGE_CACHE", cache_dir)
+        .env(PACKAGE_CACHE_ENV, cache_dir)
         .env("CARGO_TARGET_DIR", nested_target.join("cargo"))
         .env("MIDENC_TARGET_DIR", nested_target.join("miden"));
     command.output().unwrap_or_else(|err| {
@@ -472,11 +533,176 @@ fn run_cargo_miden_build(manifest_dir: &Path, cache_dir: &Path, nested_target: &
     })
 }
 
+pub mod stubs {
+    //! Compiles linker-stub crates into archives that dependents link.
+    //!
+    //! A Rust binding to a Miden procedure is an `extern "C"` declaration, and the Wasm linker
+    //! needs a definition for it. A stub is that definition: a function exported under the
+    //! procedure's link name with a diverging body, which the Wasm frontend recognizes by name
+    //! and lowers to the Miden procedure. A crate that declares bindings compiles its stubs from
+    //! its build script with [`compile_stub_archive`].
+    //!
+    //! The result is a native static library (`.a`) that contains only the stub object files
+    //! (no panic handler), to avoid duplicate panic symbols in downstream component builds. The
+    //! stub crate is compiled as an rlib and the output is named `.a`, so dependents pick it up
+    //! through the native link search path.
+    //!
+    //! - Why not an rlib? `cargo:rustc-link-lib`/`cargo:rustc-link-search` are for native
+    //!   archives; an `.rlib` doesn't fit that model, and attempts to use `rustc-link-arg` don't
+    //!   propagate to dependents.
+    //! - Why not a staticlib via rustc directly? A `no_std` staticlib usually requires a
+    //!   `#[panic_handler]`, which then collides at link time with other crates that also define
+    //!   panic symbols. Packaging a single object keeps the archive minimal and free of panic
+    //!   symbols.
+
+    use std::{
+        env,
+        ffi::OsString,
+        path::{Path, PathBuf},
+        process::Command,
+    };
+
+    /// A stub crate to compile into an archive.
+    #[derive(Clone, Debug)]
+    pub struct StubArchive {
+        /// The stub crate's name. The archive is `lib<crate_name>.a` and dependents link it as
+        /// `<crate_name>`, so it must be unique among the archives one build links.
+        pub crate_name: String,
+        /// The stub crate root. It must be `#![no_std]` and define no panic handler.
+        pub source: PathBuf,
+    }
+
+    /// Compiles `archive.source` to `<OUT_DIR>/lib<crate_name>.a` with the stub recipe and
+    /// prints the `cargo:rustc-link-search` and `cargo:rustc-link-lib=static:+whole-archive=`
+    /// directives that link it into every dependent.
+    ///
+    /// Only `archive.source` is watched (`cargo:rerun-if-changed`): a stub crate split into
+    /// modules must watch its other files itself. When `TARGET` does not start with `wasm32`
+    /// there is nothing to link stubs into, so this prints the watch and returns.
+    ///
+    /// # Panics
+    ///
+    /// If `rustc` cannot be spawned or fails to compile the stubs. This runs in a build script,
+    /// where a panic fails the build with its message.
+    pub fn compile_stub_archive(archive: &StubArchive) {
+        println!("cargo:rerun-if-changed={}", archive.source.display());
+
+        let target = env::var("TARGET").unwrap_or_else(|_| "wasm32-wasip1".to_string());
+        if !target.starts_with("wasm32") {
+            return;
+        }
+
+        // Do not declare `rerun-if-env-changed=TARGET`: Cargo controls that variable, and it
+        // is unset in Cargo's own environment but set inside build-script environments, so
+        // the declaration makes the fingerprint flip between the two. Cargo already runs
+        // this script once for each target platform.
+        println!("cargo:rerun-if-env-changed=RUSTUP_TOOLCHAIN");
+        println!("cargo:rerun-if-env-changed=RUSTFLAGS");
+
+        let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("cargo sets OUT_DIR"));
+        let out = out_dir.join(format!("lib{}.a", archive.crate_name));
+        // The compiler Cargo is driving this build with, so a toolchain override applies to the
+        // stub crate too; Cargo sets `RUSTC` for every build script.
+        let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+        let status = Command::new(rustc)
+            .args(rustc_args(&archive.crate_name, &target, &out, &archive.source))
+            .status()
+            .unwrap_or_else(|err| {
+                panic!("failed to spawn rustc for the `{}` stub archive: {err}", archive.crate_name)
+            });
+        if !status.success() {
+            panic!("failed to compile the `{}` stub archive: {status}", archive.crate_name);
+        }
+
+        println!("cargo:rustc-link-search=native={}", out_dir.display());
+        // The linker adds the `lib` prefix itself when it searches for the file.
+        println!("cargo:rustc-link-lib=static:+whole-archive={}", archive.crate_name);
+    }
+
+    /// The rustc arguments that compile the stub crate root `source` into the archive `out`.
+    fn rustc_args(crate_name: &str, target: &str, out: &Path, source: &Path) -> Vec<OsString> {
+        // LLVM MergeFunctions pass https://llvm.org/docs/MergeFunctions.html considers some
+        // functions in the stub library identical (e.g. `intrinsics::felt::add` and
+        // `intrinsics::felt::mul`) because besides the same sig they have the same body
+        // (`unreachable`). The pass merges them which manifests in the compiled Wasm as if both
+        // `add` and `mul` are linked to the same (`add` in this case) function.
+        // Setting `opt-level=1` seems to be skipping this pass and is enough on its own, but I
+        // also put `-Z merge-functions=disabled` in case `opt-level=1` behaviour changes
+        // in the future and runs the MergeFunctions pass.
+        // `opt-level=0` - introduces import for panic infra leading to WIT encoder error
+        // (unsatisfied import).
+        let mut args: Vec<OsString> = [
+            "--crate-name",
+            crate_name,
+            "--edition=2024",
+            "--crate-type=rlib",
+            "--target",
+            target,
+            "-C",
+            "opt-level=1",
+            "-C",
+            "codegen-units=1",
+            "-C",
+            "debuginfo=0",
+            "-Z",
+            "merge-functions=disabled",
+            "-C",
+            "target-feature=+bulk-memory,+wide-arithmetic",
+            "-o",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        args.push(out.into());
+        args.push(source.into());
+        args
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn the_recipe_compiles_the_stub_crate_to_the_named_archive() {
+            let args = rustc_args(
+                "miden_example_stubs",
+                "wasm32-wasip1",
+                Path::new("/out/libmiden_example_stubs.a"),
+                Path::new("/crate/stubs/lib.rs"),
+            );
+            let expected = [
+                "--crate-name",
+                "miden_example_stubs",
+                "--edition=2024",
+                "--crate-type=rlib",
+                "--target",
+                "wasm32-wasip1",
+                "-C",
+                "opt-level=1",
+                "-C",
+                "codegen-units=1",
+                "-C",
+                "debuginfo=0",
+                "-Z",
+                "merge-functions=disabled",
+                "-C",
+                "target-feature=+bulk-memory,+wide-arithmetic",
+                "-o",
+                "/out/libmiden_example_stubs.a",
+                "/crate/stubs/lib.rs",
+            ]
+            .map(OsString::from);
+            assert_eq!(args, expected);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn scratch(label: &str) -> PathBuf {
+    /// A fresh directory under the system temporary directory, named for `label`.
+    pub(crate) fn scratch(label: &str) -> PathBuf {
         let root = env::temp_dir().join(format!(
             "miden-build-script-{label}-{}-{}",
             std::process::id(),

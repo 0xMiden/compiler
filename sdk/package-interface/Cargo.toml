@@ -17,10 +17,15 @@ edition.workspace = true
 doctest = false
 
 [dependencies]
+miden-assembly = { workspace = true, features = ["std"], optional = true }
 miden-assembly-syntax.workspace = true
 miden-mast-package.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
+
+[features]
+# `testing::assemble_fixture` for dependents' tests; it needs the real assembler.
+testing = ["dep:miden-assembly"]
 
 [dev-dependencies]
 miden-assembly = { workspace = true, features = ["std"] }

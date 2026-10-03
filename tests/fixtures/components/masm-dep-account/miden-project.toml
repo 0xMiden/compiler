@@ -1,0 +1,15 @@
+[package]
+name = "masm-dep-account"
+version = "0.1.0"
+
+[lib]
+kind = "account-component"
+namespace = "miden:masm-dep-account/foo@1.0.0"
+path = "src/lib.rs"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
+
+[dependencies]
+# The MASM package this component binds; shared with the root-project fixture.
+masm-dep = { path = "../../masm-dependency-bindings/masm-dep" }

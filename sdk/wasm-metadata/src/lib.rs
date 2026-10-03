@@ -91,8 +91,9 @@ pub fn trim_trailing_nuls(bytes: &[u8]) -> &[u8] {
 /// resolution — into the directory named by [`package_cache::PACKAGE_CACHE_ENV`]; the SDK
 /// macros and the build-script support crate consume them. Every spelling of that contract lives
 /// here so the producer and the consumers cannot drift apart. The one exception is
-/// `miden-sdk-build-script-support`, which spells the variable name inline because it carries no
-/// dependencies.
+/// `miden-sdk-build-script-support`, which spells the names it needs inline because it carries
+/// no dependencies unless its `bindgen` feature is on; a test under that feature checks its
+/// spellings against these.
 pub mod package_cache {
     use alloc::{format, string::String};
 

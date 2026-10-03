@@ -47,13 +47,8 @@ pub enum WasmScalar {
     U64,
     /// A field element, carried in an `f32`.
     Felt,
-    /// A pointer, carried in an `i32`.
-    ///
-    /// Caveat: `miden-assembly-syntax` 0.29.1 drops a pointer's parsed `addrspace(..)` when
-    /// resolving `TypeExpr::Ptr` (`src/ast/type.rs`, the `Ptr` arm builds
-    /// `PointerType::new(pointee)`, which defaults to byte space), so every pointer read from an
-    /// assembled package currently reports `AddressSpace::Byte`. See the ignored test
-    /// `model::tests::an_element_space_pointer_parameter_keeps_its_address_space`.
+    /// A pointer, carried in an `i32` that is an address *in the pointer's own address space*:
+    /// an element address for an element-space pointer.
     Ptr(Arc<PointerType>),
 }
 
@@ -317,6 +312,74 @@ impl LoweredSignature {
         let params: Vec<Type> = self.params.iter().map(|p| p.scalar.miden_type()).collect();
         let results: Vec<Type> = self.ret.scalars().iter().map(WasmScalar::miden_type).collect();
         FunctionType::new(CallConv::Wasm, params, results)
+    }
+}
+
+/// One result in an out-pointer return area.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ReturnSlot {
+    /// The result scalar.
+    pub scalar: WasmScalar,
+    /// The field path that reaches it in the declared result (see [`Flattened::path`]).
+    pub path: SmallVec<[FieldStep; 2]>,
+    /// Byte offset of the slot from the start of the return area.
+    pub offset: u32,
+    /// Size of the slot in bytes: the size of the scalar's [`WasmScalar::frontend_type`].
+    pub size: u32,
+}
+
+/// The layout of the return area an out pointer points at.
+///
+/// It is the wasm32 C layout of a `#[repr(C)]` struct of the results' *carrier* types in stack
+/// order, so a wrapper that declares such a struct reads back exactly what the frontend's
+/// `store_results_to_pointer` stores at these offsets. Every carrier is naturally aligned:
+/// narrow integers occupy a 4-byte `i32` slot, 64-bit integers an 8-byte slot aligned to 8,
+/// felts and addresses 4 bytes.
+///
+/// This is deliberately not the layout of the HIR
+/// [`StructType`](miden_assembly_syntax::ast::types::StructType) of the carriers: HIR aligns a
+/// 64-bit integer to 4 bytes, so wherever the slots before one end at an offset that is not a
+/// multiple of 8 it places it 4 bytes earlier than rustc does on wasm32, which aligns it to 8.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ReturnArea {
+    /// The slots, in stack order.
+    pub slots: Vec<ReturnSlot>,
+    /// Total size in bytes, including trailing padding.
+    pub size: u32,
+    /// Minimum alignment in bytes.
+    pub align: u32,
+}
+
+impl LoweredSignature {
+    /// The return-area layout, when results go through an out pointer.
+    pub fn return_area(&self) -> Option<ReturnArea> {
+        let ReturnStrategy::OutPointer(results) = &self.ret else {
+            return None;
+        };
+        let mut offset = 0u32;
+        let mut align = 1u32;
+        let slots = results
+            .iter()
+            .map(|result| {
+                let size = result.scalar.frontend_type().size_in_bytes() as u32;
+                // Each carrier (`i32`, `i64`, `felt`) is naturally aligned in the wasm32 C ABI.
+                offset = offset.next_multiple_of(size);
+                align = align.max(size);
+                let slot = ReturnSlot {
+                    scalar: result.scalar.clone(),
+                    path: result.path.clone(),
+                    offset,
+                    size,
+                };
+                offset += size;
+                slot
+            })
+            .collect();
+        Some(ReturnArea {
+            slots,
+            size: offset.next_multiple_of(align),
+            align,
+        })
     }
 }
 
@@ -956,6 +1019,39 @@ mod tests {
         assert_eq!(results.len(), 8);
         let last: Vec<usize> = results[7].path.iter().map(|step| step.index).collect();
         assert_eq!(last, vec![1, 3], "field 1 of the struct, element 3 of that word");
+    }
+
+    /// The return area is the wasm32 C struct of the carrier types, so a narrow result occupies a
+    /// 4-byte slot and a 64-bit result an 8-byte slot aligned to 8.
+    #[test]
+    fn return_area_lays_out_carrier_scalars_like_a_c_struct() {
+        // fn() -> (u8, u64, felt)
+        let sig = FunctionType::new(CallConv::Fast, [], [Type::U8, Type::U64, Type::Felt]);
+        let lowered = lower_signature(&sig).unwrap();
+        let area = lowered.return_area().expect("two or more results use an out pointer");
+        let offsets: Vec<(u32, u32)> = area.slots.iter().map(|s| (s.offset, s.size)).collect();
+        assert_eq!(
+            offsets,
+            [(0, 4), (8, 8), (16, 4)],
+            "u8 widens to an i32 slot; u64 is 8-aligned"
+        );
+        assert_eq!(area.size, 24);
+        assert_eq!(area.align, 8);
+        assert_eq!(area.slots[0].scalar, WasmScalar::U8);
+    }
+
+    #[test]
+    fn return_area_keeps_field_paths_and_is_absent_without_an_out_pointer() {
+        let word = Type::from(ArrayType::new(Type::Felt, 4));
+        let sig = FunctionType::new(CallConv::Fast, [], [word]);
+        let lowered = lower_signature(&sig).unwrap();
+        let area = lowered.return_area().unwrap();
+        assert_eq!(area.slots.len(), 4);
+        assert_eq!(area.slots[3].path[0].index, 3);
+        assert_eq!(area.slots[3].offset, 12);
+
+        let direct = lower_signature(&FunctionType::new(CallConv::Fast, [], [Type::Felt])).unwrap();
+        assert!(direct.return_area().is_none());
     }
 
     #[test]

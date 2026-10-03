@@ -18,6 +18,8 @@ doctest = false
 
 [dependencies]
 miden-sdk-alloc = { version = "0.15.0", path = "../alloc" }
+# `support`, which bindings generated for a user project's MASM dependencies name.
+miden-intrinsics-sys.workspace = true
 miden-stdlib-sys.workspace = true
 miden-base = { version = "0.15.0", path = "../base" }
 miden-base-macros = { version = "0.15.0", path = "../base-macros" }

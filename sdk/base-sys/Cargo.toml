@@ -19,11 +19,22 @@ links = "miden_base_sys_stubs"
 doctest = false
 
 [dependencies]
-miden-stdlib-sys.workspace = true
 miden-field-repr.workspace = true
+miden-intrinsics-sys.workspace = true
+miden-stdlib-sys.workspace = true
 
 [dev-dependencies]
+# `tests/generated.rs` regenerates `src/raw/{protocol,standards}.rs` and
+# `stubs/{protocol,standards}.rs` from the toolchain's packages and compares them with the
+# committed files.
+miden-sdk-bindgen.workspace = true
+midenc-integration-test-support.workspace = true
+midenc-package-interface.workspace = true
+# The differential test of `AssetAmount` in `src/bindings/types.rs`.
 miden-protocol.workspace = true
+
+[build-dependencies]
+miden-sdk-build-script-support = { path = "../build-script-support", version = "0.15.0-rc.3" }
 
 [features]
 default = []

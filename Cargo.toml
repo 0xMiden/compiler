@@ -33,6 +33,7 @@ members = [
     "sdk/base",
     "sdk/base-macros",
     "sdk/base-sys",
+    "sdk/bindgen",
     "sdk/build-script-support",
     "sdk/note-bindings",
     "sdk/note-bindings/macros",
@@ -41,6 +42,7 @@ members = [
     "sdk/note-codec/wit-crate",
     "sdk/note-schema",
     "sdk/note-schema/codegen",
+    "sdk/intrinsics-sys",
     "sdk/package-interface",
     "sdk/sdk",
     "sdk/stdlib-sys",
@@ -208,6 +210,8 @@ midenc-package-interface = { version = "0.15.0", path = "sdk/package-interface" 
 midenc-session = { version = "0.11.0", path = "midenc-session" }
 midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }
+miden-sdk-bindgen = { version = "0.15.0", path = "sdk/bindgen" }
+miden-intrinsics-sys = { version = "0.15.0", path = "sdk/intrinsics-sys" }
 miden-base-sys = { version = "0.15.0", path = "sdk/base-sys" }
 miden-field-repr = { version = "0.15.0", path = "sdk/field-repr/repr" }
 miden-note-bindings-macros = { version = "0.15.0", path = "sdk/note-bindings/macros" }

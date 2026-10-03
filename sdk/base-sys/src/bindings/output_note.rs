@@ -1,120 +1,21 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use miden_stdlib_sys::{Felt, Word, WordAligned};
+use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
     MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, assert_attachment_count,
-    assert_attachment_word_count,
-    types::{
-        Asset, NoteId, NoteIdx, NoteMetadata, NoteType, RawCommitmentWithCount, RawFoundIndex,
-        Recipient, Tag,
-    },
+    assert_attachment_word_count, attachment_index_u8, note_index_and_scheme_u16,
+    types::{Asset, NoteId, NoteIdx, NoteMetadata, NoteType, Recipient, Tag},
 };
-
-#[allow(improper_ctypes)]
-unsafe extern "C" {
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::create"]
-    pub fn extern_output_note_create(
-        tag: Tag,
-        note_type: NoteType,
-        recipient_f0: Felt,
-        recipient_f1: Felt,
-        recipient_f2: Felt,
-        recipient_f3: Felt,
-    ) -> NoteIdx;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::add_asset"]
-    pub fn extern_output_note_add_asset(
-        asset_id_f0: Felt,
-        asset_id_f1: Felt,
-        asset_id_f2: Felt,
-        asset_id_f3: Felt,
-        asset_value_f0: Felt,
-        asset_value_f1: Felt,
-        asset_value_f2: Felt,
-        asset_value_f3: Felt,
-        note_idx: NoteIdx,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::get_assets_info"]
-    pub(crate) fn extern_output_note_get_assets_info(
-        note_index: Felt,
-        ptr: *mut RawCommitmentWithCount,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::get_assets"]
-    pub fn extern_output_note_get_assets(dest_ptr: *mut Felt, note_index: Felt) -> usize;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::get_attachments_commitment"]
-    pub fn extern_output_note_get_attachments_commitment(note_index: Felt, ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::get_recipient"]
-    pub fn extern_output_note_get_recipient(note_index: Felt, ptr: *mut Recipient);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::get_metadata"]
-    pub fn extern_output_note_get_metadata(note_index: Felt, ptr: *mut NoteMetadata);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::add_word_attachment"]
-    pub fn extern_output_note_add_word_attachment(
-        attachment_scheme: Felt,
-        attachment_f0: Felt,
-        attachment_f1: Felt,
-        attachment_f2: Felt,
-        attachment_f3: Felt,
-        note_idx: NoteIdx,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::add_attachment"]
-    pub fn extern_output_note_add_attachment(
-        attachment_scheme: Felt,
-        attachment_f0: Felt,
-        attachment_f1: Felt,
-        attachment_f2: Felt,
-        attachment_f3: Felt,
-        note_idx: NoteIdx,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::add_attachment_from_memory"]
-    pub fn extern_output_note_add_attachment_from_memory(
-        attachment_scheme: Felt,
-        num_words: usize,
-        attachment_ptr: *const Felt,
-        note_idx: NoteIdx,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::find_attachment"]
-    pub(crate) fn extern_output_note_find_attachment(
-        attachment_scheme: Felt,
-        note_index: Felt,
-        ptr: *mut RawFoundIndex,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::write_attachment_commitments_to_memory"]
-    pub fn extern_output_note_write_attachment_commitments_to_memory(
-        dest_ptr: *mut Felt,
-        note_index: Felt,
-    ) -> usize;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::write_attachment_to_memory"]
-    pub fn extern_output_note_write_attachment_to_memory(
-        dest_ptr: *mut Felt,
-        attachment_idx: Felt,
-        note_index: Felt,
-    ) -> usize;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::compute_note_id"]
-    fn extern_output_note_compute_note_id(note_idx: Felt, ptr: *mut NoteId);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::seal"]
-    fn extern_output_note_seal(note_index: Felt);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::is_sealed"]
-    fn extern_output_note_is_sealed(note_index: Felt) -> Felt;
-}
+use crate::raw::protocol::{output_note as raw, types as raw_types};
 
 /// Creates a new output note and returns its index.
+///
+/// # Panics
+///
+/// Panics if `tag` does not fit in the protocol's `u32` note tag, or if `note_type` is neither
+/// private (`0`) nor public (`1`).
 ///
 /// # Examples
 ///
@@ -146,46 +47,24 @@ unsafe extern "C" {
 /// );
 /// ```
 pub fn create(tag: Tag, note_type: NoteType, recipient: Recipient) -> NoteIdx {
-    unsafe {
-        extern_output_note_create(
-            tag,
-            note_type,
-            recipient.inner[0],
-            recipient.inner[1],
-            recipient.inner[2],
-            recipient.inner[3],
-        )
-    }
+    let note_type = raw_types::NoteType::try_from(note_type).expect("unrecognized note type");
+    // Converted last, so that its `u64` canonical value is not kept across the note type check.
+    let tag = u32::try_from(tag).expect("note tag exceeds u32");
+    raw::create(tag, note_type, recipient.inner).into()
 }
 
 /// Adds a single-word attachment to the output note specified by `note_idx`.
 pub fn add_word_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
-    unsafe {
-        extern_output_note_add_word_attachment(
-            attachment_scheme,
-            attachment[0],
-            attachment[1],
-            attachment[2],
-            attachment[3],
-            note_idx,
-        );
-    }
+    let (note_idx, attachment_scheme) = note_index_and_scheme_u16(note_idx, attachment_scheme);
+    raw::add_word_attachment(attachment_scheme, attachment, note_idx);
 }
 
 /// Adds an attachment commitment to the output note specified by `note_idx`.
 ///
 /// The advice map must contain an entry for the attachment elements committed to by `attachment`.
 pub fn add_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
-    unsafe {
-        extern_output_note_add_attachment(
-            attachment_scheme,
-            attachment[0],
-            attachment[1],
-            attachment[2],
-            attachment[3],
-            note_idx,
-        );
-    }
+    let (note_idx, attachment_scheme) = note_index_and_scheme_u16(note_idx, attachment_scheme);
+    raw::add_attachment(attachment_scheme, attachment, note_idx);
 }
 
 /// Adds a multi-word attachment from linear memory to the output note specified by `note_idx`.
@@ -195,13 +74,14 @@ pub fn add_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Wo
 pub fn add_attachment_from_memory(note_idx: NoteIdx, attachment_scheme: Felt, attachment: &[Word]) {
     assert!(!attachment.is_empty(), "note attachment cannot be empty");
     assert_attachment_word_count(attachment.len());
-    let ptr = (attachment.as_ptr().addr() / 4) as u32;
-
+    // The bound above makes the length fit in the protocol's `u16`.
+    let num_words = attachment.len() as u16;
+    let (note_idx, attachment_scheme) = note_index_and_scheme_u16(note_idx, attachment_scheme);
     unsafe {
-        extern_output_note_add_attachment_from_memory(
+        raw::add_attachment_from_memory(
             attachment_scheme,
-            attachment.len(),
-            ptr as *const Felt,
+            num_words,
+            ElementPtr::from_ptr(attachment.as_ptr().cast_mut()),
             note_idx,
         );
     }
@@ -224,20 +104,7 @@ pub fn add_attachment_from_memory(note_idx: NoteIdx, attachment_scheme: Felt, at
 /// output_note::add_asset(asset, note_idx);
 /// ```
 pub fn add_asset(asset: Asset, note_idx: NoteIdx) {
-    let id = asset.id.inner;
-    unsafe {
-        extern_output_note_add_asset(
-            id[0],
-            id[1],
-            id[2],
-            id[3],
-            asset.value[0],
-            asset.value[1],
-            asset.value[2],
-            asset.value[3],
-            note_idx,
-        );
-    }
+    raw::add_asset(asset.into(), note_idx.to_u16());
 }
 
 /// Seals the output note at `note_index`, so that its assets and attachments can no longer be
@@ -250,7 +117,7 @@ pub fn add_asset(asset: Asset, note_idx: NoteIdx) {
 /// Panics if the active account is not the native account, or if `note_index` is out of bounds
 /// for the transaction's output notes.
 pub fn seal(note_index: NoteIdx) {
-    unsafe { extern_output_note_seal(note_index.inner) }
+    raw::seal(note_index.to_u16())
 }
 
 /// Returns `true` if the output note at `note_index` is sealed against asset and attachment
@@ -260,7 +127,7 @@ pub fn seal(note_index: NoteIdx) {
 ///
 /// Panics if `note_index` is out of bounds for the transaction's output notes.
 pub fn is_sealed(note_index: NoteIdx) -> bool {
-    unsafe { extern_output_note_is_sealed(note_index.inner) != Felt::new(0).unwrap() }
+    raw::is_sealed(note_index.to_u16())
 }
 
 /// Contains summary information about the assets of an output note.
@@ -271,15 +138,10 @@ pub struct OutputNoteAssetsInfo {
 
 /// Retrieves the assets commitment and asset count for the output note at `note_index`.
 pub fn get_assets_info(note_index: NoteIdx) -> OutputNoteAssetsInfo {
-    unsafe {
-        let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<RawCommitmentWithCount>::uninit());
-        extern_output_note_get_assets_info(note_index.inner, ret_area.as_mut_ptr());
-        let raw = ret_area.into_inner().assume_init();
-        OutputNoteAssetsInfo {
-            commitment: raw.commitment,
-            num_assets: raw.num_items(),
-        }
+    let (commitment, num_assets) = raw::get_assets_info(note_index.to_u16());
+    OutputNoteAssetsInfo {
+        commitment,
+        num_assets: num_assets.into(),
     }
 }
 
@@ -288,53 +150,43 @@ pub fn get_assets(note_index: NoteIdx) -> Vec<Asset> {
     const MAX_ASSETS: usize = 256;
     let mut assets: Vec<Asset> = Vec::with_capacity(MAX_ASSETS);
     let num_assets = unsafe {
-        let ptr = (assets.as_mut_ptr() as usize) / 4;
-        extern_output_note_get_assets(ptr as *mut Felt, note_index.inner)
+        raw::get_assets(
+            ElementPtr::from_ptr(assets.as_mut_ptr().cast::<raw_types::Asset>()),
+            note_index.to_u16(),
+        )
     };
     unsafe {
-        assets.set_len(num_assets);
+        assets.set_len(num_assets.into());
     }
     assets
 }
 
 /// Returns the commitment over all attachments of the output note at `note_index`.
 pub fn get_attachments_commitment(note_index: NoteIdx) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_output_note_get_attachments_commitment(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_attachments_commitment(note_index.to_u16())
 }
 
 /// Returns the recipient of the output note at `note_index`.
 pub fn get_recipient(note_index: NoteIdx) -> Recipient {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Recipient>::uninit());
-        extern_output_note_get_recipient(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_recipient(note_index.to_u16()).into()
 }
 
 /// Returns the metadata header of the output note at `note_index`.
 pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<NoteMetadata>::uninit());
-        extern_output_note_get_metadata(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    NoteMetadata::new(raw::get_metadata(note_index.to_u16()))
 }
 
 /// Searches the output note metadata for `attachment_scheme`.
+///
+/// # Panics
+///
+/// Panics if `note_index` is out of bounds for the transaction's output notes, or if
+/// `attachment_scheme` does not fit in a `u16`: the protocol cannot store an attachment under
+/// such a scheme, so asking for one is a caller bug.
 pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u32> {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawFoundIndex>::uninit());
-        extern_output_note_find_attachment(
-            attachment_scheme,
-            note_index.inner,
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init().into_attachment_index()
-    }
+    let (note_index, attachment_scheme) = note_index_and_scheme_u16(note_index, attachment_scheme);
+    let (found, index) = raw::find_attachment(attachment_scheme, note_index);
+    found.then_some(index.into())
 }
 
 /// Returns the attachment commitments of the output note at `note_index`.
@@ -343,12 +195,12 @@ pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u
 pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> {
     let mut commitments: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENTS_PER_NOTE);
     let num_attachments = unsafe {
-        let ptr = (commitments.as_mut_ptr() as usize) / 4;
-        extern_output_note_write_attachment_commitments_to_memory(
-            ptr as *mut Felt,
-            note_index.inner,
+        raw::write_attachment_commitments_to_memory(
+            ElementPtr::from_ptr(commitments.as_mut_ptr()),
+            note_index.to_u16(),
         )
     };
+    let num_attachments = num_attachments.into();
     assert_attachment_count(num_attachments);
     unsafe {
         commitments.set_len(num_attachments);
@@ -363,13 +215,13 @@ pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> 
 pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {
-        let ptr = (attachment.as_mut_ptr() as usize) / 4;
-        extern_output_note_write_attachment_to_memory(
-            ptr as *mut Felt,
-            Felt::from_u32(attachment_idx),
-            note_index.inner,
+        raw::write_attachment_to_memory(
+            ElementPtr::from_ptr(attachment.as_mut_ptr()),
+            attachment_index_u8(attachment_idx),
+            note_index.to_u16(),
         )
     };
+    let num_words = num_words.into();
     assert_attachment_word_count(num_words);
     unsafe {
         attachment.set_len(num_words);
@@ -386,9 +238,5 @@ pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> V
 ///
 /// Panics if `note_index` is out of bounds for the transaction's output notes.
 pub fn compute_note_id(note_index: NoteIdx) -> NoteId {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<NoteId>::uninit());
-        extern_output_note_compute_note_id(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::compute_note_id(note_index.to_u16()).into()
 }

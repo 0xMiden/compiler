@@ -27,9 +27,9 @@ pub struct WasmTranslationConfig {
 
     /// The interfaces of the packages linked into this build, resolved by the session.
     ///
-    /// Linker stubs whose names are not intrinsics are resolved against these, after the
-    /// transitional table. `None` means only the transitional table is consulted, which is what
-    /// standalone unit tests want.
+    /// Linker stubs whose names are not intrinsics are resolved against these, and against
+    /// nothing else. `None` means no package is linked, which is what standalone unit tests want:
+    /// a stub rooted in the `miden` namespace is then reported as unresolvable.
     pub linked_packages: Option<alloc::sync::Arc<[midenc_package_interface::PackageInterface]>>,
 }
 

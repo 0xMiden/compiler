@@ -17,4 +17,31 @@ edition.workspace = true
 path = "lib.rs"
 doctest = false
 
+[features]
+# `generate_bindings`: the Rust bindings of a Miden package the project depends on. Opt-in
+# because the generator and the package reader behind it are most of the compiler's dependency
+# graph, and this crate is otherwise dependency-free (see the crate docs).
+bindgen = [
+    "dep:miden-mast-package",
+    "dep:miden-sdk-bindgen",
+    "dep:midenc-frontend-wasm-metadata",
+    "dep:midenc-package-interface",
+    "dep:toml",
+]
+
 [dependencies]
+# `bindgen` only: reads a dependency's package from the package cache, at the path the shared
+# cache contract spells (`package_cache`), and generates its bindings and stubs.
+miden-mast-package = { workspace = true, features = ["std"], optional = true }
+miden-sdk-bindgen = { workspace = true, optional = true }
+midenc-frontend-wasm-metadata = { workspace = true, optional = true }
+midenc-package-interface = { workspace = true, optional = true }
+# The compiler's dependency artifact map (`miden-deps/<consumer>.deps.toml`) is TOML.
+toml = { workspace = true, optional = true }
+
+[dev-dependencies]
+# The crate's own tests always build with `bindgen` on: a dev-dependency on itself is how a
+# feature is enabled for tests alone, without touching what consumers get.
+miden-sdk-build-script-support = { path = ".", features = ["bindgen"] }
+# Real package manifests for the `bindgen` root-module tests.
+midenc-package-interface = { workspace = true, features = ["testing"] }

@@ -1,69 +1,7 @@
-use miden_stdlib_sys::{Felt, Word, WordAligned};
+use miden_stdlib_sys::Word;
 
 use super::StorageSlotId;
-
-#[allow(improper_ctypes)]
-unsafe extern "C" {
-    // The public SDK models storage slots as `(prefix, suffix)`, but the host ABI expects the slot
-    // coordinates in storage order: `(suffix, prefix)`.
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_item"]
-    pub fn extern_get_storage_item(index_suffix: Felt, index_prefix: Felt, ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::get_initial_item"]
-    pub fn extern_get_initial_storage_item(index_suffix: Felt, index_prefix: Felt, ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::set_item"]
-    pub fn extern_set_storage_item(
-        index_suffix: Felt,
-        index_prefix: Felt,
-        v0: Felt,
-        v1: Felt,
-        v2: Felt,
-        v3: Felt,
-        ptr: *mut Word,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_map_item"]
-    pub fn extern_get_storage_map_item(
-        index_suffix: Felt,
-        index_prefix: Felt,
-        k0: Felt,
-        k1: Felt,
-        k2: Felt,
-        k3: Felt,
-        ptr: *mut Word,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::get_initial_map_item"]
-    pub fn extern_get_initial_storage_map_item(
-        index_suffix: Felt,
-        index_prefix: Felt,
-        k0: Felt,
-        k1: Felt,
-        k2: Felt,
-        k3: Felt,
-        ptr: *mut Word,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::set_map_item"]
-    pub fn extern_set_storage_map_item(
-        index_suffix: Felt,
-        index_prefix: Felt,
-        k0: Felt,
-        k1: Felt,
-        k2: Felt,
-        k3: Felt,
-        v0: Felt,
-        v1: Felt,
-        v2: Felt,
-        v3: Felt,
-        ptr: *mut Word,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::has_storage_slot"]
-    pub fn extern_active_account_has_storage_slot(index_suffix: Felt, index_prefix: Felt) -> Felt;
-}
+use crate::raw::protocol::{active_account, native_account};
 
 /// Gets an item from the account storage.
 ///
@@ -78,23 +16,13 @@ unsafe extern "C" {
 /// - the requested slot does not exist in the account storage.
 #[inline]
 pub fn get_item(slot_id: StorageSlotId) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        let (suffix, prefix) = slot_id.to_suffix_prefix();
-        extern_get_storage_item(suffix, prefix, ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    active_account::get_item(slot_id.into())
 }
 
 /// Gets the initial value of an item from the account storage.
 #[inline]
 pub fn get_initial_item(slot_id: StorageSlotId) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        let (suffix, prefix) = slot_id.to_suffix_prefix();
-        extern_get_initial_storage_item(suffix, prefix, ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    native_account::get_initial_item(slot_id.into())
 }
 
 /// Sets an item in the account storage.
@@ -111,20 +39,7 @@ pub fn get_initial_item(slot_id: StorageSlotId) -> Word {
 /// - the requested slot does not exist in the account storage.
 #[inline]
 pub fn set_item(slot_id: StorageSlotId, value: Word) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        let (suffix, prefix) = slot_id.to_suffix_prefix();
-        extern_set_storage_item(
-            suffix,
-            prefix,
-            value[0],
-            value[1],
-            value[2],
-            value[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init()
-    }
+    native_account::set_item(slot_id.into(), value)
 }
 
 /// Gets a map item from the account storage.
@@ -142,39 +57,13 @@ pub fn set_item(slot_id: StorageSlotId, value: Word) -> Word {
 /// - the slot content is not a map.
 #[inline]
 pub fn get_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        let (suffix, prefix) = slot_id.to_suffix_prefix();
-        extern_get_storage_map_item(
-            suffix,
-            prefix,
-            key[0],
-            key[1],
-            key[2],
-            key[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init()
-    }
+    active_account::get_map_item(slot_id.into(), *key)
 }
 
 /// Gets the initial value from a storage map.
 #[inline]
 pub fn get_initial_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        let (suffix, prefix) = slot_id.to_suffix_prefix();
-        extern_get_initial_storage_map_item(
-            suffix,
-            prefix,
-            key[0],
-            key[1],
-            key[2],
-            key[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init()
-    }
+    native_account::get_initial_map_item(slot_id.into(), *key)
 }
 
 /// Sets a map item in the account storage.
@@ -194,24 +83,7 @@ pub fn get_initial_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
 /// - the slot content is not a map.
 #[inline]
 pub fn set_map_item(slot_id: StorageSlotId, key: Word, value: Word) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        let (suffix, prefix) = slot_id.to_suffix_prefix();
-        extern_set_storage_map_item(
-            suffix,
-            prefix,
-            key[0],
-            key[1],
-            key[2],
-            key[3],
-            value[0],
-            value[1],
-            value[2],
-            value[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init()
-    }
+    native_account::set_map_item(slot_id.into(), key, value)
 }
 
 /// Returns `true` if the active account has a storage slot with the given slot id.
@@ -224,6 +96,5 @@ pub fn set_map_item(slot_id: StorageSlotId, key: Word, value: Word) -> Word {
 /// - has_slot is `true` when a slot with that id exists on the active account.
 #[inline]
 pub fn has_storage_slot(slot_id: StorageSlotId) -> bool {
-    let (suffix, prefix) = slot_id.to_suffix_prefix();
-    unsafe { extern_active_account_has_storage_slot(suffix, prefix) != Felt::new(0).unwrap() }
+    active_account::has_storage_slot(slot_id.into())
 }

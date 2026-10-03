@@ -16,3 +16,13 @@ use_try_shorthand = true
 tab_spaces = 4
 condense_wildcard_suffixes = true
 format_strings = true
+# Generated bindings and stubs, committed and checked by the sys crates' `tests/generated.rs`:
+# rustfmt cannot break some of their lines (long `unimplemented!` messages and link names).
+ignore = [
+    "sdk/stdlib-sys/src/raw/core.rs",
+    "sdk/stdlib-sys/stubs/core.rs",
+    "sdk/base-sys/src/raw/protocol.rs",
+    "sdk/base-sys/src/raw/standards.rs",
+    "sdk/base-sys/stubs/protocol.rs",
+    "sdk/base-sys/stubs/standards.rs",
+]

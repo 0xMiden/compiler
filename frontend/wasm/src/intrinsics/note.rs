@@ -12,11 +12,12 @@
 use midenc_dialect_hir::{HirOpBuilder, ProcedureRoot};
 use midenc_frontend_wasm_metadata::FrontendMetadata;
 use midenc_hir::{
-    Builder, Op, SourceSpan, SymbolNameComponent, ValueRef,
+    Builder, CallConv, FunctionType, Op, SourceSpan, SymbolNameComponent, Type, ValueRef,
     diagnostics::Report,
     dialects::builtin::{FunctionRef, attributes::UnitAttr},
     interner::{Symbol, symbols},
 };
+use midenc_package_interface::lower_signature;
 
 use crate::{
     error::WasmResult, miden_abi::transform::store_results_to_pointer,
@@ -35,7 +36,7 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
 /// export lifting uses it to locate the stub and repoint its `hir.procedure_root` op at the
 /// lifted note-script export.
 ///
-/// Must stay in lockstep with the SDK stub's `export_name` (`sdk/base-sys/stubs/note.rs`) and
+/// Must stay in lockstep with the SDK stub's `export_name` (`sdk/base-sys/stubs/intrinsics.rs`) and
 /// the binding's `link_name` (`sdk/base-sys/src/bindings/note.rs`).
 pub(crate) const SCRIPT_ROOT_STUB_NAME: &str = "intrinsics::note::script_root";
 
@@ -90,7 +91,16 @@ pub(crate) fn convert_note_intrinsics_stub<B: ?Sized + Builder>(
                 let borrow = op.borrow();
                 borrow.results().iter().map(|op_res| op_res.borrow().as_value_ref()).collect()
             };
-            store_results_to_pointer(&results, args[0], builder)?;
+            let digest = FunctionType::new(
+                CallConv::Wasm,
+                [],
+                vec![Type::Felt; ProcedureRoot::DIGEST_FELTS],
+            );
+            let area = lower_signature(&digest)
+                .expect("a digest of felts lowers")
+                .return_area()
+                .expect("a four-felt digest goes through an out pointer");
+            store_results_to_pointer(&area, &results, args[0], builder)?;
 
             Ok(Vec::new())
         }

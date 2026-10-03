@@ -22,7 +22,7 @@ use midenc_hir::{
     interner::Symbol,
 };
 use midenc_hir_symbol::symbols;
-use midenc_package_interface::ReturnStrategy;
+use midenc_package_interface::{LoweredSignature, ReturnStrategy};
 use wasmparser::{FunctionBody, Operator};
 
 use crate::{
@@ -33,9 +33,9 @@ use crate::{
         convert_module_context_stub_call, fpi,
     },
     miden_abi::{
-        resolve::{Resolved, convert_arguments, convert_results, resolve_stub},
+        effects::known_effects,
+        resolve::{convert_arguments, convert_results, resolve_stub},
         transform::{fpi_indirect_return_via_pointer, no_transform, return_via_pointer},
-        transitional,
     },
     module::{
         function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener},
@@ -52,9 +52,8 @@ enum Callee {
     Intrinsic(Intrinsic),
     /// The raw FPI executor, which the compiler lowers itself rather than calling.
     FpiIndirect,
-    /// A procedure exported by a linked package, or by the transitional table, with the shape
-    /// the Miden ABI rule set derives.
-    Package(Resolved),
+    /// A procedure exported by a linked package, with the shape the Miden ABI rule set derives.
+    Package(LoweredSignature),
 }
 
 /// Returns true if the given Wasm function body consists only of an
@@ -97,9 +96,19 @@ fn names_a_linked_namespace(path: &SymbolPath, config: &WasmTranslationConfig) -
     let Some(linked) = config.linked_packages.as_deref() else {
         return false;
     };
-    linked
-        .iter()
-        .any(|package| package.root_namespaces().contains(namespace.as_str()))
+    // A symbol path keeps a quoted MASM component as written (`"masm-dep"`), while a package's
+    // namespaces come through `PathComponent::as_str`, which strips the quotes; compare the
+    // identifier, not its spelling.
+    let namespace = unquoted(namespace.as_str());
+    linked.iter().any(|package| package.root_namespaces().contains(namespace))
+}
+
+/// `component` without the quotes a MASM path puts around an identifier that needs them.
+fn unquoted(component: &str) -> &str {
+    component
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(component)
 }
 
 /// Whether `path` is a name the frontend recognizes as a linker stub: a compiler intrinsic, the
@@ -239,10 +248,7 @@ pub fn maybe_lower_linker_stub(
                 .wrap_err("failed to create the FPI executor import")?;
             fpi_indirect_return_via_pointer(import_func_ref, &args, &mut fb)?
         }
-        Callee::Package(Resolved {
-            lowered,
-            transitional: is_transitional,
-        }) => {
+        Callee::Package(lowered) => {
             let import_ft = lowered.import_signature();
             let import_sig = Signature::new(&context, import_ft.params, import_ft.results);
             let import_module_ref = module_state
@@ -252,11 +258,11 @@ pub fn maybe_lower_linker_stub(
             let mut import_func_ref = ModuleBuilder::new(import_module_ref)
                 .define_function(import_path.name().into(), Visibility::Public, import_sig)
                 .wrap_err("failed to create MASM import function ref")?;
-            // A package export carries no effects: the manifest cannot declare them and the
-            // compiler treats them conservatively (spec §7). The transitional entries are
-            // compiler-owned data and keep the effects the deleted hand tables attached.
-            if is_transitional {
-                let effects = transitional::effects(&import_path.to_library_path());
+            // A manifest cannot declare effects, and the compiler treats an export's effects as
+            // unknown (spec §7), except for the core-library procedures whose effects it knows
+            // itself; `known_effects` is empty for every other path.
+            {
+                let effects = known_effects(&import_path.to_library_path());
                 let mut import_func = import_func_ref.borrow_mut();
                 attach_effects_to_function(&mut import_func, effects.iter());
             }

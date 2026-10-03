@@ -4,7 +4,7 @@ use midenc_hir::{
     AddressSpace, Builder, Immediate, Op, PointerType, SourceSpan, Type, ValueRef,
     dialects::builtin::FunctionRef,
 };
-use midenc_package_interface::LoweredSignature;
+use midenc_package_interface::{LoweredSignature, ReturnArea, lower_signature};
 use midenc_session::diagnostics::Report;
 
 use super::resolve::convert_results;
@@ -61,7 +61,8 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     };
     let results = convert_results(lowered, &results, builder, span)?;
 
-    store_results_to_pointer(&results, *ptr_arg, builder)?;
+    let area = lowered.return_area().expect("return_via_pointer is only used for OutPointer");
+    store_results_to_pointer(&area, &results, *ptr_arg, builder)?;
 
     Ok(Vec::new())
 }
@@ -115,13 +116,21 @@ pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 
-    store_results_to_pointer(&results, *ptr_arg, builder)?;
+    let area = lower_signature(&crate::intrinsics::fpi::signature())
+        .expect("the FPI signature lowers")
+        .return_area()
+        .expect("sixteen felts go through an out pointer");
+    store_results_to_pointer(&area, &results, *ptr_arg, builder)?;
 
     Ok(Vec::new())
 }
 
-/// Stores flattened stack results into the Rust return pointer used by linker stubs.
+/// Store `results` through `ptr_arg` at the offsets `area` gives them.
+///
+/// `area` is [`LoweredSignature::return_area`]: the same layout a generated wrapper reads back,
+/// so the two consumers of the rule set cannot disagree about where a result lives.
 pub(crate) fn store_results_to_pointer<B: ?Sized + Builder>(
+    area: &ReturnArea,
     results: &[ValueRef],
     ptr_arg: ValueRef,
     builder: &mut FunctionBuilderExt<'_, B>,
@@ -137,18 +146,32 @@ pub(crate) fn store_results_to_pointer<B: ?Sized + Builder>(
              `{ptr_arg_ty}`"
         )));
     }
+    if area.slots.len() != results.len() {
+        return Err(Report::msg(format!(
+            "return area has {} slots but the callee produced {} results",
+            area.slots.len(),
+            results.len()
+        )));
+    }
 
     let ptr_u32 = builder.bitcast(ptr_arg, Type::U32, span)?;
 
-    let result_ty = midenc_hir::StructType::new(results.iter().map(|v| (*v).borrow().ty().clone()));
-    for (idx, value) in results.iter().enumerate() {
-        let value_ty = (*value).borrow().ty().clone().clone();
-        let eff_ptr = if idx == 0 {
+    for (slot, value) in area.slots.iter().zip(results) {
+        let value_ty = (*value).borrow().ty().clone();
+        // The slot is sized for the carrier, so any other type would write the wrong width.
+        let carrier = slot.scalar.frontend_type();
+        if value_ty != carrier {
+            return Err(Report::msg(format!(
+                "return area slot at offset {} holds a `{carrier}`, but the value stored there is \
+                 a `{value_ty}`",
+                slot.offset
+            )));
+        }
+        let eff_ptr = if slot.offset == 0 {
             // We're assuming here that the base pointer is of the correct alignment
             ptr_u32
         } else {
-            let imm = Immediate::U32(result_ty.get(idx).offset);
-            let imm_val = builder.imm(imm, span);
+            let imm_val = builder.imm(Immediate::U32(slot.offset), span);
             builder.add(ptr_u32, imm_val, span)?
         };
         let addr = builder.inttoptr(eff_ptr, Type::from(PointerType::new(value_ty)), span)?;

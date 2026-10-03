@@ -1,85 +1,7 @@
-use miden_stdlib_sys::{Felt, Word, WordAligned};
+use miden_stdlib_sys::Word;
 
-use super::types::{AccountId, Asset, AssetId, Nonce, RawAccountId};
-
-#[allow(improper_ctypes)]
-unsafe extern "C" {
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::add_asset"]
-    fn extern_native_account_add_asset(
-        asset_id_0: Felt,
-        asset_id_1: Felt,
-        asset_id_2: Felt,
-        asset_id_3: Felt,
-        asset_value_0: Felt,
-        asset_value_1: Felt,
-        asset_value_2: Felt,
-        asset_value_3: Felt,
-        ptr: *mut Word,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::remove_asset"]
-    fn extern_native_account_remove_asset(
-        asset_id_0: Felt,
-        asset_id_1: Felt,
-        asset_id_2: Felt,
-        asset_id_3: Felt,
-        asset_value_0: Felt,
-        asset_value_1: Felt,
-        asset_value_2: Felt,
-        asset_value_3: Felt,
-        ptr: *mut Word,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::get_id"]
-    fn extern_native_account_get_id(ptr: *mut RawAccountId);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::incr_nonce"]
-    fn extern_native_account_incr_nonce() -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::compute_commitment"]
-    fn extern_native_account_compute_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::compute_delta_commitment"]
-    fn extern_native_account_compute_delta_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::was_procedure_called"]
-    fn extern_native_account_was_procedure_called(
-        proc_root_0: Felt,
-        proc_root_1: Felt,
-        proc_root_2: Felt,
-        proc_root_3: Felt,
-    ) -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::get_initial_commitment"]
-    fn extern_native_account_get_initial_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::get_initial_storage_commitment"]
-    fn extern_native_account_get_initial_storage_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::get_initial_vault_root"]
-    fn extern_native_account_get_initial_vault_root(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::get_initial_asset"]
-    fn extern_native_account_get_initial_asset(
-        asset_id_0: Felt,
-        asset_id_1: Felt,
-        asset_id_2: Felt,
-        asset_id_3: Felt,
-        ptr: *mut Word,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::has_state_changed"]
-    fn extern_native_account_has_state_changed() -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::native_account::has_initial_asset"]
-    fn extern_native_account_has_initial_asset(
-        asset_id_0: Felt,
-        asset_id_1: Felt,
-        asset_id_2: Felt,
-        asset_id_3: Felt,
-    ) -> Felt;
-}
+use super::types::{AccountId, Asset, AssetId, Nonce};
+use crate::raw::protocol::native_account as raw;
 
 /// Adds the specified asset to the vault and returns the resulting asset value word stored under
 /// that asset id.
@@ -113,22 +35,7 @@ unsafe extern "C" {
 /// }
 /// ```
 pub fn add_asset(asset: Asset) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        let id = asset.id.inner;
-        extern_native_account_add_asset(
-            id[0],
-            id[1],
-            id[2],
-            id[3],
-            asset.value[0],
-            asset.value[1],
-            asset.value[2],
-            asset.value[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init()
-    }
+    raw::add_asset(asset.into())
 }
 
 /// Removes the specified asset from the vault and returns the resulting asset value word.
@@ -138,38 +45,19 @@ pub fn add_asset(asset: Asset) -> Word {
 /// - The amount of the fungible asset in the vault is less than the amount to be removed.
 /// - The non-fungible asset is not found in the vault.
 pub fn remove_asset(asset: Asset) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        let id = asset.id.inner;
-        extern_native_account_remove_asset(
-            id[0],
-            id[1],
-            id[2],
-            id[3],
-            asset.value[0],
-            asset.value[1],
-            asset.value[2],
-            asset.value[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init()
-    }
+    raw::remove_asset(asset.into())
 }
 
 /// Returns the native account ID for the current transaction.
 pub fn get_id() -> AccountId {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawAccountId>::uninit());
-        extern_native_account_get_id(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init().into_account_id()
-    }
+    raw::get_id().into()
 }
 
 /// Increments the account nonce by one and returns the new nonce.
 #[inline]
 pub fn incr_nonce() -> Nonce {
     Nonce {
-        inner: unsafe { extern_native_account_incr_nonce() },
+        inner: raw::incr_nonce(),
     }
 }
 
@@ -182,74 +70,42 @@ pub fn incr_nonce() -> Nonce {
 /// - If the active account is not the native account (a foreign account reached through FPI).
 #[inline]
 pub fn compute_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_native_account_compute_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::compute_commitment()
 }
 
 /// Computes and returns the commitment to the native account's delta for this transaction.
 #[inline]
 pub fn compute_delta_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_native_account_compute_delta_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::compute_delta_commitment()
 }
 
 /// Returns `true` if the procedure identified by `proc_root` was called during the transaction.
 #[inline]
 pub fn was_procedure_called(proc_root: Word) -> bool {
-    unsafe {
-        extern_native_account_was_procedure_called(
-            proc_root[0],
-            proc_root[1],
-            proc_root[2],
-            proc_root[3],
-        ) != Felt::new(0).unwrap()
-    }
+    raw::was_procedure_called(proc_root)
 }
 
 /// Returns the native account's commitment at the beginning of the transaction.
 #[inline]
 pub fn get_initial_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_native_account_get_initial_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_initial_commitment()
 }
 
 /// Returns the native account's storage commitment at the beginning of the transaction.
 #[inline]
 pub fn get_initial_storage_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_native_account_get_initial_storage_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_initial_storage_commitment()
 }
 
 /// Returns the native account's vault root at the beginning of the transaction.
 #[inline]
 pub fn get_initial_vault_root() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_native_account_get_initial_vault_root(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_initial_vault_root()
 }
 
 /// Returns the native account's initial value stored under the specified `asset_id` in the vault.
 pub fn get_initial_asset(asset_id: AssetId) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        let id = asset_id.inner;
-        extern_native_account_get_initial_asset(id[0], id[1], id[2], id[3], ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_initial_asset(asset_id.inner)
 }
 
 /// Returns `true` if the native account's state has changed since the transaction began.
@@ -258,17 +114,14 @@ pub fn get_initial_asset(asset_id: AssetId) -> Word {
 /// increments the nonce.
 #[inline]
 pub fn has_state_changed() -> bool {
-    unsafe { extern_native_account_has_state_changed() != Felt::new(0).unwrap() }
+    raw::has_state_changed()
 }
 
 /// Returns `true` if the native account's vault held an asset with the specified asset id at the
 /// beginning of the transaction.
 #[inline]
 pub fn has_initial_asset(asset_id: AssetId) -> bool {
-    let id = asset_id.inner;
-    unsafe {
-        extern_native_account_has_initial_asset(id[0], id[1], id[2], id[3]) != Felt::new(0).unwrap()
-    }
+    raw::has_initial_asset(asset_id.inner)
 }
 
 /// Trait that provides native account operations for components.

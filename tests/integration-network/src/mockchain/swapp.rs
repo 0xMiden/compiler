@@ -295,7 +295,16 @@ fn assert_no_fungible_asset(account: &Account, faucet_id: AccountId) {
 #[test]
 fn swapp_note_package_size() {
     let packages = compile_swapp_packages();
-    expect!["42466"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
+    // 42466 before the SDK's bindings were generated, 42589 after `miden-stdlib-sys` was (Tasks 6
+    // and 6b of the generator plan; this suite was not re-run then). 3231 bytes more since
+    // `miden-base-sys` calls the protocol through its generated bindings, which take the
+    // manifest's integer types where the hand bindings passed felts:
+    // - `output_note::add_word_attachment` and `output_note::add_asset` check that the `NoteIdx`
+    //   and the attachment scheme fit the protocol's `u16`, each a felt comparison and a branch
+    //   to a trap, and the frontend masks the `u16`s to their declared type;
+    // - `add_word_attachment`, called twice, is no longer inlined at either call, so its
+    //   attachment word reaches it through memory.
+    expect!["45820"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
 }
 
 /// Tests a full fill of a SWAPP note.
@@ -354,7 +363,12 @@ fn swapp_note_full_fill_transfers_assets() {
         vec![p2id_note.id()],
         "full fill must create exactly the P2ID routing note"
     );
-    expect!["12899"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    // 12899 before the SDK's bindings were generated, 12904 after `miden-stdlib-sys` was. 645
+    // cycles more since `miden-base-sys` calls the protocol through generated bindings: the
+    // `NoteIdx`, attachment scheme, `Tag` and `NoteType` that this note and the wallet pass are
+    // checked against the protocol's `u16`/`u32`/`u8`, and the out-of-line
+    // `add_word_attachment` (see `swapp_note_package_size`) reads its word from memory.
+    expect!["13549"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 50);
@@ -444,7 +458,9 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
         vec![first_p2id_note.id(), remainder_note.id()],
         "partial fill must create the P2ID routing note and the remainder note"
     );
-    expect!["17985"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    // 17985 before the SDK's bindings were generated, 17991 after `miden-stdlib-sys` was. 1264
+    // cycles more, for the reasons given at the full fill, with two notes created.
+    expect!["19255"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 3);

@@ -1,0 +1,10 @@
+[package]
+name = "masm-dep"
+version = "0.1.0"
+
+[lib]
+# No `namespace`: the root module is the package name, `::"masm-dep"`, a quoted MASM path
+# component. Both tests bind it that way on purpose.
+path = "lib/mod.masm"
+
+[dependencies]

@@ -10,7 +10,7 @@ fn get_metadata() -> Result<(), Report> {
     //
     // The protocol signature returns a single metadata header word (4 felts) on the operand stack.
     let masm = r#"
-pub proc get_metadata
+pub proc get_metadata() -> word
     # Stack input: []
     # Stack output: [METADATA_HEADER]
     #

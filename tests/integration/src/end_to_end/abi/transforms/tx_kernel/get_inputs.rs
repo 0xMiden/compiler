@@ -13,7 +13,7 @@ fn test_get_inputs(test_name: &str, expected_inputs: Vec<u32>) -> Result<(), Rep
     assert!(expected_inputs.len() == 4, "for now only word-sized inputs are supported");
     let masm = format!(
         "
-pub proc get_storage
+pub proc get_storage(dest_ptr: ptr<felt, addrspace(felt)>) -> u16
     # Stack input: [dest_ptr]
     #
     # Write 4 inputs to memory starting at `dest_ptr`, then return `[num_inputs]`.

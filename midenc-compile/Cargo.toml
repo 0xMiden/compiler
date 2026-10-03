@@ -52,6 +52,7 @@ midenc-dialect-scf.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-hir.workspace = true
 midenc-hir-transform.workspace = true
+midenc-package-interface.workspace = true
 midenc-session.workspace = true
 sha2 = { workspace = true, optional = true }
 toml_edit = { workspace = true, optional = true, features = ["parse", "display"] }

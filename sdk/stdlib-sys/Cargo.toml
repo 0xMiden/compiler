@@ -19,7 +19,17 @@ test = false
 doctest = false
 
 [dependencies]
-miden-field = { workspace = true, default-features = false }
+miden-intrinsics-sys.workspace = true
+
+[build-dependencies]
+miden-sdk-build-script-support = { path = "../build-script-support", version = "0.15.0-rc.3" }
+
+# `tests/generated.rs` regenerates `src/raw/core.rs` and `stubs/core.rs` from the toolchain's
+# core package and compares them with the committed files.
+[dev-dependencies]
+miden-sdk-bindgen.workspace = true
+midenc-integration-test-support.workspace = true
+midenc-package-interface.workspace = true
 
 [features]
 default = []

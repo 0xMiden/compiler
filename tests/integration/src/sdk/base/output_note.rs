@@ -105,7 +105,12 @@ fn run_attachment_length_boundary_test(attachment_len: usize, should_succeed: bo
     };
     let masm = format!(
         r#"
-pub proc add_attachment_from_memory
+pub proc add_attachment_from_memory(
+    attachment_scheme: u16,
+    num_words: u16,
+    attachment_ptr: ptr<word, addrspace(felt)>,
+    note_idx: u16
+)
     {extern_body}
 end
 "#

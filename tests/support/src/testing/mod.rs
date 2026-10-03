@@ -1,6 +1,7 @@
 //! This module provides core utilities for constructing tests outside of the primary
 //! [crate::CompilerTest] infrastructure.
 
+pub mod bindings;
 mod eval;
 mod initializer;
 pub mod setup;

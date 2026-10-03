@@ -14,6 +14,7 @@ use std::path::Path;
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs, SourceFileProvenance};
 use miden_mast_package::Package as MastPackage;
 use midenc_frontend_wasm::{FrontendOutput, WasmTranslationConfig, WatEmit, wasm_to_wat};
+use midenc_package_interface::PackageInterface;
 use midenc_session::{
     FileType, InputType, OutputMode, OutputType, Session,
     diagnostics::{IntoDiagnostic, Report, WrapErr},
@@ -126,6 +127,10 @@ fn make_wasm(_session: Rc<Session>) -> Rc<dyn Frontend> {
 /// [`CodegenOutput`] instead of being stashed for
 /// [`Frontend::post_process`](crate::pipeline::Frontend::post_process).
 ///
+/// `dependencies` are the interfaces of the declared dependencies of the project whose
+/// WebAssembly this is — see [`dependency_interfaces`] — which the caller computes from the
+/// target context it holds, since this route holds none.
+///
 /// # Why that shape, rather than reusing the frontend
 ///
 /// The one caller is
@@ -145,8 +150,9 @@ fn make_wasm(_session: Rc<Session>) -> Rc<dyn Frontend> {
 pub(crate) fn lower_wasm_input(
     input: &midenc_session::InputFile,
     context: Rc<midenc_hir::Context>,
+    dependencies: &[PackageInterface],
 ) -> CompilerResult<CodegenOutput> {
-    let hir = translate_wasm_input(input, context.clone())?;
+    let hir = translate_wasm_input(input, context.clone(), dependencies)?;
     let hir = backend::analyze(hir, context.clone())?;
     backend::apply_rewrites(hir.world.as_operation_ref(), context.clone())?;
     backend::codegen(hir, context)
@@ -159,9 +165,11 @@ pub(crate) fn lower_wasm_input(
 /// bytes, write `--emit=wat`, record the provenance, translate, write the pre-rewrite
 /// `--emit=hir`. Separated from [`lower_wasm_input`] so that the translation is reachable
 /// without the backend, which is what a caller holding WebAssembly and no assembler needs.
+/// `dependencies` is as for [`lower_wasm_input`].
 pub(crate) fn translate_wasm_input(
     input: &midenc_session::InputFile,
     context: Rc<midenc_hir::Context>,
+    dependencies: &[PackageInterface],
 ) -> CompilerResult<MidenComponent> {
     let source = WasmFrontend::read_input(input)?;
     WasmFrontend::emit_wat(&source.wasm, &context.session_rc())?;
@@ -174,7 +182,88 @@ pub(crate) fn translate_wasm_input(
     }
     .to_inputs();
 
-    WasmFrontend::translate(context, &source, provenance)
+    WasmFrontend::translate(context, &source, provenance, dependencies)
+}
+
+/// The interfaces of `cx`'s target's declared dependencies, loaded from the assembler's
+/// registry.
+///
+/// These are what a linker stub rooted in a dependency's namespace resolves against — the
+/// sysroot's packages alone cannot answer for a MASM package a project depends on (spec §9.4).
+/// Each is loaded by the version the dependency graph selected, which is the artifact the
+/// assembler links and therefore the one a stub's signature must be checked against: the
+/// graph's own `selected` version for a registry or preassembled dependency, else — for one built
+/// from source in this build — the version the registry holds under the graph's semver. Every
+/// declared dependency has been resolved and published before its dependent is compiled (the
+/// assembler resolves depth-first), so one missing from the graph or the registry here is a
+/// compiler bug and is reported as such rather than skipped: skipping it would leave its
+/// namespace unknown to the frontend, and a stub naming it would then be lowered as an ordinary
+/// diverging function — a trap at runtime instead of a diagnostic at compile time.
+///
+/// A dependency the session's own set already carries — the core library, the protocol, which
+/// every project declares and the sysroot provides — is not loaded again: the sysroot's entry is
+/// the same artifact when the digests agree, and loading it twice would cost a manifest walk per
+/// target and list the package twice in every "searched:" diagnostic.
+///
+/// Direct dependencies only. A project calls what it declares, as a cargo crate does; a
+/// transitive dependency's procedures are not nameable from it, and resolving them anyway would
+/// let a binding compile against a package the project never agreed to.
+pub(super) fn dependency_interfaces(
+    cx: &TargetContext<'_>,
+) -> CompilerResult<Vec<PackageInterface>> {
+    use midenc_session::{
+        miden_package_registry::PackageId,
+        miden_project::{ProjectDependencyNodeProvenance, Version},
+    };
+
+    let assembly = cx.assembly();
+    let graph = assembly.dependency_graph;
+    let registry = assembly.package_registry;
+    let linked = cx.session().package_interfaces()?;
+
+    let mut interfaces = Vec::new();
+    for dependency in assembly.package.dependencies() {
+        let name = dependency.name();
+        let package_id: PackageId = name.clone().into();
+        let node = graph.get(&package_id).ok_or_else(|| {
+            Report::msg(format!(
+                "internal error: dependency '{name}' of package '{}' is not in the resolved \
+                 dependency graph, so the bindings for it cannot be resolved",
+                assembly.package.name()
+            ))
+        })?;
+        let version = match &node.provenance {
+            ProjectDependencyNodeProvenance::Registry { selected, .. }
+            | ProjectDependencyNodeProvenance::Preassembled { selected, .. } => selected.clone(),
+            ProjectDependencyNodeProvenance::Source(_) => registry
+                .get_by_semver(&package_id, &node.version)
+                .and_then(|record| record.digest().copied())
+                .map(|digest| Version::new(node.version.clone(), digest))
+                .ok_or_else(|| {
+                    Report::msg(format!(
+                        "internal error: dependency '{name}' {} of package '{}' was resolved but \
+                         is not registered as an assembled package, so the bindings for it cannot \
+                         be resolved",
+                        node.version,
+                        assembly.package.name()
+                    ))
+                })?,
+        };
+        if linked.iter().any(|interface| {
+            interface.name == package_id && version.digest.is_some_and(|d| interface.digest == d)
+        }) {
+            continue;
+        }
+        let package = registry.load_package(&package_id, &version).wrap_err_with(|| {
+            format!(
+                "failed to load dependency '{name}' {version} of package '{}' to resolve the \
+                 bindings against it",
+                assembly.package.name()
+            )
+        })?;
+        interfaces.push(PackageInterface::from_package(&package));
+    }
+    Ok(interfaces)
 }
 
 /// A renderer for the checkpoints on this route, every one of which something else writes.
@@ -440,14 +529,32 @@ impl WasmFrontend {
     /// which the legacy stage handled by unwrapping, i.e. by panicking. It is not invented here:
     /// it is what [`WasmTranslationConfig::default`] already uses for a source it cannot name,
     /// so an unnameable root is translated exactly as an unnamed one is.
+    ///
+    /// `dependencies` are the interfaces of the target's declared dependencies (see
+    /// [`dependency_interfaces`]). Linker stubs resolve against them *before* the sysroot's
+    /// packages: resolution is first-match, and when a project declares a package the sysroot
+    /// also carries — at another version, say — the declared one is what the assembler links,
+    /// so it is the one the stubs must be checked against.
     fn translate(
         context: Rc<midenc_hir::Context>,
         source: &WasmSource,
         source_provenance: ProjectSourceProvenanceInputs,
+        dependencies: &[PackageInterface],
     ) -> CompilerResult<MidenComponent> {
         use midenc_hir::{BuilderExt, Op, OpBuilder, SourceSpan, dialects::builtin};
 
         let session = context.session_rc();
+        let linked_packages = if dependencies.is_empty() {
+            // The session's set is shared as-is: it is computed once and cached, and a copy
+            // per target would buy nothing.
+            session.package_interfaces()?
+        } else {
+            dependencies
+                .iter()
+                .chain(session.package_interfaces()?.iter())
+                .cloned()
+                .collect()
+        };
         let world = {
             let mut builder = OpBuilder::new(context.clone());
             let world = builder.create::<builtin::World, ()>(SourceSpan::default());
@@ -464,7 +571,7 @@ impl WasmFrontend {
             remap_path_prefixes: session.options.remap_path_prefixes.clone(),
             world: Some(world),
             generate_native_debuginfo: session.options.emit_source_locations(),
-            linked_packages: Some(session.package_interfaces()?),
+            linked_packages: Some(linked_packages),
             ..Default::default()
         };
 
@@ -515,7 +622,8 @@ impl WasmFrontend {
         let source = WasmSource { path, wasm };
 
         let provenance = self.provenance_of(cx, &source)?;
-        let hir = Self::translate(cx.context(), &source, provenance)?;
+        let dependencies = dependency_interfaces(cx)?;
+        let hir = Self::translate(cx.context(), &source, provenance, &dependencies)?;
         let hir = match cx.checkpoint(CheckpointId::HIR_INITIAL, ArtifactId::HIR, hir)? {
             Flow::Continue(hir) => hir,
             Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
