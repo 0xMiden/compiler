@@ -135,7 +135,7 @@ fn add_word(a: Word, b: Word) -> Word {
 
 /// Creates a P2ID output note.
 fn create_p2id_note(serial_num: Word, input_asset: Asset, recipient_id: AccountId, _aux: Felt) {
-    let tag = Tag::from(felt!(0));
+    let tag = Tag::from(0u32);
     let note_type = get_note_type();
 
     let _p2id_note_root_digest = Digest::from_word(Word::new([
@@ -215,7 +215,7 @@ fn get_note_tag() -> Tag {
     let metadata = active_note::get_metadata().header;
     let left_shifted_32 = metadata[2] * Felt::new(2u64.pow(32)).unwrap();
     let tag_felt = left_shifted_32 / (Felt::new(2u64.pow(32)).unwrap());
-    Tag::from(tag_felt)
+    Tag::try_from(tag_felt).unwrap()
 }
 
 /// Extracts the note type from the active note metadata.
@@ -226,5 +226,5 @@ fn get_note_type() -> NoteType {
     let pow_62 = Felt::new(2u64.pow(62)).unwrap();
     let left_shifted_56 = second_felt * pow_56;
     let note_type_felt = left_shifted_56 / pow_62;
-    NoteType::from(note_type_felt)
+    NoteType::try_from(note_type_felt).unwrap()
 }

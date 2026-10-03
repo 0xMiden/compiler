@@ -125,6 +125,66 @@ fn test_felt_reader() {
     .unwrap();
 }
 
+/// Ensures a `bool` and an `Option` tag, which compare as felts on the Miden target, accept `0`
+/// and `1` and report anything else with its canonical value, a value above `u32::MAX` and the
+/// largest felt included.
+#[test]
+fn test_bool_and_option_tag_decoding() {
+    let onchain_code = r#"(input: Word) -> Word {
+        use miden_field_repr::{FeltReader, FeltReprError, FromFeltRepr};
+
+        let input_arr: [Felt; 4] = input.into();
+
+        let mut reader = FeltReader::new(&input_arr);
+        let no = Felt::from(reader.read_bool().unwrap() as u8);
+        let yes = Felt::from(reader.read_bool().unwrap() as u8);
+        let invalid_bool = match reader.read_bool() {
+            Err(FeltReprError::InvalidBool { value, .. }) => Felt::new(value).unwrap(),
+            _ => panic!("expected an invalid bool"),
+        };
+        let invalid_tag = match <Option<u8> as FromFeltRepr>::from_felt_repr(&mut reader) {
+            Err(FeltReprError::InvalidOptionTag { tag, .. }) => Felt::new(tag).unwrap(),
+            _ => panic!("expected an invalid option tag"),
+        };
+
+        Word::from([no, yes, invalid_bool, invalid_tag])
+    }"#;
+
+    let config = WasmTranslationConfig::default();
+    let name = "onchain_bool_and_option_tag_decoding";
+    let mut test = build_felt_repr_test(name, onchain_code, config);
+    let package = test.compile_package();
+
+    let in_elem_addr = 21u32 * 16384;
+    let out_elem_addr = 20u32 * 16384;
+    let in_byte_addr = in_elem_addr * 4;
+    let out_byte_addr = out_elem_addr * 4;
+
+    let values = [0, 1, u32::MAX as u64 + 1, Felt::ORDER - 1];
+    let initializers = [Initializer::MemoryFelts {
+        addr: in_elem_addr,
+        felts: Cow::from(values.map(miden_core::Felt::new_unchecked).to_vec()),
+    }];
+
+    // `Word` parameters/returns are passed by reference under `-Z wasm_c_abi=spec`:
+    // `(sret_ptr, input_ptr)`.
+    let args = [
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
+    ];
+
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
+        let result_word: [TestFelt; 4] = trace
+            .read_from_rust_memory(out_byte_addr)
+            .expect("Failed to read result from memory");
+
+        let result = result_word.map(|felt| felt.0.as_canonical_u64());
+        assert_eq!(result, values, "`0` and `1` must decode and anything else must be reported");
+        Ok(())
+    })
+    .unwrap();
+}
+
 /// Test full round-trip using the actual FromFeltRepr and ToFeltRepr from onchain crate.
 ///
 /// Test struct serialization with 2 Felt fields.

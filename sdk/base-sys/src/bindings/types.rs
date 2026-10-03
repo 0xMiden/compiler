@@ -12,19 +12,20 @@ pub fn padded_word_from_felt(value: Felt) -> Word {
 
 /// Whether the canonical value of `value` is at most `max`.
 ///
-/// Compared in the felt domain: felt comparisons lower to VM instructions, which is much cheaper
-/// than comparing the canonical `u64` with a core-library call.
+/// Compared in the felt domain: an ordering comparison of felts is one VM instruction (16
+/// cycles), where comparing the canonical `u64` takes a split, a 64-bit local and a core-library
+/// call. The two cost about the same in cycles; this one is smaller and keeps no `u64` alive.
 #[inline]
-pub(crate) fn felt_at_most(value: Felt, max: u32) -> bool {
+fn felt_at_most(value: Felt, max: u32) -> bool {
     value <= Felt::from_u32(max)
 }
 
 /// The low 32 bits of the canonical value of `value`: all of it when [`felt_at_most`] holds.
 ///
-/// Convert only after every bound a binding checks has been checked: the canonical value is a
-/// `u64`, and one kept across a branch takes a 64-bit local (`store_dw`/`load_dw` in the VM).
+/// Convert only after the bound has been checked: the canonical value is a `u64`, and one kept
+/// across a branch takes a 64-bit local (`store_dw`/`load_dw` in the VM).
 #[inline]
-pub(crate) fn felt_low_u32(value: Felt) -> u32 {
+fn felt_low_u32(value: Felt) -> u32 {
     value.as_canonical_u64() as u32
 }
 
@@ -591,22 +592,35 @@ impl From<Recipient> for Word {
     }
 }
 
+/// A note tag: the protocol's `u32` note tag, which the bindings pass on as it is.
+///
+/// A felt that holds a tag (read from note storage, say) converts with the checked
+/// [`TryFrom<Felt>`] implementation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(transparent)]
 pub struct Tag {
-    pub inner: Felt,
+    pub inner: u32,
 }
 
-impl From<Felt> for Tag {
-    fn from(value: Felt) -> Self {
-        Tag { inner: value }
+impl TryFrom<Felt> for Tag {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        if felt_at_most(value, u32::MAX) {
+            Ok(Self {
+                inner: felt_low_u32(value),
+            })
+        } else {
+            Err("note tag exceeds u32")
+        }
     }
 }
 
 impl From<Tag> for Word {
     #[inline]
     fn from(value: Tag) -> Self {
-        padded_word_from_felt(value.inner)
+        padded_word_from_felt(Felt::from_u32(value.inner))
     }
 }
 
@@ -615,45 +629,53 @@ impl TryFrom<Word> for Tag {
 
     #[inline]
     fn try_from(value: Word) -> Result<Self, Self::Error> {
-        Ok(Tag {
-            inner: felt_from_padded_word(value)?,
-        })
+        Tag::try_from(felt_from_padded_word(value)?)
     }
 }
 
 impl From<u32> for Tag {
     #[inline]
     fn from(value: u32) -> Self {
-        Self {
-            inner: Felt::from_u32(value),
-        }
+        Self { inner: value }
     }
 }
 
-impl TryFrom<Tag> for u32 {
-    type Error = &'static str;
-
-    /// The tag as the protocol's `u32` note tag.
+impl From<Tag> for u32 {
     #[inline]
-    fn try_from(value: Tag) -> Result<Self, Self::Error> {
-        if felt_at_most(value.inner, u32::MAX) {
-            Ok(felt_low_u32(value.inner))
-        } else {
-            Err("note tag exceeds u32")
-        }
+    fn from(value: Tag) -> Self {
+        value.inner
     }
 }
 
+/// The index of an output or input note in the transaction: the protocol's `u16` note index.
+///
+/// A felt that holds an index converts with the checked [`TryFrom<Felt>`] implementation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct NoteIdx {
-    pub inner: Felt,
+    pub inner: u16,
+}
+
+impl TryFrom<Felt> for NoteIdx {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        if felt_at_most(value, u16::MAX.into()) {
+            // The bound makes the truncation exact.
+            Ok(Self {
+                inner: felt_low_u32(value) as u16,
+            })
+        } else {
+            Err("note index exceeds u16")
+        }
+    }
 }
 
 impl From<NoteIdx> for Word {
     #[inline]
     fn from(value: NoteIdx) -> Self {
-        padded_word_from_felt(value.inner)
+        padded_word_from_felt(Felt::from(value.inner))
     }
 }
 
@@ -662,65 +684,55 @@ impl TryFrom<Word> for NoteIdx {
 
     #[inline]
     fn try_from(value: Word) -> Result<Self, Self::Error> {
-        Ok(NoteIdx {
-            inner: felt_from_padded_word(value)?,
-        })
+        NoteIdx::try_from(felt_from_padded_word(value)?)
     }
 }
 
 impl From<u16> for NoteIdx {
     #[inline]
     fn from(value: u16) -> Self {
-        Self {
-            inner: Felt::from(value),
-        }
+        Self { inner: value }
     }
 }
 
-impl TryFrom<NoteIdx> for u16 {
-    type Error = &'static str;
-
-    /// The index as the protocol's `u16` note index.
+impl From<NoteIdx> for u16 {
     #[inline]
-    fn try_from(value: NoteIdx) -> Result<Self, Self::Error> {
-        if felt_at_most(value.inner, u16::MAX.into()) {
-            // The bound makes the truncation exact.
-            Ok(felt_low_u32(value.inner) as u16)
-        } else {
-            Err("note index exceeds u16")
-        }
+    fn from(value: NoteIdx) -> Self {
+        value.inner
     }
 }
 
-impl NoteIdx {
-    /// The index as the `u16` the protocol's note procedures take.
-    ///
-    /// # Panics
-    ///
-    /// If the index does not fit in a `u16`, which no index the transaction kernel hands out
-    /// does.
-    #[inline]
-    pub(crate) fn to_u16(self) -> u16 {
-        u16::try_from(self).expect("note index exceeds u16")
-    }
-}
-
+/// The type of a note: the protocol's `u8` note type, `0` for private and `1` for public.
+///
+/// The value is checked against the protocol's enum only where a note is created
+/// (`TryFrom<NoteType> for raw::NoteType`); a felt that holds a note type converts with the
+/// checked [`TryFrom<Felt>`] implementation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(transparent)]
 pub struct NoteType {
-    pub inner: Felt,
+    pub inner: u8,
 }
 
-impl From<Felt> for NoteType {
-    fn from(value: Felt) -> Self {
-        NoteType { inner: value }
+impl TryFrom<Felt> for NoteType {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        if felt_at_most(value, u8::MAX.into()) {
+            // The bound makes the truncation exact.
+            Ok(Self {
+                inner: felt_low_u32(value) as u8,
+            })
+        } else {
+            Err("note type exceeds u8")
+        }
     }
 }
 
 impl From<NoteType> for Word {
     #[inline]
     fn from(value: NoteType) -> Self {
-        padded_word_from_felt(value.inner)
+        padded_word_from_felt(Felt::from(value.inner))
     }
 }
 
@@ -729,18 +741,28 @@ impl TryFrom<Word> for NoteType {
 
     #[inline]
     fn try_from(value: Word) -> Result<Self, Self::Error> {
-        Ok(NoteType {
-            inner: felt_from_padded_word(value)?,
-        })
+        NoteType::try_from(felt_from_padded_word(value)?)
+    }
+}
+
+impl From<u8> for NoteType {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl From<NoteType> for u8 {
+    #[inline]
+    fn from(value: NoteType) -> Self {
+        value.inner
     }
 }
 
 impl From<raw::NoteType> for NoteType {
     #[inline]
     fn from(value: raw::NoteType) -> Self {
-        Self {
-            inner: Felt::from(value as u8),
-        }
+        Self { inner: value as u8 }
     }
 }
 
@@ -750,13 +772,7 @@ impl TryFrom<NoteType> for raw::NoteType {
     /// The note type as the protocol's enum: `0` is private, `1` is public.
     #[inline]
     fn try_from(value: NoteType) -> Result<Self, Self::Error> {
-        if value.inner == Felt::ZERO {
-            Ok(Self::Private)
-        } else if value.inner == Felt::ONE {
-            Ok(Self::Public)
-        } else {
-            Err("unrecognized note type")
-        }
+        Self::try_from(value.inner).map_err(|_| "unrecognized note type")
     }
 }
 
@@ -935,41 +951,73 @@ mod tests {
         Tag, felt_from_padded_word, padded_word_from_felt, raw,
     };
 
-    /// Ensures a note index converts to the protocol's `u16` exactly when it fits.
-    #[test]
-    fn note_index_converts_to_u16_within_bounds() {
-        let index = |value: u64| NoteIdx {
-            inner: Felt::new(value).unwrap(),
-        };
-        assert_eq!(u16::try_from(index(0)), Ok(0));
-        assert_eq!(u16::try_from(index(u16::MAX.into())), Ok(u16::MAX));
-        assert!(u16::try_from(index(u64::from(u16::MAX) + 1)).is_err());
-        assert!(u16::try_from(index(Felt::ORDER - 1)).is_err());
-        assert_eq!(NoteIdx::from(7u16), index(7));
-    }
-
-    /// Ensures a tag converts to the protocol's `u32` exactly when it fits.
-    #[test]
-    fn tag_converts_to_u32_within_bounds() {
-        let tag = |value: u64| Tag {
-            inner: Felt::new(value).unwrap(),
-        };
-        assert_eq!(u32::try_from(tag(u32::MAX.into())), Ok(u32::MAX));
-        assert!(u32::try_from(tag(u64::from(u32::MAX) + 1)).is_err());
-        assert_eq!(Tag::from(9u32), tag(9));
-    }
-
-    /// Ensures the note type felt maps to the protocol's enum, `0` private and `1` public, and
-    /// back.
+    /// Ensures the note type maps to the protocol's enum, `0` private and `1` public, and back.
     #[test]
     fn note_type_maps_to_the_protocol_enum() {
-        let note_type = |value: u64| NoteType {
-            inner: Felt::new(value).unwrap(),
-        };
-        assert_eq!(raw::NoteType::try_from(note_type(0)), Ok(raw::NoteType::Private));
-        assert_eq!(raw::NoteType::try_from(note_type(1)), Ok(raw::NoteType::Public));
-        assert!(raw::NoteType::try_from(note_type(2)).is_err());
-        assert_eq!(NoteType::from(raw::NoteType::Public), note_type(1));
+        assert_eq!(raw::NoteType::try_from(NoteType::from(0u8)), Ok(raw::NoteType::Private));
+        assert_eq!(raw::NoteType::try_from(NoteType::from(1u8)), Ok(raw::NoteType::Public));
+        assert!(raw::NoteType::try_from(NoteType::from(2u8)).is_err());
+        assert_eq!(NoteType::from(raw::NoteType::Public), NoteType::from(1u8));
+    }
+
+    /// Ensures each newtype's felt check accepts its integer's maximum and rejects the largest
+    /// felt, whose low 32 bits would otherwise pass for an in-range value.
+    #[test]
+    fn newtype_felt_checks_are_exact_at_the_bounds() {
+        let largest = Felt::new(Felt::ORDER - 1).unwrap();
+        assert_eq!(Tag::try_from(Felt::from_u32(u32::MAX)), Ok(Tag::from(u32::MAX)));
+        assert!(Tag::try_from(largest).is_err());
+        assert_eq!(NoteIdx::try_from(Felt::from(u16::MAX)), Ok(NoteIdx::from(u16::MAX)));
+        assert!(NoteIdx::try_from(largest).is_err());
+        assert_eq!(NoteType::try_from(Felt::from(u8::MAX)), Ok(NoteType::from(u8::MAX)));
+        assert!(NoteType::try_from(largest).is_err());
+    }
+
+    /// Ensures a felt becomes a newtype exactly when it fits the manifest's integer.
+    #[test]
+    fn newtypes_are_built_from_felts_with_one_check() {
+        assert_eq!(Tag::try_from(Felt::from_u32(7)).unwrap(), Tag::from(7u32));
+        assert_eq!(
+            Tag::try_from(Felt::new_unchecked(1 << 32)).unwrap_err(),
+            "note tag exceeds u32"
+        );
+        assert_eq!(NoteIdx::try_from(Felt::from_u32(3)).unwrap(), NoteIdx::from(3u16));
+        assert_eq!(
+            NoteIdx::try_from(Felt::from_u32(1 << 16)).unwrap_err(),
+            "note index exceeds u16"
+        );
+        assert_eq!(NoteType::try_from(Felt::ONE).unwrap(), NoteType::from(raw::NoteType::Public));
+        assert_eq!(NoteType::try_from(Felt::from_u32(256)).unwrap_err(), "note type exceeds u8");
+        assert_eq!(
+            raw::NoteType::try_from(NoteType::from(2u8)).unwrap_err(),
+            "unrecognized note type"
+        );
+    }
+
+    /// Ensures the newtypes still travel as one zero-padded felt in a word.
+    #[test]
+    fn newtypes_round_trip_through_words_as_before() {
+        for tag in [0u32, 1, u32::MAX] {
+            assert_eq!(Tag::try_from(Word::from(Tag::from(tag))).unwrap(), Tag::from(tag));
+        }
+        assert_eq!(
+            NoteIdx::try_from(Word::from(NoteIdx::from(9u16))).unwrap(),
+            NoteIdx::from(9u16)
+        );
+        assert_eq!(
+            NoteType::try_from(Word::from(NoteType::from(1u8))).unwrap(),
+            NoteType::from(1u8)
+        );
+    }
+
+    /// Ensures a word whose felt does not fit the newtype's integer is rejected. Storage reads
+    /// go through these conversions, so a slot holding such a felt no longer decodes.
+    #[test]
+    fn words_holding_an_out_of_range_felt_are_rejected() {
+        let word = |value: u64| padded_word_from_felt(Felt::new(value).unwrap());
+        assert_eq!(Tag::try_from(word(1 << 32)).unwrap_err(), "note tag exceeds u32");
+        assert_eq!(NoteIdx::try_from(word(1 << 16)).unwrap_err(), "note index exceeds u16");
+        assert_eq!(NoteType::try_from(word(1 << 8)).unwrap_err(), "note type exceeds u8");
     }
 
     /// Ensures the protocol's `{ suffix, prefix }` layouts map field by field, not by position.

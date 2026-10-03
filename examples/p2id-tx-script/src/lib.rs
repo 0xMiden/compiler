@@ -37,8 +37,8 @@ fn run(arg: Word, account: &mut Wallet) {
     let num_words = Felt::new(num_felts_u64 / 4).unwrap();
     let commitment = arg;
     let input = adv_load_preimage(num_words, commitment);
-    let tag: Tag = input[TAG_INDEX].into();
-    let note_type: NoteType = input[NOTE_TYPE_INDEX].into();
+    let tag = Tag::try_from(input[TAG_INDEX]).unwrap();
+    let note_type = NoteType::try_from(input[NOTE_TYPE_INDEX]).unwrap();
     let target = AccountId::new(input[TARGET_PREFIX_INDEX], input[TARGET_SUFFIX_INDEX]);
     let serial_num: [Felt; 4] = input[SERIAL_NUM_START..SERIAL_NUM_END].try_into().unwrap();
     let recipient = miden_p2id::build_recipient(target, serial_num.into());

@@ -161,6 +161,67 @@ fn test_unknown_enum_tag_includes_position() {
     );
 }
 
+/// Ensures the integer readers accept exactly their range: the maximum, but neither the next value
+/// nor the largest felt, whose low 32 bits are zero. The error reports the canonical value.
+#[test]
+fn test_integer_readers_accept_exactly_their_range() {
+    let largest = Felt::new(Felt::ORDER - 1).unwrap();
+    let felts = [
+        Felt::new(u32::MAX as u64).unwrap(),
+        Felt::new(u32::MAX as u64 + 1).unwrap(),
+        largest,
+        Felt::new(u8::MAX as u64).unwrap(),
+        Felt::new(u8::MAX as u64 + 1).unwrap(),
+        largest,
+    ];
+    let mut reader = FeltReader::new(&felts);
+    let out_of_range = |pos, ty, value, max| miden_field_repr::FeltReprError::ValueOutOfRange {
+        pos,
+        len: felts.len(),
+        ty,
+        value,
+        max,
+    };
+
+    assert_eq!(reader.read_u32(), Ok(u32::MAX));
+    assert_eq!(
+        reader.read_u32(),
+        Err(out_of_range(1, "u32", u32::MAX as u64 + 1, u32::MAX as u64))
+    );
+    assert_eq!(reader.read_u32(), Err(out_of_range(2, "u32", Felt::ORDER - 1, u32::MAX as u64)));
+    assert_eq!(reader.read_u8(), Ok(u8::MAX));
+    assert_eq!(reader.read_u8(), Err(out_of_range(4, "u8", u8::MAX as u64 + 1, u8::MAX as u64)));
+    assert_eq!(reader.read_u8(), Err(out_of_range(5, "u8", Felt::ORDER - 1, u8::MAX as u64)));
+}
+
+/// Ensures booleans and option tags accept only `0` and `1`, and report the canonical value of
+/// anything else, the largest felt included.
+#[test]
+fn test_bool_and_option_tag_accept_only_zero_and_one() {
+    let largest = Felt::new(Felt::ORDER - 1).unwrap();
+    let felts = [Felt::ZERO, Felt::ONE, largest, largest];
+    let mut reader = FeltReader::new(&felts);
+
+    assert_eq!(reader.read_bool(), Ok(false));
+    assert_eq!(reader.read_bool(), Ok(true));
+    assert_eq!(
+        reader.read_bool(),
+        Err(miden_field_repr::FeltReprError::InvalidBool {
+            pos: 2,
+            len: 4,
+            value: Felt::ORDER - 1,
+        })
+    );
+    assert_eq!(
+        <Option<u8> as FromFeltRepr>::from_felt_repr(&mut reader),
+        Err(miden_field_repr::FeltReprError::InvalidOptionTag {
+            pos: 3,
+            len: 4,
+            tag: Felt::ORDER - 1,
+        })
+    );
+}
+
 /// Test struct containing multiple non-`Felt` fields.
 #[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 struct MixedStruct {

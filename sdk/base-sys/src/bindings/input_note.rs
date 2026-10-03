@@ -5,7 +5,7 @@ use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
     MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, assert_attachment_count,
-    assert_attachment_word_count, attachment_index_u8, note_index_and_scheme_u16,
+    assert_attachment_word_count, attachment_index_u8,
     types::{AccountId, Asset, NoteId, NoteIdx, NoteMetadata, Recipient},
 };
 use crate::raw::protocol::{input_note as raw, types as raw_types};
@@ -26,7 +26,7 @@ pub struct InputNoteStorageInfo {
 ///
 /// These describe the note's assets at creation time, unaffected by in-transaction removal.
 pub fn get_initial_assets_info(note_index: NoteIdx) -> InputNoteAssetsInfo {
-    let (commitment, num_assets) = raw::get_initial_assets_info(note_index.to_u16());
+    let (commitment, num_assets) = raw::get_initial_assets_info(u16::from(note_index));
     InputNoteAssetsInfo {
         commitment,
         num_assets: num_assets.into(),
@@ -42,7 +42,7 @@ pub fn get_initial_assets(note_index: NoteIdx) -> Vec<Asset> {
     let num_assets = unsafe {
         raw::get_initial_assets(
             ElementPtr::from_ptr(assets.as_mut_ptr().cast::<raw_types::Asset>()),
-            note_index.to_u16(),
+            u16::from(note_index),
         )
     };
     unsafe {
@@ -53,22 +53,22 @@ pub fn get_initial_assets(note_index: NoteIdx) -> Vec<Asset> {
 
 /// Returns the recipient of the input note at `note_index`.
 pub fn get_recipient(note_index: NoteIdx) -> Recipient {
-    raw::get_recipient(note_index.to_u16()).into()
+    raw::get_recipient(u16::from(note_index)).into()
 }
 
 /// Returns the metadata header of the input note at `note_index`.
 pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
-    NoteMetadata::new(raw::get_metadata(note_index.to_u16()))
+    NoteMetadata::new(raw::get_metadata(u16::from(note_index)))
 }
 
 /// Returns the sender of the input note at `note_index`.
 pub fn get_sender(note_index: NoteIdx) -> AccountId {
-    raw::get_sender(note_index.to_u16()).into()
+    raw::get_sender(u16::from(note_index)).into()
 }
 
 /// Returns the storage commitment and storage item count for the input note at `note_index`.
 pub fn get_storage_info(note_index: NoteIdx) -> InputNoteStorageInfo {
-    let (commitment, num_storage_items) = raw::get_storage_info(note_index.to_u16());
+    let (commitment, num_storage_items) = raw::get_storage_info(u16::from(note_index));
     InputNoteStorageInfo {
         commitment,
         num_storage_items: num_storage_items.into(),
@@ -77,17 +77,17 @@ pub fn get_storage_info(note_index: NoteIdx) -> InputNoteStorageInfo {
 
 /// Returns the script root of the input note at `note_index`.
 pub fn get_script_root(note_index: NoteIdx) -> Word {
-    raw::get_script_root(note_index.to_u16())
+    raw::get_script_root(u16::from(note_index))
 }
 
 /// Returns the serial number of the input note at `note_index`.
 pub fn get_serial_number(note_index: NoteIdx) -> Word {
-    raw::get_serial_number(note_index.to_u16())
+    raw::get_serial_number(u16::from(note_index))
 }
 
 /// Returns the commitment over all attachments of the input note at `note_index`.
 pub fn get_attachments_commitment(note_index: NoteIdx) -> Word {
-    raw::get_attachments_commitment(note_index.to_u16())
+    raw::get_attachments_commitment(u16::from(note_index))
 }
 
 /// Returns the attachment commitment of the active note when `is_active_note` is one, or of
@@ -116,7 +116,7 @@ pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> 
     let num_attachments = unsafe {
         raw::write_attachment_commitments_to_memory(
             ElementPtr::from_ptr(commitments.as_mut_ptr()),
-            note_index.to_u16(),
+            u16::from(note_index),
         )
     };
     let num_attachments = num_attachments.into();
@@ -136,7 +136,7 @@ pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> V
         raw::write_attachment_to_memory(
             ElementPtr::from_ptr(attachment.as_mut_ptr()),
             attachment_index_u8(attachment_idx),
-            note_index.to_u16(),
+            u16::from(note_index),
         )
     };
     let num_words = num_words.into();
@@ -151,12 +151,9 @@ pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> V
 ///
 /// # Panics
 ///
-/// Panics if `note_index` is out of bounds for the transaction's input notes, or if
-/// `attachment_scheme` does not fit in a `u16`: the protocol cannot store an attachment under
-/// such a scheme, so asking for one is a caller bug.
-pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u32> {
-    let (note_index, attachment_scheme) = note_index_and_scheme_u16(note_index, attachment_scheme);
-    let (found, index) = raw::find_attachment(attachment_scheme, note_index);
+/// Panics if `note_index` is out of bounds for the transaction's input notes.
+pub fn find_attachment(note_index: NoteIdx, attachment_scheme: u16) -> Option<u32> {
+    let (found, index) = raw::find_attachment(attachment_scheme, u16::from(note_index));
     found.then_some(index.into())
 }
 
@@ -165,7 +162,7 @@ pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u
 /// The count is unaffected by in-transaction removal.
 #[inline]
 pub fn get_initial_num_assets(note_index: NoteIdx) -> u32 {
-    raw::get_initial_num_assets(note_index.to_u16()).into()
+    raw::get_initial_num_assets(u16::from(note_index)).into()
 }
 
 /// Returns the asset at `asset_index` in the input note at `note_index`.
@@ -178,7 +175,7 @@ pub fn get_initial_num_assets(note_index: NoteIdx) -> u32 {
 /// Panics if either index is out of bounds.
 pub fn get_asset(note_index: NoteIdx, asset_index: u32) -> Asset {
     let asset_index = u8::try_from(asset_index).expect("asset index exceeds u8");
-    raw::get_asset(asset_index, note_index.to_u16()).into()
+    raw::get_asset(asset_index, u16::from(note_index)).into()
 }
 
 /// Removes `asset` from the input note at `note_index` and returns the asset value left in it.
@@ -192,12 +189,12 @@ pub fn get_asset(note_index: NoteIdx, asset_index: u32) -> Asset {
 /// present with the exact value, if the note holds less of a fungible asset than is removed, if the
 /// asset id is empty or malformed, or if the asset's composition is `Custom`.
 pub fn remove_asset(note_index: NoteIdx, asset: Asset) -> Word {
-    raw::remove_asset(asset.into(), note_index.to_u16())
+    raw::remove_asset(asset.into(), u16::from(note_index))
 }
 
 /// Returns the ID of the input note at `note_index`, as cached by the transaction prologue.
 pub fn get_note_id(note_index: NoteIdx) -> NoteId {
-    raw::get_note_id(note_index.to_u16()).into()
+    raw::get_note_id(u16::from(note_index)).into()
 }
 
 /// Returns the index of the input note with the given ID, or `None` when the transaction does not

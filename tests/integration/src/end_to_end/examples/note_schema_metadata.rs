@@ -57,7 +57,7 @@ const EXPECTED_CORE_TYPES: &str = concat!(
         }
 
         record tag {
-            inner: felt
+            inner: u32
         }
 
         /// The identifier of an asset: the word that identifies it in an account vault. It encodes the
@@ -122,11 +122,11 @@ const EXPECTED_CORE_TYPES: &str = concat!(
 
         /// An index of the created note
         record note-idx {
-            inner: felt
+            inner: u16
         }
 
         record note-type {
-            inner: felt
+            inner: u8
         }
 
         record note-execution-hint {

@@ -6,7 +6,7 @@ use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
     AccountId, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteType, Recipient, Tag,
-    assert_attachment_count, attachment_scheme_u16,
+    assert_attachment_count,
 };
 use crate::raw::protocol::note as raw;
 
@@ -187,10 +187,11 @@ pub fn metadata_into_sender(metadata: Word) -> AccountId {
     raw::metadata_into_sender(metadata).into()
 }
 
-/// Extracts the four attachment schemes encoded in a note metadata header word.
-pub fn metadata_into_attachment_schemes(metadata: Word) -> Word {
+/// Extracts the four attachment schemes encoded in a note metadata header word, in attachment
+/// order. Each is the `u16` the attachment lookups and `add_*attachment` procedures take.
+pub fn metadata_into_attachment_schemes(metadata: Word) -> [u16; 4] {
     let (first, second, third, fourth) = raw::metadata_into_attachment_schemes(metadata);
-    Word::new([first, second, third, fourth].map(Felt::from))
+    [first, second, third, fourth]
 }
 
 /// Extracts the note type encoded in a note metadata header word.
@@ -204,13 +205,7 @@ pub fn metadata_into_tag(metadata: Word) -> Tag {
 }
 
 /// Searches a metadata header word for `attachment_scheme`.
-///
-/// # Panics
-///
-/// Panics if `attachment_scheme` does not fit in a `u16`: the protocol cannot store an attachment
-/// under such a scheme, so asking for one is a caller bug.
-pub fn find_attachment_idx(attachment_scheme: Felt, metadata: Word) -> Option<u32> {
-    let (found, index) =
-        raw::find_attachment_idx(attachment_scheme_u16(attachment_scheme), metadata);
+pub fn find_attachment_idx(attachment_scheme: u16, metadata: Word) -> Option<u32> {
+    let (found, index) = raw::find_attachment_idx(attachment_scheme, metadata);
     found.then_some(index.into())
 }

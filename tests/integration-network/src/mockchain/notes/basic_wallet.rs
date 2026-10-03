@@ -135,16 +135,23 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
     );
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
     // 6439 before the SDK's bindings were generated, 6441 after `miden-stdlib-sys` was (Tasks 6
-    // and 6b of the generator plan; this suite was not re-run then). 189 cycles more since
-    // `miden-base-sys` calls the protocol through its generated bindings, which take the
-    // manifest's integer types: the wallet's `create_note` checks that the `Tag` fits the
-    // protocol's `u32` and that the `NoteType` is private or public, its `move_asset_to_note`
-    // that the `NoteIdx` fits a `u16`, and the frontend masks the narrow values to their
-    // declared types. 2 cycles more (6630 before) since `mem::pipe_preimage_to_memory`, which
-    // the tx script reaches through `adv_load_preimage`, resolves from the core manifest instead
-    // of the deleted transitional table: the casts that give the stub's `i32` carriers the
-    // manifest's element-space pointer type cost the stub a redundant `swap.1 swap.1`.
-    expect!["6632"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    // and 6b of the generator plan; this suite was not re-run then). 189 cycles more when
+    // `miden-base-sys` began calling the protocol through its generated bindings, which take the
+    // manifest's integer types, and 2 more (6630 before) since `mem::pipe_preimage_to_memory`,
+    // which the tx script reaches through `adv_load_preimage`, resolves from the core manifest
+    // instead of the deleted transitional table: the casts that give the stub's `i32` carriers
+    // the manifest's element-space pointer type cost the stub a redundant `swap.1 swap.1`.
+    //
+    // 130 cycles more (6632 before) since `Tag`, `NoteIdx` and `NoteType` wrap the manifest's
+    // integers. The wallet's felt range checks went: its `create_note` keeps only the check that
+    // the `NoteType` is private or public, its `move_asset_to_note` has none, the frontend masks
+    // the narrow values to their declared types as before, and the component now masks the `u8`
+    // and `u16` it lifts from its arguments (new with the integer newtypes). But the tx script
+    // now checks the `Tag` and the `NoteType` it used to read unchecked (see
+    // `basic_wallet_and_p2id` in the protocol tests): each is split to its canonical `u64`,
+    // compared with the bound through the core library's `u64::gt` and kept in a 64-bit local
+    // until the call, which costs more than the felt comparisons the wallet made.
+    expect!["6762"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();

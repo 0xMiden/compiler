@@ -89,8 +89,8 @@ fn run_attachment_length_boundary_test(attachment_len: usize, should_succeed: bo
     let name = format!("rust_sdk_output_note_attachment_length_{attachment_len}");
     let main_fn = format!(
         r#"() -> Felt {{
-        let idx = NoteIdx {{ inner: Felt::new(0).unwrap() }};
-        let attachment_scheme = Felt::new(1).unwrap();
+        let idx = NoteIdx::from(0u16);
+        let attachment_scheme = 1;
         let attachment = [Word::from([Felt::new(0).unwrap(); 4]); {attachment_len}];
         output_note::add_attachment_from_memory(idx, attachment_scheme, &attachment);
         Felt::new(1).unwrap()
@@ -154,7 +154,7 @@ fn rust_sdk_output_note_get_assets_info_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_get_assets_info_binding",
         "pub fn binding(&self) -> u32 {
-        let info = output_note::get_assets_info(NoteIdx { inner: Felt::new(0).unwrap() });
+        let info = output_note::get_assets_info(NoteIdx::from(0u16));
         info.num_assets
     }",
     );
@@ -165,7 +165,7 @@ fn rust_sdk_output_note_get_assets_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_get_assets_binding",
         "pub fn binding(&self) -> Felt {
-        let assets = output_note::get_assets(NoteIdx { inner: Felt::new(0).unwrap() });
+        let assets = output_note::get_assets(NoteIdx::from(0u16));
         Felt::new(assets.len() as u64).unwrap()
     }",
     );
@@ -176,7 +176,7 @@ fn rust_sdk_output_note_compute_note_id_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_compute_note_id_binding",
         "pub fn binding(&self) -> Word {
-        output_note::compute_note_id(NoteIdx { inner: Felt::new(0).unwrap() }).inner
+        output_note::compute_note_id(NoteIdx::from(0u16)).inner
     }",
     );
 }
@@ -187,7 +187,7 @@ fn rust_sdk_output_note_seal_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_seal_binding",
         "pub fn binding(&self) -> Felt {
-        output_note::seal(NoteIdx { inner: Felt::new(0).unwrap() });
+        output_note::seal(NoteIdx::from(0u16));
         Felt::new(0).unwrap()
     }",
     );
@@ -199,7 +199,7 @@ fn rust_sdk_output_note_is_sealed_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_is_sealed_binding",
         "pub fn binding(&self) -> Felt {
-        if output_note::is_sealed(NoteIdx { inner: Felt::new(0).unwrap() }) {
+        if output_note::is_sealed(NoteIdx::from(0u16)) {
             Felt::new(1).unwrap()
         } else {
             Felt::new(0).unwrap()
@@ -213,7 +213,7 @@ fn rust_sdk_output_note_get_recipient_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_get_recipient_binding",
         "pub fn binding(&self) -> Recipient {
-        output_note::get_recipient(NoteIdx { inner: Felt::new(0).unwrap() })
+        output_note::get_recipient(NoteIdx::from(0u16))
     }",
     );
 }
@@ -223,7 +223,7 @@ fn rust_sdk_output_note_get_metadata_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_get_metadata_binding",
         "pub fn binding(&self) -> Word {
-        output_note::get_metadata(NoteIdx { inner: Felt::new(0).unwrap() }).header
+        output_note::get_metadata(NoteIdx::from(0u16)).header
     }",
     );
 }
@@ -233,7 +233,7 @@ fn rust_sdk_output_note_get_attachments_commitment_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_get_attachments_commitment_binding",
         "pub fn binding(&self) -> Word {
-        output_note::get_attachments_commitment(NoteIdx { inner: Felt::new(0).unwrap() })
+        output_note::get_attachments_commitment(NoteIdx::from(0u16))
     }",
     );
 }
@@ -244,8 +244,8 @@ fn rust_sdk_output_note_create_binding() {
         "rust_sdk_output_note_create_binding",
         "pub fn binding(&self) -> NoteIdx {
         let recipient = Recipient::from([Felt::new(0).unwrap(); 4]);
-        let tag = Tag { inner: Felt::new(0).unwrap() };
-        let note_type = NoteType { inner: Felt::new(1).unwrap() };
+        let tag = Tag::from(0u32);
+        let note_type = NoteType::from(1u8);
         output_note::create(tag, note_type, recipient)
     }",
     );
@@ -258,7 +258,7 @@ fn rust_sdk_output_note_add_asset_binding() {
         "pub fn binding(&self) -> Felt {
         let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
          Word::from([Felt::new(0).unwrap(); 4]));
-        let idx = NoteIdx { inner: Felt::new(0).unwrap() };
+        let idx = NoteIdx::from(0u16);
         output_note::add_asset(asset, idx);
         Felt::new(0).unwrap()
     }",
@@ -270,8 +270,8 @@ fn rust_sdk_output_note_add_word_attachment_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_add_word_attachment_binding",
         "pub fn binding(&self) -> Felt {
-        let idx = NoteIdx { inner: Felt::new(0).unwrap() };
-        let attachment_scheme = Felt::new(1).unwrap();
+        let idx = NoteIdx::from(0u16);
+        let attachment_scheme = 1;
         let attachment = Word::from([Felt::new(0).unwrap(); 4]);
         output_note::add_word_attachment(idx, attachment_scheme, attachment);
         Felt::new(0).unwrap()
@@ -284,8 +284,8 @@ fn rust_sdk_output_note_add_attachment_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_add_attachment_binding",
         "pub fn binding(&self) -> Felt {
-        let idx = NoteIdx { inner: Felt::new(0).unwrap() };
-        let attachment_scheme = Felt::new(1).unwrap();
+        let idx = NoteIdx::from(0u16);
+        let attachment_scheme = 1;
         let attachment = Word::from([Felt::new(0).unwrap(); 4]);
         output_note::add_attachment(idx, attachment_scheme, attachment);
         Felt::new(0).unwrap()
@@ -298,8 +298,8 @@ fn rust_sdk_output_note_add_attachment_from_memory_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_add_attachment_from_memory_binding",
         "pub fn binding(&self) -> Felt {
-        let idx = NoteIdx { inner: Felt::new(0).unwrap() };
-        let attachment_scheme = Felt::new(1).unwrap();
+        let idx = NoteIdx::from(0u16);
+        let attachment_scheme = 1;
         let attachment = [Word::from([Felt::new(0).unwrap(); 4])];
         output_note::add_attachment_from_memory(idx, attachment_scheme, &attachment);
         Felt::new(0).unwrap()
@@ -333,8 +333,8 @@ fn rust_sdk_output_note_find_attachment_binding() {
         "rust_sdk_output_note_find_attachment_binding",
         "pub fn binding(&self) -> u32 {
         output_note::find_attachment(
-            NoteIdx { inner: Felt::new(0).unwrap() },
-            Felt::new(1).unwrap(),
+            NoteIdx::from(0u16),
+            1,
         )
         .unwrap_or(0)
     }",
@@ -347,8 +347,7 @@ fn rust_sdk_output_note_write_attachment_commitments_to_memory_binding() {
         "rust_sdk_output_note_write_attachment_commitments_to_memory_binding",
         "pub fn binding(&self) -> Felt {
         let commitments =
-            output_note::write_attachment_commitments_to_memory(NoteIdx { inner: \
-         Felt::new(0).unwrap() });
+            output_note::write_attachment_commitments_to_memory(NoteIdx::from(0u16));
         Felt::new(commitments.len() as u64).unwrap()
     }",
     );
@@ -360,7 +359,7 @@ fn rust_sdk_output_note_write_attachment_to_memory_binding() {
         "rust_sdk_output_note_write_attachment_to_memory_binding",
         "pub fn binding(&self) -> Felt {
         let attachment = output_note::write_attachment_to_memory(
-            NoteIdx { inner: Felt::new(0).unwrap() },
+            NoteIdx::from(0u16),
             0,
         );
         Felt::new(attachment.len() as u64).unwrap()

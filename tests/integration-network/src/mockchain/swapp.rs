@@ -295,16 +295,22 @@ fn assert_no_fungible_asset(account: &Account, faucet_id: AccountId) {
 #[test]
 fn swapp_note_package_size() {
     let packages = compile_swapp_packages();
-    // 42466 before the SDK's bindings were generated, 42589 after `miden-stdlib-sys` was (Tasks 6
-    // and 6b of the generator plan; this suite was not re-run then). 3231 bytes more since
-    // `miden-base-sys` calls the protocol through its generated bindings, which take the
-    // manifest's integer types where the hand bindings passed felts:
-    // - `output_note::add_word_attachment` and `output_note::add_asset` check that the `NoteIdx`
-    //   and the attachment scheme fit the protocol's `u16`, each a felt comparison and a branch
-    //   to a trap, and the frontend masks the `u16`s to their declared type;
-    // - `add_word_attachment`, called twice, is no longer inlined at either call, so its
-    //   attachment word reaches it through memory.
-    expect!["45820"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
+    // History: 42466 with the hand bindings; 42589 once `miden-stdlib-sys` was generated; 45820
+    // once `miden-base-sys` was, whose integer parameters made the hand layer range-check the
+    // `NoteIdx` and the attachment scheme per call and pushed `add_word_attachment` out of
+    // line; 43849 since `Tag`, `NoteIdx` and `NoteType` wrap the manifest's integers: those
+    // per-call checks are gone and `add_word_attachment` is inlined at both calls again, its
+    // word passed on the stack.
+    //
+    // The 1260 bytes that remain over 42589:
+    // - new with the integer newtypes: the note builds the `Tag` and the `NoteType` it passes
+    //   the wallet from its storage felts with `TryFrom<Felt>`, each a felt comparison and a
+    //   branch to a trap, holding the tag's canonical `u64` across the note type's check in a
+    //   64-bit local (`store_dw`/`load_dw`); and it masks the `u16` note index the wallet
+    //   returns as it lifts it;
+    // - since the generated bindings: the frontend masks the `u16`s the note passes the kernel
+    //   to their declared type.
+    expect!["43849"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
 }
 
 /// Tests a full fill of a SWAPP note.
@@ -363,12 +369,15 @@ fn swapp_note_full_fill_transfers_assets() {
         vec![p2id_note.id()],
         "full fill must create exactly the P2ID routing note"
     );
-    // 12899 before the SDK's bindings were generated, 12904 after `miden-stdlib-sys` was. 645
-    // cycles more since `miden-base-sys` calls the protocol through generated bindings: the
-    // `NoteIdx`, attachment scheme, `Tag` and `NoteType` that this note and the wallet pass are
-    // checked against the protocol's `u16`/`u32`/`u8`, and the out-of-line
-    // `add_word_attachment` (see `swapp_note_package_size`) reads its word from memory.
-    expect!["13549"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    // History: 12899 with the hand bindings; 12904 once `miden-stdlib-sys` was generated; 13549
+    // once `miden-base-sys` was (the hand layer's per-call range checks of the felt newtypes);
+    // 13198 since `Tag`, `NoteIdx` and `NoteType` wrap the manifest's integers and those checks
+    // went, here and in the wallet, with `add_word_attachment` inlined again. The 294 cycles
+    // that remain over 12904: the note's `TryFrom<Felt>` checks of the `Tag` and `NoteType`
+    // from its storage and the lift masks (both new with the integer newtypes), the wallet's
+    // check that the `NoteType` is private or public, and the frontend's masks (see
+    // `swapp_note_package_size`).
+    expect!["13198"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 50);
@@ -458,9 +467,10 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
         vec![first_p2id_note.id(), remainder_note.id()],
         "partial fill must create the P2ID routing note and the remainder note"
     );
-    // 17985 before the SDK's bindings were generated, 17991 after `miden-stdlib-sys` was. 1264
-    // cycles more, for the reasons given at the full fill, with two notes created.
-    expect!["19255"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    // History: 17985 with the hand bindings; 17991 once `miden-stdlib-sys` was generated; 19255
+    // once `miden-base-sys` was; 18412 since the newtypes wrap the manifest's integers. The 421
+    // cycles that remain over 17991 are those listed at the full fill, with two notes created.
+    expect!["18412"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 3);

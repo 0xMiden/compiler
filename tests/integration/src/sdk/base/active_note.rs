@@ -137,7 +137,7 @@ fn active_note_find_attachment_binding() {
     run_active_note_binding_test(
         "active_note_find_attachment_binding",
         "pub fn binding(&self) -> u32 {
-        active_note::find_attachment(Felt::new(1).unwrap()).unwrap_or(0)
+        active_note::find_attachment(1).unwrap_or(0)
     }",
     );
 }

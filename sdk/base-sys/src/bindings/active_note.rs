@@ -6,7 +6,6 @@ use miden_stdlib_sys::{ElementPtr, Felt, Word};
 use super::{
     AccountId, Asset, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteId, NoteMetadata,
     Recipient, assert_attachment_count, assert_attachment_word_count, attachment_index_u8,
-    attachment_scheme_u16,
 };
 use crate::raw::protocol::{active_note as raw, types as raw_types};
 
@@ -148,13 +147,8 @@ pub fn write_attachment_to_memory(attachment_idx: u32) -> Vec<Word> {
 }
 
 /// Searches the active note metadata for `attachment_scheme`.
-///
-/// # Panics
-///
-/// Panics if `attachment_scheme` does not fit in a `u16`: the protocol cannot store an attachment
-/// under such a scheme, so asking for one is a caller bug.
-pub fn find_attachment(attachment_scheme: Felt) -> Option<u32> {
-    let (found, index) = raw::find_attachment(attachment_scheme_u16(attachment_scheme));
+pub fn find_attachment(attachment_scheme: u16) -> Option<u32> {
+    let (found, index) = raw::find_attachment(attachment_scheme);
     found.then_some(index.into())
 }
 
@@ -301,12 +295,8 @@ pub trait ActiveNote {
     }
 
     /// Searches the active note metadata for `attachment_scheme`.
-    ///
-    /// # Panics
-    ///
-    /// Panics under the same conditions as [`find_attachment`].
     #[inline]
-    fn find_attachment(&self, attachment_scheme: Felt) -> Option<u32> {
+    fn find_attachment(&self, attachment_scheme: u16) -> Option<u32> {
         find_attachment(attachment_scheme)
     }
 

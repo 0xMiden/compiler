@@ -180,8 +180,8 @@ fn note_metadata_into_sender_binding() {
 fn note_metadata_into_attachment_schemes_binding() {
     run_note_binding_test(
         "note_metadata_into_attachment_schemes_binding",
-        "pub fn binding(&self) -> Word {
-        note::metadata_into_attachment_schemes(Word::from([Felt::new(0).unwrap(); 4]))
+        "pub fn binding(&self) -> u16 {
+        note::metadata_into_attachment_schemes(Word::from([Felt::new(0).unwrap(); 4]))[0]
     }",
     );
 }
@@ -190,7 +190,7 @@ fn note_metadata_into_attachment_schemes_binding() {
 fn note_metadata_into_note_type_binding() {
     run_note_binding_test(
         "note_metadata_into_note_type_binding",
-        "pub fn binding(&self) -> Felt {
+        "pub fn binding(&self) -> u8 {
         note::metadata_into_note_type(Word::from([Felt::new(0).unwrap(); 4])).inner
     }",
     );
@@ -200,7 +200,7 @@ fn note_metadata_into_note_type_binding() {
 fn note_metadata_into_tag_binding() {
     run_note_binding_test(
         "note_metadata_into_tag_binding",
-        "pub fn binding(&self) -> Felt {
+        "pub fn binding(&self) -> u32 {
         note::metadata_into_tag(Word::from([Felt::new(0).unwrap(); 4])).inner
     }",
     );
@@ -212,7 +212,7 @@ fn note_find_attachment_idx_binding() {
         "note_find_attachment_idx_binding",
         "pub fn binding(&self) -> u32 {
         note::find_attachment_idx(
-            Felt::new(1).unwrap(),
+            1,
             Word::from([Felt::new(0).unwrap(); 4]),
         )
         .unwrap_or(0)
