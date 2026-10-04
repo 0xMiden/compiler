@@ -186,6 +186,99 @@ end
     );
 }
 
+/// The lifter takes the 32-bit limbs of a `u64` sum or product from an `arith.split`, most
+/// significant first; inputs whose result carries into the high limb tell the two limbs apart.
+#[test]
+fn e2e_roundtrip_u32wrapping_add3() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry(a: u32, b: u32, c: u32) -> u32
+    u32wrapping_add3
+end
+"#,
+        &[0xffff_ffff, 0xffff_ffff, 3],
+        1,
+    );
+}
+
+#[test]
+fn e2e_roundtrip_u32overflowing_add3() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry(a: u32, b: u32, c: u32) -> (u32, u32)
+    u32overflowing_add3
+end
+"#,
+        &[0xffff_ffff, 0xffff_ffff, 3],
+        2,
+    );
+}
+
+#[test]
+fn e2e_roundtrip_u32widening_add3() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry(a: u32, b: u32, c: u32) -> (u32, u32)
+    u32widening_add3
+end
+"#,
+        &[0xffff_ffff, 0xffff_ffff, 3],
+        2,
+    );
+}
+
+#[test]
+fn e2e_roundtrip_u32widening_madd() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry(a: u32, b: u32, c: u32) -> (u32, u32)
+    u32widening_madd
+end
+"#,
+        &[0xffff_ffff, 0xffff_ffff, 7],
+        2,
+    );
+}
+
+#[test]
+fn e2e_roundtrip_u32wrapping_madd() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry(a: u32, b: u32, c: u32) -> u32
+    u32wrapping_madd
+end
+"#,
+        &[0xffff_ffff, 0xffff_ffff, 7],
+        1,
+    );
+}
+
+#[test]
+fn e2e_roundtrip_u32widening_add() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry(a: u32, b: u32) -> (u32, u32)
+    u32widening_add
+end
+"#,
+        &[0xffff_ffff, 3],
+        2,
+    );
+}
+
+#[test]
+fn e2e_roundtrip_u32widening_mul() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry(a: u32, b: u32) -> (u32, u32)
+    u32widening_mul
+end
+"#,
+        &[0xffff_ffff, 3],
+        2,
+    );
+}
+
 fn assert_roundtrip_outputs(source: &str, inputs: &[u64], num_outputs: usize) {
     assert_roundtrip_outputs_with_advice(source, inputs, &[], num_outputs);
 }

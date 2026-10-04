@@ -794,6 +794,144 @@ mod tests {
         );
     }
 
+    /// `arith.split` names its limbs most-significant first, and an integer keeps its
+    /// least-significant limb on top of the operand stack. So returning the high limb of a
+    /// 64-bit integer drops the top element, the low limb.
+    #[test]
+    fn split_of_a_64_bit_integer_names_the_high_limb_first() {
+        let mut test = Test::new("split_2x32", &[Type::U64], &[Type::U32]);
+        let [x] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let (hi, _lo) = builder.split2(x, Type::U32, span).unwrap();
+            builder.ret([hi], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                drop
+            "#]],
+        );
+    }
+
+    /// Returning the high 64-bit limb of a 128-bit integer drops the low one, the top two elements.
+    #[test]
+    fn split_of_a_128_bit_integer_into_64_bit_limbs_names_the_high_limb_first() {
+        let mut test = Test::new("split_2x64", &[Type::U128], &[Type::U64]);
+        let [x] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let (hi, _lo) = builder.split2(x, Type::U64, span).unwrap();
+            builder.ret([hi], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+            drop
+            drop
+        "#]],
+        );
+    }
+
+    /// Returning the most significant 32-bit limb of a 128-bit integer drops the other three, the
+    /// top three elements.
+    #[test]
+    fn split_of_a_128_bit_integer_into_32_bit_limbs_names_the_high_limb_first() {
+        let mut test = Test::new("split_4x32", &[Type::U128], &[Type::U32]);
+        let [x] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let [hi, ..] = builder.split4(x, Type::U32, span).unwrap();
+            builder.ret([hi], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                movup.2
+                drop
+                swap.1
+                drop
+                drop
+            "#]],
+        );
+    }
+
+    /// `arith.join` takes its limbs most-significant first and leaves the least-significant on
+    /// top: joining the arguments `(hi, lo)`, which arrive with `hi` on top, swaps them.
+    #[test]
+    fn join_into_a_64_bit_integer_puts_the_low_limb_on_top() {
+        let mut test = Test::new("join_2x32", &[Type::U32, Type::U32], &[Type::U64]);
+        let [hi, lo] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let x = builder.join2(hi, lo, Type::U64, span).unwrap();
+            builder.ret([x], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                swap.1
+            "#]],
+        );
+    }
+
+    /// Joining two 64-bit limbs `(hi, lo)`, which arrive with `hi` on top, moves `lo` above it.
+    #[test]
+    fn join_of_64_bit_limbs_puts_the_low_limb_on_top() {
+        let mut test = Test::new("join_2x64", &[Type::U64, Type::U64], &[Type::U128]);
+        let [hi, lo] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let x = builder.join2(hi, lo, Type::U128, span).unwrap();
+            builder.ret([x], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                movdn.3
+                movdn.3
+            "#]],
+        );
+    }
+
+    /// Joining four 32-bit limbs, most significant first, which arrive with the most significant
+    /// on top, reverses them.
+    #[test]
+    fn join_of_32_bit_limbs_into_a_128_bit_integer_puts_the_low_limb_on_top() {
+        let mut test =
+            Test::new("join_4x32", &[Type::U32, Type::U32, Type::U32, Type::U32], &[Type::U128]);
+        let limbs = arguments(&mut test);
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let limbs = [limbs[0], limbs[1], limbs[2], limbs[3]];
+            let x = builder.join4(limbs, Type::U128, span).unwrap();
+            builder.ret([x], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                movdn.3
+                swap.2
+            "#]],
+        );
+    }
+
     /// The result of a cast nothing uses is dropped from where the operand was, not from the top.
     #[test]
     fn a_transparent_cast_with_a_dead_result_drops_it_in_place() {
