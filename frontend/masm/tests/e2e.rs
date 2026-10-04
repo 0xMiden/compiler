@@ -279,6 +279,71 @@ end
     );
 }
 
+/// `u32split` takes the two 32-bit halves of a felt's value, and `u32test` asks whether the high
+/// one is zero. Both need the felt *converted* to a `u64` — two stack elements for one — where
+/// the lifter once only relabelled it, which code generation cannot lower. An input above
+/// `u32::MAX` tells the halves apart, and tells a conversion from a zero-extension.
+#[test]
+fn e2e_roundtrip_u32split() {
+    for input in [9, u32::MAX as u64, 1 << 32, (7 << 32) | 9] {
+        assert_roundtrip_outputs(
+            r#"
+pub proc entry(a: felt) -> (u32, u32)
+    u32split
+end
+"#,
+            &[input],
+            2,
+        );
+    }
+}
+
+#[test]
+fn e2e_roundtrip_u32test() {
+    for input in [9, u32::MAX as u64, 1 << 32, (7 << 32) | 9] {
+        assert_roundtrip_outputs(
+            r#"
+pub proc entry(a: felt) -> (felt, felt)
+    u32test
+end
+"#,
+            &[input],
+            2,
+        );
+    }
+}
+
+#[test]
+fn e2e_roundtrip_u32testw() {
+    for word in [[1, 2, 3, 4], [1, 2, 1 << 32, 4], [(7 << 32) | 9, 2, 3, 4]] {
+        assert_roundtrip_outputs(
+            r#"
+pub proc entry(a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt, felt)
+    u32testw
+end
+"#,
+            &word,
+            5,
+        );
+    }
+}
+
+/// `u32test` followed by `assert` is lifted as one range assertion; a value in range passes
+/// through it unchanged.
+#[test]
+fn e2e_roundtrip_u32test_assert() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry(a: felt) -> felt
+    u32test
+    assert
+end
+"#,
+        &[u32::MAX as u64],
+        1,
+    );
+}
+
 fn assert_roundtrip_outputs(source: &str, inputs: &[u64], num_outputs: usize) {
     assert_roundtrip_outputs_with_advice(source, inputs, &[], num_outputs);
 }

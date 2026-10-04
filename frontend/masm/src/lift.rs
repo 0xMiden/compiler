@@ -2842,7 +2842,7 @@ impl<'a> ProcedureLifter<'a> {
         builder: &mut FunctionBuilder<'_, OpBuilder>,
     ) -> Result<()> {
         let value = self.pop(span)?;
-        let value = self.cast(builder, value.value, Type::U64, span)?;
+        let value = self.convert_to_u64(builder, value.value, span)?;
         let (high, low) = builder.split2(value, Type::U32, span)?;
         self.push_value(high, span);
         self.push_value(low, span);
@@ -2873,10 +2873,30 @@ impl<'a> ProcedureLifter<'a> {
         span: SourceSpan,
         builder: &mut FunctionBuilder<'_, OpBuilder>,
     ) -> Result<ValueRef> {
-        let value = self.cast(builder, value, Type::U64, span)?;
+        let value = self.convert_to_u64(builder, value, span)?;
         let (high, _low) = builder.split2(value, Type::U32, span)?;
         let zero = builder.u32(0, span);
         builder.eq(high, zero, span)
+    }
+
+    /// Converts `value` to the `u64` holding the same number.
+    ///
+    /// This is a conversion of the value, not a change of its type: a felt is one element on the
+    /// VM's stack and a `u64` is two, so the unrealized conversion cast [`Self::cast`] emits,
+    /// which only relabels a value and must leave the stack as it is, cannot express it. It is
+    /// not a zero-extension either: a felt's value is not a 32-bit quantity whose upper half is
+    /// zero, and that upper half is exactly what `u32split` and `u32test` read. `hir.cast`
+    /// converts the number itself, and for a felt lowers to the VM's `u32split`.
+    fn convert_to_u64(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        value: ValueRef,
+        span: SourceSpan,
+    ) -> Result<ValueRef> {
+        if value.borrow().ty() == &Type::U64 {
+            return Ok(value);
+        }
+        builder.cast(value, Type::U64, span)
     }
 
     fn pop_condition(
