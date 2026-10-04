@@ -68,7 +68,10 @@ pub fn counter_note_basic_auth_increments_storage() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["9065"].assert_eq(single_note_cycles(&tx_measurements));
+    // 9065 before codegen lowered a cast that changes only a value's type by renaming its
+    // operand where it stands (40 cycles fewer) and a peephole deleted adjacent stack operations
+    // that undo each other, such as `swap.1 swap.1` (119 fewer).
+    expect!["8906"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed (incremented by 1).
     assert_counter_storage(

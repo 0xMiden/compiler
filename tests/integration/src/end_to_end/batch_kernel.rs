@@ -310,7 +310,17 @@ fn batch_kernel() {
     // entrypoint stores a constant pair of `i32`s (`0`, `4`) as two `i32` stores, not one `i64`.
     // Other 64-bit accesses remain, so the kernel still links both intrinsics. The three cycle
     // counts below that run past these stores fell by 459 each; scenario 3 traps before them.
-    expect!["116448"].assert_eq(&stripped_mast_size_str(&package));
+    //
+    // 683 bytes fewer (116448 before) since codegen lowers a cast that changes only a value's
+    // type (`hir.ptr_to_int`, `hir.int_to_ptr`, `hir.bitcast`) by renaming its operand where it
+    // stands instead of moving it to the top of the stack (214 bytes, more than the 64 the
+    // stubs' redundant moves described above cost: their shape is the one the rename test
+    // `a_transparent_inttoptr_moves_nothing` in `midenc-codegen-masm` reduces to nothing; the
+    // kernel's MASM was not inspected); and a peephole over the emitted MASM deletes adjacent
+    // stack operations that undo each other (`swap.n swap.n`, `movup.n movdn.n`,
+    // `movdn.n movup.n`, `push.x drop`, `dup.n drop`) wherever operand scheduling leaves them
+    // (469 bytes). The cycle counts below fell with both.
+    expect!["115765"].assert_eq(&stripped_mast_size_str(&package));
 
     // The reference block commitment is dropped by the kernel (verification is still a TODO
     // there), so any word will do.
@@ -365,8 +375,10 @@ fn batch_kernel() {
 
         // The VM cycles consumed by the kernel for this two-transaction batch (32570 before the
         // generated core bindings, 33292 with the first ones, 32919 before the transitional table
-        // was deleted, 32942 before store merging was turned off; see the size above).
-        expect!["32483"].assert_eq(&cycles.to_string());
+        // was deleted, 32942 before store merging was turned off, 32483 before casts became
+        // renames and the stack peephole was added, 302 and 649 cycles of the 951; see the size
+        // above).
+        expect!["31532"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -419,8 +431,9 @@ fn batch_kernel() {
 
         // The VM cycles consumed for a batch that erases a note (28683 before the generated core
         // bindings, 29365 with the first ones, 29034 before the transitional table was deleted,
-        // 29055 before store merging was turned off).
-        expect!["28596"].assert_eq(&cycles.to_string());
+        // 29055 before store merging was turned off, 28596 before casts became renames and the
+        // stack peephole was added, 267 and 585 cycles of the 852).
+        expect!["27744"].assert_eq(&cycles.to_string());
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");
@@ -464,8 +477,10 @@ fn batch_kernel() {
         // branch after the call, LLVM computes the transaction count (`len_felts >> 3`, a 20-cycle
         // `u32shr` in the VM) before the call instead of after it, and this path traps in the
         // call. 1121 before the transitional table was deleted: the trap comes after the
-        // `pipe_preimage_to_memory` stub's two extra operations (see the size above).
-        expect!["1123"].assert_eq(&cycles.to_string());
+        // `pipe_preimage_to_memory` stub's two extra operations (see the size above). 1123
+        // before casts became renames and the stack peephole was added, which took 7 and 8 cycles
+        // off the path to the trap.
+        expect!["1108"].assert_eq(&cycles.to_string());
     }
 
     // Scenario 4: tx1 consumes a note that only tx2 creates; the consume-before-create ordering
@@ -500,8 +515,10 @@ fn batch_kernel() {
 
         // The cycle at which the consume-before-create ordering gate rejects the batch (15809
         // before the generated core bindings, 16362 with the first ones, 16140 before the
-        // transitional table was deleted, 16157 before store merging was turned off).
-        expect!["15698"].assert_eq(&cycles.to_string());
+        // transitional table was deleted, 16157 before store merging was turned off, 15698
+        // before casts became renames and the stack peephole was added, 158 and 311 cycles of
+        // the 469).
+        expect!["15229"].assert_eq(&cycles.to_string());
     }
 }
 

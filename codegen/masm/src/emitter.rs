@@ -7,6 +7,7 @@ use midenc_hir::{
         builtin::{Function, attributes::LocalVariable},
         debuginfo::attributes::{INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChainAttr},
     },
+    traits::TransparentCast,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{SourceSpan, Spanned};
@@ -17,7 +18,7 @@ use crate::{
     emit::{InstOpEmitter, OpEmitter},
     linker::LinkInfo,
     masm,
-    opt::{OperandMovementConstraintSolver, SolverError, operands::SolverOptions},
+    opt::{OperandMovementConstraintSolver, SolverError, operands::SolverOptions, peephole},
 };
 
 /// The layout of a procedure's locals frame, in field elements.
@@ -147,14 +148,18 @@ impl BlockEmitter<'_> {
             // Drop any dead instruction results immediately
             if op.has_results() {
                 let span = op.span();
-                index = 0;
                 let results = ValueRange::<2>::from(op.results().all());
                 for next_result in results {
                     if self.liveness.is_live_after(next_result, &op) {
-                        index += 1;
                         continue;
                     }
 
+                    // Results are pushed on top of the stack, except the result of a transparent
+                    // cast, which takes its operand's place
+                    let index = self
+                        .stack
+                        .find(&next_result)
+                        .expect("an instruction result is not on the operand stack");
                     log::trace!(
                         target: &scheduling_target,
                         symbol = self.trace_target.relevant_symbol();
@@ -177,7 +182,8 @@ impl BlockEmitter<'_> {
     }
 
     pub fn into_emitted_block(mut self, span: SourceSpan) -> masm::Block {
-        let ops = core::mem::take(&mut self.target);
+        let mut ops = core::mem::take(&mut self.target);
+        peephole::simplify(&mut ops);
         masm::Block::new(span, ops)
     }
 
@@ -191,6 +197,12 @@ impl BlockEmitter<'_> {
         // If any values on the operand stack are no longer live, drop them now to avoid wasting
         // operand stack space on operands that will never be used.
         //self.drop_unused_operands_at(op);
+
+        // A transparent cast has no `HirLowering`, so that it cannot be lowered any other way
+        if op.implements::<dyn TransparentCast>() {
+            self.emit_transparent_cast(op);
+            return;
+        }
 
         let Some(lowering) = op.as_trait::<dyn HirLowering>() else {
             panic!("illegal operation: no lowering has been defined for '{}'", op.name());
@@ -207,6 +219,36 @@ impl BlockEmitter<'_> {
             .emit(self)
             .wrap_err("failed while emitting instruction lowering")
             .unwrap_or_else(|err| panic!("{err}"));
+    }
+
+    /// Lower a [TransparentCast], whose result is its operand under another type.
+    ///
+    /// Nothing is emitted, and the operand stays where it is: its stack slot becomes the result.
+    /// Only when the operand is still live after the cast is it copied first, as for any other
+    /// instruction, and the copy becomes the result.
+    fn emit_transparent_cast(&mut self, op: &Operation) {
+        let operands = ValueRange::<4>::from(op.operands().all());
+        let operand = operands.iter().next().expect("a transparent cast has one operand");
+        let result = op.results()[0].borrow().as_value_ref();
+        let index = match self.constraints_for(op, &operands)[0] {
+            Constraint::Move => self
+                .stack
+                .find(&operand)
+                .expect("the operand of a transparent cast is not on the operand stack"),
+            Constraint::Copy => {
+                self.schedule_operands(
+                    &[operand],
+                    &[Constraint::Copy],
+                    op.span(),
+                    SolverOptions::default(),
+                )
+                .unwrap_or_else(|err| {
+                    panic!("failed to copy the operand of '{}': {err:?}", op.name())
+                });
+                0
+            }
+        };
+        self.stack.retype(index, result);
     }
 
     fn emit_inline_call_chain(&mut self, op: &Operation) {
@@ -506,5 +548,271 @@ impl BlockEmitter<'_> {
     #[inline(always)]
     pub fn emitter<'short, 'long: 'short>(&'long mut self) -> OpEmitter<'short> {
         OpEmitter::new(self.invoked, &mut self.target, &mut self.stack)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_dialect_hir::HirOpBuilder;
+    use midenc_expect_test::{Expect, expect};
+    use midenc_hir::{
+        AddressSpace, PointerType, SourceSpan, Type, ValueRef,
+        dialects::builtin::{self, BuiltinOpBuilder},
+        formatter::PrettyPrint,
+        pass::AnalysisManager,
+        testing::Test,
+        version::Version,
+    };
+
+    use super::*;
+
+    /// Lower the entry block of `test`'s function, its arguments on the operand stack with the
+    /// first on top, and pin the MASM as emitted, before the peephole: what the rename saves must
+    /// show without it, since the peephole would also delete a `swap.1 swap.1` the scheduled path
+    /// left.
+    fn assert_lowers_to(test: &Test, masm: Expect) {
+        let function_ref = test.function();
+        let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>().unwrap();
+        let link_info = LinkInfo::new(Some(builtin::ComponentId {
+            namespace: "root".into(),
+            name: "root".into(),
+            version: Version::new(1, 0, 0),
+        }));
+
+        let function = function_ref.borrow();
+        let entry = function.entry_block();
+        let mut stack = OperandStack::new(test.context_rc());
+        for arg in entry.borrow().arguments().iter().rev() {
+            stack.push(*arg as ValueRef);
+        }
+
+        let mut invoked = Default::default();
+        let mut emitter = BlockEmitter {
+            frame: Default::default(),
+            liveness: &liveness,
+            emit_inline_calls: false,
+            link_info: &link_info,
+            invoked: &mut invoked,
+            target: Default::default(),
+            stack,
+            trace_target: TraceTarget::category("codegen"),
+        };
+        emitter.emit_inline(&entry.borrow());
+        // The block prints one level in, below an empty line
+        let printed = masm::Block::new(SourceSpan::UNKNOWN, emitter.target).to_pretty_string();
+        let mut lines = String::new();
+        for line in printed.trim_start_matches('\n').lines() {
+            lines.push_str(line.strip_prefix("    ").unwrap_or(line));
+            lines.push('\n');
+        }
+        masm.assert_eq(&lines);
+    }
+
+    /// The arguments of `test`'s function.
+    fn arguments(test: &mut Test) -> Vec<ValueRef> {
+        let builder = test.function_builder();
+        let entry = builder.entry_block();
+        entry.borrow().arguments().iter().map(|arg| *arg as ValueRef).collect()
+    }
+
+    /// A transparent cast of an operand used nowhere else moves nothing: the `add` finds its
+    /// operands where they were.
+    #[test]
+    fn a_transparent_cast_of_a_dead_operand_moves_nothing() {
+        let ptr = Type::from(PointerType::new(Type::U32));
+        let mut test = Test::new("transparent_ptrtoint", &[Type::U32, ptr], &[Type::U32]);
+        let [x, p] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let a = builder.ptrtoint(p, Type::U32, span).unwrap();
+            let r = builder.add(a, x, span).unwrap();
+            builder.ret([r], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                add
+                u32assert
+            "#]],
+        );
+    }
+
+    /// `inttoptr` of an address, stored as a pointer where the store wants it, below the address
+    /// of the slot it is stored in.
+    #[test]
+    fn a_transparent_inttoptr_moves_nothing() {
+        let ptr = Type::from(PointerType::new_with_address_space(Type::U32, AddressSpace::Element));
+        let slot =
+            Type::from(PointerType::new_with_address_space(ptr.clone(), AddressSpace::Element));
+        let mut test = Test::new("transparent_inttoptr", &[slot, Type::U32], &[]);
+        let [slot, addr] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let p = builder.inttoptr(addr, ptr, span).unwrap();
+            builder.store(slot, p, span).unwrap();
+            builder.ret(None, span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                mem_store
+            "#]],
+        );
+    }
+
+    /// A sign-only `bitcast` of a 32-bit integer.
+    #[test]
+    fn a_transparent_32_bit_bitcast_moves_nothing() {
+        let mut test = Test::new("transparent_bitcast_u32", &[Type::I32, Type::U32], &[Type::I32]);
+        let [x, y] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let a = builder.bitcast(y, Type::I32, span).unwrap();
+            let r = builder.add_wrapping(a, x, span).unwrap();
+            builder.ret([r], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                u32wrapping_add
+            "#]],
+        );
+    }
+
+    /// A sign-only `bitcast` of a 64-bit integer: two elements, one operand.
+    #[test]
+    fn a_transparent_64_bit_bitcast_moves_nothing() {
+        let mut test = Test::new("transparent_bitcast_u64", &[Type::I64, Type::U64], &[Type::I64]);
+        let [x, y] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let a = builder.bitcast(y, Type::I64, span).unwrap();
+            let r = builder.add_wrapping(a, x, span).unwrap();
+            builder.ret([r], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                push.1093736776208885424 emit drop
+                exec.::miden::core::math::u64::wrapping_add
+                push.6229491882474008289 emit drop
+            "#]],
+        );
+    }
+
+    /// A `bitcast` of a felt to `i32`: the felt carrier's reinterpretation, which checks nothing.
+    #[test]
+    fn a_transparent_felt_bitcast_moves_nothing() {
+        let mut test =
+            Test::new("transparent_bitcast_felt", &[Type::I32, Type::Felt], &[Type::I32]);
+        let [x, y] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let a = builder.bitcast(y, Type::I32, span).unwrap();
+            let r = builder.add_wrapping(a, x, span).unwrap();
+            builder.ret([r], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                u32wrapping_add
+            "#]],
+        );
+    }
+
+    /// An operand still live after the cast is copied, and the copy becomes the result.
+    #[test]
+    fn a_transparent_cast_of_a_live_operand_copies_it() {
+        let ptr = Type::from(PointerType::new(Type::U32));
+        let mut test =
+            Test::new("transparent_ptrtoint_copy", &[Type::U32, ptr.clone()], &[Type::U32, ptr]);
+        let [x, p] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let a = builder.ptrtoint(p, Type::U32, span).unwrap();
+            let r = builder.add(a, x, span).unwrap();
+            builder.ret([r, p], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                dup.1
+                add
+                u32assert
+            "#]],
+        );
+    }
+
+    /// A 64-bit operand still live after the cast is copied whole, and the copy becomes the
+    /// result.
+    #[test]
+    fn a_transparent_64_bit_cast_of_a_live_operand_copies_it() {
+        let mut test = Test::new(
+            "transparent_bitcast_u64_copy",
+            &[Type::I64, Type::U64],
+            &[Type::I64, Type::U64],
+        );
+        let [x, y] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let a = builder.bitcast(y, Type::I64, span).unwrap();
+            let r = builder.add_wrapping(a, x, span).unwrap();
+            builder.ret([r, y], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                dup.3
+                dup.3
+                push.1093736776208885424 emit drop
+                exec.::miden::core::math::u64::wrapping_add
+                push.6229491882474008289 emit drop
+            "#]],
+        );
+    }
+
+    /// The result of a cast nothing uses is dropped from where the operand was, not from the top.
+    #[test]
+    fn a_transparent_cast_with_a_dead_result_drops_it_in_place() {
+        let mut test = Test::new("transparent_dead_result", &[Type::U32, Type::U32], &[Type::U32]);
+        let [x, y] = arguments(&mut test)[..] else {
+            unreachable!()
+        };
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            builder.bitcast(y, Type::I32, span).unwrap();
+            builder.ret([x], span).unwrap();
+        }
+        assert_lowers_to(
+            &test,
+            expect![[r#"
+                swap.1
+                drop
+            "#]],
+        );
     }
 }

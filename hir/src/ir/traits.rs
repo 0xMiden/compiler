@@ -317,6 +317,88 @@ pub trait SingleRegion {
     }
 }
 
+/// Marker trait for a cast whose result is its operand: the same bits, under a different type.
+///
+/// Codegen emits nothing for such an op itself: the stack slot that holds the operand becomes the
+/// result. Only an operand still live after the cast is copied first (`dup`), as for any other
+/// op, and the copy becomes the result. A cast that checks or changes a value, such as `hir.cast`
+/// between signednesses or any widening or narrowing, must not implement this.
+///
+/// The verifier admits one operand and one result of the same bit width, a felt counting as 32
+/// bits, which are both integers (felt included), both pointers, or a pointer and an `i32` or
+/// `u32`.
+#[operation_trait]
+pub trait TransparentCast {
+    #[verifier]
+    fn is_transparent_cast(op: &Operation, context: &Context) -> Result<(), Report> {
+        use crate::{Type, Value};
+
+        let invalid = |label: alloc::string::String, help: &str| {
+            context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message(::alloc::format!("invalid operation {}", op.name()))
+                .with_primary_label(op.span(), label)
+                .with_help(::alloc::format!(
+                    "this operator implements 'TransparentCast', which {help}"
+                ))
+                .into_report()
+        };
+
+        if op.num_operands() != 1 || op.num_results() != 1 {
+            return Err(invalid(
+                format!(
+                    "expected one operand and one result, got {} and {}",
+                    op.num_operands(),
+                    op.num_results()
+                ),
+                "requires it to have exactly one operand and one result",
+            ));
+        }
+        let from = op.operands()[0].borrow().value().ty().clone();
+        let to = op.results()[0].borrow().ty().clone();
+
+        if from.is_felt() && to.is_pointer() {
+            return Err(invalid(
+                format!("cannot reinterpret {from} as {to}"),
+                "cannot convert a felt to a pointer: the felt must be converted to `u32` with \
+                 `hir.cast` first, which checks that it is in range",
+            ));
+        }
+        if from.is_pointer() && to.is_felt() {
+            return Err(invalid(
+                format!("cannot reinterpret {from} as {to}"),
+                "cannot convert a pointer to a felt: take its address as a `u32` with \
+                 `hir.ptr_to_int`, which then reinterprets as a felt unchanged",
+            ));
+        }
+        if from.size_in_bits() != to.size_in_bits() {
+            return Err(invalid(
+                format!(
+                    "{from} is {} bits wide, but {to} is {}",
+                    from.size_in_bits(),
+                    to.size_in_bits()
+                ),
+                "requires its operand and result to be of the same bit width",
+            ));
+        }
+        let is_word = |ty: &Type| matches!(ty, Type::I32 | Type::U32);
+        let same_kind = (from.is_integer() && to.is_integer())
+            || (from.is_pointer() && to.is_pointer())
+            || (from.is_pointer() && is_word(&to))
+            || (is_word(&from) && to.is_pointer());
+        if !same_kind {
+            return Err(invalid(
+                format!("cannot reinterpret {from} as {to}"),
+                "converts only integers to integers, pointers to pointers, or a pointer to or \
+                 from an `i32` or `u32`",
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 // pub trait HasParent<T> {}
 // pub trait ParentOneOf<(T,...)> {}
 
@@ -369,5 +451,109 @@ pub trait Transparent {
         } else {
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::format;
+
+    use super::*;
+    use crate::{
+        BuilderExt, Op, PointerType, Report, SourceSpan, Type, Value, ValueRef,
+        derive::operation,
+        dialects::{
+            builtin::{BuiltinOpBuilder, attributes::TypeAttr},
+            test::TestDialect,
+        },
+        testing::Test,
+        traits::InferTypeOpInterface,
+    };
+
+    /// A cast of any type to any type, to put the `TransparentCast` verifier to every pair.
+    #[operation(
+        dialect = TestDialect,
+        traits(TransparentCast),
+        implements(InferTypeOpInterface)
+    )]
+    pub struct AnyCast {
+        #[operand]
+        operand: AnyType,
+        #[attr(hidden)]
+        ty: TypeAttr,
+        #[result]
+        result: AnyType,
+    }
+
+    impl InferTypeOpInterface for AnyCast {
+        fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+            let ty = self.get_ty().clone();
+            self.result_mut().set_type(ty);
+            Ok(())
+        }
+    }
+
+    /// Verify a function that casts its argument, of type `from`, to `to`.
+    fn verify_cast(from: Type, to: Type) -> Result<(), Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::new("verify_cast", &[from], &[]);
+        {
+            let mut builder = test.function_builder();
+            let arg = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let cast = builder.builder_mut().create::<AnyCast, _>(span);
+            cast(arg, to).unwrap();
+            builder.ret(None, span).unwrap();
+        }
+        test.function().borrow().as_operation().recursively_verify()
+    }
+
+    fn pointer() -> Type {
+        Type::from(PointerType::new(Type::U8))
+    }
+
+    #[test]
+    fn transparent_casts_keep_the_bits_and_the_kind() {
+        for (from, to) in [
+            (Type::U32, Type::I32),
+            (Type::I64, Type::U64),
+            (Type::U128, Type::I128),
+            (Type::Felt, Type::I32),
+            (Type::U32, Type::Felt),
+            (pointer(), Type::from(PointerType::new(Type::U64))),
+            (pointer(), Type::U32),
+            (Type::I32, pointer()),
+        ] {
+            verify_cast(from.clone(), to.clone())
+                .unwrap_or_else(|err| panic!("{from} to {to} should be transparent: {err}"));
+        }
+    }
+
+    /// The help of the verifier's error for a cast of `from` to `to`, on one line.
+    fn rejection(from: Type, to: Type) -> alloc::string::String {
+        let err = verify_cast(from, to).unwrap_err();
+        format!("{err:?}").split_whitespace().collect::<alloc::vec::Vec<_>>().join(" ")
+    }
+
+    #[test]
+    fn a_transparent_cast_is_never_between_a_felt_and_a_pointer() {
+        let message = rejection(Type::Felt, pointer());
+        assert!(message.contains("converted to `u32` with `hir.cast` first"), "{message}");
+        let message = rejection(pointer(), Type::Felt);
+        assert!(message.contains("as a `u32` with `hir.ptr_to_int`"), "{message}");
+    }
+
+    #[test]
+    fn a_transparent_cast_never_changes_the_bit_width() {
+        for (from, to) in [(Type::U32, Type::U64), (Type::I64, Type::Felt), (pointer(), Type::U16)]
+        {
+            let message = rejection(from, to);
+            assert!(message.contains("to be of the same bit width"), "{message}");
+        }
+    }
+
+    #[test]
+    fn a_transparent_cast_never_changes_the_kind_of_value() {
+        let message = rejection(Type::F64, Type::I64);
+        assert!(message.contains("converts only integers to integers"), "{message}");
     }
 }

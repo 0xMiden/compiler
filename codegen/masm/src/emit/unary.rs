@@ -200,17 +200,6 @@ impl OpEmitter<'_> {
         self.push(dst.clone());
     }
 
-    pub fn bitcast(&mut self, dst: &Type, _span: SourceSpan) {
-        let arg = self.stack.pop().expect("operand stack is empty");
-        let src = arg.ty();
-        assert!(
-            (src.is_integer() && dst.is_integer()) || (src.is_pointer() && dst.is_pointer()),
-            "invalid cast of {src} to {dst}: only integer-to-integer or pointer-to-pointer \
-             bitcasts are supported"
-        );
-        self.push(dst.clone());
-    }
-
     /// Convert between two integral types, given as `src` and `dst`,
     /// indicating the direction of the conversion.
     ///
@@ -362,24 +351,6 @@ impl OpEmitter<'_> {
             (src, dst) => unimplemented!("unsupported cast from {src} to {dst}"),
         }
         self.push(dst.clone());
-    }
-
-    /// Cast `arg` to a pointer value
-    pub fn inttoptr(&mut self, ty: &Type, span: SourceSpan) {
-        assert!(ty.is_pointer(), "exected pointer typed argument");
-        // For now, we're strict about the types of values we'll allow casting from
-        let arg = self.stack.pop().expect("operand stack is empty");
-        match arg.ty() {
-            // We allow i32 here because Wasm uses it
-            Type::U32 | Type::I32 => {
-                self.push(ty.clone());
-            }
-            Type::Felt => {
-                self.emit(masm::Instruction::U32Assert, span);
-                self.push(ty.clone());
-            }
-            int => panic!("invalid inttoptr cast: cannot cast value of type {int} to {ty}"),
-        }
     }
 
     /// Check if an integral value on the operand stack is an odd number.

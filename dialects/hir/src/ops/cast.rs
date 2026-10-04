@@ -42,7 +42,7 @@ pub enum CastKind {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    traits(UnaryOp),
+    traits(UnaryOp, TransparentCast),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
  )]
 pub struct PtrToInt {
@@ -121,7 +121,7 @@ impl Foldable for PtrToInt {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    traits(UnaryOp),
+    traits(UnaryOp, TransparentCast),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct IntToPtr {
@@ -239,7 +239,7 @@ impl CheckedCastOpInterface for Cast {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    traits(UnaryOp),
+    traits(UnaryOp, TransparentCast),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct Bitcast {
@@ -296,5 +296,75 @@ impl Foldable for Bitcast {
         } else {
             FoldResult::Failed
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{format, vec::Vec};
+
+    use midenc_hir::{
+        AddressSpace, Op, PointerType, Report, SourceSpan, Type, ValueRef,
+        dialects::builtin::BuiltinOpBuilder, testing::Test,
+    };
+
+    use crate::HirOpBuilder;
+
+    #[derive(Copy, Clone, Debug)]
+    enum CastOp {
+        PtrToInt,
+        IntToPtr,
+        Bitcast,
+    }
+
+    /// Verify a function that casts its argument, of type `from`, to `to` with `cast`.
+    fn verify_cast(cast: CastOp, from: Type, to: Type) -> Result<(), Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::new("verify_cast", &[from], &[]);
+        {
+            let mut builder = test.function_builder();
+            let arg = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            match cast {
+                CastOp::PtrToInt => builder.ptrtoint(arg, to, span),
+                CastOp::IntToPtr => builder.inttoptr(arg, to, span),
+                CastOp::Bitcast => builder.bitcast(arg, to, span),
+            }
+            .unwrap();
+            builder.ret(None, span).unwrap();
+        }
+        test.function().borrow().as_operation().recursively_verify()
+    }
+
+    fn pointer(pointee: Type) -> Type {
+        Type::from(PointerType::new_with_address_space(pointee, AddressSpace::Element))
+    }
+
+    /// The three casts are `TransparentCast`s on every shape the frontends build them in.
+    #[test]
+    fn the_casts_the_frontends_build_are_transparent() {
+        for (cast, from, to) in [
+            (CastOp::PtrToInt, pointer(Type::Felt), Type::U32),
+            (CastOp::PtrToInt, pointer(Type::U8), Type::I32),
+            (CastOp::IntToPtr, Type::I32, pointer(Type::Felt)),
+            (CastOp::IntToPtr, Type::U32, pointer(Type::U64)),
+            (CastOp::Bitcast, Type::U32, Type::I32),
+            (CastOp::Bitcast, Type::I64, Type::U64),
+            (CastOp::Bitcast, Type::U64, Type::I64),
+            (CastOp::Bitcast, Type::Felt, Type::I32),
+            (CastOp::Bitcast, Type::I32, Type::Felt),
+            (CastOp::Bitcast, pointer(Type::U64), pointer(Type::U32)),
+        ] {
+            verify_cast(cast, from.clone(), to.clone())
+                .unwrap_or_else(|err| panic!("{cast:?} of {from} to {to} should verify: {err}"));
+        }
+    }
+
+    /// An `inttoptr` of a felt would have to check that the felt is a `u32`, so it is not a
+    /// transparent cast; no frontend builds one.
+    #[test]
+    fn an_inttoptr_of_a_felt_is_rejected() {
+        let err = verify_cast(CastOp::IntToPtr, Type::Felt, pointer(Type::U32)).unwrap_err();
+        let message = format!("{err:?}").split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(message.contains("converted to `u32` with `hir.cast` first"), "{message}");
     }
 }

@@ -197,7 +197,12 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
     // the note package, copied two felt pairs with `i64.load`/`i64.store`, each a call to
     // `intrinsics::mem::load_dw` or `store_dw` behind a byte-address alignment check, and now
     // copies the four felts with element loads and stores. The script itself is unchanged.
-    expect!["9316"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    //
+    // 146 cycles fewer (9316 before) since codegen lowers a cast that changes only a value's
+    // type by renaming its operand where it stands (32 cycles, against the 2 the stub's redundant
+    // `swap.1 swap.1` above cost), and a peephole deletes adjacent stack operations that undo
+    // each other (114 cycles).
+    expect!["9170"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
@@ -208,7 +213,10 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, consume_tx);
-    expect!["5018"].assert_eq(single_note_cycles(&tx_measurements));
+    // 5018 before codegen lowered a cast that changes only a value's type by renaming its
+    // operand where it stands (14 cycles fewer) and a peephole deleted adjacent stack operations
+    // that undo each other, such as `swap.1 swap.1` (50 fewer).
+    expect!["4954"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();

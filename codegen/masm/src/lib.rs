@@ -160,10 +160,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::Assertz, dyn HirLowering>();
     info.register_operation_trait::<hir::AssertEq, dyn HirLowering>();
     info.register_operation_trait::<hir::AssertU32, dyn HirLowering>();
-    info.register_operation_trait::<hir::PtrToInt, dyn HirLowering>();
-    info.register_operation_trait::<hir::IntToPtr, dyn HirLowering>();
     info.register_operation_trait::<hir::Cast, dyn HirLowering>();
-    info.register_operation_trait::<hir::Bitcast, dyn HirLowering>();
     //info.register_operation_trait::<hir::ConstantBytes, dyn HirLowering>();
     info.register_operation_trait::<hir::ConstantPointer, dyn HirLowering>();
     info.register_operation_trait::<hir::Exec, dyn HirLowering>();
@@ -222,4 +219,47 @@ fn lower_debuginfo_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<debuginfo::DebugDeclare, dyn HirLowering>();
     info.register_operation_trait::<debuginfo::DebugValue, dyn HirLowering>();
     info.register_operation_trait::<debuginfo::DebugKill, dyn HirLowering>();
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{rc::Rc, vec::Vec};
+
+    use midenc_hir::{Context, traits::TransparentCast};
+
+    use super::*;
+
+    /// A transparent cast is lowered by renaming its operand, and only so: no op of a dialect
+    /// MASM codegen lowers is both a `TransparentCast` and a `HirLowering`, which `emit_inst`
+    /// would otherwise have two ways to lower, and the three casts the frontends build as no-ops
+    /// are transparent.
+    #[test]
+    fn transparent_casts_have_no_other_lowering() {
+        let context = Rc::new(Context::default());
+        let dialects = [
+            context.get_or_register_dialect::<builtin::BuiltinDialect>(),
+            context.get_or_register_dialect::<arith::ArithDialect>(),
+            context.get_or_register_dialect::<cf::ControlFlowDialect>(),
+            context.get_or_register_dialect::<scf::ScfDialect>(),
+            context.get_or_register_dialect::<ub::UndefinedBehaviorDialect>(),
+            context.get_or_register_dialect::<hir::HirDialect>(),
+            context.get_or_register_dialect::<wasm::WasmDialect>(),
+            context.get_or_register_dialect::<debuginfo::DebugInfoDialect>(),
+        ];
+
+        let mut transparent = Vec::new();
+        for dialect in &dialects {
+            for op in dialect.registered_ops() {
+                if op.implements::<dyn TransparentCast>() {
+                    assert!(
+                        !op.implements::<dyn HirLowering>(),
+                        "'{op}' is a transparent cast with a HirLowering"
+                    );
+                    transparent.push(op.to_string());
+                }
+            }
+        }
+        transparent.sort();
+        assert_eq!(transparent, ["hir.bitcast", "hir.int_to_ptr", "hir.ptr_to_int"]);
+    }
 }

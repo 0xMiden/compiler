@@ -17,7 +17,7 @@ use midenc_hir::{
     dialects::{builtin, debuginfo},
     pass::{Pass, PassExecutionState, PostPassStatus},
     patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind},
-    traits::Transparent,
+    traits::{Transparent, TransparentCast},
 };
 use midenc_session::diagnostics::{Severity, Spanned};
 
@@ -508,8 +508,10 @@ fn register_masm_legalization_dialects(context: &Rc<Context>) {
     context.get_or_register_dialect::<debuginfo::DebugInfoDialect>();
 }
 
+/// An op MASM codegen can lower: one with a `HirLowering`, or a transparent cast, which codegen
+/// lowers by renaming its operand.
 fn masm_lowerable_op(op: &Operation) -> DynamicLegalityResult {
-    if op.implements::<dyn HirLowering>() {
+    if op.implements::<dyn HirLowering>() || op.implements::<dyn TransparentCast>() {
         DynamicLegalityResult::legal()
     } else {
         DynamicLegalityResult::illegal_with_reason(Report::msg(format!(

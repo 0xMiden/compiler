@@ -10,15 +10,17 @@ fn basic_wallet_and_p2id() {
     // History: 8505 with the hand bindings; 10155 once `miden-base-sys` called the protocol
     // through its generated bindings, whose integer parameters made the hand layer range-check
     // each felt newtype per call; 8895 since `Tag`, `NoteIdx` and `NoteType` wrap the manifest's
-    // integers and those checks are gone.
+    // integers and those checks are gone; 8882 since codegen lowers a cast that changes only a
+    // value's type by renaming its operand where it stands (6 bytes) and a peephole deletes
+    // adjacent stack operations that undo each other, such as `swap.1 swap.1` (7 bytes).
     //
-    // The 390 bytes that remain over the hand bindings: `output_note::create` converts the
+    // The 390 bytes over the hand bindings at 8895: `output_note::create` converts the
     // `NoteType` to the protocol's `u8` enum (a `u32lt` and a branch to a trap for anything but
     // private `0` or public `1`); the frontend masks the `u8` and the `u16` it passes the kernel
     // to their declared types (`push.255 u32and`, `push.65535 u32and`); and — new with the
     // integer newtypes — the component masks the `u8` note type and the `u16` note index as it
     // lifts them from its arguments, where it lifted felts before.
-    expect!["8895"].assert_eq(stripped_mast_size_str(&account_package).as_str());
+    expect!["8882"].assert_eq(stripped_mast_size_str(&account_package).as_str());
 
     let tx_script_package = compile_project(Path::new("../../examples/basic-wallet-tx-script"));
     assert!(tx_script_package.is_library(), "expected library");
@@ -49,7 +51,14 @@ fn basic_wallet_and_p2id() {
     // and converting them unchecked comes to 14261 bytes, so all but 30 of the bytes are the two
     // checks — and most of that is structure rather than instructions: the two branches add 17
     // MAST nodes (2 split, 5 block, 10 join) and 7 op batches.
-    expect!["15378"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
+    //
+    // 119 bytes fewer (15378 before) since codegen lowers a cast that changes only a value's
+    // type by renaming its operand where it stands instead of moving it (69 bytes, more than the
+    // 63 the stub's redundant `swap.1 swap.1` described above cost: that shape is the one the
+    // rename test `a_transparent_inttoptr_moves_nothing` in `midenc-codegen-masm` reduces to
+    // nothing; the script's MASM was not inspected), and a peephole deletes adjacent stack
+    // operations that undo each other (50 bytes).
+    expect!["15259"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
 
     let note_package = compile_project(Path::new("../../examples/p2id-note"));
     assert!(note_package.is_library(), "expected library");
@@ -66,7 +75,11 @@ fn basic_wallet_and_p2id() {
     // most of the saving: compiled without debug info, a Wasm module whose only 64-bit access is
     // one such copy is 1147 bytes larger than with two felt copies in its place, and a second
     // such copy adds 93 bytes where a second pair of felt copies adds 83.
-    expect!["20545"].assert_eq(stripped_mast_size_str(&note_package).as_str());
+    //
+    // 109 bytes fewer (20545 before) since codegen lowers a cast that changes only a value's
+    // type by renaming its operand where it stands (32 bytes) and a peephole deletes adjacent
+    // stack operations that undo each other, such as `swap.1 swap.1` (77 bytes).
+    expect!["20436"].assert_eq(stripped_mast_size_str(&note_package).as_str());
     // The note package exports both the note script and the `build-recipient` constructor; the
     // constructor must not interfere with the `@note_script`-attributed export selection.
     assert!(
@@ -78,5 +91,8 @@ fn basic_wallet_and_p2id() {
 
     let p2ide_package = compile_project(Path::new("../../examples/p2ide-note"));
     assert!(p2ide_package.is_library(), "expected library");
-    expect!["16436"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
+    // 16436 before codegen lowered a cast that changes only a value's type by renaming its
+    // operand where it stands (11 bytes fewer) and a peephole deleted adjacent stack operations
+    // that undo each other, such as `swap.1 swap.1` (51 bytes fewer).
+    expect!["16374"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
 }

@@ -114,7 +114,10 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
     expect!["3882"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["5018"].assert_eq(single_note_cycles(&tx_measurements));
+    // 5018 before codegen lowered a cast that changes only a value's type by renaming its
+    // operand where it stands (14 cycles fewer) and a peephole deleted adjacent stack operations
+    // that undo each other, such as `swap.1 swap.1` (50 fewer).
+    expect!["4954"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -151,7 +154,12 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
     // `basic_wallet_and_p2id` in the protocol tests): each is split to its canonical `u64`,
     // compared with the bound through the core library's `u64::gt` and kept in a 64-bit local
     // until the call, which costs more than the felt comparisons the wallet made.
-    expect!["6762"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    //
+    // 77 cycles fewer (6762 before) since codegen lowers a cast that changes only a value's type
+    // by renaming its operand where it stands (14 cycles, against the 2 the stub's redundant
+    // `swap.1 swap.1` above cost), and a peephole deletes adjacent stack operations that undo
+    // each other (63 cycles).
+    expect!["6685"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
@@ -162,7 +170,9 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["5018"].assert_eq(single_note_cycles(&tx_measurements));
+    // 5018 before casts that change only a type became renames and the stack peephole was added
+    // (see Step 2).
+    expect!["4954"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -304,7 +314,10 @@ pub fn basic_wallet_p2ide_allows_recipient_claim() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["5438"].assert_eq(single_note_cycles(&tx_measurements));
+    // 5438 before codegen lowered a cast that changes only a value's type by renaming its
+    // operand where it stands (16 cycles fewer) and a peephole deleted adjacent stack operations
+    // that undo each other, such as `swap.1 swap.1` (53 fewer).
+    expect!["5369"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify balances
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -446,7 +459,10 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["6002"].assert_eq(single_note_cycles(&tx_measurements));
+    // 6002 before codegen lowered a cast that changes only a value's type by renaming its
+    // operand where it stands (20 cycles fewer) and a peephole deleted adjacent stack operations
+    // that undo each other, such as `swap.1 swap.1` (57 fewer).
+    expect!["5925"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify Alice has her original amount back
     let alice_account = chain.committed_account(alice_id).unwrap();

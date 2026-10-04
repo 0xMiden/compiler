@@ -1908,24 +1908,6 @@ mod tests {
     }
 
     #[test]
-    fn op_emitter_u32_inttoptr_test() {
-        let mut block = Vec::default();
-        let context = Rc::new(Context::default());
-        let mut stack = OperandStack::new(context.clone());
-        let mut invoked = BTreeSet::default();
-        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
-
-        let addr = Immediate::U32(128);
-        let ptr = Type::from(PointerType::new(Type::from(ArrayType::new(Type::U64, 8))));
-
-        emitter.literal(addr, SourceSpan::default());
-
-        emitter.inttoptr(&ptr, SourceSpan::default());
-        assert_eq!(emitter.stack_len(), 1);
-        assert_eq!(emitter.stack()[0], ptr);
-    }
-
-    #[test]
     fn op_emitter_u32_is_odd_test() {
         let mut block = Vec::default();
         let context = Rc::new(Context::default());

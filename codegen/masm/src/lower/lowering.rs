@@ -887,36 +887,10 @@ impl HirLowering for arith::Max {
     }
 }
 
-impl HirLowering for hir::PtrToInt {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let result_ty = self.result().ty().clone();
-        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
-        inst_emitter.pop().expect("operand stack is empty");
-        inst_emitter.push(result_ty);
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::IntToPtr {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let result = self.result();
-        emitter.inst_emitter(self.as_operation()).inttoptr(result.ty(), self.span());
-        Ok(())
-    }
-}
-
 impl HirLowering for hir::Cast {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let result = self.result();
         emitter.inst_emitter(self.as_operation()).cast(result.ty(), self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::Bitcast {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let result = self.result();
-        emitter.inst_emitter(self.as_operation()).bitcast(result.ty(), self.span());
         Ok(())
     }
 }

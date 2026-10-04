@@ -1517,8 +1517,13 @@ mod tests {
     use super::*;
     use crate::{
         Type,
-        dialects::{builtin::BuiltinOpBuilder, test::TestOpBuilder},
+        derive::operation,
+        dialects::{
+            builtin::BuiltinOpBuilder,
+            test::{TestDialect, TestOpBuilder},
+        },
         testing::Test,
+        traits::AnyType,
     };
 
     #[test]
@@ -1705,5 +1710,63 @@ mod tests {
         let after = format!("{}", function.borrow().as_operation());
         assert!(!after.contains("di.debug_value"), "{after}");
         assert!(!after.contains("test.add"), "{after}");
+    }
+
+    /// A transparent op holding two values. No real one does (`Transparent` verifies an arity
+    /// below 2), but `erase_op` must not erase such a user twice.
+    #[operation(dialect = TestDialect, traits(Transparent))]
+    pub struct TwoUseMarker {
+        #[operand]
+        first: AnyType,
+        #[operand]
+        second: AnyType,
+    }
+
+    /// Counts the operations a rewriter erases.
+    #[derive(Default)]
+    struct ErasureCounter(core::cell::Cell<usize>);
+
+    impl Listener for ErasureCounter {
+        fn kind(&self) -> ListenerType {
+            ListenerType::Rewriter
+        }
+    }
+
+    impl RewriterListener for ErasureCounter {
+        fn notify_operation_erased(&self, _op: OperationRef) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
+    /// A transparent user that holds the erased op's result in two operands is erased once.
+    #[test]
+    fn a_transparent_user_holding_a_result_twice_is_erased_once() {
+        use crate::{BuilderExt, Op};
+
+        let mut test = Test::new("erase_op_with_a_double_user", &[Type::U32], &[Type::U32]);
+        let function = test.function();
+        let dead = {
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let builder = builder.builder_mut();
+            builder.set_insertion_point_to_end(entry);
+
+            let input = entry.borrow().arguments()[0] as ValueRef;
+            let dead = builder.add(input, input, SourceSpan::UNKNOWN).unwrap();
+            let marker = builder.create::<TwoUseMarker, _>(SourceSpan::UNKNOWN);
+            marker(dead, dead).unwrap();
+            builder.ret([input], SourceSpan::UNKNOWN).unwrap();
+            dead.borrow().get_defining_op().unwrap()
+        };
+
+        let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc())
+            .with_listener(ErasureCounter::default());
+        rewriter.erase_op(dead);
+
+        let after = format!("{}", function.borrow().as_operation());
+        assert!(!after.contains("two_use_marker"), "{after}");
+        assert!(!after.contains("test.add"), "{after}");
+        // The marker and the add
+        assert_eq!(rewriter.listener.as_ref().unwrap().0.get(), 2);
     }
 }

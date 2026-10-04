@@ -103,8 +103,11 @@ pub fn counter_note_no_auth_increments_storage_without_signature() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["2090"].assert_eq(auth_procedure_cycles(&tx_measurements));
-    expect!["9065"].assert_eq(single_note_cycles(&tx_measurements));
+    // 2090 and 9065 before codegen lowered a cast that changes only a value's type by renaming
+    // its operand where it stands (15 and 40 cycles fewer) and a peephole deleted adjacent stack
+    // operations that undo each other, such as `swap.1 swap.1` (24 and 119 fewer).
+    expect!["2051"].assert_eq(auth_procedure_cycles(&tx_measurements));
+    expect!["8906"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed
     assert_counter_storage(
