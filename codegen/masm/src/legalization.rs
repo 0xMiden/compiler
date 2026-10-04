@@ -9,7 +9,7 @@ use midenc_dialect_wasm as wasm;
 use midenc_hir::{
     Context, EntityMut, Immediate, Op, Operation, OperationName, OperationRef, Overflow,
     PointerType, Report, SmallVec, SourceSpan, Symbol, SymbolRef, Type, UnsafeIntrusiveEntityRef,
-    Usable, Value, ValueRef, Visibility, WalkResult,
+    Value, ValueRef, Visibility, WalkResult,
     conversion::{
         ConversionConfig, ConversionPattern, ConversionPatternRewriter, ConversionPatternSet,
         ConversionTarget, ConvertedOperands, DynamicLegalityResult, apply_full_conversion,
@@ -276,8 +276,10 @@ midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Leg
 
 /// A dialect conversion pass that validates IR against the set of operations MASM codegen can
 /// lower, and splits the 64-bit memory ops it would lower unsafely when their halves are felts: a
-/// 64-bit store of a value assembled from two 32-bit halves becomes two 32-bit stores, and a
-/// 64-bit load used only for its halves two 32-bit loads.
+/// 64-bit store of a value assembled from two 32-bit halves right before it becomes two 32-bit
+/// stores, and a 64-bit load whose every use takes one half two 32-bit loads. A pair that reaches
+/// its store, or leaves its load, through a block argument, an `scf.if` result or a local is left
+/// alone, and its 64-bit operations still trap on a felt outside the `u32` range.
 ///
 /// This pass is intentionally owned by `midenc-codegen-masm`: it builds the MASM-specific
 /// legalization target, runs full dialect conversion, and fails before `ToMasmComponent` can
@@ -327,7 +329,13 @@ impl Pass for LegalizeForMasm {
         let mut patterns = ConversionPatternSet::new(context.clone());
         patterns.push(SplitWideStore::new(context.clone()));
         patterns.push(SplitWideLoad::new(context));
-        let result = apply_full_conversion(root, target, patterns, ConversionConfig::default())?;
+        // The driver caps pattern applications across the whole root, against rewrite cycles,
+        // and exceeding the cap is an error. The splits apply once per site, in ordinary code as
+        // much as on felts, and cannot cycle: they emit only 32-bit loads and stores, which never
+        // match again. So a component is not to fail for the number of its split sites.
+        let mut config = ConversionConfig::default();
+        config.with_max_iterations(usize::MAX);
+        let result = apply_full_conversion(root, target, patterns, config)?;
 
         let changed = PostPassStatus::from(result.changed());
         state.set_post_pass_status(changed);
@@ -514,17 +522,21 @@ fn masm_lowerable_op(op: &Operation) -> DynamicLegalityResult {
 /// Splits a 64-bit integer store whose value is two 32-bit halves, `or(zext(lo), shl(zext(hi),
 /// 32))` with the `or`'s operands in either order, into a 32-bit store of each half.
 ///
-/// LLVM's store merging produces this shape for two adjacent `i32` or `f32` stores on wasm32. On
-/// Miden the merge never pays: a 64-bit store is two element stores anyway, and the `zext`, `shl`
-/// and `or` that build its value are extra work. And when the halves are felts, which Rust
-/// carries in `f32` and reinterprets as `i32` with a bitcast that emits nothing, the merge is
-/// wrong: the 64-bit `shl` and `or` work on 32-bit limbs with `u32` instructions, which trap on a
-/// felt outside the `u32` range. Split, each half is stored as the element it is.
+/// The shape comes from LLVM's IR-level passes, which can carry two adjacent 32-bit values as one
+/// `i64` and pack them so before storing them. (It does not come from the code generator's store
+/// merging, which merges only stores of constants and loaded values, into wide constants and
+/// copies.) When the halves are felts, which Rust carries in `f32` and reinterprets as `i32` with
+/// a bitcast that emits nothing, the packing is wrong: the 64-bit `shl` and `or` work on 32-bit
+/// limbs with `u32` instructions, which trap on a felt outside the `u32` range. Split, each half
+/// is stored as the element it is, and the `zext`, `shl` and `or` go with the 64-bit store unless
+/// something else uses them.
 ///
 /// Only that exact shape is split: a 64-bit integer value, `u32` halves, `zext` rather than
 /// `sext`, a shift by the constant 32. The sign-only `hir.bitcast`s with which the Wasm frontend
 /// spells `i64.extend_i32_u`, and the `band` with which it masks every shift count, are looked
-/// through. The high half goes 4 bytes on, or one element on in element space, where
+/// through. And the `or` must feed the store directly: a pair that reaches its store through a
+/// block argument, an `scf.if` result or an `i64` local is not split, and its `shl` and `or` still
+/// trap on a felt. The high half goes 4 bytes on, or one element on in element space, where
 /// `intrinsics::mem::store_dw` puts the high half of a 64-bit store.
 struct SplitWideStore {
     info: PatternInfo,
@@ -611,10 +623,13 @@ impl StoreHalves {
 /// Splits a 64-bit integer load whose every use takes a 32-bit half of it, `trunc` for the low
 /// half and `trunc(shr(_, 32))` for the high half, into a 32-bit load of each half used.
 ///
-/// The mirror of [`SplitWideStore`], for the same reasons: two 32-bit loads are never dearer on
-/// Miden than a 64-bit load and its `shr`, and that `shr` traps on the limbs of a felt pair. The
+/// The mirror of [`SplitWideStore`]: LLVM's IR-level passes can read two adjacent 32-bit values
+/// as one `i64` and take it apart so, and the 64-bit `shr` traps on the limbs of a felt pair.
+/// Split, each half is loaded as the element it is, and the 64-bit load and `shr` are gone. The
 /// `shr` must be logical (of a `u64`), and the same sign-only casts and masked shift count are
-/// looked through. Uses by debug info do not count, and go with the 64-bit value.
+/// looked through. Every use must take its half directly: a load whose value goes anywhere else,
+/// such as to a successor block, out of an `scf.if` or into an `i64` local, is not split. Uses by
+/// debug info do not count, and go with the 64-bit value.
 struct SplitWideLoad {
     info: PatternInfo,
 }
@@ -818,32 +833,19 @@ fn erase_dead_defs(
         if def.parent().is_none() {
             continue;
         }
-        let (operands, debug_users) = {
+        let operands = {
             let op = def.borrow();
             let dead = op.results().iter().all(|result| !result.borrow().has_real_uses())
                 && op.would_be_trivially_dead();
             if !dead {
                 continue;
             }
-            let operands = op
-                .operands()
+            op.operands()
                 .iter()
                 .map(|operand| operand.borrow().as_value_ref())
-                .collect::<SmallVec<[ValueRef; 2]>>();
-            let debug_users = op
-                .results()
-                .iter()
-                .flat_map(|result| {
-                    result.borrow().iter_uses().map(|user| user.owner).collect::<SmallVec<[_; 2]>>()
-                })
-                .collect::<SmallVec<[OperationRef; 2]>>();
-            (operands, debug_users)
+                .collect::<SmallVec<[ValueRef; 2]>>()
         };
-        // Erased one by one first: `erase_op` would erase them itself, but while it walks the use
-        // list that erasing them unlinks them from, which panics
-        for user in debug_users {
-            rewriter.erase_op(user)?;
-        }
+        // `erase_op` erases the debug users with it
         rewriter.erase_op(def)?;
         worklist.extend(operands);
     }
@@ -1130,8 +1132,8 @@ mod tests {
     }
 
     /// A 64-bit store of a value assembled from two 32-bit halves is two 32-bit stores: the
-    /// shape LLVM's store merging produces for two adjacent `i32`/`f32` stores on wasm32, as the
-    /// Wasm frontend translates it.
+    /// shape in which LLVM's IR-level passes store two 32-bit values they carry as one `i64`, as
+    /// the Wasm frontend translates it.
     #[test]
     fn a_store_of_two_merged_halves_is_split() {
         let mut test = Test::new(
@@ -1459,5 +1461,103 @@ mod tests {
                 builtin.ret %2, %1 : (i32, i64);
             };"#]],
         );
+    }
+
+    /// Only a `trunc` to 32 bits takes a half, and only of the load or of its logical `shr` by 32.
+    #[test]
+    fn a_load_whose_halves_are_not_taken_exactly_is_left_alone() {
+        let mut test = Test::new(
+            "a_load_whose_halves_are_not_taken_exactly_is_left_alone",
+            &[pointer_to(Type::I64, AddressSpace::Byte)],
+            &[Type::I32, Type::U16, Type::U32, Type::U32],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let addr = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            // An arithmetic `shr`, which is what a `shr` of an `i64` is in codegen
+            let value = builder.load(addr, span).unwrap();
+            let count = builder.u32(32, span);
+            let shifted = builder.shr(value, count, span).unwrap();
+            let arithmetic = builder.trunc(shifted, Type::I32, span).unwrap();
+            // A `trunc` to fewer than 32 bits
+            let value = builder.load(addr, span).unwrap();
+            let narrow = builder.trunc(value, Type::U16, span).unwrap();
+            // A `shr` of the high half
+            let value = builder.load(addr, span).unwrap();
+            let unsigned = builder.bitcast(value, Type::U64, span).unwrap();
+            let count = builder.u32(32, span);
+            let shifted = builder.shr(unsigned, count, span).unwrap();
+            let count = builder.u32(32, span);
+            let shifted = builder.shr(shifted, count, span).unwrap();
+            let twice = builder.trunc(shifted, Type::U32, span).unwrap();
+            // A shift by 16
+            let value = builder.load(addr, span).unwrap();
+            let unsigned = builder.bitcast(value, Type::U64, span).unwrap();
+            let count = builder.u32(16, span);
+            let shifted = builder.shr(unsigned, count, span).unwrap();
+            let by_16 = builder.trunc(shifted, Type::U32, span).unwrap();
+            builder.ret([arithmetic, narrow, twice, by_16], span).unwrap();
+        }
+
+        assert_left_alone(
+            &test,
+            expect![[r#"
+            builtin.function public extern("C") @a_load_whose_halves_are_not_taken_exactly_is_left_alone(%0: ptr<i64, byte>) -> (i32, u16, u32, u32) {
+                %1 = hir.load %0;
+                %2 = arith.constant 32 : u32;
+                %3 = arith.shr %1, %2;
+                %4 = arith.trunc %3 <{ ty = #builtin.type<i32> }>;
+                %5 = hir.load %0;
+                %6 = arith.trunc %5 <{ ty = #builtin.type<u16> }>;
+                %7 = hir.load %0;
+                %8 = hir.bitcast %7 <{ ty = #builtin.type<u64> }>;
+                %9 = arith.constant 32 : u32;
+                %10 = arith.shr %8, %9;
+                %11 = arith.constant 32 : u32;
+                %12 = arith.shr %10, %11;
+                %13 = arith.trunc %12 <{ ty = #builtin.type<u32> }>;
+                %14 = hir.load %0;
+                %15 = hir.bitcast %14 <{ ty = #builtin.type<u64> }>;
+                %16 = arith.constant 16 : u32;
+                %17 = arith.shr %15, %16;
+                %18 = arith.trunc %17 <{ ty = #builtin.type<u32> }>;
+                builtin.ret %4, %6, %13, %18 : (i32, u16, u32, u32);
+            };"#]],
+        );
+    }
+
+    /// The conversion driver's default cap of 1024 rewrites, a hard error, does not bound the
+    /// splits: a component is not to fail to compile for the number of its split sites.
+    #[test]
+    fn more_split_sites_than_the_default_rewrite_cap_legalize() {
+        const SITES: usize = 1025;
+        let mut test = Test::new(
+            "more_split_sites_than_the_default_rewrite_cap_legalize",
+            &[pointer_to(Type::U64, AddressSpace::Element), Type::U32, Type::U32],
+            &[],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let args = builder.entry_block().borrow().arguments().to_vec();
+            let [addr, lo, hi] = [args[0], args[1], args[2]].map(|arg| arg as ValueRef);
+            let lo = builder.zext(lo, Type::U64, span).unwrap();
+            let hi = builder.zext(hi, Type::U64, span).unwrap();
+            let count = builder.u32(32, span);
+            let hi = builder.shl(hi, count, span).unwrap();
+            let value = builder.bor(lo, hi, span).unwrap();
+            // Each store of the assembled value is a split site of its own
+            for _ in 0..SITES {
+                builder.store(addr, value, span).unwrap();
+            }
+            builder.ret(None, span).unwrap();
+        }
+
+        test.apply_pass::<LegalizeForMasm>(true).unwrap();
+        let hir = test.function().borrow().as_operation().to_string();
+        assert_eq!(hir.matches("hir.store").count(), 2 * SITES);
+        assert_eq!(hir.matches(": (ptr<u32, element>, u32)").count(), 2 * SITES);
+        assert!(!hir.contains("arith.bor"), "{hir}");
     }
 }

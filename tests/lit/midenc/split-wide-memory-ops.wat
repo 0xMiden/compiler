@@ -1,9 +1,9 @@
 ;; RUN: midenc %s --emit=masm=- 2>&1 | filecheck %s
 ;;
-;; Verify that a 64-bit store of two 32-bit halves, the shape LLVM's store merging produces for
-;; two adjacent `i32`/`f32` stores, is lowered as two 32-bit stores, and that a 64-bit load read
-;; only for its high half is lowered as a 32-bit load: no 64-bit integer operation touches the
-;; halves, which may be felts outside the `u32` range.
+;; Verify that a 64-bit store of two 32-bit halves, the shape in which LLVM's IR-level passes
+;; store two 32-bit values they carry as one `i64`, is lowered as two 32-bit stores, and that a
+;; 64-bit load read only for its high half is lowered as a 32-bit load: no 64-bit integer
+;; operation touches the halves, which may be felts outside the `u32` range.
 
 (module $split_wide_memory_ops.wasm
   (memory 1)
@@ -25,10 +25,12 @@
 ;; CHECK-NOT: exec.::intrinsics::mem::store_dw
 ;; CHECK: exec.::intrinsics::mem::store_sw
 ;; CHECK-NOT: exec.::miden::core::math::u64
+;; CHECK-NOT: exec.::intrinsics::mem::store_dw
 ;; CHECK: push.4
 ;; CHECK-NEXT: add
 ;; CHECK-NEXT: u32assert
 ;; CHECK-NOT: exec.::miden::core::math::u64
+;; CHECK-NOT: exec.::intrinsics::mem::store_dw
 ;; CHECK: exec.::intrinsics::mem::store_sw
 ;; CHECK-NOT: exec.::miden::core::math::u64
 ;; CHECK-NOT: exec.::intrinsics::mem::store_dw
@@ -41,6 +43,7 @@
 ;; CHECK-NEXT: add
 ;; CHECK-NEXT: u32assert
 ;; CHECK-NOT: exec.::miden::core::math::u64
+;; CHECK-NOT: exec.::intrinsics::mem::load_dw
 ;; CHECK: exec.::intrinsics::mem::load_sw
 ;; CHECK-NOT: exec.::miden::core::math::u64
 ;; CHECK-NOT: exec.::intrinsics::mem::load_dw

@@ -65,7 +65,7 @@ impl OperationHasher for IgnoreValueEquivalenceOperationHasher {
 /// implementations in the `Hash` and `Eq` of a hash-map key breaks the `Hash`/`Eq` contract:
 /// equal keys land in different buckets, lookups miss depending on allocation addresses, and
 /// compiler output becomes non-deterministic
-/// (see https://github.com/0xMiden/compiler/issues/1257).
+/// (see <https://github.com/0xMiden/compiler/issues/1257>).
 ///
 /// The canonical pairs are:
 ///
@@ -124,7 +124,7 @@ impl ValueHasher for IgnoreValueHasher {
 /// the paired hasher must write identical data for both. Using mismatched implementations in
 /// the `Hash` and `Eq` of a hash-map key breaks the `Hash`/`Eq` contract: equal keys land in
 /// different buckets, lookups miss depending on allocation addresses, and compiler output
-/// becomes non-deterministic (see https://github.com/0xMiden/compiler/issues/1257).
+/// becomes non-deterministic (see <https://github.com/0xMiden/compiler/issues/1257>).
 ///
 /// The canonical pairs are:
 ///
