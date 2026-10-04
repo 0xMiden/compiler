@@ -14,7 +14,8 @@ const LOW_HALF_ADDR: u32 = 128;
 /// IR-level passes can carry a pair of `f32`s, reach memory intact. Found in sub-project 3, where
 /// the batch kernel trapped in the 64-bit `shl`/`or` on a felt outside the `u32` range; where the
 /// assembled value feeds the store directly, as here, the backend stores the two halves
-/// separately. A pair that reaches its store through a join is not covered by that rewrite.
+/// separately. A pair that reaches its store through a join is joined where it is assembled
+/// instead (`felt_pair_through_a_join.rs`).
 #[test]
 fn a_felt_pair_stored_as_one_merged_integer_reaches_memory_intact() {
     let wasm = wat::parse_str(format!(

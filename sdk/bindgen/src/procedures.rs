@@ -17,11 +17,15 @@
 //!
 //! A result that is one value made only of felts (a `Word`, a struct of felts) is read back from
 //! the return area whole, as that value, not felt by felt, as the hand-written bindings read a
-//! `WordAligned<Word>`; it is the cheaper read, and it is also what keeps LLVM from carrying two
-//! of the felts as one `i64` assembled with `extend`/`shl`/`or`, which traps on a felt outside the
-//! `u32` range (it did so where two rebuilt `Word`s met at a branch). The backend splits such a
-//! value only where it feeds a store directly, so tuple results and the felt fields of mixed
-//! structs, which are still rebuilt felt by felt, remain exposed to that shape.
+//! `WordAligned<Word>`; it is the cheaper read. It was also, at first, what kept LLVM from
+//! carrying two of the felts as one `i64` assembled with `extend`/`shl`/`or`, which traps on a
+//! felt outside the `u32` range (it did so where two rebuilt `Word`s met at a branch). The backend
+//! now makes that packing a join of the two felts, and taking them back out with `shr`/`wrap` a
+//! split, wherever the pair goes in between, and neither runs a `u32` instruction. So tuple
+//! results and the felt fields of mixed structs, which are still rebuilt felt by felt, are safe
+//! from that shape too, unless something else also uses a zero-extended felt of the pair
+//! (`docs/internal/src/data_layout.md`). 64-bit arithmetic on the felts would not be safe, but
+//! the wrappers do none.
 //!
 //! Lines are broken where rustfmt, with the workspace's settings, breaks them (see [`Expr`] and
 //! [`write_message`]), so the text is what rustfmt would make of it.

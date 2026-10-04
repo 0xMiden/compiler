@@ -1,4 +1,5 @@
 mod felt_pair_merged_store;
+mod felt_pair_through_a_join;
 mod func_arg_order;
 mod func_arg_same;
 mod invalid_stack_index_16_issue_872;

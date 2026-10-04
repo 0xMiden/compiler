@@ -45,7 +45,7 @@ fn codegen_fails_on_ops_not_legal_for_masm() {
     let message = format!("{err}");
 
     assert!(message.contains("hir.bytes"));
-    assert!(message.contains("does not implement HirLowering"));
+    assert!(message.contains("implements neither HirLowering nor TransparentCast"));
 }
 
 fn build_test_component(

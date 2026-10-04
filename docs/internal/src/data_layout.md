@@ -48,14 +48,48 @@ carry two adjacent field elements as one `i64`, assembled with
 `i64.extend_i32_u`, `i64.shl` and `i64.or` and taken apart with `i64.shr_u` and
 `i32.wrap_i64`.
 
-This hazard is narrowed, not closed. [MASM legalization](https://github.com/0xMiden/compiler/blob/main/codegen/masm/src/legalization.rs)
-splits a 64-bit store whose value is assembled that way, and a 64-bit load used
-only for its two halves, into 32-bit accesses — but only where the assembled
-value feeds the store directly. A pair that reaches its store through a join (a
-block argument, an `i64` local) is still assembled with trapping operations.
-The generated bindings avoid the shape by reading a felt-only result whole.
-Separately, every Rust build for Miden turns LLVM's store merging off
-(`-C llvm-args=-combiner-store-merging=false`); that removes 64-bit copies and
+[MASM legalization](https://github.com/0xMiden/compiler/blob/main/codegen/masm/src/legalization.rs)
+closes those two shapes wherever they appear, with one exception below, so that
+no `u32` instruction touches the pair:
+
+- A 64-bit integer assembled as `or(zext(lo), shl(zext(hi), 32))` becomes an
+  `arith.join` of its two halves.
+- The high half of a 64-bit integer taken with a logical `shr` by 32 and a
+  `trunc` to 32 bits becomes a limb of an `arith.split` of the integer. (A low
+  half taken with a `trunc` alone needs no rewrite: `trunc` uses no `u32`
+  instruction.)
+
+Neither op emits an instruction. Each only renames the two elements where they
+are on the operand stack, so a pair of field elements passes through block
+arguments, `if` results, `i64` locals and aligned 64-bit copies as the two
+elements it is. Where the assembled value feeds a 64-bit store directly, the
+store becomes two 32-bit stores instead. A 64-bit load used only for its two
+halves becomes two 32-bit loads.
+
+Each rewrite applies only where it keeps no value live longer than before. The
+operand-stack spills are placed before legalization, and a longer live range
+could push the stack past the 16 elements an instruction can reach.
+
+- A pack whose `zext`s or `shl` are also used elsewhere stays an `or`.
+- A high half whose `shr` is also used elsewhere stays a `shr`.
+
+A `shr` or `shl` used elsewhere runs as a 64-bit operation anyway. The exception
+is a pack of field elements whose `zext` is also used elsewhere: it is not joined,
+so its `shl` and `or` still trap.
+
+What is not closed is 64-bit arithmetic on reinterpreted field elements:
+
+- any 64-bit arithmetic, comparison or shift that is not part of the two
+  shapes above;
+- a high half taken some other way, such as an arithmetic shift or a `trunc`
+  to fewer than 32 bits.
+
+These still run on `u32` limbs and trap on a field value above `u32::MAX`.
+Arithmetic of this kind is the program's own doing, not a reshaping by LLVM.
+
+The generated bindings read a felt-only result whole, which is also the cheaper
+read. Separately, every Rust build for Miden turns LLVM's store merging off
+(`-C llvm-args=-combiner-store-merging=false`). That removes 64-bit copies and
 constant pairs, a size and cycle saving, and does not bear on this hazard.
 
 ## Heap model
