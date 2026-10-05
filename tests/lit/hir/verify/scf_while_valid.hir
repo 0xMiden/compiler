@@ -1,0 +1,28 @@
+// RUN: hir-opt --verify %s | filecheck %s
+
+// Well-formed `scf.while` loops pass verification: one with matching iteration and result sides,
+// and one with no init operands, no forwarded operands and no results.
+builtin.function public extern("C") @f(%n: u32, %b: i1) -> u32 {
+    %r = scf.while %n before {
+    ^head(%i: u32):
+        %c = arith.lt %i, %n;
+        scf.condition %c, %i : (i1, u32);
+    } after {
+    ^body(%j: u32):
+        %next = arith.incr %j;
+        scf.yield %next : (u32);
+    } : (u32) -> (u32);
+    scf.while before {
+        scf.condition %b : (i1);
+    } after {
+        scf.yield : ();
+    } : () -> ();
+    builtin.ret %r : (u32);
+};
+
+// CHECK: scf.condition %{{\d+}}, %{{\d+}} : (i1, u32);
+// CHECK: scf.yield %{{\d+}} : (u32);
+// CHECK: } : (u32) -> (u32);
+// CHECK: scf.condition %{{\d+}} : (i1);
+// CHECK: scf.yield : ();
+// CHECK: } : () -> ();

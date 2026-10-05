@@ -1,7 +1,8 @@
-use alloc::rc::Rc;
+use alloc::{format, rc::Rc, string::String, vec::Vec};
 
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    diagnostics::Severity,
     dialects::builtin::attributes::U32ArrayAttr,
     effects::*,
     parse::ParserExt,
@@ -239,6 +240,100 @@ impl LoopLikeOpInterface for While {
 
         // The values which are yielded to each iteration
         Some(EntityMut::project(yield_op.borrow_mut(), |op| op.operands_mut().group_mut(0)))
+    }
+}
+
+/// The structural rules of [While]:
+///
+/// * The entry block of the `before` region terminates with [Condition], and the entry block of
+///   the `after` region terminates with [Yield].
+/// * The init operands, the `before` block arguments and the [Yield] operands agree in number and,
+///   position by position, in type.
+/// * The operands forwarded by [Condition], the `after` block arguments and the results agree in
+///   number and, position by position, in type.
+impl Verify<dyn LoopLikeOpInterface> for While {
+    fn verify(&self, context: &Context) -> Result<(), Report> {
+        let op = self.as_operation();
+        let invalid = |label: String| {
+            context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message(format!("invalid operation {}", op.name()))
+                .with_primary_label(op.span(), label)
+                .into_report()
+        };
+
+        let before = self.before();
+        let before_block = before
+            .entry_block_ref()
+            .ok_or_else(|| invalid("the before region has no block".into()))?;
+        let before_block = before_block.borrow();
+        let after = self.after();
+        let after_block = after
+            .entry_block_ref()
+            .ok_or_else(|| invalid("the after region has no block".into()))?;
+        let after_block = after_block.borrow();
+
+        let before_term = before_block
+            .terminator()
+            .ok_or_else(|| invalid("the before block has no terminator".into()))?;
+        let before_term = before_term.borrow();
+        let condition = before_term.downcast_ref::<Condition>().ok_or_else(|| {
+            invalid(format!(
+                "the before block must end in scf.condition, but it ends in {}",
+                before_term.name()
+            ))
+        })?;
+        let after_term = after_block
+            .terminator()
+            .ok_or_else(|| invalid("the after block has no terminator".into()))?;
+        let after_term = after_term.borrow();
+        let yield_op = after_term.downcast_ref::<Yield>().ok_or_else(|| {
+            invalid(format!(
+                "the after block must end in scf.yield, but it ends in {}",
+                after_term.name()
+            ))
+        })?;
+
+        let operand_types =
+            |range: OpOperandRange<'_>| range.iter().map(|o| o.borrow().ty()).collect::<Vec<_>>();
+        let argument_types = |block: &Block| {
+            block.arguments().iter().map(|a| a.borrow().ty().clone()).collect::<Vec<_>>()
+        };
+        let inits = ("init operand", operand_types(self.inits()));
+        let before_args = ("before block argument", argument_types(&before_block));
+        let yielded = ("scf.yield operand", operand_types(yield_op.yielded()));
+        let forwarded = ("scf.condition forwarded operand", operand_types(condition.forwarded()));
+        let after_args = ("after block argument", argument_types(&after_block));
+        let results = (
+            "result",
+            self.results().all().iter().map(|r| r.borrow().ty().clone()).collect::<Vec<_>>(),
+        );
+
+        for ((lhs_name, lhs), (rhs_name, rhs)) in [
+            (&inits, &before_args),
+            (&yielded, &inits),
+            (&forwarded, &after_args),
+            (&results, &forwarded),
+        ] {
+            if lhs.len() != rhs.len() {
+                return Err(invalid(format!(
+                    "{} {lhs_name}(s), but {} {rhs_name}(s)",
+                    lhs.len(),
+                    rhs.len()
+                )));
+            }
+            if let Some((index, (lhs_ty, rhs_ty))) =
+                lhs.iter().zip(rhs.iter()).enumerate().find(|(_, (lhs, rhs))| lhs != rhs)
+            {
+                return Err(invalid(format!(
+                    "{lhs_name} {index} has type '{lhs_ty}', but {rhs_name} {index} has type \
+                     '{rhs_ty}'"
+                )));
+            }
+        }
+
+        Ok(())
     }
 }
 

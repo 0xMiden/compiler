@@ -1096,7 +1096,8 @@ builtin.function public extern("C") @side_effect(%0: ptr<u8, byte>) -> (u8, u8) 
             let v0 = builder.i32(0, SourceSpan::UNKNOWN);
             let v1 = builder.i32(1, SourceSpan::UNKNOWN);
             let v2 = builder.i32(4, SourceSpan::UNKNOWN);
-            let while_op = builder.r#while([v0, v1], &[], SourceSpan::UNKNOWN).unwrap();
+            let while_op =
+                builder.r#while([v0, v1], &[Type::I32, Type::I32], SourceSpan::UNKNOWN).unwrap();
             builder.ret(None, SourceSpan::UNKNOWN).unwrap();
             {
                 let before_block = while_op.borrow().before().entry().as_block_ref();
@@ -1111,8 +1112,7 @@ builtin.function public extern("C") @side_effect(%0: ptr<u8, byte>) -> (u8, u8) 
                 builder.condition(v7, [v6, v4], SourceSpan::UNKNOWN).unwrap();
 
                 builder.switch_to_block(after_block);
-                let v8 = builder.append_block_param(after_block, Type::I32, SourceSpan::UNKNOWN);
-                let v9 = builder.append_block_param(after_block, Type::I32, SourceSpan::UNKNOWN);
+                let [v8, v9] = *after_block.borrow().arguments()[0..2].as_array().unwrap();
                 builder.r#yield([v8 as ValueRef, v9 as ValueRef], SourceSpan::UNKNOWN).unwrap();
             }
         }
@@ -1137,7 +1137,7 @@ builtin.function public extern("C") @down_propagate_while() {
 
     // CHECK-NEXT: scf.while %0, %1 before {
     // CHECK-NEXT: ^block{{\d}}([[V3:%\d+]]: i32, [[V4:%\d+]]: i32):
-    scf.while %0, %1 before {
+    %10, %11 = scf.while %0, %1 before {
     ^block1(%3: i32, %4: i32):
         // CHECK-NEXT: [[V6:%\d+]] = arith.add [[V3]], [[V1]] <{ overflow = #builtin.overflow<checked> }>;
         %5 = arith.constant 1 : i32;
@@ -1152,7 +1152,7 @@ builtin.function public extern("C") @down_propagate_while() {
         // CHECK-NEXT: ^block{{\d}}([[V8:%\d+]]: i32, [[V9:%\d+]]: i32):
         // CHECK-NEXT: scf.yield [[V8]], [[V9]] : (i32, i32);
         scf.yield %8, %9 : (i32, i32);
-    } : (i32, i32);
+    } : (i32, i32) -> (i32, i32);
 
     // CHECK: builtin.ret;
     builtin.ret;

@@ -1,0 +1,16 @@
+// RUN: not hir-opt --verify %s 2>&1 | filecheck %s
+
+// The type of a before-block argument must equal the type of the init operand at its position.
+builtin.function public extern("C") @f(%n: u32, %b: i1) -> u32 {
+    scf.while %n before {
+    ^head(%i: i32):
+        scf.condition %b : (i1);
+    } after {
+    ^body:
+        scf.yield %n : (u32);
+    } : (u32) -> ();
+    builtin.ret %n : (u32);
+};
+
+// CHECK: invalid operation scf.while
+// CHECK: init operand 0 has type 'u32'

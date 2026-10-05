@@ -1,0 +1,17 @@
+// RUN: not hir-opt --verify %s 2>&1 | filecheck %s
+
+// The after block of `scf.while` must end in `scf.yield`.
+builtin.function public extern("C") @f(%n: u32) -> u32 {
+    scf.while %n before {
+    ^head(%i: u32):
+        %c = arith.lt %i, %n;
+        scf.condition %c : (i1);
+    } after {
+    ^body:
+        ub.unreachable;
+    } : (u32) -> ();
+    builtin.ret %n : (u32);
+};
+
+// CHECK: invalid operation scf.while
+// CHECK: must end in scf.yield

@@ -1,0 +1,16 @@
+// RUN: not hir-opt --verify %s 2>&1 | filecheck %s
+
+// The number of `scf.yield` operands must equal the number of init operands of `scf.while`.
+builtin.function public extern("C") @f(%n: u32, %b: i1) -> u32 {
+    scf.while %n before {
+    ^head(%i: u32):
+        scf.condition %b : (i1);
+    } after {
+    ^body:
+        scf.yield %n, %n : (u32, u32);
+    } : (u32) -> ();
+    builtin.ret %n : (u32);
+};
+
+// CHECK: invalid operation scf.while
+// CHECK: 2 scf.yield operand(s)
