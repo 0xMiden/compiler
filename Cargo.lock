@@ -4351,7 +4351,6 @@ dependencies = [
 name = "midenc-dialect-scf"
 version = "0.11.0"
 dependencies = [
- "bitvec",
  "log",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
