@@ -23,7 +23,7 @@
 //! now makes that packing a join of the two felts, and taking them back out with `shr`/`wrap` a
 //! split, wherever the pair goes in between, and neither runs a `u32` instruction. So tuple
 //! results and the felt fields of mixed structs, which are still rebuilt felt by felt, are safe
-//! from that shape too, unless something else also uses a zero-extended felt of the pair
+//! from that shape too, a felt paired with a constant included
 //! (`docs/internal/src/data_layout.md`). 64-bit arithmetic on the felts would not be safe, but
 //! the wrappers do none.
 //!

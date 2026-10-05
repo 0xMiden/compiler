@@ -277,14 +277,26 @@ midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Leg
 /// A dialect conversion pass that validates IR against the set of operations MASM codegen can
 /// lower, and rewrites the 64-bit integer operations it would lower unsafely when they pack or
 /// unpack a pair of felts. A 64-bit integer assembled from two 32-bit halves,
-/// `or(zext(lo), shl(zext(hi), 32))`, becomes an `arith.join` of them, and the high half taken
-/// back out of one, `trunc(shr(_, 32))`, a limb of an `arith.split` of it. Neither emits an
-/// instruction, so the pair travels through block arguments, `scf.if` results and locals as the
-/// two elements it is. A 64-bit store of such a pair becomes two 32-bit stores, and a 64-bit load
-/// used only as its halves two 32-bit loads. None of these rewrites makes a value live longer,
-/// since the operand stack's spills are already placed, and each declines where it would. What
-/// remains unsafe is 64-bit arithmetic proper on reinterpreted felts, which still traps on a felt
-/// outside the `u32` range.
+/// `or(zext(lo), shl(zext(hi), 32))`, becomes an `arith.join` of them, and so does one with a
+/// constant half, as LLVM folds the pack of a felt beside a constant. In a block that takes the
+/// high half of a 64-bit integer, `trunc(shr(_, 32))`, it and every low half taken there with
+/// `trunc` become limbs of an `arith.split` of it. Neither runs a `u32` instruction (a join may
+/// move its operands into place), so the pair travels through block arguments, `scf.if` results
+/// and locals as the two elements it is. A 64-bit store of such a pair becomes two 32-bit stores,
+/// and a 64-bit load used only as its halves two 32-bit loads. What remains unsafe is 64-bit
+/// arithmetic proper on reinterpreted felts, which still traps on a felt outside the `u32` range.
+///
+/// # It must run before spill placement
+///
+/// The rewrites change live ranges: a join keeps the halves live up to the `or` it replaces, a
+/// split keeps the limbs live from the first half it serves, and the store split keeps the halves
+/// live up to the store. Spill placement is what keeps the operand stack within the 16 elements
+/// an instruction can reach, and it can only do so for live ranges it has seen. So this pass runs
+/// before it, after the last rewrite that could reshape the code (in `midenc-compile`,
+/// `apply_rewrites`: after the last canonicalization, before operand sinking and spill
+/// placement), and codegen, which comes after spill placement, runs [`CheckMasmLegality`]
+/// instead, which rewrites nothing. Run after spill placement, this pass could leave an operand
+/// deeper than an instruction reaches.
 ///
 /// This pass is intentionally owned by `midenc-codegen-masm`: it builds the MASM-specific
 /// legalization target, runs full dialect conversion, and fails before `ToMasmComponent` can
@@ -335,6 +347,7 @@ impl Pass for LegalizeForMasm {
         patterns.push(SplitWideStore::new(context.clone()));
         patterns.push(SplitWideLoad::new(context.clone()));
         patterns.push(JoinAssembledHalves::new(context.clone()));
+        patterns.push(JoinShiftedHalf::new(context.clone()));
         patterns.push(SplitTakenHalves::new(context));
         // The driver caps pattern applications across the whole root, against rewrite cycles,
         // and exceeding the cap is an error. These patterns apply once per site, in ordinary code
@@ -355,6 +368,72 @@ impl Pass for LegalizeForMasm {
     }
 }
 
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<CheckMasmLegality>(
+    CheckMasmLegality::ARGUMENT,
+    "check that HIR is legal for MASM codegen, rewriting nothing"
+));
+
+/// Checks that IR is in the set of operations MASM codegen can lower, and rewrites nothing:
+/// [`masm_legalization_target`] with no patterns.
+///
+/// This is what codegen runs on entry. It comes after spill placement, where nothing may be
+/// rewritten (see [`LegalizeForMasm`]), so a shape that [`LegalizeForMasm`] would have rewritten is
+/// an error here, which says that the legalization must run before spill placement; an op MASM
+/// codegen cannot lower at all is the same error as from [`LegalizeForMasm`]. Unrealized
+/// conversion casts are not reconciled, which would be a rewrite: one that is left is illegal.
+#[derive(Default)]
+pub struct CheckMasmLegality;
+
+impl CheckMasmLegality {
+    /// Command-line/pass-pipeline argument for this pass.
+    pub const ARGUMENT: &'static str = "check-masm-legality";
+}
+
+impl Pass for CheckMasmLegality {
+    type Target = Operation;
+
+    fn name(&self) -> &'static str {
+        "check-masm-legality"
+    }
+
+    fn argument(&self) -> &'static str {
+        Self::ARGUMENT
+    }
+
+    fn description(&self) -> &'static str {
+        "Checks that HIR is in the set of operations supported by MASM codegen, rewriting nothing"
+    }
+
+    fn can_schedule_on(&self, _name: &OperationName) -> bool {
+        true
+    }
+
+    fn initialize(&mut self, context: Rc<Context>) -> Result<(), Report> {
+        register_masm_legalization_dialects(&context);
+        Ok(())
+    }
+
+    fn run_on_operation(
+        &mut self,
+        op: EntityMut<'_, Self::Target>,
+        state: &mut PassExecutionState,
+    ) -> Result<(), Report> {
+        let root = op.as_operation_ref();
+        let context = op.context_rc();
+        drop(op);
+
+        let target = masm_legalization_target(context.clone());
+        let patterns = ConversionPatternSet::new(context);
+        let mut config = ConversionConfig::default();
+        config.with_reconcile_unrealized_casts(false);
+        apply_full_conversion(root, target, patterns, config)?;
+
+        state.set_post_pass_status(PostPassStatus::Unchanged);
+        state.preserved_analyses_mut().preserve_all();
+        Ok(())
+    }
+}
+
 /// Build a conversion target that represents the final IR accepted by MASM codegen.
 ///
 /// Structural builtin operations such as modules and functions are legal containers, but their
@@ -362,8 +441,9 @@ impl Pass for LegalizeForMasm {
 /// only when they implement `HirLowering` or `TransparentCast`, which codegen lowers by renaming
 /// the operand. `builtin.unrealized_conversion_cast` is always illegal
 /// as a final operation, and so are the shapes [`LegalizeForMasm`] rewrites: the `arith.bor` that
-/// assembles a 64-bit integer from two 32-bit halves, the `arith.trunc`s that take the halves of
-/// one from a split, and the 64-bit stores and loads of two 32-bit halves.
+/// assembles a 64-bit integer from two 32-bit halves, the `arith.shl` that makes one of a high
+/// half and a zero low half, the `arith.trunc`s that take the halves of one in a block that takes
+/// its high half, and the 64-bit stores and loads of two 32-bit halves.
 pub fn masm_legalization_target(context: Rc<Context>) -> ConversionTarget {
     register_masm_legalization_dialects(&context);
     let mut target = ConversionTarget::new(context);
@@ -482,7 +562,8 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
         .add_dynamically_legal_op::<hir::Store, _>(|op| {
             if Halves::stored_by(op).is_some() {
                 DynamicLegalityResult::illegal_with_reason(Report::msg(
-                    "a 64-bit store of two 32-bit halves must be split into two 32-bit stores",
+                    "a 64-bit store of two 32-bit halves must have been split into two 32-bit \
+                     stores by `legalize-for-masm`, which must run before spill placement",
                 ))
             } else {
                 masm_lowerable_op(op)
@@ -491,7 +572,8 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
         .add_dynamically_legal_op::<hir::Load, _>(|op| {
             if TakenHalves::loaded_by(op).is_some() {
                 DynamicLegalityResult::illegal_with_reason(Report::msg(
-                    "a 64-bit load used only as 32-bit halves must be split into two 32-bit loads",
+                    "a 64-bit load used only as 32-bit halves must have been split into two \
+                     32-bit loads by `legalize-for-masm`, which must run before spill placement",
                 ))
             } else {
                 masm_lowerable_op(op)
@@ -500,8 +582,20 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
         .add_dynamically_legal_op::<arith::Bor, _>(|op| {
             if Halves::assembled_by(op).is_some() {
                 DynamicLegalityResult::illegal_with_reason(Report::msg(
-                    "a 64-bit integer assembled from two 32-bit halves must be an 'arith.join' of \
-                     them",
+                    "a 64-bit integer assembled from two 32-bit halves must have been made an \
+                     'arith.join' of them by `legalize-for-masm`, which must run before spill \
+                     placement",
+                ))
+            } else {
+                masm_lowerable_op(op)
+            }
+        })
+        .add_dynamically_legal_op::<arith::Shl, _>(|op| {
+            if shifted_half(op).is_some() {
+                DynamicLegalityResult::illegal_with_reason(Report::msg(
+                    "a 64-bit integer whose high half is a 32-bit value and whose low half is \
+                     zero must have been made an 'arith.join' by `legalize-for-masm`, which must \
+                     run before spill placement",
                 ))
             } else {
                 masm_lowerable_op(op)
@@ -510,8 +604,9 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
         .add_dynamically_legal_op::<arith::Trunc, _>(|op| {
             if SplitHalves::at(op).is_some() {
                 DynamicLegalityResult::illegal_with_reason(Report::msg(
-                    "this 32-bit half of a 64-bit integer must be taken as a limb of an \
-                     'arith.split' of it",
+                    "a 32-bit half of a 64-bit integer, in a block that takes its high half, must \
+                     have been made a limb of an 'arith.split' of it by `legalize-for-masm`, \
+                     which must run before spill placement",
                 ))
             } else {
                 masm_lowerable_op(op)
@@ -553,8 +648,9 @@ fn masm_lowerable_op(op: &Operation) -> DynamicLegalityResult {
 }
 
 /// Splits a 64-bit integer store whose value is two 32-bit halves, `or(zext(lo), shl(zext(hi),
-/// 32))` with the `or`'s operands in either order or the `arith.join(hi, lo)` that
-/// [`JoinAssembledHalves`] makes of it, into a 32-bit store of each half.
+/// 32))` with the `or`'s operands in either order, one of its forms with a constant half (see
+/// [`JoinAssembledHalves`]), or the `arith.join(hi, lo)` that [`JoinAssembledHalves`] or
+/// [`JoinShiftedHalf`] makes of it, into a 32-bit store of each half.
 ///
 /// The shape comes from LLVM's IR-level passes, which can carry two adjacent 32-bit values as one
 /// `i64` and pack them so before storing them. (It does not come from the code generator's store
@@ -566,18 +662,14 @@ fn masm_lowerable_op(op: &Operation) -> DynamicLegalityResult {
 /// store, and the `zext`, `shl` and `or`, or the join, go unless something else uses them. The
 /// store is split whether the conversion reaches it before or after the `or` has become a join.
 ///
-/// Only that exact shape is split: a 64-bit integer value, `u32` halves, `zext` rather than
-/// `sext`, a shift by the constant 32, or a join of two `i32` or `u32` limbs. The sign-only
-/// `hir.bitcast`s with which the Wasm frontend spells `i64.extend_i32_u`, and the `band` with
-/// which it masks every shift count, are looked through. The pair must feed the store directly:
-/// one that reaches its store through a block argument, an `scf.if` result or an `i64` local is
-/// stored with one 64-bit store, which copies its two elements without interpreting them. And
-/// the pair, with everything between it and its halves, must have no use but the store, so that
-/// it all dies there: the halves then take its place on the operand stack, and nothing lives
-/// longer than it did. That matters because the operand stack's spills are placed before this
-/// pass, for the code as it was; a value kept live past its old last use could take the stack
-/// past the 16 elements an instruction reaches. The high half goes 4 bytes on, or one element on
-/// in element space, where `intrinsics::mem::store_dw` puts the high half of a 64-bit store.
+/// Only that exact shape is split: a 64-bit integer value, `u32` halves or constants that fit a
+/// half, `zext` rather than `sext`, a shift by the constant 32, or a join of two `i32` or `u32`
+/// limbs. The sign-only `hir.bitcast`s with which the Wasm frontend spells `i64.extend_i32_u`,
+/// and the `band` with which it masks every shift count, are looked through. And the pair must
+/// feed the store directly: one that reaches its store through a block argument, an `scf.if`
+/// result or an `i64` local is stored with one 64-bit store, which copies its two elements
+/// without interpreting them. The high half goes 4 bytes on, or one element on in element
+/// space, where `intrinsics::mem::store_dw` puts the high half of a 64-bit store.
 struct SplitWideStore {
     info: PatternInfo,
 }
@@ -623,11 +715,13 @@ impl ConversionPattern for SplitWideStore {
         };
 
         // Both halves have this type: `u32` from an `or`, the limb type from a join
-        let half_ty = halves.lo.borrow().ty().clone();
+        let half_ty = halves.ty();
+        let lo = halves.lo.materialize(rewriter, span)?;
         let lo_addr = half_address(rewriter, addr, Half::Lo, half_ty.clone(), span)?;
-        rewriter.create_op::<hir::Store, _>(span, (lo_addr, halves.lo))?;
+        rewriter.create_op::<hir::Store, _>(span, (lo_addr, lo))?;
+        let hi = halves.hi.materialize(rewriter, span)?;
         let hi_addr = half_address(rewriter, addr, Half::Hi, half_ty, span)?;
-        rewriter.create_op::<hir::Store, _>(span, (hi_addr, halves.hi))?;
+        rewriter.create_op::<hir::Store, _>(span, (hi_addr, hi))?;
         rewriter.erase_op(op)?;
         erase_dead_defs(rewriter, [value])?;
         Ok(true)
@@ -636,14 +730,43 @@ impl ConversionPattern for SplitWideStore {
 
 /// The two 32-bit halves a 64-bit integer is made of, where its definition says so.
 struct Halves {
-    lo: ValueRef,
-    hi: ValueRef,
+    lo: HalfValue,
+    hi: HalfValue,
+}
+
+/// One 32-bit half of a 64-bit integer: a value, or a constant where LLVM has folded one half of
+/// a pair to one.
+#[derive(Copy, Clone)]
+enum HalfValue {
+    Value(ValueRef),
+    Constant(u32),
+}
+
+impl HalfValue {
+    /// The half as a value, built as a `u32` constant at the rewriter's insertion point if it is
+    /// one.
+    fn materialize(
+        self,
+        rewriter: &mut ConversionPatternRewriter,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        match self {
+            Self::Value(value) => Ok(value),
+            Self::Constant(constant) => {
+                let constant =
+                    rewriter.create_op::<arith::Constant, _>(span, (Immediate::U32(constant),))?;
+                Ok(constant.borrow().result().as_value_ref())
+            }
+        }
+    }
 }
 
 impl Halves {
-    /// The `u32` halves that `op`, an `arith.bor`, assembles as `or(zext(lo), shl(zext(hi), 32))`,
-    /// with its operands in either order, when nothing but the `or` uses the `zext`s, the `shl` or
-    /// the casts between them: the `or` that [`JoinAssembledHalves`] makes a join.
+    /// The halves that `op`, an `arith.bor`, assembles, with its operands in either order: the
+    /// `or` that [`JoinAssembledHalves`] makes a join. The low side is `zext(lo)` of a `u32`, or a
+    /// constant below 2^32; the high side is `shl(zext(hi), 32)`, the `join(hi, 0)` that
+    /// [`JoinShiftedHalf`] makes of it, or a constant whose low 32 bits are zero. Not both sides
+    /// are constants.
     fn assembled_by(op: &Operation) -> Option<Self> {
         let or = op.downcast_ref::<arith::Bor>()?;
         if !is_64bit_integer(or.result().ty()) {
@@ -651,11 +774,22 @@ impl Halves {
         }
         let (lhs, rhs) = (or.lhs().as_value_ref(), or.rhs().as_value_ref());
         let halves = |lo_side, hi_side| {
-            let lo = zero_extended_u32(lo_side)?;
-            let hi = zero_extended_u32(shifted_left_by_32(hi_side)?)?;
-            let dies_with_the_or =
-                used_only_on_the_way(lo_side, lo) && used_only_on_the_way(hi_side, hi);
-            dies_with_the_or.then_some(Self { lo, hi })
+            let lo = zero_extended_u32(lo_side).map(HalfValue::Value).or_else(|| {
+                let constant = constant_u64(lo_side)?;
+                Some(HalfValue::Constant(u32::try_from(constant).ok()?))
+            })?;
+            let hi = shifted_left_by_32(hi_side)
+                .and_then(zero_extended_u32)
+                .or_else(|| joined_over_zero(hi_side))
+                .map(HalfValue::Value)
+                .or_else(|| {
+                    let constant = constant_u64(hi_side)?;
+                    let high = (constant & u64::from(u32::MAX) == 0).then_some(constant >> 32)?;
+                    Some(HalfValue::Constant(high as u32))
+                })?;
+            let constants_only =
+                matches!((lo, hi), (HalfValue::Constant(_), HalfValue::Constant(_)));
+            (!constants_only).then_some(Self { lo, hi })
         };
         halves(lhs, rhs).or_else(|| halves(rhs, lhs))
     }
@@ -669,43 +803,138 @@ impl Halves {
         }
         let [hi, lo] = [0, 1].map(|limb| limbs[limb].borrow().as_value_ref());
         let ty = lo.borrow().ty().clone();
-        (matches!(ty, Type::I32 | Type::U32) && *hi.borrow().ty() == ty).then_some(Self { lo, hi })
+        let is_32bit_integer = matches!(ty, Type::I32 | Type::U32) && *hi.borrow().ty() == ty;
+        is_32bit_integer.then_some(Self {
+            lo: HalfValue::Value(lo),
+            hi: HalfValue::Value(hi),
+        })
     }
 
-    /// The halves of the value of `op`, a 64-bit store, that [`SplitWideStore`] stores apart: the
-    /// value has no use but the store.
+    /// The halves of the value of `op`, a 64-bit store, that [`SplitWideStore`] stores apart.
     fn stored_by(op: &Operation) -> Option<Self> {
         let store = op.downcast_ref::<hir::Store>()?;
         let value = store.value().as_value_ref();
         if !is_64bit_integer(value.borrow().ty()) {
             return None;
         }
-        let assembled = through_sign_casts(value);
-        if !used_only_on_the_way(value, assembled) || !has_one_real_use(assembled) {
-            return None;
-        }
-        let def = assembled.borrow().get_defining_op()?;
+        let def = through_sign_casts(value).borrow().get_defining_op()?;
         let def = def.borrow();
         Self::assembled_by(&def).or_else(|| Self::joined_by(&def))
     }
+
+    /// The type of both halves: that of a value among them, the limb type of a join or `u32`
+    /// from an `or`, and `u32` for constants.
+    fn ty(&self) -> Type {
+        match (self.lo, self.hi) {
+            (HalfValue::Value(value), _) | (_, HalfValue::Value(value)) => {
+                value.borrow().ty().clone()
+            }
+            _ => Type::U32,
+        }
+    }
+}
+
+/// Makes `shl(zext(hi), 32)`, a 64-bit integer whose low half is zero, an `arith.join(hi, 0)`.
+///
+/// It is the pack of a pair whose low half LLVM has folded to the constant zero, as for a felt
+/// beside `Felt::ZERO` in a `Word`; on a felt outside the `u32` range, the 64-bit `shl` traps as
+/// the pack's does. Made a join, it is also what [`JoinAssembledHalves`] and [`SplitWideStore`]
+/// take the high side of a pair from, so a pack is rewritten the same whether its `shl` or its
+/// `or` is reached first. The `zext` is matched exactly as for them.
+struct JoinShiftedHalf {
+    info: PatternInfo,
+}
+
+impl JoinShiftedHalf {
+    fn new(context: Rc<Context>) -> Self {
+        let arith = context.get_or_register_dialect::<arith::ArithDialect>();
+        let mut info = PatternInfo::new(
+            context.clone(),
+            "join-shifted-half",
+            PatternKind::Operation(arith.expect_registered_name::<arith::Shl>()),
+            PatternBenefit::new(1),
+        );
+        info.with_generated_ops([
+            arith.expect_registered_name::<arith::Join>(),
+            arith.expect_registered_name::<arith::Constant>(),
+        ]);
+        Self { info }
+    }
+}
+
+impl Pattern for JoinShiftedHalf {
+    fn info(&self) -> &PatternInfo {
+        &self.info
+    }
+}
+
+impl ConversionPattern for JoinShiftedHalf {
+    fn match_and_rewrite(
+        &self,
+        op: OperationRef,
+        _operands: ConvertedOperands<'_>,
+        rewriter: &mut ConversionPatternRewriter,
+    ) -> Result<bool, Report> {
+        let Some(hi) = shifted_half(&op.borrow()) else {
+            return Ok(false);
+        };
+        let (span, ty, operands) = {
+            let op = op.borrow();
+            let shl = op.downcast_ref::<arith::Shl>().expect("the half is a shl's");
+            let operands = [shl.lhs().as_value_ref(), shl.shift().as_value_ref()];
+            (op.span(), shl.result().ty().clone(), operands)
+        };
+
+        let lo = HalfValue::Constant(0).materialize(rewriter, span)?;
+        let join = rewriter.create_op::<arith::Join, _>(span, ([hi, lo], ty))?;
+        let join = join.borrow().result().as_value_ref();
+        rewriter.replace_op(op, &[join])?;
+        erase_dead_defs(rewriter, operands)?;
+        Ok(true)
+    }
+}
+
+/// The `u32` that `op`, an `arith.shl` with a 64-bit result, shifts into the high half, when it is
+/// `shl(zext(hi), 32)`: the shift that [`JoinShiftedHalf`] makes a join.
+fn shifted_half(op: &Operation) -> Option<ValueRef> {
+    let shl = op.downcast_ref::<arith::Shl>()?;
+    if !is_64bit_integer(shl.result().ty()) || constant_u32(shl.shift().as_value_ref()) != Some(32)
+    {
+        return None;
+    }
+    zero_extended_u32(shl.lhs().as_value_ref())
+}
+
+/// The high limb of `value`, a 64-bit integer, when it is a `join(hi, 0)` of `u32` limbs, as
+/// [`JoinShiftedHalf`] makes of `shl(zext(hi), 32)`.
+fn joined_over_zero(value: ValueRef) -> Option<ValueRef> {
+    let join = defined_by::<arith::Join>(through_sign_casts(value))?;
+    let halves = Halves::joined_by(join.borrow().as_operation())?;
+    let (HalfValue::Value(hi), HalfValue::Value(lo)) = (halves.hi, halves.lo) else {
+        return None;
+    };
+    let is_u32 = *hi.borrow().ty() == Type::U32;
+    (is_u32 && constant_u32(lo) == Some(0)).then_some(hi)
 }
 
 /// Makes a 64-bit integer assembled from two 32-bit halves, `or(zext(lo), shl(zext(hi), 32))`
-/// with the `or`'s operands in either order, an `arith.join(hi, lo)`, whatever the `or`'s uses.
+/// with the `or`'s operands in either order, an `arith.join(hi, lo)`, whatever its uses; and
+/// likewise one with a constant half: `or(shl(zext(hi), 32), C)` with `C` below 2^32 becomes
+/// `join(hi, C)`, and `or(zext(lo), C)` with the low 32 bits of `C` zero becomes
+/// `join(C >> 32, lo)`, the constant a `u32` limb. (`shl(zext(hi), 32)` alone, a zero low half, is
+/// [`JoinShiftedHalf`]'s.)
 ///
 /// The shape [`SplitWideStore`] splits where it feeds a store directly; this is the rest of it.
 /// When LLVM's IR-level passes pack two felts so and the packed `i64` goes on to a block argument,
 /// an `scf.if` result or an `i64` local, as when two rebuilt `Word`s meet at a branch, the 64-bit
-/// `shl` and `or` trap on a felt outside the `u32` range. A join emits nothing: it names the two
-/// halves, where they are on the operand stack, the limbs of the integer, so the pair goes on as
-/// the two elements it is. It is cheaper for any two `u32`s.
+/// `shl` and `or` trap on a felt outside the `u32` range. A join runs no `u32` instruction: it
+/// names the two halves the limbs of the integer, moving them into place on the operand stack if
+/// need be, so the pair goes on as the two elements it is. It is cheaper for any two `u32`s, and
+/// the `zext` and `shl` go unless something else uses them.
 ///
-/// The halves are matched exactly as for [`SplitWideStore`], with the same matcher, and both are
-/// `u32`, so the join needs no cast. An `or` of anything else, a third term included, stays an
-/// `or`. So does one whose `zext`s, `shl` or the casts between them have another use: the join
-/// would keep the halves live up to the `or` beside those values, where the `zext`s and the `shl`
-/// used to take their place, and the operand stack's spills, placed before this pass, did not
-/// allow for that.
+/// The halves are matched exactly as for [`SplitWideStore`], with the same matcher, and all are
+/// `u32`, so the join needs no cast. An `or` of anything else, a third term or a constant with
+/// bits in both halves beside a `zext` included, stays an `or`.
 struct JoinAssembledHalves {
     info: PatternInfo,
 }
@@ -719,7 +948,10 @@ impl JoinAssembledHalves {
             PatternKind::Operation(arith.expect_registered_name::<arith::Bor>()),
             PatternBenefit::new(1),
         );
-        info.with_generated_ops([arith.expect_registered_name::<arith::Join>()]);
+        info.with_generated_ops([
+            arith.expect_registered_name::<arith::Join>(),
+            arith.expect_registered_name::<arith::Constant>(),
+        ]);
         Self { info }
     }
 }
@@ -747,7 +979,9 @@ impl ConversionPattern for JoinAssembledHalves {
             (op.span(), or.result().ty().clone(), operands)
         };
 
-        let join = rewriter.create_op::<arith::Join, _>(span, ([halves.hi, halves.lo], ty))?;
+        let hi = halves.hi.materialize(rewriter, span)?;
+        let lo = halves.lo.materialize(rewriter, span)?;
+        let join = rewriter.create_op::<arith::Join, _>(span, ([hi, lo], ty))?;
         let join = join.borrow().result().as_value_ref();
         rewriter.replace_op(op, &[join])?;
         erase_dead_defs(rewriter, operands)?;
@@ -764,7 +998,7 @@ impl ConversionPattern for JoinAssembledHalves {
 /// `shr` must be logical (of a `u64`), and the same sign-only casts and masked shift count are
 /// looked through. Every use must take its half directly: a load whose value also goes anywhere
 /// else, such as to a successor block, out of an `scf.if` or into an `i64` local, stays one 64-bit
-/// load, and [`SplitTakenHalves`] takes its high halves from splits of it. Uses by debug info do not
+/// load, and [`SplitTakenHalves`] takes its halves from a split of it. Uses by debug info do not
 /// count, and go with the 64-bit value. A load this pattern splits is declined by
 /// [`SplitTakenHalves`], whichever of the load and its `trunc`s the conversion reaches first: two
 /// 32-bit loads beat one 64-bit load and a split.
@@ -912,28 +1146,22 @@ impl TakenHalves {
     }
 }
 
-/// Takes the high 32-bit half of a 64-bit integer, `trunc(shr(_, 32))` with a logical shift,
-/// from an `arith.split` of it, whatever defines the integer.
+/// Takes the 32-bit halves of a 64-bit integer from an `arith.split` of it, in each block that
+/// takes its high half: there, that `trunc(shr(_, 32))`, with a logical shift, and every other use
+/// that takes a half, the low half by `trunc` to 32 bits, become limbs of one split, placed before
+/// the first of them. Whatever defines the integer.
 ///
 /// The mirror of [`JoinAssembledHalves`]. When LLVM's IR-level passes take two felts back out of
 /// an `i64` that came through a block argument, an `scf.if` result or an `i64` local, the 64-bit
-/// `shr` traps on a felt outside the `u32` range. A split emits nothing: it names the integer's
-/// two limbs, where they are on the operand stack, the halves. It is cheaper for any integer.
+/// `shr` traps on a felt outside the `u32` range. A split runs no `u32` instruction: it names the
+/// integer's two limbs the halves, moving the integer into place on the operand stack if need be.
+/// It is cheaper for any integer, and the `shr` goes unless something else uses it.
 ///
-/// No value may live longer than it did: the operand stack's spills are placed before this pass,
-/// for the code as it was, and a value kept live past its old last use could take the stack past
-/// the 16 elements an instruction reaches. So:
-///
-/// - Where every use of the integer takes a half, all in one block, one split serves them all, the
-///   low halves taken by `trunc` to 32 bits included, and the integer dies there: the split goes
-///   before the first of them, and the limbs take the integer's place.
-/// - Anywhere else, each high half has a split of its own at its `trunc`, so long as nothing else
-///   uses the `shr` or the casts on its way. The integer then lives where they did, and the low
-///   limb is dropped at once. Low halves stay `trunc`s, which drop the high limb with no `u32`
-///   instruction, as a split would.
-///
-/// A load every use of which takes a half is left to [`SplitWideLoad`], which this pattern
-/// declines.
+/// Uses of the integer that take no half keep it: codegen copies an operand that is still live
+/// after the op that uses it, so the split leaves the integer in place for them, as the `trunc`s
+/// did. A block that takes only the low half is left alone: `trunc` drops the high limb with no
+/// `u32` instruction, as a split would. And a load every use of which takes a half is left to
+/// [`SplitWideLoad`], which this pattern declines.
 struct SplitTakenHalves {
     info: PatternInfo,
 }
@@ -1023,11 +1251,11 @@ impl ConversionPattern for SplitTakenHalves {
 }
 
 /// The uses of a 64-bit integer that [`SplitTakenHalves`] takes from one split of it, when it
-/// matches at a `trunc`: every use, in the `trunc`'s block, or the `trunc` alone, of the high half.
+/// matches at a `trunc`: those in the `trunc`'s block that take a half, one of them the high half.
 struct SplitHalves {
     /// The integer
     value: ValueRef,
-    /// The `trunc`s to take from the split
+    /// Its uses in the block that take a half
     halves: TakenHalves,
 }
 
@@ -1039,25 +1267,20 @@ impl SplitHalves {
         if def.is_some_and(|def| TakenHalves::loaded_by(&def.borrow()).is_some()) {
             return None;
         }
-        let root = op.as_operation_ref();
-        let halves = TakenHalves::of(value);
+        // Decided per block, so that splitting the halves in one block does not change whether
+        // they are split in another
+        let mut halves = TakenHalves::of(value);
         let block = op.parent();
-        let in_one_block = halves.lo.iter().chain(&halves.hi).all(|trunc| trunc.parent() == block);
-        if !halves.other_uses && in_one_block && !halves.hi.is_empty() {
-            // Always so, as `half_taken_from` and `TakenHalves::of` see the same shapes; if they
-            // disagreed, the pattern would not replace the `trunc` it matched
-            let has_root = halves.lo.contains(&root) || halves.hi.contains(&root);
-            return has_root.then_some(Self { value, halves });
+        halves.lo.retain(|trunc| trunc.parent() == block);
+        halves.hi.retain(|trunc| trunc.parent() == block);
+        if halves.hi.is_empty() {
+            return None;
         }
-        let alone = halves.hi.contains(&root)
-            && used_only_on_the_way(trunc.operand().as_value_ref(), value);
-        alone.then(|| Self {
-            value,
-            halves: TakenHalves {
-                hi: SmallVec::from_slice(&[root]),
-                ..Default::default()
-            },
-        })
+        // Always so, as `half_taken_from` and `TakenHalves::of` see the same shapes; if they
+        // disagreed, the pattern would not replace the `trunc` it matched
+        let root = op.as_operation_ref();
+        let has_root = halves.lo.contains(&root) || halves.hi.contains(&root);
+        has_root.then_some(Self { value, halves })
     }
 }
 
@@ -1221,42 +1444,6 @@ fn shifted_right_by_32(value: ValueRef) -> Option<ValueRef> {
     (logical && constant_u32(shr.shift().as_value_ref()) == Some(32)).then_some(shifted)
 }
 
-/// Whether `value`, and each value between it and `source` back through the sign-only casts,
-/// `zext`s and shifts the matchers look through, has no real use but the next op on that way: so
-/// that rewriting the op at its end leaves them all dead, and `source` lives on in their place.
-fn used_only_on_the_way(mut value: ValueRef, source: ValueRef) -> bool {
-    while value != source {
-        if !has_one_real_use(value) {
-            return false;
-        }
-        let Some(def) = value.borrow().get_defining_op() else {
-            return false;
-        };
-        let def = def.borrow();
-        value = if let Some(cast) = def.downcast_ref::<hir::Bitcast>() {
-            cast.operand().as_value_ref()
-        } else if let Some(zext) = def.downcast_ref::<arith::Zext>() {
-            zext.operand().as_value_ref()
-        } else if let Some(shl) = def.downcast_ref::<arith::Shl>() {
-            shl.lhs().as_value_ref()
-        } else if let Some(shr) = def.downcast_ref::<arith::Shr>() {
-            shr.lhs().as_value_ref()
-        } else {
-            return false;
-        };
-    }
-    true
-}
-
-/// Whether `value` has one use, not counting uses by debug info.
-fn has_one_real_use(value: ValueRef) -> bool {
-    let value = value.borrow();
-    let mut real_uses = value
-        .iter_uses()
-        .filter(|user| !user.owner.borrow().implements::<dyn Transparent>());
-    real_uses.next().is_some() && real_uses.next().is_none()
-}
-
 /// The value of `value` when it is a `u32` constant, or the `band` of two, which is how the Wasm
 /// frontend masks every shift count and nothing folds.
 fn constant_u32(value: ValueRef) -> Option<u32> {
@@ -1266,6 +1453,13 @@ fn constant_u32(value: ValueRef) -> Option<u32> {
     let band = defined_by::<arith::Band>(value)?;
     let band = band.borrow();
     Some(constant_u32(band.lhs().as_value_ref())? & constant_u32(band.rhs().as_value_ref())?)
+}
+
+/// The bits of `value`, a 64-bit integer, when it is a constant, sign-only casts looked through.
+fn constant_u64(value: ValueRef) -> Option<u64> {
+    let constant = defined_by::<arith::Constant>(through_sign_casts(value))?;
+    let constant = constant.borrow();
+    is_64bit_integer(constant.result().ty()).then(|| constant.value().bitcast_u64())?
 }
 
 fn result_type(op: OperationRef) -> Type {
@@ -1538,13 +1732,13 @@ mod tests {
                 builtin.function public extern("C") @a_store_of_two_merged_halves_is_split(%0: ptr<i64, byte>, %1: i32, %2: i32) {
                     %3 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
                     %6 = hir.bitcast %2 <{ ty = #builtin.type<u32> }>;
-                    %15 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, byte>> }>;
-                    hir.store %15, %3 : (ptr<u32, byte>, u32);
-                    %16 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
-                    %17 = arith.constant 4 : u32;
-                    %18 = arith.add %16, %17 <{ overflow = #builtin.overflow<checked> }>;
-                    %19 = hir.int_to_ptr %18 <{ ty = #builtin.type<ptr<u32, byte>> }>;
-                    hir.store %19, %6 : (ptr<u32, byte>, u32);
+                    %17 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+                    hir.store %17, %3 : (ptr<u32, byte>, u32);
+                    %18 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+                    %19 = arith.constant 4 : u32;
+                    %20 = arith.add %18, %19 <{ overflow = #builtin.overflow<checked> }>;
+                    %21 = hir.int_to_ptr %20 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+                    hir.store %21, %6 : (ptr<u32, byte>, u32);
                     builtin.ret;
                 };"#]],
         );
@@ -1587,13 +1781,13 @@ mod tests {
             };"#]],
             expect![[r#"
                 builtin.function public extern("C") @the_halves_may_come_in_either_order(%0: ptr<u64, element>, %1: u32, %2: u32) {
-                    %9 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
-                    hir.store %9, %1 : (ptr<u32, element>, u32);
-                    %10 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
-                    %11 = arith.constant 1 : u32;
-                    %12 = arith.add %10, %11 <{ overflow = #builtin.overflow<checked> }>;
-                    %13 = hir.int_to_ptr %12 <{ ty = #builtin.type<ptr<u32, element>> }>;
-                    hir.store %13, %2 : (ptr<u32, element>, u32);
+                    %11 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %11, %1 : (ptr<u32, element>, u32);
+                    %12 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+                    %13 = arith.constant 1 : u32;
+                    %14 = arith.add %12, %13 <{ overflow = #builtin.overflow<checked> }>;
+                    %15 = hir.int_to_ptr %14 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %15, %2 : (ptr<u32, element>, u32);
                     builtin.ret;
                 };"#]],
         );
@@ -1709,22 +1903,22 @@ mod tests {
             };"#]],
             expect![[r#"
                 builtin.function public extern("C") @debug_uses_go_with_the_values_a_split_leaves_dead(%0: ptr<u64, element>, %1: u32, %2: u32) -> u32 {
-                    %11 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
-                    hir.store %11, %1 : (ptr<u32, element>, u32);
-                    %12 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
-                    %13 = arith.constant 1 : u32;
-                    %14 = arith.add %12, %13 <{ overflow = #builtin.overflow<checked> }>;
-                    %15 = hir.int_to_ptr %14 <{ ty = #builtin.type<ptr<u32, element>> }>;
-                    hir.store %15, %2 : (ptr<u32, element>, u32);
-                    %16 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
-                    %17 = hir.load %16;
-                    builtin.ret %17 : (u32);
+                    %13 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %13, %1 : (ptr<u32, element>, u32);
+                    %14 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+                    %15 = arith.constant 1 : u32;
+                    %16 = arith.add %14, %15 <{ overflow = #builtin.overflow<checked> }>;
+                    %17 = hir.int_to_ptr %16 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %17, %2 : (ptr<u32, element>, u32);
+                    %18 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    %19 = hir.load %18;
+                    builtin.ret %19 : (u32);
                 };"#]],
         );
     }
 
     /// Only the exact shape is split, or joined: halves of 32 bits, zero-extended, shifted apart by
-    /// 32, no third term, and nothing between the halves and the `or` used anywhere else.
+    /// 32.
     #[test]
     fn a_store_whose_value_is_not_two_halves_is_left_alone() {
         let mut test = Test::new(
@@ -1760,24 +1954,6 @@ mod tests {
             let shifted = builder.shl(hi_ext, count, span).unwrap();
             let value = builder.bor(lo_ext, shifted, span).unwrap();
             builder.store(addr, value, span).unwrap();
-            // A third term, or'ed into the low half
-            let lo_ext = wasm_extend_i32_u(&mut builder, lo);
-            let third = wasm_extend_i32_u(&mut builder, hi);
-            let low = builder.bor(lo_ext, third, span).unwrap();
-            let hi_ext = wasm_extend_i32_u(&mut builder, hi);
-            let count = builder.u32(32, span);
-            let shifted = builder.shl(hi_ext, count, span).unwrap();
-            let value = builder.bor(low, shifted, span).unwrap();
-            builder.store(addr, value, span).unwrap();
-            // A `zext` that is also used whole, which a join or a split would keep live beside the
-            // half it extends
-            let lo_ext = wasm_extend_i32_u(&mut builder, lo);
-            let hi_ext = wasm_extend_i32_u(&mut builder, hi);
-            let count = builder.u32(32, span);
-            let shifted = builder.shl(hi_ext, count, span).unwrap();
-            let value = builder.bor(lo_ext, shifted, span).unwrap();
-            builder.store(addr, value, span).unwrap();
-            builder.store(addr, lo_ext, span).unwrap();
             builder.ret(None, span).unwrap();
         }
 
@@ -1810,31 +1986,6 @@ mod tests {
                     %24 = arith.shl %22, %23;
                     %25 = arith.bor %20, %24;
                     hir.store %0, %25 : (ptr<i64, byte>, i64);
-                    %26 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
-                    %27 = arith.zext %26 <{ ty = #builtin.type<u64> }>;
-                    %28 = hir.bitcast %27 <{ ty = #builtin.type<i64> }>;
-                    %29 = hir.bitcast %2 <{ ty = #builtin.type<u32> }>;
-                    %30 = arith.zext %29 <{ ty = #builtin.type<u64> }>;
-                    %31 = hir.bitcast %30 <{ ty = #builtin.type<i64> }>;
-                    %32 = arith.bor %28, %31;
-                    %33 = hir.bitcast %2 <{ ty = #builtin.type<u32> }>;
-                    %34 = arith.zext %33 <{ ty = #builtin.type<u64> }>;
-                    %35 = hir.bitcast %34 <{ ty = #builtin.type<i64> }>;
-                    %36 = arith.constant 32 : u32;
-                    %37 = arith.shl %35, %36;
-                    %38 = arith.bor %32, %37;
-                    hir.store %0, %38 : (ptr<i64, byte>, i64);
-                    %39 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
-                    %40 = arith.zext %39 <{ ty = #builtin.type<u64> }>;
-                    %41 = hir.bitcast %40 <{ ty = #builtin.type<i64> }>;
-                    %42 = hir.bitcast %2 <{ ty = #builtin.type<u32> }>;
-                    %43 = arith.zext %42 <{ ty = #builtin.type<u64> }>;
-                    %44 = hir.bitcast %43 <{ ty = #builtin.type<i64> }>;
-                    %45 = arith.constant 32 : u32;
-                    %46 = arith.shl %44, %45;
-                    %47 = arith.bor %41, %46;
-                    hir.store %0, %47 : (ptr<i64, byte>, i64);
-                    hir.store %0, %41 : (ptr<i64, byte>, i64);
                     builtin.ret;
                 };"#]],
         );
@@ -2054,11 +2205,11 @@ mod tests {
                     %5 = scf.if %0 then {
                         %6 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
                         %9 = hir.bitcast %2 <{ ty = #builtin.type<u32> }>;
-                        %23 = arith.join %9, %6 <{ ty = #builtin.type<i64> }>;
-                        scf.yield %23 : (i64);
+                        %25 = arith.join %9, %6 <{ ty = #builtin.type<i64> }>;
+                        scf.yield %25 : (i64);
                     } else {
-                        %24 = arith.join %4, %3 <{ ty = #builtin.type<u64> }>;
-                        %22 = hir.bitcast %24 <{ ty = #builtin.type<i64> }>;
+                        %28 = arith.join %4, %3 <{ ty = #builtin.type<u64> }>;
+                        %22 = hir.bitcast %28 <{ ty = #builtin.type<i64> }>;
                         scf.yield %22 : (i64);
                     } : (i1) -> (i64);
                     builtin.ret %5 : (i64);
@@ -2123,13 +2274,13 @@ mod tests {
         );
     }
 
-    /// The high half of an integer that is also used whole, here a load, which the load split
-    /// therefore leaves alone, comes from a split of its own at its `trunc`: the integer is live
-    /// there anyway, so the split keeps nothing live longer. The low half stays a `trunc`.
+    /// Uses of the integer that take no half keep it, whatever defines it: here a load, which the
+    /// load split therefore leaves alone. The halves come from one split, with a cast where a
+    /// `trunc` has another 32-bit type than the first.
     #[test]
-    fn a_value_also_used_whole_takes_its_high_half_from_a_split_of_its_own() {
+    fn a_value_also_used_whole_keeps_it_and_takes_its_halves_from_a_split() {
         let mut test = Test::new(
-            "a_value_also_used_whole_takes_its_high_half_from_a_split_of_its_own",
+            "a_value_also_used_whole_keeps_it_and_takes_its_halves_from_a_split",
             &[pointer_to(Type::U64, AddressSpace::Element)],
             &[Type::I32, Type::U32, Type::U64],
         );
@@ -2148,7 +2299,7 @@ mod tests {
         assert_legalizes(
             &test,
             expect![[r#"
-                builtin.function public extern("C") @a_value_also_used_whole_takes_its_high_half_from_a_split_of_its_own(%0: ptr<u64, element>) -> (i32, u32, u64) {
+                builtin.function public extern("C") @a_value_also_used_whole_keeps_it_and_takes_its_halves_from_a_split(%0: ptr<u64, element>) -> (i32, u32, u64) {
                     %1 = hir.load %0;
                     %2 = arith.trunc %1 <{ ty = #builtin.type<i32> }>;
                     %3 = arith.constant 32 : u32;
@@ -2157,23 +2308,25 @@ mod tests {
                     builtin.ret %2, %5, %1 : (i32, u32, u64);
                 };"#]],
             expect![[r#"
-                builtin.function public extern("C") @a_value_also_used_whole_takes_its_high_half_from_a_split_of_its_own(%0: ptr<u64, element>) -> (i32, u32, u64) {
+                builtin.function public extern("C") @a_value_also_used_whole_keeps_it_and_takes_its_halves_from_a_split(%0: ptr<u64, element>) -> (i32, u32, u64) {
                     %1 = hir.load %0;
-                    %2 = arith.trunc %1 <{ ty = #builtin.type<i32> }>;
-                    %6, %7 = arith.split %1  : (u64) -> (u32, u32);
-                    builtin.ret %2, %6, %1 : (i32, u32, u64);
+                    %6, %7 = arith.split %1  : (u64) -> (i32, i32);
+                    %8 = hir.bitcast %6 <{ ty = #builtin.type<u32> }>;
+                    builtin.ret %7, %8, %1 : (i32, u32, u64);
                 };"#]],
         );
     }
 
-    /// An integer whose halves are taken in more than one block lives on past the first of them,
-    /// so one split there would keep both limbs live beside it. Each high half has a split of its
-    /// own instead, at its `trunc`, and the low halves stay `trunc`s. Here the function's block
-    /// takes both halves, the `then` arm the low half and the `else` arm the high half.
+    /// The split is decided per block: each block that takes the high half has a split of its
+    /// own, placed before the first half taken there, which the low halves taken there come from
+    /// too, and a block that takes only the low half is left alone. Here the function's block
+    /// takes both halves, the `then` arm only the low half and the `else` arm the high half. The
+    /// `then` arm is reached while the `else` arm still takes the high half, so a rule for the
+    /// whole function would split it too.
     #[test]
-    fn a_value_whose_halves_are_taken_in_two_blocks_has_a_split_at_each_high_half() {
+    fn each_block_that_takes_the_high_half_has_its_own_split() {
         let mut test = Test::new(
-            "a_value_whose_halves_are_taken_in_two_blocks_has_a_split_at_each_high_half",
+            "each_block_that_takes_the_high_half_has_its_own_split",
             &[Type::I1, Type::U64],
             &[Type::U32, Type::U32, Type::U32],
         );
@@ -2208,7 +2361,7 @@ mod tests {
         assert_legalizes(
             &test,
             expect![[r#"
-                builtin.function public extern("C") @a_value_whose_halves_are_taken_in_two_blocks_has_a_split_at_each_high_half(%0: i1, %1: u64) -> (u32, u32, u32) {
+                builtin.function public extern("C") @each_block_that_takes_the_high_half_has_its_own_split(%0: i1, %1: u64) -> (u32, u32, u32) {
                     %2 = arith.constant 32 : u32;
                     %3 = arith.shr %1, %2;
                     %4 = arith.trunc %3 <{ ty = #builtin.type<u32> }>;
@@ -2225,9 +2378,8 @@ mod tests {
                     builtin.ret %4, %5, %6 : (u32, u32, u32);
                 };"#]],
             expect![[r#"
-                builtin.function public extern("C") @a_value_whose_halves_are_taken_in_two_blocks_has_a_split_at_each_high_half(%0: i1, %1: u64) -> (u32, u32, u32) {
+                builtin.function public extern("C") @each_block_that_takes_the_high_half_has_its_own_split(%0: i1, %1: u64) -> (u32, u32, u32) {
                     %11, %12 = arith.split %1  : (u64) -> (u32, u32);
-                    %5 = arith.trunc %1 <{ ty = #builtin.type<u32> }>;
                     %6 = scf.if %0 then {
                         %7 = arith.trunc %1 <{ ty = #builtin.type<u32> }>;
                         scf.yield %7 : (u32);
@@ -2235,7 +2387,7 @@ mod tests {
                         %13, %14 = arith.split %1  : (u64) -> (u32, u32);
                         scf.yield %13 : (u32);
                     } : (i1) -> (u32);
-                    builtin.ret %11, %5, %6 : (u32, u32, u32);
+                    builtin.ret %11, %12, %6 : (u32, u32, u32);
                 };"#]],
         );
     }
@@ -2279,24 +2431,261 @@ mod tests {
         );
     }
 
-    /// The split takes exactly the halves, and only where it keeps nothing live longer. Left
-    /// alone: an integer of which only the low half is taken, whose `trunc` already drops the high
-    /// limb with no `u32` instruction; an arithmetic `shr`, which is what a `shr` of an `i64` is
-    /// in codegen; a shift by 16; a `trunc` to fewer than 32 bits of the logical `shr` by 32; and
-    /// a high half whose `shr` is also used whole, which would keep the integer live beside it.
+    /// An `or` with a third term stays an `or`: here the low half is itself an `or` of two
+    /// zero-extended values. Its high side, `shl(zext(hi), 32)`, is exactly `join(hi, 0)` whatever
+    /// it is or'ed with, and becomes that.
     #[test]
-    fn a_value_whose_halves_are_not_taken_exactly_is_left_alone() {
+    fn an_or_with_a_third_term_stays_an_or() {
         let mut test = Test::new(
-            "a_value_whose_halves_are_not_taken_exactly_is_left_alone",
-            &[Type::U64, Type::I64, Type::U64, Type::U64, Type::U64],
-            &[Type::U32, Type::I32, Type::U32, Type::U16, Type::U32, Type::U64],
+            "an_or_with_a_third_term_stays_an_or",
+            &[Type::U32, Type::U32, Type::U32],
+            &[Type::U64],
         );
         {
             let span = SourceSpan::UNKNOWN;
             let mut builder = test.function_builder();
             let args = builder.entry_block().borrow().arguments().to_vec();
-            let [low_only, signed, by_16, narrow, shared] =
-                [args[0], args[1], args[2], args[3], args[4]].map(|arg| arg as ValueRef);
+            let [lo, third, hi] = [args[0], args[1], args[2]].map(|arg| arg as ValueRef);
+            let lo = builder.zext(lo, Type::U64, span).unwrap();
+            let third = builder.zext(third, Type::U64, span).unwrap();
+            let low = builder.bor(lo, third, span).unwrap();
+            let hi = builder.zext(hi, Type::U64, span).unwrap();
+            let count = builder.u32(32, span);
+            let shifted = builder.shl(hi, count, span).unwrap();
+            let value = builder.bor(low, shifted, span).unwrap();
+            builder.ret([value], span).unwrap();
+        }
+
+        assert_legalizes(
+            &test,
+            expect![[r#"
+                builtin.function public extern("C") @an_or_with_a_third_term_stays_an_or(%0: u32, %1: u32, %2: u32) -> u64 {
+                    %3 = arith.zext %0 <{ ty = #builtin.type<u64> }>;
+                    %4 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+                    %5 = arith.bor %3, %4;
+                    %6 = arith.zext %2 <{ ty = #builtin.type<u64> }>;
+                    %7 = arith.constant 32 : u32;
+                    %8 = arith.shl %6, %7;
+                    %9 = arith.bor %5, %8;
+                    builtin.ret %9 : (u64);
+                };"#]],
+            expect![[r#"
+                builtin.function public extern("C") @an_or_with_a_third_term_stays_an_or(%0: u32, %1: u32, %2: u32) -> u64 {
+                    %3 = arith.zext %0 <{ ty = #builtin.type<u64> }>;
+                    %4 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+                    %5 = arith.bor %3, %4;
+                    %10 = arith.constant 0 : u32;
+                    %11 = arith.join %2, %10 <{ ty = #builtin.type<u64> }>;
+                    %9 = arith.bor %5, %11;
+                    builtin.ret %9 : (u64);
+                };"#]],
+        );
+    }
+
+    /// A pair of which LLVM has folded one half to a constant is joined with that constant as a
+    /// limb: `shl(zext(hi), 32)` alone, of a zero low half; an `or` of it with a constant below
+    /// 2^32; and an `or` of `zext(lo)` with a constant whose low 32 bits are zero. So is a pair of
+    /// one `u32` with itself, through one `zext`.
+    #[test]
+    fn a_pair_with_a_constant_half_is_joined() {
+        let mut test = Test::new(
+            "a_pair_with_a_constant_half_is_joined",
+            &[Type::U32, Type::U32, Type::U32, Type::U32],
+            &[Type::U64, Type::U64, Type::U64, Type::U64],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let args = builder.entry_block().borrow().arguments().to_vec();
+            let [a, b, c, d] = [args[0], args[1], args[2], args[3]].map(|arg| arg as ValueRef);
+            let a = builder.zext(a, Type::U64, span).unwrap();
+            let count = builder.u32(32, span);
+            let zero_low = builder.shl(a, count, span).unwrap();
+            let b = builder.zext(b, Type::U64, span).unwrap();
+            let count = builder.u32(32, span);
+            let b = builder.shl(b, count, span).unwrap();
+            let seven = builder.u64(7, span);
+            let constant_low = builder.bor(b, seven, span).unwrap();
+            let c = builder.zext(c, Type::U64, span).unwrap();
+            let five = builder.u64(5 << 32, span);
+            let constant_high = builder.bor(five, c, span).unwrap();
+            let d = builder.zext(d, Type::U64, span).unwrap();
+            let count = builder.u32(32, span);
+            let shifted = builder.shl(d, count, span).unwrap();
+            let itself = builder.bor(d, shifted, span).unwrap();
+            builder.ret([zero_low, constant_low, constant_high, itself], span).unwrap();
+        }
+
+        assert_legalizes(
+            &test,
+            expect![[r#"
+                builtin.function public extern("C") @a_pair_with_a_constant_half_is_joined(%0: u32, %1: u32, %2: u32, %3: u32) -> (u64, u64, u64, u64) {
+                    %4 = arith.zext %0 <{ ty = #builtin.type<u64> }>;
+                    %5 = arith.constant 32 : u32;
+                    %6 = arith.shl %4, %5;
+                    %7 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+                    %8 = arith.constant 32 : u32;
+                    %9 = arith.shl %7, %8;
+                    %10 = arith.constant 7 : u64;
+                    %11 = arith.bor %9, %10;
+                    %12 = arith.zext %2 <{ ty = #builtin.type<u64> }>;
+                    %13 = arith.constant 21474836480 : u64;
+                    %14 = arith.bor %13, %12;
+                    %15 = arith.zext %3 <{ ty = #builtin.type<u64> }>;
+                    %16 = arith.constant 32 : u32;
+                    %17 = arith.shl %15, %16;
+                    %18 = arith.bor %15, %17;
+                    builtin.ret %6, %11, %14, %18 : (u64, u64, u64, u64);
+                };"#]],
+            expect![[r#"
+                builtin.function public extern("C") @a_pair_with_a_constant_half_is_joined(%0: u32, %1: u32, %2: u32, %3: u32) -> (u64, u64, u64, u64) {
+                    %19 = arith.constant 0 : u32;
+                    %20 = arith.join %0, %19 <{ ty = #builtin.type<u64> }>;
+                    %23 = arith.constant 7 : u32;
+                    %24 = arith.join %1, %23 <{ ty = #builtin.type<u64> }>;
+                    %25 = arith.constant 5 : u32;
+                    %26 = arith.join %25, %2 <{ ty = #builtin.type<u64> }>;
+                    %29 = arith.join %3, %3 <{ ty = #builtin.type<u64> }>;
+                    builtin.ret %20, %24, %26, %29 : (u64, u64, u64, u64);
+                };"#]],
+        );
+    }
+
+    /// A store of a pair with a constant half stores the constant as a 32-bit half.
+    #[test]
+    fn a_store_of_a_pair_with_a_constant_half_is_split() {
+        let mut test = Test::new(
+            "a_store_of_a_pair_with_a_constant_half_is_split",
+            &[pointer_to(Type::U64, AddressSpace::Element), Type::U32],
+            &[],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let args = builder.entry_block().borrow().arguments().to_vec();
+            let [addr, hi] = [args[0], args[1]].map(|arg| arg as ValueRef);
+            let hi = builder.zext(hi, Type::U64, span).unwrap();
+            let count = builder.u32(32, span);
+            let hi = builder.shl(hi, count, span).unwrap();
+            let seven = builder.u64(7, span);
+            let value = builder.bor(seven, hi, span).unwrap();
+            builder.store(addr, value, span).unwrap();
+            builder.ret(None, span).unwrap();
+        }
+
+        assert_legalizes(
+            &test,
+            expect![[r#"
+                builtin.function public extern("C") @a_store_of_a_pair_with_a_constant_half_is_split(%0: ptr<u64, element>, %1: u32) {
+                    %2 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+                    %3 = arith.constant 32 : u32;
+                    %4 = arith.shl %2, %3;
+                    %5 = arith.constant 7 : u64;
+                    %6 = arith.bor %5, %4;
+                    hir.store %0, %6 : (ptr<u64, element>, u64);
+                    builtin.ret;
+                };"#]],
+            expect![[r#"
+                builtin.function public extern("C") @a_store_of_a_pair_with_a_constant_half_is_split(%0: ptr<u64, element>, %1: u32) {
+                    %9 = arith.constant 7 : u32;
+                    %11 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %11, %9 : (ptr<u32, element>, u32);
+                    %12 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+                    %13 = arith.constant 1 : u32;
+                    %14 = arith.add %12, %13 <{ overflow = #builtin.overflow<checked> }>;
+                    %15 = hir.int_to_ptr %14 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %15, %1 : (ptr<u32, element>, u32);
+                    builtin.ret;
+                };"#]],
+        );
+    }
+
+    /// A constant is a half only if it fits that half exactly: an `or` of one with bits in both
+    /// halves beside a `zext`, of a shift by anything but 32, or of one of 2^32 or more beside the
+    /// shifted half stays an `or`. (The last one's `shl(zext(c), 32)` is still a join on its own.)
+    #[test]
+    fn a_constant_that_is_not_a_whole_half_keeps_its_or() {
+        let mut test = Test::new(
+            "a_constant_that_is_not_a_whole_half_keeps_its_or",
+            &[Type::U32, Type::U32, Type::U32],
+            &[Type::U64, Type::U64, Type::U64],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let args = builder.entry_block().borrow().arguments().to_vec();
+            let [a, b, c] = [args[0], args[1], args[2]].map(|arg| arg as ValueRef);
+            let a = builder.zext(a, Type::U64, span).unwrap();
+            let both = builder.u64((5 << 32) | 7, span);
+            let both_halves = builder.bor(a, both, span).unwrap();
+            let b = builder.zext(b, Type::U64, span).unwrap();
+            let count = builder.u32(16, span);
+            let b = builder.shl(b, count, span).unwrap();
+            let seven = builder.u64(7, span);
+            let by_16 = builder.bor(b, seven, span).unwrap();
+            let c = builder.zext(c, Type::U64, span).unwrap();
+            let count = builder.u32(32, span);
+            let c = builder.shl(c, count, span).unwrap();
+            let high = builder.u64(1 << 32, span);
+            let too_wide = builder.bor(c, high, span).unwrap();
+            builder.ret([both_halves, by_16, too_wide], span).unwrap();
+        }
+
+        assert_legalizes(
+            &test,
+            expect![[r#"
+                builtin.function public extern("C") @a_constant_that_is_not_a_whole_half_keeps_its_or(%0: u32, %1: u32, %2: u32) -> (u64, u64, u64) {
+                    %3 = arith.zext %0 <{ ty = #builtin.type<u64> }>;
+                    %4 = arith.constant 21474836487 : u64;
+                    %5 = arith.bor %3, %4;
+                    %6 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+                    %7 = arith.constant 16 : u32;
+                    %8 = arith.shl %6, %7;
+                    %9 = arith.constant 7 : u64;
+                    %10 = arith.bor %8, %9;
+                    %11 = arith.zext %2 <{ ty = #builtin.type<u64> }>;
+                    %12 = arith.constant 32 : u32;
+                    %13 = arith.shl %11, %12;
+                    %14 = arith.constant 4294967296 : u64;
+                    %15 = arith.bor %13, %14;
+                    builtin.ret %5, %10, %15 : (u64, u64, u64);
+                };"#]],
+            expect![[r#"
+                builtin.function public extern("C") @a_constant_that_is_not_a_whole_half_keeps_its_or(%0: u32, %1: u32, %2: u32) -> (u64, u64, u64) {
+                    %3 = arith.zext %0 <{ ty = #builtin.type<u64> }>;
+                    %4 = arith.constant 21474836487 : u64;
+                    %5 = arith.bor %3, %4;
+                    %6 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+                    %7 = arith.constant 16 : u32;
+                    %8 = arith.shl %6, %7;
+                    %9 = arith.constant 7 : u64;
+                    %10 = arith.bor %8, %9;
+                    %16 = arith.constant 0 : u32;
+                    %17 = arith.join %2, %16 <{ ty = #builtin.type<u64> }>;
+                    %14 = arith.constant 4294967296 : u64;
+                    %15 = arith.bor %17, %14;
+                    builtin.ret %5, %10, %15 : (u64, u64, u64);
+                };"#]],
+        );
+    }
+
+    /// The split takes exactly the halves. Left alone: an integer of which only the low half is
+    /// taken, whose `trunc` already drops the high limb with no `u32` instruction; an arithmetic
+    /// `shr`, which is what a `shr` of an `i64` is in codegen; a shift by 16; and a `trunc` to
+    /// fewer than 32 bits of the logical `shr` by 32.
+    #[test]
+    fn a_value_whose_halves_are_not_taken_exactly_is_left_alone() {
+        let mut test = Test::new(
+            "a_value_whose_halves_are_not_taken_exactly_is_left_alone",
+            &[Type::U64, Type::I64, Type::U64, Type::U64],
+            &[Type::U32, Type::I32, Type::U32, Type::U16],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let args = builder.entry_block().borrow().arguments().to_vec();
+            let [low_only, signed, by_16, narrow] =
+                [args[0], args[1], args[2], args[3]].map(|arg| arg as ValueRef);
             let low_only = builder.trunc(low_only, Type::U32, span).unwrap();
             let count = builder.u32(32, span);
             let signed = builder.shr(signed, count, span).unwrap();
@@ -2307,30 +2696,88 @@ mod tests {
             let count = builder.u32(32, span);
             let narrow = builder.shr(narrow, count, span).unwrap();
             let narrow = builder.trunc(narrow, Type::U16, span).unwrap();
-            let count = builder.u32(32, span);
-            let shifted = builder.shr(shared, count, span).unwrap();
-            let shared = builder.trunc(shifted, Type::U32, span).unwrap();
-            builder.ret([low_only, signed, by_16, narrow, shared, shifted], span).unwrap();
+            builder.ret([low_only, signed, by_16, narrow], span).unwrap();
         }
 
         assert_left_alone(
             &test,
             expect![[r#"
-                builtin.function public extern("C") @a_value_whose_halves_are_not_taken_exactly_is_left_alone(%0: u64, %1: i64, %2: u64, %3: u64, %4: u64) -> (u32, i32, u32, u16, u32, u64) {
-                    %5 = arith.trunc %0 <{ ty = #builtin.type<u32> }>;
+                builtin.function public extern("C") @a_value_whose_halves_are_not_taken_exactly_is_left_alone(%0: u64, %1: i64, %2: u64, %3: u64) -> (u32, i32, u32, u16) {
+                    %4 = arith.trunc %0 <{ ty = #builtin.type<u32> }>;
+                    %5 = arith.constant 32 : u32;
+                    %6 = arith.shr %1, %5;
+                    %7 = arith.trunc %6 <{ ty = #builtin.type<i32> }>;
+                    %8 = arith.constant 16 : u32;
+                    %9 = arith.shr %2, %8;
+                    %10 = arith.trunc %9 <{ ty = #builtin.type<u32> }>;
+                    %11 = arith.constant 32 : u32;
+                    %12 = arith.shr %3, %11;
+                    %13 = arith.trunc %12 <{ ty = #builtin.type<u16> }>;
+                    builtin.ret %4, %7, %10, %13 : (u32, i32, u32, u16);
+                };"#]],
+        );
+    }
+
+    /// Values a rewrite keeps live longer do not hold it back: the legalization runs before spill
+    /// placement, which spills what does not fit. Here the `zext`s of one pair are also used
+    /// whole, and the `shr` of another integer's high half is too: the first pair is still a join,
+    /// with its store split, and the high half still comes from a split, the `zext`s and the `shr`
+    /// staying for their other uses.
+    #[test]
+    fn halves_whose_way_is_also_used_elsewhere_are_still_rewritten() {
+        let mut test = Test::new(
+            "halves_whose_way_is_also_used_elsewhere_are_still_rewritten",
+            &[pointer_to(Type::U64, AddressSpace::Element), Type::U32, Type::U32, Type::U64],
+            &[Type::U64, Type::U64, Type::U32, Type::U64],
+        );
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let args = builder.entry_block().borrow().arguments().to_vec();
+            let [addr, lo, hi, value] =
+                [args[0], args[1], args[2], args[3]].map(|arg| arg as ValueRef);
+            let lo_ext = builder.zext(lo, Type::U64, span).unwrap();
+            let hi_ext = builder.zext(hi, Type::U64, span).unwrap();
+            let count = builder.u32(32, span);
+            let shifted = builder.shl(hi_ext, count, span).unwrap();
+            let pair = builder.bor(lo_ext, shifted, span).unwrap();
+            builder.store(addr, pair, span).unwrap();
+            let count = builder.u32(32, span);
+            let high = builder.shr(value, count, span).unwrap();
+            let high_half = builder.trunc(high, Type::U32, span).unwrap();
+            builder.ret([lo_ext, hi_ext, high_half, high], span).unwrap();
+        }
+
+        assert_legalizes(
+            &test,
+            expect![[r#"
+                builtin.function public extern("C") @halves_whose_way_is_also_used_elsewhere_are_still_rewritten(%0: ptr<u64, element>, %1: u32, %2: u32, %3: u64) -> (u64, u64, u32, u64) {
+                    %4 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+                    %5 = arith.zext %2 <{ ty = #builtin.type<u64> }>;
                     %6 = arith.constant 32 : u32;
-                    %7 = arith.shr %1, %6;
-                    %8 = arith.trunc %7 <{ ty = #builtin.type<i32> }>;
-                    %9 = arith.constant 16 : u32;
-                    %10 = arith.shr %2, %9;
+                    %7 = arith.shl %5, %6;
+                    %8 = arith.bor %4, %7;
+                    hir.store %0, %8 : (ptr<u64, element>, u64);
+                    %9 = arith.constant 32 : u32;
+                    %10 = arith.shr %3, %9;
                     %11 = arith.trunc %10 <{ ty = #builtin.type<u32> }>;
-                    %12 = arith.constant 32 : u32;
-                    %13 = arith.shr %3, %12;
-                    %14 = arith.trunc %13 <{ ty = #builtin.type<u16> }>;
-                    %15 = arith.constant 32 : u32;
-                    %16 = arith.shr %4, %15;
-                    %17 = arith.trunc %16 <{ ty = #builtin.type<u32> }>;
-                    builtin.ret %5, %8, %11, %14, %17, %16 : (u32, i32, u32, u16, u32, u64);
+                    builtin.ret %4, %5, %11, %10 : (u64, u64, u32, u64);
+                };"#]],
+            expect![[r#"
+                builtin.function public extern("C") @halves_whose_way_is_also_used_elsewhere_are_still_rewritten(%0: ptr<u64, element>, %1: u32, %2: u32, %3: u64) -> (u64, u64, u32, u64) {
+                    %4 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+                    %5 = arith.zext %2 <{ ty = #builtin.type<u64> }>;
+                    %15 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %15, %1 : (ptr<u32, element>, u32);
+                    %16 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+                    %17 = arith.constant 1 : u32;
+                    %18 = arith.add %16, %17 <{ overflow = #builtin.overflow<checked> }>;
+                    %19 = hir.int_to_ptr %18 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %19, %2 : (ptr<u32, element>, u32);
+                    %9 = arith.constant 32 : u32;
+                    %10 = arith.shr %3, %9;
+                    %20, %21 = arith.split %3  : (u64) -> (u32, u32);
+                    builtin.ret %4, %5, %20, %10 : (u64, u64, u32, u64);
                 };"#]],
         );
     }
@@ -2464,24 +2911,25 @@ mod tests {
                     hir.store %18, %2 : (ptr<u32, element>, u32);
                     builtin.ret;
                 ^block2:
-                    %20 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
-                    hir.store %20, %1 : (ptr<u32, element>, u32);
-                    %21 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
-                    %22 = arith.constant 1 : u32;
-                    %23 = arith.add %21, %22 <{ overflow = #builtin.overflow<checked> }>;
-                    %24 = hir.int_to_ptr %23 <{ ty = #builtin.type<ptr<u32, element>> }>;
-                    hir.store %24, %2 : (ptr<u32, element>, u32);
+                    %22 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %22, %1 : (ptr<u32, element>, u32);
+                    %23 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+                    %24 = arith.constant 1 : u32;
+                    %25 = arith.add %23, %24 <{ overflow = #builtin.overflow<checked> }>;
+                    %26 = hir.int_to_ptr %25 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %26, %2 : (ptr<u32, element>, u32);
                     cf.cond_br %3 ^block1, ^block1 : (i1);
                 };"#]],
         );
     }
 
-    /// A pair stored and also used elsewhere is joined, but its store is not split: the halves
-    /// would live on to the store beside the join, where the join alone did.
+    /// A pair stored and also used elsewhere is joined for that use, and its store is split all
+    /// the same: the halves live on to the store beside the join, which spill placement, after
+    /// this pass, allows for.
     #[test]
-    fn a_store_of_a_pair_also_used_elsewhere_is_not_split() {
+    fn a_store_of_a_pair_also_used_elsewhere_is_split() {
         let mut test = Test::new(
-            "a_store_of_a_pair_also_used_elsewhere_is_not_split",
+            "a_store_of_a_pair_also_used_elsewhere_is_split",
             &[pointer_to(Type::U64, AddressSpace::Element), Type::U32, Type::U32],
             &[Type::U64],
         );
@@ -2502,7 +2950,7 @@ mod tests {
         assert_legalizes(
             &test,
             expect![[r#"
-                builtin.function public extern("C") @a_store_of_a_pair_also_used_elsewhere_is_not_split(%0: ptr<u64, element>, %1: u32, %2: u32) -> u64 {
+                builtin.function public extern("C") @a_store_of_a_pair_also_used_elsewhere_is_split(%0: ptr<u64, element>, %1: u32, %2: u32) -> u64 {
                     %3 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
                     %4 = arith.zext %2 <{ ty = #builtin.type<u64> }>;
                     %5 = arith.constant 32 : u32;
@@ -2512,10 +2960,16 @@ mod tests {
                     builtin.ret %7 : (u64);
                 };"#]],
             expect![[r#"
-                builtin.function public extern("C") @a_store_of_a_pair_also_used_elsewhere_is_not_split(%0: ptr<u64, element>, %1: u32, %2: u32) -> u64 {
-                    %8 = arith.join %2, %1 <{ ty = #builtin.type<u64> }>;
-                    hir.store %0, %8 : (ptr<u64, element>, u64);
-                    builtin.ret %8 : (u64);
+                builtin.function public extern("C") @a_store_of_a_pair_also_used_elsewhere_is_split(%0: ptr<u64, element>, %1: u32, %2: u32) -> u64 {
+                    %10 = arith.join %2, %1 <{ ty = #builtin.type<u64> }>;
+                    %11 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %11, %1 : (ptr<u32, element>, u32);
+                    %12 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+                    %13 = arith.constant 1 : u32;
+                    %14 = arith.add %12, %13 <{ overflow = #builtin.overflow<checked> }>;
+                    %15 = hir.int_to_ptr %14 <{ ty = #builtin.type<ptr<u32, element>> }>;
+                    hir.store %15, %2 : (ptr<u32, element>, u32);
+                    builtin.ret %10 : (u64);
                 };"#]],
         );
     }

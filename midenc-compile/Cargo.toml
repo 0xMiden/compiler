@@ -62,4 +62,5 @@ wit-component = { workspace = true, optional = true }
 wit-parser = { workspace = true, optional = true }
 
 [dev-dependencies]
+midenc-dialect-arith.workspace = true
 tempfile.workspace = true

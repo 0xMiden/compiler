@@ -13,7 +13,7 @@ const PAIR_ADDR: u32 = 64;
 /// Byte address at which the unpacking entrypoints store the low half they took from the pair.
 const LOW_HALF_ADDR: u32 = 128;
 
-/// Byte address at which `a_felt_pair_used_whole_and_taken_apart_is_intact` stores the pair whole.
+/// Byte address at which the tests store a second, whole copy of what they read or assembled.
 const COPY_ADDR: u32 = 192;
 
 /// Four felts, none of which fits in 32 bits: the pair each branch takes.
@@ -159,8 +159,8 @@ fn a_felt_pair_that_arrives_through_a_join_is_taken_apart_intact() {
 }
 
 /// A felt pair that arrives through a join, is stored whole and is also taken apart, is intact
-/// both ways: the high half comes from a split of the integer, made where that half is taken,
-/// and the low half's `i32.wrap_i64` and the store still get the integer whole.
+/// both ways: the halves come from a split of the integer, and the store still gets the integer,
+/// which codegen copies for the split rather than handing it over.
 #[test]
 fn a_felt_pair_used_whole_and_taken_apart_is_intact() {
     let (test, package) = compile(format!(
@@ -213,5 +213,100 @@ fn a_felt_pair_used_whole_and_taken_apart_is_intact() {
             })
             .unwrap();
         assert_eq!(read_hi, hi);
+    }
+}
+
+/// A felt pair assembled in each of two branches, whose zero-extended low felt is also kept and
+/// stored whole, reaches memory intact both ways. The `zext` with another use does not keep the
+/// pair from being joined: the legalization runs before spill placement, which makes room for
+/// whatever a rewrite keeps live longer.
+#[test]
+fn a_felt_pair_whose_extended_half_is_also_used_reaches_memory_intact() {
+    let assemble = |lo: u32, hi: u32| {
+        format!(
+            "local.get {lo}
+      i32.reinterpret_f32
+      i64.extend_i32_u
+      local.tee 5
+      local.get {hi}
+      i32.reinterpret_f32
+      i64.extend_i32_u
+      i64.const 32
+      i64.shl
+      i64.or"
+        )
+    };
+    let (first, second) = (assemble(1, 2), assemble(3, 4));
+    let (test, package) = compile(format!(
+        r#"(module
+  (memory 1)
+  (func $entrypoint (export "entrypoint") (param i32 f32 f32 f32 f32) (result f32)
+    (local i64)
+    i32.const {PAIR_ADDR}
+    local.get 0
+    if (result i64)
+      {first}
+    else
+      {second}
+    end
+    i64.store
+    i32.const {COPY_ADDR}
+    local.get 5
+    i64.store
+    i32.const {PAIR_ADDR}
+    f32.load offset=4))"#
+    ));
+
+    for (index, [lo, hi]) in pairs().into_iter().enumerate() {
+        let reloaded_hi =
+            eval_package::<Felt, _, _>(package.clone(), [], &args(index), &test.session, |trace| {
+                assert_eq!(read_pair(trace, PAIR_ADDR), [lo, hi]);
+                assert_eq!(read_pair(trace, COPY_ADDR), [lo, Felt::ZERO]);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(reloaded_hi, hi);
+    }
+}
+
+/// A felt paired with a constant, as when LLVM folds a `Felt::ZERO` beside it, is packed with the
+/// constant folded in: `shl` alone for a zero low half, or an `or` with a constant high half. In
+/// either branch the pack reaches memory intact through the join, the felt above `u32::MAX`.
+#[test]
+fn a_felt_paired_with_a_constant_reaches_memory_intact() {
+    let (test, package) = compile(format!(
+        r#"(module
+  (memory 1)
+  (func $entrypoint (export "entrypoint") (param i32 f32 f32 f32 f32) (result f32)
+    i32.const {PAIR_ADDR}
+    local.get 0
+    if (result i64)
+      local.get 2
+      i32.reinterpret_f32
+      i64.extend_i32_u
+      i64.const 32
+      i64.shl
+    else
+      local.get 3
+      i32.reinterpret_f32
+      i64.extend_i32_u
+      i64.const 0x700000000
+      i64.or
+    end
+    i64.store
+    i32.const {PAIR_ADDR}
+    f32.load offset=4))"#
+    ));
+
+    let [[_, high], [low, _]] = pairs();
+    let seven = Felt::new_unchecked(7);
+    for (index, [lo, hi]) in [[Felt::ZERO, high], [low, seven]].into_iter().enumerate() {
+        let reloaded_hi =
+            eval_package::<Felt, _, _>(package.clone(), [], &args(index), &test.session, |trace| {
+                assert_eq!(read_pair(trace, PAIR_ADDR), [lo, hi]);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(reloaded_hi, hi);
     }
 }

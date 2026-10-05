@@ -49,43 +49,43 @@ carry two adjacent field elements as one `i64`, assembled with
 `i32.wrap_i64`.
 
 [MASM legalization](https://github.com/0xMiden/compiler/blob/main/codegen/masm/src/legalization.rs)
-closes those two shapes wherever they appear, with one exception below, so that
-no `u32` instruction touches the pair:
+rewrites those shapes wherever they appear, so that no `u32` instruction touches
+the pair:
 
 - A 64-bit integer assembled as `or(zext(lo), shl(zext(hi), 32))` becomes an
   `arith.join` of its two halves.
-- The high half of a 64-bit integer taken with a logical `shr` by 32 and a
-  `trunc` to 32 bits becomes a limb of an `arith.split` of the integer. (A low
-  half taken with a `trunc` alone needs no rewrite: `trunc` uses no `u32`
-  instruction.)
+- So does each of the shapes LLVM folds that pack into when one half is a
+  constant, as for a field element beside `Felt::ZERO`. The constant becomes a
+  32-bit limb.
+  - `shl(zext(hi), 32)` alone: the low half is zero.
+  - `or(shl(zext(hi), 32), C)`, with `C` below 2^32.
+  - `or(zext(lo), C)`, with the low 32 bits of `C` zero.
+- The high half of a 64-bit integer, taken with a logical `shr` by 32 and a
+  `trunc` to 32 bits, becomes a limb of an `arith.split` of the integer. So do
+  the low halves taken in the same block. (A low half taken with a `trunc` alone
+  needs no rewrite: `trunc` uses no `u32` instruction.)
 
-Neither op emits an instruction. Each only renames the two elements where they
-are on the operand stack, so a pair of field elements passes through block
-arguments, `if` results, `i64` locals and aligned 64-bit copies as the two
-elements it is. Where the assembled value feeds a 64-bit store directly, the
-store becomes two 32-bit stores instead. A 64-bit load used only for its two
-halves becomes two 32-bit loads.
+Neither op runs a `u32` instruction. At most they move values into place on the
+operand stack. So a pair of field elements passes through block arguments, `if`
+results, `i64` locals and aligned 64-bit copies as the two elements it is. Where
+the assembled value feeds a 64-bit store directly, the store becomes two 32-bit
+stores instead. A 64-bit load used only for its two halves becomes two 32-bit
+loads.
 
-Each rewrite applies only where it keeps no value live longer than before. The
-operand-stack spills are placed before legalization, and a longer live range
-could push the stack past the 16 elements an instruction can reach.
+The legalization runs before spill placement. Its rewrites change live ranges,
+and spill placement, which keeps the operand stack within the 16 elements an
+instruction can reach, has to see the live ranges codegen will lower. Codegen
+itself only checks that the shapes were rewritten.
 
-- A pack whose `zext`s or `shl` are also used elsewhere stays an `or`.
-- A high half whose `shr` is also used elsewhere stays a `shr`.
+What is not closed is real 64-bit arithmetic on reinterpreted field elements,
+any operation other than the shapes above:
 
-A `shr` or `shl` used elsewhere runs as a 64-bit operation anyway. The exception
-is a pack of field elements whose `zext` is also used elsewhere: it is not joined,
-so its `shl` and `or` still trap.
+- shifts, `or`, `and` and `xor`;
+- ordering comparisons;
+- arithmetic.
 
-What is not closed is 64-bit arithmetic on reinterpreted field elements:
-
-- any 64-bit arithmetic, comparison or shift that is not part of the two
-  shapes above;
-- a high half taken some other way, such as an arithmetic shift or a `trunc`
-  to fewer than 32 bits.
-
-These still run on `u32` limbs and trap on a field value above `u32::MAX`.
-Arithmetic of this kind is the program's own doing, not a reshaping by LLVM.
+These run on `u32` limbs and trap on a field value above `u32::MAX`. A
+comparison for equality does not trap: it compares the limbs as field elements.
 
 The generated bindings read a felt-only result whole, which is also the cheaper
 read. Separately, every Rust build for Miden turns LLVM's store merging off

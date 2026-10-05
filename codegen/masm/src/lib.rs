@@ -40,7 +40,10 @@ pub(crate) use self::lower::HirLowering;
 pub use self::{
     artifact::{MasmComponent, Rodata},
     events::{Event, FRAME_END_EVENT, FRAME_START_EVENT, PRINT_LN_EVENT},
-    legalization::{LegalizeForMasm, masm_legalization_target, populate_masm_legalization_target},
+    legalization::{
+        CheckMasmLegality, LegalizeForMasm, masm_legalization_target,
+        populate_masm_legalization_target,
+    },
     lower::{NativePtr, ToMasmComponent},
     stack::{Constraint, Operand, OperandStack},
 };

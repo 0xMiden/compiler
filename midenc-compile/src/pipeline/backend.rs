@@ -7,7 +7,9 @@
 //! The three phases are also exposed individually — [`analyze`], [`apply_rewrites`] and
 //! [`codegen`] — for callers that have no assembler and therefore no [`TargetContext`]: the
 //! manifest Rust entry point's WebAssembly leg, and
-//! `midenc-compile/tests/codegen_legalization.rs`. They run one phase and nothing else.
+//! `midenc-compile/tests/codegen_legalization.rs`. They run one phase and nothing else. Codegen
+//! comes after spill placement and so rewrites nothing: a caller that reaches it without
+//! [`apply_rewrites`] runs [`legalize_for_masm`] first.
 //!
 //! No *stop policy* lives here, in either form. How far a build runs is the request's goal,
 //! which the service answers at a [`CheckpointId`]; the `-C` stop flags are resolved into that
@@ -17,7 +19,7 @@
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs};
-use midenc_codegen_masm::{LegalizeForMasm, MasmComponent, ToMasmComponent};
+use midenc_codegen_masm::{CheckMasmLegality, LegalizeForMasm, MasmComponent, ToMasmComponent};
 use midenc_dialect_hir::transforms::{Local2Reg, TransformSpills};
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_frontend_wasm_metadata::PackageSections;
@@ -186,8 +188,8 @@ pub fn analyze(hir: MidenComponent, context: Rc<Context>) -> CompilerResult<Mide
 /// The rewrites are applied **in place**, so `op` is returned only for the caller's
 /// convenience; the operation it names is the same one it named on the way in. That is why
 /// this takes an [`OperationRef`] rather than a [`MidenComponent`]: what the pass manager
-/// needs is an anchor, and both the world a component hangs from and a bare operation parsed
-/// from `.hir` are one.
+/// needs is an anchor, which is the `builtin.world` — the one a component hangs from, or the
+/// one a `.hir` input parsed to. Any other operation is an error.
 pub fn apply_rewrites(op: OperationRef, context: Rc<Context>) -> CompilerResult<OperationRef> {
     log::debug!(target: "driver", "applying rewrite passes");
     // TODO(pauls): Set up pass registration for new pass infra
@@ -214,55 +216,7 @@ pub fn apply_rewrites(op: OperationRef, context: Rc<Context>) -> CompilerResult<
     registered.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
     */
 
-    // Construct a pass manager with the default pass pipeline
-    let ir_print_config = IRPrintingConfig::try_from(context.session().options.as_ref())?;
-    let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit)
-        .enable_ir_printing(ir_print_config);
-
-    let mut rewrite_config = GreedyRewriteConfig::default();
-    rewrite_config.with_region_simplification_level(RegionSimplificationLevel::Normal);
-
-    // Component passes
-    {
-        let mut component_pm = pm.nest::<builtin::Component>();
-        // Function passes for module-level functions
-        {
-            let mut module_pm = component_pm.nest::<builtin::Module>();
-            let mut func_pm = module_pm.nest::<builtin::Function>();
-            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
-            func_pm.add_pass(Box::new(CommonSubexpressionElimination));
-            func_pm.add_pass(Box::new(SparseConditionalConstantPropagation));
-            func_pm.add_pass(Box::new(SinkOperandDefs));
-            //func_pm.add_pass(Box::new(ControlFlowSink));
-            func_pm.add_pass(Box::new(Local2Reg));
-            func_pm.add_pass(Box::new(TransformSpills));
-            func_pm.add_pass(Box::new(LiftControlFlowToSCF));
-            // Re-run canonicalization to clean up generated structured control flow
-            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
-            func_pm.add_pass(Box::new(SinkOperandDefs));
-            func_pm.add_pass(Box::new(TransformSpills));
-            //func_pm.add_pass(Box::new(ControlFlowSink));
-            //func_pm.add_pass(Box::new(DeadCodeElimination));
-        }
-        // Function passes for component-level functions
-        {
-            let mut func_pm = component_pm.nest::<builtin::Function>();
-            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
-            func_pm.add_pass(Box::new(CommonSubexpressionElimination));
-            func_pm.add_pass(Box::new(SparseConditionalConstantPropagation));
-            func_pm.add_pass(Box::new(SinkOperandDefs));
-            //func_pm.add_pass(Box::new(ControlFlowSink));
-            func_pm.add_pass(Box::new(Local2Reg));
-            func_pm.add_pass(Box::new(TransformSpills));
-            func_pm.add_pass(Box::new(LiftControlFlowToSCF));
-            // Re-run canonicalization to clean up generated structured control flow
-            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
-            func_pm.add_pass(Box::new(SinkOperandDefs));
-            func_pm.add_pass(Box::new(TransformSpills));
-            //func_pm.add_pass(Box::new(ControlFlowSink));
-            //func_pm.add_pass(Box::new(DeadCodeElimination));
-        }
-    }
+    let mut pm = rewrite_pipeline(op, context.clone())?;
 
     log::trace!(target: "driver", "before rewrites: {}", op.borrow());
 
@@ -288,6 +242,121 @@ pub fn apply_rewrites(op: OperationRef, context: Rc<Context>) -> CompilerResult<
     Ok(op)
 }
 
+/// The rewrite pipeline [`apply_rewrites`] runs over `world`.
+///
+/// # Spill placement comes last
+///
+/// Each function pipeline ends in operand sinking and spill placement (`TransformSpills`), and
+/// no rewrite may follow that last spill placement. Rewrites almost always change live ranges,
+/// and spill placement is what keeps the operand stack within the 16 elements an instruction
+/// can reach, which it can only do for the live ranges it sees. That is why it is one of the
+/// last things done before lowering, and why codegen only checks legality ([`codegen`]). The
+/// spill placement before `LiftControlFlowToSCF` is not the last one: the passes after it
+/// change the code again, and spills are placed once more at the end, for the live ranges as
+/// they finally are.
+///
+/// So [`LegalizeForMasm`], which rewrites the shapes MASM codegen would lower unsafely, runs
+/// over each component between the last canonicalization and operand sinking: the ops it
+/// creates are sunk, and spill placement sees the live ranges they make.
+///
+/// # What is outside a component
+///
+/// Only a component's functions get the rewrites and spill placement above. But codegen lowers
+/// more than the component, and checks all of it: the modules and functions a world holds
+/// beside its component are lowered with it (a component's supporting modules), and a world
+/// with no component is lowered as it stands. They are legalized too — beside a component, its
+/// sibling modules and functions; without one, the world as a whole — and nothing follows that
+/// for them, so the ordering rule above holds for them as well.
+///
+/// # Errors
+///
+/// If `world` is not a `builtin.world`.
+fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult<PassManager> {
+    let ir_print_config = IRPrintingConfig::try_from(context.session().options.as_ref())?;
+    let mut pm = PassManager::on::<builtin::World>(context, Nesting::Implicit)
+        .enable_ir_printing(ir_print_config);
+
+    let mut rewrite_config = GreedyRewriteConfig::default();
+    rewrite_config.with_region_simplification_level(RegionSimplificationLevel::Normal);
+
+    // Component passes
+    {
+        let mut component_pm = pm.nest::<builtin::Component>();
+        // Function passes for module-level functions, up to the last canonicalization
+        {
+            let mut module_pm = component_pm.nest::<builtin::Module>();
+            let mut func_pm = module_pm.nest::<builtin::Function>();
+            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+            func_pm.add_pass(Box::new(CommonSubexpressionElimination));
+            func_pm.add_pass(Box::new(SparseConditionalConstantPropagation));
+            func_pm.add_pass(Box::new(SinkOperandDefs));
+            //func_pm.add_pass(Box::new(ControlFlowSink));
+            func_pm.add_pass(Box::new(Local2Reg));
+            func_pm.add_pass(Box::new(TransformSpills));
+            func_pm.add_pass(Box::new(LiftControlFlowToSCF));
+            // Re-run canonicalization to clean up generated structured control flow
+            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+        }
+        // Function passes for component-level functions, up to the last canonicalization
+        {
+            let mut func_pm = component_pm.nest::<builtin::Function>();
+            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+            func_pm.add_pass(Box::new(CommonSubexpressionElimination));
+            func_pm.add_pass(Box::new(SparseConditionalConstantPropagation));
+            func_pm.add_pass(Box::new(SinkOperandDefs));
+            //func_pm.add_pass(Box::new(ControlFlowSink));
+            func_pm.add_pass(Box::new(Local2Reg));
+            func_pm.add_pass(Box::new(TransformSpills));
+            func_pm.add_pass(Box::new(LiftControlFlowToSCF));
+            // Re-run canonicalization to clean up generated structured control flow
+            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+        }
+        // The last rewrite, before operand sinking and spill placement
+        component_pm.add_pass(Box::new(LegalizeForMasm));
+        // Operand sinking and spill placement for module-level functions, then component-level
+        // ones: the last passes before lowering
+        {
+            let mut module_pm = component_pm.nest::<builtin::Module>();
+            let mut func_pm = module_pm.nest::<builtin::Function>();
+            func_pm.add_pass(Box::new(SinkOperandDefs));
+            func_pm.add_pass(Box::new(TransformSpills));
+            //func_pm.add_pass(Box::new(ControlFlowSink));
+            //func_pm.add_pass(Box::new(DeadCodeElimination));
+        }
+        {
+            let mut func_pm = component_pm.nest::<builtin::Function>();
+            func_pm.add_pass(Box::new(SinkOperandDefs));
+            func_pm.add_pass(Box::new(TransformSpills));
+            //func_pm.add_pass(Box::new(ControlFlowSink));
+            //func_pm.add_pass(Box::new(DeadCodeElimination));
+        }
+    }
+
+    let has_component = {
+        let world = world.borrow();
+        let Some(world) = world.downcast_ref::<builtin::World>() else {
+            return Err(Report::msg(format!(
+                "the rewrite pipeline runs over a `builtin.world`, but was given a `{}`",
+                world.name()
+            )));
+        };
+        let body = world.body();
+        body.entry_block_ref().is_some_and(|entry| {
+            entry.borrow().body().iter().any(|op| op.is::<builtin::Component>())
+        })
+    };
+    if has_component {
+        // The component's siblings: modules and functions of the world itself
+        pm.nest::<builtin::Module>().add_pass(Box::new(LegalizeForMasm));
+        pm.nest::<builtin::Function>().add_pass(Box::new(LegalizeForMasm));
+    } else {
+        // A world without a component
+        pm.add_pass(Box::new(LegalizeForMasm));
+    }
+
+    Ok(pm)
+}
+
 /// Lower `hir` to a Miden Assembly component.
 ///
 /// Emits `--emit=masm` on the way past, which is the one output this phase owns: it is the
@@ -303,8 +372,11 @@ pub fn codegen(hir: MidenComponent, context: Rc<Context>) -> CompilerResult<Code
 
     log::debug!("lowering miden component to masm");
 
+    // Spill placement has been done, so nothing may be rewritten here: legality is checked, and
+    // a shape `LegalizeForMasm` rewrites is an error saying that it must run before spill
+    // placement. See `rewrite_pipeline`.
     let anchor = component.map(|c| c.as_operation_ref()).unwrap_or(world.as_operation_ref());
-    legalize_for_masm(anchor, context.clone())?;
+    check_masm_legality(anchor, context.clone())?;
 
     let analysis_manager = AnalysisManager::new(anchor, None);
     let masm_component = match component {
@@ -326,8 +398,29 @@ pub fn codegen(hir: MidenComponent, context: Rc<Context>) -> CompilerResult<Code
     })
 }
 
-/// Rewrite the HIR rooted at `anchor` into the subset code generation can lower.
-fn legalize_for_masm(anchor: OperationRef, context: Rc<Context>) -> CompilerResult<()> {
+/// Check, rewriting nothing, that the HIR rooted at `anchor` is in the subset code generation
+/// can lower.
+fn check_masm_legality(anchor: OperationRef, context: Rc<Context>) -> CompilerResult<()> {
+    let ir_print_config = IRPrintingConfig::try_from(context.session().options.as_ref())?;
+    let mut pm = PassManager::new(context, OpPassManager::ANY, Nesting::Implicit)
+        .enable_ir_printing(ir_print_config);
+    pm.add_pass(Box::new(CheckMasmLegality));
+    pm.run(anchor)?;
+
+    Ok(())
+}
+
+/// Rewrite `hir` into the subset code generation can lower, for a caller that reaches
+/// [`codegen`] without [`apply_rewrites`], which does it otherwise.
+///
+/// It rewrites, so it is correct only where no spill placement has run: on HIR built by hand or
+/// translated without the rewrites. On HIR [`apply_rewrites`] has rewritten, there is nothing
+/// left for it to do.
+pub fn legalize_for_masm(hir: &MidenComponent, context: Rc<Context>) -> CompilerResult<()> {
+    let anchor = hir
+        .component
+        .map(|component| component.as_operation_ref())
+        .unwrap_or(hir.world.as_operation_ref());
     let ir_print_config = IRPrintingConfig::try_from(context.session().options.as_ref())?;
     let mut pm = PassManager::new(context, OpPassManager::ANY, Nesting::Implicit)
         .enable_ir_printing(ir_print_config);
@@ -665,11 +758,76 @@ mod tests {
             .expect("rewrite-only is the caller's policy, not ours");
     }
 
+    /// [`rewrite_pipeline`], as its textual pipeline.
+    fn textual_pipeline(
+        world: OperationRef,
+        context: Rc<midenc_hir::Context>,
+    ) -> alloc::string::String {
+        struct Textual(PassManager);
+        impl core::fmt::Display for Textual {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                self.0.print_as_textual_pipeline(f)
+            }
+        }
+        let pm = rewrite_pipeline(world, context).expect("the pipeline should build");
+        alloc::format!("{}", Textual(pm))
+    }
+
+    /// The MASM legalization rewrites, so it runs before the last spill placement: over each
+    /// component, after the last canonicalization of its functions and before their operand
+    /// sinking and spill placement, which end the component's pipeline. The world's own modules
+    /// and functions, lowered beside the component without any of that, are legalized after it.
+    #[test]
+    fn the_masm_legalization_runs_before_the_last_spill_placement() {
+        let (component, context) = build_component();
+        let pipeline = textual_pipeline(component.world.as_operation_ref(), context);
+        let functions = "canonicalizer,cse,sccp,sink-operand-defs,local2reg,transform-spills,\
+                         cfg-to-scf,canonicalizer";
+        let last = "sink-operand-defs,transform-spills";
+        assert_eq!(
+            pipeline,
+            alloc::format!(
+                "builtin.world(builtin.component(builtin.module(builtin.function({functions})),\
+                 builtin.function({functions}),legalize-for-masm,builtin.module(builtin.\
+                 function({last})),builtin.function({last})),builtin.module(legalize-for-masm),\
+                 builtin.function(legalize-for-masm))"
+            )
+        );
+    }
+
+    /// The rewrites are built for a world; any other anchor is an error, not a panic.
+    #[test]
+    fn the_rewrite_pipeline_refuses_an_anchor_that_is_not_a_world() {
+        let (component, context) = build_component();
+        let anchor = component.component.expect("the fixture has a component").as_operation_ref();
+        let err = match rewrite_pipeline(anchor, context) {
+            Ok(_) => panic!("a component is not a world"),
+            Err(err) => alloc::format!("{err}"),
+        };
+        assert!(err.contains("runs over a `builtin.world`"), "{err}");
+    }
+
+    /// A world without a component has no rewrites and no spill placement, but is lowered all
+    /// the same, so it is legalized as a whole.
+    #[test]
+    fn a_world_without_a_component_is_legalized_as_a_whole() {
+        let context = Rc::new(midenc_hir::Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world = midenc_hir::BuilderExt::create::<builtin::World, ()>(
+            &mut builder,
+            midenc_hir::SourceSpan::UNKNOWN,
+        )()
+        .expect("an empty world should build");
+        let pipeline = textual_pipeline(world.as_operation_ref(), context);
+        assert!(pipeline.ends_with(",legalize-for-masm)"), "{pipeline}");
+    }
+
     #[test]
     fn codegen_does_not_stop_on_link_only() {
         let context = context_emitting(Default::default(), |options| options.link_only = true);
         let component = minimal_component(&context);
 
+        legalize_for_masm(&component, context.clone()).expect("there is nothing to rewrite");
         codegen(component, context).expect("-Clink-only is the caller's policy, not ours");
     }
 
