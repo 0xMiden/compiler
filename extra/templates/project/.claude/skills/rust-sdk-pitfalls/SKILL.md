@@ -707,8 +707,8 @@ miden = { version = "0.14" }
 miden-sdk-build-script-support = { version = "0.14" }
 
 # integration/Cargo.toml
-miden-client = { git = "https://github.com/0xMiden/rust-sdk", rev = "98e4dba0cf25d2e09154243b6011b6de6008489a", features = ["tonic"] }
-miden-client-sqlite-store = { git = "https://github.com/0xMiden/rust-sdk", rev = "98e4dba0cf25d2e09154243b6011b6de6008489a", package = "miden-client-sqlite-store" }
+miden-client = { version = "0.17.0", features = ["tonic"] }
+miden-client-sqlite-store = { version = "0.17.0", package = "miden-client-sqlite-store" }
 miden-standards = { version = "0.17.0", features = ["testing"] }
 miden-testing = "0.16.0-rc.4"
 miden-mast-package = { version = "0.29", default-features = false }
