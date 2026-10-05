@@ -132,19 +132,6 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             .map(|o| o.borrow().as_value_ref())
             .collect::<SmallVec<[_; 4]>>();
 
-        // Everything below indexes columns by position (inits, before arguments and yield
-        // operands on one side; condition operands, after arguments and results on the other),
-        // so a loop whose arities disagree is left untouched (no verifier checks the arity of an
-        // `scf.while` today).
-        let num_after_args = after_block.borrow().num_arguments();
-        if before_args.len() != init_args.len()
-            || yield_op_args.len() != init_args.len()
-            || cond_op_args.len() != num_after_args
-            || while_op.num_results() != num_after_args
-        {
-            return Ok(false);
-        }
-
         // Returns true if the `index`-th before block argument is loop invariant, i.e. if the
         // value fed back to it over the back edge is always its initial value.
         let is_loop_invariant = |index: usize| -> bool {

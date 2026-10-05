@@ -33,9 +33,7 @@ pub(super) enum IterArg {
 /// must replace at least one result of the original one; when it replaces several, they must all
 /// be forwarded the same value by the `scf.condition`.
 ///
-/// Returns `Ok(false)`, with nothing modified, if `operation` is not an `scf.while` or if the
-/// number of its operands, block arguments, terminator operands and results do not agree with
-/// each other or with `iter_args` and `results`.
+/// Returns `Ok(false)`, with nothing modified, if `operation` is not an `scf.while`.
 pub(super) fn rebuild_while(
     rewriter: &mut dyn Rewriter,
     operation: OperationRef,
@@ -69,17 +67,10 @@ pub(super) fn rebuild_while(
         .map(|o| o.borrow().as_value_ref())
         .collect::<SmallVec<[_; 4]>>();
 
-    // Everything below pairs these lists up by position, so a loop whose arities disagree is
-    // left untouched (no verifier checks the arity of an `scf.while` today).
-    if iter_args.len() != inits.len()
-        || before_block.borrow().num_arguments() != inits.len()
-        || yielded.len() != inits.len()
-        || results.len() != while_op.num_results()
-        || forwarded.len() != results.len()
-        || after_block.borrow().num_arguments() != results.len()
-    {
-        return Ok(false);
-    }
+    // The lists above are paired up by position below; the verifier of `scf.while` guarantees
+    // that they agree with each other.
+    assert_eq!(iter_args.len(), inits.len(), "expected one entry per iteration argument");
+    assert_eq!(results.len(), forwarded.len(), "expected one entry per result");
 
     let is_kept = |index: &usize| matches!(iter_args[*index], IterArg::Keep);
     let new_inits =
