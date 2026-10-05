@@ -37,9 +37,11 @@ pub(crate) fn convert_felt_intrinsics<B: ?Sized + Builder>(
         }
         "as_u64" => {
             assert_eq!(args.len(), 1, "{function} takes exactly one argument");
-            // we're casting to i64 instead of u64 because Wasm doesn't have u64
-            // and this value will be used in Wasm ops or local vars that expect i64
-            let inst = builder.cast(args[0], Type::I64, span)?;
+            // Every felt fits in a u64. The result is used in Wasm ops or local vars that expect
+            // i64, as Wasm doesn't have u64, so the u64 is reinterpreted as an i64 rather than
+            // cast to one, which would trap on a felt at or above 2^63.
+            let inst = builder.cast(args[0], Type::U64, span)?;
+            let inst = builder.bitcast(inst, Type::I64, span)?;
             Ok(smallvec![inst])
         }
         // Arithmetic operations

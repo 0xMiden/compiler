@@ -22,11 +22,16 @@ impl OpEmitter<'_> {
 
     /// Convert a i64 value to felt.
     ///
-    /// This operation will assert at runtime if the value is negative, or larger than the felt
-    /// field.
+    /// This operation will assert at runtime if the value is negative. A non-negative i64 is below
+    /// 2^63, so it is never larger than the felt field.
     #[inline]
     pub fn i64_to_felt(&mut self, span: SourceSpan) {
-        self.u64_to_felt(span);
+        // [x_hi, x_lo]
+        self.emit(masm::Instruction::Swap1, span);
+        // Assert that the sign bit, the most significant bit of the high limb, is unset
+        self.is_signed_int32(span);
+        self.emit(Self::assertz_with_message_inst("expected a non-negative i64 value", span), span);
+        self.u32unsplit(span);
     }
 
     /// Convert a u64 value to an unsigned N-bit integer, where N <= 32
@@ -66,7 +71,9 @@ impl OpEmitter<'_> {
 
     /// Convert an i64 value to a signed N-bit integer, where N <= 32
     ///
-    /// Conversion will trap if the input value is too large to fit in an N-bit integer.
+    /// Conversion will trap if the input value is too large to fit in an N-bit integer. The result
+    /// is the N-bit two's complement pattern of the value, zero-extended: `-1` converted to 16 bits
+    /// is `0x0000FFFF`.
     pub fn i64_to_int(&mut self, n: u32, span: SourceSpan) {
         self.emit_all(
             [
@@ -129,6 +136,8 @@ impl OpEmitter<'_> {
             ],
             span,
         );
+        // Drop the sign bits above the N-bit range
+        self.trunc_int32(n, span);
     }
 
     /// Truncate a i64/u64 value to a felt value
@@ -226,20 +235,20 @@ impl OpEmitter<'_> {
 
     /// Assert that the 64-bit value on the stack does not have its sign bit set.
     pub fn assert_unsigned_int64(&mut self, span: SourceSpan) {
-        // Assert that the sign bit is unset
+        // Assert that the sign bit, the most significant bit of the high limb, is unset
         self.emit(masm::Instruction::Swap1, span);
-        self.assert_unsigned_int32(span);
+        self.is_signed_int32(span);
+        self.emit(Self::assertz_with_message_inst("expected a non-negative i64 value", span), span);
         self.emit(masm::Instruction::Swap1, span);
     }
 
-    /// Assert that the 64-bit value on the stack is a valid i64 value
+    /// Assert that the u64 value on the stack is a valid i64 value
     pub fn assert_i64(&mut self, span: SourceSpan) {
         // Copy the value on top of the stack
         self.copy_int64(span);
-        // Assert the value does not overflow i64::MAX or underflow i64::MIN
-        // This can be checked by validating that when interpreted as a u64,
-        // the value is <= i64::MIN, which is 1 more than i64::MAX.
-        self.push_i64(i64::MIN, span);
+        // Assert the value does not overflow i64::MAX: a u64 is never negative, so this is the
+        // only bound to check.
+        self.push_i64(i64::MAX, span);
         self.lte_u64(span);
         self.emit(Self::assert_with_message_inst("value does not fit in i64", span), span);
     }
@@ -280,9 +289,9 @@ impl OpEmitter<'_> {
                 let n = n as usize;
                 self.emit_all(
                     [
-                        // Move the low 32 bits to the top
-                        movup_from_offset(n + 1),
                         // Move the high 32 bits to the top
+                        movup_from_offset(n + 1),
+                        // Move the low 32 bits to the top, above them
                         movup_from_offset(n + 1),
                     ],
                     span,

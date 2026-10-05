@@ -331,3 +331,104 @@ fn global_u128_initializer_stores_four_felts_intact() {
     )
     .unwrap();
 }
+
+/// 8-, 16- and 1-bit global initializers store into their own bytes of the element they share
+/// with their neighbours, and consume their value.
+///
+/// Globals are laid out in definition order, each at the next offset aligned for its type, from an
+/// element-aligned base. So the three `u8`s and the `i1` fill one element, and their initializers
+/// store at byte offsets 0 to 3 of a constant address; the `u16` starts the next element, at offset
+/// 0, followed by two more `u8`s at offsets 2 and 3. The entrypoint loads every global back and
+/// returns them: a store that wrote the wrong bits, or into a neighbour, shows in its output. The
+/// operand stack below the outputs must still hold the zeros the program started with: a store that
+/// left its value on the stack would show there.
+#[test]
+fn global_small_initializers_store_into_their_own_bytes() {
+    setup::enable_compiler_instrumentation();
+
+    let globals = [
+        (Type::U8, Immediate::U8(0x11)),
+        (Type::U8, Immediate::U8(0x22)),
+        (Type::U8, Immediate::U8(0x33)),
+        (Type::I1, Immediate::I1(true)),
+        (Type::U16, Immediate::U16(0xbeef)),
+        (Type::U8, Immediate::U8(0x44)),
+        (Type::U8, Immediate::U8(0x55)),
+    ];
+
+    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
+    let link_output = setup::build_empty_component_for_test(context.clone());
+
+    let module = {
+        let mut component_builder =
+            midenc_hir::dialects::builtin::ComponentBuilder::new(link_output.component.unwrap());
+        component_builder
+            .define_module(midenc_hir::Ident::with_empty_span("test".into()))
+            .unwrap()
+    };
+
+    // Each global's initializer returns its value as a literal.
+    let gvs = globals
+        .iter()
+        .enumerate()
+        .map(|(i, (ty, value))| {
+            let mut gv = {
+                let mut module_builder = midenc_hir::dialects::builtin::ModuleBuilder::new(module);
+                let name = midenc_hir::interner::Symbol::intern(format!("gv_small_{i}"));
+                module_builder
+                    .define_global_variable(
+                        midenc_hir::Ident::with_empty_span(name),
+                        midenc_hir::Visibility::Private,
+                        ty.clone(),
+                    )
+                    .unwrap()
+            };
+            let init_region_ref = {
+                let mut global_var = gv.borrow_mut();
+                global_var.initializer_mut().as_region_ref()
+            };
+            let mut op_builder = midenc_hir::OpBuilder::new(context.clone());
+            op_builder.create_block(init_region_ref, None, &[]);
+            op_builder.ret_imm(*value, SourceSpan::default()).unwrap();
+            gv
+        })
+        .collect::<Vec<_>>();
+
+    // Entrypoint: load every global and return them, the first on top.
+    let signature = Signature::new(&context, [], globals.iter().map(|(ty, _)| ty.clone()));
+    let function = {
+        let mut module_builder = midenc_hir::dialects::builtin::ModuleBuilder::new(module);
+        module_builder
+            .define_function(
+                midenc_hir::Ident::with_empty_span("main".into()),
+                midenc_hir::Visibility::Public,
+                signature.clone(),
+            )
+            .unwrap()
+    };
+    {
+        let span = SourceSpan::default();
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let mut builder =
+            midenc_hir::dialects::builtin::FunctionBuilder::new(function, &mut builder);
+        let loaded =
+            gvs.iter().map(|gv| builder.load_global(*gv, span).unwrap()).collect::<Vec<_>>();
+        builder.ret(loaded, span).unwrap();
+    }
+
+    let mut expected = [Felt::ZERO; 16];
+    for (output, (_, value)) in expected.iter_mut().zip(&globals) {
+        *output = value.as_felt().unwrap();
+    }
+    eval_miden_component::<Felt, _, _>(
+        link_output,
+        std::iter::empty::<Initializer<'_>>(),
+        &[],
+        context.session(),
+        |trace| {
+            assert_eq!(trace.outputs().get_num_elements(16), expected);
+            Ok(())
+        },
+    )
+    .unwrap();
+}

@@ -365,8 +365,8 @@ impl OpEmitter<'_> {
                 self.emit(masm::Instruction::U32And, span);
                 return;
             } else {
-                self.emit_push(imm.addr, span);
-                self.emit_push(imm.offset, span);
+                // [addr, offset], as the dynamic paths below expect
+                self.push_native_ptr(imm, span);
             }
         }
 
@@ -1242,7 +1242,7 @@ impl OpEmitter<'_> {
         self.dropn(5, span);
     }
 
-    /// Store a quartet of machine words (32-bit elements) to the operand stack
+    /// Store a quartet of machine words (32-bit elements) to memory
     fn store_quad_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.store_quad_word_imm(imm, span);
@@ -1495,11 +1495,11 @@ impl OpEmitter<'_> {
         let type_size_mask = (1u32 << type_size) - 1;
         let mask = !(type_size_mask << bit_offset);
 
-        // Apply mask to the loaded value
+        // Apply mask to the loaded value: [masked_prev, value]
         self.const_mask_u32(mask, span);
 
         // Get the value and shift it to the correct position
-        self.emit(masm::Instruction::MovUp4, span); // Move value to top
+        self.emit(masm::Instruction::Swap1, span); // Move value to top: [value, masked_prev]
         if bit_offset > 0 {
             self.emit(masm::Instruction::U32ShlImm(bit_offset.into()), span);
         }

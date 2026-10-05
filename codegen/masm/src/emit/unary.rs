@@ -164,9 +164,9 @@ impl OpEmitter<'_> {
     /// the last 16 bits are the same as the original input value, giving us the i64
     /// representation of -128.
     ///
-    /// NOTE: Field elements cannot be sign-extended to i64, you must an explicit cast, as the
-    /// range of the field means that it is not guaranteed that the felt will fit in the i64
-    /// range.
+    /// NOTE: A field element is unsigned, so extending one to a signed type zero-extends it, and
+    /// does not check that it fits: a felt of `2^63` or more becomes a negative i64. Use an
+    /// explicit cast for the checked conversion.
     ///
     /// This function assumes that an integer value of type `src` is on top of the operand stack,
     /// and will ensure a value of type `dst` is on the operand stack after truncation, or that
@@ -216,6 +216,8 @@ impl OpEmitter<'_> {
     /// * Casting to a larger unsigned type will use zero-extension
     /// * Casting a signed type to a larger signed type will use sign-extension
     /// * Casting an unsigned type to a larger signed type will use zero-extension
+    /// * A signed type narrower than 32 bits holds the N-bit two's complement pattern of its value,
+    ///   zero-extended: `-1i32` cast to `i16` is `0x0000FFFF`
     ///
     /// As a rule, the input value must be representable in the target type, or an
     /// assertion will be raised. Casts are intended to faithfully translate a value
@@ -251,7 +253,9 @@ impl OpEmitter<'_> {
             }
             (Type::U128, Type::I16 | Type::I8) => {
                 self.int128_to_u32(span);
-                self.int32_to_int(dst_bits, span);
+                // An unsigned value fits in a signed N-bit integer exactly when it is below 2^(N-1)
+                self.int32_to_uint(dst_bits, span);
+                self.assert_unsigned_smallint(dst_bits, span);
             }
             // i128
             (Type::I128, Type::I64) => self.i128_to_i64(span),
@@ -261,7 +265,10 @@ impl OpEmitter<'_> {
             }
             // i64
             (Type::I64, Type::I128) => self.sext_int64(128, span),
-            (Type::I64, Type::U128) => self.zext_int64(128, span),
+            (Type::I64, Type::U128) => {
+                self.assert_unsigned_int64(span);
+                self.zext_int64(128, span);
+            }
             (Type::I64, Type::U64) => self.assert_unsigned_int64(span),
             (Type::I64, Type::Felt) => self.i64_to_felt(span),
             (Type::I64, Type::U32 | Type::U16 | Type::U8 | Type::I1) => {
@@ -285,7 +292,8 @@ impl OpEmitter<'_> {
                 self.assert_unsigned_smallint(dst_bits, span);
             }
             // felt
-            (Type::Felt, Type::I64 | Type::I128) => self.sext_felt(dst_bits, span),
+            (Type::Felt, Type::I64) => self.felt_to_i64(span),
+            (Type::Felt, Type::I128) => self.sext_felt(dst_bits, span),
             (Type::Felt, Type::U128) => self.zext_felt(dst_bits, span),
             (Type::Felt, Type::U64) => self.felt_to_u64(span),
             (Type::Felt, Type::U32 | Type::U16 | Type::U8 | Type::I1) => {
@@ -301,15 +309,19 @@ impl OpEmitter<'_> {
             (Type::U32, Type::U16 | Type::U8 | Type::I1) => {
                 self.int32_to_uint(dst_bits, span);
             }
-            (Type::U32, Type::I16 | Type::I8) => self.int32_to_int(dst_bits, span),
+            (Type::U32, Type::I16 | Type::I8) => {
+                // An unsigned value fits in a signed N-bit integer exactly when it is below 2^(N-1)
+                self.int32_to_uint(dst_bits, span);
+                self.assert_unsigned_smallint(dst_bits, span);
+            }
             // i32
             (Type::I32, Type::I64 | Type::I128) => self.sext_int32(dst_bits, span),
             (Type::I32, Type::U64) => {
-                self.assert_i32(span);
-                self.emit_push(0u32, span);
+                self.assert_unsigned_int32(span);
+                self.zext_int32(dst_bits, span);
             }
             (Type::I32, Type::U32) => {
-                self.assert_i32(span);
+                self.assert_unsigned_int32(span);
             }
             (Type::I32, Type::U16 | Type::U8 | Type::I1) => {
                 self.int32_to_uint(dst_bits, span);
@@ -326,8 +338,14 @@ impl OpEmitter<'_> {
             (Type::I16, Type::U16) | (Type::I8, Type::U8) => {
                 self.assert_unsigned_smallint(src_bits, span);
             }
-            (Type::I16, Type::U8 | Type::I1) => self.int32_to_int(dst_bits, span),
-            (Type::I16, Type::I8) => self.int32_to_int(dst_bits, span),
+            // A negative i16 has bit 15 of its 16-bit pattern set, so the pattern is in the unsigned
+            // range exactly when the value is
+            (Type::I16, Type::U8 | Type::I1) => self.int32_to_uint(dst_bits, span),
+            (Type::I16, Type::I8) => {
+                // Sign-extend the 16-bit pattern to 32 bits, and narrow that as an i32
+                self.sext_smallint(src_bits, 32, span);
+                self.int32_to_int(dst_bits, span);
+            }
             (Type::I8, Type::I1) => {
                 // Assert that input is either 0 or 1
                 //
@@ -377,13 +395,14 @@ impl OpEmitter<'_> {
                 self.emit(masm::Instruction::IsOdd, span);
             }
             // For i64/u64, we use the native instruction
-            // on the lower limb to check for odd/even
+            // on the least significant limb, which is on top
             Type::I64 | Type::U64 => {
-                self.emit_all([masm::Instruction::Drop, masm::Instruction::IsOdd], span);
+                self.trunc_int64(32, span);
+                self.emit(masm::Instruction::IsOdd, span);
             }
             // For i128, same as above, but more elements are dropped
             Type::I128 | Type::U128 => {
-                self.emit_n(3, masm::Instruction::Drop, span);
+                self.trunc_i128(32, span);
                 self.emit(masm::Instruction::IsOdd, span);
             }
             Type::F64 => {
@@ -461,23 +480,23 @@ impl OpEmitter<'_> {
             Type::I128 | Type::U128 => {
                 self.emit_all(
                     [
-                        // [x3, x2, x1, x0]
+                        // [x0, x1, x2, x3]
                         masm::Instruction::U32Popcnt,
-                        // [popcnt3, x2, x1, x0]
+                        // [popcnt0, x1, x2, x3]
                         masm::Instruction::Swap1,
-                        // [x2, popcnt3, x1, x0]
+                        // [x1, popcnt0, x2, x3]
                         masm::Instruction::U32Popcnt,
-                        // [popcnt2, popcnt3, x1, x0]
+                        // [popcnt1, popcnt0, x2, x3]
                         masm::Instruction::Add,
-                        // [popcnt_hi, x1, x0]
+                        // [popcnt_lo, x2, x3]
                         masm::Instruction::MovDn2,
-                        // [x1, x0, popcnt]
+                        // [x2, x3, popcnt_lo]
                         masm::Instruction::U32Popcnt,
-                        // [popcnt1, x0, popcnt]
+                        // [popcnt2, x3, popcnt_lo]
                         masm::Instruction::Swap1,
-                        // [x0, popcnt1, popcnt]
+                        // [x3, popcnt2, popcnt_lo]
                         masm::Instruction::U32Popcnt,
-                        // [popcnt0, popcnt1, popcnt]
+                        // [popcnt3, popcnt2, popcnt_lo]
                         //
                         // This last instruction adds all three values together mod 2^32
                         masm::Instruction::U32WrappingAdd3,
@@ -488,9 +507,9 @@ impl OpEmitter<'_> {
             Type::I64 | Type::U64 => {
                 self.emit_all(
                     [
-                        // Get popcnt of high bits
+                        // Get popcnt of low bits
                         masm::Instruction::U32Popcnt,
-                        // Swap to low bits and repeat
+                        // Swap to high bits and repeat
                         masm::Instruction::Swap1,
                         masm::Instruction::U32Popcnt,
                         // Add both counts to get the total count
@@ -518,37 +537,9 @@ impl OpEmitter<'_> {
         let arg = self.stack.pop().expect("operand stack is empty");
         match arg.ty() {
             Type::I128 | Type::U128 => {
-                // We decompose the 128-bit value into two 64-bit limbs, and use the standard
-                // library intrinsics to get the count for those limbs. We then add the count
-                // for the low bits to that of the high bits, if the high bits are all zero,
-                // otherwise we take just the high bit count.
-                //
-                // Count leading zeros in the high bits
-                self.raw_exec("::miden::core::math::u64::clz", span);
-                self.emit_all(
-                    [
-                        // [hi_clz, lo_hi, lo_lo]
-                        // Count leading zeros in the low bits
-                        masm::Instruction::MovUp2, // [lo_lo, hi_clz, lo_hi]
-                        masm::Instruction::MovUp2, // [lo_hi, lo_lo, hi_clz]
-                    ],
-                    span,
-                );
-                self.raw_exec("::miden::core::math::u64::clz", span); // [lo_clz, hi_clz]
-                // Add the low bit leading zeros to those of the high bits, if the high
-                // bits are all zeros; otherwise return only the
-                // high bit count
-                self.emit_push(0u32, span); // [0, lo_clz, hi_clz]
-                self.emit(masm::Instruction::Dup2, span); // [hi_clz, 0, lo_clz, hi_clz]
-                self.emit_push(Felt::new_unchecked(32), span);
-                self.emit_all(
-                    [
-                        masm::Instruction::Lt,    // [hi_clz < 32, 0, lo_clz, hi_clz]
-                        masm::Instruction::CDrop, // [hi_clz < 32 ? 0 : lo_clz, hi_clz]
-                        masm::Instruction::Add,
-                    ],
-                    span,
-                );
+                // The core library counts from the most significant limb, `x3`, down, adding the
+                // count of each limb only when the limbs above it are all zeros
+                self.raw_exec("::miden::core::math::u128::clz", span);
             }
             Type::I64 | Type::U64 => {
                 self.raw_exec("::miden::core::math::u64::clz", span);
@@ -603,35 +594,9 @@ impl OpEmitter<'_> {
         match arg.ty() {
             // The implementation here is effectively the same as `clz`, just with minor adjustments
             Type::I128 | Type::U128 => {
-                // We decompose the 128-bit value into two 64-bit limbs, and use the standard
-                // library intrinsics to get the count for those limbs. We then add the count
-                // for the low bits to that of the high bits, if the high bits are all one,
-                // otherwise we take just the high bit count.
-                //
-                // Count leading ones in the high bits
-                self.raw_exec("::miden::core::math::u64::clo", span); // [hi_clo, lo_hi, lo_lo]
-                self.emit_all(
-                    [
-                        // Count leading ones in the low bits
-                        masm::Instruction::MovUp2, // [lo_lo, hi_clo, lo_hi]
-                        masm::Instruction::MovUp2, // [lo_hi, lo_lo, hi_clo]
-                    ],
-                    span,
-                );
-                self.raw_exec("::miden::core::math::u64::clo", span); // [lo_clo, hi_clo]
-                // Add the low bit leading ones to those of the high bits, if the high bits
-                // are all one; otherwise return only the high bit count
-                self.emit_push(0u32, span); // [0, lo_clo, hi_clo]
-                self.emit(masm::Instruction::Dup2, span); // [hi_clo, 0, lo_clo, hi_clo]
-                self.emit_push(Felt::new_unchecked(32), span);
-                self.emit_all(
-                    [
-                        masm::Instruction::Lt,    // [hi_clo < 32, 0, lo_clo, hi_clo]
-                        masm::Instruction::CDrop, // [hi_clo < 32 ? 0 : lo_clo, hi_clo]
-                        masm::Instruction::Add,
-                    ],
-                    span,
-                );
+                // The core library counts from the most significant limb, `x3`, down, adding the
+                // count of each limb only when the limbs above it are all ones
+                self.raw_exec("::miden::core::math::u128::clo", span);
             }
             Type::I64 | Type::U64 => self.raw_exec("::miden::core::math::u64::clo", span),
             Type::I32 | Type::U32 => {
@@ -695,37 +660,9 @@ impl OpEmitter<'_> {
         let arg = self.stack.pop().expect("operand stack is empty");
         match arg.ty() {
             Type::I128 | Type::U128 => {
-                // We decompose the 128-bit value into two 64-bit limbs, and use the standard
-                // library intrinsics to get the count for those limbs. We then add the count
-                // for the low bits to that of the high bits, if the high bits are all one,
-                // otherwise we take just the high bit count.
-                //
-                // Count trailing zeros in the high bits
-                self.raw_exec("::miden::core::math::u64::ctz", span); // [hi_ctz, lo_hi, lo_lo]
-                self.emit_all(
-                    [
-                        // Count trailing zeros in the low bits
-                        masm::Instruction::MovUp2, // [lo_lo, hi_ctz, lo_hi]
-                        masm::Instruction::MovUp2, // [lo_hi, lo_lo, hi_ctz]
-                    ],
-                    span,
-                );
-                self.raw_exec("::miden::core::math::u64::ctz", span); // [lo_ctz, hi_ctz]
-                // Add the high bit trailing zeros to those of the low bits, if the low
-                // bits are all zero; otherwise return only the low
-                // bit count
-                self.emit(masm::Instruction::Swap1, span);
-                self.emit_push(0u32, span); // [0, hi_ctz, lo_ctz]
-                self.emit(masm::Instruction::Dup2, span); // [lo_ctz, 0, hi_ctz, lo_ctz]
-                self.emit_push(Felt::new_unchecked(32), span);
-                self.emit_all(
-                    [
-                        masm::Instruction::Lt,    // [lo_ctz < 32, 0, hi_ctz, lo_ctz]
-                        masm::Instruction::CDrop, // [lo_ctz < 32 ? 0 : hi_ctz, lo_ctz]
-                        masm::Instruction::Add,
-                    ],
-                    span,
-                );
+                // The core library counts from the least significant limb, `x0`, up, adding the
+                // count of each limb only when the limbs below it are all zeros
+                self.raw_exec("::miden::core::math::u128::ctz", span);
             }
             Type::I64 | Type::U64 => self.raw_exec("::miden::core::math::u64::ctz", span),
             Type::I32 | Type::U32 => self.emit(masm::Instruction::U32Ctz, span),
@@ -791,36 +728,9 @@ impl OpEmitter<'_> {
         let arg = self.stack.pop().expect("operand stack is empty");
         match arg.ty() {
             Type::I128 | Type::U128 => {
-                // We decompose the 128-bit value into two 64-bit limbs, and use the standard
-                // library intrinsics to get the count for those limbs. We then add the count
-                // for the low bits to that of the high bits, if the high bits are all one,
-                // otherwise we take just the high bit count.
-                //
-                // Count trailing ones in the high bits
-                self.raw_exec("::miden::core::math::u64::cto", span); // [hi_cto, lo_hi, lo_lo]
-                self.emit_all(
-                    [
-                        // Count trailing ones in the low bits
-                        masm::Instruction::MovUp2, // [lo_lo, hi_cto, lo_hi]
-                        masm::Instruction::MovUp2, // [lo_hi, lo_lo, hi_cto]
-                    ],
-                    span,
-                );
-                self.raw_exec("::miden::core::math::u64::cto", span); // [lo_cto, hi_cto]
-                // Add the high bit trailing ones to those of the low bits, if the low bits
-                // are all one; otherwise return only the low bit count
-                self.emit(masm::Instruction::Swap1, span);
-                self.emit_push(0u32, span); // [0, hi_cto, lo_cto]
-                self.emit(masm::Instruction::Dup2, span); // [lo_cto, 0, hi_cto, lo_cto]
-                self.emit_push(Felt::new_unchecked(32), span);
-                self.emit_all(
-                    [
-                        masm::Instruction::Lt,    // [lo_cto < 32, 0, hi_cto, lo_cto]
-                        masm::Instruction::CDrop, // [lo_cto < 32 ? 0 : hi_cto, lo_cto]
-                        masm::Instruction::Add,
-                    ],
-                    span,
-                );
+                // The core library counts from the least significant limb, `x0`, up, adding the
+                // count of each limb only when the limbs below it are all ones
+                self.raw_exec("::miden::core::math::u128::cto", span);
             }
             Type::I64 | Type::U64 => self.raw_exec("::miden::core::math::u64::cto", span),
             Type::I32 | Type::U32 | Type::I16 | Type::U16 | Type::I8 | Type::U8 => {
@@ -874,10 +784,12 @@ impl OpEmitter<'_> {
                             ],
                         );
                     }
+                    // Bring each limb up from the bottom of the value, so that after `n` of them the
+                    // limbs are back in their own order
                     n => {
                         self.emit_template(n, |_| {
                             [
-                                Span::new(span, movup_from_offset(n)),
+                                Span::new(span, movup_from_offset(n - 1)),
                                 Span::new(span, masm::Instruction::U32Not),
                             ]
                         });
@@ -915,7 +827,8 @@ impl OpEmitter<'_> {
             Type::U64 => {
                 self.emit_all(
                     [
-                        // Assert that the high bits are zero
+                        // Assert that the high limb, below the low one, is zero
+                        masm::Instruction::Swap1,
                         Self::assertz_with_message_inst(
                             "u64 exponent for pow2 must fit in u32",
                             span,

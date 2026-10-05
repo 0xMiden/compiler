@@ -1,0 +1,11 @@
+builtin.module private @noname attributes { reserved_memory = #builtin.u64<1073741824> } {
+    builtin.function public extern("C") @felt_as_u64(%0: felt) -> i64 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, felt> }> : (felt);
+        %2 = hir.load_local <{ local = #builtin.local_variable<0, felt> }>;
+        %3 = hir.cast %2 <{ ty = #builtin.type<u64> }>;
+        %4 = hir.bitcast %3 <{ ty = #builtin.type<i64> }>;
+        cf.br ^block4(%4 : i64);
+    ^block4(%1: i64):
+        builtin.ret %1 : (i64);
+    };
+};

@@ -341,6 +341,26 @@ fn call_indirect_accepts_masm_procedure_intrinsic_table_entry() {
     )
 }
 
+/// `Felt::as_u64` is the felt as a `u64`, carried in Wasm's `i64`: a cast to `u64`, which every
+/// felt passes, then a bitcast to `i64`. A cast to `i64` would trap on a felt at or above `2^63`.
+#[test]
+fn felt_as_u64_casts_to_u64_then_bitcasts_to_i64() {
+    check_module(
+        r#"
+        (module
+            (type $as_u64 (func (param f32) (result i64)))
+            (memory (;0;) 16384)
+            (func $intrinsics::felt::as_u64 (type $as_u64)
+                unreachable)
+            (func $felt_as_u64 (type $as_u64)
+                local.get 0
+                call $intrinsics::felt::as_u64)
+            (export "felt_as_u64" (func $felt_as_u64))
+        )"#,
+        expect_file!["./expected/felt_as_u64.hir"],
+    )
+}
+
 #[test]
 fn memory_grow() {
     check_op(

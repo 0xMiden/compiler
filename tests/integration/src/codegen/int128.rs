@@ -1,27 +1,18 @@
-//! Narrowing a 128-bit integer keeps its low limbs: the least significant limb is on top of the
-//! operand stack, as in the core library's `u128`. The values below have four different limbs, so
-//! a conversion that took or checked the wrong ones returns a different value, or traps. One test
-//! runs the 64-bit cast to `i32`, which shares its range check with the 128-bit casts.
+//! A 128-bit integer has its least significant limb on top of the operand stack, as in the core
+//! library's `u128`. The values below have four different limbs, so an operation that took or
+//! checked the wrong ones returns a different value, or traps. One test runs the 64-bit cast to
+//! `i32`, which shares its range check with the 128-bit casts.
 
-use std::{
-    panic::{AssertUnwindSafe, catch_unwind},
-    rc::Rc,
-    sync::Arc,
-};
-
-use miden_debug::{FromMidenRepr, ToMidenRepr};
-use miden_mast_package::Package;
+use miden_debug::ToMidenRepr;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Context, Felt, OpBuilder, SourceSpan, Type, ValueRef,
+    Felt, OpBuilder, SourceSpan, Type, ValueRef,
     dialects::builtin::{BuiltinOpBuilder, FunctionBuilder},
 };
 
-use crate::{
-    testing::{compile_test_module, eval_package},
-    trap_helpers::{panic_message, trap_matches},
-};
+use super::support::{UnaryOp, assert_traps, cast, compile, run, run_args, trunc};
+use crate::testing::compile_test_module;
 
 /// A `u128` whose limbs, least significant first, are `0x11111111`, `0x22222222`, `0x33333333`
 /// and `0x44444444`.
@@ -29,56 +20,6 @@ const LIMBS: u128 = 0x4444_4444_3333_3333_2222_2222_1111_1111;
 
 /// The low half of [LIMBS], which fits in a felt.
 const LOW_HALF: u64 = LIMBS as u64;
-
-/// A conversion of a value to a type.
-type Conversion = fn(&mut FunctionBuilder<'_, OpBuilder>, ValueRef, Type) -> ValueRef;
-
-fn trunc(builder: &mut FunctionBuilder<'_, OpBuilder>, value: ValueRef, ty: Type) -> ValueRef {
-    builder.trunc(value, ty, SourceSpan::default()).unwrap()
-}
-
-fn cast(builder: &mut FunctionBuilder<'_, OpBuilder>, value: ValueRef, ty: Type) -> ValueRef {
-    builder.cast(value, ty, SourceSpan::default()).unwrap()
-}
-
-/// Compile an entrypoint that converts its argument, of type `src`, to `dst` with `convert`.
-fn compile(src: Type, dst: Type, convert: Conversion) -> (Arc<Package>, Rc<Context>) {
-    compile_test_module([src], [dst.clone()], move |builder| {
-        let input = builder.current_block().borrow().arguments()[0] as ValueRef;
-        let output = convert(builder, input, dst.clone());
-        builder.ret(Some(output), SourceSpan::default()).unwrap();
-    })
-}
-
-/// Run `package` on `input`, its least significant limb on top of the operand stack.
-fn run<T>(package: &Arc<Package>, context: &Rc<Context>, input: impl ToMidenRepr) -> T
-where
-    T: Clone + FromMidenRepr + PartialEq + core::fmt::Debug,
-{
-    let mut args = Vec::new();
-    input.push_to_operand_stack(&mut args);
-    eval_package::<T, _, _>(package.clone(), None, &args, context.session(), |_| Ok(())).unwrap()
-}
-
-/// Run `package` on `input`, and assert that it traps with the assertion `message`.
-fn assert_traps(
-    package: &Arc<Package>,
-    context: &Rc<Context>,
-    input: impl ToMidenRepr + Copy + core::fmt::Debug,
-    message: &str,
-) {
-    let result = catch_unwind(AssertUnwindSafe(|| run::<Felt>(package, context, input)));
-    match result {
-        Err(panic) => {
-            let err = panic_message(panic);
-            assert!(
-                trap_matches(&err, message),
-                "expected {input:?} to trap with {message:?}: {err}"
-            );
-        }
-        Ok(output) => panic!("expected {input:?} to trap with {message:?}, got {output:?}"),
-    }
-}
 
 #[test]
 fn trunc_of_a_u128_to_u64_keeps_the_low_half() {
@@ -165,24 +106,28 @@ fn cast_of_an_i128_to_i32_checks_the_value_is_in_range() {
     assert_traps(&package, &context, LIMBS as i128, "128-bit value does not fit in i64");
 }
 
-/// An `i128` in the `i16` range casts to its least significant limb; one past either bound traps.
+/// An `i128` in the `i16` range casts to its 16-bit pattern, with nothing above bit 15 even when
+/// it is negative; one past either bound traps.
 #[test]
 fn cast_of_an_i128_to_i16_checks_the_value_is_in_range() {
     let (package, context) = compile(Type::I128, Type::I16, cast);
-    for value in [i16::MIN as i128, i16::MAX as i128] {
-        assert_eq!(run::<i16>(&package, &context, value), value as i16);
+    for value in [i16::MIN, -1, i16::MAX] {
+        let pattern = Felt::new_unchecked(value as u16 as u64);
+        assert_eq!(run::<Felt>(&package, &context, value as i128), pattern, "{value}");
     }
     for value in [i16::MIN as i128 - 1, i16::MAX as i128 + 1] {
         assert_traps(&package, &context, value, "i64 value does not fit in signed 16-bit range");
     }
 }
 
-/// An `i128` in the `i8` range casts to its least significant limb; one past either bound traps.
+/// An `i128` in the `i8` range casts to its 8-bit pattern, with nothing above bit 7 even when it
+/// is negative; one past either bound traps.
 #[test]
 fn cast_of_an_i128_to_i8_checks_the_value_is_in_range() {
     let (package, context) = compile(Type::I128, Type::I8, cast);
-    for value in [i8::MIN as i128, i8::MAX as i128] {
-        assert_eq!(run::<i8>(&package, &context, value), value as i8);
+    for value in [i8::MIN, -1, i8::MAX] {
+        let pattern = Felt::new_unchecked(value as u8 as u64);
+        assert_eq!(run::<Felt>(&package, &context, value as i128), pattern, "{value}");
     }
     for value in [i8::MIN as i128 - 1, i8::MAX as i128 + 1] {
         assert_traps(&package, &context, value, "i64 value does not fit in signed 8-bit range");
@@ -213,4 +158,178 @@ fn cast_of_a_felt_to_128_bits_keeps_its_value() {
     assert_eq!(run::<u128>(&package, &context, felt), LOW_HALF as u128);
     let (package, context) = compile(Type::Felt, Type::I128, cast);
     assert_eq!(run::<i128>(&package, &context, felt), LOW_HALF as i128);
+}
+
+fn is_odd(builder: &mut FunctionBuilder<'_, OpBuilder>, value: ValueRef, _: Type) -> ValueRef {
+    builder.is_odd(value, SourceSpan::default()).unwrap()
+}
+
+fn clz(builder: &mut FunctionBuilder<'_, OpBuilder>, value: ValueRef, _: Type) -> ValueRef {
+    builder.clz(value, SourceSpan::default()).unwrap()
+}
+
+fn clo(builder: &mut FunctionBuilder<'_, OpBuilder>, value: ValueRef, _: Type) -> ValueRef {
+    builder.clo(value, SourceSpan::default()).unwrap()
+}
+
+fn ctz(builder: &mut FunctionBuilder<'_, OpBuilder>, value: ValueRef, _: Type) -> ValueRef {
+    builder.ctz(value, SourceSpan::default()).unwrap()
+}
+
+fn cto(builder: &mut FunctionBuilder<'_, OpBuilder>, value: ValueRef, _: Type) -> ValueRef {
+    builder.cto(value, SourceSpan::default()).unwrap()
+}
+
+fn bnot(builder: &mut FunctionBuilder<'_, OpBuilder>, value: ValueRef, _: Type) -> ValueRef {
+    builder.bnot(value, SourceSpan::default()).unwrap()
+}
+
+fn assert(builder: &mut FunctionBuilder<'_, OpBuilder>, value: ValueRef, _: Type) -> ValueRef {
+    builder.assert(value, SourceSpan::default()).unwrap()
+}
+
+/// A `u128` is odd when its least significant limb is: `LIMBS` has an odd low limb and an even high
+/// one, and the other value the reverse.
+#[test]
+fn is_odd_of_a_u128_tests_its_least_significant_limb() {
+    let (package, context) = compile(Type::U128, Type::I1, is_odd);
+    assert!(run::<bool>(&package, &context, LIMBS));
+    assert!(!run::<bool>(&package, &context, 0x4444_4445_3333_3333_2222_2222_1111_1110u128));
+}
+
+/// Values that separate the limbs, the halves, and the point where one half's count carries into
+/// the other's.
+const COUNT_INPUTS: [u128; 8] = [0, 1, 1 << 31, 1 << 63, 1 << 64, 1 << 100, 1 << 127, u128::MAX];
+
+/// Run the count `op` of a `u128` on each of `inputs`, and compare it with `expected`.
+fn check_count(op: UnaryOp, inputs: &[u128], expected: fn(u128) -> u32) {
+    let (package, context) = compile(Type::U128, Type::U32, op);
+    for &value in inputs {
+        assert_eq!(run::<u32>(&package, &context, value), expected(value), "input {value:#x}");
+    }
+}
+
+/// `COUNT_INPUTS` and their complements, for the ones-counting forms.
+fn with_complements() -> Vec<u128> {
+    COUNT_INPUTS.iter().flat_map(|&value| [value, !value]).collect()
+}
+
+#[test]
+fn clz_of_a_u128_counts_from_its_most_significant_limb() {
+    check_count(clz, &COUNT_INPUTS, u128::leading_zeros);
+}
+
+#[test]
+fn clo_of_a_u128_counts_from_its_most_significant_limb() {
+    check_count(clo, &with_complements(), u128::leading_ones);
+}
+
+#[test]
+fn ctz_of_a_u128_counts_from_its_least_significant_limb() {
+    check_count(ctz, &COUNT_INPUTS, u128::trailing_zeros);
+}
+
+#[test]
+fn cto_of_a_u128_counts_from_its_least_significant_limb() {
+    check_count(cto, &with_complements(), u128::trailing_ones);
+}
+
+/// `u128` wrapping addition carries out of each limb and wraps at the top.
+#[test]
+fn wrapping_add_of_u128s_carries_between_the_halves_and_wraps() {
+    let (package, context) =
+        compile_test_module([Type::U128, Type::U128], [Type::U128], |builder| {
+            let args = builder.current_block().borrow().arguments().to_vec();
+            let (a, b) = (args[0] as ValueRef, args[1] as ValueRef);
+            let sum = builder.add_wrapping(a, b, SourceSpan::default()).unwrap();
+            builder.ret(Some(sum), SourceSpan::default()).unwrap();
+        });
+    for (a, b) in [(u64::MAX as u128, 1), (u128::MAX, 2), (LIMBS, LIMBS)] {
+        let mut args = Vec::new();
+        a.push_to_operand_stack(&mut args);
+        b.push_to_operand_stack(&mut args);
+        assert_eq!(
+            run_args::<u128>(&package, &context, &args),
+            a.wrapping_add(b),
+            "{a:#x} + {b:#x}"
+        );
+    }
+}
+
+/// `u128` wrapping subtraction borrows across each limb and wraps at the bottom.
+#[test]
+fn wrapping_sub_of_u128s_borrows_between_the_halves_and_wraps() {
+    let (package, context) =
+        compile_test_module([Type::U128, Type::U128], [Type::U128], |builder| {
+            let args = builder.current_block().borrow().arguments().to_vec();
+            let (a, b) = (args[0] as ValueRef, args[1] as ValueRef);
+            let difference = builder.sub_wrapping(a, b, SourceSpan::default()).unwrap();
+            builder.ret(Some(difference), SourceSpan::default()).unwrap();
+        });
+    for (a, b) in [(1u128 << 64, 1), (0, 1), (LIMBS, !LIMBS)] {
+        let mut args = Vec::new();
+        a.push_to_operand_stack(&mut args);
+        b.push_to_operand_stack(&mut args);
+        assert_eq!(
+            run_args::<u128>(&package, &context, &args),
+            a.wrapping_sub(b),
+            "{a:#x} - {b:#x}"
+        );
+    }
+}
+
+/// The bitwise complement of a `u128` inverts its four limbs in place.
+#[test]
+fn bnot_of_a_u128_inverts_each_limb_in_place() {
+    let (package, context) = compile(Type::U128, Type::U128, bnot);
+    assert_eq!(run::<u128>(&package, &context, LIMBS), !LIMBS);
+}
+
+/// A `u128` below `2^15` casts to `i16`; one at or above it traps, and `0xFFFF_FFFF` is not `-1`.
+#[test]
+fn cast_of_a_u128_to_i16_checks_it_is_below_2_to_the_15() {
+    let (package, context) = compile(Type::U128, Type::I16, cast);
+    assert_eq!(run::<i16>(&package, &context, i16::MAX as u128), i16::MAX);
+    assert_traps(
+        &package,
+        &context,
+        i16::MAX as u128 + 1,
+        "16-bit integer signedness check failed",
+    );
+    assert_traps(
+        &package,
+        &context,
+        0xffff_ffffu128,
+        "value does not fit in unsigned 16-bit range",
+    );
+}
+
+/// A `u128` below `2^7` casts to `i8`; one at or above it traps, and `0xFFFF_FFFF` is not `-1`.
+#[test]
+fn cast_of_a_u128_to_i8_checks_it_is_below_2_to_the_7() {
+    let (package, context) = compile(Type::U128, Type::I8, cast);
+    assert_eq!(run::<i8>(&package, &context, i8::MAX as u128), i8::MAX);
+    assert_traps(&package, &context, i8::MAX as u128 + 1, "8-bit integer signedness check failed");
+    assert_traps(
+        &package,
+        &context,
+        0xffff_ffffu128,
+        "value does not fit in unsigned 8-bit range",
+    );
+}
+
+/// A negative `i64` does not fit in a `u128`.
+#[test]
+fn cast_of_an_i64_to_u128_checks_it_is_non_negative() {
+    let (package, context) = compile(Type::I64, Type::U128, cast);
+    assert_eq!(run::<u128>(&package, &context, i64::MAX), i64::MAX as u128);
+    assert_traps(&package, &context, -1i64, "expected a non-negative i64 value");
+}
+
+/// `hir.assert` of a `u128` checks the value is 1, its least significant limb.
+#[test]
+fn assert_of_a_u128_checks_it_is_one() {
+    let (package, context) = compile(Type::U128, Type::U128, assert);
+    assert_eq!(run::<u128>(&package, &context, 1u128), 1);
+    assert_traps(&package, &context, 1u128 << 96, "expected u128 value to equal 1");
 }

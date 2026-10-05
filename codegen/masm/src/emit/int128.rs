@@ -250,7 +250,8 @@ impl OpEmitter<'_> {
     /// The core library takes its operands in this order, `b` on top: `[b0, b1, b2, b3, a0, a1,
     /// a2, a3]`.
     ///
-    /// For now we're only supporting wrapping add for signed values.
+    /// Wrapping addition does not depend on signedness, so this serves `u128` values too. For now
+    /// only wrapping addition is supported.
     #[inline]
     pub fn add_i128(&mut self, overflow: Overflow, span: SourceSpan) {
         assert!(
@@ -261,6 +262,9 @@ impl OpEmitter<'_> {
     }
 
     /// Pops two i128 values off the stack, `b` and `a`, and performs `a - b`.
+    ///
+    /// Wrapping subtraction does not depend on signedness, so this serves `u128` values too. For
+    /// now only wrapping subtraction is supported.
     pub fn sub_i128(&mut self, overflow: Overflow, span: SourceSpan) {
         assert!(
             matches!(overflow, Overflow::Wrapping),

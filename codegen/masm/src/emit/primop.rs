@@ -63,9 +63,11 @@ impl OpEmitter<'_> {
             Type::I128 | Type::U128 => {
                 self.emit_all(
                     [
+                        // The first element of a pushed word ends on top, as the least significant
+                        // limb does
                         masm::Instruction::Push(masm::Immediate::Value(masm::Span::new(
                             span,
-                            WordValue([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]).into(),
+                            WordValue([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]).into(),
                         ))),
                         Self::assert_eqw_with_message_inst(message, span),
                     ],
@@ -75,8 +77,9 @@ impl OpEmitter<'_> {
             Type::U64 | Type::I64 => {
                 self.emit_all(
                     [
-                        Self::assertz_with_message_inst(message.clone(), span),
-                        Self::assert_with_message_inst(message, span),
+                        // The low limb, on top, is 1, and the high limb is 0
+                        Self::assert_with_message_inst(message.clone(), span),
+                        Self::assertz_with_message_inst(message, span),
                     ],
                     span,
                 );
@@ -162,10 +165,10 @@ impl OpEmitter<'_> {
             Type::U64 | Type::I64 => {
                 self.emit_all(
                     [
-                        // compare the hi bits
+                        // compare the low limbs
                         masm::Instruction::MovUp2,
                         Self::assert_eq_with_message_inst(message.clone(), span),
-                        // compare the low bits
+                        // compare the high limbs
                         Self::assert_eq_with_message_inst(message, span),
                     ],
                     span,
@@ -218,9 +221,10 @@ impl OpEmitter<'_> {
                 let (hi, lo) = int64::to_raw_parts(imm);
                 self.emit_all(
                     [
-                        masm::Instruction::EqImm(Felt::new_unchecked(hi as u64).into()),
-                        Self::assert_with_message_inst(message.clone(), span),
+                        // The low limb is on top
                         masm::Instruction::EqImm(Felt::new_unchecked(lo as u64).into()),
+                        Self::assert_with_message_inst(message.clone(), span),
+                        masm::Instruction::EqImm(Felt::new_unchecked(hi as u64).into()),
                         Self::assert_with_message_inst(message, span),
                     ],
                     span,
@@ -266,16 +270,16 @@ impl OpEmitter<'_> {
                 // corresponding to the value which is being selected
                 self.emit_all(
                     [
-                        // stack starts as [c, b_hi, b_lo, a_hi, a_lo]
-                        masm::Instruction::Dup0, // [c, c, b_hi, b_lo, a_hi, a_lo]
-                        masm::Instruction::MovDn5, // [c, b_hi, b_lo, a_hi, a_lo, c]
-                        masm::Instruction::MovUp3, // [a_hi, c, b_hi, b_lo, a_lo, c]
-                        masm::Instruction::MovUp2, // [b_hi, a_hi, c, b_lo, a_lo, c]
-                        masm::Instruction::MovUp5, // [c, b_hi, a_hi, c, b_lo, a_lo]
-                        masm::Instruction::CDrop, // [d_hi, c, b_lo, a_lo]
-                        masm::Instruction::MovDn3, // [c, b_lo, a_lo, d_hi]
-                        masm::Instruction::CDrop, // [d_lo, d_hi]
-                        masm::Instruction::Swap1, // [d_hi, d_lo]
+                        // stack starts as [c, b_lo, b_hi, a_lo, a_hi]
+                        masm::Instruction::Dup0, // [c, c, b_lo, b_hi, a_lo, a_hi]
+                        masm::Instruction::MovDn5, // [c, b_lo, b_hi, a_lo, a_hi, c]
+                        masm::Instruction::MovUp3, // [a_lo, c, b_lo, b_hi, a_hi, c]
+                        masm::Instruction::MovUp2, // [b_lo, a_lo, c, b_hi, a_hi, c]
+                        masm::Instruction::MovUp5, // [c, b_lo, a_lo, c, b_hi, a_hi]
+                        masm::Instruction::CDrop, // [d_lo, c, b_hi, a_hi]
+                        masm::Instruction::MovDn3, // [c, b_hi, a_hi, d_lo]
+                        masm::Instruction::CDrop, // [d_hi, d_lo]
+                        masm::Instruction::Swap1, // [d_lo, d_hi]
                     ],
                     span,
                 );

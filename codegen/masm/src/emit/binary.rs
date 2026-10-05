@@ -349,7 +349,7 @@ impl OpEmitter<'_> {
             Type::Felt => {
                 self.emit(masm::Instruction::Add, span);
             }
-            Type::I128 => {
+            Type::I128 | Type::U128 => {
                 self.add_i128(overflow, span);
             }
             Type::U64 => {
@@ -418,7 +418,7 @@ impl OpEmitter<'_> {
             Type::Felt => {
                 self.emit(masm::Instruction::Sub, span);
             }
-            Type::I128 => {
+            Type::I128 | Type::U128 => {
                 self.sub_i128(overflow, span);
             }
             Type::U64 => {
@@ -994,31 +994,31 @@ impl OpEmitter<'_> {
         assert_eq!(ty, rhs.ty(), "expected band operands to be the same type");
         match &ty {
             Type::U128 | Type::I128 => {
-                // AND the high bits
+                // AND the low halves
                 //
-                // [b_hi_hi, b_hi_lo, b_lo_hi, b_lo_lo, a_hi_hi, ..]
+                // [b0, b1, b2, b3, a0, a1, a2, a3]
                 self.emit_all(
                     [
-                        // [a_hi_hi, a_hi_lo, b_hi_hi, b_hi_lo, ..]
+                        // [a0, a1, b0, b1, b2, b3, a2, a3]
                         masm::Instruction::MovUp5,
                         masm::Instruction::MovUp5,
                     ],
                     span,
                 );
-                self.band_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                // AND the low bits
+                self.band_int64(span); // [c0, c1, b2, b3, a2, a3]
+                // AND the high halves
                 self.emit_all(
                     [
-                        // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]
+                        // [b2, b3, a2, a3, c0, c1]
                         masm::Instruction::MovDn5,
                         masm::Instruction::MovDn5,
                     ],
                     span,
                 );
-                self.band_int64(span); // [band_lo_hi, band_lo_lo, band_hi_hi, band_hi_lo]
+                self.band_int64(span); // [c2, c3, c0, c1]
                 self.emit_all(
                     [
-                        // [band_hi_hi, band_hi_lo, band_lo_hi, band_lo_lo]
+                        // [c0, c1, c2, c3]
                         masm::Instruction::MovUp3,
                         masm::Instruction::MovUp3,
                     ],
@@ -1046,31 +1046,31 @@ impl OpEmitter<'_> {
         match &ty {
             Type::U128 | Type::I128 => {
                 self.push_immediate(imm, span);
-                // AND the high bits
+                // AND the low halves
                 //
-                // [b_hi_hi, b_hi_lo, b_lo_hi, b_lo_lo, a_hi_hi, ..]
+                // [b0, b1, b2, b3, a0, a1, a2, a3]
                 self.emit_all(
                     [
-                        // [a_hi_hi, a_hi_lo, b_hi_hi, b_hi_lo, ..]
+                        // [a0, a1, b0, b1, b2, b3, a2, a3]
                         masm::Instruction::MovUp5,
                         masm::Instruction::MovUp5,
                     ],
                     span,
                 );
-                self.band_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                // AND the low bits
+                self.band_int64(span); // [c0, c1, b2, b3, a2, a3]
+                // AND the high halves
                 self.emit_all(
                     [
-                        // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]
+                        // [b2, b3, a2, a3, c0, c1]
                         masm::Instruction::MovDn5,
                         masm::Instruction::MovDn5,
                     ],
                     span,
                 );
-                self.band_int64(span); // [band_lo_hi, band_lo_lo, band_hi_hi, band_hi_lo]
+                self.band_int64(span); // [c2, c3, c0, c1]
                 self.emit_all(
                     [
-                        // [band_hi_hi, band_hi_lo, band_lo_hi, band_lo_lo]
+                        // [c0, c1, c2, c3]
                         masm::Instruction::MovUp3,
                         masm::Instruction::MovUp3,
                     ],
@@ -1104,31 +1104,31 @@ impl OpEmitter<'_> {
         assert_eq!(ty, rhs.ty(), "expected bor operands to be the same type");
         match &ty {
             Type::U128 | Type::I128 => {
-                // OR the high bits
+                // OR the low halves
                 //
-                // [b_hi_hi, b_hi_lo, b_lo_hi, b_lo_lo, a_hi_hi, ..]
+                // [b0, b1, b2, b3, a0, a1, a2, a3]
                 self.emit_all(
                     [
-                        // [a_hi_hi, a_hi_lo, b_hi_hi, b_hi_lo, ..]
+                        // [a0, a1, b0, b1, b2, b3, a2, a3]
                         masm::Instruction::MovUp5,
                         masm::Instruction::MovUp5,
                     ],
                     span,
                 );
-                self.bor_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                // OR the low bits
+                self.bor_int64(span); // [c0, c1, b2, b3, a2, a3]
+                // OR the high halves
                 self.emit_all(
                     [
-                        // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]
+                        // [b2, b3, a2, a3, c0, c1]
                         masm::Instruction::MovDn5,
                         masm::Instruction::MovDn5,
                     ],
                     span,
                 );
-                self.bor_int64(span); // [band_lo_hi, band_lo_lo, band_hi_hi, band_hi_lo]
+                self.bor_int64(span); // [c2, c3, c0, c1]
                 self.emit_all(
                     [
-                        // [band_hi_hi, band_hi_lo, band_lo_hi, band_lo_lo]
+                        // [c0, c1, c2, c3]
                         masm::Instruction::MovUp3,
                         masm::Instruction::MovUp3,
                     ],
@@ -1156,31 +1156,31 @@ impl OpEmitter<'_> {
         match &ty {
             Type::U128 | Type::I128 => {
                 self.push_immediate(imm, span);
-                // OR the high bits
+                // OR the low halves
                 //
-                // [b_hi_hi, b_hi_lo, b_lo_hi, b_lo_lo, a_hi_hi, ..]
+                // [b0, b1, b2, b3, a0, a1, a2, a3]
                 self.emit_all(
                     [
-                        // [a_hi_hi, a_hi_lo, b_hi_hi, b_hi_lo, ..]
+                        // [a0, a1, b0, b1, b2, b3, a2, a3]
                         masm::Instruction::MovUp5,
                         masm::Instruction::MovUp5,
                     ],
                     span,
                 );
-                self.bor_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                // OR the low bits
+                self.bor_int64(span); // [c0, c1, b2, b3, a2, a3]
+                // OR the high halves
                 self.emit_all(
                     [
-                        // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]
+                        // [b2, b3, a2, a3, c0, c1]
                         masm::Instruction::MovDn5,
                         masm::Instruction::MovDn5,
                     ],
                     span,
                 );
-                self.bor_int64(span); // [band_lo_hi, band_lo_lo, band_hi_hi, band_hi_lo]
+                self.bor_int64(span); // [c2, c3, c0, c1]
                 self.emit_all(
                     [
-                        // [band_hi_hi, band_hi_lo, band_lo_hi, band_lo_lo]
+                        // [c0, c1, c2, c3]
                         masm::Instruction::MovUp3,
                         masm::Instruction::MovUp3,
                     ],
@@ -1214,31 +1214,31 @@ impl OpEmitter<'_> {
         assert_eq!(ty, rhs.ty(), "expected bxor operands to be the same type");
         match &ty {
             Type::U128 | Type::I128 => {
-                // XOR the high bits
+                // XOR the low halves
                 //
-                // [b_hi_hi, b_hi_lo, b_lo_hi, b_lo_lo, a_hi_hi, ..]
+                // [b0, b1, b2, b3, a0, a1, a2, a3]
                 self.emit_all(
                     [
-                        // [a_hi_hi, a_hi_lo, b_hi_hi, b_hi_lo, ..]
+                        // [a0, a1, b0, b1, b2, b3, a2, a3]
                         masm::Instruction::MovUp5,
                         masm::Instruction::MovUp5,
                     ],
                     span,
                 );
-                self.bxor_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                // XOR the low bits
+                self.bxor_int64(span); // [c0, c1, b2, b3, a2, a3]
+                // XOR the high halves
                 self.emit_all(
                     [
-                        // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]
+                        // [b2, b3, a2, a3, c0, c1]
                         masm::Instruction::MovDn5,
                         masm::Instruction::MovDn5,
                     ],
                     span,
                 );
-                self.bxor_int64(span); // [band_lo_hi, band_lo_lo, band_hi_hi, band_hi_lo]
+                self.bxor_int64(span); // [c2, c3, c0, c1]
                 self.emit_all(
                     [
-                        // [band_hi_hi, band_hi_lo, band_lo_hi, band_lo_lo]
+                        // [c0, c1, c2, c3]
                         masm::Instruction::MovUp3,
                         masm::Instruction::MovUp3,
                     ],
@@ -1268,31 +1268,31 @@ impl OpEmitter<'_> {
         match &ty {
             Type::U128 | Type::I128 => {
                 self.push_immediate(imm, span);
-                // XOR the high bits
+                // XOR the low halves
                 //
-                // [b_hi_hi, b_hi_lo, b_lo_hi, b_lo_lo, a_hi_hi, ..]
+                // [b0, b1, b2, b3, a0, a1, a2, a3]
                 self.emit_all(
                     [
-                        // [a_hi_hi, a_hi_lo, b_hi_hi, b_hi_lo, ..]
+                        // [a0, a1, b0, b1, b2, b3, a2, a3]
                         masm::Instruction::MovUp5,
                         masm::Instruction::MovUp5,
                     ],
                     span,
                 );
-                self.bxor_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                // XOR the low bits
+                self.bxor_int64(span); // [c0, c1, b2, b3, a2, a3]
+                // XOR the high halves
                 self.emit_all(
                     [
-                        // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]
+                        // [b2, b3, a2, a3, c0, c1]
                         masm::Instruction::MovDn5,
                         masm::Instruction::MovDn5,
                     ],
                     span,
                 );
-                self.bxor_int64(span); // [band_lo_hi, band_lo_lo, band_hi_hi, band_hi_lo]
+                self.bxor_int64(span); // [c2, c3, c0, c1]
                 self.emit_all(
                     [
-                        // [band_hi_hi, band_hi_lo, band_lo_hi, band_lo_lo]
+                        // [c0, c1, c2, c3]
                         masm::Instruction::MovUp3,
                         masm::Instruction::MovUp3,
                     ],
