@@ -70,8 +70,12 @@ pub fn counter_note_basic_auth_increments_storage() {
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
     // 9065 before codegen lowered a cast that changes only a value's type by renaming its
     // operand where it stands (40 cycles fewer) and a peephole deleted adjacent stack operations
-    // that undo each other, such as `swap.1 swap.1` (119 fewer).
-    expect!["8906"].assert_eq(single_note_cycles(&tx_measurements));
+    // that undo each other, such as `swap.1 swap.1` (119 fewer). 40 fewer (8906 before) with no
+    // `u32assert` on a constant-address 32-bit store: one fewer per 32-bit global initializer, in
+    // the `init` that every call into a component runs. The note runs its own `init` once and the
+    // counter contract's on each of its three calls into it; each stores three such globals and
+    // is 10 cycles shorter (9 for the assertions, 1 for an op batch its stores no longer fill).
+    expect!["8866"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed (incremented by 1).
     assert_counter_storage(

@@ -158,3 +158,176 @@ fn global_u64_initializer_stores_a_felt_pair_intact() {
     )
     .unwrap();
 }
+
+/// A `u32` global initialized from a felt that does not fit in 32 bits holds it intact.
+///
+/// The initializer stores the value at the global's constant address, which moves the element as
+/// it is, as a store to a dynamic address does: there is no `u32` range check to trap on. The
+/// entrypoint loads the global, from its address on the operand stack, and returns it as a felt.
+#[test]
+fn global_u32_initializer_stores_a_felt_intact() {
+    setup::enable_compiler_instrumentation();
+
+    let value = Felt::new_unchecked(u64::MAX - u64::from(u32::MAX));
+
+    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
+    let link_output = setup::build_empty_component_for_test(context.clone());
+
+    let module = {
+        let mut component_builder =
+            midenc_hir::dialects::builtin::ComponentBuilder::new(link_output.component.unwrap());
+        component_builder
+            .define_module(midenc_hir::Ident::with_empty_span("test".into()))
+            .unwrap()
+    };
+
+    // A u32 global whose initializer reinterprets the felt as a `u32`.
+    let mut gv = {
+        let mut module_builder = midenc_hir::dialects::builtin::ModuleBuilder::new(module);
+        module_builder
+            .define_global_variable(
+                midenc_hir::Ident::with_empty_span("gv_felt".into()),
+                midenc_hir::Visibility::Private,
+                Type::U32,
+            )
+            .unwrap()
+    };
+    {
+        let init_region_ref = {
+            let mut global_var = gv.borrow_mut();
+            global_var.initializer_mut().as_region_ref()
+        };
+        let span = SourceSpan::default();
+        let mut op_builder = midenc_hir::OpBuilder::new(context.clone());
+        op_builder.create_block(init_region_ref, None, &[]);
+        let value = op_builder.felt(value, span);
+        let value = op_builder.bitcast(value, Type::U32, span).unwrap();
+        op_builder.ret(Some(value), span).unwrap();
+    }
+
+    // Entrypoint: load the global and return it as a felt.
+    let signature = Signature::new(&context, [], [Type::Felt]);
+    let function = {
+        let mut module_builder = midenc_hir::dialects::builtin::ModuleBuilder::new(module);
+        module_builder
+            .define_function(
+                midenc_hir::Ident::with_empty_span("main".into()),
+                midenc_hir::Visibility::Public,
+                signature.clone(),
+            )
+            .unwrap()
+    };
+    {
+        let span = SourceSpan::default();
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let mut builder =
+            midenc_hir::dialects::builtin::FunctionBuilder::new(function, &mut builder);
+        let loaded = builder.load_global(gv, span).unwrap();
+        let loaded = builder.bitcast(loaded, Type::Felt, span).unwrap();
+        builder.ret(Some(loaded), span).unwrap();
+    }
+
+    eval_miden_component::<Felt, _, _>(
+        link_output,
+        std::iter::empty::<Initializer<'_>>(),
+        &[],
+        context.session(),
+        |trace| {
+            assert_eq!(trace.outputs().get_num_elements(1), [value]);
+            Ok(())
+        },
+    )
+    .unwrap();
+}
+
+/// A `u128` global initialized from four felts that do not fit in 32 bits holds them intact.
+///
+/// The global is word-aligned, so the initializer stores the value at its constant address with
+/// one word store, which moves the four elements as they are, as a store to a dynamic address
+/// does: there is no `u32` range check to trap on. The entrypoint loads the global, from its
+/// address on the operand stack, and returns its four limbs.
+#[test]
+fn global_u128_initializer_stores_four_felts_intact() {
+    setup::enable_compiler_instrumentation();
+
+    // Least significant first
+    let limbs = [
+        Felt::new_unchecked(u64::MAX - u64::from(u32::MAX)),
+        Felt::new_unchecked(1 << 40),
+        Felt::new_unchecked((1 << 33) + 1),
+        Felt::new_unchecked(1 << 63),
+    ];
+
+    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
+    let link_output = setup::build_empty_component_for_test(context.clone());
+
+    let module = {
+        let mut component_builder =
+            midenc_hir::dialects::builtin::ComponentBuilder::new(link_output.component.unwrap());
+        component_builder
+            .define_module(midenc_hir::Ident::with_empty_span("test".into()))
+            .unwrap()
+    };
+
+    // A u128 global whose initializer joins the four felts as its limbs.
+    let mut gv = {
+        let mut module_builder = midenc_hir::dialects::builtin::ModuleBuilder::new(module);
+        module_builder
+            .define_global_variable(
+                midenc_hir::Ident::with_empty_span("gv_felt_quad".into()),
+                midenc_hir::Visibility::Private,
+                Type::U128,
+            )
+            .unwrap()
+    };
+    {
+        let init_region_ref = {
+            let mut global_var = gv.borrow_mut();
+            global_var.initializer_mut().as_region_ref()
+        };
+        let span = SourceSpan::default();
+        let mut op_builder = midenc_hir::OpBuilder::new(context.clone());
+        op_builder.create_block(init_region_ref, None, &[]);
+        // `arith.join` takes the most significant limb first
+        let x3 = op_builder.felt(limbs[3], span);
+        let x2 = op_builder.felt(limbs[2], span);
+        let x1 = op_builder.felt(limbs[1], span);
+        let x0 = op_builder.felt(limbs[0], span);
+        let quad = op_builder.join4([x3, x2, x1, x0], Type::U128, span).unwrap();
+        op_builder.ret(Some(quad), span).unwrap();
+    }
+
+    // Entrypoint: load the global and return its limbs, the least significant one on top.
+    let signature = Signature::new(&context, [], [Type::Felt, Type::Felt, Type::Felt, Type::Felt]);
+    let function = {
+        let mut module_builder = midenc_hir::dialects::builtin::ModuleBuilder::new(module);
+        module_builder
+            .define_function(
+                midenc_hir::Ident::with_empty_span("main".into()),
+                midenc_hir::Visibility::Public,
+                signature.clone(),
+            )
+            .unwrap()
+    };
+    {
+        let span = SourceSpan::default();
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let mut builder =
+            midenc_hir::dialects::builtin::FunctionBuilder::new(function, &mut builder);
+        let loaded = builder.load_global(gv, span).unwrap();
+        let [x3, x2, x1, x0] = builder.split4(loaded, Type::Felt, span).unwrap();
+        builder.ret([x0, x1, x2, x3], span).unwrap();
+    }
+
+    eval_miden_component::<Felt, _, _>(
+        link_output,
+        std::iter::empty::<Initializer<'_>>(),
+        &[],
+        context.session(),
+        |trace| {
+            assert_eq!(trace.outputs().get_num_elements(4), limbs);
+            Ok(())
+        },
+    )
+    .unwrap();
+}

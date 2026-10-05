@@ -12,7 +12,10 @@ fn basic_wallet_and_p2id() {
     // each felt newtype per call; 8895 since `Tag`, `NoteIdx` and `NoteType` wrap the manifest's
     // integers and those checks are gone; 8882 since codegen lowers a cast that changes only a
     // value's type by renaming its operand where it stands (6 bytes) and a peephole deletes
-    // adjacent stack operations that undo each other, such as `swap.1 swap.1` (7 bytes).
+    // adjacent stack operations that undo each other, such as `swap.1 swap.1` (7 bytes); 8844
+    // with no `u32assert` on a constant-address 32-bit store, one fewer per 32-bit global
+    // initializer: the wallet's `init` stores three such globals, 11 bytes per assertion and 5
+    // for an op batch its stores no longer fill (38 bytes fewer).
     //
     // The 390 bytes over the hand bindings at 8895: `output_note::create` converts the
     // `NoteType` to the protocol's `u8` enum (a `u32lt` and a branch to a trap for anything but
@@ -20,7 +23,7 @@ fn basic_wallet_and_p2id() {
     // to their declared types (`push.255 u32and`, `push.65535 u32and`); and — new with the
     // integer newtypes — the component masks the `u8` note type and the `u16` note index as it
     // lifts them from its arguments, where it lifted felts before.
-    expect!["8882"].assert_eq(stripped_mast_size_str(&account_package).as_str());
+    expect!["8844"].assert_eq(stripped_mast_size_str(&account_package).as_str());
 
     let tx_script_package = compile_project(Path::new("../../examples/basic-wallet-tx-script"));
     assert!(tx_script_package.is_library(), "expected library");
@@ -58,7 +61,11 @@ fn basic_wallet_and_p2id() {
     // rename test `a_transparent_inttoptr_moves_nothing` in `midenc-codegen-masm` reduces to
     // nothing; the script's MASM was not inspected), and a peephole deletes adjacent stack
     // operations that undo each other (50 bytes).
-    expect!["15259"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
+    //
+    // 21 bytes fewer (15259 before) with no `u32assert` on a constant-address 32-bit store: one
+    // fewer per 32-bit global initializer. The script's `init` stores two such globals, 11 bytes
+    // per assertion, less a padding `noop` its shorter block needs.
+    expect!["15238"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
 
     let note_package = compile_project(Path::new("../../examples/p2id-note"));
     assert!(note_package.is_library(), "expected library");
@@ -79,7 +86,11 @@ fn basic_wallet_and_p2id() {
     // 109 bytes fewer (20545 before) since codegen lowers a cast that changes only a value's
     // type by renaming its operand where it stands (32 bytes) and a peephole deletes adjacent
     // stack operations that undo each other, such as `swap.1 swap.1` (77 bytes).
-    expect!["20436"].assert_eq(stripped_mast_size_str(&note_package).as_str());
+    //
+    // 46 bytes fewer (20436 before) with no `u32assert` on a constant-address 32-bit store: one
+    // fewer per 32-bit global initializer. The note's `init` stores four such globals, 11 bytes
+    // per assertion and 2 padding `noop`s its shorter block no longer needs.
+    expect!["20390"].assert_eq(stripped_mast_size_str(&note_package).as_str());
     // The note package exports both the note script and the `build-recipient` constructor; the
     // constructor must not interfere with the `@note_script`-attributed export selection.
     assert!(
@@ -93,6 +104,8 @@ fn basic_wallet_and_p2id() {
     assert!(p2ide_package.is_library(), "expected library");
     // 16436 before codegen lowered a cast that changes only a value's type by renaming its
     // operand where it stands (11 bytes fewer) and a peephole deleted adjacent stack operations
-    // that undo each other, such as `swap.1 swap.1` (51 bytes fewer).
-    expect!["16374"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
+    // that undo each other, such as `swap.1 swap.1` (51 bytes fewer). 16374 before the
+    // `u32assert` on a constant-address 32-bit store went, one fewer per 32-bit global
+    // initializer: 46 bytes fewer, as for the P2ID note above.
+    expect!["16328"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
 }

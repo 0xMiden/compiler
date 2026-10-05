@@ -2661,4 +2661,91 @@ mod tests {
             "#]],
         );
     }
+
+    /// A 32-bit load from an aligned constant address moves the element as it is, as the dynamic
+    /// `load_sw` does: `[] => [m[a]]`.
+    #[test]
+    fn an_aligned_32_bit_load_from_a_constant_address_moves_the_element_unchecked() {
+        assert_emits(
+            &[],
+            |emitter| emitter.load_imm(128, Type::U32, SourceSpan::UNKNOWN),
+            expect![[r#"
+                mem_load.32
+            "#]],
+        );
+    }
+
+    /// A 32-bit store to an aligned constant address moves the element as it is, as the dynamic
+    /// `store_sw` does.
+    #[test]
+    fn an_aligned_32_bit_store_to_a_constant_address_moves_the_element_unchecked() {
+        assert_emits(
+            &[Type::U32],
+            |emitter| emitter.store_imm(128, SourceSpan::UNKNOWN),
+            expect![[r#"
+                mem_store.32
+            "#]],
+        );
+    }
+
+    /// A 128-bit load from a word-aligned constant address moves the four elements as they are, as
+    /// the dynamic `load_qw` does: `[] => [m[a], m[a + 1], m[a + 2], m[a + 3]]`.
+    #[test]
+    fn a_word_aligned_128_bit_load_from_a_constant_address_moves_the_elements_unchecked() {
+        assert_emits(
+            &[],
+            |emitter| emitter.load_imm(128, Type::U128, SourceSpan::UNKNOWN),
+            expect![[r#"
+                padw
+                mem_loadw_le.32
+            "#]],
+        );
+    }
+
+    /// A 128-bit load from a constant address that is element-aligned but not word-aligned moves
+    /// the four elements as they are, as the dynamic `load_qw` does: `[] => [m[a], .., m[a + 3]]`.
+    #[test]
+    fn an_element_aligned_128_bit_load_from_a_constant_address_moves_the_elements_unchecked() {
+        assert_emits(
+            &[],
+            |emitter| emitter.load_imm(132, Type::U128, SourceSpan::UNKNOWN),
+            expect![[r#"
+                mem_load.36
+                mem_load.35
+                mem_load.34
+                mem_load.33
+            "#]],
+        );
+    }
+
+    /// A 128-bit store to a word-aligned constant address moves the four elements as they are, as
+    /// the dynamic `store_qw` does: the limb on top to the lowest address.
+    #[test]
+    fn a_word_aligned_128_bit_store_to_a_constant_address_moves_the_elements_unchecked() {
+        assert_emits(
+            &[Type::U128],
+            |emitter| emitter.store_imm(128, SourceSpan::UNKNOWN),
+            expect![[r#"
+                mem_storew_le.32
+                dropw
+            "#]],
+        );
+    }
+
+    /// A 128-bit store to a constant address that is element-aligned but not word-aligned moves
+    /// the four elements as they are, as the dynamic `store_qw` does: the limb on top to the lowest
+    /// address.
+    #[test]
+    fn an_element_aligned_128_bit_store_to_a_constant_address_moves_the_elements_unchecked() {
+        assert_emits(
+            &[Type::U128],
+            |emitter| emitter.store_imm(132, SourceSpan::UNKNOWN),
+            expect![[r#"
+                mem_store.33
+                mem_store.34
+                mem_store.35
+                mem_store.36
+            "#]],
+        );
+    }
 }

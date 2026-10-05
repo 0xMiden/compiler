@@ -202,7 +202,14 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
     // type by renaming its operand where it stands (32 cycles, against the 2 the stub's redundant
     // `swap.1 swap.1` above cost), and a peephole deletes adjacent stack operations that undo
     // each other (114 cycles).
-    expect!["9170"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    //
+    // 44 cycles fewer (9170 before) with no `u32assert` on a constant-address 32-bit store: one
+    // fewer per 32-bit global initializer, in the `init` that every call into a component runs.
+    // The script's own `init` stores three such globals (10 cycles: 9 for the assertions, 1 for
+    // an op batch its stores no longer fill), the `p2id` constructor's four (14 cycles: 12, and 2
+    // for padding `noop`s), and the wallet's three, once for each of `create_note` and
+    // `move_asset_to_note` (10 cycles each).
+    expect!["9126"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
@@ -215,8 +222,11 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
     let tx_measurements = execute_tx_measurements(&mut chain, consume_tx);
     // 5018 before codegen lowered a cast that changes only a value's type by renaming its
     // operand where it stands (14 cycles fewer) and a peephole deleted adjacent stack operations
-    // that undo each other, such as `swap.1 swap.1` (50 fewer).
-    expect!["4954"].assert_eq(single_note_cycles(&tx_measurements));
+    // that undo each other, such as `swap.1 swap.1` (50 fewer). 4954 before the `u32assert` on a
+    // constant-address 32-bit store went, one fewer per 32-bit global initializer: the P2ID
+    // note's `init` stores four such globals (14 cycles) and the wallet's three (10 cycles, run
+    // once for `receive_asset`).
+    expect!["4930"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();

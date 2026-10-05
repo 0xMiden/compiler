@@ -314,10 +314,8 @@ impl OpEmitter<'_> {
     /// Loads a single 32-bit machine word from the given immediate address.
     fn load_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
         if ptr.is_element_aligned() {
-            self.emit_all(
-                [masm::Instruction::MemLoadImm(ptr.addr.into()), masm::Instruction::U32Assert],
-                span,
-            );
+            // The element is loaded as it is, without a range check, as `load_sw` does
+            self.emit(masm::Instruction::MemLoadImm(ptr.addr.into()), span);
         } else {
             // Delegate to load_sw intrinsic to handle the details of unaligned loads
             self.push_native_ptr(ptr, span);
@@ -459,14 +457,14 @@ impl OpEmitter<'_> {
     }
 
     fn load_quad_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
-        // For all other cases, more complicated loads are required
+        // When aligned, the elements are loaded as they are, without a range check, as `load_qw`
+        // does
         if ptr.is_word_aligned() {
             self.emit_all(
                 [
                     // [w0, w1, w2, w3]
                     masm::Instruction::PadW,
                     masm::Instruction::MemLoadWLeImm(ptr.addr.into()),
-                    masm::Instruction::U32AssertW,
                 ],
                 span,
             );
@@ -477,7 +475,6 @@ impl OpEmitter<'_> {
                     masm::Instruction::MemLoadImm((ptr.addr + 2).into()),
                     masm::Instruction::MemLoadImm((ptr.addr + 1).into()),
                     masm::Instruction::MemLoadImm(ptr.addr.into()),
-                    masm::Instruction::U32AssertW,
                 ],
                 span,
             );
@@ -1254,11 +1251,12 @@ impl OpEmitter<'_> {
     }
 
     fn store_quad_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
+        // When aligned, the elements are stored as they are, without a range check, as `store_qw`
+        // does
         if ptr.is_word_aligned() {
             self.emit_all(
                 [
                     // Stack: [a, b, c, d]
-                    masm::Instruction::U32AssertW,
                     // Write to heap
                     masm::Instruction::MemStoreWLeImm(ptr.addr.into()),
                     masm::Instruction::DropW,
@@ -1268,7 +1266,6 @@ impl OpEmitter<'_> {
         } else if ptr.is_element_aligned() {
             self.emit_all(
                 [
-                    masm::Instruction::U32AssertW,
                     masm::Instruction::MemStoreImm(ptr.addr.into()),
                     masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
                     masm::Instruction::MemStoreImm((ptr.addr + 2).into()),
@@ -1335,10 +1332,8 @@ impl OpEmitter<'_> {
     /// Stores a single 32-bit machine word to the given immediate address.
     fn store_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
         if ptr.is_element_aligned() {
-            self.emit_all(
-                [masm::Instruction::U32Assert, masm::Instruction::MemStoreImm(ptr.addr.into())],
-                span,
-            );
+            // The element is stored as it is, without a range check, as `store_sw` does
+            self.emit(masm::Instruction::MemStoreImm(ptr.addr.into()), span);
         } else {
             // Delegate to `store_sw` to handle unaligned stores
             self.push_native_ptr(ptr, span);

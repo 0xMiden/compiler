@@ -320,7 +320,15 @@ fn batch_kernel() {
     // stack operations that undo each other (`swap.n swap.n`, `movup.n movdn.n`,
     // `movdn.n movup.n`, `push.x drop`, `dup.n drop`) wherever operand scheduling leaves them
     // (469 bytes). The cycle counts below fell with both.
-    expect!["115765"].assert_eq(&stripped_mast_size_str(&package));
+    //
+    // 47 bytes fewer (115765 before) with no `u32assert` on a constant-address 32-bit store: one
+    // fewer per 32-bit global initializer. The kernel's `init` stores two such globals, and the
+    // size fits its block being in the forest twice, as the `init` procedure and merged into
+    // `main`'s first block (the assembler inlines a procedure that is one small basic block; the
+    // kernel's MAST was not inspected): 11 bytes per assertion in each copy, and 3 padding
+    // `noop`s `init`'s copy no longer needs. The cycle counts below fell by the 6 cycles of the
+    // two assertions, which `main` runs once.
+    expect!["115718"].assert_eq(&stripped_mast_size_str(&package));
 
     // The reference block commitment is dropped by the kernel (verification is still a TODO
     // there), so any word will do.
@@ -376,9 +384,10 @@ fn batch_kernel() {
         // The VM cycles consumed by the kernel for this two-transaction batch (32570 before the
         // generated core bindings, 33292 with the first ones, 32919 before the transitional table
         // was deleted, 32942 before store merging was turned off, 32483 before casts became
-        // renames and the stack peephole was added, 302 and 649 cycles of the 951; see the size
-        // above).
-        expect!["31532"].assert_eq(&cycles.to_string());
+        // renames and the stack peephole was added, 302 and 649 cycles of the 951; 31532 before
+        // the `u32assert` on a constant-address 32-bit store went, one fewer per 32-bit global
+        // initializer; see the size above).
+        expect!["31526"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -432,8 +441,9 @@ fn batch_kernel() {
         // The VM cycles consumed for a batch that erases a note (28683 before the generated core
         // bindings, 29365 with the first ones, 29034 before the transitional table was deleted,
         // 29055 before store merging was turned off, 28596 before casts became renames and the
-        // stack peephole was added, 267 and 585 cycles of the 852).
-        expect!["27744"].assert_eq(&cycles.to_string());
+        // stack peephole was added, 267 and 585 cycles of the 852, 27744 before the `u32assert`
+        // on a constant-address 32-bit store went, one fewer per 32-bit global initializer).
+        expect!["27738"].assert_eq(&cycles.to_string());
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");
@@ -479,8 +489,9 @@ fn batch_kernel() {
         // call. 1121 before the transitional table was deleted: the trap comes after the
         // `pipe_preimage_to_memory` stub's two extra operations (see the size above). 1123
         // before casts became renames and the stack peephole was added, which took 7 and 8 cycles
-        // off the path to the trap.
-        expect!["1108"].assert_eq(&cycles.to_string());
+        // off the path to the trap. 1108 before the `u32assert` on a constant-address 32-bit store
+        // went, one fewer per 32-bit global initializer: `init` runs before the trap.
+        expect!["1102"].assert_eq(&cycles.to_string());
     }
 
     // Scenario 4: tx1 consumes a note that only tx2 creates; the consume-before-create ordering
@@ -517,8 +528,9 @@ fn batch_kernel() {
         // before the generated core bindings, 16362 with the first ones, 16140 before the
         // transitional table was deleted, 16157 before store merging was turned off, 15698
         // before casts became renames and the stack peephole was added, 158 and 311 cycles of
-        // the 469).
-        expect!["15229"].assert_eq(&cycles.to_string());
+        // the 469, 15229 before the `u32assert` on a constant-address 32-bit store went, one
+        // fewer per 32-bit global initializer).
+        expect!["15223"].assert_eq(&cycles.to_string());
     }
 }
 
