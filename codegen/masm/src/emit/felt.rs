@@ -47,12 +47,16 @@ impl OpEmitter<'_> {
     ///
     /// # Stack effects
     ///
-    /// `[a, ..] => [0, 0, a_hi, a_lo]`
+    /// `[a, ..] => [a_lo, a_hi, 0, 0]`
     #[inline]
     pub fn felt_to_i128(&mut self, span: SourceSpan) {
+        // [a_lo, a_hi]
         self.emit(masm::Instruction::U32Split, span);
+        // [0, 0, a_lo, a_hi]
         self.emit_push(ZERO, span);
         self.emit_push(ZERO, span);
+        // Move the limbs of `a` back above the most significant limbs: [a_lo, a_hi, 0, 0]
+        self.emit_all([masm::Instruction::MovUp3, masm::Instruction::MovUp3], span);
     }
 
     /// Convert a field element to u64 by zero-extension.
@@ -61,7 +65,7 @@ impl OpEmitter<'_> {
     ///
     /// # Stack effects
     ///
-    /// `[a, ..] => [a_hi, a_lo]`
+    /// `[a, ..] => [a_lo, a_hi]`
     #[inline(always)]
     pub fn felt_to_u64(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32Split, span);
@@ -75,7 +79,7 @@ impl OpEmitter<'_> {
     ///
     /// # Stack effects
     ///
-    /// `[a, ..] => [a_hi, a_lo]`
+    /// `[a, ..] => [a_lo, a_hi]`
     #[inline(always)]
     pub fn felt_to_i64(&mut self, span: SourceSpan) {
         self.felt_to_u64(span);

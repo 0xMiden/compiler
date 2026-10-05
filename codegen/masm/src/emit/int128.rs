@@ -1,50 +1,57 @@
+//! A 128-bit integer is four 32-bit limbs on the operand stack, in little-endian order: the least
+//! significant limb is on top, `[x0, x1, x2, x3]`, for the value `x0 + x1 * 2^32 + x2 * 2^64 +
+//! x3 * 2^96`. This is the layout of `u128` in the core library (`::miden::core::math::u128`).
+//!
+//! Each half is laid out as a 64-bit integer is, `[lo, hi]`: the low half `[x0, x1]` is on top of
+//! the high half `[x2, x3]`.
+
+use miden_core::Felt;
 use midenc_hir::{Overflow, SourceSpan};
 
-use super::{OpEmitter, masm};
+use super::{OpEmitter, int32::SIGN_BIT, masm};
 
 #[allow(unused)]
 impl OpEmitter<'_> {
-    /// Checks if the i128 value on the stack has its sign bit set.
+    /// Checks if the i128 value on the stack has its sign bit set, the most significant bit of
+    /// `x3`.
+    ///
+    /// The value IS NOT consumed: `[x0, x1, x2, x3] => [is_signed, x0, x1, x2, x3]`
     #[inline(always)]
     pub fn is_signed_int128(&mut self, span: SourceSpan) {
-        self.is_signed_int32(span)
+        self.emit(masm::Instruction::Dup3, span);
+        self.const_mask_u32(SIGN_BIT, span);
+        self.emit(masm::Instruction::EqImm(Felt::new_unchecked(SIGN_BIT as u64).into()), span);
     }
 
     /// Assert that the i128 value on the stack does not have its sign bit set.
+    ///
+    /// The value IS NOT consumed.
     #[inline(always)]
     pub fn assert_unsigned_int128(&mut self, span: SourceSpan) {
-        // Assert that the sign bit is unset
-        self.assert_unsigned_int32(span)
+        self.is_signed_int128(span);
+        self.emit(
+            Self::assertz_with_message_inst("expected a non-negative i128 value", span),
+            span,
+        );
     }
 
     /// Push a u128 value on the operand stack
     ///
-    /// An u128 value consists of 4 32-bit limbs
+    /// An u128 value consists of 4 32-bit limbs; the high half is pushed first, so that the least
+    /// significant limb ends up on top.
     pub fn push_u128(&mut self, value: u128, span: SourceSpan) {
-        let bytes = value.to_le_bytes();
-        let hi = u64::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        ]);
-        let lo = u64::from_le_bytes([
-            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
-        ]);
-        self.push_u64(lo, span);
+        let lo = value as u64;
+        let hi = (value >> 64) as u64;
         self.push_u64(hi, span);
+        self.push_u64(lo, span);
     }
 
     /// Push an i128 value on the operand stack
     ///
     /// An i128 value consists of 4 32-bit limbs
+    #[inline(always)]
     pub fn push_i128(&mut self, value: i128, span: SourceSpan) {
-        let bytes = value.to_le_bytes();
-        let hi = u64::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        ]);
-        let lo = u64::from_le_bytes([
-            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
-        ]);
-        self.push_u64(lo, span);
-        self.push_u64(hi, span);
+        self.push_u128(value as u128, span);
     }
 
     /// Convert an i128 value to a field element value.
@@ -74,13 +81,13 @@ impl OpEmitter<'_> {
     /// NOTE: This function does not validate the i128, the caller is expected to
     /// have already validated that the top of the stack holds a valid i128.
     pub fn int128_to_u64(&mut self, span: SourceSpan) {
-        // Assert the first two limbs are equal to 0
+        // Assert the two most significant limbs are equal to 0
         //
         // What remains on the stack at this point are the low 64-bits,
-        // which is also our result.
-        self.emit_n(
-            2,
-            Self::assertz_with_message_inst("128-bit value does not fit in u64", span),
+        // which is also our result: `[x0, x1, x2, x3] => [x0, x1]`
+        let assertz = Self::assertz_with_message_inst("128-bit value does not fit in u64", span);
+        self.emit_all(
+            [masm::Instruction::MovUp3, assertz.clone(), masm::Instruction::MovUp2, assertz],
             span,
         );
     }
@@ -95,10 +102,11 @@ impl OpEmitter<'_> {
     /// NOTE: This function does not validate the i128, the caller is expected to
     /// have already validated that the top of the stack holds a valid i128.
     pub fn int128_to_u32(&mut self, span: SourceSpan) {
-        // Assert the first three limbs are equal to 0
+        // Move the least significant limb below the three others, and assert they are equal to 0
         //
         // What remains on the stack at this point are the low 32-bits,
-        // which is also our result.
+        // which is also our result: `[x0, x1, x2, x3] => [x0]`
+        self.emit(masm::Instruction::MovDn3, span);
         self.emit_n(
             3,
             Self::assertz_with_message_inst("128-bit value does not fit in u32", span),
@@ -116,7 +124,7 @@ impl OpEmitter<'_> {
     /// NOTE: This function does not validate the i128, the caller is expected to
     /// have already validated that the top of the stack holds a valid i128.
     pub fn u128_to_i64(&mut self, span: SourceSpan) {
-        // Truncate the first 64-bits, so long as those bits are zero
+        // Drop the most significant 64 bits, so long as those bits are zero
         self.int128_to_u64(span);
         // Ensure that the remaining 64 bits are a valid non-negative i64 value
         self.assert_unsigned_int64(span);
@@ -132,40 +140,30 @@ impl OpEmitter<'_> {
     /// NOTE: This function does not validate the i128, the caller is expected to
     /// have already validated that the top of the stack holds a valid i128.
     pub fn i128_to_i64(&mut self, span: SourceSpan) {
-        // Determine if this value is signed or not
-        self.is_signed_int32(span);
-        // Preserving the is_signed flag, select the expected hi bits value
-        self.emit(masm::Instruction::Dup0, span);
+        // The value fits in an i64 if its most significant 64 bits extend the sign of the low
+        // half, the most significant bit of `x1`: both high limbs are all ones if it is set, and
+        // all zeros if it is not.
+        //
+        // [x1, x0, x1, x2, x3]
+        self.emit(masm::Instruction::Dup1, span);
+        // [is_signed, x0, x1, x2, x3]
+        self.const_mask_u32(SIGN_BIT, span);
+        self.emit(masm::Instruction::EqImm(Felt::new_unchecked(SIGN_BIT as u64).into()), span);
+        // Select the expected value of each high limb based on the is_signed flag
+        //
+        // [expected, x0, x1, x2, x3]
         self.select_int32(u32::MAX, 0, span);
-        // Move the most significant 64 bits to top of stack
-        self.move_int64_up(2, span);
-        // Move expected value to top of stack
-        self.emit(masm::Instruction::MovUp2, span);
-        // Assert the most significant 32 bits match, without consuming them
-        self.assert_eq_u32(span);
         self.emit_all(
             [
-                // Assert that both 32-bit limbs of the most significant 64 bits match,
-                // consuming them in the process
+                // [x2, expected, x0, x1, x3]
+                masm::Instruction::MovUp3,
+                // [expected, x2, expected, x0, x1, x3]
+                masm::Instruction::Dup1,
+                // [expected, x0, x1, x3]
                 Self::assert_eq_with_message_inst("128-bit value does not fit in i64", span),
-                // At this point, the stack is: [is_signed, x1, x0]
-                //
-                // Select an expected value for the sign bit based on the is_signed flag
-                masm::Instruction::Swap1,
-            ],
-            span,
-        );
-        // [is_sign_bit_set, x1, is_signed, x0]
-        self.is_const_flag_set_u32(1 << 31, span);
-        self.emit_all(
-            [
-                // [is_signed, is_sign_bit_set, x1, x0]
-                masm::Instruction::MovUp2,
-                // Assert that the flags are equal: either the input was signed and the
-                // sign bit was set, or the input was unsigned, and the sign bit was unset,
-                // any other combination will trap.
-                //
-                // [x1, x0]
+                // [x3, expected, x0, x1]
+                masm::Instruction::MovUp3,
+                // [x0, x1]
                 Self::assert_eq_with_message_inst("128-bit value does not fit in i64", span),
             ],
             span,
@@ -179,7 +177,8 @@ impl OpEmitter<'_> {
     /// NOTE: This function does not validate the i128, that is left up to the caller.
     #[inline]
     pub fn trunc_i128_to_felt(&mut self, span: SourceSpan) {
-        self.emit_n(2, masm::Instruction::Drop, span);
+        // Drop the most significant 64 bits, then truncate the low half
+        self.trunc_i128(64, span);
         self.trunc_int64_to_felt(span);
     }
 
@@ -195,14 +194,27 @@ impl OpEmitter<'_> {
     pub fn trunc_i128(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 1, 64);
         match n {
+            // Drop the two most significant limbs: `[x0, x1, x2, x3] => [x0, x1]`
             64 => {
-                self.emit_n(2, masm::Instruction::Drop, span);
+                self.emit_all(
+                    [
+                        masm::Instruction::MovUp3,
+                        masm::Instruction::Drop,
+                        masm::Instruction::MovUp2,
+                        masm::Instruction::Drop,
+                    ],
+                    span,
+                );
             }
-            32 => {
-                self.emit_n(3, masm::Instruction::Drop, span);
-            }
+            // Move the least significant limb below the three others, and drop them:
+            // `[x0, x1, x2, x3] => [x0]`
             n => {
-                self.trunc_int32(n, span);
+                self.emit(masm::Instruction::MovDn3, span);
+                self.emit_n(3, masm::Instruction::Drop, span);
+                match n {
+                    32 => (),
+                    n => self.trunc_int32(n, span),
+                }
             }
         }
     }
@@ -234,6 +246,9 @@ impl OpEmitter<'_> {
 
     /// Pop two i128 values off the stack, `b` and `a`, and place the result of  `a + b` on the
     /// stack.
+    ///
+    /// The core library takes its operands in this order, `b` on top: `[b0, b1, b2, b3, a0, a1,
+    /// a2, a3]`.
     ///
     /// For now we're only supporting wrapping add for signed values.
     #[inline]

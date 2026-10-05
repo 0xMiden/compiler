@@ -70,6 +70,9 @@ impl OpEmitter<'_> {
     pub fn i64_to_int(&mut self, n: u32, span: SourceSpan) {
         self.emit_all(
             [
+                // i64 values are represented as `[x_lo, x_hi]`, so bring `x_hi` to the top
+                // [x_hi, x_lo]
+                masm::Instruction::Swap1,
                 // Assert hi bits are all zero or all one
                 // [x_hi, x_hi, x_lo]
                 masm::Instruction::Dup0,
@@ -97,25 +100,24 @@ impl OpEmitter<'_> {
             ],
             span,
         );
-        // Select mask for remaining sign bits
+        // Select the expected value of the remaining sign bits
         //
-        // The mask should cover the u64 bits which must be set to 1 if
-        // the value is in range for the N-bit integer type. If the value
-        // is unsigned, the mask should be zero, so that comparing the
-        // mask for equality succeeds in that case
+        // The sign bits are the bits of `x_lo` from bit N-1 up. For the value
+        // to be in range for the N-bit integer type, they must all be set if
+        // the value is negative, and all be zero if it is unsigned.
         //
         // The value bits are all of the non-sign bits, so for an N-bit
         // integer, there are N-1 such bits.
         let value_bits = (2u64.pow(n - 1) - 1) as u32;
         // [sign_bits, is_unsigned, x_lo]
         self.const_mask_u32(!value_bits, span);
-        // [sign_bits, sign_bits, ..]
-        self.emit(masm::Instruction::Dup0, span);
-        // [0, sign_bits, sign_bits, is_unsigned, x_lo]
+        // [!value_bits, sign_bits, is_unsigned, x_lo]
+        self.emit_push(!value_bits, span);
+        // [0, !value_bits, sign_bits, is_unsigned, x_lo]
         self.emit_push(0u32, span);
         self.emit_all(
             [
-                // [is_unsigned, 0, sign_bits, sign_bits, x_lo]
+                // [is_unsigned, 0, !value_bits, sign_bits, x_lo]
                 masm::Instruction::MovUp3,
                 // [expected_sign_bits, sign_bits, x_lo]
                 masm::Instruction::CDrop,

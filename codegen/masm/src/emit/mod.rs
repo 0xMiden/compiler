@@ -798,9 +798,10 @@ pub fn movdnw_from_offset(offset: usize) -> masm::Instruction {
 mod tests {
     use alloc::rc::Rc;
 
+    use midenc_expect_test::{Expect, expect};
     use midenc_hir::{
         ArrayType, Context, Felt, Overflow, PointerType, ValueRef,
-        dialects::builtin::attributes::Signature,
+        dialects::builtin::attributes::Signature, formatter::PrettyPrint,
     };
 
     use super::*;
@@ -812,6 +813,30 @@ mod tests {
                 miden_assembly_syntax::parser::PushValue::from($x),
             )))))
         };
+    }
+
+    /// Run `emit` on an emitter whose operand stack holds values of the types in `inputs`, the
+    /// first on top, and pin the MASM it emits.
+    fn assert_emits(inputs: &[Type], emit: impl FnOnce(&mut OpEmitter<'_>), masm: Expect) {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        {
+            let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+            for ty in inputs.iter().rev() {
+                emitter.push(ty.clone());
+            }
+            emit(&mut emitter);
+        }
+        // The block prints one level in, below an empty line
+        let printed = masm::Block::new(SourceSpan::UNKNOWN, block).to_pretty_string();
+        let mut lines = String::new();
+        for line in printed.trim_start_matches('\n').lines() {
+            lines.push_str(line.strip_prefix("    ").unwrap_or(line));
+            lines.push('\n');
+        }
+        masm.assert_eq(&lines);
     }
 
     /// Assert that the emitted block ends by delegating to the dedicated 16-bit memory intrinsic.
@@ -2313,5 +2338,327 @@ mod tests {
             assert_eq!(&ops[0], &Op::Inst(Span::new(span, masm::Instruction::DropW)));
             assert_eq!(&ops[1], &Op::Inst(Span::new(span, masm::Instruction::Drop)));
         }
+    }
+
+    /// A `u128` literal is pushed most significant half first, so its least significant limb ends
+    /// on top: `[x0, x1, x2, x3]`.
+    #[test]
+    fn a_u128_literal_leaves_its_least_significant_limb_on_top() {
+        assert_emits(
+            &[],
+            |emitter| {
+                let value = 0x4444_4444_3333_3333_2222_2222_1111_1111u128;
+                emitter.literal(Immediate::U128(value), SourceSpan::UNKNOWN);
+            },
+            expect![[r#"
+                push.1145324612
+                push.858993459
+                push.572662306
+                push.286331153
+            "#]],
+        );
+    }
+
+    /// Truncating to 64 bits drops the two most significant limbs, which lie below the low half:
+    /// `[x0, x1, x2, x3] => [x0, x1]`.
+    #[test]
+    fn a_128_bit_trunc_to_64_bits_keeps_the_low_limbs() {
+        assert_emits(
+            &[Type::U128],
+            |emitter| emitter.trunc(&Type::U64, SourceSpan::UNKNOWN),
+            expect![[r#"
+                movup.3
+                drop
+                movup.2
+                drop
+            "#]],
+        );
+    }
+
+    /// Truncating to 32 bits keeps the limb on top: `[x0, x1, x2, x3] => [x0]`.
+    #[test]
+    fn a_128_bit_trunc_to_32_bits_keeps_the_least_significant_limb() {
+        assert_emits(
+            &[Type::U128],
+            |emitter| emitter.trunc(&Type::U32, SourceSpan::UNKNOWN),
+            expect![[r#"
+                movdn.3
+                drop
+                drop
+                drop
+            "#]],
+        );
+    }
+
+    /// Truncating below 32 bits drops the three high limbs, then masks the one left.
+    #[test]
+    fn a_128_bit_trunc_below_32_bits_masks_the_least_significant_limb() {
+        assert_emits(
+            &[Type::U128],
+            |emitter| emitter.trunc(&Type::U16, SourceSpan::UNKNOWN),
+            expect![[r#"
+                movdn.3
+                drop
+                drop
+                drop
+                push.65535
+                u32and
+            "#]],
+        );
+    }
+
+    /// Truncating to a felt combines the low half: `[x0, x1, x2, x3] => [x1 * 2^32 + x0]`.
+    #[test]
+    fn a_128_bit_trunc_to_felt_combines_the_low_limbs() {
+        assert_emits(
+            &[Type::U128],
+            |emitter| emitter.trunc(&Type::Felt, SourceSpan::UNKNOWN),
+            expect![[r#"
+                movup.3
+                drop
+                movup.2
+                drop
+                swap.1
+                mul.4294967296
+                add
+            "#]],
+        );
+    }
+
+    /// Casting to `u64` asserts that the two most significant limbs are zero, and keeps the low
+    /// half: `[x0, x1, x2, x3] => [x0, x1]`.
+    #[test]
+    fn a_128_bit_cast_to_u64_asserts_the_high_limbs_are_zero() {
+        assert_emits(
+            &[Type::U128],
+            |emitter| emitter.cast(&Type::U64, SourceSpan::UNKNOWN),
+            expect![[r#"
+                movup.3
+                assertz.err="128-bit value does not fit in u64"
+                movup.2
+                assertz.err="128-bit value does not fit in u64"
+            "#]],
+        );
+    }
+
+    /// Casting to `u32` asserts that the three high limbs are zero: `[x0, x1, x2, x3] => [x0]`.
+    #[test]
+    fn a_128_bit_cast_to_u32_asserts_the_three_high_limbs_are_zero() {
+        assert_emits(
+            &[Type::U128],
+            |emitter| emitter.cast(&Type::U32, SourceSpan::UNKNOWN),
+            expect![[r#"
+                movdn.3
+                assertz.err="128-bit value does not fit in u32"
+                assertz.err="128-bit value does not fit in u32"
+                assertz.err="128-bit value does not fit in u32"
+            "#]],
+        );
+    }
+
+    /// Casting to a felt casts to `u64`, then range-checks the low half against the modulus.
+    #[test]
+    fn a_128_bit_cast_to_felt_range_checks_the_low_limbs() {
+        assert_emits(
+            &[Type::U128],
+            |emitter| emitter.cast(&Type::Felt, SourceSpan::UNKNOWN),
+            expect![[r#"
+                movup.3
+                assertz.err="128-bit value does not fit in u64"
+                movup.2
+                assertz.err="128-bit value does not fit in u64"
+                dup.1
+                dup.1
+                push.4294967295
+                push.1
+                push.1093736776208885424 emit drop
+                exec.::miden::core::math::u64::lt
+                push.6229491882474008289 emit drop
+                assert.err="u64 value does not fit in felt"
+                swap.1
+                mul.4294967296
+                add
+            "#]],
+        );
+    }
+
+    /// Casting a `u128` to `i64` casts to `u64`, then asserts the sign bit of `x1` is clear.
+    #[test]
+    fn a_u128_cast_to_i64_asserts_the_low_limbs_are_non_negative() {
+        assert_emits(
+            &[Type::U128],
+            |emitter| emitter.cast(&Type::I64, SourceSpan::UNKNOWN),
+            expect![[r#"
+                movup.3
+                assertz.err="128-bit value does not fit in u64"
+                movup.2
+                assertz.err="128-bit value does not fit in u64"
+                swap.1
+                dup.0
+                push.2147483648
+                u32and
+                eq.2147483648
+                assertz.err="expected a non-negative i32 value"
+                swap.1
+            "#]],
+        );
+    }
+
+    /// Casting an `i128` to `i64` asserts that both high limbs extend the sign of `x1`.
+    #[test]
+    fn an_i128_cast_to_i64_asserts_the_high_limbs_extend_the_sign() {
+        assert_emits(
+            &[Type::I128],
+            |emitter| emitter.cast(&Type::I64, SourceSpan::UNKNOWN),
+            expect![[r#"
+                dup.1
+                push.2147483648
+                u32and
+                eq.2147483648
+                push.0
+                push.4294967295
+                movup.2
+                cdrop
+                movup.3
+                dup.1
+                assert_eq.err="128-bit value does not fit in i64"
+                movup.3
+                assert_eq.err="128-bit value does not fit in i64"
+            "#]],
+        );
+    }
+
+    /// Casting an `i128` to `i32` casts to `i64`, then to `i32`.
+    #[test]
+    fn an_i128_cast_to_i32_narrows_through_the_low_limbs() {
+        assert_emits(
+            &[Type::I128],
+            |emitter| emitter.cast(&Type::I32, SourceSpan::UNKNOWN),
+            expect![[r#"
+                dup.1
+                push.2147483648
+                u32and
+                eq.2147483648
+                push.0
+                push.4294967295
+                movup.2
+                cdrop
+                movup.3
+                dup.1
+                assert_eq.err="128-bit value does not fit in i64"
+                movup.3
+                assert_eq.err="128-bit value does not fit in i64"
+                swap.1
+                dup.0
+                eq.0
+                dup.0
+                movdn.2
+                push.4294967295
+                push.0
+                movup.2
+                cdrop
+                assert_eq.err="i64 value does not fit in signed 32-bit range"
+                dup.1
+                push.2147483648
+                u32and
+                push.2147483648
+                push.0
+                movup.3
+                cdrop
+                assert_eq.err="i64 value does not fit in signed 32-bit range"
+            "#]],
+        );
+    }
+
+    /// Casting an `i64` to `i32` asserts that the high limb, below the low one, extends the sign of
+    /// the low limb.
+    #[test]
+    fn an_i64_cast_to_i32_asserts_the_high_limb_extends_the_sign() {
+        assert_emits(
+            &[Type::I64],
+            |emitter| emitter.cast(&Type::I32, SourceSpan::UNKNOWN),
+            expect![[r#"
+                swap.1
+                dup.0
+                eq.0
+                dup.0
+                movdn.2
+                push.4294967295
+                push.0
+                movup.2
+                cdrop
+                assert_eq.err="i64 value does not fit in signed 32-bit range"
+                dup.1
+                push.2147483648
+                u32and
+                push.2147483648
+                push.0
+                movup.3
+                cdrop
+                assert_eq.err="i64 value does not fit in signed 32-bit range"
+            "#]],
+        );
+    }
+
+    /// Casting a `u128` to `i128` asserts the sign bit of the most significant limb, `x3`, is
+    /// clear.
+    #[test]
+    fn a_u128_cast_to_i128_asserts_the_most_significant_limb_is_non_negative() {
+        assert_emits(
+            &[Type::U128],
+            |emitter| emitter.cast(&Type::I128, SourceSpan::UNKNOWN),
+            expect![[r#"
+                dup.3
+                push.2147483648
+                u32and
+                eq.2147483648
+                assertz.err="expected a non-negative i128 value"
+            "#]],
+        );
+    }
+
+    /// Casting a felt to 128 bits splits it, and places the two zero limbs below its own:
+    /// `[a] => [a_lo, a_hi, 0, 0]`.
+    #[test]
+    fn a_felt_cast_to_128_bits_keeps_its_limbs_on_top() {
+        assert_emits(
+            &[Type::Felt],
+            |emitter| emitter.cast(&Type::U128, SourceSpan::UNKNOWN),
+            expect![[r#"
+                u32split
+                push.0
+                push.0
+                movup.3
+                movup.3
+            "#]],
+        );
+    }
+
+    /// A 64-bit load from an aligned constant address moves the two elements as they are, as the
+    /// dynamic `load_dw` does: `[] => [m[a], m[a + 1]]`.
+    #[test]
+    fn an_aligned_64_bit_load_from_a_constant_address_moves_the_elements_unchecked() {
+        assert_emits(
+            &[],
+            |emitter| emitter.load_imm(128, Type::U64, SourceSpan::UNKNOWN),
+            expect![[r#"
+                mem_load.33
+                mem_load.32
+            "#]],
+        );
+    }
+
+    /// A 64-bit store to an aligned constant address moves the two elements as they are, as the
+    /// dynamic `store_dw` does: the limb on top to the lower address.
+    #[test]
+    fn an_aligned_64_bit_store_to_a_constant_address_moves_the_elements_unchecked() {
+        assert_emits(
+            &[Type::U64],
+            |emitter| emitter.store_imm(128, SourceSpan::UNKNOWN),
+            expect![[r#"
+                mem_store.32
+                mem_store.33
+            "#]],
+        );
     }
 }

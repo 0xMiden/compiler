@@ -434,11 +434,12 @@ impl OpEmitter<'_> {
 
     fn load_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
         if ptr.is_element_aligned() {
+            // The elements are loaded as they are, without a range check, as `load_dw` does:
+            // [lo, hi]
             self.emit_all(
                 [
                     masm::Instruction::MemLoadImm((ptr.addr + 1).into()),
                     masm::Instruction::MemLoadImm(ptr.addr.into()),
-                    masm::Instruction::U32Assert2,
                 ],
                 span,
             )
@@ -1290,11 +1291,12 @@ impl OpEmitter<'_> {
         match ptr {
             // When storing to an immediate address, the operand stack only contains the value
             // limbs. In LE order, lo is on top, so MemStoreImm stores lo at lower addr first.
+            //
+            // The elements are stored as they are, without a range check, as `store_dw` does.
             Some(ptr) if ptr.is_element_aligned() => {
                 // Stack: [value_lo, value_hi]
                 self.emit_all(
                     [
-                        masm::Instruction::U32Assert2,
                         masm::Instruction::MemStoreImm(ptr.addr.into()),
                         masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
                     ],
