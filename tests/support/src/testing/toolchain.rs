@@ -5,6 +5,8 @@
 //! `miden build`. Nothing here embeds or vendors a package.
 
 use std::{
+    cell::RefCell,
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -101,7 +103,26 @@ fn home_dir() -> PathBuf {
 }
 
 /// Every package in `sysroot/lib`.
+///
+/// A sysroot is read once per test thread: a property test evaluates its program hundreds of
+/// times, the core library's package alone is several megabytes, and the toolchain does not
+/// change under a running test.
 pub fn packages_in(sysroot: &Path) -> Result<Vec<Arc<Package>>, ToolchainError> {
+    thread_local! {
+        static LOADED: RefCell<BTreeMap<PathBuf, Vec<Arc<Package>>>> =
+            const { RefCell::new(BTreeMap::new()) };
+    }
+
+    if let Some(packages) = LOADED.with_borrow(|loaded| loaded.get(sysroot).cloned()) {
+        return Ok(packages);
+    }
+    let packages = read_packages_in(sysroot)?;
+    LOADED.with_borrow_mut(|loaded| loaded.insert(sysroot.to_path_buf(), packages.clone()));
+    Ok(packages)
+}
+
+/// Reads and deserializes every package in `sysroot/lib`.
+fn read_packages_in(sysroot: &Path) -> Result<Vec<Arc<Package>>, ToolchainError> {
     let lib = sysroot.join("lib");
     let entries = std::fs::read_dir(&lib).map_err(|err| ToolchainError::new(&lib, err))?;
     let mut packages = Vec::new();

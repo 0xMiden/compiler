@@ -144,12 +144,12 @@ where
     advice_stack.insert(0, Felt::new_unchecked(num_initializers));
     advice_stack.extend(user_advice_stack);
 
-    let registry = miden_debug::HybridPackageRegistry::new(
-        session.options.sysroot.as_deref(),
-        session.options.search_paths.as_slice(),
-        &[],
-    )
-    .map_err(|err| TestCaseError::fail(err.to_string()))?;
+    // The registry is not given the sysroot: it would read and install every toolchain package
+    // from disk on each evaluation, and the loop below registers the same packages from the
+    // copies `toolchain::packages` already holds.
+    let registry =
+        miden_debug::HybridPackageRegistry::new(None, session.options.search_paths.as_slice(), &[])
+            .map_err(|err| TestCaseError::fail(err.to_string()))?;
     let mut exec = Executor::new(args.to_vec()).with_registry(registry);
     // The core and protocol libraries are registered from the toolchain sysroot below.
     for library in session

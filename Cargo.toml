@@ -288,6 +288,27 @@ incremental = false
 
 [profile.test.package.miden-debug]
 opt-level = 3
+
+# What the debug executor does for every evaluation of a test program: deserializing the
+# packages it loads, hashing their commitments and reading their debug info. A property test
+# pays for it once per case.
+[profile.test.package.miden-debug-engine]
+opt-level = 3
+
+[profile.test.package.miden-mast-package]
+opt-level = 3
+
+[profile.test.package.miden-package-registry]
+opt-level = 3
+
+[profile.test.package.miden-serde-utils]
+opt-level = 3
+
+[profile.test.package.miden-field]
+opt-level = 3
+
+[profile.test.package.p3-goldilocks]
+opt-level = 3
 # ============================================================
 
 [profile.dev.package.dissimilar]
