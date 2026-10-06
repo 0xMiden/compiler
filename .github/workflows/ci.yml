@@ -35,6 +35,7 @@ env:
   CARGO_MAKE_VERSION: 0.37.24
   # Both integration shards derive from this selection, so their partition stays complementary.
   MIDENC_EXAMPLE_TEST_FILTER: "package(midenc-integration-tests) and test(~end_to_end::examples::)"
+  MIDENUP_HOME: ${{ github.workspace }}/.midenup
 
 jobs:
   workspace_inheritance:
@@ -129,34 +130,26 @@ jobs:
         name: Install midenup
         id: install-midenup-cli
         env:
-          MIDENUP_HOME: ${{ github.workspace }}/.midenup
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p "$MIDENUP_HOME/bin"
-          curl -fsSL https://raw.githubusercontent.com/0xMiden/midenup/refs/heads/next/bin/installer.sh \
-            | sh -s -- --install-path "$MIDENUP_HOME/bin" --no-init
-          echo "MIDENUP_HOME=$MIDENUP_HOME" >> "$GITHUB_ENV"
-          echo "version=$("$MIDENUP_HOME/bin/midenup" --version)" >> "$GITHUB_OUTPUT"
-      - &cache-midenup-toolchain
+          curl -fsSL https://github.com/0xMiden/midenup/releases/latest/download/installer.sh \
+            | bash -s
+          echo "version=$(midenup --version=plain)" >> "$GITHUB_OUTPUT"
+      - uses: WarpBuilds/cache@dad44e2487e9dc889ad6e6bd198e77bb2d828eee # v2.0.0
         name: Cache the Miden toolchain
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          path: ${{ env.MIDENUP_HOME }}
           key: midenup-toolchain-${{ hashFiles('miden-toolchain.toml') }}-${{ steps.install-midenup-cli.outputs.version }}
-      - &install-midenup
+          path: ${{ env.MIDENUP_HOME }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+      - &midenup-update
         name: Install the Miden toolchain
         run: |
           set -euo pipefail
-          CHANNEL=$(sed -n 's/^channel = "\(.*\)"/\1/p' miden-toolchain.toml)
-          if [ -d "$MIDENUP_HOME/toolchains" ]; then
-            echo "Miden toolchain restored from cache"
-          else
-            "$MIDENUP_HOME/bin/midenup" --midenup-home "$MIDENUP_HOME" --cargo-home "$MIDENUP_HOME/cargo" init
-            "$MIDENUP_HOME/bin/midenup" --midenup-home "$MIDENUP_HOME" --cargo-home "$MIDENUP_HOME/cargo" \
-              install "$CHANNEL" --profile empty --component core --component protocol
-          fi
-          echo "MIDEN_SYSROOT=$MIDENUP_HOME/toolchains/$CHANNEL" >> "$GITHUB_ENV"
-          ls "$MIDENUP_HOME/toolchains/$CHANNEL/lib"
+          midenup update
+          sysroot=$(midenup show sysroot)
+          echo "MIDEN_SYSROOT=$sysroot" >> "$GITHUB_ENV"
+          ls "${sysroot}/lib"
       - name: Cache Cargo
         uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
@@ -196,8 +189,12 @@ jobs:
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - *install-midenup-cli
-      - *cache-midenup-toolchain
-      - *install-midenup
+      - &restore-midenup-toolchain
+        uses: WarpBuilds/cache/restore@dad44e2487e9dc889ad6e6bd198e77bb2d828eee # v2.0.0
+        with:
+          key: midenup-toolchain-${{ hashFiles('miden-toolchain.toml') }}-${{ steps.install-midenup-cli.outputs.version }}
+          path: ${{ env.MIDENUP_HOME }}
+      - *midenup-update
       - name: Cache Cargo
         uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
@@ -237,8 +234,8 @@ jobs:
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - *install-midenup-cli
-      - *cache-midenup-toolchain
-      - *install-midenup
+      - *restore-midenup-toolchain
+      - *midenup-update
       - &restore-shared-tests-cache
         name: Cache Cargo
         uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
@@ -267,8 +264,8 @@ jobs:
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - *install-midenup-cli
-      - *cache-midenup-toolchain
-      - *install-midenup
+      - *restore-midenup-toolchain
+      - *midenup-update
       - *restore-shared-tests-cache
       - *install-cargo-make
       - name: Test
@@ -297,8 +294,8 @@ jobs:
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - *install-midenup-cli
-      - *cache-midenup-toolchain
-      - *install-midenup
+      - *restore-midenup-toolchain
+      - *midenup-update
       - *restore-shared-tests-cache
       - *install-cargo-make
       - name: Test
@@ -327,8 +324,8 @@ jobs:
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - *install-midenup-cli
-      - *cache-midenup-toolchain
-      - *install-midenup
+      - *restore-midenup-toolchain
+      - *midenup-update
       - *restore-shared-tests-cache
       - *install-cargo-make
       - name: Test
@@ -359,8 +356,8 @@ jobs:
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - *install-midenup-cli
-      - *cache-midenup-toolchain
-      - *install-midenup
+      - *restore-midenup-toolchain
+      - *midenup-update
       - *restore-shared-tests-cache
       - *install-cargo-make
       - name: Test
@@ -388,8 +385,8 @@ jobs:
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - *install-midenup-cli
-      - *cache-midenup-toolchain
-      - *install-midenup
+      - *restore-midenup-toolchain
+      - *midenup-update
       - *restore-shared-tests-cache
       - *install-cargo-make
       # Scaffolds a project from each of the five `rust/` templates and builds
@@ -424,8 +421,8 @@ jobs:
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - *install-midenup-cli
-      - *cache-midenup-toolchain
-      - *install-midenup
+      - *restore-midenup-toolchain
+      - *midenup-update
       - *restore-shared-tests-cache
       - *install-cargo-make
       - name: Test
@@ -469,7 +466,7 @@ jobs:
           cargo make check-each --release --all-features
 
   dependency_tiers:
-    name: compiler tier has no Miden library crates
+    name: Compiler unit should not depend on Miden packages, protocol, or client crates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

@@ -211,6 +211,7 @@ midenc-session = { version = "0.11.0", path = "midenc-session" }
 midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }
 miden-sdk-bindgen = { version = "0.15.0", path = "sdk/bindgen" }
+miden-sdk-build-script-support = { version = "0.15.0", path = "sdk/build-script-support" }
 miden-intrinsics-sys = { version = "0.15.0", path = "sdk/intrinsics-sys" }
 miden-base-sys = { version = "0.15.0", path = "sdk/base-sys" }
 miden-field-repr = { version = "0.15.0", path = "sdk/field-repr/repr" }

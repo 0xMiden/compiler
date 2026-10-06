@@ -34,7 +34,7 @@ midenc-package-interface.workspace = true
 miden-protocol.workspace = true
 
 [build-dependencies]
-miden-sdk-build-script-support = { path = "../build-script-support", version = "0.15.0-rc.3" }
+miden-sdk-build-script-support.workspace = true
 
 [features]
 default = []

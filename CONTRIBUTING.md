@@ -158,10 +158,10 @@ requires one installed.
 
 1. Install [`midenup`](https://github.com/0xMiden/midenup) and initialise it (`midenup init`
    creates its home directory and the `miden` command).
-2. Install the toolchain this repo pins in `miden-toolchain.toml`:
+2. Install the toolchain this repo pins in `miden-toolchain.toml` (run from repo root):
 
    ```bash
-   midenup install 0.17.0 --profile empty --component core --component protocol
+   midenup install
    ```
 
 `cargo make test` and the other `cargo make` test targets derive `MIDEN_SYSROOT` from

@@ -16,7 +16,7 @@ doctest = false
 
 [dependencies]
 miden-core.workspace = true
-miden-assembly.workspace = true
+miden-assembly = { workspace = true, features = ["std"] }
 miden-assembly-syntax = { workspace = true, features = ["std"] }
 miden-mast-package.workspace = true
 miden-project = { workspace = true, features = ["std", "serde"] }
