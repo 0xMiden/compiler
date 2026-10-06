@@ -56,14 +56,6 @@ tempfile = { workspace = true, optional = true }
 termcolor = { version = "1.4.1", optional = true }
 thiserror.workspace = true
 
-[build-dependencies]
-# Constrain miden-protocol's build dependency for consumers without our lockfile.
-miden-protocol-build-utils.workspace = true
-
 [dev-dependencies]
 midenc-frontend-wasm-metadata.workspace = true
 tempfile.workspace = true
-
-[package.metadata.cargo-shear]
-# This dependency constrains resolution and is not used directly.
-ignored = ["miden-protocol-build-utils"]

@@ -172,14 +172,15 @@ For map slots, seed entries with `init_storage_data.insert_map_entry(slot_name, 
 
 ### 6. Create Notes
 
-Build a note with `NoteBuilder`, seeding the `RandomCoin` from the note-script root:
+Build a note with `NoteBuilder`, seeding a `rand` generator from the note-script root:
 
 ```rust
-use miden_client::{asset::FungibleAsset, crypto::RandomCoin, note::NoteScript, Felt, Word};
+use miden_client::{asset::FungibleAsset, note::NoteScript, Felt, Word};
 use miden_standards::testing::note::NoteBuilder;
+use rand::{rngs::StdRng, SeedableRng};
 
 let note_script = NoteScript::from_package(note_package.as_ref())?;
-let mut note_rng = RandomCoin::new(Word::from(note_script.root()));
+let mut note_rng = StdRng::from_seed(Word::from(note_script.root()).into());
 let note = NoteBuilder::new(sender.id(), &mut note_rng)
     .package((*note_package).clone())
     .add_assets([FungibleAsset::new(faucet.id(), 50)?.into()])
@@ -187,8 +188,8 @@ let note = NoteBuilder::new(sender.id(), &mut note_rng)
     .build()?;
 ```
 
-`NoteBuilder::new(sender: AccountId, rng: T)` takes the RNG **by value**; `&mut RandomCoin` works
-because `&mut T: Rng`. Other builder methods: `package`, `script`, `code`, `note_type`, `tag`,
+`NoteBuilder::new(sender: AccountId, rng: T)` takes the RNG **by value**; `&mut StdRng` works
+because `&mut T: Rng`. `miden_client::crypto::RandomCoin` is no longer re-exported by the client. Other builder methods: `package`, `script`, `code`, `note_type`, `tag`,
 `add_assets`, `note_storage`, `serial_number`, `attachment`, `advice_map`,
 `dynamically_linked_packages`, `source_manager`, `build`.
 
@@ -196,8 +197,8 @@ because `&mut T: Rng`. Other builder methods: `package`, `script`, `code`, `note
 > `.tag(NoteTag::with_account_target(account.id()).into())`.
 
 > `NoteScript::from_package(&Package)` requires the package to have exactly one `@note_script`
-> export. `NoteScript::root()` returns a `NoteScriptRoot` newtype, and `RandomCoin::new` needs a
-> `Word`, so convert explicitly with `Word::from(...root())`.
+> export. `NoteScript::root()` returns a `NoteScriptRoot` newtype, and the 32-byte seed comes from a
+> `Word`, so convert explicitly with `Word::from(...root()).into()`.
 
 > `Felt::new(u64)` is **fallible** — it returns `Result<Felt, FeltFromIntError>`. `note_storage`
 > takes `impl IntoIterator<Item = Felt>`, so build each felt with the infallible
@@ -379,7 +380,7 @@ Prefer `NoteBuilder` for creating notes in tests. Start from `NoteBuilder::new(s
 
 ### Building Notes from `.masp` Packages
 
-When a test or binary needs full control over the note, start with the compiled `.masp` package and construct the note script from the package. The current project-template path is `NoteScript::from_package(package.as_ref())`, seed a `RandomCoin` from `Word::from(note_script.root())`, and pass the package into `NoteBuilder::package((*package).clone())` before adding assets, storage inputs, type, tag, serial number, or attachments.
+When a test or binary needs full control over the note, start with the compiled `.masp` package and construct the note script from the package. The current project-template path is `NoteScript::from_package(package.as_ref())`, seed a `StdRng` from `Word::from(note_script.root())`, and pass the package into `NoteBuilder::package((*package).clone())` before adding assets, storage inputs, type, tag, serial number, or attachments.
 
 The miden-bank tutorial wraps `NoteScript::from_package(...)` and `NoteBuilder` in two helpers:
 
@@ -397,7 +398,7 @@ Binary-side example: see [miden-bank deposit.rs](https://github.com/0xMiden/tuto
 1. Create a `FungibleAsset` from a faucet ID and amount, e.g. `FungibleAsset::new(faucet.id(), 50)?`
    (the amount parameter is still `u64`), and wrap it into `NoteAssets::new(vec![Asset::Fungible(asset)])?`
    — or pass it via `NoteBuilder::add_assets`.
-2. Seed a `RandomCoin` from `Word::from(NoteScript::from_package(note_package.as_ref())?.root())`.
+2. Seed a `StdRng` from `Word::from(NoteScript::from_package(note_package.as_ref())?.root())`.
 3. Pass any note inputs into `note_storage(...)?`, building each felt with the infallible
    `Felt::from(_u32)` for in-range literals or checked `Felt::new(n)?` for arbitrary `u64` inputs.
 4. Finish with `.package((*note_package).clone()).build()?`.
@@ -408,9 +409,9 @@ The faucet must be set up first (see Step 3) and the sender wallet must hold suf
 ## Key Dependencies
 
 ```toml
-miden-client = { version = "0.17.0-rc.5", features = ["tonic"] }
-miden-client-sqlite-store = { version = "0.17.0-rc.5", package = "miden-client-sqlite-store" }
-miden-standards = { version = "0.17.0-rc.9", features = ["testing"] }
+miden-client = { version = "0.17.0", features = ["tonic"] }
+miden-client-sqlite-store = { version = "0.17.0", package = "miden-client-sqlite-store" }
+miden-standards = { version = "0.17.0", features = ["testing"] }
 miden-testing = "0.16.0-rc.4"
 miden-mast-package = { version = "0.29", default-features = false }
 ```
@@ -429,7 +430,7 @@ The contracts a test builds depend on the guest SDK `miden = { version = "0.14" 
 - [ ] Storage slot names follow `<package_name>::<interface_segment>::<field_name>`
 - [ ] Value slots without a schema default are seeded via `InitStorageData::insert_value(StorageValueName::from_slot_name(&slot), ..)`; `StorageValue<Word>` slots get a `Word`, not a bare integer
 - [ ] Contracts are built out of process with `build_project_in_dir(...)` / midenup / `CARGO_MIDEN` / `cargo miden`, not by depending on `cargo-miden`
-- [ ] `NoteScript::root()` converted with `Word::from(..)` before seeding `RandomCoin`
+- [ ] `NoteScript::root()` converted with `Word::from(..)` before seeding the note RNG
 - [ ] `NoteBuilder::tag(..)` is passed a `u32`
 - [ ] Note-storage felts built with infallible `Felt::from(_u32)` or checked `Felt::new(n)?` for arbitrary `u64` inputs
 - [ ] `Note::new(..)` is passed a `PartialNoteMetadata` (not `NoteMetadata`)

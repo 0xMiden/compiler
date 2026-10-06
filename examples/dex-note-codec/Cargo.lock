@@ -2117,9 +2117,9 @@ dependencies = [
 
 [[package]]
 name = "miden-protocol"
-version = "0.17.0-rc.9"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "525a43808effad4b97de2db6d11efc1898a5762a0181a2a21baa4e7c02370c0f"
+checksum = "8d9e8eb8b0ff7edebbbd5ef959c0cf624f0e8f5033c45151856e728debe04d83"
 dependencies = [
  "bech32",
  "fs-err",
