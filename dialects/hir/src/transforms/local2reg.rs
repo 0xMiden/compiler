@@ -308,7 +308,8 @@ impl Pass for Local2Reg {
                 // following criteria:
                 //
                 // 1. The load and store are in the same block
-                // 2. There is no control flow between the store and load, including function calls
+                // 2. The store precedes the load
+                // 3. There is no control flow between the store and load, including function calls
                 let load = loads[0];
                 let store = *stores.last().unwrap();
 
@@ -322,7 +323,18 @@ impl Pass for Local2Reg {
                     continue;
                 }
 
-                // 2.
+                // 2. A load that precedes the store reads what the slot held before the store,
+                // not the stored value
+                if !store.borrow().is_before_in_block(&load) {
+                    log::trace!(
+                        target: &trace_target,
+                        sym = trace_target.relevant_symbol();
+                        "ignoring {local}: loaded before it is stored",
+                    );
+                    continue;
+                }
+
+                // 3.
                 let mut next_op = store.next();
                 while let Some(current) = next_op.take() {
                     if current == load {
@@ -886,6 +898,103 @@ builtin.function public extern("C") @ignores_poison_loads(%0: i32, %1: i32) -> i
     // CHECK-NEXT: builtin.ret [[V3]] : (i32);
     builtin.ret %3 : (i32);
 };
+            "#
+        );
+    }
+
+    #[test]
+    fn does_not_promote_a_load_that_precedes_its_store() {
+        let mut test = Test::new("ignores_load_before_store", &[Type::I32], &[Type::I32]);
+
+        // The load reads the slot before the store writes it, and its use follows the store
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let v1 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.add(v0, v0, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local0, v2, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.mul(v1, v0, SourceSpan::UNKNOWN).unwrap();
+            let v4 = builder.add(v3, v2, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v4], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
+
+        let output = format!("{}", test.function().borrow().as_operation());
+        std::println!("{output}");
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.function public extern("C") @ignores_load_before_store
+// CHECK-NEXT: [[V1:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+// CHECK-NEXT: [[V2:%\d+]] = arith.add %0, %0 <{ overflow = #builtin.overflow<checked> }>;
+// CHECK-NEXT: hir.store_local [[V2]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
+// CHECK-NEXT: [[V3:%\d+]] = arith.mul [[V1]], %0 <{ overflow = #builtin.overflow<checked> }>;
+            "#
+        );
+    }
+
+    #[test]
+    fn does_not_promote_a_load_used_before_its_store() {
+        let mut test = Test::new("ignores_use_before_store", &[Type::I32], &[Type::I32]);
+
+        // The load and its use both precede the store
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let v1 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.mul(v1, v0, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.add(v0, v0, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local0, v3, SourceSpan::UNKNOWN).unwrap();
+            let v4 = builder.add(v2, v3, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v4], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
+
+        let output = format!("{}", test.function().borrow().as_operation());
+        std::println!("{output}");
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.function public extern("C") @ignores_use_before_store
+// CHECK-NEXT: [[V1:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+// CHECK-NEXT: [[V2:%\d+]] = arith.mul [[V1]], %0 <{ overflow = #builtin.overflow<checked> }>;
+// CHECK-NEXT: [[V3:%\d+]] = arith.add %0, %0 <{ overflow = #builtin.overflow<checked> }>;
+// CHECK-NEXT: hir.store_local [[V3]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
+            "#
+        );
+    }
+
+    #[test]
+    fn does_not_promote_a_load_stored_back_to_its_local() {
+        let mut test = Test::new("ignores_self_store", &[Type::I32], &[Type::I32]);
+
+        // The only store writes back the value the only load read
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let v1 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local0, v1, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.add(v1, v0, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v2], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
+
+        let output = format!("{}", test.function().borrow().as_operation());
+        std::println!("{output}");
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.function public extern("C") @ignores_self_store
+// CHECK-NEXT: [[V1:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+// CHECK-NEXT: hir.store_local [[V1]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
+// CHECK-NEXT: [[V2:%\d+]] = arith.add [[V1]], %0 <{ overflow = #builtin.overflow<checked> }>;
+// CHECK-NEXT: builtin.ret [[V2]] : (i32);
             "#
         );
     }
