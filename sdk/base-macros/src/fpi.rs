@@ -301,6 +301,8 @@ fn import_synthetic_interface(
         WorldKey::Interface(synthetic_id),
         WorldItem::Interface {
             id: synthetic_id,
+            external_id: None,
+            docs: Default::default(),
             stability: Default::default(),
             span: WitSpan::default(),
         },
@@ -789,6 +791,7 @@ fn alias_wit_type(
         let mut kind = source_type.kind;
         alias_type_def_kind(resolve, synthetic_id, &mut kind, aliases, interface_types);
         let clone_id = resolve.types.alloc(TypeDef {
+            external_id: None,
             name: None,
             kind,
             owner: TypeOwner::None,
@@ -803,6 +806,7 @@ fn alias_wit_type(
 
     let name = format!("miden-fpi-type-{}", interface_types.len());
     let alias_id = resolve.types.alloc(TypeDef {
+        external_id: None,
         name: Some(name.clone()),
         kind: TypeDefKind::Type(WitType::Id(source_id_value)),
         owner: TypeOwner::Interface(synthetic_id),
@@ -924,6 +928,7 @@ fn build_import_function(function: Function, fpi_name: String, core_types: CoreT
     params.extend(function.params);
 
     Function {
+        external_id: None,
         name: fpi_name,
         kind: FunctionKind::Freestanding,
         params,
@@ -2005,6 +2010,7 @@ interface api {
 
     fn test_function(name: &str) -> Function {
         Function {
+            external_id: None,
             name: name.to_string(),
             kind: FunctionKind::Freestanding,
             params: Vec::new(),

@@ -1320,6 +1320,13 @@ impl HirLowering for hir::MemCpy {
     }
 }
 
+impl HirLowering for hir::MemMove {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).memmove(self.span());
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::PrintLn {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).println(self.span());

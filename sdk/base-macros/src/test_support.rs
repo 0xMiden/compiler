@@ -1,6 +1,12 @@
 //! Shared fixtures for base-macros unit tests.
 
-use std::{fs, path::Path, sync::Arc};
+use std::{
+    env, fs,
+    io::Write,
+    path::Path,
+    process::{Command, Output, Stdio},
+    sync::Arc,
+};
 
 use miden_assembly::{Assembler, DefaultSourceManager, ModuleParser, ast::ModuleKind};
 use miden_mast_package::Package;
@@ -37,4 +43,30 @@ pub(crate) fn write_masp_fixture(package_path: &Path, package_id: &str, wit: Opt
     fs::create_dir_all(package_path.parent().expect("package path must have a parent"))
         .expect("package directory must be created");
     fs::write(package_path, package.to_bytes()).expect("package fixture must be written");
+}
+
+/// Compiles one standalone Rust source string and returns the rustc result.
+///
+/// The source is compiled to metadata only, so a test can assert on the diagnostics that a macro
+/// expansion produces in a real compilation.
+pub(crate) fn compile_rust_source(source: &str) -> Output {
+    let output_dir = tempfile::tempdir().expect("failed to create rustc output directory");
+    let output_path = output_dir.path().join("macro_expansion.rmeta");
+    let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let mut child = Command::new(rustc)
+        .args(["--crate-name", "macro_expansion", "--edition=2024", "--emit=metadata", "-o"])
+        .arg(output_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to start rustc for a macro expansion test");
+    child
+        .stdin
+        .take()
+        .expect("rustc stdin must be piped")
+        .write_all(source.as_bytes())
+        .expect("failed to write the macro expansion source");
+    child.wait_with_output().expect("failed to wait for rustc")
 }

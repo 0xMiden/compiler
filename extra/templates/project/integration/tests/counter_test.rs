@@ -7,13 +7,13 @@ use miden_client::{
         component::InitStorageData, AccountBuilder, AccountComponent, AccountType, StorageMapKey,
     },
     auth::AuthSchemeId,
-    crypto::RandomCoin,
     note::NoteScript,
     transaction::RawOutputNote,
     Word,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{AccountState, Auth, MockChain};
+use rand::{rngs::StdRng, SeedableRng};
 
 #[tokio::test]
 async fn counter_test() -> anyhow::Result<()> {
@@ -53,11 +53,12 @@ async fn counter_test() -> anyhow::Result<()> {
         AccountState::Exists,
     )?;
 
-    let mut note_rng = RandomCoin::new(Word::from(
+    let note_script_root = Word::from(
         NoteScript::from_package(note_package.as_ref())
             .context("failed to build note script from package")?
             .root(),
-    ));
+    );
+    let mut note_rng = StdRng::from_seed(note_script_root.into());
     let counter_note = NoteBuilder::new(sender.id(), &mut note_rng)
         .package((*note_package).clone())
         .build()

@@ -393,8 +393,8 @@ impl Frontend for HirFrontend {
             package,
             &found.component,
             &found.sections,
-            cx.assembly().target,
-            cx.assembly().package_registry,
+            cx.assembly(),
+            cx.role(),
         )
     }
 

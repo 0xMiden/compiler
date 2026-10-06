@@ -11,14 +11,16 @@ use alloc::{
 };
 
 use midenc_hir::{
-    CallableOpInterface, Context, Immediate, Operation, OperationRef, RegionBranchPoint, RegionRef,
-    Report, SmallVec, SourceSpan, Spanned, SymbolPath, Type, Value as _, ValueRange, ValueRef,
+    CallableOpInterface, Context, Felt, Immediate, Operation, OperationRef, RegionBranchPoint,
+    RegionRef, Report, SmallVec, SourceSpan, Spanned, SymbolPath, Type, Value as _, ValueRange,
+    ValueRef,
     dialects::builtin::{ComponentId, attributes::LocalVariable},
     formatter::DisplayValues,
     smallvec,
 };
 use midenc_session::diagnostics::{InFlightDiagnosticBuilder, Severity};
 
+pub use self::memory::MemoryAddress;
 use self::{context::ExecutionContext, frame::CallFrame};
 use crate::{value::MaterializedValue, *};
 
@@ -371,14 +373,18 @@ impl HirEvaluator {
     /// Returns an error if `addr` is invalid, `ty` is not a valid immediate type, or the specified
     /// type could not be read from `addr` (either the encoding is invalid, or the read would be
     /// out of bounds).
-    pub fn read_memory(&self, addr: u32, ty: &Type) -> Result<Value, Report> {
+    pub fn read_memory(&self, addr: impl Into<MemoryAddress>, ty: &Type) -> Result<Value, Report> {
         self.current_context().read_memory(addr, ty, self.current_span())
     }
 
     /// Read `len` bytes from memory starting at `addr`.
     ///
     /// Returns an error if `addr` is invalid or the read would be out of bounds.
-    pub fn read_memory_bytes(&self, addr: u32, len: u32) -> Result<Vec<u8>, Report> {
+    pub fn read_memory_bytes(
+        &self,
+        addr: impl Into<MemoryAddress>,
+        len: u32,
+    ) -> Result<Vec<u8>, Report> {
         self.current_context().read_memory_bytes(addr, len, self.current_span())
     }
 
@@ -386,9 +392,58 @@ impl HirEvaluator {
     ///
     /// Returns an error if `addr` is invalid, or `value` could not be written to `addr` (either the
     /// value is poison, or the write would go out of bounds).
-    pub fn write_memory(&mut self, addr: u32, value: impl Into<Value>) -> Result<(), Report> {
+    pub fn write_memory(
+        &mut self,
+        addr: impl Into<MemoryAddress>,
+        value: impl Into<Value>,
+    ) -> Result<(), Report> {
         let at = self.current_span();
         self.current_context_mut().write_memory(addr, value, at)
+    }
+
+    /// Write `bytes` to memory starting at `addr`.
+    ///
+    /// Returns an error if `addr` is invalid or the write would be out of bounds, in which case
+    /// nothing is written.
+    pub fn write_memory_bytes(
+        &mut self,
+        addr: impl Into<MemoryAddress>,
+        bytes: &[u8],
+    ) -> Result<(), Report> {
+        let at = self.current_span();
+        self.current_context_mut().write_memory_bytes(addr, bytes, at)
+    }
+
+    /// Check that `len` bytes can be written to memory starting at `addr`.
+    ///
+    /// Returns an error if `addr` is invalid or the write would be out of bounds.
+    pub fn check_write_bounds(
+        &self,
+        addr: impl Into<MemoryAddress>,
+        len: usize,
+    ) -> Result<(), Report> {
+        self.current_context().check_write_bounds(addr, len, self.current_span())
+    }
+
+    /// Check a range before allocating a snapshot or mutating its destination.
+    pub(crate) fn check_read_bounds(&self, addr: MemoryAddress, len: usize) -> Result<(), Report> {
+        self.current_context().check_read_bounds(addr, len, self.current_span())
+    }
+
+    /// Snapshot the cells containing an element-aligned byte range.
+    pub fn read_memory_elements(&self, addr: MemoryAddress, len: u32) -> Result<Vec<Felt>, Report> {
+        self.current_context().read_memory_elements(addr, len, self.current_span())
+    }
+
+    /// Write exactly `len` bytes from an element snapshot, preserving partial boundary cells.
+    pub fn write_memory_elements(
+        &mut self,
+        addr: MemoryAddress,
+        len: u32,
+        elements: &[Felt],
+    ) -> Result<(), Report> {
+        let at = self.current_span();
+        self.current_context_mut().write_memory_elements(addr, len, elements, at)
     }
 
     /// Read the value of the given local variable in the current symbol, if present.

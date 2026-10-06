@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0]
+
+### Added
+
+- Named-field `#[note]` structs embed their storage schema, nested exported types, and field
+  documentation in compiled `.masp` packages. Host applications can read the layout without
+  manually mirroring the guest struct. Unit-note structs remain valid and emit no storage schema.
+- The new `miden-note-schema` crate reads these schemas and builds or decodes `NoteStorage` from
+  named string values, with standard codecs and a registry for custom parsing, display, and
+  validation. `miden-note-bindings::from_project!` and `from_package!` generate typed host structs
+  with felt-representation conversions; build the note package before compiling its consumer.
+- Note authors can supply custom text codecs with `miden-note-codec::AuthorTypeCodec`,
+  `#[note_codec]`, and `export_codecs!`. Opt in with
+  `[package.metadata.midenc.note-codec]` and `crate = "../my-note-codec"` in `miden-project.toml`.
+  The codec builds as a release-profile `wasm32-wasip2` component and is embedded when the note
+  is the root build target. To consume its codec, load the note's own package; source-dependency
+  copies carry the schema but omit the codec.
+- Enable `miden-note-schema`'s `codec-component` feature to load bundled codecs. They run without
+  host capabilities under fuel, memory, and output limits. `CodecLimits` lets hosts set runtime
+  budgets; `Error::codec_failure()` distinguishes exhaustion, limit violations, traps, and codec
+  rejection, including failures during discovery and cleanup. Packages without a codec use the
+  standard registry. Schema and component validation also bounds parsing and expansion work.
+- `output_note::seal(note_index)` prevents further asset and attachment changes to an output
+  note for the rest of the transaction; `output_note::is_sealed(note_index)` queries that state.
+- Felt-representation derives accept `#[felt_repr(crate_path = "path::to::felt_repr")]` to
+  select the runtime path used by generated implementations.
+
+### Fixed
+
+- Invalid note schemas report source locations without cascading missing-type or missing-impl
+  errors that obscure the original diagnostic.
+- Exported fields using `Result<(), T>` or `Result<T, ()>` compile again instead of failing with
+  an internal type-reconstruction error. These types remain unsupported as note-storage fields.
+- Exported-type registrations are isolated between crates and refreshed when IDE macro servers
+  re-expand an edited definition, avoiding conflicts from its previous shape.
+
+### Migration and breaking changes
+
+- Align host dependencies with released protocol `0.17.0` and Miden VM `0.35.0`, and rebuild
+  compiled packages with the matching toolchain when upgrading from the rc.3 stack.
+- `#[note]` tuple structs and `Vec<T>` storage fields, including nested vectors, are rejected.
+  Convert tuple structs to named fields in the same order to preserve their felt layout. Replace
+  vectors with explicit fixed fields, optional positions, or a redesigned payload; there is no
+  direct replacement for unbounded vectors. Supported storage types are `Felt`, `Word`, SDK core
+  records, `u64`, `u32`, `u8`, `bool`, exported records or enums, and `Option<T>` over supported
+  types. Custom types must have `#[export_type]`, implement both `FromFeltRepr` and `ToFeltRepr`, and
+  be registered before the `#[note]` struct. See the
+  [note-layout migration guide](./sdk/MIGRATION.md#rewrite-tuple-note-and-vec-storage-layouts).
+- Keep only one `#[note]` struct per linked artifact. Move additional notes to separate crates
+  and remove dependencies between note crates; otherwise linking fails on the duplicate
+  `__MIDEN_NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD` symbol.
+- Exported types and note fields must refer to the actual registered Rust types, and builtin
+  or SDK core-type names must refer to their genuine definitions. Same-name substitutes now fail
+  compilation instead of silently producing a mismatched schema. Different Rust types mapping to
+  the same WIT name also fail, even with identical shapes; rename one type. Rename associated
+  items that conflict with the generated `__MIDEN_EXPORT_TYPE_SHAPE` constant or
+  `__miden_validate_export_type_shape` function. See the
+  [type-identity migration guide](./sdk/MIGRATION.md#keep-duplicate-export_type-registrations-nominally-unique-and-shape-compatible).
+- `cfg` and `cfg_attr` now filter note-storage fields and exported-type members before encoding
+  and schema generation. Disabled members no longer contribute to the felt layout; rebuild
+  packages and regenerate host bindings with matching feature selections.
+- Host-side SDK crates now default to the host target when Cargo runs from their directories;
+  guest crates retain their Wasm configuration. If your tooling relied on the shared SDK directory
+  selecting the guest target, pass `--target wasm32-wasip1` explicitly for guest builds.
+- When constructing `midenc_frontend_wasm_metadata::PackageSections` with a struct literal, add
+  `note_storage_schema: None`, or use `..Default::default()`.
+
 ## [0.15.0-rc.3]
 
 - Target protocol `0.17.0-rc.7` on Miden VM `0.33.0`. The transaction kernel is unchanged from

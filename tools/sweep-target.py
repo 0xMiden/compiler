@@ -29,15 +29,25 @@ invocation, including the fresh ones. This tool therefore:
      all, and its live units cannot refresh their timestamps without a
      recompile. A short age would force a full rebuild of such a cache per
      window, so these keep `--cache-age` days (default 14).
-3. SWEEPS: deletes the `deps/`, `build/`, and `.fingerprint/` entries of
-   every unit that is neither marked nor protected. Incremental caches and
-   uplifted final artifacts are never touched.
+3. SWEEPS: deletes every unit that is neither marked nor protected.
+   Incremental caches are keyed separately from the units, so they are swept
+   by age alone, with the cutoff of their directory's tier. Uplifted final
+   artifacts are never touched.
+
+Two layouts of a profile directory are understood. Current Cargo keeps each
+unit in a directory of its own, `build/<package>/<hash>/{fingerprint,out}`
+(a build script's run adds `run`): every artifact of the unit lives under it,
+the hash is the directory's name, and sweeping a unit is removing that
+directory. Older Cargo spread a unit over `deps/<name>-<hash>*`,
+`build/<name>-<hash>/` and `.fingerprint/<name>-<hash>/`, with the hash in
+each entry's name. A directory is swept by whichever layout it holds.
 
 A profile directory whose Cargo lock is held by a running build is skipped.
 
 Usage: sweep-target.py [--dry-run] [--age DAYS] [--cache-age DAYS] ROOT [ROOT...]
 """
 
+import contextlib
 import fcntl
 import json
 import os
@@ -63,6 +73,14 @@ MARK_INVOCATIONS = (
 OUTPUT_DIRS = (".fingerprint", "deps", "build", "incremental", "examples", "tmp")
 
 HASH_RE = re.compile(r"-([0-9a-f]{16,20})$")
+
+# The name of a unit directory in the per-unit layout: the bare hash.
+UNIT_DIR_RE = re.compile(r"^[0-9a-f]{16,20}$")
+
+# The lock files Cargo may hold on a profile directory while it builds. Which
+# of them exist depends on the Cargo version and on whether the build
+# directory is the target directory.
+LOCK_FILES = (".cargo-lock", ".cargo-build-lock", ".cargo-artifact-lock")
 
 
 def unit_hash(name):
@@ -110,9 +128,12 @@ def cargo_path_components(path, target_dir=None, build_dir=None):
 def artifact_hashes(path, target_dir=None, build_dir=None):
     """Return unit hashes encoded in a Cargo artifact path.
 
-    Normal artifacts carry the hash in their basename. Build-script artifacts
-    instead use a hashless basename below `build/<crate>-<hash>`. Restricting
-    the search to those Cargo-owned positions avoids mistaking a workspace or
+    In the per-unit layout every artifact lies below `build/<package>/<hash>`,
+    and that directory names the unit whatever the file is called (a binary
+    and a build script keep hashless names there). In the older layout normal
+    artifacts carry the hash in their basename, and build-script artifacts use
+    a hashless basename below `build/<crate>-<hash>`. Restricting the search to
+    those Cargo-owned positions avoids mistaking a workspace or
     target-directory component for a live unit hash.
     """
     components = cargo_path_components(path, target_dir, build_dir)
@@ -124,10 +145,13 @@ def artifact_hashes(path, target_dir=None, build_dir=None):
     if marked:
         found.add(marked)
     for index, component in enumerate(components[:-1]):
-        if component == "build":
-            marked = unit_hash(components[index + 1])
-            if marked:
-                found.add(marked)
+        if component != "build":
+            continue
+        marked = unit_hash(components[index + 1])
+        if marked:
+            found.add(marked)
+        if index + 2 < len(components) and UNIT_DIR_RE.match(components[index + 2]):
+            found.add(components[index + 2])
     return found
 
 
@@ -152,8 +176,10 @@ def uplifted_executable_hashes(message, target_dir, build_dir):
 
     Cargo's JSON messages name ordinary binaries only by their final, unhashed
     path (for example, `target/debug/midenc`). The build cache keeps the same
-    executable as `target/debug/deps/midenc-<hash>`. Compare the uplifted file
-    with same-named cache candidates so the live unit hash is not swept.
+    executable as `target/debug/build/midenc/<hash>/out/midenc` in the per-unit
+    layout, and as `target/debug/deps/midenc-<hash>` in the older one. Compare
+    the uplifted file with same-named cache candidates so the live unit hash
+    is not swept.
 
     Multiple byte-identical candidates are all live for sweep purposes. That
     deliberately favors retaining a duplicate over guessing which one Cargo
@@ -190,31 +216,56 @@ def uplifted_executable_hashes(message, target_dir, build_dir):
         raise UnresolvedExecutableError(
             f"uplifted executable is outside Cargo's target directory: {executable}"
         )
-    cache_dir = os.path.join(os.path.abspath(build_dir), relative_profile, cache_subdir)
-    try:
-        candidates = os.scandir(cache_dir)
-    except OSError as err:
+    cached_profile = os.path.join(os.path.abspath(build_dir), relative_profile)
+    cache_dir = os.path.join(cached_profile, cache_subdir)
+    units_dir = os.path.join(cached_profile, "build")
+    if not os.path.isdir(cache_dir) and not os.path.isdir(units_dir):
         raise UnresolvedExecutableError(
-            f"cannot inspect cache for uplifted executable {executable}: {err}"
-        ) from err
+            f"cannot inspect cache for uplifted executable {executable}: "
+            f"neither {cache_dir} nor {units_dir} exists"
+        )
+
+    def same_executable(path):
+        try:
+            return os.path.isfile(path) and not os.path.islink(path) and files_equal(
+                executable, path
+            )
+        except OSError as err:
+            raise UnresolvedExecutableError(
+                f"cannot compare uplifted executable {executable} with {path}: {err}"
+            ) from err
 
     resolved = set()
     try:
-        with candidates:
-            for entry in candidates:
-                marked = unit_hash(entry.name)
-                if marked is None or unhashed_artifact_name(entry.name) != cached_name:
-                    continue
-                try:
-                    matches = entry.is_file(follow_symlinks=False) and files_equal(
-                        executable, entry.path
-                    )
-                except OSError as err:
-                    raise UnresolvedExecutableError(
-                        f"cannot compare uplifted executable {executable} with {entry.path}: {err}"
-                    ) from err
-                if matches:
-                    resolved.add(marked)
+        # The older layout: `deps/<crate>-<hash>` (or `examples/<crate>-<hash>`).
+        if os.path.isdir(cache_dir):
+            with os.scandir(cache_dir) as candidates:
+                for entry in candidates:
+                    marked = unit_hash(entry.name)
+                    if marked is None or unhashed_artifact_name(entry.name) != cached_name:
+                        continue
+                    if same_executable(entry.path):
+                        resolved.add(marked)
+        # The per-unit layout: `build/<package>/<hash>/out/<crate>`, the hash
+        # being the unit directory's name. An example is looked for in
+        # `out/examples` as well.
+        if os.path.isdir(units_dir):
+            out_subdirs = ["out"]
+            if cache_subdir == "examples":
+                out_subdirs.append(os.path.join("out", "examples"))
+            with os.scandir(units_dir) as packages:
+                for package in packages:
+                    if not package.is_dir(follow_symlinks=False):
+                        continue
+                    with os.scandir(package.path) as units:
+                        for unit in units:
+                            if not UNIT_DIR_RE.match(unit.name):
+                                continue
+                            if any(
+                                same_executable(os.path.join(unit.path, subdir, cached_name))
+                                for subdir in out_subdirs
+                            ):
+                                resolved.add(unit.name)
     except OSError as err:
         raise UnresolvedExecutableError(
             f"cannot inspect cache for uplifted executable {executable}: {err}"
@@ -313,30 +364,39 @@ def mark_live_units(workspace_root):
 
 
 def profile_dirs(root):
-    """Yield every directory under `root` that holds a `.fingerprint` table."""
-    for dirpath, dirnames, _ in os.walk(root):
-        if ".fingerprint" in dirnames:
+    """Yield every profile directory under `root`.
+
+    A profile directory holds a `.fingerprint` table (the older layout), or a
+    `build` directory beside one of Cargo's lock files (the per-unit layout,
+    which has no table of its own).
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        if ".fingerprint" in dirnames or (
+            "build" in dirnames and any(name in filenames for name in LOCK_FILES)
+        ):
             yield dirpath
         dirnames[:] = [d for d in dirnames if d not in OUTPUT_DIRS]
 
 
 def try_lock(profile_dir):
-    """Take the profile directory's Cargo lock without blocking.
+    """Take the profile directory's Cargo locks without blocking.
 
-    Returns the open file object that holds the lock, or None when a running
-    build holds it. The caller must keep the object alive while it deletes.
+    Returns a context manager that holds every lock file the directory has,
+    or None when a running build holds one of them. The caller must keep it
+    open while it deletes.
     """
-    for name in (".cargo-lock", ".cargo-build-lock"):
+    held = contextlib.ExitStack()
+    for name in LOCK_FILES:
         path = os.path.join(profile_dir, name)
-        if os.path.exists(path):
-            handle = open(path)
-            try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                handle.close()
-                return None
-            return handle
-    return open(os.devnull)
+        if not os.path.exists(path):
+            continue
+        handle = held.enter_context(open(path))
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            held.close()
+            return None
+    return held
 
 
 def tree_size(path):
@@ -364,6 +424,32 @@ def remove(path, dry_run):
     return size
 
 
+def unit_dirs(profile_dir):
+    """Yield (hash, path) for every unit directory of the per-unit layout."""
+    units_dir = os.path.join(profile_dir, "build")
+    if not os.path.isdir(units_dir):
+        return
+    for package in os.listdir(units_dir):
+        package_dir = os.path.join(units_dir, package)
+        if not os.path.isdir(package_dir) or os.path.islink(package_dir):
+            continue
+        for unit in os.listdir(package_dir):
+            if UNIT_DIR_RE.match(unit):
+                yield unit, os.path.join(package_dir, unit)
+
+
+def unit_fingerprints(profile_dir):
+    """Yield (hash, fingerprint directory) for every unit of either layout."""
+    fingerprint_dir = os.path.join(profile_dir, ".fingerprint")
+    if os.path.isdir(fingerprint_dir):
+        for unit in os.listdir(fingerprint_dir):
+            found = unit_hash(unit)
+            if found:
+                yield found, os.path.join(fingerprint_dir, unit)
+    for found, unit_dir in unit_dirs(profile_dir):
+        yield found, os.path.join(unit_dir, "fingerprint")
+
+
 def dead_units(profile_dir, root, live, marked_cutoff, cache_cutoff):
     """Return (dead hash set, cutoff) for one profile directory.
 
@@ -378,21 +464,21 @@ def dead_units(profile_dir, root, live, marked_cutoff, cache_cutoff):
     workspace graphs is common there (fixture builds share path
     dependencies) without implying the marks cover the directory.
     """
-    fingerprint_dir = os.path.join(profile_dir, ".fingerprint")
     unmarked = []
     marked_count = 0
     total = 0
-    for unit in os.listdir(fingerprint_dir):
-        found = unit_hash(unit)
-        if not found:
-            continue
+    for found, fingerprint_dir in unit_fingerprints(profile_dir):
         total += 1
         if found in live:
             marked_count += 1
             continue
-        unit_dir = os.path.join(fingerprint_dir, unit)
-        newest = os.lstat(unit_dir).st_mtime
-        stamp = os.path.join(unit_dir, "invoked.timestamp")
+        try:
+            newest = os.lstat(fingerprint_dir).st_mtime
+        except OSError:
+            # A unit directory without its fingerprint is a build that did not
+            # finish; date it by the directory that is there.
+            newest = os.lstat(os.path.dirname(fingerprint_dir)).st_mtime
+        stamp = os.path.join(fingerprint_dir, "invoked.timestamp")
         if os.path.exists(stamp):
             newest = max(newest, os.lstat(stamp).st_mtime)
         unmarked.append((found, newest))
@@ -406,6 +492,7 @@ def sweep_profile_dir(profile_dir, root, live, marked_cutoff, cache_cutoff, dry_
     """Sweep one profile directory. Returns (bytes, unit count)."""
     dead, cutoff = dead_units(profile_dir, root, live, marked_cutoff, cache_cutoff)
     freed = 0
+    # The older layout: a unit's entries carry its hash in their names
     for subdir in ("deps", "build", ".fingerprint"):
         path = os.path.join(profile_dir, subdir)
         if not dead:
@@ -415,6 +502,20 @@ def sweep_profile_dir(profile_dir, root, live, marked_cutoff, cache_cutoff, dry_
         for name in os.listdir(path):
             if unit_hash(name) in dead:
                 freed += remove(os.path.join(path, name), dry_run)
+    # The per-unit layout: a unit is one directory, and a package directory
+    # left without units goes with its last one
+    if dead:
+        emptied = set()
+        for found, unit_dir in list(unit_dirs(profile_dir)):
+            if found in dead:
+                freed += remove(unit_dir, dry_run)
+                emptied.add(os.path.dirname(unit_dir))
+        if not dry_run:
+            for package_dir in emptied:
+                try:
+                    os.rmdir(package_dir)
+                except OSError:
+                    pass
     # Incremental caches are keyed separately from the unit hashes, so they are
     # swept by age alone, with the same cutoff as the directory's tier: a cache
     # nobody compiled with since the cutoff only saves time for a unit that is

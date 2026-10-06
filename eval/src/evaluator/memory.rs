@@ -1,8 +1,6 @@
-use alloc::{format, string::String, vec, vec::Vec};
-use core::ops::{Index, IndexMut, Range};
+use alloc::{collections::BTreeMap, vec};
 
-use miden_core::field::PrimeField64;
-use midenc_hir::{Felt, Immediate, SmallVec, SourceSpan, Type};
+use midenc_hir::{AddressSpace, Felt, Immediate, SmallVec, SourceSpan, Type};
 use midenc_session::diagnostics::{Diagnostic, miette};
 
 use crate::Value;
@@ -28,9 +26,12 @@ pub enum ReadFailed {
     #[error("unsupported type")]
     #[diagnostic()]
     UnsupportedType,
-    #[error("invalid field element: {0}")]
+    #[error("byte access requires a u32 memory element, got {0}")]
     #[diagnostic()]
-    InvalidFelt(String),
+    InvalidElement(u64),
+    #[error("field element access requires an element-aligned pointer")]
+    #[diagnostic()]
+    UnalignedElement,
 }
 
 /// An error occurred while writing a value to memory
@@ -51,219 +52,256 @@ pub enum WriteFailed {
         #[label]
         at: SourceSpan,
     },
+    #[error("byte access requires a u32 memory element, got {0}")]
+    #[diagnostic()]
+    InvalidElement(u64),
+    #[error("field element access requires an element-aligned pointer")]
+    #[diagnostic()]
+    UnalignedElement,
+    #[error("element snapshot does not match the requested byte length")]
+    #[diagnostic()]
+    InvalidSnapshot,
 }
 
-/// Read a value of type `ty`, starting from offset `addr` in `memory`
+/// A VM cell and byte offset, retaining the address units used by the originating pointer.
 ///
-/// This operation can fail if `ty` is not a supported immediate type, or if the bytes in memory
-/// are not valid for that type.
-///
-/// NOTE: If `memory` is smaller than implied by `addr`, it is presumed to be zeroed.
-pub fn read_value(addr: usize, ty: &Type, memory: &[u8]) -> Result<Value, ReadFailed> {
-    let imm = match ty {
-        Type::I1 => {
-            let byte = read_byte(addr, memory);
-            Immediate::I1((byte & 0x1) == 1)
-        }
-        Type::I8 => {
-            let value = read_byte(addr, memory) as i8;
-            Immediate::I8(value)
-        }
-        Type::U8 => {
-            let value = read_byte(addr, memory);
-            Immediate::U8(value)
-        }
-        Type::I16 => {
-            let value = i16::from_be_bytes(read_bytes(addr, memory));
-            Immediate::I16(value)
-        }
-        Type::U16 => {
-            let value = u16::from_be_bytes(read_bytes(addr, memory));
-            Immediate::U16(value)
-        }
-        Type::I32 => {
-            let value = i32::from_be_bytes(read_bytes(addr, memory));
-            Immediate::I32(value)
-        }
-        Type::U32 => {
-            let value = u32::from_be_bytes(read_bytes(addr, memory));
-            Immediate::U32(value)
-        }
-        Type::I64 => {
-            let value = i64::from_be_bytes(read_bytes(addr, memory));
-            Immediate::I64(value)
-        }
-        Type::U64 => {
-            let value = u64::from_be_bytes(read_bytes(addr, memory));
-            Immediate::U64(value)
-        }
-        Type::I128 => {
-            let value = i128::from_be_bytes(read_bytes(addr, memory));
-            Immediate::I128(value)
-        }
-        Type::U128 => {
-            let value = u128::from_be_bytes(read_bytes(addr, memory));
-            Immediate::U128(value)
-        }
-        Type::F64 => {
-            let value = f64::from_be_bytes(read_bytes(addr, memory));
-            Immediate::F64(value)
-        }
-        Type::Felt => {
-            let bytes = read_bytes::<8>(addr, memory);
-            let value = u64::from_le_bytes(bytes);
-            if value >= Felt::ORDER_U64 {
-                return Err(ReadFailed::InvalidFelt(format!(
-                    "failed to decode felt at {addr}: value {value} exceeds field modulus"
-                )));
-            }
-            Immediate::Felt(Felt::new_unchecked(value))
-        }
-        Type::Ptr(_) => {
-            let value = u32::from_be_bytes(read_bytes(addr, memory));
-            Immediate::U32(value)
-        }
-        _ => {
-            return Err(ReadFailed::UnsupportedType);
-        }
-    };
+/// A cell occupies four bytes of IR address space but stores a complete field element.
+#[derive(Debug, Copy, Clone)]
+pub struct MemoryAddress {
+    pub(super) element: u32,
+    pub(super) offset: u8,
+    pub(super) space: AddressSpace,
+}
 
+impl MemoryAddress {
+    /// Interpret a raw pointer in byte or native element units.
+    pub fn new(address: u32, space: AddressSpace) -> Self {
+        let (element, offset) = match space {
+            AddressSpace::Byte => (address / 4, (address % 4) as u8),
+            AddressSpace::Element => (address, 0),
+        };
+        Self {
+            element,
+            offset,
+            space,
+        }
+    }
+
+    pub(crate) fn from_pointer(address: u32, ty: &Type) -> Self {
+        let Type::Ptr(ptr) = ty else {
+            panic!("expected verified pointer type")
+        };
+        Self::new(address, ptr.addrspace())
+    }
+
+    pub(crate) fn position(self) -> u64 {
+        u64::from(self.element) * 4 + u64::from(self.offset)
+    }
+
+    pub(crate) fn is_element_aligned(self) -> bool {
+        self.offset == 0
+    }
+
+    pub(super) fn raw(self) -> u32 {
+        match self.space {
+            AddressSpace::Byte => self.position() as u32,
+            AddressSpace::Element => self.element,
+        }
+    }
+
+    /// Offset a normalized address without changing the units of its originating pointer.
+    pub(crate) fn checked_add(self, bytes: u64) -> Option<Self> {
+        let position = self.position().checked_add(bytes)?;
+        let element = u32::try_from(position / 4).ok()?;
+        if self.space == AddressSpace::Byte && position > u64::from(u32::MAX) {
+            return None;
+        }
+        Some(Self {
+            element,
+            offset: (position % 4) as u8,
+            space: self.space,
+        })
+    }
+}
+
+/// Bare addresses in the evaluator's convenience API remain byte addresses.
+impl From<u32> for MemoryAddress {
+    fn from(address: u32) -> Self {
+        Self::new(address, AddressSpace::Byte)
+    }
+}
+
+/// Cell storage shared by sparse context memory and compact procedure-local buffers.
+pub(super) trait Cells {
+    fn get(&self, address: u32) -> Felt;
+    fn set(&mut self, address: u32, value: Felt);
+}
+
+impl Cells for BTreeMap<u32, Felt> {
+    fn get(&self, address: u32) -> Felt {
+        BTreeMap::get(self, &address).copied().unwrap_or_default()
+    }
+
+    fn set(&mut self, address: u32, value: Felt) {
+        if value == Felt::ZERO {
+            self.remove(&address);
+        } else {
+            self.insert(address, value);
+        }
+    }
+}
+
+impl<const N: usize> Cells for SmallVec<[Felt; N]> {
+    fn get(&self, address: u32) -> Felt {
+        self.as_slice().get(address as usize).copied().unwrap_or_default()
+    }
+
+    fn set(&mut self, address: u32, value: Felt) {
+        self[address as usize] = value;
+    }
+}
+
+fn read_u32(memory: &impl Cells, element: u32) -> Result<u32, ReadFailed> {
+    let value = memory.get(element).as_canonical_u64();
+    u32::try_from(value).map_err(|_| ReadFailed::InvalidElement(value))
+}
+
+pub(super) fn read_byte(addr: MemoryAddress, memory: &impl Cells) -> Result<u8, ReadFailed> {
+    Ok((read_u32(memory, addr.element)? >> (u32::from(addr.offset) * 8)) as u8)
+}
+
+fn read_bytes<const N: usize>(
+    addr: MemoryAddress,
+    memory: &impl Cells,
+) -> Result<[u8; N], ReadFailed> {
+    let mut bytes = [0; N];
+    for (offset, byte) in bytes.iter_mut().enumerate() {
+        *byte = read_byte(addr.checked_add(offset as u64).expect("range was checked"), memory)?;
+    }
+    Ok(bytes)
+}
+
+/// Decode integers in little-endian order; a Felt occupies one whole cell, not eight bytes.
+pub(super) fn read_value(
+    addr: MemoryAddress,
+    ty: &Type,
+    memory: &impl Cells,
+) -> Result<Value, ReadFailed> {
+    let imm = match ty {
+        Type::I1 => Immediate::I1(read_byte(addr, memory)? & 1 != 0),
+        Type::I8 => Immediate::I8(read_byte(addr, memory)? as i8),
+        Type::U8 => Immediate::U8(read_byte(addr, memory)?),
+        Type::I16 => Immediate::I16(i16::from_le_bytes(read_bytes(addr, memory)?)),
+        Type::U16 => Immediate::U16(u16::from_le_bytes(read_bytes(addr, memory)?)),
+        Type::I32 => Immediate::I32(i32::from_le_bytes(read_bytes(addr, memory)?)),
+        Type::U32 | Type::Ptr(_) => Immediate::U32(u32::from_le_bytes(read_bytes(addr, memory)?)),
+        Type::I64 => Immediate::I64(i64::from_le_bytes(read_bytes(addr, memory)?)),
+        Type::U64 => Immediate::U64(u64::from_le_bytes(read_bytes(addr, memory)?)),
+        Type::I128 => Immediate::I128(i128::from_le_bytes(read_bytes(addr, memory)?)),
+        Type::U128 => Immediate::U128(u128::from_le_bytes(read_bytes(addr, memory)?)),
+        Type::F64 => Immediate::F64(f64::from_le_bytes(read_bytes(addr, memory)?)),
+        Type::Felt if addr.offset == 0 => Immediate::Felt(memory.get(addr.element)),
+        Type::Felt => return Err(ReadFailed::UnalignedElement),
+        _ => return Err(ReadFailed::UnsupportedType),
+    };
     Ok(Value::Immediate(imm))
 }
 
-/// Read a single byte from `addr` in `memory`.
-///
-/// Returns a zero byte if `addr` is not in bounds of `memory`.
-#[inline]
-pub fn read_byte(addr: usize, memory: &[u8]) -> u8 {
-    memory.get(addr).copied().unwrap_or_default()
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum WriteMode {
+    /// Bit operations inspect the old contents even when the requested range covers a whole cell.
+    Bytewise,
+    /// Typed stores can replace complete cells without inspecting their previous contents.
+    Typed,
 }
 
-/// Read `N` bytes starting from `addr` in `memory`.
-///
-/// Any bytes that are out of bounds of `memory` are presumed to be zeroed.
-pub fn read_bytes<const N: usize>(addr: usize, memory: &[u8]) -> [u8; N] {
-    match memory.get(addr..(addr + N)) {
-        Some(bytes) => <[u8; N]>::try_from(bytes).unwrap(),
-        None if memory.len() <= addr => {
-            // No memory at `addr` has been written yet, return all zeros
-            [0; N]
+/// Write a byte window, preserving all bytes outside it. Byte operations require u32 cells.
+/// Validate the entire destination before mutating it.
+pub(super) fn write_bytes(
+    addr: MemoryAddress,
+    bytes: &[u8],
+    memory: &mut impl Cells,
+) -> Result<(), WriteFailed> {
+    write_window(addr, bytes, memory, WriteMode::Bytewise)
+}
+
+fn write_window(
+    addr: MemoryAddress,
+    bytes: &[u8],
+    memory: &mut impl Cells,
+    mode: WriteMode,
+) -> Result<(), WriteFailed> {
+    if bytes.is_empty() {
+        return Ok(());
+    }
+    let first = addr.position();
+    let end = first + bytes.len() as u64;
+    let last = (end - 1) / 4;
+    for element in u64::from(addr.element)..=last {
+        let start = first.max(element * 4);
+        let stop = end.min(element * 4 + 4);
+        if mode == WriteMode::Bytewise || stop - start != 4 {
+            let value = memory.get(element as u32).as_canonical_u64();
+            u32::try_from(value).map_err(|_| WriteFailed::InvalidElement(value))?;
         }
-        None => {
-            // Some bytes are available, but not all, read them individually
-            let mut buf = [0; N];
-            for (byte, addr) in (addr..(addr + N)).enumerate() {
-                buf[byte] = read_byte(addr, memory);
-            }
-            buf
+    }
+    for element in u64::from(addr.element)..=last {
+        let start = first.max(element * 4);
+        let stop = end.min(element * 4 + 4);
+        let mut value = if stop - start == 4 {
+            0
+        } else {
+            memory.get(element as u32).as_canonical_u64() as u32
+        };
+        for position in start..stop {
+            let shift = (position % 4) as u32 * 8;
+            value = (value & !(0xff << shift))
+                | (u32::from(bytes[(position - first) as usize]) << shift);
         }
+        memory.set(element as u32, Felt::from(value));
     }
+    Ok(())
 }
 
-/// This trait exists so as to abstract over the buffer type being used to represent memory.
-///
-/// For now, it is implemented for `Vec` and `SmallVec`.
-pub trait Buffer:
-    Index<usize, Output = u8>
-    + Index<Range<usize>, Output = [u8]>
-    + IndexMut<usize, Output = u8>
-    + IndexMut<Range<usize>, Output = [u8]>
-{
-    fn get_mut(&mut self, index: usize) -> Option<&mut u8>;
-    fn get_slice_mut(&mut self, index: Range<usize>) -> Option<&mut [u8]>;
-    fn resize(&mut self, len: usize, value: u8);
-}
-
-impl Buffer for Vec<u8> {
-    #[inline(always)]
-    fn get_mut(&mut self, index: usize) -> Option<&mut u8> {
-        self.as_mut_slice().get_mut(index)
-    }
-
-    #[inline(always)]
-    fn get_slice_mut(&mut self, index: Range<usize>) -> Option<&mut [u8]> {
-        self.as_mut_slice().get_mut(index)
-    }
-
-    #[inline(always)]
-    fn resize(&mut self, len: usize, value: u8) {
-        self.resize(len, value)
-    }
-}
-
-impl<const N: usize> Buffer for SmallVec<[u8; N]> {
-    #[inline(always)]
-    fn get_mut(&mut self, index: usize) -> Option<&mut u8> {
-        self.as_mut_slice().get_mut(index)
-    }
-
-    #[inline(always)]
-    fn get_slice_mut(&mut self, index: Range<usize>) -> Option<&mut [u8]> {
-        self.as_mut_slice().get_mut(index)
-    }
-
-    #[inline(always)]
-    fn resize(&mut self, len: usize, value: u8) {
-        self.resize(len, value)
-    }
-}
-
-/// Write `value` to `memory` starting at offset `addr`.
-///
-/// If `addr`, or the resulting write, would go out of bounds of `memory`, it is resized such that
-/// there is sufficient space for the write, i.e. a write never fails unless allocating the
-/// underlying storage would fail.
-pub fn write_value<B: Buffer>(addr: usize, value: Value, memory: &mut B) {
+pub(super) fn write_value(
+    addr: MemoryAddress,
+    value: Value,
+    memory: &mut impl Cells,
+) -> Result<(), WriteFailed> {
     let imm = match value {
         Value::Poison { value, .. } | Value::Immediate(value) => value,
     };
-
     match imm {
-        Immediate::I1(value) => write_byte(addr, value as u8, memory),
-        Immediate::I8(value) => write_byte(addr, value as u8, memory),
-        Immediate::U8(value) => write_byte(addr, value, memory),
-        Immediate::I16(value) => write_bytes(addr, &value.to_be_bytes(), memory),
-        Immediate::U16(value) => write_bytes(addr, &value.to_be_bytes(), memory),
-        Immediate::I32(value) => write_bytes(addr, &value.to_be_bytes(), memory),
-        Immediate::U32(value) => write_bytes(addr, &value.to_be_bytes(), memory),
-        Immediate::I64(value) => write_bytes(addr, &value.to_be_bytes(), memory),
-        Immediate::U64(value) => write_bytes(addr, &value.to_be_bytes(), memory),
-        Immediate::I128(value) => write_bytes(addr, &value.to_be_bytes(), memory),
-        Immediate::U128(value) => write_bytes(addr, &value.to_be_bytes(), memory),
-        Immediate::F64(value) => write_bytes(addr, &value.to_be_bytes(), memory),
-        Immediate::Felt(value) => {
-            write_bytes(addr, &value.as_canonical_u64().to_le_bytes(), memory)
+        Immediate::Felt(value) if addr.offset == 0 => {
+            memory.set(addr.element, value);
+            Ok(())
         }
-    }
-}
-
-/// Write `byte` to `memory` at offset `addr`.
-///
-/// If `addr` is out of bounds of `memory`, it is resized such that there is sufficient space for
-/// the write, i.e. a write never fails unless allocating the underlying storage would fail.
-pub fn write_byte<B: Buffer>(addr: usize, byte: u8, memory: &mut B) {
-    match memory.get_mut(addr) {
-        Some(slot) => *slot = byte,
-        None => {
-            memory.resize(addr + 8, 0);
-            memory[addr] = byte;
+        Immediate::Felt(_) => Err(WriteFailed::UnalignedElement),
+        Immediate::I1(value) => {
+            let previous = memory.get(addr.element).as_canonical_u64();
+            let previous =
+                u32::try_from(previous).map_err(|_| WriteFailed::InvalidElement(previous))?;
+            let shift = u32::from(addr.offset) * 8;
+            memory.set(
+                addr.element,
+                Felt::from((previous & !(1 << shift)) | ((value as u32) << shift)),
+            );
+            Ok(())
         }
-    }
-}
-
-/// Write `bytes` to `memory` at offset `addr`.
-///
-/// If `addr`, or the resulting write, would go out of bounds of `memory`, it is resized such that
-/// there is sufficient space for the write, i.e. a write never fails unless allocating the
-/// underlying storage would fail.
-pub fn write_bytes<B: Buffer>(addr: usize, bytes: &[u8], memory: &mut B) {
-    match memory.get_slice_mut(addr..(addr + bytes.len())) {
-        Some(target_bytes) => {
-            target_bytes.copy_from_slice(bytes);
+        Immediate::I8(value) => write_window(addr, &[value as u8], memory, WriteMode::Typed),
+        Immediate::U8(value) => write_window(addr, &[value], memory, WriteMode::Typed),
+        Immediate::I16(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
+        Immediate::U16(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
+        Immediate::I32(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
+        Immediate::U32(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
+        Immediate::I64(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
+        Immediate::U64(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
+        Immediate::I128(value) => {
+            write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed)
         }
-        None => {
-            memory.resize(addr + bytes.len() + 8, 0);
-            memory[addr..(addr + bytes.len())].copy_from_slice(bytes);
+        Immediate::U128(value) => {
+            write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed)
         }
+        Immediate::F64(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
     }
 }

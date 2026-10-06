@@ -1,8 +1,9 @@
 use std::{env, time::SystemTime};
 
 use cargo_miden::run;
+use midenc_integration_test_support::{example_build_lock, workspace_root};
 
-use crate::utils::{current_dir_lock, workspace_root};
+use crate::utils::current_dir_lock;
 
 /// A caller-provided `MIDENC_PACKAGE_CACHE` materializes a build's Miden dependencies on disk.
 ///
@@ -27,7 +28,8 @@ fn p2id_build_materializes_basic_wallet_dependency() {
         env::remove_var("CARGO_TARGET_DIR");
     }
 
-    let examples = workspace_root().join("examples");
+    let workspace = workspace_root();
+    let examples = workspace.join("examples");
     let p2id_note_dir = examples.join("p2id-note");
 
     // Build the p2id-note project, which pulls in basic-wallet as a Miden dependency.
@@ -35,9 +37,12 @@ fn p2id_build_materializes_basic_wallet_dependency() {
     env::set_current_dir(&p2id_note_dir).unwrap();
     let build_started_at = SystemTime::now();
     let export_dir = crate::utils::exported_packages_dir(&p2id_note_dir);
-    let result = crate::utils::with_package_cache_env(&export_dir, || {
-        run(["cargo", "miden", "build", "--release"].into_iter().map(|s| s.to_string()))
-    });
+    let result = {
+        let _build_lock = example_build_lock(&workspace);
+        crate::utils::with_package_cache_env(&export_dir, || {
+            run(["cargo", "miden", "build", "--release"].into_iter().map(|s| s.to_string()))
+        })
+    };
     env::set_current_dir(&restore_dir).unwrap();
 
     // Restore `CARGO_TARGET_DIR` before asserting, so a build failure doesn't leak the unset state.

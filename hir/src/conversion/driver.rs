@@ -235,6 +235,7 @@ impl FullConversionDriver<'_> {
                 Rc::clone(&self.context),
                 type_converter.clone(),
             );
+            rewriter.inherit_inline_call_chain(op);
             if op.parent().is_some() {
                 rewriter.set_insertion_point_before(op);
             }
@@ -1052,6 +1053,20 @@ builtin.function public extern(\"C\") @full_conversion_rewrites_illegal_op_to_le
     #[test]
     fn full_conversion_materializes_1_to_1_type_conversions() {
         let test = add_function("full_conversion_materializes_1_to_1_type_conversions");
+        use crate::dialects::debuginfo::attributes::{
+            INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain, InlineCallChainAttr,
+        };
+        let chain = test
+            .context_rc()
+            .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::default())
+            .as_attribute_ref();
+        let mut add = None;
+        test.function().borrow().as_operation().prewalk_all(|op| {
+            if op.is::<Add>() {
+                add = Some(op.as_operation_ref());
+            }
+        });
+        add.unwrap().borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
         let target = target_with_test_ops(test.context_rc(), |target| {
             target.add_legal_op::<Mul>().add_legal_op::<UnrealizedConversionCast>();
         });
@@ -1067,6 +1082,16 @@ builtin.function public extern(\"C\") @full_conversion_rewrites_illegal_op_to_le
         .unwrap();
 
         assert_eq!(result.converted_ops(), 1);
+        let mut inherited = 0;
+        test.function().borrow().as_operation().prewalk_all(|op| {
+            if op.is::<Mul>() || op.is::<UnrealizedConversionCast>() {
+                assert_eq!(op.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME), Some(chain));
+                inherited += 1;
+            } else if op.is::<Constant>() {
+                assert!(!op.has_attribute(INLINE_CALL_CHAIN_ATTR_NAME));
+            }
+        });
+        assert_eq!(inherited, 4, "replacement plus operand and result materializations");
         let output = test.function().borrow().as_operation().to_string();
         assert!(output.contains("builtin.unrealized_conversion_cast"));
         assert!(output.contains("#builtin.type<i32>"));

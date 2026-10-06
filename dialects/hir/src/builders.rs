@@ -817,9 +817,13 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     /// Copies `count` values from the memory at address `src`, to the memory at address `dst`.
     ///
     /// The unit size for `count` is determined by the `src` pointer type, i.e. a pointer to u8
-    /// will copy one `count` bytes, a pointer to u16 will copy `count * 2` bytes, and so on.
+    /// will copy `count` bytes, a pointer to u16 will copy `count * 2` bytes, and so on.
     ///
-    /// NOTE: The source and destination pointer types must match, or this function will panic.
+    /// The source and destination ranges must not overlap, a copy of a non-zero length between
+    /// overlapping ranges traps. Use [Self::memmove] when the ranges may overlap.
+    ///
+    /// NOTE: The source and destination pointer types must match, a mismatch is rejected by the
+    /// verifier.
     fn memcpy(
         &mut self,
         src: ValueRef,
@@ -828,6 +832,28 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::MemCpy>, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::MemCpy, _>(span);
+        op_builder(src, dst, count)
+    }
+
+    /// Copies `count` values from the memory at address `src`, to the memory at address `dst`,
+    /// where the two ranges may overlap.
+    ///
+    /// The unit size for `count` is determined by the `src` pointer type, i.e. a pointer to u8
+    /// will copy `count` bytes, a pointer to u16 will copy `count * 2` bytes, and so on.
+    ///
+    /// The destination receives the values the source range held before the copy. Use
+    /// [Self::memcpy] when the ranges are known to be disjoint.
+    ///
+    /// NOTE: The source and destination pointer types must match, a mismatch is rejected by the
+    /// verifier.
+    fn memmove(
+        &mut self,
+        src: ValueRef,
+        dst: ValueRef,
+        count: ValueRef,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::MemMove>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::MemMove, _>(span);
         op_builder(src, dst, count)
     }
 

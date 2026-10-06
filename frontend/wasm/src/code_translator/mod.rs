@@ -252,7 +252,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
                 let count = builder.bitcast(count_i32, Type::U32, span)?;
                 let dst = prepare_addr(dst_i32, &U8, None, builder, span)?;
                 let src = prepare_addr(src_i32, &U8, None, builder, span)?;
-                builder.memcpy(src, dst, count, span)?;
+                // The source and destination ranges of `memory.copy` may overlap
+                builder.memmove(src, dst, count, span)?;
             } else {
                 unsupported_diag!(diagnostics, "MemoryCopy: only single memory is supported");
             }

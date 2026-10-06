@@ -1,0 +1,11 @@
+[package]
+name = "dex-note-codec"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden-note-codec = { path = "../../sdk/note-codec" }

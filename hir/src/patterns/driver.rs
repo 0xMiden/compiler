@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 
 use super::{
     ForwardingListener, FrozenRewritePatternSet, PatternApplicator, PatternRewriter, Rewriter,
-    RewriterListener,
+    RewriterExt, RewriterListener,
 };
 use crate::{
     BlockRef, Builder, Context, Forward, InsertionGuard, Listener, OpFoldResult, OperationFolder,
@@ -484,6 +484,8 @@ impl GreedyPatternRewriteDriver {
     ) -> bool {
         log::trace!(target: "pattern-rewrite-driver", "processing operation '{op_ref}'");
 
+        let mut scope = rewriter.with_inline_call_chain(op_ref);
+        let rewriter = &mut *scope;
         let op = op_ref.borrow();
 
         // If the operation is trivially dead - remove it.
@@ -527,7 +529,7 @@ impl GreedyPatternRewriteDriver {
                     op.num_results(),
                     "folder produced incorrect number of results"
                 );
-                let mut rewriter = InsertionGuard::new(&mut **rewriter);
+                let mut rewriter = InsertionGuard::new(&mut *rewriter);
                 rewriter.set_insertion_point(ProgramPoint::before(op_ref));
 
                 log::trace!(target: "pattern-rewrite-driver", "replacing op with fold results..");
@@ -671,7 +673,7 @@ impl GreedyPatternRewriteDriver {
             };
             self.matcher.borrow_mut().match_and_rewrite(
                 op_ref,
-                &mut **rewriter,
+                &mut *rewriter,
                 can_apply,
                 on_failure,
                 on_success,
@@ -679,7 +681,7 @@ impl GreedyPatternRewriteDriver {
         } else {
             self.matcher.borrow_mut().match_and_rewrite(
                 op_ref,
-                &mut **rewriter,
+                &mut *rewriter,
                 |_| true,
                 |_| {},
                 |_| Ok(()),

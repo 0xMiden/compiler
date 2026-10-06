@@ -20,11 +20,11 @@ doctest = false
 miden-field.workspace = true
 miden-field-repr.workspace = true
 miden-tx-script-args.workspace = true
-miden-client = { version = "0.17.0-rc.3", features = ["std", "tonic", "testing"] }
+miden-client = { version = "0.17.0", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std", "testing"] }
 miden-standards = { workspace = true, features = ["std", "testing"] }
-miden-testing = { version = "=0.17.0-rc.7", features = ["std"] }
+miden-testing = { version = "0.17.0", features = ["std"] }
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-expect-test.workspace = true
@@ -33,3 +33,7 @@ tokio.workspace = true
 
 # For accessing shared compiler test builders and helpers
 midenc-integration-test-support.workspace = true
+
+[dev-dependencies]
+miden-note-schema = { workspace = true, features = ["codec-component"] }
+midenc-frontend-wasm-metadata.workspace = true

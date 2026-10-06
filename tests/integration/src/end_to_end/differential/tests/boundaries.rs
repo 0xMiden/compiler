@@ -200,7 +200,7 @@ fn bitcnt_zero_edges() {
 }
 
 /// Zero- and boundary-length memory ops with disjoint ranges: element copies
-/// of length 0/1, byte copies of length 0..=5 across the memcpy `% 4`
+/// of length 0/1, byte copies of length 0..=5 across the memmove `% 4`
 /// fastpath boundary, and a byte fill of length 0 — with fixed-index reads
 /// asserting length-0 ops wrote nothing.
 #[test]
@@ -233,8 +233,8 @@ fn memlen_zero_edges() {
 
 /// DELIBERATE PROBE: zero-length copy at an identical src == dst position
 /// (opaquely-zero length and dst offset survive to a runtime memory.copy) —
-/// length-0 ranges cannot overlap, so any VM-side abort would be a real
-/// divergence in the memcopy_elements overlap assert.
+/// the 4-aligned zero count takes the element path, where `count == 0` is a
+/// no-op on both sides.
 #[test]
 fn memnoop_same() {
     run_case("memnoop_same", include_str!("../cases/case_memnoop_same.rs"));

@@ -7,6 +7,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0]
+
+### Compiler and `midenc`
+
+- Support duplicate function names in the Wasm name section, including those emitted by rustc
+  for the Miden target. Functions receive unique linkage names while debug information retains
+  their source names; DWARF entries with duplicate names resolve through their code addresses.
+- Compiled debug information includes DWARF inline call chains and call sites, preserving them
+  through optimization and lowering. Inline function declarations remain stable across call sites
+  even when source files are unavailable, and shared constants no longer carry misleading inline
+  frames.
+- Wasm `memory.copy` handles overlapping ranges correctly, including the shifts used by
+  `Vec::insert`, `Vec::remove`, and `String::insert`. Aligned copies previously trapped on overlap,
+  while other copies could overwrite source bytes before reading them.
+- Note packages embed validated storage schemas, including schemas supplied by raw core Wasm
+  modules. Hosts can discover the note's storage layout from its `.masp` package.
+- Note authors can bundle a custom text codec by setting `[package.metadata.midenc.note-codec]`
+  and `crate = "../my-note-codec"` in `miden-project.toml`. The compiler builds a release-profile
+  `wasm32-wasip2` component, checks its interface and sandbox limits, and embeds it only when the
+  note is the root build target. Note dependencies retain their schemas without building or
+  embedding the codec. The codec crate must produce a `cdylib`.
+- `--locked` and `--offline` control lockfile updates and network access in Rust project builds.
+  Offline builds report how to install a missing Wasm target instead of invoking rustup to
+  download it. The independent note codec build does not inherit these flags.
+- Wasm programs can call the transaction kernel's output-note `seal` and `is_sealed` procedures.
+
+### Libraries and public APIs
+
+- HIR builders provide `hir.mem_move` and `HirOpBuilder::memmove` for copies whose source and
+  destination may overlap. The count is in values of the source pointer's pointee type.
+- `midenc-hir-eval` exposes `MemoryAddress` for selecting byte or native element addresses, and
+  `read_memory_elements` and `write_memory_elements` for snapshots that preserve complete field
+  elements. Existing `u32` addresses passed to evaluator memory APIs remain byte addresses.
+- HIR producers can attach inline frames with `InlineCallFrame` and `InlineCallChain`;
+  `RewriterExt::with_inline_call_chain` scopes inherited metadata to replacement operations.
+- `midenc_compile::rust::run_cargo` reports Cargo build failures as errors, allowing library
+  callers to handle them without terminating the process.
+
+### Migration and breaking changes
+
+- Align dependencies with protocol `0.17.0` and Miden VM `0.35.0`, and rebuild compiled packages
+  with the matching toolchain when upgrading from the rc.3 stack.
+- Wasm function export names now determine their HIR linkage symbols and CLI entrypoint names.
+  If an export differs from its name-section name, update entrypoint selections and external
+  references to use the export name. Source names remain available for diagnostics and debug
+  information. Exporting one function under multiple names, exports colliding with global names,
+  and exports identifying compiler intrinsics or Miden ABI linker stubs are rejected.
+  Library callers needing source labels should use `Module::source_func_name`; `func_name`
+  now returns the unique linkage name.
+- `hir.mem_cpy` now traps on nonempty overlapping ranges, including identical source and
+  destination ranges. Use `hir.mem_move` or `HirOpBuilder::memmove` when overlap is possible.
+  Both operations require identical source and destination pointer types; cast mismatched
+  pointers before copying. MASM lowering supports byte-address-space pointers only, checks that
+  the byte length and range ends fit in `u32`, and requires 16-byte alignment for pointees of
+  16 bytes or multiples of 16, even for a zero count. Copies through 1-byte pointees move whole
+  bytes, including through `ptr<i1>`.
+- Evaluator integer memory encoding is now little-endian, and a `Felt` occupies one four-byte
+  address-space cell while preserving its full field value. Update code or fixtures that assumed
+  big-endian integers or eight-byte felt storage. Byte reads and partial writes reject cells
+  outside the `u32` range, and unaligned felt accesses fail. Pointer address spaces are honored
+  for loads, stores, copies, and fills; `hir.mem_set` advances by the pointee size, and invalid
+  local accesses report errors instead of indexing unchecked storage.
+- Package assembly rejects duplicate account-component metadata and component WIT section
+  identifiers. Custom package producers must supply only one section for each identifier.
+- Evaluator memory APIs now accept `impl Into<MemoryAddress>` instead of `u32`. Explicitly
+  type numeric addresses as `u32` (for example, `0u32`) where literals would otherwise default
+  to `i32`, or pass a `MemoryAddress`.
+- Custom implementations of `midenc_hir::Rewriter` must implement `replace_inline_call_chain`,
+  returning the previous chain. Builders that wrap another builder should forward
+  `Builder::inherit_debug_info` so newly built operations retain inherited inline metadata.
+- Struct literals for `midenc_compile::Compiler` and `midenc_compile::cargo::CargoOptions` need
+  `locked` and `offline` fields; `midenc_session::Options` needs `cargo_locked` and
+  `cargo_offline`. Set them to `false` to retain the default behavior. Literals for the Wasm
+  frontend's `ParsedModule` also need `note_storage_schema_bytes: None`.
+- `midenc_compile::rust::install_wasm32_target` takes a third `offline: bool` argument. Pass
+  `false` to retain automatic installation, or `true` to fail if the target is absent.
+- `midenc-compile`'s `compile`, `compile_to_memory`,
+  `compile_link_output_to_masm_with_pre_assembly_stage`, and the `CodegenOutput`,
+  `CompiledArtifact`, and `MidenComponent` re-exports now require the `std` feature. Enable it
+  when using these APIs.
+
 ## [0.11.0-rc.3]
 
 ### Compiler and `midenc`

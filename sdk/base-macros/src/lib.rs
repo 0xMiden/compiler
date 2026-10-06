@@ -75,6 +75,7 @@ mod fpi;
 mod generate;
 mod manifest_paths;
 mod note;
+mod note_schema;
 mod script;
 #[cfg(test)]
 mod test_support;
@@ -285,8 +286,11 @@ pub fn account_procedure(
     component_macro::expand_account_procedure(attr, item)
 }
 
-/// Generates an equvalent type in the WIT interface.
-/// Required for every type mentioned in the public methods of an account component.
+/// Generates an equivalent type in the WIT interface.
+///
+/// Use this macro for every custom type in the public methods of an account component. Exported
+/// records and enums can also appear in note storage schemas. The macro emits a hidden shape
+/// constant that lets `#[note]` confirm the exact Rust type at compile time.
 ///
 /// Intended to be used together with `#[component]` attribute macro.
 #[proc_macro_attribute]
@@ -297,12 +301,33 @@ pub fn export_type(
     export_type::expand(attr, item)
 }
 
+/// Implementation detail of `#[export_type]` for cfg-filtered types.
+#[doc(hidden)]
+#[proc_macro_derive(__MidenExportType)]
+pub fn derive_export_type(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    export_type::derive(item)
+}
+
 /// Marks a type/impl as a note script definition.
 ///
 /// This attribute is intended to be used on:
 /// - a note input type definition (`struct MyNote { ... }`)
 /// - the associated inherent `impl` block that contains an entrypoint method annotated with
 ///   `#[note_script]`
+///
+/// # Note storage schema
+///
+/// A named-field `#[note]` struct emits a WIT storage schema into the package's
+/// `note_storage_schema` section. Field doc comments are copied into the schema.
+///
+/// A note struct must use named fields or no fields. A tuple struct is a compile error. A storage
+/// field cannot use `Vec`. Apply `#[export_type]` to each nested custom type, and place that type
+/// definition before the `#[note]` struct. Each field must use the exact registered
+/// `#[export_type]` Rust type. A different type with the same name fails the hidden shape check.
+///
+/// There can be only one `#[note]` struct per linked artifact, so a note crate cannot depend on
+/// another note crate. A second struct fails at link time because it defines the duplicate
+/// `__MIDEN_NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD` symbol.
 ///
 /// # Foreign Procedure Invocation (FPI)
 ///
@@ -406,6 +431,13 @@ pub fn note(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     note::expand_note(attr, item)
+}
+
+/// Implementation detail of `#[note]` for cfg-filtered storage structs.
+#[doc(hidden)]
+#[proc_macro_derive(__MidenNoteStorage)]
+pub fn derive_note_storage(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    note::derive_note_struct(item)
 }
 
 /// Marks a method as the note script entrypoint (`#[note_script]`).

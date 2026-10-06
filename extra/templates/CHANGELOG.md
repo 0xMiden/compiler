@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0]
+
+### Templates
+
+- The full-project scaffold uses the released Miden client and protocol `0.17.0` crates from
+  crates.io, with `miden-mast-package 0.35.0` for compiled packages.
+
+### SDK compatibility
+
+- The scaffold's assistant guidance now correctly lists `Word` and SDK core records such as
+  `Asset` as supported typed-note fields and explains the requirements for custom field types.
+
+### Migration and breaking changes
+
+- In existing project integration manifests, update `miden-client`, `miden-client-sqlite-store`,
+  `miden-standards`, and `miden-testing` to `0.17.0`, and `miden-mast-package` to `0.35.0`.
+  Replace prerelease, git, or local-path selections with the released crates and regenerate the
+  workspace lockfile.
+- In copied integration tests, replace `miden_client::crypto::RandomCoin` with
+  `rand::rngs::StdRng` and import `rand::SeedableRng`. Seed it with
+  `StdRng::from_seed(Word::from(note_script.root()).into())`. This changes the deterministic note
+  serial numbers produced from the same script root; update expectations that pin them.
+- The full-project scaffold no longer ships its root `Cargo.lock`. Generate a workspace lockfile
+  before using `--locked`; retain and update an existing project's lockfile for reproducible builds.
+- If following the previous typed-note guidance, replace `Vec<T>` fields with explicit, fixed
+  fields and tuple-note structs with named-field structs, preserving field order; unit structs
+  remain supported. Keep one `#[note]` struct per
+  linked artifact: move additional notes to separate crates, without dependencies between note
+  crates. Custom record or enum fields must have `#[export_type]`, derive both `FromFeltRepr` and
+  `ToFeltRepr`, and be declared before the `#[note]` struct. These corrections describe enforced
+  SDK rules; see the [note migration guidance](../../sdk/sdk/MIGRATION.md#keep-one-note-struct-in-each-crate).
+
 ## [0.33.0-rc.3]
 
 ### Templates

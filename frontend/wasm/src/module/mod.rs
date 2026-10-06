@@ -1,15 +1,18 @@
 //! Data structures for representing parsed Wasm modules.
 
 use alloc::{borrow::Cow, collections::BTreeMap};
-use core::{fmt, ops::Range};
+use core::{fmt, ops::Range, str::FromStr};
 
 use cranelift_entity::{EntityRef, PrimaryMap, packed_option::ReservedValue};
 use indexmap::IndexMap;
-use midenc_hir::{FxHashMap, Ident, interner::Symbol};
+use midenc_hir::{FunctionIdent, FxHashMap, FxHashSet, Ident, SymbolPath, interner::Symbol};
 use midenc_session::DiagnosticsHandler;
 
 use self::types::*;
-use crate::{component::SignatureIndex, error::WasmResult, unsupported_diag};
+use crate::{
+    component::SignatureIndex, error::WasmResult, intrinsics::Intrinsic,
+    miden_abi::is_miden_abi_module, unsupported_diag,
+};
 
 pub mod build_ir;
 pub mod debug_info;
@@ -150,7 +153,21 @@ pub struct Module {
     pub memories: PrimaryMap<MemoryIndex, Memory>,
 
     /// Parsed names section.
+    ///
+    /// Wasm's [name section] may contain duplicate names. Therefore it is recommended to
+    /// call [`Self::resolve_func_symbols`] after parsing and then get the unique function
+    /// symbol with [`Self::func_name`].
+    ///
+    /// [name section]: https://webassembly.github.io/spec/core/appendix/custom.html#name-section
     name_section: NameSection,
+
+    /// Linkage name per function. Linkage names are unique.
+    ///
+    /// Built by [`Self::resolve_func_symbols`].
+    func_linkages: PrimaryMap<FuncIndex, Symbol>,
+
+    /// Names in the name section that are shared by more than one function.
+    duplicate_source_names: FxHashSet<Symbol>,
 
     /// The fallback name of this module, used if there is no module name in the name section,
     /// and there is no override specified
@@ -314,13 +331,215 @@ impl Module {
             .expect("No module name in the name section and no fallback name is set")
     }
 
-    /// Returns the name of the given function
+    /// Returns the unique name of the given function
     pub fn func_name(&self, index: FuncIndex) -> Symbol {
+        if let Some(sym) = self.func_linkages.get(index).copied() {
+            return sym;
+        }
+        // Fallback for unnamed functions
+        self.source_func_name(index)
+    }
+
+    /// Returns the name according to the name section.
+    ///
+    /// Use this when referring to the original source code, e.g. in diagnostics or debug info.
+    ///
+    /// The returned name might not be unique, see `Self::name_section`.
+    pub fn source_func_name(&self, index: FuncIndex) -> Symbol {
         self.name_section
             .func_names
             .get(&index)
-            .cloned()
-            .unwrap_or(Symbol::intern(format!("func{}", index.as_u32())))
+            .copied()
+            .unwrap_or_else(|| Self::fallback_func_name(index))
+    }
+
+    /// Synthesized name for functions without a name-section entry (e.g. stripped binaries).
+    // TODO check if there are more places that could use this
+    fn fallback_func_name(index: FuncIndex) -> Symbol {
+        Symbol::intern(format!("func{}", index.as_u32()))
+    }
+
+    /// Returns true if the function has an explicit entry in the name section.
+    pub fn has_explicit_source_func_name(&self, index: FuncIndex) -> bool {
+        self.name_section.func_names.contains_key(&index)
+    }
+
+    /// Returns true if the function's name-section name is shared with at least one other function.
+    ///
+    /// Requires [`Self::resolve_func_symbols`] to have run, which the Wasm frontend does during
+    /// parsing.
+    pub fn is_duplicate_source_func_name(&self, index: FuncIndex) -> bool {
+        self.name_section
+            .func_names
+            .get(&index)
+            .is_some_and(|name| self.duplicate_source_names.contains(name))
+    }
+
+    /// Resolves unique HIR linkage names for all functions in the module.
+    ///
+    /// WebAssembly function export names define the public interface and take precedence as
+    /// the primary HIR linkage symbol. Unexported functions use their name-section name (or
+    /// `func{index}` fallback if absent), disambiguated via `{name}_func{index}` (with `_` appended
+    /// to resolve collisions) if they conflict with an export name, a global variable name, or
+    /// another function with the same source name.
+    ///
+    /// Intrinsics and Miden ABI linker stubs are identified by name (see
+    /// [`maybe_lower_linker_stub`]) and considered internal, so an export or duplicate name that
+    /// identifies a known stub is an error.
+    ///
+    /// This method is idempotent.
+    ///
+    /// [name section]: https://webassembly.github.io/spec/core/appendix/custom.html#name-section
+    /// [`maybe_lower_linker_stub`]: linker_stubs::maybe_lower_linker_stub
+    pub fn resolve_func_symbols(&mut self, diagnostics: &DiagnosticsHandler) -> WasmResult<()> {
+        self.func_linkages.clear();
+        self.duplicate_source_names.clear();
+
+        // Collect and validate function exports
+        let mut exported_as: FxHashMap<FuncIndex, Symbol> = FxHashMap::default();
+        let mut export_names: FxHashSet<Symbol> = FxHashSet::default();
+        for (export_name, entity) in &self.exports {
+            let EntityIndex::Function(func_idx) = entity else {
+                continue;
+            };
+            let export_sym = Symbol::intern(export_name.as_str());
+
+            if exported_as.insert(*func_idx, export_sym).is_some() {
+                unsupported_diag!(
+                    diagnostics,
+                    "exporting a function under multiple names is not supported: function index \
+                     `{}`, `{export_name}`)",
+                    func_idx.as_u32()
+                );
+            }
+            export_names.insert(export_sym);
+
+            if let Ok(func_ident) = FunctionIdent::from_str(export_name.as_str()) {
+                let path = SymbolPath::from_masm_function_id(func_ident);
+                if Intrinsic::try_from(&path).is_ok() || is_miden_abi_module(&path) {
+                    unsupported_diag!(
+                        diagnostics,
+                        "export name '{export_name}' identifies an intrinsic or Miden ABI linker \
+                         stub, which cannot be exported"
+                    );
+                }
+            }
+        }
+
+        // Reject collisions between export names and global variable names
+        let mut global_names: FxHashSet<Symbol> = FxHashSet::default();
+        for global_idx in self.globals.keys() {
+            let name = self.global_name(global_idx);
+            if export_names.contains(&name) {
+                unsupported_diag!(
+                    diagnostics,
+                    "export name '{name}' conflicts with a global variable name"
+                );
+            }
+            global_names.insert(name);
+        }
+
+        // Source names are explicit name-section names only; fallbacks (`func{index}`) are unique
+        // by construction and handled below via `taken`. Counting explicit names ensures that
+        // explicit names win over fallbacks.
+        let mut counts: FxHashMap<Symbol, usize> = FxHashMap::default();
+        for (func_idx, name) in &self.name_section.func_names {
+            if func_idx.index() >= self.functions.len() {
+                continue;
+            }
+            *counts.entry(*name).or_default() += 1;
+        }
+        for (name, count) in &counts {
+            if *count > 1 {
+                self.duplicate_source_names.insert(*name);
+            }
+        }
+
+        // Collect source names that don't need to change. Only explicit (non-fallback) names
+        // participate here. Fallbacks are handled below via `taken`.
+        let mut keep_source_name: FxHashSet<Symbol> = FxHashSet::default();
+        for (func_idx, name) in &self.name_section.func_names {
+            if func_idx.index() >= self.functions.len() {
+                continue;
+            }
+            if !exported_as.contains_key(func_idx)
+                && counts.get(name) == Some(&1)
+                && !export_names.contains(name)
+                && !global_names.contains(name)
+            {
+                keep_source_name.insert(*name);
+            }
+        }
+
+        // Exports take precedence and are never renamed.
+        let mut taken: FxHashSet<Symbol> = export_names;
+        taken.extend(global_names);
+        taken.extend(keep_source_name.iter().copied());
+
+        // Assign dense linkage names in deterministic `FuncIndex` order.
+        let mut linkages: Vec<Option<Symbol>> = vec![None; self.functions.len()];
+        for fidx in self.functions.keys() {
+            let linkage = if let Some(export_name) = exported_as.get(&fidx) {
+                // Export name must become linkage name for external calls to resolve.
+                *export_name
+            } else {
+                // Not exported: linkage defaults to the source name. Fallbacks are unique among
+                // themselves, but an explicit name may be `funcY` while `Y` is unnamed. Explicit
+                // names win regardless of index order because `keep` is pre-seeded into `taken`, so
+                // the fallback loses here and is renamed below.
+                let (candidate, is_explicit) = match self.name_section.func_names.get(&fidx) {
+                    Some(name) => (*name, true),
+                    None => (Self::fallback_func_name(fidx), false),
+                };
+                let can_use_source_as_linkage = if is_explicit {
+                    keep_source_name.contains(&candidate)
+                } else if taken.contains(&candidate) {
+                    false
+                } else {
+                    taken.insert(candidate);
+                    true
+                };
+
+                if can_use_source_as_linkage {
+                    candidate
+                } else {
+                    // Need to construct a unique linkage name.
+                    let cand_str = candidate.as_str();
+                    if let Ok(func_id) = FunctionIdent::from_str(cand_str) {
+                        let path = SymbolPath::from_masm_function_id(func_id);
+                        if Intrinsic::try_from(&path).is_ok() || is_miden_abi_module(&path) {
+                            unsupported_diag!(
+                                diagnostics,
+                                "duplicated function name '{cand_str}' identifies an intrinsic or \
+                                 Miden ABI linker stub, which midenc recognizes by name, so it \
+                                 cannot be renamed"
+                            );
+                        }
+                    }
+
+                    // Interning in the loop is fine because either the string is already interned
+                    // (if taken) or it is about to be used as new symbol.
+                    let mut unique_str = format!("{cand_str}_func{}", fidx.as_u32());
+                    while taken.contains(&Symbol::intern(unique_str.as_str())) {
+                        unique_str.push('_');
+                    }
+                    let unique_sym = Symbol::intern(unique_str);
+                    taken.insert(unique_sym);
+                    unique_sym
+                }
+            };
+            linkages[fidx.index()] = Some(linkage);
+        }
+
+        self.func_linkages.clear();
+        self.func_linkages.reserve(linkages.len());
+        for (idx, slot) in linkages.into_iter().enumerate() {
+            let linkage = slot.expect("linkage assigned for every function");
+            let key = self.func_linkages.push(linkage);
+            debug_assert_eq!(key, FuncIndex::new(idx));
+        }
+
+        Ok(())
     }
 
     /// Returns the name of the given data segment.
@@ -450,6 +669,9 @@ impl FuncRefIndex {
     }
 }
 
+/// Parsed names from the Wasm [name section].
+///
+/// [name section]: https://webassembly.github.io/spec/core/appendix/custom.html#name-section
 #[derive(Debug, Default)]
 pub struct NameSection {
     pub module_name: Option<Ident>,

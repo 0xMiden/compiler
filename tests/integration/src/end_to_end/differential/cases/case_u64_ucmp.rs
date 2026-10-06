@@ -1,10 +1,13 @@
-// Exercises the unsigned-u64 emitter arms in `codegen/masm/src/emit/int64.rs`:
-// `lt_u64`/`lte_u64`/`gt_u64`/`gte_u64` (the `i64.lt_u`-family translators
-// bitcast both operands to U64, the only way U64-typed values reach the
-// comparison emitters), `rotr_u64` via a dynamic-count rotate (constant-count
-// rotr is turned into rotl by LLVM), and the u64 arm of `clz`. Comparisons
-// feed both branches and a select. u64 division/remainder lives in the
-// separate `u64_udiv` case, which aborts in the VM (U64_DIV_EVENT).
+// Exercises the STRICT unsigned-u64 comparison emitter arms in
+// `codegen/masm/src/emit/int64.rs`: `lt_u64`/`gt_u64` (the `i64.lt_u`-family
+// translators bitcast both operands to U64, the only way U64-typed values
+// reach the comparison emitters), `rotr_u64` via a dynamic-count rotate
+// (constant-count rotr is turned into rotl by LLVM), and the u64 arm of
+// `clz`. Comparisons feed both branches and a select. NOTE: the `<=`/`>=`
+// comparisons below are canonicalized by LLVM into strict compares with
+// inverted arms (branch position) — the non-strict `lte_u64`/`gte_u64` arms
+// are covered by the materialized-bool helpers in `case_ucmp_ge.rs`.
+// u64 division/remainder lives in the separate `u64_udiv` case.
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let a: u64 = ((input1 as u64) << 32) | input2 as u64;
