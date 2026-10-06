@@ -95,10 +95,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   frontend's `ParsedModule` also need `note_storage_schema_bytes: None`.
 - `midenc_compile::rust::install_wasm32_target` takes a third `offline: bool` argument. Pass
   `false` to retain automatic installation, or `true` to fail if the target is absent.
-- `midenc-compile`'s `compile`, `compile_to_memory`,
-  `compile_link_output_to_masm_with_pre_assembly_stage`, and the `CodegenOutput`,
-  `CompiledArtifact`, and `MidenComponent` re-exports now require the `std` feature. Enable it
-  when using these APIs.
+- `midenc-compile`'s `compile` and `compile_to_memory` now require the `std` feature, along with
+  `compile_link_output_to_masm_with_pre_assembly_stage`. The same applies to the `CodegenOutput`
+  and `CompiledArtifact` re-exports, plus `MidenComponent`. Enable `std` when using these APIs.
 
 ## [0.11.0-rc.3]
 
