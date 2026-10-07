@@ -452,8 +452,9 @@ pub(crate) fn wit_param(name: &str, wit_type: &str) -> String {
 /// Collects dependency metadata needed for SDK-generated dependency imports.
 ///
 /// The dependency's exported interfaces are read from the component WIT embedded in its compiled
-/// `.masp` package, which cargo-miden materializes before the dependent crate's macros expand
-/// (or from the dependency's `wit` manifest key when the package embeds none).
+/// `.masp` package, which cargo-miden materializes before the dependent crate's macros expand; when
+/// the package embeds none, from the dependency's `wit` manifest key or, for an account component,
+/// from WIT synthesized from the package manifest.
 fn collect_miden_dependencies(
     manifest_dir: &Path,
     package: &miden_project::Package,

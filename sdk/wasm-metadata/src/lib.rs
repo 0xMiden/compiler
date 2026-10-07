@@ -137,6 +137,12 @@ pub mod package_cache {
     pub const DEPENDENCY_MANIFEST_DIR: &str = "miden-deps";
 
     /// Schema version of the dependency artifact map.
+    ///
+    /// In schema 1, an entry's `wit` key says whether the artifact has a component interface:
+    /// embedded WIT, or an account component whose interface the SDK macros synthesize from its
+    /// manifest. Older writers recorded only embedded WIT; a reader sees such an account component
+    /// as a link-only package and reports that with a clear diagnostic, never a wrong build, so
+    /// the widened meaning does not bump the schema.
     pub const DEPENDENCY_MAP_SCHEMA: i64 = 1;
 
     /// Schema version of the dependency build-input record.
