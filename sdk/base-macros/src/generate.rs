@@ -214,7 +214,7 @@ fn local_wit_link_section(
             format!("failed to read WIT file '{}': {err}", local_wit_path.display()),
         )
     })?;
-    if crate::wit_world::parse_dependency_wit_source(&wit_source).is_err() {
+    if crate::wit_world::parse_dependency_wit_source(&wit_source, "local WIT").is_err() {
         return Ok(TokenStream2::new());
     }
     // The emitter and the Wasm frontend accept exactly one top-level package declaration.

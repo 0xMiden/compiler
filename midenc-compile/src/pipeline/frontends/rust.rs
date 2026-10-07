@@ -1227,10 +1227,7 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
             .and_then(|record| record.digest().copied())
             .map(|digest| miden_project::Version::new(node.version.clone(), digest))
             .and_then(|version| registry.load_package(&package_id, &version).ok())
-            .map(|package| {
-                package.kind == miden_mast_package::TargetType::AccountComponent
-                    || midenc_frontend_wasm_metadata::package_wit(&package).is_some()
-            });
+            .map(|package| package_cache::has_component_interface(&package));
         if let Some(has_interface) = has_interface {
             entry.insert("wit", has_interface.into());
         }
