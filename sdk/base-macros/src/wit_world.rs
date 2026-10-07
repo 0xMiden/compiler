@@ -525,6 +525,7 @@ pub(crate) fn dependency_wit_error_message(source: &DependencyWitSource, details
 /// WIT metadata extracted from a dependency's component WIT.
 #[derive(Debug)]
 pub(crate) struct DependencyWit {
+    /// The interfaces the dependency's WIT exports.
     interfaces: Vec<DependencyInterface>,
 }
 
@@ -1056,8 +1057,9 @@ world empty-export-world {
 
     #[test]
     fn package_without_wit_section_is_skipped_with_a_rebuild_reason() {
-        // A dependency without component WIT is link-only until a macro references it, so the
-        // collection records it as skipped instead of failing every expansion; the recorded
+        // A dependency without component WIT that is not an account component (the fixture is a
+        // library, so no WIT is synthesized for it) is link-only until a macro references it, so
+        // the collection records it as skipped instead of failing every expansion; the recorded
         // reason is what a reference-site diagnostic reports.
         let fixture_root = empty_fixture_root();
         let dependency_root = fixture_root.join("wit-world-fixture-dep");

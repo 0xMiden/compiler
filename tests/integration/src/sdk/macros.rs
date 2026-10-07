@@ -656,9 +656,9 @@ fn account_component_project_with_sibling_dep(
 
 /// Builds an account component project with one sibling component dependency named `test-sibling`.
 ///
-/// `sibling_wit` is embedded into the WIT section of the dependency's synthesized `.masp`
-/// package. Passing `None` omits the section, reproducing a dependency package built by a
-/// toolchain that predates embedded WIT.
+/// `sibling_wit` is embedded into the WIT section of the dependency's `.masp` package, a library
+/// assembled from MASM. Passing `None` omits the section: a library gets no WIT synthesized from
+/// its manifest (only an account component does), so the dependency has no interface.
 fn account_component_project_with_sibling_dep_inner(
     name: &str,
     lib_rs: &str,
@@ -1000,8 +1000,9 @@ impl TestComponent for TestComponentStorage {
 
 #[test]
 fn component_sibling_reports_dependency_package_without_embedded_wit() {
-    // The dependency package exists but predates embedded WIT (no `wit` section). Expansion
-    // should tell the user to rebuild the dependency with the current toolchain.
+    // The dependency package exists but is a library without a `wit` section, so no WIT is
+    // synthesized for it either. Expansion should say it is not an account component and tell the
+    // user to rebuild the dependency with the current toolchain.
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 

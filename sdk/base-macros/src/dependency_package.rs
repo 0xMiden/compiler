@@ -34,7 +34,8 @@ pub(crate) struct DependencyWitSource {
     pub(crate) name: String,
     /// Canonical project root or precompiled package path.
     pub(crate) root: PathBuf,
-    /// Path of the compiled `.masp` package the WIT was read from.
+    /// Path of the dependency's compiled `.masp` package, whatever the [`Self::origin`] of its
+    /// WIT.
     pub(crate) package_path: PathBuf,
     /// The deserialized package, shared so later consumers (FPI procedure-root extraction) reuse
     /// the exact bytes this resolution read.
@@ -225,10 +226,7 @@ pub(crate) fn collect_dependency_wit_sources(
             // component, whose interface is synthesized from its manifest.
             (None, None) if package_cache::has_component_interface(&resolved.package) => {
                 let interface = PackageInterface::from_package(&resolved.package);
-                match midenc_package_wit::generate(
-                    &interface,
-                    &midenc_package_wit::Options::default(),
-                ) {
+                match midenc_package_wit::generate(&interface) {
                     // The consumer defines its own package of that id, so the two would
                     // clash in every macro of the crate.
                     Ok(generated)
