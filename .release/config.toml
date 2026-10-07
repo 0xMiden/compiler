@@ -250,6 +250,10 @@ name = "midenc-package-interface"
 unit = "sdk"
 
 [[packages]]
+name = "midenc-package-wit"
+unit = "sdk"
+
+[[packages]]
 name = "miden-sdk-bindgen"
 unit = "sdk"
 
