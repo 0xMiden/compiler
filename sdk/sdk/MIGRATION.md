@@ -12,6 +12,36 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## 0.15.0-rc.3 -> unreleased
 
+### MASM account-component dependencies need no `wit` override
+
+A dependency on an account component written in Miden Assembly (e.g. the standard basic wallet)
+no longer needs a hand-written WIT file in `package.metadata.miden.dependencies.<name>.wit`: the
+SDK macros derive the interface from the package manifest. Remove the override:
+
+```toml
+# Before
+[dependencies]
+miden-standards-wallets-basic-wallet = "0.17.0"
+
+[package.metadata.miden.dependencies]
+miden-standards-wallets-basic-wallet = { wit = "wit/basic-wallet.wit" }
+
+# After
+[dependencies]
+miden-standards-wallets-basic-wallet = "0.17.0"
+```
+
+The Rust side stays the same:
+
+```rust
+#[account(miden_standards_wallets_basic_wallet::BasicWallet)]
+pub struct Wallet;
+```
+
+The override is still available, and still takes precedence, for packages that embed no WIT and
+for components whose derived interface does not fit (see "Depending on MASM account components"
+in the `cargo miden` documentation).
+
 ### The `extern_*` procedures are gone; the generated `miden::raw` modules replace them
 
 The bindings to the core library, the protocol and the standards are now generated from the

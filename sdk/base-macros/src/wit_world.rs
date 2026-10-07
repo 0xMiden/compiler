@@ -485,15 +485,25 @@ fn collect_miden_dependencies(
 
 /// Formats the dependency WIT diagnostic emitted by SDK macros.
 pub(crate) fn dependency_wit_error_message(source: &DependencyWitSource, details: &str) -> String {
-    // A "package not found" from wit-parser means the embedded WIT itself references another
-    // package: the rebuild advice cannot fix that, so name the self-containment requirement.
-    let guidance = if details.contains("not found") {
+    let guidance = if source.synthesized {
+        format!(
+            "The WIT was synthesized from the account-component package's manifest because the \
+             package embeds none; provide the WIT manually via \
+             package.metadata.miden.dependencies.{}.wit in miden-project.toml.",
+            source.name
+        )
+    } else if details.contains("not found") {
+        // A "package not found" from wit-parser means the embedded WIT itself references
+        // another package: the rebuild advice cannot fix that, so name the self-containment
+        // requirement.
         "The dependency's embedded WIT references a package that is not embedded alongside it; \
          embedded WIT must be self-contained apart from the bundled SDK WIT (`miden:base`)."
+            .to_string()
     } else {
         "The SDK macros read the dependency's component WIT embedded in the `.masp` package during \
          Rust macro expansion to construct dependency imports; rebuild the dependency with the \
          current `cargo miden build`."
+            .to_string()
     };
 
     // In map mode the recorded root IS the package path; repeating it adds nothing.

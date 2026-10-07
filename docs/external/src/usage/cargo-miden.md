@@ -170,6 +170,60 @@ and every other procedure of a library package is rejected: bind a plain library
 natively with an `extern "C"` function carrying its path in `#[link_name]`. The procedures of
 component packages stay importable.
 
+### Depending on MASM account components
+
+An account component written in Miden Assembly, such as the standard basic wallet, needs no WIT
+to be used from Rust, however it is declared (a registry version, a path to a `.masp`, ...). The
+SDK macros derive its interface from the package manifest:
+
+- the WIT package is `<namespace head>:<package name without that head>@<version>`, e.g.
+  `miden:standards-wallets-basic-wallet@0.17.0` for a package named
+  `miden-standards-wallets-basic-wallet` in the `miden::…` namespace;
+- the interface is the last segment of the component's namespace in kebab case, so
+  `miden-standards-wallets-basic-wallet` provides `basic-wallet`, used as
+  `#[account(miden_standards_wallets_basic_wallet::BasicWallet)]`;
+- each role procedure (`@account_procedure`, `@auth_script`) becomes one function with the
+  parameter types of the manifest. Type aliases are not recoverable: a `NoteTag` is a `u32`, an
+  `AssetAmount` a `felt`. Parameters are named after their type, else `argN`;
+- procedures whose results do not fit a single stack value are not callable yet and are left
+  out.
+
+```toml
+# miden-project.toml
+[dependencies]
+miden-standards-wallets-basic-wallet = "0.17.0"
+```
+
+```rust
+#[account(miden_standards_wallets_basic_wallet::BasicWallet)]
+pub struct Wallet;
+
+// in a note script taking `account: &mut Wallet`
+account.receive_asset(asset);
+```
+
+The basic wallet's derived interface:
+
+```wit
+package miden:standards-wallets-basic-wallet@0.17.0;
+
+interface basic-wallet {
+    use miden:base/core-types@1.0.0.{asset, note-type, word};
+
+    @external-id("miden::standards::components::wallets::basic_wallet::create_note")
+    create-note: func(arg0: u32, note-type: note-type, arg2: word) -> u16;
+
+    @external-id("miden::standards::components::wallets::basic_wallet::move_asset_to_note")
+    move-asset-to-note: func(asset: asset, arg1: u16);
+
+    @external-id("miden::standards::components::wallets::basic_wallet::receive_asset")
+    receive-asset: func(asset: asset);
+}
+```
+
+A WIT file set through `package.metadata.miden.dependencies.<name>.wit` in `miden-project.toml`
+still takes precedence over the derived interface.
+
 The core Wasm module of a component is named after the crate. An export of the same name (a crate
 `swap` exporting `swap`) takes precedence: the module is renamed `<name>_core`, a name that only
 appears in the package's internal MASM paths.
