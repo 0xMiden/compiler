@@ -311,6 +311,83 @@ fn wasm_i64_remainder() -> Result<(), Report> {
     Ok(())
 }
 
+/// Builds and evaluates `fn(value: param) -> result`, whose body `build` computes from `value`.
+fn eval_limb_fn(
+    param: Type,
+    result: Type,
+    arg: Immediate,
+    build: impl FnOnce(&mut FunctionBuilder<'_, midenc_hir::OpBuilder>, ValueRef) -> ValueRef,
+) -> Result<Value, Report> {
+    let mut test = EvalTest::named("limbs");
+    test.with_function(&[param], &[result]);
+    {
+        let mut builder = test.function_builder();
+        let value = builder.current_block().borrow().arguments()[0] as ValueRef;
+        let output = build(&mut builder, value);
+        builder.ret(Some(output), SourceSpan::default())?;
+    }
+    let function = test.function();
+    let callable = function.borrow();
+    let results = test.evaluator.eval_callable(&*callable, [arg.into()])?;
+    Ok(results[0])
+}
+
+/// `arith.split` returns limbs most-significant first and `arith.join` takes them in that order:
+/// a join of the high felt limb under a zero limb is `x >> 32`, of the low limb above a zero limb
+/// is `x << 32`, four `u32` limbs can be reordered, and the two `u64` halves of a `u128` can be
+/// swapped.
+#[test]
+fn split_join_limb_order() -> Result<(), Report> {
+    let span = SourceSpan::default();
+    let x = 0x1111_1111_2222_2222u64;
+
+    let shr = eval_limb_fn(Type::U64, Type::U64, x.into(), |b, value| {
+        let (high, _) = b.split2(value, Type::Felt, span).unwrap();
+        let zero = b.felt(midenc_hir::Felt::ZERO, span);
+        b.join2(zero, high, Type::U64, span).unwrap()
+    })?;
+    assert_eq!(shr, Value::Immediate((x >> 32).into()));
+
+    let shl = eval_limb_fn(Type::U64, Type::U64, x.into(), |b, value| {
+        let (_, low) = b.split2(value, Type::Felt, span).unwrap();
+        let zero = b.felt(midenc_hir::Felt::ZERO, span);
+        b.join2(low, zero, Type::U64, span).unwrap()
+    })?;
+    assert_eq!(shl, Value::Immediate((x << 32).into()));
+
+    let wide = 0x1111_1111_2222_2222_3333_3333_4444_4444u128;
+    let reordered = eval_limb_fn(Type::U128, Type::U128, wide.into(), |b, value| {
+        let [l0, l1, l2, l3] = b.split4(value, Type::U32, span).unwrap();
+        b.join4([l3, l1, l0, l2], Type::U128, span).unwrap()
+    })?;
+    assert_eq!(
+        reordered,
+        Value::Immediate(0x4444_4444_2222_2222_1111_1111_3333_3333u128.into())
+    );
+
+    let swapped_halves = eval_limb_fn(Type::U128, Type::U128, wide.into(), |b, value| {
+        let (high, low) = b.split2(value, Type::U64, span).unwrap();
+        b.join2(low, high, Type::U128, span).unwrap()
+    })?;
+    assert_eq!(
+        swapped_halves,
+        Value::Immediate(0x3333_3333_4444_4444_1111_1111_2222_2222u128.into())
+    );
+    Ok(())
+}
+
+/// `arith.join` of a felt limb that does not fit in 32 bits is an evaluation error.
+#[test]
+fn join_of_wide_felt_limb_is_an_error() {
+    let span = SourceSpan::default();
+    let wide = midenc_hir::Felt::new_unchecked(1 << 40);
+    let result = eval_limb_fn(Type::Felt, Type::U64, Immediate::Felt(wide), |b, value| {
+        b.join2(value, value, Type::U64, span).unwrap()
+    });
+    let err = result.expect_err("a felt limb >= 2^32 must not be joined");
+    assert!(has_label(&err, "does not fit in 32 bits"), "{err:?}");
+}
+
 /// A memory copy operation exercised by the `mem_cpy` and `mem_move` tests.
 #[derive(Debug, Clone, Copy)]
 enum CopyOp {
