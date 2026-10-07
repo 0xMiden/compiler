@@ -210,6 +210,7 @@ midenc-compile = { version = "0.11.0", path = "midenc-compile" }
 midenc-driver = { version = "0.11.0", path = "midenc-driver" }
 midenc-log = { version = "0.11.0", path = "midenc-log", features = ["kv"] }
 midenc-package-interface = { version = "0.15.0", path = "sdk/package-interface" }
+midenc-package-wit = { version = "0.15.0", path = "sdk/package-wit" }
 midenc-session = { version = "0.11.0", path = "midenc-session" }
 midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }

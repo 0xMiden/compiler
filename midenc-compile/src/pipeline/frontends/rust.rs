@@ -1168,8 +1168,9 @@ impl RustProjectFrontend {
 ///   `package` file name inside the cache for compiler-published artifacts, or an absolute
 ///   `path` for preassembled `.masp` dependencies consumed in place. Each entry also records
 ///   `version` (unread until the #1300 digest pin extends it) and `wit` — whether the
-///   artifact embeds component WIT, which lets the macros skip link-only packages without
-///   deserializing them.
+///   macros can obtain a component interface for the artifact: it embeds component WIT, or it
+///   is an account component whose interface the macros derive from its manifest. A `false`
+///   lets the macros skip link-only packages without deserializing them.
 /// - `build-inputs` — root consumer only: a versioned declaration of the dependency inputs the
 ///   frontends can enumerate completely, plus explicit opacity reasons for the ones they cannot.
 ///   The contract build script turns a complete record into selective Cargo change directives;
@@ -1215,19 +1216,23 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
         // No reader consults the version yet; it is recorded for the #1300 digest pin, which
         // extends these entries with the artifact identity to verify on read.
         entry.insert("version", node.version.to_string().into());
-        // The assembler's registry holds every resolved artifact. Recording whether it
-        // embeds component WIT lets the macros skip a link-only package — a base library,
-        // a MASM-only dependency — without deserializing it. An absent key means unknown,
-        // and the reader reads the package to find out.
+        // The assembler's registry holds every resolved artifact. Recording whether it has a
+        // component interface — embedded WIT, or an account component whose interface the
+        // macros synthesize from its manifest — lets the macros skip a link-only package (a
+        // base library, a MASM library) without deserializing it. An absent key means
+        // unknown, and the reader reads the package to find out.
         let package_id: midenc_session::miden_package_registry::PackageId = name.clone().into();
-        let embeds_wit = registry
+        let has_interface = registry
             .get_by_semver(&package_id, &node.version)
             .and_then(|record| record.digest().copied())
             .map(|digest| miden_project::Version::new(node.version.clone(), digest))
             .and_then(|version| registry.load_package(&package_id, &version).ok())
-            .map(|package| midenc_frontend_wasm_metadata::package_wit(&package).is_some());
-        if let Some(embeds_wit) = embeds_wit {
-            entry.insert("wit", embeds_wit.into());
+            .map(|package| {
+                package.kind == miden_mast_package::TargetType::AccountComponent
+                    || midenc_frontend_wasm_metadata::package_wit(&package).is_some()
+            });
+        if let Some(has_interface) = has_interface {
+            entry.insert("wit", has_interface.into());
         }
         dependencies
             .insert(name.as_ref(), toml_edit::Item::Value(toml_edit::Value::InlineTable(entry)));

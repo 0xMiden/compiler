@@ -34,6 +34,8 @@ syn = { workspace = true, features = ["full"] }
 heck.workspace = true
 miden-formatting.workspace = true
 midenc-frontend-wasm-metadata.workspace = true
+midenc-package-interface.workspace = true
+midenc-package-wit.workspace = true
 wit-bindgen-core.workspace = true
 wit-bindgen-rust.workspace = true
 wit-component = { workspace = true, optional = true }
@@ -45,6 +47,7 @@ miden-protocol = { workspace = true, features = ["std"] }
 miden-field.workspace = true
 miden-field-repr.workspace = true
 midenc-expect-test.workspace = true
+midenc-package-interface = { workspace = true, features = ["testing"] }
 tempfile.workspace = true
 wit-component.workspace = true
 
