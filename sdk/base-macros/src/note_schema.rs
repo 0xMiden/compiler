@@ -3,7 +3,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use midenc_frontend_wasm_metadata::{
-    WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, namespace::CORE_TYPES_INTERFACE,
+    WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME,
+    namespace::{CORE_TYPES_INTERFACE, CORE_TYPES_PACKAGE},
     pad_to_link_section_alignment,
 };
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
@@ -26,8 +27,6 @@ use crate::{
     wit_world::ManifestPackage,
 };
 
-/// SDK core-types package name used for the embedded dependency package.
-const CORE_TYPES_PACKAGE_NAME: &str = "miden:base";
 /// Component package of a crate without a `miden-project.toml`.
 const PLACEHOLDER_COMPONENT_PACKAGE: &str = "miden:empty";
 /// WIT type alias the schema declares for the note storage root.
@@ -678,7 +677,7 @@ fn render_core_types_package(wit: &mut WitBuilder) -> Result<(), syn::Error> {
     let body = body.strip_prefix('\n').unwrap_or(body);
     let body = body.strip_suffix('\n').unwrap_or(body);
 
-    wit.package_block(CORE_TYPES_PACKAGE_NAME, &Version::new(1, 0, 0), |package| {
+    wit.package_block(CORE_TYPES_PACKAGE, &Version::new(1, 0, 0), |package| {
         package.line("interface core-types {");
         for line in body.split('\n') {
             package.line(line);
