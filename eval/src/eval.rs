@@ -1919,6 +1919,102 @@ macro_rules! unaryop {
     }};
 }
 
+impl Eval for arith::Split {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let operand = self.operand();
+        let value = evaluator.use_value(&operand.as_value_ref())?;
+        let operand_ty = operand.ty().clone();
+        if value.ty() != operand_ty {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("invalid split: expected a {operand_ty} operand, got {}", value.ty()),
+            ));
+        }
+        let limb_ty = self.get_limb_ty().clone();
+        let limbs = self.limbs();
+        let num_limbs = limbs.len();
+        let limb_bits = operand_ty.size_in_bits() / num_limbs.max(1);
+        let Some(bits) = value.bitcast_u128() else {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("invalid split: unsupported operand type {}", value.ty()),
+            ));
+        };
+
+        // Limbs are defined most-significant first.
+        for (index, limb) in limbs.iter().enumerate() {
+            let shift = limb_bits * (num_limbs - 1 - index);
+            let limb_value = (bits >> shift) & (u128::MAX >> (128 - limb_bits));
+            let limb_value = match limb_ty {
+                Type::Felt => Immediate::Felt(Felt::new_unchecked(limb_value as u64)),
+                Type::I32 => Immediate::I32(limb_value as u32 as i32),
+                Type::U32 => Immediate::U32(limb_value as u32),
+                Type::I64 => Immediate::I64(limb_value as u64 as i64),
+                Type::U64 => Immediate::U64(limb_value as u64),
+                ref ty => {
+                    return Err(evaluator.report(
+                        "evaluation failed",
+                        self.span(),
+                        format!("invalid split: unsupported limb type {ty}"),
+                    ));
+                }
+            };
+            evaluator.set_value(limb.borrow().as_value_ref(), limb_value);
+        }
+        Ok(ControlFlowEffect::None)
+    }
+}
+
+impl Eval for arith::Join {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let ty = self.get_ty().clone();
+        let limbs = self.limbs();
+        let limb_bits = ty.size_in_bits() / limbs.len().max(1);
+
+        // Limbs are given most-significant first.
+        let mut bits = 0u128;
+        for limb in limbs.iter() {
+            let limb_value = evaluator.use_value(&limb.borrow().as_value_ref())?;
+            // The evaluator holds the result as an integer, so it cannot represent a felt limb
+            // wider than the limb width, although the op allows one.
+            let limb_bits_value = match limb_bits {
+                32 => limb_value.bitcast_u32().map(u128::from),
+                64 => limb_value.bitcast_u64().map(u128::from),
+                _ => None,
+            };
+            let Some(limb_bits_value) = limb_bits_value else {
+                return Err(evaluator.report(
+                    "evaluation failed",
+                    self.span(),
+                    format!(
+                        "invalid join: the evaluator cannot represent limb {limb_value}, which \
+                         does not fit in {limb_bits} bits"
+                    ),
+                ));
+            };
+            bits = (bits << limb_bits) | limb_bits_value;
+        }
+
+        let result = match ty {
+            Type::I64 => Immediate::I64(bits as u64 as i64),
+            Type::U64 => Immediate::U64(bits as u64),
+            Type::I128 => Immediate::I128(bits as i128),
+            Type::U128 => Immediate::U128(bits),
+            ref ty => {
+                return Err(evaluator.report(
+                    "evaluation failed",
+                    self.span(),
+                    format!("invalid join: unsupported result type {ty}"),
+                ));
+            }
+        };
+        evaluator.set_value(self.result().as_value_ref(), result);
+        Ok(ControlFlowEffect::None)
+    }
+}
+
 impl Eval for arith::Incr {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         let lhs = self.operand();

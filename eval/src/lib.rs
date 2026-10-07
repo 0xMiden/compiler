@@ -97,6 +97,8 @@ fn eval_arith_dialect(info: &mut ::midenc_hir::DialectInfo) {
     info.register_operation_trait::<arith::Trunc, dyn Eval>();
     info.register_operation_trait::<arith::Zext, dyn Eval>();
     info.register_operation_trait::<arith::Sext, dyn Eval>();
+    info.register_operation_trait::<arith::Split, dyn Eval>();
+    info.register_operation_trait::<arith::Join, dyn Eval>();
     info.register_operation_trait::<arith::Incr, dyn Eval>();
     info.register_operation_trait::<arith::Neg, dyn Eval>();
     info.register_operation_trait::<arith::Inv, dyn Eval>();
