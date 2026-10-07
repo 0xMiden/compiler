@@ -2,9 +2,9 @@
 // Dependency commitment: 0x292d0e9cd514304057095ccc5aae1b07f0a291909ac5c9a5092e0e7dca15d37e.
 package miden:standards-faucets-fungible-faucet@0.17.0;
 
-/// Left out: `miden::standards::components::faucets::fungible_faucet::get_mutability_config`: results flatten to 4 values; multi-value results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::faucets::fungible_faucet::get_name`: results flatten to 8 values; multi-value results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::faucets::fungible_faucet::get_token_config`: results flatten to 4 values; multi-value results of Miden Assembly components are not supported yet
+/// Left out: `miden::standards::components::faucets::fungible_faucet::get_mutability_config`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
+/// Left out: `miden::standards::components::faucets::fungible_faucet::get_name`: results occupy 8 stack elements; multi-element results of Miden Assembly components are not supported yet
+/// Left out: `miden::standards::components::faucets::fungible_faucet::get_token_config`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
 interface fungible-faucet {
     use miden:base/core-types@1.0.0.{asset, felt, note-type, word};
 

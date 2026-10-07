@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use heck::ToKebabCase;
+use heck::{ToKebabCase, ToUpperCamelCase};
 use midenc_frontend_wasm_metadata::namespace::{
     NamespaceSegmentError, SegmentPosition, WIT_KEYWORDS, validate_namespace_segment,
 };
@@ -49,6 +49,29 @@ pub fn rust_ident(name: &str) -> Result<String, String> {
         ));
     }
     Ok(ident)
+}
+
+/// The Rust spelling wit-bindgen gives a type or enum case whose WIT spelling is `ident` (see
+/// [`ident`]): heck's upper camel case, except `guest`, which becomes `Guest_` because wit-bindgen
+/// reserves `Guest` for the traits of exported interfaces.
+pub fn upper_camel(ident: &str) -> String {
+    match ident.trim_start_matches('%') {
+        "guest" => "Guest_".to_owned(),
+        bare => bare.to_upper_camel_case(),
+    }
+}
+
+/// The [`upper_camel`] Rust spelling of the type or enum case `name` whose WIT spelling is
+/// `ident`; or, when that spelling is the Rust keyword `Self`, the reason `name` has none.
+pub fn rust_type_ident(name: &str, ident: &str) -> Result<String, String> {
+    let rust = upper_camel(ident);
+    if rust == "Self" {
+        return Err(format!(
+            "`{name}` would be the Rust keyword `Self` in the generated bindings, which \
+             wit-bindgen does not escape"
+        ));
+    }
+    Ok(rust)
 }
 
 /// The WIT spelling `derived` of `name` as a segment of a package id or as an interface name at
@@ -110,7 +133,9 @@ pub fn short_name(name: &str) -> &str {
 /// name, a WIT or Rust keyword included (see [`segment`]).
 ///
 /// The name is kebab-normalized and loses a leading `<head>-`, which the namespace part of the id
-/// already says: `miden-standards-wallets-basic-wallet` → `miden:standards-wallets-basic-wallet`.
+/// already says: `miden-standards-wallets-basic-wallet` → `miden:standards-wallets-basic-wallet`;
+/// it keeps the head when the rest alone would be a keyword or no WIT name: `miden-list` →
+/// `miden:miden-list`.
 pub fn package_id(head: &str, package_name: &str) -> Result<(String, String), String> {
     let namespace = segment(head, kebab(head), SegmentPosition::Namespace)
         .map_err(|err| format!("the namespace {err}"))?;
@@ -120,7 +145,15 @@ pub fn package_id(head: &str, package_name: &str) -> Result<(String, String), St
         .and_then(|rest| rest.strip_prefix('-'))
         .filter(|rest| !rest.is_empty())
         .unwrap_or(&full);
+    // A stripped name that is a keyword or no WIT name (`miden-list` → `list`, `miden-1x` → `1x`)
+    // falls back to the full name.
     let name = segment(package_name, name.to_owned(), SegmentPosition::Package)
+        .or_else(|err| {
+            if name == full {
+                return Err(err);
+            }
+            segment(package_name, full.clone(), SegmentPosition::Package).map_err(|_| err)
+        })
         .map_err(|err| format!("the package name {err}"))?;
     Ok((namespace, name))
 }
@@ -128,6 +161,7 @@ pub fn package_id(head: &str, package_name: &str) -> Result<(String, String), St
 /// Hands out the parameter names of one function, unique within it.
 #[derive(Default)]
 pub struct ParamNames {
+    /// The unescaped names handed out so far.
     taken: BTreeSet<String>,
 }
 
@@ -207,6 +241,21 @@ mod tests {
     }
 
     #[test]
+    fn rust_type_names_follow_wit_bindgen() {
+        let rust = |name: &str| rust_type_ident(name, &ident(name).unwrap());
+        assert_eq!(rust("SLOT1").unwrap(), "Slot1");
+        assert_eq!(rust("SLOT_1").unwrap(), "Slot1");
+        assert_eq!(rust("AUTH_CONTROLLED").unwrap(), "AuthControlled");
+        assert_eq!(rust("Record").unwrap(), "Record");
+        assert_eq!(rust("Guest").unwrap(), "Guest_");
+        assert_eq!(
+            rust("SELF").unwrap_err(),
+            "`SELF` would be the Rust keyword `Self` in the generated bindings, which wit-bindgen \
+             does not escape"
+        );
+    }
+
+    #[test]
     fn keywords_are_escaped() {
         assert_eq!(ident("type").unwrap(), "%type");
         assert_eq!(ident("Record").unwrap(), "%record");
@@ -244,13 +293,18 @@ mod tests {
 
     #[test]
     fn package_id_segments_are_checked() {
+        // A keyword or invalid name left by stripping the head falls back to the full name...
+        let id = |head, name| package_id(head, name).map(|(ns, name)| format!("{ns}:{name}"));
+        assert_eq!(id("miden", "miden-list").unwrap(), "miden:miden-list");
+        assert_eq!(id("miden", "miden-match").unwrap(), "miden:miden-match");
+        // ...and a package name that is a keyword in full is rejected.
         assert_eq!(
-            package_id("miden", "miden-list").unwrap_err(),
-            "the package name `miden-list` has the WIT name `list`, which is a WIT keyword"
+            package_id("miden", "list").unwrap_err(),
+            "the package name `list` is a WIT keyword"
         );
         assert_eq!(
-            package_id("miden", "miden-match").unwrap_err(),
-            "the package name `miden-match` has the WIT name `match`, which is a Rust keyword"
+            package_id("miden", "Match").unwrap_err(),
+            "the package name `Match` has the WIT name `match`, which is a Rust keyword"
         );
         assert_eq!(
             package_id("use", "use-foo").unwrap_err(),
@@ -264,13 +318,10 @@ mod tests {
             package_id("_1", "foo").unwrap_err(),
             "the namespace `_1` has no WIT name (derived `1`)"
         );
+        assert_eq!(id("miden", "miden-1x").unwrap(), "miden:miden-1x");
         assert_eq!(
-            package_id("_1", "foo").unwrap_err(),
-            "the namespace `_1` has no WIT name (derived `1`)"
-        );
-        assert_eq!(
-            package_id("miden", "miden-1x").unwrap_err(),
-            "the package name `miden-1x` has no WIT name (derived `1x`)"
+            package_id("miden", "_1x").unwrap_err(),
+            "the package name `_1x` has no WIT name (derived `1x`)"
         );
     }
 

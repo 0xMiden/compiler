@@ -146,19 +146,19 @@ fn the_component_interface() {
         [
             (
                 "miden::test::my_component::digest",
-                "results flatten to 4 values; multi-value results of Miden Assembly components \
-                 are not supported yet"
+                "results occupy 4 stack elements; multi-element results of Miden Assembly \
+                 components are not supported yet"
             ),
             ("miden::test::my_component::halves", "unsupported type `[felt; 2]`"),
             (
                 "miden::test::my_component::owner",
-                "results flatten to 2 values; multi-value results of Miden Assembly components \
-                 are not supported yet"
+                "results occupy 2 stack elements; multi-element results of Miden Assembly \
+                 components are not supported yet"
             ),
             (
                 "miden::test::my_component::pair",
-                "results flatten to 2 values; multi-value results of Miden Assembly components \
-                 are not supported yet"
+                "results occupy 2 stack elements; multi-element results of Miden Assembly \
+                 components are not supported yet"
             ),
             (
                 "miden::test::my_component::sparse",
@@ -177,10 +177,10 @@ fn the_component_interface() {
 // Dependency commitment: {digest}.
 package miden:test-my-component@0.0.0;
 
-/// Left out: `miden::test::my_component::digest`: results flatten to 4 values; multi-value results of Miden Assembly components are not supported yet
+/// Left out: `miden::test::my_component::digest`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
 /// Left out: `miden::test::my_component::halves`: unsupported type `[felt; 2]`
-/// Left out: `miden::test::my_component::owner`: results flatten to 2 values; multi-value results of Miden Assembly components are not supported yet
-/// Left out: `miden::test::my_component::pair`: results flatten to 2 values; multi-value results of Miden Assembly components are not supported yet
+/// Left out: `miden::test::my_component::owner`: results occupy 2 stack elements; multi-element results of Miden Assembly components are not supported yet
+/// Left out: `miden::test::my_component::pair`: results occupy 2 stack elements; multi-element results of Miden Assembly components are not supported yet
 /// Left out: `miden::test::my_component::sparse`: unsupported type `Sparse`: an enum with non-contiguous discriminants
 /// Left out: `miden::test::my_component::too_wide`: parameters flatten to 17 stack values, more than the 16 a direct call can pass
 /// Left out: `miden::test::my_component::untyped`: no typed signature
@@ -407,8 +407,8 @@ fn keyword_package_and_interface_names_are_rejected() {
         "the module `match` is a Rust keyword"
     );
     assert_eq!(
-        namespace_error("miden-list", "miden::test::my_component"),
-        "the package name `miden-list` has the WIT name `list`, which is a WIT keyword"
+        namespace_error("list", "miden::test::my_component"),
+        "the package name `list` is a WIT keyword"
     );
     assert_eq!(
         namespace_error("use-foo", "use::test::my_component"),
@@ -518,8 +518,8 @@ end
     assert_eq!(
         err.to_string(),
         "every interface procedure is left out:\n  `miden::test::my_component::digest`: results \
-         flatten to 4 values; multi-value results of Miden Assembly components are not supported \
-         yet\n  `miden::test::my_component::untyped`: no typed signature"
+         occupy 4 stack elements; multi-element results of Miden Assembly components are not \
+         supported yet\n  `miden::test::my_component::untyped`: no typed signature"
     );
 }
 
@@ -547,4 +547,81 @@ end
     assert!(generated.skipped.is_empty(), "{:?}", generated.skipped);
     let functions = parse(&generated.wit, "my-component");
     assert_eq!(functions, [("ping".to_owned(), "miden::test::my_component::ping".to_owned())]);
+}
+
+#[test]
+fn a_u64_result_is_left_out() {
+    let iface = component(
+        r#"
+@account_procedure
+pub proc ping()
+    nop
+end
+
+@account_procedure
+pub proc nonce() -> u64
+    nop
+end
+"#,
+    );
+    let generated = generate(&iface, &Options::default()).unwrap();
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(
+        skipped,
+        [(
+            "miden::test::my_component::nonce",
+            "results occupy 2 stack elements; multi-element results of Miden Assembly components \
+             are not supported yet"
+        )]
+    );
+}
+
+#[test]
+fn only_types_of_kept_functions_shadow_a_function() {
+    // `z_set_mode` alone would declare `mode`, but its local `account-id` conflicts with the core
+    // one `set_owner` uses, so it is left out and `mode` stays a function name.
+    let iface = component(
+        r#"
+pub type Account_Id = struct { prefix: felt, suffix: felt }
+pub type AccountId = struct { suffix: felt, prefix: felt }
+
+pub enum Mode : u8 {
+    A = 0,
+    B = 1,
+}
+
+@account_procedure
+pub proc mode() -> u32
+    nop
+end
+
+@account_procedure
+pub proc set_owner(id: Account_Id)
+    drop drop
+end
+
+@account_procedure
+pub proc z_set_mode(id: AccountId, m: Mode)
+    drop drop drop
+end
+"#,
+    );
+    let generated = generate(&iface, &Options::default()).unwrap();
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(
+        skipped,
+        [(
+            "miden::test::my_component::z_set_mode",
+            "conflicting definitions of type `account-id` in one interface"
+        )]
+    );
+    assert_eq!(
+        parse(&generated.wit, "my-component"),
+        [
+            ("mode".to_owned(), "miden::test::my_component::mode".to_owned()),
+            ("set-owner".to_owned(), "miden::test::my_component::set_owner".to_owned()),
+        ]
+    );
 }

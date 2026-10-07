@@ -39,9 +39,9 @@ pub struct Wallet;
 ```
 
 Call sites may need to pass inner values where the hand-written WIT used `core-types` aliases:
-the derived interface takes the manifest's types, so a `Tag` becomes its `.inner` (a `u32`), a
-`Recipient` its `.inner` word, and other wrappers plain integers. See
-`examples/std-wallet-tx-script`:
+the derived interface takes the manifest's types, and type aliases are not recoverable, so a
+`NoteTag` or `Tag` becomes its `.inner` (a `u32`), an `AssetAmount` a `felt`, and a `Recipient`
+its `.inner` word. See `examples/std-wallet-tx-script`:
 
 ```rust
 // Before (hand-written WIT taking `tag` and `recipient`)
@@ -54,6 +54,17 @@ let note_idx = account.create_note(args.tag.inner, args.note_type, args.recipien
 The override is still available, and still takes precedence, for packages that embed no WIT and
 for components whose derived interface does not fit (see "Depending on MASM account components"
 in the `cargo miden` documentation).
+
+A Rust-built account-component package without embedded WIT (built by an older toolchain) is no
+longer skipped with rebuild advice: it now gets an interface derived from its manifest, too. That
+interface has no alias names, leaves out procedures whose results occupy more than one stack
+element, and takes its WIT package id from the package name, so it can differ from the
+component's own WIT; rebuild the package with the current `cargo miden build` to restore its
+embedded interface.
+
+Declaring a MASM account-component dependency in `miden-project.toml` now generates its bindings
+in every SDK macro of the crate (`#[component]`, `#[note]`, `#[tx_script]`), whether or not a
+macro references it, as for a dependency with embedded WIT.
 
 ### The `extern_*` procedures are gone; the generated `miden::raw` modules replace them
 
