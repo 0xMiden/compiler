@@ -2,9 +2,9 @@
 // Dependency commitment: 0xac711b92a4664d22278c26e713bc89c4f2d51ea427703fb7a336f9b6cace8601.
 package miden:standards-auth-network-account@0.17.0;
 
-/// Left out: `miden::standards::components::auth::network_account::estimate_note_fee`: results flatten to 8 values; multi-value results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::auth::network_account::get_fee_asset_id`: results flatten to 4 values; multi-value results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::auth::network_account::get_fee_policy`: results flatten to 4 values; multi-value results of Miden Assembly components are not supported yet
+/// Left out: `miden::standards::components::auth::network_account::estimate_note_fee`: results occupy 8 stack elements; multi-element results of Miden Assembly components are not supported yet
+/// Left out: `miden::standards::components::auth::network_account::get_fee_asset_id`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
+/// Left out: `miden::standards::components::auth::network_account::get_fee_policy`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
 interface network-account {
     use miden:base/core-types@1.0.0.{word};
 

@@ -5,10 +5,13 @@
 //! from the package's manifest alone: one function per interface procedure, each carrying its
 //! export path in `@external-id`, with the manifest types expressed through the SDK's `core-types`
 //! where they match exactly and declared locally otherwise. A procedure the interface cannot offer
-//! (unsupported or clashing names and types, parameters beyond the stack budget, multi-value
-//! results, reserved or invalid names) is left out and reported in [`Generated::skipped`] and in
-//! the interface's doc comment; only a package whose every interface procedure is left out fails,
-//! with [`Error::EverythingSkipped`].
+//! (unsupported or clashing names and types, parameters beyond the stack budget, results
+//! occupying more than one stack element, reserved or invalid names) is left out and reported in
+//! [`Generated::skipped`] and in the interface's doc comment. A package fails as a whole only when
+//! it is not an account component ([`Error::NotAComponent`]), has no interface procedures
+//! ([`Error::NoInterfaceProcedures`]), has no usable WIT package id or interface name
+//! ([`Error::Namespace`]), or has every interface procedure left out
+//! ([`Error::EverythingSkipped`]).
 //!
 //! The interface procedures are the exports marked `@account_procedure` or `@auth_script`: the
 //! protocol counts only those as part of an account component's interface
@@ -27,7 +30,7 @@ use std::collections::BTreeSet;
 
 use miden_mast_package::TargetType;
 use midenc_frontend_wasm_metadata::{
-    FPI_IMPORT_PREFIX, namespace::CORE_TYPES_INTERFACE, procedure_path::validate_procedure_path,
+    FPI_IMPORT_PREFIX, namespace::CORE_TYPES_INTERFACE_ID, procedure_path::validate_procedure_path,
 };
 use midenc_hir_type::FunctionType;
 use midenc_package_interface::{PackageInterface, ProcedureItem, Role};
@@ -48,7 +51,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            core_types: format!("miden:base/{CORE_TYPES_INTERFACE}@1.0.0"),
+            core_types: CORE_TYPES_INTERFACE_ID.to_owned(),
         }
     }
 }
@@ -123,9 +126,13 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
     debug_assert!(naming::is_valid(&world));
 
     // Functions and types share one namespace in a WIT interface. On a clash the function is left
-    // out, never a function that needs the type, so the type names come first: every name a
-    // function could add when offered on its own. A function offered next to others adds no
-    // other names, so no function kept below can be shadowed by a later type.
+    // out, never a function that uses the type, so the type names are fixed before a function is
+    // checked against them. The first pass checks against every name a function could add when
+    // offered on its own: a superset of the types any pass keeps, since a function offered next
+    // to others adds no other names. Each further pass checks against the types the previous
+    // pass kept, and is accepted only while its own types stay within them, so no kept function
+    // is shadowed by a type. The checked set shrinks strictly with every accepted pass, so the
+    // passes end, in practice after one or two.
     let mut type_names: BTreeSet<String> = BTreeSet::new();
     for procedure in &procedures {
         if let Some(signature) = &procedure.signature
@@ -135,7 +142,64 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
             type_names.extend(types.names().map(str::to_owned));
         }
     }
+    let mut pass = interface_pass(&procedures, &type_names);
+    loop {
+        let kept_types: BTreeSet<String> = pass.types.names().map(str::to_owned).collect();
+        if kept_types == type_names {
+            break;
+        }
+        let next = interface_pass(&procedures, &kept_types);
+        if !next.types.names().all(|name| kept_types.contains(name)) {
+            break;
+        }
+        type_names = kept_types;
+        pass = next;
+    }
+    let Pass {
+        types,
+        functions,
+        skipped,
+    } = pass;
+    if functions.is_empty() {
+        return Err(Error::EverythingSkipped(skipped));
+    }
 
+    let package_id = format!("{id_namespace}:{id_name}@{version}");
+    let wit = emit::render(&emit::Document {
+        package_name,
+        package_version: package.version.to_string(),
+        commitment: package.digest.to_string(),
+        skipped: &skipped,
+        package_id: &package_id,
+        interface: &interface,
+        world: &world,
+        core_types: &options.core_types,
+        types: &types,
+        functions: &functions,
+    });
+    Ok(Generated {
+        wit,
+        package_id,
+        interface,
+        world,
+        skipped,
+    })
+}
+
+/// The outcome of offering every interface procedure once: the functions kept, the types they
+/// use, and the procedures left out with why.
+struct Pass {
+    /// The types the kept functions use or declare.
+    types: TypeSet,
+    /// The kept functions, in procedure order.
+    functions: Vec<Function>,
+    /// The procedures left out, in procedure order.
+    skipped: Vec<Skipped>,
+}
+
+/// Offer `procedures` in order, leaving out each one that has no function form, whose function
+/// name another kept function already has, or whose function name is one of `type_names`.
+fn interface_pass(procedures: &[&ProcedureItem], type_names: &BTreeSet<String>) -> Pass {
     // `TypeSet::map` may leave partial state behind on failure, so each function is mapped on a
     // clone (see `function`) that replaces the set only on success.
     let mut types = TypeSet::default();
@@ -168,30 +232,11 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
             Err(reason) => skipped.push(Skipped { path, reason }),
         }
     }
-    if functions.is_empty() {
-        return Err(Error::EverythingSkipped(skipped));
-    }
-
-    let package_id = format!("{id_namespace}:{id_name}@{version}");
-    let wit = emit::render(&emit::Document {
-        package_name,
-        package_version: package.version.to_string(),
-        commitment: package.digest.to_string(),
-        skipped: &skipped,
-        package_id: &package_id,
-        interface: &interface,
-        world: &world,
-        core_types: &options.core_types,
-        types: &types,
-        functions: &functions,
-    });
-    Ok(Generated {
-        wit,
-        package_id,
-        interface,
-        world,
+    Pass {
+        types,
+        functions,
         skipped,
-    })
+    }
 }
 
 /// The export path of `procedure`, without a leading `::`.
@@ -270,18 +315,19 @@ fn function(
              direct call can pass"
         ));
     }
-    // Only results that flatten to at most one value are offered. This is a deliberate
-    // restriction, not a compiler limit (multi-value import results are lowered through an
-    // out-pointer): the stack convention for multi-value results of MASM callees has not been
-    // validated yet.
-    let result_values: usize = results.iter().map(|mapped| mapped.values).sum();
+    // Only a result that is one core value occupying one operand stack element is offered. This
+    // is a deliberate restriction, not a compiler limit (multi-value import results are lowered
+    // through an out-pointer): the stack convention for results of MASM callees that occupy more
+    // than one element (several values, or the two limbs of a `u64`/`s64`) has not been validated
+    // yet.
+    let result_felts: usize = results.iter().map(|mapped| mapped.felts).sum();
     let result = match results.as_slice() {
         [] => None,
-        [single] if single.values == 1 => Some(single.wit.clone()),
+        [single] if single.values == 1 && single.felts == 1 => Some(single.wit.clone()),
         _ => {
             return Err(format!(
-                "results flatten to {result_values} values; multi-value results of Miden Assembly \
-                 components are not supported yet"
+                "results occupy {result_felts} stack elements; multi-element results of Miden \
+                 Assembly components are not supported yet"
             ));
         }
     };
