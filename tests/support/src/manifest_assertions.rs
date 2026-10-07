@@ -1,6 +1,8 @@
 //! Lookups and assertions over compiled package manifests, shared by tests (in both the
 //! compiler tier and the protocol-linked tier) that inspect attribute-tagged procedure exports.
 
+use std::collections::BTreeSet;
+
 use miden_mast_package::{Package, PackageExport, ProcedureExport};
 
 /// Returns the manifest procedure export uniquely matching `predicate`.
@@ -63,5 +65,63 @@ pub fn assert_unique_protocol_export(
     assert_eq!(
         export_name, expected_export_name,
         "expected the `{attribute}` export to preserve the user-defined procedure name",
+    );
+}
+
+/// Returns the Miden paths the package's embedded WIT declares as exports, plus the
+/// compiler's `<namespace>::init` initializer: the exact set a manifest must expose.
+pub fn expected_exports_from_wit(package: &Package, namespace: &str) -> BTreeSet<String> {
+    // Manifest paths are absolute.
+    let absolute = |path: &str| {
+        if path.starts_with("::") {
+            path.to_string()
+        } else {
+            format!("::{path}")
+        }
+    };
+    let external_id = |function: &wit_parser::Function| {
+        absolute(function.external_id.as_deref().unwrap_or_else(|| {
+            panic!("exported WIT function `{}` carries no external-id", function.name)
+        }))
+    };
+    let wit =
+        midenc_frontend_wasm_metadata::package_wit(package).expect("package must embed its WIT");
+    let wit = core::str::from_utf8(wit).expect("embedded WIT must be UTF-8");
+    let parsed = wit_parser::UnresolvedPackageGroup::parse("package.wit", wit)
+        .unwrap_or_else(|(map, err)| panic!("embedded WIT must parse: {}", err.render(&map)));
+    let mut expected = BTreeSet::from([absolute(&format!(
+        "{namespace}::{}",
+        midenc_frontend_wasm_metadata::COMPONENT_INIT_PROCEDURE
+    ))]);
+    for (_, world) in parsed.main.worlds.iter() {
+        for export in world.exports.values() {
+            match export {
+                wit_parser::WorldItem::Interface { id, .. } => {
+                    for function in parsed.main.interfaces[*id].functions.values() {
+                        expected.insert(external_id(function));
+                    }
+                }
+                wit_parser::WorldItem::Function(function) => {
+                    expected.insert(external_id(function));
+                }
+                wit_parser::WorldItem::Type { .. } => {}
+            }
+        }
+    }
+    expected
+}
+
+/// Asserts that the manifest of `package` exports exactly [`expected_exports_from_wit`].
+pub fn assert_exports_match_wit(package: &Package, namespace: &str) {
+    let actual = package
+        .manifest
+        .exports()
+        .filter_map(|export| export.as_procedure())
+        .map(|export| export.path.as_str().to_string())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        actual,
+        expected_exports_from_wit(package, namespace),
+        "the manifest must export exactly the WIT-declared procedures and init"
     );
 }

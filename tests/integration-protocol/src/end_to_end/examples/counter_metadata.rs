@@ -31,7 +31,7 @@ fn counter_contract() {
         .find_map(|line| line.trim().strip_prefix("namespace = \""))
         .and_then(|rest| rest.strip_suffix('"'))
         .expect("the example must declare `[lib].namespace`");
-    crate::sdk::assert_exports_match_wit(&package, namespace);
+    midenc_integration_test_support::assert_exports_match_wit(&package, namespace);
     let account_component_metadata_bytes = package
         .as_ref()
         .sections

@@ -4655,6 +4655,7 @@ dependencies = [
  "proptest",
  "sha2",
  "walkdir",
+ "wit-parser 0.259.0",
 ]
 
 [[package]]
@@ -4693,7 +4694,6 @@ dependencies = [
  "wasmi",
  "wat",
  "wit-bindgen-core",
- "wit-parser 0.259.0",
 ]
 
 [[package]]

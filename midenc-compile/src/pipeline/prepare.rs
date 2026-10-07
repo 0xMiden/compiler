@@ -392,7 +392,11 @@ fn declared_namespace(input: &InputFile, session: &Session) -> Option<String> {
 fn wasm_declared_namespace(wasm: &[u8], session: &Session) -> Option<String> {
     use midenc_hir::{SymbolNameComponent, SymbolPath};
 
-    let namespace = midenc_frontend_wasm::declared_namespace(wasm, session).ok()??;
+    // The scan is given the packages the translation links, so that it classifies linker stubs
+    // as the translation does.
+    let linked_packages = session.package_interfaces().ok()?;
+    let namespace =
+        midenc_frontend_wasm::declared_namespace(wasm, Some(linked_packages), session).ok()??;
     let relative = namespace
         .components()
         .filter(|component| !matches!(component, SymbolNameComponent::Root))

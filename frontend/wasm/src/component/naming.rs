@@ -171,7 +171,7 @@ mod tests {
     /// Returns the namespace the exports of `wasm` declare, as the compiler scans it before
     /// translation.
     fn declared_namespace(wasm: &[u8]) -> WasmResult<Option<SymbolPath>> {
-        crate::declared_namespace(wasm, Context::default().session())
+        crate::declared_namespace(wasm, None, Context::default().session())
     }
 
     /// Returns the diagnostic of translating `wasm` (rooted at `namespace` when given), which

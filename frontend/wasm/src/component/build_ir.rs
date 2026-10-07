@@ -1,6 +1,7 @@
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 
 use midenc_hir::{Context, SymbolPath, dialects::builtin::BuiltinDialect};
+use midenc_package_interface::PackageInterface;
 use midenc_session::{Session, diagnostics::Report};
 
 use super::{
@@ -55,13 +56,22 @@ pub fn translate_component(
 /// Returns the namespace declared by the function exports of the Wasm component `wasm`, i.e. the
 /// namespace the frontend roots the component at when the build does not provide one.
 ///
+/// `linked_packages` are the package interfaces the translation is given (see
+/// [`WasmTranslationConfig::linked_packages`]), so the scan classifies linker stubs exactly as
+/// the translation does.
+///
 /// Returns `Ok(None)` for a core module or a component without function exports.
-pub fn declared_namespace(wasm: &[u8], session: &Session) -> WasmResult<Option<SymbolPath>> {
+pub fn declared_namespace(
+    wasm: &[u8],
+    linked_packages: Option<Arc<[PackageInterface]>>,
+    session: &Session,
+) -> WasmResult<Option<SymbolPath>> {
     if !wasmparser::Parser::is_component(wasm) {
         return Ok(None);
     }
     let config = WasmTranslationConfig {
         parse_wasm_debuginfo: false,
+        linked_packages,
         ..Default::default()
     };
     let (_, parsed) = parse(&config, wasm, session)?;

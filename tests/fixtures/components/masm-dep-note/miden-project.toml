@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "note"
-namespace = "miden:masm-dep-note/miden-masm-dep-note@0.1.0"
+namespace = "miden::masm_dep_note::masm_dep_note"
 path = "src/lib.rs"
 
 [dependencies]

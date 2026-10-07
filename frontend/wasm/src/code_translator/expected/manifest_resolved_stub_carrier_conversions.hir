@@ -1,5 +1,5 @@
 builtin.module private @noname attributes { reserved_memory = #builtin.u64<65536> } {
-    builtin.function private extern("C") @lib::narrow(%0: i32, %1: i32, %2: felt) -> i32 {
+    builtin.function private extern("C") @"lib::narrow"(%0: i32, %1: i32, %2: felt) -> i32 {
         %3 = hir.bitcast %0 <{ ty = #builtin.type<u32> }>;
         %4 = arith.trunc %1 <{ ty = #builtin.type<u16> }>;
         %5 = hir.exec ::@lib::@narrow(%3, %4, %2) : extern("C") (u32, u16, felt) -> u8;
@@ -16,7 +16,7 @@ builtin.module private @noname attributes { reserved_memory = #builtin.u64<65536
         %13 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
         %14 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
         %15 = hir.load_local <{ local = #builtin.local_variable<2, felt> }>;
-        %16 = hir.exec ::@root_ns:root@1.0.0::@noname::@lib::narrow(%13, %14, %15) : extern("C") (i32, i32, felt) -> i32;
+        %16 = hir.exec ::@noname::@noname::@"lib::narrow"(%13, %14, %15) : extern("C") (i32, i32, felt) -> i32;
         cf.br ^block7(%16 : i32);
     ^block7(%12: i32):
         builtin.ret %12 : (i32);

@@ -119,8 +119,6 @@ fn main() {
 and includes `concat!(env!("OUT_DIR"), "/my-lib.rs")` in a module of its own; the crate root
 needs `#![cfg_attr(all(target_family = "wasm", miden), feature(linkage))]`.
 
-## 0.14.0 -> 0.15.0
-
 ### `[lib].namespace` is a three-segment Miden path that names everything
 
 `[lib].namespace` in `miden-project.toml` is now a Miden path of exactly three segments,
@@ -222,6 +220,8 @@ replaced by `path()`, and `protocol_export_kind_for` takes the full Miden path o
 The bindings generator moved to wit-bindgen 0.62 (wit-parser and wit-component 0.259), which
 understands the attribute; crates that depend on `wit-bindgen` directly should move to the same
 version.
+
+## 0.14.0 -> 0.15.0
 
 ### `compute_commitment` moved to `native_account` (protocol 0.17.0-rc.6)
 
