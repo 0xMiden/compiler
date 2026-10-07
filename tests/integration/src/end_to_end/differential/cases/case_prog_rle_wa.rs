@@ -2,7 +2,7 @@
 // except that the escape arm's five-statistic update moves into an
 // `#[inline(never)]` helper taking the statistics as a `&mut [u64; 5]`.  Same
 // answer on every input; compiles at the default level where the original
-// panics (F12, rewriter.rs:335).
+// panicked (F12, rewriter.rs:335, #1419, fixed).
 const E0: u32 = 5;
 const E1: u32 = 15;
 const E2: u32 = 25;

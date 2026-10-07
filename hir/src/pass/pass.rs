@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, rc::Rc};
+use alloc::{boxed::Box, format, rc::Rc};
 use core::{any::Any, fmt};
 
 use super::*;
@@ -28,9 +28,7 @@ pub trait OperationPass {
     }
     /// The name of the operation that this pass operates on, or `None` if this is a generic pass.
     fn target_name(&self, context: &Context) -> Option<OperationName>;
-    fn initialize_options(&mut self, options: &str) -> Result<(), Report> {
-        Ok(())
-    }
+    fn initialize_options(&mut self, options: &str) -> Result<(), Report>;
     fn print_as_textual_pipeline(&self, f: &mut fmt::Formatter) -> fmt::Result;
     fn has_statistics(&self) -> bool {
         !self.statistics().is_empty()
@@ -215,9 +213,22 @@ pub trait Pass: Sized + Any {
     /// If command-line options are provided for this pass, implementations must parse the raw
     /// options here, returning `Err` if parsing fails for some reason.
     ///
-    /// By default, this is a no-op.
+    /// By convention, the pass pipeline parser (see `hir-opt`) hands over the options of a pass
+    /// as a comma-separated list of `key=value` pairs, e.g. `key1=value1, key2=value2`, so a
+    /// value must not contain a comma and each key appears at most once.
+    ///
+    /// By default, a pass takes no options, so any option given is an error.
     fn initialize_options(&mut self, options: &str) -> Result<(), Report> {
-        Ok(())
+        if options.trim().is_empty() {
+            Ok(())
+        } else {
+            // Name the pass the way it was written in the pipeline, when it has such a name
+            let name = match self.argument() {
+                "" => self.name(),
+                argument => argument,
+            };
+            Err(Report::msg(format!("pass '{name}' takes no options")))
+        }
     }
     /// Prints out the pass in the textual representation of pipelines.
     ///

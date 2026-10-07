@@ -1,0 +1,192 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=while-remove-unused-args}))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=while-remove-unused-args}))' | hir-opt --verify - | filecheck %s
+
+// Coverage for the `while-remove-unused-args` canonicalization of `scf.while`. The canonicalizer
+// is restricted to that single pattern so that no other pattern touches the loops below (the
+// greedy driver still folds, erases trivially dead operations and simplifies regions). The second
+// RUN line re-parses and verifies the rewritten IR, so every printed form must be valid input.
+//
+// An iteration argument is removed when its before-block argument has no real uses (a `di.debug_value`
+// does not count). Its `scf.while`
+// operand, its before-block argument and its `scf.yield` operand go away; the results, the after
+// block and the `scf.condition` operands are untouched. A before-block argument that is only
+// forwarded by `scf.condition` counts as used.
+builtin.module private @while_remove_unused_args {
+    // Before-block arguments 0, 2 and 4 (first, middle and last) are unused; argument 1 is used by
+    // the comparison and the condition, argument 3 only by the condition. The loop keeps operands
+    // `%1, %3` and the yield keeps the operands for columns 1 and 3.
+    // CHECK: @unused_positions(%[[A:\d+]]: u32, %[[B:\d+]]: u32, %[[C:\d+]]: u32, %[[D:\d+]]: u32, %[[E:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R0:\d+]], %[[R1:\d+]] = scf.while %[[B]], %[[D]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32, %[[Y:\d+]]: u32):
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[X]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[X]], %[[Y]] : (i1, u32, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32, %[[Q:\d+]]: u32):
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[P]], %[[Q]]
+    // CHECK-NEXT: scf.yield %[[S]], %[[Q]] : (u32, u32);
+    // CHECK-NEXT: } : (u32, u32) -> (u32, u32);
+    // CHECK-NEXT: arith.add %[[R0]], %[[R1]]
+    builtin.function public extern("C") @unused_positions(%0: u32, %1: u32, %2: u32, %3: u32, %4: u32) -> u32 {
+        %5 = arith.constant 10 : u32;
+        %6, %7 = scf.while %0, %1, %2, %3, %4 before {
+        ^block1(%8: u32, %9: u32, %10: u32, %11: u32, %12: u32):
+            %13 = arith.lt %9, %5;
+            scf.condition %13, %9, %11 : (i1, u32, u32);
+        } after {
+        ^block2(%14: u32, %15: u32):
+            %16 = arith.add %14, %15 <{ overflow = #builtin.overflow<unchecked> }>;
+            scf.yield %14, %16, %15, %15, %16 : (u32, u32, u32, u32, u32);
+        } : (u32, u32, u32, u32, u32) -> (u32, u32);
+        %17 = arith.add %6, %7 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %17 : (u32);
+    };
+
+    // Every before-block argument is unused (the before body only reads the function arguments):
+    // the loop is left with no operands, an argument-less before block and an empty yield, while
+    // its results and after-block arguments survive.
+    // CHECK: @all_unused(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R0:\d+]], %[[R1:\d+]] = scf.while before {
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[A]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[A]], %[[B]] : (i1, u32, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%{{\d+}}: u32, %{{\d+}}: u32):
+    // CHECK-NEXT: scf.yield : ();
+    // CHECK-NEXT: } : () -> (u32, u32);
+    // CHECK-NEXT: arith.add %[[R0]], %[[R1]]
+    builtin.function public extern("C") @all_unused(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3, %4 = scf.while %0, %1 before {
+        ^block1(%5: u32, %6: u32):
+            %7 = arith.lt %0, %2;
+            scf.condition %7, %0, %1 : (i1, u32, u32);
+        } after {
+        ^block2(%8: u32, %9: u32):
+            %10 = arith.add %8, %9 <{ overflow = #builtin.overflow<unchecked> }>;
+            scf.yield %10, %10 : (u32, u32);
+        } : (u32, u32) -> (u32, u32);
+        %11 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %11 : (u32);
+    };
+
+    // Negative: before-block argument 1 is used by the comparison and argument 0 is forwarded by
+    // the condition, so nothing is removed and the loop is left untouched.
+    // CHECK: @none_unused(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R0:\d+]], %[[R1:\d+]] = scf.while %[[A]], %[[B]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32, %[[Y:\d+]]: u32):
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[Y]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[X]], %[[Y]] : (i1, u32, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32, %[[Q:\d+]]: u32):
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[Q]], %[[P]]
+    // CHECK-NEXT: scf.yield %[[P]], %[[S]] : (u32, u32);
+    // CHECK-NEXT: } : (u32, u32) -> (u32, u32);
+    // CHECK-NEXT: arith.add %[[R0]], %[[R1]]
+    builtin.function public extern("C") @none_unused(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3, %4 = scf.while %0, %1 before {
+        ^block1(%5: u32, %6: u32):
+            %7 = arith.lt %6, %2;
+            scf.condition %7, %5, %6 : (i1, u32, u32);
+        } after {
+        ^block2(%8: u32, %9: u32):
+            %10 = arith.add %9, %8 <{ overflow = #builtin.overflow<unchecked> }>;
+            scf.yield %8, %10 : (u32, u32);
+        } : (u32, u32) -> (u32, u32);
+        %11 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %11 : (u32);
+    };
+
+    // Debug uses do not keep an argument alive: before-block argument 1 is only described by a
+    // `di.debug_value`, so it is removed and the `di.debug_value` becomes a `di.debug_kill` of
+    // its variable in place.
+    // CHECK: @debug_use(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R:\d+]] = scf.while %[[A]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32):
+    // CHECK-NEXT: di.debug_kill <{ variable = #di.variable<{ name = "b", file = "test.rs", line = 2 }> }>;
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[X]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[X]] : (i1, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32):
+    // CHECK-NEXT: %[[N:\d+]] = arith.incr %[[P]];
+    // CHECK-NEXT: scf.yield %[[N]] : (u32);
+    // CHECK-NEXT: } : (u32) -> (u32);
+    // CHECK-NEXT: builtin.ret %[[R]] : (u32);
+    builtin.function public extern("C") @debug_use(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3 = scf.while %0, %1 before {
+        ^block1(%4: u32, %5: u32):
+            di.debug_value %5 <{ variable = #di.variable<{ name = "b", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+            %6 = arith.lt %4, %2;
+            scf.condition %6, %4 : (i1, u32);
+        } after {
+        ^block2(%7: u32):
+            %8 = arith.incr %7;
+            scf.yield %8, %7 : (u32, u32);
+        } : (u32, u32) -> (u32);
+        builtin.ret %3 : (u32);
+    };
+
+    // The `di.debug_kill` inherits the inline-call chain of the `di.debug_value` it replaces, not
+    // the different chain of the `scf.while` being rewritten; the loop keeps its own chain.
+    // CHECK: @debug_use_own_chain(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R:\d+]] = scf.while %[[A]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32):
+    // CHECK-NEXT: di.debug_kill <{ variable = #di.variable<{ name = "b", file = "test.rs", line = 2 }> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "helper", linkage = "", file = "lib.rs", line = 5, column = 1, call_file = "main.rs", call_line = 9, call_column = 3 }]> };
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[X]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[X]] : (i1, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32):
+    // CHECK-NEXT: %[[N:\d+]] = arith.incr %[[P]];
+    // CHECK-NEXT: scf.yield %[[N]] : (u32);
+    // CHECK-NEXT: } attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "outer", linkage = "", file = "lib.rs", line = 20, column = 1, call_file = "main.rs", call_line = 30, call_column = 7 }]> } : (u32) -> (u32);
+    // CHECK-NEXT: builtin.ret %[[R]] : (u32);
+    builtin.function public extern("C") @debug_use_own_chain(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3 = scf.while %0, %1 before {
+        ^block1(%4: u32, %5: u32):
+            di.debug_value %5 <{ variable = #di.variable<{ name = "b", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "helper", linkage = "", file = "lib.rs", line = 5, column = 1, call_file = "main.rs", call_line = 9, call_column = 3 }]> } : (u32);
+            %6 = arith.lt %4, %2;
+            scf.condition %6, %4 : (i1, u32);
+        } after {
+        ^block2(%7: u32):
+            %8 = arith.incr %7;
+            scf.yield %8, %7 : (u32, u32);
+        } attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "outer", linkage = "", file = "lib.rs", line = 20, column = 1, call_file = "main.rs", call_line = 30, call_column = 7 }]> } : (u32, u32) -> (u32);
+        builtin.ret %3 : (u32);
+    };
+
+    // A `di.debug_value` without an inline-call chain yields a `di.debug_kill` without one, even
+    // though the rewritten `scf.while` carries a chain.
+    // CHECK: @debug_use_no_chain(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R:\d+]] = scf.while %[[A]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32):
+    // CHECK-NEXT: di.debug_kill <{ variable = #di.variable<{ name = "b", file = "test.rs", line = 2 }> }>;
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[X]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[X]] : (i1, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32):
+    // CHECK-NEXT: %[[N:\d+]] = arith.incr %[[P]];
+    // CHECK-NEXT: scf.yield %[[N]] : (u32);
+    // CHECK-NEXT: } attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "outer", linkage = "", file = "lib.rs", line = 20, column = 1, call_file = "main.rs", call_line = 30, call_column = 7 }]> } : (u32) -> (u32);
+    // CHECK-NEXT: builtin.ret %[[R]] : (u32);
+    builtin.function public extern("C") @debug_use_no_chain(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3 = scf.while %0, %1 before {
+        ^block1(%4: u32, %5: u32):
+            di.debug_value %5 <{ variable = #di.variable<{ name = "b", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+            %6 = arith.lt %4, %2;
+            scf.condition %6, %4 : (i1, u32);
+        } after {
+        ^block2(%7: u32):
+            %8 = arith.incr %7;
+            scf.yield %8, %7 : (u32, u32);
+        } attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "outer", linkage = "", file = "lib.rs", line = 20, column = 1, call_file = "main.rs", call_line = 30, call_column = 7 }]> } : (u32, u32) -> (u32);
+        builtin.ret %3 : (u32);
+    };
+};

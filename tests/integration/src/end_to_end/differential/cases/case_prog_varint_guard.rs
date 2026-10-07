@@ -1,8 +1,8 @@
 // Bounding sibling of `prog_varint` (campaign 21): the same LEB128 record
 // decoder — four in-loop error returns over a 48-byte frame — with TWO
 // running values (a running hash and a checksum-like fold) instead of six.
-// Largest variant that compiles at the default level; it still panics at
-// `--optimize=size-min` (see `prog_varint`).
+// Before the #1419 fix it panicked at `--optimize=size-min`; it now compiles
+// at every level (see `prog_varint`).
 const S1: u32 = 7;
 const S2: u32 = 13;
 const S3: u32 = 23;

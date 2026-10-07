@@ -1,11 +1,11 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    adt::{SmallDenseMap, SmallSet},
     patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
     *,
 };
 
+use super::while_rebuild::{IterArg, rebuild_while};
 use crate::*;
 
 /// Remove duplicated [crate::ops::Condition] args in a [While] loop.
@@ -45,83 +45,23 @@ impl RewritePattern for WhileRemoveDuplicatedResults {
             return Ok(false);
         };
 
-        let cond_op = while_op.condition_op();
-        let cond_op_args = cond_op
-            .borrow()
-            .forwarded()
-            .iter()
-            .map(|v| v.borrow().as_value_ref())
-            .collect::<SmallVec<[_; 4]>>();
-
-        let mut args_set = SmallSet::<ValueRef, 4>::default();
-        for arg in cond_op_args.iter().copied() {
-            args_set.insert(arg);
+        // Results that are forwarded the same value are all replaced with the first of them.
+        let mut unique = SmallVec::<[ValueRef; 4]>::default();
+        let mut results = SmallVec::<[Option<usize>; 4]>::default();
+        for forwarded in while_op.condition_op().borrow().forwarded().iter() {
+            let value = forwarded.borrow().as_value_ref();
+            let index = unique.iter().position(|v| *v == value).unwrap_or(unique.len());
+            if index == unique.len() {
+                unique.push(value);
+            }
+            results.push(Some(index));
         }
-
-        if args_set.len() == cond_op_args.len() {
-            // No results to remove
+        if unique.len() == results.len() {
             return Ok(false);
         }
-
-        let mut args_map = SmallDenseMap::<_, _, 4>::with_capacity(cond_op_args.len());
-        let mut new_args = SmallVec::<[ValueRef; 4]>::with_capacity(cond_op_args.len());
-
-        for arg in cond_op_args.iter().copied() {
-            if !args_map.contains_key(&arg) {
-                args_map.insert(arg, args_map.len());
-                new_args.push(arg);
-            }
-        }
-
-        let span = op.span();
-        let results = new_args
-            .iter()
-            .map(|arg| arg.borrow().ty().clone())
-            .collect::<SmallVec<[_; 4]>>();
-        let new_while_op = rewriter.r#while(
-            while_op.inits().into_iter().map(|o| o.borrow().as_value_ref()),
-            &results,
-            span,
-        )?;
-
-        let new_while = new_while_op.borrow();
-        let new_before_block = new_while.before().entry().as_block_ref();
-        let new_after_block = new_while.after().entry().as_block_ref();
-        let before_block = while_op.before().entry().as_block_ref();
-        let after_block = while_op.after().entry().as_block_ref();
+        let iter_args = SmallVec::<[_; 4]>::from_elem(IterArg::Keep, while_op.inits().len());
         drop(op);
 
-        let mut after_args_mapping = SmallVec::<[_; 4]>::default();
-        let mut results_mapping = SmallVec::<[_; 4]>::default();
-        for arg in cond_op_args.iter() {
-            let pos = args_map.get(arg).copied().unwrap();
-            after_args_mapping
-                .push(Some(new_after_block.borrow().get_argument(pos).borrow().as_value_ref()));
-            results_mapping.push(Some(new_while.results()[pos].borrow().as_value_ref()));
-        }
-
-        let mut guard = InsertionGuard::new(rewriter);
-        guard.set_insertion_point_before(cond_op.as_operation_ref());
-
-        let new_cond_op = guard.condition(
-            cond_op.borrow().condition().as_value_ref(),
-            new_args.iter().copied(),
-            span,
-        )?;
-        let new_cond_op = new_cond_op.as_operation_ref();
-        let cond_op = cond_op.as_operation_ref();
-        guard.replace_op(cond_op, new_cond_op);
-
-        let new_before_block_args = new_before_block
-            .borrow()
-            .arguments()
-            .iter()
-            .map(|v| Some(v.borrow().as_value_ref()))
-            .collect::<SmallVec<[_; 4]>>();
-        guard.merge_blocks(before_block, new_before_block, &new_before_block_args);
-        guard.merge_blocks(after_block, new_after_block, &after_args_mapping);
-        guard.replace_op_with_values(operation, &results_mapping);
-
-        Ok(true)
+        rebuild_while(rewriter, operation, &iter_args, &results)
     }
 }

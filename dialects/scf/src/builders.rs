@@ -25,6 +25,12 @@ pub trait StructuredControlFlowOpBuilder<'f, B: ?Sized + Builder> {
         Ok(if_op)
     }
 
+    /// Creates an `scf.while` over `loop_init_variables` with results of the types in `results`.
+    ///
+    /// Both regions of the new op are populated with an empty entry block: the block of the
+    /// "before" region has one argument per init variable, the block of the "after" region one
+    /// argument per result. The caller fills these blocks, terminating them with `scf.condition`
+    /// and `scf.yield` respectively.
     fn r#while<T>(
         &mut self,
         loop_init_variables: T,

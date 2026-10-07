@@ -1,4 +1,4 @@
-// Passing sibling of `case_invariant_args_noreturn.rs` (campaign 28, W4): the
+// Sibling of `case_invariant_args_noreturn.rs` (campaign 28, W4): the
 // same program with SIX mixing steps instead of seven, which LLVM unrolls into
 // the block loop -- so cfg-to-scf sees one loop instead of a nest and no
 // payload column carries poison.

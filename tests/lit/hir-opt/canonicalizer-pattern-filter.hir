@@ -1,0 +1,81 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{disable-patterns=remove-loop-invariant-args-from-before-block}))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns="remove-loop-invariant-args-from-before-block;while-unused-result"}))' | filecheck %s --check-prefix=ENABLE
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{bogus=1}))' 2>&1 | filecheck %s --check-prefix=ERR
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=no-such-pattern}))' 2>&1 | filecheck %s --check-prefix=UNKNOWN
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=""}))' 2>&1 | filecheck %s --check-prefix=EMPTY
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{disable-patterns=a disable-patterns=b}))' 2>&1 | filecheck %s --check-prefix=DUP
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=while-unused-result disable-patterns=while-unused-result}))' 2>&1 | filecheck %s --check-prefix=BOTH
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(dce{x=1}))' 2>&1 | filecheck %s --check-prefix=NOOPT
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(dce{}))' | filecheck %s --check-prefix=EMPTYOPTS
+
+// Coverage for the `enable-patterns` and `disable-patterns` options of the canonicalizer.
+//
+// Two patterns have work to do on the loop below:
+// - column 0 is invariant (the yield feeds the loop operand `%0` back), so
+//   `remove-loop-invariant-args-from-before-block` drops operand 0 and before-block argument 0;
+// - result 0 and after-block argument 0 are unused, so `while-unused-result` drops result 0,
+//   after-block argument 0 and condition operand 0.
+// Before-block argument 0 stays used by the `arith.lt`, so `while-remove-unused-args` does not
+// drop it on its own.
+//
+// With only the invariant-argument pattern disabled, the loop keeps both operands and a
+// two-argument before block, while `while-unused-result` still runs: one result, a one-argument
+// after block, and a condition forwarding one value.
+// CHECK: @unused_result(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+// CHECK: scf.while %[[A]], %[[B]] before {
+// CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32, %[[Y:\d+]]: u32):
+// CHECK-NEXT: %[[LT:\d+]] = arith.lt %[[X]], %{{\d+}};
+// CHECK-NEXT: scf.condition %[[LT]], %[[Y]] : (i1, u32);
+// CHECK: } after {
+// CHECK-NEXT: ^block{{\d+}}(%{{\d+}}: u32):
+// CHECK: scf.yield %[[A]], %{{\d+}} : (u32, u32);
+// CHECK-NEXT: } : (u32, u32) -> (u32);
+//
+// With both patterns enabled (in a `;`-separated list) both rewrites happen: the invariant
+// operand is removed and its before-block argument is replaced by the init value, and the unused
+// result is removed.
+// ENABLE: @unused_result(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+// ENABLE: scf.while %[[B]] before {
+// ENABLE-NEXT: ^block{{\d+}}(%[[Y:\d+]]: u32):
+// ENABLE-NEXT: %[[LT:\d+]] = arith.lt %[[A]], %{{\d+}};
+// ENABLE-NEXT: scf.condition %[[LT]], %[[Y]] : (i1, u32);
+// ENABLE: } after {
+// ENABLE-NEXT: ^block{{\d+}}(%{{\d+}}: u32):
+// ENABLE: scf.yield %{{\d+}} : (u32);
+// ENABLE-NEXT: } : (u32) -> (u32);
+//
+// An unknown option is rejected.
+// ERR: invalid option 'bogus' for pass 'canonicalizer'
+//
+// An unknown pattern name is rejected.
+// UNKNOWN: unknown canonicalization pattern 'no-such-pattern'
+//
+// An empty pattern list is rejected.
+// EMPTY: has no pattern names
+//
+// A repeated option key is rejected by the pipeline parser.
+// DUP: duplicate option 'disable-patterns'
+//
+// A pattern named in both lists is rejected.
+// BOTH: pattern 'while-unused-result' is both enabled and disabled
+//
+// An option given to a pass that takes none is rejected, naming the pass by its pipeline argument.
+// NOOPT: pass 'dce' takes no options
+//
+// An empty option list is accepted by a pass that takes no options.
+// EMPTYOPTS: @unused_result(
+builtin.module private @pattern_filter {
+    builtin.function public extern("C") @unused_result(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3, %4 = scf.while %0, %1 before {
+        ^block1(%5: u32, %6: u32):
+            %7 = arith.lt %5, %2;
+            scf.condition %7, %5, %6 : (i1, u32, u32);
+        } after {
+        ^block2(%8: u32, %9: u32):
+            %10 = arith.add %9, %9 <{ overflow = #builtin.overflow<unchecked> }>;
+            scf.yield %0, %10 : (u32, u32);
+        } : (u32, u32) -> (u32, u32);
+        builtin.ret %4 : (u32);
+    };
+};

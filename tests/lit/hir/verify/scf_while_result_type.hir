@@ -1,0 +1,16 @@
+// RUN: not hir-opt --verify %s 2>&1 | filecheck %s
+
+// The type of an after-block argument must equal the type of the operand `scf.condition` forwards at its position.
+builtin.function public extern("C") @f(%n: u32, %b: i1) -> u32 {
+    scf.while %n before {
+    ^head(%i: u32):
+        scf.condition %b, %i : (i1, u32);
+    } after {
+    ^body(%j: i32):
+        scf.yield %n : (u32);
+    } : (u32) -> ();
+    builtin.ret %n : (u32);
+};
+
+// CHECK: invalid operation scf.while
+// CHECK: forwarded operand 0 has type 'u32'

@@ -70,28 +70,37 @@ impl RewritePattern for WhileConditionTruth {
             return Ok(false);
         };
 
-        let condition_operation = while_op.condition_op();
-
-        // These variables serve to prevent creating duplicate constants and hold constant true or
-        // false values
-        let mut constant_true = None;
-
-        let mut replaced = false;
-
         let span = while_op.span();
-        let condition_op = condition_operation.borrow();
-        let condition = condition_op.condition().as_value_ref();
+        let (condition, forwarded) = {
+            let condition_op = while_op.condition_op();
+            let condition_op = condition_op.borrow();
+            (
+                condition_op.condition().as_value_ref(),
+                condition_op
+                    .forwarded()
+                    .iter()
+                    .map(|v| v.borrow().as_value_ref())
+                    .collect::<SmallVec<[ValueRef; 4]>>(),
+            )
+        };
+        let after_args = while_op
+            .after()
+            .entry()
+            .arguments()
+            .iter()
+            .map(|arg| arg.borrow().as_value_ref())
+            .collect::<SmallVec<[ValueRef; 4]>>();
+        // Only `ValueRef`s are kept from here on: a borrow of the loop, of its after block or of
+        // a block argument must not be alive while the rewriter replaces the uses of that argument.
+        drop(op);
 
-        let forwarded = condition_op.forwarded();
-        let after_region = while_op.after();
-        let after_block = after_region.entry();
-        for (yielded, block_arg) in forwarded.iter().zip(after_block.arguments()) {
-            let yielded = yielded.borrow().as_value_ref();
-            if yielded == condition && block_arg.borrow().is_used() {
+        // Prevents creating duplicate constants
+        let mut constant_true = None;
+        let mut replaced = false;
+        for (forwarded, after_arg) in forwarded.into_iter().zip(after_args) {
+            if forwarded == condition && after_arg.borrow().has_real_uses() {
                 let constant = *constant_true.get_or_insert_with(|| rewriter.i1(true, span));
-
-                rewriter
-                    .replace_all_uses_of_value_with(block_arg.borrow().as_value_ref(), constant);
+                rewriter.replace_all_uses_of_value_with(after_arg, constant);
                 replaced = true;
             }
         }

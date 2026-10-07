@@ -220,15 +220,15 @@ fn prog_decoder_edges() {
 /// and an absent key, a linear rank cross-checked against the search; the
 /// sorted array and every flag folded.
 /// Configuration note (campaigns 23 and 24): WITHOUT full guest DWARF this
-/// program panics in the F12 class (`AliasingViolationError` at
+/// program panicked in the F12 class (#1419, fixed; `AliasingViolationError` at
 /// hir/src/patterns/rewriter.rs:335 while matching
 /// `remove-loop-invariant-args-from-before-block`): the Local2Reg promotion
 /// that DWARF blocks turns the sort loops' early exits into the
 /// poison-carrying payload column `compose::invariant_args_min` documents.
 /// Passes at every opt-level with DWARF on. Campaign 24 mapped the reach:
-/// the panic is the same at guest `debug = 1` (line tables carry no variable
-/// DIEs, so they do not block the promotion either) and survives a 256-pair
-/// sweep, but `--optimize=size-min` compiles and passes even at `debug = 0`.
+/// the panic was the same at guest `debug = 1` (line tables carry no variable
+/// DIEs, so they do not block the promotion either) and survived a 256-pair
+/// sweep, but `--optimize=size-min` compiled and passed even at `debug = 0`.
 #[test]
 fn prog_sorts() {
     run_case("prog_sorts", include_str!("../cases/case_prog_sorts.rs"));
@@ -850,16 +850,16 @@ fn prog_scanchain_edges() {
 /// over the window. Compile-time — no inputs involved. Un-ignore together with
 /// the other F6 reproducers (`pressure::zero_trip_frontier`).
 /// Configuration note (campaign 24): WITHOUT full guest DWARF the program
-/// changes CLASS — it panics with `AliasingViolationError` at
-/// hir/src/patterns/rewriter.rs:335 (F12) instead of at the emitter's window
-/// assert, because the Local2Reg promotions DWARF blocks reach cfg-to-scf
-/// first. It is the only program in the corpus whose panic class depends on
-/// the debug level.
+/// changed CLASS — it panicked with `AliasingViolationError` at
+/// hir/src/patterns/rewriter.rs:335 (F12, #1419, fixed) instead of at the
+/// emitter's window assert, because the Local2Reg promotions DWARF blocks
+/// reach cfg-to-scf first. It was the only program in the corpus whose panic
+/// class depended on the debug level.
 #[test]
 #[ignore = "#1420: compiler panic at the DEFAULT configuration: 'invalid operand stack index (9): \
             requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
-            class (26 erased split-edge reloads in the spills trace); WITHOUT guest DWARF it is \
-            the F12 class instead (rewriter.rs:335); compile-time, no inputs involved"]
+            class (26 erased split-edge reloads in the spills trace); compile-time, no inputs \
+            involved"]
 fn prog_rkscan() {
     run_case("prog_rkscan", include_str!("../cases/case_prog_rkscan.rs"));
 }
@@ -870,8 +870,9 @@ fn prog_rkscan() {
 /// `--optimize=max`; still panics at `--optimize=basic` (see
 /// `prog_rkscan_guard_o1`).
 /// Configuration note (campaigns 23 and 24): WITHOUT full guest DWARF the
-/// reduced scanner panics in the F12 class (`AliasingViolationError` at
-/// hir/src/patterns/rewriter.rs:335) rather than compiling — the same
+/// reduced scanner panicked in the F12 class (#1419, fixed;
+/// `AliasingViolationError` at hir/src/patterns/rewriter.rs:335) rather than
+/// compiling — the same
 /// no-DWARF amplifier `prog_rkscan_wa` and `prog_sorts` show; pinned in-repo
 /// by [`prog_rkscan_guard_nodwarf`] below.
 #[test]
@@ -902,10 +903,10 @@ fn prog_rkscan_guard_edges() {
 }
 
 /// THE RELEASE-BUILD ROW: [`prog_rkscan_guard`] — the largest Rabin-Karp
-/// variant that compiles at the default level — does NOT compile in the
-/// configuration a user actually ships. `cargo miden build` emits no guest
-/// DWARF, and with the debug level pinned to 0 the program panics in the F12
-/// class: `AliasingViolationError { kind: Mutable, location:
+/// variant that compiles at the default level — did NOT compile in the
+/// configuration a user actually ships until #1419 was fixed. `cargo miden
+/// build` emits no guest DWARF, and with the debug level pinned to 0 the
+/// program panicked in the F12 class: `AliasingViolationError { kind: Mutable, location:
 /// hir/src/ir/operation.rs:877 }` at hir/src/patterns/rewriter.rs:335, the
 /// driver's last line under `MIDENC_TRACE='pattern-rewrite-driver=trace'`
 /// being `trying to match 'remove-loop-invariant-args-from-before-block'
@@ -914,23 +915,19 @@ fn prog_rkscan_guard_edges() {
 /// exit payload cfg-to-scf threads out as a column that still carries
 /// `ub.poison` at the back edge. Full DWARF blocks the Local2Reg promotions
 /// that produce that column (`debug_info::l2r_*` measures which slots), which
-/// is the only reason the corpus sees this program compile.
+/// was the only reason the corpus saw this program compile.
 ///
 /// Reach measured in campaign 24: identical at guest `debug = 1` (line tables
 /// carry no variable DIEs, so they block nothing); NO source-level workaround
-/// survives — `prog_rkscan_wa`'s `black_box` on every rotate-constant use,
+/// survived — `prog_rkscan_wa`'s `black_box` on every rotate-constant use,
 /// [`prog_rkscan_ref_nodwarf`]'s by-reference helper and a restructure that
 /// replaces all four escaping `return`s with a single `break 'outer` exit all
-/// still panic at rewriter.rs:335 while all three pass with DWARF and compute
-/// the same answer on the 1225-pair native boundary grid. The ONE escape is
-/// `--optimize=size-min`, which compiles and passes even at `debug = 0`.
-/// Compile-time — no inputs involved. Un-ignore with `invariant_args_min`.
+/// still panicked at rewriter.rs:335 while all three pass with DWARF and compute
+/// the same answer on the 1225-pair native boundary grid. The ONE escape was
+/// `--optimize=size-min`, which compiled and passed even at `debug = 0`.
+/// Compile-time — no inputs involved. It was `#[ignore]`d until the #1419 fix
+/// (see `compose::invariant_args_min`).
 #[test]
-#[ignore = "#1419: compiler panic WITHOUT full guest DWARF (guest debug 0 and 1, i.e. an ordinary \
-            release build) at the DEFAULT optimization level: 'AliasingViolationError { kind: \
-            Mutable, location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 \
-            while matching 'remove-loop-invariant-args-from-before-block' — F12 class; \
-            compile-time, no inputs involved"]
 fn prog_rkscan_guard_nodwarf() {
     run_case_with_flags(
         "prog_rkscan_guard_nodwarf",
@@ -939,24 +936,22 @@ fn prog_rkscan_guard_nodwarf() {
     );
 }
 
-/// The by-reference-helper rescue of [`prog_rkscan_guard`], which does NOT
-/// hold in the release configuration: the Bloom-probe expression moves into an
+/// The by-reference-helper rescue of [`prog_rkscan_guard`], which did NOT
+/// hold in the release configuration until #1419 was fixed: the Bloom-probe
+/// expression moves into an
 /// `#[inline(never)] fn(&[u64; 4], u64)`, so the four fingerprint words live
 /// in the shadow stack instead of crossing the search loop as scheduled
-/// operands. That is the shape that rescues `prog_tlv` and `prog_rle` from
-/// their F6/F12 panics, and it compiles and passes here WITH guest DWARF —
-/// but at `debug = 0` it still panics at hir/src/patterns/rewriter.rs:335,
+/// operands. That is the shape that rescues `prog_tlv` from its F6 panic (and
+/// rescued `prog_rle` from F12 before #1419), and it compiles and passes here WITH guest DWARF —
+/// but at `debug = 0` it still panicked at hir/src/patterns/rewriter.rs:335,
 /// because moving the words out of the window does nothing about the four
 /// `return`s that leave the function from inside the two-level nest. Computes
 /// the same answer as `prog_rkscan_guard` on the 1225-pair native boundary
 /// grid (checksum 0x2168a1769f80256d), so it is a like-for-like substitution.
-/// Kept as the counter-example to `prog_rkscan_wa`'s "pass the fingerprint
-/// words by reference" note. Compile-time — no inputs involved.
+/// Kept to pin that `prog_rkscan_wa`'s "pass the fingerprint words by
+/// reference" rescue now also holds without DWARF. The former panic was
+/// compile-time — no inputs involved.
 #[test]
-#[ignore = "#1419: compiler panic WITHOUT full guest DWARF: 'AliasingViolationError { kind: \
-            Mutable, location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 \
-            while matching 'remove-loop-invariant-args-from-before-block' — F12 class; the same \
-            source compiles and passes with DWARF; compile-time, no inputs involved"]
 fn prog_rkscan_ref_nodwarf() {
     run_case_with_flags(
         "prog_rkscan_ref_nodwarf",
@@ -997,13 +992,14 @@ fn prog_rkscan_guard_o1() {
 /// panics in the spill analysis instead (`calls::sig17` pins that limit).
 /// Configuration note: this rescue holds at the default level, `size-min`,
 /// `max` and `basic`, but WITHOUT full guest DWARF the black-boxed scanner
-/// panics in the F12 class instead (`AliasingViolationError` at
+/// panicked in the F12 class instead (#1419, fixed; `AliasingViolationError` at
 /// hir/src/patterns/rewriter.rs:335) — the Local2Reg promotion that DWARF
 /// blocks creates the poison-carrying payload column
 /// `compose::invariant_args_min` documents. Campaign 24: that also holds at
-/// guest `debug = 1`, and the by-reference-helper alternative fails the same
-/// way (see [`prog_rkscan_ref_nodwarf`]), so this program has NO source-level
-/// rescue in a release build — only `--optimize=size-min` compiles there.
+/// guest `debug = 1`, and the by-reference-helper alternative failed the same
+/// way before the #1419 fix (see [`prog_rkscan_ref_nodwarf`]), so before the fix this program had
+/// NO source-level rescue in a release build — only `--optimize=size-min`
+/// compiled there.
 #[test]
 fn prog_rkscan_wa() {
     run_case("prog_rkscan_wa", include_str!("../cases/case_prog_rkscan_wa.rs"));
@@ -1031,42 +1027,38 @@ fn prog_rkscan_wa_edges() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
-/// campaign 21, 2026-09-09). LEB128 record decoder (cliff shape: return-heavy
+/// FORMER COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (#1419,
+/// fixed; safe Rust, campaign 21, 2026-09-09). LEB128 record decoder (cliff shape: return-heavy
 /// inner loop nested in an outer loop; 6 u64 running values, 4 shared shift
 /// constants): a 48-byte frame of varints is decoded by a continuation-byte
 /// loop with four error returns (truncated frame, 64-bit overflow, overlong
 /// encoding, reserved marker), each combining the six running values — sum,
 /// xor fold, minimum, maximum, running hash and checksum — in one expression.
-/// Building it panics with `AliasingViolationError { kind: Mutable, location:
+/// Building it panicked (#1419) with `AliasingViolationError { kind: Mutable, location:
 /// hir/src/ir/operation.rs:877 }` at hir/src/patterns/rewriter.rs:335.
 /// Classification F12: the last line the pattern driver logs before the panic
 /// (`MIDENC_TRACE='pattern-rewrite-driver=trace'`) is `trying to match
 /// 'remove-loop-invariant-args-from-before-block' dialect=scf op=while`. The
 /// documented F12 producer was a labeled `continue` over a loop containing a
 /// call, at `-Oz` where LLVM stops inlining it; this program has neither a
-/// labeled `continue` nor a call in the loop, and fails at the DEFAULT level.
-/// Per level: default PANIC, `--optimize=size-min` PANIC, `--optimize=max`
-/// PASSES, `--optimize=basic` PANIC. Bounding sibling: `prog_varint_guard` —
-/// the same decoder with two running values — compiles at the default level,
-/// at max and at basic; four values still panic, and even ONE value still
-/// panics at size-min (`prog_varint_guard_oz`), so the state count moves the
-/// default-level boundary but not the size-min one. Compile-time — no inputs
-/// involved. Un-ignore when the rewriter stops taking a mutable borrow of an
-/// operation it is already borrowing.
+/// labeled `continue` nor a call in the loop, and failed at the DEFAULT level.
+/// Per level before the fix: default PANIC, `--optimize=size-min` PANIC,
+/// `--optimize=max` PASSES, `--optimize=basic` PANIC. Bounding sibling:
+/// `prog_varint_guard` — the same decoder with two running values — compiled
+/// at the default level, at max and at basic; four values still panicked, and
+/// even ONE value still panicked at size-min (`prog_varint_guard_oz`), so the
+/// state count moved the default-level boundary but not the size-min one.
+/// Compile-time — no inputs involved. It was `#[ignore]`d until the #1419 fix
+/// (see `compose::invariant_args_min`).
 #[test]
-#[ignore = "#1419: compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: \
-            Mutable, location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 \
-            while matching 'remove-loop-invariant-args-from-before-block' — F12 class; \
-            compile-time, no inputs involved"]
 fn prog_varint() {
     run_case("prog_varint", include_str!("../cases/case_prog_varint.rs"));
 }
 
-/// The largest variant of `prog_varint` that compiles at the default level:
-/// two running values instead of six. Passes at the default level,
-/// `--optimize=max` and `--optimize=basic`; still panics at
-/// `--optimize=size-min` (see `prog_varint_guard_oz`).
+/// The largest variant of `prog_varint` that compiled at the default level
+/// before the #1419 fix: two running values instead of six. Passes at the
+/// default level, `--optimize=max` and `--optimize=basic`; panicked at
+/// `--optimize=size-min` before the fix (see `prog_varint_guard_oz`).
 #[test]
 fn prog_varint_guard() {
     run_case("prog_varint_guard", include_str!("../cases/case_prog_varint_guard.rs"));
@@ -1093,17 +1085,14 @@ fn prog_varint_guard_edges() {
     );
 }
 
-/// CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC: the reduced
-/// `prog_varint_guard` still panics at `--optimize=size-min` in the F12 class
-/// (`AliasingViolationError` at hir/src/patterns/rewriter.rs:335 while
-/// matching `remove-loop-invariant-args-from-before-block`), and so does a
+/// CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC (#1419, fixed): the
+/// reduced `prog_varint_guard` panicked at `--optimize=size-min` in the F12
+/// class (`AliasingViolationError` at hir/src/patterns/rewriter.rs:335 while
+/// matching `remove-loop-invariant-args-from-before-block`), and so did a
 /// further-reduced variant with a single running value — the size-min failure
-/// does not depend on how much u64 state the loop carries. Compile-time — no
+/// did not depend on how much u64 state the loop carries. Compile-time — no
 /// inputs involved.
 #[test]
-#[ignore = "#1419: compiler panic at --optimize=size-min: 'AliasingViolationError { kind: Mutable, \
-            location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 — F12 \
-            class; compile-time, no inputs involved"]
 fn prog_varint_guard_oz() {
     run_case_with_flags(
         "prog_varint_guard_oz",
@@ -1114,18 +1103,20 @@ fn prog_varint_guard_oz() {
 
 /// Workaround for [`prog_varint`] (campaign 22): all six running values and
 /// all four error returns kept, with every use of the four shift constants
-/// wrapped in `core::hint::black_box`; the F12 aliasing panic
-/// (`rewriter.rs:335`) disappears at the default level. It is the ONLY
-/// workaround that rescued this program: the array-state rewrite, the manual
-/// shift spelling, moving the decode loop into an `#[inline(never)]` helper
-/// (by value or by `&mut`), the three-way function split, and even rewriting
-/// the four in-loop `return`s into a single exit through `break 'outer` all
-/// still panic in the same pattern. Cost: 4399 MASM lines against 2904 for
+/// wrapped in `core::hint::black_box`. Before the #1419 fix this was the ONLY
+/// workaround that avoided the F12 aliasing panic (`rewriter.rs:335`) at the
+/// default level: the array-state rewrite, the manual shift spelling, moving
+/// the decode loop into an `#[inline(never)]` helper (by value or by `&mut`),
+/// the three-way function split, and even rewriting the four in-loop
+/// `return`s into a single exit through `break 'outer` all still panicked in
+/// the same pattern. [`prog_varint`] itself now compiles; this case pins that
+/// the black-boxed shape still compiles and matches native. Cost: 4399 MASM lines against 2904 for
 /// `prog_varint_guard` (two running values instead of six).
 /// Configuration note (campaign 24): the rescue holds at the default level
-/// with and without guest DWARF, but the two conditions COMPOSE — at
-/// `--optimize=size-min` AND `debug = 0` together it panics again (see
-/// [`prog_varint_wa_oz_nodwarf`]), while either alone compiles.
+/// with and without guest DWARF, but the two conditions COMPOSED — at
+/// `--optimize=size-min` AND `debug = 0` together it panicked again before
+/// the #1419 fix (see [`prog_varint_wa_oz_nodwarf`]), while either alone
+/// compiled.
 #[test]
 fn prog_varint_wa() {
     run_case("prog_varint_wa", include_str!("../cases/case_prog_varint_wa.rs"));
@@ -1153,26 +1144,22 @@ fn prog_varint_wa_edges() {
     );
 }
 
-/// The two rescues of [`prog_varint`] do not COMPOSE (campaign 24): the
-/// black-boxed decoder compiles at `--optimize=size-min` with guest DWARF and
-/// compiles at the default level without it, but with BOTH — the ordinary
-/// release build of a size-tuned guest — it panics again in the F12 class
-/// (`AliasingViolationError { kind: Mutable, location:
+/// The two rescues of [`prog_varint`] did not COMPOSE (campaign 24): the
+/// black-boxed decoder compiled at `--optimize=size-min` with guest DWARF and
+/// compiled at the default level without it, but with BOTH — the ordinary
+/// release build of a size-tuned guest — it panicked again in the F12 class
+/// (#1419, fixed; `AliasingViolationError { kind: Mutable, location:
 /// hir/src/ir/operation.rs:877 }` at hir/src/patterns/rewriter.rs:335).
 /// Mechanism: `-Oz` keeps the count bands un-hoisted while `debug = 0` lets
 /// Local2Reg promote the slots DWARF pins, and the payload column that still
-/// carries cfg-to-scf's `ub.poison` at the back edge survives both. This is
+/// carries cfg-to-scf's `ub.poison` at the back edge survives both. This was
 /// the only case in the corpus where two independently-safe configurations
-/// combine into a panic, so it is the reason a "workaround" must be validated
+/// combined into a panic, so it is the reason a "workaround" must be validated
 /// at the exact configuration the user ships. `prog_varint_guard` (the
-/// reduced program) panics at `-Oz` with DWARF too — that one is
-/// [`prog_varint_guard_oz`]. Compile-time — no inputs involved.
+/// reduced program) panicked at `-Oz` with DWARF too — that one is
+/// [`prog_varint_guard_oz`]. The former panic was compile-time — no inputs
+/// involved.
 #[test]
-#[ignore = "#1419: compiler panic at --optimize=size-min WITHOUT full guest DWARF (either \
-            configuration alone compiles): 'AliasingViolationError { kind: Mutable, location: \
-            hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 while matching \
-            'remove-loop-invariant-args-from-before-block' — F12 class; compile-time, no inputs \
-            involved"]
 fn prog_varint_wa_oz_nodwarf() {
     run_case_with_flags(
         "prog_varint_wa_oz_nodwarf",
@@ -1275,33 +1262,29 @@ fn prog_feistel_wa_edges() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
-/// campaign 21, 2026-09-09). Run-length + delta encoder (cliff shape:
+/// FORMER COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (#1419,
+/// fixed; safe Rust, campaign 21, 2026-09-09). Run-length + delta encoder (cliff shape:
 /// asymmetric diamond in a hot loop; 5 u64 statistics, 5 shared rotate
 /// constants): a 64-sample signal is encoded into a token buffer, the common
 /// arm only extending the current run while the escape arm — a literal block
 /// that cannot be run-encoded — reads and rewrites all five encoder
 /// statistics (dictionary hash, entropy fold, delta accumulator, escape
-/// counter and checksum). Building it panics with `AliasingViolationError {
+/// counter and checksum). Building it panicked with `AliasingViolationError {
 /// kind: Mutable, location: hir/src/ir/operation.rs:877 }` at
 /// hir/src/patterns/rewriter.rs:335 — F12, confirmed the same way as
 /// `prog_varint` (the driver's last line is `trying to match
 /// 'remove-loop-invariant-args-from-before-block' dialect=scf op=while`), and
-/// again with no labeled `continue` and no call in the loop. Per level:
-/// default PANIC, `--optimize=size-min` PASSES, `--optimize=max` PANIC,
+/// again with no labeled `continue` and no call in the loop. Per level before
+/// the fix: default PANIC, `--optimize=size-min` PASSES, `--optimize=max` PANIC,
 /// `--optimize=basic` PASSES. Bounding sibling: `prog_rle_guard` — the same
-/// encoder with three statistics — compiles at all four levels. Compile-time
-/// — no inputs involved.
+/// encoder with three statistics — compiles at all four levels. The former
+/// panic was compile-time — no inputs involved.
 #[test]
-#[ignore = "#1419: compiler panic at the DEFAULT configuration: 'AliasingViolationError { kind: \
-            Mutable, location: hir/src/ir/operation.rs:877 }' at hir/src/patterns/rewriter.rs:335 \
-            while matching 'remove-loop-invariant-args-from-before-block' — F12 class; \
-            compile-time, no inputs involved"]
 fn prog_rle() {
     run_case("prog_rle", include_str!("../cases/case_prog_rle.rs"));
 }
 
-/// The largest variant of `prog_rle` that compiles: three encoder statistics
+/// The largest variant of `prog_rle` that compiled before the #1419 fix: three encoder statistics
 /// instead of five. Passes at all four optimization levels.
 #[test]
 fn prog_rle_guard() {
@@ -1332,13 +1315,16 @@ fn prog_rle_guard_edges() {
 
 /// Workaround for [`prog_rle`] (campaign 22): all five encoder statistics and
 /// all five rotate constants kept; only the escape arm's statistics update
-/// moves into an `#[inline(never)]` helper taking them as a `&mut [u64; 5]`,
-/// which clears the F12 aliasing panic (`rewriter.rs:335`) at the default
-/// level. Cost: 2493 MASM lines against 1850 for `prog_rle_guard` (three
-/// statistics instead of five). Moving the whole encode loop into a helper and
-/// the four-way function split work too; black-boxing the rotate constants,
-/// the array-state rewrite, the manual rotate spelling and making the common
-/// arm touch every statistic all still panic.
+/// moves into an `#[inline(never)]` helper taking them as a `&mut [u64; 5]`.
+/// Before the #1419 fix this avoided the F12 aliasing panic
+/// (`rewriter.rs:335`) at the default level; [`prog_rle`] itself now compiles,
+/// and this case pins that the by-reference rescue shape still compiles and
+/// matches native. Cost: 2493 MASM lines against 1850 for `prog_rle_guard`
+/// (three statistics instead of five). Moving the whole encode loop into a
+/// helper and the four-way function split avoided the panic too;
+/// black-boxing the rotate constants, the array-state rewrite, the manual
+/// rotate spelling and making the common arm touch every statistic all still
+/// panicked.
 #[test]
 fn prog_rle_wa() {
     run_case("prog_rle_wa", include_str!("../cases/case_prog_rle_wa.rs"));

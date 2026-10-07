@@ -607,19 +607,17 @@ fn prog_numeric_edges() {
 
 /// [`prog_numeric`] in the RELEASE configuration (`--guest-debug=0`, no
 /// guest DWARF — what `cargo miden build` actually emits): the compiler
-/// panics with `AliasingViolationError { kind: Mutable, location: ...
+/// panicked (#1419) with `AliasingViolationError { kind: Mutable, location: ...
 /// operation.rs:877 }` at `hir/src/patterns/rewriter.rs:335:32`, and the
 /// pattern driver's last attempt under
-/// `MIDENC_TRACE='pattern-rewrite-driver=trace'` is
+/// `MIDENC_TRACE='pattern-rewrite-driver=trace'` was
 /// `remove-loop-invariant-args-from-before-block` on `scf.while` — the F12
 /// cluster. With DWARF the same program compiles at all four optimization
 /// levels, so this is the campaign-24 rule (the release configuration moves
 /// F12's producer set) reached by ordinary `core::num` code: a `while` loop
 /// over narrow integer accumulators, no `return` / `break` / `continue` in
-/// it at all. Un-ignore when F12 is fixed.
+/// it at all. It was `#[ignore]`d until #1419 was fixed.
 #[test]
-#[ignore = "#1419: F12: rewriter.rs:335 AliasingViolationError without guest DWARF (last pattern: \
-            remove-loop-invariant-args-from-before-block)"]
 fn prog_numeric_nodwarf() {
     run_case_with_flags(
         "prog_numeric_nodwarf",

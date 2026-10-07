@@ -1,0 +1,144 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=while-remove-duplicated-results}))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=while-remove-duplicated-results}))' | hir-opt --verify - | filecheck %s
+
+// Coverage for the `while-remove-duplicated-results` canonicalization of `scf.while`. The
+// canonicalizer is restricted to that single pattern so that no other pattern touches the loops
+// below (the greedy driver still folds, erases trivially dead operations and simplifies regions).
+// The second RUN line re-parses and verifies the rewritten IR.
+//
+// Results that `scf.condition` forwards the same value to are merged into the first of them: the
+// uses of every later duplicate result and of its after-block argument are replaced with the
+// first result and the first after-block argument, and the condition forwards each distinct value
+// once. The iteration arguments are untouched.
+builtin.module private @while_remove_duplicated_results {
+    // The condition forwards before-block argument 0 at positions 0 and 2: result 2 and
+    // after-block argument 2 are replaced with result 0 and after-block argument 0.
+    // CHECK: @one_pair(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R0:\d+]], %[[R1:\d+]] = scf.while %[[A]], %[[B]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32, %[[Y:\d+]]: u32):
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[X]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[X]], %[[Y]] : (i1, u32, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32, %[[Q:\d+]]: u32):
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[P]], %[[Q]]
+    // CHECK-NEXT: %[[T:\d+]] = arith.add %[[P]], %[[S]]
+    // CHECK-NEXT: scf.yield %[[T]], %[[S]] : (u32, u32);
+    // CHECK-NEXT: } : (u32, u32) -> (u32, u32);
+    // CHECK-NEXT: %[[U:\d+]] = arith.add %[[R0]], %[[R1]]
+    // CHECK-NEXT: arith.add %[[U]], %[[R0]]
+    builtin.function public extern("C") @one_pair(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3, %4, %5 = scf.while %0, %1 before {
+        ^block1(%6: u32, %7: u32):
+            %8 = arith.lt %6, %2;
+            scf.condition %8, %6, %7, %6 : (i1, u32, u32, u32);
+        } after {
+        ^block2(%9: u32, %10: u32, %11: u32):
+            %12 = arith.add %9, %10 <{ overflow = #builtin.overflow<unchecked> }>;
+            %13 = arith.add %11, %12 <{ overflow = #builtin.overflow<unchecked> }>;
+            scf.yield %13, %12 : (u32, u32);
+        } : (u32, u32) -> (u32, u32, u32);
+        %14 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+        %15 = arith.add %14, %5 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %15 : (u32);
+    };
+
+    // The condition forwards before-block argument 1 at positions 0, 2 and 3: results 2 and 3
+    // (and their after-block arguments) are replaced with result 0 (and after-block argument 0).
+    // CHECK: @three_times(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R0:\d+]], %[[R1:\d+]] = scf.while %[[A]], %[[B]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32, %[[Y:\d+]]: u32):
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[X]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[Y]], %[[X]] : (i1, u32, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32, %[[Q:\d+]]: u32):
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[P]], %[[P]]
+    // CHECK-NEXT: %[[T:\d+]] = arith.add %[[S]], %[[P]]
+    // CHECK-NEXT: scf.yield %[[Q]], %[[T]] : (u32, u32);
+    // CHECK-NEXT: } : (u32, u32) -> (u32, u32);
+    // CHECK-NEXT: %[[U:\d+]] = arith.add %[[R0]], %[[R1]]
+    // CHECK-NEXT: %[[V:\d+]] = arith.add %[[U]], %[[R0]]
+    // CHECK-NEXT: arith.add %[[V]], %[[R0]]
+    builtin.function public extern("C") @three_times(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3, %4, %5, %6 = scf.while %0, %1 before {
+        ^block1(%7: u32, %8: u32):
+            %9 = arith.lt %7, %2;
+            scf.condition %9, %8, %7, %8, %8 : (i1, u32, u32, u32, u32);
+        } after {
+        ^block2(%10: u32, %11: u32, %12: u32, %13: u32):
+            %14 = arith.add %10, %12 <{ overflow = #builtin.overflow<unchecked> }>;
+            %15 = arith.add %14, %13 <{ overflow = #builtin.overflow<unchecked> }>;
+            scf.yield %11, %15 : (u32, u32);
+        } : (u32, u32) -> (u32, u32, u32, u32);
+        %16 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+        %17 = arith.add %16, %5 <{ overflow = #builtin.overflow<unchecked> }>;
+        %18 = arith.add %17, %6 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %18 : (u32);
+    };
+
+    // Two interleaved pairs: the condition forwards `a, b, a, b`. Result 2 merges into result 0
+    // and result 3 into result 1 (likewise for the after-block arguments).
+    // CHECK: @two_pairs(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R0:\d+]], %[[R1:\d+]] = scf.while %[[A]], %[[B]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32, %[[Y:\d+]]: u32):
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[X]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[X]], %[[Y]] : (i1, u32, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32, %[[Q:\d+]]: u32):
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[P]], %[[Q]]
+    // CHECK-NEXT: %[[T:\d+]] = arith.add %[[P]], %[[Q]]
+    // CHECK-NEXT: scf.yield %[[S]], %[[T]] : (u32, u32);
+    // CHECK-NEXT: } : (u32, u32) -> (u32, u32);
+    // CHECK-NEXT: %[[U:\d+]] = arith.add %[[R0]], %[[R1]]
+    // CHECK-NEXT: %[[V:\d+]] = arith.add %[[R0]], %[[R1]]
+    // CHECK-NEXT: arith.add %[[U]], %[[V]]
+    builtin.function public extern("C") @two_pairs(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3, %4, %5, %6 = scf.while %0, %1 before {
+        ^block1(%7: u32, %8: u32):
+            %9 = arith.lt %7, %2;
+            scf.condition %9, %7, %8, %7, %8 : (i1, u32, u32, u32, u32);
+        } after {
+        ^block2(%10: u32, %11: u32, %12: u32, %13: u32):
+            %14 = arith.add %10, %13 <{ overflow = #builtin.overflow<unchecked> }>;
+            %15 = arith.add %12, %11 <{ overflow = #builtin.overflow<unchecked> }>;
+            scf.yield %14, %15 : (u32, u32);
+        } : (u32, u32) -> (u32, u32, u32, u32);
+        %16 = arith.add %3, %6 <{ overflow = #builtin.overflow<unchecked> }>;
+        %17 = arith.add %5, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+        %18 = arith.add %16, %17 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %18 : (u32);
+    };
+
+    // Negative: the condition forwards two distinct values, so the loop is left untouched.
+    // CHECK: @no_duplicates(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[TEN:\d+]] = arith.constant 10 : u32;
+    // CHECK-NEXT: %[[R0:\d+]], %[[R1:\d+]] = scf.while %[[A]], %[[B]] before {
+    // CHECK-NEXT: ^block{{\d+}}(%[[X:\d+]]: u32, %[[Y:\d+]]: u32):
+    // CHECK-NEXT: %[[CND:\d+]] = arith.lt %[[Y]], %[[TEN]];
+    // CHECK-NEXT: scf.condition %[[CND]], %[[X]], %[[Y]] : (i1, u32, u32);
+    // CHECK-NEXT: } after {
+    // CHECK-NEXT: ^block{{\d+}}(%[[P:\d+]]: u32, %[[Q:\d+]]: u32):
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[Q]], %[[P]]
+    // CHECK-NEXT: scf.yield %[[P]], %[[S]] : (u32, u32);
+    // CHECK-NEXT: } : (u32, u32) -> (u32, u32);
+    // CHECK-NEXT: arith.add %[[R0]], %[[R1]]
+    builtin.function public extern("C") @no_duplicates(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 10 : u32;
+        %3, %4 = scf.while %0, %1 before {
+        ^block1(%5: u32, %6: u32):
+            %7 = arith.lt %6, %2;
+            scf.condition %7, %5, %6 : (i1, u32, u32);
+        } after {
+        ^block2(%8: u32, %9: u32):
+            %10 = arith.add %9, %8 <{ overflow = #builtin.overflow<unchecked> }>;
+            scf.yield %8, %10 : (u32, u32);
+        } : (u32, u32) -> (u32, u32);
+        %11 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %11 : (u32);
+    };
+};

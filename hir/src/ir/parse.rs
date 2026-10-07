@@ -540,6 +540,22 @@ pub trait OpAsmParser<'input>: Parser<'input> {
         }
     }
 
+    /// Parse a comma-separated list of SSA operand references without a surrounding delimiter,
+    /// if one is present.
+    ///
+    /// Without a delimiter, [Self::parse_operand_list] requires at least one operand; this method
+    /// consumes nothing when there is none.
+    fn parse_optional_operand_list(
+        &mut self,
+        result: &mut SmallVec<[UnresolvedOperand; 2]>,
+    ) -> ParseResult {
+        let Some(first) = self.parse_optional_operand(/* allow_result_number= */ true)? else {
+            return Ok(());
+        };
+        result.push(first);
+        self.parse_trailing_operand_list(result, Delimiter::None)
+    }
+
     /// Resolve an operand to an SSA value, emitting an error on failure.
     fn resolve_operand(&mut self, operand: UnresolvedOperand, ty: Type) -> ParseResult<ValueRef>;
 

@@ -208,7 +208,9 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   (`control_flow::switch_trap_arm`); `FoldRedundantYields`,
   `ConvertTrivialIfToSelect` and `SplitCriticalEdges` routinely
   (`control_flow::sm16`, `control_flow::wide_exits`);
-  `RemoveLoopInvariantArgsFromBeforeBlock` panics on every match (#1419).
+  `RemoveLoopInvariantArgsFromBeforeBlock` matches and rewrites
+  (`compose::invariant_args_min`; directly pinned by
+  `tests/lit/hir-opt/canonicalizer-remove-loop-invariant-args-from-before-block.hir`).
   `SplitCriticalEdges` shares the greedy fixpoint, so a critical-edge guard
   can become satisfiable mid-run.
 - Dead end: `CanonicalizeI64RotateBy32ToSwap` (the count band hides the 32,
@@ -331,11 +333,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   constants (`programs::prog_sponge_wa`, `programs::prog_feistel_wa`,
   `programs_oz::prog_threefish_oz_wa`), or moving the deepest arm's expression
   into an `#[inline(never)]` helper taking state by reference
-  (`programs::prog_tlv_wa`, `programs::prog_rle_wa`). Without DWARF the same
-  rescues can fall into #1419 (`programs::prog_rkscan_ref_nodwarf`), and two
-  individually safe configurations can compose into a panic
-  (`programs::prog_varint_wa_oz_nodwarf`). Opt level is not a safety ladder
-  either way (`programs_oz::prog_sha512`, `programs_oz::prog_threefish_o3`).
+  (`programs::prog_tlv_wa`). Opt level is not a safety ladder
+  (`programs_oz::prog_sha512`, `programs_oz::prog_threefish_o3`).
 - Dead end: user fixes that fail: fewer distinct rotation constants
   (non-monotone, `programs_oz::prog_threefish_oz_guard`), `[u64; N]` state,
   hand-written rotates, flattening or splitting the program for the frontier
@@ -357,13 +356,13 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   initialize every `scf.while` column, so
   `RemoveLoopInvariantArgsFromBeforeBlock` matches as soon as a column still
   carries poison at the `scf.condition`. Producers: a `return` leaving the
-  function from inside a two-level nest (`compose::invariant_args_min`) and an
-  inner counted loop's merged exit dispatch with no early exit
-  (`programs_oz::prog_blake2b`). The same nests with a labeled
-  `break`/`continue`, one loop, or an unrolled inner loop compile
-  (`compose::invariant_args_guard`, `compose::invariant_args_noreturn_guard`,
-  `compose::nest_continue_inline`). Ask "does cfg-to-scf still see a nested
-  loop with a merged exit"; reduce by removing features.
+  function from inside a two-level nest (`compose::invariant_args_min`,
+  `programs::prog_varint`) and an inner counted loop's merged exit dispatch
+  with no early exit (`compose::invariant_args_noreturn`). The same
+  nest with the `return` moved below the `break`, an unrolled inner loop, or
+  an inlined helper does not match (`compose::invariant_args_guard`,
+  `compose::invariant_args_noreturn_guard`, and `compose::nest_continue_inline`
+  at the default level).
 - Without DWARF, Local2Reg promotions create more producers of that pattern
   (`compose::chain_sm_nodwarf`, `corelib::prog_numeric_nodwarf`).
 - An in-loop trapping edge becomes one extra u32 exit column plus a top-level
