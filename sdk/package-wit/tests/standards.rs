@@ -74,7 +74,7 @@ fn components() -> Vec<&'static miden_mast_package::Package> {
 }
 
 /// The components whose every interface procedure is left out, so they have no interface: each
-/// procedure returns more than one value.
+/// procedure's results occupy more than one stack element.
 const WITHOUT_INTERFACE: [&str; 4] = [
     "miden-standards-faucets-policies-mint-allow-all",
     "miden-standards-faucets-policies-mint-owner-controlled-owner-only",
@@ -125,6 +125,16 @@ fn every_component_matches_its_snapshot() {
     for (name, generated) in &generated {
         check_generated(manifest_dir, &format!("tests/standards/{name}.wit"), &generated.wit);
     }
+    // A snapshot of a component renamed or removed upstream is stale, too.
+    let mut expected: Vec<String> =
+        generated.iter().map(|(name, _)| format!("{name}.wit")).collect();
+    expected.sort();
+    let mut snapshots: Vec<String> = std::fs::read_dir(manifest_dir.join("tests/standards"))
+        .expect("the snapshot directory exists")
+        .map(|entry| entry.expect("a snapshot entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    snapshots.sort();
+    assert_eq!(snapshots, expected, "the snapshot files are exactly the generated interfaces");
 }
 
 #[test]
@@ -183,10 +193,11 @@ fn generated_and_skipped_totals() {
         .collect();
     assert_eq!((functions, skipped.len()), (93, 27));
     // Every standard procedure has a typed signature the mapping covers; the ones left out all
-    // return more than one value (a word, an asset, a struct, or several results).
+    // have results occupying more than one stack element (a word, an asset, a struct, or several
+    // results).
     for skipped in skipped {
         assert!(
-            skipped.reason.starts_with("results flatten to "),
+            skipped.reason.starts_with("results occupy "),
             "{}: {}",
             skipped.path,
             skipped.reason

@@ -2,8 +2,8 @@
 // Dependency commitment: 0x14604a1ebce1c207a336b05f10260c41e9a17eed306524f42feec05ae27d430e.
 package miden:standards-faucets-non-fungible-faucet@0.17.0;
 
-/// Left out: `miden::standards::components::faucets::non_fungible_faucet::get_mutability_config`: results flatten to 4 values; multi-value results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::faucets::non_fungible_faucet::get_name`: results flatten to 8 values; multi-value results of Miden Assembly components are not supported yet
+/// Left out: `miden::standards::components::faucets::non_fungible_faucet::get_mutability_config`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
+/// Left out: `miden::standards::components::faucets::non_fungible_faucet::get_name`: results occupy 8 stack elements; multi-element results of Miden Assembly components are not supported yet
 interface non-fungible-faucet {
     use miden:base/core-types@1.0.0.{asset, felt, note-type, word};
 

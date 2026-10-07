@@ -2,7 +2,7 @@
 // Dependency commitment: 0x1c1ee38c6b338abe6a9b3e8301ac06a566cbdcf6c43404e78a695ebb4a128800.
 package miden:standards-oracle-price-oracle@0.17.0;
 
-/// Left out: `miden::standards::components::oracle::price_oracle::get_conversion_rate`: results flatten to 3 values; multi-value results of Miden Assembly components are not supported yet
+/// Left out: `miden::standards::components::oracle::price_oracle::get_conversion_rate`: results occupy 3 stack elements; multi-element results of Miden Assembly components are not supported yet
 interface price-oracle {
     use miden:base/core-types@1.0.0.{word};
 

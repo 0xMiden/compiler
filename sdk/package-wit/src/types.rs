@@ -213,7 +213,13 @@ impl TypeSet {
                 .map_err(|err| format!("unsupported type `{name}`: field {err}"))?;
             fields.push((field_name, ident, mapped.wit));
         }
-        unique_idents(&name, "fields", fields.iter().map(|(from, to, _)| (&***from, to.as_str())))?;
+        // The Rust (snake case) field names are unique when the WIT (kebab case) ones are.
+        unique_idents(
+            &name,
+            "fields",
+            "WIT",
+            fields.iter().map(|(from, to, _)| (&***from, to.as_str())),
+        )?;
         let fields = fields.into_iter().map(|(_, ident, wit)| (ident, wit)).collect();
         let wit = local_ident(&name)?;
         self.declare(wit_name, Decl::Record(fields))?;
@@ -251,21 +257,25 @@ impl TypeSet {
                 "unsupported type `{name}`: an enum with non-contiguous discriminants"
             ));
         }
-        let cases = en
-            .variants()
-            .iter()
-            .map(|variant| {
-                naming::ident(&variant.name)
-                    .map_err(|err| format!("unsupported type `{name}`: case {err}"))
-            })
-            .collect::<Result<Vec<String>, String>>()?;
+        // wit-bindgen spells the cases in upper camel case, which can merge cases that are
+        // distinct in WIT (`slot1`, `slot-1`), so both spellings must be unique.
+        let mut cases = Vec::with_capacity(en.variants().len());
+        let mut rust_cases = Vec::with_capacity(en.variants().len());
+        for variant in en.variants() {
+            let case = naming::ident(&variant.name)
+                .map_err(|err| format!("unsupported type `{name}`: case {err}"))?;
+            let rust = naming::rust_type_ident(&variant.name, &case)
+                .map_err(|err| format!("unsupported type `{name}`: case {err}"))?;
+            cases.push(case);
+            rust_cases.push(rust);
+        }
+        let variant_names = || en.variants().iter().map(|variant| &*variant.name);
+        unique_idents(name, "cases", "WIT", variant_names().zip(cases.iter().map(String::as_str)))?;
         unique_idents(
             name,
             "cases",
-            en.variants()
-                .iter()
-                .map(|variant| &*variant.name)
-                .zip(cases.iter().map(String::as_str)),
+            "Rust",
+            variant_names().zip(rust_cases.iter().map(String::as_str)),
         )?;
         let wit = local_ident(name)?;
         self.declare(wit_name, Decl::Enum(cases))?;
@@ -273,17 +283,19 @@ impl TypeSet {
     }
 
     /// Record the core item `name` as used; an error when a local declaration already has its
-    /// name.
+    /// name or its Rust spelling.
     fn use_core(&mut self, name: &'static str) -> Result<(), String> {
         if self.locals.iter().any(|(local, _)| local == name) {
             return Err(conflict(name));
         }
+        self.check_rust_name(name)?;
         self.core.insert(name);
         Ok(())
     }
 
     /// Declare the local type `name`; declaring an identical type twice is a no-op, while a
-    /// different type or a used core item of the same name is an error.
+    /// different type or a used core item of the same name, or another type of the same Rust
+    /// spelling, is an error.
     fn declare(&mut self, name: String, decl: Decl) -> Result<(), String> {
         if self.core.contains(name.as_str()) {
             return Err(conflict(&name));
@@ -292,32 +304,59 @@ impl TypeSet {
             Some((_, existing)) if *existing == decl => Ok(()),
             Some(_) => Err(conflict(&name)),
             None => {
+                self.check_rust_name(&name)?;
                 self.locals.push((name, decl));
                 Ok(())
             }
         }
     }
+
+    /// An error when a type of another WIT name in the set has the Rust spelling of the type
+    /// `name` (see [`naming::upper_camel`]): `slot1` and `slot-1` are both `Slot1`.
+    fn check_rust_name(&self, name: &str) -> Result<(), String> {
+        let rust = naming::upper_camel(name);
+        match self.names().find(|other| *other != name && naming::upper_camel(other) == rust) {
+            Some(other) => Err(format!(
+                "types `{other}` and `{name}` in one interface both have the Rust name `{rust}`"
+            )),
+            None => Ok(()),
+        }
+    }
 }
 
-/// The WIT spelling of the local declaration of the manifest type `name`, or why it has none.
+/// The WIT spelling of the local declaration of the manifest type `name`, or why it has none: it
+/// has no WIT spelling, or its Rust spelling (see [`naming::rust_type_ident`]) is `Self` or
+/// `Guest_`.
 fn local_ident(name: &str) -> Result<String, String> {
-    naming::ident(naming::short_name(name))
-        .map_err(|err| format!("unsupported type `{name}`: {err}"))
+    let short = naming::short_name(name);
+    let ident = naming::ident(short).map_err(|err| format!("unsupported type `{name}`: {err}"))?;
+    let rust = naming::rust_type_ident(short, &ident)
+        .map_err(|err| format!("unsupported type `{name}`: {err}"))?;
+    // The SDK's foreign procedure call bindings name a dependency's types in plain upper camel
+    // case, so they would miss the type wit-bindgen renames.
+    if rust == "Guest_" {
+        return Err(format!(
+            "unsupported type `{name}`: wit-bindgen renames it to `Guest_` in the generated \
+             bindings, which the SDK's foreign procedure call bindings do not follow"
+        ));
+    }
+    Ok(ident)
 }
 
-/// Check that the members of the type `type_name` (its `kind`, e.g. "fields") keep distinct WIT
-/// names; `members` pairs each manifest name with its WIT name.
+/// Check that the members of the type `type_name` (its `kind`, e.g. "fields") keep distinct names
+/// in the `form` ("WIT" or "Rust"); `members` pairs each manifest name with its name in that form.
 fn unique_idents<'a>(
     type_name: &str,
     kind: &str,
+    form: &str,
     members: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> Result<(), String> {
     let mut seen: Vec<(&str, &str)> = Vec::new();
     for (from, to) in members {
         if let Some((other, _)) = seen.iter().find(|(_, seen)| *seen == to) {
             return Err(format!(
-                "unsupported type `{type_name}`: {kind} `{other}` and `{from}` both have the WIT \
-                 name `{to}`"
+                "unsupported type `{type_name}`: {kind} `{other}` and `{from}` both have the \
+                 {form} name `{to}`"
             ));
         }
         seen.push((from, to));
@@ -442,12 +481,48 @@ mod tests {
             "unsupported type `Seed`: field `gen` would be the Rust keyword `gen` in the \
              generated bindings, which wit-bindgen does not escape"
         );
+        let self_case = c_enum("Mode", &[("SELF", 0), ("OTHER", 1)]);
+        assert_eq!(
+            set.map(&self_case).unwrap_err(),
+            "unsupported type `Mode`: case `SELF` would be the Rust keyword `Self` in the \
+             generated bindings, which wit-bindgen does not escape"
+        );
+        let rust_cases = c_enum("Slots", &[("SLOT1", 0), ("SLOT_1", 1)]);
+        assert_eq!(
+            set.map(&rust_cases).unwrap_err(),
+            "unsupported type `Slots`: cases `SLOT1` and `SLOT_1` both have the Rust name `Slot1`"
+        );
+        let guest = record("Guest", &[("x", Type::Felt)]);
+        assert_eq!(
+            set.map(&guest).unwrap_err(),
+            "unsupported type `Guest`: wit-bindgen renames it to `Guest_` in the generated \
+             bindings, which the SDK's foreign procedure call bindings do not follow"
+        );
+        let self_type = record("Self_", &[("x", Type::Felt)]);
+        assert_eq!(
+            set.map(&self_type).unwrap_err(),
+            "unsupported type `Self_`: `Self_` would be the Rust keyword `Self` in the generated \
+             bindings, which wit-bindgen does not escape"
+        );
         let digit_type = record("_2", &[("x", Type::Felt)]);
         assert_eq!(
             set.map(&digit_type).unwrap_err(),
             "unsupported type `_2`: `_2` has no WIT name (derived `2`)"
         );
         assert!(set.locals.is_empty());
+    }
+
+    #[test]
+    fn local_types_need_distinct_rust_names() {
+        let mut set = TypeSet::default();
+        let slot1 = record("Slot1", &[("x", Type::U32)]);
+        let slot_1 = record("Slot_1", &[("x", Type::U32)]);
+        assert_eq!(set.map(&slot1).unwrap().wit, "slot1");
+        assert_eq!(
+            set.map(&slot_1).unwrap_err(),
+            "types `slot1` and `slot-1` in one interface both have the Rust name `Slot1`"
+        );
+        assert_eq!(set.locals.len(), 1);
     }
 
     #[test]
