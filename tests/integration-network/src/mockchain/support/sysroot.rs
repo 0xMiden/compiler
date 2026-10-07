@@ -36,6 +36,7 @@ use miden_standards::{
         wallets::BasicWallet,
     },
 };
+use midenc_frontend_wasm_metadata::package_cache::package_file_name;
 use midenc_integration_test_support::{
     cargo_proj::test_target_dir,
     testing::toolchain::{packages_in, sysroot},
@@ -106,7 +107,8 @@ fn standard_component_packages() -> Vec<Arc<Package>> {
 /// The directory lives under the workspace's target directory, keyed by everything its contents
 /// are derived from, and is shared by every test process that agrees on that key.
 ///
-/// Panics if a component depends on a package the overlay lacks or provides with another digest,
+/// Panics if a component or the standards library depends on a package the overlay lacks or
+/// provides with another digest,
 /// or if the toolchain cannot be read or the overlay cannot be staged.
 pub(crate) fn sysroot_with_standard_components() -> PathBuf {
     static OVERLAY: OnceLock<PathBuf> = OnceLock::new();
@@ -133,36 +135,40 @@ fn stage_overlay(toolchain: &Path, root: &Path) -> Result<PathBuf, String> {
         .collect();
     let written_names: BTreeSet<&str> = written.iter().map(|package| &*package.name).collect();
 
+    // The toolchain packages the overlay keeps: those the overlay does not replace.
+    let installed = packages_in(toolchain).map_err(|err| err.to_string())?;
+    let kept: Vec<&Package> = installed
+        .iter()
+        .map(|package| &**package)
+        .filter(|package| !written_names.contains(&*package.name))
+        .collect();
+    // Every package file, linked or written, is named after its package, so a file the overlay
+    // writes is never linked first: writing a package would follow the symlink and overwrite the
+    // installed toolchain's file.
     let lib = toolchain.join("lib");
-    let mut toolchain_files = fs::read_dir(&lib)
-        .map_err(|err| format!("cannot read {}: {err}", lib.display()))?
-        .map(|entry| entry.map(|entry| entry.path()))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| format!("cannot read {}: {err}", lib.display()))?;
-    // A file the overlay writes must never be linked first: writing a package follows the
-    // symlink and would overwrite the installed toolchain's file. The extension is matched like
-    // `packages_in` matches it, so the overlay links exactly the packages the toolchain provides.
-    toolchain_files.retain(|path| {
-        path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case(Package::EXTENSION))
-            && path
-                .file_stem()
-                .is_some_and(|stem| !written_names.contains(&*stem.to_string_lossy()))
-    });
+    let mut toolchain_files = kept
+        .iter()
+        .map(|package| {
+            let path = lib.join(package_file_name(&package.name));
+            if path.is_file() {
+                Ok(path)
+            } else {
+                Err(format!("toolchain package {} is not at {}", package.name, path.display()))
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     toolchain_files.sort();
 
     // What each dependency name resolves to in the overlay: the toolchain packages, with the
     // packages the overlay writes replacing any of the same name.
-    let installed = packages_in(toolchain).map_err(|err| err.to_string())?;
-    let provided: BTreeMap<String, Word> = installed
+    let provided: BTreeMap<String, Word> = kept
         .iter()
-        .map(|package| &**package)
-        .filter(|package| !written_names.contains(&*package.name))
-        .chain(written.iter().copied())
+        .chain(written.iter())
         .map(|package| (package.name.to_string(), package.dependency_commitment()))
         .collect();
-    for component in &components {
+    for package in &written {
         check_component_dependencies(
-            component,
+            package,
             &provided,
             &standards.version.to_string(),
             toolchain,
@@ -201,7 +207,8 @@ fn stage_overlay(toolchain: &Path, root: &Path) -> Result<PathBuf, String> {
         link_or_copy(source, &target).map_err(|err| io(&target, err))?;
     }
     for package in &written {
-        package.write_masp_file(&staging_lib).map_err(|err| io(&staging_lib, err))?;
+        let target = staging_lib.join(package_file_name(&package.name));
+        package.write_to_file(&target).map_err(|err| io(&target, err))?;
     }
     match fs::rename(&staging, &overlay) {
         Ok(()) => Ok(overlay),
@@ -214,10 +221,11 @@ fn stage_overlay(toolchain: &Path, root: &Path) -> Result<PathBuf, String> {
     }
 }
 
-/// Checks that every dependency of `component` resolves to the package it was built against.
+/// Checks that every dependency of `component`, a package the overlay writes (a standard component
+/// or the standards library), resolves to the package it was built against.
 ///
 /// `provided` maps each package name in the overlay to its dependency commitment;
-/// `standards_version` is the version of the `miden-standards` crate the component comes from, and
+/// `standards_version` is the version of the `miden-standards` crate the package comes from, and
 /// `toolchain` the toolchain the overlay extends.
 fn check_component_dependencies(
     component: &Package,
@@ -234,10 +242,10 @@ fn check_component_dependencies(
             .get(name)
             .map_or_else(|| String::from("no such package"), |digest| digest.to_hex());
         return Err(format!(
-            "component package {} of the {STANDARDS_PACKAGE} crate {standards_version} depends on \
-             {name} {}, but the sysroot overlay of the toolchain at {} provides {name} {found}: \
-             align the toolchain channel in miden-toolchain.toml with the {STANDARDS_PACKAGE} \
-             crate version",
+            "package {} of the {STANDARDS_PACKAGE} crate {standards_version} depends on {name} \
+             {}, but the sysroot overlay of the toolchain at {} provides {name} {found}: align \
+             the toolchain channel in miden-toolchain.toml with the {STANDARDS_PACKAGE} crate \
+             version",
             component.name,
             dependency.digest.to_hex(),
             toolchain.display(),

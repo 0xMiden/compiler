@@ -37,9 +37,10 @@ use rand::{SeedableRng, rngs::StdRng};
 use super::sysroot_with_standard_components;
 
 /// Host-side mirror of the transaction-script arguments declared, with the same layout, in
-/// `examples/basic-wallet-tx-script` and `examples/std-wallet-tx-script`, spelled in the felt-repr primitives its field types encode
-/// to (`Tag`/`NoteType` = one felt, `Recipient` = one word, `Asset` = id and value words); what
-/// must match the script's struct is the felt-repr wire sequence, not the Rust fields.
+/// `examples/basic-wallet-tx-script` and `examples/std-wallet-tx-script`, spelled in the felt-repr
+/// primitives their field types encode to (`Tag`/`NoteType` = one felt, `Recipient` = one word,
+/// `Asset` = id and value words); what must match the scripts' structs is the felt-repr wire
+/// sequence, not the Rust fields.
 #[derive(FromFeltRepr, ToFeltRepr)]
 struct TxScriptArgs {
     tag: miden_field::Felt,

@@ -1108,17 +1108,20 @@ fn component_sibling_wit_key_conflicts_with_embedded_wit() {
     assert!(stderr.contains("remove the `wit` key"), "unexpected stderr: {stderr}");
 }
 
-#[test]
-fn masm_account_component_dependency_needs_no_wit() {
-    // A MASM account component: its package embeds no WIT and the manifest sets no `wit` key, so
-    // the macros synthesize its interface from the package manifest.
+/// `cargo check` of a note project `name` that references, with `#[account(test_wallet::<iface>)]`,
+/// a MASM account component whose procedures live in `dependency_namespace`: its package embeds no WIT and
+/// the manifest sets no `wit` key, so the macros synthesize its interface from the package
+/// manifest.
+fn check_masm_account_component_dependency(
+    name: &str,
+    dependency_namespace: &str,
+    iface: &str,
+) -> std::process::Output {
     use miden_core::serde::Serializable;
 
     const DEPENDENCY: &str = "test-wallet";
-    const NAMESPACE: &str = "miden::test_wallet::wallet";
     const SOURCE: &str =
         "@account_procedure\npub proc receive_asset(asset: word)\n    dropw\nend\n";
-    let name = "masm_account_component_dependency";
     let sdk_path = sdk_crate_path();
     let namespace = component_namespace(name);
     let component_package = format!("miden:{}", name.replace('_', "-"));
@@ -1158,46 +1161,77 @@ package = "{component_package}"
 "#,
         sdk_path = sdk_path.display(),
     );
-    // The interface is named after the last namespace segment, `wallet`.
-    let lib_rs = r#"#![no_std]
+    // The interface is named after the last namespace segment.
+    let lib_rs = format!(
+        r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{account, note, Word};
+use miden::{{account, note, Word}};
 
-#[account(test_wallet::Wallet)]
+#[account(test_wallet::{iface})]
 pub struct TestAccount;
 
 #[note]
 struct ReceiveNote;
 
 #[note]
-impl ReceiveNote {
+impl ReceiveNote {{
     #[note_script]
-    pub fn script(self, arg: Word, account: &mut TestAccount) {
+    pub fn script(self, arg: Word, account: &mut TestAccount) {{
         account.receive_asset(arg);
-    }
-}
-"#;
+    }}
+}}
+"#
+    );
 
     let cargo_proj = project(name)
         .file("miden-project.toml", &miden_project_toml)
         .file("Cargo.toml", &cargo_toml)
-        .file("src/lib.rs", lib_rs)
+        .file("src/lib.rs", &lib_rs)
         .build();
-    let mut wallet =
-        (*midenc_package_interface::testing::assemble_fixture(DEPENDENCY, NAMESPACE, SOURCE))
-            .clone();
+    let mut wallet = (*midenc_package_interface::testing::assemble_fixture(
+        DEPENDENCY,
+        dependency_namespace,
+        SOURCE,
+    ))
+    .clone();
     wallet.kind = miden_mast_package::TargetType::AccountComponent;
     let package_dir = cargo_proj.root().join("package-cache");
     std::fs::create_dir_all(&package_dir).expect("the package cache must be created");
     std::fs::write(package_dir.join(format!("{DEPENDENCY}.masp")), wallet.to_bytes())
         .expect("the wallet package must be written");
 
-    let output = cargo_check_miden_target(&cargo_proj);
+    cargo_check_miden_target(&cargo_proj)
+}
+
+#[test]
+fn masm_account_component_dependency_needs_no_wit() {
+    let output = check_masm_account_component_dependency(
+        "masm_account_component_dependency",
+        "miden::test_wallet::wallet",
+        "Wallet",
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
         "expected the MASM account component to be usable without WIT: {stderr}"
+    );
+}
+
+#[test]
+fn masm_account_component_with_a_keyword_interface_is_reported_at_its_reference() {
+    // The interface would be named `list`, a WIT keyword, so no WIT is synthesized and the
+    // dependency is skipped; the reason surfaces where `#[account]` references it.
+    let output = check_masm_account_component_dependency(
+        "masm_account_component_keyword_interface",
+        "miden::test_wallet::list",
+        "List",
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "expected the keyword interface to be rejected");
+    assert!(
+        stderr.contains("the module `list` is a WIT keyword"),
+        "unexpected stderr: {stderr}"
     );
 }
 

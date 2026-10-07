@@ -27,6 +27,8 @@ miden-standards = { workspace = true, features = ["std", "testing"] }
 miden-testing = { version = "0.17.0", features = ["std"] }
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
+# `package_file_name`, the file names of the staged sysroot overlay
+midenc-frontend-wasm-metadata.workspace = true
 midenc-expect-test.workspace = true
 rand.workspace = true
 # Keys the staged sysroot overlay by its contents
@@ -38,4 +40,3 @@ midenc-integration-test-support.workspace = true
 
 [dev-dependencies]
 miden-note-schema = { workspace = true, features = ["codec-component"] }
-midenc-frontend-wasm-metadata.workspace = true
