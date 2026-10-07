@@ -417,7 +417,7 @@ impl InlineInterfaceWorld<'_> {
         body: impl FnOnce(&mut WitBody),
     ) -> String {
         let mut wit = WitBuilder::new(self.generated_by, self.package, self.version);
-        wit.use_path(&CORE_TYPES_INTERFACE_ID);
+        wit.use_path(CORE_TYPES_INTERFACE_ID);
         wit.blank_line();
         wit.interface(self.interface_name, |interface| {
             let core_types = core_types.iter().cloned().collect::<Vec<_>>().join(", ");
@@ -522,7 +522,7 @@ pub(crate) fn dependency_wit_error_message(source: &DependencyWitSource, details
     )
 }
 
-/// WIT metadata extracted from a dependency package.
+/// WIT metadata extracted from a dependency's component WIT.
 #[derive(Debug)]
 pub(crate) struct DependencyWit {
     interfaces: Vec<DependencyInterface>,
@@ -531,10 +531,11 @@ pub(crate) struct DependencyWit {
 /// Parses dependency WIT source and returns metadata for its exported interfaces.
 ///
 /// The source is resolved against the bundled SDK WIT alone, which makes this doubly useful: it
-/// extracts the exported interfaces of a dependency's embedded WIT, and it is the self-containment
-/// check a WIT source must pass before being embedded in the first place.
+/// extracts the exported interfaces of a dependency's WIT (embedded, supplied by a `wit` override,
+/// or synthesized from its package manifest), and it is the self-containment check a WIT source
+/// must pass before being embedded in the first place.
 ///
-/// `what` names the source in a parse error, e.g. `embedded dependency WIT`.
+/// `what` names the source in an error, e.g. `embedded dependency WIT`.
 pub(crate) fn parse_dependency_wit_source(
     wit_source: &str,
     what: &str,
@@ -563,8 +564,7 @@ pub(crate) fn parse_dependency_wit_source(
         })
         .collect::<Vec<_>>();
     if interfaces.is_empty() {
-        let mut message =
-            "no exported WIT interface found in the embedded dependency WIT".to_string();
+        let mut message = format!("no exported WIT interface found in {what}");
         if !skip_reasons.is_empty() {
             message.push_str(&format!("; skipped exports: {}", skip_reasons.join("; ")));
         }
@@ -944,6 +944,26 @@ world mixed-export-world {
         assert_eq!(dependency_wit.interfaces[0].name, "named-api");
     }
 
+    /// Every committed snapshot of a synthesized standard-component interface is accepted as a
+    /// dependency WIT with exactly one exported interface.
+    #[test]
+    fn synthesized_standard_interfaces_are_accepted_as_dependency_wit() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../package-wit/tests/standards");
+        let mut checked = 0;
+        for entry in fs::read_dir(&dir).unwrap_or_else(|err| panic!("{}: {err}", dir.display())) {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|ext| ext != "wit") {
+                continue;
+            }
+            let wit = fs::read_to_string(&path).unwrap();
+            let parsed = parse_dependency_wit_source(&wit, "the synthesized WIT")
+                .unwrap_or_else(|err| panic!("{}: {err}", path.display()));
+            assert_eq!(parsed.interfaces.len(), 1, "{}", path.display());
+            checked += 1;
+        }
+        assert!(checked > 0, "no snapshots in {}", dir.display());
+    }
+
     #[test]
     fn dependency_wit_without_exported_interfaces_reports_error() {
         // An embedded WIT whose world exports nothing referenceable must produce a parse error
@@ -957,7 +977,10 @@ world empty-export-world {
 
         let err = parse_dependency_wit_source(wit, "embedded dependency WIT").unwrap_err();
 
-        assert!(err.contains("no exported WIT interface found"), "unexpected error: {err}");
+        assert!(
+            err.contains("no exported WIT interface found in embedded dependency WIT"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
@@ -1051,9 +1074,8 @@ world empty-export-world {
         let message = &collected.skipped[0].reason;
 
         assert!(message.contains("does not embed component WIT"), "unexpected reason: {message}");
-        assert!(message.contains("older Miden toolchain"), "unexpected reason: {message}");
+        assert!(message.contains("is not an account component"), "unexpected reason: {message}");
         assert!(message.contains("cargo miden build"), "unexpected reason: {message}");
-        assert!(message.contains("provide the WIT manually via"), "unexpected reason: {message}");
         assert!(
             message.contains("package.metadata.miden.dependencies.wit-world-fixture-dep.wit"),
             "unexpected reason: {message}"

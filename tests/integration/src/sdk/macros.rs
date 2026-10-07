@@ -1037,7 +1037,7 @@ impl TestComponent for TestComponentStorage {
 
     assert!(stderr.contains("does not embed component WIT"), "unexpected stderr: {stderr}");
     assert!(stderr.contains("cargo miden build"), "unexpected stderr: {stderr}");
-    assert!(stderr.contains("provide the WIT manually"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains("is not an account component"), "unexpected stderr: {stderr}");
 }
 
 /// The sibling-consumer source shared by the `wit`-key escape-hatch tests.
@@ -1108,10 +1108,10 @@ fn component_sibling_wit_key_conflicts_with_embedded_wit() {
     assert!(stderr.contains("remove the `wit` key"), "unexpected stderr: {stderr}");
 }
 
-/// `cargo check` of a note project `name` that references, with `#[account(test_wallet::<iface>)]`,
-/// a MASM account component whose procedures live in `dependency_namespace`: its package embeds no WIT and
-/// the manifest sets no `wit` key, so the macros synthesize its interface from the package
-/// manifest.
+/// `cargo check` of a note project `name` that references, with
+/// `#[account(test_wallet::<iface>)]`, a MASM account component whose procedures live in
+/// `dependency_namespace`: its package embeds no WIT and the manifest sets no `wit` key, so the
+/// macros try to synthesize its interface from the package manifest, which may succeed or fail.
 fn check_masm_account_component_dependency(
     name: &str,
     dependency_namespace: &str,

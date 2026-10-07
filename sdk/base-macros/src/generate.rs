@@ -5,7 +5,9 @@ use std::{
     sync::LazyLock,
 };
 
-use midenc_frontend_wasm_metadata::{FPI_IMPORT_PREFIX, namespace::CORE_TYPES_INTERFACE};
+use midenc_frontend_wasm_metadata::FPI_IMPORT_PREFIX;
+/// Fully-qualified WIT interface path for Miden SDK core types, `miden:base/core-types@1.0.0`.
+pub(crate) use midenc_frontend_wasm_metadata::namespace::CORE_TYPES_INTERFACE_ID;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use syn::{
@@ -31,10 +33,6 @@ use crate::{fpi, manifest_paths};
 pub(crate) const STORED_PROCEDURE_BINDINGS_PACKAGE: &str = "miden:stored-procedure-bindings";
 /// WIT function-name prefix the Wasm frontend reserves for stored-procedure dispatch imports.
 pub(crate) const DYNCALL_WIT_PREFIX: &str = midenc_frontend_wasm_metadata::DYNCALL_IMPORT_PREFIX;
-
-/// Fully-qualified WIT interface path for Miden SDK core types, `miden:base/core-types@1.0.0`.
-pub(crate) static CORE_TYPES_INTERFACE_ID: LazyLock<String> =
-    LazyLock::new(|| format!("miden:base/{CORE_TYPES_INTERFACE}@1.0.0"));
 
 /// Whether the world being generated may declare imports named with the reserved `dyncall-`
 /// prefix, and so whether its functions are checked against the reserved `fpi-` and `dyncall-`
@@ -755,7 +753,7 @@ fn push_custom_with_entries(opts: &mut Opts, entries: &[(String, WithOption)]) {
 
 /// Pushes default `with` entries that map Miden base types to SDK types.
 fn push_default_with_entries(opts: &mut Opts) {
-    let core_types = CORE_TYPES_INTERFACE_ID.as_str();
+    let core_types = CORE_TYPES_INTERFACE_ID;
     opts.with.push((core_types.to_string(), WithOption::Generate));
     push_path_entry(opts, &format!("{core_types}/felt"), "::miden::Felt");
     push_path_entry(opts, &format!("{core_types}/word"), "::miden::Word");
@@ -885,7 +883,7 @@ fn world_uses_miden_core_types(resolve: &Resolve, world_id: WorldId) -> bool {
         .imports
         .values()
         .chain(world.exports.values())
-        .any(|item| world_item_uses_interface(resolve, item, &CORE_TYPES_INTERFACE_ID))
+        .any(|item| world_item_uses_interface(resolve, item, CORE_TYPES_INTERFACE_ID))
 }
 
 /// Returns true when a world item references a type from `interface_path`.

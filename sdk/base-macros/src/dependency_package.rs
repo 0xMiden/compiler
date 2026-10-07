@@ -25,9 +25,8 @@ use midenc_package_interface::PackageInterface;
 use proc_macro2::Span;
 use syn::Error;
 
-use crate::generate::CORE_TYPES_INTERFACE_ID;
-
-/// WIT source extracted from a compiled Miden dependency package.
+/// The component WIT source of a declared Miden dependency: embedded in its compiled package,
+/// supplied by its `wit` manifest key, or synthesized from its package manifest.
 pub(crate) struct DependencyWitSource {
     /// Manifest key used for this dependency.
     pub(crate) name: String,
@@ -70,8 +69,10 @@ pub(crate) struct DependencyWitSources {
     /// Dependencies whose WIT resolved, in declaration order.
     pub(crate) sources: Vec<DependencyWitSource>,
     /// Dependencies that resolved to a package without usable component WIT: one that embeds no
-    /// WIT, has no `wit` override and is not an account component, or an account component whose
-    /// interface failed to synthesize or whose synthesized WIT failed to parse.
+    /// WIT, has no `wit` override and is not an account component; one the compiler's dependency
+    /// map records as link-only (an older map records an account component without embedded WIT
+    /// that way, too); or an account component whose interface failed to synthesize or whose
+    /// synthesized WIT failed to parse.
     ///
     /// Not an error here: a link-only dependency — for example a MASM library — is never
     /// referenced by an SDK macro and needs no WIT. A macro that does reference one of these
@@ -208,7 +209,10 @@ pub(crate) fn collect_dependency_wit_sources(
                 // component, whose interface is synthesized from its manifest.
                 (None, None) if package_cache::has_component_interface(&resolved.package) => {
                     let interface = PackageInterface::from_package(&resolved.package);
-                    match midenc_package_wit::generate(&interface, &generator_options()) {
+                    match midenc_package_wit::generate(
+                        &interface,
+                        &midenc_package_wit::Options::default(),
+                    ) {
                         Ok(generated) => (generated.wit, None, true),
                         // Not an error here: only a macro that references this dependency
                         // needs its WIT, and the reason is reported at that reference.
@@ -460,27 +464,18 @@ fn read_wit_override(
     Ok((wit, file))
 }
 
-/// The options the component WIT of an account-component dependency is synthesized with.
-///
-/// The core types are located through the SDK WIT these macros bundle
-/// ([`CORE_TYPES_INTERFACE_ID`]), not the generator's defaults, so a version bump of the bundled
-/// WIT cannot leave the synthesized WIT `use`-ing an interface the macros do not provide.
-fn generator_options() -> midenc_package_wit::Options {
-    midenc_package_wit::Options {
-        core_types: CORE_TYPES_INTERFACE_ID.to_owned(),
-    }
-}
-
-/// Formats the diagnostic for a dependency package that embeds no WIT and has no override.
+/// Formats the diagnostic for a dependency package that embeds no WIT, has no override and is not
+/// an account component.
 fn missing_embedded_wit_message(package_path: &Path, dependency_name: &str) -> String {
     format!(
         "dependency package '{}' does not embed component WIT (missing package section \
-         '{wit_section}'); it was likely built with an older Miden toolchain. Rebuild the \
-         dependency with the current `cargo miden build`, or provide the WIT manually via \
-         package.metadata.miden.dependencies.{dependency_name}.wit in miden-project.toml. For \
-         manually authored components (a hand-written `wit/` directory with a bare \
-         `miden::generate!()`), the WIT is embedded only when the `wit/` directory contains \
-         exactly one `.wit` file that is self-contained and exports an interface.",
+         '{wit_section}') and is not an account component, so it has no component interface. If \
+         it was built from Rust, rebuild it with the current `cargo miden build`; if it is a \
+         Miden Assembly library that should supply an interface, set \
+         package.metadata.miden.dependencies.{dependency_name}.wit in miden-project.toml to a WIT \
+         file describing it. For manually authored components (a hand-written `wit/` directory \
+         with a bare `miden::generate!()`), the WIT is embedded only when the `wit/` directory \
+         contains exactly one `.wit` file that is self-contained and exports an interface.",
         package_path.display(),
         wit_section = midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID,
     )
@@ -624,8 +619,9 @@ enum ArtifactLocation {
 enum MapResolution {
     /// The dependency's package was located and deserialized.
     Resolved(PathBuf, ResolvedDependencyPackage),
-    /// The compiler recorded the package as having no component interface (no embedded WIT,
-    /// not an account component); it was not read.
+    /// The compiler recorded the package as having no component interface: no embedded WIT and
+    /// not an account component, or, in a map written by an older compiler, an account component
+    /// without embedded WIT. The package was not read.
     ///
     /// The located path is carried so a `wit` manifest override — the escape hatch for
     /// exactly such packages — can still read the package for its procedure roots.
@@ -1542,10 +1538,16 @@ end
 
         assert!(collected.sources.is_empty());
         assert_eq!(collected.skipped.len(), 1);
+        let reason = &collected.skipped[0].reason;
         assert!(
-            collected.skipped[0].reason.contains("does not embed component WIT"),
-            "{}",
-            collected.skipped[0].reason
+            reason.contains(
+                "does not embed component WIT (missing package section 'wit') and is not an \
+                 account component, so it has no component interface. If it was built from Rust, \
+                 rebuild it with the current `cargo miden build`; if it is a Miden Assembly \
+                 library that should supply an interface, set \
+                 package.metadata.miden.dependencies.dep-lib.wit"
+            ),
+            "{reason}"
         );
 
         std::fs::remove_dir_all(temp_root).unwrap();

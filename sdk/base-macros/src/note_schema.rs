@@ -192,7 +192,7 @@ fn render_note_storage_schema_with_registry_model(
 
     let mut wit = WitBuilder::new("#[note]", &schema_package, component_version);
     if !core_imports.is_empty() {
-        wit.use_path(&CORE_TYPES_INTERFACE_ID);
+        wit.use_path(CORE_TYPES_INTERFACE_ID);
         wit.blank_line();
     }
     wit.interface("note-storage", |interface| {
