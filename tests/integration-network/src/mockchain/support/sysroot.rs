@@ -46,6 +46,12 @@ use sha2::{Digest, Sha256};
 /// The name of the standards library package every standard account component links against.
 const STANDARDS_PACKAGE: &str = "miden-standards";
 
+/// The version of the overlay's directory layout, part of the overlay key.
+///
+/// Bump it whenever the way an overlay is staged changes (its layout, or how its files are
+/// linked or written), so an overlay staged by an older test build is never reused.
+const OVERLAY_FORMAT_VERSION: u32 = 1;
+
 /// The package of every account component the `miden-standards` crate defines.
 const STANDARD_COMPONENTS: [fn() -> &'static Package; 33] = [
     || Authority::code().as_package(),
@@ -194,8 +200,9 @@ fn stage_overlay(toolchain: &Path, root: &Path) -> Result<PathBuf, String> {
     }
 
     // The key names everything the overlay's contents are derived from, so a stale overlay is never
-    // picked up after the toolchain or the crate changes.
+    // picked up after the toolchain, the crate or the staging format changes.
     let mut key = Sha256::new();
+    key.update(OVERLAY_FORMAT_VERSION.to_le_bytes());
     key.update(toolchain.as_os_str().as_encoded_bytes());
     for path in &toolchain_files {
         key.update(path.as_os_str().as_encoded_bytes());
