@@ -9,7 +9,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock},
+    sync::OnceLock,
 };
 
 use miden_core::Word;
@@ -93,8 +93,8 @@ const STANDARD_COMPONENTS: [fn() -> &'static Package; 33] = [
 ///
 /// The installed toolchain does not ship these yet, so the tests take them from the crate the
 /// workspace builds against.
-fn standard_component_packages() -> Vec<Arc<Package>> {
-    STANDARD_COMPONENTS.iter().map(|package| Arc::new(package().clone())).collect()
+fn standard_component_packages() -> Vec<&'static Package> {
+    STANDARD_COMPONENTS.iter().map(|package| package()).collect()
 }
 
 /// A sysroot that extends the installed toolchain with the `miden-standards` account-component
@@ -137,9 +137,8 @@ fn stage_overlay(toolchain: &Path, root: &Path) -> Result<PathBuf, String> {
     let toolchain = toolchain.as_path();
     let standards = StandardsLib::default().package();
     let components = standard_component_packages();
-    let written: Vec<&Package> = core::iter::once(&*standards)
-        .chain(components.iter().map(|component| &**component))
-        .collect();
+    let written: Vec<&Package> =
+        core::iter::once(&*standards).chain(components.iter().copied()).collect();
     let written_names: BTreeSet<&str> = written.iter().map(|package| &*package.name).collect();
 
     // The toolchain packages the overlay keeps, linked from the files they were read from: those

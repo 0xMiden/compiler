@@ -5,7 +5,7 @@ use miden_client::{
     transaction::RawOutputNote,
 };
 use miden_protocol::{account::auth::AuthScheme, crypto::rand::RandomCoin};
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::{account::wallets::BasicWallet, testing::note::NoteBuilder};
 use miden_testing::{Auth, MockChain};
 use midenc_expect_test::expect;
 
@@ -14,9 +14,6 @@ use super::super::support::{
     compile_rust_package, execute_tx, execute_tx_measurements, note_script_root, prologue_cycles,
     single_note_cycles, to_core_felts, tx_script_processing_cycles,
 };
-
-/// The package name of the standard basic wallet account component.
-const STANDARD_BASIC_WALLET: &str = "miden-standards-wallets-basic-wallet";
 
 /// Transfers an asset between two accounts made only of the standard components, with a Rust
 /// note and a Rust transaction script that call the standard basic wallet.
@@ -36,13 +33,14 @@ pub fn std_basic_wallet_p2id_transfers_asset_with_rust_note_and_tx_script() {
     let note_package = compile_rust_package("../../examples/std-wallet-p2id-note", true);
     let tx_script_package = compile_rust_package("../../examples/std-wallet-tx-script", true);
     // Both link the standard wallet's package, with no WIT of its own.
+    let basic_wallet = &BasicWallet::code().as_package().name;
     for package in [&note_package, &tx_script_package] {
         assert!(
             package
                 .manifest
                 .dependencies()
-                .any(|dependency| &*dependency.name == STANDARD_BASIC_WALLET),
-            "`{}` must depend on `{STANDARD_BASIC_WALLET}`",
+                .any(|dependency| dependency.name == *basic_wallet),
+            "`{}` must depend on `{basic_wallet}`",
             package.name
         );
     }
