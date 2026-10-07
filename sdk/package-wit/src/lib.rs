@@ -2,10 +2,16 @@
 //!
 //! An account component written in MASM has no WIT of its own, yet `#[account(pkg::Iface)]` in
 //! the Miden SDK links a component through its WIT interface. This crate writes that interface
-//! from the package's manifest alone: one function per role procedure, each carrying its export
-//! path in `@external-id`, with the manifest types expressed through the SDK's `core-types` where
-//! they match exactly and declared locally otherwise. A procedure the component model cannot call
-//! directly is left out and reported in [`Generated::skipped`], never failing the package.
+//! from the package's manifest alone: one function per interface procedure, each carrying its
+//! export path in `@external-id`, with the manifest types expressed through the SDK's `core-types`
+//! where they match exactly and declared locally otherwise. A procedure the component model cannot
+//! call directly is left out and reported in [`Generated::skipped`] and in the interface's doc
+//! comment, never failing the package.
+//!
+//! The interface procedures are the exports marked `@account_procedure` or `@auth_script`: the
+//! protocol counts only those as part of an account component's interface
+//! (`AccountComponentCode::exports` in `miden-protocol`), so the kernel rejects a call to any
+//! other export, `@note_script` and `@transaction_script` entrypoints included.
 
 #![deny(warnings)]
 #![deny(missing_docs)]
@@ -16,37 +22,29 @@ mod naming;
 mod types;
 
 use miden_mast_package::TargetType;
+use midenc_frontend_wasm_metadata::{FPI_IMPORT_PREFIX, procedure_path::validate_procedure_path};
 use midenc_hir_type::FunctionType;
-use midenc_package_interface::{PackageInterface, ProcedureItem};
+use midenc_package_interface::{PackageInterface, ProcedureItem, Role};
 
 use self::{emit::Function, types::TypeSet};
 
 /// The most operand stack elements the parameters of a direct cross-context call may occupy.
 const MAX_PARAM_FELTS: usize = midenc_package_interface::abi::MAX_STACK_ELEMENTS;
 
-/// Where the SDK core types live.
+/// Generation options.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CoreTypes {
-    /// The WIT package that defines them, with its version: `miden:base@1.0.0`.
-    pub package: String,
-    /// The interface inside that package: `core-types`.
-    pub interface: String,
+pub struct Options {
+    /// The fully versioned id of the WIT interface that defines the SDK core types:
+    /// `miden:base/core-types@1.0.0`.
+    pub core_types: String,
 }
 
-impl Default for CoreTypes {
+impl Default for Options {
     fn default() -> Self {
         Self {
-            package: "miden:base@1.0.0".to_owned(),
-            interface: "core-types".to_owned(),
+            core_types: "miden:base/core-types@1.0.0".to_owned(),
         }
     }
-}
-
-/// Generation options.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Options {
-    /// Where the SDK core types live.
-    pub core_types: CoreTypes,
 }
 
 /// A generated WIT document and the names in it.
@@ -54,17 +52,18 @@ pub struct Options {
 pub struct Generated {
     /// The WIT text.
     pub wit: String,
-    /// The WIT package id, e.g. `miden:standards-wallets-basic-wallet@0.17.0`.
+    /// The WIT package id, e.g. `miden:standards-wallets-basic-wallet@0.17.0`, without the `%`
+    /// keyword escapes the WIT text writes.
     pub package_id: String,
-    /// The interface name, e.g. `basic-wallet`.
+    /// The interface name, e.g. `basic-wallet`, without a `%` keyword escape.
     pub interface: String,
     /// The world name, e.g. `basic-wallet-world`.
     pub world: String,
-    /// The role procedures left out, in package order.
+    /// The interface procedures left out, in package order.
     pub skipped: Vec<Skipped>,
 }
 
-/// A role procedure the interface leaves out.
+/// An interface procedure the interface leaves out.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Skipped {
     /// The export path, without a leading `::`.
@@ -79,10 +78,11 @@ pub enum Error {
     /// The package is not an account component.
     #[error("package is a {0}, not an account component")]
     NotAComponent(TargetType),
-    /// The package has no role procedures to put in an interface.
-    #[error("package exports no role procedures")]
-    NoRoleProcedures,
-    /// The role procedures do not share one module that can name the interface.
+    /// The package has no interface procedures (`@account_procedure` or `@auth_script`).
+    #[error("package exports no `@account_procedure` or `@auth_script` procedures")]
+    NoInterfaceProcedures,
+    /// The interface procedures do not share one module whose path can name the WIT package and
+    /// interface.
     #[error("{0}")]
     Namespace(String),
 }
@@ -92,20 +92,30 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
     if package.kind != TargetType::AccountComponent {
         return Err(Error::NotAComponent(package.kind));
     }
-    let roles: Vec<&ProcedureItem> = package.roles().map(|(procedure, _)| procedure).collect();
-    let (head, leaf) = namespace(&roles)?;
+    let procedures: Vec<&ProcedureItem> = package
+        .roles()
+        .filter(|(_, role)| matches!(role, Role::AccountProcedure | Role::AuthScript))
+        .map(|(procedure, _)| procedure)
+        .collect();
+    let (head, leaf) = namespace(&procedures)?;
 
     let package_name: &str = package.name.as_ref();
-    let package_id = naming::package_id(&head, package_name, &package.version);
-    let interface = naming::kebab(&leaf);
+    let (id_namespace, id_name) =
+        naming::package_id(&head, package_name).map_err(Error::Namespace)?;
+    let version = &package.version;
+    let interface_ident =
+        naming::ident(&leaf).map_err(|err| Error::Namespace(format!("the module {err}")))?;
+    let interface = interface_ident.trim_start_matches('%').to_owned();
+    // Needs no escape: the `-world` suffix keeps it from being a keyword.
     let world = format!("{interface}-world");
+    debug_assert!(naming::is_valid(&world));
 
     // `TypeSet::map` may leave partial state behind on failure, so each function is mapped on a
     // clone (see `function`) that replaces the set only on success.
     let mut types = TypeSet::default();
     let mut functions: Vec<Function> = Vec::new();
     let mut skipped = Vec::new();
-    for procedure in roles {
+    for procedure in procedures {
         let path = procedure.path.to_relative().to_string();
         let result = match &procedure.signature {
             None => Err("no typed signature".to_owned()),
@@ -125,8 +135,8 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
         package_version: package.version.to_string(),
         commitment: package.digest.to_string(),
         skipped: &skipped,
-        package_id: &package_id,
-        interface: &interface,
+        package_id: &format!("{id_namespace}:{id_name}@{version}"),
+        interface: &interface_ident,
         world: &world,
         core_types: &options.core_types,
         types: &types,
@@ -134,23 +144,28 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
     });
     Ok(Generated {
         wit,
-        package_id,
+        package_id: format!(
+            "{}:{}@{version}",
+            id_namespace.trim_start_matches('%'),
+            id_name.trim_start_matches('%')
+        ),
         interface,
         world,
         skipped,
     })
 }
 
-/// The head and the leaf segment of the one module all role procedures live in.
-fn namespace(roles: &[&ProcedureItem]) -> Result<(String, String), Error> {
-    let Some(first) = roles.first() else {
-        return Err(Error::NoRoleProcedures);
+/// The head and the leaf segment of the one module all interface `procedures` live in.
+fn namespace(procedures: &[&ProcedureItem]) -> Result<(String, String), Error> {
+    let Some(first) = procedures.first() else {
+        return Err(Error::NoInterfaceProcedures);
     };
     let module = first.namespace();
-    if let Some(other) = roles.iter().find(|p| p.namespace().to_relative() != module.to_relative())
+    if let Some(other) =
+        procedures.iter().find(|p| p.namespace().to_relative() != module.to_relative())
     {
         return Err(Error::Namespace(format!(
-            "role procedures live in more than one module: `{}` and `{}`",
+            "interface procedures live in more than one module: `{}` and `{}`",
             module.to_relative(),
             other.namespace().to_relative()
         )));
@@ -158,7 +173,7 @@ fn namespace(roles: &[&ProcedureItem]) -> Result<(String, String), Error> {
     match (module.first(), module.last()) {
         (Some(head), Some(leaf)) => Ok((head.to_owned(), leaf.to_owned())),
         _ => Err(Error::Namespace(format!(
-            "role procedure `{}` is not inside a module",
+            "interface procedure `{}` is not inside a module",
             first.path.to_relative()
         ))),
     }
@@ -173,14 +188,22 @@ fn function(
     types: &TypeSet,
     functions: &[Function],
 ) -> Result<(Function, TypeSet), String> {
-    // The path is written into `@external-id("...")`, which has no escapes.
-    if path.contains(['"', '\\']) {
-        return Err(
-            "the export path contains a `\"` or `\\`, which `@external-id` cannot spell".to_owned()
-        );
+    // Every `@external-id` consumer applies this rule; it also keeps the `"` and `\` that
+    // `@external-id("...")` cannot spell out of the path.
+    if let Err(err) = validate_procedure_path(path) {
+        return Err(format!("the export path {err}"));
+    }
+    let name =
+        naming::ident(procedure.name()).map_err(|err| format!("the procedure name {err}"))?;
+    // The SDK rejects a dependency interface that has a function in the prefix its generated
+    // FPI imports use.
+    if name.starts_with(FPI_IMPORT_PREFIX) {
+        return Err(format!(
+            "the function name `{name}` starts with `{FPI_IMPORT_PREFIX}`, which the SDK reserves \
+             for its foreign procedure call imports"
+        ));
     }
     let mut types = types.clone();
-    let name = naming::ident(procedure.name());
 
     let mut param_names = naming::ParamNames::default();
     let mut params = Vec::with_capacity(signature.params.len());
