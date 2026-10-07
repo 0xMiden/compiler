@@ -15,6 +15,7 @@
 
 use std::{
     fmt,
+    fs::{self, File},
     path::PathBuf,
     process::{Command, Stdio},
 };
@@ -237,6 +238,7 @@ fn run_case_inner_with_flags(
     traps: Traps,
 ) {
     let pkg_name = format!("differential_{name}");
+    let _case_lock = case_lock(&pkg_name);
     // Per-case flags win: an env flag for an option the case already pins is
     // dropped, so a corpus-wide sweep never passes the same option twice.
     let option_name = |flag: &str| flag.split('=').next().unwrap_or(flag).to_string();
@@ -371,6 +373,29 @@ fn run_case_inner_with_flags(
             }
         }
     }
+}
+
+/// Serializes cases that share a generated package name.
+///
+/// Cargo locks the shared target directory only while it builds. A pinned-input
+/// test and its random-input twin can use the same generated project and final
+/// cdylib path, so the twin can replace the artifact after the first build has
+/// released Cargo's lock but before the first test loads it.
+fn case_lock(pkg_name: &str) -> File {
+    let lock_dir = crate::cargo_proj::shared_build_dir().join("differential-locks");
+    fs::create_dir_all(&lock_dir).unwrap_or_else(|err| {
+        panic!("failed to create differential lock directory {}: {err}", lock_dir.display())
+    });
+    let lock = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(lock_dir.join(pkg_name))
+        .unwrap_or_else(|err| panic!("failed to open differential lock for `{pkg_name}`: {err}"));
+    lock.lock()
+        .unwrap_or_else(|err| panic!("failed to lock differential case `{pkg_name}`: {err}"));
+    lock
 }
 
 /// Prepended to every case source before compilation — supplies the
