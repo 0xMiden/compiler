@@ -117,6 +117,7 @@ fn left_out_entirely() -> Vec<(String, Vec<Skipped>)> {
         .collect()
 }
 
+/// Every standard component's generated WIT matches its snapshot, with no stale snapshots.
 #[test]
 fn every_component_matches_its_snapshot() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -137,6 +138,7 @@ fn every_component_matches_its_snapshot() {
     assert_eq!(snapshots, expected, "the snapshot files are exactly the generated interfaces");
 }
 
+/// Standard components without an interface report their left-out procedures and no snapshot.
 #[test]
 fn components_without_an_interface_list_their_procedures() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -151,6 +153,7 @@ fn components_without_an_interface_list_their_procedures() {
     }
 }
 
+/// Every generated interface parses and each function has a standards procedure external id.
 #[test]
 fn every_interface_parses_with_external_ids() {
     for (name, generated) in generated() {
@@ -178,6 +181,7 @@ fn every_interface_parses_with_external_ids() {
     }
 }
 
+/// The standards yield the expected function and left-out counts, all for multi-element results.
 #[test]
 fn generated_and_skipped_totals() {
     let generated = generated();

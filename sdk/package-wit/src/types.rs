@@ -153,7 +153,9 @@ impl TypeSet {
             Type::I16 => Ok(Mapped::scalar("s16", 1)),
             Type::U32 => Ok(Mapped::scalar("u32", 1)),
             Type::I32 => Ok(Mapped::scalar("s32", 1)),
-            // One core Wasm `i64`, but two operand stack elements on Miden.
+            // One core Wasm `i64`, but two operand stack elements on Miden. `function` (in the
+            // crate root) leaves out a procedure with such a parameter or result: no binding
+            // exercises the limb order of a call to a MASM callee yet.
             Type::U64 => Ok(Mapped::scalar("u64", 2)),
             Type::I64 => Ok(Mapped::scalar("s64", 2)),
             ty if is_word(ty) => {
@@ -264,7 +266,7 @@ impl TypeSet {
         for variant in en.variants() {
             let case = naming::ident(&variant.name)
                 .map_err(|err| format!("unsupported type `{name}`: case {err}"))?;
-            let rust = naming::rust_type_ident(&variant.name, &case)
+            let rust = naming::rust_case_ident(&variant.name, &case)
                 .map_err(|err| format!("unsupported type `{name}`: case {err}"))?;
             cases.push(case);
             rust_cases.push(rust);
@@ -312,10 +314,13 @@ impl TypeSet {
     }
 
     /// An error when a type of another WIT name in the set has the Rust spelling of the type
-    /// `name` (see [`naming::upper_camel`]): `slot1` and `slot-1` are both `Slot1`.
+    /// `name` (see [`naming::rust_type_name`]): `slot1` and `slot-1` are both `Slot1`.
     fn check_rust_name(&self, name: &str) -> Result<(), String> {
-        let rust = naming::upper_camel(name);
-        match self.names().find(|other| *other != name && naming::upper_camel(other) == rust) {
+        let rust = naming::rust_type_name(name);
+        match self
+            .names()
+            .find(|other| *other != name && naming::rust_type_name(other) == rust)
+        {
             Some(other) => Err(format!(
                 "types `{other}` and `{name}` in one interface both have the Rust name `{rust}`"
             )),
@@ -398,6 +403,7 @@ mod tests {
         Type::from(EnumType::new(Arc::from(name), Type::U8, variants).unwrap())
     }
 
+    /// A type maps to a core item only with the exact core shape, field order included.
     #[test]
     fn core_items_need_the_exact_shape() {
         let mut set = TypeSet::default();
@@ -428,6 +434,7 @@ mod tests {
         assert!(set.map(&id).unwrap_err().contains("conflicting definitions"));
     }
 
+    /// Enums map to the core enum, a local enum, or nothing when discriminants have gaps.
     #[test]
     fn enums_map_to_core_local_or_nothing() {
         let mut set = TypeSet::default();
@@ -451,6 +458,7 @@ mod tests {
         assert!(set.map(&note_type_gaps).unwrap_err().contains("non-contiguous"));
     }
 
+    /// Types with clashing, invalid or unusable type, field or case names are unsupported.
     #[test]
     fn members_and_types_need_distinct_valid_wit_names() {
         let mut set = TypeSet::default();
@@ -512,6 +520,7 @@ mod tests {
         assert!(set.locals.is_empty());
     }
 
+    /// Two local types whose Rust names coincide cannot share one interface.
     #[test]
     fn local_types_need_distinct_rust_names() {
         let mut set = TypeSet::default();
@@ -525,6 +534,7 @@ mod tests {
         assert_eq!(set.locals.len(), 1);
     }
 
+    /// A record's flat value and stack element counts are the sums over its fields.
     #[test]
     fn flat_counts_add_up() {
         let mut set = TypeSet::default();
@@ -533,6 +543,7 @@ mod tests {
         assert_eq!((mapped.values, mapped.felts), (5, 6));
     }
 
+    /// The error for an unsupported type names the innermost unsupported type.
     #[test]
     fn unsupported_types_name_themselves() {
         let mut set = TypeSet::default();

@@ -188,8 +188,11 @@ SDK macros derive its interface from the package manifest:
 
 - the WIT package is `<namespace head>:<package name without that head>@<version>`, e.g.
   `miden:standards-wallets-basic-wallet@0.17.0` for a package named
-  `miden-standards-wallets-basic-wallet` in the `miden::…` namespace;
-- the interface is the last segment of the component's namespace in kebab case, so
+  `miden-standards-wallets-basic-wallet` in the `miden::…` namespace. A package name that does
+  not start with the head keeps it whole (`other-foo` → `miden:other-foo`), and so does one whose
+  rest would be a keyword or no WIT name (`miden-list` → `miden:miden-list`);
+- the interface is the last segment of the component's namespace (the module of its first
+  interface procedure, in path order) in kebab case, so
   `miden-standards-wallets-basic-wallet` provides `basic-wallet`, used as
   `#[account(miden_standards_wallets_basic_wallet::BasicWallet)]`. The interface ident in
   `#[account(pkg::Iface)]` is kebab-cased with heck, so a namespace leaf with digits like
@@ -205,18 +208,22 @@ SDK macros derive its interface from the package manifest:
   becomes a local `account-id` record: a caller of such a procedure (e.g. in the `rbac` or
   `ownable2step` components) builds the dependency module's own `AccountId` type rather than
   passing a `miden::AccountId`;
-- procedures without a typed signature, with parameters beyond 16 stack elements, with types WIT
-  cannot express, whose names have no WIT form or clash, with an export path that is not a Miden
-  procedure path, with a name whose kebab form starts with `fpi-` (reserved for the SDK's
+- procedures without a typed signature, outside the interface module, with parameters beyond 16
+  stack elements, with a 64-bit integer (`u64`/`s64`) parameter (not callable yet), with types
+  WIT cannot express, whose names have no WIT form or clash, with an export path that is not a
+  Miden procedure path, with a name whose kebab form starts with `fpi-` (reserved for the SDK's
   foreign-procedure imports), or whose results occupy more than one stack element (not callable
   yet) are left out. The reasons are listed in the interface's doc comment, which the generated
-  Rust bindings carry. The same 16-element parameter budget applies to foreign-procedure calls
-  through `#[account]`.
+  Rust bindings carry. A foreign-procedure call through `#[account]` prepends the account id
+  prefix and suffix and the procedure root (6 stack elements) to the parameters, so a procedure
+  whose parameters occupy more than 10 stack elements can be called natively but not through FPI,
+  unless the parameters, together with those 6, flatten to more than 16 core values (they then
+  travel through memory).
 
 A package gets no interface at all when it has no `@account_procedure` or `@auth_script`
-procedure, when its interface procedures do not live in one module, when its package name or
-namespace yields a keyword or an invalid WIT name, or when every one of its procedures is left
-out. Such a dependency is skipped, and the reasons are reported where a macro references it.
+procedure, when its package name or namespace yields a keyword, an invalid WIT name or the
+reserved `core_types` interface leaf, when its WIT package id is the SDK's own `miden:base` or
+the depending crate's own package id, or when every one of its procedures is left out. Such a dependency is skipped, and the reasons are reported where a macro references it.
 Today four standard components are in that situation, each because all its procedures return
 more than one stack element: `miden-standards-faucets-policies-mint-allow-all`,
 `miden-standards-faucets-policies-mint-owner-controlled-owner-only`,
