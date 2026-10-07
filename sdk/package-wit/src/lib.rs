@@ -4,7 +4,8 @@
 //! the Miden SDK links a component through its WIT interface. This crate writes that interface
 //! from the package's manifest alone: one function per interface procedure, each carrying its
 //! export path in `@external-id`, with the manifest types expressed through the SDK's `core-types`
-//! where they match exactly and declared locally otherwise. A procedure the interface cannot offer
+//! where they match exactly or are named by their `core-types` id (as in a Rust-built component),
+//! and declared locally otherwise. A procedure the interface cannot offer
 //! (an auth procedure, no typed signature, outside the interface module, unsupported or clashing
 //! names and types, parameters beyond the stack budget, 64-bit integer parameters, results
 //! occupying more than one stack element, reserved or invalid names) is left out and reported in
@@ -34,9 +35,7 @@ use std::collections::BTreeSet;
 
 use miden_mast_package::TargetType;
 use midenc_frontend_wasm_metadata::{
-    FPI_IMPORT_PREFIX,
-    namespace::{CORE_TYPES_INTERFACE_ID, CORE_TYPES_PACKAGE},
-    procedure_path::validate_procedure_path,
+    FPI_IMPORT_PREFIX, namespace::CORE_TYPES_PACKAGE, procedure_path::validate_procedure_path,
 };
 use midenc_hir_type::{FunctionType, StructRef, Type};
 use midenc_package_interface::{PackageInterface, ProcedureItem, Role};
@@ -52,22 +51,6 @@ const MAX_PARAM_FELTS: usize = midenc_package_interface::abi::MAX_STACK_ELEMENTS
 /// the kernel itself (`epilogue.masm` in `miden-protocol`).
 const AUTH_PROCEDURE_REASON: &str = "an auth procedure is invoked by the transaction kernel in \
                                      the epilogue, not by notes or scripts";
-
-/// Generation options.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Options {
-    /// The fully versioned id of the WIT interface that defines the SDK core types:
-    /// `miden:base/core-types@1.0.0`.
-    pub core_types: String,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            core_types: CORE_TYPES_INTERFACE_ID.to_owned(),
-        }
-    }
-}
 
 /// A generated WIT document and the names in it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,11 +85,11 @@ pub enum Error {
     /// The package has no interface procedures (`@account_procedure` or `@auth_script`).
     #[error("package exports no `@account_procedure` or `@auth_script` procedures")]
     NoInterfaceProcedures,
-    /// The interface module (the module of the first interface procedure) is not inside a
-    /// module path that can name the WIT package and interface, or the package name or that
-    /// module's path yields no WIT package id or interface name (an invalid name, a WIT or Rust
-    /// keyword, or the reserved `core_types` leaf), or the package id is the Miden SDK's own WIT
-    /// package.
+    /// The interface module (the module of the first account procedure) is not inside a module
+    /// path that can name the WIT package and interface, or the package name or that module's
+    /// path yields no WIT package id or interface name (an invalid name, a WIT or Rust keyword, or
+    /// the reserved `core_types` leaf), or the package id is the Miden SDK's own WIT package even
+    /// with the package name kept whole.
     #[error("{0}")]
     Namespace(String),
     /// Every interface procedure is left out; the procedures and why, in path order.
@@ -120,7 +103,7 @@ fn list_skipped(skipped: &[Skipped]) -> String {
 }
 
 /// Generate the WIT interface of the account-component `package`.
-pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generated, Error> {
+pub fn generate(package: &PackageInterface) -> Result<Generated, Error> {
     if package.kind != TargetType::AccountComponent {
         return Err(Error::NotAComponent(package.kind));
     }
@@ -136,7 +119,24 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
                 .any(|role| procedure.attributes.has(role.attribute()))
         })
         .collect();
-    let (first, head, leaf) = namespace(&procedures)?;
+    if procedures.is_empty() {
+        return Err(Error::NoInterfaceProcedures);
+    }
+    // Only account procedures become functions, so only they decide the interface module and the
+    // type names below: an auth procedure elsewhere, even one sorting first, changes neither.
+    let Some(first) = procedures.iter().copied().find(|procedure| is_account_procedure(procedure))
+    else {
+        return Err(Error::EverythingSkipped(
+            procedures
+                .iter()
+                .map(|procedure| Skipped {
+                    path: procedure_path(procedure),
+                    reason: AUTH_PROCEDURE_REASON.to_owned(),
+                })
+                .collect(),
+        ));
+    };
+    let (head, leaf) = namespace(first)?;
 
     let package_name: &str = package.name.as_ref();
     let (id_namespace, id_name) =
@@ -161,7 +161,7 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
     // is shadowed by a type. The checked set shrinks strictly with every accepted pass, so the
     // passes end, in practice after one or two.
     let mut type_names: BTreeSet<String> = BTreeSet::new();
-    for procedure in &procedures {
+    for procedure in procedures.iter().filter(|procedure| is_account_procedure(procedure)) {
         if let Some(signature) = &procedure.signature
             && let Ok((_, types)) = function(
                 procedure,
@@ -205,7 +205,6 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
         package_id: &package_id,
         interface: &interface,
         world: &world,
-        core_types: &options.core_types,
         types: &types,
         functions: &functions,
     });
@@ -230,7 +229,7 @@ struct Pass {
 }
 
 /// Offer `procedures` in order, leaving out each auth procedure that is not also an account
-/// procedure, each one that has no function form in the interface module of the `first`
+/// procedure, each one that has no function form in the interface module of the `first` account
 /// procedure, whose function name another kept function already has, or whose function name is
 /// one of `type_names`.
 fn interface_pass(
@@ -245,9 +244,8 @@ fn interface_pass(
     let mut skipped = Vec::new();
     for procedure in procedures {
         let path = procedure_path(procedure);
-        let is_account_procedure = procedure.attributes.has(Role::AccountProcedure.attribute());
         let result = match &procedure.signature {
-            _ if !is_account_procedure => Err(AUTH_PROCEDURE_REASON.to_owned()),
+            _ if !is_account_procedure(procedure) => Err(AUTH_PROCEDURE_REASON.to_owned()),
             None => Err("no typed signature".to_owned()),
             Some(signature) => function(procedure, &path, first, signature, &types).and_then(
                 |(function, extended)| {
@@ -284,19 +282,19 @@ fn procedure_path(procedure: &ProcedureItem) -> String {
     procedure.path.to_relative().to_string()
 }
 
-/// The first of the interface `procedures` (in path order), whose module is the interface
-/// module, with the head and leaf segments of that module.
+/// Whether `procedure` is marked `@account_procedure`, so that it can become a function.
+fn is_account_procedure(procedure: &ProcedureItem) -> bool {
+    procedure.attributes.has(Role::AccountProcedure.attribute())
+}
+
+/// The head and leaf segments of the module of `first`, the first account procedure (in path
+/// order), whose module is the interface module.
 ///
 /// An interface procedure in another module is left out by [`function`].
-fn namespace<'a>(
-    procedures: &[&'a ProcedureItem],
-) -> Result<(&'a ProcedureItem, String, String), Error> {
-    let Some(first) = procedures.first().copied() else {
-        return Err(Error::NoInterfaceProcedures);
-    };
+fn namespace(first: &ProcedureItem) -> Result<(String, String), Error> {
     let module = first.namespace();
     match (module.first(), module.last()) {
-        (Some(head), Some(leaf)) => Ok((first, head.to_owned(), leaf.to_owned())),
+        (Some(head), Some(leaf)) => Ok((head.to_owned(), leaf.to_owned())),
         _ => Err(Error::Namespace(format!(
             "interface procedure `{}` is not inside a module",
             first.path.to_relative()
@@ -316,7 +314,7 @@ fn function(
     signature: &FunctionType,
     types: &TypeSet,
 ) -> Result<(Function, TypeSet), String> {
-    // The interface is named after one module, that of the `first` interface procedure, so it
+    // The interface is named after one module, that of the `first` account procedure, so it
     // offers only that module's procedures.
     let module = first.namespace().to_relative();
     if procedure.namespace().to_relative() != module {
@@ -371,8 +369,8 @@ fn function(
 
     if param_felts > MAX_PARAM_FELTS {
         return Err(format!(
-            "parameters flatten to {param_felts} stack values, more than the {MAX_PARAM_FELTS} a \
-             direct call can pass"
+            "parameters flatten to {param_felts} stack elements, more than the {MAX_PARAM_FELTS} \
+             a direct call can pass"
         ));
     }
     // Only a result that is one core value occupying one operand stack element is offered. This

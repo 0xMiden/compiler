@@ -26,9 +26,9 @@ use miden_standards::account::{
 };
 use midenc_integration_test_support::testing::bindings::check_generated;
 use midenc_package_interface::PackageInterface;
-use midenc_package_wit::{Error, Generated, Options, Skipped, generate};
+use midenc_package_wit::{Error, Generated, Skipped, generate};
 
-/// The SDK's core-types package, which every generated document `use`s.
+/// The SDK's core-types package, which a generated document `use`s when it needs a core item.
 const MIDEN_WIT: &str = include_str!("../../base-macros/wit/miden.wit");
 
 /// Every account component of `miden-standards`.
@@ -92,7 +92,7 @@ fn results() -> Vec<(String, Result<Generated, Error>)> {
         .into_iter()
         .map(|package| {
             let name = package.name.to_string();
-            (name, generate(&PackageInterface::from_package(package), &Options::default()))
+            (name, generate(&PackageInterface::from_package(package)))
         })
         .collect()
 }

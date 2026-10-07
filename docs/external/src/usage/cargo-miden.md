@@ -186,13 +186,15 @@ An account component written in Miden Assembly, such as the standard basic walle
 to be used from Rust, however it is declared (a registry version, a path to a `.masp`, ...). The
 SDK macros derive its interface from the package manifest:
 
-- the WIT package is `<namespace head>:<package name without that head>@<version>`, e.g.
+- the WIT package is `<head>:<name>@<version>`, where `<head>` is the first segment of the
+  component's namespace and `<name>` the package name without the leading `<head>-`, e.g.
   `miden:standards-wallets-basic-wallet@0.17.0` for a package named
   `miden-standards-wallets-basic-wallet` in the `miden::…` namespace. A package name that does
-  not start with the head keeps it whole (`other-foo` → `miden:other-foo`), and so does one whose
-  rest would be a keyword or no WIT name (`miden-list` → `miden:miden-list`);
+  not start with `<head>-` keeps it whole (`other-foo` → `miden:other-foo`), and so does one whose
+  rest would be a keyword, no WIT name, or the SDK's own `base` (`miden-list` →
+  `miden:miden-list`, `miden-base` → `miden:miden-base`);
 - the interface is the last segment of the component's namespace (the module of its first
-  interface procedure, in path order) in kebab case, so
+  account procedure, in path order) in kebab case, so
   `miden-standards-wallets-basic-wallet` provides `basic-wallet`, used as
   `#[account(miden_standards_wallets_basic_wallet::BasicWallet)]`. The interface ident in
   `#[account(pkg::Iface)]` is kebab-cased with heck, so a namespace leaf with digits like
@@ -207,11 +209,14 @@ SDK macros derive its interface from the package manifest:
   `AccountId` has the fields `{ suffix, prefix }`, the reverse of the SDK's `AccountId`, so it
   becomes a local `account-id` record: a caller of such a procedure (e.g. in the `rbac` or
   `ownable2step` components) builds the dependency module's own `AccountId` type rather than
-  passing a `miden::AccountId`;
+  passing a `miden::AccountId`. A Rust-built component's manifest names the SDK types it uses by
+  their `core-types` id (`miden:base/core-types@1.0.0/asset`), and those map to the `core-types`
+  items; a type named by another WIT id is not supported;
 - auth procedures, procedures without a typed signature, outside the interface module, with
   parameters beyond 16 stack elements, with a 64-bit integer (`u64`/`s64`) parameter or a record
   parameter containing a 64-bit integer field (not callable yet), with types WIT cannot express,
-  with local types named `Guest` (wit-bindgen renames them), whose names have no WIT form, clash,
+  with local types named `Guest` (wit-bindgen renames them) or `Option`, `Result`, `String` or
+  `Vec` (they would clash with the Rust prelude in the bindings), whose names have no WIT form, clash,
   or would be a Rust keyword wit-bindgen does not escape (`gen`), with an export path that is not
   a Miden procedure path, with a name whose kebab form starts with `fpi-` (reserved for the SDK's
   foreign-procedure imports), or whose results occupy more than one stack element (not callable
@@ -221,10 +226,11 @@ SDK macros derive its interface from the package manifest:
   and the procedure root) travels through memory.
 
 A package gets no interface at all when it has no `@account_procedure` or `@auth_script`
-procedure, when its first interface procedure is not inside a module, when its package name or
+procedure, when its first account procedure is not inside a module, when its package name or
 namespace yields a keyword, an invalid WIT name or the reserved `core_types` interface leaf, when
-its WIT package id is the SDK's own `miden:base` or the depending crate's own package id, when
-every one of its procedures is left out, or when its synthesized WIT fails to parse. Such a
+its WIT package id is the SDK's own `miden:base` (even with the package name kept whole) or the
+depending crate's own package id, when every one of its procedures is left out, or when its
+synthesized WIT fails to parse. Such a
 dependency is skipped, and the reasons are reported where a macro references it. Today seven
 standard components are in that situation: `miden-standards-auth-no-auth`,
 `miden-standards-auth-singlesig` and `miden-standards-auth-tx-fee-collector`, whose only procedure

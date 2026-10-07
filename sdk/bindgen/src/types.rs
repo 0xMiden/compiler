@@ -15,7 +15,7 @@ use miden_assembly_syntax::ast::{
     Path, PathBuf,
     types::{AddressSpace, StructField, StructType, Type},
 };
-use midenc_package_interface::{PackageInterface, TypeItem, WasmScalar};
+use midenc_package_interface::{PackageInterface, TypeItem, WasmScalar, abi};
 
 use crate::{Error, External, Options, layout, names};
 
@@ -332,7 +332,7 @@ impl<'a> TypeUniverse<'a> {
                 text: self.support_item("Felt", at),
                 kind: RustTypeKind::Felt,
             },
-            Type::Array(_) if words && layout::is_word(ty) => RustType {
+            Type::Array(_) if words && abi::is_word(ty) => RustType {
                 text: self.support_item("Word", at),
                 kind: RustTypeKind::Word,
             },
