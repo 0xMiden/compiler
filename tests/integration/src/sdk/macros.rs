@@ -1110,12 +1110,14 @@ fn component_sibling_wit_key_conflicts_with_embedded_wit() {
 
 #[test]
 fn masm_account_component_dependency_needs_no_wit() {
-    // The standard basic wallet is a MASM account component: its package embeds no WIT and the
-    // manifest sets no `wit` key, so the macros synthesize its interface from the package
-    // manifest.
+    // A MASM account component: its package embeds no WIT and the manifest sets no `wit` key, so
+    // the macros synthesize its interface from the package manifest.
     use miden_core::serde::Serializable;
 
-    const DEPENDENCY: &str = "miden-standards-wallets-basic-wallet";
+    const DEPENDENCY: &str = "test-wallet";
+    const NAMESPACE: &str = "miden::test_wallet::wallet";
+    const SOURCE: &str =
+        "@account_procedure\npub proc receive_asset(asset: word)\n    dropw\nend\n";
     let name = "masm_account_component_dependency";
     let sdk_path = sdk_crate_path();
     let namespace = component_namespace(name);
@@ -1156,13 +1158,14 @@ package = "{component_package}"
 "#,
         sdk_path = sdk_path.display(),
     );
+    // The interface is named after the last namespace segment, `wallet`.
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
 use miden::{account, note, Word};
 
-#[account(miden_standards_wallets_basic_wallet::BasicWallet)]
-pub struct Wallet;
+#[account(test_wallet::Wallet)]
+pub struct TestAccount;
 
 #[note]
 struct ReceiveNote;
@@ -1170,10 +1173,8 @@ struct ReceiveNote;
 #[note]
 impl ReceiveNote {
     #[note_script]
-    pub fn script(self, _arg: Word, account: &mut Wallet) {
-        for asset in self.get_initial_assets() {
-            account.receive_asset(asset);
-        }
+    pub fn script(self, arg: Word, account: &mut TestAccount) {
+        account.receive_asset(arg);
     }
 }
 "#;
@@ -1183,14 +1184,14 @@ impl ReceiveNote {
         .file("Cargo.toml", &cargo_toml)
         .file("src/lib.rs", lib_rs)
         .build();
-    let wallet = midenc_integration_test_support::testing::toolchain::standard_component_packages()
-        .into_iter()
-        .find(|package| &*package.name == DEPENDENCY)
-        .expect("the standard components include the basic wallet");
+    let mut wallet =
+        (*midenc_package_interface::testing::assemble_fixture(DEPENDENCY, NAMESPACE, SOURCE))
+            .clone();
+    wallet.kind = miden_mast_package::TargetType::AccountComponent;
     let package_dir = cargo_proj.root().join("package-cache");
     std::fs::create_dir_all(&package_dir).expect("the package cache must be created");
     std::fs::write(package_dir.join(format!("{DEPENDENCY}.masp")), wallet.to_bytes())
-        .expect("the basic wallet package must be written");
+        .expect("the wallet package must be written");
 
     let output = cargo_check_miden_target(&cargo_proj);
     let stderr = String::from_utf8_lossy(&output.stderr);

@@ -4635,6 +4635,7 @@ dependencies = [
  "midenc-frontend-wasm-metadata",
  "midenc-integration-test-support",
  "rand 0.10.2",
+ "sha2",
  "tokio",
 ]
 
@@ -4667,7 +4668,6 @@ dependencies = [
  "miden-debug",
  "miden-mast-package",
  "miden-processor",
- "miden-standards",
  "miden-thiserror",
  "midenc-compile",
  "midenc-expect-test",
@@ -4708,6 +4708,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-eval",
  "midenc-integration-test-support",
+ "midenc-package-interface",
  "midenc-session",
  "num-traits",
  "proptest",

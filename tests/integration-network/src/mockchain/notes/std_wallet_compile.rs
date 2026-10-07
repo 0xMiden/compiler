@@ -2,11 +2,9 @@
 //! registry dependency on its package, with no WIT of its own.
 
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_integration_test_support::{
-    example_build_lock, testing::toolchain::sysroot_with_standard_components, workspace_root,
-};
+use midenc_integration_test_support::{CompilerTestBuilder, example_build_lock, workspace_root};
 
-use crate::CompilerTestBuilder;
+use super::super::support::sysroot_with_standard_components;
 
 /// The Miden path of the standard basic wallet component's procedures.
 const BASIC_WALLET: &str = "::miden::standards::components::wallets::basic_wallet";
@@ -24,6 +22,7 @@ fn compile_masm(project: &str) -> String {
     builder.with_release(true);
     let mut test = builder.build();
     let masm = test.masm_src();
+    // Assembling the package proves the emitted MASM links against the standard wallet.
     let _package = test.compile_package();
     masm
 }

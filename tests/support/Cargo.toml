@@ -29,8 +29,6 @@ miden-core-lib.workspace = true
 miden-mast-package.workspace = true
 miden-processor.workspace = true
 miden-debug = { workspace = true, features = ["proptest", "std"] }
-# The account-component packages staged into the test sysroot overlay.
-miden-standards = { workspace = true, features = ["std"] }
 midenc-expect-test.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-frontend-wasm-metadata.workspace = true
