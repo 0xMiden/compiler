@@ -191,12 +191,13 @@ builtin.component private @"test_ns:test@1.0.0" {
 /// The rewrites report an indirect call whose operands cannot all be reachable at once, rather
 /// than panicking inside the spill analysis.
 ///
-/// [`apply_rewrites`] runs MASM legalization before the final spill placement, so the bound on the
-/// root word plus the arguments is what such a call meets first on the default pipeline; the
-/// spill analysis behind it reports the same shape as a diagnostic of its own. `.hir` text is the
-/// input that can carry one there: the Wasm frontend rejects an over-budget stored procedure at
-/// translation, so no Rust source reaches this. Like the tests above, this calls the backend
-/// phase directly, as there is no route, project, or assembler in the claim.
+/// The bound itself is also stated by MASM legalization, which [`apply_rewrites`] runs before the
+/// *final* spill placement — but a spill placement precedes the lift to structured control flow,
+/// ahead of legalization, so the spill analysis is what such a call meets first on the default
+/// pipeline. `.hir` text is the input that can carry one there: the Wasm frontend rejects an
+/// over-budget stored procedure at translation, so no Rust source reaches this. Like the tests
+/// above, this calls the backend phase directly, as there is no route, project, or assembler in
+/// the claim.
 #[test]
 fn apply_rewrites_rejects_operands_that_cannot_fit_the_operand_stack() {
     let context = Rc::new(Context::default());
@@ -218,9 +219,6 @@ fn apply_rewrites_rejects_operands_that_cannot_fit_the_operand_stack() {
     let message = format!("{err}");
 
     assert!(message.contains("hir.dyncall"), "{message}");
-    assert!(
-        message.contains("13 argument field elements plus the 4-element procedure root"),
-        "{message}"
-    );
-    assert!(message.contains("exceeds the 16-element operand stack window"), "{message}");
+    assert!(message.contains("needs 17 operand stack elements at once"), "{message}");
+    assert!(message.contains("only 16 are addressable"), "{message}");
 }

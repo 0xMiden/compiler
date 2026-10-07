@@ -2201,9 +2201,9 @@ builtin.component private @"root_ns:root@1.0.0" {
 /// budget lowers even when the root and every argument must move.
 ///
 /// `TransformSpills` runs first, as it does for every function in the backend pipeline: it is the
-/// pass that answers whether an operand set is reachable at all, and it runs *before* MASM
-/// legalization, so it — not legalization — is what a wider call meets first. It reports one as a
-/// diagnostic (see `apply_rewrites_rejects_operands_that_cannot_fit_the_operand_stack` in
+/// pass that answers whether an operand set is reachable at all, and its first placement precedes
+/// MASM legalization, so it — not legalization — is what a wider call meets first. It reports one
+/// as a diagnostic (see `apply_rewrites_rejects_operands_that_cannot_fit_the_operand_stack` in
 /// `midenc-compile/tests/codegen_legalization.rs`), while legalization states the same bound as
 /// part of the IR contract codegen accepts (see `oversized_dyncall_arguments_fail_legalization`
 /// in `crate::legalization`). Lowering alone would not prove this budget is the one the pipeline
