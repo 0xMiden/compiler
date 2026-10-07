@@ -237,14 +237,13 @@ pub mod __stored_procedure_sealed {
 /// the result is returned through a pointer, which takes an element of its own.
 ///
 /// Roots are expected to be written by the host at deployment or update time, taken from the
-/// sibling package's exports: the SDK offers no constructor for this type. The stored root is not
-/// validated by the compiler or the VM against the declared signature: the called procedure is
-/// trusted to honour it. A wrong or stale root — one that names no procedure of the account, or
-/// one with a different stack contract — fails the transaction or returns wrong values. A result
-/// of a variant type ([`Option`], [`Result`]) is lifted from the returned discriminant
-/// without validation, so a root returning an out-of-range discriminant is undefined behaviour in
-/// the caller, like any other canonical-ABI lift. Calling an unset slot (all-zero root) fails the
-/// transaction with a descriptive assertion.
+/// sibling package's exports. A value can also be constructed from a root word via
+/// [`WordValue::try_from_word`]. Neither construction nor calling validates the root against the
+/// declared signature: the called procedure is trusted to honour it. A wrong or stale root — one
+/// that names no procedure of the account, or one with a different stack contract — fails the
+/// transaction or returns wrong values. A result of a variant type ([`Option`], [`Result`]) has
+/// its discriminant validated before Rust lifts it; an out-of-range discriminant traps. Calling
+/// an unset slot (all-zero root) fails the transaction with a descriptive assertion.
 pub struct StoredProcedure<S: ProcedureSignature> {
     /// MAST root of the procedure, all-zero while the slot is unset.
     root: Word,
@@ -260,9 +259,6 @@ impl<S: ProcedureSignature> StoredProcedure<S> {
     }
 
     /// Returns the stored procedure root.
-    ///
-    /// The root alone grants no way to call the procedure; it is exposed for inspection and
-    /// forwarding only.
     #[inline(always)]
     pub fn root(&self) -> Word {
         self.root

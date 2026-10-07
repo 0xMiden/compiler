@@ -405,10 +405,11 @@ values and at most 12 argument field elements — 11 field elements when the res
 through a pointer, which takes an element of its own. Wider signatures are rejected when the
 component is compiled.
 
-Roots are expected to be written by the host at deployment or update time; the SDK offers no
-constructor for a `StoredProcedure`, and neither the compiler nor the VM checks a stored root
-against the declared signature. Calling an unset slot fails the transaction, so check `is_set()`
-on a slot that may not have been populated yet.
+Roots are expected to be written by the host at deployment or update time. A `StoredProcedure`
+can also be constructed from a root word via `WordValue::try_from_word`. Neither construction
+nor calling validates the root against the declared signature. Variant result discriminants
+are validated before Rust lifts them; an out-of-range discriminant traps. Calling an unset slot
+fails the transaction, so check `is_set()` on a slot that may not have been populated yet.
 
 ### Transaction summaries are six words (protocol 0.16)
 
