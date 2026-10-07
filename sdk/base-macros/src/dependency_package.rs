@@ -42,7 +42,8 @@ pub(crate) struct DependencyWitSource {
     /// manifest key when the package embeds none, or synthesized from the manifest of an
     /// account-component package that has neither.
     pub(crate) wit: String,
-    /// The `.wit` file the `wit` manifest key selected, when the WIT is not embedded.
+    /// The `.wit` file the `wit` manifest key selected, when that key supplied the WIT; `None`
+    /// for embedded or synthesized WIT.
     ///
     /// Recorded so consumers can register the file as a build input: it is the only source of
     /// the dependency's interface in that flow, and an edit to it must re-run the expansion.
@@ -55,7 +56,9 @@ pub(crate) struct DependencyWitSource {
 pub(crate) struct DependencyWitSources {
     /// Dependencies whose WIT resolved, in declaration order.
     pub(crate) sources: Vec<DependencyWitSource>,
-    /// Dependencies that resolved to a package without component WIT (and no `wit` override).
+    /// Dependencies that resolved to a package without usable component WIT: one that embeds no
+    /// WIT, has no `wit` override and is not an account component, or an account component whose
+    /// interface failed to synthesize or whose synthesized WIT failed to parse.
     ///
     /// Not an error here: a link-only dependency — for example a MASM library — is never
     /// referenced by an SDK macro and needs no WIT. A macro that does reference one of these
@@ -222,21 +225,39 @@ pub(crate) fn collect_dependency_wit_sources(
             wit_override_path,
             synthesized,
         };
-        // The dependency's WIT must be self-contained apart from the bundled SDK WIT.
-        // Validated here — the single point every macro path shares — so a package is
-        // accepted or rejected identically by the `#[component]`-family macros and by bare
-        // `generate!()` consumers, whose resolver would otherwise tolerate imports of
-        // sibling dependency packages.
-        if let Err(details) = crate::wit_world::parse_dependency_wit_source(&source.wit) {
-            return Err(Error::new(
-                error_span,
-                crate::wit_world::dependency_wit_error_message(&source, &details),
-            ));
-        }
-        collected.sources.push(source);
+        push_parsed_source(&mut collected, source)?;
     }
 
     Ok(collected)
+}
+
+/// Adds `source` to `collected` once its WIT parses.
+///
+/// The dependency's WIT must be self-contained apart from the bundled SDK WIT. Validated here —
+/// the single point every macro path shares — so a package is accepted or rejected identically by
+/// the `#[component]`-family macros and by bare `generate!()` consumers, whose resolver would
+/// otherwise tolerate imports of sibling dependency packages.
+///
+/// Embedded or override WIT that does not parse is an error. Synthesized WIT that does not parse
+/// skips the dependency instead, like a failed synthesis: only a macro that references it needs
+/// its WIT, and the reason, with the override hint, is reported at that reference.
+fn push_parsed_source(
+    collected: &mut DependencyWitSources,
+    source: DependencyWitSource,
+) -> Result<(), Error> {
+    if let Err(details) = crate::wit_world::parse_dependency_wit_source(&source.wit) {
+        let message = crate::wit_world::dependency_wit_error_message(&source, &details);
+        if !source.synthesized {
+            return Err(Error::new(Span::call_site(), message));
+        }
+        collected.skipped.push(SkippedDependency {
+            name: source.name,
+            reason: message,
+        });
+        return Ok(());
+    }
+    collected.sources.push(source);
+    Ok(())
 }
 
 /// Resolves a path dependency without a compiler-written artifact map.
@@ -424,18 +445,8 @@ fn read_wit_override(
 /// ([`CORE_TYPES_INTERFACE_ID`]), not the generator's defaults, so a version bump of the bundled
 /// WIT cannot leave the synthesized WIT `use`-ing an interface the macros do not provide.
 fn generator_options() -> midenc_package_wit::Options {
-    // `miden:base/core-types@1.0.0` -> package `miden:base@1.0.0`, interface `core-types`.
-    let (package, interface) = CORE_TYPES_INTERFACE_ID
-        .split_once('/')
-        .expect("the core-types interface id names its package");
-    let (interface, version) = interface
-        .split_once('@')
-        .expect("the core-types interface id carries a version");
     midenc_package_wit::Options {
-        core_types: midenc_package_wit::CoreTypes {
-            package: format!("{package}@{version}"),
-            interface: interface.to_owned(),
-        },
+        core_types: CORE_TYPES_INTERFACE_ID.to_owned(),
     }
 }
 
@@ -1303,8 +1314,9 @@ mod tests {
 
     #[test]
     fn recorded_link_only_entry_honors_the_wit_override() {
-        // `wit = false` records that the package embeds no component WIT — which is exactly
-        // the case the `wit` manifest key exists for. The override must win over the fast
+        // `wit = false` records that the package has no component interface: it embeds no WIT
+        // and is not an account component — which is exactly the case the `wit` manifest key
+        // exists for. The override must win over the fast
         // path: the package is read for its procedure roots, and the key supplies the
         // interface.
         let temp_root = fixture_root("link-only-wit-override");
@@ -1345,8 +1357,8 @@ mod tests {
 
     #[test]
     fn recorded_link_only_entries_are_skipped_without_reading_the_package() {
-        // `wit = false` is the compiler's record that the package embeds no component WIT.
-        // The package file deliberately does not exist in the fixture cache: a skip that
+        // `wit = false` is the compiler's record that the package has no component interface
+        // (no embedded WIT, not an account component). The package file deliberately does not exist in the fixture cache: a skip that
         // tried to read it would fail, proving link-only packages are never deserialized.
         let temp_root = fixture_root("link-only-fast-path");
         let cache_dir = temp_root.join("package-cache");
@@ -1518,7 +1530,7 @@ end
     }
 
     #[test]
-    fn account_component_without_role_procedures_reports_the_generator_error() {
+    fn account_component_without_interface_procedures_reports_the_generator_error() {
         let temp_root = fixture_root("synthesis-error");
         let package_path = temp_root.join("miden-test-wallet.masp");
         write_component_fixture(&package_path, "pub proc helper(x: felt) -> felt\n    nop\nend\n");
@@ -1541,12 +1553,53 @@ end
             "unexpected error: {message}"
         );
         assert!(message.contains(&package_path.display().to_string()), "{message}");
-        assert!(message.contains("no role procedures"), "unexpected error: {message}");
+        assert!(
+            message.contains("no `@account_procedure` or `@auth_script` procedures"),
+            "unexpected error: {message}"
+        );
         assert!(
             message.contains("package.metadata.miden.dependencies.wallet.wit"),
             "unexpected error: {message}"
         );
 
         std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn unparsable_wit_is_skipped_only_when_synthesized() {
+        // The generator validates every name it emits, so no fixture package yields synthesized
+        // WIT that fails to parse; the source is built by hand instead.
+        let source = |synthesized| DependencyWitSource {
+            name: "wallet".to_string(),
+            root: PathBuf::from("wallet.masp"),
+            package_path: PathBuf::from("wallet.masp"),
+            package: midenc_package_interface::testing::assemble_fixture(
+                "miden-test-wallet",
+                "miden::test::wallet",
+                WALLET_COMPONENT,
+            ),
+            wit: "package miden:wallet@0.1.0;\ninterface wallet { 1: func(); }\n".to_string(),
+            wit_override_path: None,
+            synthesized,
+        };
+        let mut collected = DependencyWitSources {
+            sources: Vec::new(),
+            skipped: Vec::new(),
+            artifact_map_path: None,
+        };
+
+        push_parsed_source(&mut collected, source(true))
+            .expect("unparsable synthesized WIT skips the dependency");
+        assert!(collected.sources.is_empty());
+        assert_eq!(collected.skipped.len(), 1);
+        assert_eq!(collected.skipped[0].name, "wallet");
+        let reason = &collected.skipped[0].reason;
+        assert!(reason.contains("failed to parse embedded dependency WIT"), "{reason}");
+        assert!(reason.contains("package.metadata.miden.dependencies.wallet.wit"), "{reason}");
+
+        let err = push_parsed_source(&mut collected, source(false))
+            .expect_err("unparsable embedded or override WIT is an error");
+        assert!(err.to_string().contains("failed to parse embedded dependency WIT"), "{err}");
+        assert_eq!(collected.skipped.len(), 1);
     }
 }
