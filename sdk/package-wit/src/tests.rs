@@ -12,7 +12,7 @@ const MIDEN_WIT: &str = include_str!("../../base-macros/wit/miden.wit");
 const COMPONENT: &str = r#"
 pub type Asset = struct { id: word, value: word }
 pub type AccountId = struct { suffix: felt, prefix: felt }
-pub type Nested = struct { owner: AccountId, amount: u64 }
+pub type Nested = struct { owner: AccountId, amount: u32 }
 
 pub enum NoteType : u8 {
     PRIVATE = 0,
@@ -131,6 +131,7 @@ fn parse(wit: &str, interface: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// A component's interface maps every supported procedure and lists the left-out ones.
 #[test]
 fn the_component_interface() {
     let iface = component(COMPONENT);
@@ -199,7 +200,7 @@ interface my-component {{
 
     record nested {{
         owner: account-id,
-        amount: u64,
+        amount: u32,
     }}
 
     @external-id("miden::test::my_component::auth_tx")
@@ -236,6 +237,7 @@ world my-component-world {{
     )));
 }
 
+/// An `AccountId` with the core field order uses the core type instead of a local record.
 #[test]
 fn an_account_id_in_core_order_uses_the_core_type() {
     let iface = component(
@@ -257,6 +259,7 @@ end
     parse(&generated.wit, "my-component");
 }
 
+/// A procedure without parameters becomes a parameterless function and uses no core items.
 #[test]
 fn a_function_without_parameters() {
     let iface = component(
@@ -273,6 +276,7 @@ end
     parse(&generated.wit, "my-component");
 }
 
+/// A package that is not an account component has no interface.
 #[test]
 fn only_account_components_have_an_interface() {
     let package = assemble_fixture("miden-test-my-component", MODULE, COMPONENT);
@@ -283,6 +287,7 @@ fn only_account_components_have_an_interface() {
     ));
 }
 
+/// A component without account procedures or auth scripts has no interface.
 #[test]
 fn a_component_needs_interface_procedures() {
     let iface = component(
@@ -303,6 +308,74 @@ end
     ));
 }
 
+/// A procedure tagged both `@note_script` and `@auth_script` belongs to the interface.
+#[test]
+fn an_auth_script_that_is_also_a_note_script_is_in_the_interface() {
+    let mut iface = component(
+        r#"
+@auth_script
+pub proc auth_tx()
+    nop
+end
+
+@note_script
+pub proc run_note()
+    nop
+end
+"#,
+    );
+    // The assembler rejects two role attributes on one procedure, but a manifest may carry them.
+    let note_script = iface.procedures[1].attributes.get("note_script").unwrap().clone();
+    iface.procedures[0].attributes.insert(note_script);
+    assert_eq!(iface.procedures[0].name(), "auth_tx");
+    let generated = generate(&iface, &Options::default()).unwrap();
+    assert_eq!(
+        parse(&generated.wit, "my-component"),
+        [("auth-tx".to_owned(), "miden::test::my_component::auth_tx".to_owned())]
+    );
+}
+
+/// An interface procedure outside the module of the first one is left out, not the package.
+#[test]
+fn a_procedure_outside_the_interface_module_is_skipped() {
+    let mut iface = component(
+        r#"
+@account_procedure
+pub proc ping()
+    nop
+end
+"#,
+    );
+    let other = assemble_fixture(
+        "miden-test-other",
+        "miden::test::other",
+        "@account_procedure\npub proc pong()\n    nop\nend\n",
+    );
+    iface.procedures.extend(PackageInterface::from_package(&other).procedures);
+    let generated = generate(&iface, &Options::default()).unwrap();
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(
+        skipped,
+        [(
+            "miden::test::other::pong",
+            "lives in module `miden::test::other`, outside the interface module \
+             `miden::test::my_component`"
+        )]
+    );
+    assert_eq!(generated.interface, "my-component");
+}
+
+/// A package whose WIT package id would be the SDK's own `miden:base` has no interface.
+#[test]
+fn the_sdk_package_id_is_rejected() {
+    assert_eq!(
+        namespace_error("miden-base", MODULE),
+        "the package id `miden:base` is the Miden SDK's own WIT package"
+    );
+}
+
+/// A procedure with a quoted name is left out, the rest of the interface stays.
 #[test]
 fn a_quoted_export_path_is_skipped() {
     let iface = component(
@@ -331,6 +404,7 @@ end
     parse(&generated.wit, "my-component");
 }
 
+/// Procedures with no WIT name or a reserved `fpi-` name are left out with a reason.
 #[test]
 fn names_without_a_wit_form_are_skipped() {
     let iface = component(
@@ -394,6 +468,7 @@ fn namespace_error(package_name: &str, module: &str) -> String {
     }
 }
 
+/// A WIT or Rust keyword in the namespace, package or module name rejects the package.
 #[test]
 fn keyword_package_and_interface_names_are_rejected() {
     // The SDK macros write the package id and the interface name back into WIT text and Rust
@@ -416,6 +491,7 @@ fn keyword_package_and_interface_names_are_rejected() {
     );
 }
 
+/// Procedures and fields named after Rust keywords wit-bindgen does not escape are left out.
 #[test]
 fn rust_keywords_wit_bindgen_does_not_escape_are_skipped() {
     let iface = component(
@@ -459,6 +535,7 @@ end
     assert_eq!(parse(&generated.wit, "my-component").len(), 1);
 }
 
+/// A function sharing a type's name is left out, the functions using that type are kept.
 #[test]
 fn a_function_named_like_a_type_is_skipped_not_its_users() {
     let iface = component(
@@ -495,6 +572,7 @@ end
     );
 }
 
+/// A component whose every procedure is left out fails and lists each reason.
 #[test]
 fn a_component_whose_every_procedure_is_left_out_has_no_interface() {
     let iface = component(
@@ -523,6 +601,7 @@ end
     );
 }
 
+/// Note and transaction scripts are neither in the interface nor reported as left out.
 #[test]
 fn only_account_procedures_and_auth_scripts_form_the_interface() {
     let iface = component(
@@ -549,10 +628,13 @@ end
     assert_eq!(functions, [("ping".to_owned(), "miden::test::my_component::ping".to_owned())]);
 }
 
+/// Procedures with a 64-bit integer result, parameter or field are left out.
 #[test]
-fn a_u64_result_is_left_out() {
+fn a_64_bit_result_or_parameter_is_left_out() {
     let iface = component(
         r#"
+pub type Wide = struct { lo: u32, value: i64 }
+
 @account_procedure
 pub proc ping()
     nop
@@ -562,6 +644,16 @@ end
 pub proc nonce() -> u64
     nop
 end
+
+@account_procedure
+pub proc set_nonce(n: u64)
+    drop drop
+end
+
+@account_procedure
+pub proc set_wide(w: Wide)
+    drop drop drop
+end
 "#,
     );
     let generated = generate(&iface, &Options::default()).unwrap();
@@ -569,14 +661,25 @@ end
         generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
     assert_eq!(
         skipped,
-        [(
-            "miden::test::my_component::nonce",
-            "results occupy 2 stack elements; multi-element results of Miden Assembly components \
-             are not supported yet"
-        )]
+        [
+            (
+                "miden::test::my_component::nonce",
+                "results occupy 2 stack elements; multi-element results of Miden Assembly \
+                 components are not supported yet"
+            ),
+            (
+                "miden::test::my_component::set_nonce",
+                "parameters of 64-bit integer type are not supported yet"
+            ),
+            (
+                "miden::test::my_component::set_wide",
+                "parameters of 64-bit integer type are not supported yet"
+            ),
+        ]
     );
 }
 
+/// A type only clashes with a function name when a kept function declares it.
 #[test]
 fn only_types_of_kept_functions_shadow_a_function() {
     // `z_set_mode` alone would declare `mode`, but its local `account-id` conflicts with the core

@@ -10,8 +10,10 @@ use miden::{AccountId, Recipient, Word, account, felt_repr::ToFeltRepr, note};
 #[account(miden_standards_wallets_basic_wallet::BasicWallet)]
 pub struct Wallet;
 
+/// Inputs of the P2ID note, whose encoding the note's recipient commits to.
 #[note]
 struct P2idNote {
+    /// The account that may consume the note.
     target_account_id: AccountId,
 }
 
