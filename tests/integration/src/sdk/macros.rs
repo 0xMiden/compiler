@@ -1204,6 +1204,7 @@ impl ReceiveNote {{
     cargo_check_miden_target(&cargo_proj)
 }
 
+/// A Miden Assembly account-component dependency without WIT is usable from `#[account]`.
 #[test]
 fn masm_account_component_dependency_needs_no_wit() {
     let output = check_masm_account_component_dependency(
@@ -1218,6 +1219,7 @@ fn masm_account_component_dependency_needs_no_wit() {
     );
 }
 
+/// A Miden Assembly component with a keyword interface name fails where `#[account]` uses it.
 #[test]
 fn masm_account_component_with_a_keyword_interface_is_reported_at_its_reference() {
     // The interface would be named `list`, a WIT keyword, so no WIT is synthesized and the
