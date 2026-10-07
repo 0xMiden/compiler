@@ -29,6 +29,8 @@ miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-expect-test.workspace = true
 rand.workspace = true
+# Keys the staged sysroot overlay by its contents
+sha2.workspace = true
 tokio.workspace = true
 
 # For accessing shared compiler test builders and helpers

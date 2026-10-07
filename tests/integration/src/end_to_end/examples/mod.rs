@@ -5,4 +5,3 @@ mod counter_contract_debug_build;
 mod fibonacci;
 mod is_prime;
 mod note_schema_metadata;
-mod std_wallet;

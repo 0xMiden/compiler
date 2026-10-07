@@ -31,11 +31,10 @@ use miden_standards::{testing::note::NoteBuilder, tx_script::SendNotesTransactio
 use miden_testing::{MockChain, MockTransaction, MockTransactionBuilder};
 use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_integration_test_support::{
-    CompilerTestBuilder, example_build_lock, testing::toolchain::sysroot_with_standard_components,
-    workspace_root,
-};
+use midenc_integration_test_support::{CompilerTestBuilder, example_build_lock, workspace_root};
 use rand::{SeedableRng, rngs::StdRng};
+
+use super::sysroot_with_standard_components;
 
 /// Host-side mirror of the transaction-script arguments declared in
 /// `examples/basic-wallet-tx-script`, spelled in the felt-repr primitives its field types encode
