@@ -19,7 +19,7 @@ use std::{
     sync::Arc,
 };
 
-use miden_mast_package::{Package, TargetType};
+use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::package_cache;
 use midenc_package_interface::PackageInterface;
 use proc_macro2::Span;
@@ -50,6 +50,19 @@ pub(crate) struct DependencyWitSource {
     pub(crate) wit_override_path: Option<PathBuf>,
     /// Whether [`Self::wit`] was synthesized from the package manifest rather than read.
     pub(crate) synthesized: bool,
+}
+
+impl DependencyWitSource {
+    /// What [`Self::wit`] is, for a diagnostic: embedded, override or synthesized WIT.
+    pub(crate) fn description(&self) -> String {
+        if self.synthesized {
+            format!("the WIT synthesized for dependency '{}' from its package manifest", self.name)
+        } else if self.wit_override_path.is_some() {
+            "the WIT override".to_string()
+        } else {
+            "embedded dependency WIT".to_string()
+        }
+    }
 }
 
 /// The result of resolving every declared Miden dependency's component WIT.
@@ -138,12 +151,16 @@ pub(crate) fn collect_dependency_wit_sources(
                     } else {
                         collected.skipped.push(SkippedDependency {
                             name: name.to_string(),
-                            reason: "the compiler recorded its package as having no component \
-                                     interface; it is consumed at link time only. If the package \
-                                     should supply an interface, set \
-                                     package.metadata.miden.dependencies.<name>.wit to a WIT file \
-                                     describing it"
-                                .to_string(),
+                            // The map may come from an older `cargo miden`, which recorded an
+                            // account component without embedded WIT as link-only.
+                            reason: format!(
+                                "the compiler recorded its package as having no component \
+                                 interface; it is consumed at link time only. If the package is \
+                                 an account component, rebuild with the current `cargo miden \
+                                 build`; otherwise, if it should supply an interface, set \
+                                 package.metadata.miden.dependencies.{name}.wit to a WIT file \
+                                 describing it"
+                            ),
                         });
                         continue;
                     }
@@ -187,7 +204,9 @@ pub(crate) fn collect_dependency_wit_sources(
                         read_wit_override(&wit_override, manifest_dir, name)?;
                     (wit, Some(override_path), false)
                 }
-                (None, None) if resolved.package.kind == TargetType::AccountComponent => {
+                // Embedding no WIT, the package has a component interface only as an account
+                // component, whose interface is synthesized from its manifest.
+                (None, None) if package_cache::has_component_interface(&resolved.package) => {
                     let interface = PackageInterface::from_package(&resolved.package);
                     match midenc_package_wit::generate(&interface, &generator_options()) {
                         Ok(generated) => (generated.wit, None, true),
@@ -245,7 +264,9 @@ fn push_parsed_source(
     collected: &mut DependencyWitSources,
     source: DependencyWitSource,
 ) -> Result<(), Error> {
-    if let Err(details) = crate::wit_world::parse_dependency_wit_source(&source.wit) {
+    if let Err(details) =
+        crate::wit_world::parse_dependency_wit_source(&source.wit, &source.description())
+    {
         let message = crate::wit_world::dependency_wit_error_message(&source, &details);
         if !source.synthesized {
             return Err(Error::new(Span::call_site(), message));
@@ -425,7 +446,7 @@ fn read_wit_override(
             ),
         )
     })?;
-    crate::wit_world::parse_dependency_wit_source(&wit).map_err(|details| {
+    crate::wit_world::parse_dependency_wit_source(&wit, "the WIT override").map_err(|details| {
         Error::new(
             error_span,
             format!(
@@ -1358,8 +1379,9 @@ mod tests {
     #[test]
     fn recorded_link_only_entries_are_skipped_without_reading_the_package() {
         // `wit = false` is the compiler's record that the package has no component interface
-        // (no embedded WIT, not an account component). The package file deliberately does not exist in the fixture cache: a skip that
-        // tried to read it would fail, proving link-only packages are never deserialized.
+        // (no embedded WIT, not an account component). The package file deliberately does not
+        // exist in the fixture cache: a skip that tried to read it would fail, proving link-only
+        // packages are never deserialized.
         let temp_root = fixture_root("link-only-fast-path");
         let cache_dir = temp_root.join("package-cache");
         let map_dir = cache_dir.join("miden-deps");
@@ -1423,7 +1445,7 @@ mod tests {
             source,
         ))
         .clone();
-        package.kind = TargetType::AccountComponent;
+        package.kind = miden_mast_package::TargetType::AccountComponent;
         std::fs::create_dir_all(package_path.parent().unwrap()).unwrap();
         std::fs::write(package_path, package.to_bytes()).unwrap();
     }
@@ -1594,7 +1616,13 @@ end
         assert_eq!(collected.skipped.len(), 1);
         assert_eq!(collected.skipped[0].name, "wallet");
         let reason = &collected.skipped[0].reason;
-        assert!(reason.contains("failed to parse embedded dependency WIT"), "{reason}");
+        assert!(
+            reason.contains(
+                "failed to parse the WIT synthesized for dependency 'wallet' from its package \
+                 manifest"
+            ),
+            "{reason}"
+        );
         assert!(reason.contains("package.metadata.miden.dependencies.wallet.wit"), "{reason}");
 
         let err = push_parsed_source(&mut collected, source(false))

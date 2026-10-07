@@ -145,6 +145,14 @@ pub mod package_cache {
     /// the widened meaning does not bump the schema.
     pub const DEPENDENCY_MAP_SCHEMA: i64 = 1;
 
+    /// Whether `package` has a component interface, the meaning of an artifact map entry's `wit`
+    /// key: it embeds component WIT, or it is an account component, whose interface the SDK
+    /// macros synthesize from its manifest.
+    pub fn has_component_interface(package: &miden_mast_package::Package) -> bool {
+        package.kind == miden_mast_package::TargetType::AccountComponent
+            || super::package_wit(package).is_some()
+    }
+
     /// Schema version of the dependency build-input record.
     pub const BUILD_INPUTS_SCHEMA: u32 = 1;
 

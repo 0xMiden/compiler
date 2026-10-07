@@ -464,9 +464,10 @@ fn collect_miden_dependencies(
     let mut dependencies = Vec::new();
 
     for source in collected.sources {
-        let dependency_wit = parse_dependency_wit_source(&source.wit).map_err(|msg| {
-            syn::Error::new(error_span, dependency_wit_error_message(&source, &msg))
-        })?;
+        let dependency_wit = parse_dependency_wit_source(&source.wit, &source.description())
+            .map_err(|msg| {
+                syn::Error::new(error_span, dependency_wit_error_message(&source, &msg))
+            })?;
 
         dependencies.push(MidenDependency {
             name: source.name,
@@ -532,14 +533,19 @@ pub(crate) struct DependencyWit {
 /// The source is resolved against the bundled SDK WIT alone, which makes this doubly useful: it
 /// extracts the exported interfaces of a dependency's embedded WIT, and it is the self-containment
 /// check a WIT source must pass before being embedded in the first place.
-pub(crate) fn parse_dependency_wit_source(wit_source: &str) -> Result<DependencyWit, String> {
+///
+/// `what` names the source in a parse error, e.g. `embedded dependency WIT`.
+pub(crate) fn parse_dependency_wit_source(
+    wit_source: &str,
+    what: &str,
+) -> Result<DependencyWit, String> {
     let mut resolve = Resolve::default();
     resolve
         .push_str("miden.wit", crate::manifest_paths::SDK_WIT_SOURCE)
         .map_err(|err| format!("failed to load bundled Miden WIT: {err}"))?;
     let package_id = resolve
         .push_str("package.wit", wit_source)
-        .map_err(|err| format!("failed to parse embedded dependency WIT: {err}"))?;
+        .map_err(|err| format!("failed to parse {what}: {err}"))?;
 
     // Skip exported interfaces that cannot be turned into a referenceable import id (anonymous
     // inline interfaces, or interfaces in an unversioned package) rather than failing the whole
@@ -866,7 +872,7 @@ world typed-account-world {
 }
 "#;
 
-        let dependency_wit = parse_dependency_wit_source(wit).unwrap();
+        let dependency_wit = parse_dependency_wit_source(wit, "embedded dependency WIT").unwrap();
 
         assert_eq!(dependency_wit.interfaces.len(), 1);
         assert_eq!(dependency_wit.interfaces[0].name, "typed-account");
@@ -896,7 +902,7 @@ world multi-account-world {
 }
 "#;
 
-        let dependency_wit = parse_dependency_wit_source(wit).unwrap();
+        let dependency_wit = parse_dependency_wit_source(wit, "embedded dependency WIT").unwrap();
         let dependency = super::MidenDependency {
             name: "multi-account".to_string(),
             package_path: PathBuf::from("/tmp/multi-account/target/miden/debug/multi_account.masp"),
@@ -932,7 +938,7 @@ world mixed-export-world {
 }
 "#;
 
-        let dependency_wit = parse_dependency_wit_source(wit).unwrap();
+        let dependency_wit = parse_dependency_wit_source(wit, "embedded dependency WIT").unwrap();
 
         assert_eq!(dependency_wit.interfaces.len(), 1);
         assert_eq!(dependency_wit.interfaces[0].name, "named-api");
@@ -949,7 +955,7 @@ world empty-export-world {
 }
 "#;
 
-        let err = parse_dependency_wit_source(wit).unwrap_err();
+        let err = parse_dependency_wit_source(wit, "embedded dependency WIT").unwrap_err();
 
         assert!(err.contains("no exported WIT interface found"), "unexpected error: {err}");
     }
@@ -1146,7 +1152,7 @@ world empty-export-world {
         let wit =
             "package foo:bar;\n\ninterface baz {\n  f: func();\n}\n\nworld w {\n  export baz;\n}\n";
 
-        let err = parse_dependency_wit_source(wit).unwrap_err();
+        let err = parse_dependency_wit_source(wit, "embedded dependency WIT").unwrap_err();
 
         assert!(err.contains("no exported WIT interface found"), "unexpected error: {err}");
         assert!(err.contains("missing a version suffix"), "unexpected error: {err}");
