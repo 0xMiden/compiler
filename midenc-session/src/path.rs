@@ -77,6 +77,14 @@ mod fallback {
     }
 
     impl Path {
+        pub fn new<S: AsRef<str> + ?Sized>(path: &S) -> &Self {
+            Self::from_bytes(path.as_ref().as_bytes())
+        }
+
+        pub fn eq_ignore_ascii_case(&self, other: &str) -> bool {
+            self.0.eq_ignore_ascii_case(other.as_bytes())
+        }
+
         pub fn to_str(&self) -> Option<&str> {
             core::str::from_utf8(&self.0).ok()
         }
@@ -166,6 +174,19 @@ mod fallback {
             buf.extend_from_slice(&path.0);
 
             PathBuf(buf)
+        }
+
+        pub fn with_file_name<S: AsRef<str>>(&self, name: S) -> PathBuf {
+            let prefix = match self.file_name() {
+                Some(file_name) => self.0.strip_suffix(&file_name.0).unwrap(),
+                None => &self.0,
+            };
+            let mut bytes = prefix.to_vec();
+            if !bytes.is_empty() && !bytes.ends_with(b"/") {
+                bytes.push(b'/');
+            }
+            bytes.extend_from_slice(name.as_ref().as_bytes());
+            PathBuf(bytes)
         }
 
         pub fn with_stem<S>(&self, stem: S) -> PathBuf

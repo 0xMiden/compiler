@@ -7271,3 +7271,136 @@ impl PackageRegistry for TestRegistry {
         self.packages.get(package)
     }
 }
+
+#[test]
+fn lint_prepares_procedures_before_declaring_hir() -> Result<()> {
+    // Each fixture has a valid stack effect, so signature inference alone accepts it.
+    for infer_missing_signatures in [false, true] {
+        for (body, instruction, reason) in [
+            ("loc_load.1", "loc_load.1", "invalid local index 1"),
+            ("push.7 drop loc_load.1", "loc_load.1", "invalid local index 1"),
+            (
+                "push.1 if.true loc_load.1 else push.0 end",
+                "loc_load.1",
+                "invalid local index 1",
+            ),
+            ("repeat.2 push.7 drop end loc_load.1", "loc_load.1", "invalid local index 1"),
+            ("loc_loadw_le.0 dropw push.0", "loc_loadw_le.0", "invalid local index 1"),
+            (
+                "loc_loadw_le.1 dropw push.0",
+                "loc_loadw_le.1",
+                "local word index 1 is not word-aligned",
+            ),
+            (
+                "padw mem_loadw_be.1 dropw push.0",
+                "mem_loadw_be.1",
+                "memory word address 1 is not word-aligned",
+            ),
+            (
+                "locaddr.0 u32cast",
+                "u32cast",
+                "invalid cast operand: expected an integral type, got ptr<element, felt>",
+            ),
+            (
+                "locaddr.0 assert push.0",
+                "assert",
+                "invalid assert operand: expected an integral type, got ptr<element, felt>",
+            ),
+            (
+                "locaddr.0 assertz push.0",
+                "assertz",
+                "invalid assertz operand: expected an integral type, got ptr<element, felt>",
+            ),
+            (
+                "locaddr.0 push.0 assert_eq push.0",
+                "assert_eq",
+                "invalid assert_eq left operand: expected an integral type, got ptr<element, felt>",
+            ),
+            (
+                "push.0 locaddr.0 assert_eq push.0",
+                "assert_eq",
+                "invalid assert_eq right operand: expected an integral type, got ptr<element, \
+                 felt>",
+            ),
+            (
+                "locaddr.0 u32assert",
+                "u32assert",
+                "invalid assert_u32 operand: expected an integral type, got ptr<element, felt>",
+            ),
+        ] {
+            let source = format!(
+                r#"
+pub proc caller() -> felt
+    exec.bad
+end
+
+pub proc outer() -> felt
+    exec.caller
+end
+
+@locals(1)
+pub proc bad() -> felt
+    {body}
+end
+
+pub proc good() -> felt
+    push.42
+end
+"#
+            );
+            let source = if infer_missing_signatures {
+                source.replace("() -> felt", "")
+            } else {
+                source
+            };
+            let config = DisassemblerConfig {
+                infer_missing_signatures,
+            };
+            let context = Rc::new(Context::default());
+            let parsed = parse_source_with_module_path(&source, "test", context.clone())?;
+            let bad = parsed.procedures().find(|p| p.name().as_str() == "bad").unwrap();
+            let instruction_start = source.find(body).unwrap() + body.find(instruction).unwrap();
+            let instruction_span = SourceSpan::new(
+                bad.span().source_id(),
+                instruction_start as u32..(instruction_start + instruction.len()) as u32,
+            );
+            let direct_reason = format!("{reason} at {instruction_span:?}");
+            let dependency_span = |name| {
+                let procedure = parsed.procedures().find(|p| p.name().as_str() == name).unwrap();
+                // Memory alignment is checked during signature inference, whose skips
+                // cover the procedure. Preparation records the exact invocation span.
+                if instruction == "mem_loadw_be.1" {
+                    procedure.span()
+                } else {
+                    procedure.body().iter().next().unwrap().span()
+                }
+            };
+            let expected_spans = [bad.span(), dependency_span("caller"), dependency_span("outer")];
+            let output = disassemble_source_for_lint(&source, "test", &config, context.clone())?;
+            assert!(module_has_function(output.module, "good"));
+            for name in ["bad", "caller", "outer"] {
+                assert!(!module_has_function(output.module, name), "{name} survived {body}");
+            }
+            assert_eq!(output.skipped_procedures.len(), 3);
+            for ((name, expected), span) in [
+                ("::test::bad", direct_reason.as_str()),
+                ("::test::caller", "depends on skipped procedure '::test::bad'"),
+                ("::test::outer", "depends on skipped procedure '::test::caller'"),
+            ]
+            .into_iter()
+            .zip(expected_spans)
+            {
+                let skipped =
+                    output.skipped_procedures.iter().find(|p| p.path.as_str() == name).unwrap();
+                assert_eq!(skipped.reason, expected);
+                assert_eq!(skipped.span, span, "{body}, inferred={infer_missing_signatures}");
+            }
+            let err = match disassemble_source(&source, "test", &config, context) {
+                Ok(_) => panic!("strict disassembly accepted {body}"),
+                Err(err) => err,
+            };
+            assert_eq!(err.to_string(), direct_reason);
+        }
+    }
+    Ok(())
+}

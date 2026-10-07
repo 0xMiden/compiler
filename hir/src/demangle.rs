@@ -1,4 +1,4 @@
-use alloc::{string::String, vec::Vec};
+use alloc::string::String;
 
 /// Demangle `name`, where `name` was mangled using Rust's mangling scheme
 #[inline]
@@ -8,13 +8,13 @@ pub fn demangle<S: AsRef<str>>(name: S) -> String {
 
 #[cfg(not(feature = "std"))]
 fn demangle_impl(name: &str) -> String {
-    use alloc::string::ToString;
-
-    rustc_demangle::demangle(s).as_str().to_string();
+    alloc::format!("{:#}", rustc_demangle::demangle(name))
 }
 
 #[cfg(feature = "std")]
 fn demangle_impl(name: &str) -> String {
+    use alloc::vec::Vec;
+
     let mut input = name.as_bytes();
     let mut demangled = Vec::with_capacity(input.len() * 2);
     rustc_demangle::demangle_stream(&mut input, &mut demangled, /* include_hash= */ false)

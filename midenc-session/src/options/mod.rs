@@ -14,8 +14,10 @@ use miden_debug_types::SourceManager;
 use miden_project::TargetType;
 
 pub use self::printing::IrFilter;
+#[cfg(feature = "std")]
+use crate::FileType;
 use crate::{
-    ColorChoice, CompileFlags, FileType, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
+    ColorChoice, CompileFlags, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
     diagnostics::{DiagnosticsConfig, Emitter, Report},
 };
 
@@ -202,6 +204,7 @@ impl Options {
         output_dir: Option<PathBuf>,
         sysroot: Option<PathBuf>,
     ) -> Self {
+        #[cfg(feature = "std")]
         let search_paths = if let Some(sysroot) = sysroot.as_deref() {
             let lib_dir = sysroot.join("lib");
             if lib_dir.try_exists().is_ok_and(|exists| exists) {
@@ -212,6 +215,8 @@ impl Options {
         } else {
             vec![]
         };
+        #[cfg(not(feature = "std"))]
+        let search_paths = vec![];
 
         Self {
             manifest_path: None,
