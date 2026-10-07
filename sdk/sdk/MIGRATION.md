@@ -57,10 +57,10 @@ in the `cargo miden` documentation).
 
 A Rust-built account-component package without embedded WIT (built by an older toolchain) is no
 longer skipped with rebuild advice: it now gets an interface derived from its manifest, too. That
-interface has no alias names, leaves out procedures whose results occupy more than one stack
-element, and takes its WIT package id from the package name, so it can differ from the
-component's own WIT; rebuild the package with the current `cargo miden build` to restore its
-embedded interface.
+interface has no alias names, leaves out procedures for the reasons listed in the interface doc
+comment (multi-element results, 64-bit parameters, auth procedures, ...), and takes its WIT
+package id from the package name, so it can differ from the component's own WIT; rebuild the
+package with the current `cargo miden build` to restore its embedded interface.
 
 Declaring a MASM account-component dependency in `miden-project.toml` now generates its bindings
 in every SDK macro of the crate (`#[component]`, `#[note]`, `#[tx_script]`), whether or not a

@@ -2,13 +2,11 @@
 // Dependency commitment: 0x5fa40141599cf871b62babf904af8f8d3cd504c7e456391cbdaef49a5fc25c5f.
 package miden:standards-auth-guarded-multisig@0.17.0;
 
+/// Left out: `miden::standards::components::auth::guarded_multisig::auth_tx_guarded_multisig`: an auth procedure is invoked by the transaction kernel in the epilogue, not by notes or scripts
 /// Left out: `miden::standards::components::auth::guarded_multisig::get_signer_at`: results occupy 5 stack elements; multi-element results of Miden Assembly components are not supported yet
 /// Left out: `miden::standards::components::auth::guarded_multisig::get_threshold_and_num_approvers`: results occupy 2 stack elements; multi-element results of Miden Assembly components are not supported yet
 interface guarded-multisig {
     use miden:base/core-types@1.0.0.{felt, word};
-
-    @external-id("miden::standards::components::auth::guarded_multisig::auth_tx_guarded_multisig")
-    auth-tx-guarded-multisig: func(arg0: word);
 
     @external-id("miden::standards::components::auth::guarded_multisig::is_signer")
     is-signer: func(arg0: word) -> felt;

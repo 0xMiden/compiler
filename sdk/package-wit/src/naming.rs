@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 use heck::{ToKebabCase, ToUpperCamelCase};
 use midenc_frontend_wasm_metadata::{
     FPI_ABI_PARAM_NAMES,
-    namespace::{NamespaceSegmentError, SegmentPosition, WIT_KEYWORDS, validate_namespace_segment},
+    namespace::{
+        NamespaceSegmentError, SegmentPosition, is_wit_keyword, validate_namespace_segment,
+    },
 };
 
 /// The Rust keywords wit-bindgen's Rust generator turns into identifiers as they are, without the
@@ -117,8 +119,7 @@ pub fn interface(leaf: &str) -> Result<String, String> {
 
 /// `%`-escape a kebab-case identifier when it is a WIT keyword.
 pub fn escape(kebab: String) -> String {
-    // The shared keyword list spells keywords as snake_case segments (`error_context`).
-    if WIT_KEYWORDS.contains(&kebab.replace('-', "_").as_str()) {
+    if is_wit_keyword(&kebab) {
         format!("%{kebab}")
     } else {
         kebab
