@@ -25,6 +25,8 @@ use midenc_package_interface::PackageInterface;
 use proc_macro2::Span;
 use syn::Error;
 
+use crate::generate::CORE_TYPES_INTERFACE_ID;
+
 /// WIT source extracted from a compiled Miden dependency package.
 pub(crate) struct DependencyWitSource {
     /// Manifest key used for this dependency.
@@ -97,8 +99,9 @@ pub(crate) struct SkippedDependency {
 /// through the `package.metadata.miden.dependencies.<name>.wit` key in `miden-project.toml` — the
 /// escape hatch for packages produced by toolchains that do not embed WIT. Setting the key for a
 /// package that embeds WIT is an error. An account-component package with neither gets its
-/// interface synthesized from its manifest; any other package with neither is skipped, not
-/// rejected: only dependencies a macro references need WIT.
+/// interface synthesized from its manifest. A package with neither whose interface cannot be
+/// synthesized is skipped, not rejected: only dependencies a macro references need WIT, and the
+/// reason is reported where a macro references it.
 pub(crate) fn collect_dependency_wit_sources(
     manifest_dir: &Path,
     package: &miden_project::Package,
@@ -115,12 +118,11 @@ pub(crate) fn collect_dependency_wit_sources(
         let name = dependency.name().as_ref();
         let resolved = match &artifact_map {
             // A `wit = false` entry is a link-only package (for example a base library or a
-            // MASM library): the compiler recorded that it neither embeds component WIT nor is
-            // an account component whose interface could be synthesized, so its (potentially
-            // large) package is never deserialized here. Unless the
-            // manifest supplies a `wit` override — the escape hatch for exactly such packages
-            // — in which case the package is read for its procedure roots and the override
-            // provides the interface, like on every other path.
+            // MASM library): the compiler recorded that it has no component interface, so its
+            // (potentially large) package is never deserialized here, unless the manifest
+            // supplies a `wit` override, the escape hatch for exactly such packages. Then the
+            // package is read for its procedure roots and the override provides the interface,
+            // like on every other path.
             Some(map) => match map.resolve(name, error_span)? {
                 MapResolution::Resolved(root, resolved) => Some((root, resolved)),
                 MapResolution::LinkOnly(path) => {
@@ -134,8 +136,7 @@ pub(crate) fn collect_dependency_wit_sources(
                         collected.skipped.push(SkippedDependency {
                             name: name.to_string(),
                             reason: "the compiler recorded its package as having no component \
-                                     interface (it embeds no WIT and is not an account \
-                                     component); it is consumed at link time only. If the package \
+                                     interface; it is consumed at link time only. If the package \
                                      should supply an interface, set \
                                      package.metadata.miden.dependencies.<name>.wit to a WIT file \
                                      describing it"
@@ -185,24 +186,24 @@ pub(crate) fn collect_dependency_wit_sources(
                 }
                 (None, None) if resolved.package.kind == TargetType::AccountComponent => {
                     let interface = PackageInterface::from_package(&resolved.package);
-                    let generated = midenc_package_wit::generate(
-                        &interface,
-                        &midenc_package_wit::Options::default(),
-                    )
-                    .map_err(|err| {
-                        Error::new(
-                            error_span,
-                            format!(
-                                "dependency '{name}': failed to synthesize the component WIT of \
-                                 account-component package '{}' from its manifest: {err}. Provide \
-                                 the WIT manually via \
-                                 package.metadata.miden.dependencies.{name}.wit in \
-                                 miden-project.toml",
-                                resolved.path.display(),
-                            ),
-                        )
-                    })?;
-                    (generated.wit, None, true)
+                    match midenc_package_wit::generate(&interface, &generator_options()) {
+                        Ok(generated) => (generated.wit, None, true),
+                        // Not an error here: only a macro that references this dependency
+                        // needs its WIT, and the reason is reported at that reference.
+                        Err(err) => {
+                            collected.skipped.push(SkippedDependency {
+                                name: name.to_string(),
+                                reason: format!(
+                                    "failed to synthesize the component WIT of account-component \
+                                     package '{}' from its manifest: {err}. Provide the WIT \
+                                     manually via package.metadata.miden.dependencies.{name}.wit \
+                                     in miden-project.toml",
+                                    resolved.path.display(),
+                                ),
+                            });
+                            continue;
+                        }
+                    }
                 }
                 (None, None) => {
                     collected.skipped.push(SkippedDependency {
@@ -415,6 +416,27 @@ fn read_wit_override(
         )
     })?;
     Ok((wit, file))
+}
+
+/// The options the component WIT of an account-component dependency is synthesized with.
+///
+/// The core types are located through the SDK WIT these macros bundle
+/// ([`CORE_TYPES_INTERFACE_ID`]), not the generator's defaults, so a version bump of the bundled
+/// WIT cannot leave the synthesized WIT `use`-ing an interface the macros do not provide.
+fn generator_options() -> midenc_package_wit::Options {
+    // `miden:base/core-types@1.0.0` -> package `miden:base@1.0.0`, interface `core-types`.
+    let (package, interface) = CORE_TYPES_INTERFACE_ID
+        .split_once('/')
+        .expect("the core-types interface id names its package");
+    let (interface, version) = interface
+        .split_once('@')
+        .expect("the core-types interface id carries a version");
+    midenc_package_wit::Options {
+        core_types: midenc_package_wit::CoreTypes {
+            package: format!("{package}@{version}"),
+            interface: interface.to_owned(),
+        },
+    }
 }
 
 /// Formats the diagnostic for a dependency package that embeds no WIT and has no override.
@@ -1501,17 +1523,24 @@ end
         let package_path = temp_root.join("miden-test-wallet.masp");
         write_component_fixture(&package_path, "pub proc helper(x: felt) -> felt\n    nop\nend\n");
 
-        let error = with_test_package_cache_dir(None, || {
+        // Skipped rather than rejected, so only a macro referencing the dependency reports it.
+        let collected = with_test_package_cache_dir(None, || {
             collect_dependency_wit_sources(
                 &temp_root,
                 &consumer_with_path_dependency("wallet", &package_path),
             )
         })
-        .expect_err("a component without role procedures has no interface to synthesize");
-        let message = error.to_string();
+        .expect("a failed synthesis does not fail the collection");
+        assert!(collected.sources.is_empty());
+        assert_eq!(collected.skipped.len(), 1);
+        assert_eq!(collected.skipped[0].name, "wallet");
+        let message = &collected.skipped[0].reason;
 
-        assert!(message.contains("dependency 'wallet'"), "unexpected error: {message}");
-        assert!(message.contains("failed to synthesize"), "unexpected error: {message}");
+        assert!(
+            message.contains("failed to synthesize the component WIT of account-component package"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains(&package_path.display().to_string()), "{message}");
         assert!(message.contains("no role procedures"), "unexpected error: {message}");
         assert!(
             message.contains("package.metadata.miden.dependencies.wallet.wit"),
