@@ -40,8 +40,10 @@ pub struct Wallet;
 
 Call sites may need to pass inner values where the hand-written WIT used `core-types` aliases:
 the derived interface takes the manifest's types, and type aliases are not recoverable, so a
-`NoteTag` or `Tag` becomes its `.inner` (a `u32`), an `AssetAmount` a `felt`, and a `Recipient`
-its `.inner` word. See `examples/std-wallet-tx-script`:
+`Tag` becomes its `.inner` (a `u32`; a `NoteTag` already is one), an `AssetAmount` its
+`.as_felt()`, and a `Recipient` its `.inner` word. Results change the same way: `create_note`
+now returns a plain `u16` instead of a `NoteIdx`, which `move_asset_to_note` takes as is. See
+`examples/std-wallet-tx-script`:
 
 ```rust
 // Before (hand-written WIT taking `tag` and `recipient`)
@@ -55,12 +57,14 @@ The override is still available, and still takes precedence, for packages that e
 for components whose derived interface does not fit (see "Depending on MASM account components"
 in the `cargo miden` documentation).
 
-A Rust-built account-component package without embedded WIT (built by an older toolchain) is no
-longer skipped with rebuild advice: it now gets an interface derived from its manifest, too. That
-interface has no alias names, leaves out procedures for the reasons listed in the interface doc
-comment (multi-element results, 64-bit parameters, auth procedures, ...), and takes its WIT
-package id from the package name, so it can differ from the component's own WIT; rebuild the
-package with the current `cargo miden build` to restore its embedded interface.
+A Rust-built account-component package without embedded WIT is no longer skipped with rebuild
+advice: it now gets an interface derived from its manifest, too, in which the SDK types the
+component uses (`asset`, `word`, `felt`, `note-type`, ...) are the SDK's `core-types` items, as
+in a MASM component's interface. That interface has no other alias names, leaves out procedures
+for the reasons listed in the interface doc comment (multi-element results, 64-bit parameters,
+auth procedures, ...), and takes its WIT package id from the package name, so it can differ from
+the component's own WIT; rebuild the package with the current `cargo miden build` to restore its
+embedded interface.
 
 Declaring a MASM account-component dependency in `miden-project.toml` now generates its bindings
 in every SDK macro of the crate (`#[component]`, `#[note]`, `#[tx_script]`), whether or not a

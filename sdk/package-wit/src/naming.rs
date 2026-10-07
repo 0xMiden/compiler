@@ -6,7 +6,8 @@ use heck::{ToKebabCase, ToUpperCamelCase};
 use midenc_frontend_wasm_metadata::{
     FPI_ABI_PARAM_NAMES,
     namespace::{
-        NamespaceSegmentError, SegmentPosition, is_wit_keyword, validate_namespace_segment,
+        CORE_TYPES_PACKAGE, NamespaceSegmentError, SegmentPosition, is_wit_keyword,
+        validate_namespace_segment,
     },
 };
 
@@ -153,8 +154,9 @@ pub fn short_name(name: &str) -> &str {
 ///
 /// The name is kebab-normalized and loses a leading `<head>-`, which the namespace part of the id
 /// already says: `miden-standards-wallets-basic-wallet` → `miden:standards-wallets-basic-wallet`;
-/// it keeps the head when the rest alone would be a keyword or no WIT name: `miden-list` →
-/// `miden:miden-list`.
+/// it keeps the head when the rest alone would be a keyword or no WIT name, or would make the id
+/// the SDK's own [`CORE_TYPES_PACKAGE`]: `miden-list` → `miden:miden-list`, `miden-base` →
+/// `miden:miden-base`.
 pub fn package_id(head: &str, package_name: &str) -> Result<(String, String), String> {
     let namespace = segment(head, kebab(head), SegmentPosition::Namespace)
         .map_err(|err| format!("the namespace {err}"))?;
@@ -162,7 +164,7 @@ pub fn package_id(head: &str, package_name: &str) -> Result<(String, String), St
     let name = full
         .strip_prefix(&namespace)
         .and_then(|rest| rest.strip_prefix('-'))
-        .filter(|rest| !rest.is_empty())
+        .filter(|rest| !rest.is_empty() && format!("{namespace}:{rest}") != CORE_TYPES_PACKAGE)
         .unwrap_or(&full);
     // A stripped name that is a keyword or no WIT name (`miden-list` → `list`, `miden-1x` → `1x`)
     // falls back to the full name.
@@ -330,6 +332,16 @@ mod tests {
         assert_eq!(id("miden", "other-foo").unwrap(), "miden:other-foo");
         assert_eq!(id("miden", "midenfoo").unwrap(), "miden:midenfoo");
         assert_eq!(id("miden", "miden").unwrap(), "miden:miden");
+    }
+
+    /// A stripped name that would make the id the SDK's own `miden:base` keeps the head.
+    #[test]
+    fn package_id_avoids_the_sdk_package_id() {
+        let id = |head, name| package_id(head, name).map(|(ns, name)| format!("{ns}:{name}"));
+        assert_eq!(id("miden", "miden-base").unwrap(), "miden:miden-base");
+        assert_eq!(id("miden", "miden_base").unwrap(), "miden:miden-base");
+        // Without a head to keep, the id stays `miden:base`, which `generate` rejects.
+        assert_eq!(id("miden", "base").unwrap(), "miden:base");
     }
 
     /// Package id segments that are keywords or have no WIT name fall back or are rejected.
