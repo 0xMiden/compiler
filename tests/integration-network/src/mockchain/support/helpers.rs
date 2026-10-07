@@ -32,7 +32,8 @@ use miden_testing::{MockChain, MockTransaction, MockTransactionBuilder};
 use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::{
-    CompilerTest, CompilerTestBuilder, example_build_lock, workspace_root,
+    CompilerTest, CompilerTestBuilder, example_build_lock,
+    testing::toolchain::sysroot_with_standard_components, workspace_root,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -116,6 +117,9 @@ pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
 // ================================================================================================
 
 /// Compiles a Rust project and returns its Miden package.
+///
+/// The project resolves its dependencies from the toolchain extended with the `miden-standards`
+/// account components, so it can depend on a standard component by name.
 pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool) -> Arc<Package> {
     with_rust_package_test(project_path.as_ref(), release, CompilerTest::compile_package)
 }
@@ -129,7 +133,12 @@ fn with_rust_package_test<T>(
 ) -> T {
     let _build_lock = example_build_lock(&workspace_root());
     let config = WasmTranslationConfig::default();
-    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(project_path, config, []);
+    let sysroot = sysroot_with_standard_components().display().to_string();
+    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
+        project_path,
+        config,
+        ["--sysroot".to_string(), sysroot],
+    );
 
     if release {
         builder.with_release(true);
