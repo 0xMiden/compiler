@@ -24,11 +24,9 @@ use miden_standards::account::{
     upgrade::UpgradeManager,
     wallets::BasicWallet,
 };
+use midenc_integration_test_support::testing::bindings::check_generated;
 use midenc_package_interface::PackageInterface;
 use midenc_package_wit::{Generated, Options, generate};
-
-/// Set to rewrite the snapshots instead of comparing against them.
-const UPDATE_BINDINGS: &str = "UPDATE_BINDINGS";
 
 /// The SDK's core-types package, which every generated document `use`s.
 const MIDEN_WIT: &str = include_str!("../../base-macros/wit/miden.wit");
@@ -88,38 +86,13 @@ fn generated() -> Vec<(String, Generated)> {
         .collect()
 }
 
-/// Compare `fresh` against the committed snapshot `path`, or rewrite it under
-/// [`UPDATE_BINDINGS`]; a mismatch names the first differing line.
-fn check_snapshot(path: &Path, fresh: &str) {
-    if std::env::var_os(UPDATE_BINDINGS).is_some() {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, fresh)
-            .unwrap_or_else(|err| panic!("cannot write {}: {err}", path.display()));
-        return;
-    }
-    let committed = std::fs::read_to_string(path).unwrap_or_default();
-    if committed == fresh {
-        return;
-    }
-    let line = committed
-        .lines()
-        .zip(fresh.lines())
-        .position(|(committed, fresh)| committed != fresh)
-        .unwrap_or_else(|| committed.lines().count().min(fresh.lines().count()))
-        + 1;
-    panic!(
-        "{} is stale from line {line}: run the test with {UPDATE_BINDINGS}=1 to regenerate it",
-        path.display()
-    );
-}
-
 #[test]
 fn every_component_matches_its_snapshot() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/standards");
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let generated = generated();
     assert_eq!(generated.len(), 33);
     for (name, generated) in &generated {
-        check_snapshot(&dir.join(format!("{name}.wit")), &generated.wit);
+        check_generated(manifest_dir, &format!("tests/standards/{name}.wit"), &generated.wit);
     }
 }
 
@@ -140,8 +113,9 @@ fn every_interface_parses_with_external_ids() {
                 .external_id
                 .as_deref()
                 .unwrap_or_else(|| panic!("{name}: `{}` has no external id", function.name));
+            let procedure = external_id.strip_prefix("miden::standards::components::");
             assert!(
-                external_id.ends_with(&function.name.replace('-', "_")),
+                procedure.is_some_and(|procedure| !procedure.is_empty()),
                 "{name}: `{}` is `{external_id}`",
                 function.name
             );

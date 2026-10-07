@@ -19,6 +19,7 @@ pub struct Mapped {
 }
 
 impl Mapped {
+    /// A type that flattens to one core Wasm value occupying `felts` operand stack elements.
     fn scalar(wit: &str, felts: usize) -> Self {
         Self {
             wit: wit.to_owned(),
@@ -59,9 +60,12 @@ struct CoreItem {
 
 /// The core-types items a named manifest type can stand for.
 ///
-/// A name alone is not enough: the item must have the same field names, field order and field
-/// types, because a WIT record lowers field by field in declaration order. A manifest type with
-/// the right name but another shape becomes a local declaration instead.
+/// A name alone is not enough: the manifest type must have the same flattened layout as the item,
+/// because a WIT record lowers field by field in declaration order. The fields need not have the
+/// item's own field types: the core `asset` is `{ id: asset-id, value: word }` with
+/// `asset-id { inner: word }`, so it matches a manifest `{ id: word, value: word }`, and the core
+/// `note-type` is a record `{ inner: u8 }`, which matches a `u8` C-like enum. A manifest type with
+/// the right name but another layout becomes a local declaration instead.
 const CORE_ITEMS: &[CoreItem] = &[
     CoreItem {
         name: "asset",
@@ -92,6 +96,7 @@ const CORE_ITEMS: &[CoreItem] = &[
     },
 ];
 
+/// `felt`, the core `felt`.
 fn is_felt(ty: &Type) -> bool {
     matches!(ty, Type::Felt)
 }
@@ -134,6 +139,9 @@ impl TypeSet {
 
     /// Map `ty`, recording the core items and declarations it needs. The error is the reason the
     /// type has no WIT form here.
+    ///
+    /// On an error the set may keep part of what the type needed, so a caller that must not see
+    /// that maps on a clone, as `generate` does for each function.
     pub fn map(&mut self, ty: &Type) -> Result<Mapped, String> {
         match ty {
             Type::Felt => {
@@ -182,6 +190,7 @@ impl TypeSet {
         }))
     }
 
+    /// Map the named struct `ty` (`st`) to its core item, or else to a local record.
     fn map_struct(&mut self, ty: &Type, st: &StructType) -> Result<Mapped, String> {
         let Some(name) = st.name() else {
             return Err(format!("unsupported type `{ty}`: an anonymous struct has no WIT name"));
@@ -202,13 +211,17 @@ impl TypeSet {
             let mapped = self.map(&field.ty)?;
             values += mapped.values;
             felts += mapped.felts;
-            fields.push((naming::ident(field_name), mapped.wit));
+            fields.push((field_name, naming::ident(field_name), mapped.wit));
         }
+        unique_idents(&name, "fields", fields.iter().map(|(from, to, _)| (&***from, to.as_str())))?;
+        let fields = fields.into_iter().map(|(_, ident, wit)| (ident, wit)).collect();
         let wit = naming::escape(wit_name.clone());
         self.declare(wit_name, Decl::Record(fields))?;
         Ok(Mapped { wit, values, felts })
     }
 
+    /// Map the enum `ty` (`en`) to its core item, or else to a local enum when it is C-like with
+    /// contiguous discriminants from zero.
     fn map_enum(&mut self, ty: &Type, en: &EnumType) -> Result<Mapped, String> {
         let name = en.name();
         let wit_name = naming::kebab(naming::short_name(name));
@@ -238,12 +251,23 @@ impl TypeSet {
                 "unsupported type `{name}`: an enum with non-contiguous discriminants"
             ));
         }
-        let cases = en.variants().iter().map(|variant| naming::ident(&variant.name)).collect();
+        let cases: Vec<String> =
+            en.variants().iter().map(|variant| naming::ident(&variant.name)).collect();
+        unique_idents(
+            name,
+            "cases",
+            en.variants()
+                .iter()
+                .map(|variant| &*variant.name)
+                .zip(cases.iter().map(String::as_str)),
+        )?;
         let wit = naming::escape(wit_name.clone());
         self.declare(wit_name, Decl::Enum(cases))?;
         Ok(Mapped::scalar(&wit, 1))
     }
 
+    /// Record the core item `name` as used; an error when a local declaration already has its
+    /// name.
     fn use_core(&mut self, name: &'static str) -> Result<(), String> {
         if self.locals.iter().any(|(local, _)| local == name) {
             return Err(conflict(name));
@@ -252,6 +276,8 @@ impl TypeSet {
         Ok(())
     }
 
+    /// Declare the local type `name`; declaring an identical type twice is a no-op, while a
+    /// different type or a used core item of the same name is an error.
     fn declare(&mut self, name: String, decl: Decl) -> Result<(), String> {
         if self.core.contains(name.as_str()) {
             return Err(conflict(&name));
@@ -267,6 +293,30 @@ impl TypeSet {
     }
 }
 
+/// Check that the members of the type `type_name` (its `kind`, e.g. "fields") keep distinct,
+/// non-empty WIT names; `members` pairs each manifest name with its WIT name.
+fn unique_idents<'a>(
+    type_name: &str,
+    kind: &str,
+    members: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Result<(), String> {
+    let mut seen: Vec<(&str, &str)> = Vec::new();
+    for (from, to) in members {
+        if to.is_empty() {
+            return Err(format!("unsupported type `{type_name}`: `{from}` has no WIT name"));
+        }
+        if let Some((other, _)) = seen.iter().find(|(_, seen)| *seen == to) {
+            return Err(format!(
+                "unsupported type `{type_name}`: {kind} `{other}` and `{from}` both have the WIT \
+                 name `{to}`"
+            ));
+        }
+        seen.push((from, to));
+    }
+    Ok(())
+}
+
+/// The reason two different types named `name` cannot share one interface.
 fn conflict(name: &str) -> String {
     format!("conflicting definitions of type `{name}` in one interface")
 }
@@ -279,10 +329,12 @@ mod tests {
 
     use super::*;
 
+    /// The manifest type of a word, `[felt; 4]`.
     fn word() -> Type {
         Type::from(ArrayType::new(Type::Felt, 4))
     }
 
+    /// A named struct with `fields`.
     fn record(name: &str, fields: &[(&str, Type)]) -> Type {
         Type::from(StructType::named(
             Arc::from(name),
@@ -290,6 +342,7 @@ mod tests {
         ))
     }
 
+    /// A C-like enum with a `u8` discriminant and `variants`.
     fn c_enum(name: &str, variants: &[(&str, u128)]) -> Type {
         let variants = variants
             .iter()
@@ -348,6 +401,25 @@ mod tests {
         assert!(set.map(&gaps).unwrap_err().contains("non-contiguous discriminants"));
         let note_type_gaps = c_enum("NoteType", &[("PRIVATE", 1), ("PUBLIC", 2)]);
         assert!(set.map(&note_type_gaps).unwrap_err().contains("non-contiguous"));
+    }
+
+    #[test]
+    fn members_need_distinct_non_empty_wit_names() {
+        let mut set = TypeSet::default();
+        let clash = record("Clash", &[("fooBar", Type::Felt), ("foo_bar", Type::Felt)]);
+        assert_eq!(
+            set.map(&clash).unwrap_err(),
+            "unsupported type `Clash`: fields `fooBar` and `foo_bar` both have the WIT name \
+             `foo-bar`"
+        );
+        let empty = record("Empty", &[("__", Type::Felt)]);
+        assert_eq!(set.map(&empty).unwrap_err(), "unsupported type `Empty`: `__` has no WIT name");
+        let cases = c_enum("Slots", &[("SLOT_1", 0), ("SLOT1", 1)]);
+        assert_eq!(
+            set.map(&cases).unwrap_err(),
+            "unsupported type `Slots`: cases `SLOT_1` and `SLOT1` both have the WIT name `slot1`"
+        );
+        assert!(set.locals.is_empty());
     }
 
     #[test]

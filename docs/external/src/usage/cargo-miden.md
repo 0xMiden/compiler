@@ -182,10 +182,11 @@ SDK macros derive its interface from the package manifest:
 - the interface is the last segment of the component's namespace in kebab case, so
   `miden-standards-wallets-basic-wallet` provides `basic-wallet`, used as
   `#[account(miden_standards_wallets_basic_wallet::BasicWallet)]`;
-- each role procedure (`@account_procedure`, `@auth_script`) becomes one function with the
+- each role procedure (a procedure tagged with any role attribute: `@account_procedure`,
+  `@auth_script`, `@note_script` or `@transaction_script`) becomes one function with the
   parameter types of the manifest. Type aliases are not recoverable: a `NoteTag` is a `u32`, an
   `AssetAmount` a `felt`. Parameters are named after their type, else `argN`;
-- procedures whose results do not fit a single stack value are not callable yet and are left
+- procedures whose results flatten to more than one value are not callable yet and are left
   out.
 
 ```toml
