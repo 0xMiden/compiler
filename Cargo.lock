@@ -4647,6 +4647,7 @@ dependencies = [
  "miden-processor",
  "miden-thiserror",
  "midenc-compile",
+ "miden-standards",
  "midenc-expect-test",
  "midenc-frontend-wasm",
  "midenc-frontend-wasm-metadata",
