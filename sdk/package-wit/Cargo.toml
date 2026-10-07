@@ -19,6 +19,8 @@ doctest = false
 [dependencies]
 # `TargetType`, the package kind the generator checks.
 miden-mast-package.workspace = true
+# `WIT_KEYWORDS`, the keywords a generated identifier is escaped against.
+midenc-frontend-wasm-metadata.workspace = true
 midenc-hir-type.workspace = true
 midenc-package-interface.workspace = true
 thiserror.workspace = true
@@ -26,5 +28,7 @@ thiserror.workspace = true
 [dev-dependencies]
 # The 33 standard account components, for the snapshot tests.
 miden-standards = { workspace = true, features = ["std"] }
+# `check_generated`, the snapshot comparison shared with the SDK binding tests.
+midenc-integration-test-support.workspace = true
 midenc-package-interface = { workspace = true, features = ["testing"] }
 wit-parser.workspace = true

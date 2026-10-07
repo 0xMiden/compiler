@@ -4730,7 +4730,9 @@ dependencies = [
  "miden-mast-package",
  "miden-standards",
  "miden-thiserror",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir-type",
+ "midenc-integration-test-support",
  "midenc-package-interface",
  "wit-parser 0.259.0",
 ]
