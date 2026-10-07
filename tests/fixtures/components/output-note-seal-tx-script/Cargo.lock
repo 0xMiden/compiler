@@ -2445,6 +2445,7 @@ version = "0.15.0"
 dependencies = [
  "miden-mast-package",
  "miden-thiserror",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir-type",
  "midenc-package-interface",
 ]

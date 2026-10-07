@@ -32,10 +32,11 @@ use miden_testing::{MockChain, MockTransaction, MockTransactionBuilder};
 use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::{
-    CompilerTest, CompilerTestBuilder, example_build_lock,
-    testing::toolchain::sysroot_with_standard_components, workspace_root,
+    CompilerTest, CompilerTestBuilder, example_build_lock, workspace_root,
 };
 use rand::{SeedableRng, rngs::StdRng};
+
+use super::sysroot_with_standard_components;
 
 /// Host-side mirror of the transaction-script arguments declared in
 /// `examples/basic-wallet-tx-script`, spelled in the felt-repr primitives its field types encode
