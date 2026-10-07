@@ -11,7 +11,8 @@ use miden_assembly_syntax::ast::{Path as MasmPath, PathBuf as MasmPathBuf};
 use miden_mast_package::PackageExport;
 use miden_protocol::crypto::hash::blake::Blake3_256;
 use midenc_frontend_wasm_metadata::{
-    FPI_ABI_PARAM_NAMES, FPI_IMPORT_PREFIX, namespace::CORE_TYPES_INTERFACE,
+    FPI_ABI_PARAM_NAMES, FPI_IMPORT_PREFIX,
+    namespace::{CORE_TYPES_INTERFACE, CORE_TYPES_PACKAGE},
     procedure_path::validate_procedure_path,
 };
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -496,7 +497,9 @@ fn resolve_core_types(resolve: &Resolve) -> syn::Result<CoreTypes> {
         .packages
         .iter()
         .find_map(|(_, package)| {
-            if package.name.namespace != "miden" || package.name.name != "base" {
+            if CORE_TYPES_PACKAGE.split_once(':')
+                != Some((package.name.namespace.as_str(), package.name.name.as_str()))
+            {
                 return None;
             }
 
