@@ -628,10 +628,20 @@ fn load_wit_sources(
         let owner =
             format!("dependency `{}` (package '{}')", source.name, source.package_path.display());
         let load_error = |err: String| {
+            let hint = if source.synthesized {
+                format!(
+                    "; provide a WIT via package.metadata.miden.dependencies.{}.wit in \
+                     miden-project.toml",
+                    source.name
+                )
+            } else {
+                String::new()
+            };
             Error::new(
                 Span::call_site(),
                 format!(
-                    "failed to load WIT embedded in dependency package '{}': {err}",
+                    "failed to load {} of dependency package '{}': {err}{hint}",
+                    source.description(),
                     source.package_path.display()
                 ),
             )

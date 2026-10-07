@@ -11,7 +11,8 @@ use miden_assembly_syntax::ast::{Path as MasmPath, PathBuf as MasmPathBuf};
 use miden_mast_package::PackageExport;
 use miden_protocol::crypto::hash::blake::Blake3_256;
 use midenc_frontend_wasm_metadata::{
-    FPI_IMPORT_PREFIX, namespace::CORE_TYPES_INTERFACE, procedure_path::validate_procedure_path,
+    FPI_ABI_PARAM_NAMES, FPI_IMPORT_PREFIX, namespace::CORE_TYPES_INTERFACE,
+    procedure_path::validate_procedure_path,
 };
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
@@ -50,11 +51,7 @@ const FPI_ABI_VERSION: &str = "v1";
 const FPI_PACKAGE_PREFIX: &str = "fpi";
 
 /// Number of parameters prepended by the FPI calling convention.
-const FPI_ABI_PARAM_COUNT: usize = 3;
-
-/// Names of the parameters prepended by the FPI calling convention.
-const FPI_ABI_PARAM_NAMES: [&str; FPI_ABI_PARAM_COUNT] =
-    ["account-id-prefix", "account-id-suffix", "foreign-proc-root"];
+const FPI_ABI_PARAM_COUNT: usize = FPI_ABI_PARAM_NAMES.len();
 
 /// Maps one real dependency interface to its private synthetic FPI interface.
 #[derive(Clone, Debug, Eq, PartialEq)]

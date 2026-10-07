@@ -25,6 +25,8 @@ use midenc_package_interface::PackageInterface;
 use proc_macro2::Span;
 use syn::Error;
 
+use crate::namespace::ComponentNamespace;
+
 /// The component WIT source of a declared Miden dependency: embedded in its compiled package,
 /// supplied by its `wit` manifest key, or synthesized from its package manifest.
 pub(crate) struct DependencyWitSource {
@@ -130,6 +132,13 @@ pub(crate) fn collect_dependency_wit_sources(
         skipped: Vec::new(),
         artifact_map_path: artifact_map.as_ref().map(|map| map.map_path.clone()),
     };
+    // The consumer's own WIT package id (`ns:pkg`, without version); an invalid namespace is
+    // reported by the macro that reads it.
+    let consumer_wit_package = package.library_target().and_then(|target| {
+        ComponentNamespace::from_path(target.inner().namespace.inner(), error_span)
+            .ok()
+            .map(|namespace| namespace.wit_package())
+    });
 
     for dependency in package.dependencies() {
         let name = dependency.name().as_ref();
@@ -213,6 +222,24 @@ pub(crate) fn collect_dependency_wit_sources(
                         &interface,
                         &midenc_package_wit::Options::default(),
                     ) {
+                        // The consumer defines its own package of that id, so the two would
+                        // clash in every macro of the crate.
+                        Ok(generated)
+                            if consumer_wit_package.as_deref()
+                                == generated.package_id.split('@').next() =>
+                        {
+                            collected.skipped.push(SkippedDependency {
+                                name: name.to_string(),
+                                reason: format!(
+                                    "its synthesized WIT package id `{}` is this crate's own \
+                                     package id; provide a WIT with another id via the override \
+                                     package.metadata.miden.dependencies.{name}.wit in \
+                                     miden-project.toml",
+                                    generated.package_id
+                                ),
+                            });
+                            continue;
+                        }
                         Ok(generated) => (generated.wit, None, true),
                         // Not an error here: only a macro that references this dependency
                         // needs its WIT, and the reason is reported at that reference.
@@ -597,8 +624,9 @@ struct DependencyArtifactMap {
 struct ArtifactMapEntry {
     /// Where the selected artifact lives.
     location: ArtifactLocation,
-    /// Whether the artifact has a component interface — it embeds component WIT, or it is an
-    /// account component whose interface is synthesized from its manifest — when the compiler
+    /// Whether the artifact may have a component interface — it embeds component WIT, or it is
+    /// an account component whose interface the macros try to synthesize from its manifest — when
+    /// the compiler
     /// recorded it (the map's `wit` key).
     ///
     /// `Some(false)` lets the macros skip a link-only package without deserializing it. An
@@ -1451,12 +1479,21 @@ mod tests {
         dependency_name: &str,
         package_path: &Path,
     ) -> Box<miden_project::Package> {
+        consumer_in_namespace_with_path_dependency("empty", dependency_name, package_path)
+    }
+
+    /// [`consumer_with_path_dependency`] with the library namespace `namespace`.
+    fn consumer_in_namespace_with_path_dependency(
+        namespace: &str,
+        dependency_name: &str,
+        package_path: &Path,
+    ) -> Box<miden_project::Package> {
         use miden_assembly_syntax::{ast, debuginfo::Span as MidenSpan};
 
         let target = miden_project::Target::new(
             miden_project::TargetType::Library,
             "default",
-            ast::Path::new("empty"),
+            ast::Path::new(namespace),
             miden_project::Uri::new("lib/src.rs"),
         );
         let dependency = miden_project::Dependency::new(
@@ -1478,6 +1515,7 @@ pub proc receive_asset(asset: word)
 end
 "#;
 
+    /// An account-component dependency without embedded WIT gets a synthesized interface.
     #[test]
     fn account_component_without_wit_gets_a_synthesized_interface() {
         // Both resolution flows reach the synthesis: the compiler's artifact map (recording
@@ -1520,6 +1558,37 @@ end
         std::fs::remove_dir_all(temp_root).unwrap();
     }
 
+    /// A component whose synthesized WIT package id is the consumer's own is skipped.
+    #[test]
+    fn synthesized_package_id_of_the_consumer_is_skipped() {
+        let temp_root = fixture_root("synthesized-own-id");
+        let package_path = temp_root.join("miden-test-wallet.masp");
+        write_component_fixture(&package_path, WALLET_COMPONENT);
+
+        let collected = with_test_package_cache_dir(None, || {
+            collect_dependency_wit_sources(
+                &temp_root,
+                &consumer_in_namespace_with_path_dependency(
+                    "miden::test_wallet::consumer",
+                    "wallet",
+                    &package_path,
+                ),
+            )
+        })
+        .expect("a clashing synthesized id does not fail the collection");
+        assert!(collected.sources.is_empty());
+        assert_eq!(collected.skipped.len(), 1);
+        assert_eq!(
+            collected.skipped[0].reason,
+            "its synthesized WIT package id `miden:test-wallet@0.0.0` is this crate's own package \
+             id; provide a WIT with another id via the override \
+             package.metadata.miden.dependencies.wallet.wit in miden-project.toml"
+        );
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    /// A library dependency without embedded WIT is skipped with an actionable reason.
     #[test]
     fn library_without_wit_is_still_skipped() {
         // Only account components have an interface to synthesize; a library without WIT
@@ -1553,6 +1622,7 @@ end
         std::fs::remove_dir_all(temp_root).unwrap();
     }
 
+    /// A component whose WIT synthesis fails is skipped with the generator's error as the reason.
     #[test]
     fn account_component_without_interface_procedures_reports_the_generator_error() {
         let temp_root = fixture_root("synthesis-error");
@@ -1589,6 +1659,7 @@ end
         std::fs::remove_dir_all(temp_root).unwrap();
     }
 
+    /// Unparsable synthesized WIT skips the dependency, unparsable embedded WIT is an error.
     #[test]
     fn unparsable_wit_is_skipped_only_when_synthesized() {
         // The generator validates every name it emits, so no fixture package yields synthesized
