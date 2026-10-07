@@ -74,7 +74,7 @@ const CORE_ITEMS: &[CoreItem] = &[
     },
     CoreItem {
         name: "account-id",
-        matches: |ty| struct_shape(ty, &[("prefix", is_felt), ("suffix", is_felt)]),
+        matches: |ty| struct_shape(ty, &[("prefix", Type::is_felt), ("suffix", Type::is_felt)]),
         felts: 2,
     },
     CoreItem {
@@ -95,11 +95,6 @@ const CORE_ITEMS: &[CoreItem] = &[
         felts: 1,
     },
 ];
-
-/// `felt`, the core `felt`.
-fn is_felt(ty: &Type) -> bool {
-    matches!(ty, Type::Felt)
-}
 
 /// `[felt; 4]`, the core `word`.
 fn is_word(ty: &Type) -> bool {
@@ -141,7 +136,7 @@ impl TypeSet {
     /// type has no WIT form here.
     ///
     /// On an error the set may keep part of what the type needed, so a caller that must not see
-    /// that maps on a clone, as `generate` does for each function.
+    /// that maps on a clone, as `function` (in the crate root) does for each procedure.
     pub fn map(&mut self, ty: &Type) -> Result<Mapped, String> {
         match ty {
             Type::Felt => {
@@ -211,11 +206,13 @@ impl TypeSet {
             let mapped = self.map(&field.ty)?;
             values += mapped.values;
             felts += mapped.felts;
-            fields.push((field_name, naming::ident(field_name), mapped.wit));
+            let ident = naming::ident(field_name)
+                .map_err(|err| format!("unsupported type `{name}`: field {err}"))?;
+            fields.push((field_name, ident, mapped.wit));
         }
         unique_idents(&name, "fields", fields.iter().map(|(from, to, _)| (&***from, to.as_str())))?;
         let fields = fields.into_iter().map(|(_, ident, wit)| (ident, wit)).collect();
-        let wit = naming::escape(wit_name.clone());
+        let wit = local_ident(&name)?;
         self.declare(wit_name, Decl::Record(fields))?;
         Ok(Mapped { wit, values, felts })
     }
@@ -251,8 +248,14 @@ impl TypeSet {
                 "unsupported type `{name}`: an enum with non-contiguous discriminants"
             ));
         }
-        let cases: Vec<String> =
-            en.variants().iter().map(|variant| naming::ident(&variant.name)).collect();
+        let cases = en
+            .variants()
+            .iter()
+            .map(|variant| {
+                naming::ident(&variant.name)
+                    .map_err(|err| format!("unsupported type `{name}`: case {err}"))
+            })
+            .collect::<Result<Vec<String>, String>>()?;
         unique_idents(
             name,
             "cases",
@@ -261,7 +264,7 @@ impl TypeSet {
                 .map(|variant| &*variant.name)
                 .zip(cases.iter().map(String::as_str)),
         )?;
-        let wit = naming::escape(wit_name.clone());
+        let wit = local_ident(name)?;
         self.declare(wit_name, Decl::Enum(cases))?;
         Ok(Mapped::scalar(&wit, 1))
     }
@@ -293,8 +296,14 @@ impl TypeSet {
     }
 }
 
-/// Check that the members of the type `type_name` (its `kind`, e.g. "fields") keep distinct,
-/// non-empty WIT names; `members` pairs each manifest name with its WIT name.
+/// The WIT spelling of the local declaration of the manifest type `name`, or why it has none.
+fn local_ident(name: &str) -> Result<String, String> {
+    naming::ident(naming::short_name(name))
+        .map_err(|err| format!("unsupported type `{name}`: {err}"))
+}
+
+/// Check that the members of the type `type_name` (its `kind`, e.g. "fields") keep distinct WIT
+/// names; `members` pairs each manifest name with its WIT name.
 fn unique_idents<'a>(
     type_name: &str,
     kind: &str,
@@ -302,9 +311,6 @@ fn unique_idents<'a>(
 ) -> Result<(), String> {
     let mut seen: Vec<(&str, &str)> = Vec::new();
     for (from, to) in members {
-        if to.is_empty() {
-            return Err(format!("unsupported type `{type_name}`: `{from}` has no WIT name"));
-        }
         if let Some((other, _)) = seen.iter().find(|(_, seen)| *seen == to) {
             return Err(format!(
                 "unsupported type `{type_name}`: {kind} `{other}` and `{from}` both have the WIT \
@@ -404,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn members_need_distinct_non_empty_wit_names() {
+    fn members_and_types_need_distinct_valid_wit_names() {
         let mut set = TypeSet::default();
         let clash = record("Clash", &[("fooBar", Type::Felt), ("foo_bar", Type::Felt)]);
         assert_eq!(
@@ -413,11 +419,24 @@ mod tests {
              `foo-bar`"
         );
         let empty = record("Empty", &[("__", Type::Felt)]);
-        assert_eq!(set.map(&empty).unwrap_err(), "unsupported type `Empty`: `__` has no WIT name");
-        let cases = c_enum("Slots", &[("SLOT_1", 0), ("SLOT1", 1)]);
+        assert_eq!(
+            set.map(&empty).unwrap_err(),
+            "unsupported type `Empty`: field `__` has no WIT name (derived ``)"
+        );
+        let cases = c_enum("Slots", &[("SLOT_A", 0), ("SlotA", 1)]);
         assert_eq!(
             set.map(&cases).unwrap_err(),
-            "unsupported type `Slots`: cases `SLOT_1` and `SLOT1` both have the WIT name `slot1`"
+            "unsupported type `Slots`: cases `SLOT_A` and `SlotA` both have the WIT name `slot-a`"
+        );
+        let digit_case = c_enum("Digits", &[("_1", 0)]);
+        assert_eq!(
+            set.map(&digit_case).unwrap_err(),
+            "unsupported type `Digits`: case `_1` has no WIT name (derived `1`)"
+        );
+        let digit_type = record("_2", &[("x", Type::Felt)]);
+        assert_eq!(
+            set.map(&digit_type).unwrap_err(),
+            "unsupported type `_2`: `_2` has no WIT name (derived `2`)"
         );
         assert!(set.locals.is_empty());
     }

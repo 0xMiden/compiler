@@ -3,7 +3,7 @@
 use std::fmt::Write;
 
 use crate::{
-    CoreTypes, Skipped,
+    Skipped,
     types::{Decl, TypeSet},
 };
 
@@ -28,28 +28,20 @@ pub struct Document<'a> {
     pub package_version: String,
     /// The package's dependency commitment, for the header.
     pub commitment: String,
-    /// The procedures left out, for the header.
+    /// The procedures left out, for the interface's doc comment.
     pub skipped: &'a [Skipped],
-    /// The WIT package id.
+    /// The WIT package id, as written: segments `%`-escaped.
     pub package_id: &'a str,
-    /// The interface name.
+    /// The interface name, as written: `%`-escaped.
     pub interface: &'a str,
     /// The world name.
     pub world: &'a str,
-    /// Where the core types come from.
-    pub core_types: &'a CoreTypes,
+    /// The fully versioned id of the core-types interface.
+    pub core_types: &'a str,
     /// The used and declared types.
     pub types: &'a TypeSet,
     /// The functions, in order.
     pub functions: &'a [Function],
-}
-
-/// The fully versioned id of the core-types interface, `<ns>:<name>/<interface>@<version>`.
-fn core_types_id(core: &CoreTypes) -> String {
-    match core.package.split_once('@') {
-        Some((name, version)) => format!("{name}/{}@{version}", core.interface),
-        None => format!("{}/{}", core.package, core.interface),
-    }
 }
 
 /// Print `doc` as WIT text.
@@ -60,8 +52,8 @@ pub fn render(doc: &Document<'_>) -> String {
     out
 }
 
-/// Write `doc` as WIT text to `out`: the header comments, the package, the interface and the
-/// world.
+/// Write `doc` as WIT text to `out`: the header comments, the package, the interface with the
+/// left-out procedures in its doc comment, and the world.
 fn write_document(out: &mut String, doc: &Document<'_>) -> std::fmt::Result {
     writeln!(
         out,
@@ -69,12 +61,6 @@ fn write_document(out: &mut String, doc: &Document<'_>) -> std::fmt::Result {
         doc.package_name, doc.package_version
     )?;
     writeln!(out, "// Dependency commitment: {}.", doc.commitment)?;
-    if doc.skipped.is_empty() {
-        writeln!(out, "// Skipped: none")?;
-    }
-    for skipped in doc.skipped {
-        writeln!(out, "// Skipped: {}: {}", skipped.path, skipped.reason)?;
-    }
     writeln!(out, "package {};", doc.package_id)?;
     writeln!(out)?;
 
@@ -82,11 +68,7 @@ fn write_document(out: &mut String, doc: &Document<'_>) -> std::fmt::Result {
     let mut blocks: Vec<String> = Vec::new();
     if !doc.types.core.is_empty() {
         let items: Vec<&str> = doc.types.core.iter().copied().collect();
-        blocks.push(format!(
-            "    use {}.{{{}}};\n",
-            core_types_id(doc.core_types),
-            items.join(", ")
-        ));
+        blocks.push(format!("    use {}.{{{}}};\n", doc.core_types, items.join(", ")));
     }
     for (name, decl) in &doc.types.locals {
         let mut block = String::new();
@@ -120,7 +102,15 @@ fn write_document(out: &mut String, doc: &Document<'_>) -> std::fmt::Result {
         ));
     }
 
-    let interface = crate::naming::escape(doc.interface.to_owned());
+    // wit-bindgen carries interface docs onto the generated bindings, so the left-out procedures
+    // show in the consumer's rustdoc.
+    if doc.skipped.is_empty() {
+        writeln!(out, "/// Left out: none")?;
+    }
+    for skipped in doc.skipped {
+        writeln!(out, "/// Left out: `{}`: {}", skipped.path, skipped.reason)?;
+    }
+    let interface = doc.interface;
     writeln!(out, "interface {interface} {{")?;
     out.push_str(&blocks.join("\n"));
     writeln!(out, "}}")?;
