@@ -31,11 +31,24 @@ miden-standards-wallets-basic-wallet = { wit = "wit/basic-wallet.wit" }
 miden-standards-wallets-basic-wallet = "0.17.0"
 ```
 
-The Rust side stays the same:
+The `#[account]` reference stays the same:
 
 ```rust
 #[account(miden_standards_wallets_basic_wallet::BasicWallet)]
 pub struct Wallet;
+```
+
+Call sites may need to pass inner values where the hand-written WIT used `core-types` aliases:
+the derived interface takes the manifest's types, so a `Tag` becomes its `.inner` (a `u32`), a
+`Recipient` its `.inner` word, and other wrappers plain integers. See
+`examples/std-wallet-tx-script`:
+
+```rust
+// Before (hand-written WIT taking `tag` and `recipient`)
+let note_idx = account.create_note(args.tag, args.note_type, args.recipient);
+
+// After
+let note_idx = account.create_note(args.tag.inner, args.note_type, args.recipient.inner);
 ```
 
 The override is still available, and still takes precedence, for packages that embed no WIT and

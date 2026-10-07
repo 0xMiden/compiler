@@ -30,9 +30,9 @@ pub struct Document<'a> {
     pub commitment: String,
     /// The procedures left out, for the interface's doc comment.
     pub skipped: &'a [Skipped],
-    /// The WIT package id, as written: segments `%`-escaped.
+    /// The WIT package id; its segments are never keywords, so it needs no `%` escape.
     pub package_id: &'a str,
-    /// The interface name, as written: `%`-escaped.
+    /// The interface name; never a keyword, so it needs no `%` escape.
     pub interface: &'a str,
     /// The world name.
     pub world: &'a str,

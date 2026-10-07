@@ -200,9 +200,12 @@ SDK macros derive its interface from the package manifest:
   `NoteTag` is a `u32`, an `AssetAmount` a `felt`. Parameters are named after their type, else
   `argN`;
 - procedures without a typed signature, with parameters beyond 16 stack elements, with types WIT
-  cannot express, whose names have no WIT form or clash, or whose results flatten to more than
-  one value (not callable yet) are left out. The reasons are listed in the interface's doc
-  comment, which the generated Rust bindings carry.
+  cannot express, whose names have no WIT form or clash, with an export path that is not a Miden
+  procedure path, with a name starting with `fpi_` (reserved for the SDK's foreign-procedure
+  imports), or whose results flatten to more than one value (not callable yet) are left out. The
+  reasons are listed in the interface's doc comment, which the generated Rust bindings carry. A
+  `#[foreign_account]` call adds the FPI prefix (`felt, felt, word`) to the 16-element budget, so
+  a procedure with more than 10 parameter elements can only be called natively.
 
 ```toml
 # miden-project.toml

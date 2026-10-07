@@ -379,24 +379,148 @@ end
     assert_eq!(parse(&generated.wit, "my-component").len(), 1);
 }
 
-#[test]
-fn keyword_package_and_interface_names_are_escaped() {
+/// The generation error for a package named `package_name` whose procedures live in `module`.
+fn namespace_error(package_name: &str, module: &str) -> String {
     let mut package = (*assemble_fixture(
-        "miden-list",
-        "miden::test::record",
+        package_name,
+        module,
         "@account_procedure\npub proc ping()\n    nop\nend\n",
     ))
     .clone();
     package.kind = TargetType::AccountComponent;
-    let generated =
-        generate(&PackageInterface::from_package(&package), &Options::default()).unwrap();
-    assert_eq!(generated.package_id, "miden:list@0.0.0");
-    assert_eq!(generated.interface, "record");
-    assert_eq!(generated.world, "record-world");
-    assert!(generated.wit.contains("package miden:%list@0.0.0;\n"), "{}", generated.wit);
-    assert!(generated.wit.contains("interface %record {\n"), "{}", generated.wit);
-    assert!(generated.wit.contains("    export %record;\n"), "{}", generated.wit);
-    assert_eq!(parse(&generated.wit, "record").len(), 1);
+    match generate(&PackageInterface::from_package(&package), &Options::default()) {
+        Err(Error::Namespace(reason)) => reason,
+        other => panic!("expected a namespace error, got {other:?}"),
+    }
+}
+
+#[test]
+fn keyword_package_and_interface_names_are_rejected() {
+    // The SDK macros write the package id and the interface name back into WIT text and Rust
+    // module paths unescaped, so a keyword there has no usable spelling.
+    assert_eq!(
+        namespace_error("miden-test-my-component", "miden::test::record"),
+        "the module `record` is a WIT keyword"
+    );
+    assert_eq!(
+        namespace_error("miden-test-my-component", "miden::test::match"),
+        "the module `match` is a Rust keyword"
+    );
+    assert_eq!(
+        namespace_error("miden-list", "miden::test::my_component"),
+        "the package name `miden-list` has the WIT name `list`, which is a WIT keyword"
+    );
+    assert_eq!(
+        namespace_error("use-foo", "use::test::my_component"),
+        "the namespace `use` is a WIT keyword"
+    );
+}
+
+#[test]
+fn rust_keywords_wit_bindgen_does_not_escape_are_skipped() {
+    let iface = component(
+        r#"
+pub type Seed = struct { gen: felt }
+
+@account_procedure
+pub proc ping()
+    nop
+end
+
+@account_procedure
+pub proc gen()
+    nop
+end
+
+@account_procedure
+pub proc reseed(seed: Seed)
+    drop
+end
+"#,
+    );
+    let generated = generate(&iface, &Options::default()).unwrap();
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(
+        skipped,
+        [
+            (
+                "miden::test::my_component::gen",
+                "the procedure name `gen` would be the Rust keyword `gen` in the generated \
+                 bindings, which wit-bindgen does not escape"
+            ),
+            (
+                "miden::test::my_component::reseed",
+                "unsupported type `Seed`: field `gen` would be the Rust keyword `gen` in the \
+                 generated bindings, which wit-bindgen does not escape"
+            ),
+        ]
+    );
+    assert_eq!(parse(&generated.wit, "my-component").len(), 1);
+}
+
+#[test]
+fn a_function_named_like_a_type_is_skipped_not_its_users() {
+    let iface = component(
+        r#"
+pub type Asset = struct { id: word, value: word }
+
+@account_procedure
+pub proc asset() -> felt
+    nop
+end
+
+@account_procedure
+pub proc receive_asset(asset: Asset)
+    dropw dropw
+end
+"#,
+    );
+    let generated = generate(&iface, &Options::default()).unwrap();
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(
+        skipped,
+        [(
+            "miden::test::my_component::asset",
+            "function `asset` has the name of a type in the interface"
+        )]
+    );
+    assert_eq!(
+        parse(&generated.wit, "my-component"),
+        [(
+            "receive-asset".to_owned(),
+            "miden::test::my_component::receive_asset".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn a_component_whose_every_procedure_is_left_out_has_no_interface() {
+    let iface = component(
+        r#"
+@account_procedure
+pub proc digest() -> word
+    nop
+end
+
+@account_procedure
+pub proc untyped
+    nop
+end
+"#,
+    );
+    let err = generate(&iface, &Options::default()).unwrap_err();
+    let Error::EverythingSkipped(skipped) = &err else {
+        panic!("expected every procedure to be left out, got {err:?}");
+    };
+    assert_eq!(skipped.len(), 2);
+    assert_eq!(
+        err.to_string(),
+        "every interface procedure is left out:\n  `miden::test::my_component::digest`: results \
+         flatten to 4 values; multi-value results of Miden Assembly components are not supported \
+         yet\n  `miden::test::my_component::untyped`: no typed signature"
+    );
 }
 
 #[test]

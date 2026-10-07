@@ -127,9 +127,12 @@ pub fn type_name(ty: &Type) -> Option<String> {
 }
 
 impl TypeSet {
-    /// Whether the interface already has a type named `name`, used or declared.
-    pub fn contains(&self, name: &str) -> bool {
-        self.core.contains(name) || self.locals.iter().any(|(local, _)| local == name)
+    /// The names of the types the interface uses or declares.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.core
+            .iter()
+            .copied()
+            .chain(self.locals.iter().map(|(name, _)| name.as_str()))
     }
 
     /// Map `ty`, recording the core items and declarations it needs. The error is the reason the
@@ -206,7 +209,7 @@ impl TypeSet {
             let mapped = self.map(&field.ty)?;
             values += mapped.values;
             felts += mapped.felts;
-            let ident = naming::ident(field_name)
+            let ident = naming::rust_ident(field_name)
                 .map_err(|err| format!("unsupported type `{name}`: field {err}"))?;
             fields.push((field_name, ident, mapped.wit));
         }
@@ -432,6 +435,12 @@ mod tests {
         assert_eq!(
             set.map(&digit_case).unwrap_err(),
             "unsupported type `Digits`: case `_1` has no WIT name (derived `1`)"
+        );
+        let keyword_field = record("Seed", &[("gen", Type::Felt)]);
+        assert_eq!(
+            set.map(&keyword_field).unwrap_err(),
+            "unsupported type `Seed`: field `gen` would be the Rust keyword `gen` in the \
+             generated bindings, which wit-bindgen does not escape"
         );
         let digit_type = record("_2", &[("x", Type::Felt)]);
         assert_eq!(

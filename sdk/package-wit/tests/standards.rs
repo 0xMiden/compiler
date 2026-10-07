@@ -1,7 +1,7 @@
 //! The WIT interfaces of the `miden-standards` account components, pinned as snapshots.
 //!
-//! Each snapshot is `tests/standards/<package name>.wit`; run with `UPDATE_BINDINGS=1` to
-//! regenerate them.
+//! Each component that has an interface has its snapshot at `tests/standards/<package name>.wit`;
+//! run with `UPDATE_BINDINGS=1` to regenerate them.
 
 use std::path::Path;
 
@@ -26,7 +26,7 @@ use miden_standards::account::{
 };
 use midenc_integration_test_support::testing::bindings::check_generated;
 use midenc_package_interface::PackageInterface;
-use midenc_package_wit::{Generated, Options, generate};
+use midenc_package_wit::{Error, Generated, Options, Skipped, generate};
 
 /// The SDK's core-types package, which every generated document `use`s.
 const MIDEN_WIT: &str = include_str!("../../base-macros/wit/miden.wit");
@@ -73,15 +73,46 @@ fn components() -> Vec<&'static miden_mast_package::Package> {
     .collect()
 }
 
-/// Generate the interface of every component, keyed by package name.
-fn generated() -> Vec<(String, Generated)> {
+/// The components whose every interface procedure is left out, so they have no interface: each
+/// procedure returns more than one value.
+const WITHOUT_INTERFACE: [&str; 4] = [
+    "miden-standards-faucets-policies-mint-allow-all",
+    "miden-standards-faucets-policies-mint-owner-controlled-owner-only",
+    "miden-standards-fees-policies-basic-constant-fee",
+    "miden-standards-inspection-schema-commitment",
+];
+
+/// The generation result of every component, keyed by package name.
+fn results() -> Vec<(String, Result<Generated, Error>)> {
     components()
         .into_iter()
         .map(|package| {
             let name = package.name.to_string();
-            let generated = generate(&PackageInterface::from_package(package), &Options::default())
-                .unwrap_or_else(|err| panic!("{name}: {err}"));
+            (name, generate(&PackageInterface::from_package(package), &Options::default()))
+        })
+        .collect()
+}
+
+/// Generate the interface of every component that has one, keyed by package name.
+fn generated() -> Vec<(String, Generated)> {
+    results()
+        .into_iter()
+        .filter(|(name, _)| !WITHOUT_INTERFACE.contains(&name.as_str()))
+        .map(|(name, result)| {
+            let generated = result.unwrap_or_else(|err| panic!("{name}: {err}"));
             (name, generated)
+        })
+        .collect()
+}
+
+/// The procedures left out of each component in [`WITHOUT_INTERFACE`].
+fn left_out_entirely() -> Vec<(String, Vec<Skipped>)> {
+    results()
+        .into_iter()
+        .filter(|(name, _)| WITHOUT_INTERFACE.contains(&name.as_str()))
+        .map(|(name, result)| match result {
+            Err(Error::EverythingSkipped(skipped)) => (name, skipped),
+            other => panic!("{name}: expected every procedure to be left out, got {other:?}"),
         })
         .collect()
 }
@@ -90,9 +121,23 @@ fn generated() -> Vec<(String, Generated)> {
 fn every_component_matches_its_snapshot() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let generated = generated();
-    assert_eq!(generated.len(), 33);
+    assert_eq!(generated.len(), 33 - WITHOUT_INTERFACE.len());
     for (name, generated) in &generated {
         check_generated(manifest_dir, &format!("tests/standards/{name}.wit"), &generated.wit);
+    }
+}
+
+#[test]
+fn components_without_an_interface_list_their_procedures() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let left_out = left_out_entirely();
+    assert_eq!(left_out.len(), WITHOUT_INTERFACE.len());
+    for (name, skipped) in left_out {
+        assert!(!skipped.is_empty(), "{name}");
+        assert!(
+            !manifest_dir.join(format!("tests/standards/{name}.wit")).exists(),
+            "{name} has no interface, so no snapshot"
+        );
     }
 }
 
@@ -130,7 +175,12 @@ fn generated_and_skipped_totals() {
         .iter()
         .map(|(_, generated)| generated.wit.matches("@external-id(").count())
         .sum();
-    let skipped: Vec<_> = generated.iter().flat_map(|(_, generated)| &generated.skipped).collect();
+    let left_out = left_out_entirely();
+    let skipped: Vec<&Skipped> = generated
+        .iter()
+        .flat_map(|(_, generated)| &generated.skipped)
+        .chain(left_out.iter().flat_map(|(_, skipped)| skipped))
+        .collect();
     assert_eq!((functions, skipped.len()), (93, 27));
     // Every standard procedure has a typed signature the mapping covers; the ones left out all
     // return more than one value (a word, an asset, a struct, or several results).
