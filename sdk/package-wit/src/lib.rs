@@ -22,7 +22,7 @@ use midenc_package_interface::{PackageInterface, ProcedureItem};
 use self::{emit::Function, types::TypeSet};
 
 /// The most operand stack elements the parameters of a direct cross-context call may occupy.
-const MAX_PARAM_FELTS: usize = 16;
+const MAX_PARAM_FELTS: usize = midenc_package_interface::abi::MAX_STACK_ELEMENTS;
 
 /// Where the SDK core types live.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +100,8 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
     let interface = naming::kebab(&leaf);
     let world = format!("{interface}-world");
 
+    // `TypeSet::map` may leave partial state behind on failure, so each function is mapped on a
+    // clone (see `function`) that replaces the set only on success.
     let mut types = TypeSet::default();
     let mut functions: Vec<Function> = Vec::new();
     let mut skipped = Vec::new();
@@ -171,6 +173,12 @@ fn function(
     types: &TypeSet,
     functions: &[Function],
 ) -> Result<(Function, TypeSet), String> {
+    // The path is written into `@external-id("...")`, which has no escapes.
+    if path.contains(['"', '\\']) {
+        return Err(
+            "the export path contains a `\"` or `\\`, which `@external-id` cannot spell".to_owned()
+        );
+    }
     let mut types = types.clone();
     let name = naming::ident(procedure.name());
 
@@ -193,14 +201,18 @@ fn function(
              direct call can pass"
         ));
     }
+    // Only results that flatten to at most one value are offered. This is a deliberate
+    // restriction, not a compiler limit (multi-value import results are lowered through an
+    // out-pointer): the stack convention for multi-value results of MASM callees has not been
+    // validated yet.
     let result_values: usize = results.iter().map(|mapped| mapped.values).sum();
     let result = match results.as_slice() {
         [] => None,
         [single] if single.values == 1 => Some(single.wit.clone()),
         _ => {
             return Err(format!(
-                "results flatten to {result_values} values; only a single-value result can cross \
-                 a call"
+                "results flatten to {result_values} values; multi-value results of Miden Assembly \
+                 components are not supported yet"
             ));
         }
     };

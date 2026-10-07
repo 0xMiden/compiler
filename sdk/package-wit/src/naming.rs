@@ -2,51 +2,7 @@
 
 use std::{collections::BTreeSet, fmt::Display};
 
-/// The words WIT reserves; an identifier spelled like one must be written `%name`.
-const KEYWORDS: &[&str] = &[
-    "as",
-    "async",
-    "bool",
-    "borrow",
-    "char",
-    "constructor",
-    "enum",
-    "error-context",
-    "export",
-    "f32",
-    "f64",
-    "flags",
-    "from",
-    "func",
-    "future",
-    "import",
-    "include",
-    "interface",
-    "list",
-    "option",
-    "own",
-    "package",
-    "record",
-    "resource",
-    "result",
-    "s16",
-    "s32",
-    "s64",
-    "s8",
-    "static",
-    "stream",
-    "string",
-    "tuple",
-    "type",
-    "u16",
-    "u32",
-    "u64",
-    "u8",
-    "use",
-    "variant",
-    "with",
-    "world",
-];
+use midenc_frontend_wasm_metadata::namespace::WIT_KEYWORDS;
 
 /// Convert a Miden identifier to kebab case: `receive_asset` → `receive-asset`, `NoteType` →
 /// `note-type`, `PRIVATE` → `private`.
@@ -84,7 +40,9 @@ pub fn kebab(name: &str) -> String {
         segments.push(current);
     }
 
-    // A WIT word cannot start with a digit, so `slot_1` joins its digits to the previous word.
+    // WIT accepts a digit-leading word after the first one (`slot-1`). The digits are still
+    // joined to the previous word (`slot_1` → `slot1`) because that spelling round-trips through
+    // the heck case conversions of the Rust bindings.
     let mut out = String::new();
     for segment in segments {
         if !out.is_empty() && !segment.starts_with(|c: char| c.is_ascii_digit()) {
@@ -102,7 +60,8 @@ pub fn ident(name: &str) -> String {
 
 /// `%`-escape a kebab-case identifier when it is a WIT keyword.
 pub fn escape(kebab: String) -> String {
-    if KEYWORDS.contains(&kebab.as_str()) {
+    // The shared keyword list spells keywords as snake_case segments (`error_context`).
+    if WIT_KEYWORDS.contains(&kebab.replace('-', "_").as_str()) {
         format!("%{kebab}")
     } else {
         kebab
@@ -184,6 +143,8 @@ mod tests {
         assert_eq!(ident("type"), "%type");
         assert_eq!(ident("Record"), "%record");
         assert_eq!(ident("asset"), "asset");
+        assert_eq!(ident("map"), "%map");
+        assert_eq!(ident("error_context"), "%error-context");
     }
 
     #[test]

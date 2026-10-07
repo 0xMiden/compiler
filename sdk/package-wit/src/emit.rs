@@ -60,6 +60,8 @@ pub fn render(doc: &Document<'_>) -> String {
     out
 }
 
+/// Write `doc` as WIT text to `out`: the header comments, the package, the interface and the
+/// world.
 fn write_document(out: &mut String, doc: &Document<'_>) -> std::fmt::Result {
     writeln!(
         out,
