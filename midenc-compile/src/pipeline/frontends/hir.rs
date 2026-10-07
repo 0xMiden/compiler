@@ -1185,7 +1185,9 @@ builtin.module public @outer {
     /// A package must export at least one procedure to be constructible, so rather than
     /// hand-building a MAST forest this borrows the compiler's own intrinsics package.
     fn any_package() -> MastPackage {
-        (*midenc_codegen_masm::intrinsics::load()).clone()
+        let session = testing::session_linked_to_the_toolchain();
+        (*midenc_codegen_masm::intrinsics::load(&session).expect("the intrinsics should load"))
+            .clone()
     }
 
     /// Post-processing a target this frontend never compiled is an invariant violation.
@@ -1197,7 +1199,7 @@ builtin.module public @outer {
         let cx = TargetContext::for_testing(&assembly, context(), TargetRole::Root, &state);
 
         let frontend = HIR_FRONTEND.instantiate(cx.session());
-        let mut package = (*midenc_codegen_masm::intrinsics::load()).clone();
+        let mut package = any_package();
         let err = frontend
             .post_process(&mut package, &cx)
             .expect_err("nothing was compiled for this target");

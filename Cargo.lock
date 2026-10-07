@@ -3064,6 +3064,7 @@ dependencies = [
  "miden-base-sys",
  "miden-field",
  "miden-field-repr",
+ "miden-intrinsics-sys",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
  "miden-tx-script-args",
@@ -3217,8 +3218,13 @@ name = "miden-base-sys"
 version = "0.15.0"
 dependencies = [
  "miden-field-repr",
+ "miden-intrinsics-sys",
  "miden-protocol",
+ "miden-sdk-bindgen",
+ "miden-sdk-build-script-support",
  "miden-stdlib-sys",
+ "midenc-integration-test-support",
+ "midenc-package-interface",
 ]
 
 [[package]]
@@ -3516,6 +3522,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e392e0a8c34b32671012b439de35fa8987bf14f0f8aac279b97f8b8cc6e263b"
 dependencies = [
  "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "miden-intrinsics-sys"
+version = "0.15.0"
+dependencies = [
+ "miden-field",
+ "miden-sdk-build-script-support",
 ]
 
 [[package]]
@@ -3974,8 +3988,31 @@ name = "miden-sdk-alloc"
 version = "0.15.0"
 
 [[package]]
+name = "miden-sdk-bindgen"
+version = "0.15.0"
+dependencies = [
+ "miden-assembly",
+ "miden-assembly-syntax",
+ "miden-core",
+ "miden-mast-package",
+ "miden-thiserror",
+ "midenc-expect-test",
+ "midenc-integration-test-support",
+ "midenc-package-interface",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "miden-sdk-build-script-support"
 version = "0.15.0"
+dependencies = [
+ "miden-mast-package",
+ "miden-sdk-bindgen",
+ "miden-sdk-build-script-support",
+ "midenc-frontend-wasm-metadata",
+ "midenc-package-interface",
+ "toml 1.1.4+spec-1.1.0",
+]
 
 [[package]]
 name = "miden-serde-utils"
@@ -4031,7 +4068,11 @@ dependencies = [
 name = "miden-stdlib-sys"
 version = "0.15.0"
 dependencies = [
- "miden-field",
+ "miden-intrinsics-sys",
+ "miden-sdk-bindgen",
+ "miden-sdk-build-script-support",
+ "midenc-integration-test-support",
+ "midenc-package-interface",
 ]
 
 [[package]]
@@ -4223,7 +4264,6 @@ dependencies = [
  "miden-mast-package",
  "miden-processor",
  "miden-thiserror",
- "miden-utils-sync",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-hir",
@@ -4233,7 +4273,6 @@ dependencies = [
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-analysis",
- "midenc-log",
  "midenc-session",
  "petgraph 0.8.3",
  "proptest",
@@ -4255,6 +4294,7 @@ dependencies = [
  "miden-package-registry",
  "miden-thiserror",
  "midenc-codegen-masm",
+ "midenc-dialect-arith",
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-frontend-masm",
@@ -4263,6 +4303,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-analysis",
  "midenc-hir-transform",
+ "midenc-package-interface",
  "midenc-session",
  "sha2",
  "tempfile",
@@ -4392,6 +4433,7 @@ dependencies = [
  "log",
  "miden-assembly",
  "miden-core",
+ "miden-mast-package",
  "miden-thiserror",
  "midenc-codegen-masm",
  "midenc-dialect-arith",
@@ -4403,6 +4445,7 @@ dependencies = [
  "midenc-frontend-wasm-metadata",
  "midenc-hir",
  "midenc-hir-symbol",
+ "midenc-package-interface",
  "midenc-session",
  "wasm-encoder 0.248.0",
  "wasmparser 0.248.0",
@@ -4576,6 +4619,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-integration-protocol-tests"
+version = "0.1.0"
+dependencies = [
+ "miden-assembly",
+ "miden-core",
+ "miden-debug",
+ "miden-mast-package",
+ "miden-protocol",
+ "midenc-expect-test",
+ "midenc-frontend-wasm",
+ "midenc-integration-test-support",
+ "midenc-session",
+]
+
+[[package]]
 name = "midenc-integration-test-support"
 version = "0.1.0"
 dependencies = [
@@ -4589,8 +4647,7 @@ dependencies = [
  "miden-debug",
  "miden-mast-package",
  "miden-processor",
- "miden-protocol",
- "miden-standards",
+ "miden-thiserror",
  "midenc-compile",
  "midenc-expect-test",
  "midenc-frontend-wasm",
@@ -4618,7 +4675,6 @@ dependencies = [
  "miden-debug",
  "miden-mast-package",
  "miden-processor",
- "miden-protocol",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-hir",
@@ -4654,6 +4710,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-package-interface"
+version = "0.15.0"
+dependencies = [
+ "miden-assembly",
+ "miden-assembly-syntax",
+ "miden-mast-package",
+ "miden-thiserror",
+ "smallvec",
+]
+
+[[package]]
 name = "midenc-session"
 version = "0.11.0"
 dependencies = [
@@ -4662,19 +4729,19 @@ dependencies = [
  "hashbrown 0.17.1",
  "inventory",
  "log",
+ "miden-assembly",
  "miden-assembly-syntax",
  "miden-assembly-syntax-cst",
  "miden-core",
- "miden-core-lib",
  "miden-debug-types",
  "miden-mast-package",
  "miden-package-registry",
  "miden-project",
- "miden-protocol",
  "miden-thiserror",
  "midenc-frontend-wasm-metadata",
  "midenc-hir-macros",
  "midenc-hir-symbol",
+ "midenc-package-interface",
  "parking_lot",
  "rustc-hash",
  "smallvec",

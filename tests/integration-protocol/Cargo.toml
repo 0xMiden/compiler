@@ -1,0 +1,29 @@
+[package]
+name = "midenc-integration-protocol-tests"
+# Never published; this version is deliberately frozen and meaningless.
+version = "0.1.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+miden-assembly.workspace = true
+miden-core = { workspace = true, features = ["testing"] }
+miden-debug = { workspace = true, features = ["proptest", "std"] }
+miden-mast-package.workspace = true
+miden-protocol = { workspace = true, features = ["std"] }
+midenc-expect-test.workspace = true
+midenc-frontend-wasm.workspace = true
+midenc-session.workspace = true
+
+# For accessing shared compiler test builders and helpers
+midenc-integration-test-support.workspace = true

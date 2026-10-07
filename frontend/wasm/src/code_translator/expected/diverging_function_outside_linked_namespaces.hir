@@ -1,0 +1,16 @@
+builtin.module private @noname attributes { reserved_memory = #builtin.u64<65536> } {
+    builtin.function private extern("C") @core::ptr::drop_in_place(%0: i32) {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+        ub.unreachable;
+    ^block4:
+
+    };
+    builtin.function public extern("C") @probe(%1: i32) {
+        hir.store_local %1 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+        %2 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+        hir.exec ::@root_ns:root@1.0.0::@noname::@core::ptr::drop_in_place(%2) : extern("C") (i32) -> ();
+        cf.br ^block6;
+    ^block6:
+        builtin.ret;
+    };
+};

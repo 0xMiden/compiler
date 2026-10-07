@@ -347,22 +347,22 @@ end
 
 # Shift two 32-bit words by the given offset.
 #
-# Returns three 32-bit chunks [chunk_lo, chunk_mid, chunk_hi]
-pub proc offset_dw # [value_hi, value_lo, offset]
+# Returns three 32-bit chunks [chunk_hi, chunk_mid, chunk_lo]
+pub proc offset_dw # [value_lo, value_hi, offset]
     dup.0
-    dup.3 u32shl # [chunk_hi, value_hi, value_lo, offset]
+    dup.3 u32shl # [chunk_lo, value_lo, value_hi, offset]
 
-    movdn.3      # [value_hi, value_lo, offset, chunk_hi]
-    push.32 dup.3 u32wrapping_sub # [32 - offset, value_hi, value_lo, offset, chunk_hi]
-    u32shr       # [ chunk_mid_hi, value_lo, offset, chunk_hi]
-    dup.1        # [ value_lo, chunk_mid_hi, value_lo, offset, chunk_hi]
-    dup.3        # [ offset, value_lo, chunk_mid_hi, value_lo, offset, chunk_hi]
-    u32shl       # [ chunk_mid_lo, chunk_mid_hi, value_lo, offset, chunk_hi]
-    u32or        # [ chunk_mid, value_lo, offset, chunk_hi]
+    movdn.3      # [value_lo, value_hi, offset, chunk_lo]
+    push.32 dup.3 u32wrapping_sub # [32 - offset, value_lo, value_hi, offset, chunk_lo]
+    u32shr       # [ chunk_mid_lo, value_hi, offset, chunk_lo]
+    dup.1        # [ value_hi, chunk_mid_lo, value_hi, offset, chunk_lo]
+    dup.3        # [ offset, value_hi, chunk_mid_lo, value_hi, offset, chunk_lo]
+    u32shl       # [ chunk_mid_hi, chunk_mid_lo, value_hi, offset, chunk_lo]
+    u32or        # [ chunk_mid, value_hi, offset, chunk_lo]
 
-    movdn.2      # [ value_lo, offset, chunk_mid, chunk_hi]
-    push.32 movup.2 u32wrapping_sub # [32 - offset, value_lo, offset, chunk_mid, chunk_hi]
-    u32shr       # [ chunk_lo, chunk_mid, chunk_hi]
+    movdn.2      # [ value_hi, offset, chunk_mid, chunk_lo]
+    push.32 movup.2 u32wrapping_sub # [32 - offset, value_hi, chunk_mid, chunk_lo]
+    u32shr       # [ chunk_hi, chunk_mid, chunk_lo]
 end
 
 # Load two 32-bit words to the operand stack
@@ -383,13 +383,13 @@ pub proc load_dw # [addr, offset]
     else
         # unaligned; an unaligned double-word spans three elements
         #
-        # convert offset from bytes to bitcount from RHS of tuple (32 - offset * 8)
-        swap.1 push.8 mul push.32 swap.1 sub swap.1        # [addr, bit_offset]
+        # convert offset from bytes to rshift, the bitcount from RHS of tuple (32 - offset * 8)
+        swap.1 push.8 mul push.32 swap.1 sub swap.1        # [addr, rshift]
 
         # load the three elements containing the double-word on the stack and re-align
-        dup.0 mem_load                                     # [e0, addr, bit_offset]
-        dup.1 push.1 u32overflowing_add assertz mem_load   # [e1, e0, addr, bit_offset]
-        movup.2 push.2 u32overflowing_add assertz mem_load # [e2, e1, e0, bit_offset]
+        dup.0 mem_load                                     # [e0, addr, rshift]
+        dup.1 push.1 u32overflowing_add assertz mem_load   # [e1, e0, addr, rshift]
+        movup.2 push.2 u32overflowing_add assertz mem_load # [e2, e1, e0, rshift]
         exec.realign_dw
     end
 end
@@ -415,15 +415,15 @@ pub proc load_qw(addr: ptr<u32, addrspace(felt)>, offset: u8) -> u128
     else
         # unaligned; an unaligned quad-word spans five elements
         #
-        # convert offset from bytes to bitcount from RHS of tuple (32 - offset * 8)
-        swap.1 push.8 mul push.32 swap.1 sub swap.1        # [addr, bit_offset]
+        # convert offset from bytes to rshift, the bitcount from RHS of tuple (32 - offset * 8)
+        swap.1 push.8 mul push.32 swap.1 sub swap.1        # [addr, rshift]
 
         # load the five elements containing the quad-word on the stack and re-align
-        dup.0 mem_load                                     # [e0, addr, bit_offset]
-        dup.1 push.1 u32overflowing_add assertz mem_load   # [e1, e0, addr, bit_offset]
-        dup.2 push.2 u32overflowing_add assertz mem_load   # [e2, e1, e0, addr, bit_offset]
-        dup.3 push.3 u32overflowing_add assertz mem_load   # [e3, e2, e1, e0, addr, bit_offset]
-        movup.4 push.4 u32overflowing_add assertz mem_load # [e4, e3, e2, e1, e0, bit_offset]
+        dup.0 mem_load                                     # [e0, addr, rshift]
+        dup.1 push.1 u32overflowing_add assertz mem_load   # [e1, e0, addr, rshift]
+        dup.2 push.2 u32overflowing_add assertz mem_load   # [e2, e1, e0, addr, rshift]
+        dup.3 push.3 u32overflowing_add assertz mem_load   # [e3, e2, e1, e0, addr, rshift]
+        movup.4 push.4 u32overflowing_add assertz mem_load # [e4, e3, e2, e1, e0, rshift]
         exec.realign_qw
     end
 end
@@ -547,55 +547,55 @@ end
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
 # which is the offset of the first byte, in the 32-bit representation of that element.
-pub proc store_dw # [addr, offset, value_hi, value_lo]
+pub proc store_dw # [addr, offset, value_lo, value_hi]
     # check for alignment and offset validity
     dup.1 eq.0   # [offset == 0, addr, offset]
     # offset must be < 4
     dup.2 push.4 u32lt assert
     # if the pointer is naturally aligned..
-    if.true  # [addr, offset, value_hi, value_lo]
+    if.true  # [addr, offset, value_lo, value_hi]
         # drop byte offset
-        swap.1 drop   # [addr, value_hi, value_lo]
-        swap.1 dup.1  # [addr, value_hi, addr, value_lo]
-        mem_store     # [addr, value_lo]
-        push.1 u32overflowing_add assertz # [addr + 1, value_lo]
+        swap.1 drop   # [addr, value_lo, value_hi]
+        swap.1 dup.1  # [addr, value_lo, addr, value_hi]
+        mem_store     # [addr, value_hi]
+        push.1 u32overflowing_add assertz # [addr + 1, value_hi]
         mem_store
-    else     # [addr, offset, value_hi, value_lo]
+    else     # [addr, offset, value_lo, value_hi]
         # unaligned; an unaligned double-word spans three elements
         #
         # convert offset from bytes to bits
-        swap.1 push.8 u32wrapping_mul swap.1   # [addr, bit_offset, value_hi, value_lo]
+        swap.1 push.8 u32wrapping_mul swap.1   # [addr, bit_offset, value_lo, value_hi]
 
-        movdn.3        # [bit_offset, value_hi, value_lo, addr]
-        dup.0 movdn.4  # [bit_offset, value_hi, value_lo, addr, bit_offset]
-        movdn.2        # [value_hi, value_lo, bit_offset, addr, bit_offset]
-        exec.offset_dw # [chunk_lo, chunk_mid, chunk_hi, addr, bit_offset]
+        movdn.3        # [bit_offset, value_lo, value_hi, addr]
+        dup.0 movdn.4  # [bit_offset, value_lo, value_hi, addr, bit_offset]
+        movdn.2        # [value_lo, value_hi, bit_offset, addr, bit_offset]
+        exec.offset_dw # [chunk_hi, chunk_mid, chunk_lo, addr, bit_offset]
 
         # compute the bit shift
-        push.32 movup.5 sub           # [32 - bit_offset, lo, mid, hi, addr]
+        push.32 movup.5 sub           # [32 - bit_offset, hi, mid, lo, addr]
 
         # compute the masks
-        push.4294967295 swap.1 u32shr # [mask_hi, lo, mid, hi, addr]
-        dup.0 u32not                  # [mask_lo, mask_hi, lo, mid, hi, addr]
+        push.4294967295 swap.1 u32shr # [mask_lo, hi, mid, lo, addr]
+        dup.0 u32not                  # [mask_hi, mask_lo, hi, mid, lo, addr]
 
-        # combine the bits of the lo and hi chunks with their corresponding elements, so that we
+        # combine the bits of the hi and lo chunks with their corresponding elements, so that we
         # do not overwrite memory that is out of bounds of the actual value being stored.
         #
-        # 1. load e2 (lo)
+        # 1. load e2 (hi)
         dup.5 push.2 u32overflowing_add assertz mem_load
-        # 2. mask e2 (lo)
-        u32and                       # [e2_masked, mask_hi, lo, mid, hi, addr]
-        # 3. load e0 (hi)
-        dup.5 mem_load               # [e0, e2_masked, mask_hi, lo, mid, hi, addr]
-        # 4. mask e0 (hi)
-        movup.2 u32and               # [e0_masked, e2_masked, lo, mid, hi, addr]
-        # 5. combine e2 & lo
-        movdn.2 u32or                # [e2', e0_masked, mid, hi, addr]
+        # 2. mask e2 (hi)
+        u32and                       # [e2_masked, mask_lo, hi, mid, lo, addr]
+        # 3. load e0 (lo)
+        dup.5 mem_load               # [e0, e2_masked, mask_lo, hi, mid, lo, addr]
+        # 4. mask e0 (lo)
+        movup.2 u32and               # [e0_masked, e2_masked, hi, mid, lo, addr]
+        # 5. combine e2 & hi
+        movdn.2 u32or                # [e2', e0_masked, mid, lo, addr]
         # 6. store e2
-        dup.4 add.2 mem_store        # [e0_masked, mid, hi, addr]
+        dup.4 add.2 mem_store        # [e0_masked, mid, lo, addr]
         # 7. store e1 (mid)
-        swap.1 dup.3 add.1 mem_store # [e0_masked, hi, addr]
-        # 8. combine e0 & hi
+        swap.1 dup.3 add.1 mem_store # [e0_masked, lo, addr]
+        # 8. combine e0 & lo
         u32or                        # [e0', addr]
         # 9. store e0
         swap.1 mem_store             # []

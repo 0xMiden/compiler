@@ -685,7 +685,7 @@ end
         output_types: OutputTypes,
         configure: impl FnOnce(&mut Options),
     ) -> Rc<Context> {
-        let mut options = Box::new(Options::default());
+        let mut options = Box::new(testing::options_linked_to_the_toolchain());
         configure(&mut options);
         let options = options.with_output_types(output_types, None);
         let source_manager = Arc::new(DefaultSourceManager::default());

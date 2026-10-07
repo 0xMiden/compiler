@@ -446,6 +446,44 @@ fn capturing_context() -> (Rc<Context>, alloc::sync::Arc<CaptureEmitter>) {
     (Rc::new(Context::new(Rc::new(session))), emitter)
 }
 
+/// A [`Context`] whose session's sysroot is the toolchain under test.
+///
+/// Needed only by tests that resolve the compiler intrinsics against a real linked core:
+/// `intrinsics::load` assembles the intrinsics per session against whatever core the session
+/// links, rather than an embedded package built for no toolchain in particular, so exercising it
+/// takes a session that can actually resolve one.
+///
+/// The toolchain is `MIDEN_SYSROOT` when it is set, and otherwise the one `Options::default()`
+/// derives from `MIDENUP_HOME` and `MIDENUP_TOOLCHAIN`; one of the two must name a toolchain.
+fn context_linked_to_the_toolchain() -> Rc<Context> {
+    let sysroot = match std::env::var_os("MIDEN_SYSROOT") {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => Options::default().sysroot.expect(
+            "this test needs a Miden toolchain: set MIDEN_SYSROOT to one, or set MIDENUP_HOME and \
+             MIDENUP_TOOLCHAIN so that one can be derived",
+        ),
+    };
+    let defaults = Options::default();
+    let with_sysroot = Options::new(
+        None,
+        None,
+        defaults.current_dir.clone(),
+        defaults.target_dir.clone(),
+        None,
+        Some(sysroot),
+    );
+    let options = alloc::boxed::Box::new(Options {
+        sysroot: with_sysroot.sysroot,
+        search_paths: with_sysroot.search_paths,
+        ..defaults
+    })
+    .with_output_types(Default::default(), None);
+    let source_manager = alloc::sync::Arc::new(DefaultSourceManager::default());
+    let session = Session::new(InputFile::empty(), options, None, source_manager)
+        .expect("should build a session");
+    Rc::new(Context::new(Rc::new(session)))
+}
+
 fn context_with_entrypoint(entrypoint: &str) -> Rc<Context> {
     let options = Options {
         entrypoint: Some(entrypoint.to_string()),
@@ -711,7 +749,7 @@ fn a_marked_start_is_the_final_component_initialization_step() {
 
 #[test]
 fn a_marked_start_remains_resolvable_when_a_synthetic_wrapper_is_rebased() {
-    let context = Rc::new(Context::default());
+    let context = context_linked_to_the_toolchain();
     let op = parse(&context, COMPONENT);
     let mut component = op
         .try_downcast_op::<builtin::Component>()
@@ -730,7 +768,10 @@ fn a_marked_start_remains_resolvable_when_a_synthetic_wrapper_is_rebased() {
         .expect("the marked wrapper must produce rebased assembler inputs");
     let mut assembler = miden_assembly::Assembler::new(context.session().source_manager.clone());
     assembler
-        .link_package(crate::intrinsics::load(), miden_assembly::Linkage::Static)
+        .link_package(
+            crate::intrinsics::load(context.session()).expect("the intrinsics should load"),
+            miden_assembly::Linkage::Static,
+        )
         .expect("the compiler intrinsics should link");
     assembler
         .assemble_library("rebased", sources.root, sources.support)
@@ -1275,12 +1316,15 @@ fn a_component_and_its_supporting_sibling_assemble() {
     fn assembler(session: &Session) -> miden_assembly::Assembler {
         let mut assembler = miden_assembly::Assembler::new(session.source_manager.clone());
         assembler
-            .link_package(crate::intrinsics::load(), miden_assembly::Linkage::Static)
+            .link_package(
+                crate::intrinsics::load(session).expect("the intrinsics should load"),
+                miden_assembly::Linkage::Static,
+            )
             .expect("the compiler intrinsics should link");
         assembler
     }
 
-    let context = Rc::new(Context::default());
+    let context = context_linked_to_the_toolchain();
     let world = parse_world(&context, WORLD_CALLING_ITS_SUPPORTING_SIBLING);
     let lowered = lower_world(world).expect("a supporting module beside a component lowers");
     let target = library_target("hir_ns:test@1.0.0");
@@ -2163,7 +2207,7 @@ builtin.component private @"root_ns:root@1.0.0" {
 /// callee's own module.
 #[test]
 fn a_private_table_callee_is_not_part_of_the_package_surface() {
-    let context = Rc::new(Context::default());
+    let context = context_linked_to_the_toolchain();
     let world = parse_world(&context, WORLD_WITH_A_PRIVATE_TABLE_CALLEE);
     let lowered = lower_world(world).expect("a component with a private table callee lowers");
     let target = library_target("root_ns:root@1.0.0");
@@ -2175,7 +2219,10 @@ fn a_private_table_callee_is_not_part_of_the_package_surface() {
     // intrinsic heap initializer, so this one must link the intrinsics as a real build does.
     let mut assembler = miden_assembly::Assembler::new(context.session().source_manager.clone());
     assembler
-        .link_package(crate::intrinsics::load(), miden_assembly::Linkage::Static)
+        .link_package(
+            crate::intrinsics::load(context.session()).expect("the intrinsics should load"),
+            miden_assembly::Linkage::Static,
+        )
         .expect("the compiler intrinsics should link");
     let package = assembler
         .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)

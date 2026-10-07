@@ -1,6 +1,7 @@
-use miden_stdlib_sys::{Felt, Word, WordAligned};
+use miden_stdlib_sys::{Felt, Word};
 
 use super::types::{AccountId, AssetAmount, AssetId, BlockNumber};
+use crate::raw::protocol::tx as raw;
 
 /// Number of input felt slots and of output felt slots of the protocol's FPI executor.
 pub const FOREIGN_PROCEDURE_SLOTS: usize = 16;
@@ -111,85 +112,19 @@ impl ForeignProcedureInvocation {
     }
 }
 
-#[allow(improper_ctypes)]
-unsafe extern "C" {
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_reference_block_number"]
-    pub fn extern_tx_get_reference_block_number() -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_reference_block_commitment"]
-    pub fn extern_tx_get_reference_block_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_block_commitment"]
-    pub fn extern_tx_get_block_commitment(block_number: Felt, ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_block_timestamp"]
-    pub fn extern_tx_get_block_timestamp() -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_input_notes_commitment"]
-    pub fn extern_tx_get_input_notes_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_output_notes_commitment"]
-    pub fn extern_tx_get_output_notes_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_num_input_notes"]
-    pub fn extern_tx_get_num_input_notes() -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_num_output_notes"]
-    pub fn extern_tx_get_num_output_notes() -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_expiration_block_delta"]
-    pub fn extern_tx_get_expiration_block_delta() -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::update_expiration_block_delta"]
-    pub fn extern_tx_update_expiration_block_delta(delta: Felt);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_tx_script_root"]
-    pub fn extern_tx_get_tx_script_root(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::execute_foreign_procedure_indirect"]
-    pub fn extern_tx_execute_foreign_procedure(
-        invocation: *const ForeignProcedureInvocation,
-        ptr: *mut ForeignProcedureOutputs,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::compute_fee"]
-    fn extern_tx_compute_fee(
-        num_extra_cycles: Felt,
-        exclude_notes_commitment_0: Felt,
-        exclude_notes_commitment_1: Felt,
-        exclude_notes_commitment_2: Felt,
-        exclude_notes_commitment_3: Felt,
-    ) -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::tx::get_fee_asset_id"]
-    fn extern_tx_get_fee_asset_id(ptr: *mut AssetId);
-}
-
 /// Returns the transaction reference block number.
 pub fn get_reference_block_number() -> BlockNumber {
-    BlockNumber {
-        // The transaction kernel guarantees block numbers fit in a u32.
-        inner: unsafe { extern_tx_get_reference_block_number() },
-    }
+    raw::get_reference_block_number().into()
 }
 
 /// Returns the input notes commitment digest.
 pub fn get_input_notes_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_tx_get_input_notes_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_input_notes_commitment()
 }
 
 /// Returns the block commitment of the reference block.
 pub fn get_reference_block_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_tx_get_reference_block_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_reference_block_commitment()
 }
 
 /// Returns the commitment of the block with the given number.
@@ -197,66 +132,44 @@ pub fn get_reference_block_commitment() -> Word {
 /// Any block up to and including the reference block can be read; the transaction kernel aborts
 /// for later blocks.
 pub fn get_block_commitment(block_number: BlockNumber) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_tx_get_block_commitment(block_number.as_felt(), ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_block_commitment(block_number.as_u32())
 }
 
 /// Returns the timestamp of the reference block, in seconds.
 pub fn get_block_timestamp() -> u32 {
-    // The transaction kernel guarantees block timestamps fit in a u32.
-    let timestamp = unsafe { extern_tx_get_block_timestamp() };
-    timestamp.as_canonical_u64() as u32
+    raw::get_block_timestamp()
 }
 
 /// Returns the total number of input notes consumed by the transaction.
 pub fn get_num_input_notes() -> u32 {
-    // The transaction kernel guarantees note counts fit in a u32.
-    let count = unsafe { extern_tx_get_num_input_notes() };
-    count.as_canonical_u64() as u32
+    raw::get_num_input_notes().into()
 }
 
 /// Returns the number of output notes created so far in the transaction.
 pub fn get_num_output_notes() -> u32 {
-    // The transaction kernel guarantees note counts fit in a u32.
-    let count = unsafe { extern_tx_get_num_output_notes() };
-    count.as_canonical_u64() as u32
+    raw::get_num_output_notes().into()
 }
 
 /// Returns the transaction expiration block delta, or `0` if no expiration delta has been set.
 pub fn get_expiration_block_delta() -> u16 {
-    // Set deltas are kernel-bounded to 1..=u16::MAX; the kernel returns 0 for an unset delta.
-    let delta = unsafe { extern_tx_get_expiration_block_delta() };
-    delta.as_canonical_u64() as u16
+    raw::get_expiration_block_delta()
 }
 
 /// Updates the transaction expiration block delta.
 ///
 /// The transaction kernel accepts deltas in `1..=u16::MAX`.
 pub fn update_expiration_block_delta(delta: u16) {
-    unsafe {
-        extern_tx_update_expiration_block_delta(Felt::from(delta));
-    }
+    raw::update_expiration_block_delta(delta);
 }
 
 /// Returns the transaction script root.
 pub fn get_tx_script_root() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_tx_get_tx_script_root(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_tx_script_root()
 }
 
 /// Returns the output notes commitment digest.
 pub fn get_output_notes_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_tx_get_output_notes_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_output_notes_commitment()
 }
 
 /// Executes `foreign_proc_root` against `foreign_account_id` with raw felt inputs.
@@ -277,13 +190,37 @@ pub fn execute_foreign_procedure(
     foreign_proc_root: Word,
     inputs: ForeignProcedureInputs,
 ) -> ForeignProcedureOutputs {
-    unsafe {
-        let invocation =
-            ForeignProcedureInvocation::new(foreign_account_id, foreign_proc_root, inputs);
-        let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<ForeignProcedureOutputs>::uninit());
-        extern_tx_execute_foreign_procedure(&invocation, ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
+    let invocation = ForeignProcedureInvocation::new(foreign_account_id, foreign_proc_root, inputs);
+    #[cfg(all(target_family = "wasm", miden))]
+    {
+        use core::mem::MaybeUninit;
+
+        use miden_stdlib_sys::WordAligned;
+
+        unsafe extern "C" {
+            // Not an export of the protocol package: the compiler lowers this name to its FPI
+            // executor (`frontend/wasm/src/intrinsics/fpi.rs`). The stub is in
+            // `stubs/intrinsics.rs`.
+            #[linkage = "extern_weak"]
+            #[link_name = "miden::protocol::tx::execute_foreign_procedure_indirect"]
+            fn extern_tx_execute_foreign_procedure(
+                invocation: *const ForeignProcedureInvocation,
+                ptr: *mut ForeignProcedureOutputs,
+            );
+        }
+        unsafe {
+            let mut ret_area = WordAligned::new(MaybeUninit::<ForeignProcedureOutputs>::uninit());
+            extern_tx_execute_foreign_procedure(&invocation, ret_area.as_mut_ptr());
+            ret_area.into_inner().assume_init()
+        }
+    }
+    #[cfg(not(all(target_family = "wasm", miden)))]
+    {
+        let _ = invocation;
+        unimplemented!(
+            "`miden::protocol::tx::execute_foreign_procedure_indirect` is only available when \
+             compiled for the Miden VM"
+        )
     }
 }
 
@@ -298,25 +235,13 @@ pub fn execute_foreign_procedure(
 ///
 /// Panics if the computed fee exceeds the maximum asset amount.
 pub fn compute_fee(num_extra_cycles: u32, exclude_notes_commitment: Word) -> AssetAmount {
-    let fee = unsafe {
-        extern_tx_compute_fee(
-            Felt::from_u32(num_extra_cycles),
-            exclude_notes_commitment[0],
-            exclude_notes_commitment[1],
-            exclude_notes_commitment[2],
-            exclude_notes_commitment[3],
-        )
-    };
+    let fee = raw::compute_fee(num_extra_cycles, exclude_notes_commitment);
     AssetAmount::try_from(fee).expect("transaction fee exceeds the maximum asset amount")
 }
 
 /// Returns the asset id that transaction fees are paid in, as of the transaction reference block.
 pub fn get_fee_asset_id() -> AssetId {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<AssetId>::uninit());
-        extern_tx_get_fee_asset_id(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_fee_asset_id().into()
 }
 
 #[cfg(test)]

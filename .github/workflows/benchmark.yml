@@ -46,6 +46,14 @@ jobs:
             cargo install cargo-make --force
           fi
 
+      - name: Install midenup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/0xMiden/midenup/releases/latest/download/installer.sh \
+            | bash -s -- --no-init
+
       - name: Test benchmark report formatter
         run: python3 -m unittest discover -s .github/scripts -p 'test_compare_example_benchmarks.py'
 
@@ -70,7 +78,27 @@ jobs:
           cargo build --release -p midenc-benchmark-runner --bin example-benchmarks
           popd
 
+      - name: Install the Miden toolchain for next
+        id: midenup-next
+        env:
+          MIDENUP_HOME: ${{ github.workspace }}/.midenup-next
+        run: |
+          set -euo pipefail
+          pushd "${RUNNER_TEMP}/compiler-next"
+          if [ ! -f miden-toolchain.toml ]; then
+              midenup init && midenup install 0.17.0 --profile empty --component core --component protocol && midenup override 0.17.0
+          else
+              midenup init && midenup install
+          fi
+          sysroot=$(midenup show sysroot)
+          popd
+          echo "sysroot=$sysroot" >> "$GITHUB_OUTPUT"
+          echo "MIDEN_SYSROOT=$sysroot" >> "$GITHUB_ENV"
+          ls "${sysroot}/lib"
+
       - name: Benchmark next
+        env:
+          MIDENUP_HOME: ${{ github.workspace }}/.midenup-next
         run: |
           target/benchmark-next/release/example-benchmarks \
             --workspace-root "${RUNNER_TEMP}/compiler-next" \
@@ -78,7 +106,21 @@ jobs:
             --output-dir target/example-benchmarks/baseline \
             --build-dir target/example-benchmark-build/baseline
 
+      - name: Install the Miden toolchain for candidate
+        id: midenup-candidate
+        env:
+          MIDENUP_HOME: ${{ github.workspace }}/.midenup-candidate
+        run: |
+          set -euo pipefail
+          midenup init && midenup install
+          sysroot=$(midenup show sysroot)
+          echo "sysroot=$sysroot" >> "$GITHUB_OUTPUT"
+          echo "MIDEN_SYSROOT=$sysroot" >> "$GITHUB_ENV"
+          ls "${sysroot}/lib"
+
       - name: Benchmark candidate
+        env:
+          MIDENUP_HOME: ${{ github.workspace }}/.midenup-candidate
         run: |
           target/benchmark-candidate/release/example-benchmarks \
             --workspace-root "$GITHUB_WORKSPACE" \

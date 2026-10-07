@@ -1,0 +1,11 @@
+[package]
+name = "masm-dep-note"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+namespace = "miden:masm-dep-note/miden-masm-dep-note@0.1.0"
+path = "src/lib.rs"
+
+[dependencies]
+masm-dep-account = { path = "../masm-dep-account" }

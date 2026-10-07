@@ -18,7 +18,7 @@ doctest = false
 
 [dependencies]
 heck.workspace = true
-miden-note-schema.workspace = true
+miden-note-schema = { workspace = true, features = ["protocol"] }
 proc-macro2.workspace = true
 quote.workspace = true
 

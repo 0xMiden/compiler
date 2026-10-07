@@ -13,7 +13,8 @@ edition.workspace = true
 publish = false
 
 [lib]
-test = false
+# `toolchain.rs` carries this crate's own unit tests (see `tests/support/src/testing/toolchain.rs`).
+test = true
 doctest = false
 
 [dependencies]
@@ -23,10 +24,9 @@ filetime = "0.2.23"
 glob = "0.3.1"
 miden-assembly.workspace = true
 miden-core = { workspace = true, features = ["testing"] }
+# VM host event handlers only; packages come from the toolchain.
 miden-core-lib.workspace = true
 miden-mast-package.workspace = true
-miden-protocol = { workspace = true, features = ["std"] }
-miden-standards = { workspace = true, features = ["std"] }
 miden-processor.workspace = true
 miden-debug = { workspace = true, features = ["proptest", "std"] }
 midenc-expect-test.workspace = true
@@ -37,4 +37,5 @@ midenc-session.workspace = true
 midenc-compile.workspace = true
 proptest.workspace = true
 sha2.workspace = true
+thiserror.workspace = true
 walkdir = "2.5.0"

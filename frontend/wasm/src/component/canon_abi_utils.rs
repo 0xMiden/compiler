@@ -605,7 +605,12 @@ fn convert_flat_value<B: ?Sized + Builder>(
                 let value = fb.zext(value, Type::U64, span)?;
                 fb.bitcast(value, Type::I64, span)?
             }
-            Type::Felt => fb.cast(value, Type::I64, span)?,
+            // The felt as a u64, carried in the i64: a cast to i64 would trap on a felt at or
+            // above 2^63
+            Type::Felt => {
+                let value = fb.cast(value, Type::U64, span)?;
+                fb.bitcast(value, Type::I64, span)?
+            }
             _ => fb.cast(value, Type::I64, span)?,
         },
         Type::Felt => match source_ty {
@@ -700,7 +705,8 @@ pub(super) fn offset_addr<B: ?Sized + Builder>(
 #[cfg(test)]
 mod tests {
     use midenc_dialect_arith as arith;
-    use midenc_hir::{SourceSpan, Type, ValueRef};
+    use midenc_dialect_hir as hir;
+    use midenc_hir::{Operation, SourceSpan, Type, Value, ValueRef};
 
     use super::*;
     use crate::{
@@ -786,5 +792,27 @@ mod tests {
         let zext_count = count_conversion_zext_ops(Type::I32, Type::I64);
 
         assert_eq!(zext_count, 1, "joined i64 payload slot should zero-extend i32 payload");
+    }
+
+    /// A felt in a joined `i64` payload slot is the felt as a `u64`, carried in the `i64`: a cast to
+    /// `u64`, which every felt passes, then a bitcast to `i64`. A cast to `i64` would trap on a felt
+    /// at or above `2^63`.
+    #[test]
+    fn convert_flat_felt_to_i64_casts_to_u64_then_bitcasts() {
+        let (_context, function) =
+            build_module_function("convert_flat", vec![Type::Felt], |fb, args| {
+                convert_flat_value(fb, args[0], &Type::I64, SourceSpan::default())
+                    .expect("flat conversion should build");
+            });
+        let result_ty = |op: &Operation| op.results()[0].borrow().ty().clone();
+
+        let casts_to_u64 =
+            count_ops(function, |op| op.is::<hir::Cast>() && result_ty(op) == Type::U64);
+        let bitcasts_to_i64 =
+            count_ops(function, |op| op.is::<hir::Bitcast>() && result_ty(op) == Type::I64);
+        let casts_to_i64 =
+            count_ops(function, |op| op.is::<hir::Cast>() && result_ty(op) == Type::I64);
+
+        assert_eq!((casts_to_u64, bitcasts_to_i64, casts_to_i64), (1, 1, 0));
     }
 }

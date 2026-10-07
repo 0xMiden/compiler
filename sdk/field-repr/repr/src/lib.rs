@@ -217,15 +217,24 @@ impl<'a> FeltReader<'a> {
 
     /// Reads the next element and decodes it as a boolean.
     ///
-    /// Only `0` and `1` are accepted.
+    /// Only `0` and `1` are accepted. They are compared as felts: on the Miden target a felt `eq`
+    /// takes one VM cycle, where matching the canonical `u64` takes a split and a 64-bit
+    /// comparison. The canonical value is taken only for the error.
     #[inline(always)]
     pub fn read_bool(&mut self) -> FeltReprResult<bool> {
         let pos = self.pos;
         let len = self.data.len();
-        match self.read()?.as_canonical_u64() {
-            0 => Ok(false),
-            1 => Ok(true),
-            value => Err(FeltReprError::InvalidBool { pos, len, value }),
+        let felt = self.read()?;
+        if felt == Felt::ZERO {
+            Ok(false)
+        } else if felt == Felt::ONE {
+            Ok(true)
+        } else {
+            Err(FeltReprError::InvalidBool {
+                pos,
+                len,
+                value: felt.as_canonical_u64(),
+            })
         }
     }
 
@@ -398,10 +407,18 @@ where
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         let pos = reader.pos();
         let len = reader.len();
-        match reader.read()?.as_canonical_u64() {
-            0 => Ok(None),
-            1 => Ok(Some(T::from_felt_repr(reader)?)),
-            tag => Err(FeltReprError::InvalidOptionTag { pos, len, tag }),
+        // Compared as felts, for the reason `FeltReader::read_bool` gives.
+        let tag = reader.read()?;
+        if tag == Felt::ZERO {
+            Ok(None)
+        } else if tag == Felt::ONE {
+            Ok(Some(T::from_felt_repr(reader)?))
+        } else {
+            Err(FeltReprError::InvalidOptionTag {
+                pos,
+                len,
+                tag: tag.as_canonical_u64(),
+            })
         }
     }
 }

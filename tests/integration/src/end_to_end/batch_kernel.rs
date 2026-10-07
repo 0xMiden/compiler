@@ -272,7 +272,63 @@ fn batch_kernel() {
     let package = test.compile_package();
 
     // The serialized size of the compiled kernel's MAST forest, with debug info stripped.
-    expect!["116274"].assert_eq(&stripped_mast_size_str(&package));
+    //
+    // 63 bytes more than the hand tables produced: `poseidon2::hash_elements` and `hash_words`
+    // resolve from the core manifest, which types their addresses as element-space pointers, and
+    // the casts that give the stubs' `i32` arguments those types cost each stub a redundant
+    // `swap.1 swap.1` in operand scheduling. No address is changed and nothing else is emitted;
+    // the same two instructions are the two extra cycles per hash in the counts below.
+    //
+    // A further 760 bytes (116337 before) since `miden-stdlib-sys` calls the core library
+    // through its generated bindings: `ElementPtr::from_ptr` checks the addresses the kernel's
+    // buffers give `hash_elements`, `hash_words` and the `pipe_*` procedures for element
+    // alignment, and the word count reaches both `pipe_*` procedures as the `u32` their manifest
+    // declares, converted from the felt the kernel passes.
+    //
+    // The first generated bindings came to 119426 bytes. Their wrappers converted every address
+    // themselves: each call also range-checked the end pointer `mem::pipe_words_to_memory` and
+    // `mem::pipe_preimage_to_memory` return, which the kernel ignores (`ElementPtr::to_ptr`, a
+    // branch to a trap), and `hash_words` got its end address as a byte address divided by 4. The
+    // wrappers now pass and return element addresses unconverted, and `miden-stdlib-sys` computes
+    // the end address in element space. The cycle counts below moved with both changes (the
+    // earlier counts are noted at each).
+    //
+    // One byte more (117097 before) since the three `mem::pipe_*` procedures resolve from the
+    // core manifest instead of the deleted transitional table, which declared their addresses as
+    // `i32`. The casts that give the stubs' `i32` carriers the manifest's element-space pointer
+    // types cost the `pipe_preimage_to_memory` and `pipe_words_to_memory` stubs the same
+    // redundant `swap.1 swap.1` before the `exec` as the hash stubs, and the
+    // `pipe_words_to_memory` stub a `swap.1`/`movup.2` pair where it stores the end pointer the
+    // procedure returns. No address changes. The cycle counts below moved with these operations
+    // and the basic-block padding they shift (the earlier counts are noted at each).
+    //
+    // 650 bytes fewer (117098 before) since LLVM's store merging is off (the mandatory rustflag
+    // `-C llvm-args=-combiner-store-merging=false`). `miden-stdlib-sys::pipe_words_to_memory`
+    // copies the `Word` it returns (`state.rate0`), which LLVM moved as two `i64` loads and
+    // stores: each was a byte-address alignment check and a call to `intrinsics::mem::load_dw` or
+    // `store_dw`, where the four felts it moves now are each an element load and store. And the
+    // entrypoint stores a constant pair of `i32`s (`0`, `4`) as two `i32` stores, not one `i64`.
+    // Other 64-bit accesses remain, so the kernel still links both intrinsics. The three cycle
+    // counts below that run past these stores fell by 459 each; scenario 3 traps before them.
+    //
+    // 683 bytes fewer (116448 before) since codegen lowers a cast that changes only a value's
+    // type (`hir.ptr_to_int`, `hir.int_to_ptr`, `hir.bitcast`) by renaming its operand where it
+    // stands instead of moving it to the top of the stack (214 bytes, more than the 64 the
+    // stubs' redundant moves described above cost: their shape is the one the rename test
+    // `a_transparent_inttoptr_moves_nothing` in `midenc-codegen-masm` reduces to nothing; the
+    // kernel's MASM was not inspected); and a peephole over the emitted MASM deletes adjacent
+    // stack operations that undo each other (`swap.n swap.n`, `movup.n movdn.n`,
+    // `movdn.n movup.n`, `push.x drop`, `dup.n drop`) wherever operand scheduling leaves them
+    // (469 bytes). The cycle counts below fell with both.
+    //
+    // 47 bytes fewer (115765 before) with no `u32assert` on a constant-address 32-bit store: one
+    // fewer per 32-bit global initializer. The kernel's `init` stores two such globals, and the
+    // size fits its block being in the forest twice, as the `init` procedure and merged into
+    // `main`'s first block (the assembler inlines a procedure that is one small basic block; the
+    // kernel's MAST was not inspected): 11 bytes per assertion in each copy, and 3 padding
+    // `noop`s `init`'s copy no longer needs. The cycle counts below fell by the 6 cycles of the
+    // two assertions, which `main` runs once.
+    expect!["115718"].assert_eq(&stripped_mast_size_str(&package));
 
     // The reference block commitment is dropped by the kernel (verification is still a TODO
     // there), so any word will do.
@@ -325,8 +381,13 @@ fn batch_kernel() {
         let (trace, cycles) = execute(&transactions, build_advice_inputs(&transactions))
             .expect("kernel should accept the batch");
 
-        // The VM cycles consumed by the kernel for this two-transaction batch.
-        expect!["32568"].assert_eq(&cycles.to_string());
+        // The VM cycles consumed by the kernel for this two-transaction batch (32570 before the
+        // generated core bindings, 33292 with the first ones, 32919 before the transitional table
+        // was deleted, 32942 before store merging was turned off, 32483 before casts became
+        // renames and the stack peephole was added, 302 and 649 cycles of the 951; 31532 before
+        // the `u32assert` on a constant-address 32-bit store went, one fewer per 32-bit global
+        // initializer; see the size above).
+        expect!["31526"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -377,8 +438,12 @@ fn batch_kernel() {
         let (trace, cycles) = execute(&transactions, build_advice_inputs(&transactions))
             .expect("kernel should accept the batch");
 
-        // The VM cycles consumed for a batch that erases a note.
-        expect!["28681"].assert_eq(&cycles.to_string());
+        // The VM cycles consumed for a batch that erases a note (28683 before the generated core
+        // bindings, 29365 with the first ones, 29034 before the transitional table was deleted,
+        // 29055 before store merging was turned off, 28596 before casts became renames and the
+        // stack peephole was added, 267 and 585 cycles of the 852, 27744 before the `u32assert`
+        // on a constant-address 32-bit store went, one fewer per 32-bit global initializer).
+        expect!["27738"].assert_eq(&cycles.to_string());
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");
@@ -416,8 +481,17 @@ fn batch_kernel() {
             Ok(_) => panic!("kernel should reject a tampered BATCH_ID pre-image"),
         };
 
-        // The cycle at which the Layer 1 hash check rejects the tampered pre-image.
-        expect!["1089"].assert_eq(&cycles.to_string());
+        // The cycle at which the Layer 1 hash check rejects the tampered pre-image (1089 before the
+        // generated core bindings, 1082 with the first ones). It is later now because the range
+        // check of the end pointer `mem::pipe_preimage_to_memory` returns is gone: without that
+        // branch after the call, LLVM computes the transaction count (`len_felts >> 3`, a 20-cycle
+        // `u32shr` in the VM) before the call instead of after it, and this path traps in the
+        // call. 1121 before the transitional table was deleted: the trap comes after the
+        // `pipe_preimage_to_memory` stub's two extra operations (see the size above). 1123
+        // before casts became renames and the stack peephole was added, which took 7 and 8 cycles
+        // off the path to the trap. 1108 before the `u32assert` on a constant-address 32-bit store
+        // went, one fewer per 32-bit global initializer: `init` runs before the trap.
+        expect!["1102"].assert_eq(&cycles.to_string());
     }
 
     // Scenario 4: tx1 consumes a note that only tx2 creates; the consume-before-create ordering
@@ -450,8 +524,13 @@ fn batch_kernel() {
             Ok(_) => panic!("kernel should reject a note consumed before it is created"),
         };
 
-        // The cycle at which the consume-before-create ordering gate rejects the batch.
-        expect!["15809"].assert_eq(&cycles.to_string());
+        // The cycle at which the consume-before-create ordering gate rejects the batch (15809
+        // before the generated core bindings, 16362 with the first ones, 16140 before the
+        // transitional table was deleted, 16157 before store merging was turned off, 15698
+        // before casts became renames and the stack peephole was added, 158 and 311 cycles of
+        // the 469, 15229 before the `u32assert` on a constant-address 32-bit store went, one
+        // fewer per 32-bit global initializer).
+        expect!["15223"].assert_eq(&cycles.to_string());
     }
 }
 

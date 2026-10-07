@@ -887,36 +887,10 @@ impl HirLowering for arith::Max {
     }
 }
 
-impl HirLowering for hir::PtrToInt {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let result_ty = self.result().ty().clone();
-        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
-        inst_emitter.pop().expect("operand stack is empty");
-        inst_emitter.push(result_ty);
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::IntToPtr {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let result = self.result();
-        emitter.inst_emitter(self.as_operation()).inttoptr(result.ty(), self.span());
-        Ok(())
-    }
-}
-
 impl HirLowering for hir::Cast {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let result = self.result();
         emitter.inst_emitter(self.as_operation()).cast(result.ty(), self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::Bitcast {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let result = self.result();
-        emitter.inst_emitter(self.as_operation()).bitcast(result.ty(), self.span());
         Ok(())
     }
 }
@@ -1590,14 +1564,11 @@ impl HirLowering for arith::Join {
         let mut constraints = emitter.constraints_for(op, &args);
         let mut args = args.into_smallvec();
 
-        // For `i128`/`u128` we use a different stack order for 64-bit limbs.
-        //
-        // The IR specifies limbs most-significant to least-significant, but the runtime stack
-        // representation for two 64-bit limbs is (lo, hi).
-        if args.len() == 2 && matches!(&*self.get_ty(), Type::I128 | Type::U128) {
-            args.swap(0, 1);
-            constraints.swap(0, 1);
-        }
+        // The IR specifies limbs most-significant to least-significant, but an integer keeps its
+        // least-significant limb on top of the operand stack, whatever the width of its limbs: the
+        // last limb is scheduled on top.
+        args.reverse();
+        constraints.reverse();
 
         emitter
             .schedule_operands(
@@ -1633,15 +1604,18 @@ impl HirLowering for arith::Join {
 
 impl HirLowering for arith::Split {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
-        inst_emitter.pop().expect("operand stack is empty");
         // `arith.split` defines results in most-significant to least-significant order, but the
         // underlying runtime stack representation is little-endian (least-significant parts are
         // closer to the top of the stack). Since `arith.split` does not emit runtime instructions,
         // we must update the operand stack to match the existing raw-part order, which means
         // leaving the least-significant limb on top.
+        //
+        // This bypasses `InstOpEmitter`, which on drop names the operands from the top in result
+        // order: that would name the least-significant limb on top after the most-significant one.
+        let mut emitter = emitter.emitter();
+        emitter.pop().expect("operand stack is empty");
         for limb in self.limbs().iter() {
-            inst_emitter.push(limb.borrow().as_value_ref());
+            emitter.push(limb.borrow().as_value_ref());
         }
         Ok(())
     }

@@ -122,14 +122,13 @@ impl OpEmitter<'_> {
         self.emit(Self::assertz_with_message_inst("expected a non-negative i32 value", span), span);
     }
 
-    /// Assert that the 32-bit value on the stack is a valid i32 value
+    /// Assert that the u32 value on the stack is a valid i32 value
     pub fn assert_i32(&mut self, span: SourceSpan) {
         // Copy the value on top of the stack
         self.emit(masm::Instruction::Dup0, span);
-        // Assert the value does not overflow i32::MAX or underflow i32::MIN
-        // This can be checked by validating that when interpreted as a u32,
-        // the value is <= i32::MIN, which is 1 more than i32::MAX.
-        self.push_i32(i32::MIN, span);
+        // Assert the value does not overflow i32::MAX: a u32 is never negative, so this is the
+        // only bound to check.
+        self.push_i32(i32::MAX, span);
         self.emit(masm::Instruction::U32Lte, span);
         self.emit(Self::assert_with_message_inst("value does not fit in i32", span), span);
     }
@@ -230,32 +229,34 @@ impl OpEmitter<'_> {
         self.emit_all([masm::Instruction::MovUp2, masm::Instruction::CDrop], span);
     }
 
-    /// Convert an i32/u32 value on the stack to a signed N-bit integer value
+    /// Convert an i32 value on the stack to a signed N-bit integer value
     ///
-    /// Execution traps if the value cannot fit in the signed N-bit range.
+    /// Execution traps if the value cannot fit in the signed N-bit range. The result is the N-bit
+    /// two's complement pattern of the value, zero-extended: `-1` converted to 16 bits is
+    /// `0x0000FFFF`.
     pub fn int32_to_int(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 1, 32);
+        // The value fits exactly when its bits from 31 down to N-1 are all set, if it is negative,
+        // or all clear, if it is not.
+        //
         // Push is_signed on the stack
         self.is_signed_int32(span);
-        // Pop the is_signed flag, and replace it with a selected mask
-        // for the upper reserved bits of the N-bit range
+        // Pop the is_signed flag, and replace it with the expected value of those bits
         self.select_int32(signed_reserved_mask(n), 0, span);
-        self.emit_all(
-            [
-                // Copy the input to the top of the stack for the masking op
-                masm::Instruction::Dup1,
-                // Copy the mask value for the masking op
-                masm::Instruction::Dup1,
-                // Apply the mask
-                masm::Instruction::U32And,
-                // Assert that the masked bits and the mask are equal
-                Self::assert_eq_with_message_inst(
-                    format!("value does not fit in signed {n}-bit range"),
-                    span,
-                ),
-            ],
+        // Copy the input to the top of the stack for the masking op
+        self.emit(masm::Instruction::Dup1, span);
+        // Select those bits of the input
+        self.const_mask_u32(signed_reserved_mask(n), span);
+        // Assert that they are the expected ones
+        self.emit(
+            Self::assert_eq_with_message_inst(
+                format!("value does not fit in signed {n}-bit range"),
+                span,
+            ),
             span,
         );
+        // Drop the sign bits above the N-bit range
+        self.trunc_int32(n, span);
     }
 
     /// Convert an i32/u32 value on the stack to a signed N-bit integer value

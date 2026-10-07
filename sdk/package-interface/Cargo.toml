@@ -1,0 +1,31 @@
+[package]
+name = "midenc-package-interface"
+description = "Package interface model and Miden ABI lowering rules shared by the compiler and binding generators"
+version = "0.15.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+miden-assembly = { workspace = true, features = ["std"], optional = true }
+miden-assembly-syntax.workspace = true
+miden-mast-package.workspace = true
+smallvec.workspace = true
+thiserror.workspace = true
+
+[features]
+# `testing::assemble_fixture` for dependents' tests; it needs the real assembler.
+testing = ["dep:miden-assembly"]
+
+[dev-dependencies]
+miden-assembly = { workspace = true, features = ["std"] }

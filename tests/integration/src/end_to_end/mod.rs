@@ -7,6 +7,7 @@ mod differential;
 mod examples;
 mod indirect_call_traps;
 mod intrinsics;
+mod masm_dependency_bindings;
 mod memory;
 mod regressions;
 pub(crate) mod support;

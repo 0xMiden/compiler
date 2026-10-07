@@ -1,0 +1,36 @@
+[package]
+name = "miden-sdk-bindgen"
+description = "Generates Rust FFI bindings and linker stubs for Miden packages from their manifests"
+version = "0.15.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+miden-assembly-syntax = { workspace = true, features = ["std"] }
+# `hash_string_to_word` and `EventId`: the values of `word("…")` and `event("…")` constants.
+miden-core.workspace = true
+midenc-package-interface.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+# The fixture package has a nested module, which `midenc_package_interface::testing` cannot
+# assemble: the test assembles it with the assembler itself.
+miden-assembly = { workspace = true, features = ["std"] }
+# `TargetType`, to pick the library packages of the toolchain.
+miden-mast-package.workspace = true
+midenc-expect-test.workspace = true
+# The toolchain's packages, for the tests over real packages.
+midenc-integration-test-support.workspace = true
+midenc-package-interface = { workspace = true, features = ["testing"] }
+syn = { workspace = true, features = ["full"] }

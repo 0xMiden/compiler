@@ -224,7 +224,10 @@ pub fn load_cargo_based_source_dependencies(
 ///
 /// `package_name` names the package that declares `target`, and is the name the nested session is
 /// opened under. The package itself is not needed: the nested build loads the manifest it is
-/// pointed at, and the project *that* yields is the one it compiles.
+/// pointed at, and the project *that* yields is the one it compiles. `dependencies` are the
+/// interfaces of the packages that project declares, which its linker stubs resolve against; see
+/// [`compile_manifest`](crate::pipeline::frontends::rust::compile_manifest).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn cargo_build(
     package_name: String,
     target: &miden_project::Target,
@@ -233,6 +236,7 @@ pub(crate) fn cargo_build(
     options: &midenc_session::Options,
     cargo_opts: &CargoOptions,
     source_manager: Arc<dyn SourceManager>,
+    dependencies: &[midenc_package_interface::PackageInterface],
 ) -> CompilerResult<CodegenOutput> {
     // The directory of the dependency being compiled, captured before `manifest_path` is consumed
     // below. The compiled package is materialized under this directory's `target` (see the end of
@@ -295,6 +299,7 @@ pub(crate) fn cargo_build(
         &manifest_path,
         filesystem_cache_dir,
         context,
+        dependencies,
     )
 
     //component.source_inputs(target, context.session())
@@ -1149,7 +1154,7 @@ mod tests {
     #[test]
     fn staged_package_reuse_refreshes_the_entry_age() {
         let root = tempfile::TempDir::new().unwrap();
-        let package = midenc_codegen_masm::intrinsics::load();
+        let package = crate::pipeline::testing::some_package();
         let codec_crate = root.path().join("codec");
         fs::create_dir(&codec_crate).unwrap();
 
@@ -1195,7 +1200,7 @@ mod tests {
     #[test]
     fn note_codec_staging_is_content_addressed() {
         let root = tempfile::TempDir::new().unwrap();
-        let package = midenc_codegen_masm::intrinsics::load();
+        let package = crate::pipeline::testing::some_package();
         let codec_crate = root.path().join("codec");
         fs::create_dir(&codec_crate).unwrap();
 

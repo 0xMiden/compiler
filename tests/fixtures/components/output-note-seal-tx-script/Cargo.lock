@@ -1713,6 +1713,7 @@ dependencies = [
  "miden-base-sys",
  "miden-field",
  "miden-field-repr",
+ "miden-intrinsics-sys",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
  "miden-tx-script-args",
@@ -1833,6 +1834,8 @@ name = "miden-base-sys"
 version = "0.15.0-rc.3"
 dependencies = [
  "miden-field-repr",
+ "miden-intrinsics-sys",
+ "miden-sdk-build-script-support",
  "miden-stdlib-sys",
 ]
 
@@ -2010,6 +2013,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e392e0a8c34b32671012b439de35fa8987bf14f0f8aac279b97f8b8cc6e263b"
 dependencies = [
  "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "miden-intrinsics-sys"
+version = "0.15.0-rc.3"
+dependencies = [
+ "miden-field",
+ "miden-sdk-build-script-support",
 ]
 
 [[package]]
@@ -2260,6 +2271,10 @@ name = "miden-sdk-alloc"
 version = "0.15.0-rc.3"
 
 [[package]]
+name = "miden-sdk-build-script-support"
+version = "0.15.0-rc.3"
+
+[[package]]
 name = "miden-serde-utils"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2296,7 +2311,8 @@ dependencies = [
 name = "miden-stdlib-sys"
 version = "0.15.0-rc.3"
 dependencies = [
- "miden-field",
+ "miden-intrinsics-sys",
+ "miden-sdk-build-script-support",
 ]
 
 [[package]]

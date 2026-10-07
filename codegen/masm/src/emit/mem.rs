@@ -314,10 +314,8 @@ impl OpEmitter<'_> {
     /// Loads a single 32-bit machine word from the given immediate address.
     fn load_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
         if ptr.is_element_aligned() {
-            self.emit_all(
-                [masm::Instruction::MemLoadImm(ptr.addr.into()), masm::Instruction::U32Assert],
-                span,
-            );
+            // The element is loaded as it is, without a range check, as `load_sw` does
+            self.emit(masm::Instruction::MemLoadImm(ptr.addr.into()), span);
         } else {
             // Delegate to load_sw intrinsic to handle the details of unaligned loads
             self.push_native_ptr(ptr, span);
@@ -367,8 +365,8 @@ impl OpEmitter<'_> {
                 self.emit(masm::Instruction::U32And, span);
                 return;
             } else {
-                self.emit_push(imm.addr, span);
-                self.emit_push(imm.offset, span);
+                // [addr, offset], as the dynamic paths below expect
+                self.push_native_ptr(imm, span);
             }
         }
 
@@ -434,11 +432,12 @@ impl OpEmitter<'_> {
 
     fn load_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
         if ptr.is_element_aligned() {
+            // The elements are loaded as they are, without a range check, as `load_dw` does:
+            // [lo, hi]
             self.emit_all(
                 [
                     masm::Instruction::MemLoadImm((ptr.addr + 1).into()),
                     masm::Instruction::MemLoadImm(ptr.addr.into()),
-                    masm::Instruction::U32Assert2,
                 ],
                 span,
             )
@@ -458,14 +457,14 @@ impl OpEmitter<'_> {
     }
 
     fn load_quad_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
-        // For all other cases, more complicated loads are required
+        // When aligned, the elements are loaded as they are, without a range check, as `load_qw`
+        // does
         if ptr.is_word_aligned() {
             self.emit_all(
                 [
                     // [w0, w1, w2, w3]
                     masm::Instruction::PadW,
                     masm::Instruction::MemLoadWLeImm(ptr.addr.into()),
-                    masm::Instruction::U32AssertW,
                 ],
                 span,
             );
@@ -476,7 +475,6 @@ impl OpEmitter<'_> {
                     masm::Instruction::MemLoadImm((ptr.addr + 2).into()),
                     masm::Instruction::MemLoadImm((ptr.addr + 1).into()),
                     masm::Instruction::MemLoadImm(ptr.addr.into()),
-                    masm::Instruction::U32AssertW,
                 ],
                 span,
             );
@@ -1244,7 +1242,7 @@ impl OpEmitter<'_> {
         self.dropn(5, span);
     }
 
-    /// Store a quartet of machine words (32-bit elements) to the operand stack
+    /// Store a quartet of machine words (32-bit elements) to memory
     fn store_quad_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.store_quad_word_imm(imm, span);
@@ -1253,11 +1251,12 @@ impl OpEmitter<'_> {
     }
 
     fn store_quad_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
+        // When aligned, the elements are stored as they are, without a range check, as `store_qw`
+        // does
         if ptr.is_word_aligned() {
             self.emit_all(
                 [
                     // Stack: [a, b, c, d]
-                    masm::Instruction::U32AssertW,
                     // Write to heap
                     masm::Instruction::MemStoreWLeImm(ptr.addr.into()),
                     masm::Instruction::DropW,
@@ -1267,7 +1266,6 @@ impl OpEmitter<'_> {
         } else if ptr.is_element_aligned() {
             self.emit_all(
                 [
-                    masm::Instruction::U32AssertW,
                     masm::Instruction::MemStoreImm(ptr.addr.into()),
                     masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
                     masm::Instruction::MemStoreImm((ptr.addr + 2).into()),
@@ -1290,11 +1288,12 @@ impl OpEmitter<'_> {
         match ptr {
             // When storing to an immediate address, the operand stack only contains the value
             // limbs. In LE order, lo is on top, so MemStoreImm stores lo at lower addr first.
+            //
+            // The elements are stored as they are, without a range check, as `store_dw` does.
             Some(ptr) if ptr.is_element_aligned() => {
                 // Stack: [value_lo, value_hi]
                 self.emit_all(
                     [
-                        masm::Instruction::U32Assert2,
                         masm::Instruction::MemStoreImm(ptr.addr.into()),
                         masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
                     ],
@@ -1333,10 +1332,8 @@ impl OpEmitter<'_> {
     /// Stores a single 32-bit machine word to the given immediate address.
     fn store_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
         if ptr.is_element_aligned() {
-            self.emit_all(
-                [masm::Instruction::U32Assert, masm::Instruction::MemStoreImm(ptr.addr.into())],
-                span,
-            );
+            // The element is stored as it is, without a range check, as `store_sw` does
+            self.emit(masm::Instruction::MemStoreImm(ptr.addr.into()), span);
         } else {
             // Delegate to `store_sw` to handle unaligned stores
             self.push_native_ptr(ptr, span);
@@ -1498,11 +1495,11 @@ impl OpEmitter<'_> {
         let type_size_mask = (1u32 << type_size) - 1;
         let mask = !(type_size_mask << bit_offset);
 
-        // Apply mask to the loaded value
+        // Apply mask to the loaded value: [masked_prev, value]
         self.const_mask_u32(mask, span);
 
         // Get the value and shift it to the correct position
-        self.emit(masm::Instruction::MovUp4, span); // Move value to top
+        self.emit(masm::Instruction::Swap1, span); // Move value to top: [value, masked_prev]
         if bit_offset > 0 {
             self.emit(masm::Instruction::U32ShlImm(bit_offset.into()), span);
         }

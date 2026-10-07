@@ -17,6 +17,8 @@ use midenc_frontend_wasm_metadata::NESTED_CARGO_SCRUB_ENV;
 pub mod cargo_proj;
 /// Compiler test builders and pipeline assertions.
 pub mod compiler_test;
+/// Lookups and assertions over compiled package manifests.
+pub mod manifest_assertions;
 /// VM execution, initialization, and session setup helpers.
 pub mod testing;
 mod timing;
@@ -29,6 +31,7 @@ pub use self::cargo_proj::ProjectBuilder;
 pub use self::cargo_proj::project;
 pub use self::{
     compiler_test::{CargoTest, CompilerTest, CompilerTestBuilder, RustcTest, WasmTest},
+    manifest_assertions::{assert_unique_protocol_export, find_manifest_procedure},
     testing::setup::default_session,
 };
 

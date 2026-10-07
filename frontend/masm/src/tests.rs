@@ -3500,6 +3500,32 @@ end
     Ok(())
 }
 
+/// `u32split` makes two `u32` limbs of any felt, so what it yields is range-constrained even
+/// when the felt came raw from the advice provider: the lifter converts the felt to a `u64`
+/// with a checked cast, which the lint reads as establishing that range. (A relabel of the felt
+/// as a `u64`, which the lifter emitted before, established nothing, and the limbs stayed raw.)
+#[test]
+fn advice_taint_treats_u32split_limbs_as_range_constrained() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+    adv_push
+    u32split
+    u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "the limbs `u32split` yields are `u32`s by construction");
+
+    Ok(())
+}
+
 #[test]
 fn advice_taint_treats_u32assertw_as_multi_value_sanitizer() -> Result<()> {
     let context = Rc::new(Context::default());
@@ -4979,8 +5005,10 @@ end
         context,
     )?;
 
+    // The felt is converted to a `u64`, not relabelled as one: the two differ in stack shape
     let function = find_function(output.module, "split");
-    assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 1);
+    assert_eq!(top_level_op_count::<hir::Cast>(function), 1);
+    assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 0);
     assert_eq!(top_level_op_count::<arith::Split>(function), 1);
 
     Ok(())
@@ -5001,7 +5029,8 @@ end
     )?;
 
     let function = find_function(output.module, "test");
-    assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 1);
+    assert_eq!(top_level_op_count::<hir::Cast>(function), 1);
+    assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 0);
     assert_eq!(top_level_op_count::<arith::Split>(function), 1);
     assert_eq!(top_level_op_count::<arith::Eq>(function), 1);
 
@@ -5023,7 +5052,8 @@ end
     )?;
 
     let function = find_function(output.module, "testw");
-    assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 4);
+    assert_eq!(top_level_op_count::<hir::Cast>(function), 4);
+    assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 0);
     assert_eq!(top_level_op_count::<arith::Split>(function), 4);
     assert_eq!(top_level_op_count::<arith::Eq>(function), 4);
     assert_eq!(top_level_op_count::<arith::And>(function), 3);

@@ -144,11 +144,53 @@ pub struct Options {
 }
 
 impl Default for Options {
+    /// Builds a default session configuration by reading the same environment variables the
+    /// `miden` CLI does — `MIDEN_SYSROOT`, `MIDENUP_HOME`, and `MIDENUP_TOOLCHAIN` — so that a
+    /// session built in-process (e.g. `midenc_hir::Context::default()`, used throughout the
+    /// frontend test suites) sees the same toolchain a CLI invocation launched under `midenup`
+    /// would, rather than silently compiling with no sysroot and no Miden library search paths.
+    ///
+    /// Precedence: an explicit, non-empty `MIDEN_SYSROOT` wins outright; otherwise, if both
+    /// `MIDENUP_HOME` and `MIDENUP_TOOLCHAIN` are set and non-empty, the sysroot is derived as
+    /// `MIDENUP_HOME/toolchains/<toolchain>` via [`Options::derive_sysroot_from_toolchain`];
+    /// otherwise there is no sysroot, as before. An empty value is treated as unset here, which
+    /// is stricter than clap's `env` handling on the CLI (clap accepts an empty value as set).
+    /// Without the `std` feature none of this environment is available, so behavior there is
+    /// unchanged.
     fn default() -> Self {
         let current_dir = current_dir();
         let target_dir = current_dir.join("target");
-        Self::new(None, None, current_dir, target_dir, None, None)
+
+        #[cfg(feature = "std")]
+        {
+            let sysroot = non_empty_env_var("MIDEN_SYSROOT").map(PathBuf::from);
+
+            let mut options = Self::new(None, None, current_dir, target_dir, None, sysroot);
+
+            if options.sysroot.is_none() {
+                let midenup_home = non_empty_env_var("MIDENUP_HOME").map(PathBuf::from);
+                let toolchain = non_empty_env_var("MIDENUP_TOOLCHAIN");
+                if let (Some(midenup_home), Some(toolchain)) = (midenup_home, toolchain) {
+                    options.midenup_home = Some(midenup_home);
+                    options.toolchain = Some(toolchain);
+                    options.derive_sysroot_from_toolchain();
+                }
+            }
+
+            options
+        }
+
+        #[cfg(not(feature = "std"))]
+        {
+            Self::new(None, None, current_dir, target_dir, None, None)
+        }
     }
+}
+
+/// Reads `key` from the environment, treating an unset or empty value as absent.
+#[cfg(feature = "std")]
+fn non_empty_env_var(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|value| !value.is_empty())
 }
 
 impl Options {
@@ -411,6 +453,30 @@ impl Options {
     pub fn quiet(&self) -> bool {
         matches!(self.diagnostics.verbosity, Verbosity::Silent)
     }
+
+    /// Derives `--sysroot` from `midenup`'s environment when it was not given explicitly.
+    ///
+    /// When the compiler is invoked via the `miden` CLI, `midenup` sets `midenup_home` and
+    /// `toolchain` rather than `--sysroot` directly; the sysroot is `MIDENUP_HOME/toolchains/
+    /// <toolchain>`, and its `lib/` directory (when present) is added to the library search
+    /// path the same way an explicit `--sysroot` would be. A no-op once `sysroot` is set, so
+    /// calling this from more than one constructor is harmless.
+    pub fn derive_sysroot_from_toolchain(&mut self) {
+        if self.sysroot.is_some() {
+            return;
+        }
+        let (Some(home), Some(toolchain)) =
+            (self.midenup_home.as_deref(), self.toolchain.as_deref())
+        else {
+            return;
+        };
+        let sysroot = home.join("toolchains").join(toolchain);
+        let lib_dir = sysroot.join("lib");
+        if lib_dir.try_exists().is_ok_and(|exists| exists) {
+            self.search_paths.push(lib_dir);
+        }
+        self.sysroot = Some(sysroot);
+    }
 }
 
 /// This enum describes the degree to which compiled programs will be optimized
@@ -618,6 +684,8 @@ fn current_dir() -> PathBuf {
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
+    use std::ffi::{OsStr, OsString};
+
     use super::*;
 
     /// Options for a compiler whose working directory is `/work`, with the given `--manifest-path`.
@@ -798,5 +866,105 @@ mod tests {
             .resolve_input(Some(input(dir.path().join("contract").join("src").join("foo.wasm"))))
             .unwrap_err();
         assert!(err.to_string().contains("is a source file"), "{err}");
+    }
+
+    const MIDEN_SYSROOT: &str = "MIDEN_SYSROOT";
+    const MIDENUP_HOME: &str = "MIDENUP_HOME";
+    const MIDENUP_TOOLCHAIN: &str = "MIDENUP_TOOLCHAIN";
+
+    /// Sets or clears an environment variable.
+    ///
+    /// # Safety
+    ///
+    /// `std::env::set_var`/`remove_var` are `unsafe` in this edition because mutating the
+    /// environment races with any other thread reading it concurrently. Nextest runs each test
+    /// in its own process, so no other test can observe this mutation; it is not safe to rely on
+    /// under a harness that runs tests as threads within one process (e.g. plain `cargo test`).
+    fn set_env(key: &str, value: Option<&OsStr>) {
+        match value {
+            Some(value) => unsafe { std::env::set_var(key, value) },
+            None => unsafe { std::env::remove_var(key) },
+        }
+    }
+
+    /// Captures the current value of a set of environment variables and restores them on drop,
+    /// so a test that overrides `MIDEN_SYSROOT` et al. cannot leak that override to whatever
+    /// runs next in the same process.
+    struct EnvGuard {
+        saved: Vec<(&'static str, Option<OsString>)>,
+    }
+
+    impl EnvGuard {
+        fn capture(keys: &[&'static str]) -> Self {
+            let saved = keys.iter().map(|&key| (key, std::env::var_os(key))).collect();
+            Self { saved }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.saved {
+                set_env(key, value.as_deref());
+            }
+        }
+    }
+
+    #[test]
+    fn default_uses_miden_sysroot_when_set() {
+        let _guard = EnvGuard::capture(&[MIDEN_SYSROOT, MIDENUP_HOME, MIDENUP_TOOLCHAIN]);
+
+        let temp = tempfile::TempDir::new().expect("failed to create temp dir");
+        let lib_dir = temp.path().join("lib");
+        std::fs::create_dir_all(&lib_dir).expect("failed to create lib dir");
+
+        set_env(MIDEN_SYSROOT, Some(temp.path().as_os_str()));
+        set_env(MIDENUP_HOME, None);
+        set_env(MIDENUP_TOOLCHAIN, None);
+
+        let options = Options::default();
+
+        assert_eq!(options.sysroot.as_deref(), Some(temp.path()));
+        assert!(
+            options.search_paths.contains(&lib_dir),
+            "expected {:?} to contain {lib_dir:?}",
+            options.search_paths
+        );
+    }
+
+    #[test]
+    fn default_derives_sysroot_from_toolchain_when_miden_sysroot_unset() {
+        let _guard = EnvGuard::capture(&[MIDEN_SYSROOT, MIDENUP_HOME, MIDENUP_TOOLCHAIN]);
+
+        let temp = tempfile::TempDir::new().expect("failed to create temp dir");
+        let toolchain_dir = temp.path().join("toolchains").join("0.16.0");
+        let lib_dir = toolchain_dir.join("lib");
+        std::fs::create_dir_all(&lib_dir).expect("failed to create lib dir");
+
+        set_env(MIDEN_SYSROOT, None);
+        set_env(MIDENUP_HOME, Some(temp.path().as_os_str()));
+        set_env(MIDENUP_TOOLCHAIN, Some(OsStr::new("0.16.0")));
+
+        let options = Options::default();
+
+        assert_eq!(options.sysroot.as_deref(), Some(toolchain_dir.as_path()));
+        assert!(
+            options.search_paths.contains(&lib_dir),
+            "expected {:?} to contain {lib_dir:?}",
+            options.search_paths
+        );
+    }
+
+    #[test]
+    fn default_has_no_sysroot_when_env_unset() {
+        let _guard = EnvGuard::capture(&[MIDEN_SYSROOT, MIDENUP_HOME, MIDENUP_TOOLCHAIN]);
+
+        set_env(MIDEN_SYSROOT, None);
+        set_env(MIDENUP_HOME, None);
+        set_env(MIDENUP_TOOLCHAIN, None);
+
+        let options = Options::default();
+
+        assert!(options.sysroot.is_none());
+        assert!(options.search_paths.is_empty());
     }
 }

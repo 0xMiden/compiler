@@ -818,7 +818,7 @@ mod tests {
                     }
 
                     record tag {
-                        inner: felt
+                        inner: u32
                     }
 
                     /// The identifier of an asset: the word that identifies it in an account vault. It encodes the
@@ -883,11 +883,11 @@ mod tests {
 
                     /// An index of the created note
                     record note-idx {
-                        inner: felt
+                        inner: u16
                     }
 
                     record note-type {
-                        inner: felt
+                        inner: u8
                     }
 
                     record note-execution-hint {
@@ -1041,7 +1041,7 @@ mod tests {
                     }
 
                     record tag {
-                        inner: felt
+                        inner: u32
                     }
 
                     /// The identifier of an asset: the word that identifies it in an account vault. It encodes the
@@ -1106,11 +1106,11 @@ mod tests {
 
                     /// An index of the created note
                     record note-idx {
-                        inner: felt
+                        inner: u16
                     }
 
                     record note-type {
-                        inner: felt
+                        inner: u8
                     }
 
                     record note-execution-hint {

@@ -11,11 +11,27 @@
 //! Encoding and decoding use [`miden_field_repr::FeltReader`] and
 //! [`miden_field_repr::FeltWriter`]. Codecs only parse, display, and validate values. They do not
 //! change this layout.
+//!
+//! # Features
+//!
+//! - `protocol` (default): everything that produces or consumes values of protocol types —
+//!   `NoteStorage`, the `NoteStorageBuilder`, decoding to `DecodedValue`, and the
+//!   `CodecRegistry` with its standard codecs. It is what makes this crate depend on
+//!   `miden-protocol`.
+//! - `codec-component`: loading author-supplied codec components with Wasmtime. Implies
+//!   `protocol`.
+//!
+//! Without `protocol` the crate is the schema model alone: resolving and validating a schema
+//! ([`NoteStorageSchema`]), the structural validation of a codec component
+//! ([`validate_note_codec_component`]), and the limits both are held to. That is all the compiler
+//! uses, and it depends on this crate with the feature off so that it does not link the protocol.
 
 #![deny(missing_docs)]
 
 mod artifact;
+#[cfg(feature = "protocol")]
 mod builder;
+#[cfg(feature = "protocol")]
 mod codec;
 #[cfg(feature = "codec-component")]
 mod codec_component;
@@ -23,17 +39,18 @@ mod codec_structure;
 mod error;
 mod schema;
 mod section;
+mod standard_leaf;
+#[cfg(feature = "protocol")]
 mod value;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "protocol"))]
 mod tests;
 
 pub use artifact::{NotePackageArtifact, NotePackageResolver};
+#[cfg(feature = "protocol")]
 pub use builder::NoteStorageBuilder;
-pub use codec::{
-    ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN, CodecRegistry, ConsumerTypeCodec, FELT_FQN, StandardLeaf,
-    WORD_FQN,
-};
+#[cfg(feature = "protocol")]
+pub use codec::{CodecRegistry, ConsumerTypeCodec};
 #[cfg(feature = "codec-component")]
 pub use codec_component::CodecLimits;
 pub use codec_structure::{
@@ -41,6 +58,7 @@ pub use codec_structure::{
 };
 pub use error::{CodecFailure, Error, Result};
 pub use miden_field::Felt;
+#[cfg(feature = "protocol")]
 pub use miden_protocol::note::NoteStorage;
 pub use schema::{
     FeltLayout, MAX_NOTE_CODEC_COMPONENT_BYTES, MAX_NOTE_STORAGE_SCHEMA_BYTES,
@@ -48,4 +66,6 @@ pub use schema::{
     MAX_NOTE_STORAGE_SCHEMA_TYPES, NOTE_CODEC_GUEST_RUSTFLAGS, NoteStorageSchema, PrimitiveType,
     SchemaCase, SchemaField, SchemaType, SchemaTypeKind,
 };
+pub use standard_leaf::{ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN, FELT_FQN, StandardLeaf, WORD_FQN};
+#[cfg(feature = "protocol")]
 pub use value::{DecodedValue, DecodedValueKind};

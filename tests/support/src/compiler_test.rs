@@ -1041,7 +1041,8 @@ impl CompilerTest {
     ///
     /// The harness compiles **once**, and this artifact's callers want the package too. Capping
     /// the run at `hir.transformed` would make a later `compile_package()` a second compilation,
-    /// which [`CompilerTest::compile`] refuses. Compare [`CompilerTest::expect_ir_unoptimized`],
+    /// which `CompilerTest::compile` (private) refuses. Compare
+    /// [`CompilerTest::expect_ir_unoptimized`],
     /// which does cap, because the HIR document is the whole of what its callers want.
     pub fn hir(&mut self) -> midenc_hir::dialects::builtin::ComponentRef {
         self.compile(

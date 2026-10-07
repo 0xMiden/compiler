@@ -53,6 +53,7 @@ midenc-dialect-hir.workspace = true
 midenc-hir-analysis.workspace = true
 midenc-hir.workspace = true
 midenc-hir-transform.workspace = true
+midenc-package-interface.workspace = true
 midenc-session.workspace = true
 sha2 = { workspace = true, optional = true }
 toml_edit = { workspace = true, optional = true, features = ["parse", "display"] }
@@ -62,4 +63,5 @@ wit-component = { workspace = true, optional = true }
 wit-parser = { workspace = true, optional = true }
 
 [dev-dependencies]
+midenc-dialect-arith.workspace = true
 tempfile.workspace = true

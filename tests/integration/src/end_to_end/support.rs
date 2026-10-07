@@ -9,6 +9,7 @@ use miden_core_lib::{CoreLibrary, handlers::u64_div::U64DivError};
 use miden_mast_package::Package;
 use miden_processor::{DefaultHost, ExecutionError, operation::OperationError};
 use midenc_hir::diagnostics::PrintDiagnostic;
+use midenc_integration_test_support::testing::toolchain;
 use num_traits::{PrimInt, Unsigned};
 use proptest::{
     prelude::*,
@@ -20,13 +21,24 @@ use crate::compiler_test::{sdk_alloc_crate_path, sdk_crate_path};
 const INTRINSICS_ROOT: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/../../codegen/masm/intrinsics/mod.masm");
 
-/// Links the core library package into the assembler.
-fn link_core_package(assembler: &mut Assembler, core_library: &CoreLibrary) {
-    let package = core_library.package();
-    let package_name = package.name.clone();
+/// The `miden-core` package, loaded from the toolchain sysroot.
+///
+/// One source for both halves of an end-to-end test: [`link_core_package`] links it into the
+/// assembler and [`default_host_with_core_package`] loads the same one into the VM host, so the
+/// VM executes the MAST the program was assembled against.
+pub(crate) fn toolchain_core_package() -> Arc<Package> {
+    toolchain::packages_in(&toolchain::sysroot())
+        .unwrap_or_else(|err| panic!("{err}"))
+        .into_iter()
+        .find(|package| package.name == "miden-core")
+        .unwrap_or_else(|| panic!("toolchain sysroot is missing 'miden-core'"))
+}
+
+/// Links the `miden-core` package, loaded from the toolchain sysroot, into the assembler.
+fn link_core_package(assembler: &mut Assembler) {
     assembler
-        .link_package(package, miden_assembly::Linkage::Dynamic)
-        .unwrap_or_else(|err| panic!("failed to link package '{package_name}': {err}"));
+        .link_package(toolchain_core_package(), miden_assembly::Linkage::Dynamic)
+        .unwrap_or_else(|err| panic!("failed to link package 'miden-core': {err}"));
 }
 
 /// Assembles an executable program that wraps `procedure_body` inside a procedure that is called
@@ -36,9 +48,8 @@ fn link_core_package(assembler: &mut Assembler, core_library: &CoreLibrary) {
 /// of either type by their fully-qualified path (`::intrinsics::i32::*` or `::intrinsics::i64::*`).
 pub(super) fn assemble_test_program(procedure_body: &str) -> Arc<Package> {
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager.clone());
-    link_core_package(&mut assembler, &core_library);
+    link_core_package(&mut assembler);
 
     // Parse the intrinsics
     assembler
@@ -56,7 +67,7 @@ pub(super) fn assemble_test_program(procedure_body: &str) -> Arc<Package> {
         .unwrap_or_else(|err| panic!("{}", PrintDiagnostic::new(err)));
 
     let mut assembler = Assembler::new(source_manager);
-    link_core_package(&mut assembler, &core_library);
+    link_core_package(&mut assembler);
     assembler
         .with_package(library.into(), miden_assembly::Linkage::Static)
         .expect("failed to add library package as dependency")
@@ -75,16 +86,22 @@ end
         .unwrap_or_else(|err| panic!("{}", PrintDiagnostic::new(err)))
 }
 
-/// Returns a [`DefaultHost`] with the Miden core library loaded.
+/// Returns a [`DefaultHost`] that executes against the toolchain's core package.
 ///
-/// The core library registers the event handlers required to execute core helpers that rely on
-/// the advice provider.
-pub(crate) fn default_host_with_core_lib() -> DefaultHost {
+/// The MAST comes from the very package [`link_core_package`] links into the assembler, so
+/// assembly and execution cannot drift apart: `HostLibrary::from(&CoreLibrary)` would hand the VM
+/// `miden-core-lib`'s own embedded core instead, which is versioned independently of the pinned
+/// toolchain. `miden-core-lib` contributes only the VM host event handlers that core helpers
+/// relying on the advice provider need, registered separately here.
+pub(crate) fn default_host_with_core_package() -> DefaultHost {
     use miden_processor::HostLibrary;
-    let core_library = CoreLibrary::default();
     let mut host = DefaultHost::default();
-    host.load_library(HostLibrary::from(&core_library))
-        .expect("failed to load core library into host");
+    host.load_library(HostLibrary::from(toolchain_core_package()))
+        .unwrap_or_else(|err| panic!("failed to load package 'miden-core' into host: {err}"));
+    for (event, handler) in CoreLibrary::default().handlers() {
+        host.register_handler(event, handler)
+            .unwrap_or_else(|err| panic!("failed to register core library event handler: {err}"));
+    }
     host
 }
 

@@ -10,8 +10,8 @@ use midenc_session::DiagnosticsHandler;
 
 use self::types::*;
 use crate::{
-    component::SignatureIndex, error::WasmResult, intrinsics::Intrinsic,
-    miden_abi::is_miden_abi_module, unsupported_diag,
+    WasmTranslationConfig, component::SignatureIndex, error::WasmResult,
+    module::linker_stubs::names_a_linker_stub, unsupported_diag,
 };
 
 pub mod build_ir;
@@ -385,13 +385,18 @@ impl Module {
     ///
     /// Intrinsics and Miden ABI linker stubs are identified by name (see
     /// [`maybe_lower_linker_stub`]) and considered internal, so an export or duplicate name that
-    /// identifies a known stub is an error.
+    /// identifies one — per [`names_a_linker_stub`], against the packages `config` links — is an
+    /// error.
     ///
     /// This method is idempotent.
     ///
     /// [name section]: https://webassembly.github.io/spec/core/appendix/custom.html#name-section
     /// [`maybe_lower_linker_stub`]: linker_stubs::maybe_lower_linker_stub
-    pub fn resolve_func_symbols(&mut self, diagnostics: &DiagnosticsHandler) -> WasmResult<()> {
+    pub fn resolve_func_symbols(
+        &mut self,
+        config: &WasmTranslationConfig,
+        diagnostics: &DiagnosticsHandler,
+    ) -> WasmResult<()> {
         self.func_linkages.clear();
         self.duplicate_source_names.clear();
 
@@ -416,7 +421,7 @@ impl Module {
 
             if let Ok(func_ident) = FunctionIdent::from_str(export_name.as_str()) {
                 let path = SymbolPath::from_masm_function_id(func_ident);
-                if Intrinsic::try_from(&path).is_ok() || is_miden_abi_module(&path) {
+                if names_a_linker_stub(&path, config) {
                     unsupported_diag!(
                         diagnostics,
                         "export name '{export_name}' identifies an intrinsic or Miden ABI linker \
@@ -501,13 +506,17 @@ impl Module {
                 };
 
                 if can_use_source_as_linkage {
-                    candidate
+                    let linkage = stub_linkage_name(candidate, config);
+                    if linkage != candidate {
+                        taken.insert(linkage);
+                    }
+                    linkage
                 } else {
                     // Need to construct a unique linkage name.
                     let cand_str = candidate.as_str();
                     if let Ok(func_id) = FunctionIdent::from_str(cand_str) {
                         let path = SymbolPath::from_masm_function_id(func_id);
-                        if Intrinsic::try_from(&path).is_ok() || is_miden_abi_module(&path) {
+                        if names_a_linker_stub(&path, config) {
                             unsupported_diag!(
                                 diagnostics,
                                 "duplicated function name '{cand_str}' identifies an intrinsic or \
@@ -679,4 +688,27 @@ pub struct NameSection {
     pub locals_names: FxHashMap<FuncIndex, FxHashMap<u32, Symbol>>,
     pub globals_names: FxHashMap<GlobalIndex, Symbol>,
     pub data_segment_names: FxHashMap<DataSegmentIndex, Symbol>,
+}
+
+/// The linkage name of a function whose source name is a linker-stub path with quoted
+/// components: that path with the quotes removed. Any other name is returned as it is.
+///
+/// A stub is recognized by its *source* name, which stays as the bindings spelled it — the MASM
+/// path of the procedure it binds, `"masm-dep"::add_pair` for a package whose root module needs
+/// quoting. Its linkage name becomes the name of a local procedure in the assembled module,
+/// where it is quoted whole on account of the `::`; a name that already holds quotes would nest
+/// them, which the assembler cannot read. `masm-dep::add_pair` quotes cleanly, and the call
+/// sites use the same linkage name, so nothing else changes.
+fn stub_linkage_name(candidate: Symbol, config: &WasmTranslationConfig) -> Symbol {
+    let name = candidate.as_str();
+    if !name.contains('"') {
+        return candidate;
+    }
+    let Ok(func_id) = FunctionIdent::from_str(name) else {
+        return candidate;
+    };
+    if !names_a_linker_stub(&SymbolPath::from_masm_function_id(func_id), config) {
+        return candidate;
+    }
+    Symbol::intern(name.replace('"', ""))
 }

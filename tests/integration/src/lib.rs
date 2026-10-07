@@ -3,11 +3,10 @@
 
 pub use midenc_integration_test_support::{
     self as support, CargoTest, CompilerTest, CompilerTestBuilder, Project, ProjectBuilder,
-    RustcTest, WasmTest, cargo_proj, compiler_test, default_session, project, testing,
+    RustcTest, WasmTest, assert_unique_protocol_export, cargo_proj, compiler_test, default_session,
+    find_manifest_procedure, project, testing,
 };
 
-#[cfg(test)]
-mod assert_helpers;
 #[cfg(test)]
 mod codegen;
 #[cfg(test)]

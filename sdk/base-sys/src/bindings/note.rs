@@ -2,106 +2,15 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use miden_stdlib_sys::{Felt, Word, WordAligned};
+use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
-    AccountId, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteType, RawAccountId,
-    RawFoundIndex, Recipient, Tag, assert_attachment_count,
+    AccountId, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteType, Recipient, Tag,
+    assert_attachment_count,
 };
+use crate::raw::protocol::note as raw;
 
 const MAX_NOTE_STORAGE_ITEMS: usize = 1024;
-
-#[allow(improper_ctypes)]
-unsafe extern "C" {
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::note::compute_and_store_recipient"]
-    fn extern_note_build_recipient(
-        storage_ptr: *mut Felt,
-        num_storage_items: usize,
-        serial_num_f0: Felt,
-        serial_num_f1: Felt,
-        serial_num_f2: Felt,
-        serial_num_f3: Felt,
-        script_root_f0: Felt,
-        script_root_f1: Felt,
-        script_root_f2: Felt,
-        script_root_f3: Felt,
-        ptr: *mut Recipient,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::note::compute_storage_commitment"]
-    fn extern_note_compute_storage_commitment(
-        storage_ptr: *const Felt,
-        num_storage_items: usize,
-        ptr: *mut Word,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::note::compute_recipient"]
-    fn extern_note_compute_recipient(
-        serial_num_f0: Felt,
-        serial_num_f1: Felt,
-        serial_num_f2: Felt,
-        serial_num_f3: Felt,
-        script_root_f0: Felt,
-        script_root_f1: Felt,
-        script_root_f2: Felt,
-        script_root_f3: Felt,
-        storage_commitment_f0: Felt,
-        storage_commitment_f1: Felt,
-        storage_commitment_f2: Felt,
-        storage_commitment_f3: Felt,
-        ptr: *mut Recipient,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::note::metadata_into_sender"]
-    fn extern_note_metadata_into_sender(
-        metadata_f0: Felt,
-        metadata_f1: Felt,
-        metadata_f2: Felt,
-        metadata_f3: Felt,
-        ptr: *mut RawAccountId,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::note::metadata_into_attachment_schemes"]
-    fn extern_note_metadata_into_attachment_schemes(
-        metadata_f0: Felt,
-        metadata_f1: Felt,
-        metadata_f2: Felt,
-        metadata_f3: Felt,
-        ptr: *mut Word,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::note::metadata_into_note_type"]
-    fn extern_note_metadata_into_note_type(
-        metadata_f0: Felt,
-        metadata_f1: Felt,
-        metadata_f2: Felt,
-        metadata_f3: Felt,
-    ) -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::note::metadata_into_tag"]
-    fn extern_note_metadata_into_tag(
-        metadata_f0: Felt,
-        metadata_f1: Felt,
-        metadata_f2: Felt,
-        metadata_f3: Felt,
-    ) -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::note::find_attachment_idx"]
-    fn extern_note_find_attachment_idx(
-        attachment_scheme: Felt,
-        metadata_f0: Felt,
-        metadata_f1: Felt,
-        metadata_f2: Felt,
-        metadata_f3: Felt,
-        ptr: *mut RawFoundIndex,
-    );
-    // The name must stay in lockstep with the stub's `export_name` (`stubs/note.rs`) and
-    // `SCRIPT_ROOT_STUB_NAME` in the compiler frontend (`frontend/wasm/src/intrinsics/note.rs`).
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "intrinsics::note::script_root"]
-    fn extern_note_script_root(ptr: *mut Word);
-}
 
 /// Returns the MAST root digest of the note script defined by the current crate.
 ///
@@ -122,11 +31,45 @@ unsafe extern "C" {
 /// [`active_note::get_script_root`]: crate::bindings::active_note::get_script_root
 #[doc(hidden)]
 pub fn __entrypoint_root() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_note_script_root(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
+    #[cfg(all(target_family = "wasm", miden))]
+    {
+        use core::mem::MaybeUninit;
+
+        use miden_stdlib_sys::WordAligned;
+
+        unsafe extern "C" {
+            // The name must stay in lockstep with the stub's `export_name`
+            // (`stubs/intrinsics.rs`) and `SCRIPT_ROOT_STUB_NAME` in the compiler frontend
+            // (`frontend/wasm/src/intrinsics/note.rs`).
+            #[linkage = "extern_weak"]
+            #[link_name = "intrinsics::note::script_root"]
+            fn extern_note_script_root(ptr: *mut Word);
+        }
+        unsafe {
+            let mut ret_area = WordAligned::new(MaybeUninit::<Word>::uninit());
+            extern_note_script_root(ret_area.as_mut_ptr());
+            ret_area.into_inner().assume_init()
+        }
     }
+    #[cfg(not(all(target_family = "wasm", miden)))]
+    {
+        unimplemented!(
+            "`intrinsics::note::script_root` is only available when compiled for the Miden VM"
+        )
+    }
+}
+
+/// Returns the element address of `storage` for the protocol's note storage procedures, which
+/// read it a word at a time: `0` for empty storage, else the word-aligned address of its first
+/// element.
+fn storage_ptr(storage: &[Felt]) -> ElementPtr<Felt> {
+    if storage.is_empty() {
+        return ElementPtr::new(0);
+    }
+    let ptr = ElementPtr::from_ptr(storage.as_ptr().cast_mut());
+    // Vec storage comes from the SDK allocator, which only produces word-aligned pointers.
+    assert_eq!(ptr.addr() % 4, 0, "storage pointer must be word-aligned");
+    ptr
 }
 
 /// Computes and stores a note recipient from serial number, script root, and storage elements.
@@ -145,34 +88,17 @@ pub fn compute_and_store_recipient(
         storage.len() <= MAX_NOTE_STORAGE_ITEMS,
         "note storage cannot contain more than {MAX_NOTE_STORAGE_ITEMS} items"
     );
-
-    let rust_ptr = if storage.is_empty() {
-        0
-    } else {
-        storage.as_ptr().addr() as u32
+    // The bound above makes the length fit in the protocol's `u16`.
+    let num_storage_items = storage.len() as u16;
+    let recipient = unsafe {
+        raw::compute_and_store_recipient(
+            storage_ptr(&storage),
+            num_storage_items,
+            serial_num,
+            script_root,
+        )
     };
-    let miden_ptr = rust_ptr / 4;
-
-    // Vec storage comes from the SDK allocator, which only produces word-aligned pointers.
-    assert_eq!(miden_ptr % 4, 0, "storage pointer must be word-aligned");
-
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Recipient>::uninit());
-        extern_note_build_recipient(
-            miden_ptr as *mut Felt,
-            storage.len(),
-            serial_num[0],
-            serial_num[1],
-            serial_num[2],
-            serial_num[3],
-            script_root[0],
-            script_root[1],
-            script_root[2],
-            script_root[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init()
-    }
+    recipient.into()
 }
 
 /// Builds a note recipient from the provided serial number, script root, and storage elements.
@@ -190,25 +116,9 @@ pub fn compute_storage_commitment(storage: &[Felt]) -> Word {
         storage.len() <= MAX_NOTE_STORAGE_ITEMS,
         "note storage cannot contain more than {MAX_NOTE_STORAGE_ITEMS} items"
     );
-
-    let rust_ptr = if storage.is_empty() {
-        0
-    } else {
-        storage.as_ptr().addr() as u32
-    };
-    let miden_ptr = rust_ptr / 4;
-
-    assert_eq!(miden_ptr % 4, 0, "storage pointer must be word-aligned");
-
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_note_compute_storage_commitment(
-            miden_ptr as *const Felt,
-            storage.len(),
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init()
-    }
+    // The bound above makes the length fit in the protocol's `u16`.
+    let num_storage_items = storage.len() as u16;
+    unsafe { raw::compute_storage_commitment(storage_ptr(storage), num_storage_items) }
 }
 
 /// Loads the attachment commitments committed to by `attachments_commitment` from the advice map.
@@ -269,93 +179,33 @@ pub fn compute_recipient(
     script_root: Word,
     storage_commitment: Word,
 ) -> Recipient {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Recipient>::uninit());
-        extern_note_compute_recipient(
-            serial_num[0],
-            serial_num[1],
-            serial_num[2],
-            serial_num[3],
-            script_root[0],
-            script_root[1],
-            script_root[2],
-            script_root[3],
-            storage_commitment[0],
-            storage_commitment[1],
-            storage_commitment[2],
-            storage_commitment[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init()
-    }
+    raw::compute_recipient(serial_num, script_root, storage_commitment).into()
 }
 
 /// Extracts the sender account ID from a note metadata header word.
 pub fn metadata_into_sender(metadata: Word) -> AccountId {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawAccountId>::uninit());
-        extern_note_metadata_into_sender(
-            metadata[0],
-            metadata[1],
-            metadata[2],
-            metadata[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init().into_account_id()
-    }
+    raw::metadata_into_sender(metadata).into()
 }
 
-/// Extracts the four attachment schemes encoded in a note metadata header word.
-pub fn metadata_into_attachment_schemes(metadata: Word) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_note_metadata_into_attachment_schemes(
-            metadata[0],
-            metadata[1],
-            metadata[2],
-            metadata[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init()
-    }
+/// Extracts the four attachment schemes encoded in a note metadata header word, in attachment
+/// order. Each is the `u16` the attachment lookups and `add_*attachment` procedures take.
+pub fn metadata_into_attachment_schemes(metadata: Word) -> [u16; 4] {
+    let (first, second, third, fourth) = raw::metadata_into_attachment_schemes(metadata);
+    [first, second, third, fourth]
 }
 
 /// Extracts the note type encoded in a note metadata header word.
 pub fn metadata_into_note_type(metadata: Word) -> NoteType {
-    unsafe {
-        NoteType::from(extern_note_metadata_into_note_type(
-            metadata[0],
-            metadata[1],
-            metadata[2],
-            metadata[3],
-        ))
-    }
+    raw::metadata_into_note_type(metadata).into()
 }
 
 /// Extracts the note tag encoded in a note metadata header word.
 pub fn metadata_into_tag(metadata: Word) -> Tag {
-    unsafe {
-        Tag::from(extern_note_metadata_into_tag(
-            metadata[0],
-            metadata[1],
-            metadata[2],
-            metadata[3],
-        ))
-    }
+    raw::metadata_into_tag(metadata).into()
 }
 
 /// Searches a metadata header word for `attachment_scheme`.
-pub fn find_attachment_idx(attachment_scheme: Felt, metadata: Word) -> Option<u32> {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawFoundIndex>::uninit());
-        extern_note_find_attachment_idx(
-            attachment_scheme,
-            metadata[0],
-            metadata[1],
-            metadata[2],
-            metadata[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init().into_attachment_index()
-    }
+pub fn find_attachment_idx(attachment_scheme: u16, metadata: Word) -> Option<u32> {
+    let (found, index) = raw::find_attachment_idx(attachment_scheme, metadata);
+    found.then_some(index.into())
 }

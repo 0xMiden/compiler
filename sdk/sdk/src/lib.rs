@@ -21,6 +21,10 @@ pub use miden_field_repr as felt_repr;
 // (which reference `miden_field_repr::...`) resolve in crates that only depend on `miden`
 // and glob-import it.
 pub use miden_field_repr;
+/// The items generated bindings refer to (`Felt`, `Word`, `ElementPtr`, the constant carriers):
+/// bindings a user project generates for its own MASM dependencies name them as
+/// `::miden::support`.
+pub use miden_intrinsics_sys::support;
 pub use miden_sdk_alloc::BumpAlloc;
 pub use miden_stdlib_sys::*;
 pub use miden_tx_script_args::{
@@ -28,3 +32,10 @@ pub use miden_tx_script_args::{
 };
 // Re-export since `wit_bindgen::generate!` is used in `generate!`
 pub use wit_bindgen;
+
+/// Bindings generated from the Miden package manifests: one module per package, every
+/// `exec`-callable procedure as a function, every exported type and constant.
+pub mod raw {
+    pub use miden_base_sys::raw::{protocol, standards};
+    pub use miden_stdlib_sys::raw::core;
+}

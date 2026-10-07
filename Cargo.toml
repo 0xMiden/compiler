@@ -33,6 +33,7 @@ members = [
     "sdk/base",
     "sdk/base-macros",
     "sdk/base-sys",
+    "sdk/bindgen",
     "sdk/build-script-support",
     "sdk/note-bindings",
     "sdk/note-bindings/macros",
@@ -41,6 +42,8 @@ members = [
     "sdk/note-codec/wit-crate",
     "sdk/note-schema",
     "sdk/note-schema/codegen",
+    "sdk/intrinsics-sys",
+    "sdk/package-interface",
     "sdk/sdk",
     "sdk/stdlib-sys",
     "sdk/tx-script-args",
@@ -52,6 +55,7 @@ members = [
     "tests/support",
     "tests/integration",
     "tests/integration-network",
+    "tests/integration-protocol",
     "tests/templates",
 ]
 exclude = [
@@ -124,7 +128,6 @@ miden-core-lib = { version = "0.35.0", default-features = false }
 miden-mast-package = { version = "0.35.0", default-features = false }
 miden-package-registry = { version = "0.35.0", default-features = false }
 miden-project = { version = "0.35.0", default-features = false }
-miden-utils-sync = { version = "0.35.0", default-features = false }
 miden-field = { version = "0.35.0", default-features = false }
 midenc-hir-type = "0.17"
 
@@ -205,15 +208,21 @@ midenc-frontend-wasm-metadata = { version = "0.15.0", path = "sdk/wasm-metadata"
 midenc-compile = { version = "0.11.0", path = "midenc-compile" }
 midenc-driver = { version = "0.11.0", path = "midenc-driver" }
 midenc-log = { version = "0.11.0", path = "midenc-log", features = ["kv"] }
+midenc-package-interface = { version = "0.15.0", path = "sdk/package-interface" }
 midenc-session = { version = "0.11.0", path = "midenc-session" }
 midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }
+miden-sdk-bindgen = { version = "0.15.0", path = "sdk/bindgen" }
+miden-sdk-build-script-support = { version = "0.15.0", path = "sdk/build-script-support" }
+miden-intrinsics-sys = { version = "0.15.0", path = "sdk/intrinsics-sys" }
 miden-base-sys = { version = "0.15.0", path = "sdk/base-sys" }
 miden-field-repr = { version = "0.15.0", path = "sdk/field-repr/repr" }
 miden-note-bindings-macros = { version = "0.15.0", path = "sdk/note-bindings/macros" }
 miden-note-codec-macros = { version = "0.15.0", path = "sdk/note-codec/macros" }
 miden-note-codec-wit = { version = "0.15.0", path = "sdk/note-codec/wit-crate" }
-miden-note-schema = { version = "0.15.0", path = "sdk/note-schema" }
+# Without default features: the compiler uses the schema model only, and must not link the
+# protocol crate through it. The SDK crates enable `protocol` where they depend on it.
+miden-note-schema = { version = "0.15.0", path = "sdk/note-schema", default-features = false }
 miden-note-schema-codegen = { version = "0.15.0", path = "sdk/note-schema/codegen" }
 miden-stdlib-sys = { version = "0.15.0", path = "sdk/stdlib-sys" }
 miden-tx-script-args = { version = "0.15.0", path = "sdk/tx-script-args" }
@@ -281,6 +290,27 @@ overflow-checks = false
 incremental = false
 
 [profile.test.package.miden-debug]
+opt-level = 3
+
+# What the debug executor does for every evaluation of a test program: deserializing the
+# packages it loads, hashing their commitments and reading their debug info. A property test
+# pays for it once per case.
+[profile.test.package.miden-debug-engine]
+opt-level = 3
+
+[profile.test.package.miden-mast-package]
+opt-level = 3
+
+[profile.test.package.miden-package-registry]
+opt-level = 3
+
+[profile.test.package.miden-serde-utils]
+opt-level = 3
+
+[profile.test.package.miden-field]
+opt-level = 3
+
+[profile.test.package.p3-goldilocks]
 opt-level = 3
 # ============================================================
 

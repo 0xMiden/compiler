@@ -69,8 +69,15 @@ impl NativePtr {
     /// For example, a pointer to the first word in linear memory, i.e. address 1, with an offset
     /// of 2, is equivalent to an address in byte-addressable memory of 6, which has an implied
     /// alignment of 2 bytes.
+    ///
+    /// Address 0 is aligned to every power of two; it is given the largest one a `u32` holds.
     pub const fn alignment(&self) -> u32 {
-        2u32.pow(self.as_ptr().trailing_zeros())
+        let trailing_zeros = self.as_ptr().trailing_zeros();
+        if trailing_zeros < u32::BITS {
+            1 << trailing_zeros
+        } else {
+            1 << (u32::BITS - 1)
+        }
     }
 
     /// Converts this native pointer back to a byte-addressable pointer value

@@ -1,0 +1,9 @@
+pub type Pair = struct { a: felt, b: felt }
+
+pub proc add_pair(p: Pair) -> felt
+    add
+end
+
+pub proc double(x: u32) -> u32
+    push.2 u32wrapping_mul
+end

@@ -18,6 +18,25 @@ use midenc_session::{
 
 use crate::CompilerResult;
 
+/// Some small, well-formed package, for a test that needs one to stage, copy or attach sections
+/// to and does not care what is in it. Assembled in-test, so it needs no toolchain.
+pub(crate) fn some_package() -> Arc<miden_mast_package::Package> {
+    use miden_assembly::{Assembler, ModuleParser, ast::ModuleKind};
+
+    let source_manager = Arc::new(midenc_session::diagnostics::DefaultSourceManager::default());
+    let module = ModuleParser::new(Some(ModuleKind::Library))
+        .parse_str(
+            Some(MasmPath::new("::probe")),
+            "pub proc id\n    nop\nend\n",
+            source_manager.clone(),
+        )
+        .expect("the probe module should parse");
+    let package = Assembler::new(source_manager)
+        .assemble_library("probe", module, core::iter::empty::<Box<miden_assembly::ast::Module>>())
+        .expect("the probe module should assemble");
+    Arc::from(package)
+}
+
 /// Write `contents` to `<temp>/midenc-pipeline-fixtures/<dir>/<file>` and return its path.
 ///
 /// [`VirtualProject`] needs a target root that exists on disk, because the dependency graph
@@ -112,6 +131,63 @@ pub(crate) fn context_emitting(
     let session = Session::new(InputFile::empty(), options, None, source_manager)
         .expect("should build a session");
     Rc::new(midenc_hir::Context::new(Rc::new(session)))
+}
+
+/// `Options::default()`, with its sysroot pointed at the toolchain under test.
+///
+/// `Options::default()` alone has no sysroot at all, which is fine for the many tests that
+/// never resolve a real linked package — but `midenc_codegen_masm::intrinsics::load` now
+/// assembles the compiler intrinsics per session against whatever core the session links,
+/// rather than an embedded package built for no toolchain in particular. Every test whose
+/// session reaches real assembly (through `pipeline::assembly::prepare_assembler`, directly or
+/// by way of a full build) needs a session that can actually resolve one — including a test
+/// that only needs *some* well-formed package, to hand to `post_process` say, and does not care
+/// which.
+///
+/// The toolchain is `MIDEN_SYSROOT` when it is set, and otherwise the one `Options::default()`
+/// derives from `MIDENUP_HOME` and `MIDENUP_TOOLCHAIN`; one of the two must name a toolchain.
+pub(crate) fn options_linked_to_the_toolchain() -> midenc_session::Options {
+    use midenc_session::Options;
+
+    let sysroot = match std::env::var_os("MIDEN_SYSROOT") {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => Options::default().sysroot.expect(
+            "this test needs a Miden toolchain: set MIDEN_SYSROOT to one, or set MIDENUP_HOME and \
+             MIDENUP_TOOLCHAIN so that one can be derived",
+        ),
+    };
+    let defaults = Options::default();
+    // `Options::new` only pushes `sysroot/lib` onto `search_paths` when that directory
+    // actually exists, so a stale `MIDEN_SYSROOT` leaves `search_paths` empty here instead of
+    // pointing at a directory that isn't there — which is what lets the later failure to
+    // resolve core surface as the curated "install a Miden toolchain with midenup" error
+    // rather than a raw `read_dir` failure.
+    let with_sysroot = Options::new(
+        None,
+        None,
+        defaults.current_dir.clone(),
+        defaults.target_dir.clone(),
+        None,
+        Some(sysroot),
+    );
+    Options {
+        sysroot: with_sysroot.sysroot,
+        search_paths: with_sysroot.search_paths,
+        ..defaults
+    }
+}
+
+/// A minimal session whose sysroot is the toolchain under test — see
+/// [`options_linked_to_the_toolchain`].
+pub(crate) fn session_linked_to_the_toolchain() -> Rc<midenc_session::Session> {
+    use midenc_session::{InputFile, Session};
+
+    let options = Box::new(options_linked_to_the_toolchain());
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    Rc::new(
+        Session::new(InputFile::empty(), options, None, source_manager)
+            .expect("should build a session"),
+    )
 }
 
 /// The smallest [`MidenComponent`] the backend accepts, built in `context`.

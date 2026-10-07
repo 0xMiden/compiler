@@ -245,6 +245,18 @@ unit = "sdk"
 name = "miden-note-codec-wit"
 unit = "sdk"
 
+[[packages]]
+name = "midenc-package-interface"
+unit = "sdk"
+
+[[packages]]
+name = "miden-sdk-bindgen"
+unit = "sdk"
+
+[[packages]]
+name = "miden-intrinsics-sys"
+unit = "sdk"
+
 # --- private: repository infrastructure, never published ----------------------
 
 [[packages]]
@@ -257,6 +269,10 @@ unit = "private"
 
 [[packages]]
 name = "midenc-integration-network-tests"
+unit = "private"
+
+[[packages]]
+name = "midenc-integration-protocol-tests"
 unit = "private"
 
 [[packages]]

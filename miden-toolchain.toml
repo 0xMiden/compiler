@@ -1,0 +1,14 @@
+# The Miden toolchain the compiler's own test suites run against. `midenup` reads this; so does
+# `Makefile.toml`, which derives `MIDEN_SYSROOT` from it when the variable is unset.
+[toolchain]
+channel = "0.17.0"
+profile = "empty"
+components = ["core", "protocol"]
+
+#[patches.midenc]
+#crate_name = "midenc"
+#version = { kind = "path", path = "./midenc" }
+
+#[patches.cargo-miden]
+#crate_name = "cargo-miden"
+#version = { kind = "path", path = "./tools/cargo-miden" }

@@ -9,7 +9,7 @@ use super::wasm_interpreter::WasmInterpreter;
 use crate::{
     CompilerTestBuilder,
     end_to_end::support::{
-        NumericCases, NumericStrategy, TrapExpectation, default_host_with_core_lib,
+        NumericCases, NumericStrategy, TrapExpectation, default_host_with_core_package,
     },
 };
 
@@ -60,7 +60,7 @@ where
         .expect("invalid stack inputs");
 
         let vm_result = FastProcessor::new(stack_inputs)
-            .execute_sync(&program, &mut default_host_with_core_lib());
+            .execute_sync(&program, &mut default_host_with_core_package());
 
         match (expected, vm_result) {
             (Ok(expected), Ok(output)) => {

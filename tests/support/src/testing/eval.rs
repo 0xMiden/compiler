@@ -3,8 +3,6 @@ use std::sync::Arc;
 use miden_core::Felt;
 use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
 use miden_processor::advice::AdviceInputs;
-use miden_protocol::{ProtocolLib, transaction::TransactionKernel};
-use miden_standards::StandardsLib;
 use midenc_compile::MidenComponent;
 use midenc_hir::{Type, dialects::builtin::attributes::Signature};
 use midenc_session::Session;
@@ -146,14 +144,14 @@ where
     advice_stack.insert(0, Felt::new_unchecked(num_initializers));
     advice_stack.extend(user_advice_stack);
 
-    let registry = miden_debug::HybridPackageRegistry::new(
-        session.options.sysroot.as_deref(),
-        session.options.search_paths.as_slice(),
-        &[],
-    )
-    .map_err(|err| TestCaseError::fail(err.to_string()))?;
+    // The registry is not given the sysroot: it would read and install every toolchain package
+    // from disk on each evaluation, and the loop below registers the same packages from the
+    // copies `toolchain::packages` already holds.
+    let registry =
+        miden_debug::HybridPackageRegistry::new(None, session.options.search_paths.as_slice(), &[])
+            .map_err(|err| TestCaseError::fail(err.to_string()))?;
     let mut exec = Executor::new(args.to_vec()).with_registry(registry);
-    // The core and protocol libraries are registered from their bundled packages below.
+    // The core and protocol libraries are registered from the toolchain sysroot below.
     for library in session
         .options
         .link_libraries
@@ -166,16 +164,12 @@ where
         exec.with_package(package).map_err(|err| TestCaseError::fail(err.to_string()))?;
     }
 
-    register_core_packages(&mut exec).map_err(TestCaseError::fail)?;
+    for toolchain_package in toolchain::packages(session) {
+        exec.with_package(toolchain_package)
+            .map_err(|err| TestCaseError::fail(err.to_string()))?;
+    }
 
-    let tx_kernel = TransactionKernel::package();
-    let protocol_lib = ProtocolLib::default().package();
-    exec.with_package(tx_kernel)
-        .map_err(|err| TestCaseError::fail(err.to_string()))?;
-    exec.with_package(protocol_lib)
-        .map_err(|err| TestCaseError::fail(err.to_string()))?;
-    exec.with_package(Arc::new(StandardsLib::default().as_ref().clone()))
-        .map_err(|err| TestCaseError::fail(err.to_string()))?;
+    register_core_event_handlers(&mut exec).map_err(TestCaseError::fail)?;
 
     exec.with_advice_inputs(AdviceInputs::default().with_stack(advice_stack.into()));
 

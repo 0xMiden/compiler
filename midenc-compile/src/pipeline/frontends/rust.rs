@@ -36,6 +36,7 @@ use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs, SourceF
 use miden_mast_package::Package as MastPackage;
 use midenc_frontend_wasm_metadata::package_cache;
 use midenc_hir::{Context, formatter::DisplayMany};
+use midenc_package_interface::PackageInterface;
 use midenc_session::{FileType, InputFile, InputType, Options, Session, diagnostics::Report};
 
 use super::wasm::{WasmFrontend, WasmSource};
@@ -311,14 +312,25 @@ fn make_rust_standalone(_session: Rc<Session>) -> Rc<dyn Frontend> {
 /// gap: a dependency's checkpoints are precisely what must *not* reach this request's observers
 /// or its goal, so the type system holding it here is the guard. The **root** target does not
 /// come through here at all; see [`RustProjectFrontend::compile`].
+///
+/// # What the caller must bring: the dependency's own dependencies
+///
+/// `dependencies` are the interfaces of the packages the project at `manifest_path` declares
+/// in *its* `miden-project.toml` (see `super::wasm::dependency_interfaces`). Its linker stubs
+/// resolve against them — the sysroot's packages alone cannot answer for a MASM package of the
+/// dependency's own — and only the caller, holding the assembler's [`TargetContext`] for this
+/// dependency, can produce them: the nested session built here knows nothing of the enclosing
+/// project's dependency graph. Passing an empty slice compiles a project that binds nothing
+/// beyond the sysroot, and silently traps one that does.
 pub fn compile_manifest(
     manifest_path: &Path,
     filesystem_cache_dir: Option<&Path>,
     context: Rc<Context>,
+    dependencies: &[PackageInterface],
 ) -> CompilerResult<CodegenOutput> {
     let session = context.session_rc();
     let wasm = build_manifest_to_wasm(manifest_path, filesystem_cache_dir, &session)?;
-    lower_wasm_artifact(wasm, context)
+    lower_wasm_artifact(wasm, context, dependencies)
 }
 
 /// Run `cargo` over the project the manifest at `manifest_path` declares, and hand back the
@@ -386,8 +398,12 @@ pub fn build_manifest_to_wasm(
 ///
 /// Named rather than inlined so that the half of the entry point which does *not* require a
 /// multi-minute `cargo build -Z build-std` against the SDK is assertable on its own.
-fn lower_wasm_artifact(wasm: InputFile, context: Rc<Context>) -> CompilerResult<CodegenOutput> {
-    super::wasm::lower_wasm_input(&wasm, context)
+fn lower_wasm_artifact(
+    wasm: InputFile,
+    context: Rc<Context>,
+    dependencies: &[PackageInterface],
+) -> CompilerResult<CodegenOutput> {
+    super::wasm::lower_wasm_input(&wasm, context, dependencies)
 }
 
 /// Compile the Rust source `input` to WebAssembly, and hand back the file it produced.
@@ -807,6 +823,8 @@ fn rustc(
         .arg("-g") // generate debug info
         .args(["-C", "opt-level=s"]) // optimize for size
         .args(["-C", "target-feature=+wide-arithmetic"])
+        // No 64-bit copies merged from two 32-bit ones, as for `MANDATORY_RUST_FLAGS`
+        .args(["-C", "llvm-args=-combiner-store-merging=false"])
         .args(rustc_flags)
         .arg("--target")
         .arg(target.as_deref().unwrap_or("wasm32-wasip1"))
@@ -1106,6 +1124,9 @@ impl RustProjectFrontend {
         if let Some(cache_dir) = filesystem_cache_dir.as_deref() {
             self.write_dependency_manifest_once(cx, cache_dir)?;
         }
+        // Computed here, from this dependency's target context, because the nested build has
+        // no view of the dependency graph: see `compile_manifest`.
+        let dependencies = super::wasm::dependency_interfaces(cx)?;
         crate::cargo::cargo_build(
             assembly.package.name().to_string(),
             assembly.target,
@@ -1114,6 +1135,7 @@ impl RustProjectFrontend {
             &self.session.options,
             &cargo_opts,
             source_manager,
+            &dependencies,
         )
     }
 
@@ -1834,6 +1856,15 @@ pub(crate) mod manifest {
         // Build with panic=immediate-abort
         "-Zunstable-options",
         "-Cpanic=immediate-abort",
+        // LLVM's DAG combiner merges adjacent 32-bit stores of constants or of loaded values
+        // into one 64-bit store on wasm32: a copy of two `f32`s becomes `i64.load`/`i64.store`,
+        // a pair of constants one `i64.const`. On Miden a 64-bit access is two element accesses
+        // through the `load_dw`/`store_dw` intrinsics, so the merge only costs size and cycles.
+        // This is not what protects felts: a pair of felts *assembled* into an `i64` with
+        // `extend`/`shl`/`or` comes from LLVM's IR-level passes, which this option does not
+        // reach; see `midenc-codegen-masm`'s legalization for what is done about that shape.
+        "-C",
+        "llvm-args=-combiner-store-merging=false",
     ];
 
     /// Executes a Cargo-based build with the provided compiler options and package registry
@@ -2615,7 +2646,9 @@ mod tests {
     /// `post_process` must reject the cache miss before it looks at the package at all, so
     /// which package it is does not matter.
     fn any_package() -> MastPackage {
-        (*midenc_codegen_masm::intrinsics::load()).clone()
+        let session = testing::session_linked_to_the_toolchain();
+        (*midenc_codegen_masm::intrinsics::load(&session).expect("the intrinsics should load"))
+            .clone()
     }
 
     /// A minimal build result to seed a frontend's cache with.
@@ -3482,7 +3515,7 @@ path = "lib.rs"
         let dir = manifest_fixture("rust_manifest_kernel", KERNEL_MANIFEST);
 
         let msg = manifest_error(
-            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {})),
+            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {}), &[]),
             "a kernel cannot be built through this route",
         );
         assert!(
@@ -3501,6 +3534,7 @@ path = "lib.rs"
                 &dir.join("miden-project.toml"),
                 None,
                 manifest_context(|options| options.target = Some("three".to_string())),
+                &[],
             ),
             "the project declares no executable named 'three'",
         );
@@ -3527,7 +3561,7 @@ path = "lib.rs"
             .expect("should write the Cargo manifest");
 
         let from_manifest_build = manifest_error(
-            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {})),
+            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {}), &[]),
             "a project declaring two executables cannot be built without a selection",
         );
         let from_session = Session::new(
@@ -3565,7 +3599,7 @@ path = "lib.rs"
         assert!(!dir.join("Cargo.toml").exists(), "the Cargo manifest must not exist");
 
         let msg = manifest_error(
-            compile_manifest(&dir.join("Cargo.toml"), None, manifest_context(|_| {})),
+            compile_manifest(&dir.join("Cargo.toml"), None, manifest_context(|_| {}), &[]),
             "a workspace manifest cannot be built without a selection",
         );
         assert!(
@@ -3583,7 +3617,7 @@ path = "lib.rs"
         let dir = manifest_fixture("rust_manifest_direct", WORKSPACE_MANIFEST);
 
         let msg = manifest_error(
-            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {})),
+            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {}), &[]),
             "a workspace manifest cannot be built without a selection",
         );
         assert!(
@@ -3604,7 +3638,12 @@ path = "lib.rs"
         let manifest = dir.join("miden-project.toml");
 
         let msg = manifest_error(
-            compile_manifest(&manifest, None, manifest_context(|options| options.workspace = true)),
+            compile_manifest(
+                &manifest,
+                None,
+                manifest_context(|options| options.workspace = true),
+                &[],
+            ),
             "this workspace has no members to build",
         );
         assert!(
@@ -3617,6 +3656,7 @@ path = "lib.rs"
                 &manifest,
                 None,
                 manifest_context(|options| options.packages = vec!["absent".to_string()]),
+                &[],
             ),
             "the selected package is not a member of this workspace",
         );
@@ -3654,6 +3694,7 @@ path = "lib.rs"
                 &dir.join("miden-project.toml"),
                 None,
                 manifest_context(|options| options.packages = vec!["other".to_string()]),
+                &[],
             ),
             "`other` is not the package this manifest defines",
         );
@@ -3751,6 +3792,20 @@ path = "lib.rs"
         assert_eq!(
             manifest::nested_cargo_target_dir(std::path::Path::new("/project"), &custom, false),
             Some(custom.join("cargo"))
+        );
+    }
+
+    /// Both cargo routes build with LLVM's store merging off, so a copy of two adjacent 32-bit
+    /// values does not reach the backend as one 64-bit load and store. The `rustc` route passes
+    /// the same flag, which `tests/lit/midenc/rust-store-merging-off.rs` checks.
+    #[test]
+    fn the_mandatory_rust_flags_turn_off_llvm_store_merging() {
+        assert!(
+            manifest::MANDATORY_RUST_FLAGS
+                .windows(2)
+                .any(|flag| flag == ["-C", "llvm-args=-combiner-store-merging=false"]),
+            "{:?}",
+            manifest::MANDATORY_RUST_FLAGS
         );
     }
 
@@ -3869,7 +3924,7 @@ path = "lib.rs"
         let wasm = testing::fixture_source("rust_manifest_lowering", "lib.wat", MANIFEST_WAT);
         let input = InputFile::from_path(wasm).expect("a `.wat` file is a valid compiler input");
 
-        let output = lower_wasm_artifact(input, manifest_context(|_| {}))
+        let output = lower_wasm_artifact(input, manifest_context(|_| {}), &[])
             .expect("the module a manifest build produces must lower to Miden Assembly");
 
         // Two weaker assertions this deliberately avoids. A module *count* is satisfied by a

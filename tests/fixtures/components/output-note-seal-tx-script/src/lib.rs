@@ -17,9 +17,9 @@ struct Wallet;
 
 #[tx_script]
 fn run(arg: Word, account: &mut Wallet) {
-    let tag = Tag::from(felt!(0));
+    let tag = Tag::from(0u32);
     // Private note type (0b00).
-    let note_type = NoteType::from(felt!(0));
+    let note_type = NoteType::from(0u8);
     let recipient = Recipient::from([felt!(1), felt!(2), felt!(3), felt!(4)]);
     let note_idx = account.create_note(tag, note_type, recipient);
     assert!(!output_note::is_sealed(note_idx), "a new output note must not be sealed");
@@ -33,7 +33,7 @@ fn run(arg: Word, account: &mut Wallet) {
 
     if arg[0] != felt!(0) {
         // Scheme 0 is reserved by the protocol to signal an absent attachment.
-        let attachment_scheme = felt!(1);
+        let attachment_scheme = 1;
         let attachment = Word::from([felt!(5), felt!(6), felt!(7), felt!(8)]);
         output_note::add_word_attachment(note_idx, attachment_scheme, attachment);
     }

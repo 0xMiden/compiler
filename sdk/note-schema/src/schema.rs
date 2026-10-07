@@ -6,22 +6,31 @@ use std::{
 };
 
 use miden_mast_package::Package;
-use miden_protocol::MAX_NOTE_STORAGE_ITEMS;
 use midenc_frontend_wasm_metadata::{
     PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID, package_note_storage_schema_section_id,
     trim_trailing_nuls,
 };
 use wit_parser::{Resolve, Type, TypeDefKind, TypeId, TypeOwner};
 
-use crate::{
-    CodecRegistry, DecodedValue, Error, NoteStorage, NoteStorageBuilder, Result, StandardLeaf,
-    codec::FELT_FQN,
-};
+#[cfg(feature = "protocol")]
+use crate::{CodecRegistry, DecodedValue, NoteStorage, NoteStorageBuilder};
+use crate::{Error, FELT_FQN, Result, StandardLeaf};
+
+/// The protocol's limit on the number of items in a note's storage, from which the schema limits
+/// below are derived.
+///
+/// Stated here, rather than read from `miden-protocol`, so that the schema model does not need
+/// the protocol crate; when the `protocol` feature links it, the two are checked to agree.
+const MAX_NOTE_STORAGE_ITEMS: usize = 1024;
+
+#[cfg(feature = "protocol")]
+const _: () = assert!(MAX_NOTE_STORAGE_ITEMS == miden_protocol::MAX_NOTE_STORAGE_ITEMS);
 
 /// Maximum bytes accepted in an embedded note storage schema section, including alignment padding.
 ///
 /// The budget allows 64 bytes of schema description per protocol note-storage item. It is derived
-/// from [`MAX_NOTE_STORAGE_ITEMS`] so schema parsing remains bounded with the protocol surface.
+/// from the protocol's note-storage item limit so schema parsing remains bounded with the protocol
+/// surface.
 pub const MAX_NOTE_STORAGE_SCHEMA_BYTES: usize = MAX_NOTE_STORAGE_ITEMS * 64;
 
 /// Maximum number of resolved WIT type definitions in a note storage schema.
@@ -247,11 +256,13 @@ impl SchemaCase {
     }
 }
 
-/// A resolved note storage schema with the standard codec registry.
+/// A resolved note storage schema, with the standard codec registry when the `protocol` feature
+/// is enabled.
 #[derive(Clone)]
 pub struct NoteStorageSchema {
     wit_text: String,
     root: Arc<SchemaType>,
+    #[cfg(feature = "protocol")]
     codecs: CodecRegistry,
 }
 
@@ -307,6 +318,7 @@ impl NoteStorageSchema {
         let schema = Self {
             wit_text: wit_text.to_owned(),
             root,
+            #[cfg(feature = "protocol")]
             codecs: CodecRegistry::default(),
         };
         schema.validate_native_leaf_shapes()?;
@@ -342,22 +354,26 @@ impl NoteStorageSchema {
     }
 
     /// Returns the schema's standard codec registry.
+    #[cfg(feature = "protocol")]
     pub const fn codecs(&self) -> &CodecRegistry {
         &self.codecs
     }
 
     /// Replaces the codec registry used by `builder` and `decode`.
+    #[cfg(feature = "protocol")]
     pub fn with_codec_registry(mut self, codecs: CodecRegistry) -> Self {
         self.codecs = codecs;
         self
     }
 
     /// Creates a string-value builder with the schema's codec registry.
+    #[cfg(feature = "protocol")]
     pub fn builder(&self) -> NoteStorageBuilder<'_> {
         self.builder_with_registry(&self.codecs)
     }
 
     /// Creates a string-value builder with a caller-provided codec registry.
+    #[cfg(feature = "protocol")]
     pub fn builder_with_registry<'a>(
         &'a self,
         registry: &'a CodecRegistry,
@@ -366,11 +382,13 @@ impl NoteStorageSchema {
     }
 
     /// Decodes note storage with the schema's codec registry.
+    #[cfg(feature = "protocol")]
     pub fn decode(&self, storage: &NoteStorage) -> Result<DecodedValue> {
         self.decode_with_registry(storage, &self.codecs)
     }
 
     /// Decodes note storage with a caller-provided codec registry.
+    #[cfg(feature = "protocol")]
     pub fn decode_with_registry(
         &self,
         storage: &NoteStorage,
@@ -974,6 +992,7 @@ fn kind_name(kind: &SchemaTypeKind) -> &'static str {
 }
 
 /// Normalizes one WIT path segment from snake case to kebab case.
+#[cfg(feature = "protocol")]
 pub(crate) fn normalize_name(name: &str) -> String {
     name.trim().replace('_', "-")
 }

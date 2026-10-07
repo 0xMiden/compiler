@@ -6,6 +6,7 @@ pub mod advice;
 pub mod crypto;
 pub mod debug;
 pub mod felt;
+pub mod fpi;
 pub mod mem;
 pub mod note;
 

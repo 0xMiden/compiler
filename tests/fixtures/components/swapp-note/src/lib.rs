@@ -107,8 +107,8 @@ fn active_note_tag() -> Tag {
 /// Returns the untyped ("none") attachment scheme used for the aux word attachments.
 ///
 /// Scheme 0 is reserved by the protocol to signal an absent attachment.
-fn aux_attachment_scheme() -> Felt {
-    felt!(1)
+fn aux_attachment_scheme() -> u16 {
+    1
 }
 
 /// SWAPP note storage.
@@ -158,8 +158,8 @@ impl SwappNote {
         // Notes may only be created from an account component context, so the note is created
         // through the native wallet.
         let note_idx = account.create_note(
-            Tag::from(self.p2id_tag),
-            NoteType::from(self.output_note_type),
+            Tag::try_from(self.p2id_tag).unwrap(),
+            NoteType::try_from(self.output_note_type).unwrap(),
             recipient,
         );
 
@@ -218,7 +218,7 @@ impl SwappNote {
         // through the native wallet.
         let note_idx = account.create_note(
             active_note_tag(),
-            NoteType::from(self.output_note_type),
+            NoteType::try_from(self.output_note_type).unwrap(),
             recipient,
         );
 

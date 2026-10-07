@@ -351,9 +351,26 @@ impl OperandStack {
         }
     }
 
-    /// Searches for the position on the stack containing the operand corresponding to `value`.
+    /// Renames the `n`th operand from the top of the stack to `value`, whose type may differ from
+    /// the operand's but must occupy the same elements: the operand's bits become `value`.
     ///
-    /// NOTE: This function will panic if `value` is not on the stack
+    /// NOTE: This function will panic if `value` would take a different number of elements
+    pub fn retype(&mut self, n: usize, value: ValueRef) {
+        let len = self.stack.len();
+        assert!(n < len, "invalid operand stack index ({n}), only {len} operands are available");
+        let index = len - n - 1;
+        let operand = Operand::from(value);
+        assert_eq!(
+            operand.size(),
+            self.stack[index].size(),
+            "cannot retype {:?} as {value}: they take a different number of elements",
+            self.stack[index]
+        );
+        self.stack[index] = operand;
+    }
+
+    /// Searches for the position on the stack containing the operand corresponding to `value`,
+    /// the topmost if there are several, or `None` if `value` is not on the stack.
     pub fn find(&self, value: &ValueRef) -> Option<usize> {
         self.stack.iter().rev().position(|v| v == value)
     }
@@ -806,6 +823,41 @@ mod tests {
         assert_eq!(stack[2], three);
         assert_eq!(stack.find(&two), Some(3));
         assert_eq!(stack.find(&zero), Some(4));
+    }
+
+    /// `retype` gives an operand a new value of another type in place, element for element.
+    #[test]
+    fn operand_stack_retype_test() {
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let block = context.create_block_with_params([Type::U64, Type::Felt, Type::I64]);
+        let block = block.borrow();
+        let [wide, felt, signed] = [0, 1, 2].map(|index| block.arguments()[index] as ValueRef);
+        drop(block);
+
+        stack.push(wide);
+        stack.push(felt);
+        stack.retype(1, signed);
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.raw_len(), 3);
+        assert_eq!(stack.find(&signed), Some(1));
+        assert_eq!(stack.find(&wide), None);
+        assert_eq!(stack[1].ty(), Type::I64);
+        assert_eq!(stack.find(&felt), Some(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "they take a different number of elements")]
+    fn operand_stack_retype_keeps_the_elements_test() {
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let block = context.create_block_with_params([Type::U32, Type::U64]);
+        let block = block.borrow();
+        let [narrow, wide] = [0, 1].map(|index| block.arguments()[index] as ValueRef);
+        drop(block);
+
+        stack.push(narrow);
+        stack.retype(0, wide);
     }
 
     #[test]

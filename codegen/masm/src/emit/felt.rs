@@ -1,7 +1,7 @@
 use miden_core::Felt;
 use midenc_hir::SourceSpan;
 
-use super::{OpEmitter, masm};
+use super::{OpEmitter, int32::SIGN_BIT, masm};
 
 /// The value zero, as a field element
 pub const ZERO: Felt = Felt::ZERO;
@@ -47,12 +47,16 @@ impl OpEmitter<'_> {
     ///
     /// # Stack effects
     ///
-    /// `[a, ..] => [0, 0, a_hi, a_lo]`
+    /// `[a, ..] => [a_lo, a_hi, 0, 0]`
     #[inline]
     pub fn felt_to_i128(&mut self, span: SourceSpan) {
+        // [a_lo, a_hi]
         self.emit(masm::Instruction::U32Split, span);
+        // [0, 0, a_lo, a_hi]
         self.emit_push(ZERO, span);
         self.emit_push(ZERO, span);
+        // Move the limbs of `a` back above the most significant limbs: [a_lo, a_hi, 0, 0]
+        self.emit_all([masm::Instruction::MovUp3, masm::Instruction::MovUp3], span);
     }
 
     /// Convert a field element to u64 by zero-extension.
@@ -61,7 +65,7 @@ impl OpEmitter<'_> {
     ///
     /// # Stack effects
     ///
-    /// `[a, ..] => [a_hi, a_lo]`
+    /// `[a, ..] => [a_lo, a_hi]`
     #[inline(always)]
     pub fn felt_to_u64(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32Split, span);
@@ -69,16 +73,21 @@ impl OpEmitter<'_> {
 
     /// Convert a field element to i64 by zero-extension.
     ///
-    /// Asserts if the field element is too large to represent as an i64.
+    /// Asserts if the field element is too large to represent as an i64, that is if it is at or
+    /// above 2^63.
     ///
     /// This consumes the field element on top of the stack.
     ///
     /// # Stack effects
     ///
-    /// `[a, ..] => [a_hi, a_lo]`
-    #[inline(always)]
+    /// `[a, ..] => [a_lo, a_hi]`
+    #[inline]
     pub fn felt_to_i64(&mut self, span: SourceSpan) {
         self.felt_to_u64(span);
+        // The felt fits exactly when bit 63, the sign bit of the high limb, is clear
+        self.emit(masm::Instruction::Dup1, span);
+        self.const_mask_u32(SIGN_BIT, span);
+        self.emit(Self::assertz_with_message_inst("felt value does not fit in i64", span), span);
     }
 
     /// Convert a field element value to an unsigned N-bit integer, where N <= 32
@@ -88,9 +97,10 @@ impl OpEmitter<'_> {
         assert_valid_integer_size!(n, 1, 32);
         self.emit_all(
             [
-                // Split into u32 limbs
+                // Split into u32 limbs: [a_lo, a_hi]
                 masm::Instruction::U32Split,
-                // Assert most significant 32 bits are unused
+                // Assert the most significant 32 bits, the high limb below the low one, are unused
+                masm::Instruction::Swap1,
                 Self::assertz_with_message_inst("felt value does not fit in 32 bits", span),
             ],
             span,
@@ -108,18 +118,22 @@ impl OpEmitter<'_> {
         assert_valid_integer_size!(n, 1, 32);
         self.emit_all(
             [
-                // Split into u32 limbs
+                // Split into u32 limbs: [a_lo, a_hi]
                 masm::Instruction::U32Split,
-                // Assert most significant 32 bits are unused
+                // Assert the most significant 32 bits, the high limb below the low one, are unused
+                masm::Instruction::Swap1,
                 Self::assertz_with_message_inst("felt value does not fit in 32 bits", span),
             ],
             span,
         );
-        // Assert the sign bit isn't set
-        self.assert_unsigned_int32(span);
         if n < 32 {
-            // Convert to signed N-bit integer
-            self.int32_to_int(n, span);
+            // A felt is never negative, so it fits in a signed N-bit integer exactly when it is
+            // below 2^(N-1)
+            self.int32_to_uint(n, span);
+            self.assert_unsigned_smallint(n, span);
+        } else {
+            // Assert the sign bit isn't set
+            self.assert_unsigned_int32(span);
         }
     }
 
@@ -144,16 +158,19 @@ impl OpEmitter<'_> {
     /// Field elements are unsigned, so sign-extension here is indicating that the target
     /// integer type is a signed type, so we have one less bit available to use.
     ///
+    /// This does not check that the felt fits in the signed type: `cast` does that, with
+    /// [Self::felt_to_i64].
+    ///
     /// N must be a power of two, or this function will panic.
     pub fn sext_felt(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 64, 256);
         match n {
-            64 => self.felt_to_i64(span),
+            64 => self.felt_to_u64(span),
             128 => self.felt_to_i128(span),
             n => {
-                // Convert to i64 and sign-extend
-                self.felt_to_i64(span);
-                self.sext_int64(n, span);
+                // A field element is never negative: convert to u64 and zero-extend
+                self.felt_to_u64(span);
+                self.zext_int64(n, span);
             }
         }
     }

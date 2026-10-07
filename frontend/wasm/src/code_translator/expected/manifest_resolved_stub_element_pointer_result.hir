@@ -1,0 +1,15 @@
+builtin.module private @noname attributes { reserved_memory = #builtin.u64<65536> } {
+    builtin.function private extern("C") @lib::cursor() -> i32 {
+        %0 = hir.exec ::@lib::@cursor() : extern("C") () -> ptr<felt, element>;
+        %1 = hir.ptr_to_int %0 <{ ty = #builtin.type<i32> }>;
+        cf.br ^block5(%1 : i32);
+    ^block5(%2: i32):
+        builtin.ret %2 : (i32);
+    };
+    builtin.function public extern("C") @probe() -> i32 {
+        %4 = hir.exec ::@root_ns:root@1.0.0::@noname::@lib::cursor() : extern("C") () -> i32;
+        cf.br ^block7(%4 : i32);
+    ^block7(%3: i32):
+        builtin.ret %3 : (i32);
+    };
+};

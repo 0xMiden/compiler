@@ -96,7 +96,7 @@ pub fn build_ir_module(
     parsed_module: &mut ParsedModule,
     module_types: &ModuleTypesBuilder,
     module_state: &mut ModuleTranslationState,
-    _config: &WasmTranslationConfig,
+    config: &WasmTranslationConfig,
     context: Rc<Context>,
 ) -> WasmResult<()> {
     // Record the linear memory the module claims for itself, derived from its declared minimum
@@ -221,6 +221,7 @@ pub fn build_ir_module(
             &body_data.body,
             module_state,
             parsed_module.component_frontend_metadata.as_ref(),
+            config,
         )? {
             continue;
         }
@@ -240,7 +241,7 @@ pub fn build_ir_module(
             &addr2line,
             context.session(),
             &mut func_validator,
-            _config,
+            config,
             debug_info,
         )?;
     }

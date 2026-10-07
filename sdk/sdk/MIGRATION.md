@@ -10,6 +10,115 @@ directly below this paragraph, above the previous one (newest first, like the
 
 <!-- Add the next migration section here, above the most recent one. -->
 
+## 0.15.0-rc.3 -> unreleased
+
+### The `extern_*` procedures are gone; the generated `miden::raw` modules replace them
+
+The bindings to the core library, the protocol and the standards are now generated from the
+packages' manifests (`miden::raw::{core, protocol, standards}`). The hand-written functions and
+traits keep their names and signatures; what went away is the layer underneath them: every
+`pub fn extern_*` of `miden-base-sys` (reached as `miden::active_account::extern_*`,
+`miden::tx::extern_*`, ...) and `miden-stdlib-sys`'s `extern_hash_elements`/`extern_hash_words`,
+with the `Raw*` structs they took.
+
+A caller of a raw extern calls the generated procedure of the same MASM name instead. The
+generated wrapper takes the manifest's types — a `u16` where the extern took a `Felt`, an
+`ElementPtr<T>` where it took a `*mut T` — and returns the manifest's result type:
+
+```rust
+// Before
+let nonce: Felt = unsafe { miden::active_account::extern_active_account_get_nonce() };
+
+// After: the generated procedure, typed as the manifest declares it
+let nonce: Felt = miden::raw::protocol::active_account::get_nonce();
+```
+
+Byte addresses convert with `miden::support::ElementPtr::from_ptr(ptr)` (the pointer must be
+4-byte aligned) and back with `.to_ptr()` (the address must be below 2^30 elements and aligned
+for the pointee); both panic otherwise. Manifest constants are `FeltConstant`/`WordConstant`
+carriers: call `.get()` for the `Felt`/`Word`.
+
+### `Tag`, `NoteIdx` and `NoteType` wrap integers; attachment schemes are `u16`
+
+The three newtypes now hold the integer the protocol declares instead of a `Felt`:
+`Tag { inner: u32 }`, `NoteIdx { inner: u16 }`, `NoteType { inner: u8 }`. A value built from an
+integer needs no check; a value built from a felt is checked once, when it is built, and then
+reaches the kernel as it is. `From<Felt>` became `TryFrom<Felt>`:
+
+```rust
+// Before
+let tag = Tag::from(felt);
+let note_type = NoteType::from(felt!(1));
+
+// After
+let tag = Tag::try_from(felt)?; // "note tag exceeds u32"; `.unwrap()` where that is a bug
+let note_type = NoteType::from(1u8);
+```
+
+`NoteIdx::try_from(felt)` and `NoteType::try_from(felt)` reject a felt above `u16::MAX` and
+`u8::MAX`. Code that reads `.inner` gets the integer (`u32::from(tag)`, `u16::from(note_idx)` and
+`u8::from(note_type)` say the same); `Felt::from(tag.inner)` and the like give the felt back.
+The conversions back to the integers are infallible now, so `u32::try_from(tag)` and
+`u16::try_from(note_idx)` no longer return the `&'static str` error they did: drop the `?` or
+`.unwrap()` and write `u32::from(tag)`.
+`NoteType` still checks for private (`0`) or public (`1`) where `output_note::create` converts it
+to the protocol's enum. A `#[derive(FromFeltRepr)]` struct with a `Tag` or `NoteType` field still
+encodes it as one felt, now range-checked on decode.
+
+The word conversions check the range too. `Tag::try_from(word)`, `NoteIdx::try_from(word)` and
+`NoteType::try_from(word)` used to accept any felt in the first element; they now reject one
+that does not fit. Account storage reads go through them, so a `StorageValue<Tag>` (or a
+`StorageMap` value of one of the three types) panics on `get` — and on `set`, which decodes the
+previous value — if the slot holds a felt outside the type's range. A slot written through the
+SDK with a valid tag, index or note type is unaffected.
+
+The attachment procedures take the scheme as a `u16`, which no longer needs a check:
+
+```rust
+// Before
+output_note::add_word_attachment(note_idx, felt!(1), word);
+let found = active_note::find_attachment(felt!(1));
+
+// After
+output_note::add_word_attachment(note_idx, 1, word);
+let found = active_note::find_attachment(1);
+```
+
+The same holds for `output_note::{add_attachment, add_attachment_from_memory, find_attachment}`,
+`input_note::find_attachment`, `note::find_attachment_idx` and the `ActiveNote::find_attachment`
+trait method. `note::metadata_into_attachment_schemes` returns the four schemes as `[u16; 4]`
+instead of a `Word` of felts, so its result feeds the lookups directly.
+
+The WIT `core-types` records `tag`, `note-idx` and `note-type` changed with the types
+(`inner: u32`/`u16`/`u8` instead of `felt`), and they cross component boundaries: the basic
+wallet's `create-note` and `move-asset-to-note` take and return them. Rebuild every account,
+note and transaction script built against the SDK together: a package built before this change
+and one built after it disagree on the types of these records.
+
+### Binding a Miden Assembly dependency from Rust
+
+A Rust project that declares a MASM package in `miden-project.toml` can generate its bindings
+from `build.rs` with `miden-sdk-build-script-support`'s `generate_bindings` (feature `bindgen`):
+
+```toml
+# Cargo.toml
+[build-dependencies]
+miden-sdk-build-script-support = { version = "0.15.0-rc.3", features = ["bindgen"] }
+```
+
+```rust
+// build.rs
+use miden_sdk_build_script_support::{Bindings, generate_bindings, prepare_package_cache};
+
+fn main() {
+    prepare_package_cache();
+    generate_bindings(&Bindings { package: "my-lib", root: "", support: "::miden::support", with: &[] });
+}
+```
+
+and includes `concat!(env!("OUT_DIR"), "/my-lib.rs")` in a module of its own; the crate root
+needs `#![cfg_attr(all(target_family = "wasm", miden), feature(linkage))]`.
+
 ## 0.14.0 -> 0.15.0
 
 ### `compute_commitment` moved to `native_account` (protocol 0.17.0-rc.6)

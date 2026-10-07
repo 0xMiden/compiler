@@ -59,7 +59,7 @@ where
     Rc::new(session)
 }
 
-/// Create a [LinkOutput] representing an empty component named `root:root@1.0.0`.
+/// Create a [`MidenComponent`] representing an empty component named `root:root@1.0.0`.
 ///
 /// Callers may then populate the world/component as they see fit for a particular test.
 ///

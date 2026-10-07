@@ -180,8 +180,8 @@ fn note_metadata_into_sender_binding() {
 fn note_metadata_into_attachment_schemes_binding() {
     run_note_binding_test(
         "note_metadata_into_attachment_schemes_binding",
-        "pub fn binding(&self) -> Word {
-        note::metadata_into_attachment_schemes(Word::from([Felt::new(0).unwrap(); 4]))
+        "pub fn binding(&self) -> u16 {
+        note::metadata_into_attachment_schemes(Word::from([Felt::new(0).unwrap(); 4]))[0]
     }",
     );
 }
@@ -190,7 +190,7 @@ fn note_metadata_into_attachment_schemes_binding() {
 fn note_metadata_into_note_type_binding() {
     run_note_binding_test(
         "note_metadata_into_note_type_binding",
-        "pub fn binding(&self) -> Felt {
+        "pub fn binding(&self) -> u8 {
         note::metadata_into_note_type(Word::from([Felt::new(0).unwrap(); 4])).inner
     }",
     );
@@ -200,7 +200,7 @@ fn note_metadata_into_note_type_binding() {
 fn note_metadata_into_tag_binding() {
     run_note_binding_test(
         "note_metadata_into_tag_binding",
-        "pub fn binding(&self) -> Felt {
+        "pub fn binding(&self) -> u32 {
         note::metadata_into_tag(Word::from([Felt::new(0).unwrap(); 4])).inner
     }",
     );
@@ -212,7 +212,7 @@ fn note_find_attachment_idx_binding() {
         "note_find_attachment_idx_binding",
         "pub fn binding(&self) -> u32 {
         note::find_attachment_idx(
-            Felt::new(1).unwrap(),
+            1,
             Word::from([Felt::new(0).unwrap(); 4]),
         )
         .unwrap_or(0)
@@ -227,7 +227,7 @@ fn note_attachment_preimages() {
     use miden_core::{Felt, crypto::hash::Poseidon2};
     use miden_processor::{ExecutionOptions, FastProcessor, StackInputs, advice::AdviceInputs};
 
-    use crate::end_to_end::support::default_host_with_core_lib;
+    use crate::end_to_end::support::default_host_with_core_package;
 
     for (loader, max_words) in [("load_attachment_commitments", 4), ("load_attachment", 256)] {
         let source = format!(
@@ -276,7 +276,7 @@ fn note_attachment_preimages() {
                 ExecutionOptions::default(),
             )
             .expect("test processor should initialize")
-            .execute_sync(&program, &mut default_host_with_core_lib());
+            .execute_sync(&program, &mut default_host_with_core_package());
             if succeeds {
                 let output = result.unwrap_or_else(|error| {
                     panic!("{loader} rejected {num_elements} elements: {error}")

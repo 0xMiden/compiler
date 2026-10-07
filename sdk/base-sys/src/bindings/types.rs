@@ -3,9 +3,30 @@ extern crate alloc;
 use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 use miden_stdlib_sys::{Felt, Word, felt};
 
+use crate::raw::protocol::types as raw;
+
 /// Packs a scalar felt into the leading limb of a protocol word.
 pub fn padded_word_from_felt(value: Felt) -> Word {
     Word::new([value, felt!(0), felt!(0), felt!(0)])
+}
+
+/// Whether the canonical value of `value` is at most `max`.
+///
+/// Compared in the felt domain: an ordering comparison of felts is one VM instruction (16
+/// cycles), where comparing the canonical `u64` takes a split, a 64-bit local and a core-library
+/// call. The two cost about the same in cycles; this one is smaller and keeps no `u64` alive.
+#[inline]
+fn felt_at_most(value: Felt, max: u32) -> bool {
+    value <= Felt::from_u32(max)
+}
+
+/// The low 32 bits of the canonical value of `value`: all of it when [`felt_at_most`] holds.
+///
+/// Convert only after the bound has been checked: the canonical value is a `u64`, and one kept
+/// across a branch takes a 64-bit local (`store_dw`/`load_dw` in the VM).
+#[inline]
+fn felt_low_u32(value: Felt) -> u32 {
+    value.as_canonical_u64() as u32
 }
 
 /// Extracts a scalar felt from a protocol word with zero-padded trailing limbs.
@@ -31,19 +52,20 @@ impl AccountId {
     }
 }
 
-/// Raw protocol return layout for account identifiers.
-/// The protocol MASM procedures are returning [suffix, prefix]
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub(crate) struct RawAccountId {
-    pub suffix: Felt,
-    pub prefix: Felt,
+impl From<raw::AccountId> for AccountId {
+    #[inline]
+    fn from(value: raw::AccountId) -> Self {
+        Self::new(value.prefix, value.suffix)
+    }
 }
 
-impl RawAccountId {
-    /// Converts the protocol return layout into the Rust [`AccountId`] layout.
-    pub(crate) fn into_account_id(self) -> AccountId {
-        AccountId::new(self.prefix, self.suffix)
+impl From<AccountId> for raw::AccountId {
+    #[inline]
+    fn from(value: AccountId) -> Self {
+        Self {
+            suffix: value.suffix,
+            prefix: value.prefix,
+        }
     }
 }
 
@@ -137,6 +159,26 @@ impl From<Asset> for (Word, Word) {
     }
 }
 
+impl From<raw::Asset> for Asset {
+    #[inline]
+    fn from(value: raw::Asset) -> Self {
+        Self {
+            id: AssetId { inner: value.id },
+            value: value.value,
+        }
+    }
+}
+
+impl From<Asset> for raw::Asset {
+    #[inline]
+    fn from(value: Asset) -> Self {
+        Self {
+            id: value.id.inner,
+            value: value.value,
+        }
+    }
+}
+
 /// The identifier of an asset, the word that identifies it in an account vault.
 ///
 /// An asset id encodes the issuing faucet, the asset class and the composition rule; read them with
@@ -191,21 +233,20 @@ impl AssetClass {
     }
 }
 
-/// Raw protocol return layout for asset classes.
-/// The protocol MASM procedures are returning [suffix, prefix]
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub(crate) struct RawAssetClass {
-    /// The suffix of the class, the first element of the kernel's output.
-    pub suffix: Felt,
-    /// The prefix of the class, the second element of the kernel's output.
-    pub prefix: Felt,
+impl From<raw::AssetClass> for AssetClass {
+    #[inline]
+    fn from(value: raw::AssetClass) -> Self {
+        Self::new(value.prefix, value.suffix)
+    }
 }
 
-impl RawAssetClass {
-    /// Converts the protocol return layout into the Rust [`AssetClass`] layout.
-    pub(crate) fn into_asset_class(self) -> AssetClass {
-        AssetClass::new(self.prefix, self.suffix)
+impl From<AssetClass> for raw::AssetClass {
+    #[inline]
+    fn from(value: AssetClass) -> Self {
+        Self {
+            suffix: value.suffix,
+            prefix: value.prefix,
+        }
     }
 }
 
@@ -230,6 +271,28 @@ impl TryFrom<Felt> for AssetComposition {
             1 => Ok(Self::Fungible),
             2 => Ok(Self::Custom),
             _ => Err("unrecognized asset composition"),
+        }
+    }
+}
+
+impl From<raw::AssetComposition> for AssetComposition {
+    #[inline]
+    fn from(value: raw::AssetComposition) -> Self {
+        match value {
+            raw::AssetComposition::None => Self::None,
+            raw::AssetComposition::Fungible => Self::Fungible,
+            raw::AssetComposition::Custom => Self::Custom,
+        }
+    }
+}
+
+impl From<AssetComposition> for raw::AssetComposition {
+    #[inline]
+    fn from(value: AssetComposition) -> Self {
+        match value {
+            AssetComposition::None => Self::None,
+            AssetComposition::Fungible => Self::Fungible,
+            AssetComposition::Custom => Self::Custom,
         }
     }
 }
@@ -489,27 +552,6 @@ impl From<NoteId> for Word {
     }
 }
 
-/// Raw protocol return layout for procedures that leave a commitment word followed by a count.
-///
-/// Used by the note asset and storage summaries (`get_initial_assets_info`, `get_storage_info`,
-/// `get_assets_info`), whose stack outputs are `[COMMITMENT, count]`.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub(crate) struct RawCommitmentWithCount {
-    /// The commitment word.
-    pub commitment: Word,
-    /// The count that follows the commitment on the stack.
-    pub count: Felt,
-}
-
-impl RawCommitmentWithCount {
-    /// Returns the count as an integer.
-    pub(crate) fn num_items(&self) -> u32 {
-        // The transaction kernel guarantees asset and storage item counts fit in a u32.
-        self.count.as_canonical_u64() as u32
-    }
-}
-
 /// The note metadata returned by `*_note::get_metadata` procedures.
 ///
 /// In the Miden protocol, metadata retrieval returns a single metadata header word. Note
@@ -526,36 +568,6 @@ impl NoteMetadata {
     /// Creates a new [`NoteMetadata`] from the metadata header word.
     pub fn new(header: Word) -> Self {
         Self { header }
-    }
-}
-
-/// Raw protocol return layout for lookups whose stack outputs are `[is_found, index]`.
-///
-/// Used by the attachment lookups (`find_attachment`) and the input-note lookup (`find_note`).
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub(crate) struct RawFoundIndex {
-    /// Non-zero when the lookup found a match.
-    pub is_found: Felt,
-    /// The index of the match, valid only when `is_found` is non-zero.
-    pub index: Felt,
-}
-
-impl RawFoundIndex {
-    /// Returns the index of the match, if there was one.
-    fn index(self) -> Option<Felt> {
-        (self.is_found != Felt::ZERO).then_some(self.index)
-    }
-
-    /// Converts the protocol return layout into the found attachment index, if any.
-    pub(crate) fn into_attachment_index(self) -> Option<u32> {
-        // The transaction kernel guarantees attachment indexes fit in a u32.
-        self.index().map(|index| index.as_canonical_u64() as u32)
-    }
-
-    /// Converts the protocol return layout into the found input-note index, if any.
-    pub(crate) fn into_note_index(self) -> Option<NoteIdx> {
-        self.index().map(|index| NoteIdx { inner: index })
     }
 }
 
@@ -580,22 +592,35 @@ impl From<Recipient> for Word {
     }
 }
 
+/// A note tag: the protocol's `u32` note tag, which the bindings pass on as it is.
+///
+/// A felt that holds a tag (read from note storage, say) converts with the checked
+/// [`TryFrom<Felt>`] implementation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(transparent)]
 pub struct Tag {
-    pub inner: Felt,
+    pub inner: u32,
 }
 
-impl From<Felt> for Tag {
-    fn from(value: Felt) -> Self {
-        Tag { inner: value }
+impl TryFrom<Felt> for Tag {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        if felt_at_most(value, u32::MAX) {
+            Ok(Self {
+                inner: felt_low_u32(value),
+            })
+        } else {
+            Err("note tag exceeds u32")
+        }
     }
 }
 
 impl From<Tag> for Word {
     #[inline]
     fn from(value: Tag) -> Self {
-        padded_word_from_felt(value.inner)
+        padded_word_from_felt(Felt::from_u32(value.inner))
     }
 }
 
@@ -604,22 +629,53 @@ impl TryFrom<Word> for Tag {
 
     #[inline]
     fn try_from(value: Word) -> Result<Self, Self::Error> {
-        Ok(Tag {
-            inner: felt_from_padded_word(value)?,
-        })
+        Tag::try_from(felt_from_padded_word(value)?)
     }
 }
 
+impl From<u32> for Tag {
+    #[inline]
+    fn from(value: u32) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl From<Tag> for u32 {
+    #[inline]
+    fn from(value: Tag) -> Self {
+        value.inner
+    }
+}
+
+/// The index of an output or input note in the transaction: the protocol's `u16` note index.
+///
+/// A felt that holds an index converts with the checked [`TryFrom<Felt>`] implementation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct NoteIdx {
-    pub inner: Felt,
+    pub inner: u16,
+}
+
+impl TryFrom<Felt> for NoteIdx {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        if felt_at_most(value, u16::MAX.into()) {
+            // The bound makes the truncation exact.
+            Ok(Self {
+                inner: felt_low_u32(value) as u16,
+            })
+        } else {
+            Err("note index exceeds u16")
+        }
+    }
 }
 
 impl From<NoteIdx> for Word {
     #[inline]
     fn from(value: NoteIdx) -> Self {
-        padded_word_from_felt(value.inner)
+        padded_word_from_felt(Felt::from(value.inner))
     }
 }
 
@@ -628,28 +684,55 @@ impl TryFrom<Word> for NoteIdx {
 
     #[inline]
     fn try_from(value: Word) -> Result<Self, Self::Error> {
-        Ok(NoteIdx {
-            inner: felt_from_padded_word(value)?,
-        })
+        NoteIdx::try_from(felt_from_padded_word(value)?)
     }
 }
 
+impl From<u16> for NoteIdx {
+    #[inline]
+    fn from(value: u16) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl From<NoteIdx> for u16 {
+    #[inline]
+    fn from(value: NoteIdx) -> Self {
+        value.inner
+    }
+}
+
+/// The type of a note: the protocol's `u8` note type, `0` for private and `1` for public.
+///
+/// The value is checked against the protocol's enum only where a note is created
+/// (`TryFrom<NoteType> for raw::NoteType`); a felt that holds a note type converts with the
+/// checked [`TryFrom<Felt>`] implementation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(transparent)]
 pub struct NoteType {
-    pub inner: Felt,
+    pub inner: u8,
 }
 
-impl From<Felt> for NoteType {
-    fn from(value: Felt) -> Self {
-        NoteType { inner: value }
+impl TryFrom<Felt> for NoteType {
+    type Error = &'static str;
+
+    #[inline]
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        if felt_at_most(value, u8::MAX.into()) {
+            // The bound makes the truncation exact.
+            Ok(Self {
+                inner: felt_low_u32(value) as u8,
+            })
+        } else {
+            Err("note type exceeds u8")
+        }
     }
 }
 
 impl From<NoteType> for Word {
     #[inline]
     fn from(value: NoteType) -> Self {
-        padded_word_from_felt(value.inner)
+        padded_word_from_felt(Felt::from(value.inner))
     }
 }
 
@@ -658,9 +741,38 @@ impl TryFrom<Word> for NoteType {
 
     #[inline]
     fn try_from(value: Word) -> Result<Self, Self::Error> {
-        Ok(NoteType {
-            inner: felt_from_padded_word(value)?,
-        })
+        NoteType::try_from(felt_from_padded_word(value)?)
+    }
+}
+
+impl From<u8> for NoteType {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl From<NoteType> for u8 {
+    #[inline]
+    fn from(value: NoteType) -> Self {
+        value.inner
+    }
+}
+
+impl From<raw::NoteType> for NoteType {
+    #[inline]
+    fn from(value: raw::NoteType) -> Self {
+        Self { inner: value as u8 }
+    }
+}
+
+impl TryFrom<NoteType> for raw::NoteType {
+    type Error = &'static str;
+
+    /// The note type as the protocol's enum: `0` is private, `1` is public.
+    #[inline]
+    fn try_from(value: NoteType) -> Result<Self, Self::Error> {
+        Self::try_from(value.inner).map_err(|_| "unrecognized note type")
     }
 }
 
@@ -813,13 +925,115 @@ impl StorageSlotId {
     }
 }
 
+impl From<raw::StorageSlotId> for StorageSlotId {
+    #[inline]
+    fn from(value: raw::StorageSlotId) -> Self {
+        Self::new(value.suffix, value.prefix)
+    }
+}
+
+impl From<StorageSlotId> for raw::StorageSlotId {
+    #[inline]
+    fn from(value: StorageSlotId) -> Self {
+        Self {
+            suffix: value.suffix,
+            prefix: value.prefix,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use miden_stdlib_sys::{Felt, Word, felt};
 
     use super::{
-        AssetAmount, AssetAmountError, BlockNumber, felt_from_padded_word, padded_word_from_felt,
+        AccountId, AssetAmount, AssetAmountError, BlockNumber, NoteIdx, NoteType, StorageSlotId,
+        Tag, felt_from_padded_word, padded_word_from_felt, raw,
     };
+
+    /// Ensures the note type maps to the protocol's enum, `0` private and `1` public, and back.
+    #[test]
+    fn note_type_maps_to_the_protocol_enum() {
+        assert_eq!(raw::NoteType::try_from(NoteType::from(0u8)), Ok(raw::NoteType::Private));
+        assert_eq!(raw::NoteType::try_from(NoteType::from(1u8)), Ok(raw::NoteType::Public));
+        assert!(raw::NoteType::try_from(NoteType::from(2u8)).is_err());
+        assert_eq!(NoteType::from(raw::NoteType::Public), NoteType::from(1u8));
+    }
+
+    /// Ensures each newtype's felt check accepts its integer's maximum and rejects the largest
+    /// felt, whose low 32 bits would otherwise pass for an in-range value.
+    #[test]
+    fn newtype_felt_checks_are_exact_at_the_bounds() {
+        let largest = Felt::new(Felt::ORDER - 1).unwrap();
+        assert_eq!(Tag::try_from(Felt::from_u32(u32::MAX)), Ok(Tag::from(u32::MAX)));
+        assert!(Tag::try_from(largest).is_err());
+        assert_eq!(NoteIdx::try_from(Felt::from(u16::MAX)), Ok(NoteIdx::from(u16::MAX)));
+        assert!(NoteIdx::try_from(largest).is_err());
+        assert_eq!(NoteType::try_from(Felt::from(u8::MAX)), Ok(NoteType::from(u8::MAX)));
+        assert!(NoteType::try_from(largest).is_err());
+    }
+
+    /// Ensures a felt becomes a newtype exactly when it fits the manifest's integer.
+    #[test]
+    fn newtypes_are_built_from_felts_with_one_check() {
+        assert_eq!(Tag::try_from(Felt::from_u32(7)).unwrap(), Tag::from(7u32));
+        assert_eq!(
+            Tag::try_from(Felt::new_unchecked(1 << 32)).unwrap_err(),
+            "note tag exceeds u32"
+        );
+        assert_eq!(NoteIdx::try_from(Felt::from_u32(3)).unwrap(), NoteIdx::from(3u16));
+        assert_eq!(
+            NoteIdx::try_from(Felt::from_u32(1 << 16)).unwrap_err(),
+            "note index exceeds u16"
+        );
+        assert_eq!(NoteType::try_from(Felt::ONE).unwrap(), NoteType::from(raw::NoteType::Public));
+        assert_eq!(NoteType::try_from(Felt::from_u32(256)).unwrap_err(), "note type exceeds u8");
+        assert_eq!(
+            raw::NoteType::try_from(NoteType::from(2u8)).unwrap_err(),
+            "unrecognized note type"
+        );
+    }
+
+    /// Ensures the newtypes still travel as one zero-padded felt in a word.
+    #[test]
+    fn newtypes_round_trip_through_words_as_before() {
+        for tag in [0u32, 1, u32::MAX] {
+            assert_eq!(Tag::try_from(Word::from(Tag::from(tag))).unwrap(), Tag::from(tag));
+        }
+        assert_eq!(
+            NoteIdx::try_from(Word::from(NoteIdx::from(9u16))).unwrap(),
+            NoteIdx::from(9u16)
+        );
+        assert_eq!(
+            NoteType::try_from(Word::from(NoteType::from(1u8))).unwrap(),
+            NoteType::from(1u8)
+        );
+    }
+
+    /// Ensures a word whose felt does not fit the newtype's integer is rejected. Storage reads
+    /// go through these conversions, so a slot holding such a felt no longer decodes.
+    #[test]
+    fn words_holding_an_out_of_range_felt_are_rejected() {
+        let word = |value: u64| padded_word_from_felt(Felt::new(value).unwrap());
+        assert_eq!(Tag::try_from(word(1 << 32)).unwrap_err(), "note tag exceeds u32");
+        assert_eq!(NoteIdx::try_from(word(1 << 16)).unwrap_err(), "note index exceeds u16");
+        assert_eq!(NoteType::try_from(word(1 << 8)).unwrap_err(), "note type exceeds u8");
+    }
+
+    /// Ensures the protocol's `{ suffix, prefix }` layouts map field by field, not by position.
+    #[test]
+    fn suffix_prefix_pairs_map_by_field() {
+        let raw_id = raw::AccountId {
+            suffix: felt!(1),
+            prefix: felt!(2),
+        };
+        assert_eq!(AccountId::from(raw_id), AccountId::new(felt!(2), felt!(1)));
+        assert_eq!(raw::AccountId::from(AccountId::from(raw_id)), raw_id);
+
+        let raw_slot = raw::StorageSlotId::from(StorageSlotId::new(felt!(3), felt!(4)));
+        assert_eq!((raw_slot.suffix, raw_slot.prefix), (felt!(3), felt!(4)));
+        assert_eq!(StorageSlotId::from(raw_slot), StorageSlotId::new(felt!(3), felt!(4)));
+    }
 
     /// Ensures `padded_word_from_felt` zero-pads the trailing three limbs.
     #[test]

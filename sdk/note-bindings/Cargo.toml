@@ -20,7 +20,7 @@ doctest = false
 miden-field.workspace = true
 miden-field-repr.workspace = true
 miden-note-bindings-macros.workspace = true
-miden-note-schema.workspace = true
+miden-note-schema = { workspace = true, features = ["protocol"] }
 miden-protocol = { workspace = true, features = ["std"] }
 
 [dev-dependencies]

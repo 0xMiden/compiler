@@ -60,10 +60,20 @@ fn check_op(wat_op: &str, expected_ir: midenc_expect_test::ExpectFile) {
 /// Unlike [check_op], prints every `builtin.module` wholesale, including module-level items such
 /// as function tables, so tests can cover more than function bodies.
 fn check_module(wat: &str, expected_ir: midenc_expect_test::ExpectFile) {
+    check_module_with_config(wat, &WasmTranslationConfig::default(), expected_ir)
+}
+
+/// Like [check_module], but with a caller-supplied translation config — used by the tests that
+/// resolve a linker stub against a linked package.
+fn check_module_with_config(
+    wat: &str,
+    config: &WasmTranslationConfig,
+    expected_ir: midenc_expect_test::ExpectFile,
+) {
     let context = Rc::new(midenc_hir::Context::default());
 
     let wasm = wat::parse_str(wat).unwrap();
-    let output = translate(&wasm, &WasmTranslationConfig::default(), context.clone())
+    let output = translate(&wasm, config, context.clone())
         .map_err(|e| {
             if let Some(labels) = e.labels() {
                 for label in labels {
@@ -93,6 +103,40 @@ fn check_module(wat: &str, expected_ir: midenc_expect_test::ExpectFile) {
         .unwrap();
 
     expected_ir.assert_eq(&w);
+}
+
+/// A config whose linked packages are a single library exporting `procedures`.
+fn config_with_library(procedures: Vec<(&str, midenc_hir::FunctionType)>) -> WasmTranslationConfig {
+    use miden_mast_package::{PackageId, TargetType, Version};
+    use midenc_package_interface::{
+        PackageInterface, ProcedureClass, ProcedureItem, lower_signature,
+    };
+    use midenc_session::miden_assembly_syntax::ast::{AttributeSet, Path};
+
+    let procedures = procedures
+        .into_iter()
+        .map(|(path, signature)| ProcedureItem {
+            path: std::sync::Arc::from(Path::new(path).to_path_buf().into_boxed_path()),
+            digest: Default::default(),
+            class: ProcedureClass::Bindable(lower_signature(&signature).unwrap()),
+            signature: Some(signature),
+            attributes: AttributeSet::default(),
+        })
+        .collect();
+    let package = PackageInterface {
+        name: PackageId::from("lib"),
+        version: Version::new(1, 2, 3),
+        kind: TargetType::Library,
+        digest: Default::default(),
+        procedures,
+        types: Vec::new(),
+        constants: Vec::new(),
+        modules: Vec::new(),
+    };
+    WasmTranslationConfig {
+        linked_packages: Some(vec![package].into()),
+        ..Default::default()
+    }
 }
 
 /// Check that translating a complete Wasm module fails with an error containing `expected_msg`.
@@ -294,6 +338,26 @@ fn call_indirect_accepts_masm_procedure_intrinsic_table_entry() {
             (export "dispatch" (func $dispatch))
         )"#,
         expect_file!["./expected/call_indirect_intrinsic_stub.hir"],
+    )
+}
+
+/// `Felt::as_u64` is the felt as a `u64`, carried in Wasm's `i64`: a cast to `u64`, which every
+/// felt passes, then a bitcast to `i64`. A cast to `i64` would trap on a felt at or above `2^63`.
+#[test]
+fn felt_as_u64_casts_to_u64_then_bitcasts_to_i64() {
+    check_module(
+        r#"
+        (module
+            (type $as_u64 (func (param f32) (result i64)))
+            (memory (;0;) 16384)
+            (func $intrinsics::felt::as_u64 (type $as_u64)
+                unreachable)
+            (func $felt_as_u64 (type $as_u64)
+                local.get 0
+                call $intrinsics::felt::as_u64)
+            (export "felt_as_u64" (func $felt_as_u64))
+        )"#,
+        expect_file!["./expected/felt_as_u64.hir"],
     )
 }
 
@@ -1526,4 +1590,347 @@ fn translates_a_data_segment_at_the_end_of_memory() {
     });
 
     assert_eq!(segments, vec![(0xffff_fff0u32, 16usize)]);
+}
+
+/// A linker stub whose name is exported by a linked package is lowered to an `exec` of that
+/// package's procedure, with the signature the Miden ABI rule set derives from the manifest —
+/// no hand-written table involved.
+#[test]
+fn manifest_resolved_stub() {
+    use midenc_hir::{CallConv, FunctionType, Type};
+
+    let config = config_with_library(vec![(
+        "::lib::add",
+        FunctionType::new(CallConv::Fast, [Type::Felt, Type::Felt], [Type::Felt]),
+    )]);
+    check_module_with_config(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"lib::add" (param f32 f32) (result f32)
+                unreachable)
+            (func $probe (param f32 f32) (result f32)
+                local.get 0
+                local.get 1
+                call $"lib::add")
+            (export "probe" (func $probe))
+        )"#,
+        &config,
+        expect_file!("./expected/manifest_resolved_stub.hir"),
+    )
+}
+
+/// A pointer parameter the manifest declares in the element address space is passed through: the
+/// stub's `i32` is taken to be an element address already and is only given the callee's pointer
+/// type. No address arithmetic happens here; turning a Rust byte address into an element address
+/// is the binding wrapper's job.
+#[test]
+fn manifest_resolved_stub_passes_an_element_space_pointer_through() {
+    use alloc::sync::Arc;
+
+    use midenc_hir::{AddressSpace, CallConv, FunctionType, PointerType, Type};
+
+    let element_ptr =
+        Type::Ptr(Arc::new(PointerType::new_with_address_space(Type::Felt, AddressSpace::Element)));
+    let config = config_with_library(vec![(
+        "::lib::write",
+        FunctionType::new(CallConv::Fast, [element_ptr, Type::Felt], []),
+    )]);
+    check_module_with_config(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"lib::write" (param i32 f32)
+                unreachable)
+            (func $probe (param i32 f32)
+                local.get 0
+                local.get 1
+                call $"lib::write")
+            (export "probe" (func $probe))
+        )"#,
+        &config,
+        expect_file!("./expected/manifest_resolved_stub_element_pointer.hir"),
+    )
+}
+
+/// A pointer result is cast to its `i32` carrier and nothing else: an element-space pointer comes
+/// back as an element address. Scaling it to a byte address, with the range check that needs, is
+/// the binding wrapper's job.
+#[test]
+fn manifest_resolved_stub_returns_an_element_space_pointer_as_its_address() {
+    use alloc::sync::Arc;
+
+    use midenc_hir::{AddressSpace, CallConv, FunctionType, PointerType, Type};
+
+    let element_ptr =
+        Type::Ptr(Arc::new(PointerType::new_with_address_space(Type::Felt, AddressSpace::Element)));
+    let config = config_with_library(vec![(
+        "::lib::cursor",
+        FunctionType::new(CallConv::Fast, [], [element_ptr]),
+    )]);
+    check_module_with_config(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"lib::cursor" (result i32)
+                unreachable)
+            (func $probe (result i32)
+                call $"lib::cursor")
+            (export "probe" (func $probe))
+        )"#,
+        &config,
+        expect_file!("./expected/manifest_resolved_stub_element_pointer_result.hir"),
+    )
+}
+
+/// A stub rooted in a linked package's own namespace, but naming something that package does not
+/// export, is a diagnostic, not a panic — a stale binding has to be reported rather than quietly
+/// left as a diverging function.
+#[test]
+fn an_unresolvable_stub_is_reported() {
+    use midenc_hir::{CallConv, FunctionType, Type};
+
+    let config = config_with_library(vec![(
+        "::lib::present",
+        FunctionType::new(CallConv::Fast, [Type::Felt], [Type::Felt]),
+    )]);
+    let wasm = wat::parse_str(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"lib::missing" (param f32) (result f32)
+                unreachable)
+            (func $probe (param f32) (result f32)
+                local.get 0
+                call $"lib::missing")
+            (export "probe" (func $probe))
+        )"#,
+    )
+    .unwrap();
+    let context = Rc::new(midenc_hir::Context::default());
+    let msg = match translate(&wasm, &config, context) {
+        Ok(_) => panic!("expected translation to fail"),
+        Err(err) => format!("{err}"),
+    };
+    assert!(
+        msg.contains("does not name a procedure exported by any linked package"),
+        "got: {msg}"
+    );
+    assert!(msg.contains("lib 1.2.3"), "got: {msg}");
+}
+
+/// A diverging Rust function is not a linker stub. LLVM reduces `unreachable_unchecked`
+/// wrappers, `drop_in_place` for uninhabited types and matches on empty enums to a lone
+/// `unreachable`, and the name section spells them as Rust paths — which parse as MASM paths
+/// just as well. Such a function is rooted in no linked package's namespace, so it is left
+/// exactly as it is rather than becoming a hard "does not name a procedure" error.
+#[test]
+fn a_diverging_function_outside_every_linked_namespace_is_left_alone() {
+    use midenc_hir::{CallConv, FunctionType, Type};
+
+    let config = config_with_library(vec![(
+        "::lib::present",
+        FunctionType::new(CallConv::Fast, [Type::Felt], [Type::Felt]),
+    )]);
+    check_module_with_config(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"core::ptr::drop_in_place" (param i32)
+                unreachable)
+            (func $probe (param i32)
+                local.get 0
+                call $"core::ptr::drop_in_place")
+            (export "probe" (func $probe))
+        )"#,
+        &config,
+        expect_file!("./expected/diverging_function_outside_linked_namespaces.hir"),
+    )
+}
+
+/// The stub deals in Wasm carrier types (`i32` for every integer of 32 bits or narrower) while
+/// the manifest declares the callee's own widths and signedness, and codegen validates `exec`
+/// arguments against the callee's declaration by exact type. So the stub converts in both
+/// directions: `u32` by `bitcast`, `u16` by `trunc`, and the `u8` result back to its `i32`
+/// carrier by `zext` (to `u32`, since `zext` produces an unsigned type) plus a `bitcast`.
+#[test]
+fn manifest_resolved_stub_converts_narrow_and_unsigned_carriers() {
+    use midenc_hir::{CallConv, FunctionType, Type};
+
+    let config = config_with_library(vec![(
+        "::lib::narrow",
+        FunctionType::new(CallConv::Fast, [Type::U32, Type::U16, Type::Felt], [Type::U8]),
+    )]);
+    check_module_with_config(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"lib::narrow" (param i32 i32 f32) (result i32)
+                unreachable)
+            (func $probe (param i32 i32 f32) (result i32)
+                local.get 0
+                local.get 1
+                local.get 2
+                call $"lib::narrow")
+            (export "probe" (func $probe))
+        )"#,
+        &config,
+        expect_file!("./expected/manifest_resolved_stub_carrier_conversions.hir"),
+    )
+}
+
+/// Two results are returned through the out pointer, and the conversion back to the carrier types
+/// has to happen before the stores: the return area is laid out from the stored values' types, so
+/// each `u16` must occupy the 4-byte `i32` slot the SDK wrapper reads back, not a 2-byte one.
+#[test]
+fn manifest_resolved_stub_widens_out_pointer_results_before_storing_them() {
+    use midenc_hir::{CallConv, FunctionType, Type};
+
+    let config = config_with_library(vec![(
+        "::lib::pair",
+        FunctionType::new(CallConv::Fast, [Type::Felt], [Type::U16, Type::U16]),
+    )]);
+    check_module_with_config(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"lib::pair" (param f32 i32)
+                unreachable)
+            (func $probe (param f32 i32)
+                local.get 0
+                local.get 1
+                call $"lib::pair")
+            (export "probe" (func $probe))
+        )"#,
+        &config,
+        expect_file!("./expected/manifest_resolved_stub_out_pointer_carriers.hir"),
+    )
+}
+
+/// Every callee resolved from a linked package is declared with the effects the compiler knows it
+/// to have (`miden_abi::effects`): a core `mem::pipe_*` procedure reads the advice provider and
+/// writes memory, which the advice-taint lint reads off the declaration, and any other export
+/// carries none.
+#[test]
+fn a_resolved_callee_is_declared_with_the_effects_the_compiler_knows() {
+    use midenc_hir::{
+        BuilderExt, CallConv, FunctionType, Symbol, Type,
+        dialects::builtin::attributes::AdviceResourceKind,
+        effects::{AdviceEffect, MemoryEffect},
+    };
+
+    // The imports are declared in the world the component is translated into, so the test
+    // supplies the world in order to walk it afterwards. `context` owns the IR and has to outlive
+    // the walk.
+    let context = Rc::new(midenc_hir::Context::default());
+    let world = context.clone().builder().create::<builtin::World, ()>(Default::default())();
+    let world = world.unwrap();
+    let library = config_with_library(vec![
+        (
+            "::miden::core::mem::pipe_preimage_to_memory",
+            FunctionType::new(
+                CallConv::Fast,
+                [Type::U32, Type::I32, Type::Felt, Type::Felt, Type::Felt, Type::Felt],
+                [Type::I32],
+            ),
+        ),
+        (
+            "::miden::core::mem::memcopy_words",
+            FunctionType::new(CallConv::Fast, [Type::U32, Type::I32, Type::I32], []),
+        ),
+    ]);
+    let config = WasmTranslationConfig {
+        world: Some(world),
+        ..library
+    };
+    let wasm = wat::parse_str(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"miden::core::mem::pipe_preimage_to_memory"
+                (param i32 i32 f32 f32 f32 f32) (result i32)
+                unreachable)
+            (func $"miden::core::mem::memcopy_words" (param i32 i32 i32)
+                unreachable)
+            (func $probe (param i32 i32 f32 f32 f32 f32) (result i32)
+                local.get 0
+                local.get 1
+                local.get 1
+                call $"miden::core::mem::memcopy_words"
+                local.get 0
+                local.get 1
+                local.get 2
+                local.get 3
+                local.get 4
+                local.get 5
+                call $"miden::core::mem::pipe_preimage_to_memory")
+            (export "probe" (func $probe))
+        )"#,
+    )
+    .unwrap();
+    translate(&wasm, &config, context.clone()).unwrap();
+
+    let mut declared = Vec::new();
+    world.borrow().as_operation().prewalk_all(|op: &Operation| {
+        if let Some(function) = op.downcast_ref::<builtin::Function>()
+            && function.is_declaration()
+        {
+            let advice: Vec<_> = function
+                .advice_effects()
+                .as_value()
+                .iter()
+                .map(|effect| (effect.effect, effect.resource))
+                .collect();
+            let memory: Vec<_> = function
+                .memory_effects()
+                .as_value()
+                .iter()
+                .map(|effect| effect.effect)
+                .collect();
+            declared.push((function.get_name().as_str(), advice, memory));
+        }
+    });
+    declared.sort_by_key(|(name, ..)| *name);
+
+    assert_eq!(
+        declared,
+        vec![
+            ("memcopy_words", vec![], vec![]),
+            (
+                "pipe_preimage_to_memory",
+                vec![(AdviceEffect::Read, AdviceResourceKind::Map)],
+                vec![MemoryEffect::Write]
+            ),
+        ]
+    );
+}
+
+/// A stub rooted in a namespace that MASM spells quoted — the default root module of a package
+/// named `my-lib` is `::"my-lib"` — resolves like any other. The frontend compares the identifier
+/// rather than its spelling (`names_a_linked_namespace`), and gives the local stub a linkage name
+/// without the quotes, since the assembler cannot read a quoted procedure name that nests them;
+/// the import it `exec`s keeps the MASM spelling.
+#[test]
+fn manifest_resolved_stub_in_a_quoted_namespace() {
+    use midenc_hir::{CallConv, FunctionType, Type};
+
+    let config = config_with_library(vec![(
+        "::\"my-lib\"::add",
+        FunctionType::new(CallConv::Fast, [Type::Felt, Type::Felt], [Type::Felt]),
+    )]);
+    check_module_with_config(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"\"my-lib\"::add" (param f32 f32) (result f32)
+                unreachable)
+            (func $probe (param f32 f32) (result f32)
+                local.get 0
+                local.get 1
+                call $"\"my-lib\"::add")
+            (export "probe" (func $probe))
+        )"#,
+        &config,
+        expect_file!("./expected/manifest_resolved_stub_in_a_quoted_namespace.hir"),
+    )
 }

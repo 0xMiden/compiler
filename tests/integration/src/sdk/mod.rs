@@ -2,8 +2,7 @@ use std::{fs, path::Path, sync::Arc};
 
 use miden_assembly::ast::types::{FunctionType, Type};
 use miden_core::serde::Serializable;
-use miden_mast_package::{Package, PackageExport, ProcedureExport, QualifiedProcedureName};
-use miden_protocol::note::NoteScript;
+use miden_mast_package::{Package, ProcedureExport, QualifiedProcedureName};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::{scrub_nested_cargo_env, write_masp_file_atomic};
 
@@ -11,6 +10,7 @@ use crate::{
     CompilerTest, CompilerTestBuilder,
     cargo_proj::project,
     compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
+    find_manifest_procedure,
     testing::executor_with_std,
 };
 
@@ -18,48 +18,33 @@ mod base;
 mod build_script;
 mod canonabi;
 mod macros;
-mod note_script_root;
 mod stdlib;
 
 /// Rebuilds an executable program from a compiled note-script package for direct execution tests.
+///
+/// Selects the procedure carrying the `@note_script` attribute the way the protocol crate's
+/// note-script constructor does — exactly one such export, or the package is rejected — without
+/// depending on that crate.
 pub(crate) fn note_script_program(
     package: Arc<miden_mast_package::Package>,
 ) -> Arc<miden_mast_package::Package> {
-    let note_script =
-        NoteScript::from_package(&package).expect("compiled package should contain a note script");
-    let entrypoint_id = note_script.entrypoint();
-    let entrypoint = package.manifest.exports().find(|export| matches!(export.as_procedure(), Some(p) if p.node.is_some_and(|node| node == entrypoint_id))).unwrap();
+    let mut candidates = package.manifest.exports().filter(|export| {
+        export
+            .as_procedure()
+            .is_some_and(|proc_export| proc_export.attributes.has("note_script"))
+    });
+    let entrypoint = candidates.next().expect("compiled package should contain a note script");
+    if let Some(extra) = candidates.next() {
+        panic!(
+            "compiled package has more than one `@note_script` export: {} and {}",
+            entrypoint.path(),
+            extra.path()
+        );
+    }
     package
         .make_executable(&QualifiedProcedureName::from(entrypoint.path()))
         .map(Arc::new)
         .unwrap()
-}
-
-fn find_manifest_procedure<'a>(
-    package: &'a miden_mast_package::Package,
-    description: &str,
-    mut predicate: impl FnMut(&str) -> bool,
-) -> &'a ProcedureExport {
-    let matches = package
-        .manifest
-        .exports()
-        .filter_map(|export| export.as_procedure())
-        .filter(|export| predicate(export.path.as_ref().as_str()))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        matches.len(),
-        1,
-        "expected exactly one manifest procedure matching {description}, got {:?}",
-        package
-            .manifest
-            .exports()
-            .filter_map(|export| match export {
-                PackageExport::Procedure(export) => Some(export.path.as_ref().as_str().to_string()),
-                PackageExport::Constant(_) | PackageExport::Type(_) => None,
-            })
-            .collect::<Vec<_>>(),
-    );
-    matches[0]
 }
 
 fn assert_export_signature<'a>(
@@ -559,7 +544,7 @@ impl TraitNote {
         let commitments = self.write_attachment_commitments_to_memory();
         let attachment = self.write_attachment_to_memory(0);
         assert!(commitments.len() + attachment.len() < 1024);
-        let attachment_idx = self.find_attachment(Felt::new(1).unwrap()).unwrap_or(0);
+        let attachment_idx = self.find_attachment(1).unwrap_or(0);
         assert!(attachment_idx < 1024);
 
         let assets = self.get_initial_assets();

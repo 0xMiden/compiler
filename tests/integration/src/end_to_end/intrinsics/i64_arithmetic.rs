@@ -7,7 +7,7 @@ use proptest::prelude::*;
 
 use crate::end_to_end::support::{
     NumericCases, NumericStrategy, TrapExpectation, assemble_test_program,
-    default_host_with_core_lib,
+    default_host_with_core_package,
 };
 
 /// Test helper that assembles `proc_body` with the i64 intrinsics, executes the procedure with
@@ -42,7 +42,7 @@ fn test_i64_intrinsic<V, F1, F2, D>(
         let stack_inputs = StackInputs::new(&inputs).expect("invalid stack inputs");
 
         let vm_result = FastProcessor::new(stack_inputs)
-            .execute_sync(&program, &mut default_host_with_core_lib());
+            .execute_sync(&program, &mut default_host_with_core_package());
 
         match (expected_result, vm_result) {
             (Ok(expected), Ok(output)) => {

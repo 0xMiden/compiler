@@ -1,147 +1,71 @@
-use miden_stdlib_sys::{Felt, Word, WordAligned};
+use miden_stdlib_sys::Word;
 
-use super::types::{AccountId, AssetId, Nonce, RawAccountId, StorageSlotId};
-
-#[allow(improper_ctypes)]
-unsafe extern "C" {
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_id"]
-    fn extern_active_account_get_id(ptr: *mut RawAccountId);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_nonce"]
-    fn extern_active_account_get_nonce() -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_code_commitment"]
-    fn extern_active_account_get_code_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::compute_storage_commitment"]
-    fn extern_active_account_compute_storage_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_asset"]
-    fn extern_active_account_get_asset(
-        asset_id_0: Felt,
-        asset_id_1: Felt,
-        asset_id_2: Felt,
-        asset_id_3: Felt,
-        ptr: *mut Word,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::has_asset"]
-    fn extern_active_account_has_asset(
-        asset_id_0: Felt,
-        asset_id_1: Felt,
-        asset_id_2: Felt,
-        asset_id_3: Felt,
-    ) -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_vault_root"]
-    fn extern_active_account_get_vault_root(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_num_procedures"]
-    fn extern_active_account_get_num_procedures() -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_procedure_root"]
-    fn extern_active_account_get_procedure_root(index: Felt, ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::has_procedure"]
-    fn extern_active_account_has_procedure(
-        proc_root_0: Felt,
-        proc_root_1: Felt,
-        proc_root_2: Felt,
-        proc_root_3: Felt,
-    ) -> Felt;
-}
+use super::types::{AccountId, AssetId, Nonce, StorageSlotId};
+use crate::raw::protocol::active_account as raw;
 
 /// Returns the account ID of the active account.
 pub fn get_id() -> AccountId {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawAccountId>::uninit());
-        extern_active_account_get_id(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init().into_account_id()
-    }
+    raw::get_id().into()
 }
 
 /// Returns the nonce of the active account.
 #[inline]
 pub fn get_nonce() -> Nonce {
     Nonce {
-        inner: unsafe { extern_active_account_get_nonce() },
+        inner: raw::get_nonce(),
     }
 }
 
 /// Returns the code commitment of the active account.
 #[inline]
 pub fn get_code_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_get_code_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_code_commitment()
 }
 
 /// Computes the latest storage commitment of the active account.
 #[inline]
 pub fn compute_storage_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_compute_storage_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::compute_storage_commitment()
 }
 
 /// Returns the current value stored under the specified `asset_id` in the active account vault.
 pub fn get_asset(asset_id: AssetId) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        let id = asset_id.inner;
-        extern_active_account_get_asset(id[0], id[1], id[2], id[3], ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_asset(asset_id.inner)
 }
 
 /// Returns `true` if the active account vault currently contains an asset with the specified asset
 /// id.
 #[inline]
 pub fn has_asset(asset_id: AssetId) -> bool {
-    let id = asset_id.inner;
-    unsafe { extern_active_account_has_asset(id[0], id[1], id[2], id[3]) != Felt::new(0).unwrap() }
+    raw::has_asset(asset_id.inner)
 }
 
 /// Returns the current vault root of the active account.
 #[inline]
 pub fn get_vault_root() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_get_vault_root(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_vault_root()
 }
 
 /// Returns the number of procedures exported by the active account.
 #[inline]
 pub fn get_num_procedures() -> u32 {
-    // The transaction kernel guarantees procedure counts fit in a u32.
-    let count = unsafe { extern_active_account_get_num_procedures() };
-    count.as_canonical_u64() as u32
+    raw::get_num_procedures().into()
 }
 
 /// Returns the procedure root for the procedure at `index`.
+///
+/// # Panics
+///
+/// Panics if `index` exceeds `u8::MAX`, the largest procedure index the protocol accepts.
 #[inline]
 pub fn get_procedure_root(index: u32) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_get_procedure_root(Felt::from_u32(index), ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
+    raw::get_procedure_root(u8::try_from(index).expect("procedure index exceeds u8"))
 }
 
 /// Returns `true` if the procedure identified by `proc_root` exists on the active account.
 #[inline]
 pub fn has_procedure(proc_root: Word) -> bool {
-    unsafe {
-        extern_active_account_has_procedure(proc_root[0], proc_root[1], proc_root[2], proc_root[3])
-            != Felt::new(0).unwrap()
-    }
+    raw::has_procedure(proc_root)
 }
 
 /// Trait that provides active account operations for components.

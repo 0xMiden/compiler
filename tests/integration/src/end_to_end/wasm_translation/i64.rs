@@ -8,7 +8,7 @@ use proptest::{prelude::*, test_runner::TestCaseError};
 use super::wasm_interpreter::WasmInterpreter;
 use crate::{
     CompilerTestBuilder,
-    end_to_end::support::{NumericStrategy, TrapExpectation, default_host_with_core_lib},
+    end_to_end::support::{NumericStrategy, TrapExpectation, default_host_with_core_package},
 };
 
 #[test]
@@ -36,7 +36,7 @@ fn i64_rem_s() {
         a.push_to_operand_stack(&mut inputs);
         b.push_to_operand_stack(&mut inputs);
         let actual = FastProcessor::new(StackInputs::new(&inputs).unwrap())
-            .execute_sync(&program, &mut default_host_with_core_lib());
+            .execute_sync(&program, &mut default_host_with_core_package());
         match (expected, actual) {
             (Ok(expected), Ok(output)) => {
                 prop_assert_eq!(i64::from_felts(output.stack.get_num_elements(2)), expected);

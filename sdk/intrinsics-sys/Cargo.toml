@@ -1,0 +1,31 @@
+[package]
+name = "miden-intrinsics-sys"
+description = "Low-level Rust bindings for the Miden compiler's intrinsics, and the support types generated bindings use"
+version = "0.15.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+build = "build.rs"
+links = "miden_intrinsics_sys_stubs"
+
+[lib]
+crate-type = ["rlib"]
+doctest = false
+
+[dependencies]
+miden-field = { workspace = true, default-features = false }
+
+[build-dependencies]
+miden-sdk-build-script-support.workspace = true
+
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"
+additional-targets = ["wasm32-unknown-unknown", "wasm32-wasip1", "wasm32-wasip2"]
+
+[package.metadata.cargo-shear]
+ignored-paths = ["stubs/*.rs"]

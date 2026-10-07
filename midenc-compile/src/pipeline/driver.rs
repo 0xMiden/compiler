@@ -1065,7 +1065,7 @@ path = "{root}"
         configure: impl FnOnce(&mut Options),
     ) -> (Rc<Session>, PathBuf) {
         let manifest = manifest_rooted_at(dir, extension);
-        let mut options = Box::new(Options::default());
+        let mut options = Box::new(crate::pipeline::testing::options_linked_to_the_toolchain());
         configure(&mut options);
         let options = options.with_output_types(Default::default(), None);
         let source_manager: Arc<dyn SourceManager + Send + Sync> =

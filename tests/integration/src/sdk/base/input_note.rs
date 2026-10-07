@@ -77,7 +77,7 @@ fn input_note_get_initial_assets_info_binding() {
     run_input_note_binding_test(
         "input_note_get_initial_assets_info_binding",
         "pub fn binding(&self) -> u32 {
-        let info = input_note::get_initial_assets_info(NoteIdx { inner: Felt::new(0).unwrap() });
+        let info = input_note::get_initial_assets_info(NoteIdx::from(0u16));
         info.num_assets
     }",
     );
@@ -88,7 +88,7 @@ fn input_note_get_initial_assets_binding() {
     run_input_note_binding_test(
         "input_note_get_initial_assets_binding",
         "pub fn binding(&self) -> Felt {
-        let assets = input_note::get_initial_assets(NoteIdx { inner: Felt::new(0).unwrap() });
+        let assets = input_note::get_initial_assets(NoteIdx::from(0u16));
         Felt::new(assets.len() as u64).unwrap()
     }",
     );
@@ -99,7 +99,7 @@ fn input_note_get_recipient_binding() {
     run_input_note_binding_test(
         "input_note_get_recipient_binding",
         "pub fn binding(&self) -> Recipient {
-        input_note::get_recipient(NoteIdx { inner: Felt::new(0).unwrap() })
+        input_note::get_recipient(NoteIdx::from(0u16))
     }",
     );
 }
@@ -109,7 +109,7 @@ fn input_note_get_metadata_binding() {
     run_input_note_binding_test(
         "input_note_get_metadata_binding",
         "pub fn binding(&self) -> Word {
-        input_note::get_metadata(NoteIdx { inner: Felt::new(0).unwrap() }).header
+        input_note::get_metadata(NoteIdx::from(0u16)).header
     }",
     );
 }
@@ -119,7 +119,7 @@ fn input_note_get_sender_binding() {
     run_input_note_binding_test(
         "input_note_get_sender_binding",
         "pub fn binding(&self) -> AccountId {
-        input_note::get_sender(NoteIdx { inner: Felt::new(0).unwrap() })
+        input_note::get_sender(NoteIdx::from(0u16))
     }",
     );
 }
@@ -129,7 +129,7 @@ fn input_note_get_storage_info_binding() {
     run_input_note_binding_test(
         "input_note_get_storage_info_binding",
         "pub fn binding(&self) -> u32 {
-        let info = input_note::get_storage_info(NoteIdx { inner: Felt::new(0).unwrap() });
+        let info = input_note::get_storage_info(NoteIdx::from(0u16));
         info.num_storage_items
     }",
     );
@@ -140,7 +140,7 @@ fn input_note_get_script_root_binding() {
     run_input_note_binding_test(
         "input_note_get_script_root_binding",
         "pub fn binding(&self) -> Word {
-        input_note::get_script_root(NoteIdx { inner: Felt::new(0).unwrap() })
+        input_note::get_script_root(NoteIdx::from(0u16))
     }",
     );
 }
@@ -150,7 +150,7 @@ fn input_note_get_serial_number_binding() {
     run_input_note_binding_test(
         "input_note_get_serial_number_binding",
         "pub fn binding(&self) -> Word {
-        input_note::get_serial_number(NoteIdx { inner: Felt::new(0).unwrap() })
+        input_note::get_serial_number(NoteIdx::from(0u16))
     }",
     );
 }
@@ -160,7 +160,7 @@ fn input_note_get_attachments_commitment_binding() {
     run_input_note_binding_test(
         "input_note_get_attachments_commitment_binding",
         "pub fn binding(&self) -> Word {
-        input_note::get_attachments_commitment(NoteIdx { inner: Felt::new(0).unwrap() })
+        input_note::get_attachments_commitment(NoteIdx::from(0u16))
     }",
     );
 }
@@ -172,7 +172,7 @@ fn input_note_get_attachments_commitment_raw_binding() {
         "pub fn binding(&self) -> Word {
         input_note::get_attachments_commitment_raw(
             Felt::new(0).unwrap(),
-            NoteIdx { inner: Felt::new(0).unwrap() },
+            NoteIdx::from(0u16),
         )
     }",
     );
@@ -184,8 +184,7 @@ fn input_note_write_attachment_commitments_to_memory_binding() {
         "input_note_write_attachment_commitments_to_memory_binding",
         "pub fn binding(&self) -> Felt {
         let commitments =
-            input_note::write_attachment_commitments_to_memory(NoteIdx { inner: \
-         Felt::new(0).unwrap() });
+            input_note::write_attachment_commitments_to_memory(NoteIdx::from(0u16));
         Felt::new(commitments.len() as u64).unwrap()
     }",
     );
@@ -197,7 +196,7 @@ fn input_note_write_attachment_to_memory_binding() {
         "input_note_write_attachment_to_memory_binding",
         "pub fn binding(&self) -> Felt {
         let attachment = input_note::write_attachment_to_memory(
-            NoteIdx { inner: Felt::new(0).unwrap() },
+            NoteIdx::from(0u16),
             0,
         );
         Felt::new(attachment.len() as u64).unwrap()
@@ -211,8 +210,8 @@ fn input_note_find_attachment_binding() {
         "input_note_find_attachment_binding",
         "pub fn binding(&self) -> u32 {
         input_note::find_attachment(
-            NoteIdx { inner: Felt::new(0).unwrap() },
-            Felt::new(1).unwrap(),
+            NoteIdx::from(0u16),
+            1,
         )
         .unwrap_or(0)
     }",
@@ -224,7 +223,7 @@ fn input_note_get_initial_num_assets_binding() {
     run_input_note_binding_test(
         "input_note_get_initial_num_assets_binding",
         "pub fn binding(&self) -> u32 {
-        input_note::get_initial_num_assets(NoteIdx { inner: Felt::new(0).unwrap() })
+        input_note::get_initial_num_assets(NoteIdx::from(0u16))
     }",
     );
 }
@@ -234,7 +233,7 @@ fn input_note_get_asset_binding() {
     run_input_note_binding_test(
         "input_note_get_asset_binding",
         "pub fn binding(&self) -> Word {
-        input_note::get_asset(NoteIdx { inner: Felt::new(0).unwrap() }, 0).id.inner
+        input_note::get_asset(NoteIdx::from(0u16), 0).id.inner
     }",
     );
 }
@@ -246,7 +245,7 @@ fn input_note_remove_asset_binding() {
         "pub fn binding(&self) -> Word {
         let empty = Word::from([Felt::new(0).unwrap(); 4]);
         input_note::remove_asset(
-            NoteIdx { inner: Felt::new(0).unwrap() },
+            NoteIdx::from(0u16),
             Asset::new(empty, empty),
         )
     }",
@@ -258,7 +257,7 @@ fn input_note_get_note_id_binding() {
     run_input_note_binding_test(
         "input_note_get_note_id_binding",
         "pub fn binding(&self) -> Word {
-        input_note::get_note_id(NoteIdx { inner: Felt::new(0).unwrap() }).inner
+        input_note::get_note_id(NoteIdx::from(0u16)).inner
     }",
     );
 }
@@ -267,11 +266,11 @@ fn input_note_get_note_id_binding() {
 fn input_note_find_note_binding() {
     run_input_note_binding_test(
         "input_note_find_note_binding",
-        "pub fn binding(&self) -> Felt {
+        "pub fn binding(&self) -> u16 {
         let note_id = NoteId::from(Word::from([Felt::new(0).unwrap(); 4]));
         match input_note::find_note(note_id) {
             Some(idx) => idx.inner,
-            None => Felt::new(0).unwrap(),
+            None => 0,
         }
     }",
     );

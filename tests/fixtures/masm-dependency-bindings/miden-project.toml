@@ -1,0 +1,11 @@
+[package]
+name = "masm-dependency-bindings"
+version = "0.1.0"
+
+[[bin]]
+name = "masm-dependency-bindings"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+masm-dep = { path = "masm-dep" }

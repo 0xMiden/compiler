@@ -47,7 +47,7 @@ impl OpEmitter<'_> {
             n => {
                 self.is_signed_smallint(n, span);
                 self.emit(
-                    Self::assert_with_message_inst(
+                    Self::assertz_with_message_inst(
                         format!("{n}-bit integer signedness check failed"),
                         span,
                     ),
@@ -76,13 +76,13 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn int_to_u64(&mut self, n: u32, span: SourceSpan) {
         self.assert_unsigned_smallint(n, span);
-        self.emit_push(0u32, span);
+        self.zext_smallint(n, 64, span);
     }
 
     /// Convert an unsigned N-bit integer to u64
     #[inline(always)]
-    pub fn uint_to_u64(&mut self, _: u32, span: SourceSpan) {
-        self.emit_push(0u32, span);
+    pub fn uint_to_u64(&mut self, n: u32, span: SourceSpan) {
+        self.zext_smallint(n, 64, span);
     }
 
     /// Convert a signed N-bit integer to i128
@@ -93,11 +93,8 @@ impl OpEmitter<'_> {
 
     /// Convert an unsigned N-bit integer to i128
     #[inline(always)]
-    pub fn uint_to_i128(&mut self, _n: u32, span: SourceSpan) {
-        // zero-extend to i128
-        for _ in 0..3 {
-            self.emit_push(0u32, span);
-        }
+    pub fn uint_to_i128(&mut self, n: u32, span: SourceSpan) {
+        self.zext_smallint(n, 128, span);
     }
 
     /// Sign-extend the N-bit value on the stack to M-bits, where M is >= N and <= 256.

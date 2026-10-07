@@ -461,7 +461,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let res = builder.add_wrapping(lhs, rhs, span)?;
 
             let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
-            state.pushn(&[res_hi, res_lo]);
+            state.pushn(&[res_lo, res_hi]);
         }
         Operator::I32And | Operator::I64And => {
             let (arg1, arg2) = state.pop2();
@@ -556,7 +556,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let res = builder.sub_wrapping(lhs, rhs, span)?;
 
             let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
-            state.pushn(&[res_hi, res_lo]);
+            state.pushn(&[res_lo, res_hi]);
         }
         Operator::I32Mul | Operator::I64Mul => {
             let (arg1, arg2) = state.pop2();
@@ -576,7 +576,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let res = builder.mul_wrapping(lhs, rhs, span)?;
 
             let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
-            state.pushn(&[res_hi, res_lo]);
+            state.pushn(&[res_lo, res_hi]);
         }
         Operator::I64MulWideS => {
             let (arg1, arg2) = state.pop2();
@@ -587,7 +587,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let res = builder.mul_wrapping(lhs, rhs, span)?;
 
             let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
-            state.pushn(&[res_hi, res_lo]);
+            state.pushn(&[res_lo, res_hi]);
         }
         Operator::I32DivS | Operator::I64DivS => {
             let (arg1, arg2) = state.pop2();

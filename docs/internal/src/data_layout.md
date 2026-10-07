@@ -39,6 +39,59 @@ Accesses that must preserve full field values need field-aware operations;
 reinterpreting an element as four ordinary integer bytes cannot preserve every
 field value. See [Wasm type translation](https://github.com/0xMiden/compiler/blob/main/frontend/wasm/src/module/types.rs).
 
+A field element must not pass through a 64-bit integer *operation*: `shl`, `or`,
+`shr` and the like work on 32-bit limbs with `u32` instructions, which trap on a
+field value above `u32::MAX`. (A 64-bit *copy* is safe: an aligned `i64.load` or
+`i64.store` moves its two elements without interpreting them.) LLVM can produce
+such an operation without the source asking for one: its IR-level passes may
+carry two adjacent field elements as one `i64`, assembled with
+`i64.extend_i32_u`, `i64.shl` and `i64.or` and taken apart with `i64.shr_u` and
+`i32.wrap_i64`.
+
+[MASM legalization](https://github.com/0xMiden/compiler/blob/main/codegen/masm/src/legalization.rs)
+rewrites those shapes wherever they appear, so that no `u32` instruction touches
+the pair:
+
+- A 64-bit integer assembled as `or(zext(lo), shl(zext(hi), 32))` becomes an
+  `arith.join` of its two halves.
+- So does each of the shapes LLVM folds that pack into when one half is a
+  constant, as for a field element beside `Felt::ZERO`. The constant becomes a
+  32-bit limb.
+  - `shl(zext(hi), 32)` alone: the low half is zero.
+  - `or(shl(zext(hi), 32), C)`, with `C` below 2^32.
+  - `or(zext(lo), C)`, with the low 32 bits of `C` zero.
+- The high half of a 64-bit integer, taken with a logical `shr` by 32 and a
+  `trunc` to 32 bits, becomes a limb of an `arith.split` of the integer. So do
+  the low halves taken in the same block. (A low half taken with a `trunc` alone
+  needs no rewrite: `trunc` uses no `u32` instruction.)
+
+Neither op runs a `u32` instruction. At most they move values into place on the
+operand stack. So a pair of field elements passes through block arguments, `if`
+results, `i64` locals and aligned 64-bit copies as the two elements it is. Where
+the assembled value feeds a 64-bit store directly, the store becomes two 32-bit
+stores instead. A 64-bit load used only for its two halves becomes two 32-bit
+loads.
+
+The legalization runs before spill placement. Its rewrites change live ranges,
+and spill placement, which keeps the operand stack within the 16 elements an
+instruction can reach, has to see the live ranges codegen will lower. Codegen
+itself only checks that the shapes were rewritten.
+
+What is not closed is real 64-bit arithmetic on reinterpreted field elements,
+any operation other than the shapes above:
+
+- shifts, `or`, `and` and `xor`;
+- ordering comparisons;
+- arithmetic.
+
+These run on `u32` limbs and trap on a field value above `u32::MAX`. A
+comparison for equality does not trap: it compares the limbs as field elements.
+
+The generated bindings read a felt-only result whole, which is also the cheaper
+read. Separately, every Rust build for Miden turns LLVM's store merging off
+(`-C llvm-args=-combiner-store-merging=false`). That removes 64-bit copies and
+constant pairs, a size and cycle saving, and does not bear on this hazard.
+
 ## Heap model
 
 The compiler's memory intrinsics manage a heap above a configured byte address.

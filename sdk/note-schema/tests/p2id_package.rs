@@ -1,5 +1,7 @@
 //! End-to-end test for a schema embedded in the p2id note package.
 
+#![cfg(feature = "protocol")]
+
 use miden_note_schema::{NoteStorage, NoteStorageSchema};
 use miden_protocol::{account::AccountId, address::NetworkId};
 use midenc_integration_test_support::{compile_project, workspace_root, write_masp_file_atomic};

@@ -26,6 +26,7 @@ gimli = { workspace = true, features = ["read"] }
 indexmap = "2.7"
 log.workspace = true
 miden-core.workspace = true
+miden-mast-package.workspace = true
 midenc-hir.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-dialect-cf.workspace = true
@@ -34,6 +35,7 @@ midenc-dialect-arith.workspace = true
 midenc-dialect-wasm.workspace = true
 midenc-frontend-wasm-metadata.workspace = true
 midenc-hir-symbol.workspace = true
+midenc-package-interface.workspace = true
 midenc-session.workspace = true
 thiserror.workspace = true
 wasmparser.workspace = true

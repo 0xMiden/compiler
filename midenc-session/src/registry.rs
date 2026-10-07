@@ -131,15 +131,10 @@ impl HybridPackageRegistry {
             registry.load_local_registry(options)?;
         }
 
-        // Load link libraries, including the bundled core and protocol packages.
-        let core = crate::LinkLibrary::core();
-        let tx_kernel = crate::LinkLibrary::tx_kernel();
-        let protocol = crate::LinkLibrary::protocol();
-        let implied_libraries = vec![&core, &tx_kernel, &protocol]
-            .into_iter()
-            .filter(|ll| !options.link_libraries.iter().any(|oll| oll.name == ll.name));
-        let link_libraries = options.link_libraries.iter().chain(implied_libraries);
-        for lib in link_libraries {
+        // Load the explicitly requested link libraries. Every Miden library, including the
+        // core and protocol libraries, now comes from the sysroot above (or from an explicit
+        // `-l`/`-L`); nothing is force-loaded here.
+        for lib in options.link_libraries.iter() {
             let package = lib.load(options)?;
             let file_name =
                 midenc_frontend_wasm_metadata::package_cache::registry_package_file_name(
@@ -190,9 +185,21 @@ impl HybridPackageRegistry {
         };
 
         let lib_dir = sysroot.join("lib");
-        let entries = lib_dir.read_dir().map_err(|err| {
-            Report::msg(format!("cannot read from sysroot ({}): {err}", lib_dir.display()))
-        })?;
+        let entries = match lib_dir.read_dir() {
+            Ok(entries) => entries,
+            // A sysroot with no `lib/` is an empty local registry, not a failure. `Options`
+            // derives a sysroot from `MIDENUP_HOME`/`MIDENUP_TOOLCHAIN` whether or not a
+            // toolchain is installed there, so this is the ordinary first-run path; failing
+            // here would pre-empt `LinkLibrary::find`'s curated error, which names the paths
+            // tried and points at midenup.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(err) => {
+                return Err(Report::msg(format!(
+                    "cannot read from sysroot ({}): {err}",
+                    lib_dir.display()
+                )));
+            }
+        };
 
         for entry in entries {
             let Ok(entry) = entry else {
@@ -295,6 +302,20 @@ impl HybridPackageRegistry {
             .insert(version.clone(), package);
 
         Ok(version)
+    }
+
+    /// Every package this registry holds, in name order then version order.
+    ///
+    /// `artifacts` is keyed by an `FxHashMap`, whose iteration order is unspecified and can
+    /// change between runs; sorting the package names first keeps this deterministic, which
+    /// matters because [`ExportResolver::resolve_procedure`](midenc_package_interface::ExportResolver::resolve_procedure)'s
+    /// "first match wins" must not depend on hash order.
+    pub fn packages(&self) -> impl Iterator<Item = &Arc<Package>> {
+        let mut names: alloc::vec::Vec<&PackageId> = self.artifacts.keys().collect();
+        names.sort();
+        names.into_iter().flat_map(move |name| {
+            self.artifacts.get(name).into_iter().flat_map(|versions| versions.values())
+        })
     }
 }
 
@@ -460,10 +481,65 @@ impl PackageStore for HybridPackageRegistry {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    use alloc::boxed::Box;
+
     use tempfile::TempDir;
 
     use super::*;
+
+    /// A minimal library package named `name`, assembled with the real assembler.
+    ///
+    /// The body's pushed immediate is derived from `name`'s bytes so that fixtures with
+    /// different names always assemble to different MAST digests. A `nop` is elided by the
+    /// assembler entirely (any number of them assembles identically), so it cannot be used for
+    /// this; `push`/`drop` is a true no-op on the stack that still varies the assembled opcodes.
+    /// Digests hash only the assembled opcodes, never the package or module name, so two
+    /// fixtures with an identical body would otherwise collide and defeat every test that checks
+    /// digest-conflict handling.
+    pub(crate) fn fixture_package(name: &str) -> Arc<Package> {
+        use miden_assembly_syntax::{
+            ModuleParser,
+            debuginfo::{DefaultSourceManager, SourceLanguage, SourceManager, Uri},
+        };
+        let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
+        let root = name.replace('-', "_");
+        let uri = Uri::from(root.clone().into_boxed_str());
+        // Kept well under the field modulus (~2^64 - 2^32 + 1); the value itself is never read.
+        let immediate = name
+            .bytes()
+            .fold(1u64, |acc, b| acc.wrapping_mul(31).wrapping_add(u64::from(b)))
+            % 1_000_003
+            + 1;
+        let source = source_manager.load(
+            SourceLanguage::Masm,
+            uri,
+            format!("pub proc id(x: felt) -> felt\n    push.{immediate}\n    drop\nend\n"),
+        );
+        let module = ModuleParser::new(None)
+            .parse(
+                Some(miden_assembly_syntax::ast::Path::new(&root)),
+                source,
+                source_manager.clone(),
+            )
+            .unwrap();
+        let package = miden_assembly::Assembler::new(source_manager)
+            .assemble_library(
+                name,
+                module,
+                core::iter::empty::<Box<miden_assembly_syntax::ast::Module>>(),
+            )
+            .unwrap();
+        Arc::from(package)
+    }
+
+    /// A second fixture whose manifest declares a dependency on `dep`, for the tests that need
+    /// a package that requires another.
+    pub(crate) fn fixture_package_depending_on(name: &str, dep: &Package) -> Arc<Package> {
+        let mut package = (*fixture_package(name)).clone();
+        package.manifest.add_dependency(dep.to_dependency()).unwrap();
+        Arc::new(package)
+    }
 
     /// Returns a copy of `package` renamed to the name and version of `like`.
     ///
@@ -485,9 +561,8 @@ mod tests {
     /// overwriting the incumbent's artifact, in memory or in the filesystem cache.
     #[test]
     fn rejected_install_preserves_the_cached_artifact() {
-        let core_library = miden_core_lib::CoreLibrary::default();
-        let incumbent = core_library.package();
-        let intruder = renamed(&miden_protocol::ProtocolLib::default().package(), &incumbent);
+        let incumbent = fixture_package("alpha");
+        let intruder = renamed(&fixture_package("beta"), &incumbent);
         assert_ne!(incumbent.dependency_commitment(), intruder.dependency_commitment());
 
         let cache_dir = tempfile::tempdir().unwrap();
@@ -512,21 +587,31 @@ mod tests {
         assert_eq!(loaded.dependency_commitment(), incumbent.dependency_commitment());
     }
 
-    /// Every bundled dependency must resolve using its dependency commitment.
+    /// A fresh registry seeded from the sysroot must contain a dependency artifact that
+    /// satisfies the exact-digest dependency recorded by the package requiring it.
     #[test]
-    fn seeding_provides_the_dependencies_bundled_packages_require() {
-        let registry = HybridPackageRegistry::new(&options(None)).unwrap();
-        for package in [
-            miden_core_lib::CoreLibrary::default().package(),
-            miden_protocol::ProtocolLib::default().package(),
-            miden_protocol::transaction::TransactionKernel::package(),
-        ] {
-            for dep in package.manifest.dependencies() {
-                let version = miden_project::Version::new(dep.version.clone(), dep.digest);
-                let loaded = registry.load_package(&dep.name, &version).unwrap();
-                assert_eq!(loaded.dependency_commitment(), dep.digest);
-            }
-        }
+    fn seeding_from_the_sysroot_provides_a_dependency_the_root_package_requires() {
+        let sysroot = tempfile::tempdir().unwrap();
+        let lib_dir = sysroot.path().join("lib");
+        std::fs::create_dir_all(&lib_dir).unwrap();
+
+        let dep = fixture_package("dep");
+        let root = fixture_package_depending_on("root", &dep);
+        dep.write_masp_file(&lib_dir).unwrap();
+        root.write_masp_file(&lib_dir).unwrap();
+
+        let registry =
+            HybridPackageRegistry::new(&options(Some(sysroot.path().to_path_buf()))).unwrap();
+
+        let recorded = root
+            .manifest
+            .dependencies()
+            .find(|recorded| recorded.name == dep.name)
+            .expect("root package should depend on the dep package");
+
+        let version = miden_project::Version::new(recorded.version.clone(), recorded.digest);
+        let loaded = registry.load_package(&recorded.name, &version).unwrap();
+        assert_eq!(loaded.dependency_commitment(), recorded.digest);
     }
 
     /// A failed filesystem-cache write must surface as an error and must not leave a partial
@@ -536,7 +621,7 @@ mod tests {
     fn failed_cache_write_leaves_no_partial_file() {
         use std::os::unix::fs::PermissionsExt;
 
-        let package = miden_core_lib::CoreLibrary::default().package();
+        let package = fixture_package("alpha");
 
         let cache_dir = tempfile::tempdir().unwrap();
         let mut permissions = std::fs::metadata(cache_dir.path()).unwrap().permissions();
@@ -560,29 +645,35 @@ mod tests {
         assert_eq!(leftovers, 0, "a failed cache write must not leave files behind");
     }
 
-    /// When the local registry provides a same-version core package with a different
-    /// digest, seeding must keep the local copy and initialization must still succeed.
+    /// When the local registry on disk provides a same-version package with a different digest
+    /// than one already installed, seeding from it must keep the already-installed package and
+    /// must not fail the whole load.
+    ///
+    /// The registry no longer bundles anything on construction, so the "already installed"
+    /// package that used to arrive automatically is installed explicitly here first.
     #[test]
     fn seeding_keeps_a_mismatched_local_registry_copy() {
-        let core_library = miden_core_lib::CoreLibrary::default();
-        let bundled_core = core_library.package();
-        let doctored = renamed(&miden_protocol::ProtocolLib::default().package(), &bundled_core);
+        let bundled = fixture_package("alpha");
+        let doctored = renamed(&fixture_package("beta"), &bundled);
 
         let sysroot = tempfile::tempdir().unwrap();
         let lib_dir = sysroot.path().join("lib");
         std::fs::create_dir_all(&lib_dir).unwrap();
         doctored.write_masp_file(&lib_dir).unwrap();
 
-        let registry =
-            HybridPackageRegistry::new(&options(Some(sysroot.path().to_path_buf()))).unwrap();
+        let mut registry = HybridPackageRegistry::empty();
+        registry.install_if_missing(Arc::clone(&bundled)).unwrap();
+        registry
+            .load_local_registry(&options(Some(sysroot.path().to_path_buf())))
+            .unwrap();
 
         let version =
-            miden_project::Version::new(doctored.version.clone(), doctored.dependency_commitment());
-        let loaded = registry.load_package(&doctored.name, &version).unwrap();
+            miden_project::Version::new(bundled.version.clone(), bundled.dependency_commitment());
+        let loaded = registry.load_package(&bundled.name, &version).unwrap();
         assert_eq!(
             loaded.dependency_commitment(),
-            doctored.dependency_commitment(),
-            "the local registry copy must survive the bundled seeding"
+            bundled.dependency_commitment(),
+            "an already-installed package must survive a conflicting local registry copy"
         );
     }
 
@@ -592,7 +683,13 @@ mod tests {
         let cache = temp.path().join("cache");
         std::fs::create_dir_all(&cache).unwrap();
 
-        let options = crate::Options::default();
+        let sysroot = temp.path().join("sysroot");
+        let lib_dir = sysroot.join("lib");
+        std::fs::create_dir_all(&lib_dir).unwrap();
+        fixture_package("miden-core").write_masp_file(&lib_dir).unwrap();
+        fixture_package("miden-tx-kernel").write_masp_file(&lib_dir).unwrap();
+
+        let options = options(Some(sysroot));
         let package = crate::LinkLibrary::core().load(&options).unwrap();
         let package_name: &str = &package.name;
         let cached_package = cache
@@ -668,11 +765,37 @@ mod tests {
         assert!(sibling.exists(), "a sibling directory must never be swept");
     }
 
+    /// A sysroot with no `lib/` directory is an empty local registry, not a failure.
+    ///
+    /// `Options` derives a sysroot from `MIDENUP_HOME`/`MIDENUP_TOOLCHAIN` whether or not a
+    /// toolchain is installed there, so this is the ordinary first-run path. Construction has to
+    /// succeed for the error the user finally sees to be `LinkLibrary::find`'s, which names the
+    /// paths tried and points at midenup.
     #[test]
-    fn constructor_publishes_embedded_registry_packages_under_versioned_names() {
+    fn a_sysroot_without_a_lib_directory_is_an_empty_registry() {
+        let temp = TempDir::new().unwrap();
+        let options = options(Some(temp.path().to_path_buf()));
+
+        let registry = HybridPackageRegistry::new_with_filesystem_cache(&options, None).unwrap();
+        assert!(
+            registry.packages().next().is_none(),
+            "nothing is installed from an empty sysroot"
+        );
+
+        let err = alloc::format!("{}", crate::LinkLibrary::core().load(&options).unwrap_err());
+        assert!(err.contains("midenup"), "{err}");
+        assert!(!err.contains("cannot read from sysroot"), "{err}");
+    }
+
+    #[test]
+    fn constructor_publishes_sysroot_packages_under_versioned_names() {
         let temp = TempDir::new().unwrap();
         let cache = temp.path().join("cache");
-        let options = crate::Options::default();
+        let sysroot = temp.path().join("sysroot");
+        std::fs::create_dir_all(sysroot.join("lib")).unwrap();
+        fixture_package("miden-core").write_masp_file(sysroot.join("lib")).unwrap();
+
+        let options = options(Some(sysroot));
         let core = crate::LinkLibrary::core().load(&options).unwrap();
 
         HybridPackageRegistry::new_with_filesystem_cache(&options, Some(cache.clone())).unwrap();
@@ -684,22 +807,30 @@ mod tests {
             ));
         assert!(
             published.is_file(),
-            "an embedded registry dependency must use the path recorded in dependency maps"
+            "a sysroot-resolved dependency must use the path recorded in dependency maps"
         );
     }
 
     #[test]
     fn constructor_publishes_preloaded_registry_packages_into_the_cache() {
         let temp = TempDir::new().unwrap();
-        let sysroot = temp.path().join("sysroot");
-        let lib_dir = sysroot.join("lib");
-        std::fs::create_dir_all(&lib_dir).unwrap();
 
+        // A separate sysroot, used only to source a template package via the alias-resolving
+        // load path; it is not the sysroot under test below.
+        let source_sysroot = temp.path().join("source-sysroot");
+        std::fs::create_dir_all(source_sysroot.join("lib")).unwrap();
+        fixture_package("miden-core")
+            .write_masp_file(source_sysroot.join("lib"))
+            .unwrap();
         let mut registry_package =
-            (*crate::LinkLibrary::core().load(&crate::Options::default()).unwrap()).clone();
+            (*crate::LinkLibrary::core().load(&options(Some(source_sysroot))).unwrap()).clone();
         registry_package.name = "registry-component".into();
         let mut newer_registry_package = registry_package.clone();
         newer_registry_package.version.major += 1;
+
+        let sysroot = temp.path().join("sysroot");
+        let lib_dir = sysroot.join("lib");
+        std::fs::create_dir_all(&lib_dir).unwrap();
         registry_package
             .write_to_file(lib_dir.join("registry-component-v1.masp"))
             .unwrap();
@@ -708,13 +839,9 @@ mod tests {
             .unwrap();
 
         let cache = temp.path().join("cache");
-        let options = crate::Options {
-            sysroot: Some(sysroot),
-            ..crate::Options::default()
-        };
+        let opts = options(Some(sysroot));
         let registry =
-            HybridPackageRegistry::new_with_filesystem_cache(&options, Some(cache.clone()))
-                .unwrap();
+            HybridPackageRegistry::new_with_filesystem_cache(&opts, Some(cache.clone())).unwrap();
 
         let published =
             cache.join(midenc_frontend_wasm_metadata::package_cache::registry_package_file_name(

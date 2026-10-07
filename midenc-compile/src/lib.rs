@@ -126,6 +126,15 @@ pub fn compile_to_memory(context: Rc<Context>) -> CompilerResult<CompiledArtifac
 /// through a boxed source provider. A caller that needs to get something out of the callback
 /// shares an `Rc<RefCell<_>>` with it rather than borrowing a local.
 ///
+/// # The HIR is legalized here, and must not have had spills placed without it
+///
+/// Codegen only checks that the HIR is legal for Miden Assembly; the pass that makes it so,
+/// `LegalizeForMasm`, rewrites, and so belongs before spill placement. This entry point runs it
+/// over `link_output` first: HIR built by hand has seen neither it nor spill placement, and on
+/// HIR that went through [`pipeline::backend::apply_rewrites`] it finds nothing left to do. A
+/// caller must not hand over HIR whose spills were placed some other way before it was
+/// legalized.
+///
 /// # The caller's HIR context must outlive this call
 ///
 /// `link_output` is HIR, and HIR operations hold only a raw pointer to the context they were
@@ -155,6 +164,12 @@ where
     // second run produced `NoSolution` operand-scheduling failures in five 128-bit arithmetic
     // fixtures and two differential proptests. It is also what the legacy
     // `CodegenStage → AssembleStage` chain did: codegen and nothing before it.
+    //
+    // Codegen does not legalize, though: it runs after spill placement, so it only checks that
+    // the rewrites did. The rewrites' last pass, `LegalizeForMasm`, rewrites no more than a few
+    // shapes and none twice, so it is run here: hand-built HIR has not seen it, and on HIR the
+    // caller rewrote it finds nothing to do.
+    pipeline::backend::legalize_for_masm(&link_output, context.clone())?;
     let start = pipeline::Start::At {
         checkpoint: pipeline::CheckpointId::HIR_TRANSFORMED,
         artifact: pipeline::Artifact::new(pipeline::ArtifactId::HIR, link_output),

@@ -1,18 +1,16 @@
 //! This module provides core utilities for constructing tests outside of the primary
 //! [crate::CompilerTest] infrastructure.
 
+pub mod bindings;
 mod eval;
 mod initializer;
 pub mod setup;
-
-use std::sync::Arc;
+pub mod toolchain;
 
 use miden_assembly::serde::Serializable;
 use miden_core::Felt;
 use miden_debug::Executor;
 use miden_mast_package::Package;
-use miden_protocol::{ProtocolLib, transaction::TransactionKernel};
-use miden_standards::StandardsLib;
 
 pub use self::{
     eval::{
@@ -29,25 +27,26 @@ pub use self::{
 pub fn executor_with_std(args: Vec<Felt>) -> Executor {
     let mut exec = Executor::new(args);
 
-    register_core_packages(&mut exec).unwrap_or_else(|err| panic!("{err}"));
+    for package in
+        toolchain::packages_in(&toolchain::sysroot()).unwrap_or_else(|err| panic!("{err}"))
+    {
+        let package_name = package.name.clone();
+        exec.with_package(package).unwrap_or_else(|err| {
+            panic!("failed to register toolchain package '{package_name}': {err}")
+        });
+    }
 
-    let tx_kernel = TransactionKernel::package();
-    let protocol_lib = ProtocolLib::default().package();
-    exec.with_package(tx_kernel).expect("failed to register tx-kernel package");
-    exec.with_package(protocol_lib).expect("failed to register protocol package");
-    exec.with_package(Arc::new(StandardsLib::default().as_ref().clone()))
-        .expect("failed to register standards package");
+    register_core_event_handlers(&mut exec).unwrap_or_else(|err| panic!("{err}"));
 
     exec
 }
 
-/// Registers the core packages and user-defined event handlers needed by the debug executor.
-fn register_core_packages(exec: &mut Executor) -> Result<(), String> {
+/// Registers the user-defined event handlers needed by the debug executor.
+///
+/// Packages come from the toolchain sysroot (see [toolchain]); this only wires up the core
+/// library's VM host event handlers, which `miden-core-lib` is kept as a dependency for.
+fn register_core_event_handlers(exec: &mut Executor) -> Result<(), String> {
     let core_library = miden_core_lib::CoreLibrary::default();
-    let package = core_library.package();
-    let package_name = package.name.clone();
-    exec.with_package(package)
-        .map_err(|err| format!("failed to register core package '{package_name}': {err}"))?;
 
     // The debug executor path does not automatically install core-library event handlers, but
     // integration tests execute core helpers such as `u64::div` through the VM.

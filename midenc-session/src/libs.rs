@@ -3,7 +3,6 @@ use alloc::{borrow::Cow, format, sync::Arc, vec::Vec};
 use alloc::{boxed::Box, string::ToString};
 
 pub use miden_assembly_syntax::{PathBuf as LibraryPath, PathComponent as LibraryPathComponent};
-use miden_core_lib::CoreLibrary;
 #[cfg(feature = "std")]
 use miden_mast_package::Package;
 use miden_project::Linkage;
@@ -66,24 +65,26 @@ impl LinkLibrary {
         }
     }
 
+    /// The file stem this library has in a toolchain's `lib/` directory.
+    ///
+    /// The short names `-l std`, `-l core`, `-l base`, `-l protocol` and `-l tx-kernel` are
+    /// accepted for the toolchain libraries; everything else is used as given.
+    pub fn canonical_name(&self) -> &str {
+        match self.name.as_ref() {
+            "std" | "core" | "miden-core" => "miden-core",
+            "base" | "protocol" | "miden-protocol" => "miden-protocol",
+            "tx-kernel" | "miden-tx-kernel" => "miden-tx-kernel",
+            other => other,
+        }
+    }
+
     #[cfg(not(feature = "std"))]
     pub fn load(&self, _options: &Options) -> Result<Arc<Package>, Report> {
-        // Handle libraries shipped with the compiler, or via Miden crates
-        match self.name.as_ref() {
-            "std" | "core" | "miden-core" => {
-                return Ok(CoreLibrary::default().package());
-            }
-            "base" | "protocol" | "miden-protocol" => {
-                return Ok(miden_protocol::ProtocolLib::default().package());
-            }
-            "tx-kernel" | "miden-tx-kernel" => {
-                return Ok(miden_protocol::transaction::TransactionKernel::package());
-            }
-            name => Err(Report::msg(format!(
-                "link library '{name}' cannot be loaded: compiler was built without standard \
-                 library"
-            ))),
-        }
+        Err(Report::msg(format!(
+            "link library '{}' cannot be loaded: the compiler was built without `std`, and \
+             packages are only available from a toolchain on disk",
+            self.name
+        )))
     }
 
     #[cfg(feature = "std")]
@@ -91,24 +92,7 @@ impl LinkLibrary {
         if let Some(path) = self.path.as_deref() {
             return self.load_from_path(path, options);
         }
-
-        // Handle libraries shipped with the compiler, or via Miden crates
-        match self.name.as_ref() {
-            "std" | "core" | "miden-core" => {
-                return Ok(CoreLibrary::default().package());
-            }
-            "base" | "protocol" | "miden-protocol" => {
-                return Ok(miden_protocol::ProtocolLib::default().package());
-            }
-            "tx-kernel" | "miden-tx-kernel" => {
-                return Ok(miden_protocol::transaction::TransactionKernel::package());
-            }
-            _ => (),
-        }
-
-        // Search for library among specified search paths
         let path = self.find(options)?;
-
         self.load_from_path(&path, options)
     }
 
@@ -144,7 +128,7 @@ impl LinkLibrary {
                 let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
                     continue;
                 };
-                if stem != self.name.as_ref() {
+                if stem != self.canonical_name() {
                     continue;
                 }
 
@@ -159,8 +143,23 @@ impl LinkLibrary {
         }
 
         Err(Report::msg(format!(
-            "unable to locate library '{}' using any of the provided search paths",
-            self.name
+            "unable to locate library '{}' (file stem '{}.masp'): searched {}; install a Miden \
+             toolchain with midenup (see miden-toolchain.toml) so that MIDEN_SYSROOT/lib contains \
+             it, or pass its directory with -L",
+            self.name,
+            self.canonical_name(),
+            if options.search_paths.is_empty() {
+                alloc::string::String::from(
+                    "no search paths (MIDEN_SYSROOT is unset and no -L was given)",
+                )
+            } else {
+                options
+                    .search_paths
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
         )))
     }
 }
@@ -308,5 +307,74 @@ pub fn add_target_link_libraries(link_libraries: &mut Vec<LinkLibrary>, requires
     }
     if requires_protocol && !link_libraries.iter().any(LinkLibrary::is_protocol) {
         link_libraries.push(LinkLibrary::protocol());
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aliases_canonicalise_to_the_toolchain_file_stems() {
+        for (alias, canonical) in [
+            ("std", "miden-core"),
+            ("core", "miden-core"),
+            ("miden-core", "miden-core"),
+            ("base", "miden-protocol"),
+            ("protocol", "miden-protocol"),
+            ("tx-kernel", "miden-tx-kernel"),
+            ("my-lib", "my-lib"),
+        ] {
+            let lib = LinkLibrary {
+                name: alias.into(),
+                path: None,
+                linkage: Linkage::Dynamic,
+            };
+            assert_eq!(lib.canonical_name(), canonical, "{alias}");
+        }
+    }
+
+    #[test]
+    fn a_missing_library_names_the_sysroot_and_search_paths_and_points_at_midenup() {
+        let dir = tempfile::tempdir().unwrap();
+        let sysroot = dir.path().join("toolchain");
+        std::fs::create_dir_all(sysroot.join("lib")).unwrap();
+        let options = crate::Options::new(
+            None,
+            None,
+            dir.path().into(),
+            dir.path().into(),
+            None,
+            Some(sysroot.clone()),
+        );
+        let err = LinkLibrary::core().load(&options).unwrap_err().to_string();
+        assert!(err.contains("miden-core"), "{err}");
+        assert!(err.contains(&sysroot.join("lib").display().to_string()), "{err}");
+        assert!(err.contains("midenup"), "{err}");
+    }
+
+    #[test]
+    fn a_library_in_the_sysroot_loads_by_alias() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib_dir = dir.path().join("toolchain").join("lib");
+        std::fs::create_dir_all(&lib_dir).unwrap();
+        let package = crate::registry::tests::fixture_package("miden-core");
+        package.write_masp_file(&lib_dir).unwrap();
+        let options = crate::Options::new(
+            None,
+            None,
+            dir.path().into(),
+            dir.path().into(),
+            None,
+            Some(dir.path().join("toolchain")),
+        );
+        let loaded = LinkLibrary {
+            name: "std".into(),
+            path: None,
+            linkage: Linkage::Dynamic,
+        }
+        .load(&options)
+        .unwrap();
+        assert_eq!(AsRef::<str>::as_ref(&loaded.name), "miden-core");
     }
 }

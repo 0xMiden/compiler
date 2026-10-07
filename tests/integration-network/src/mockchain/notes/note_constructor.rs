@@ -176,7 +176,40 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, create_tx);
-    expect!["8977"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    // 8977 before the SDK's bindings were generated, 8984 after `miden-stdlib-sys` was (Tasks 6
+    // and 6b of the generator plan; this suite was not re-run then). 189 cycles more, as in
+    // `basic_wallet_p2id_transfers_asset_with_custom_tx_script`, once `miden-base-sys` was
+    // generated: the wallet's `create_note` and `move_asset_to_note` then checked the `Tag`,
+    // `NoteType` and `NoteIdx` felts against the protocol's integer types. 2 cycles more (9173
+    // before), as in that test: the `mem::pipe_preimage_to_memory` stub's redundant
+    // `swap.1 swap.1`, since the procedure resolves from the core manifest instead of the
+    // deleted transitional table.
+    //
+    // 227 cycles more (9175 before) since `Tag`, `NoteIdx` and `NoteType` wrap the manifest's
+    // integers. The wallet's felt range checks went, as in that test, but `p2id-tx-script` now
+    // builds the `Tag` and the `NoteType` from its input felts with `TryFrom<Felt>` before it
+    // calls the `p2id` constructor: the felt comparisons moved into the script, and LLVM holds
+    // both converted values across the constructor call as canonical `u64`s in 64-bit locals
+    // (`store_dw`/`load_dw`).
+    //
+    // 86 cycles fewer (9402 before) since LLVM's store merging is off (the mandatory rustflag
+    // `-C llvm-args=-combiner-store-merging=false`): the `p2id` constructor, `build-recipient` in
+    // the note package, copied two felt pairs with `i64.load`/`i64.store`, each a call to
+    // `intrinsics::mem::load_dw` or `store_dw` behind a byte-address alignment check, and now
+    // copies the four felts with element loads and stores. The script itself is unchanged.
+    //
+    // 146 cycles fewer (9316 before) since codegen lowers a cast that changes only a value's
+    // type by renaming its operand where it stands (32 cycles, against the 2 the stub's redundant
+    // `swap.1 swap.1` above cost), and a peephole deletes adjacent stack operations that undo
+    // each other (114 cycles).
+    //
+    // 44 cycles fewer (9170 before) with no `u32assert` on a constant-address 32-bit store: one
+    // fewer per 32-bit global initializer, in the `init` that every call into a component runs.
+    // The script's own `init` stores three such globals (10 cycles: 9 for the assertions, 1 for
+    // an op batch its stores no longer fill), the `p2id` constructor's four (14 cycles: 12, and 2
+    // for padding `noop`s), and the wallet's three, once for each of `create_note` and
+    // `move_asset_to_note` (10 cycles each).
+    expect!["9126"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
@@ -187,7 +220,13 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, consume_tx);
-    expect!["5018"].assert_eq(single_note_cycles(&tx_measurements));
+    // 5018 before codegen lowered a cast that changes only a value's type by renaming its
+    // operand where it stands (14 cycles fewer) and a peephole deleted adjacent stack operations
+    // that undo each other, such as `swap.1 swap.1` (50 fewer). 4954 before the `u32assert` on a
+    // constant-address 32-bit store went, one fewer per 32-bit global initializer: the P2ID
+    // note's `init` stores four such globals (14 cycles) and the wallet's three (10 cycles, run
+    // once for `receive_asset`).
+    expect!["4930"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();

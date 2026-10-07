@@ -14,8 +14,11 @@ readme.workspace = true
 edition.workspace = true
 
 [features]
-default = []
-codec-component = ["dep:wasmtime"]
+default = ["protocol"]
+# Values of protocol types: `NoteStorage`, its builder and decoder, and the standard codecs.
+# The schema model and the codec-component validation do not need it.
+protocol = ["dep:miden-protocol"]
+codec-component = ["protocol", "dep:wasmtime"]
 
 [lib]
 doctest = false
@@ -24,7 +27,7 @@ doctest = false
 miden-field.workspace = true
 miden-field-repr.workspace = true
 miden-mast-package = { workspace = true, features = ["std"] }
-miden-protocol = { workspace = true, features = ["std"] }
+miden-protocol = { workspace = true, features = ["std"], optional = true }
 midenc-frontend-wasm-metadata.workspace = true
 toml.workspace = true
 wasmparser.workspace = true
