@@ -72,6 +72,9 @@ pub const RUST_KEYWORDS: &[&str] = &[
 /// (`felt`, `word`, ...).
 pub const CORE_TYPES_INTERFACE: &str = "core-types";
 
+/// The fully versioned id of [`CORE_TYPES_INTERFACE`], as WIT documents `use` it.
+pub const CORE_TYPES_INTERFACE_ID: &str = "miden:base/core-types@1.0.0";
+
 /// The namespace segment whose WIT spelling is [`CORE_TYPES_INTERFACE`].
 pub const CORE_TYPES_SEGMENT: &str = "core_types";
 
@@ -326,5 +329,9 @@ mod tests {
     #[test]
     fn core_types_segment_is_spelled_like_the_interface() {
         assert_eq!(CORE_TYPES_SEGMENT.replace('_', "-"), CORE_TYPES_INTERFACE);
+        assert_eq!(
+            CORE_TYPES_INTERFACE_ID,
+            alloc::format!("miden:base/{CORE_TYPES_INTERFACE}@1.0.0")
+        );
     }
 }

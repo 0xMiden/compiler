@@ -186,7 +186,7 @@ pub(crate) fn import_world_wit(name: &str, imports: &[FpiImportSpec]) -> String 
     // up front keeps the world's dependency closure complete without mutating or re-elaborating it.
     let mut source_imports = vec![CORE_TYPES_INTERFACE_ID.to_string()];
     for import in imports {
-        if import.source_import() != CORE_TYPES_INTERFACE_ID.as_str() {
+        if import.source_import() != CORE_TYPES_INTERFACE_ID {
             source_imports.push(import.source_import().to_string());
         }
     }
@@ -1755,7 +1755,7 @@ mod tests {
 
         let wit = import_world_wit("foreign-account-bindings", &specs);
 
-        assert_eq!(wit.matches(&format!("import {};", *CORE_TYPES_INTERFACE_ID)).count(), 1);
+        assert_eq!(wit.matches(&format!("import {CORE_TYPES_INTERFACE_ID};")).count(), 1);
         let alpha = wit.find("import miden:alpha/api@1.0.0;").unwrap();
         let zebra = wit.find("import miden:zebra/api@1.0.0;").unwrap();
         assert!(alpha < zebra, "world imports must be deterministic: {wit}");

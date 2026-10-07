@@ -1168,9 +1168,10 @@ impl RustProjectFrontend {
 ///   `package` file name inside the cache for compiler-published artifacts, or an absolute
 ///   `path` for preassembled `.masp` dependencies consumed in place. Each entry also records
 ///   `version` (unread until the #1300 digest pin extends it) and `wit` — whether the
-///   macros can obtain a component interface for the artifact: it embeds component WIT, or it
-///   is an account component whose interface the macros derive from its manifest. A `false`
-///   lets the macros skip link-only packages without deserializing them.
+///   artifact may have a component interface for the macros: it embeds component WIT, or it is
+///   an account component whose interface the macros try to derive from its manifest (which
+///   fails for some components). A `false` lets the macros skip link-only packages without
+///   deserializing them.
 /// - `build-inputs` — root consumer only: a versioned declaration of the dependency inputs the
 ///   frontends can enumerate completely, plus explicit opacity reasons for the ones they cannot.
 ///   The contract build script turns a complete record into selective Cargo change directives;
