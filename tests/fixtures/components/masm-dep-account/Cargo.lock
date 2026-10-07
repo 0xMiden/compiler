@@ -2468,6 +2468,7 @@ dependencies = [
 name = "midenc-package-wit"
 version = "0.15.0"
 dependencies = [
+ "heck",
  "miden-mast-package",
  "miden-thiserror",
  "midenc-frontend-wasm-metadata",

@@ -4727,6 +4727,7 @@ dependencies = [
 name = "midenc-package-wit"
 version = "0.15.0"
 dependencies = [
+ "heck",
  "miden-mast-package",
  "miden-standards",
  "miden-thiserror",
@@ -4734,6 +4735,7 @@ dependencies = [
  "midenc-hir-type",
  "midenc-integration-test-support",
  "midenc-package-interface",
+ "wit-bindgen-rust",
  "wit-parser 0.259.0",
 ]
 
