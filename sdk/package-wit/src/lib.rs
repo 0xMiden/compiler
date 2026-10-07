@@ -4,9 +4,11 @@
 //! the Miden SDK links a component through its WIT interface. This crate writes that interface
 //! from the package's manifest alone: one function per interface procedure, each carrying its
 //! export path in `@external-id`, with the manifest types expressed through the SDK's `core-types`
-//! where they match exactly and declared locally otherwise. A procedure the component model cannot
-//! call directly is left out and reported in [`Generated::skipped`] and in the interface's doc
-//! comment, never failing the package.
+//! where they match exactly and declared locally otherwise. A procedure the interface cannot offer
+//! (unsupported or clashing names and types, parameters beyond the stack budget, multi-value
+//! results, reserved or invalid names) is left out and reported in [`Generated::skipped`] and in
+//! the interface's doc comment; only a package whose every interface procedure is left out fails,
+//! with [`Error::EverythingSkipped`].
 //!
 //! The interface procedures are the exports marked `@account_procedure` or `@auth_script`: the
 //! protocol counts only those as part of an account component's interface
@@ -21,8 +23,12 @@ mod emit;
 mod naming;
 mod types;
 
+use std::collections::BTreeSet;
+
 use miden_mast_package::TargetType;
-use midenc_frontend_wasm_metadata::{FPI_IMPORT_PREFIX, procedure_path::validate_procedure_path};
+use midenc_frontend_wasm_metadata::{
+    FPI_IMPORT_PREFIX, namespace::CORE_TYPES_INTERFACE, procedure_path::validate_procedure_path,
+};
 use midenc_hir_type::FunctionType;
 use midenc_package_interface::{PackageInterface, ProcedureItem, Role};
 
@@ -42,7 +48,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            core_types: "miden:base/core-types@1.0.0".to_owned(),
+            core_types: format!("miden:base/{CORE_TYPES_INTERFACE}@1.0.0"),
         }
     }
 }
@@ -52,14 +58,13 @@ impl Default for Options {
 pub struct Generated {
     /// The WIT text.
     pub wit: String,
-    /// The WIT package id, e.g. `miden:standards-wallets-basic-wallet@0.17.0`, without the `%`
-    /// keyword escapes the WIT text writes.
+    /// The WIT package id, e.g. `miden:standards-wallets-basic-wallet@0.17.0`.
     pub package_id: String,
-    /// The interface name, e.g. `basic-wallet`, without a `%` keyword escape.
+    /// The interface name, e.g. `basic-wallet`.
     pub interface: String,
     /// The world name, e.g. `basic-wallet-world`.
     pub world: String,
-    /// The interface procedures left out, in package order.
+    /// The interface procedures left out, in path order.
     pub skipped: Vec<Skipped>,
 }
 
@@ -82,9 +87,18 @@ pub enum Error {
     #[error("package exports no `@account_procedure` or `@auth_script` procedures")]
     NoInterfaceProcedures,
     /// The interface procedures do not share one module whose path can name the WIT package and
-    /// interface.
+    /// interface, or the package name or that module's path yields no WIT package id or interface
+    /// name (an invalid name, or a WIT or Rust keyword).
     #[error("{0}")]
     Namespace(String),
+    /// Every interface procedure is left out; the procedures and why, in path order.
+    #[error("every interface procedure is left out:{}", list_skipped(.0))]
+    EverythingSkipped(Vec<Skipped>),
+}
+
+/// One `` `path`: reason`` line per procedure of `skipped`, each after a line break.
+fn list_skipped(skipped: &[Skipped]) -> String {
+    skipped.iter().map(|s| format!("\n  `{}`: {}", s.path, s.reason)).collect()
 }
 
 /// Generate the WIT interface of the account-component `package`.
@@ -103,12 +117,24 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
     let (id_namespace, id_name) =
         naming::package_id(&head, package_name).map_err(Error::Namespace)?;
     let version = &package.version;
-    let interface_ident =
-        naming::ident(&leaf).map_err(|err| Error::Namespace(format!("the module {err}")))?;
-    let interface = interface_ident.trim_start_matches('%').to_owned();
+    let interface = naming::interface(&leaf).map_err(Error::Namespace)?;
     // Needs no escape: the `-world` suffix keeps it from being a keyword.
     let world = format!("{interface}-world");
     debug_assert!(naming::is_valid(&world));
+
+    // Functions and types share one namespace in a WIT interface. On a clash the function is left
+    // out, never a function that needs the type, so the type names come first: every name a
+    // function could add when offered on its own. A function offered next to others adds no
+    // other names, so no function kept below can be shadowed by a later type.
+    let mut type_names: BTreeSet<String> = BTreeSet::new();
+    for procedure in &procedures {
+        if let Some(signature) = &procedure.signature
+            && let Ok((_, types)) =
+                function(procedure, &procedure_path(procedure), signature, &TypeSet::default())
+        {
+            type_names.extend(types.names().map(str::to_owned));
+        }
+    }
 
     // `TypeSet::map` may leave partial state behind on failure, so each function is mapped on a
     // clone (see `function`) that replaces the set only on success.
@@ -116,10 +142,23 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
     let mut functions: Vec<Function> = Vec::new();
     let mut skipped = Vec::new();
     for procedure in procedures {
-        let path = procedure.path.to_relative().to_string();
+        let path = procedure_path(procedure);
         let result = match &procedure.signature {
             None => Err("no typed signature".to_owned()),
-            Some(signature) => function(procedure, &path, signature, &types, &functions),
+            Some(signature) => {
+                function(procedure, &path, signature, &types).and_then(|(function, extended)| {
+                    if type_names.contains(function.name.trim_start_matches('%')) {
+                        Err(format!(
+                            "function `{}` has the name of a type in the interface",
+                            function.name
+                        ))
+                    } else if functions.iter().any(|f| f.name == function.name) {
+                        Err(format!("another function is also named `{}`", function.name))
+                    } else {
+                        Ok((function, extended))
+                    }
+                })
+            }
         };
         match result {
             Ok((function, extended)) => {
@@ -129,14 +168,18 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
             Err(reason) => skipped.push(Skipped { path, reason }),
         }
     }
+    if functions.is_empty() {
+        return Err(Error::EverythingSkipped(skipped));
+    }
 
+    let package_id = format!("{id_namespace}:{id_name}@{version}");
     let wit = emit::render(&emit::Document {
         package_name,
         package_version: package.version.to_string(),
         commitment: package.digest.to_string(),
         skipped: &skipped,
-        package_id: &format!("{id_namespace}:{id_name}@{version}"),
-        interface: &interface_ident,
+        package_id: &package_id,
+        interface: &interface,
         world: &world,
         core_types: &options.core_types,
         types: &types,
@@ -144,15 +187,16 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
     });
     Ok(Generated {
         wit,
-        package_id: format!(
-            "{}:{}@{version}",
-            id_namespace.trim_start_matches('%'),
-            id_name.trim_start_matches('%')
-        ),
+        package_id,
         interface,
         world,
         skipped,
     })
+}
+
+/// The export path of `procedure`, without a leading `::`.
+fn procedure_path(procedure: &ProcedureItem) -> String {
+    procedure.path.to_relative().to_string()
 }
 
 /// The head and the leaf segment of the one module all interface `procedures` live in.
@@ -181,12 +225,14 @@ fn namespace(procedures: &[&ProcedureItem]) -> Result<(String, String), Error> {
 
 /// The interface function for `procedure`, with the type set extended by what it needs; or the
 /// reason it is left out, in which case `types` stays as it was.
+///
+/// The function's name is not checked against the other functions and the types; `generate` does
+/// that.
 fn function(
     procedure: &ProcedureItem,
     path: &str,
     signature: &FunctionType,
     types: &TypeSet,
-    functions: &[Function],
 ) -> Result<(Function, TypeSet), String> {
     // Every `@external-id` consumer applies this rule; it also keeps the `"` and `\` that
     // `@external-id("...")` cannot spell out of the path.
@@ -194,7 +240,7 @@ fn function(
         return Err(format!("the export path {err}"));
     }
     let name =
-        naming::ident(procedure.name()).map_err(|err| format!("the procedure name {err}"))?;
+        naming::rust_ident(procedure.name()).map_err(|err| format!("the procedure name {err}"))?;
     // The SDK rejects a dependency interface that has a function in the prefix its generated
     // FPI imports use.
     if name.starts_with(FPI_IMPORT_PREFIX) {
@@ -239,20 +285,6 @@ fn function(
             ));
         }
     };
-
-    // Functions and types share one namespace in a WIT interface.
-    let bare = name.trim_start_matches('%');
-    if types.contains(bare) {
-        return Err(format!("function `{name}` has the name of a type in the interface"));
-    }
-    if functions.iter().any(|f| f.name == name) {
-        return Err(format!("another function is also named `{name}`"));
-    }
-    if let Some(function) =
-        functions.iter().find(|f| types.contains(f.name.trim_start_matches('%')))
-    {
-        return Err(format!("a type would take the name of function `{}`", function.name));
-    }
 
     Ok((
         Function {
