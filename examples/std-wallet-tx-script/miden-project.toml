@@ -1,0 +1,16 @@
+[package]
+name = "std-wallet-tx-script"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+namespace = "miden::std_wallet_tx_script::std_wallet_tx_script"
+path = "src/lib.rs"
+
+[profile.release]
+debug = true
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+miden-standards-wallets-basic-wallet = "0.17.0"
