@@ -93,9 +93,10 @@ fn standard_component_packages() -> Vec<Arc<Package>> {
 /// A sysroot that extends the installed toolchain with the `miden-standards` account-component
 /// packages.
 ///
-/// Its `lib/` holds every package of [`sysroot`] except `miden-standards`, the `miden-standards`
-/// crate's own build of the standards library in its place, and one `<name>.masp` per entry of
-/// [`standard_component_packages`], so a project can depend on a standard component by name.
+/// Its `lib/` holds the `miden-standards` crate's own build of the standards library, one
+/// `<name>.masp` per entry of [`standard_component_packages`], so a project can depend on a
+/// standard component by name, and every other package of [`sysroot`]: a toolchain package with
+/// the name of one of these is replaced by it.
 ///
 /// The standards library is taken from the crate because the components and the mock-chain
 /// runtime both come from the crate, so the standards library compiled Rust code links against
@@ -105,7 +106,8 @@ fn standard_component_packages() -> Vec<Arc<Package>> {
 /// The directory lives under the workspace's target directory, keyed by everything its contents
 /// are derived from, and is shared by every test process that agrees on that key.
 ///
-/// Panics if a component depends on a package whose digest differs from the one in the overlay.
+/// Panics if a component depends on a package the overlay lacks or provides with another digest,
+/// or if the toolchain cannot be read or the overlay cannot be staged.
 pub(crate) fn sysroot_with_standard_components() -> PathBuf {
     static OVERLAY: OnceLock<PathBuf> = OnceLock::new();
     OVERLAY
@@ -130,10 +132,6 @@ fn stage_overlay(toolchain: &Path, root: &Path) -> Result<PathBuf, String> {
         .chain(components.iter().map(|component| &**component))
         .collect();
     let written_names: BTreeSet<&str> = written.iter().map(|package| &*package.name).collect();
-    let written_files: BTreeSet<String> = written_names
-        .iter()
-        .map(|name| format!("{name}.{}", Package::EXTENSION))
-        .collect();
 
     let lib = toolchain.join("lib");
     let mut toolchain_files = fs::read_dir(&lib)
@@ -142,12 +140,13 @@ fn stage_overlay(toolchain: &Path, root: &Path) -> Result<PathBuf, String> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| format!("cannot read {}: {err}", lib.display()))?;
     // A file the overlay writes must never be linked first: writing a package follows the
-    // symlink and would overwrite the installed toolchain's file.
+    // symlink and would overwrite the installed toolchain's file. The extension is matched like
+    // `packages_in` matches it, so the overlay links exactly the packages the toolchain provides.
     toolchain_files.retain(|path| {
-        path.extension().is_some_and(|ext| ext == Package::EXTENSION)
+        path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case(Package::EXTENSION))
             && path
-                .file_name()
-                .is_some_and(|name| !written_files.contains(&*name.to_string_lossy()))
+                .file_stem()
+                .is_some_and(|stem| !written_names.contains(&*stem.to_string_lossy()))
     });
     toolchain_files.sort();
 
