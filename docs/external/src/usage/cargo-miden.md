@@ -170,7 +170,17 @@ and every other procedure of a library package is rejected: bind a plain library
 natively with an `extern "C"` function carrying its path in `#[link_name]`. The procedures of
 component packages stay importable.
 
-### Depending on MASM account components
+The core Wasm module of a component is named after the crate. An export of the same name (a crate
+`swap` exporting `swap`) takes precedence: the module is renamed `<name>_core`, a name that only
+appears in the package's internal MASM paths.
+
+When compiling a bare `.wasm` or `.wat` component without a manifest or an explicit namespace, the
+namespace is inferred only when every export has the same parent path, which becomes the
+namespace; exports under different parents are an error, and a component that exports nothing is
+an error unless a namespace is given. If a namespace is given (by the manifest or `--name`) and
+does not match the exports, compilation fails.
+
+## Depending on MASM account components
 
 An account component written in Miden Assembly, such as the standard basic wallet, needs no WIT
 to be used from Rust, however it is declared (a registry version, a path to a `.masp`, ...). The
@@ -181,13 +191,18 @@ SDK macros derive its interface from the package manifest:
   `miden-standards-wallets-basic-wallet` in the `miden::…` namespace;
 - the interface is the last segment of the component's namespace in kebab case, so
   `miden-standards-wallets-basic-wallet` provides `basic-wallet`, used as
-  `#[account(miden_standards_wallets_basic_wallet::BasicWallet)]`;
-- each role procedure (a procedure tagged with any role attribute: `@account_procedure`,
-  `@auth_script`, `@note_script` or `@transaction_script`) becomes one function with the
-  parameter types of the manifest. Type aliases are not recoverable: a `NoteTag` is a `u32`, an
-  `AssetAmount` a `felt`. Parameters are named after their type, else `argN`;
-- procedures whose results flatten to more than one value are not callable yet and are left
-  out.
+  `#[account(miden_standards_wallets_basic_wallet::BasicWallet)]`. The interface ident in
+  `#[account(pkg::Iface)]` is kebab-cased with heck, so a namespace leaf with digits like
+  `ownable2step` is referenced as `Ownable2step` (`Ownable2Step` would be `ownable2-step`);
+- each procedure of the component's interface (a procedure tagged `@account_procedure` or
+  `@auth_script`, the only exports the protocol lets other code call on an account) becomes one
+  function with the parameter types of the manifest. Type aliases are not recoverable: a
+  `NoteTag` is a `u32`, an `AssetAmount` a `felt`. Parameters are named after their type, else
+  `argN`;
+- procedures without a typed signature, with parameters beyond 16 stack elements, with types WIT
+  cannot express, whose names have no WIT form or clash, or whose results flatten to more than
+  one value (not callable yet) are left out. The reasons are listed in the interface's doc
+  comment, which the generated Rust bindings carry.
 
 ```toml
 # miden-project.toml
@@ -208,6 +223,7 @@ The basic wallet's derived interface:
 ```wit
 package miden:standards-wallets-basic-wallet@0.17.0;
 
+/// Left out: none
 interface basic-wallet {
     use miden:base/core-types@1.0.0.{asset, note-type, word};
 
@@ -225,15 +241,9 @@ interface basic-wallet {
 A WIT file set through `package.metadata.miden.dependencies.<name>.wit` in `miden-project.toml`
 still takes precedence over the derived interface.
 
-The core Wasm module of a component is named after the crate. An export of the same name (a crate
-`swap` exporting `swap`) takes precedence: the module is renamed `<name>_core`, a name that only
-appears in the package's internal MASM paths.
-
-When compiling a bare `.wasm` or `.wat` component without a manifest or an explicit namespace, the
-namespace is inferred only when every export has the same parent path, which becomes the
-namespace; exports under different parents are an error, and a component that exports nothing is
-an error unless a namespace is given. If a namespace is given (by the manifest or `--name`) and
-does not match the exports, compilation fails.
+Two components whose namespaces nest, such as the standard `access::pausable` and
+`access::pausable::manager`, cannot both be dependencies of one consumer, because dependency
+component namespaces must not nest.
 
 ## Running a compiled Miden VM program
 
