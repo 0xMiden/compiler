@@ -15,6 +15,9 @@ use super::super::support::{
     single_note_cycles, to_core_felts, tx_script_processing_cycles,
 };
 
+/// The package name of the standard basic wallet account component.
+const STANDARD_BASIC_WALLET: &str = "miden-standards-wallets-basic-wallet";
+
 /// Transfers an asset between two accounts made only of the standard components, with a Rust
 /// note and a Rust transaction script that call the standard basic wallet.
 ///
@@ -32,6 +35,17 @@ pub fn std_basic_wallet_p2id_transfers_asset_with_rust_note_and_tx_script() {
     // Compile the contracts first (before creating any runtime)
     let note_package = compile_rust_package("../../examples/std-wallet-p2id-note", true);
     let tx_script_package = compile_rust_package("../../examples/std-wallet-tx-script", true);
+    // Both link the standard wallet's package, with no WIT of its own.
+    for package in [&note_package, &tx_script_package] {
+        assert!(
+            package
+                .manifest
+                .dependencies()
+                .any(|dependency| &*dependency.name == STANDARD_BASIC_WALLET),
+            "`{}` must depend on `{STANDARD_BASIC_WALLET}`",
+            package.name
+        );
+    }
 
     let auth = || Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
