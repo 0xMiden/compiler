@@ -2,6 +2,8 @@
 
 use std::fmt::Write;
 
+use midenc_frontend_wasm_metadata::namespace::CORE_TYPES_INTERFACE_ID;
+
 use crate::{
     Skipped,
     types::{Decl, TypeSet},
@@ -36,8 +38,6 @@ pub struct Document<'a> {
     pub interface: &'a str,
     /// The world name.
     pub world: &'a str,
-    /// The fully versioned id of the core-types interface.
-    pub core_types: &'a str,
     /// The used and declared types.
     pub types: &'a TypeSet,
     /// The functions, in order.
@@ -67,8 +67,8 @@ fn write_document(out: &mut String, doc: &Document<'_>) -> std::fmt::Result {
     // Each block inside the interface, separated by blank lines.
     let mut blocks: Vec<String> = Vec::new();
     if !doc.types.core.is_empty() {
-        let items: Vec<&str> = doc.types.core.iter().copied().collect();
-        blocks.push(format!("    use {}.{{{}}};\n", doc.core_types, items.join(", ")));
+        let items: Vec<&str> = doc.types.core.iter().map(String::as_str).collect();
+        blocks.push(format!("    use {CORE_TYPES_INTERFACE_ID}.{{{}}};\n", items.join(", ")));
     }
     for (name, decl) in &doc.types.locals {
         let mut block = String::new();

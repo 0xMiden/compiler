@@ -3,7 +3,9 @@
 
 use std::collections::BTreeSet;
 
+use midenc_frontend_wasm_metadata::namespace::CORE_TYPES_INTERFACE_ID;
 use midenc_hir_type::{EnumRef, EnumType, StructRef, StructType, Type};
+use midenc_package_interface::abi::{WasmScalar, flatten_type, is_word};
 
 use crate::naming;
 
@@ -42,7 +44,7 @@ pub enum Decl {
 #[derive(Debug, Clone, Default)]
 pub struct TypeSet {
     /// The core-types items used, by WIT name.
-    pub core: BTreeSet<&'static str>,
+    pub core: BTreeSet<String>,
     /// The declared types, by WIT name, in the order they were first needed (a record after the
     /// types of its fields).
     pub locals: Vec<(String, Decl)>,
@@ -96,11 +98,6 @@ const CORE_ITEMS: &[CoreItem] = &[
     },
 ];
 
-/// `[felt; 4]`, the core `word`.
-fn is_word(ty: &Type) -> bool {
-    matches!(ty, Type::Array(array) if array.element_type() == &Type::Felt && array.len() == 4)
-}
-
 /// A field of an expected struct shape: its name and a check of its type.
 type FieldShape = (&'static str, fn(&Type) -> bool);
 
@@ -117,13 +114,22 @@ fn struct_shape(ty: &Type, fields: &[FieldShape]) -> bool {
             .all(|(field, (name, check))| field.name.as_deref() == Some(*name) && check(&field.ty))
 }
 
-/// The manifest name of a named struct or enum, the hint a parameter is named after.
+/// The manifest name of a named struct or enum, the hint a parameter is named after; for a type of
+/// the SDK's core types (see [`sdk_core_item`]), the name of the core item.
 pub fn type_name(ty: &Type) -> Option<String> {
-    match ty {
-        Type::Struct(st) => st.name().map(|name| name.to_string()),
-        Type::Enum(en) => Some(en.name().to_string()),
-        _ => None,
-    }
+    let name = match ty {
+        Type::Struct(st) => st.name()?.to_string(),
+        Type::Enum(en) => en.name().to_string(),
+        _ => return None,
+    };
+    Some(sdk_core_item(&name).map(str::to_owned).unwrap_or(name))
+}
+
+/// The core-types item a manifest type named `<CORE_TYPES_INTERFACE_ID>/<item>` stands for, e.g.
+/// `asset` for `miden:base/core-types@1.0.0/asset`: a Rust-built component's manifest names the
+/// SDK types it uses by their component-model id.
+fn sdk_core_item(name: &str) -> Option<&str> {
+    name.strip_prefix(CORE_TYPES_INTERFACE_ID)?.strip_prefix('/')
 }
 
 impl TypeSet {
@@ -131,7 +137,7 @@ impl TypeSet {
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.core
             .iter()
-            .copied()
+            .map(String::as_str)
             .chain(self.locals.iter().map(|(name, _)| name.as_str()))
     }
 
@@ -190,11 +196,49 @@ impl TypeSet {
         }))
     }
 
+    /// The mapping of the struct or enum `ty` named `name` when the name alone decides it: a type
+    /// of the SDK's core types (see [`sdk_core_item`]) is that core item, and a name that is not a
+    /// Miden identifier path names a type from elsewhere, which is unsupported. `None` for a Miden
+    /// identifier path.
+    fn map_by_name(&mut self, ty: &Type, name: &str) -> Result<Option<Mapped>, String> {
+        if let Some(item) = sdk_core_item(name) {
+            if !naming::is_valid(item) {
+                return Err(format!("unsupported type `{name}`: `{item}` is no WIT name"));
+            }
+            // The layout is the SDK's own by construction, so the manifest type is counted as it
+            // is rather than checked against the item's shape.
+            let flat = flatten_type(ty).map_err(|ty| format!("unsupported type `{ty}`"))?;
+            let felts = flat
+                .iter()
+                .map(|flat| match flat.scalar {
+                    WasmScalar::I64 | WasmScalar::U64 => 2,
+                    _ => 1,
+                })
+                .sum();
+            self.use_core(item)?;
+            return Ok(Some(Mapped {
+                wit: item.to_owned(),
+                values: flat.len(),
+                felts,
+            }));
+        }
+        if name.split("::").any(|segment| segment.contains([':', '/', '@', '.'])) {
+            return Err(format!(
+                "unsupported type `{name}`: the name is neither a Miden identifier path nor a \
+                 type of the SDK's `{CORE_TYPES_INTERFACE_ID}`"
+            ));
+        }
+        Ok(None)
+    }
+
     /// Map the named struct `ty` (`st`) to its core item, or else to a local record.
     fn map_struct(&mut self, ty: &Type, st: &StructType) -> Result<Mapped, String> {
         let Some(name) = st.name() else {
             return Err(format!("unsupported type `{ty}`: an anonymous struct has no WIT name"));
         };
+        if let Some(mapped) = self.map_by_name(ty, &name)? {
+            return Ok(mapped);
+        }
         let wit_name = naming::kebab(naming::short_name(&name));
         if let Some(mapped) = self.core_item(&wit_name, ty)? {
             return Ok(mapped);
@@ -232,6 +276,9 @@ impl TypeSet {
     /// contiguous discriminants from zero.
     fn map_enum(&mut self, ty: &Type, en: &EnumType) -> Result<Mapped, String> {
         let name = en.name();
+        if let Some(mapped) = self.map_by_name(ty, name)? {
+            return Ok(mapped);
+        }
         let wit_name = naming::kebab(naming::short_name(name));
         if let Some(mapped) = self.core_item(&wit_name, ty)? {
             return Ok(mapped);
@@ -286,12 +333,12 @@ impl TypeSet {
 
     /// Record the core item `name` as used; an error when a local declaration already has its
     /// name or its Rust spelling.
-    fn use_core(&mut self, name: &'static str) -> Result<(), String> {
+    fn use_core(&mut self, name: &str) -> Result<(), String> {
         if self.locals.iter().any(|(local, _)| local == name) {
             return Err(conflict(name));
         }
         self.check_rust_name(name)?;
-        self.core.insert(name);
+        self.core.insert(name.to_owned());
         Ok(())
     }
 
@@ -329,14 +376,24 @@ impl TypeSet {
     }
 }
 
+/// The Rust prelude types the SDK's foreign procedure call bindings leave unqualified, so a local
+/// type of the same Rust spelling would be taken for them.
+const PRELUDE_TYPES: &[&str] = &["Option", "Result", "String", "Vec"];
+
 /// The WIT spelling of the local declaration of the manifest type `name`, or why it has none: it
-/// has no WIT spelling, or its Rust spelling (see [`naming::rust_type_ident`]) is `Self` or
-/// `Guest_`.
+/// has no WIT spelling, or its Rust spelling (see [`naming::rust_type_ident`]) is `Self`,
+/// `Guest_` or one of the [`PRELUDE_TYPES`].
 fn local_ident(name: &str) -> Result<String, String> {
     let short = naming::short_name(name);
     let ident = naming::ident(short).map_err(|err| format!("unsupported type `{name}`: {err}"))?;
     let rust = naming::rust_type_ident(short, &ident)
         .map_err(|err| format!("unsupported type `{name}`: {err}"))?;
+    if PRELUDE_TYPES.contains(&rust.as_str()) {
+        return Err(format!(
+            "unsupported type `{name}`: its Rust name `{rust}` clashes with the Rust prelude's \
+             `{rust}`, which the SDK's foreign procedure call bindings leave unqualified"
+        ));
+    }
     // The SDK's foreign procedure call bindings name a dependency's types in plain upper camel
     // case, so they would miss the type wit-bindgen renames.
     if rust == "Guest_" {
@@ -411,7 +468,7 @@ mod tests {
         assert_eq!(set.map(&asset).unwrap().wit, "asset");
         let id = record("AccountId", &[("prefix", Type::Felt), ("suffix", Type::Felt)]);
         assert_eq!(set.map(&id).unwrap().wit, "account-id");
-        assert_eq!(set.core.iter().copied().collect::<Vec<_>>(), ["account-id", "asset"]);
+        assert_eq!(set.core.iter().collect::<Vec<_>>(), ["account-id", "asset"]);
         assert!(set.locals.is_empty());
 
         // Field order is part of the shape: the standards' `{suffix, prefix}` is a local record.
@@ -419,7 +476,7 @@ mod tests {
         let swapped = record("AccountId", &[("suffix", Type::Felt), ("prefix", Type::Felt)]);
         let mapped = set.map(&swapped).unwrap();
         assert_eq!((mapped.wit.as_str(), mapped.felts), ("account-id", 2));
-        assert_eq!(set.core.iter().copied().collect::<Vec<_>>(), ["felt"]);
+        assert_eq!(set.core.iter().collect::<Vec<_>>(), ["felt"]);
         assert_eq!(
             set.locals,
             [(
@@ -555,5 +612,94 @@ mod tests {
         );
         let nested = record("Outer", &[("x", Type::F64)]);
         assert_eq!(set.map(&nested).unwrap_err(), "unsupported type `f64`");
+    }
+
+    /// The name of a type of the SDK's core types, as a Rust-built component's manifest spells it.
+    fn sdk_name(item: &str) -> String {
+        format!("{CORE_TYPES_INTERFACE_ID}/{item}")
+    }
+
+    /// The Rust-built layout of the core `felt`: `{ inner: felt }`.
+    fn sdk_felt() -> Type {
+        record(&sdk_name("felt"), &[("inner", Type::Felt)])
+    }
+
+    /// The Rust-built layout of the core `word`: four `felt` records.
+    fn sdk_word() -> Type {
+        let felt = sdk_felt();
+        record(
+            &sdk_name("word"),
+            &[("a", felt.clone()), ("b", felt.clone()), ("c", felt.clone()), ("d", felt)],
+        )
+    }
+
+    /// Types a Rust-built component names by their core-types id map to those core items.
+    #[test]
+    fn sdk_core_type_ids_map_to_core_items() {
+        let mut set = TypeSet::default();
+        let asset_id = record(&sdk_name("asset-id"), &[("inner", sdk_word())]);
+        let asset = record(&sdk_name("asset"), &[("id", asset_id), ("value", sdk_word())]);
+        assert_eq!(
+            set.map(&asset).unwrap(),
+            Mapped {
+                wit: "asset".to_owned(),
+                values: 8,
+                felts: 8
+            }
+        );
+        assert_eq!(
+            set.map(&sdk_word()).unwrap(),
+            Mapped {
+                wit: "word".to_owned(),
+                values: 4,
+                felts: 4
+            }
+        );
+        assert_eq!(set.map(&sdk_felt()).unwrap(), Mapped::scalar("felt", 1));
+        let note_type = record(&sdk_name("note-type"), &[("inner", Type::U8)]);
+        assert_eq!(set.map(&note_type).unwrap(), Mapped::scalar("note-type", 1));
+        let tag = record(&sdk_name("tag"), &[("inner", Type::U32)]);
+        assert_eq!(set.map(&tag).unwrap(), Mapped::scalar("tag", 1));
+        let note_idx = record(&sdk_name("note-idx"), &[("inner", Type::U16)]);
+        assert_eq!(set.map(&note_idx).unwrap(), Mapped::scalar("note-idx", 1));
+        // Only the items themselves are used, not the items their fields are.
+        assert_eq!(
+            set.core.iter().collect::<Vec<_>>(),
+            ["asset", "felt", "note-idx", "note-type", "tag", "word"]
+        );
+        assert!(set.locals.is_empty());
+        assert_eq!(type_name(&asset).as_deref(), Some("asset"));
+    }
+
+    /// A type named by the id of a WIT interface other than the SDK's core types is unsupported.
+    #[test]
+    fn foreign_wit_type_ids_are_unsupported() {
+        let mut set = TypeSet::default();
+        let thing = record("other:pkg/iface@1.0.0/thing", &[("x", Type::Felt)]);
+        assert_eq!(
+            set.map(&thing).unwrap_err(),
+            "unsupported type `other:pkg/iface@1.0.0/thing`: the name is neither a Miden \
+             identifier path nor a type of the SDK's `miden:base/core-types@1.0.0`"
+        );
+        assert!(set.core.is_empty() && set.locals.is_empty());
+    }
+
+    /// Local types whose Rust names are the prelude types the FPI bindings leave unqualified are
+    /// unsupported.
+    #[test]
+    fn local_types_named_like_prelude_types_are_unsupported() {
+        let mut set = TypeSet::default();
+        for name in ["Result", "Option", "String", "Vec"] {
+            let ty = record(name, &[("x", Type::Felt)]);
+            assert_eq!(
+                set.map(&ty).unwrap_err(),
+                format!(
+                    "unsupported type `{name}`: its Rust name `{name}` clashes with the Rust \
+                     prelude's `{name}`, which the SDK's foreign procedure call bindings leave \
+                     unqualified"
+                )
+            );
+        }
+        assert!(set.locals.is_empty());
     }
 }

@@ -19,6 +19,7 @@
 //! and neither has anything that holds it, points at it, or takes it.
 
 use miden_assembly_syntax::ast::types::{EnumType, StructType, Type, TypeRepr};
+use midenc_package_interface::abi::is_word;
 
 use crate::{names, types::field_name};
 
@@ -99,11 +100,6 @@ pub(crate) fn enum_repr(en: &EnumType) -> Result<&Type, String> {
         return Err(format!("variants `{first}` and `{second}` would both be named `{ident}`"));
     }
     Ok(discriminant)
-}
-
-/// Whether `ty` is `[felt; 4]`, the type the SDK calls `Word`.
-pub(crate) fn is_word(ty: &Type) -> bool {
-    matches!(ty, Type::Array(a) if a.ty == Type::Felt && a.len == 4)
 }
 
 /// The layout of `ty`'s Rust form, with a `[felt; 4]` as `Word` if `words`.

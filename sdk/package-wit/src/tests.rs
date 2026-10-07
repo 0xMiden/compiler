@@ -5,7 +5,7 @@ use midenc_package_interface::{PackageInterface, testing::assemble_fixture};
 
 use super::*;
 
-/// The SDK's core-types package, which every generated document `use`s.
+/// The SDK's core-types package, which a generated document `use`s when it needs a core item.
 const MIDEN_WIT: &str = include_str!("../../base-macros/wit/miden.wit");
 
 /// A component exercising every mapping and skip rule.
@@ -135,7 +135,7 @@ fn parse(wit: &str, interface: &str) -> Vec<(String, String)> {
 #[test]
 fn the_component_interface() {
     let iface = component(COMPONENT);
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     assert_eq!(generated.package_id, "miden:test-my-component@0.0.0");
     assert_eq!(generated.interface, "my-component");
     assert_eq!(generated.world, "my-component-world");
@@ -172,7 +172,7 @@ fn the_component_interface() {
             ),
             (
                 "miden::test::my_component::too_wide",
-                "parameters flatten to 17 stack values, more than the 16 a direct call can pass"
+                "parameters flatten to 17 stack elements, more than the 16 a direct call can pass"
             ),
             ("miden::test::my_component::untyped", "no typed signature"),
         ]
@@ -189,7 +189,7 @@ package miden:test-my-component@0.0.0;
 /// Left out: `miden::test::my_component::owner`: results occupy 2 stack elements; multi-element results of Miden Assembly components are not supported yet
 /// Left out: `miden::test::my_component::pair`: results occupy 2 stack elements; multi-element results of Miden Assembly components are not supported yet
 /// Left out: `miden::test::my_component::sparse`: unsupported type `Sparse`: an enum with non-contiguous discriminants
-/// Left out: `miden::test::my_component::too_wide`: parameters flatten to 17 stack values, more than the 16 a direct call can pass
+/// Left out: `miden::test::my_component::too_wide`: parameters flatten to 17 stack elements, more than the 16 a direct call can pass
 /// Left out: `miden::test::my_component::untyped`: no typed signature
 interface my-component {{
     use miden:base/core-types@1.0.0.{{asset, felt, note-type, word}};
@@ -253,7 +253,7 @@ pub proc set_owner(id: AccountId)
 end
 "#,
     );
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     assert!(generated.skipped.is_empty());
     assert!(generated.wit.contains("/// Left out: none\ninterface my-component {\n"));
     assert!(generated.wit.contains("use miden:base/core-types@1.0.0.{account-id};"));
@@ -273,7 +273,7 @@ pub proc ping()
 end
 "#,
     );
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     assert!(!generated.wit.contains("use "), "no core item is used");
     assert!(generated.wit.contains("    ping: func();\n"));
     parse(&generated.wit, "my-component");
@@ -284,10 +284,7 @@ end
 fn only_account_components_have_an_interface() {
     let package = assemble_fixture("miden-test-my-component", MODULE, COMPONENT);
     let iface = PackageInterface::from_package(&package);
-    assert!(matches!(
-        generate(&iface, &Options::default()),
-        Err(Error::NotAComponent(TargetType::Library))
-    ));
+    assert!(matches!(generate(&iface), Err(Error::NotAComponent(TargetType::Library))));
 }
 
 /// A component without account procedures or auth scripts has no interface.
@@ -305,10 +302,7 @@ pub proc run_note()
 end
 "#,
     );
-    assert!(matches!(
-        generate(&iface, &Options::default()),
-        Err(Error::NoInterfaceProcedures)
-    ));
+    assert!(matches!(generate(&iface), Err(Error::NoInterfaceProcedures)));
 }
 
 /// An auth procedure, even one also tagged `@note_script`, is left out unless it is also an
@@ -337,7 +331,7 @@ end
     let note_script = iface.procedures[2].attributes.get("note_script").unwrap().clone();
     iface.procedures[0].attributes.insert(note_script);
     assert_eq!(iface.procedures[0].name(), "auth_tx");
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     let skipped: Vec<(&str, &str)> =
         generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
     assert_eq!(
@@ -356,7 +350,7 @@ end
     let account_procedure =
         iface.procedures[1].attributes.get("account_procedure").unwrap().clone();
     iface.procedures[0].attributes.insert(account_procedure);
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     assert!(generated.skipped.is_empty(), "{:?}", generated.skipped);
     assert_eq!(
         parse(&generated.wit, "my-component"),
@@ -378,7 +372,7 @@ pub proc auth_tx(salt: word)
 end
 "#,
     );
-    let err = generate(&iface, &Options::default()).unwrap_err();
+    let err = generate(&iface).unwrap_err();
     assert_eq!(
         err.to_string(),
         "every interface procedure is left out:\n  `miden::test::my_component::auth_tx`: an auth \
@@ -403,7 +397,7 @@ end
         "@account_procedure\npub proc pong()\n    nop\nend\n",
     );
     iface.procedures.extend(PackageInterface::from_package(&other).procedures);
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     let skipped: Vec<(&str, &str)> =
         generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
     assert_eq!(
@@ -417,11 +411,60 @@ end
     assert_eq!(generated.interface, "my-component");
 }
 
-/// A package whose WIT package id would be the SDK's own `miden:base` has no interface.
+/// An auth procedure sorting before the account procedures, in a submodule, neither decides the
+/// interface module nor empties the interface.
+#[test]
+fn an_auth_procedure_in_a_submodule_does_not_decide_the_interface() {
+    let wallet = |name: &str, module: &str, source: &str| {
+        let mut package = (*assemble_fixture(name, module, source)).clone();
+        package.kind = TargetType::AccountComponent;
+        PackageInterface::from_package(&package)
+    };
+    let mut iface = wallet(
+        "miden-test-wallet",
+        "miden::test::wallet",
+        "@account_procedure\npub proc receive_asset(asset: word)\n    dropw\nend\n",
+    );
+    let auth = wallet(
+        "miden-test-wallet",
+        "miden::test::wallet::auth",
+        "@auth_script\npub proc auth_tx(salt: word)\n    dropw\nend\n",
+    );
+    // One package with both modules, its procedures in path order as a manifest lists them.
+    iface.procedures.extend(auth.procedures);
+    iface.procedures.sort_by(|a, b| a.path.cmp(&b.path));
+    assert_eq!(iface.procedures[0].name(), "auth_tx");
+    let generated = generate(&iface).unwrap();
+    assert_eq!(generated.interface, "wallet");
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(skipped, [("miden::test::wallet::auth::auth_tx", AUTH_PROCEDURE_REASON)]);
+    assert_eq!(
+        parse(&generated.wit, "wallet"),
+        [("receive-asset".to_owned(), "miden::test::wallet::receive_asset".to_owned())]
+    );
+}
+
+/// A package whose stripped package id would be the SDK's own `miden:base` keeps its name whole.
+#[test]
+fn the_sdk_package_id_falls_back_to_the_full_package_name() {
+    let mut package = (*assemble_fixture(
+        "miden-base",
+        MODULE,
+        "@account_procedure\npub proc ping()\n    nop\nend\n",
+    ))
+    .clone();
+    package.kind = TargetType::AccountComponent;
+    let generated = generate(&PackageInterface::from_package(&package)).unwrap();
+    assert_eq!(generated.package_id, "miden:miden-base@0.0.0");
+}
+
+/// A package whose WIT package id is the SDK's own `miden:base` even with its name kept whole
+/// has no interface.
 #[test]
 fn the_sdk_package_id_is_rejected() {
     assert_eq!(
-        namespace_error("miden-base", MODULE),
+        namespace_error("base", MODULE),
         "the package id `miden:base` is the Miden SDK's own WIT package"
     );
 }
@@ -442,7 +485,7 @@ pub proc "with-dash"()
 end
 "#,
     );
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     assert_eq!(generated.skipped.len(), 1, "{:?}", generated.skipped);
     assert!(generated.skipped[0].path.contains('"'), "{:?}", generated.skipped);
     assert!(
@@ -476,7 +519,7 @@ pub proc fpi_call()
 end
 "#,
     );
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     let skipped: Vec<(&str, &str)> =
         generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
     assert_eq!(
@@ -513,7 +556,7 @@ fn namespace_error(package_name: &str, module: &str) -> String {
     ))
     .clone();
     package.kind = TargetType::AccountComponent;
-    match generate(&PackageInterface::from_package(&package), &Options::default()) {
+    match generate(&PackageInterface::from_package(&package)) {
         Err(Error::Namespace(reason)) => reason,
         other => panic!("expected a namespace error, got {other:?}"),
     }
@@ -565,7 +608,7 @@ pub proc reseed(seed: Seed)
 end
 "#,
     );
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     let skipped: Vec<(&str, &str)> =
         generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
     assert_eq!(
@@ -604,7 +647,7 @@ pub proc receive_asset(asset: Asset)
 end
 "#,
     );
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     let skipped: Vec<(&str, &str)> =
         generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
     assert_eq!(
@@ -639,7 +682,7 @@ pub proc untyped
 end
 "#,
     );
-    let err = generate(&iface, &Options::default()).unwrap_err();
+    let err = generate(&iface).unwrap_err();
     let Error::EverythingSkipped(skipped) = &err else {
         panic!("expected every procedure to be left out, got {err:?}");
     };
@@ -673,7 +716,7 @@ pub proc run_tx()
 end
 "#,
     );
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     assert!(generated.skipped.is_empty(), "{:?}", generated.skipped);
     let functions = parse(&generated.wit, "my-component");
     assert_eq!(functions, [("ping".to_owned(), "miden::test::my_component::ping".to_owned())]);
@@ -713,7 +756,7 @@ pub proc set_outer(o: Outer)
 end
 "#,
     );
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     let skipped: Vec<(&str, &str)> =
         generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
     assert_eq!(
@@ -773,7 +816,7 @@ pub proc z_set_mode(id: AccountId, m: Mode)
 end
 "#,
     );
-    let generated = generate(&iface, &Options::default()).unwrap();
+    let generated = generate(&iface).unwrap();
     let skipped: Vec<(&str, &str)> =
         generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
     assert_eq!(
