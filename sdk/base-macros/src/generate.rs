@@ -26,7 +26,7 @@ use wit_bindgen_core::{
 };
 use wit_bindgen_rust::{Opts, WithOption};
 
-use crate::{fpi, manifest_paths};
+use crate::{dependency_package::WitOrigin, fpi, manifest_paths};
 
 /// WIT package name of the inline world `#[component_storage]` generates for stored-procedure
 /// slots.
@@ -628,23 +628,21 @@ fn load_wit_sources(
         let owner =
             format!("dependency `{}` (package '{}')", source.name, source.package_path.display());
         let load_error = |err: String| {
-            let hint = if source.synthesized {
-                format!(
-                    "; provide a WIT via package.metadata.miden.dependencies.{}.wit in \
-                     miden-project.toml",
-                    source.name
-                )
-            } else {
-                String::new()
-            };
-            Error::new(
-                Span::call_site(),
-                format!(
-                    "failed to load {} of dependency package '{}': {err}{hint}",
-                    source.description(),
-                    source.package_path.display()
+            let (name, path) = (&source.name, source.package_path.display());
+            let message = match &source.origin {
+                WitOrigin::Embedded => {
+                    format!("failed to load the WIT embedded in dependency package '{path}': {err}")
+                }
+                WitOrigin::Override(_) => {
+                    format!("failed to load the WIT override of dependency package '{path}': {err}")
+                }
+                WitOrigin::Synthesized => format!(
+                    "failed to load the WIT synthesized for dependency '{name}' from the manifest \
+                     of package '{path}': {err}; provide a WIT via \
+                     package.metadata.miden.dependencies.{name}.wit in miden-project.toml"
                 ),
-            )
+            };
+            Error::new(Span::call_site(), message)
         };
         let group = UnresolvedPackageGroup::parse(format!("{}.wit", source.name), &source.wit)
             .map_err(|(map, err)| load_error(err.render(&map)))?;
@@ -653,7 +651,7 @@ fn load_wit_sources(
         record_package_owners(&resolve, &mut owners, &owner);
         packages.push(pkg);
         files.push(source.package_path.clone());
-        if let Some(wit_override_path) = &source.wit_override_path {
+        if let WitOrigin::Override(wit_override_path) = &source.origin {
             files.push(wit_override_path.clone());
         }
     }

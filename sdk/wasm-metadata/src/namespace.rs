@@ -58,6 +58,12 @@ pub const WIT_KEYWORDS: &[&str] = &[
     "world",
 ];
 
+/// Whether `ident`, spelled in kebab-case (`error-context`) or snake_case (`error_context`), is
+/// one of the [`WIT_KEYWORDS`].
+pub fn is_wit_keyword(ident: &str) -> bool {
+    WIT_KEYWORDS.contains(&ident.replace('-', "_").as_str())
+}
+
 /// The lowercase strict and reserved keywords of Rust 2024, which cannot name the modules the
 /// generated bindings derive from namespace segments.
 pub const RUST_KEYWORDS: &[&str] = &[
@@ -72,8 +78,19 @@ pub const RUST_KEYWORDS: &[&str] = &[
 /// (`felt`, `word`, ...).
 pub const CORE_TYPES_INTERFACE: &str = "core-types";
 
+/// Expands to the [`CORE_TYPES_PACKAGE`] literal, so [`CORE_TYPES_INTERFACE_ID`] can be built from
+/// it with `concat!`.
+macro_rules! core_types_package {
+    () => {
+        "miden:base"
+    };
+}
+
+/// The id, without version, of the SDK's own WIT package, which holds [`CORE_TYPES_INTERFACE`].
+pub const CORE_TYPES_PACKAGE: &str = core_types_package!();
+
 /// The fully versioned id of [`CORE_TYPES_INTERFACE`], as WIT documents `use` it.
-pub const CORE_TYPES_INTERFACE_ID: &str = "miden:base/core-types@1.0.0";
+pub const CORE_TYPES_INTERFACE_ID: &str = concat!(core_types_package!(), "/core-types@1.0.0");
 
 /// The namespace segment whose WIT spelling is [`CORE_TYPES_INTERFACE`].
 pub const CORE_TYPES_SEGMENT: &str = "core_types";
@@ -326,12 +343,21 @@ mod tests {
         }
     }
 
+    /// A WIT keyword is recognized in both its kebab-case and snake_case spellings.
+    #[test]
+    fn wit_keywords_match_in_either_spelling() {
+        assert!(is_wit_keyword("error-context"));
+        assert!(is_wit_keyword("error_context"));
+        assert!(is_wit_keyword("type"));
+        assert!(!is_wit_keyword("error-contexts"));
+    }
+
     #[test]
     fn core_types_segment_is_spelled_like_the_interface() {
         assert_eq!(CORE_TYPES_SEGMENT.replace('_', "-"), CORE_TYPES_INTERFACE);
         assert_eq!(
             CORE_TYPES_INTERFACE_ID,
-            alloc::format!("miden:base/{CORE_TYPES_INTERFACE}@1.0.0")
+            alloc::format!("{CORE_TYPES_PACKAGE}/{CORE_TYPES_INTERFACE}@1.0.0")
         );
     }
 }

@@ -18,7 +18,7 @@ use wit_bindgen_core::wit_parser::{
 };
 
 use crate::{
-    dependency_package::{DependencyWitSource, collect_dependency_wit_sources},
+    dependency_package::{DependencyWitSource, WitOrigin, collect_dependency_wit_sources},
     generate::CORE_TYPES_INTERFACE_ID,
     namespace::ComponentNamespace,
     wit_builder::{WitBody, WitBuilder},
@@ -487,7 +487,7 @@ fn collect_miden_dependencies(
 
 /// Formats the dependency WIT diagnostic emitted by SDK macros.
 pub(crate) fn dependency_wit_error_message(source: &DependencyWitSource, details: &str) -> String {
-    let guidance = if source.synthesized {
+    let guidance = if source.origin == WitOrigin::Synthesized {
         format!(
             "The WIT was synthesized from the account-component package's manifest because the \
              package embeds none; provide the WIT manually via \
@@ -1133,8 +1133,8 @@ world empty-export-world {
             fs::canonicalize(&override_path).expect("override fixture must canonicalize");
         assert_eq!(sources.sources.len(), 1);
         assert_eq!(
-            sources.sources[0].wit_override_path.as_deref(),
-            Some(canonical_override.as_path())
+            sources.sources[0].origin,
+            crate::dependency_package::WitOrigin::Override(canonical_override)
         );
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
