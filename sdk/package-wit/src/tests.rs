@@ -146,6 +146,11 @@ fn the_component_interface() {
         skipped,
         [
             (
+                "miden::test::my_component::auth_tx",
+                "an auth procedure is invoked by the transaction kernel in the epilogue, not by \
+                 notes or scripts"
+            ),
+            (
                 "miden::test::my_component::digest",
                 "results occupy 4 stack elements; multi-element results of Miden Assembly \
                  components are not supported yet"
@@ -178,6 +183,7 @@ fn the_component_interface() {
 // Dependency commitment: {digest}.
 package miden:test-my-component@0.0.0;
 
+/// Left out: `miden::test::my_component::auth_tx`: an auth procedure is invoked by the transaction kernel in the epilogue, not by notes or scripts
 /// Left out: `miden::test::my_component::digest`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
 /// Left out: `miden::test::my_component::halves`: unsupported type `[felt; 2]`
 /// Left out: `miden::test::my_component::owner`: results occupy 2 stack elements; multi-element results of Miden Assembly components are not supported yet
@@ -203,9 +209,6 @@ interface my-component {{
         amount: u32,
     }}
 
-    @external-id("miden::test::my_component::auth_tx")
-    auth-tx: func(arg0: word);
-
     @external-id("miden::test::my_component::create_note")
     create-note: func(arg0: u32, note-type: note-type, arg2: word) -> u16;
 
@@ -230,7 +233,7 @@ world my-component-world {{
     assert_eq!(generated.wit, expected);
 
     let functions = parse(&generated.wit, "my-component");
-    assert_eq!(functions.len(), 6);
+    assert_eq!(functions.len(), 5);
     assert!(functions.contains(&(
         "receive-asset".to_owned(),
         "miden::test::my_component::receive_asset".to_owned()
@@ -308,13 +311,19 @@ end
     ));
 }
 
-/// A procedure tagged both `@note_script` and `@auth_script` belongs to the interface.
+/// An auth procedure, even one also tagged `@note_script`, is left out unless it is also an
+/// account procedure.
 #[test]
-fn an_auth_script_that_is_also_a_note_script_is_in_the_interface() {
+fn an_auth_script_is_in_the_interface_only_as_an_account_procedure() {
     let mut iface = component(
         r#"
 @auth_script
 pub proc auth_tx()
+    nop
+end
+
+@account_procedure
+pub proc ping()
     nop
 end
 
@@ -325,13 +334,55 @@ end
 "#,
     );
     // The assembler rejects two role attributes on one procedure, but a manifest may carry them.
-    let note_script = iface.procedures[1].attributes.get("note_script").unwrap().clone();
+    let note_script = iface.procedures[2].attributes.get("note_script").unwrap().clone();
     iface.procedures[0].attributes.insert(note_script);
     assert_eq!(iface.procedures[0].name(), "auth_tx");
     let generated = generate(&iface, &Options::default()).unwrap();
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(
+        skipped,
+        [(
+            "miden::test::my_component::auth_tx",
+            "an auth procedure is invoked by the transaction kernel in the epilogue, not by notes \
+             or scripts"
+        )]
+    );
     assert_eq!(
         parse(&generated.wit, "my-component"),
-        [("auth-tx".to_owned(), "miden::test::my_component::auth_tx".to_owned())]
+        [("ping".to_owned(), "miden::test::my_component::ping".to_owned())]
+    );
+
+    let account_procedure =
+        iface.procedures[1].attributes.get("account_procedure").unwrap().clone();
+    iface.procedures[0].attributes.insert(account_procedure);
+    let generated = generate(&iface, &Options::default()).unwrap();
+    assert!(generated.skipped.is_empty(), "{:?}", generated.skipped);
+    assert_eq!(
+        parse(&generated.wit, "my-component"),
+        [
+            ("auth-tx".to_owned(), "miden::test::my_component::auth_tx".to_owned()),
+            ("ping".to_owned(), "miden::test::my_component::ping".to_owned()),
+        ]
+    );
+}
+
+/// A component whose only interface procedure is an auth procedure has no interface.
+#[test]
+fn an_auth_only_component_has_no_interface() {
+    let iface = component(
+        r#"
+@auth_script
+pub proc auth_tx(salt: word)
+    dropw
+end
+"#,
+    );
+    let err = generate(&iface, &Options::default()).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "every interface procedure is left out:\n  `miden::test::my_component::auth_tx`: an auth \
+         procedure is invoked by the transaction kernel in the epilogue, not by notes or scripts"
     );
 }
 
@@ -603,7 +654,7 @@ end
 
 /// Note and transaction scripts are neither in the interface nor reported as left out.
 #[test]
-fn only_account_procedures_and_auth_scripts_form_the_interface() {
+fn note_and_transaction_scripts_are_not_interface_procedures() {
     let iface = component(
         r#"
 @account_procedure
@@ -634,6 +685,7 @@ fn a_64_bit_result_or_parameter_is_left_out() {
     let iface = component(
         r#"
 pub type Wide = struct { lo: u32, value: i64 }
+pub type Outer = struct { id: felt, inner: Wide }
 
 @account_procedure
 pub proc ping()
@@ -654,6 +706,11 @@ end
 pub proc set_wide(w: Wide)
     drop drop drop
 end
+
+@account_procedure
+pub proc set_outer(o: Outer)
+    drop drop drop drop
+end
 "#,
     );
     let generated = generate(&iface, &Options::default()).unwrap();
@@ -672,8 +729,14 @@ end
                 "parameters of 64-bit integer type are not supported yet"
             ),
             (
+                "miden::test::my_component::set_outer",
+                "parameter `outer` contains a 64-bit integer field `inner.value`, which is not \
+                 supported yet"
+            ),
+            (
                 "miden::test::my_component::set_wide",
-                "parameters of 64-bit integer type are not supported yet"
+                "parameter `wide` contains a 64-bit integer field `value`, which is not supported \
+                 yet"
             ),
         ]
     );

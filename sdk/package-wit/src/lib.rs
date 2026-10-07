@@ -5,9 +5,9 @@
 //! from the package's manifest alone: one function per interface procedure, each carrying its
 //! export path in `@external-id`, with the manifest types expressed through the SDK's `core-types`
 //! where they match exactly and declared locally otherwise. A procedure the interface cannot offer
-//! (outside the interface module, unsupported or clashing names and types, parameters beyond the
-//! stack budget, 64-bit integer parameters, results occupying more than one stack element,
-//! reserved or invalid names) is left out and reported in
+//! (an auth procedure, no typed signature, outside the interface module, unsupported or clashing
+//! names and types, parameters beyond the stack budget, 64-bit integer parameters, results
+//! occupying more than one stack element, reserved or invalid names) is left out and reported in
 //! [`Generated::skipped`] and in the interface's doc comment. A package fails as a whole only when
 //! it is not an account component ([`Error::NotAComponent`]), has no interface procedures
 //! ([`Error::NoInterfaceProcedures`]), has no usable WIT package id or interface name
@@ -17,7 +17,10 @@
 //! The interface procedures are the exports marked `@account_procedure` or `@auth_script`: the
 //! protocol counts only those as part of an account component's interface
 //! (`AccountComponentCode::exports` in `miden-protocol`), so the kernel rejects a call to any
-//! other export, `@note_script` and `@transaction_script` entrypoints included.
+//! other export, `@note_script` and `@transaction_script` entrypoints included. Only the
+//! `@account_procedure` ones become functions: an `@auth_script` procedure is invoked by the
+//! transaction kernel in the epilogue, which rejects a transaction that called it before, so one
+//! without `@account_procedure` is left out.
 
 #![deny(warnings)]
 #![deny(missing_docs)]
@@ -31,15 +34,24 @@ use std::collections::BTreeSet;
 
 use miden_mast_package::TargetType;
 use midenc_frontend_wasm_metadata::{
-    FPI_IMPORT_PREFIX, namespace::CORE_TYPES_INTERFACE_ID, procedure_path::validate_procedure_path,
+    FPI_IMPORT_PREFIX,
+    namespace::{CORE_TYPES_INTERFACE_ID, CORE_TYPES_PACKAGE},
+    procedure_path::validate_procedure_path,
 };
-use midenc_hir_type::FunctionType;
+use midenc_hir_type::{FunctionType, StructRef, Type};
 use midenc_package_interface::{PackageInterface, ProcedureItem, Role};
 
 use self::{emit::Function, types::TypeSet};
 
 /// The most operand stack elements the parameters of a direct cross-context call may occupy.
 const MAX_PARAM_FELTS: usize = midenc_package_interface::abi::MAX_STACK_ELEMENTS;
+
+/// Why an `@auth_script` procedure that is not also an `@account_procedure` is left out.
+///
+/// The kernel's epilogue rejects a transaction in which anything called the auth procedure before
+/// the kernel itself (`epilogue.masm` in `miden-protocol`).
+const AUTH_PROCEDURE_REASON: &str = "an auth procedure is invoked by the transaction kernel in \
+                                     the epilogue, not by notes or scripts";
 
 /// Generation options.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,7 +125,8 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
         return Err(Error::NotAComponent(package.kind));
     }
     // Checked on the attributes rather than the first-match `Role`: a procedure carrying both
-    // `@note_script` and `@auth_script` is still part of the interface.
+    // `@note_script` and `@account_procedure` is still part of the interface. `interface_pass`
+    // leaves out the `@auth_script` ones that are not also account procedures.
     let procedures: Vec<&ProcedureItem> = package
         .procedures
         .iter()
@@ -128,10 +141,9 @@ pub fn generate(package: &PackageInterface, options: &Options) -> Result<Generat
     let package_name: &str = package.name.as_ref();
     let (id_namespace, id_name) =
         naming::package_id(&head, package_name).map_err(Error::Namespace)?;
-    let sdk_package = options.core_types.split_once('/').map_or("", |(package, _)| package);
-    if format!("{id_namespace}:{id_name}") == sdk_package {
+    if format!("{id_namespace}:{id_name}") == CORE_TYPES_PACKAGE {
         return Err(Error::Namespace(format!(
-            "the package id `{sdk_package}` is the Miden SDK's own WIT package"
+            "the package id `{CORE_TYPES_PACKAGE}` is the Miden SDK's own WIT package"
         )));
     }
     let version = &package.version;
@@ -217,9 +229,10 @@ struct Pass {
     skipped: Vec<Skipped>,
 }
 
-/// Offer `procedures` in order, leaving out each one that has no function form in the interface
-/// module of the `first` procedure, whose function name another kept function already has, or
-/// whose function name is one of `type_names`.
+/// Offer `procedures` in order, leaving out each auth procedure that is not also an account
+/// procedure, each one that has no function form in the interface module of the `first`
+/// procedure, whose function name another kept function already has, or whose function name is
+/// one of `type_names`.
 fn interface_pass(
     procedures: &[&ProcedureItem],
     first: &ProcedureItem,
@@ -232,7 +245,9 @@ fn interface_pass(
     let mut skipped = Vec::new();
     for procedure in procedures {
         let path = procedure_path(procedure);
+        let is_account_procedure = procedure.attributes.has(Role::AccountProcedure.attribute());
         let result = match &procedure.signature {
+            _ if !is_account_procedure => Err(AUTH_PROCEDURE_REASON.to_owned()),
             None => Err("no typed signature".to_owned()),
             Some(signature) => function(procedure, &path, first, signature, &types).and_then(
                 |(function, extended)| {
@@ -292,8 +307,8 @@ fn namespace<'a>(
 /// The interface function for `procedure`, with the type set extended by what it needs; or the
 /// reason it is left out, in which case `types` stays as it was.
 ///
-/// The function's name is not checked against the other functions and the types; `generate` does
-/// that.
+/// The function's name is not checked against the other functions and the types;
+/// `interface_pass` does that.
 fn function(
     procedure: &ProcedureItem,
     path: &str,
@@ -332,14 +347,22 @@ fn function(
     let mut param_felts = 0;
     for (index, ty) in signature.params.iter().enumerate() {
         let mapped = types.map(ty)?;
+        let param_name = param_names.next(index, types::type_name(ty).as_deref());
         // Only a 64-bit integer occupies more stack elements than it flattens to core values.
         // Like for results, the stack convention of its two limbs in a call to a MASM callee has
         // not been validated yet: no binding exercises it.
         if mapped.felts > mapped.values {
-            return Err("parameters of 64-bit integer type are not supported yet".to_owned());
+            return Err(match wide_field(ty) {
+                Some(field) => format!(
+                    "parameter `{}` contains a 64-bit integer field `{field}`, which is not \
+                     supported yet",
+                    param_name.trim_start_matches('%')
+                ),
+                None => "parameters of 64-bit integer type are not supported yet".to_owned(),
+            });
         }
         param_felts += mapped.felts;
-        params.push((param_names.next(index, types::type_name(ty).as_deref()), mapped.wit));
+        params.push((param_name, mapped.wit));
     }
     let mut results = Vec::with_capacity(signature.results.len());
     for ty in &signature.results {
@@ -378,6 +401,21 @@ fn function(
         },
         types,
     ))
+}
+
+/// The dotted path of the first 64-bit integer field inside the struct `ty`, e.g. `inner.value`;
+/// `None` when `ty` is not a struct or has no such field.
+fn wide_field(ty: &Type) -> Option<String> {
+    let Type::Struct(StructRef::Plain(st)) = ty else {
+        return None;
+    };
+    st.fields().iter().find_map(|field| {
+        let name = field.name.as_deref().unwrap_or("_");
+        match &field.ty {
+            Type::U64 | Type::I64 => Some(name.to_owned()),
+            ty => wide_field(ty).map(|inner| format!("{name}.{inner}")),
+        }
+    })
 }
 
 #[cfg(test)]

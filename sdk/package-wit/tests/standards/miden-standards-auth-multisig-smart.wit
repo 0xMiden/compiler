@@ -2,6 +2,7 @@
 // Dependency commitment: 0x9f02e0bd1ee37cbb1527d844e56469a557c9c08e7b311d5aa69b11d8971ad189.
 package miden:standards-auth-multisig-smart@0.17.0;
 
+/// Left out: `miden::standards::components::auth::multisig_smart::auth_tx_multisig_smart`: an auth procedure is invoked by the transaction kernel in the epilogue, not by notes or scripts
 /// Left out: `miden::standards::components::auth::multisig_smart::get_signer_at`: results occupy 5 stack elements; multi-element results of Miden Assembly components are not supported yet
 /// Left out: `miden::standards::components::auth::multisig_smart::get_threshold_and_num_approvers`: results occupy 2 stack elements; multi-element results of Miden Assembly components are not supported yet
 interface multisig-smart {
@@ -12,9 +13,6 @@ interface multisig-smart {
         delayed: u8,
         note-restrictions: u8,
     }
-
-    @external-id("miden::standards::components::auth::multisig_smart::auth_tx_multisig_smart")
-    auth-tx-multisig-smart: func(arg0: word);
 
     @external-id("miden::standards::components::auth::multisig_smart::is_signer")
     is-signer: func(arg0: word) -> felt;
