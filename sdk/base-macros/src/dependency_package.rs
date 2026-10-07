@@ -2,6 +2,8 @@
 //!
 //! A Miden path dependency is consumed through its compiled package: the `.masp` carries both the
 //! dependency's embedded component WIT (read here) and its procedure roots (read by [`crate::fpi`]).
+//! An account-component package that embeds no WIT gets its interface synthesized here from its
+//! manifest.
 //!
 //! Every dependency package comes from the build-owned package cache named by
 //! `MIDENC_PACKAGE_CACHE`. A midenc-driven build compiles the dependencies, publishes them into
@@ -17,8 +19,9 @@ use std::{
     sync::Arc,
 };
 
-use miden_mast_package::Package;
+use miden_mast_package::{Package, TargetType};
 use midenc_frontend_wasm_metadata::package_cache;
+use midenc_package_interface::PackageInterface;
 use proc_macro2::Span;
 use syn::Error;
 
@@ -33,14 +36,17 @@ pub(crate) struct DependencyWitSource {
     /// The deserialized package, shared so later consumers (FPI procedure-root extraction) reuse
     /// the exact bytes this resolution read.
     pub(crate) package: Arc<Package>,
-    /// The component WIT source: embedded in the package, or supplied by the dependency's `wit`
-    /// manifest key when the package embeds none.
+    /// The component WIT source: embedded in the package, supplied by the dependency's `wit`
+    /// manifest key when the package embeds none, or synthesized from the manifest of an
+    /// account-component package that has neither.
     pub(crate) wit: String,
     /// The `.wit` file the `wit` manifest key selected, when the WIT is not embedded.
     ///
     /// Recorded so consumers can register the file as a build input: it is the only source of
     /// the dependency's interface in that flow, and an edit to it must re-run the expansion.
     pub(crate) wit_override_path: Option<PathBuf>,
+    /// Whether [`Self::wit`] was synthesized from the package manifest rather than read.
+    pub(crate) synthesized: bool,
 }
 
 /// The result of resolving every declared Miden dependency's component WIT.
@@ -90,8 +96,9 @@ pub(crate) struct SkippedDependency {
 /// Embedded WIT is authoritative. A dependency whose package embeds none may supply it manually
 /// through the `package.metadata.miden.dependencies.<name>.wit` key in `miden-project.toml` — the
 /// escape hatch for packages produced by toolchains that do not embed WIT. Setting the key for a
-/// package that embeds WIT is an error, and a package with neither is skipped, not rejected:
-/// only dependencies a macro references need WIT.
+/// package that embeds WIT is an error. An account-component package with neither gets its
+/// interface synthesized from its manifest; any other package with neither is skipped, not
+/// rejected: only dependencies a macro references need WIT.
 pub(crate) fn collect_dependency_wit_sources(
     manifest_dir: &Path,
     package: &miden_project::Package,
@@ -108,8 +115,9 @@ pub(crate) fn collect_dependency_wit_sources(
         let name = dependency.name().as_ref();
         let resolved = match &artifact_map {
             // A `wit = false` entry is a link-only package (for example a base library or a
-            // MASM-only dependency): the compiler recorded that there is no component WIT to
-            // read, so its (potentially large) package is never deserialized here. Unless the
+            // MASM library): the compiler recorded that it neither embeds component WIT nor is
+            // an account component whose interface could be synthesized, so its (potentially
+            // large) package is never deserialized here. Unless the
             // manifest supplies a `wit` override — the escape hatch for exactly such packages
             // — in which case the package is read for its procedure roots and the override
             // provides the interface, like on every other path.
@@ -125,9 +133,10 @@ pub(crate) fn collect_dependency_wit_sources(
                     } else {
                         collected.skipped.push(SkippedDependency {
                             name: name.to_string(),
-                            reason: "the compiler recorded its package as embedding no component \
-                                     WIT; it is consumed at link time only. If the package should \
-                                     supply an interface, set \
+                            reason: "the compiler recorded its package as having no component \
+                                     interface (it embeds no WIT and is not an account \
+                                     component); it is consumed at link time only. If the package \
+                                     should supply an interface, set \
                                      package.metadata.miden.dependencies.<name>.wit to a WIT file \
                                      describing it"
                                 .to_string(),
@@ -154,7 +163,7 @@ pub(crate) fn collect_dependency_wit_sources(
         };
 
         let wit_override = dependency_wit_override(package, name)?;
-        let (wit, wit_override_path) =
+        let (wit, wit_override_path, synthesized) =
             match (package_wit(&resolved.package, &resolved.path)?, wit_override) {
                 (Some(_), Some(_)) => {
                     return Err(Error::new(
@@ -168,11 +177,32 @@ pub(crate) fn collect_dependency_wit_sources(
                         ),
                     ));
                 }
-                (Some(wit), None) => (wit, None),
+                (Some(wit), None) => (wit, None, false),
                 (None, Some(wit_override)) => {
                     let (wit, override_path) =
                         read_wit_override(&wit_override, manifest_dir, name)?;
-                    (wit, Some(override_path))
+                    (wit, Some(override_path), false)
+                }
+                (None, None) if resolved.package.kind == TargetType::AccountComponent => {
+                    let interface = PackageInterface::from_package(&resolved.package);
+                    let generated = midenc_package_wit::generate(
+                        &interface,
+                        &midenc_package_wit::Options::default(),
+                    )
+                    .map_err(|err| {
+                        Error::new(
+                            error_span,
+                            format!(
+                                "dependency '{name}': failed to synthesize the component WIT of \
+                                 account-component package '{}' from its manifest: {err}. Provide \
+                                 the WIT manually via \
+                                 package.metadata.miden.dependencies.{name}.wit in \
+                                 miden-project.toml",
+                                resolved.path.display(),
+                            ),
+                        )
+                    })?;
+                    (generated.wit, None, true)
                 }
                 (None, None) => {
                     collected.skipped.push(SkippedDependency {
@@ -189,6 +219,7 @@ pub(crate) fn collect_dependency_wit_sources(
             package: resolved.package,
             wit,
             wit_override_path,
+            synthesized,
         };
         // The dependency's WIT must be self-contained apart from the bundled SDK WIT.
         // Validated here — the single point every macro path shares — so a package is
@@ -517,12 +548,14 @@ struct DependencyArtifactMap {
 struct ArtifactMapEntry {
     /// Where the selected artifact lives.
     location: ArtifactLocation,
-    /// Whether the artifact embeds component WIT, when the compiler recorded it.
+    /// Whether the artifact has a component interface — it embeds component WIT, or it is an
+    /// account component whose interface is synthesized from its manifest — when the compiler
+    /// recorded it (the map's `wit` key).
     ///
     /// `Some(false)` lets the macros skip a link-only package without deserializing it. An
     /// absent key (a map from an older writer) means unknown, and the package is read to
     /// find out.
-    embeds_wit: Option<bool>,
+    has_interface: Option<bool>,
 }
 
 /// Where a selected artifact lives.
@@ -537,7 +570,8 @@ enum ArtifactLocation {
 enum MapResolution {
     /// The dependency's package was located and deserialized.
     Resolved(PathBuf, ResolvedDependencyPackage),
-    /// The compiler recorded the package as embedding no component WIT; it was not read.
+    /// The compiler recorded the package as having no component interface (no embedded WIT,
+    /// not an account component); it was not read.
     ///
     /// The located path is carried so a `wit` manifest override — the escape hatch for
     /// exactly such packages — can still read the package for its procedure roots.
@@ -563,7 +597,7 @@ impl DependencyArtifactMap {
             ArtifactLocation::CacheFile(file) => self.cache_dir.join(file),
             ArtifactLocation::Path(path) => path.clone(),
         };
-        if entry.embeds_wit == Some(false) {
+        if entry.has_interface == Some(false) {
             return Ok(MapResolution::LinkOnly(path));
         }
         let package = read_package(&path)?;
@@ -646,7 +680,7 @@ fn load_dependency_artifact_map(
                     };
                 location.map(|location| ArtifactMapEntry {
                     location,
-                    embeds_wit: entry.get("wit").and_then(toml::Value::as_bool),
+                    has_interface: entry.get("wit").and_then(toml::Value::as_bool),
                 })
             });
             let Some(entry) = entry else {
@@ -1340,6 +1374,149 @@ mod tests {
             "unexpected error: {message}"
         );
         assert!(message.contains("cargo miden build"), "unexpected error: {message}");
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    /// Assembles `source` as the module `miden::test::wallet` of an account-component package
+    /// named `miden-test-wallet`, without a WIT section, and writes it to `package_path`.
+    fn write_component_fixture(package_path: &Path, source: &str) {
+        use miden_protocol::utils::serde::Serializable;
+
+        let mut package = (*midenc_package_interface::testing::assemble_fixture(
+            "miden-test-wallet",
+            "miden::test::wallet",
+            source,
+        ))
+        .clone();
+        package.kind = TargetType::AccountComponent;
+        std::fs::create_dir_all(package_path.parent().unwrap()).unwrap();
+        std::fs::write(package_path, package.to_bytes()).unwrap();
+    }
+
+    /// Builds a consumer package named `consumer` with one path dependency on `package_path`.
+    fn consumer_with_path_dependency(
+        dependency_name: &str,
+        package_path: &Path,
+    ) -> Box<miden_project::Package> {
+        use miden_assembly_syntax::{ast, debuginfo::Span as MidenSpan};
+
+        let target = miden_project::Target::new(
+            miden_project::TargetType::Library,
+            "default",
+            ast::Path::new("empty"),
+            miden_project::Uri::new("lib/src.rs"),
+        );
+        let dependency = miden_project::Dependency::new(
+            MidenSpan::unknown(Arc::<str>::from(dependency_name)),
+            miden_project::DependencyVersionScheme::Path {
+                path: MidenSpan::unknown(miden_project::Uri::new(package_path.to_string_lossy())),
+                version: None,
+            },
+            miden_project::Linkage::Dynamic,
+        );
+        miden_project::Package::new("consumer", target).with_dependencies([dependency])
+    }
+
+    /// An account component with one typed role procedure.
+    const WALLET_COMPONENT: &str = r#"
+@account_procedure
+pub proc receive_asset(asset: word)
+    dropw
+end
+"#;
+
+    #[test]
+    fn account_component_without_wit_gets_a_synthesized_interface() {
+        // Both resolution flows reach the synthesis: the compiler's artifact map (recording
+        // `wit = true` for an account component) and the legacy path probing without a map.
+        let temp_root = fixture_root("synthesized-wit");
+        let cache_dir = temp_root.join("package-cache");
+        let package_path = cache_dir.join("miden-test-wallet.masp");
+        write_component_fixture(&package_path, WALLET_COMPONENT);
+        let map_dir = cache_dir.join("miden-deps");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::write(
+            map_dir.join("consumer.deps.toml"),
+            "schema = 1\n\n[dependencies]\nwallet = { package = \"miden-test-wallet.masp\", \
+             version = \"0.1.0\", wit = true }\n",
+        )
+        .unwrap();
+
+        let mapped = with_test_package_cache_dir(Some(&cache_dir), || {
+            collect_dependency_wit_sources(&temp_root, &consumer_with_registry_dependency("wallet"))
+        })
+        .expect("the map flow must synthesize the component's WIT");
+        let legacy = with_test_package_cache_dir(None, || {
+            collect_dependency_wit_sources(
+                &temp_root,
+                &consumer_with_path_dependency("wallet", &package_path),
+            )
+        })
+        .expect("the legacy path flow must synthesize the component's WIT");
+
+        for collected in [mapped, legacy] {
+            assert_eq!(collected.sources.len(), 1);
+            let source = &collected.sources[0];
+            assert!(source.synthesized);
+            assert!(source.wit_override_path.is_none());
+            assert!(source.wit.contains("interface wallet"), "{}", source.wit);
+            assert!(source.wit.contains("@external-id("), "{}", source.wit);
+            assert!(collected.skipped.is_empty());
+        }
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn library_without_wit_is_still_skipped() {
+        // Only account components have an interface to synthesize; a library without WIT
+        // stays a link-only dependency.
+        let temp_root = fixture_root("library-no-wit");
+        let package_path = temp_root.join("dep-lib.masp");
+        write_masp_fixture(&package_path, "dep-lib", None);
+
+        let collected = with_test_package_cache_dir(None, || {
+            collect_dependency_wit_sources(
+                &temp_root,
+                &consumer_with_path_dependency("dep-lib", &package_path),
+            )
+        })
+        .expect("a library without WIT must be skipped, not rejected");
+
+        assert!(collected.sources.is_empty());
+        assert_eq!(collected.skipped.len(), 1);
+        assert!(
+            collected.skipped[0].reason.contains("does not embed component WIT"),
+            "{}",
+            collected.skipped[0].reason
+        );
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn account_component_without_role_procedures_reports_the_generator_error() {
+        let temp_root = fixture_root("synthesis-error");
+        let package_path = temp_root.join("miden-test-wallet.masp");
+        write_component_fixture(&package_path, "pub proc helper(x: felt) -> felt\n    nop\nend\n");
+
+        let error = with_test_package_cache_dir(None, || {
+            collect_dependency_wit_sources(
+                &temp_root,
+                &consumer_with_path_dependency("wallet", &package_path),
+            )
+        })
+        .expect_err("a component without role procedures has no interface to synthesize");
+        let message = error.to_string();
+
+        assert!(message.contains("dependency 'wallet'"), "unexpected error: {message}");
+        assert!(message.contains("failed to synthesize"), "unexpected error: {message}");
+        assert!(message.contains("no role procedures"), "unexpected error: {message}");
+        assert!(
+            message.contains("package.metadata.miden.dependencies.wallet.wit"),
+            "unexpected error: {message}"
+        );
 
         std::fs::remove_dir_all(temp_root).unwrap();
     }

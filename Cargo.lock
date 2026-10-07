@@ -3193,6 +3193,8 @@ dependencies = [
  "miden-protocol",
  "midenc-expect-test",
  "midenc-frontend-wasm-metadata",
+ "midenc-package-interface",
+ "midenc-package-wit",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -4665,9 +4667,9 @@ dependencies = [
  "miden-debug",
  "miden-mast-package",
  "miden-processor",
+ "miden-standards",
  "miden-thiserror",
  "midenc-compile",
- "miden-standards",
  "midenc-expect-test",
  "midenc-frontend-wasm",
  "midenc-frontend-wasm-metadata",
@@ -4741,7 +4743,6 @@ dependencies = [
 ]
 
 [[package]]
-[[package]]
 name = "midenc-package-wit"
 version = "0.15.0"
 dependencies = [
@@ -4753,6 +4754,7 @@ dependencies = [
  "wit-parser 0.259.0",
 ]
 
+[[package]]
 name = "midenc-session"
 version = "0.11.0"
 dependencies = [

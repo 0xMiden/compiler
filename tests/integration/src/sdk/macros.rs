@@ -1109,6 +1109,98 @@ fn component_sibling_wit_key_conflicts_with_embedded_wit() {
 }
 
 #[test]
+fn masm_account_component_dependency_needs_no_wit() {
+    // The standard basic wallet is a MASM account component: its package embeds no WIT and the
+    // manifest sets no `wit` key, so the macros synthesize its interface from the package
+    // manifest.
+    use miden_core::serde::Serializable;
+
+    const DEPENDENCY: &str = "miden-standards-wallets-basic-wallet";
+    let name = "masm_account_component_dependency";
+    let sdk_path = sdk_crate_path();
+    let namespace = component_namespace(name);
+    let component_package = format!("miden:{}", name.replace('_', "-"));
+    let miden_project_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+
+[lib]
+kind = "note"
+namespace = "{namespace}"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+{DEPENDENCY} = {{ path = "package-cache/{DEPENDENCY}.masp" }}
+"#
+    );
+    let cargo_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{sdk_path}" }}
+
+[package.metadata.component]
+package = "{component_package}"
+"#,
+        sdk_path = sdk_path.display(),
+    );
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{account, note, Word};
+
+#[account(miden_standards_wallets_basic_wallet::BasicWallet)]
+pub struct Wallet;
+
+#[note]
+struct ReceiveNote;
+
+#[note]
+impl ReceiveNote {
+    #[note_script]
+    pub fn script(self, _arg: Word, account: &mut Wallet) {
+        for asset in self.get_initial_assets() {
+            account.receive_asset(asset);
+        }
+    }
+}
+"#;
+
+    let cargo_proj = project(name)
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
+        .file("src/lib.rs", lib_rs)
+        .build();
+    let wallet = midenc_integration_test_support::testing::toolchain::standard_component_packages()
+        .into_iter()
+        .find(|package| &*package.name == DEPENDENCY)
+        .expect("the standard components include the basic wallet");
+    let package_dir = cargo_proj.root().join("package-cache");
+    std::fs::create_dir_all(&package_dir).expect("the package cache must be created");
+    std::fs::write(package_dir.join(format!("{DEPENDENCY}.masp")), wallet.to_bytes())
+        .expect("the basic wallet package must be written");
+
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected the MASM account component to be usable without WIT: {stderr}"
+    );
+}
+
+#[test]
 fn bare_generate_local_wit_imports_dependency_package() {
     // A manually authored crate's local `wit/` world may import a Miden dependency's interface.
     // The dependency WIT (read from its compiled `.masp`) must be in the resolver before the
