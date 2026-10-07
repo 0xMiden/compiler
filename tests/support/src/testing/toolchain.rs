@@ -123,6 +123,14 @@ pub fn packages_in(sysroot: &Path) -> Result<Vec<Arc<Package>>, ToolchainError> 
 
 /// Reads and deserializes every package in `sysroot/lib`.
 fn read_packages_in(sysroot: &Path) -> Result<Vec<Arc<Package>>, ToolchainError> {
+    Ok(package_files_in(sysroot)?.into_iter().map(|(_, package)| package).collect())
+}
+
+/// Reads and deserializes every package in `sysroot/lib`, each with the path of its `.masp` file,
+/// in path order.
+///
+/// Unlike [`packages_in`], nothing is cached.
+pub fn package_files_in(sysroot: &Path) -> Result<Vec<(PathBuf, Arc<Package>)>, ToolchainError> {
     let lib = sysroot.join("lib");
     let entries = std::fs::read_dir(&lib).map_err(|err| ToolchainError::new(&lib, err))?;
     let mut packages = Vec::new();
@@ -132,12 +140,13 @@ fn read_packages_in(sysroot: &Path) -> Result<Vec<Arc<Package>>, ToolchainError>
             let bytes = std::fs::read(&path).map_err(|err| ToolchainError::new(&path, err))?;
             let package = Package::read_from_bytes_trusted(&bytes)
                 .map_err(|err| ToolchainError::new(&path, err))?;
-            packages.push(Arc::new(package));
+            packages.push((path, Arc::new(package)));
         }
     }
     if packages.is_empty() {
         return Err(ToolchainError::new(lib, "no .masp files"));
     }
+    packages.sort_by(|(a, _), (b, _)| a.cmp(b));
     Ok(packages)
 }
 

@@ -39,7 +39,7 @@ use miden_standards::{
 use midenc_frontend_wasm_metadata::package_cache::package_file_name;
 use midenc_integration_test_support::{
     cargo_proj::test_target_dir,
-    testing::toolchain::{packages_in, sysroot},
+    testing::toolchain::{package_files_in, sysroot},
 };
 use sha2::{Digest, Sha256};
 
@@ -107,9 +107,10 @@ fn standard_component_packages() -> Vec<Arc<Package>> {
 /// The directory lives under the workspace's target directory, keyed by everything its contents
 /// are derived from, and is shared by every test process that agrees on that key.
 ///
-/// Panics if a component or the standards library depends on a package the overlay lacks or
-/// provides with another digest,
-/// or if the toolchain cannot be read or the overlay cannot be staged.
+/// Panics if a package in the overlay (a standard component, the standards library or a kept
+/// toolchain package) depends on a package the overlay lacks or provides with another digest, if
+/// two toolchain files carry the same package, or if the toolchain cannot be read or the overlay
+/// cannot be staged.
 pub(crate) fn sysroot_with_standard_components() -> PathBuf {
     static OVERLAY: OnceLock<PathBuf> = OnceLock::new();
     OVERLAY
@@ -135,44 +136,61 @@ fn stage_overlay(toolchain: &Path, root: &Path) -> Result<PathBuf, String> {
         .collect();
     let written_names: BTreeSet<&str> = written.iter().map(|package| &*package.name).collect();
 
-    // The toolchain packages the overlay keeps: those the overlay does not replace.
-    let installed = packages_in(toolchain).map_err(|err| err.to_string())?;
-    let kept: Vec<&Package> = installed
+    // The toolchain packages the overlay keeps, linked from the files they were read from: those
+    // the overlay does not replace.
+    let installed = package_files_in(toolchain).map_err(|err| err.to_string())?;
+    let mut installed_names: BTreeMap<&str, &Path> = BTreeMap::new();
+    for (path, package) in &installed {
+        if let Some(other) = installed_names.insert(&package.name, path) {
+            return Err(format!(
+                "toolchain files {} and {} both carry package {}",
+                other.display(),
+                path.display(),
+                package.name
+            ));
+        }
+    }
+    let kept: Vec<(&Path, &Package)> = installed
         .iter()
-        .map(|package| &**package)
-        .filter(|package| !written_names.contains(&*package.name))
+        .map(|(path, package)| (path.as_path(), &**package))
+        .filter(|(_, package)| !written_names.contains(&*package.name))
         .collect();
-    // Every package file, linked or written, is named after its package, so a file the overlay
-    // writes is never linked first: writing a package would follow the symlink and overwrite the
-    // installed toolchain's file.
-    let lib = toolchain.join("lib");
-    let mut toolchain_files = kept
-        .iter()
-        .map(|package| {
-            let path = lib.join(package_file_name(&package.name));
-            if path.is_file() {
-                Ok(path)
-            } else {
-                Err(format!("toolchain package {} is not at {}", package.name, path.display()))
-            }
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    toolchain_files.sort();
+    // Writing a package onto a linked file would follow the symlink and overwrite the installed
+    // toolchain's file, so no kept file may have the file name of a written package.
+    let written_files: BTreeSet<String> =
+        written.iter().map(|package| package_file_name(&package.name)).collect();
+    if let Some((path, _)) = kept.iter().find(|(path, _)| {
+        path.file_name()
+            .is_some_and(|name| written_files.contains(&*name.to_string_lossy()))
+    }) {
+        return Err(format!(
+            "toolchain file {} carries another package than the one the overlay writes under its \
+             name",
+            path.display()
+        ));
+    }
+    let toolchain_files: Vec<&Path> = kept.iter().map(|(path, _)| *path).collect();
 
     // What each dependency name resolves to in the overlay: the toolchain packages, with the
     // packages the overlay writes replacing any of the same name.
     let provided: BTreeMap<String, Word> = kept
         .iter()
-        .chain(written.iter())
+        .map(|(_, package)| *package)
+        .chain(written.iter().copied())
         .map(|package| (package.name.to_string(), package.dependency_commitment()))
         .collect();
+    let standards_version = standards.version.to_string();
     for package in &written {
-        check_component_dependencies(
-            package,
-            &provided,
-            &standards.version.to_string(),
-            toolchain,
-        )?;
+        let origin = format!(
+            "package {} of the {STANDARDS_PACKAGE} crate {standards_version}",
+            package.name
+        );
+        check_dependencies(package, &origin, &provided, toolchain)?;
+    }
+    // A kept toolchain package may depend on a package the overlay replaces.
+    for (_, package) in &kept {
+        let origin = format!("toolchain package {}", package.name);
+        check_dependencies(package, &origin, &provided, toolchain)?;
     }
 
     // The key names everything the overlay's contents are derived from, so a stale overlay is never
@@ -221,19 +239,19 @@ fn stage_overlay(toolchain: &Path, root: &Path) -> Result<PathBuf, String> {
     }
 }
 
-/// Checks that every dependency of `component`, a package the overlay writes (a standard component
-/// or the standards library), resolves to the package it was built against.
+/// Checks that every dependency of `package`, a package in the overlay (one the overlay writes or a
+/// kept toolchain package), resolves to the package it was built against.
 ///
-/// `provided` maps each package name in the overlay to its dependency commitment;
-/// `standards_version` is the version of the `miden-standards` crate the package comes from, and
-/// `toolchain` the toolchain the overlay extends.
-fn check_component_dependencies(
-    component: &Package,
+/// `origin` describes the package in the error, e.g. `package miden-standards of the
+/// miden-standards crate 0.17.0`; `provided` maps each package name in the overlay to its
+/// dependency commitment, and `toolchain` is the toolchain the overlay extends.
+fn check_dependencies(
+    package: &Package,
+    origin: &str,
     provided: &BTreeMap<String, Word>,
-    standards_version: &str,
     toolchain: &Path,
 ) -> Result<(), String> {
-    for dependency in component.manifest.dependencies() {
+    for dependency in package.manifest.dependencies() {
         let name: &str = &dependency.name;
         if provided.get(name) == Some(&dependency.digest) {
             continue;
@@ -242,11 +260,9 @@ fn check_component_dependencies(
             .get(name)
             .map_or_else(|| String::from("no such package"), |digest| digest.to_hex());
         return Err(format!(
-            "package {} of the {STANDARDS_PACKAGE} crate {standards_version} depends on {name} \
-             {}, but the sysroot overlay of the toolchain at {} provides {name} {found}: align \
-             the toolchain channel in miden-toolchain.toml with the {STANDARDS_PACKAGE} crate \
-             version",
-            component.name,
+            "{origin} depends on {name} {}, but the sysroot overlay of the toolchain at {} \
+             provides {name} {found}: align the toolchain channel in miden-toolchain.toml with \
+             the {STANDARDS_PACKAGE} crate version",
             dependency.digest.to_hex(),
             toolchain.display(),
         ));
@@ -254,11 +270,21 @@ fn check_component_dependencies(
     Ok(())
 }
 
-/// Symlinks `target` to `source`, copying where symlinks are unavailable.
+/// Symlinks `target` to `source`, or copies `source` to `target` where symlinks are unsupported.
+///
+/// Any other failure is returned, `target` already existing included: a copy onto an existing
+/// symlink would follow it and truncate the toolchain file it points to.
 fn link_or_copy(source: &Path, target: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
-    if std::os::unix::fs::symlink(source, target).is_ok() {
-        return Ok(());
+    match std::os::unix::fs::symlink(source, target) {
+        Ok(()) => return Ok(()),
+        // `EPERM` and `ENOSYS`: the file system does not support symlinks.
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::Unsupported
+            ) => {}
+        Err(err) => return Err(err),
     }
     fs::copy(source, target).map(drop)
 }
@@ -273,17 +299,24 @@ mod tests {
     /// package per standard component.
     #[test]
     fn the_overlay_adds_the_standard_components_to_the_toolchain() {
-        let toolchain = packages_in(&sysroot()).unwrap_or_else(|err| panic!("{err}"));
-        let overlay =
-            packages_in(&sysroot_with_standard_components()).unwrap_or_else(|err| panic!("{err}"));
+        let names = |packages: Vec<&Package>| {
+            let mut names: Vec<String> = packages.iter().map(|p| p.name.to_string()).collect();
+            names.sort();
+            names
+        };
+        let is_component = |p: &&Package| p.kind == TargetType::AccountComponent;
+        let toolchain = package_files_in(&sysroot()).unwrap_or_else(|err| panic!("{err}"));
+        let toolchain: Vec<&Package> = toolchain.iter().map(|(_, p)| &**p).collect();
+        let overlay = package_files_in(&sysroot_with_standard_components())
+            .unwrap_or_else(|err| panic!("{err}"));
+        let overlay: Vec<&Package> = overlay.iter().map(|(_, p)| &**p).collect();
 
-        let mut toolchain_names: Vec<&str> = toolchain.iter().map(|p| p.name.as_ref()).collect();
-        toolchain_names.sort();
-        let (mut components, mut rest): (Vec<_>, Vec<_>) =
-            overlay.iter().partition(|p| p.kind == TargetType::AccountComponent);
-        rest.sort_by(|a, b| a.name.cmp(&b.name));
-        let rest_names: Vec<&str> = rest.iter().map(|p| p.name.as_ref()).collect();
-        assert_eq!(rest_names, toolchain_names);
+        // The toolchain's other packages are kept, its standards library replaced.
+        let (components, rest): (Vec<&Package>, Vec<&Package>) =
+            overlay.iter().copied().partition(is_component);
+        let toolchain_rest: Vec<&Package> =
+            toolchain.iter().copied().filter(|p| !is_component(p)).collect();
+        assert_eq!(names(rest.clone()), names(toolchain_rest));
         let standards = rest.iter().find(|p| &*p.name == STANDARDS_PACKAGE).unwrap();
         assert_eq!(
             standards.dependency_commitment(),
@@ -291,13 +324,15 @@ mod tests {
             "the overlay's standards library must be the crate's"
         );
 
-        components.sort_by(|a, b| a.name.cmp(&b.name));
-        let mut expected: Vec<String> =
-            standard_component_packages().iter().map(|p| p.name.to_string()).collect();
+        // The standard components are added to any the toolchain ships.
+        let mut expected: Vec<String> = standard_component_packages()
+            .iter()
+            .map(|p| p.name.to_string())
+            .chain(toolchain.iter().copied().filter(is_component).map(|p| p.name.to_string()))
+            .collect();
         expected.sort();
-        let names: Vec<String> = components.iter().map(|p| p.name.to_string()).collect();
-        assert_eq!(names.len(), STANDARD_COMPONENTS.len(), "{names:?}");
-        assert_eq!(names, expected);
+        expected.dedup();
+        assert_eq!(names(components), expected);
     }
 
     /// A component built against another package than the overlay provides is reported with both
@@ -311,14 +346,14 @@ mod tests {
             .map(|dependency| (dependency.name.to_string(), dependency.digest))
             .collect();
         let toolchain = Path::new("/some/toolchain");
-        check_component_dependencies(component, &provided, "1.2.3", toolchain)
+        let origin = format!("package {} of the miden-standards crate 1.2.3", component.name);
+        check_dependencies(component, &origin, &provided, toolchain)
             .expect("matching digests pass");
 
         let actual = provided["miden-protocol"];
         let drifted = Word::default();
         provided.insert("miden-protocol".to_string(), drifted);
-        let err =
-            check_component_dependencies(component, &provided, "1.2.3", toolchain).unwrap_err();
+        let err = check_dependencies(component, &origin, &provided, toolchain).unwrap_err();
         for expected in [
             actual.to_hex().as_str(),
             drifted.to_hex().as_str(),
