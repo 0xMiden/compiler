@@ -44,6 +44,7 @@ members = [
     "sdk/note-schema/codegen",
     "sdk/intrinsics-sys",
     "sdk/package-interface",
+    "sdk/package-wit",
     "sdk/sdk",
     "sdk/stdlib-sys",
     "sdk/tx-script-args",

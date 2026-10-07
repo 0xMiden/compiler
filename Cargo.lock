@@ -4720,6 +4720,18 @@ dependencies = [
 ]
 
 [[package]]
+[[package]]
+name = "midenc-package-wit"
+version = "0.15.0"
+dependencies = [
+ "miden-mast-package",
+ "miden-standards",
+ "miden-thiserror",
+ "midenc-hir-type",
+ "midenc-package-interface",
+ "wit-parser 0.259.0",
+]
+
 name = "midenc-session"
 version = "0.11.0"
 dependencies = [
