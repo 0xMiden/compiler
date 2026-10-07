@@ -3,8 +3,9 @@
 use std::collections::BTreeSet;
 
 use heck::{ToKebabCase, ToUpperCamelCase};
-use midenc_frontend_wasm_metadata::namespace::{
-    NamespaceSegmentError, SegmentPosition, WIT_KEYWORDS, validate_namespace_segment,
+use midenc_frontend_wasm_metadata::{
+    FPI_ABI_PARAM_NAMES,
+    namespace::{NamespaceSegmentError, SegmentPosition, WIT_KEYWORDS, validate_namespace_segment},
 };
 
 /// The Rust keywords wit-bindgen's Rust generator turns into identifiers as they are, without the
@@ -51,20 +52,37 @@ pub fn rust_ident(name: &str) -> Result<String, String> {
     Ok(ident)
 }
 
-/// The Rust spelling wit-bindgen gives a type or enum case whose WIT spelling is `ident` (see
-/// [`ident`]): heck's upper camel case, except `guest`, which becomes `Guest_` because wit-bindgen
-/// reserves `Guest` for the traits of exported interfaces.
+/// The Rust spelling wit-bindgen gives an enum case whose WIT spelling is `ident` (see
+/// [`ident`]): heck's upper camel case.
 pub fn upper_camel(ident: &str) -> String {
+    ident.trim_start_matches('%').to_upper_camel_case()
+}
+
+/// The Rust spelling wit-bindgen gives a type whose WIT spelling is `ident` (see [`ident`]):
+/// [`upper_camel`], except `guest`, which becomes `Guest_` because wit-bindgen reserves `Guest`
+/// for the traits of exported interfaces.
+pub fn rust_type_name(ident: &str) -> String {
     match ident.trim_start_matches('%') {
         "guest" => "Guest_".to_owned(),
-        bare => bare.to_upper_camel_case(),
+        _ => upper_camel(ident),
     }
 }
 
-/// The [`upper_camel`] Rust spelling of the type or enum case `name` whose WIT spelling is
-/// `ident`; or, when that spelling is the Rust keyword `Self`, the reason `name` has none.
+/// The [`rust_type_name`] Rust spelling of the type `name` whose WIT spelling is `ident`; or,
+/// when that spelling is the Rust keyword `Self`, the reason `name` has none.
 pub fn rust_type_ident(name: &str, ident: &str) -> Result<String, String> {
-    let rust = upper_camel(ident);
+    not_self(name, rust_type_name(ident))
+}
+
+/// The [`upper_camel`] Rust spelling of the enum case `name` whose WIT spelling is `ident`; or,
+/// when that spelling is the Rust keyword `Self`, the reason `name` has none.
+pub fn rust_case_ident(name: &str, ident: &str) -> Result<String, String> {
+    not_self(name, upper_camel(ident))
+}
+
+/// `rust`, the Rust spelling of `name`; or, when it is the Rust keyword `Self`, the reason `name`
+/// has none.
+fn not_self(name: &str, rust: String) -> Result<String, String> {
     if rust == "Self" {
         return Err(format!(
             "`{name}` would be the Rust keyword `Self` in the generated bindings, which \
@@ -158,11 +176,19 @@ pub fn package_id(head: &str, package_name: &str) -> Result<(String, String), St
     Ok((namespace, name))
 }
 
-/// Hands out the parameter names of one function, unique within it.
-#[derive(Default)]
+/// Hands out the parameter names of one function, unique within it and distinct from the
+/// [`FPI_ABI_PARAM_NAMES`] the SDK's FPI imports prepend to them.
 pub struct ParamNames {
-    /// The unescaped names handed out so far.
+    /// The unescaped names handed out so far, and the FPI parameter names.
     taken: BTreeSet<String>,
+}
+
+impl Default for ParamNames {
+    fn default() -> Self {
+        Self {
+            taken: FPI_ABI_PARAM_NAMES.iter().map(|name| (*name).to_owned()).collect(),
+        }
+    }
 }
 
 impl ParamNames {
@@ -189,6 +215,7 @@ impl ParamNames {
 mod tests {
     use super::*;
 
+    /// Snake, camel and screaming-case names convert to kebab case at word and acronym breaks.
     #[test]
     fn kebab_splits_snake_and_camel_case() {
         for (from, to) in [
@@ -217,6 +244,7 @@ mod tests {
         }
     }
 
+    /// Only Rust keywords that wit-bindgen leaves unescaped are rejected as identifiers.
     #[test]
     fn rust_keywords_wit_bindgen_does_not_escape_are_rejected() {
         assert_eq!(
@@ -230,6 +258,7 @@ mod tests {
         assert_eq!(rust_ident("generic").unwrap(), "generic");
     }
 
+    /// The list of unescaped Rust keywords matches what wit-bindgen actually leaves unescaped.
     #[test]
     fn unescaped_rust_keywords_match_wit_bindgen() {
         let unescaped: Vec<&str> = midenc_frontend_wasm_metadata::namespace::RUST_KEYWORDS
@@ -240,6 +269,7 @@ mod tests {
         assert_eq!(unescaped, UNESCAPED_RUST_KEYWORDS);
     }
 
+    /// Rust type and case names match wit-bindgen's, and unescaped `Self` is rejected.
     #[test]
     fn rust_type_names_follow_wit_bindgen() {
         let rust = |name: &str| rust_type_ident(name, &ident(name).unwrap());
@@ -248,6 +278,13 @@ mod tests {
         assert_eq!(rust("AUTH_CONTROLLED").unwrap(), "AuthControlled");
         assert_eq!(rust("Record").unwrap(), "Record");
         assert_eq!(rust("Guest").unwrap(), "Guest_");
+        // wit-bindgen remaps `guest` for type names only.
+        assert_eq!(rust_case_ident("GUEST", &ident("GUEST").unwrap()).unwrap(), "Guest");
+        assert_eq!(
+            rust_case_ident("SELF", &ident("SELF").unwrap()).unwrap_err(),
+            "`SELF` would be the Rust keyword `Self` in the generated bindings, which wit-bindgen \
+             does not escape"
+        );
         assert_eq!(
             rust("SELF").unwrap_err(),
             "`SELF` would be the Rust keyword `Self` in the generated bindings, which wit-bindgen \
@@ -255,6 +292,7 @@ mod tests {
         );
     }
 
+    /// WIT keywords get a `%` prefix, other names stay bare.
     #[test]
     fn keywords_are_escaped() {
         assert_eq!(ident("type").unwrap(), "%type");
@@ -264,6 +302,7 @@ mod tests {
         assert_eq!(ident("error_context").unwrap(), "%error-context");
     }
 
+    /// Identifiers are valid only per the WIT grammar, and names deriving none are rejected.
     #[test]
     fn identifiers_follow_the_wit_grammar() {
         for valid in ["a", "receive-asset", "slot-1", "u256", "a1-2b", "%type", "%asset"] {
@@ -278,6 +317,7 @@ mod tests {
         assert_eq!(ident("__").unwrap_err(), "`__` has no WIT name (derived ``)");
     }
 
+    /// The package id drops a leading namespace segment from the package name.
     #[test]
     fn package_id_strips_the_namespace_head() {
         let id = |head, name| package_id(head, name).map(|(ns, name)| format!("{ns}:{name}"));
@@ -291,6 +331,7 @@ mod tests {
         assert_eq!(id("miden", "miden").unwrap(), "miden:miden");
     }
 
+    /// Package id segments that are keywords or have no WIT name fall back or are rejected.
     #[test]
     fn package_id_segments_are_checked() {
         // A keyword or invalid name left by stripping the head falls back to the full name...
@@ -325,6 +366,7 @@ mod tests {
         );
     }
 
+    /// Parameter names derive from their type names, get numbered on reuse, else `arg<N>`.
     #[test]
     fn parameter_names_come_from_types_and_are_unique() {
         let mut names = ParamNames::default();
@@ -338,6 +380,15 @@ mod tests {
         assert_eq!(names.next(7, Some("Gen")), "arg7");
     }
 
+    /// A type-derived parameter name never takes a name the FPI imports prepend.
+    #[test]
+    fn parameter_names_avoid_the_fpi_parameters() {
+        let mut names = ParamNames::default();
+        assert_eq!(names.next(0, Some("AccountIdPrefix")), "account-id-prefix2");
+        assert_eq!(names.next(1, Some("ForeignProcRoot")), "foreign-proc-root2");
+    }
+
+    /// Module names that are keywords or have no WIT name are rejected as interface names.
     #[test]
     fn interface_names_are_checked() {
         assert_eq!(interface("basic_wallet").unwrap(), "basic-wallet");
