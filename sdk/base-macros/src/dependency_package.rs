@@ -43,25 +43,34 @@ pub(crate) struct DependencyWitSource {
     /// manifest key when the package embeds none, or synthesized from the manifest of an
     /// account-component package that has neither.
     pub(crate) wit: String,
-    /// The `.wit` file the `wit` manifest key selected, when that key supplied the WIT; `None`
-    /// for embedded or synthesized WIT.
+    /// Where [`Self::wit`] came from.
+    pub(crate) origin: WitOrigin,
+}
+
+/// Where the component WIT of a [`DependencyWitSource`] came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum WitOrigin {
+    /// Embedded in the dependency's compiled package.
+    Embedded,
+    /// Read from the `.wit` file the dependency's `wit` manifest key selected.
     ///
     /// Recorded so consumers can register the file as a build input: it is the only source of
     /// the dependency's interface in that flow, and an edit to it must re-run the expansion.
-    pub(crate) wit_override_path: Option<PathBuf>,
-    /// Whether [`Self::wit`] was synthesized from the package manifest rather than read.
-    pub(crate) synthesized: bool,
+    Override(PathBuf),
+    /// Synthesized from the manifest of an account-component package that embeds none.
+    Synthesized,
 }
 
 impl DependencyWitSource {
     /// What [`Self::wit`] is, for a diagnostic: embedded, override or synthesized WIT.
     pub(crate) fn description(&self) -> String {
-        if self.synthesized {
-            format!("the WIT synthesized for dependency '{}' from its package manifest", self.name)
-        } else if self.wit_override_path.is_some() {
-            "the WIT override".to_string()
-        } else {
-            "embedded dependency WIT".to_string()
+        match self.origin {
+            WitOrigin::Synthesized => format!(
+                "the WIT synthesized for dependency '{}' from its package manifest",
+                self.name
+            ),
+            WitOrigin::Override(_) => "the WIT override".to_string(),
+            WitOrigin::Embedded => "embedded dependency WIT".to_string(),
         }
     }
 }
@@ -73,8 +82,8 @@ pub(crate) struct DependencyWitSources {
     /// Dependencies that resolved to a package without usable component WIT: one that embeds no
     /// WIT, has no `wit` override and is not an account component; one the compiler's dependency
     /// map records as link-only (an older map records an account component without embedded WIT
-    /// that way, too); or an account component whose interface failed to synthesize or whose
-    /// synthesized WIT failed to parse.
+    /// that way, too); or an account component whose interface failed to synthesize, whose
+    /// synthesized WIT failed to parse, or whose synthesized WIT package id is the consumer's own.
     ///
     /// Not an error here: a link-only dependency — for example a MASM library — is never
     /// referenced by an SDK macro and needs no WIT. A macro that does reference one of these
@@ -194,86 +203,83 @@ pub(crate) fn collect_dependency_wit_sources(
         };
 
         let wit_override = dependency_wit_override(package, name)?;
-        let (wit, wit_override_path, synthesized) =
-            match (package_wit(&resolved.package, &resolved.path)?, wit_override) {
-                (Some(_), Some(_)) => {
-                    return Err(Error::new(
-                        error_span,
-                        format!(
-                            "dependency '{name}': package '{}' embeds component WIT, but \
-                             miden-project.toml also sets \
-                             package.metadata.miden.dependencies.{name}.wit; remove the `wit` key \
-                             — embedded WIT is authoritative",
-                            resolved.path.display(),
-                        ),
-                    ));
-                }
-                (Some(wit), None) => (wit, None, false),
-                (None, Some(wit_override)) => {
-                    let (wit, override_path) =
-                        read_wit_override(&wit_override, manifest_dir, name)?;
-                    (wit, Some(override_path), false)
-                }
-                // Embedding no WIT, the package has a component interface only as an account
-                // component, whose interface is synthesized from its manifest.
-                (None, None) if package_cache::has_component_interface(&resolved.package) => {
-                    let interface = PackageInterface::from_package(&resolved.package);
-                    match midenc_package_wit::generate(
-                        &interface,
-                        &midenc_package_wit::Options::default(),
-                    ) {
-                        // The consumer defines its own package of that id, so the two would
-                        // clash in every macro of the crate.
-                        Ok(generated)
-                            if consumer_wit_package.as_deref()
-                                == generated.package_id.split('@').next() =>
-                        {
-                            collected.skipped.push(SkippedDependency {
-                                name: name.to_string(),
-                                reason: format!(
-                                    "its synthesized WIT package id `{}` is this crate's own \
-                                     package id; provide a WIT with another id via the override \
-                                     package.metadata.miden.dependencies.{name}.wit in \
-                                     miden-project.toml",
-                                    generated.package_id
-                                ),
-                            });
-                            continue;
-                        }
-                        Ok(generated) => (generated.wit, None, true),
-                        // Not an error here: only a macro that references this dependency
-                        // needs its WIT, and the reason is reported at that reference.
-                        Err(err) => {
-                            collected.skipped.push(SkippedDependency {
-                                name: name.to_string(),
-                                reason: format!(
-                                    "failed to synthesize the component WIT of account-component \
-                                     package '{}' from its manifest: {err}. Provide the WIT \
-                                     manually via package.metadata.miden.dependencies.{name}.wit \
-                                     in miden-project.toml",
-                                    resolved.path.display(),
-                                ),
-                            });
-                            continue;
-                        }
+        let (wit, origin) = match (package_wit(&resolved.package, &resolved.path)?, wit_override) {
+            (Some(_), Some(_)) => {
+                return Err(Error::new(
+                    error_span,
+                    format!(
+                        "dependency '{name}': package '{}' embeds component WIT, but \
+                         miden-project.toml also sets \
+                         package.metadata.miden.dependencies.{name}.wit; remove the `wit` key — \
+                         embedded WIT is authoritative",
+                        resolved.path.display(),
+                    ),
+                ));
+            }
+            (Some(wit), None) => (wit, WitOrigin::Embedded),
+            (None, Some(wit_override)) => {
+                let (wit, override_path) = read_wit_override(&wit_override, manifest_dir, name)?;
+                (wit, WitOrigin::Override(override_path))
+            }
+            // Embedding no WIT, the package has a component interface only as an account
+            // component, whose interface is synthesized from its manifest.
+            (None, None) if package_cache::has_component_interface(&resolved.package) => {
+                let interface = PackageInterface::from_package(&resolved.package);
+                match midenc_package_wit::generate(
+                    &interface,
+                    &midenc_package_wit::Options::default(),
+                ) {
+                    // The consumer defines its own package of that id, so the two would
+                    // clash in every macro of the crate.
+                    Ok(generated)
+                        if consumer_wit_package.as_deref()
+                            == generated.package_id.split('@').next() =>
+                    {
+                        collected.skipped.push(SkippedDependency {
+                            name: name.to_string(),
+                            reason: format!(
+                                "its synthesized WIT package id `{}` is this crate's own package \
+                                 id; provide a WIT with another id via the override \
+                                 package.metadata.miden.dependencies.{name}.wit in \
+                                 miden-project.toml",
+                                generated.package_id
+                            ),
+                        });
+                        continue;
+                    }
+                    Ok(generated) => (generated.wit, WitOrigin::Synthesized),
+                    // Not an error here: only a macro that references this dependency
+                    // needs its WIT, and the reason is reported at that reference.
+                    Err(err) => {
+                        collected.skipped.push(SkippedDependency {
+                            name: name.to_string(),
+                            reason: format!(
+                                "failed to synthesize the component WIT of account-component \
+                                 package '{}' from its manifest: {err}\nProvide the WIT manually \
+                                 via package.metadata.miden.dependencies.{name}.wit in \
+                                 miden-project.toml",
+                                resolved.path.display(),
+                            ),
+                        });
+                        continue;
                     }
                 }
-                (None, None) => {
-                    collected.skipped.push(SkippedDependency {
-                        name: name.to_string(),
-                        reason: missing_embedded_wit_message(&resolved.path, name),
-                    });
-                    continue;
-                }
-            };
+            }
+            (None, None) => {
+                collected.skipped.push(SkippedDependency {
+                    name: name.to_string(),
+                    reason: missing_embedded_wit_message(&resolved.path, name),
+                });
+                continue;
+            }
+        };
         let source = DependencyWitSource {
             name: name.to_string(),
             root: dependency_root,
             package_path: resolved.path,
             package: resolved.package,
             wit,
-            wit_override_path,
-            synthesized,
+            origin,
         };
         push_parsed_source(&mut collected, source)?;
     }
@@ -299,7 +305,7 @@ fn push_parsed_source(
         crate::wit_world::parse_dependency_wit_source(&source.wit, &source.description())
     {
         let message = crate::wit_world::dependency_wit_error_message(&source, &details);
-        if !source.synthesized {
+        if source.origin != WitOrigin::Synthesized {
             return Err(Error::new(Span::call_site(), message));
         }
         collected.skipped.push(SkippedDependency {
@@ -626,8 +632,7 @@ struct ArtifactMapEntry {
     location: ArtifactLocation,
     /// Whether the artifact may have a component interface — it embeds component WIT, or it is
     /// an account component whose interface the macros try to synthesize from its manifest — when
-    /// the compiler
-    /// recorded it (the map's `wit` key).
+    /// the compiler recorded it (the map's `wit` key).
     ///
     /// `Some(false)` lets the macros skip a link-only package without deserializing it. An
     /// absent key (a map from an older writer) means unknown, and the package is read to
@@ -1361,9 +1366,8 @@ mod tests {
     fn recorded_link_only_entry_honors_the_wit_override() {
         // `wit = false` records that the package has no component interface: it embeds no WIT
         // and is not an account component — which is exactly the case the `wit` manifest key
-        // exists for. The override must win over the fast
-        // path: the package is read for its procedure roots, and the key supplies the
-        // interface.
+        // exists for. The override must win over the fast path: the package is read for its
+        // procedure roots, and the key supplies the interface.
         let temp_root = fixture_root("link-only-wit-override");
         let cache_dir = temp_root.join("package-cache");
         write_masp_fixture(&cache_dir.join("foreign-dep.masp"), "foreign-dep", None);
@@ -1389,10 +1393,10 @@ mod tests {
         assert_eq!(collected.sources[0].name, "the-dep");
         assert_eq!(collected.sources[0].package_path, cache_dir.join("foreign-dep.masp"));
         assert_eq!(
-            collected.sources[0].wit_override_path.as_deref(),
+            collected.sources[0].origin,
             // The override flow canonicalizes; canonicalize the expectation too so macOS's
             // `/var` symlink does not fail the comparison.
-            Some(override_path.canonicalize().unwrap().as_path()),
+            WitOrigin::Override(override_path.canonicalize().unwrap()),
             "the override file must be reported as a build input"
         );
         assert!(collected.skipped.is_empty());
@@ -1548,8 +1552,7 @@ end
         for collected in [mapped, legacy] {
             assert_eq!(collected.sources.len(), 1);
             let source = &collected.sources[0];
-            assert!(source.synthesized);
-            assert!(source.wit_override_path.is_none());
+            assert_eq!(source.origin, WitOrigin::Synthesized);
             assert!(source.wit.contains("interface wallet"), "{}", source.wit);
             assert!(source.wit.contains("@external-id("), "{}", source.wit);
             assert!(collected.skipped.is_empty());
@@ -1664,7 +1667,7 @@ end
     fn unparsable_wit_is_skipped_only_when_synthesized() {
         // The generator validates every name it emits, so no fixture package yields synthesized
         // WIT that fails to parse; the source is built by hand instead.
-        let source = |synthesized| DependencyWitSource {
+        let source = |origin| DependencyWitSource {
             name: "wallet".to_string(),
             root: PathBuf::from("wallet.masp"),
             package_path: PathBuf::from("wallet.masp"),
@@ -1674,8 +1677,7 @@ end
                 WALLET_COMPONENT,
             ),
             wit: "package miden:wallet@0.1.0;\ninterface wallet { 1: func(); }\n".to_string(),
-            wit_override_path: None,
-            synthesized,
+            origin,
         };
         let mut collected = DependencyWitSources {
             sources: Vec::new(),
@@ -1683,7 +1685,7 @@ end
             artifact_map_path: None,
         };
 
-        push_parsed_source(&mut collected, source(true))
+        push_parsed_source(&mut collected, source(WitOrigin::Synthesized))
             .expect("unparsable synthesized WIT skips the dependency");
         assert!(collected.sources.is_empty());
         assert_eq!(collected.skipped.len(), 1);
@@ -1698,7 +1700,7 @@ end
         );
         assert!(reason.contains("package.metadata.miden.dependencies.wallet.wit"), "{reason}");
 
-        let err = push_parsed_source(&mut collected, source(false))
+        let err = push_parsed_source(&mut collected, source(WitOrigin::Embedded))
             .expect_err("unparsable embedded or override WIT is an error");
         assert!(err.to_string().contains("failed to parse embedded dependency WIT"), "{err}");
         assert_eq!(collected.skipped.len(), 1);
