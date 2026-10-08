@@ -1243,27 +1243,6 @@ fn reject_duplicate_method_wit_names(methods: &[ComponentMethod]) -> Result<(), 
     Ok(())
 }
 
-/// Rejects component methods whose WIT name is also the name of a type of the component's WIT
-/// interface, `type_names`: an imported core type or an exported custom type. WIT interfaces share
-/// one namespace between types and functions.
-fn reject_method_type_name_collisions<'a>(
-    methods: &[ComponentMethod],
-    type_names: impl IntoIterator<Item = &'a String>,
-) -> Result<(), syn::Error> {
-    let type_names = type_names.into_iter().collect::<BTreeSet<_>>();
-    match methods.iter().find(|method| type_names.contains(&method.wit_name)) {
-        Some(method) => Err(syn::Error::new(
-            method.fn_ident.span(),
-            format!(
-                "component method `{}` produces the WIT name `{}`, which collides with the type \
-                 `{}` of the component's WIT interface; rename the method",
-                method.fn_ident, method.wit_name, method.wit_name
-            ),
-        )),
-        None => Ok(()),
-    }
-}
-
 /// Builds the diagnostic for a component `kind` (method or parameter) `ident` whose WIT name
 /// `wit_name` is already used by `previous`, pointing at both declarations.
 fn duplicate_wit_name_error(
@@ -1664,7 +1643,7 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "component method `felt` produces the WIT name `felt`, which collides with the type \
-             `felt` of the component's WIT interface; rename the method"
+             `felt` of the generated WIT interface; rename it"
         );
     }
 

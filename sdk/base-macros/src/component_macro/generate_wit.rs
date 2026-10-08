@@ -5,13 +5,11 @@ use semver::Version;
 use syn::spanned::Spanned;
 
 use crate::{
-    component_macro::{
-        ComponentMethod, MethodReturn, export_path, reject_method_type_name_collisions,
-    },
+    component_macro::{ComponentMethod, MethodReturn, export_path},
     namespace::ComponentNamespace,
     types::{ExportedTypeDef, ExportedTypeKind, ensure_custom_type_defined},
     wit_builder::WitBuilder,
-    wit_names::explicit_wit_identifier,
+    wit_names::{explicit_wit_identifier, reject_function_type_name_collisions},
 };
 
 /// Inputs used to render the WIT interface and world for a component implementation.
@@ -59,9 +57,14 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
         }
     }
 
-    // Types and functions share the interface's namespace.
-    let interface_type_names = combined_core_imports.iter().chain(&exported_type_names);
-    reject_method_type_name_collisions(spec.methods, interface_type_names)?;
+    // Types and functions share the interface's namespace: the imported core types and the
+    // exported custom types.
+    reject_function_type_name_collisions(
+        spec.methods
+            .iter()
+            .map(|method| ("component method", &method.fn_ident, method.wit_name.as_str())),
+        combined_core_imports.iter().chain(&exported_type_names),
+    )?;
 
     let (wit, result) = WitBuilder::exported_interface(
         "#[component]",

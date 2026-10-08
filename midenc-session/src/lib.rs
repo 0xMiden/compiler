@@ -919,7 +919,11 @@ fn infer_rust_entrypoint(manifest: &ProjectManifest, options: &mut Options) -> R
         }
         Some(miden_project::TargetType::TransactionScript) => {
             if let Some(library) = manifest.library.as_ref().filter(|target| is_rust_root(target)) {
-                options.entrypoint = Some(format!("{}::run", library.namespace.inner()));
+                options.entrypoint = Some(format!(
+                    "{}::{}",
+                    library.namespace.inner(),
+                    midenc_frontend_wasm_metadata::TX_SCRIPT_ENTRYPOINT_PROCEDURE
+                ));
             }
         }
         _ => (),

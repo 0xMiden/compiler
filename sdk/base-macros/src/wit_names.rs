@@ -4,8 +4,11 @@
 //! generated WIT, and which wit-bindgen maps back to the Rust identifier of the generated guest
 //! trait method.
 
+use std::collections::BTreeSet;
+
 use heck::ToKebabCase;
 use midenc_frontend_wasm_metadata::namespace::RUST_KEYWORDS;
+use proc_macro2::Span;
 use syn::ext::IdentExt;
 
 /// Converts a Rust identifier to its canonical WIT spelling before WIT escaping is applied.
@@ -24,6 +27,14 @@ pub(crate) fn rust_ident_to_wit_name(ident: &syn::Ident) -> syn::Result<String> 
         ));
     }
     Ok(wit_name)
+}
+
+/// Returns the Rust identifier wit-bindgen generates for the WIT name `wit_name`, at `span`.
+///
+/// Code that refers to a generated binding must spell it exactly as wit-bindgen does, so it
+/// derives the identifier from the WIT name rather than from a Rust identifier the name came from.
+pub(crate) fn wit_bindgen_rust_ident(wit_name: &str, span: Span) -> syn::Ident {
+    syn::Ident::new(&wit_bindgen_rust::to_rust_ident(wit_name), span)
 }
 
 /// Returns the Rust identifier wit-bindgen generates for the canonical WIT name `wit_name` of the
@@ -52,6 +63,30 @@ pub(crate) fn wit_bindgen_guest_ident(
         "`{wit_name}` was validated as a WIT name, so its guest identifier `{guest_name}` is valid"
     );
     Ok(syn::Ident::new(&guest_name, ident.span()))
+}
+
+/// Rejects the first exported function whose WIT name is also the name of a type of the same
+/// generated WIT interface, `type_names`.
+///
+/// Each function is given as `(item kind, Rust identifier, WIT name)`, e.g.
+/// `("component method", ident, "get-count")`. WIT interfaces share one namespace between types
+/// and functions, so a collision would otherwise surface as a WIT parse error inside the
+/// generated bindings; the error points at the Rust identifier instead.
+pub(crate) fn reject_function_type_name_collisions<'a>(
+    functions: impl IntoIterator<Item = (&'a str, &'a syn::Ident, &'a str)>,
+    type_names: impl IntoIterator<Item = &'a String>,
+) -> syn::Result<()> {
+    let type_names = type_names.into_iter().map(String::as_str).collect::<BTreeSet<_>>();
+    match functions.into_iter().find(|(_, _, wit_name)| type_names.contains(wit_name)) {
+        Some((item_kind, ident, wit_name)) => Err(syn::Error::new(
+            ident.span(),
+            format!(
+                "{item_kind} `{ident}` produces the WIT name `{wit_name}`, which collides with \
+                 the type `{wit_name}` of the generated WIT interface; rename it"
+            ),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// Renders WIT's explicit identifier form.

@@ -2104,7 +2104,10 @@ interface api {
             .collect::<Vec<_>>();
         assert_eq!(native_names, ["type_"]);
         assert_eq!(foreign_names, ["fpi_type"]);
-        assert_eq!(fpi::native_ident("type", proc_macro2::Span::call_site()), "type_");
+        assert_eq!(
+            crate::wit_names::wit_bindgen_rust_ident("type", proc_macro2::Span::call_site()),
+            "type_"
+        );
     }
 
     /// Preserves aliases imported from a sibling WIT interface.

@@ -21,7 +21,9 @@ use crate::{
         NOTE_NAMED_FIELDS_ERROR, base_macros_derive_path, generate_frontend_link_section,
         generate_wit_link_section, is_type_named, is_unit_return_type,
     },
-    wit_names::{rust_ident_to_wit_name, wit_bindgen_guest_ident},
+    wit_names::{
+        reject_function_type_name_collisions, rust_ident_to_wit_name, wit_bindgen_guest_ident,
+    },
     wit_world::{InlineInterfaceWorld, ManifestPackage, wit_func_line, wit_param},
 };
 
@@ -717,9 +719,7 @@ fn collect_note_constructors(
 /// Rejects exported function names that collide with the interface's imported core type names.
 ///
 /// The generated interface imports core types via `use core-types.{...}`, which places the type
-/// names in the same WIT namespace as the exported functions; a collision would surface as a
-/// "name defined more than once" parse error inside the generated bindings, so catch it here
-/// with a span on the offending Rust identifier.
+/// names in the same WIT namespace as the exported functions.
 fn reject_type_import_name_collisions(
     entrypoint_ident: &syn::Ident,
     entrypoint_export_name: &str,
@@ -730,29 +730,11 @@ fn reject_type_import_name_collisions(
     let mut imports = constructor_type_imports.clone();
     imports.insert("word".to_string());
 
-    if imports.contains(entrypoint_export_name) {
-        return Err(syn::Error::new(
-            entrypoint_ident.span(),
-            format!(
-                "the `#[note_script]` entrypoint `{entrypoint_ident}` produces the WIT export \
-                 name '{entrypoint_export_name}', which collides with a core type imported by the \
-                 note's interface",
-            ),
-        ));
-    }
-    for constructor in constructors {
-        if imports.contains(&constructor.wit_name) {
-            return Err(syn::Error::new(
-                constructor.fn_ident.span(),
-                format!(
-                    "note constructor `{}` produces the WIT export name '{}', which collides with \
-                     a core type imported by the note's interface",
-                    constructor.fn_ident, constructor.wit_name
-                ),
-            ));
-        }
-    }
-    Ok(())
+    let entrypoint = ("the `#[note_script]` entrypoint", entrypoint_ident, entrypoint_export_name);
+    let constructors = constructors.iter().map(|constructor| {
+        ("note constructor", &constructor.fn_ident, constructor.wit_name.as_str())
+    });
+    reject_function_type_name_collisions(std::iter::once(entrypoint).chain(constructors), &imports)
 }
 
 /// Renders the guest trait method forwarding an exported constructor to the user's function.
@@ -1910,7 +1892,9 @@ fn main() {{}}
             Ok(_) => panic!("export names colliding with imported type names must be rejected"),
             Err(err) => err,
         };
-        assert!(err.to_string().contains("collides with a core type"));
+        let message = err.to_string();
+        assert!(message.contains("note constructor `tag`"), "{message}");
+        assert!(message.contains("collides with the type `tag`"), "{message}");
 
         // The entrypoint always imports `word`, so an entrypoint exporting the name 'word'
         // collides even without constructors.
@@ -1920,7 +1904,9 @@ fn main() {{}}
                 Ok(_) => panic!("entrypoint name colliding with the word import must be rejected"),
                 Err(err) => err,
             };
-        assert!(err.to_string().contains("collides with a core type"));
+        let message = err.to_string();
+        assert!(message.contains("`#[note_script]` entrypoint `word`"), "{message}");
+        assert!(message.contains("collides with the type `word`"), "{message}");
 
         // No collision when the type of the same name is never imported.
         let mut item_impl: ItemImpl = parse_quote! {

@@ -33,6 +33,7 @@ use crate::{
         should_generate_struct,
     },
     namespace::ComponentNamespace,
+    wit_names::wit_bindgen_rust_ident,
     wit_world::{self, SelectedDependency},
 };
 
@@ -1214,7 +1215,11 @@ pub(crate) fn augment_foreign_account_bindings(
             // Pair the FPI variant with the native binding through the dependency's WIT name:
             // wit-bindgen escapes a keyword name (`type` -> `type_`) but not the prefixed FPI
             // variant (`fpi_type`), so stripping the prefix does not give the native name.
-            let native_ident = native_ident(wit_name, foreign_func.sig.ident.span());
+            // The native name also names the generated trait method. No dependency method name
+            // is reserved: a method named like the inherent constructor `new` or an
+            // `ActiveAccount` built-in (e.g. `get_id`) coexists with it and is resolved by the
+            // caller with UFCS (`<Wallet as Interface>::method(account, ..)`).
+            let native_ident = wit_bindgen_rust_ident(wit_name, foreign_func.sig.ident.span());
             let native_func = native_module
                 .functions
                 .iter()
@@ -1557,16 +1562,6 @@ fn active_account_impl(account_struct: &ItemStruct) -> TokenStream2 {
     }
 }
 
-/// Returns the identifier wit-bindgen gives the native import binding, and so the generated trait
-/// method, of the dependency WIT function `wit_name`.
-pub(crate) fn native_ident(wit_name: &str, span: Span) -> syn::Ident {
-    // No dependency method name is reserved. Component methods live on the generated trait, so a
-    // method that shares a name with the inherent constructor `new` or an `ActiveAccount` built-in
-    // (e.g. `get_id`) coexists with it and is resolved by the caller with UFCS
-    // (`<Wallet as Interface>::method(account, ..)`) rather than silently shadowing it.
-    syn::Ident::new(&wit_bindgen_rust::to_rust_ident(wit_name), span)
-}
-
 /// Converts a procedure root into SDK `Word` construction tokens.
 fn procedure_root_tokens(root: ProcedureRoot) -> TokenStream2 {
     let felts = root.felts.into_iter().map(|value| quote!(::miden::felt!(#value)));
@@ -1618,10 +1613,12 @@ fn dependency_functions(
     function_paths
         .into_iter()
         .map(|(wit_name, external_id)| {
-            let foreign_ident =
-                wit_bindgen_rust::to_rust_ident(&format!("{WIT_FUNCTION_PREFIX}{wit_name}"));
+            let foreign_ident = wit_bindgen_rust_ident(
+                &format!("{WIT_FUNCTION_PREFIX}{wit_name}"),
+                Span::call_site(),
+            );
             (
-                foreign_ident,
+                foreign_ident.to_string(),
                 DependencyFunction {
                     wit_name,
                     external_id,
@@ -1895,8 +1892,7 @@ interface api {
     #[test]
     fn dependency_functions_are_found_by_their_generated_identifier() {
         let dependency = test_dependency(&[("HTTP-get", "miden::counter::counter::http_get")]);
-        let foreign_ident =
-            syn::Ident::new(&wit_bindgen_rust::to_rust_ident("fpi-HTTP-get"), Span::call_site());
+        let foreign_ident = wit_bindgen_rust_ident("fpi-HTTP-get", Span::call_site());
 
         let (wit_name, path) = dependency
             .function_path(&foreign_ident)
@@ -1911,8 +1907,7 @@ interface api {
     #[test]
     fn keyword_named_dependency_functions_pair_with_their_native_binding() {
         let dependency = test_dependency(&[("type", "miden::counter::counter::type")]);
-        let foreign_ident =
-            syn::Ident::new(&wit_bindgen_rust::to_rust_ident("fpi-type"), Span::call_site());
+        let foreign_ident = wit_bindgen_rust_ident("fpi-type", Span::call_site());
         assert_eq!(foreign_ident, "fpi_type");
 
         let (wit_name, path) = dependency
@@ -1924,7 +1919,7 @@ interface api {
             canonical_procedure_path(MasmPath::new("miden::counter::counter::type"))
         );
         // wit-bindgen escapes the keyword in the native binding it generates.
-        assert_eq!(native_ident(wit_name, Span::call_site()), "type_");
+        assert_eq!(wit_bindgen_rust_ident(wit_name, Span::call_site()), "type_");
     }
 
     #[test]
@@ -1968,10 +1963,10 @@ interface api {
     }
 
     #[test]
-    fn native_ident_allows_new() {
+    fn native_binding_name_allows_new() {
         // A component method named `new` is a trait method and coexists with the inherent
         // constructor `Wallet::new(id)`; it is no longer reserved.
-        assert_eq!(native_ident("new", Span::call_site()), "new");
+        assert_eq!(wit_bindgen_rust_ident("new", Span::call_site()), "new");
     }
 
     #[test]
@@ -2018,10 +2013,10 @@ interface api {
     }
 
     #[test]
-    fn native_ident_allows_active_account_method_names() {
+    fn native_binding_name_allows_active_account_method_names() {
         // Component methods sharing a name with an `ActiveAccount` built-in are now legal: both
         // live on traits, so the clash is resolved by the caller with UFCS rather than rejected.
-        assert_eq!(native_ident("get-id", Span::call_site()), "get_id");
+        assert_eq!(wit_bindgen_rust_ident("get-id", Span::call_site()), "get_id");
     }
 
     #[test]

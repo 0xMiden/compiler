@@ -1,4 +1,4 @@
-use midenc_frontend_wasm_metadata::FrontendMetadata;
+use midenc_frontend_wasm_metadata::{FrontendMetadata, TX_SCRIPT_ENTRYPOINT_PROCEDURE};
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{FnArg, ItemFn, Type, parse_macro_input, spanned::Spanned};
@@ -11,8 +11,9 @@ use crate::{
     wit_world::ManifestPackage,
 };
 
-/// Name of the entrypoint function exported by the transaction-script WIT interface.
-const EXPORT_NAME: &str = "run";
+/// Name of the entrypoint function the script exports from its own WIT interface, as
+/// `<namespace>::run`.
+const EXPORT_NAME: &str = TX_SCRIPT_ENTRYPOINT_PROCEDURE;
 
 /// Configuration for generating a script guest wrapper.
 struct GuestWrapperConfig {
