@@ -31,7 +31,10 @@ use crate::{
         StorageFieldType, TypeRef, map_type_to_type_ref, registered_export_type_map,
         reject_custom_type_ref,
     },
-    wit_names::{explicit_wit_identifier, rust_ident_to_wit_name, wit_bindgen_guest_ident},
+    wit_names::{
+        explicit_wit_identifier, reject_duplicate_wit_name, rust_ident_to_wit_name,
+        wit_bindgen_guest_ident,
+    },
     wit_world::{InlineInterfaceWorld, wit_func_line, wit_param},
 };
 
@@ -41,6 +44,8 @@ const STORED_PROCEDURE_BINDINGS_WORLD: &str = "stored-procedure-bindings";
 const STORED_PROCEDURE_BINDINGS_PACKAGE: &str = generate::STORED_PROCEDURE_BINDINGS_PACKAGE;
 /// Name synthesized for unnamed signature parameters, suffixed with the parameter index.
 const UNNAMED_PARAM_PREFIX: &str = "arg";
+/// Item kind naming a stored procedure parameter in diagnostics.
+const STORED_PROCEDURE_PARAMETER: &str = "stored procedure parameter";
 /// WIT name of the leading procedure-root parameter of every generated import.
 const PROC_ROOT_PARAM: &str = "proc-root";
 /// WIT name of the core `word` type carrying a procedure root.
@@ -308,17 +313,14 @@ fn build_slot(field_ident: &Ident, signature: &Type) -> Result<StoredProcedureSl
                 ),
             ));
         }
-        if let Some(previous) = params.iter().find(|param| param.wit_name == wit_name) {
-            return Err(Error::new(
-                ident.span(),
-                format!(
-                    "stored procedure parameters `{}` and `{ident}` are both named `{wit_name}` \
-                     in WIT; parameter names must differ by more than their word separators or \
-                     letter case",
-                    previous.ident
-                ),
-            ));
-        }
+        reject_duplicate_wit_name(
+            STORED_PROCEDURE_PARAMETER,
+            &ident,
+            &wit_name,
+            params
+                .iter()
+                .map(|param| (STORED_PROCEDURE_PARAMETER, &param.ident, param.wit_name.as_str())),
+        )?;
         let type_ref = map_type_to_type_ref(&input.ty, &exported_types)?;
         reject_custom_type_ref(&type_ref, input.ty.span(), CUSTOM_TYPE_ERROR)?;
         params.push(StoredProcedureParam {
@@ -923,10 +925,15 @@ world stored-procedure-bindings {
     #[test]
     fn rejects_duplicate_parameter_names() {
         let cases = [
-            (quote!(fn(x: Felt, x: u32)), "`x` and `x` are both named `x`"),
+            (
+                quote!(fn(x: Felt, x: u32)),
+                "parameter `x` produces the WIT name `x`, which is already used by stored \
+                 procedure parameter `x`",
+            ),
             (
                 quote!(fn(foo_bar: Felt, fooBar: u32)),
-                "`foo_bar` and `fooBar` are both named `foo-bar`",
+                "parameter `fooBar` produces the WIT name `foo-bar`, which is already used by \
+                 stored procedure parameter `foo_bar`",
             ),
         ];
 

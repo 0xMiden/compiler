@@ -31,7 +31,7 @@ use crate::{
         ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
     },
     util::{generate_frontend_link_section, generate_wit_link_section, is_type_named},
-    wit_names::{rust_ident_to_wit_name, wit_bindgen_guest_ident},
+    wit_names::{reject_duplicate_wit_name, rust_ident_to_wit_name, wit_bindgen_guest_ident},
 };
 
 pub(crate) mod generate_wit;
@@ -39,6 +39,10 @@ mod sibling;
 mod storage;
 mod stored_procedure;
 
+/// Item kind naming a component method in diagnostics.
+const COMPONENT_METHOD: &str = "component method";
+/// Item kind naming a component method parameter in diagnostics.
+const COMPONENT_PARAMETER: &str = "component parameter";
 /// Attribute name used to mark the authentication procedure on a component method.
 const AUTH_SCRIPT_ATTR: &str = "auth_script";
 /// Helper attribute preserved by `#[auth_script]` so `#[component]` can recognize the method.
@@ -1178,14 +1182,14 @@ fn parse_component_signature(
         let wit_param_name = rust_ident_to_wit_name(&ident)?;
         // The generated guest trait names the parameter by wit-bindgen's spelling.
         wit_bindgen_guest_ident(&wit_param_name, &ident)?;
-        if let Some(previous) = params.iter().find(|param| param.wit_param_name == wit_param_name) {
-            return Err(duplicate_wit_name_error(
-                "parameter",
-                &ident,
-                &previous.ident,
-                &wit_param_name,
-            ));
-        }
+        reject_duplicate_wit_name(
+            COMPONENT_PARAMETER,
+            &ident,
+            &wit_param_name,
+            params
+                .iter()
+                .map(|param| (COMPONENT_PARAMETER, &param.ident, param.wit_param_name.as_str())),
+        )?;
 
         params.push(MethodParam {
             wit_param_name,
@@ -1211,7 +1215,7 @@ fn parse_component_signature(
     let doc_attrs = attrs.iter().filter(|attr| attr.path().is_ident("doc")).cloned().collect();
 
     let wit_name = rust_ident_to_wit_name(&sig.ident)?;
-    reject_reserved_import_prefix_export(&sig.ident, &wit_name, "component method")?;
+    reject_reserved_import_prefix_export(&sig.ident, &wit_name, COMPONENT_METHOD)?;
 
     let component_method = ComponentMethod {
         fn_ident: sig.ident.clone(),
@@ -1229,37 +1233,16 @@ fn parse_component_signature(
 /// Rejects component methods whose Rust identifiers normalize to one WIT name.
 fn reject_duplicate_method_wit_names(methods: &[ComponentMethod]) -> Result<(), syn::Error> {
     for (index, method) in methods.iter().enumerate() {
-        if let Some(previous) =
-            methods[..index].iter().find(|previous| previous.wit_name == method.wit_name)
-        {
-            return Err(duplicate_wit_name_error(
-                "method",
-                &method.fn_ident,
-                &previous.fn_ident,
-                &method.wit_name,
-            ));
-        }
+        reject_duplicate_wit_name(
+            COMPONENT_METHOD,
+            &method.fn_ident,
+            &method.wit_name,
+            methods[..index]
+                .iter()
+                .map(|previous| (COMPONENT_METHOD, &previous.fn_ident, previous.wit_name.as_str())),
+        )?;
     }
     Ok(())
-}
-
-/// Builds the diagnostic for a component `kind` (method or parameter) `ident` whose WIT name
-/// `wit_name` is already used by `previous`, pointing at both declarations.
-fn duplicate_wit_name_error(
-    kind: &str,
-    ident: &syn::Ident,
-    previous: &syn::Ident,
-    wit_name: &str,
-) -> syn::Error {
-    let mut error = syn::Error::new(
-        ident.span(),
-        format!(
-            "component {kind} `{ident}` produces the WIT name `{wit_name}`, which is already used \
-             by {kind} `{previous}`"
-        ),
-    );
-    error.combine(syn::Error::new(previous.span(), format!("first {kind} with this WIT name")));
-    error
 }
 
 /// Returns true if `ty` names a type through a path, the only shape a component storage type

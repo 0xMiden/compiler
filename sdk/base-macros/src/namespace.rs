@@ -9,7 +9,9 @@
 use miden_assembly_syntax::ast::Path;
 use midenc_frontend_wasm_metadata::namespace::{NamespaceError, validate_namespace};
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote};
+use quote::quote;
+
+use crate::wit_names::wit_bindgen_rust_ident;
 
 /// Example namespace shown in diagnostics.
 const EXAMPLE_NAMESPACE: &str = "miden::counter_contract::counter_contract";
@@ -80,7 +82,7 @@ impl ComponentNamespace {
     pub(crate) fn guest_trait_path(&self) -> TokenStream {
         // Mirror wit-bindgen's module naming for each kebab WIT name.
         let [ns, pkg, iface] = [&self.ns, &self.pkg, &self.iface]
-            .map(|segment| format_ident!("{}", wit_bindgen_rust::to_rust_ident(&kebab(segment))));
+            .map(|segment| wit_bindgen_rust_ident(&kebab(segment), Span::call_site()));
         quote! { self::bindings::exports::#ns::#pkg::#iface::Guest }
     }
 

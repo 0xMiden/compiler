@@ -22,7 +22,8 @@ use crate::{
         generate_wit_link_section, is_type_named, is_unit_return_type,
     },
     wit_names::{
-        reject_function_type_name_collisions, rust_ident_to_wit_name, wit_bindgen_guest_ident,
+        reject_duplicate_wit_name, reject_function_type_name_collisions, rust_ident_to_wit_name,
+        wit_bindgen_guest_ident,
     },
     wit_world::{InlineInterfaceWorld, ManifestPackage, wit_func_line, wit_param},
 };
@@ -34,6 +35,12 @@ const NOTE_CONSTRUCTOR_ATTR: &str = "note_constructor";
 const NOTE_CONSTRUCTOR_MARKER_ATTR: &str = "miden_note_constructor_requires_note";
 const NOTE_CONSTRUCTOR_DOC_MARKER: &str = "__miden_note_constructor_marker";
 const ENTRYPOINT_ROOT_METHOD: &str = "get_entrypoint_root";
+/// Item kind naming the `#[note_script]` entrypoint in diagnostics.
+const NOTE_SCRIPT_ENTRYPOINT: &str = "the `#[note_script]` entrypoint";
+/// Item kind naming a note constructor in diagnostics.
+const NOTE_CONSTRUCTOR: &str = "note constructor";
+/// Item kind naming a note constructor parameter in diagnostics.
+const CONSTRUCTOR_PARAMETER: &str = "note constructor parameter";
 /// Diagnostic emitted for an `#[export_type]` custom type in a note constructor signature.
 const CUSTOM_TYPE_ERROR: &str = "custom exported types are not supported in note constructor \
                                  signatures; use SDK core types (e.g. `Felt`, `Word`, \
@@ -473,11 +480,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
 /// rejecting a name that carries a prefix reserved for generated imports.
 fn entrypoint_export_name(entrypoint_ident: &syn::Ident) -> syn::Result<String> {
     let export_name = rust_ident_to_wit_name(entrypoint_ident)?;
-    reject_reserved_import_prefix_export(
-        entrypoint_ident,
-        &export_name,
-        "`#[note_script]` entrypoint",
-    )?;
+    reject_reserved_import_prefix_export(entrypoint_ident, &export_name, NOTE_SCRIPT_ENTRYPOINT)?;
     Ok(export_name)
 }
 
@@ -578,7 +581,6 @@ fn collect_note_constructors(
     let exported_types = registered_export_type_map();
     let mut constructors = Vec::new();
     let mut type_imports = BTreeSet::new();
-    let mut wit_names = BTreeSet::new();
 
     for item in &mut item_impl.items {
         let ImplItem::Fn(method) = item else {
@@ -638,8 +640,7 @@ fn collect_note_constructors(
             return Err(syn::Error::new(variadic.span(), "note constructors cannot be variadic"));
         }
 
-        let mut params = Vec::new();
-        let mut wit_param_names = BTreeSet::new();
+        let mut params: Vec<ConstructorParam> = Vec::new();
         for arg in &sig.inputs {
             let FnArg::Typed(pat_type) = arg else {
                 unreachable!("receiver arguments are rejected above");
@@ -658,16 +659,14 @@ fn collect_note_constructors(
             let wit_param_name = rust_ident_to_wit_name(&pat_ident.ident)?;
             // The generated bindings name the parameter by wit-bindgen's spelling.
             wit_bindgen_guest_ident(&wit_param_name, &pat_ident.ident)?;
-            if !wit_param_names.insert(wit_param_name.clone()) {
-                return Err(syn::Error::new(
-                    pat_ident.ident.span(),
-                    format!(
-                        "note constructor parameter `{}` produces the WIT parameter name \
-                         '{wit_param_name}', which is already used by another parameter",
-                        pat_ident.ident
-                    ),
-                ));
-            }
+            reject_duplicate_wit_name(
+                CONSTRUCTOR_PARAMETER,
+                &pat_ident.ident,
+                &wit_param_name,
+                params.iter().map(|param| {
+                    (CONSTRUCTOR_PARAMETER, &param.ident, param.wit_param_name.as_str())
+                }),
+            )?;
             params.push(ConstructorParam {
                 wit_param_name,
                 ident: pat_ident.ident.clone(),
@@ -703,17 +702,16 @@ fn collect_note_constructors(
         // the entrypoint export or with a duplicate method definition. Catch that here instead
         // of surfacing a WIT parse error from the generated bindings.
         let wit_name = rust_ident_to_wit_name(&sig.ident)?;
-        reject_reserved_import_prefix_export(&sig.ident, &wit_name, "note constructor")?;
-        if wit_name == entrypoint_export_name || !wit_names.insert(wit_name.clone()) {
-            return Err(syn::Error::new(
-                sig.ident.span(),
-                format!(
-                    "note constructor `{}` produces the WIT export name '{wit_name}', which is \
-                     already used by another export of this note",
-                    sig.ident
-                ),
-            ));
-        }
+        reject_reserved_import_prefix_export(&sig.ident, &wit_name, NOTE_CONSTRUCTOR)?;
+        reject_duplicate_wit_name(
+            NOTE_CONSTRUCTOR,
+            &sig.ident,
+            &wit_name,
+            core::iter::once((NOTE_SCRIPT_ENTRYPOINT, entrypoint_ident, entrypoint_export_name))
+                .chain(constructors.iter().map(|constructor: &NoteConstructor| {
+                    (NOTE_CONSTRUCTOR, &constructor.fn_ident, constructor.wit_name.as_str())
+                })),
+        )?;
 
         constructors.push(NoteConstructor {
             guest_fn_ident: wit_bindgen_guest_ident(&wit_name, &sig.ident)?,
@@ -742,9 +740,9 @@ fn reject_type_import_name_collisions(
     let mut imports = constructor_type_imports.clone();
     imports.insert("word".to_string());
 
-    let entrypoint = ("the `#[note_script]` entrypoint", entrypoint_ident, entrypoint_export_name);
+    let entrypoint = (NOTE_SCRIPT_ENTRYPOINT, entrypoint_ident, entrypoint_export_name);
     let constructors = constructors.iter().map(|constructor| {
-        ("note constructor", &constructor.fn_ident, constructor.wit_name.as_str())
+        (NOTE_CONSTRUCTOR, &constructor.fn_ident, constructor.wit_name.as_str())
     });
     reject_function_type_name_collisions(std::iter::once(entrypoint).chain(constructors), &imports)
 }
@@ -1788,7 +1786,12 @@ fn main() {{}}
             Ok(_) => panic!("duplicate WIT export names must be rejected"),
             Err(err) => err,
         };
-        assert!(err.to_string().contains("already used by another export"));
+        assert!(
+            err.to_string()
+                .contains("which is already used by note constructor `make_note`"),
+            "{err}"
+        );
+        assert_eq!(err.into_iter().count(), 2, "diagnostic must point at both constructors");
     }
 
     #[test]
@@ -1876,7 +1879,13 @@ fn main() {{}}
             Ok(_) => panic!("duplicate WIT parameter names must be rejected"),
             Err(err) => err,
         };
-        assert!(err.to_string().contains("already used by another parameter"));
+        assert!(
+            err.to_string().contains(
+                "note constructor parameter `noteType` produces the WIT name `note-type`, which \
+                 is already used by note constructor parameter `note_type`"
+            ),
+            "{err}"
+        );
     }
 
     #[test]
@@ -2002,7 +2011,11 @@ fn main() {{}}
             Ok(_) => panic!("collision with the entrypoint export name must be rejected"),
             Err(err) => err,
         };
-        assert!(err.to_string().contains("already used by another export"));
+        assert!(
+            err.to_string()
+                .contains("already used by the `#[note_script]` entrypoint `execute`"),
+            "{err}"
+        );
     }
 
     #[test]

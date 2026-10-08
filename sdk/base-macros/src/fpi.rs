@@ -33,7 +33,7 @@ use crate::{
         should_generate_struct,
     },
     namespace::ComponentNamespace,
-    wit_names::wit_bindgen_rust_ident,
+    wit_names::{wit_bindgen_rust_ident, wit_bindgen_rust_name},
     wit_world::{self, SelectedDependency},
 };
 
@@ -1613,12 +1613,8 @@ fn dependency_functions(
     function_paths
         .into_iter()
         .map(|(wit_name, external_id)| {
-            let foreign_ident = wit_bindgen_rust_ident(
-                &format!("{WIT_FUNCTION_PREFIX}{wit_name}"),
-                Span::call_site(),
-            );
             (
-                foreign_ident.to_string(),
+                wit_bindgen_rust_name(&format!("{WIT_FUNCTION_PREFIX}{wit_name}")),
                 DependencyFunction {
                     wit_name,
                     external_id,
