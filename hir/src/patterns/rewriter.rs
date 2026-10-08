@@ -878,10 +878,11 @@ impl Listener for TracingRewriterListener {
     fn notify_operation_inserted(&self, _op: OperationRef, _prev: ProgramPoint) {
         if log::log_enabled!(target: "rewriter", log::Level::Trace) {
             let name = _op.name();
-            let (event, direction) = if _prev.is_valid() {
-                ("moved", "from")
+            // A freshly created op has no previous location, so its new one is reported
+            let (event, location) = if _prev.is_valid() {
+                ("moved", format!("from {_prev}"))
             } else {
-                ("inserted", "at")
+                ("inserted", format!("at {}", ProgramPoint::before(_op)))
             };
             if let Some(symbol) = _op.borrow().as_symbol() {
                 log::trace!(
@@ -890,7 +891,7 @@ impl Listener for TracingRewriterListener {
                     dialect = name.dialect().as_str(),
                     op = name.name().as_str(),
                     rewrite_event = event;
-                    "{event} '{name}' {direction} {_prev}"
+                    "{event} '{name}' {location}"
                 );
             } else {
                 log::trace!(
@@ -898,7 +899,7 @@ impl Listener for TracingRewriterListener {
                     dialect = name.dialect().as_str(),
                     op = name.name().as_str(),
                     rewrite_event = event;
-                    "{event} '{name}' {direction} {_prev}",
+                    "{event} '{name}' {location}",
                 );
             }
         }

@@ -155,7 +155,8 @@ pub trait Builder: Listener {
             },
             ProgramPoint::Invalid => panic!("insertion point is invalid/unset"),
         }
-        self.notify_operation_inserted(op, *self.insertion_point());
+        // `op` was unlinked until now, so it has no previous location to report.
+        self.notify_operation_inserted(op, ProgramPoint::Invalid);
     }
 
     /// Create an [super::Operation] from the provided [OperationState]
