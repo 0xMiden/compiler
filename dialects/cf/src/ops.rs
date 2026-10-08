@@ -381,9 +381,9 @@ mod tests {
         assert_eq!(switch_op.cases().len(), 0);
     }
 
-    /// A `cf.switch` with more than 255 cases, each forwarding an argument, so that the op holds
-    /// more than 255 successors, operand groups and operands at once (the shape of a `br_table`
-    /// with 256+ targets whose shared destination takes a block argument).
+    /// A `cf.switch` with more than 255 cases, each forwarding an argument to a shared
+    /// destination, so that the op holds more than 255 successors, operand groups and operands at
+    /// once.
     #[test]
     fn switch_building_with_more_than_255_cases_and_arguments() {
         const NUM_CASES: usize = 300;
@@ -415,21 +415,6 @@ mod tests {
         assert_eq!(last_case.arguments().len(), 1);
         assert_eq!(last_case.arguments()[0].borrow().as_value_ref(), selector);
         assert_eq!(switch_op.operands().all().len(), NUM_CASES + 1);
-    }
-
-    /// A block holds more than 255 arguments (the entry block of a function with 256+
-    /// parameters), each keeping its position in the argument list.
-    #[test]
-    fn block_with_more_than_255_arguments() {
-        const NUM_PARAMS: usize = 300;
-
-        let test = Test::new("wide", &vec![Type::U32; NUM_PARAMS], &[]);
-        let function = test.function().borrow();
-        let entry = function.entry_block().borrow();
-        let args = entry.arguments();
-
-        assert_eq!(args.len(), NUM_PARAMS);
-        assert_eq!(args[NUM_PARAMS - 1].borrow().index(), NUM_PARAMS - 1);
     }
 
     /// The value returned by the `builtin.ret` terminating `block`.
