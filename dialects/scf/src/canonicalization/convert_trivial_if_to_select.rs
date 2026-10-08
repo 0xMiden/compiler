@@ -81,6 +81,8 @@ impl RewritePattern for ConvertTrivialIfToSelect {
         for (true_value, false_value) in
             then_yield_args.iter().copied().zip(else_yield_args.iter().copied())
         {
+            // A value yielded by both branches is forwarded as is, whatever its type (as
+            // `FoldRedundantYields` would), so that it never ends up in the new `scf.if`.
             let true_value_ref = true_value.borrow();
             let is_hoistable = true_value_ref.parent_region().unwrap() != then_region
                 && false_value.borrow().parent_region().unwrap() != else_region
