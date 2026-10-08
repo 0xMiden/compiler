@@ -157,6 +157,11 @@ pub fn sig_from_func_type(func_type: &FunctionType, call_conv: CallConv) -> Sign
 }
 
 /// Returns the first of `base`, `base2`, `base3`, … that `is_free` accepts.
+///
+/// The counter is appended with no separator, so `base` must not end in a digit: `table_1` bumped
+/// to `table_12` would be indistinguishable from the base `table_12`. The function table names
+/// built in `ModuleTranslationState` end in the table index, so they use their own `_`-separated
+/// counter instead.
 pub(crate) fn first_free_name(base: &str, is_free: impl Fn(&str) -> bool) -> String {
     if is_free(base) {
         return base.to_string();

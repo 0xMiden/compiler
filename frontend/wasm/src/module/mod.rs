@@ -396,15 +396,15 @@ impl Module {
     /// These name the HIR functions, except in a component, which names the functions backing its
     /// exports and lowering its imports after their Miden paths (see `core_names::assign`).
     ///
-    /// WebAssembly function export names take precedence as the linkage name. Unexported functions use their name-section name (or
-    /// `func{index}` fallback if absent), disambiguated via `{name}_func{index}` (with `_` appended
-    /// to resolve collisions) if they conflict with an export name, a global variable name, or
-    /// another function with the same source name.
+    /// WebAssembly function export names take precedence as the linkage name. Unexported
+    /// functions use their name-section name (or `func{index}` fallback if absent), disambiguated
+    /// via `{name}_func{index}` (with `_` appended to resolve collisions) if they conflict with an
+    /// export name, a global variable name, or another function with the same source name.
     ///
     /// Intrinsics and Miden ABI linker stubs are identified by name (see
     /// [`maybe_lower_linker_stub`]) and considered internal, so an export or duplicate name that
-    /// identifies one — per [`names_a_linker_stub`], against the packages `config` links — is an
-    /// error.
+    /// identifies one — per [`names_a_linker_stub`], against the packages `config` links — is
+    /// an error.
     ///
     /// This method is idempotent.
     ///

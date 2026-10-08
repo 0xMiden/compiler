@@ -67,7 +67,7 @@ impl<'a> ModuleTranslationState<'a> {
     ///   which every component import called by path must lie outside of (FPI and dyncall
     ///   imports, which declare no stub component, are exempt)
     /// `names` - the names of the functions backing component exports and lowering component
-    ///   imports; every other function keeps its Wasm name
+    ///   imports; every other function keeps its linkage name (`Module::func_name`)
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         module: &Module,
