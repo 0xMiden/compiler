@@ -4,12 +4,16 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
     adt::SmallDenseMap,
     patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
+    traits::{AnyInteger, TypeConstraint},
     *,
 };
 
 use crate::*;
 
 /// Hoist any yielded results whose operands are defined outside an [If], to a [Select] instruction.
+///
+/// Only results of a type [Select] accepts are hoisted; the others (e.g. pointers) stay in the
+/// [If], together with the results computed inside its regions.
 pub struct ConvertTrivialIfToSelect {
     info: PatternInfo,
 }
@@ -72,13 +76,16 @@ impl RewritePattern for ConvertTrivialIfToSelect {
         drop(op);
 
         let mut non_hoistable = SmallVec::<[_; 4]>::default();
+        let mut hoistable = SmallVec::<[bool; 4]>::with_capacity(num_results);
         for (true_value, false_value) in
             then_yield_args.iter().copied().zip(else_yield_args.iter().copied())
         {
             let true_value = true_value.borrow();
-            if true_value.parent_region().unwrap() == then_region
-                || false_value.borrow().parent_region().unwrap() == else_region
-            {
+            let is_hoistable = true_value.parent_region().unwrap() != then_region
+                && false_value.borrow().parent_region().unwrap() != else_region
+                && AnyInteger::get().matches(true_value.ty());
+            hoistable.push(is_hoistable);
+            if !is_hoistable {
                 non_hoistable.push(true_value.ty().clone());
             }
         }
@@ -113,12 +120,13 @@ impl RewritePattern for ConvertTrivialIfToSelect {
         let new_then_region = anchor_op.then_body().as_region_ref();
         let new_else_region = anchor_op.else_body().as_region_ref();
         rewriter.set_insertion_point_before(anchor.as_operation_ref());
-        for (true_value, false_value) in
-            then_yield_args.iter().copied().zip(else_yield_args.iter().copied())
+        for ((true_value, false_value), is_hoistable) in then_yield_args
+            .iter()
+            .copied()
+            .zip(else_yield_args.iter().copied())
+            .zip(hoistable)
         {
-            let true_parent_region = true_value.borrow().parent_region().unwrap();
-            let false_parent_region = false_value.borrow().parent_region().unwrap();
-            if new_then_region == true_parent_region || new_else_region == false_parent_region {
+            if !is_hoistable {
                 results.push(Some(anchor_op.results()[true_yields.len()] as ValueRef));
                 true_yields.push(true_value);
                 false_yields.push(false_value);
