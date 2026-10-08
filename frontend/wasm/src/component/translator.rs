@@ -1237,13 +1237,13 @@ fn canon_lower_func(
                      component instance"
                 )));
             };
-            let path = external_id_path(
+            let miden_path = external_id_path(
                 &import.name,
                 import_func_name,
                 types[import.ty].external_ids.get(*import_func_name).map(String::as_str),
             )?;
 
-            Ok((func_ty, cm_path, path))
+            Ok((func_ty, cm_path, miden_path))
         }
         CoreDef::Export(module_instance_idx, export_name) => canon_lower_from_alias_export(
             frame,

@@ -1603,7 +1603,7 @@ namespace = "miden::prepare_fixture::prepare_fixture"
         assert_eq!(session.options.target_type, Some(TargetType::TransactionScript));
         assert_eq!(
             session.options.entrypoint, None,
-            "the fixed name is what the Rust frontend emits; Miden Assembly names its own \
+            "the inferred `run` is what the Rust frontend emits; Miden Assembly names its own \
              entrypoint"
         );
     }
@@ -2507,9 +2507,9 @@ namespace = "miden::prepare_fixture::prepare_fixture"
     #[test]
     fn a_hir_root_declaring_more_than_one_component_declares_no_namespace() {
         // Not "the first component's namespace": a world with two components has no single
-        // namespace to be rooted at, and choosing one would be an invention. Codegen rejects such a world
-        // outright — see `too_many_components` in `codegen/masm` — which is the answer the user
-        // gets either way, so the scan says nothing rather than disagreeing with it.
+        // namespace to be rooted at, and choosing one would be an invention. Codegen rejects such
+        // a world outright — see `too_many_components` in `codegen/masm` — which is the answer the
+        // user gets either way, so the scan says nothing rather than disagreeing with it.
         assert_eq!(
             hir_namespace("prepare_standalone_hir_two", &two_component_world(), |_| {}),
             "::lib",

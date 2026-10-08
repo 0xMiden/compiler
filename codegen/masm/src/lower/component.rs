@@ -1092,14 +1092,14 @@ impl MasmComponentBuilder<'_> {
         //
         // Two of the shapes reaching here have no component boundary to speak of, and in both
         // the modules *are* the artifact's interface, so they keep public submodules. A world
-        // lowered without a component namespace is one. The other is the wrapper the compiler invents
-        // around a bare core module, which is not a real boundary either: the wrapped module is
-        // the artifact's own interface (the entrypoint of an executable, or the exports of a
-        // bare library), and the generated executable `main` module lives outside the wrapper's
-        // module tree. That the wrapper is the compiler's is something it *says* — the frontend
-        // marks it (`builtin::Component::SYNTHETIC_WRAPPER_ATTR`) — rather than something read
-        // off its id, which is a name an author may write. An authored component is the
-        // complement, and keeps the visibility its author declared.
+        // lowered without a component namespace is one. The other is the wrapper the compiler
+        // invents around a bare core module, which is not a real boundary either: the wrapped
+        // module is the artifact's own interface (the entrypoint of an executable, or the exports
+        // of a bare library), and the generated executable `main` module lives outside the
+        // wrapper's module tree. That the wrapper is the compiler's is something it *says* — the
+        // frontend marks it (`builtin::Component::SYNTHETIC_WRAPPER_ATTR`) — rather than
+        // something read off its id, which is a name an author may write. An authored component
+        // is the complement, and keeps the visibility its author declared.
         let is_artifact_interface = self.component.id.is_none() || self.component.synthetic_wrapper;
         let visibility = if is_artifact_interface {
             masm::Visibility::Public

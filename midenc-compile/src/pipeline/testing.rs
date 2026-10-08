@@ -216,8 +216,9 @@ const COMPONENT_NAME: &str = "test";
 /// Codegen roots a component's Miden Assembly at its *name* — here `<namespace>::test` — and the
 /// assembler refuses to assemble a target whose root module sits anywhere but the target's own
 /// namespace. So a manifest for such a target reads `namespace = "test_ns::test"`, not
-/// `namespace = "test_ns"`. Real projects look the same: `tests/fixtures/components/cross-ctx-account`
-/// declares `namespace = "miden::cross_ctx_account::foo"`, the namespace of its components.
+/// `namespace = "test_ns"`. Real projects look the same:
+/// `tests/fixtures/components/cross-ctx-account` declares
+/// `namespace = "miden::cross_ctx_account::foo"`, the namespace of its components.
 pub(crate) fn component_target_namespace(namespace: &str) -> alloc::string::String {
     format!("{namespace}::{COMPONENT_NAME}")
 }
