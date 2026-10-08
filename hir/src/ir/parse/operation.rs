@@ -119,7 +119,8 @@ impl OpOrArgument {
 pub struct ResultRecord {
     pub loc: SourceSpan,
     pub id: interner::Symbol,
-    pub count: u8,
+    /// The number of consecutive results bound to the name, at most [ValueId::MAX_NAMED_RESULTS]
+    pub count: usize,
 }
 
 /// This struct represents an isolated SSA name scope.
@@ -638,7 +639,7 @@ where
         let start = self.parser.token_stream().current_position();
 
         let mut result_ids = SmallVec::<[ResultRecord; 1]>::new_const();
-        let mut num_expected_results = 0;
+        let mut num_expected_results = 0usize;
         if self
             .parser
             .token_stream_mut()
@@ -667,13 +668,14 @@ where
                             _ => None,
                         })?
                         .into_parts();
-                    let count = count_str.parse::<u8>().map_err(|err| {
+                    let count = count_str.parse::<usize>().map_err(|err| {
                         ParserError::InvalidIntegerLiteral {
                             span: count_span,
                             reason: err.to_string(),
                         }
                     })?;
-                    if count == 0 {
+                    // A shared name encodes the result index in the value id, which bounds it.
+                    if count == 0 || count > ValueId::MAX_NAMED_RESULTS {
                         return Err(ParserError::InvalidResultCount { span: count_span });
                     }
                     end = count_span.end();
@@ -724,7 +726,7 @@ where
             let op = op.borrow();
             match op.num_results() {
                 0 => return Err(ParserError::NamedOpWithNoResults { span: name_span }),
-                n if n != num_expected_results as usize => {
+                n if n != num_expected_results => {
                     return Err(ParserError::ResultCountMismatch {
                         span: name_span,
                         count: n,
@@ -738,9 +740,9 @@ where
             if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
                 let mut asm_result_groups = SmallVec::<[_; 4]>::new_const();
                 asm_result_groups.reserve(result_ids.len());
-                let mut result_index = 0;
+                let mut result_index = 0usize;
                 for record in result_ids.iter() {
-                    asm_result_groups.push((result_index as usize, record.loc));
+                    asm_result_groups.push((result_index, record.loc));
                     result_index += record.count;
                 }
                 asm_state.finalize_operation_definition(
@@ -765,7 +767,8 @@ where
                     let name = if result_record.count == 1 {
                         name
                     } else {
-                        name.with_result_index(result_index)
+                        // Bounded by the check on `count` when the record was parsed
+                        name.with_result_index(result_index as u8)
                     };
                     let use_info = UnresolvedOperand {
                         loc: result_record.loc,
@@ -1835,7 +1838,7 @@ where
     ///    getResultName(1) == {"y", 0 }
     ///    getResultName(2) == {"y", 1 }
     ///    getResultName(3) == {"z", 0 }
-    fn get_result_name(&self, mut result_num: u8) -> Option<(interner::Symbol, u8)> {
+    fn get_result_name(&self, mut result_num: usize) -> Option<(interner::Symbol, usize)> {
         // Scan for the resultID that contains this result number.
         for entry in self.result_ids {
             if result_num < entry.count {
@@ -1851,7 +1854,7 @@ where
     /// Return the number of declared SSA results.  This returns 4 for the foo.op example in the
     /// comment for [Self:get_result_name].
     fn get_num_results(&self) -> usize {
-        self.result_ids.iter().map(|entry| entry.count as usize).sum()
+        self.result_ids.iter().map(|entry| entry.count).sum()
     }
 
     /// Parse a single operand.

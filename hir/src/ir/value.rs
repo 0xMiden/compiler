@@ -20,6 +20,9 @@ pub struct ValueId(u32);
 impl ValueId {
     /// The shift used to offset the actual unique value id into untagged bits
     const ID_SHIFT: u32 = 6;
+    /// The number of consecutive operation results that can share one user-defined name, i.e.
+    /// the `%name:count` spelling of the textual IR
+    pub const MAX_NAMED_RESULTS: usize = Self::OP_RESULT_INDEX_MASK as usize + 1;
     /// The maximum value of any raw u32 value used as a [ValueId]
     const MAX_VALUE_ID: u32 = (u8::MAX as u32) << 24;
     /// 6 bits are reserved for op result indices, used when OP_RESULT_TAG is set

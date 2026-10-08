@@ -448,7 +448,7 @@ pub trait OpAsmParser<'input>: Parser<'input> {
     ///    getResultName(2) == {"y", 1 }
     ///    getResultName(3) == {"z", 0 }
     ///    getResultName(4) == {"", ~0U }
-    fn get_result_name(&self, result_num: u8) -> Option<(interner::Symbol, u8)>;
+    fn get_result_name(&self, result_num: usize) -> Option<(interner::Symbol, usize)>;
 
     /// Returns the number of declared SSA results.
     fn get_num_results(&self) -> usize;
