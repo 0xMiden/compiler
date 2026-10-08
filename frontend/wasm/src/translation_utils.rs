@@ -155,3 +155,14 @@ pub fn sig_from_func_type(func_type: &FunctionType, call_conv: CallConv) -> Sign
         cc: call_conv,
     }
 }
+
+/// Returns the first of `base`, `base2`, `base3`, … that `is_free` accepts.
+pub(crate) fn first_free_name(base: &str, is_free: impl Fn(&str) -> bool) -> String {
+    if is_free(base) {
+        return base.to_string();
+    }
+    (2u32..)
+        .map(|suffix| format!("{base}{suffix}"))
+        .find(|candidate| is_free(candidate))
+        .expect("the candidate names are unbounded")
+}

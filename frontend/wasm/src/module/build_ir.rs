@@ -29,6 +29,7 @@ use crate::{
         module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule, collect_package_sections},
         types::ir_type,
     },
+    translation_utils::first_free_name,
 };
 
 /// Translate a validated core Wasm module into a HIR component, including imports
@@ -121,13 +122,9 @@ fn program_wrapper_name(module_name: &str, world: &World) -> String {
     if !nests_with_library {
         return module_name.to_string();
     }
-    let name = (1..)
-        .map(|n| match n {
-            1 => format!("{module_name}_program"),
-            n => format!("{module_name}_program{n}"),
-        })
-        .find(|candidate| world.get(SymbolName::intern(candidate)).is_none())
-        .expect("the candidate names are unbounded");
+    let name = first_free_name(&format!("{module_name}_program"), |candidate| {
+        world.get(SymbolName::intern(candidate)).is_none()
+    });
     log::debug!(
         "program module `{module_name}` is named like a library root, naming its wrapper \
          component `{name}`"

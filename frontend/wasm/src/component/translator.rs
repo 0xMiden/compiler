@@ -49,6 +49,7 @@ use crate::{
         module_translation_state::{ModuleTranslationState, core_import_path},
         types::{EntityIndex, FuncIndex},
     },
+    translation_utils::first_free_name,
     unsupported_diag,
 };
 
@@ -1597,14 +1598,7 @@ fn free_core_module_name(
             && !module_names.contains(&candidate)
             && component.get(candidate).is_none()
     };
-    let base = format!("{name}_core");
-    if is_free(&base) {
-        return base;
-    }
-    (2u32..)
-        .map(|suffix| format!("{base}{suffix}"))
-        .find(|candidate| is_free(candidate))
-        .expect("the candidate names are unbounded")
+    first_free_name(&format!("{name}_core"), is_free)
 }
 
 #[cfg(test)]
