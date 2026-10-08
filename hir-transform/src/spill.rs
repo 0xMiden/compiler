@@ -570,12 +570,57 @@ fn rewrite_cfg_spills(
         used_sets.insert(block_ref, used);
     }
 
-    prune_dead_phis(&inserted_phis, trace_target);
+    let live_phis = prune_dead_phis(&inserted_phis, trace_target);
+    verify_phi_feeds_dominate(&live_phis, domtree)?;
 
     rewrite_spill_pseudo_instructions(context, analysis, interface, trace_target)
 }
 
-/// Remove the phis inserted by [insert_required_phis] which no use was rewritten to.
+/// Verify that every value passed to a phi kept by [prune_dead_phis] dominates the branch passing
+/// it.
+///
+/// [insert_required_phis] seeds the phis with the original spilled value from every predecessor,
+/// including those its definition does not dominate. The bottom-up rewrite must have replaced each
+/// such seed with the reaching definition (a reload, or another phi), or the phi must have been
+/// pruned; a seed that survives is invalid SSA, which nothing downstream checks before the operand
+/// scheduler fails on it.
+fn verify_phi_feeds_dominate(
+    phis: &SmallSet<ValueRef, 8>,
+    domtree: &DominanceTree,
+) -> Result<(), Report> {
+    for phi in phis.iter() {
+        let (block, index) = {
+            let phi = phi.borrow();
+            let arg =
+                phi.downcast_ref::<BlockArgument>().expect("inserted phi is a block argument");
+            (arg.owner(), arg.index())
+        };
+        for pred in block.borrow().predecessors() {
+            let pred_op = pred.owner.borrow();
+            let pred_block = pred_op.parent().expect("predecessor op is attached to a block");
+            let feed =
+                pred_op.successor(pred.index as usize).arguments[index].borrow().as_value_ref();
+            let def_block = {
+                let feed = feed.borrow();
+                match feed.get_defining_op() {
+                    Some(op) => op.parent().expect("defining op is attached to a block"),
+                    None => feed.downcast_ref::<BlockArgument>().unwrap().owner(),
+                }
+            };
+            if !domtree.dominates(Some(def_block), Some(pred_block)) {
+                return Err(Report::msg(format!(
+                    "internal error: {feed} is passed to {phi} from {pred_block}, which its \
+                     definition in {def_block} does not dominate"
+                )));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Remove the phis inserted by [insert_required_phis] which no use was rewritten to, returning the
+/// phis that were kept.
 ///
 /// The iterated dominance frontier of the reloads is a conservative placement: a spilled value
 /// need not be live at every block of it, so some of the inserted phis end up unused by the time
@@ -589,7 +634,7 @@ fn rewrite_cfg_spills(
 fn prune_dead_phis(
     inserted_phis: &SmallDenseMap<BlockRef, SmallDenseMap<ValueRef, ValueRef, 8>, 8>,
     trace_target: &TraceTarget,
-) {
+) -> SmallSet<ValueRef, 8> {
     let phi_index = |phi: &ValueRef| {
         phi.borrow()
             .downcast_ref::<BlockArgument>()
@@ -676,6 +721,8 @@ fn prune_dead_phis(
             block.erase_argument(index);
         }
     }
+
+    live
 }
 
 /// Rewrite uses of spilled values in `op` and any nested regions of `op`.
