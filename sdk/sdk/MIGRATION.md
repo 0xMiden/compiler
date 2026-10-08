@@ -189,9 +189,11 @@ takes part in naming, and the WIT package and interface ids derive from the name
   rejected with the name it clashes with instead of a WIT parse error.
 - `<namespace>::init` is reserved for the compiler's component initializer; rename any exported
   procedure, note entrypoint or note constructor called `init`.
-- `#[component]` methods and `#[note_constructor]` methods named with an `fpi_` prefix are now
-  rejected, as `dyncall_` ones already were: the compiler reserves both prefixes for the imports
-  the SDK macros generate. Rename such a method (e.g. `fpi_transfer` to `transfer_fpi`).
+- Exported WIT function names must not start with `fpi-` or `dyncall-` (`fpi_`/`dyncall_` in
+  Rust): `#[component]` methods, `#[note_script]` entrypoints, `#[note_constructor]` methods and
+  hand-written WIT exports with the `fpi-` prefix are now rejected, as `dyncall-` ones already
+  were, since the compiler reserves both prefixes for the imports the SDK macros generate. Rename
+  such a function (e.g. `fpi_transfer` to `transfer_fpi`).
 
 ### Hand-written WIT needs `@external-id` on every function
 

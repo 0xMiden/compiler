@@ -132,9 +132,9 @@ The SDK macros derive every other name from the namespace:
 | Transaction script entrypoint | `<namespace>::run` | `miden::basic_wallet_tx_script::basic_wallet_tx_script::run` |
 
 Paths never contain a version. Changing the namespace changes procedure paths and storage slot
-names, so treat it as part of the component's on-chain interface. Exported procedure names must
-not start with `fpi_` or `dyncall_`: the compiler reserves both prefixes for the imports the SDK
-macros generate. A storage field's name is used as written in its slot name and, for a
+names, so treat it as part of the component's on-chain interface. Exported WIT function names must
+not start with `fpi-` or `dyncall-` (`fpi_`/`dyncall_` in Rust): the compiler reserves both
+prefixes for the imports the SDK macros generate. A storage field's name is used as written in its slot name and, for a
 `StoredProcedure` slot, in its `<namespace>::dyncall::<field>` import path: a raw identifier
 loses its `r#` (`r#type` gives `<namespace>::type`), and a field name starting with `_` is
 rejected, since a slot name segment cannot start with an underscore.
