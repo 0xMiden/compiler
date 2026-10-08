@@ -187,7 +187,7 @@ fn render_note_storage_schema_with_registry_model(
         validate_note_storage_definition(definition, item_struct.ident.span())?;
     }
     let core_imports = required_core_type_imports(&root, &custom_types);
-    reject_note_root_name_collisions(item_struct, &root, &custom_types, &core_imports)?;
+    reject_note_type_name_collisions(item_struct, &root, &custom_types, &core_imports)?;
     let schema_package = schema_package_name(component_package);
 
     let mut wit = WitBuilder::new("#[note]", &schema_package, component_version);
@@ -254,31 +254,50 @@ fn note_root_type(
     })
 }
 
-/// Rejects a note root struct whose WIT name is already taken in the `note-storage` interface:
-/// by the `storage` alias, an imported core type, or a referenced custom type.
-fn reject_note_root_name_collisions(
+/// Rejects a type of the `note-storage` interface whose WIT name is already taken there: by the
+/// `storage` alias, by an imported core type or, for the note root struct, by a referenced custom
+/// type.
+///
+/// The note root and every referenced `#[export_type]` type are checked; the diagnostic points
+/// at the note struct, the only item this expansion can span.
+fn reject_note_type_name_collisions(
     item_struct: &ItemStruct,
     root: &ExportedTypeDef,
     custom_types: &[ExportedTypeDef],
     core_imports: &BTreeSet<String>,
 ) -> Result<(), syn::Error> {
-    let taken_by = if root.wit_name == NOTE_STORAGE_ALIAS {
-        "the `storage` alias the schema declares for the note root"
-    } else if core_imports.contains(&root.wit_name) {
-        "an SDK core type the schema imports"
-    } else if custom_types.iter().any(|custom| custom.wit_name == root.wit_name) {
-        "an `#[export_type]` type the note storage references"
-    } else {
-        return Ok(());
-    };
-    Err(syn::Error::new(
-        item_struct.ident.span(),
-        format!(
-            "note struct `{}` produces the WIT type name `{}`, which is already used by \
-             {taken_by}; rename the struct",
-            item_struct.ident, root.wit_name
-        ),
-    ))
+    for definition in [root].into_iter().chain(custom_types) {
+        let is_root = std::ptr::eq(definition, root);
+        let taken_by = if definition.wit_name == NOTE_STORAGE_ALIAS {
+            "the `storage` alias the schema declares for the note root"
+        } else if core_imports.contains(&definition.wit_name) {
+            "an SDK core type the schema imports"
+        } else if is_root && custom_types.iter().any(|custom| custom.wit_name == root.wit_name) {
+            "an `#[export_type]` type the note storage references"
+        } else {
+            continue;
+        };
+        let (subject, renamed) = if is_root {
+            (format!("note struct `{}`", item_struct.ident), "struct")
+        } else {
+            (
+                format!(
+                    "`#[export_type]` type `{}` referenced by note struct `{}`",
+                    definition.rust_name, item_struct.ident
+                ),
+                "type",
+            )
+        };
+        return Err(syn::Error::new(
+            item_struct.ident.span(),
+            format!(
+                "{subject} produces the WIT type name `{}`, which is already used by {taken_by}; \
+                 rename the {renamed}",
+                definition.wit_name
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Checks one record or variant against the supported note storage type surface.
@@ -1265,10 +1284,9 @@ mod tests {
     }
 
     #[test]
-    fn expansion_surfaces_wit_parser_errors_with_type_context() {
+    fn rejects_referenced_custom_types_named_like_the_storage_alias() {
         let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
-        // A custom type named `Storage` clashes with the schema's `storage` alias in WIT only.
         let storage: syn::ItemStruct = parse_quote! {
             struct Storage {
                 count: u64,
@@ -1280,19 +1298,49 @@ mod tests {
                 inner: Storage,
             }
         };
-        let rendered = render_note_storage_schema_with_registry_model(
+        let message = note_schema_error(&note, &[storage]);
+        assert!(
+            message
+                .contains("`#[export_type]` type `Storage` referenced by note struct `AliasNote`"),
+            "{message}"
+        );
+        assert!(message.contains("the `storage` alias"), "{message}");
+        assert!(message.contains("rename the type"), "{message}");
+    }
+
+    #[test]
+    fn expansion_surfaces_wit_parser_errors_with_type_context() {
+        let _registry_guard = lock_export_type_registry_for_tests();
+        reset_export_type_registry_for_tests();
+        let inner: syn::ItemStruct = parse_quote! {
+            struct Inner {
+                count: u64,
+            }
+        };
+        let inner = exported_type_from_struct(&inner).expect("record must map");
+        let note: ItemStruct = parse_quote! {
+            struct ContextNote {
+                inner: Inner,
+            }
+        };
+        let mut rendered = render_note_storage_schema_with_registry_model(
             &note,
-            "miden:alias-note",
+            "miden:context-note",
             &Version::new(1, 0, 0),
-            &[storage],
+            &[inner],
         )
         .expect("the schema renders");
+        // Every schema the macro renders resolves, so the parser fallback is reached only by
+        // breaking a rendered field type.
+        let field = "%count: u64,";
+        assert!(rendered.source.contains(field), "{}", rendered.source);
+        rendered.source = rendered.source.replace(field, "%count: missing-type,");
         let err = validate_rendered_note_storage_schema(&rendered)
-            .expect_err("a duplicate WIT type name must fail to resolve");
+            .expect_err("an undefined WIT type must fail to resolve");
 
         let message = err.to_string();
         assert!(message.contains("failed to resolve note storage schema"), "{message}");
-        assert!(message.contains("type `"), "{message}");
+        assert!(message.contains("field `count` of type `u64` in type `Inner`"), "{message}");
         assert!(message.contains("note-storage-schema.wit:"), "message is {message}");
     }
 
