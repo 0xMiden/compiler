@@ -284,8 +284,8 @@ pub fn component(
 ///
 /// The generated imports are named `dyncall-<kebab-field>`, with the field name kebab-cased
 /// (`last_sum` gives `dyncall-last-sum`), and carry the `@external-id`
-/// `<namespace>::dyncall::<field>`, with the field name as written (without `r#`, so `last_sum`
-/// gives `<namespace>::dyncall::last_sum`); that WIT name prefix is reserved, and a dependency
+/// `<namespace>::dyncall::<field>`, with the field name as written (without `r#`, so `r#type`
+/// gives `<namespace>::dyncall::type`); that WIT name prefix is reserved, and a dependency
 /// interface defining a function with it is rejected.
 #[proc_macro_attribute]
 pub fn component_storage(

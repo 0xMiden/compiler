@@ -707,7 +707,7 @@ fn collect_note_constructors(
             NOTE_CONSTRUCTOR,
             &sig.ident,
             &wit_name,
-            core::iter::once((NOTE_SCRIPT_ENTRYPOINT, entrypoint_ident, entrypoint_export_name))
+            std::iter::once((NOTE_SCRIPT_ENTRYPOINT, entrypoint_ident, entrypoint_export_name))
                 .chain(constructors.iter().map(|constructor: &NoteConstructor| {
                     (NOTE_CONSTRUCTOR, &constructor.fn_ident, constructor.wit_name.as_str())
                 })),

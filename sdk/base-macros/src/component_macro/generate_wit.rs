@@ -5,7 +5,7 @@ use semver::Version;
 use syn::spanned::Spanned;
 
 use crate::{
-    component_macro::{ComponentMethod, MethodReturn, export_path},
+    component_macro::{COMPONENT_METHOD, ComponentMethod, MethodReturn, export_path},
     namespace::ComponentNamespace,
     types::{ExportedTypeDef, ExportedTypeKind, ensure_custom_type_defined},
     wit_builder::WitBuilder,
@@ -62,7 +62,7 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
     reject_function_type_name_collisions(
         spec.methods
             .iter()
-            .map(|method| ("component method", &method.fn_ident, method.wit_name.as_str())),
+            .map(|method| (COMPONENT_METHOD, &method.fn_ident, method.wit_name.as_str())),
         combined_core_imports.iter().chain(&exported_type_names),
     )?;
 

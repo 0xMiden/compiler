@@ -266,8 +266,10 @@ fn reject_note_type_name_collisions(
     custom_types: &[ExportedTypeDef],
     core_imports: &BTreeSet<String>,
 ) -> Result<(), syn::Error> {
-    for definition in [root].into_iter().chain(custom_types) {
-        let is_root = std::ptr::eq(definition, root);
+    let definitions = [(root, true)]
+        .into_iter()
+        .chain(custom_types.iter().map(|custom| (custom, false)));
+    for (definition, is_root) in definitions {
         let taken_by = if definition.wit_name == NOTE_STORAGE_ALIAS {
             "the `storage` alias the schema declares for the note root"
         } else if core_imports.contains(&definition.wit_name) {

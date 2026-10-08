@@ -100,10 +100,10 @@ pub(crate) fn reject_function_type_name_collisions<'a>(
     }
 }
 
-/// Rejects the item `ident` when its WIT name `wit_name` is already used by one of the sibling
-/// items declared before it, `previous`.
+/// Rejects the item `ident` of kind `item_kind` (e.g. `"component method"`) when its WIT name
+/// `wit_name` is already used by one of the sibling items checked before it, `previous`.
 ///
-/// Items are given as `(item kind, Rust identifier, WIT name)`, e.g.
+/// Each of `previous` is given as `(item kind, Rust identifier, WIT name)`, e.g.
 /// `("component method", ident, "get-count")`; siblings are the functions of one generated WIT
 /// interface or the parameters of one function. Distinct Rust identifiers can normalize to one
 /// WIT name (`foo_bar`, `fooBar`), which would otherwise surface as a WIT parse error inside the
@@ -128,7 +128,7 @@ pub(crate) fn reject_duplicate_wit_name<'a>(
     );
     error.combine(syn::Error::new(
         previous.span(),
-        format!("{previous_kind} `{previous}` first uses the WIT name `{wit_name}`"),
+        format!("{previous_kind} `{previous}` also uses the WIT name `{wit_name}`"),
     ));
     Err(error)
 }
