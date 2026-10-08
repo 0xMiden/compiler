@@ -1,0 +1,54 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=convert-trivial-if-to-select}))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=convert-trivial-if-to-select}))' | hir-opt --verify - | filecheck %s
+
+// Coverage for the `convert-trivial-if-to-select` canonicalization of `scf.if`. The canonicalizer
+// is restricted to that single pattern so that no other pattern touches the operations below. The
+// second RUN line re-parses and verifies the rewritten IR, so every printed form must be valid
+// input.
+//
+// `cf.select` only accepts integral operands, so a yielded value of another type (here a pointer)
+// is not hoisted, even when both branches yield values defined outside the `scf.if`: it stays a
+// result of the `scf.if`, next to the results computed inside the branches. This used to produce
+// an invalid `cf.select` of pointer type and leave the `scf.if` half-rewritten.
+builtin.module private @convert_trivial_if_to_select {
+    // The integer result is hoisted to a `cf.select`, the pointer result stays in the `scf.if`.
+    // CHECK: @mixed_results(%[[C:\d+]]: i1, %[[P1:\d+]]: ptr<u32, element>, %[[P2:\d+]]: ptr<u32, element>, %[[A:\d+]]: u32, %[[B:\d+]]: u32)
+    // CHECK-NEXT: %[[S:\d+]] = cf.select %[[C]], %[[A]], %[[B]]
+    // CHECK-NEXT: %[[P:\d+]] = scf.if %[[C]] then {
+    // CHECK-NEXT: scf.yield %[[P1]] : (ptr<u32, element>);
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT: scf.yield %[[P2]] : (ptr<u32, element>);
+    // CHECK-NEXT: } : (i1) -> (ptr<u32, element>);
+    // CHECK-NEXT: %[[L:\d+]] = hir.load %[[P]];
+    // CHECK-NEXT: %[[R:\d+]] = arith.add %[[L]], %[[S]]
+    // CHECK-NEXT: builtin.ret %[[R]] : (u32);
+    builtin.function public extern("C") @mixed_results(%0: i1, %1: ptr<u32, element>, %2: ptr<u32, element>, %3: u32, %4: u32) -> u32 {
+        %5, %6 = scf.if %0 then {
+            scf.yield %1, %3 : (ptr<u32, element>, u32);
+        } else {
+            scf.yield %2, %4 : (ptr<u32, element>, u32);
+        } : (i1) -> (ptr<u32, element>, u32);
+        %7 = hir.load %5;
+        %8 = arith.add %7, %6 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %8 : (u32);
+    };
+
+    // Negative: the only result is a pointer, so the `scf.if` is left untouched.
+    // CHECK: @pointer_result(%[[C:\d+]]: i1, %[[P1:\d+]]: ptr<u32, element>, %[[P2:\d+]]: ptr<u32, element>)
+    // CHECK-NEXT: %[[P:\d+]] = scf.if %[[C]] then {
+    // CHECK-NEXT: scf.yield %[[P1]] : (ptr<u32, element>);
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT: scf.yield %[[P2]] : (ptr<u32, element>);
+    // CHECK-NEXT: } : (i1) -> (ptr<u32, element>);
+    // CHECK-NEXT: %[[L:\d+]] = hir.load %[[P]];
+    // CHECK-NEXT: builtin.ret %[[L]] : (u32);
+    builtin.function public extern("C") @pointer_result(%0: i1, %1: ptr<u32, element>, %2: ptr<u32, element>) -> u32 {
+        %3 = scf.if %0 then {
+            scf.yield %1 : (ptr<u32, element>);
+        } else {
+            scf.yield %2 : (ptr<u32, element>);
+        } : (i1) -> (ptr<u32, element>);
+        %4 = hir.load %3;
+        builtin.ret %4 : (u32);
+    };
+};
