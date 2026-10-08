@@ -140,7 +140,7 @@ where
         // Record SuccessorInfo for this successor in the op, in the successor group expected
         // by the operation's accessors. Pending successors must be added in non-decreasing
         // successor group order.
-        let succ_index = u8::try_from(op.successors.len()).expect("too many successors");
+        let succ_index = u16::try_from(op.successors.len()).expect("too many successors");
         let successor = self.builder.context().make_block_operand(succ.block, owner, succ_index);
         op.successors.push_to_group(
             succ.successor_group as usize,
@@ -167,7 +167,7 @@ where
                 .map(|(index, arg)| self.builder.context().make_operand(arg, owner, index as u8)),
         );
         // Record SuccessorInfo for this successor in the op
-        let succ_index = u8::try_from(op.successors.len()).expect("too many successors");
+        let succ_index = u16::try_from(op.successors.len()).expect("too many successors");
         let successor = self.builder.context().make_block_operand(dest, owner, succ_index);
         op.successors.push(SuccessorInfo {
             block: successor,
@@ -188,7 +188,7 @@ where
         let mut op = self.op.borrow_mut();
         let mut group = vec![];
         for (i, (block, args)) in succs.into_iter().enumerate() {
-            let block = self.builder.context().make_block_operand(block, owner, i as u8);
+            let block = self.builder.context().make_block_operand(block, owner, i as u16);
             let operands = args
                 .into_iter()
                 .map(|value_ref| self.builder.context().make_operand(value_ref, owner, 0));
@@ -213,7 +213,7 @@ where
         let mut group = vec![];
         for (i, successor) in succs.into_iter().enumerate() {
             let (key, block, args) = successor.into_parts();
-            let block = self.builder.context().make_block_operand(block, owner, i as u8);
+            let block = self.builder.context().make_block_operand(block, owner, i as u16);
             let operands = args
                 .into_iter()
                 .map(|value_ref| self.builder.context().make_operand(value_ref, owner, 0));

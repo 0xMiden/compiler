@@ -1208,7 +1208,7 @@ pub struct BlockOperand {
     /// The owner of this operand, i.e. the operation it is an operand of
     pub owner: OperationRef,
     /// The index of this operand in the set of block operands of the operation
-    pub index: u8,
+    pub index: u16,
 }
 
 impl Entity for BlockOperand {}
@@ -1227,7 +1227,7 @@ impl EntityListItem for BlockOperand {
 
 impl BlockOperand {
     #[inline]
-    pub fn new(owner: OperationRef, index: u8) -> Self {
+    pub fn new(owner: OperationRef, index: u16) -> Self {
         Self { owner, index }
     }
 

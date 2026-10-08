@@ -5,7 +5,7 @@ use core::fmt;
 /// This is used so that individual groups can be grown or shrunk, while maintaining stability
 /// of references to items in other groups.
 #[derive(Default, Copy, Clone)]
-pub struct EntityGroup(u16);
+pub struct EntityGroup(u32);
 impl fmt::Debug for EntityGroup {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EntityGroup")
@@ -15,13 +15,17 @@ impl fmt::Debug for EntityGroup {
     }
 }
 impl EntityGroup {
-    const START_MASK: u16 = u8::MAX as u16;
+    /// The start index occupies the low 16 bits, the length the high 16 bits.
+    const START_MASK: u32 = u16::MAX as u32;
+    const LEN_SHIFT: u32 = 16;
 
     /// Create a new group of size `len`, starting at index `start`
+    ///
+    /// Panics if `start` or `len` overflows `u16::MAX`
     pub fn new(start: usize, len: usize) -> Self {
-        let start = u16::try_from(start).expect("too many items");
-        let len = u16::try_from(len).expect("group too large");
-        let group = start | (len << 8);
+        let start = u16::try_from(start).expect("too many items") as u32;
+        let len = u16::try_from(len).expect("group too large") as u32;
+        let group = start | (len << Self::LEN_SHIFT);
 
         Self(group)
     }
@@ -47,7 +51,7 @@ impl EntityGroup {
     /// Get the number of items in this group
     #[inline]
     pub fn len(&self) -> usize {
-        (self.0 >> 8) as usize
+        (self.0 >> Self::LEN_SHIFT) as usize
     }
 
     /// Get the [core::ops::Range] equivalent of this group
@@ -59,37 +63,25 @@ impl EntityGroup {
 
     /// Increase the size of this group by `n` items
     ///
-    /// Panics if `n` overflows `u16::MAX`, or if the resulting size overflows `u8::MAX`
+    /// Panics if the resulting size overflows `u16::MAX`
     pub fn grow(&mut self, n: usize) {
-        let n = u16::try_from(n).expect("group is too large");
-        let start = self.0 & Self::START_MASK;
-        let len = (self.0 >> 8) + n;
-        assert!(len <= u8::MAX as u16, "group is too large");
-        self.0 = start | (len << 8);
+        let len = u16::try_from(self.len() + n).expect("group is too large") as u32;
+        self.0 = (self.0 & Self::START_MASK) | (len << Self::LEN_SHIFT);
     }
 
-    /// Decrease the size of this group by `n` items
-    ///
-    /// Panics if `n` overflows `u16::MAX`, or if `n` is greater than the number of remaining items.
+    /// Decrease the size of this group by `n` items, to no less than zero
     pub fn shrink(&mut self, n: usize) {
-        let n = u16::try_from(n).expect("cannot shrink by a size larger than the max group size");
-        let start = self.0 & Self::START_MASK;
-        let len = (self.0 >> 8).saturating_sub(n);
-        self.0 = start | (len << 8);
+        let len = self.len().saturating_sub(n) as u32;
+        self.0 = (self.0 & Self::START_MASK) | (len << Self::LEN_SHIFT);
     }
 
     /// Shift the position of this group by `offset`
+    ///
+    /// Panics if the resulting start index is negative or overflows `u16::MAX`
     pub fn shift_start(&mut self, offset: isize) {
-        let offset = i16::try_from(offset).expect("offset too large");
-        let mut start = self.0 & Self::START_MASK;
-        if offset >= 0 {
-            start += offset as u16;
-        } else {
-            start -= offset.unsigned_abs();
-        }
-        assert!(start <= Self::START_MASK, "group offset cannot be larger than u8::MAX");
-        self.0 &= !Self::START_MASK;
-        self.0 |= start;
+        let start = self.start().checked_add_signed(offset).expect("group offset is negative");
+        let start = u16::try_from(start).expect("group offset is too large") as u32;
+        self.0 = (self.0 & !Self::START_MASK) | start;
     }
 }
 
