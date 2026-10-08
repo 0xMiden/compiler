@@ -87,8 +87,8 @@ fn zero_trip_guard_repro() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-02): building this case
-/// panicked with `called Option::unwrap() on a None value` at
+/// FORMER COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-02): building this
+/// case panicked with `called Option::unwrap() on a None value` at
 /// hir/src/ir/dominance/frontier.rs:123 (`DominanceFrontier::new`, called
 /// from `midenc_hir_transform::spill::rewrite_cfg_spills`). Shape: the
 /// `zero_trip_guard` case with ELEVEN shared rotate counts — counts shared
@@ -134,8 +134,8 @@ fn zero_trip_frontier() {
     run_case("zero_trip_frontier", include_str!("../cases/case_zero_trip_frontier.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-02): building this case
-/// panicked with `NoSolution` at codegen/masm/src/lower/lowering.rs:109 while
+/// FORMER COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-02): building this
+/// case panicked with `NoSolution` at codegen/masm/src/lower/lowering.rs:109 while
 /// scheduling `arith.rotl` with constraints `[Copy, Move]` over an
 /// EIGHTEEN-felt operand stack (two u64 rotate results above fourteen u32
 /// count values) — the emitter stack exceeds the K = 16 cap the spill
@@ -198,8 +198,8 @@ fn select_chain() {
     run_case("select_chain", include_str!("../cases/case_select_chain.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, campaign 21, 2026-09-09): the
-/// minimal `frontier.rs:123` reproducer with NO zero-trip-capable loop — a
+/// FORMER COMPILE-TIME COMPILER PANIC (safe Rust, campaign 21, 2026-09-09):
+/// the minimal `frontier.rs:123` reproducer with NO zero-trip-capable loop — a
 /// sixteen-arm `match` inside a bottom-tested `(input1 % 13) + 2` loop, three
 /// of whose arms carry a dynamically impossible `panic!()` guard (the
 /// `SimplifyCondBrLikeSwitch` producer from `canon::trap_dispatch`), with NINE
@@ -226,8 +226,8 @@ fn frontier_dispatch() {
     run_case("frontier_dispatch", include_str!("../cases/case_frontier_dispatch.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, campaign 21, 2026-09-09): the
-/// second minimal `frontier.rs:123` reproducer without a zero-trip-capable
+/// FORMER COMPILE-TIME COMPILER PANIC (safe Rust, campaign 21, 2026-09-09):
+/// the second minimal `frontier.rs:123` reproducer without a zero-trip-capable
 /// loop, and the smallest freight in the corpus that reaches the unwrap — two
 /// sequential bottom-tested loops (`(input1 % 7) + 2` and `(input2 % 7) + 2`)
 /// where FOUR masked rotate count bands are used before the first loop and

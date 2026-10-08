@@ -272,18 +272,24 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   before the loop and on its loop-carried accumulator,
   `spills::spill_loop_mix`); symmetric pressure never splits
   (`spills::spill_twin`).
-- `rewrite_cfg_spills` (`hir-transform/src/spill.rs`) rebuilds SSA form from
-  the dominator tree cached BEFORE the transform split edges, so split-edge
-  reloads are erased and spilled values stay on the stack.
-  `DominanceFrontier::new` fills frontiers only at joins with three or more
-  predecessors (`i > 1`, `hir/src/ir/dominance/frontier.rs`), and
-  `frontier.rs:123` unwraps `None` at such a join reached through a split edge
-  (`pressure::frontier_seq`). Erased reloads and `unused phi` warnings also
-  occur in correct programs (`interact::dispatch_spill`).
-- `insert_required_phis` seeds every predecessor edge with the spilled value,
-  so a join reachable around the definition leaves SSA-invalid IR; it always
-  ends in a compile-time panic, never a silent miscompile
-  (`control_flow::unroll_chain`, `spills::unroll_rotmix`).
+- `rewrite_cfg_spills` (`hir-transform/src/spill.rs`) recomputes the
+  dominator tree after splitting edges, so the SSA reconstruction sees the
+  split-edge reloads. `DominanceFrontier::new`
+  (`hir/src/ir/dominance/frontier.rs`) treats every join with two or more
+  predecessors as a frontier candidate and ignores unreachable predecessors
+  (`pressure::frontier_seq`, `pressure::window_erased_min`). `erase unused
+  reload` lines remain for reloads nothing uses (`interact::dispatch_spill`).
+- `insert_required_phis` seeds every predecessor edge with the spilled value.
+  The transform then erases dead spills, prunes the inserted phis nothing uses
+  (`pruning unused phi` trace line) and verifies the kept ones: a feed whose
+  definition does not dominate its branch is an internal error of the
+  transform, not a later panic (`control_flow::unroll_chain`,
+  `spills::unroll_rotmix`).
+- What still overflows the window after the spills: the second spills run
+  (after control-flow lifting) reports `edges to split = 0`, spills a few
+  values, and the emitter overflows in `codegen/masm/src/emit/mod.rs
+  (OpEmitter::copy_operand_to_position)` (#1422 item 2;
+  `programs_oz::prog_threefish_oz`, `opt_levels::spill_store_guard`).
 - `TransformSpills` rewrites each reload into a `hir.load_local` of a spill
   slot (`convert reload to load`); post-lift dumps show no reload ops. Slots
   are procedure locals (`locaddr`), one set per activation, numbered above the

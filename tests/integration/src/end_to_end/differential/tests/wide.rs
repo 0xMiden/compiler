@@ -1043,17 +1043,17 @@ fn wide_limbs_freight() {
 /// gone (the trace shows no `erase unused reload` and no unused phi), but the
 /// case still panics at `--optimize=size-min`, now with `invalid operand
 /// stack index (9): requires access to more than 16 elements` at
-/// codegen/masm/src/emit/mod.rs (OpEmitter::dup), after a second spill run reporting
-/// `edges to split = 0, values spilled = 17, reloads issued = 15`. What
-/// remains is #1422 item 2 — over-window pressure reaching the emitter
-/// although the spill analysis ran, the class of
-/// `programs_oz::prog_threefish_oz`. Un-ignore when that is fixed.
+/// codegen/masm/src/emit/mod.rs (OpEmitter::copy_operand_to_position) after
+/// the second spills run (`edges to split = 0, values spilled = 17, reloads
+/// issued = 15`). What remains is the #1422 item 2 class (over-window
+/// pressure after the second spills run), the class of
+/// `programs_oz::prog_threefish_oz`.
 #[test]
 #[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (9): \
             requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs \
-            (OpEmitter::dup) — over-window pressure reaching the emitter although the spill \
-            analysis ran (second spill run: edges to split = 0, values spilled = 17, reloads \
-            issued = 15; the #1420 erased reload is fixed); compile-time, no inputs involved"]
+            (OpEmitter::copy_operand_to_position) — over-window pressure after the second spills \
+            run (edges to split = 0, values spilled = 17, reloads issued = 15); filed under #1420 \
+            for the erased reload %55, which that fix removed; compile-time, no inputs involved"]
 fn wide_limbs_freight_oz() {
     run_case_with_flags(
         "wide_limbs_freight_oz",

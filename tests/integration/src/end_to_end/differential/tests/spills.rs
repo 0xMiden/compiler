@@ -45,8 +45,8 @@ fn spill_loop_mix() {
     run_case("spill_loop_mix", include_str!("../cases/case_spill_loop_mix.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC under `--optimize=size-min` only (safe Rust,
-/// 2026-09-02): the `spill_loop_mix` case, which compiles and passes at the
+/// FORMER COMPILE-TIME COMPILER PANIC under `--optimize=size-min` only (safe
+/// Rust, 2026-09-02): the `spill_loop_mix` case, which compiles and passes at the
 /// default opt-level 2 and at `--optimize=max`, panicked with `NoSolution` at
 /// codegen/masm/src/lower/lowering.rs:109 when the guest is built at
 /// opt-level z: `failed to schedule operands: [%594, %258] for inst
@@ -73,8 +73,8 @@ fn spill_loop_mix_oz() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case
-/// panicked with `attempt to subtract with overflow` in `Stack::movdn` at
+/// FORMER COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this
+/// case panicked with `attempt to subtract with overflow` in `Stack::movdn` at
 /// codegen/masm/src/opt/operands/stack.rs:80. Trigger: LLVM runtime-unrolls
 /// the `% 97`-bounded round `acc = (acc.wrapping_mul(33) ^ i).rotate_left(5)`
 /// 4x, whose live state spills. Root cause (triage 2026-08-27): the SAME
@@ -110,8 +110,8 @@ fn spill_switch() {
     run_case("spill_switch", include_str!("../cases/case_spill_switch.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case
-/// panicked with `NoSolution` at codegen/masm/src/lower/lowering.rs:109 while
+/// FORMER COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this
+/// case panicked with `NoSolution` at codegen/masm/src/lower/lowering.rs:109 while
 /// scheduling `arith.rotl %167, %397` (constraints `[Move, Copy]`) over a
 /// 15-felt operand stack. Root cause (triage 2026-08-27, distinct from
 /// `unroll_chain`): for arity-2 problems the solver pushes ONLY the
@@ -149,7 +149,7 @@ fn rotl_window() {
 
 /// u32 variant of the unrolled mul-xor-rotate round — schedulable single-
 /// felt interleaved chains pressing the scheduler tactic interiors (the u64
-/// twins are the ignored unroll_chain / unroll_rotmix panics).
+/// twins are unroll_chain / unroll_rotmix, which panicked until the #1420 fix).
 #[test]
 fn unroll_u32() {
     run_case("unroll_u32", include_str!("../cases/case_unroll_u32.rs"));

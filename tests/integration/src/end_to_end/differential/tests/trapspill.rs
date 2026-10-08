@@ -179,8 +179,8 @@ fn body_assert_edges() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-17) that the TRAPPING EDGE
-/// ALONE causes: `invalid operand stack index (11): requires access to more
+/// FORMER COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-17) that the
+/// TRAPPING EDGE ALONE caused: `invalid operand stack index (11): requires access to more
 /// than 16 elements, which is not supported in Miden` at
 /// codegen/masm/src/emit/mod.rs:623.
 ///

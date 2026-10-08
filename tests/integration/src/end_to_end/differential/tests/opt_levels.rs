@@ -22,8 +22,9 @@ const SIZE_MIN: &[&str] = &["--optimize=size-min"];
 /// shape (masked rotate counts shared between pre-loop code and rotates of
 /// the loop-carried accumulator, plus the 28/30 live-through pair and a light
 /// second loop) with NINE shared counts. At -Oz ten or more shared counts hit
-/// the known arity-2 `NoSolution` panic (the ignored `spill_loop_mix_oz` in
-/// `spills.rs` is the sixteen-count reproducer); nine is the largest count
+/// the known arity-2 `NoSolution` panic until the #1420 fix (the formerly
+/// ignored `spill_loop_mix_oz` in `spills.rs` was the sixteen-count
+/// reproducer); nine is the largest count
 /// that compiles, and the same source also passes at O2. At -Oz the count
 /// bands stay un-hoisted, so the nine dead bands are dropped AFTER the loop
 /// (the post-op drop site's used/unused interleave arms).
@@ -262,20 +263,22 @@ fn spill_store_min() {
 /// compiling on the full Threefish), so this rung bounded the reproducer
 /// without being a user rule.
 ///
-/// It compiled on `next` only because the spill transform dropped its
-/// split-edge reloads at two-predecessor joins (the #1420 defect), and it
+/// It compiled before the #1420 fix only because the spill transform dropped
+/// its split-edge reloads at two-predecessor joins (the #1420 defect), and it
 /// stopped compiling once #1420 was fixed: with those spills materialized it
 /// panics with `invalid operand stack index (10): requires access to more
-/// than 16 elements` at codegen/masm/src/emit/mod.rs (OpEmitter::dup) after the second
-/// spills run (`edges to split = 0, values spilled = 2, reloads issued = 0`).
-/// What remains is the #1422 item 2 class (over-window pressure after the
-/// second spills run). Compile-time — no inputs involved.
+/// than 16 elements` at codegen/masm/src/emit/mod.rs
+/// (OpEmitter::copy_operand_to_position) after the second spills run
+/// (`edges to split = 0, values spilled = 2, reloads issued = 0`). What
+/// remains is the #1422 item 2 class (over-window pressure after the second
+/// spills run). Compile-time — no inputs involved.
 #[test]
 #[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
             requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs \
-            (OpEmitter::dup) — over-window pressure after the second spills run (edges to split = \
-            0, values spilled = 2, reloads issued = 0); compiled before the #1420 fix only because \
-            split-edge reloads were dropped; compile-time, no inputs involved"]
+            (OpEmitter::copy_operand_to_position) — over-window pressure after the second spills \
+            run (edges to split = 0, values spilled = 2, reloads issued = 0); compiled before the \
+            #1420 fix only because split-edge reloads were dropped; compile-time, no inputs \
+            involved"]
 fn spill_store_guard() {
     run_case_with_flags(
         "spill_store_guard",
