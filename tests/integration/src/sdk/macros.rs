@@ -387,7 +387,7 @@ impl MyNote {
     assert!(
         stderr.contains("note constructor `dyncall_notify`")
             && stderr.contains("exported as `dyncall-notify`")
-            && stderr.contains("reserved for stored-procedure dispatch"),
+            && stderr.contains("stored-procedure dispatch imports"),
         "unexpected stderr: {stderr}"
     );
 }
@@ -1288,7 +1288,7 @@ impl TestComponent for TestComponentStorage {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("exported as `dyncall-notify`")
-            && stderr.contains("reserved for stored-procedure dispatch"),
+            && stderr.contains("stored-procedure dispatch imports"),
         "unexpected stderr: {stderr}"
     );
 }

@@ -132,7 +132,9 @@ The SDK macros derive every other name from the namespace:
 | Transaction script entrypoint | `<namespace>::run` | `miden::basic_wallet_tx_script::basic_wallet_tx_script::run` |
 
 Paths never contain a version. Changing the namespace changes procedure paths and storage slot
-names, so treat it as part of the component's on-chain interface.
+names, so treat it as part of the component's on-chain interface. Exported procedure names must
+not start with `fpi_` or `dyncall_`: the compiler reserves both prefixes for the imports the SDK
+macros generate.
 
 All exports of a package sit directly under its namespace. Calls into a dependency use the
 dependency's paths as they are, e.g. a note calling the basic wallet calls

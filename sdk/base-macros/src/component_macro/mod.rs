@@ -25,7 +25,7 @@ use crate::{
         storage::process_storage_fields,
     },
     dependency_ref::{DependencyRef, DependencyRefArgs},
-    generate::reject_reserved_dyncall_export,
+    generate::reject_reserved_import_prefix_export,
     namespace::ComponentNamespace,
     types::{
         ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
@@ -1211,7 +1211,7 @@ fn parse_component_signature(
     let doc_attrs = attrs.iter().filter(|attr| attr.path().is_ident("doc")).cloned().collect();
 
     let wit_name = rust_ident_to_wit_name(&sig.ident)?;
-    reject_reserved_dyncall_export(&sig.ident, &wit_name, "component method")?;
+    reject_reserved_import_prefix_export(&sig.ident, &wit_name, "component method")?;
 
     let component_method = ComponentMethod {
         fn_ident: sig.ident.clone(),
@@ -1937,13 +1937,29 @@ mod tests {
 
         assert!(message.contains("`dyncall_notify`"), "{message}");
         assert!(message.contains("exported as `dyncall-notify`"), "{message}");
-        assert!(message.contains("reserved for stored-procedure dispatch"), "{message}");
+        assert!(message.contains("stored-procedure dispatch imports"), "{message}");
 
         let allowed: syn::Signature = parse_quote!(fn notify(&self, amount: u32));
         assert!(
             parse_component_signature(&allowed, &[], &exported_types).is_ok(),
             "an unrelated export name is accepted"
         );
+    }
+
+    /// Rejects a component export carrying the reserved FPI prefix at the producer: consumers
+    /// classify an import named `fpi-…` as a foreign procedure invocation.
+    #[test]
+    fn component_exports_cannot_use_the_reserved_fpi_prefix() {
+        let exported_types = HashMap::new();
+        let reserved: syn::Signature = parse_quote!(fn fpi_transfer(&self, amount: u32));
+        let message = match parse_component_signature(&reserved, &[], &exported_types) {
+            Ok(_) => panic!("expected the reserved fpi prefix to be rejected"),
+            Err(err) => err.to_string(),
+        };
+
+        assert!(message.contains("`fpi_transfer`"), "{message}");
+        assert!(message.contains("exported as `fpi-transfer`"), "{message}");
+        assert!(message.contains("foreign procedure invocation imports"), "{message}");
     }
 
     /// Pins that the guard reads the name the method is actually exported under: a raw identifier
@@ -1962,7 +1978,14 @@ mod tests {
             Err(err) => err.to_string(),
         };
         assert!(message.contains("exported as `dyncall-notify`"), "{message}");
-        assert!(message.contains("reserved for stored-procedure dispatch"), "{message}");
+        assert!(message.contains("stored-procedure dispatch imports"), "{message}");
+
+        let reserved: syn::Signature = parse_quote!(fn r#fpi_transfer(&self, amount: u32));
+        let message = match parse_component_signature(&reserved, &[], &exported_types) {
+            Ok(_) => panic!("expected the reserved fpi prefix to be rejected"),
+            Err(err) => err.to_string(),
+        };
+        assert!(message.contains("exported as `fpi-transfer`"), "{message}");
     }
 
     #[test]

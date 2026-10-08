@@ -5,7 +5,7 @@ use std::{
     sync::LazyLock,
 };
 
-use midenc_frontend_wasm_metadata::namespace::CORE_TYPES_INTERFACE;
+use midenc_frontend_wasm_metadata::{FPI_IMPORT_PREFIX, namespace::CORE_TYPES_INTERFACE};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use syn::{
@@ -829,31 +829,41 @@ fn validate_reserved_dyncall_namespace(
     Ok(())
 }
 
-/// Rejects an exported function whose WIT name carries the prefix reserved for stored-procedure
-/// dispatch.
+/// Rejects an exported function whose WIT name carries a prefix the Wasm frontend reserves for
+/// generated imports: `fpi-` (foreign procedure invocation) or `dyncall-` (stored-procedure
+/// dispatch).
 ///
-/// The Wasm frontend classifies imports named `dyncall-…` as dynamic calls on a stored procedure
-/// root, so exporting such a name only breaks the package's consumers — and there the diagnostic
-/// blames the dependency. Reject it where the name is written instead. `item_kind` names the
-/// construct that carries the name, e.g. `"component method"`.
+/// The frontend classifies imports by these prefixes, so exporting such a name only breaks the
+/// package's consumers — and there the diagnostic blames the dependency. Reject it where the name
+/// is written instead. `item_kind` names the construct that carries the name, e.g.
+/// `"component method"`.
 ///
-/// `wit_name` must be the un-rawed WIT spelling of `fn_ident` (see
-/// [`rust_ident_to_wit_name`](crate::wit_names::rust_ident_to_wit_name)): a raw identifier keeps its
-/// `r#` through plain kebab-casing and would slip past the prefix comparison.
-pub(crate) fn reject_reserved_dyncall_export(
+/// `wit_name` must be the WIT spelling of `fn_ident` as produced by
+/// [`rust_ident_to_wit_name`](crate::wit_names::rust_ident_to_wit_name), which strips the `r#` of
+/// a raw identifier: plain kebab-casing turns `r#dyncall_notify` into `r-dyncall-notify`, which
+/// would slip past the prefix comparison.
+pub(crate) fn reject_reserved_import_prefix_export(
     fn_ident: &syn::Ident,
     wit_name: &str,
     item_kind: &str,
 ) -> syn::Result<()> {
-    if !wit_name.starts_with(DYNCALL_WIT_PREFIX) {
+    let reserved = [
+        (FPI_IMPORT_PREFIX, "foreign procedure invocation"),
+        (DYNCALL_WIT_PREFIX, "stored-procedure dispatch"),
+    ];
+    let Some((prefix, purpose)) =
+        reserved.into_iter().find(|(prefix, _)| wit_name.starts_with(prefix))
+    else {
         return Ok(());
-    }
+    };
 
+    let rust_prefix = prefix.replace('-', "_");
     Err(Error::new(
         fn_ident.span(),
         format!(
-            "{item_kind} `{fn_ident}` is exported as `{wit_name}`, but the `{DYNCALL_WIT_PREFIX}` \
-             WIT prefix (`dyncall_` in Rust) is reserved for stored-procedure dispatch; rename it"
+            "{item_kind} `{fn_ident}` is exported as `{wit_name}`, but the frontend reserves the \
+             `{prefix}` WIT prefix (`{rust_prefix}` in Rust) for generated {purpose} imports; \
+             rename it"
         ),
     ))
 }
@@ -1667,19 +1677,38 @@ world world-level-export-world {
         assert!(message.contains("`dyncall-run`"), "{message}");
     }
 
-    /// Rejects a written export name with the reserved prefix, and only that prefix.
+    /// Rejects a written export name with the reserved dyncall prefix, and only that prefix.
     #[test]
     fn reserved_dyncall_export_names_are_rejected_by_name() {
         let ident = syn::Ident::new("dyncall_notify", Span::call_site());
-        let message = reject_reserved_dyncall_export(&ident, "dyncall-notify", "note constructor")
-            .unwrap_err()
-            .to_string();
+        let message =
+            reject_reserved_import_prefix_export(&ident, "dyncall-notify", "note constructor")
+                .unwrap_err()
+                .to_string();
         assert!(message.contains("note constructor `dyncall_notify`"), "{message}");
         assert!(message.contains("exported as `dyncall-notify`"), "{message}");
-        assert!(message.contains("reserved for stored-procedure dispatch"), "{message}");
+        assert!(message.contains("`dyncall-` WIT prefix (`dyncall_` in Rust)"), "{message}");
+        assert!(message.contains("stored-procedure dispatch imports"), "{message}");
 
-        reject_reserved_dyncall_export(&ident, "notify", "note constructor")
+        reject_reserved_import_prefix_export(&ident, "notify", "note constructor")
             .expect("an unrelated export name is accepted");
+    }
+
+    /// Rejects a written export name with the reserved FPI prefix.
+    #[test]
+    fn reserved_fpi_export_names_are_rejected_by_name() {
+        let ident = syn::Ident::new("fpi_transfer", Span::call_site());
+        let message =
+            reject_reserved_import_prefix_export(&ident, "fpi-transfer", "note constructor")
+                .unwrap_err()
+                .to_string();
+        assert!(message.contains("note constructor `fpi_transfer`"), "{message}");
+        assert!(message.contains("exported as `fpi-transfer`"), "{message}");
+        assert!(message.contains("`fpi-` WIT prefix (`fpi_` in Rust)"), "{message}");
+        assert!(message.contains("foreign procedure invocation imports"), "{message}");
+
+        reject_reserved_import_prefix_export(&ident, "fpitransfer", "note constructor")
+            .expect("a name merely starting with `fpi` is accepted");
     }
 
     /// Parses a test WIT world with the bundled SDK WIT available in the resolver.

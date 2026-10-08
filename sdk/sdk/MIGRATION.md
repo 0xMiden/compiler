@@ -181,6 +181,9 @@ takes part in naming, and the WIT package and interface ids derive from the name
   bindings.
 - `<namespace>::init` is reserved for the compiler's component initializer; rename any exported
   procedure, note entrypoint or note constructor called `init`.
+- `#[component]` methods and `#[note_constructor]` methods named with an `fpi_` prefix are now
+  rejected, as `dyncall_` ones already were: the compiler reserves both prefixes for the imports
+  the SDK macros generate. Rename such a method (e.g. `fpi_transfer` to `transfer_fpi`).
 
 ### Hand-written WIT needs `@external-id` on every function
 

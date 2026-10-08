@@ -13,7 +13,7 @@ use syn::{
 use crate::{
     boilerplate::runtime_boilerplate,
     component_macro::export_path,
-    generate::reject_reserved_dyncall_export,
+    generate::reject_reserved_import_prefix_export,
     namespace::ComponentNamespace,
     note_schema::{expand_note_storage_schema, note_storage_schema_uniqueness_guard},
     types::{map_type_to_type_ref, registered_export_type_map, reject_custom_type_ref},
@@ -689,7 +689,7 @@ fn collect_note_constructors(
         // the entrypoint export or with a duplicate method definition. Catch that here instead
         // of surfacing a WIT parse error from the generated bindings.
         let wit_name = rust_ident_to_wit_name(&sig.ident)?;
-        reject_reserved_dyncall_export(&sig.ident, &wit_name, "note constructor")?;
+        reject_reserved_import_prefix_export(&sig.ident, &wit_name, "note constructor")?;
         if wit_name == entrypoint_export_name || !wit_names.insert(wit_name.clone()) {
             return Err(syn::Error::new(
                 sig.ident.span(),
@@ -1732,7 +1732,29 @@ fn main() {{}}
         let message = err.to_string();
         assert!(message.contains("note constructor `dyncall_notify`"), "{message}");
         assert!(message.contains("exported as `dyncall-notify`"), "{message}");
-        assert!(message.contains("reserved for stored-procedure dispatch"), "{message}");
+        assert!(message.contains("stored-procedure dispatch imports"), "{message}");
+    }
+
+    #[test]
+    fn note_constructors_reject_the_reserved_fpi_prefix() {
+        // A note package exporting `fpi-…` compiles on its own and only breaks its consumers,
+        // where the frontend expects the import to carry the generated FPI ABI.
+        let mut item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[note_constructor]
+                pub fn r#fpi_notify(target: AccountId) {}
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+        let entrypoint_ident = format_ident!("execute");
+
+        let err = match collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute") {
+            Ok(_) => panic!("the reserved fpi prefix must be rejected"),
+            Err(err) => err,
+        };
+        let message = err.to_string();
+        assert!(message.contains("exported as `fpi-notify`"), "{message}");
+        assert!(message.contains("foreign procedure invocation imports"), "{message}");
     }
 
     #[test]
