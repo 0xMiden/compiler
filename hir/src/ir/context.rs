@@ -363,12 +363,8 @@ impl Context {
             .map(|succ| succ.operand_group as usize)
             .collect();
         for dest_group in dest_operand_groups {
-            let current_dest_operands_len = op.operands.group(dest_group).len();
-            let operand = self.make_operand(
-                value,
-                op.as_operation_ref(),
-                (current_dest_operands_len + 1) as u16,
-            );
+            // The operand index is assigned when the operand is stored in its group
+            let operand = self.make_operand(value, op.as_operation_ref(), 0);
             op.operands_mut().extend_group(dest_group, [operand]);
         }
     }
@@ -503,3 +499,4 @@ impl<T: AttributeRegistration + Marker> UniquedAttribute for T {
         }
     }
 }
+
