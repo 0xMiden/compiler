@@ -24,11 +24,12 @@ use super::is_unit_type;
 use crate::{
     component_macro::storage::storage_field_type,
     fpi, generate, manifest_paths,
+    namespace::ComponentNamespace,
     types::{
-        StorageFieldType, TypeRef, explicit_wit_identifier, map_type_to_type_ref,
-        registered_export_type_map, reject_custom_type_ref, rust_ident_to_wit_name,
-        wit_bindgen_rust_ident,
+        StorageFieldType, TypeRef, map_type_to_type_ref, registered_export_type_map,
+        reject_custom_type_ref,
     },
+    wit_names::{explicit_wit_identifier, rust_ident_to_wit_name, wit_bindgen_guest_ident},
     wit_world::{InlineInterfaceWorld, wit_func_line, wit_param},
 };
 
@@ -36,9 +37,6 @@ use crate::{
 const STORED_PROCEDURE_BINDINGS_WORLD: &str = "stored-procedure-bindings";
 /// WIT package name of the generated inline world.
 const STORED_PROCEDURE_BINDINGS_PACKAGE: &str = generate::STORED_PROCEDURE_BINDINGS_PACKAGE;
-/// Prefix of the generated import functions recognized by the Wasm frontend, without the
-/// separator: it is joined with `-` in WIT names and with `_` in Rust names.
-const DYNCALL_PREFIX: &str = "dyncall";
 /// Name synthesized for unnamed signature parameters, suffixed with the parameter index.
 const UNNAMED_PARAM_PREFIX: &str = "arg";
 /// WIT name of the leading procedure-root parameter of every generated import.
@@ -191,14 +189,19 @@ pub(crate) fn mentions_stored_procedure(ty: &Type) -> bool {
 /// sealed marker type plus the trait providing the typed `call` on
 /// `StoredProcedure<Marker>`. Returns an empty token stream when the struct has no such slot, so
 /// storage structs that do not use the feature never run bindings generation.
+///
+/// `namespace` is the component's `[lib].namespace`, which names the imports; it is known
+/// whenever the struct has slots, as storage fields require a `miden-project.toml`.
 pub(super) fn expand_stored_procedure_slots(
     struct_ident: &Ident,
     struct_vis: &Visibility,
+    namespace: Option<&ComponentNamespace>,
     slots: &[StoredProcedureSlot],
 ) -> Result<TokenStream2, Error> {
     if slots.is_empty() {
         return Ok(TokenStream2::new());
     }
+    let namespace = namespace.expect("storage fields are only expanded with a namespace");
     for slot in slots {
         for generated in [&slot.marker_ident, &slot.trait_ident] {
             if generated == struct_ident {
@@ -214,7 +217,7 @@ pub(super) fn expand_stored_procedure_slots(
         }
     }
 
-    let inline_wit = build_stored_procedure_wit(struct_ident, slots);
+    let inline_wit = build_stored_procedure_wit(struct_ident, namespace, slots)?;
     // The rendered world only ever uses SDK core types, so it resolves against the bundled WIT
     // alone: no dependency package is read, and none becomes a build input of this expansion.
     let wit_config = manifest_paths::resolve_sdk_wit()?;
@@ -288,7 +291,7 @@ fn build_slot(field_ident: &Ident, signature: &Type) -> Result<StoredProcedureSl
                 ident
             }
         };
-        let wit_name = rust_ident_to_wit_name(&ident);
+        let wit_name = rust_ident_to_wit_name(&ident)?;
         if wit_name == PROC_ROOT_PARAM {
             return Err(Error::new(
                 ident.span(),
@@ -331,13 +334,14 @@ fn build_slot(field_ident: &Ident, signature: &Type) -> Result<StoredProcedureSl
     };
 
     let camel_name = field_ident.unraw().to_string().to_upper_camel_case();
-    let wit_fn_name = format!("{DYNCALL_PREFIX}-{}", rust_ident_to_wit_name(field_ident));
+    let wit_fn_name =
+        format!("{}{}", generate::DYNCALL_WIT_PREFIX, rust_ident_to_wit_name(field_ident)?);
     Ok(StoredProcedureSlot {
         marker_ident: format_ident!("{}Signature", camel_name, span = field_ident.span()),
         trait_ident: format_ident!("{}Call", camel_name, span = field_ident.span()),
         // Derived from the WIT name rather than from the field: the generated call must spell the
         // import exactly as wit-bindgen names it.
-        import_fn_ident: wit_bindgen_rust_ident(&wit_fn_name, field_ident.span()),
+        import_fn_ident: wit_bindgen_guest_ident(&wit_fn_name, field_ident)?,
         wit_fn_name,
         field_ident: field_ident.clone(),
         params,
@@ -375,10 +379,17 @@ fn bare_fn_signature(signature: &Type) -> Result<&syn::TypeBareFn, Error> {
 }
 
 /// Renders the inline WIT world declaring one `dyncall-<field>` import per stored-procedure slot.
-fn build_stored_procedure_wit(struct_ident: &Ident, slots: &[StoredProcedureSlot]) -> String {
+///
+/// Each import carries the `@external-id` `<namespace>::dyncall::<field>`, as every component
+/// import does; the frontend never declares it, as its target is runtime data.
+fn build_stored_procedure_wit(
+    struct_ident: &Ident,
+    namespace: &ComponentNamespace,
+    slots: &[StoredProcedureSlot],
+) -> Result<String, Error> {
     // Every name derived from a Rust identifier is rendered as an explicit WIT identifier, so a
     // struct, field or parameter named like a WIT keyword still yields a parsable world.
-    let interface_name = explicit_wit_identifier(&rust_ident_to_wit_name(struct_ident));
+    let interface_name = explicit_wit_identifier(&rust_ident_to_wit_name(struct_ident)?);
 
     // The procedure root is the leading parameter of every generated import, so `word` is always
     // imported regardless of what the signatures themselves need.
@@ -392,7 +403,7 @@ fn build_stored_procedure_wit(struct_ident: &Ident, slots: &[StoredProcedureSlot
         }
     }
 
-    InlineInterfaceWorld {
+    Ok(InlineInterfaceWorld {
         generated_by: "#[component_storage]",
         package: STORED_PROCEDURE_BINDINGS_PACKAGE,
         version: &Version::new(1, 0, 0),
@@ -403,9 +414,11 @@ fn build_stored_procedure_wit(struct_ident: &Ident, slots: &[StoredProcedureSlot
     }
     .render(&core_imports, |interface| {
         for slot in slots {
-            interface.line(&stored_procedure_wit_signature(slot));
+            let field = slot.field_ident.unraw().to_string().to_snake_case();
+            interface
+                .function(&namespace.dyncall_path(&field), &stored_procedure_wit_signature(slot));
         }
-    })
+    }))
 }
 
 /// Renders the WIT function signature of one generated stored-procedure import.
@@ -564,6 +577,15 @@ mod tests {
         component_macro::storage::typecheck_storage_field, manifest_paths::SDK_WIT_SOURCE,
     };
 
+    /// The `[lib].namespace` of the component the test slots belong to.
+    fn test_namespace() -> ComponentNamespace {
+        ComponentNamespace::parse(
+            "miden::counter_contract::counter_contract",
+            proc_macro2::Span::call_site(),
+        )
+        .unwrap()
+    }
+
     /// Parses the named fields of a storage struct body.
     fn fields(tokens: TokenStream2) -> FieldsNamed {
         syn::parse2(tokens).expect("test fields must parse")
@@ -628,7 +650,12 @@ mod tests {
     fn renders_the_inline_wit_world_for_all_slots() {
         let mut fields = example_fields();
         let slots = collect_stored_procedure_slots(&mut fields).unwrap();
-        let wit = build_stored_procedure_wit(&format_ident!("AuthorityStorage"), &slots);
+        let wit = build_stored_procedure_wit(
+            &format_ident!("AuthorityStorage"),
+            &test_namespace(),
+            &slots,
+        )
+        .unwrap();
 
         let expected = r#"// This file is auto-generated by the `#[component_storage]` macro.
 // Do not edit this file manually.
@@ -639,7 +666,9 @@ use miden:base/core-types@1.0.0;
 
 interface %authority-storage {
     use core-types.{account-id, felt, word};
+    @external-id("miden::counter_contract::counter_contract::dyncall::authority")
     %dyncall-authority: func(proc-root: word, %role: felt, %caller: account-id) -> bool;
+    @external-id("miden::counter_contract::counter_contract::dyncall::hook")
     %dyncall-hook: func(proc-root: word);
 }
 
@@ -682,7 +711,9 @@ world stored-procedure-bindings {
         });
         let slots = collect_stored_procedure_slots(&mut fields).unwrap();
         // `interface` is a WIT keyword, so the interface name needs escaping too.
-        let wit = build_stored_procedure_wit(&format_ident!("Interface"), &slots);
+        let wit =
+            build_stored_procedure_wit(&format_ident!("Interface"), &test_namespace(), &slots)
+                .unwrap();
 
         let (resolve, world) = resolve_world(&wit);
         let mut signatures = resolved_import_signatures(&resolve, world);
@@ -871,6 +902,7 @@ world stored-procedure-bindings {
         let err = expand_stored_procedure_slots(
             &format_ident!("HookCall"),
             &Visibility::Inherited,
+            Some(&test_namespace()),
             &slots,
         )
         .unwrap_err();

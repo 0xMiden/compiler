@@ -75,13 +75,13 @@ fn rust_sibling() {
         init_storage_data
             .insert_value(
                 StorageValueName::from_slot_name(&increment_slot),
-                lifted_export_root(&counter_package, "increment-count"),
+                lifted_export_root(&counter_package, "increment_count"),
             )
             .unwrap();
         init_storage_data
             .insert_value(
                 StorageValueName::from_slot_name(&add_slot),
-                lifted_export_root(&counter_package, "add-to-count"),
+                lifted_export_root(&counter_package, "add_to_count"),
             )
             .unwrap();
         AccountComponent::from_package(dispatcher_package.as_ref().clone(), &init_storage_data)

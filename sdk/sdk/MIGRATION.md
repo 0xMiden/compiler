@@ -206,8 +206,9 @@ interface foo {
 The parent of an imported function's path names a dependency component, so the parents of a
 component's imports must not nest in one another or in the component's own namespace: importing
 both `acme::math::add` and `acme::math::u64::add` is rejected. The FPI imports `#[account(...)]`
-generates (`<namespace>::fpi::<dependency path>::<function>`) nest in the component's namespace by
-design and are exempt, since they declare no dependency component.
+generates (`<namespace>::fpi::<dependency path>::<function>`) and the stored-procedure imports
+`#[component_storage]` generates for `StoredProcedure` slots (`<namespace>::dyncall::<field>`) nest
+in the component's namespace by design and are exempt, since they declare no dependency component.
 
 The core Wasm module of a component, named after the crate, now gives way to an export of the same
 name (a crate `swap` exporting `swap`): the module is renamed `<name>_core`, which only appears in

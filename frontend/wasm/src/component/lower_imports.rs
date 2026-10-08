@@ -6,7 +6,7 @@ use core::cell::RefCell;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{Dyncall, ExecFpi, HirOpBuilder};
-use midenc_frontend_wasm_metadata::FPI_IMPORT_PREFIX;
+use midenc_frontend_wasm_metadata::{DYNCALL_IMPORT_PREFIX, FPI_IMPORT_PREFIX};
 use midenc_hir::{
     Builder, Context, FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolName, SymbolPath,
     SymbolTable, Type, ValueRef, Visibility,
@@ -37,9 +37,6 @@ use crate::{
     },
 };
 
-/// Name prefix marking a synthesized import that dispatches to a procedure root passed as its
-/// leading `word` parameter, lowered to `hir.dyncall` instead of a declared `hir.call` target.
-const DYNCALL_IMPORT_PREFIX: &str = "dyncall-";
 /// The attribute recording, on a declared import function, the component-model path of the
 /// import that declared it, so a later clashing import can name it. Its value is a `StringAttr`.
 const COMPONENT_IMPORT_PATH_ATTR: &str = "wasm_component_import_path";

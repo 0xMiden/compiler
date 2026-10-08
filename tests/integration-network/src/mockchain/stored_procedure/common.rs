@@ -12,7 +12,7 @@ use miden_protocol::account::{
     AccountComponentMetadata, StorageSlotName,
     component::{StorageSlotSchema, storage::SchemaType},
 };
-use midenc_integration_test_support::{cargo_proj::Project, project};
+use midenc_integration_test_support::{cargo_proj::Project, find_manifest_procedure, project};
 
 /// The non-zero storage key the counter fixtures use (matching the note sources), shared with
 /// the sibling tests driving the same counter component.
@@ -200,36 +200,17 @@ pub(super) fn build_note_package(
     compile_rust_package(project.root(), true)
 }
 
-/// Returns the MAST root of the lifted component-model export `leaf` of `package`.
+/// Returns the MAST root of the export `leaf` of `package`.
 ///
-/// A package manifest exposes each export twice under one leaf name: the core Wasm function
-/// under the `namespace::interface` module and the lifted component-model wrapper under the
-/// component-id module (whose path segment contains `/`). Only the wrapper is a valid `dyncall`
-/// target, so the lookup selects by path.
+/// A package manifest exports each component procedure once, at the Miden path
+/// `<[lib].namespace>::<leaf>` (`leaf` being the Rust method name); that lifted wrapper is the
+/// `dyncall` target.
 pub(super) fn lifted_export_root(package: &Package, leaf: &str) -> Word {
-    let matches = package
-        .manifest
-        .exports()
-        .filter_map(|export| export.as_procedure())
-        .filter(|export| {
-            let path = export.path.as_ref().as_str();
-            // Leaf names containing `-` are rendered quoted (`::"increment-count"`)
-            let last = path.rsplit("::").next().map(|last| last.trim_matches('"'));
-            path.contains('/') && last == Some(leaf)
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        matches.len(),
-        1,
-        "expected exactly one lifted export named `{leaf}`, got {:?}",
-        package
-            .manifest
-            .exports()
-            .filter_map(|export| export.as_procedure())
-            .map(|export| export.path.as_ref().as_str().to_string())
-            .collect::<Vec<_>>()
-    );
-    matches[0].digest
+    let suffix = format!("::{leaf}");
+    find_manifest_procedure(package, &format!("the export `{leaf}`"), |path| {
+        path.ends_with(&suffix)
+    })
+    .digest
 }
 
 /// Asserts that every stored-procedure slot of `package` is described as a plain `word` value

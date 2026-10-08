@@ -82,6 +82,12 @@ impl ComponentNamespace {
         quote! { self::bindings::exports::#ns::#pkg::#iface::Guest }
     }
 
+    /// The Miden path carried by the stored-procedure dispatch import of the storage field
+    /// `field`, e.g. `miden::counter_contract::counter_contract::dyncall::authority`.
+    pub(crate) fn dyncall_path(&self, field: &str) -> String {
+        format!("{}::dyncall::{field}", self.path())
+    }
+
     /// The storage slot name of the storage field `field`.
     pub(crate) fn storage_slot_name(&self, field: &str) -> String {
         format!("{}::{field}", self.path())

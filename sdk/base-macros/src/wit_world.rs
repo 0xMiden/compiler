@@ -21,8 +21,8 @@ use crate::{
     dependency_package::{DependencyWitSource, collect_dependency_wit_sources},
     generate::CORE_TYPES_INTERFACE_ID,
     namespace::ComponentNamespace,
-    types::explicit_wit_identifier,
     wit_builder::{WitBody, WitBuilder},
+    wit_names::explicit_wit_identifier,
 };
 
 /// Parsed package metadata from the consuming crate's manifest.

@@ -30,7 +30,7 @@ use crate::{fpi, manifest_paths};
 /// slots.
 pub(crate) const STORED_PROCEDURE_BINDINGS_PACKAGE: &str = "miden:stored-procedure-bindings";
 /// WIT function-name prefix the Wasm frontend reserves for stored-procedure dispatch imports.
-pub(crate) const DYNCALL_WIT_PREFIX: &str = "dyncall-";
+pub(crate) const DYNCALL_WIT_PREFIX: &str = midenc_frontend_wasm_metadata::DYNCALL_IMPORT_PREFIX;
 
 /// Fully-qualified WIT interface path for Miden SDK core types, `miden:base/core-types@1.0.0`.
 pub(crate) static CORE_TYPES_INTERFACE_ID: LazyLock<String> =
@@ -838,7 +838,7 @@ fn validate_reserved_dyncall_namespace(
 /// construct that carries the name, e.g. `"component method"`.
 ///
 /// `wit_name` must be the un-rawed WIT spelling of `fn_ident` (see
-/// [`rust_ident_to_wit_name`](crate::types::rust_ident_to_wit_name)): a raw identifier keeps its
+/// [`rust_ident_to_wit_name`](crate::wit_names::rust_ident_to_wit_name)): a raw identifier keeps its
 /// `r#` through plain kebab-casing and would slip past the prefix comparison.
 pub(crate) fn reject_reserved_dyncall_export(
     fn_ident: &syn::Ident,

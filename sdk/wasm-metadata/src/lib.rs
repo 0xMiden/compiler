@@ -50,6 +50,14 @@ pub const COMPONENT_INIT_PROCEDURE: &str = "init";
 /// stub for a dependency component, so its Miden path is exempt from the import nesting rule.
 pub const FPI_IMPORT_PREFIX: &str = "fpi-";
 
+/// Prefix of the component-model function names of the stored-procedure dispatch imports the SDK
+/// generates for `StoredProcedure` storage slots.
+///
+/// The frontend lowers an import carrying it to a dynamic call on the procedure root passed as its
+/// leading `word` parameter rather than declaring a stub for a dependency component, so, like an
+/// FPI import, its Miden path is exempt from the import nesting rule.
+pub const DYNCALL_IMPORT_PREFIX: &str = "dyncall-";
+
 /// Name of the Miden package (`.masp`) section that carries the component's public WIT source.
 pub const PACKAGE_WIT_SECTION_ID: &str = "wit";
 

@@ -1072,33 +1072,6 @@ pub(crate) fn exported_type_from_enum(
     })
 }
 
-/// Converts a Rust identifier to its canonical WIT spelling before WIT escaping is applied.
-///
-/// Raw identifiers lose their `r#` prefix: `r#type` and `type` name the same WIT item, which
-/// [`explicit_wit_identifier`] then renders in a form the WIT parser accepts for keywords.
-pub(crate) fn rust_ident_to_wit_name(ident: &syn::Ident) -> String {
-    ident.unraw().to_string().to_kebab_case()
-}
-
-/// Renders WIT's explicit identifier form.
-///
-/// Explicit identifiers are valid for both keywords and ordinary identifiers, and the `%` is
-/// syntax only: the resolved name, which the Wasm frontend and wit-bindgen see, is unchanged.
-/// Using this form for every Rust-derived name keeps generated interfaces valid without
-/// duplicating WIT's evolving keyword list in the macro.
-pub(crate) fn explicit_wit_identifier(name: &str) -> String {
-    format!("%{name}")
-}
-
-/// Returns the Rust identifier wit-bindgen generates for a canonical WIT name.
-///
-/// Generated code that calls into (or implements) the bindings must spell the name exactly as
-/// wit-bindgen does, so derive it from the WIT name rather than from the Rust identifier the WIT
-/// name came from.
-pub(crate) fn wit_bindgen_rust_ident(wit_name: &str, span: Span) -> syn::Ident {
-    syn::Ident::new(&wit_bindgen_rust::to_rust_ident(wit_name), span)
-}
-
 /// Rejects a type that maps to an `#[export_type]` custom type, including one nested in an
 /// `Option` or `Result` payload, with the caller's `message`.
 pub(crate) fn reject_custom_type_ref(

@@ -363,6 +363,7 @@ fn expand_component_storage(
     );
 
     let mut stored_procedure_slots = Vec::new();
+    let mut namespace = None;
     let default_impl = match &mut input_struct.fields {
         syn::Fields::Named(fields) => {
             // Rewrites the stored-procedure field types to their generated marker types before
@@ -372,11 +373,9 @@ fn expand_component_storage(
             // Slot names derive from the component's public identity (the `[lib].namespace`)
             // rather than the storage struct name, so renaming the private struct cannot change
             // deployed storage slot names.
-            let namespace = if metadata.has_miden_project_toml {
-                Some(metadata.namespace(struct_name.span())?)
-            } else {
-                None
-            };
+            if metadata.has_miden_project_toml {
+                namespace = Some(metadata.namespace(struct_name.span())?);
+            }
             let field_inits = process_storage_fields(fields, &mut acc_builder, namespace.as_ref())?;
             // Checked after field validation so type errors take priority.
             if !fields.named.is_empty() && namespace.is_none() {
@@ -409,6 +408,7 @@ fn expand_component_storage(
     let stored_procedure_items = stored_procedure::expand_stored_procedure_slots(
         struct_name,
         &struct_vis,
+        namespace.as_ref(),
         &stored_procedure_slots,
     )?;
 
@@ -1947,15 +1947,22 @@ mod tests {
     }
 
     /// Pins that the guard reads the name the method is actually exported under: a raw identifier
-    /// keeps its `r#` through kebab-casing, so it never carries the reserved prefix.
+    /// is exported under its unraw'd name, so `r#dyncall_notify` carries the reserved prefix too.
     #[test]
-    fn a_raw_identifier_is_exported_under_its_kebab_cased_name() {
+    fn a_raw_identifier_is_exported_under_its_unrawed_name() {
         let exported_types = HashMap::new();
-        let raw: syn::Signature = parse_quote!(fn r#dyncall_notify(&self, amount: u32));
+        let raw: syn::Signature = parse_quote!(fn r#type(&self, amount: u32));
         let (method, _) = parse_component_signature(&raw, &[], &exported_types)
-            .expect("an export name without the reserved prefix is accepted");
+            .expect("a raw identifier without the reserved prefix is accepted");
+        assert_eq!(method.wit_name, "type");
 
-        assert_eq!(method.wit_name, "r-dyncall-notify");
+        let reserved: syn::Signature = parse_quote!(fn r#dyncall_notify(&self, amount: u32));
+        let message = match parse_component_signature(&reserved, &[], &exported_types) {
+            Ok(_) => panic!("expected the reserved dyncall prefix to be rejected"),
+            Err(err) => err.to_string(),
+        };
+        assert!(message.contains("exported as `dyncall-notify`"), "{message}");
+        assert!(message.contains("reserved for stored-procedure dispatch"), "{message}");
     }
 
     #[test]
