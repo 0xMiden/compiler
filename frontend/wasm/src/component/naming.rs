@@ -11,13 +11,14 @@ use alloc::{
     vec::Vec,
 };
 
-use miden_mast_package::TargetType;
 use midenc_frontend_wasm_metadata::procedure_path::validate_procedure_path;
 use midenc_hir::{
     FxHashMap, SymbolName, SymbolNameComponent, SymbolPath,
     reserved_names::COMPONENT_INIT_PROCEDURE,
 };
-use midenc_package_interface::PackageInterface;
+use midenc_package_interface::{
+    ExportResolver, PackageInterface, ProcedureClass, ProcedureItem, ResolvedProcedure,
+};
 use midenc_session::diagnostics::Report;
 
 use crate::{component::StaticComponentIndex, error::WasmResult};
@@ -95,31 +96,32 @@ pub(crate) fn exports_namespace<'a>(
     }
 }
 
-/// Rejects the component import at the Miden path `path` when it names a procedure of one of the
-/// `linked` library or kernel packages.
+/// Rejects the component import at the Miden path `path` when it names an `exec`-bindable library
+/// procedure of one of the `linked` packages.
 ///
-/// A component import is a cross-context `call` of another component's procedure, while a
-/// library procedure is reached natively, through a linker stub lowered to `exec`. Packages of the
-/// component kinds (account components, notes, transaction scripts) stay importable.
+/// A WIT import is a cross-context `call` into another component, while an `exec`-bindable
+/// library procedure ([`ProcedureClass::Bindable`]) must be bound natively, through a linker stub
+/// lowered to `exec`. Every other procedure stays importable: a role procedure (e.g.
+/// `@account_procedure`) is part of a component interface even inside a library package, and
+/// procedures of the other package kinds are never `exec`-bindable.
 pub(crate) fn reject_library_procedure_import(
     path: &SymbolPath,
     linked: &[PackageInterface],
 ) -> WasmResult<()> {
-    if linked.is_empty() {
-        return Ok(());
-    }
-    let masm_path = path.to_library_path();
-    let library = linked
-        .iter()
-        .filter(|package| matches!(package.kind, TargetType::Library | TargetType::Kernel))
-        .find(|package| package.procedure(&masm_path).is_some());
-    match library {
-        None => Ok(()),
-        Some(package) => Err(Report::msg(format!(
-            "`{path}` is a procedure of the {} package `{}`; bind library procedures natively \
-             (`extern \"C\"` with `#[link_name]`), WIT imports name component procedures",
-            package.kind, package.name
+    match linked.resolve_procedure(&path.to_library_path()) {
+        Some(ResolvedProcedure {
+            package,
+            procedure:
+                ProcedureItem {
+                    class: ProcedureClass::Bindable(_),
+                    ..
+                },
+        }) => Err(Report::msg(format!(
+            "`{path}` is a procedure of the library package `{}`; bind library procedures \
+             natively (`extern \"C\"` with `#[link_name]`), WIT imports name component procedures",
+            package.name
         ))),
+        _ => Ok(()),
     }
 }
 
@@ -153,7 +155,9 @@ pub(crate) fn interface_hint(root_instance_exports: &[&str], nested_component: u
 mod tests {
     use alloc::{format, rc::Rc, string::String};
 
+    use miden_mast_package::TargetType;
     use midenc_hir::{Context, Op, Operation, SymbolName, SymbolTable, dialects::builtin::Module};
+    use midenc_session::miden_assembly_syntax::ast::AttributeSet;
 
     use super::*;
     use crate::{WasmTranslationConfig, translate};
@@ -1122,17 +1126,28 @@ mod tests {
     }
 
     /// Translates `import_and_export_component` importing `acme::first::api::read` in `context`,
-    /// with a linked package of `kind` exporting that procedure.
+    /// with a linked package of `kind` exporting that procedure with `attributes`, classified as
+    /// the package interface model classifies it.
     fn translate_linking_read(
         context: &Rc<Context>,
         kind: TargetType,
+        attributes: AttributeSet,
     ) -> WasmResult<crate::FrontendOutput> {
         use alloc::sync::Arc;
 
         use miden_mast_package::{PackageId, Version};
-        use midenc_package_interface::{ProcedureClass, ProcedureItem, SkipReason};
-        use midenc_session::miden_assembly_syntax::ast::{AttributeSet, Path};
+        use midenc_hir::{CallConv, FunctionType, Type};
+        use midenc_package_interface::{Role, SkipReason, lower_signature};
+        use midenc_session::miden_assembly_syntax::ast::Path;
 
+        let signature = FunctionType::new(CallConv::Fast, [], [Type::U32]);
+        let class = match Role::from_attributes(&attributes) {
+            Some(role) => ProcedureClass::Role(role),
+            None if kind == TargetType::Library => {
+                ProcedureClass::Bindable(lower_signature(&signature).unwrap())
+            }
+            None => ProcedureClass::Skipped(SkipReason::NotALibrary(kind)),
+        };
         let package = PackageInterface {
             name: PackageId::from("first"),
             version: Version::new(1, 0, 0),
@@ -1144,9 +1159,9 @@ mod tests {
                     Path::new("::acme::first::api::read").to_path_buf().into_boxed_path()
                 ),
                 digest: Default::default(),
-                signature: None,
-                attributes: AttributeSet::default(),
-                class: ProcedureClass::Skipped(SkipReason::Untyped),
+                signature: Some(signature),
+                attributes,
+                class,
             }],
             types: Vec::new(),
             constants: Vec::new(),
@@ -1161,31 +1176,58 @@ mod tests {
 
     #[test]
     fn an_import_of_a_library_procedure_is_rejected() {
-        for kind in [TargetType::Library, TargetType::Kernel] {
-            let err = match translate_linking_read(&Rc::default(), kind) {
-                Ok(_) => panic!("an import of a {kind} procedure must be rejected"),
-                Err(err) => err.to_string(),
-            };
-            assert!(
-                err.contains(&format!(
-                    "`::acme::first::api::read` is a procedure of the {kind} package `first`; \
-                     bind library procedures natively"
-                )),
-                "unexpected diagnostic: {err}"
-            );
-        }
+        let err = match translate_linking_read(
+            &Rc::default(),
+            TargetType::Library,
+            AttributeSet::default(),
+        ) {
+            Ok(_) => panic!("an import of an `exec`-bindable library procedure must be rejected"),
+            Err(err) => err.to_string(),
+        };
+        assert!(
+            err.contains(
+                "`::acme::first::api::read` is a procedure of the library package `first`; bind \
+                 library procedures natively"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// Asserts that `output` lowers the import of `acme::first::api::read` to a `call`.
+    fn assert_read_is_called(output: &crate::FrontendOutput) {
+        let hir = core_modules_of(output);
+        assert!(
+            hir.contains("hir.call ::@acme::@first::@api::@read()"),
+            "the import must call the linked procedure:\n{hir}"
+        );
     }
 
     #[test]
     fn an_import_of_an_account_component_procedure_is_lowered() {
         let context = Rc::default();
-        let output = translate_linking_read(&context, TargetType::AccountComponent)
-            .expect("an import of an account component procedure should translate");
-        let hir = core_modules_of(&output);
-        assert!(
-            hir.contains("hir.call ::@acme::@first::@api::@read()"),
-            "the import must call the account component's procedure:\n{hir}"
-        );
+        let output =
+            translate_linking_read(&context, TargetType::AccountComponent, AttributeSet::default())
+                .expect("an import of an account component procedure should translate");
+        assert_read_is_called(&output);
+    }
+
+    /// The standard account components ship as role procedures of a library package, which are
+    /// reached only through their component interface.
+    #[test]
+    fn an_import_of_a_role_procedure_in_a_library_package_is_lowered() {
+        use midenc_package_interface::Role;
+        use midenc_session::miden_assembly_syntax::ast::{Attribute, Ident};
+
+        let marker = Attribute::Marker(Ident::new(Role::AccountProcedure.attribute()).unwrap());
+        let context = Rc::default();
+        let output = translate_linking_read(
+            &context,
+            TargetType::Library,
+            AttributeSet::from_iter([marker]),
+        )
+        .expect("an import of a role procedure of a library package should translate");
+        assert!(!context.session().diagnostics.has_errors(), "the import must not be diagnosed");
+        assert_read_is_called(&output);
     }
 
     #[test]
