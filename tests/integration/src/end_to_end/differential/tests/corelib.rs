@@ -131,7 +131,9 @@ fn core_eq_reach() {
 /// defines, the shape of the `memcmp` gap above) fails the build with an
 /// error. Until #1421 `midenc-compile` ended the process with Cargo's exit
 /// status instead, which took `cargo miden` and this test binary down with
-/// it, so a failing guest left no test summary at all.
+/// it, so a failing guest left no test summary at all. The assertion pins
+/// only that the failure arrives as an error carrying Cargo's status; the
+/// linker's own message goes to the inherited stderr and is not captured.
 #[test]
 fn guest_link_failure() {
     run_case_rejected(

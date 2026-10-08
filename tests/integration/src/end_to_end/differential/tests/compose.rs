@@ -286,7 +286,8 @@ fn shortcircuit_calls() {
 /// around a fn-pointer dispatch and after it — CSE-merged count bands live
 /// across direct and indirect call boundaries. The dispatch takes plain
 /// locals only: computing two of its arguments in place is the
-/// `indirect_spill_args` panic (tests/calls.rs).
+/// `indirect_spill_args` shape (tests/calls.rs, a compiler panic until
+/// #1421).
 ///
 /// Since 2026-09-28 the table is read through `black_box`, because the guest
 /// toolchain devirtualizes constant fn-pointer tables; the wasm has 1

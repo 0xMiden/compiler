@@ -196,7 +196,7 @@ fn heap_list() {
 #[ignore = "gap: configuration-dependent compile failure at --optimize=basic only: the guest keeps \
             core::ptr::drop_glue::<Node> for the Box-linked list, which calls itself through the \
             Option<Box<Node>> link, and the assembler rejects it with 'found a cycle in the call \
-            graph' (panic at tests/support/src/compiler_test.rs:1024). The case already drops \
+            graph' (panic at tests/support/src/compiler_test.rs:1022). The case already drops \
             every node iteratively with an Option::take loop, which IS enough at the default \
             level, --optimize=max and --optimize=size-min (heap_list passes at all three, swept \
             2026-09-17) — cargo's opt-level 1 simply does not prove the glue dead. Known \
