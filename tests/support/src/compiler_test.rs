@@ -1019,21 +1019,21 @@ impl CompilerTest {
     /// Package-only tests do not capture intermediate HIR or MASM. To inspect one of those
     /// artifacts, call its accessor first, then retrieve the package from the same compilation.
     pub fn compile_package(&mut self) -> Arc<miden_mast_package::Package> {
-        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED), None);
-        match self.package.as_ref().expect("a full run must produce a package").as_ref() {
-            Ok(prog) => prog.clone(),
-            Err(msg) => panic!("{msg}"),
-        }
+        self.try_compile_package().unwrap_or_else(|msg| panic!("{msg}"))
     }
 
     /// Runs the same full compilation as [`Self::compile_package`], but expects it to fail, and
     /// returns the rendered error report.
     pub fn compile_package_err(&mut self) -> String {
+        self.try_compile_package().err().unwrap_or_else(|| {
+            panic!("expected the compilation of '{}' to fail", self.artifact_name())
+        })
+    }
+
+    /// Runs the full compilation and returns the package, or the rendered error report.
+    fn try_compile_package(&mut self) -> Result<Arc<miden_mast_package::Package>, String> {
         self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED), None);
-        match self.package.as_ref().expect("a full run must produce a package").as_ref() {
-            Ok(_) => panic!("expected the compilation of '{}' to fail", self.artifact_name()),
-            Err(msg) => msg.clone(),
-        }
+        self.package.as_ref().expect("a full run must produce a package").clone()
     }
 
     /// The post-rewrite HIR component this build produced, **live**.

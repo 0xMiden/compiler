@@ -137,7 +137,8 @@ fn guest_link_failure() {
     run_case_rejected(
         "guest_link_failure",
         include_str!("../cases/case_guest_link_failure.rs"),
-        "failed with exit status",
+        // Cargo's own status for a build that fails inside `rustc`/`rust-lld`.
+        "failed with exit status: 101",
     );
 }
 
