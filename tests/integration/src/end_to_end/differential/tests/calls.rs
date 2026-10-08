@@ -1,6 +1,6 @@
 //! Function-call boundaries: sret aggregates, at-limit signatures, call placement.
 
-use super::super::harness::{run_case, run_case_with_flags, run_case_with_inputs};
+use super::super::harness::{run_case, run_case_rejected, run_case_with_flags, run_case_with_inputs};
 
 /// Non-inlined helper calls (multi-arg, u64, bool) plus reused selects —
 /// exercises call translation/lowering and select emitter variants.
@@ -500,25 +500,24 @@ fn indirect_u128() {
     run_case("indirect_u128", include_str!("../cases/case_indirect_u128.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, campaign 22, 2026-09-09): a helper
-/// taking one u32 and eight u64s BY VALUE — seventeen felts, one over the
-/// 16-felt call-signature limit — called from a loop. Building it panics with
-/// `unable to spill sufficient capacity to hold all operands on stack at one
-/// time at hir.exec ...` at hir-analysis/src/analyses/spills.rs:2366: the spill
-/// analysis excludes the call's own operands from its spill candidates, so on
-/// an over-wide argument list it runs out of candidates and panics instead of
-/// reporting the signature width. The limit itself is by design; the panic in
-/// place of a diagnostic is the finding. Surfaced by the campaign-22
+/// A helper taking one u32 and eight u64s BY VALUE — seventeen felts, one
+/// over the 16-felt call-signature limit — called from a loop. The limit is
+/// by design, so the build must fail with the operand stack diagnostic: the
+/// spill analysis excludes the call's own operands from its spill candidates,
+/// and until #1421 it panicked (`unable to spill sufficient capacity to hold
+/// all operands on stack at one time at hir.exec ...`) when it ran out of
+/// candidates on an over-wide argument list. Surfaced by the campaign-22
 /// workaround map (`prog_*_wa`): moving a hot loop into an `#[inline(never)]`
 /// helper rescues the F6 programs only when the wide state is passed by
 /// reference. Bounded by the same helper with the state behind a `&[u64; 8]`
 /// (the `prog_tlv_wa` shape) and by the sixteen-felt signatures of
 /// `call_sigs16`. Compile-time — no inputs involved.
-/// Un-ignore when an over-wide signature is rejected with a diagnostic.
 #[test]
-#[ignore = "#1421: compiler panic: 'unable to spill sufficient capacity to hold all operands on \
-            stack at one time at hir.exec ...' at hir-analysis/src/analyses/spills.rs:2366 on a \
-            seventeen-felt by-value call signature; compile-time, no inputs involved"]
 fn sig17() {
-    run_case("sig17", include_str!("../cases/case_sig17.rs"));
+    run_case_rejected(
+        "sig17",
+        include_str!("../cases/case_sig17.rs"),
+        "operation 'hir.exec' needs 17 operand stack elements at once for its operands, but only \
+         16 are addressable",
+    );
 }
