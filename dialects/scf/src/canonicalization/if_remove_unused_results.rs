@@ -65,61 +65,170 @@ impl Pattern for IfRemoveUnusedResults {
 impl RewritePattern for IfRemoveUnusedResults {
     fn match_and_rewrite(
         &self,
-        mut operation: OperationRef,
+        operation: OperationRef,
         rewriter: &mut dyn Rewriter,
     ) -> Result<bool, Report> {
-        // Compute the list of used results.
-        let used_results = operation
-            .borrow()
-            .results()
-            .iter()
-            .copied()
-            .filter(|result| result.borrow().has_real_uses())
-            .collect::<SmallVec<[_; 4]>>();
+        // Everything the rewrite needs from the original op is read up front, so that no borrow
+        // of `operation` is alive while the rewriter runs: a rewriter listener (e.g. the tracing
+        // one) may borrow `operation` as the insertion point of the ops created below.
+        let (used_results, num_results, condition, new_types, then_entry, else_entry, span) = {
+            let op = operation.borrow();
+            let Some(if_op) = op.downcast_ref::<If>() else {
+                return Ok(false);
+            };
 
-        // Replace the operation if only a subset of its results have uses.
-        let num_results = operation.borrow().num_results();
-        if used_results.len() == num_results {
-            return Ok(false);
-        }
+            // Compute the list of used results.
+            let used_results = op
+                .results()
+                .iter()
+                .copied()
+                .filter(|result| result.borrow().has_real_uses())
+                .collect::<SmallVec<[_; 4]>>();
 
-        let mut op = operation.borrow_mut();
-        let Some(if_op) = op.downcast_mut::<If>() else {
-            return Ok(false);
+            // Replace the operation if only a subset of its results have uses.
+            let num_results = op.num_results();
+            if used_results.len() == num_results {
+                return Ok(false);
+            }
+
+            // Compute the result types of the replacement operation.
+            let new_types = used_results
+                .iter()
+                .map(|result| result.borrow().ty().clone())
+                .collect::<SmallVec<[_; 4]>>();
+
+            (
+                used_results,
+                num_results,
+                if_op.condition().as_value_ref(),
+                new_types,
+                if_op.then_body().entry_block_ref().unwrap(),
+                if_op.else_body().entry_block_ref().unwrap(),
+                if_op.span(),
+            )
         };
 
-        // Compute the result types of the replacement operation.
-        let new_types = used_results
-            .iter()
-            .map(|result| result.borrow().ty().clone())
-            .collect::<SmallVec<[_; 4]>>();
-
         // Create a replacement operation with empty then and else regions.
-        let new_if = rewriter.r#if(if_op.condition().as_value_ref(), &new_types, if_op.span())?;
-        let new_if_op = new_if.borrow();
-
-        let new_then_region = new_if_op.then_body().as_region_ref();
+        let new_if = rewriter.r#if(condition, &new_types, span)?;
+        let (new_then_region, new_else_region) = {
+            let new_if_op = new_if.borrow();
+            (new_if_op.then_body().as_region_ref(), new_if_op.else_body().as_region_ref())
+        };
         let new_then_block = rewriter.create_block(new_then_region, None, &[]);
-        let new_else_region = new_if_op.else_body().as_region_ref();
         let new_else_block = rewriter.create_block(new_else_region, None, &[]);
 
         // Move the bodies and replace the terminators (note there is a then and an else region
         // since the operation returns results).
-        let then_entry = { if_op.then_body().entry_block_ref().unwrap() };
         self.transfer_body(then_entry, new_then_block, &used_results, rewriter);
-        let else_entry = { if_op.else_body().entry_block_ref().unwrap() };
         self.transfer_body(else_entry, new_else_block, &used_results, rewriter);
-        drop(op);
 
         // Replace the operation by the new one.
         let mut replaced_results = SmallVec::<[_; 4]>::with_capacity(num_results);
         replaced_results.resize(num_results, None);
-        for (index, result) in used_results.into_iter().enumerate() {
-            replaced_results[result.borrow().index()] =
-                Some(new_if_op.results()[index] as ValueRef);
+        {
+            let new_if_op = new_if.borrow();
+            for (index, result) in used_results.into_iter().enumerate() {
+                replaced_results[result.borrow().index()] =
+                    Some(new_if_op.results()[index] as ValueRef);
+            }
         }
         rewriter.replace_op_with_values(operation, &replaced_results);
 
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{boxed::Box, format, rc::Rc, string::String, vec::Vec};
+
+    use midenc_expect_test::expect_file;
+    use midenc_hir::{
+        Listener, ListenerType, Op, OperationRef, ProgramPoint, Report, SourceSpan, Type,
+        dialects::{builtin::BuiltinOpBuilder, test::TestOpBuilder},
+        patterns::{
+            self, FrozenRewritePatternSet, GreedyRewriteConfig, RewritePatternSet,
+            RewriterListener,
+        },
+        testing::Test,
+    };
+
+    use super::*;
+
+    fn normalize_hir(input: &str) -> String {
+        let mut normalized = input.lines().map(str::trim_end).collect::<Vec<_>>().join("\n");
+        normalized.push('\n');
+        normalized
+    }
+
+    /// Renders the insertion point of every inserted op, as the tracing rewriter listener does
+    /// under `MIDENC_TRACE=rewriter=trace`. Rendering a program point borrows its operation, so
+    /// the rewrite fails here if the pattern still borrows the op it is replacing.
+    struct InsertionPointListener;
+
+    impl Listener for InsertionPointListener {
+        fn kind(&self) -> ListenerType {
+            ListenerType::Rewriter
+        }
+
+        fn notify_operation_inserted(&self, _op: OperationRef, prev: ProgramPoint) {
+            let _ = format!("{prev}");
+        }
+    }
+
+    impl RewriterListener for InsertionPointListener {}
+
+    #[test]
+    fn if_remove_unused_results() -> Result<(), Report> {
+        let mut test = Test::new("if_remove_unused_results", &[Type::I1], &[Type::U32]);
+
+        let span = SourceSpan::default();
+        let mut builder = test.function_builder();
+        let entry = builder.entry_block();
+        let condition = entry.borrow().arguments()[0].upcast();
+
+        let dead_then_value = builder.u32(1, span)?;
+        let live_then_value = builder.u32(2, span)?;
+        let dead_else_value = builder.u32(3, span)?;
+        let live_else_value = builder.u32(4, span)?;
+
+        let if_op = builder.r#if(condition, &[Type::U32, Type::U32], span)?;
+
+        let then_region = if_op.borrow().then_body().as_region_ref();
+        let then_block = builder.create_block_in_region(then_region);
+        builder.switch_to_block(then_block);
+        builder.r#yield([dead_then_value, live_then_value], span)?;
+
+        let else_region = if_op.borrow().else_body().as_region_ref();
+        let else_block = builder.create_block_in_region(else_region);
+        builder.switch_to_block(else_block);
+        builder.r#yield([dead_else_value, live_else_value], span)?;
+
+        builder.switch_to_block(entry);
+        let live_if_result = if_op.borrow().results()[1].upcast();
+        builder.ret(Some(live_if_result), span)?;
+
+        let input = normalize_hir(&format!("{}", test.function().as_operation_ref().borrow()));
+        expect_file!["expected/if_remove_unused_results_before.hir"].assert_eq(&input);
+
+        let context = test.context_rc();
+        let pattern: Box<dyn RewritePattern> =
+            Box::new(IfRemoveUnusedResults::new(context.clone()));
+        let pattern_set = RewritePatternSet::from_iter(context.clone(), [pattern]);
+        let rewrites = Rc::new(FrozenRewritePatternSet::new(pattern_set));
+        let changed = patterns::apply_patterns_and_fold_greedily(
+            test.function().as_operation_ref(),
+            rewrites,
+            GreedyRewriteConfig::new_with_listener(InsertionPointListener),
+        )
+        .expect("expected canonicalizer to converge");
+        assert!(changed, "expected if to be rewritten");
+
+        test.function().as_operation_ref().borrow().recursively_verify()?;
+
+        let output = normalize_hir(&format!("{}", test.function().as_operation_ref().borrow()));
+        expect_file!["expected/if_remove_unused_results_after.hir"].assert_eq(&output);
+
+        Ok(())
     }
 }
