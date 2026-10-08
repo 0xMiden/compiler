@@ -13,6 +13,8 @@ use syn::ext::IdentExt;
 
 /// Converts a Rust identifier to its canonical WIT spelling before WIT escaping is applied.
 ///
+/// A raw identifier loses its `r#`, so `r#type` maps to `type`.
+///
 /// Returns an error at the identifier's span when the derived name is not a valid WIT name.
 pub(crate) fn rust_ident_to_wit_name(ident: &syn::Ident) -> syn::Result<String> {
     let wit_name = ident.unraw().to_string().to_kebab_case();
@@ -92,9 +94,10 @@ pub(crate) fn reject_function_type_name_collisions<'a>(
 /// Renders WIT's explicit identifier form.
 ///
 /// Explicit identifiers are valid for both keywords and ordinary identifiers. Using this form for
-/// every Rust-derived function, parameter, field and case name keeps them valid without checking
-/// them against WIT's keyword list; type, package and interface names are rendered bare and are
-/// still checked against the keyword list.
+/// every Rust-derived function, parameter, field and case name, and for the stored-procedure
+/// interface named after the storage struct, keeps them valid without checking them against
+/// WIT's keyword list. Type names, and the package and interface names derived from the
+/// namespace, are rendered bare and are checked against the keyword list instead.
 pub(crate) fn explicit_wit_identifier(name: &str) -> String {
     format!("%{name}")
 }

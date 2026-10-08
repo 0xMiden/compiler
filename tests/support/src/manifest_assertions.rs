@@ -1,5 +1,6 @@
 //! Lookups and assertions over compiled package manifests, shared by tests (in both the
-//! compiler tier and the protocol-linked tier) that inspect attribute-tagged procedure exports.
+//! compiler tier and the protocol-linked tier) that inspect procedure exports: finding an export
+//! by path or attribute, and checking the exports against the package's embedded WIT.
 
 use std::collections::BTreeSet;
 

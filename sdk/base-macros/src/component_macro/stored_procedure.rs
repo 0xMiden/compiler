@@ -8,9 +8,10 @@
 //! Each such field expands into three things: a marker type sealing the signature to that one
 //! slot, a per-slot trait providing the typed `call` method, and one entry in a hidden
 //! wit-bindgen bindings module shared by all stored-procedure slots of the storage struct. The
-//! generated import is named `dyncall-<field>` and takes the procedure root as its leading `word`
-//! parameter, which the Wasm frontend lowers to a dynamic call in a new VM context — nothing has
-//! to be linked or resolved for it, so no dependency package is consulted here.
+//! generated import is named `dyncall-<field>`, carries the `@external-id`
+//! `<namespace>::dyncall::<field>`, and takes the procedure root as its leading `word` parameter,
+//! which the Wasm frontend lowers to a dynamic call in a new VM context — nothing has to be
+//! linked or resolved for it, so no dependency package is consulted here.
 
 use std::collections::{BTreeMap, BTreeSet};
 

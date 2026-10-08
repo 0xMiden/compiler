@@ -1,8 +1,10 @@
 //! The component namespace declared by `[lib].namespace` in `miden-project.toml`.
 //!
 //! The namespace is the single source of every name the SDK macros generate: the Miden paths of
-//! the exported procedures (carried by WIT `@external-id` attributes), the WIT package and
-//! interface ids, the guest trait path of the generated bindings, and the storage slot names.
+//! the exported procedures and of the generated FPI (`<namespace>::fpi::<dependency path>::<fn>`)
+//! and stored-procedure (`<namespace>::dyncall::<field>`) imports, all carried by WIT
+//! `@external-id` attributes; the WIT package and interface ids; the guest trait path of the
+//! generated bindings; and the storage slot names.
 
 use miden_assembly_syntax::ast::Path;
 use midenc_frontend_wasm_metadata::namespace::{NamespaceError, validate_namespace};
