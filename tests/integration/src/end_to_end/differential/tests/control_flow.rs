@@ -698,7 +698,7 @@ fn switch256() {
 }
 
 /// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case
-/// panics in the MASM operand scheduler with `NoSolution` at
+/// panicked in the MASM operand scheduler with `NoSolution` at
 /// codegen/masm/src/lower/lowering.rs:109. Trigger: LLVM runtime-unrolls the
 /// `% 97`-bounded loop 8x into a single block computing the interleaved
 /// non-reassociable chain `((((acc*33)^i)*33)^(i+1))*33 ...`, whose live
@@ -716,13 +716,12 @@ fn switch256() {
 /// the same defect is `unroll_rotmix` (spills.rs), and the independent
 /// in-contract arity-2 solver gap is `rotl_window` (spills.rs). Bounded by:
 /// the xor-only and mul-only bodies of the identical loop compile and pass,
-/// and `case_chain300`'s ~400-op straight-line chain passes. Un-ignore when
-/// this case compiles (after a spills fix it may still hit the rotl_window
-/// gap — then re-triage).
+/// and `case_chain300`'s ~400-op straight-line chain passes. Filed under
+/// #1422; it stopped panicking with the #1420 fix (fresh dominator tree after
+/// edge splits, pruning of the spill transform's unused phis), was
+/// `#[ignore]`d until then, and no longer reproduces the panic it was filed
+/// for.
 #[test]
-#[ignore = "#1422: compiler panic: 'with error: NoSolution' at \
-            codegen/masm/src/lower/lowering.rs:109 while scheduling the 8x-unrolled mul-xor loop \
-            chain (compile-time, no inputs involved)"]
 fn unroll_chain() {
     run_case("unroll_chain", include_str!("../cases/case_unroll_chain.rs"));
 }

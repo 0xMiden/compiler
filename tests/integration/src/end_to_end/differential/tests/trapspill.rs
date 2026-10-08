@@ -6,7 +6,8 @@
 //! `traps.rs` (campaign 29) established trap parity on spill-free shapes.
 //! This module crosses that oracle with the machinery of campaigns 18/20/21:
 //! the spill transform splits critical edges, places reloads on them and
-//! erases the ones the stale dominator tree cannot see, and cfg-to-scf lifts
+//! (until the #1420 fix) erased the ones its stale dominator tree could not
+//! see, and cfg-to-scf lifts
 //! `unreachable`-terminated blocks as return-like exits merged through
 //! `ReturnLikeOpKey` (operands compared BY TYPE, so every `ub.unreachable` is
 //! equivalent to every other). Each case therefore asks two questions at once:
@@ -198,12 +199,10 @@ fn body_assert_edges() {
 /// difference between the two is the spill/reload balance: 48 spills / 54
 /// reloads with the trapping edge against 46 / 56 without it, i.e. the trap
 /// edge converts two reloads into two spills. Compile-time — no inputs
-/// involved. Un-ignore when this case compiles.
+/// involved. It was `#[ignore]`d until the #1420 fix (the spill transform now
+/// recomputes dominance after splitting edges and prunes its unused phis) and
+/// now compiles.
 #[test]
-#[ignore = "#1420: compiler panic: 'invalid operand stack index (11): requires access to more than \
-            16 elements' at codegen/masm/src/emit/mod.rs:623 with the trapping edge placed above \
-            the cluster-consuming expression; the same file with the index masked into range \
-            (guard_above_masked) compiles (compile-time, no inputs involved)"]
 fn guard_above() {
     run_case_traps("ts_guard_above", include_str!("../cases/case_ts_guard_above.rs"));
 }
@@ -313,14 +312,14 @@ fn second_loop_edges() {
 ///
 /// CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC (safe Rust,
 /// 2026-09-17), caused by the trapping edge alone: at `--optimize=max` this
-/// case panics with "called `Option::unwrap()` on a `None` value" at
+/// case panicked, until the #1420 fix, with "called `Option::unwrap()` on a `None` value" at
 /// hir/src/ir/dominance/frontier.rs:123, the F6 site, while
 /// `interact::cascade_spill` — the same file WITHOUT the `assert!` in the
 /// `continue` arm — compiles at `--optimize=max` with 57 spills / 84 reloads /
 /// 6 split edges / 32 erased split reloads. The trap twin dies inside the
 /// FIRST spill transform (one `edges to split = 6` line, then the unwrap; no
 /// `erase unused reload` and no `convert reload to load` line is ever
-/// reached). Pinned in-repo by [`cascade_cont_max`].
+/// reached). Pinned in-repo by [`cascade_cont_max`], which compiles now.
 #[test]
 fn cascade_cont() {
     run_case_traps("ts_cascade_cont", include_str!("../cases/case_ts_cascade_cont.rs"));
@@ -328,14 +327,10 @@ fn cascade_cont() {
 
 /// [`cascade_cont`] pinned at `--optimize=max` through `run_case_traps_with_flags`
 /// (the flags+traps entry point added for this finding, 2026-09-17): the
-/// compile-time panic described above, kept in-repo. Un-ignore when the case
-/// compiles at that level.
+/// compile-time panic described above, kept in-repo. It was `#[ignore]`d until
+/// the #1420 fix (the spill transform now recomputes dominance after
+/// splitting edges and prunes its unused phis) and now compiles.
 #[test]
-#[ignore = "#1420: compiler panic at --optimize=max: 'called `Option::unwrap()` on a `None` value' \
-            at hir/src/ir/dominance/frontier.rs:123 (the F6 site) inside the first spill \
-            transform, caused by the trapping edge alone — interact::cascade_spill, the same file \
-            without the assert! in the continue arm, compiles at --optimize=max (director re-ran \
-            both 2026-09-17)"]
 fn cascade_cont_max() {
     run_case_traps_with_flags(
         "ts_cascade_cont_max",

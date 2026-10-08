@@ -630,9 +630,9 @@ fn prog_numeric_nodwarf() {
 /// (`swap_bytes` / `rotate_right` / `saturating_sub` / `isqrt` /
 /// `to_le_bytes` on a `u64` built from two readings) and a byte-order block
 /// (`to_le_bytes` / `to_be_bytes` / `from_le_bytes` / `from_be_bytes` /
-/// `swap_bytes` / `reverse_bits`). It compiles ONLY at
+/// `swap_bytes` / `reverse_bits`). Before the #1420 fix it compiled ONLY at
 /// `--optimize=size-min`; at the default level and at `--optimize=max` the
-/// compiler panics at `codegen/masm/src/lower/lowering.rs:109:17` with
+/// compiler panicked at `codegen/masm/src/lower/lowering.rs:109:17` with
 /// `failed to schedule operands ... with error: NoSolution constraints:
 /// [Move, Copy]` over a thirteen-operand, sixteen-felt stack. Which operation
 /// takes the hit depends on the guest toolchain — `arith.shr` with
@@ -645,15 +645,12 @@ fn prog_numeric_nodwarf() {
 /// those reloads should have brought back stay live on the operand stack
 /// past their spills, which is what pushes the Copy-constrained operand out
 /// of reach, so this is F6 wearing F2's signature. At `--optimize=basic` it
-/// panics at `hir/src/ir/dominance/frontier.rs:123:55` — the same class at
+/// panicked at `hir/src/ir/dominance/frontier.rs:123:55` — the same class at
 /// its first site. Neither block is the lever on its own: removing either
-/// one makes the default level compile. Un-ignore with the other F6
-/// reproducers.
+/// one makes the default level compile. It was `#[ignore]`d until the #1420
+/// fix (the spill transform now recomputes dominance after splitting edges
+/// and prunes its unused phis) and now compiles.
 #[test]
-#[ignore = "#1420: F6 (erased split-edge reloads in the spills trace): lowering.rs:109 NoSolution \
-            [Move, Copy] over an in-window 16-felt stack at the default level and --optimize=max \
-            (the failing op is arith.gt on nightly-2026-09-01 guests, arith.shr on \
-            nightly-2026-04-30); frontier.rs:123 at --optimize=basic"]
 fn prog_numeric_full() {
     run_case("prog_numeric_full", include_str!("../cases/case_prog_numeric.rs"));
 }
@@ -734,27 +731,26 @@ fn prog_records_edges() {
 /// `clamp`, `partial_cmp`, `is_sorted` / `is_sorted_by`, an insertion sort
 /// by the derived `Ord` and `sort_unstable_by` on a projection, the two
 /// orders cross-checked element-wise. With nightly-2026-04-30 guests it
-/// compiles and matches native at the default level, at
-/// `--optimize=size-min` and at `--optimize=basic`, and fails only at
+/// compiled and matched native at the default level, at
+/// `--optimize=size-min` and at `--optimize=basic`, and failed only at
 /// `--optimize=max` ([`prog_ordkeys_max`]); the nightly-2026-09-01 guest
-/// shape fails the same way at the default level (the spills pass splits 8
-/// edges, then `frontier.rs:123` unwraps `None` in the dominance-frontier
+/// shape failed the same way at the default level (the spills pass splits 8
+/// edges, then `frontier.rs:123` unwrapped `None` in the dominance-frontier
 /// query — the F6 stale-dominator-tree mechanism; verified 2026-09-17 to
-/// still pass with `RUSTUP_TOOLCHAIN=nightly-2026-04-30` guests).
+/// still pass with `RUSTUP_TOOLCHAIN=nightly-2026-04-30` guests). It was
+/// `#[ignore]`d until the #1420 fix (the spill transform now recomputes
+/// dominance after splitting edges and prunes its unused phis) and now
+/// compiles.
 #[test]
-#[ignore = "#1420: F6: frontier.rs:123 Option::unwrap on None at the default level with \
-            nightly-2026-09-01 guests (8 split edges in the spills trace); compiled on \
-            nightly-2026-04-30"]
 fn prog_ordkeys() {
     run_case("prog_ordkeys", include_str!("../cases/case_prog_ordkeys.rs"));
 }
 
 /// Pinned grid for [`prog_ordkeys`]: the first and last key index
 /// (`input1 % 12`, `input2 % 12`), a clamp range whose ends are equal, all
-/// three `Class` variants present, zero / all-ones / equal pairs.
+/// three `Class` variants present, zero / all-ones / equal pairs. It was
+/// `#[ignore]`d with [`prog_ordkeys`] until the #1420 fix.
 #[test]
-#[ignore = "#1420: F6: frontier.rs:123 Option::unwrap on None at the default level with \
-            nightly-2026-09-01 guests; see prog_ordkeys"]
 fn prog_ordkeys_edges() {
     run_case_with_inputs(
         "prog_ordkeys_edges",
@@ -773,15 +769,16 @@ fn prog_ordkeys_edges() {
     );
 }
 
-/// [`prog_ordkeys`] at `--optimize=max`: the compiler panics with
+/// [`prog_ordkeys`] at `--optimize=max`: the compiler panicked with
 /// `called `Option::unwrap()` on a `None` value` at
 /// `hir/src/ir/dominance/frontier.rs:123:55` — the F6 stale-dominator-tree
 /// cluster, reached here by ordinary derived-`Ord` comparison code that LLVM
 /// unrolls at `-O3`. With nightly-2026-04-30 guests the same program
 /// compiled at the other three levels; since nightly-2026-09-01 the default
-/// level fails too ([`prog_ordkeys`]). Un-ignore when F6 is fixed.
+/// level failed too ([`prog_ordkeys`]). It was `#[ignore]`d until the #1420
+/// fix (the spill transform now recomputes dominance after splitting edges
+/// and prunes its unused phis) and now compiles.
 #[test]
-#[ignore = "#1420: F6: frontier.rs:123 Option::unwrap on None at --optimize=max"]
 fn prog_ordkeys_max() {
     run_case_with_flags("prog_ordkeys_max", include_str!("../cases/case_prog_ordkeys.rs"), MAX);
 }

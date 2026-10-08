@@ -13,9 +13,10 @@
 //! three-level nests whose deepest arm is the only consumer of the
 //! accumulated words, and a chain of early-`break` scans as the control. Each
 //! carries the state and the constants an algorithm of its kind really has —
-//! and seven of the twelve fail to COMPILE at the default configuration, so
-//! they are kept as `#[ignore]`d user-impact evidence next to the largest
-//! variant of the same program that does compile (`prog_*_guard`).
+//! and seven of the twelve failed to COMPILE at the default configuration, so
+//! they were kept as `#[ignore]`d user-impact evidence next to the largest
+//! variant of the same program that did compile (`prog_*_guard`); all of them
+//! compile since the #1419 and #1420 fixes.
 
 use super::super::harness::{run_case, run_case_with_flags, run_case_with_inputs};
 
@@ -509,25 +510,24 @@ fn prog_vm_table_edges() {
 /// `any` and `Option` combinators over `checked_*` chains (`sort_unstable`
 /// and `select_nth_unstable` are recursive in `core` and hit the linker's
 /// call-graph cycle check — probe deleted). Compiled and matched native with
-/// nightly-2026-04-30 guests; the nightly-2026-09-01 guest shape hits F6 at
+/// nightly-2026-04-30 guests; the nightly-2026-09-01 guest shape hit F6 at
 /// the default level (`emit/mod.rs:623` "only the first 16 elements on the
-/// stack are directly accessible, got 16" after the spills trace reports 2
-/// split edges and erases 6 unused reloads — the stale-dominator-tree
+/// stack are directly accessible, got 16" after the spills trace reported 2
+/// split edges and erased 6 unused reloads — the stale-dominator-tree
 /// mechanism; verified 2026-09-17 to still pass with
-/// `RUSTUP_TOOLCHAIN=nightly-2026-04-30` guests).
+/// `RUSTUP_TOOLCHAIN=nightly-2026-04-30` guests). It was `#[ignore]`d until
+/// the #1420 fix (the spill transform now recomputes dominance after
+/// splitting edges and prunes its unused phis) and now compiles.
 #[test]
-#[ignore = "#1420: F6: emit/mod.rs:623 stack index 16 at the default level with nightly-2026-09-01 \
-            guests (2 split edges, 6 erased reloads); compiled on nightly-2026-04-30"]
 fn prog_iters() {
     run_case("prog_iters", include_str!("../cases/case_prog_iters.rs"));
 }
 
 /// Pinned inputs for `prog_iters`: `skip` / `nth` past the end, the
 /// overflowing `checked_pow`, the zero-length `cycle`, the last index,
-/// zero / all-ones / equal pairs.
+/// zero / all-ones / equal pairs. It was `#[ignore]`d with `prog_iters` until
+/// the #1420 fix.
 #[test]
-#[ignore = "#1420: F6: emit/mod.rs:623 stack index 16 at the default level with nightly-2026-09-01 \
-            guests; see prog_iters"]
 fn prog_iters_edges() {
     run_case_with_inputs(
         "prog_iters_edges",
@@ -551,7 +551,7 @@ fn prog_iters_edges() {
 /// 17, 2026-09-03): the realistic `prog_fixedpoint` program built with
 /// `--optimize=max` (guest opt-level 3; the default opt-level 2 and
 /// `--optimize=size-min` pass, and the 512-pair default sweep is clean)
-/// panics in the MASM emitter: `invalid operand stack index (11): requires
+/// panicked in the MASM emitter: `invalid operand stack index (11): requires
 /// access to more than 16 elements` at codegen/masm/src/stack.rs:540
 /// (reported at emit/mod.rs:623) from `OperandStack::dup` <-
 /// `OpEmitter::copy_operand_to_position` <- the operand solver <-
@@ -573,12 +573,10 @@ fn prog_iters_edges() {
 /// budget check. No "unused phi" warning (not F1), no `hir.exec_indirect`
 /// (not F11), in-contract input. Panic-only. Minimized reproducer:
 /// `fir_cordic_o3` below (the same signature; the ladder is in its doc
-/// comment). Un-ignore together with the F6 reproducers.
+/// comment). It was `#[ignore]`d until the #1420 fix (the spill transform
+/// now recomputes dominance after splitting edges and prunes its unused
+/// phis) and now compiles.
 #[test]
-#[ignore = "#1420: compiler panic at --optimize=max: 'invalid operand stack index (11): requires \
-            access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 \
-            (OperandStack::dup from StoreLocal::schedule_operands) — F6 class: the four reloads on \
-            the FIR loop's split backedge are erased as unused; compile-time, no inputs involved"]
 fn prog_fixedpoint_o3() {
     run_case_with_flags(
         "prog_fixedpoint_o3",
@@ -596,7 +594,8 @@ fn fir_cordic() {
     run_case("fir_cordic", include_str!("../cases/case_fir_cordic.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC at `--optimize=max` — the minimized form of
+/// COMPILE-TIME COMPILER PANIC at `--optimize=max` before the #1420 fix — the
+/// minimized form of
 /// `prog_fixedpoint_o3` (same signature, `invalid operand stack index (11)`
 /// at emit/mod.rs:623 from `StoreLocal::schedule_operands` in the FIR
 /// loop body). Ingredients, each necessary (ladder of 24 generated rungs,
@@ -614,12 +613,10 @@ fn fir_cordic() {
 /// over the 16-felt window. Bounded by `fir_cordic_guard_o3` (8 taps, 4
 /// iterations, passes at max) and `fir_cordic` (this file at the default
 /// level, passes; 512-pair-clean sibling `prog_fixedpoint`). Compile-time
-/// — no inputs involved. Un-ignore together with the F6 reproducers.
+/// — no inputs involved. It was `#[ignore]`d until the #1420 fix (the spill
+/// transform now recomputes dominance after splitting edges and prunes its
+/// unused phis) and now compiles.
 #[test]
-#[ignore = "#1420: compiler panic at --optimize=max: 'invalid operand stack index (11): requires \
-            access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 class \
-            (erased split-backedge reloads) at the emitter's window assert; compile-time, no \
-            inputs involved"]
 fn fir_cordic_o3() {
     run_case_with_flags(
         "fir_cordic_o3",
@@ -829,7 +826,7 @@ fn prog_scanchain_edges() {
 /// buffer with a rolling hash, the inner scan loop returning early on a
 /// verified match, on an exhausted false-positive budget and on a sentinel
 /// byte, with the six-word Bloom probe — the only place all six fingerprint
-/// words are live at once — evaluated on every iteration. Building it panics
+/// words are live at once — evaluated on every iteration. Building it panicked
 /// with `invalid operand stack index (9): requires access to more than 16
 /// elements` at codegen/masm/src/emit/mod.rs:623 (`OperandStack::dup` from the
 /// operand solver). Classification F6, not F2: the spills trace
@@ -847,8 +844,9 @@ fn prog_scanchain_edges() {
 /// constants alone (six words kept) passes at the default level and at
 /// size-min but panics at max (frontier.rs:123) and at basic (index 10), so it
 /// is the crossing COUNT BANDS, not the word count, that carries this program
-/// over the window. Compile-time — no inputs involved. Un-ignore together with
-/// the other F6 reproducers (`pressure::zero_trip_frontier`).
+/// over the window. Compile-time — no inputs involved. It was `#[ignore]`d
+/// until the #1420 fix (the spill transform now recomputes dominance after
+/// splitting edges and prunes its unused phis) and now compiles.
 /// Configuration note (campaign 24): WITHOUT full guest DWARF the program
 /// changed CLASS — it panicked with `AliasingViolationError` at
 /// hir/src/patterns/rewriter.rs:335 (F12, #1419, fixed) instead of at the
@@ -856,10 +854,6 @@ fn prog_scanchain_edges() {
 /// reach cfg-to-scf first. It was the only program in the corpus whose panic
 /// class depended on the debug level.
 #[test]
-#[ignore = "#1420: compiler panic at the DEFAULT configuration: 'invalid operand stack index (9): \
-            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
-            class (26 erased split-edge reloads in the spills trace); compile-time, no inputs \
-            involved"]
 fn prog_rkscan() {
     run_case("prog_rkscan", include_str!("../cases/case_prog_rkscan.rs"));
 }
@@ -867,7 +861,7 @@ fn prog_rkscan() {
 /// The largest variant of `prog_rkscan` that compiles at the default level:
 /// three distinct rotate constants instead of five and four fingerprint words
 /// instead of six. Passes at the default level, `--optimize=size-min` and
-/// `--optimize=max`; still panics at `--optimize=basic` (see
+/// `--optimize=max`; panicked at `--optimize=basic` until the #1420 fix (see
 /// `prog_rkscan_guard_o1`).
 /// Configuration note (campaigns 23 and 24): WITHOUT full guest DWARF the
 /// reduced scanner panicked in the F12 class (#1419, fixed;
@@ -961,15 +955,14 @@ fn prog_rkscan_ref_nodwarf() {
 }
 
 /// CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC: the reduced
-/// `prog_rkscan_guard` still panics at `--optimize=basic` with `invalid
+/// `prog_rkscan_guard` panicked at `--optimize=basic` with `invalid
 /// operand stack index (10): requires access to more than 16 elements` at
 /// codegen/masm/src/emit/mod.rs:623 — the same F6 site as the full program.
 /// Kept so a corpus-wide `--optimize=basic` sweep does not rediscover it as a
-/// new finding. Compile-time — no inputs involved.
+/// new finding. Compile-time — no inputs involved. It was `#[ignore]`d until
+/// the #1420 fix (the spill transform now recomputes dominance after
+/// splitting edges and prunes its unused phis) and now compiles.
 #[test]
-#[ignore = "#1420: compiler panic at --optimize=basic: 'invalid operand stack index (10): requires \
-            access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 class; \
-            compile-time, no inputs involved"]
 fn prog_rkscan_guard_o1() {
     run_case_with_flags(
         "prog_rkscan_guard_o1",
@@ -1175,7 +1168,7 @@ fn prog_varint_wa_oz_nodwarf() {
 /// round function runs only on the iterations the schedule selects, so the
 /// then-arm reads all six round keys and the else-arm none — the pressure
 /// asymmetry the spill analysis has to reconcile on the join. Building it
-/// panics with `failed to schedule operands: [%22, %146] for inst
+/// panicked with `failed to schedule operands: [%22, %146] for inst
 /// 'arith.rotl' with error: NoSolution, constraints: [Copy, Move]` at
 /// codegen/masm/src/lower/lowering.rs:109 over a NINETEEN-felt operand stack
 /// (six u64 words and seven u32 count bands). Classification F6, not F2: the
@@ -1183,16 +1176,13 @@ fn prog_varint_wa_oz_nodwarf() {
 /// the spills trace shows 23 spills, 21 reloads, two "edges to split" and six
 /// `erase unused reload` lines; the Copy-constrained operand %22 is one of the
 /// count bands stranded at index 11. Per level: default, `--optimize=size-min`,
-/// `max` and `basic` ALL panic at the same site. Bounding sibling:
+/// `max` and `basic` ALL panicked at the same site. Bounding sibling:
 /// `prog_feistel_guard` — the same network with TWO round keys — compiles and
-/// matches native at all four levels; four keys still panic at all four.
-/// Compile-time — no inputs involved. Un-ignore together with the other F6
-/// reproducers.
+/// matches native at all four levels; four keys still panicked at all four.
+/// Compile-time — no inputs involved. It was `#[ignore]`d until the #1420 fix
+/// (the spill transform now recomputes dominance after splitting edges and
+/// prunes its unused phis) and now compiles.
 #[test]
-#[ignore = "#1420: compiler panic at every optimization level: 'failed to schedule operands ... \
-            with error: NoSolution' on 'arith.rotl' [Copy, Move] over a 19-felt operand stack at \
-            codegen/masm/src/lower/lowering.rs:109 — F6 class (six erased split-edge reloads); \
-            compile-time, no inputs involved"]
 fn prog_feistel() {
     run_case("prog_feistel", include_str!("../cases/case_prog_feistel.rs"));
 }
@@ -1358,7 +1348,7 @@ fn prog_rle_wa_edges() {
 /// and six statistics, and a second pass turns the histogram into cumulative
 /// offsets and emits a packed code stream, reusing the SAME shift constants
 /// the first pass used for bucket selection — so every constant is live from
-/// before the first loop, across it and into the second. Building it panics
+/// before the first loop, across it and into the second. Building it panicked
 /// with `failed to schedule operands: [%1218, %695] for inst 'arith.rotl' with
 /// error: NoSolution, constraints: [Copy, Move]` at
 /// codegen/masm/src/lower/lowering.rs:109 (F6, the `zero_trip_overflow`
@@ -1369,11 +1359,11 @@ fn prog_rle_wa_edges() {
 /// `--optimize=basic` PANIC (`invalid operand stack index (12)` at
 /// emit/mod.rs:623). Bounding sibling: `prog_histogram_guard` — the same two
 /// passes with SIX distinct shift constants instead of eight — compiles and
-/// matches native at all four levels. Compile-time — no inputs involved.
+/// matches native at all four levels. Compile-time — no inputs involved. It
+/// was `#[ignore]`d until the #1420 fix (the spill transform now recomputes
+/// dominance after splitting edges and prunes its unused phis) and now
+/// compiles.
 #[test]
-#[ignore = "#1420: compiler panic at the DEFAULT configuration: 'failed to schedule operands ... \
-            with error: NoSolution' on 'arith.rotl' [Copy, Move] at \
-            codegen/masm/src/lower/lowering.rs:109 — F6 class; compile-time, no inputs involved"]
 fn prog_histogram() {
     run_case("prog_histogram", include_str!("../cases/case_prog_histogram.rs"));
 }
@@ -1446,7 +1436,7 @@ fn prog_histogram_wa_edges() {
 /// rounds (column mix, lane rotations, chi), and a squeeze loop then extracts
 /// four output words with the SAME eight rotation offsets — the shape every
 /// Keccak-like permutation in Rust has, with no 128-bit arithmetic anywhere.
-/// Building it panics with `invalid operand stack index (14): requires access
+/// Building it panicked with `invalid operand stack index (14): requires access
 /// to more than 16 elements` at codegen/masm/src/emit/mod.rs:623 (F6, the
 /// `prog_fixedpoint_o3` signature at the DEFAULT level rather than at max;
 /// spills trace: four split edges, eighteen `erase unused reload` lines).
@@ -1456,11 +1446,11 @@ fn prog_histogram_wa_edges() {
 /// `prog_sponge_guard` — the same eight-lane sponge with FOUR distinct
 /// rotation offsets instead of eight — compiles and matches native at all four
 /// levels, so it is the number of distinct rotation constants, not the number
-/// of lanes, that decides. Compile-time — no inputs involved.
+/// of lanes, that decides. Compile-time — no inputs involved. It was
+/// `#[ignore]`d until the #1420 fix (the spill transform now recomputes
+/// dominance after splitting edges and prunes its unused phis) and now
+/// compiles.
 #[test]
-#[ignore = "#1420: compiler panic at the DEFAULT configuration: 'invalid operand stack index (14): \
-            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
-            class; compile-time, no inputs involved"]
 fn prog_sponge() {
     run_case("prog_sponge", include_str!("../cases/case_prog_sponge.rs"));
 }
@@ -1535,20 +1525,18 @@ fn prog_sponge_wa_edges() {
 /// 64-byte container is parsed as tag / length / value records behind three
 /// nested checks — container magic, record header, value type — and only the
 /// innermost accepted path reads the eight digest words computed before the
-/// loop. Building it panics with `called Option::unwrap() on a None value` at
+/// loop. Building it panicked with `called Option::unwrap() on a None value` at
 /// hir/src/ir/dominance/frontier.rs:123 (`DominanceFrontier::new` from
 /// `spill::rewrite_cfg_spills`) — the F6 flavor `pressure::zero_trip_frontier`
 /// documents, here with no zero-trip-capable loop anywhere in the program and
 /// at EVERY optimization level (default, size-min, max, basic); the spills
 /// trace reports nine edges to split before the unwrap. Bounding
 /// sibling: `prog_tlv_guard` — the same validator with TWO digest words —
-/// compiles at all four levels; four words still panic at all four.
-/// Compile-time — no inputs involved. Un-ignore when the spill transform
-/// recomputes dominance after splitting edges.
+/// compiles at all four levels; four words still panicked at all four.
+/// Compile-time — no inputs involved. It was `#[ignore]`d until the #1420 fix
+/// (the spill transform now recomputes dominance after splitting edges and
+/// prunes its unused phis) and now compiles.
 #[test]
-#[ignore = "#1420: compiler panic at every optimization level: 'called `Option::unwrap()` on a \
-            `None` value' at hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
-            spill::rewrite_cfg_spills) — F6 class; compile-time, no inputs involved"]
 fn prog_tlv() {
     run_case("prog_tlv", include_str!("../cases/case_prog_tlv.rs"));
 }
