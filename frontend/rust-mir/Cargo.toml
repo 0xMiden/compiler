@@ -1,0 +1,33 @@
+[package]
+name = "midenc-frontend-rust-mir"
+description = "Rust MIR frontend for the Miden compiler"
+# Private packages stay at 0.1.0; the release lint rejects the workspace version.
+version = "0.1.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+doctest = false
+
+# Tells rust-analyzer to load the private `rustc_*` crates for this package. This works only
+# together with the editor-side setting `rust-analyzer.rustc.source = "discover"` — see the
+# "rust-analyzer setup" section in README.md.
+[package.metadata.rust-analyzer]
+rustc_private = true
+
+[dependencies]
+midenc-dialect-arith.workspace = true
+midenc-dialect-hir.workspace = true
+midenc-hir.workspace = true
+midenc-session.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+midenc-hir-eval.workspace = true
