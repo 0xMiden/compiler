@@ -219,6 +219,10 @@ both `acme::math::add` and `acme::math::u64::add` is rejected. The FPI imports `
 generates (`<namespace>::fpi::<dependency path>::<function>`) and the stored-procedure imports
 `#[component_storage]` generates for `StoredProcedure` slots (`<namespace>::dyncall::<field>`) nest
 in the component's namespace by design and are exempt, since they declare no dependency component.
+A WIT import names a procedure of another component: importing a procedure of a linked library
+(the core library, the kernel or a Miden Assembly dependency) through WIT is an error; bind it
+natively with an `extern "C"` function carrying its Miden path in `#[link_name]` (see "Binding a
+Miden Assembly dependency from Rust" above).
 
 The core Wasm module of a component, named after the crate, now gives way to an export of the same
 name (a crate `swap` exporting `swap`): the module is renamed `<name>_core`, which only appears in
