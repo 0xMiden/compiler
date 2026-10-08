@@ -15,6 +15,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use heck::{ToSnakeCase, ToUpperCamelCase};
+use midenc_frontend_wasm_metadata::namespace::RESERVED_INTERFACE_SEGMENTS;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{ToTokens, format_ident, quote};
 use semver::Version;
@@ -389,7 +390,20 @@ fn build_stored_procedure_wit(
 ) -> Result<String, Error> {
     // Every name derived from a Rust identifier is rendered as an explicit WIT identifier, so a
     // struct, field or parameter named like a WIT keyword still yields a parsable world.
-    let interface_name = explicit_wit_identifier(&rust_ident_to_wit_name(struct_ident)?);
+    let interface_wit_name = rust_ident_to_wit_name(struct_ident)?;
+    // The world `use`s the SDK core-types interface at package level, so an interface named like
+    // a reserved segment would collide with it.
+    if RESERVED_INTERFACE_SEGMENTS.contains(&interface_wit_name.replace('-', "_").as_str()) {
+        return Err(Error::new(
+            struct_ident.span(),
+            format!(
+                "storage struct `{struct_ident}` names the generated stored-procedure WIT \
+                 interface `{interface_wit_name}`, which is reserved for the SDK core types; \
+                 rename the struct"
+            ),
+        ));
+    }
+    let interface_name = explicit_wit_identifier(&interface_wit_name);
 
     // The procedure root is the leading parameter of every generated import, so `word` is always
     // imported regardless of what the signatures themselves need.
@@ -908,6 +922,25 @@ world stored-procedure-bindings {
         .unwrap_err();
 
         assert!(err.to_string().contains("collides with the storage struct"), "{err}");
+    }
+
+    /// Rejects a storage struct naming the generated interface like the SDK core-types interface
+    /// the world imports.
+    #[test]
+    fn rejects_a_storage_struct_named_like_the_core_types_interface() {
+        let mut fields = fields(quote! {
+            {
+                hook: StorageValue<StoredProcedure<fn()>>,
+            }
+        });
+        let slots = collect_stored_procedure_slots(&mut fields).unwrap();
+        let err =
+            build_stored_procedure_wit(&format_ident!("CoreTypes"), &test_namespace(), &slots)
+                .unwrap_err();
+
+        let message = err.to_string();
+        assert!(message.contains("storage struct `CoreTypes`"), "{message}");
+        assert!(message.contains("interface `core-types`"), "{message}");
     }
 
     /// Renders a unit-returning signature without a WIT result.
