@@ -266,16 +266,16 @@ fn spill_store_min() {
 /// split-edge reloads at two-predecessor joins (the #1420 defect), and it
 /// stopped compiling once #1420 was fixed: with those spills materialized it
 /// panics with `invalid operand stack index (10): requires access to more
-/// than 16 elements` at codegen/masm/src/emit/mod.rs:620 after the second
+/// than 16 elements` at codegen/masm/src/emit/mod.rs (OpEmitter::dup) after the second
 /// spills run (`edges to split = 0, values spilled = 2, reloads issued = 0`).
 /// What remains is the #1422 item 2 class (over-window pressure after the
 /// second spills run). Compile-time — no inputs involved.
 #[test]
 #[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
-            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:620 — \
-            over-window pressure after the second spills run (edges to split = 0, values spilled = \
-            2, reloads issued = 0); compiled before the #1420 fix only because split-edge reloads \
-            were dropped; compile-time, no inputs involved"]
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs \
+            (OpEmitter::dup) — over-window pressure after the second spills run (edges to split = \
+            0, values spilled = 2, reloads issued = 0); compiled before the #1420 fix only because \
+            split-edge reloads were dropped; compile-time, no inputs involved"]
 fn spill_store_guard() {
     run_case_with_flags(
         "spill_store_guard",
