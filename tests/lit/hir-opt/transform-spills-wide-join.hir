@@ -1,0 +1,793 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(transform-spills))' | filecheck %s
+
+// A `cf.switch` with 256 cases plus a fallback, every arm branching to one join block, while
+// %1 stays live across the join. The spill analysis counts, per value live into a join, the
+// predecessors it arrives from; 257 executable predecessors overflowed the 8-bit count it used
+// to keep (`attempt to add with overflow` in debug builds, a wrapped count in release builds).
+// Nothing exceeds the operand stack here, so the function must come out without a spill.
+
+// CHECK-NOT: hir.store_local
+// CHECK: cf.switch %0 [
+// CHECK-NOT: hir.store_local
+// CHECK: ^[[JOIN:block\d+]](%[[R:\d+]]: u32):
+// CHECK-NEXT: arith.add %[[R]], %1
+// CHECK-NEXT: builtin.ret %
+builtin.module public @test {
+    builtin.function public extern("C") @wide_join(%0: u32, %1: u32) -> u32 {
+        cf.switch %0 [#builtin.u32<0> -> ^case0, #builtin.u32<1> -> ^case1, #builtin.u32<2> -> ^case2, #builtin.u32<3> -> ^case3, #builtin.u32<4> -> ^case4, #builtin.u32<5> -> ^case5, #builtin.u32<6> -> ^case6, #builtin.u32<7> -> ^case7, #builtin.u32<8> -> ^case8, #builtin.u32<9> -> ^case9, #builtin.u32<10> -> ^case10, #builtin.u32<11> -> ^case11, #builtin.u32<12> -> ^case12, #builtin.u32<13> -> ^case13, #builtin.u32<14> -> ^case14, #builtin.u32<15> -> ^case15, #builtin.u32<16> -> ^case16, #builtin.u32<17> -> ^case17, #builtin.u32<18> -> ^case18, #builtin.u32<19> -> ^case19, #builtin.u32<20> -> ^case20, #builtin.u32<21> -> ^case21, #builtin.u32<22> -> ^case22, #builtin.u32<23> -> ^case23, #builtin.u32<24> -> ^case24, #builtin.u32<25> -> ^case25, #builtin.u32<26> -> ^case26, #builtin.u32<27> -> ^case27, #builtin.u32<28> -> ^case28, #builtin.u32<29> -> ^case29, #builtin.u32<30> -> ^case30, #builtin.u32<31> -> ^case31, #builtin.u32<32> -> ^case32, #builtin.u32<33> -> ^case33, #builtin.u32<34> -> ^case34, #builtin.u32<35> -> ^case35, #builtin.u32<36> -> ^case36, #builtin.u32<37> -> ^case37, #builtin.u32<38> -> ^case38, #builtin.u32<39> -> ^case39, #builtin.u32<40> -> ^case40, #builtin.u32<41> -> ^case41, #builtin.u32<42> -> ^case42, #builtin.u32<43> -> ^case43, #builtin.u32<44> -> ^case44, #builtin.u32<45> -> ^case45, #builtin.u32<46> -> ^case46, #builtin.u32<47> -> ^case47, #builtin.u32<48> -> ^case48, #builtin.u32<49> -> ^case49, #builtin.u32<50> -> ^case50, #builtin.u32<51> -> ^case51, #builtin.u32<52> -> ^case52, #builtin.u32<53> -> ^case53, #builtin.u32<54> -> ^case54, #builtin.u32<55> -> ^case55, #builtin.u32<56> -> ^case56, #builtin.u32<57> -> ^case57, #builtin.u32<58> -> ^case58, #builtin.u32<59> -> ^case59, #builtin.u32<60> -> ^case60, #builtin.u32<61> -> ^case61, #builtin.u32<62> -> ^case62, #builtin.u32<63> -> ^case63, #builtin.u32<64> -> ^case64, #builtin.u32<65> -> ^case65, #builtin.u32<66> -> ^case66, #builtin.u32<67> -> ^case67, #builtin.u32<68> -> ^case68, #builtin.u32<69> -> ^case69, #builtin.u32<70> -> ^case70, #builtin.u32<71> -> ^case71, #builtin.u32<72> -> ^case72, #builtin.u32<73> -> ^case73, #builtin.u32<74> -> ^case74, #builtin.u32<75> -> ^case75, #builtin.u32<76> -> ^case76, #builtin.u32<77> -> ^case77, #builtin.u32<78> -> ^case78, #builtin.u32<79> -> ^case79, #builtin.u32<80> -> ^case80, #builtin.u32<81> -> ^case81, #builtin.u32<82> -> ^case82, #builtin.u32<83> -> ^case83, #builtin.u32<84> -> ^case84, #builtin.u32<85> -> ^case85, #builtin.u32<86> -> ^case86, #builtin.u32<87> -> ^case87, #builtin.u32<88> -> ^case88, #builtin.u32<89> -> ^case89, #builtin.u32<90> -> ^case90, #builtin.u32<91> -> ^case91, #builtin.u32<92> -> ^case92, #builtin.u32<93> -> ^case93, #builtin.u32<94> -> ^case94, #builtin.u32<95> -> ^case95, #builtin.u32<96> -> ^case96, #builtin.u32<97> -> ^case97, #builtin.u32<98> -> ^case98, #builtin.u32<99> -> ^case99, #builtin.u32<100> -> ^case100, #builtin.u32<101> -> ^case101, #builtin.u32<102> -> ^case102, #builtin.u32<103> -> ^case103, #builtin.u32<104> -> ^case104, #builtin.u32<105> -> ^case105, #builtin.u32<106> -> ^case106, #builtin.u32<107> -> ^case107, #builtin.u32<108> -> ^case108, #builtin.u32<109> -> ^case109, #builtin.u32<110> -> ^case110, #builtin.u32<111> -> ^case111, #builtin.u32<112> -> ^case112, #builtin.u32<113> -> ^case113, #builtin.u32<114> -> ^case114, #builtin.u32<115> -> ^case115, #builtin.u32<116> -> ^case116, #builtin.u32<117> -> ^case117, #builtin.u32<118> -> ^case118, #builtin.u32<119> -> ^case119, #builtin.u32<120> -> ^case120, #builtin.u32<121> -> ^case121, #builtin.u32<122> -> ^case122, #builtin.u32<123> -> ^case123, #builtin.u32<124> -> ^case124, #builtin.u32<125> -> ^case125, #builtin.u32<126> -> ^case126, #builtin.u32<127> -> ^case127, #builtin.u32<128> -> ^case128, #builtin.u32<129> -> ^case129, #builtin.u32<130> -> ^case130, #builtin.u32<131> -> ^case131, #builtin.u32<132> -> ^case132, #builtin.u32<133> -> ^case133, #builtin.u32<134> -> ^case134, #builtin.u32<135> -> ^case135, #builtin.u32<136> -> ^case136, #builtin.u32<137> -> ^case137, #builtin.u32<138> -> ^case138, #builtin.u32<139> -> ^case139, #builtin.u32<140> -> ^case140, #builtin.u32<141> -> ^case141, #builtin.u32<142> -> ^case142, #builtin.u32<143> -> ^case143, #builtin.u32<144> -> ^case144, #builtin.u32<145> -> ^case145, #builtin.u32<146> -> ^case146, #builtin.u32<147> -> ^case147, #builtin.u32<148> -> ^case148, #builtin.u32<149> -> ^case149, #builtin.u32<150> -> ^case150, #builtin.u32<151> -> ^case151, #builtin.u32<152> -> ^case152, #builtin.u32<153> -> ^case153, #builtin.u32<154> -> ^case154, #builtin.u32<155> -> ^case155, #builtin.u32<156> -> ^case156, #builtin.u32<157> -> ^case157, #builtin.u32<158> -> ^case158, #builtin.u32<159> -> ^case159, #builtin.u32<160> -> ^case160, #builtin.u32<161> -> ^case161, #builtin.u32<162> -> ^case162, #builtin.u32<163> -> ^case163, #builtin.u32<164> -> ^case164, #builtin.u32<165> -> ^case165, #builtin.u32<166> -> ^case166, #builtin.u32<167> -> ^case167, #builtin.u32<168> -> ^case168, #builtin.u32<169> -> ^case169, #builtin.u32<170> -> ^case170, #builtin.u32<171> -> ^case171, #builtin.u32<172> -> ^case172, #builtin.u32<173> -> ^case173, #builtin.u32<174> -> ^case174, #builtin.u32<175> -> ^case175, #builtin.u32<176> -> ^case176, #builtin.u32<177> -> ^case177, #builtin.u32<178> -> ^case178, #builtin.u32<179> -> ^case179, #builtin.u32<180> -> ^case180, #builtin.u32<181> -> ^case181, #builtin.u32<182> -> ^case182, #builtin.u32<183> -> ^case183, #builtin.u32<184> -> ^case184, #builtin.u32<185> -> ^case185, #builtin.u32<186> -> ^case186, #builtin.u32<187> -> ^case187, #builtin.u32<188> -> ^case188, #builtin.u32<189> -> ^case189, #builtin.u32<190> -> ^case190, #builtin.u32<191> -> ^case191, #builtin.u32<192> -> ^case192, #builtin.u32<193> -> ^case193, #builtin.u32<194> -> ^case194, #builtin.u32<195> -> ^case195, #builtin.u32<196> -> ^case196, #builtin.u32<197> -> ^case197, #builtin.u32<198> -> ^case198, #builtin.u32<199> -> ^case199, #builtin.u32<200> -> ^case200, #builtin.u32<201> -> ^case201, #builtin.u32<202> -> ^case202, #builtin.u32<203> -> ^case203, #builtin.u32<204> -> ^case204, #builtin.u32<205> -> ^case205, #builtin.u32<206> -> ^case206, #builtin.u32<207> -> ^case207, #builtin.u32<208> -> ^case208, #builtin.u32<209> -> ^case209, #builtin.u32<210> -> ^case210, #builtin.u32<211> -> ^case211, #builtin.u32<212> -> ^case212, #builtin.u32<213> -> ^case213, #builtin.u32<214> -> ^case214, #builtin.u32<215> -> ^case215, #builtin.u32<216> -> ^case216, #builtin.u32<217> -> ^case217, #builtin.u32<218> -> ^case218, #builtin.u32<219> -> ^case219, #builtin.u32<220> -> ^case220, #builtin.u32<221> -> ^case221, #builtin.u32<222> -> ^case222, #builtin.u32<223> -> ^case223, #builtin.u32<224> -> ^case224, #builtin.u32<225> -> ^case225, #builtin.u32<226> -> ^case226, #builtin.u32<227> -> ^case227, #builtin.u32<228> -> ^case228, #builtin.u32<229> -> ^case229, #builtin.u32<230> -> ^case230, #builtin.u32<231> -> ^case231, #builtin.u32<232> -> ^case232, #builtin.u32<233> -> ^case233, #builtin.u32<234> -> ^case234, #builtin.u32<235> -> ^case235, #builtin.u32<236> -> ^case236, #builtin.u32<237> -> ^case237, #builtin.u32<238> -> ^case238, #builtin.u32<239> -> ^case239, #builtin.u32<240> -> ^case240, #builtin.u32<241> -> ^case241, #builtin.u32<242> -> ^case242, #builtin.u32<243> -> ^case243, #builtin.u32<244> -> ^case244, #builtin.u32<245> -> ^case245, #builtin.u32<246> -> ^case246, #builtin.u32<247> -> ^case247, #builtin.u32<248> -> ^case248, #builtin.u32<249> -> ^case249, #builtin.u32<250> -> ^case250, #builtin.u32<251> -> ^case251, #builtin.u32<252> -> ^case252, #builtin.u32<253> -> ^case253, #builtin.u32<254> -> ^case254, #builtin.u32<255> -> ^case255], ^fallback : (u32);
+    ^case0:
+        %2 = arith.constant 0 : u32;
+        cf.br ^join(%2 : u32);
+    ^case1:
+        %3 = arith.constant 1 : u32;
+        cf.br ^join(%3 : u32);
+    ^case2:
+        %4 = arith.constant 2 : u32;
+        cf.br ^join(%4 : u32);
+    ^case3:
+        %5 = arith.constant 3 : u32;
+        cf.br ^join(%5 : u32);
+    ^case4:
+        %6 = arith.constant 4 : u32;
+        cf.br ^join(%6 : u32);
+    ^case5:
+        %7 = arith.constant 5 : u32;
+        cf.br ^join(%7 : u32);
+    ^case6:
+        %8 = arith.constant 6 : u32;
+        cf.br ^join(%8 : u32);
+    ^case7:
+        %9 = arith.constant 7 : u32;
+        cf.br ^join(%9 : u32);
+    ^case8:
+        %10 = arith.constant 8 : u32;
+        cf.br ^join(%10 : u32);
+    ^case9:
+        %11 = arith.constant 9 : u32;
+        cf.br ^join(%11 : u32);
+    ^case10:
+        %12 = arith.constant 10 : u32;
+        cf.br ^join(%12 : u32);
+    ^case11:
+        %13 = arith.constant 11 : u32;
+        cf.br ^join(%13 : u32);
+    ^case12:
+        %14 = arith.constant 12 : u32;
+        cf.br ^join(%14 : u32);
+    ^case13:
+        %15 = arith.constant 13 : u32;
+        cf.br ^join(%15 : u32);
+    ^case14:
+        %16 = arith.constant 14 : u32;
+        cf.br ^join(%16 : u32);
+    ^case15:
+        %17 = arith.constant 15 : u32;
+        cf.br ^join(%17 : u32);
+    ^case16:
+        %18 = arith.constant 16 : u32;
+        cf.br ^join(%18 : u32);
+    ^case17:
+        %19 = arith.constant 17 : u32;
+        cf.br ^join(%19 : u32);
+    ^case18:
+        %20 = arith.constant 18 : u32;
+        cf.br ^join(%20 : u32);
+    ^case19:
+        %21 = arith.constant 19 : u32;
+        cf.br ^join(%21 : u32);
+    ^case20:
+        %22 = arith.constant 20 : u32;
+        cf.br ^join(%22 : u32);
+    ^case21:
+        %23 = arith.constant 21 : u32;
+        cf.br ^join(%23 : u32);
+    ^case22:
+        %24 = arith.constant 22 : u32;
+        cf.br ^join(%24 : u32);
+    ^case23:
+        %25 = arith.constant 23 : u32;
+        cf.br ^join(%25 : u32);
+    ^case24:
+        %26 = arith.constant 24 : u32;
+        cf.br ^join(%26 : u32);
+    ^case25:
+        %27 = arith.constant 25 : u32;
+        cf.br ^join(%27 : u32);
+    ^case26:
+        %28 = arith.constant 26 : u32;
+        cf.br ^join(%28 : u32);
+    ^case27:
+        %29 = arith.constant 27 : u32;
+        cf.br ^join(%29 : u32);
+    ^case28:
+        %30 = arith.constant 28 : u32;
+        cf.br ^join(%30 : u32);
+    ^case29:
+        %31 = arith.constant 29 : u32;
+        cf.br ^join(%31 : u32);
+    ^case30:
+        %32 = arith.constant 30 : u32;
+        cf.br ^join(%32 : u32);
+    ^case31:
+        %33 = arith.constant 31 : u32;
+        cf.br ^join(%33 : u32);
+    ^case32:
+        %34 = arith.constant 32 : u32;
+        cf.br ^join(%34 : u32);
+    ^case33:
+        %35 = arith.constant 33 : u32;
+        cf.br ^join(%35 : u32);
+    ^case34:
+        %36 = arith.constant 34 : u32;
+        cf.br ^join(%36 : u32);
+    ^case35:
+        %37 = arith.constant 35 : u32;
+        cf.br ^join(%37 : u32);
+    ^case36:
+        %38 = arith.constant 36 : u32;
+        cf.br ^join(%38 : u32);
+    ^case37:
+        %39 = arith.constant 37 : u32;
+        cf.br ^join(%39 : u32);
+    ^case38:
+        %40 = arith.constant 38 : u32;
+        cf.br ^join(%40 : u32);
+    ^case39:
+        %41 = arith.constant 39 : u32;
+        cf.br ^join(%41 : u32);
+    ^case40:
+        %42 = arith.constant 40 : u32;
+        cf.br ^join(%42 : u32);
+    ^case41:
+        %43 = arith.constant 41 : u32;
+        cf.br ^join(%43 : u32);
+    ^case42:
+        %44 = arith.constant 42 : u32;
+        cf.br ^join(%44 : u32);
+    ^case43:
+        %45 = arith.constant 43 : u32;
+        cf.br ^join(%45 : u32);
+    ^case44:
+        %46 = arith.constant 44 : u32;
+        cf.br ^join(%46 : u32);
+    ^case45:
+        %47 = arith.constant 45 : u32;
+        cf.br ^join(%47 : u32);
+    ^case46:
+        %48 = arith.constant 46 : u32;
+        cf.br ^join(%48 : u32);
+    ^case47:
+        %49 = arith.constant 47 : u32;
+        cf.br ^join(%49 : u32);
+    ^case48:
+        %50 = arith.constant 48 : u32;
+        cf.br ^join(%50 : u32);
+    ^case49:
+        %51 = arith.constant 49 : u32;
+        cf.br ^join(%51 : u32);
+    ^case50:
+        %52 = arith.constant 50 : u32;
+        cf.br ^join(%52 : u32);
+    ^case51:
+        %53 = arith.constant 51 : u32;
+        cf.br ^join(%53 : u32);
+    ^case52:
+        %54 = arith.constant 52 : u32;
+        cf.br ^join(%54 : u32);
+    ^case53:
+        %55 = arith.constant 53 : u32;
+        cf.br ^join(%55 : u32);
+    ^case54:
+        %56 = arith.constant 54 : u32;
+        cf.br ^join(%56 : u32);
+    ^case55:
+        %57 = arith.constant 55 : u32;
+        cf.br ^join(%57 : u32);
+    ^case56:
+        %58 = arith.constant 56 : u32;
+        cf.br ^join(%58 : u32);
+    ^case57:
+        %59 = arith.constant 57 : u32;
+        cf.br ^join(%59 : u32);
+    ^case58:
+        %60 = arith.constant 58 : u32;
+        cf.br ^join(%60 : u32);
+    ^case59:
+        %61 = arith.constant 59 : u32;
+        cf.br ^join(%61 : u32);
+    ^case60:
+        %62 = arith.constant 60 : u32;
+        cf.br ^join(%62 : u32);
+    ^case61:
+        %63 = arith.constant 61 : u32;
+        cf.br ^join(%63 : u32);
+    ^case62:
+        %64 = arith.constant 62 : u32;
+        cf.br ^join(%64 : u32);
+    ^case63:
+        %65 = arith.constant 63 : u32;
+        cf.br ^join(%65 : u32);
+    ^case64:
+        %66 = arith.constant 64 : u32;
+        cf.br ^join(%66 : u32);
+    ^case65:
+        %67 = arith.constant 65 : u32;
+        cf.br ^join(%67 : u32);
+    ^case66:
+        %68 = arith.constant 66 : u32;
+        cf.br ^join(%68 : u32);
+    ^case67:
+        %69 = arith.constant 67 : u32;
+        cf.br ^join(%69 : u32);
+    ^case68:
+        %70 = arith.constant 68 : u32;
+        cf.br ^join(%70 : u32);
+    ^case69:
+        %71 = arith.constant 69 : u32;
+        cf.br ^join(%71 : u32);
+    ^case70:
+        %72 = arith.constant 70 : u32;
+        cf.br ^join(%72 : u32);
+    ^case71:
+        %73 = arith.constant 71 : u32;
+        cf.br ^join(%73 : u32);
+    ^case72:
+        %74 = arith.constant 72 : u32;
+        cf.br ^join(%74 : u32);
+    ^case73:
+        %75 = arith.constant 73 : u32;
+        cf.br ^join(%75 : u32);
+    ^case74:
+        %76 = arith.constant 74 : u32;
+        cf.br ^join(%76 : u32);
+    ^case75:
+        %77 = arith.constant 75 : u32;
+        cf.br ^join(%77 : u32);
+    ^case76:
+        %78 = arith.constant 76 : u32;
+        cf.br ^join(%78 : u32);
+    ^case77:
+        %79 = arith.constant 77 : u32;
+        cf.br ^join(%79 : u32);
+    ^case78:
+        %80 = arith.constant 78 : u32;
+        cf.br ^join(%80 : u32);
+    ^case79:
+        %81 = arith.constant 79 : u32;
+        cf.br ^join(%81 : u32);
+    ^case80:
+        %82 = arith.constant 80 : u32;
+        cf.br ^join(%82 : u32);
+    ^case81:
+        %83 = arith.constant 81 : u32;
+        cf.br ^join(%83 : u32);
+    ^case82:
+        %84 = arith.constant 82 : u32;
+        cf.br ^join(%84 : u32);
+    ^case83:
+        %85 = arith.constant 83 : u32;
+        cf.br ^join(%85 : u32);
+    ^case84:
+        %86 = arith.constant 84 : u32;
+        cf.br ^join(%86 : u32);
+    ^case85:
+        %87 = arith.constant 85 : u32;
+        cf.br ^join(%87 : u32);
+    ^case86:
+        %88 = arith.constant 86 : u32;
+        cf.br ^join(%88 : u32);
+    ^case87:
+        %89 = arith.constant 87 : u32;
+        cf.br ^join(%89 : u32);
+    ^case88:
+        %90 = arith.constant 88 : u32;
+        cf.br ^join(%90 : u32);
+    ^case89:
+        %91 = arith.constant 89 : u32;
+        cf.br ^join(%91 : u32);
+    ^case90:
+        %92 = arith.constant 90 : u32;
+        cf.br ^join(%92 : u32);
+    ^case91:
+        %93 = arith.constant 91 : u32;
+        cf.br ^join(%93 : u32);
+    ^case92:
+        %94 = arith.constant 92 : u32;
+        cf.br ^join(%94 : u32);
+    ^case93:
+        %95 = arith.constant 93 : u32;
+        cf.br ^join(%95 : u32);
+    ^case94:
+        %96 = arith.constant 94 : u32;
+        cf.br ^join(%96 : u32);
+    ^case95:
+        %97 = arith.constant 95 : u32;
+        cf.br ^join(%97 : u32);
+    ^case96:
+        %98 = arith.constant 96 : u32;
+        cf.br ^join(%98 : u32);
+    ^case97:
+        %99 = arith.constant 97 : u32;
+        cf.br ^join(%99 : u32);
+    ^case98:
+        %100 = arith.constant 98 : u32;
+        cf.br ^join(%100 : u32);
+    ^case99:
+        %101 = arith.constant 99 : u32;
+        cf.br ^join(%101 : u32);
+    ^case100:
+        %102 = arith.constant 100 : u32;
+        cf.br ^join(%102 : u32);
+    ^case101:
+        %103 = arith.constant 101 : u32;
+        cf.br ^join(%103 : u32);
+    ^case102:
+        %104 = arith.constant 102 : u32;
+        cf.br ^join(%104 : u32);
+    ^case103:
+        %105 = arith.constant 103 : u32;
+        cf.br ^join(%105 : u32);
+    ^case104:
+        %106 = arith.constant 104 : u32;
+        cf.br ^join(%106 : u32);
+    ^case105:
+        %107 = arith.constant 105 : u32;
+        cf.br ^join(%107 : u32);
+    ^case106:
+        %108 = arith.constant 106 : u32;
+        cf.br ^join(%108 : u32);
+    ^case107:
+        %109 = arith.constant 107 : u32;
+        cf.br ^join(%109 : u32);
+    ^case108:
+        %110 = arith.constant 108 : u32;
+        cf.br ^join(%110 : u32);
+    ^case109:
+        %111 = arith.constant 109 : u32;
+        cf.br ^join(%111 : u32);
+    ^case110:
+        %112 = arith.constant 110 : u32;
+        cf.br ^join(%112 : u32);
+    ^case111:
+        %113 = arith.constant 111 : u32;
+        cf.br ^join(%113 : u32);
+    ^case112:
+        %114 = arith.constant 112 : u32;
+        cf.br ^join(%114 : u32);
+    ^case113:
+        %115 = arith.constant 113 : u32;
+        cf.br ^join(%115 : u32);
+    ^case114:
+        %116 = arith.constant 114 : u32;
+        cf.br ^join(%116 : u32);
+    ^case115:
+        %117 = arith.constant 115 : u32;
+        cf.br ^join(%117 : u32);
+    ^case116:
+        %118 = arith.constant 116 : u32;
+        cf.br ^join(%118 : u32);
+    ^case117:
+        %119 = arith.constant 117 : u32;
+        cf.br ^join(%119 : u32);
+    ^case118:
+        %120 = arith.constant 118 : u32;
+        cf.br ^join(%120 : u32);
+    ^case119:
+        %121 = arith.constant 119 : u32;
+        cf.br ^join(%121 : u32);
+    ^case120:
+        %122 = arith.constant 120 : u32;
+        cf.br ^join(%122 : u32);
+    ^case121:
+        %123 = arith.constant 121 : u32;
+        cf.br ^join(%123 : u32);
+    ^case122:
+        %124 = arith.constant 122 : u32;
+        cf.br ^join(%124 : u32);
+    ^case123:
+        %125 = arith.constant 123 : u32;
+        cf.br ^join(%125 : u32);
+    ^case124:
+        %126 = arith.constant 124 : u32;
+        cf.br ^join(%126 : u32);
+    ^case125:
+        %127 = arith.constant 125 : u32;
+        cf.br ^join(%127 : u32);
+    ^case126:
+        %128 = arith.constant 126 : u32;
+        cf.br ^join(%128 : u32);
+    ^case127:
+        %129 = arith.constant 127 : u32;
+        cf.br ^join(%129 : u32);
+    ^case128:
+        %130 = arith.constant 128 : u32;
+        cf.br ^join(%130 : u32);
+    ^case129:
+        %131 = arith.constant 129 : u32;
+        cf.br ^join(%131 : u32);
+    ^case130:
+        %132 = arith.constant 130 : u32;
+        cf.br ^join(%132 : u32);
+    ^case131:
+        %133 = arith.constant 131 : u32;
+        cf.br ^join(%133 : u32);
+    ^case132:
+        %134 = arith.constant 132 : u32;
+        cf.br ^join(%134 : u32);
+    ^case133:
+        %135 = arith.constant 133 : u32;
+        cf.br ^join(%135 : u32);
+    ^case134:
+        %136 = arith.constant 134 : u32;
+        cf.br ^join(%136 : u32);
+    ^case135:
+        %137 = arith.constant 135 : u32;
+        cf.br ^join(%137 : u32);
+    ^case136:
+        %138 = arith.constant 136 : u32;
+        cf.br ^join(%138 : u32);
+    ^case137:
+        %139 = arith.constant 137 : u32;
+        cf.br ^join(%139 : u32);
+    ^case138:
+        %140 = arith.constant 138 : u32;
+        cf.br ^join(%140 : u32);
+    ^case139:
+        %141 = arith.constant 139 : u32;
+        cf.br ^join(%141 : u32);
+    ^case140:
+        %142 = arith.constant 140 : u32;
+        cf.br ^join(%142 : u32);
+    ^case141:
+        %143 = arith.constant 141 : u32;
+        cf.br ^join(%143 : u32);
+    ^case142:
+        %144 = arith.constant 142 : u32;
+        cf.br ^join(%144 : u32);
+    ^case143:
+        %145 = arith.constant 143 : u32;
+        cf.br ^join(%145 : u32);
+    ^case144:
+        %146 = arith.constant 144 : u32;
+        cf.br ^join(%146 : u32);
+    ^case145:
+        %147 = arith.constant 145 : u32;
+        cf.br ^join(%147 : u32);
+    ^case146:
+        %148 = arith.constant 146 : u32;
+        cf.br ^join(%148 : u32);
+    ^case147:
+        %149 = arith.constant 147 : u32;
+        cf.br ^join(%149 : u32);
+    ^case148:
+        %150 = arith.constant 148 : u32;
+        cf.br ^join(%150 : u32);
+    ^case149:
+        %151 = arith.constant 149 : u32;
+        cf.br ^join(%151 : u32);
+    ^case150:
+        %152 = arith.constant 150 : u32;
+        cf.br ^join(%152 : u32);
+    ^case151:
+        %153 = arith.constant 151 : u32;
+        cf.br ^join(%153 : u32);
+    ^case152:
+        %154 = arith.constant 152 : u32;
+        cf.br ^join(%154 : u32);
+    ^case153:
+        %155 = arith.constant 153 : u32;
+        cf.br ^join(%155 : u32);
+    ^case154:
+        %156 = arith.constant 154 : u32;
+        cf.br ^join(%156 : u32);
+    ^case155:
+        %157 = arith.constant 155 : u32;
+        cf.br ^join(%157 : u32);
+    ^case156:
+        %158 = arith.constant 156 : u32;
+        cf.br ^join(%158 : u32);
+    ^case157:
+        %159 = arith.constant 157 : u32;
+        cf.br ^join(%159 : u32);
+    ^case158:
+        %160 = arith.constant 158 : u32;
+        cf.br ^join(%160 : u32);
+    ^case159:
+        %161 = arith.constant 159 : u32;
+        cf.br ^join(%161 : u32);
+    ^case160:
+        %162 = arith.constant 160 : u32;
+        cf.br ^join(%162 : u32);
+    ^case161:
+        %163 = arith.constant 161 : u32;
+        cf.br ^join(%163 : u32);
+    ^case162:
+        %164 = arith.constant 162 : u32;
+        cf.br ^join(%164 : u32);
+    ^case163:
+        %165 = arith.constant 163 : u32;
+        cf.br ^join(%165 : u32);
+    ^case164:
+        %166 = arith.constant 164 : u32;
+        cf.br ^join(%166 : u32);
+    ^case165:
+        %167 = arith.constant 165 : u32;
+        cf.br ^join(%167 : u32);
+    ^case166:
+        %168 = arith.constant 166 : u32;
+        cf.br ^join(%168 : u32);
+    ^case167:
+        %169 = arith.constant 167 : u32;
+        cf.br ^join(%169 : u32);
+    ^case168:
+        %170 = arith.constant 168 : u32;
+        cf.br ^join(%170 : u32);
+    ^case169:
+        %171 = arith.constant 169 : u32;
+        cf.br ^join(%171 : u32);
+    ^case170:
+        %172 = arith.constant 170 : u32;
+        cf.br ^join(%172 : u32);
+    ^case171:
+        %173 = arith.constant 171 : u32;
+        cf.br ^join(%173 : u32);
+    ^case172:
+        %174 = arith.constant 172 : u32;
+        cf.br ^join(%174 : u32);
+    ^case173:
+        %175 = arith.constant 173 : u32;
+        cf.br ^join(%175 : u32);
+    ^case174:
+        %176 = arith.constant 174 : u32;
+        cf.br ^join(%176 : u32);
+    ^case175:
+        %177 = arith.constant 175 : u32;
+        cf.br ^join(%177 : u32);
+    ^case176:
+        %178 = arith.constant 176 : u32;
+        cf.br ^join(%178 : u32);
+    ^case177:
+        %179 = arith.constant 177 : u32;
+        cf.br ^join(%179 : u32);
+    ^case178:
+        %180 = arith.constant 178 : u32;
+        cf.br ^join(%180 : u32);
+    ^case179:
+        %181 = arith.constant 179 : u32;
+        cf.br ^join(%181 : u32);
+    ^case180:
+        %182 = arith.constant 180 : u32;
+        cf.br ^join(%182 : u32);
+    ^case181:
+        %183 = arith.constant 181 : u32;
+        cf.br ^join(%183 : u32);
+    ^case182:
+        %184 = arith.constant 182 : u32;
+        cf.br ^join(%184 : u32);
+    ^case183:
+        %185 = arith.constant 183 : u32;
+        cf.br ^join(%185 : u32);
+    ^case184:
+        %186 = arith.constant 184 : u32;
+        cf.br ^join(%186 : u32);
+    ^case185:
+        %187 = arith.constant 185 : u32;
+        cf.br ^join(%187 : u32);
+    ^case186:
+        %188 = arith.constant 186 : u32;
+        cf.br ^join(%188 : u32);
+    ^case187:
+        %189 = arith.constant 187 : u32;
+        cf.br ^join(%189 : u32);
+    ^case188:
+        %190 = arith.constant 188 : u32;
+        cf.br ^join(%190 : u32);
+    ^case189:
+        %191 = arith.constant 189 : u32;
+        cf.br ^join(%191 : u32);
+    ^case190:
+        %192 = arith.constant 190 : u32;
+        cf.br ^join(%192 : u32);
+    ^case191:
+        %193 = arith.constant 191 : u32;
+        cf.br ^join(%193 : u32);
+    ^case192:
+        %194 = arith.constant 192 : u32;
+        cf.br ^join(%194 : u32);
+    ^case193:
+        %195 = arith.constant 193 : u32;
+        cf.br ^join(%195 : u32);
+    ^case194:
+        %196 = arith.constant 194 : u32;
+        cf.br ^join(%196 : u32);
+    ^case195:
+        %197 = arith.constant 195 : u32;
+        cf.br ^join(%197 : u32);
+    ^case196:
+        %198 = arith.constant 196 : u32;
+        cf.br ^join(%198 : u32);
+    ^case197:
+        %199 = arith.constant 197 : u32;
+        cf.br ^join(%199 : u32);
+    ^case198:
+        %200 = arith.constant 198 : u32;
+        cf.br ^join(%200 : u32);
+    ^case199:
+        %201 = arith.constant 199 : u32;
+        cf.br ^join(%201 : u32);
+    ^case200:
+        %202 = arith.constant 200 : u32;
+        cf.br ^join(%202 : u32);
+    ^case201:
+        %203 = arith.constant 201 : u32;
+        cf.br ^join(%203 : u32);
+    ^case202:
+        %204 = arith.constant 202 : u32;
+        cf.br ^join(%204 : u32);
+    ^case203:
+        %205 = arith.constant 203 : u32;
+        cf.br ^join(%205 : u32);
+    ^case204:
+        %206 = arith.constant 204 : u32;
+        cf.br ^join(%206 : u32);
+    ^case205:
+        %207 = arith.constant 205 : u32;
+        cf.br ^join(%207 : u32);
+    ^case206:
+        %208 = arith.constant 206 : u32;
+        cf.br ^join(%208 : u32);
+    ^case207:
+        %209 = arith.constant 207 : u32;
+        cf.br ^join(%209 : u32);
+    ^case208:
+        %210 = arith.constant 208 : u32;
+        cf.br ^join(%210 : u32);
+    ^case209:
+        %211 = arith.constant 209 : u32;
+        cf.br ^join(%211 : u32);
+    ^case210:
+        %212 = arith.constant 210 : u32;
+        cf.br ^join(%212 : u32);
+    ^case211:
+        %213 = arith.constant 211 : u32;
+        cf.br ^join(%213 : u32);
+    ^case212:
+        %214 = arith.constant 212 : u32;
+        cf.br ^join(%214 : u32);
+    ^case213:
+        %215 = arith.constant 213 : u32;
+        cf.br ^join(%215 : u32);
+    ^case214:
+        %216 = arith.constant 214 : u32;
+        cf.br ^join(%216 : u32);
+    ^case215:
+        %217 = arith.constant 215 : u32;
+        cf.br ^join(%217 : u32);
+    ^case216:
+        %218 = arith.constant 216 : u32;
+        cf.br ^join(%218 : u32);
+    ^case217:
+        %219 = arith.constant 217 : u32;
+        cf.br ^join(%219 : u32);
+    ^case218:
+        %220 = arith.constant 218 : u32;
+        cf.br ^join(%220 : u32);
+    ^case219:
+        %221 = arith.constant 219 : u32;
+        cf.br ^join(%221 : u32);
+    ^case220:
+        %222 = arith.constant 220 : u32;
+        cf.br ^join(%222 : u32);
+    ^case221:
+        %223 = arith.constant 221 : u32;
+        cf.br ^join(%223 : u32);
+    ^case222:
+        %224 = arith.constant 222 : u32;
+        cf.br ^join(%224 : u32);
+    ^case223:
+        %225 = arith.constant 223 : u32;
+        cf.br ^join(%225 : u32);
+    ^case224:
+        %226 = arith.constant 224 : u32;
+        cf.br ^join(%226 : u32);
+    ^case225:
+        %227 = arith.constant 225 : u32;
+        cf.br ^join(%227 : u32);
+    ^case226:
+        %228 = arith.constant 226 : u32;
+        cf.br ^join(%228 : u32);
+    ^case227:
+        %229 = arith.constant 227 : u32;
+        cf.br ^join(%229 : u32);
+    ^case228:
+        %230 = arith.constant 228 : u32;
+        cf.br ^join(%230 : u32);
+    ^case229:
+        %231 = arith.constant 229 : u32;
+        cf.br ^join(%231 : u32);
+    ^case230:
+        %232 = arith.constant 230 : u32;
+        cf.br ^join(%232 : u32);
+    ^case231:
+        %233 = arith.constant 231 : u32;
+        cf.br ^join(%233 : u32);
+    ^case232:
+        %234 = arith.constant 232 : u32;
+        cf.br ^join(%234 : u32);
+    ^case233:
+        %235 = arith.constant 233 : u32;
+        cf.br ^join(%235 : u32);
+    ^case234:
+        %236 = arith.constant 234 : u32;
+        cf.br ^join(%236 : u32);
+    ^case235:
+        %237 = arith.constant 235 : u32;
+        cf.br ^join(%237 : u32);
+    ^case236:
+        %238 = arith.constant 236 : u32;
+        cf.br ^join(%238 : u32);
+    ^case237:
+        %239 = arith.constant 237 : u32;
+        cf.br ^join(%239 : u32);
+    ^case238:
+        %240 = arith.constant 238 : u32;
+        cf.br ^join(%240 : u32);
+    ^case239:
+        %241 = arith.constant 239 : u32;
+        cf.br ^join(%241 : u32);
+    ^case240:
+        %242 = arith.constant 240 : u32;
+        cf.br ^join(%242 : u32);
+    ^case241:
+        %243 = arith.constant 241 : u32;
+        cf.br ^join(%243 : u32);
+    ^case242:
+        %244 = arith.constant 242 : u32;
+        cf.br ^join(%244 : u32);
+    ^case243:
+        %245 = arith.constant 243 : u32;
+        cf.br ^join(%245 : u32);
+    ^case244:
+        %246 = arith.constant 244 : u32;
+        cf.br ^join(%246 : u32);
+    ^case245:
+        %247 = arith.constant 245 : u32;
+        cf.br ^join(%247 : u32);
+    ^case246:
+        %248 = arith.constant 246 : u32;
+        cf.br ^join(%248 : u32);
+    ^case247:
+        %249 = arith.constant 247 : u32;
+        cf.br ^join(%249 : u32);
+    ^case248:
+        %250 = arith.constant 248 : u32;
+        cf.br ^join(%250 : u32);
+    ^case249:
+        %251 = arith.constant 249 : u32;
+        cf.br ^join(%251 : u32);
+    ^case250:
+        %252 = arith.constant 250 : u32;
+        cf.br ^join(%252 : u32);
+    ^case251:
+        %253 = arith.constant 251 : u32;
+        cf.br ^join(%253 : u32);
+    ^case252:
+        %254 = arith.constant 252 : u32;
+        cf.br ^join(%254 : u32);
+    ^case253:
+        %255 = arith.constant 253 : u32;
+        cf.br ^join(%255 : u32);
+    ^case254:
+        %256 = arith.constant 254 : u32;
+        cf.br ^join(%256 : u32);
+    ^case255:
+        %257 = arith.constant 255 : u32;
+        cf.br ^join(%257 : u32);
+    ^fallback:
+        %258 = arith.constant 256 : u32;
+        cf.br ^join(%258 : u32);
+    ^join(%259: u32):
+        %260 = arith.add %259, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %260 : (u32);
+    };
+};

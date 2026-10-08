@@ -1345,7 +1345,7 @@ impl SpillAnalysis {
         block: &Block,
         liveness: &LivenessAnalysis,
     ) {
-        let mut freq = SmallOrdMap::<ValueOrAlias, u8, 4>::default();
+        let mut freq = SmallOrdMap::<ValueOrAlias, usize, 4>::default();
         let mut take = SmallSet::<ValueOrAlias, 4>::default();
         let mut cand = SmallSet::<ValueOrAlias, 4>::default();
 
@@ -1439,7 +1439,7 @@ impl SpillAnalysis {
         }
 
         for (v, count) in freq.iter() {
-            if *count as usize == predecessor_count {
+            if *count == predecessor_count {
                 cand.remove(v);
                 take.insert(*v);
             }
@@ -1498,7 +1498,7 @@ impl SpillAnalysis {
         branch: &dyn RegionBranchOpInterface,
         liveness: &LivenessAnalysis,
     ) {
-        let mut freq = SmallOrdMap::<ValueOrAlias, u8, 4>::default();
+        let mut freq = SmallOrdMap::<ValueOrAlias, usize, 4>::default();
         let mut take = SmallSet::<ValueOrAlias, 4>::default();
         let mut cand = SmallSet::<ValueOrAlias, 4>::default();
 
@@ -1561,7 +1561,7 @@ impl SpillAnalysis {
         }
 
         for (v, count) in freq.iter() {
-            if *count as usize == predecessor_count {
+            if *count == predecessor_count {
                 cand.remove(v);
                 take.insert(*v);
             }
