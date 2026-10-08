@@ -153,8 +153,9 @@ takes part in naming, and the WIT package and interface ids derive from the name
   `::miden::counter_contract::counter_contract::get_count`. Code that looks up exports by path in
   a package manifest, or `call`s them from MASM, needs the new path. Calls into dependencies use
   the dependency's paths, e.g. `call ::miden::basic_wallet::basic_wallet::receive_asset`.
-- Storage slot names are `<namespace>::<field>`:
-  `miden_counter_contract::counter_contract::count_map` becomes
+- Storage slot names are `<namespace>::<field>` instead of
+  `<[package].name>::<interface>::<field>` (each segment sanitized, with the `[package].name` of
+  `miden-project.toml`): `counter_contract::counter_contract::count_map` becomes
   `miden::counter_contract::counter_contract::count_map`. Storage slot ids derive from
   these names, so deployed components are re-keyed; accounts deployed with the old slot names
   need a migration, and host code that builds `StorageSlotName`s must use the new names. The
