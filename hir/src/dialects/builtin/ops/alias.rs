@@ -23,9 +23,6 @@ pub type FunctionAliasRef = crate::UnsafeIntrusiveEntityRef<FunctionAlias>;
 /// its own table. The canonical target must be callable (see the `Verify<dyn CallableSymbol>`
 /// implementation), but it does not need to live in the same symbol table as the aliases pointing
 /// to it.
-///
-/// An alias's visibility is independent of its target, so a public alias can expose a private
-/// target under the alias name.
 #[operation(
     dialect = BuiltinDialect,
     implements(Symbol, CallableSymbol, OpPrinter)
@@ -181,11 +178,11 @@ impl crate::Verify<dyn CallableSymbol> for FunctionAlias {
         use crate::Spanned;
 
         let span = self.as_operation().span();
-        self.as_operation()
+        let callee = self
+            .as_operation()
             .as_symbol_ref()
             .expect("function aliases are symbols")
             .resolve_callable()
-            .map(|_| ())
             .map_err(|err| {
                 context
                     .diagnostics()
@@ -196,7 +193,54 @@ impl crate::Verify<dyn CallableSymbol> for FunctionAlias {
                     ))
                     .with_primary_label(span, "cannot resolve this alias to a callable")
                     .into_report()
-            })
+            })?;
+
+        // Private symbols are only accessible from their defining symbol table.
+        let target = self.resolve_target().expect("callable resolution validated the target");
+        let target = target.borrow();
+        if target.is_private()
+            && target.as_symbol_operation().nearest_symbol_table()
+                != self.as_operation().nearest_symbol_table()
+        {
+            return Err(context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message(format!(
+                    "invalid builtin.function_alias '{}': target '{}' is private to another \
+                     symbol table",
+                    self.get_name().as_str(),
+                    target.path()
+                ))
+                .with_primary_label(span, "cannot alias a private symbol in another symbol table")
+                .with_secondary_label(
+                    target.as_symbol_operation().span(),
+                    "the private target is defined here",
+                )
+                .into_report());
+        }
+
+        // A non-private alias must not expose a private canonical callable.
+        let canonical = callee.target().as_symbol_ref();
+        let canonical = canonical.borrow();
+        if !self.visibility().is_private() && canonical.is_private() {
+            return Err(context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message(format!(
+                    "invalid builtin.function_alias '{}': {} alias cannot expose private target \
+                     '{}'",
+                    self.get_name().as_str(),
+                    self.visibility().as_str(),
+                    canonical.path()
+                ))
+                .with_primary_label(span, "this alias exposes a private callable")
+                .with_secondary_label(
+                    canonical.as_symbol_operation().span(),
+                    "the private canonical target is defined here",
+                )
+                .into_report());
+        }
+        Ok(())
     }
 }
 
@@ -266,7 +310,7 @@ mod tests {
 builtin.module public @test {
     builtin.function_alias public @bar -> @first;
     builtin.function_alias private @first -> @foo;
-    builtin.function private extern("C") @foo(%arg: u32) -> u32 {
+    builtin.function public extern("C") @foo(%arg: u32) -> u32 {
         builtin.ret %arg : (u32);
     };
 };
@@ -364,6 +408,159 @@ builtin.module public @test {
             mb.resolve_function("chain").unwrap().borrow().get_signature().clone(),
             updated_signature
         );
+    }
+
+    /// Parses and verifies a HIR module from source.
+    fn verify_alias_source(source: &str) -> Result<(), crate::Report> {
+        let test = Test::default();
+        parse::<Module>(ParserConfig::new(test.context_rc()), Uri::new("alias.hir"), source)
+            .map(|_| ())
+    }
+
+    fn verify_cross_module_alias(visibility: &str, target: &str) -> Result<(), crate::Report> {
+        let source = format!(
+            r#"
+builtin.module public @test {{
+    builtin.module public @api {{
+        builtin.function_alias {visibility} @alias -> ::@test::@implementation::@target;
+    }};
+    builtin.module public @implementation {{
+        {target}
+    }};
+}};
+"#
+        );
+        verify_alias_source(&source)
+    }
+
+    fn local_alias_source(
+        visibility: &str,
+        target_visibility: &str,
+        chained: bool,
+    ) -> alloc::string::String {
+        let target = if chained { "forward" } else { "body" };
+        format!(
+            r#"
+builtin.module public @test {{
+    builtin.function_alias {visibility} @alias -> @{target};
+    builtin.function_alias private @forward -> @body;
+    builtin.function {target_visibility} extern("C") @body() {{ builtin.ret; }};
+}};
+"#
+        )
+    }
+
+    #[test]
+    fn non_private_aliases_reject_private_canonical_targets() {
+        for visibility in ["public", "internal"] {
+            for chained in [false, true] {
+                let err = verify_alias_source(&local_alias_source(visibility, "private", chained))
+                    .expect_err("a non-private alias must not expose a private callable");
+                let message = err.to_string();
+                assert!(message.contains("builtin.function_alias 'alias'"), "{message}");
+                assert!(
+                    message.contains(&format!("{visibility} alias cannot expose private target")),
+                    "{message}"
+                );
+                assert!(message.contains("body"), "{message}");
+                assert_eq!(err.labels().unwrap().count(), 2);
+            }
+        }
+    }
+
+    #[test]
+    fn private_local_aliases_accept_private_canonical_targets() {
+        for chained in [false, true] {
+            // TODO instead of `unwrap` use expect which prints values of current loop params
+            verify_alias_source(&local_alias_source("private", "private", chained)).unwrap();
+        }
+    }
+
+    #[test]
+    fn aliases_accept_non_private_canonical_targets() {
+        for visibility in ["private", "internal", "public"] {
+            for target_visibility in ["internal", "public"] {
+                for chained in [false, true] {
+                    // TODO instead of `unwrap` use expect which prints values of current loop params
+                    verify_alias_source(&local_alias_source(
+                        visibility,
+                        target_visibility,
+                        chained,
+                    ))
+                    .unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn public_alias_rejects_private_canonical_target_through_another_module() {
+        for visibility in ["public", "internal"] {
+            let err = verify_cross_module_alias(
+                "public",
+                &format!(
+                    r#"
+                builtin.function_alias {visibility} @target -> @body;
+                builtin.function private extern("C") @body() {{ builtin.ret; }};
+                "#,
+                ),
+            )
+            // TODO reformulate message below, `hide` is ambigous here
+            .expect_err("a visible intermediate alias must not hide a private canonical target");
+            assert!(err.to_string().contains("cannot expose private target"), "{err}");
+        }
+    }
+
+    #[test]
+    fn alias_rejects_private_cross_module_function() {
+        for visibility in ["private", "internal", "public"] {
+            let err = verify_cross_module_alias(
+                visibility,
+                r#"builtin.function private extern("C") @target() { builtin.ret; };"#,
+            )
+            .expect_err("a private function is inaccessible from the alias's table");
+            assert!(err.to_string().contains("private to another symbol table"), "{err}");
+            assert_eq!(err.labels().unwrap().count(), 2);
+        }
+    }
+
+    #[test]
+    fn alias_rejects_private_cross_module_alias_to_public_function() {
+        for visibility in ["private", "internal", "public"] {
+            let err = verify_cross_module_alias(
+                visibility,
+                r#"
+                builtin.function_alias private @target -> @body;
+                builtin.function public extern("C") @body() { builtin.ret; };
+                "#,
+            )
+            .expect_err("a public canonical target does not make a private alias accessible");
+            assert!(err.to_string().contains("private to another symbol table"), "{err}");
+            assert_eq!(err.labels().unwrap().count(), 2);
+        }
+    }
+
+    #[test]
+    fn alias_accepts_visible_cross_module_callable_symbols() {
+        for visibility in ["public", "internal"] {
+            verify_cross_module_alias(
+                "public",
+                &format!(
+                    r#"builtin.function {visibility} extern("C") @target() {{ builtin.ret; }};"#,
+                ),
+            )
+            .unwrap();
+            verify_cross_module_alias(
+                "public",
+                &format!(
+                    r#"
+                builtin.function_alias {visibility} @target -> @body;
+                builtin.function {visibility} extern("C") @body() {{ builtin.ret; }};
+                "#,
+                ),
+            )
+            .unwrap();
+        }
     }
 
     #[test]

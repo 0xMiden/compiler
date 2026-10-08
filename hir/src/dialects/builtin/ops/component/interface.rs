@@ -489,7 +489,7 @@ mod tests {
             Uri::new("exports.hir"),
             r#"
 builtin.module public @api {
-    builtin.function private extern("C") @foo() { builtin.ret; };
+    builtin.function public extern("C") @foo() { builtin.ret; };
     builtin.function_alias private @alias_private -> @foo;
     builtin.function_alias public @alias_public -> @alias_private;
     builtin.function_alias internal @alias_internal -> @foo;
@@ -503,22 +503,22 @@ builtin.module public @api {
         assert_eq!(module.defined_functions().count(), 1);
         assert_eq!(module.callable_symbols().count(), 4);
 
-        // There are two exports both pointing at the same target
         let exports =
             module.exported_callables().collect::<Result<alloc::vec::Vec<_>, _>>().unwrap();
-        assert_eq!(exports.len(), 2);
-        assert_eq!(exports[0].target(), exports[1].target());
+        assert_eq!(exports.len(), 3);
+        assert!(exports.iter().all(|export| export.target() == exports[0].target()));
 
         // Exports picked up corretly
         let interface = ModuleInterface::try_new(&module).unwrap();
         assert!(!interface.is_externally_defined());
         assert!(interface.imports().is_empty());
-        assert_eq!(interface.exports().len(), 2);
+        assert_eq!(interface.exports().len(), 3);
         assert_eq!(
             interface.exports().keys().copied().collect::<alloc::collections::BTreeSet<_>>(),
             alloc::collections::BTreeSet::from([
                 SymbolName::intern("alias_public"),
                 SymbolName::intern("alias_internal"),
+                SymbolName::intern("foo"),
             ])
         );
 

@@ -230,7 +230,7 @@ Symbol paths can come in two forms: relative and absolute. Relative paths are re
 
 Symbols, like the various forms of [_values_](#values), track their uses and definitions, i.e. when you reference a symbol from another operation, that reference is recorded in the use list of the referenced symbol. This allows us to trivially determine if a symbol is used, and visit all of those uses.
 
-Symbols may include aliases (builtin.function_alias), which provide alternative names for functions. Aliases have independent visibility, allowing a public alias to expose a private function. While basic resolution returns the named symbol (potentially an alias), canonical resolution follows aliases to the target function. Aliases are treated as first-class callable symbols in module inventories and exports.
+Function aliases (`builtin.function_alias`) give functions additional names. Basic resolution returns the named symbol, which may be an alias. Canonical resolution follows aliases to the target function. Aliases are callable symbols in module inventories and exports. See [Function Aliases](#function-aliases) for visibility rules.
 
 ### Successors and Predecessors
 
@@ -614,7 +614,7 @@ One is generally interested in the call graph for one of a couple reasons:
 3. Visit the call graph reachable from a given call site as part of an analysis
 4. Identify cycles in the call graph
 
-For 1 and 2, the `Symbol` use-list describes uses of that particular name, not all callers of its canonical body. Uses include alias forwarding edges, calls, and address-taking operations. Public aliases can keep private targets externally reachable even without local calls. `midenc_hir_analysis::analyses::CallableUseSnapshot` provides an alias-aware snapshot keyed by canonical callable. This snapshot requires linked symbol-use lists and must be recomputed after mutation.
+For 1 and 2, the `Symbol` use-list describes uses of that particular name, not all callers of its canonical body. Uses include alias forwarding edges, calls, and address-taking operations. Public aliases can make internal targets externally reachable even without local calls. `midenc_hir_analysis::analyses::CallableUseSnapshot` provides an alias-aware snapshot keyed by canonical callable. This snapshot requires linked symbol-use lists and must be recomputed after mutation.
 
 For 2 and 3, the mechanism is essentially identical:
 

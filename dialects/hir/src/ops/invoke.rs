@@ -1612,7 +1612,7 @@ builtin.world {
         };
     };
     builtin.module public @b {
-        builtin.function private extern("C") @target() { builtin.ret; };
+        builtin.function public extern("C") @target() { builtin.ret; };
         builtin.function_alias private @target_alias -> @target;
         builtin.function_alias public @callee -> @target_alias;
     };

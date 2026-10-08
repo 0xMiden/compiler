@@ -1016,17 +1016,24 @@ mod tests {
         let mut solver = DataFlowSolver::new(config);
         solver.load::<DeadCodeAnalysis>();
         solver.load::<SparseConstantPropagation>();
+        // Internal targets alone must not imply callers outside the analyzed graph.
+        let root = module.parent_op().unwrap_or(module);
         solver
-            .initialize_and_run(&module.borrow(), AnalysisManager::new(module, None))
+            .initialize_and_run(&root.borrow(), AnalysisManager::new(root, None))
             .expect("analysis must converge");
         (test, module, solver)
     }
 
     fn alias_module(visibility: &str, extra_use: &str) -> alloc::string::String {
+        let target_visibility = if visibility == "private" {
+            "private"
+        } else {
+            "internal"
+        };
         format!(
             r#"
 builtin.module public @test {{
-    builtin.function private extern("C") @target(%x: u32) -> u32 {{
+    builtin.function {target_visibility} extern("C") @target(%x: u32) -> u32 {{
         builtin.ret %x : (u32);
     }};
     builtin.function_alias private @first -> @target;

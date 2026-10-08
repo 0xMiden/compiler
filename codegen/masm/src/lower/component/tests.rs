@@ -689,27 +689,43 @@ builtin.component private @"hir_ns:test@1.0.0" {
     );
 }
 
-#[test]
-fn cross_module_call_preserves_public_alias_of_private_function() {
-    let context = Rc::new(Context::default());
-    let lowered = lower_component(
-        &context,
+fn cross_module_call_via_alias_source(target_visibility: &str) -> String {
+    format!(
         r#"
-builtin.component private @"hir_ns:test@1.0.0" {
-    builtin.module public @a {
-        builtin.function public extern("C") @caller() {
+builtin.component private @"hir_ns:test@1.0.0" {{
+    builtin.module public @a {{
+        builtin.function public extern("C") @caller() {{
             hir.exec ::@"hir_ns:test@1.0.0"::@b::@alias() : extern("C") () -> ();
             builtin.ret;
-        };
-    };
-    builtin.module public @b {
-        builtin.function private extern("C") @target() { builtin.ret; };
+        }};
+    }};
+    builtin.module public @b {{
+        builtin.function {target_visibility} extern("C") @target() {{ builtin.ret; }};
         builtin.function_alias public @alias -> @target;
-    };
-};
-"#,
+    }};
+}};
+"#
     )
-    .expect("calls through public aliases must lower");
+}
+
+#[test]
+fn public_alias_to_private_function_is_rejected_before_lowering() {
+    let context = Rc::new(Context::default());
+    let err = midenc_hir::parse::parse_any(
+        midenc_hir::parse::ParserConfig::new(context.clone()),
+        Uri::new("alias_visibility.hir"),
+        &cross_module_call_via_alias_source("private"),
+    )
+    .err()
+    .expect("verification must reject the alias before assembly");
+    assert!(err.to_string().contains("public alias cannot expose private target"), "{err}");
+}
+
+#[test]
+fn cross_module_call_preserves_public_alias_of_public_function() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(&context, &cross_module_call_via_alias_source("public"))
+        .expect("calls through public aliases must lower");
 
     let caller = lowered
         .modules
@@ -723,7 +739,7 @@ builtin.component private @"hir_ns:test@1.0.0" {
 
     let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
     assert!(exports.iter().any(|path| path.ends_with("::b::alias")), "{exports:?}");
-    assert!(!exports.iter().any(|path| path.ends_with("::b::target")), "{exports:?}");
+    assert!(exports.iter().any(|path| path.ends_with("::b::target")), "{exports:?}");
 }
 
 /// A world holding a single component lowers to exactly what that component lowers to.

@@ -220,7 +220,7 @@ mod tests {
 
     const ALIASED: &str = r#"
 builtin.module public @test {
-    builtin.function private extern("C") @body() { builtin.ret; };
+    builtin.function internal extern("C") @body() { builtin.ret; };
     builtin.function_alias private @first -> @body;
     builtin.function_alias public @api -> @first;
 };
@@ -241,7 +241,7 @@ builtin.module public @test {
         );
         assert!(alias.target().callable_region().is_some());
         let mut function = alias.target().as_function().unwrap();
-        assert_eq!(function.borrow().visibility(), Visibility::Private);
+        assert_eq!(function.borrow().visibility(), Visibility::Internal);
         let updated = Signature::new(&test.context_rc(), [Type::U32], [Type::U64]);
         *function.borrow_mut().get_signature_mut() = updated.clone();
         assert_eq!(alias.signature(), updated);
@@ -255,7 +255,7 @@ builtin.module public @test {
             source.push_str(&format!("builtin.function_alias public @a{i} -> @a{};\n", i + 1));
         }
         source.push_str(&format!(
-            "builtin.function private extern(\"C\") @a{length}() {{ builtin.ret; }};\n}};"
+            "builtin.function public extern(\"C\") @a{length}() {{ builtin.ret; }};\n}};"
         ));
         // Verification rejects chains deeper than `MAX_ALIAS_DEPTH` at their head alias, so
         // parse unverified and let tests verify explicitly.

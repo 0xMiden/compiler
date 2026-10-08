@@ -198,12 +198,17 @@ mod tests {
     use super::*;
 
     fn fixture(visibility: &str, extra_use: &str) -> (Test, ModuleRef) {
+        let target_visibility = if visibility == "private" {
+            "private"
+        } else {
+            "internal"
+        };
         let test = Test::default();
         test.context().get_or_register_dialect::<midenc_dialect_hir::HirDialect>();
         let source = format!(
             r#"
 builtin.module public @test {{
-    builtin.function private extern("C") @body() {{ builtin.ret; }};
+    builtin.function {target_visibility} extern("C") @body() {{ builtin.ret; }};
     builtin.function_alias private @first -> @body;
     builtin.function_alias {visibility} @api -> @first;
     builtin.function public extern("C") @caller() {{
@@ -266,12 +271,14 @@ builtin.module public @test {{
     fn alias_use_queries_separate_callers_exposure_and_address_taking() {
         for (visibility, extra, exposed, address_taken) in [
             ("private", "", false, false),
+            ("internal", "", false, false),
             ("public", "", true, false),
             ("private", "%a, %b, %c, %d = hir.procedure_root @api;", false, true),
         ] {
             let (_test, module) = fixture(visibility, extra);
             let body = ModuleBuilder::new(module).resolve_callable("body").unwrap().target();
-            let uses = CallableUseSnapshot::new(module.borrow().as_operation());
+            let world = module.borrow().as_operation().parent_op().unwrap();
+            let uses = CallableUseSnapshot::new(&world.borrow());
             let body_uses = uses.get(body).unwrap();
             let expected_callers = exec_callers(module, "caller");
             assert_eq!(expected_callers.len(), 2);
@@ -454,7 +461,7 @@ builtin.module public @test {
             r#"
 builtin.world {
     builtin.module public @test {
-        builtin.function private extern("C") @body() { builtin.ret; };
+        builtin.function internal extern("C") @body() { builtin.ret; };
         builtin.function_alias internal @api -> @body;
     };
 };

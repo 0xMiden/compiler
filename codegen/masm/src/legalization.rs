@@ -124,8 +124,8 @@ pub(crate) fn validate_procedure_roots(root: &Operation) -> Result<(), Report> {
 /// Resolve and validate one `hir.procedure_root` for MASM lowering.
 ///
 /// If the callee path names a `builtin.function_alias`, the alias itself is returned, and
-/// linkability checks apply to the alias's own visibility. A public alias to a private target is
-/// linkable, matching how the alias is lowered.
+/// linkability checks apply to the alias's own visibility. HIR verification prevents non-private
+/// aliases from exposing private canonical targets.
 ///
 /// A private procedure is linkable only from within the MASM module that defines it. HIR symbol
 /// tables are the ownership boundaries lowered to MASM modules for components, interfaces, and

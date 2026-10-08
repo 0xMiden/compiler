@@ -576,7 +576,7 @@ mod tests {
             let target = module_builder
                 .define_function(
                     Ident::from("implementation"),
-                    Visibility::Private,
+                    Visibility::Internal,
                     Signature {
                         params: vec![],
                         results: vec![AbiParam::new(Type::I32)],
@@ -599,10 +599,10 @@ mod tests {
                 None,
                 &DiagnosticsHandler::default(),
             )
-            .expect("export lifting should accept an alias to a private function");
+            .expect("export lifting should accept an alias to an internal function");
 
             assert_eq!(alias.borrow().visibility(), Visibility::Internal);
-            assert_eq!(target.borrow().visibility(), Visibility::Private);
+            assert_eq!(target.borrow().visibility(), Visibility::Internal);
             let mut callees = vec![];
             let _ = component_function(&component_builder, "lifted")
                 .borrow()

@@ -348,10 +348,10 @@ builtin.module public @a {
     };
 };
 builtin.module public @b {
-    builtin.function_alias private @alias -> ::@c::@body;
+    builtin.function_alias public @alias -> ::@c::@body;
 };
 builtin.module public @c {
-    builtin.function private extern("C") @body() { builtin.ret; };
+    builtin.function public extern("C") @body() { builtin.ret; };
 };
 };
 "#,

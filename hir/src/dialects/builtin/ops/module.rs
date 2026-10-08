@@ -33,8 +33,7 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 ///   graph, but are expected to be provided at runtime. The difference between the two depends on
 ///   whether or not the [super::Function] operation has a region (no region == declaration).
 /// * [super::FunctionAlias], an additional name for a callable, possibly defined in another
-///   module, e.g. a secondary export name. The alias's visibility is independent of its target's,
-///   so a public alias may expose a private function.
+///   module, e.g. a secondary export name.
 /// * [super::GlobalVariable], either a declaration of an externally-defined global, or a
 ///   definition, same as [super::Function].
 /// * [super::FunctionTable], describing a function-reference table in the component's shared
@@ -49,8 +48,8 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 /// * `Visibility::Public` indicates that all functions exported from the module with `Public`
 ///   visibility form the public interface of the module, and thus are not permitted to be dead-
 ///   code eliminated, or otherwise rewritten by optimizations in a way that changes the public
-///   interface. This extends to names exposed via a public [super::FunctionAlias]. the alias is
-///   part of the public interface and keeps its (possibly private) target live.
+///   interface. This extends to names exposed via a public [super::FunctionAlias]. The alias is
+///   part of the public interface and keeps its target live.
 /// * `Visibility::Internal` indicates that all functions exported from the module with `Public`
 ///   or `Internal` visibility are only visibile by modules in the current compilation graph, and
 ///   are thus eligible for dead-code elimination or other invasive rewrites so long as all
