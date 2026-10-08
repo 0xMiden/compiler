@@ -69,8 +69,8 @@ impl RewritePattern for IfRemoveUnusedResults {
         rewriter: &mut dyn Rewriter,
     ) -> Result<bool, Report> {
         // Everything the rewrite needs from the original op is read up front, so that no borrow
-        // of `operation` is alive while the rewriter runs: a rewriter listener (e.g. the tracing
-        // one) may borrow `operation` as the insertion point of the ops created below.
+        // of `operation` is alive while the rewriter runs: a rewriter listener may inspect the
+        // ops around each insertion made below, and `operation` is next to all of them.
         let (used_results, num_results, condition, new_types, then_entry, else_entry, span) = {
             let op = operation.borrow();
             let Some(if_op) = op.downcast_ref::<If>() else {
@@ -161,9 +161,10 @@ mod tests {
         normalized
     }
 
-    /// Renders the insertion point of every inserted op, as the tracing rewriter listener does
-    /// under `MIDENC_TRACE=rewriter=trace`, while the pattern that made the insertion is still
-    /// running: the shape of the `AliasingViolationError` report in #1421.
+    /// Borrows the op following every inserted op while the pattern that made the insertion is
+    /// still running, the way a listener inspecting the neighbourhood of an insertion does. The
+    /// pattern inserts before the op it rewrites, so that op is the neighbour: the rewrite fails
+    /// here if the pattern still holds it (the shape of the `AliasingViolationError` in #1421).
     struct InsertionPointListener;
 
     impl Listener for InsertionPointListener {
@@ -171,15 +172,17 @@ mod tests {
             ListenerType::Rewriter
         }
 
-        fn notify_operation_inserted(&self, _op: OperationRef, prev: ProgramPoint) {
-            let _ = format!("{prev}");
+        fn notify_operation_inserted(&self, op: OperationRef, _prev: ProgramPoint) {
+            if let Some(next) = op.next() {
+                let _ = next.borrow();
+            }
         }
     }
 
     impl RewriterListener for InsertionPointListener {}
 
     /// An `scf.if` with one dead and one live result is narrowed to the live one, with a
-    /// listener that borrows the insertion point of every op the pattern creates.
+    /// listener that borrows the neighbour of every op the pattern creates.
     #[test]
     fn if_remove_unused_results() -> Result<(), Report> {
         let mut test = Test::new("if_remove_unused_results", &[Type::I1], &[Type::U32]);
