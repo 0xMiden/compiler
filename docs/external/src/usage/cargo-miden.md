@@ -134,7 +134,10 @@ The SDK macros derive every other name from the namespace:
 Paths never contain a version. Changing the namespace changes procedure paths and storage slot
 names, so treat it as part of the component's on-chain interface. Exported procedure names must
 not start with `fpi_` or `dyncall_`: the compiler reserves both prefixes for the imports the SDK
-macros generate.
+macros generate. A storage field's name is used as written in its slot name and, for a
+`StoredProcedure` slot, in its `<namespace>::dyncall::<field>` import path: a raw identifier
+loses its `r#` (`r#type` gives `<namespace>::type`), and a field name starting with `_` is
+rejected, since a slot name segment cannot start with an underscore.
 
 All exports of a package sit directly under its namespace. Calls into a dependency use the
 dependency's paths as they are, e.g. a note calling the basic wallet calls

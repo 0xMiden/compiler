@@ -24,7 +24,7 @@ use syn::{Error, FieldsNamed, ReturnType, Type, Visibility, ext::IdentExt, spann
 
 use super::is_unit_type;
 use crate::{
-    component_macro::storage::storage_field_type,
+    component_macro::storage::{storage_field_name, storage_field_type},
     fpi, generate, manifest_paths,
     namespace::ComponentNamespace,
     types::{
@@ -78,6 +78,8 @@ struct StoredProcedureParam {
 pub(super) struct StoredProcedureSlot {
     /// Field identifier, e.g. `authority`.
     field_ident: Ident,
+    /// Field name as written, without `r#`, e.g. `authority`; see [`storage_field_name`].
+    field_name: String,
     /// Generated marker type sealing the signature, e.g. `AuthoritySignature`.
     marker_ident: Ident,
     /// Generated trait carrying the typed call, e.g. `AuthorityCall`.
@@ -336,9 +338,13 @@ fn build_slot(field_ident: &Ident, signature: &Type) -> Result<StoredProcedureSl
     };
 
     let camel_name = field_ident.unraw().to_string().to_upper_camel_case();
+    // The slot name, the import's `@external-id` and its WIT name must all spell the field the
+    // same way: the unraw'd identifier as written (kebab-cased for WIT).
+    let field_name = storage_field_name(field_ident)?;
     let wit_fn_name =
         format!("{}{}", generate::DYNCALL_WIT_PREFIX, rust_ident_to_wit_name(field_ident)?);
     Ok(StoredProcedureSlot {
+        field_name,
         marker_ident: format_ident!("{}Signature", camel_name, span = field_ident.span()),
         trait_ident: format_ident!("{}Call", camel_name, span = field_ident.span()),
         // Derived from the WIT name rather than from the field: the generated call must spell the
@@ -429,9 +435,10 @@ fn build_stored_procedure_wit(
     }
     .render(&core_imports, |interface| {
         for slot in slots {
-            let field = slot.field_ident.unraw().to_string().to_snake_case();
-            interface
-                .function(&namespace.dyncall_path(&field), &stored_procedure_wit_signature(slot));
+            interface.function(
+                &namespace.dyncall_path(&slot.field_name),
+                &stored_procedure_wit_signature(slot),
+            );
         }
     }))
 }
@@ -767,6 +774,41 @@ world stored-procedure-bindings {
             ),
             "{items}"
         );
+    }
+
+    /// Pins that the dispatch import's `@external-id` spells the field as written, like its slot
+    /// name: a raw identifier loses only its `r#`, and a camelCase name is not snake-cased.
+    #[test]
+    fn external_ids_use_the_field_name_as_written() {
+        let mut fields = fields(quote! {
+            {
+                r#type: StorageValue<StoredProcedure<fn()>>,
+                hookA: StorageValue<StoredProcedure<fn()>>,
+            }
+        });
+        let slots = collect_stored_procedure_slots(&mut fields).unwrap();
+        let wit =
+            build_stored_procedure_wit(&format_ident!("Hooks"), &test_namespace(), &slots).unwrap();
+
+        for field in ["type", "hookA"] {
+            let external_id = format!(
+                "@external-id(\"miden::counter_contract::counter_contract::dyncall::{field}\")"
+            );
+            assert!(wit.contains(&external_id), "{wit}");
+        }
+        assert!(wit.contains("%dyncall-hook-a: func(proc-root: word);"), "{wit}");
+    }
+
+    /// Rejects a field the storage slot name cannot spell, rather than rewriting it.
+    #[test]
+    fn rejects_a_leading_underscore_field() {
+        let mut fields = fields(quote! {
+            {
+                _hook: StorageValue<StoredProcedure<fn()>>,
+            }
+        });
+        let message = collect_error(&mut fields);
+        assert!(message.contains("storage field `_hook` starts with `_`"), "{message}");
     }
 
     /// Pins the in-place rewrite: only the signature argument is replaced, by the marker type.
