@@ -615,7 +615,6 @@ impl HirLowering for ub::Poison {
         // for should we ever wish to do so. We could also catch the evaluation of poison under an
         // emulator for the IR itself.
         let span = self.span();
-        let result = self.result().as_value_ref();
         let mut op_emitter = emitter.inst_emitter(self.as_operation());
         op_emitter.literal(
             {
@@ -654,9 +653,6 @@ impl HirLowering for ub::Poison {
             },
             span,
         );
-        // The immediate only provides the bit pattern: a poison of pointer type is pushed as a
-        // `u32`, so the operand on the stack must be given the poison's declared type explicitly.
-        op_emitter.retype(0, result);
 
         Ok(())
     }
