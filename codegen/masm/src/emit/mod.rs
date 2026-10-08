@@ -144,8 +144,12 @@ impl DerefMut for InstOpEmitter<'_> {
 }
 impl Drop for InstOpEmitter<'_> {
     fn drop(&mut self) {
+        // Bind the results to the operands the lowering left on top of the stack. The operands
+        // are retyped, not just renamed: a lowering may push a result's bit pattern as a value of
+        // another type of the same size (e.g. a pointer as a `u32` immediate), and the element
+        // types recorded on the stack must be those of the result.
         for (i, result) in self.inst.results().iter().copied().enumerate() {
-            self.emitter.stack.rename(i, result as ValueRef);
+            self.emitter.stack.retype(i, result as ValueRef);
         }
     }
 }
@@ -382,15 +386,6 @@ impl<'a> OpEmitter<'a> {
         let imm = imm.into();
         self.push_immediate(imm, span);
         self.stack.push_immediate(imm);
-    }
-
-    /// Make the `n`th operand from the top of the stack `value`, whose type may differ from the
-    /// operand's but must occupy the same number of elements.
-    ///
-    /// See [OperandStack::retype].
-    #[inline(always)]
-    pub fn retype(&mut self, n: usize, value: ValueRef) {
-        self.stack.retype(n, value);
     }
 
     #[inline(always)]
