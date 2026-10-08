@@ -500,3 +500,23 @@ impl<T: AttributeRegistration + Marker> UniquedAttribute for T {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+
+    use crate::{Type, testing::Test};
+
+    /// A block holds more than 255 arguments, each keeping its position in the argument list.
+    #[test]
+    fn block_with_more_than_255_arguments() {
+        const NUM_PARAMS: usize = 300;
+
+        let test = Test::new("wide", &vec![Type::U32; NUM_PARAMS], &[]);
+        let function = test.function().borrow();
+        let entry = function.entry_block().borrow();
+        let args = entry.arguments();
+
+        assert_eq!(args.len(), NUM_PARAMS);
+        assert_eq!(args[NUM_PARAMS - 1].borrow().index(), NUM_PARAMS - 1);
+    }
+}
