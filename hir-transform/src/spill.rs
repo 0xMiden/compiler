@@ -1,8 +1,8 @@
 use alloc::{collections::VecDeque, format, rc::Rc};
 
 use midenc_hir::{
-    BlockRef, Builder, Context, FxHashMap, OpBuilder, OpOperand, Operation, OperationRef,
-    ProgramPoint, Reachability, ReachabilityCache, Region, RegionBranchOpInterface,
+    BlockArgument, BlockRef, Builder, Context, FxHashMap, OpBuilder, OpOperand, Operation,
+    OperationRef, ProgramPoint, Reachability, ReachabilityCache, Region, RegionBranchOpInterface,
     RegionBranchPoint, RegionRef, Report, Rewriter, SmallVec, SourceSpan, Spanned, StorableEntity,
     TraceTarget, Usable, ValueRange, ValueRef,
     adt::{SmallDenseMap, SmallSet},
@@ -570,7 +570,112 @@ fn rewrite_cfg_spills(
         used_sets.insert(block_ref, used);
     }
 
+    prune_dead_phis(&inserted_phis, trace_target);
+
     rewrite_spill_pseudo_instructions(context, analysis, interface, trace_target)
+}
+
+/// Remove the phis inserted by [insert_required_phis] which no use was rewritten to.
+///
+/// The iterated dominance frontier of the reloads is a conservative placement: a spilled value
+/// need not be live at every block of it, so some of the inserted phis end up unused by the time
+/// the bottom-up rewrite is done. Such a phi still carries a block argument along every incoming
+/// edge, i.e. operand stack pressure the spill analysis never budgeted for; and the value seeded
+/// on an edge from a predecessor the original definition does not dominate is invalid SSA.
+///
+/// A phi is live if it has a use other than feeding another inserted phi, and liveness flows
+/// from a live phi to the phis feeding it, so that phis which only feed each other (e.g. around
+/// a loop) are removed too.
+fn prune_dead_phis(
+    inserted_phis: &SmallDenseMap<BlockRef, SmallDenseMap<ValueRef, ValueRef, 8>, 8>,
+    trace_target: &TraceTarget,
+) {
+    let phi_index = |phi: &ValueRef| {
+        phi.borrow()
+            .downcast_ref::<BlockArgument>()
+            .expect("inserted phi is a block argument")
+            .index()
+    };
+
+    // The operands feeding each inserted phi from the predecessors of its block
+    let mut feeds = SmallDenseMap::<ValueRef, SmallVec<[OpOperand; 2]>, 8>::default();
+    let mut feed_operands = SmallSet::<OpOperand, 8>::default();
+    for (block, phis) in inserted_phis.iter() {
+        let block = block.borrow();
+        for (_, phi) in phis.iter() {
+            let index = phi_index(phi);
+            let operands = feeds.entry(*phi).or_default();
+            for pred in block.predecessors() {
+                let pred_op = pred.owner.borrow();
+                let operand = pred_op.successor(pred.index as usize).arguments[index];
+                operands.push(operand);
+                feed_operands.insert(operand);
+            }
+        }
+    }
+
+    // Find the live phis
+    let mut live = SmallSet::<ValueRef, 8>::default();
+    let mut worklist = SmallVec::<[ValueRef; 8]>::default();
+    for (phi, _) in feeds.iter() {
+        let has_real_use = phi
+            .borrow()
+            .iter_uses()
+            .any(|use_| !feed_operands.contains(&use_.as_operand_ref()));
+        if has_real_use {
+            live.insert(*phi);
+            worklist.push(*phi);
+        }
+    }
+    while let Some(phi) = worklist.pop() {
+        for operand in feeds[&phi].iter() {
+            let value = operand.borrow().as_value_ref();
+            if feeds.contains_key(&value) && live.insert(value) {
+                worklist.push(value);
+            }
+        }
+    }
+
+    // Erase the dead phis. Their feeds go first, as they may be the remaining uses of other dead
+    // phis; the arguments of a block are erased from the highest index down, so that the indices
+    // of the ones still to be erased stay valid.
+    let mut dead = SmallVec::<[(BlockRef, SmallVec<[usize; 4]>); 4]>::default();
+    for (block, phis) in inserted_phis.iter() {
+        let mut indices = phis
+            .iter()
+            .map(|(_, phi)| phi)
+            .filter(|phi| !live.contains(phi))
+            .inspect(|phi| {
+                log::trace!(
+                    target: trace_target,
+                    symbol = trace_target.relevant_symbol();
+                    "pruning unused phi {phi} in {block}"
+                );
+            })
+            .map(&phi_index)
+            .collect::<SmallVec<[usize; 4]>>();
+        if indices.is_empty() {
+            continue;
+        }
+        indices.sort_unstable_by(|a, b| b.cmp(a));
+        dead.push((*block, indices));
+    }
+    for (block, indices) in dead.iter() {
+        for pred in block.borrow().predecessors() {
+            let (mut pred_op, succ_index) = (pred.owner, pred.index as usize);
+            let mut pred_op = pred_op.borrow_mut();
+            let mut succ = pred_op.successor_mut(succ_index);
+            for index in indices.iter().copied() {
+                succ.arguments.erase(index);
+            }
+        }
+    }
+    for (mut block, indices) in dead {
+        let mut block = block.borrow_mut();
+        for index in indices {
+            block.erase_argument(index);
+        }
+    }
 }
 
 /// Rewrite uses of spilled values in `op` and any nested regions of `op`.
@@ -816,8 +921,8 @@ fn rewrite_inserted_phi_uses(
                     user.borrow_mut().set(*phi);
                 }
             } else {
-                // TODO(pauls): This phi is unused, we should be able to remove it
-                log::warn!(
+                // No use reaches this phi, it is removed by `prune_dead_phis`
+                log::trace!(
                     target: trace_target,
                     symbol = trace_target.relevant_symbol();
                     "unused phi {phi} encountered during rewrite phase"
