@@ -7,8 +7,8 @@ use midenc_hir::{
     TraceTarget, Usable, ValueRange, ValueRef,
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
-    dominance::{DomTreeNode, DominanceFrontier, DominanceInfo},
-    pass::{AnalysisManager, PostPassStatus},
+    dominance::{DomTreeNode, DominanceFrontier, DominanceTree},
+    pass::PostPassStatus,
     traits::{IsolatedFromAbove, SingleRegion},
 };
 use midenc_hir_analysis::analyses::{
@@ -126,7 +126,6 @@ pub fn transform_spills(
     op: OperationRef,
     analysis: &mut SpillAnalysis,
     interface: &mut dyn TransformSpillsInterface,
-    analysis_manager: AnalysisManager,
 ) -> Result<PostPassStatus, Report> {
     assert!(
         op.borrow().implements::<dyn SingleRegion>(),
@@ -310,28 +309,15 @@ pub fn transform_spills(
         op.borrow()
     );
 
-    let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
-
     let region = op.borrow().regions().front().as_pointer().unwrap();
     if region.borrow().has_one_block() {
-        rewrite_single_block_spills(
-            op,
-            region,
-            analysis,
-            interface,
-            analysis_manager,
-            &trace_target,
-        )?;
+        rewrite_single_block_spills(op, region, analysis, interface, &trace_target)?;
     } else {
-        rewrite_cfg_spills(
-            builder.context_rc(),
-            region,
-            analysis,
-            interface,
-            &dominfo,
-            analysis_manager,
-            &trace_target,
-        )?;
+        // The edge splits above changed the CFG, so any dominance information computed by (or
+        // for) the spill analysis is stale: the split blocks are missing from it. Build a fresh
+        // dominator tree for the SSA reconstruction, which must visit the reloads in the splits.
+        let domtree = DominanceTree::new(region).expect("a multi-block region has an entry block");
+        rewrite_cfg_spills(builder.context_rc(), analysis, interface, &domtree, &trace_target)?;
     }
 
     log::trace!(
@@ -349,7 +335,6 @@ fn rewrite_single_block_spills(
     region: RegionRef,
     analysis: &mut SpillAnalysis,
     interface: &mut dyn TransformSpillsInterface,
-    _analysis_manager: AnalysisManager,
     trace_target: &TraceTarget,
 ) -> Result<(), Report> {
     // In a flattened CFG with only structured control flow, no dominance tree is required.
@@ -471,13 +456,15 @@ fn rewrite_single_block_spills(
     rewrite_spill_pseudo_instructions(context, analysis, interface, trace_target)
 }
 
+/// Reconstruct SSA form for the spilled values of a multi-block region.
+///
+/// `domtree` must describe the region's CFG as it is *after* [transform_spills] split edges and
+/// inserted the spills and reloads.
 fn rewrite_cfg_spills(
     context: Rc<Context>,
-    region: RegionRef,
     analysis: &mut SpillAnalysis,
     interface: &mut dyn TransformSpillsInterface,
-    dominfo: &DominanceInfo,
-    _analysis_manager: AnalysisManager,
+    domtree: &DominanceTree,
     trace_target: &TraceTarget,
 ) -> Result<(), Report> {
     // At this point, we've potentially emitted spills/reloads, but these are not yet being
@@ -505,8 +492,7 @@ fn rewrite_cfg_spills(
     //     thus be eliminated.
 
     // We consume the spill analysis in this pass, as it will no longer be valid after this
-    let domtree = dominfo.dominance(region);
-    let domf = DominanceFrontier::new(&domtree);
+    let domf = DominanceFrontier::new(domtree);
 
     // Make sure that any block in the iterated dominance frontier of a spilled value, has
     // a new phi (block argument) inserted, if one is not already present. These must be in

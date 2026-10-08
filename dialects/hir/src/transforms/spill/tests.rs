@@ -290,8 +290,10 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
                 || l.trim_start().starts_with("hir.load_local ")
         })
         .count();
-    assert!(stores == 1, "expected only one store_local ops\n{after}");
-    assert!(loads == 1, "expected only one load_local op\n{after}");
+    // The analysis spills `v1` and `v2c` ahead of the call: `v1` is reloaded in the then-block,
+    // and `v2c` on the (split) edge to the join, where it feeds the phi read by the `ret`.
+    assert!(stores == 2, "expected two store_local ops\n{after}");
+    assert!(loads == 2, "expected two load_local ops\n{after}");
     Ok(())
 }
 
@@ -589,13 +591,7 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
         function: func,
         locals: Default::default(),
     };
-    let analysis_manager = midenc_hir::pass::AnalysisManager::new(func.as_operation_ref(), None);
-    midenc_hir_transform::transform_spills(
-        func.as_operation_ref(),
-        &mut analysis,
-        &mut interface,
-        analysis_manager,
-    )?;
+    midenc_hir_transform::transform_spills(func.as_operation_ref(), &mut analysis, &mut interface)?;
 
     let after = func.as_operation_ref().borrow().to_string();
 
@@ -679,13 +675,7 @@ fn materializes_spills_shared_local_for_rewritten_spill() -> TestResult<()> {
         function: func,
         locals: Default::default(),
     };
-    let analysis_manager = midenc_hir::pass::AnalysisManager::new(func.as_operation_ref(), None);
-    midenc_hir_transform::transform_spills(
-        func.as_operation_ref(),
-        &mut analysis,
-        &mut interface,
-        analysis_manager,
-    )?;
+    midenc_hir_transform::transform_spills(func.as_operation_ref(), &mut analysis, &mut interface)?;
 
     let after = func.as_operation_ref().borrow().to_string();
     std::println!("{after}");

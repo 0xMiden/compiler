@@ -106,8 +106,9 @@ impl DominanceFrontier {
                 continue;
             };
 
+            // Only join blocks (two or more predecessors) can be in a dominance frontier
             let block = node_block.borrow();
-            let has_multiple_predecessors = block.predecessors().enumerate().any(|(i, _)| i > 1);
+            let has_multiple_predecessors = block.predecessors().nth(1).is_some();
             if !has_multiple_predecessors {
                 continue;
             }
