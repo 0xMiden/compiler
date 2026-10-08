@@ -699,6 +699,7 @@ impl Block {
             "cannot erase block arguments with uses"
         );
         self.arguments.remove(index);
+        self.reindex_arguments_from(index);
     }
 
     /// Erase every parameter of this block for which `should_erase` returns true.
@@ -714,6 +715,16 @@ impl Block {
             assert!(keep || !arg.is_used(), "cannot erase block arguments with uses");
             keep
         });
+        self.reindex_arguments_from(0);
+    }
+
+    /// Restore the recorded index of every argument from `start` onwards, after arguments were
+    /// erased in front of them.
+    fn reindex_arguments_from(&mut self, start: usize) {
+        for (index, arg) in self.arguments.iter_mut().enumerate().skip(start) {
+            // SAFETY: `arg` is stored at `index` in this block's argument list
+            unsafe { arg.borrow_mut().set_index(index) };
+        }
     }
 
     pub fn erase(&mut self) {
