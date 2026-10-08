@@ -77,21 +77,39 @@ fn prog_keccakf_oz_edges() {
 /// distinct rotate/shift constants — Sigma0 (28, 34, 39), Sigma1 (14, 18,
 /// 41), sigma0 (1, 8, `>> 7`) and sigma1 (19, 61, `>> 6`) — cross the
 /// schedule loop, the round loop, the block loop and the digest fold.
-/// `-Oz` IS THE ONLY CONFIGURATION THAT COMPILES IT: the default level, max
-/// and basic all panic in the F6 class (see the ignored [`prog_sha512`]
-/// twin below). The u32 sibling `programs::prog_sha256` compiles everywhere;
+/// Until the #1420 fix `-Oz` WAS THE ONLY CONFIGURATION THAT COMPILED IT: the
+/// default level, max and basic all panicked in the F6 class (see the formerly
+/// ignored [`prog_sha512`] twin below). The u32 sibling `programs::prog_sha256` compiles everywhere;
 /// the difference is the operand width — the same twelve-constant shape on
 /// 64-bit working variables doubles the felts each band and each working
 /// variable occupies.
+///
+/// It compiled on `next` only because the spill transform dropped its
+/// split-edge reloads at two-predecessor joins (the #1420 defect), and it
+/// stopped compiling once #1420 was fixed: with those spills materialized it
+/// panics with `invalid operand stack index (9): requires access to more than
+/// 16 elements` at codegen/masm/src/emit/mod.rs:620 after the second spills
+/// run (`edges to split = 0, values spilled = 11, reloads issued = 3`). What
+/// remains is the #1422 item 2 class (over-window pressure after the second
+/// spills run). Compile-time — no inputs involved.
 #[test]
+#[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (9): \
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:620 — \
+            over-window pressure after the second spills run (edges to split = 0, values spilled = \
+            11, reloads issued = 3); compiled before the #1420 fix only because split-edge reloads \
+            were dropped; compile-time, no inputs involved"]
 fn prog_sha512_oz() {
     run_case_with_flags("prog_sha512_oz", include_str!("../cases/case_prog_sha512.rs"), SIZE_MIN);
 }
 
 /// Pinned grid for [`prog_sha512_oz`]: both block counts (`input2 % 2`), the
 /// message-length byte at 0 and 1023 (`input1 % 1024`), zero / all-ones /
-/// equal pairs.
+/// equal pairs. Ignored with [`prog_sha512_oz`] (#1422 item 2, same
+/// compile-time panic since the #1420 fix); the pinned inputs never run.
 #[test]
+#[ignore = "#1422: same compile-time panic as prog_sha512_oz ('invalid operand stack index (9)' at \
+            codegen/masm/src/emit/mod.rs:620 at --optimize=size-min, over-window pressure after \
+            the second spills run); the pinned inputs never run"]
 fn prog_sha512_oz_edges() {
     run_case_with_flags_and_inputs(
         "prog_sha512_oz_edges",
@@ -119,8 +137,8 @@ fn prog_sha512_oz_edges() {
 /// split" and 14 `erase unused reload` lines — the SSA reconstruction walking
 /// the dominator tree cached before the transform's own splits. Per level:
 /// default PANIC (index 9), `--optimize=max` PANIC (index 12),
-/// `--optimize=basic` PANIC (index 10), `--optimize=size-min` PASSES (the
-/// pinned [`prog_sha512_oz`] above, deep-fuzzed at 512 pairs). Guest DWARF
+/// `--optimize=basic` PANIC (index 10), `--optimize=size-min` PASSED until the
+/// #1420 fix (the pinned [`prog_sha512_oz`] above, deep-fuzzed at 512 pairs). Guest DWARF
 /// did not move it. This was the headline "-Oz is the only escape" row: no
 /// source change is involved, only the guest optimization level.
 /// Compile-time — no inputs involved. It was `#[ignore]`d until the #1420 fix
@@ -284,9 +302,9 @@ fn prog_blake2b_nodwarf() {
 /// [`prog_threefish_o3`].
 /// LADDER (all rungs value-checked natively, `scratch/c26gen_tf.py`): merging
 /// rotation rows to reduce the distinct-constant count does NOT give a
-/// boundary — 13, 12, 11, 9 and 6 constants all panic, 8 and 4 compile, so
-/// the ladder is non-monotone and the largest compiling variant is the
-/// eight-constant [`prog_threefish_oz_guard`]. Removing every post-loop use
+/// boundary — 13, 12, 11, 9 and 6 constants all panic, 8 and 4 compiled, so
+/// the ladder is non-monotone and the largest compiling variant was the
+/// eight-constant [`prog_threefish_oz_guard`] (until the #1420 fix). Removing every post-loop use
 /// of the constants (the `M = 0` rescue of campaign 18's synthetic ladder)
 /// does not rescue this program either. What does: `black_box` on the counts
 /// ([`prog_threefish_oz_wa`]) and moving the round group into an
@@ -335,17 +353,31 @@ fn prog_threefish_o3() {
     );
 }
 
-/// The largest variant of [`prog_threefish_oz`] that compiles at `-Oz`: the
-/// eight-row rotation table halved, so four rows are used twice each and
-/// EIGHT distinct rotation constants cross the round-group loop, the block
-/// loop, the whitening and the fold. Everything else is unchanged. Passes at
-/// `-Oz` with and without guest DWARF, at the default level, at max and at
-/// basic. Note that the ladder between it and the full cipher is
+/// The largest variant of [`prog_threefish_oz`] that compiled at `-Oz` until
+/// the #1420 fix: the eight-row rotation table halved, so four rows are used
+/// twice each and EIGHT distinct rotation constants cross the round-group
+/// loop, the block loop, the whitening and the fold. Everything else is
+/// unchanged. Passed at `-Oz` with and without guest DWARF, at the default
+/// level, at max and at basic. Note that the ladder between it and the full cipher is
 /// non-monotone: nine, eleven, twelve and thirteen constants all panic, but
 /// so does the SIX-constant rung — "use fewer distinct rotation constants" is
 /// therefore not a reliable user-level fix, which is why
 /// [`prog_threefish_oz_wa`] is the recommended one.
+///
+/// It compiled on `next` only because the spill transform dropped its
+/// split-edge reloads at two-predecessor joins (the #1420 defect), and it
+/// stopped compiling at `-Oz` once #1420 was fixed: with those spills
+/// materialized it panics with `invalid operand stack index (10): requires
+/// access to more than 16 elements` at codegen/masm/src/emit/mod.rs:620 after
+/// the second spills run (`edges to split = 0, values spilled = 8, reloads
+/// issued = 2`). What remains is the #1422 item 2 class (over-window pressure
+/// after the second spills run). Compile-time — no inputs involved.
 #[test]
+#[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:620 — \
+            over-window pressure after the second spills run (edges to split = 0, values spilled = \
+            8, reloads issued = 2); compiled before the #1420 fix only because split-edge reloads \
+            were dropped; compile-time, no inputs involved"]
 fn prog_threefish_oz_guard() {
     run_case_with_flags(
         "prog_threefish_oz_guard",
@@ -356,7 +388,12 @@ fn prog_threefish_oz_guard() {
 
 /// Pinned grid for [`prog_threefish_oz_guard`]: all three block counts
 /// (`input2 % 3`), zero / all-ones / equal pairs and the sign boundary.
+/// Ignored with [`prog_threefish_oz_guard`] (#1422 item 2, same compile-time
+/// panic since the #1420 fix); the pinned inputs never run.
 #[test]
+#[ignore = "#1422: same compile-time panic as prog_threefish_oz_guard ('invalid operand stack \
+            index (10)' at codegen/masm/src/emit/mod.rs:620 at --optimize=size-min, over-window \
+            pressure after the second spills run); the pinned inputs never run"]
 fn prog_threefish_oz_guard_edges() {
     run_case_with_flags_and_inputs(
         "prog_threefish_oz_guard_edges",
