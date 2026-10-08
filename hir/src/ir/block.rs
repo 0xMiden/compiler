@@ -690,7 +690,7 @@ impl Block {
         self.arguments[index]
     }
 
-    /// Erase the block argument at `index`
+    /// Erase the block argument at `index`; the arguments after it shift down and are renumbered.
     ///
     /// Panics if the argument still has uses.
     pub fn erase_argument(&mut self, index: usize) {
@@ -702,7 +702,8 @@ impl Block {
         self.reindex_arguments_from(index);
     }
 
-    /// Erase every parameter of this block for which `should_erase` returns true.
+    /// Erase every parameter of this block for which `should_erase` returns true; the remaining
+    /// arguments are renumbered.
     ///
     /// Panics if any argument to be erased still has uses.
     pub fn erase_arguments<F>(&mut self, should_erase: F)
