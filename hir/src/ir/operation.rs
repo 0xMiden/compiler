@@ -169,7 +169,7 @@ impl fmt::Debug for OperationRef {
 
 impl fmt::Display for OperationRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.borrow().name())
+        write!(f, "{}", self.name())
     }
 }
 

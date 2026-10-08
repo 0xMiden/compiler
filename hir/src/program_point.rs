@@ -512,7 +512,7 @@ impl fmt::Debug for ProgramPoint {
                 .debug_struct("Op")
                 .field("block", &op.parent().map(|blk| blk.borrow().id()))
                 .field("point", point)
-                .field("op", &op.borrow())
+                .field("op", &op.name())
                 .finish(),
         }
     }
