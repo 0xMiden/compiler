@@ -224,13 +224,13 @@ both `acme::math::add` and `acme::math::u64::add` is rejected. The FPI imports `
 generates (`<namespace>::fpi::<dependency path>::<function>`) and the stored-procedure imports
 `#[component_storage]` generates for `StoredProcedure` slots (`<namespace>::dyncall::<field>`) nest
 in the component's namespace by design and are exempt, since they declare no dependency component.
-A WIT import names a procedure of another component. Importing a plain library procedure through
-WIT (a typed procedure of the core library or of a Miden Assembly library dependency, one an
-`extern "C"` function can bind natively) is an error: bind it natively with an `extern "C"`
-function carrying its Miden path in `#[link_name]` (see "Binding a Miden Assembly dependency from
-Rust" above). Procedures tagged `@account_procedure`, such as the standard account components of
-the `miden-standards` library, stay importable through WIT, as do untyped library procedures and
-the procedures of component packages.
+A WIT import names a procedure of another component. In a library package (the core library or a
+Miden Assembly library dependency), procedures tagged with a protocol role attribute
+(`@account_procedure`, `@note_script`, `@auth_script`, `@tx_script`), such as the standard account
+components of the `miden-standards` library, stay importable through WIT, and every other
+procedure of a library package is rejected: bind a plain library procedure natively with an
+`extern "C"` function carrying its Miden path in `#[link_name]` (see "Binding a Miden Assembly
+dependency from Rust" above). The procedures of component packages stay importable.
 
 The core Wasm module of a component, named after the crate, now gives way to an export of the same
 name (a crate `swap` exporting `swap`): the module is renamed `<name>_core`, which only appears in
