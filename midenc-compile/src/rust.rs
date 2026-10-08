@@ -102,38 +102,13 @@ pub fn get_sysroot(toolchain: Option<&str>) -> CompilerResult<PathBuf> {
     Ok(sysroot)
 }
 
-/// Runs a Cargo command and exits the process with Cargo's status when the build fails.
+/// Runs a Cargo command and collects its Wasm artifacts, returning an error when the build fails.
 ///
-/// The frontend build paths use this so a failed user build ends the tool with Cargo's own
-/// exit code. Callers that must report the failure themselves use [`run_cargo`].
-pub fn spawn_cargo(cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>> {
-    let (status, artifacts) = run_cargo_inner(cmd, cargo)?;
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
-    }
-    Ok(artifacts)
-}
-
-/// Runs a Cargo command and returns an error when the build fails.
-///
-/// Nested builds such as the note codec build use this so their error context and recovery
-/// guidance reach the user instead of the process ending with Cargo's status.
-pub fn run_cargo(cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>> {
-    let (status, artifacts) = run_cargo_inner(cmd, cargo)?;
-    if !status.success() {
-        return Err(Report::msg(format!(
-            "`{cargo}` failed with {status}",
-            cargo = cargo.display()
-        )));
-    }
-    Ok(artifacts)
-}
-
-/// Spawns a Cargo command and collects its Wasm artifacts together with the exit status.
-fn run_cargo_inner(
-    mut cmd: Command,
-    cargo: &Path,
-) -> CompilerResult<(std::process::ExitStatus, Vec<Artifact>)> {
+/// A failed build is reported, never turned into a process exit: `midenc` is embedded in-process
+/// by `cargo miden` and by the test harness, and only the embedding program owns the process.
+/// Cargo's own diagnostics reach the user through the inherited stderr; the returned report
+/// carries the exit status.
+pub fn run_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>> {
     use std::io::BufRead;
 
     log::debug!(target: "driver", "spawning command {cmd:?}");
@@ -188,7 +163,14 @@ fn run_cargo_inner(
         );
     }
 
-    Ok((status, artifacts))
+    if !status.success() {
+        return Err(Report::msg(format!(
+            "`{cargo}` failed with {status}",
+            cargo = cargo.display()
+        )));
+    }
+
+    Ok(artifacts)
 }
 
 pub fn rustup_toolchain() -> Option<String> {

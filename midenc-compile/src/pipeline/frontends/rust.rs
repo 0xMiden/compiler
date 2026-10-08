@@ -707,7 +707,7 @@ trim-paths = [\"diagnostics\", \"object\"]
     cargo.stdout(std::process::Stdio::piped());
     cargo.stderr(std::process::Stdio::inherit());
 
-    let artifacts = crate::rust::spawn_cargo(cargo, cargo_path)?;
+    let artifacts = crate::rust::run_cargo(cargo, cargo_path)?;
 
     let mut outputs: Vec<PathBuf> = artifacts
         .into_iter()
@@ -2201,7 +2201,7 @@ pub(crate) mod manifest {
         cargo.stdout(std::process::Stdio::piped());
         cargo.stderr(std::process::Stdio::inherit());
 
-        let artifacts = crate::rust::spawn_cargo(cargo, cargo_path)?;
+        let artifacts = crate::rust::run_cargo(cargo, cargo_path)?;
 
         let outputs: Vec<PathBuf> = artifacts
             .into_iter()
