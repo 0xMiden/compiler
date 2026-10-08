@@ -754,8 +754,6 @@ impl ModuleRegistry {
 
 fn validate_lint_signature(path: &ast::Path, signature: &Signature) -> Result<()> {
     let checks = [
-        (signature.params().len(), u16::MAX as usize, "has", "parameter", "HIR operand"),
-        (signature.results().len(), u16::MAX as usize, "returns", "value", "HIR operand"),
         (
             signature.params().len(),
             LINT_SIGNATURE_VALUE_LIMIT,
