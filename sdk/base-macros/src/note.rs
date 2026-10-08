@@ -317,7 +317,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     };
 
     let entrypoint_ident = &entrypoint_fn.sig.ident;
-    let export_name = match entrypoint_export_name(entrypoint_ident) {
+    let export_name = match note_script_export_name(entrypoint_ident) {
         Ok(val) => val,
         Err(err) => return err.into_compile_error(),
     };
@@ -471,19 +471,19 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     }
 }
 
-/// Renders the generated associated method exposing the note script root.
-///
-/// Emitted from the `#[note]` impl expansion — not the struct expansion — so the method exists
-/// exactly when a `#[note_script]` entrypoint exists. `#[inline(always)]` keeps the compiled
-/// output identical to calling the SDK plumbing directly, even in unoptimized builds.
 /// Returns the WIT name the `#[note_script]` entrypoint `entrypoint_ident` is exported under,
 /// rejecting a name that carries a prefix reserved for generated imports.
-fn entrypoint_export_name(entrypoint_ident: &syn::Ident) -> syn::Result<String> {
+fn note_script_export_name(entrypoint_ident: &syn::Ident) -> syn::Result<String> {
     let export_name = rust_ident_to_wit_name(entrypoint_ident)?;
     reject_reserved_import_prefix_export(entrypoint_ident, &export_name, NOTE_SCRIPT_ENTRYPOINT)?;
     Ok(export_name)
 }
 
+/// Renders the generated associated method exposing the note script root.
+///
+/// Emitted from the `#[note]` impl expansion — not the struct expansion — so the method exists
+/// exactly when a `#[note_script]` entrypoint exists. `#[inline(always)]` keeps the compiled
+/// output identical to calling the SDK plumbing directly, even in unoptimized builds.
 fn render_entrypoint_root_method(note_ty: &syn::TypePath) -> TokenStream2 {
     let method_ident = syn::Ident::new(ENTRYPOINT_ROOT_METHOD, Span::call_site());
     quote! {
@@ -1712,14 +1712,14 @@ fn main() {{}}
             ("fpi_run", "fpi-run", "foreign procedure invocation imports"),
             ("dyncall_run", "dyncall-run", "stored-procedure dispatch imports"),
         ] {
-            let message = entrypoint_export_name(&format_ident!("{name}"))
+            let message = note_script_export_name(&format_ident!("{name}"))
                 .expect_err("the reserved prefix must be rejected")
                 .to_string();
             assert!(message.contains(&format!("entrypoint `{name}`")), "{message}");
             assert!(message.contains(&format!("exported as `{wit_name}`")), "{message}");
             assert!(message.contains(purpose), "{message}");
         }
-        assert_eq!(entrypoint_export_name(&format_ident!("run")).unwrap(), "run");
+        assert_eq!(note_script_export_name(&format_ident!("run")).unwrap(), "run");
     }
 
     #[test]
