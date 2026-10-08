@@ -109,8 +109,6 @@ pub fn get_sysroot(toolchain: Option<&str>) -> CompilerResult<PathBuf> {
 /// Cargo's own diagnostics reach the user through the inherited stderr; the returned report
 /// carries the exit status.
 pub fn run_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>> {
-    use std::io::BufRead;
-
     log::debug!(target: "driver", "spawning command {cmd:?}");
 
     let timing = std::env::var("MIDENC_TEST_TIMINGS")
@@ -120,40 +118,17 @@ pub fn run_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>
         Report::msg(format!("failed to spawn `{cargo}`: {err}", cargo = cargo.display()))
     })?;
 
-    let mut artifacts = Vec::new();
     let stdout = child.stdout.take().expect("no stdout");
-    let reader = std::io::BufReader::new(stdout);
-    for line in reader.lines() {
-        let line =
-            line.map_err(|err| Report::msg(format!("failed to read output from `cargo`: {err}")))?;
-
-        if line.is_empty() {
-            continue;
-        }
-
-        for message in Message::parse_stream(line.as_bytes()) {
-            let message = message
-                .map_err(|err| Report::msg(format!("unexpected JSON message from cargo: {err}")))?;
-            if let Message::CompilerArtifact(artifact) = message {
-                for path in &artifact.filenames {
-                    match path.extension() {
-                        Some("wasm") => {
-                            artifacts.push(artifact);
-                            break;
-                        }
-                        _ => continue,
-                    }
-                }
-            }
-        }
-    }
-
+    // The child is always waited for, even when its output cannot be read, so that no finished
+    // cargo process is left behind holding the build directory lock.
+    let artifacts = collect_wasm_artifacts(stdout);
     let status = child.wait().map_err(|err| {
         Report::msg(format!(
             "failed to wait for `{cargo}` to finish: {err}",
             cargo = cargo.display()
         ))
     })?;
+    let artifacts = artifacts?;
 
     if let Some(started) = timing {
         eprintln!(
@@ -170,6 +145,32 @@ pub fn run_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>
         )));
     }
 
+    Ok(artifacts)
+}
+
+/// Reads Cargo's JSON message stream from `stdout` and collects the artifacts with a Wasm output.
+fn collect_wasm_artifacts(stdout: std::process::ChildStdout) -> CompilerResult<Vec<Artifact>> {
+    use std::io::BufRead;
+
+    let mut artifacts = Vec::new();
+    for line in std::io::BufReader::new(stdout).lines() {
+        let line =
+            line.map_err(|err| Report::msg(format!("failed to read output from `cargo`: {err}")))?;
+
+        if line.is_empty() {
+            continue;
+        }
+
+        for message in Message::parse_stream(line.as_bytes()) {
+            let message = message
+                .map_err(|err| Report::msg(format!("unexpected JSON message from cargo: {err}")))?;
+            if let Message::CompilerArtifact(artifact) = message
+                && artifact.filenames.iter().any(|path| path.extension() == Some("wasm"))
+            {
+                artifacts.push(artifact);
+            }
+        }
+    }
     Ok(artifacts)
 }
 
