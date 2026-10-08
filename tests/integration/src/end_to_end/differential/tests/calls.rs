@@ -21,8 +21,9 @@ fn sret_shapes() {
 }
 
 /// 16-u32 and 8-u64 helper signatures — exactly 16 stack felts each, the
-/// call-site scheduling limit (20 felts is a verified compile-time spills
-/// panic) — with u64 values live across both call sites.
+/// call-site scheduling limit (wider signatures are rejected at compile
+/// time, see `sig17`; 20 felts was a spills panic until #1421) — with u64
+/// values live across both call sites.
 #[test]
 fn wide_calls() {
     run_case("wide_calls", include_str!("../cases/case_wide_calls.rs"));
@@ -173,28 +174,25 @@ fn loop_calls_edges() {
 /// dispatched inside a loop whose index is loop-carried while SIX u64
 /// locals stay live across the dispatch (each is an argument and is used
 /// again afterwards), then `dyn Trait` methods returning a u128 (return
-/// area + receiver + four u64) under the same live state. Six is the
-/// largest live-local count that compiles; seven is the `indirect_spill`
-/// panic below.
+/// area + receiver + four u64) under the same live state. Seven live locals
+/// is the `indirect_spill` shape below, which panicked the compiler until
+/// #1421.
 #[test]
 fn dispatch_pressure() {
     run_case("dispatch_pressure", include_str!("../cases/case_dispatch_pressure.rs"));
 }
 
 /// Formerly `#[ignore]`d as the LOOP form of the `hir.exec_indirect`
-/// argument-blindness class (campaign 14). It compiles and matches native at
-/// every configuration since the guest toolchain bump to nightly-2026-09-01 —
-/// but the COMPILER BUG IS NOT FIXED: at the default level, `-Oz` and `-O3`
-/// LLVM devirtualizes a plain read of a constant fn-pointer table, so the
-/// guest wasm contains ZERO `call_indirect` and the case never reaches
-/// `hir.exec_indirect` at all. Arbitrated 2026-09-17 by rebuilding the guest
-/// with nightly-2026-04-30, which reproduces the original `NoSolution` at
-/// codegen/masm/src/lower/lowering.rs:109 verbatim. The class keeps a
-/// default-level reproducer in `indirect_spill_bb`, which reads the table
+/// argument-blindness class (campaign 14), fixed by #1421: the spill
+/// analysis now models every operand group of a non-branch op. At the
+/// default level, `-Oz` and `-O3` LLVM devirtualizes a plain read of a
+/// constant fn-pointer table, so the guest wasm contains ZERO
+/// `call_indirect` and the case never reaches `hir.exec_indirect` at all;
+/// this test stays as the devirtualized-dispatch guard. The class keeps an
+/// indirect regression case in `indirect_spill_bb`, which reads the table
 /// through `core::hint::black_box(&WIDES)` and stays indirect at every level;
-/// `--optimize=basic` does not devirtualize either, which is why
-/// `indirect_spill_args` and `indirect_spill_line` still panic there. This
-/// test stays as the devirtualized-dispatch guard. What it used to do:
+/// `--optimize=basic` does not devirtualize either, so `indirect_spill_args`
+/// and `indirect_spill_line` exercise the dispatch there. What it used to do:
 ///
 /// building it panicked with `NoSolution` at
 /// codegen/masm/src/lower/lowering.rs:109 while scheduling the loop body's
@@ -203,23 +201,22 @@ fn dispatch_pressure() {
 /// the arguments of a 7-u64 fn-pointer dispatch inside a loop with a
 /// loop-carried table index, and a u64 accumulator is carried across the
 /// dispatch (one local more than the passing `dispatch_pressure`). Root
-/// cause (`MIDENC_TRACE='analysis:spills=trace'`): the spill analysis takes
+/// cause (`MIDENC_TRACE='analysis:spills=trace'`): the spill analysis took
 /// an operation's inputs from operand group 0 only
-/// (hir-analysis/src/analyses/spills.rs, `op.operands().group(0)` at the
-/// generic scheduling site ~2291 and at ~993/~2470), but `hir.exec_indirect`
-/// keeps only the u32 table index in group 0 and its ARGUMENTS in group 1
+/// (hir-analysis/src/analyses/spills.rs), but `hir.exec_indirect` keeps only
+/// the u32 table index in group 0 and its ARGUMENTS in group 1
 /// (dialects/hir/src/ops/invoke.rs, `#[operand] index` + `#[operands]
 /// arguments`). In the loop body the seven argument loads (`hir.load_local`
 /// of the DWARF-kept wasm locals) plus the accumulator and the table-index
-/// math exceed the window, so the analysis spills four of the arguments
-/// and, blind to their use at the dispatch, never reloads them ("required
+/// math exceeded the window, so the analysis spilled four of the arguments
+/// and, blind to their use at the dispatch, never reloaded them ("required
 /// by reloads = 0", "freed by op = 1", four arguments in S^entry at the
 /// dispatch). Spills materialize as `store_local` copies, so the emitter
-/// keeps the four values physically until the dispatch consumes them and
-/// the body is scheduled over 17 felts. No "unused phi" warning (not F1),
+/// kept the four values physically until the dispatch consumed them and
+/// the body was scheduled over 17 felts. No "unused phi" warning (not F1),
 /// no edge split needed (not F6), out-of-contract stack (not the arity-2 F2
-/// gap). Panic-only: the emitter schedules the real values and every spill
-/// slot holds the correct value, so no silent miscompile is possible.
+/// gap). Panic-only: the emitter scheduled the real values and every spill
+/// slot held the correct value, so no silent miscompile was possible.
 /// Bounded by `dispatch_pressure` (six such locals, passes), `direct_loop`
 /// (the SAME loop with eight locals and a DIRECT 7-u64 call: `hir.exec`
 /// keeps its arguments in group 0, passes) and `indirect_args` (eight
@@ -248,9 +245,9 @@ fn indirect_spill_bb() {
 
 /// Straight-line twin of `indirect_spill`: eight u64 locals used by two
 /// fn-pointer dispatches with no loop — every argument is loaded right
-/// before its dispatch with nothing else live, so no spill is needed and
-/// the group-0-only accounting is harmless here (twelve such locals pass
-/// too; probe deleted).
+/// before its dispatch with nothing else live, so no spill is needed (it
+/// passed even under the group-0-only accounting fixed by #1421; twelve such
+/// locals pass too; probe deleted).
 ///
 /// Since 2026-09-28 the table is read through `black_box`, because the guest
 /// toolchain devirtualizes constant fn-pointer tables; the wasm has 2
@@ -351,35 +348,32 @@ fn recursion_indirect_edges() {
 /// Direct-call loop twin of `indirect_spill`: the same bottom-test loop with
 /// EIGHT loop-invariant u64 locals as the arguments of a pinned direct 7-u64
 /// call and a u64 accumulator carried across it — `hir.exec` keeps its
-/// arguments in operand group 0, so the spill analysis reloads them and the
-/// shape compiles and passes (seven pass as well; probe deleted).
+/// arguments in operand group 0, so this shape compiled and passed even
+/// before #1421 (seven pass as well; probe deleted).
 #[test]
 fn direct_loop() {
     run_case("direct_loop", include_str!("../cases/case_direct_loop.rs"));
 }
 
 /// Formerly `#[ignore]`d as the loop-free minimal form of the
-/// `indirect_spill` class. Passes at the DEFAULT level since the
-/// nightly-2026-09-01 bump for the same reason as `indirect_spill` — the table
-/// read is devirtualized and the wasm has no `call_indirect` — and reproduces
-/// verbatim with nightly-2026-04-30 guests. It is NOT fixed: at
-/// `--optimize=basic` the wasm keeps its `call_indirect` and the same
-/// `NoSolution` at codegen/masm/src/lower/lowering.rs:109 `for inst
-/// 'hir.exec_indirect'`, constraints all `Move`, fires again (measured
-/// 2026-09-17); `--optimize=max`, `--optimize=size-min` and the no-DWARF build
-/// devirtualize like the default level. The class's default-level reproducer
-/// is `indirect_spill_bb`. What it used to do (campaign 14 attempt 2,
-/// 2026-09-03): a
-/// straight-line 7-u64 fn-pointer dispatch with two single-use u64 helper
-/// results computed before it and consumed after it (LLVM stackifies them
-/// UNDER the dispatch, so they are SSA values live across
-/// `hir.exec_indirect` in one block: 14 argument felts + the table index +
-/// 4 felts live-through = 19). The spill analysis, reading operand group 0
-/// only, spills two of the arguments ("required by reloads = 0", "freed by
-/// op = 1", two argument limbs in S^entry) and never reloads them; the
-/// emitter still holds them and the dispatch ITSELF is scheduled over a
-/// 17-felt stack: `NoSolution` at codegen/masm/src/lower/lowering.rs:109
-/// `for inst 'hir.exec_indirect'`, constraints all `Move`. Bounded by
+/// `indirect_spill` class, fixed by #1421. At the DEFAULT level, as with
+/// `indirect_spill`, the table read is devirtualized and the wasm has no
+/// `call_indirect`; at `--optimize=basic` the wasm keeps its `call_indirect`
+/// (it used to panic there too), while `--optimize=max`,
+/// `--optimize=size-min` and the no-DWARF build devirtualize like the
+/// default level. The class's default-level regression case is
+/// `indirect_spill_bb`. What it used to do (campaign 14 attempt 2,
+/// 2026-09-03): a straight-line 7-u64 fn-pointer dispatch with two
+/// single-use u64 helper results computed before it and consumed after it
+/// (LLVM stackifies them UNDER the dispatch, so they are SSA values live
+/// across `hir.exec_indirect` in one block: 14 argument felts + the table
+/// index + 4 felts live-through = 19). The spill analysis, reading operand
+/// group 0 only, spilled two of the arguments ("required by reloads = 0",
+/// "freed by op = 1", two argument limbs in S^entry) and never reloaded
+/// them; the emitter still held them and the dispatch ITSELF was scheduled
+/// over a 17-felt stack: `NoSolution` at
+/// codegen/masm/src/lower/lowering.rs:109 `for inst 'hir.exec_indirect'`,
+/// constraints all `Move`. Bounded by
 /// `direct_line` (the same shape with a pinned direct call, passes) and
 /// `indirect_wide` (the same 7-u64 dispatch with nothing live across it,
 /// passes); one live-through u64 still fits (probe deleted).
@@ -396,22 +390,21 @@ fn direct_line() {
 }
 
 /// Formerly `#[ignore]`d as the third signature of the `indirect_spill`
-/// class. Passes at the DEFAULT level since the nightly-2026-09-01 bump only
-/// because the table read is devirtualized (zero `call_indirect` in the wasm);
-/// nightly-2026-04-30 guests still abort at emit/mod.rs:623 index 10, and so
-/// does `--optimize=basic` with the current toolchain (measured 2026-09-17 —
-/// -O1 does not devirtualize). The class's default-level reproducer is
+/// class, fixed by #1421. At the DEFAULT level the table read is
+/// devirtualized (zero `call_indirect` in the wasm); `--optimize=basic` does
+/// not devirtualize, so the dispatch stays indirect there (it used to abort
+/// there too). The class's default-level regression case is
 /// `indirect_spill_bb`. What it used to do (campaign 14 attempt 2,
-/// 2026-09-03): a loop-free 7-u64 fn-pointer
-/// dispatch whose fourth and sixth arguments are rotated IN PLACE from two
-/// more u64 locals by runtime counts, so the argument setup alone loads
-/// nine u64 (18 felts) before the dispatch. The spill analysis (blind to the
-/// group-1 arguments) spills four of them and never reloads them; the
-/// emitter keeps them physically and the first arity-1 `arith.trunc` of a
-/// Copy-constrained deep u64 aborts in the EMITTER rather than the solver:
+/// 2026-09-03): a loop-free 7-u64 fn-pointer dispatch whose fourth and
+/// sixth arguments are rotated IN PLACE from two more u64 locals by runtime
+/// counts, so the argument setup alone loads nine u64 (18 felts) before the
+/// dispatch. The spill analysis (blind to the group-1 arguments) spilled
+/// four of them and never reloaded them; the emitter kept them physically
+/// and the first arity-1 `arith.trunc` of a Copy-constrained deep u64
+/// aborted in the EMITTER rather than the solver:
 /// `invalid operand stack index (10): requires access to more than 16
 /// elements` at codegen/masm/src/emit/mod.rs:623 (`copy_operand_to_position`
-/// → `dup`). The same class also surfaces as `invalid stack offset for
+/// → `dup`). The same class also surfaced as `invalid stack offset for
 /// movup: 17 is out of range` (emit/mod.rs:758) for a `dyn Trait` method
 /// dispatch with two in-place-computed u64 arguments (probe deleted) and as
 /// a 17-felt `arith.shl` `NoSolution` for fn pointers taking three u128
@@ -484,10 +477,11 @@ fn recursion_frames() {
 /// (four i64 limbs, eight felts) and returning a u128 through a return area,
 /// dispatched in a loop whose carried state is three u128s, with u128 / i128
 /// `checked_div` / `checked_rem` against divisors reaching 0 / -1 / MIN and
-/// 128-bit shifts by runtime counts in the callees. Two plain u128 locals is
-/// the boundary: three u128 parameters, or two with one argument computed
-/// in place, hit the `indirect_spill` class (17-felt `arith.shl`
-/// `NoSolution` while the limbs are loaded for the dispatch; probes deleted).
+/// 128-bit shifts by runtime counts in the callees. Until #1421 two plain
+/// u128 locals were the boundary: three u128 parameters, or two with one
+/// argument computed in place, hit the `indirect_spill` class (17-felt
+/// `arith.shl` `NoSolution` while the limbs were loaded for the dispatch;
+/// probes deleted).
 ///
 /// Since 2026-09-28 the table is read through `black_box`, because the guest
 /// toolchain devirtualizes constant fn-pointer tables; the wasm has 5

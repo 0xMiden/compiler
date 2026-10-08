@@ -33,8 +33,8 @@ build only, asserts it fails with an error containing the expected text).
   <filter> -- --test-threads=8`. One filter per invocation: names after `--`
   are OR-ed with the first filter.
 - `--exact` needs the FULL path `end_to_end::differential::tests::<module>::<test>`
-  (a partial path runs zero tests). `--ignored` runs ignored tests; run them
-  one per invocation. `--skip` is a substring filter.
+  (a partial path runs zero tests). `--ignored` runs ignored tests. `--skip`
+  is a substring filter.
 - Env knobs: `MIDENC_DIFF_FLAGS='<flags>'` (whitespace-split, appended after
   the case's flags; an option the case pins keeps the case's value, keyed on
   the text before `=`), `FUZZA_GUEST_DEBUG=0|1|2` (default 2),
@@ -42,8 +42,6 @@ build only, asserts it fails with an error containing the expected text).
 - `--optimize=`: default = LLVM 2, `size-min` z, `max` 3, `basic` 1.
   `RUST_MIN_STACK=8388608` for max sweeps (big unrolled guests overflow the
   2 MiB test thread in the assembler; not a finding).
-- Link skips for a whole-corpus sweep: only `corelib`, `--skip core_str_find`
-  at size-min, plus `--skip core_str_patterns` at basic.
 - Machine time (about 700 tests): default run about 6 min, a flag sweep 8 to
   9 min, `FUZZA_INPUT_PAIRS=256` about 73 min (over half in `programs`,
   `programs_oz`, `memory`). A warm case about 2 s; Keccak-f[800] about 4 s
@@ -66,9 +64,9 @@ build only, asserts it fails with an error containing the expected text).
 - `MIDENC_TRACE='codegen:operand-scheduling=trace'`: `there are N used operands
   out of M`; the last `dropping unused operands at:` names the op the emitter
   was on when it panicked.
-- `pass:local2reg=trace`
-  logs `found promotable local` BEFORE the debug check; subtract the `debug
-  declarations cannot all be converted safely` lines.
+- `MIDENC_TRACE='pass:local2reg=trace'` logs `found promotable local` BEFORE
+  the debug check; subtract the `debug declarations cannot all be converted
+  safely` lines.
 - `-Z print-ir-after-pass=<pass>` logs to target `pass:<pass>`: it needs the
   flag, `MIDENC_TRACE='pass:<pass>=trace'` and `--nocapture`. Pass names:
   `canonicalizer`, `cse`, `sparse-conditional-constant-propagation`,
@@ -117,9 +115,8 @@ build the masked-index control before calling a trap-edge variant new.
 
 ## Gotchas
 
-- A guest that fails to build or link is reported as an error (since #1421),
-  so a non-linking case is an ordinary failed test, as is an assembler
-  call-graph cycle.
+- A guest that fails to build or link is reported as an ordinary failed test,
+  as is an assembler call-graph cycle; cargo's diagnostics go to stderr.
 - A passing test swallows its output (`--nocapture`); when tracing several
   tests in one run, log lines belong to the `test <name> ...` line above.
   Quote globs and `::` paths in zsh.
