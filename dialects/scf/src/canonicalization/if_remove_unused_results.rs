@@ -147,8 +147,7 @@ mod tests {
         Listener, ListenerType, Op, OperationRef, ProgramPoint, Report, SourceSpan, Type,
         dialects::{builtin::BuiltinOpBuilder, test::TestOpBuilder},
         patterns::{
-            self, FrozenRewritePatternSet, GreedyRewriteConfig, RewritePatternSet,
-            RewriterListener,
+            self, FrozenRewritePatternSet, GreedyRewriteConfig, RewritePatternSet, RewriterListener,
         },
         testing::Test,
     };
@@ -178,6 +177,8 @@ mod tests {
 
     impl RewriterListener for InsertionPointListener {}
 
+    /// An `scf.if` with one dead and one live result is narrowed to the live one, with a
+    /// listener that borrows the insertion point of every op the pattern creates.
     #[test]
     fn if_remove_unused_results() -> Result<(), Report> {
         let mut test = Test::new("if_remove_unused_results", &[Type::I1], &[Type::U32]);
