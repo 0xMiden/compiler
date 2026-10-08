@@ -381,6 +381,42 @@ mod tests {
         assert_eq!(switch_op.cases().len(), 0);
     }
 
+    /// A `cf.switch` with more than 255 cases, each forwarding an argument, so that the op holds
+    /// more than 255 successors, operand groups and operands at once (the shape of a `br_table`
+    /// with 256+ targets whose shared destination takes a block argument).
+    #[test]
+    fn switch_building_with_more_than_255_cases_and_arguments() {
+        const NUM_CASES: usize = 300;
+
+        let mut test = Test::new("foo", &[Type::U32], &[]);
+        let context = test.context_rc();
+        let selector = test.function().borrow().entry_block().borrow().arguments()[0] as ValueRef;
+        let mut builder = test.function_builder();
+        let dest = builder.create_block();
+        builder.append_block_param(dest, Type::U32, SourceSpan::UNKNOWN);
+        let fallback = builder.create_block();
+        let cases = (0..NUM_CASES)
+            .map(|i| SwitchCase {
+                value: context.create_attribute::<U32Attr, _>(i as u32),
+                successor: dest,
+                arguments: vec![selector],
+            })
+            .collect::<Vec<_>>();
+
+        let op = builder.switch(selector, cases, fallback, [], SourceSpan::UNKNOWN).unwrap();
+        let switch_op = op.borrow();
+
+        assert_eq!(switch_op.fallback().successor(), fallback);
+        let cases = switch_op.cases();
+        assert_eq!(cases.len(), NUM_CASES);
+        let last_case = cases.get(NUM_CASES - 1).unwrap();
+        assert_eq!(last_case.block(), dest);
+        assert_eq!(*last_case.key(), (NUM_CASES - 1) as u32);
+        assert_eq!(last_case.arguments().len(), 1);
+        assert_eq!(last_case.arguments()[0].borrow().as_value_ref(), selector);
+        assert_eq!(switch_op.operands().all().len(), NUM_CASES + 1);
+    }
+
     /// The value returned by the `builtin.ret` terminating `block`.
     fn returned_value(block: BlockRef) -> ValueRef {
         let block = block.borrow();

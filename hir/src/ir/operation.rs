@@ -1047,7 +1047,7 @@ impl Operation {
             operands
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| context.make_operand(value, owner, index as u8)),
+                .map(|(index, value)| context.make_operand(value, owner, index as u16)),
         );
     }
 

@@ -15,9 +15,9 @@ impl fmt::Debug for EntityGroup {
     }
 }
 impl EntityGroup {
+    const LEN_SHIFT: u32 = 16;
     /// The start index occupies the low 16 bits, the length the high 16 bits.
     const START_MASK: u32 = u16::MAX as u32;
-    const LEN_SHIFT: u32 = 16;
 
     /// Create a new group of size `len`, starting at index `start`
     ///
@@ -121,6 +121,45 @@ mod tests {
         assert_eq!(group.len(), 255);
         assert!(!group.is_empty());
         assert_eq!(group.as_range(), 255..510);
+    }
+
+    #[test]
+    fn entity_group_wide() {
+        let group = EntityGroup::new(256, 300);
+        assert_eq!(group.start(), 256);
+        assert_eq!(group.end(), 556);
+        assert_eq!(group.len(), 300);
+        assert_eq!(group.as_range(), 256..556);
+
+        let mut group = EntityGroup::new(u16::MAX as usize, 0);
+        group.grow(u16::MAX as usize);
+        assert_eq!(group.start(), u16::MAX as usize);
+        assert_eq!(group.len(), u16::MAX as usize);
+        assert_eq!(group.as_range(), 65535..131070);
+
+        group.shift_start(-(u16::MAX as isize));
+        assert_eq!(group.start(), 0);
+        assert_eq!(group.len(), u16::MAX as usize);
+    }
+
+    #[test]
+    #[should_panic(expected = "too many items")]
+    fn entity_group_start_overflow() {
+        EntityGroup::new(u16::MAX as usize + 1, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "group is too large")]
+    fn entity_group_grow_overflow() {
+        let mut group = EntityGroup::new(0, u16::MAX as usize);
+        group.grow(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "group offset is negative")]
+    fn entity_group_shift_start_negative() {
+        let mut group = EntityGroup::new(1, 0);
+        group.shift_start(-2);
     }
 
     #[test]

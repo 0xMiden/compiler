@@ -285,7 +285,7 @@ impl Context {
     /// NOTE: This inserts the operand as a user of `value`, but does _not_ add the operand to
     /// `owner`'s operand storage, the caller is expected to do that. This makes this function a
     /// more useful primitive.
-    pub fn make_operand(&self, mut value: ValueRef, owner: OperationRef, index: u8) -> OpOperand {
+    pub fn make_operand(&self, mut value: ValueRef, owner: OperationRef, index: u16) -> OpOperand {
         let op_operand = self.alloc_tracked(OpOperandImpl::new(value, owner, index));
         let mut value = value.borrow_mut();
         value.insert_use(op_operand);
@@ -367,7 +367,7 @@ impl Context {
             let operand = self.make_operand(
                 value,
                 op.as_operation_ref(),
-                (current_dest_operands_len + 1) as u8,
+                (current_dest_operands_len + 1) as u16,
             );
             op.operands_mut().extend_group(dest_group, [operand]);
         }

@@ -164,7 +164,7 @@ where
             arguments
                 .into_iter()
                 .enumerate()
-                .map(|(index, arg)| self.builder.context().make_operand(arg, owner, index as u8)),
+                .map(|(index, arg)| self.builder.context().make_operand(arg, owner, index as u16)),
         );
         // Record SuccessorInfo for this successor in the op
         let succ_index = u16::try_from(op.successors.len()).expect("too many successors");
@@ -236,7 +236,7 @@ where
         let operands = operands
             .into_iter()
             .enumerate()
-            .map(|(index, value)| self.builder.context().make_operand(value, owner, index as u8));
+            .map(|(index, value)| self.builder.context().make_operand(value, owner, index as u16));
         let mut op = self.op.borrow_mut();
         op.operands.extend(operands);
     }
@@ -250,7 +250,7 @@ where
         let operands = operands
             .into_iter()
             .enumerate()
-            .map(|(index, value)| self.builder.context().make_operand(value, owner, index as u8));
+            .map(|(index, value)| self.builder.context().make_operand(value, owner, index as u16));
         let mut op = self.op.borrow_mut();
         op.operands.extend_group(group, operands);
     }
