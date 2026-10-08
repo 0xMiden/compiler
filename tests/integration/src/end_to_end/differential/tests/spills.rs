@@ -47,7 +47,7 @@ fn spill_loop_mix() {
 
 /// COMPILE-TIME COMPILER PANIC under `--optimize=size-min` only (safe Rust,
 /// 2026-09-02): the `spill_loop_mix` case, which compiles and passes at the
-/// default opt-level 2 and at `--optimize=max`, panics with `NoSolution` at
+/// default opt-level 2 and at `--optimize=max`, panicked with `NoSolution` at
 /// codegen/masm/src/lower/lowering.rs:109 when the guest is built at
 /// opt-level z: `failed to schedule operands: [%594, %258] for inst
 /// 'arith.rotl'`, constraints `[Copy, Move]`, over a 16-entry operand stack
@@ -59,14 +59,12 @@ fn spill_loop_mix() {
 /// trace shows no unused-phi warning, so the IR is SSA-valid and the
 /// scheduling problem is in-contract. `-Oz` triggers it because LLVM keeps
 /// the count band un-hoisted, so the counts sit deeper in the window at the
-/// rotate than they do at O2/O3. Compile-time — no inputs involved.
-/// Un-ignore when `rotl_window` compiles (binary problems get a
-/// window-aware fallback tactic).
+/// rotate than they do at O2/O3. Compile-time — no inputs involved. Filed
+/// under #1422; it stopped panicking with the #1420 fix (fresh dominator tree
+/// after edge splits, pruning of the spill transform's unused phis), was
+/// `#[ignore]`d until then, and no longer reproduces the panic it was filed
+/// for.
 #[test]
-#[ignore = "#1422: compiler panic: 'with error: NoSolution' at \
-            codegen/masm/src/lower/lowering.rs:109 scheduling an arity-2 arith.rotl under \
-            --optimize=size-min (rotl_window bug class: TwoArgs-only tactic list, no window-aware \
-            fallback; compile-time, no inputs involved)"]
 fn spill_loop_mix_oz() {
     run_case_with_flags(
         "spill_loop_mix_oz",
@@ -76,7 +74,7 @@ fn spill_loop_mix_oz() {
 }
 
 /// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case
-/// panics with `attempt to subtract with overflow` in `Stack::movdn` at
+/// panicked with `attempt to subtract with overflow` in `Stack::movdn` at
 /// codegen/masm/src/opt/operands/stack.rs:80. Trigger: LLVM runtime-unrolls
 /// the `% 97`-bounded round `acc = (acc.wrapping_mul(33) ^ i).rotate_left(5)`
 /// 4x, whose live state spills. Root cause (triage 2026-08-27): the SAME
@@ -92,11 +90,11 @@ fn spill_loop_mix_oz() {
 /// validates accepted solutions). Bounded by: the xor-rotl and mul-rotl
 /// rounds of the identical loop compile and pass; the rotate-less round is
 /// the arity-2 symptom (`unroll_chain`, NoSolution at lowering.rs:109).
-/// Compile-time — no inputs involved. Un-ignore when this case compiles.
+/// Compile-time — no inputs involved. Filed under #1422; it stopped panicking
+/// with the #1420 fix (fresh dominator tree after edge splits, pruning of the
+/// spill transform's unused phis), was `#[ignore]`d until then, and no longer
+/// reproduces the panic it was filed for.
 #[test]
-#[ignore = "#1422: compiler panic: 'attempt to subtract with overflow' in Stack::movdn at \
-            codegen/masm/src/opt/operands/stack.rs:80 while applying the scheduler solution for \
-            the 4x-unrolled mul-xor-rotl loop chain (compile-time, no inputs involved)"]
 fn unroll_rotmix() {
     run_case("unroll_rotmix", include_str!("../cases/case_unroll_rotmix.rs"));
 }
@@ -113,7 +111,7 @@ fn spill_switch() {
 }
 
 /// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case
-/// panics with `NoSolution` at codegen/masm/src/lower/lowering.rs:109 while
+/// panicked with `NoSolution` at codegen/masm/src/lower/lowering.rs:109 while
 /// scheduling `arith.rotl %167, %397` (constraints `[Move, Copy]`) over a
 /// 15-felt operand stack. Root cause (triage 2026-08-27, distinct from
 /// `unroll_chain`): for arity-2 problems the solver pushes ONLY the
@@ -131,8 +129,10 @@ fn spill_switch() {
 /// TransformSpills-produced non-dominating phi operands). The same class is
 /// also reachable with no loop at all: a single-block chain of twenty shared
 /// counts on a multi-use u64 panics identically (`[Move, Copy]`, 15 felts),
-/// eighteen counts pass (`chain_window` in pressure.rs). Un-ignore when
-/// this case compiles (binary problems get a window-aware fallback tactic).
+/// eighteen counts pass (`chain_window` in pressure.rs). Filed under #1422;
+/// it stopped panicking with the #1420 fix (fresh dominator tree after edge
+/// splits, pruning of the spill transform's unused phis), was `#[ignore]`d
+/// until then, and no longer reproduces the panic it was filed for.
 ///
 /// The gap is not limited to the `copy_move`/`move_copy` arms of `TwoArgs`:
 /// its `copy_copy` arm fails the same way. Campaign 18 hit it at -Oz on
@@ -143,10 +143,6 @@ fn spill_switch() {
 /// window, again with no fallback tactic. Same site, same root cause — a
 /// window-aware fallback fixes all four arms.
 #[test]
-#[ignore = "#1422: compiler panic: 'with error: NoSolution' at \
-            codegen/masm/src/lower/lowering.rs:109 scheduling an arity-2 arith.rotl with a \
-            Copy-constrained count at the bottom of a full 15-felt window (TwoArgs-only tactic \
-            list, no window-aware fallback; compile-time, no inputs involved)"]
 fn rotl_window() {
     run_case("rotl_window", include_str!("../cases/case_rotl_window.rs"));
 }

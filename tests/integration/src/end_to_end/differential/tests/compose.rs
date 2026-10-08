@@ -562,38 +562,31 @@ fn sret_indexed() {
 /// toolchain devirtualizes constant fn-pointer tables; the wasm has 2
 /// `call_indirect`.
 ///
-/// Fails since the inline-call debug info landed (next @ edf596b5b): every op
+/// Failed since the inline-call debug info landed (next @ edf596b5b): every op
 /// built inside an inlined frame carries a `di.inline_call_chain` attribute,
 /// operation equivalence compares attributes by value even when locations
 /// are ignored, so CSE and cfg-to-scf's return-like merging keep identical
 /// ops from different inline frames apart and the loop reaches
 /// `RemoveLoopInvariantArgsFromBeforeBlock`. It used to hit the #1419 panic
-/// there (`invariant_args_min`'s); since that fix it gets past the pattern and
-/// panics in `TransformSpills` with `missing liveness for block entry` at
+/// there (`invariant_args_min`'s); after that fix it got past the pattern and
+/// panicked in `TransformSpills` with `missing liveness for block entry` at
 /// hir-analysis/src/analyses/spills.rs:1684 (`SpillAnalysis::compute_w_entry_loop_like`).
-/// It passes with `FUZZA_GUEST_DEBUG=0` and fails with 1 and 2; with the
+/// It passed with `FUZZA_GUEST_DEBUG=0` and failed with 1 and 2; with the
 /// attribute skipped in the equivalence it compiles and matches native.
-/// Compile-time, no inputs involved. Un-ignore when the equivalence ignores
-/// the inline chain.
+/// Compile-time, no inputs involved. Filed under #1429; it stopped panicking
+/// with the #1420 fix (fresh dominator tree after edge splits, pruning of the
+/// spill transform's unused phis), was `#[ignore]`d until then, and no longer
+/// reproduces the panic it was filed for.
 #[test]
-#[ignore = "#1429: compiler panic only when the guest has debug info (guest debug 1 and 2; passes \
-            at 0): 'missing liveness for block entry' at hir-analysis/src/analyses/spills.rs:1684 \
-            in TransformSpills (before the #1419 fix it was the #1419 'AliasingViolationError' \
-            while matching 'remove-loop-invariant-args-from-before-block'), reached because the \
-            per-op 'di.inline_call_chain' attribute keeps identical ops from different inline \
-            frames apart in CSE and cfg-to-scf; compile-time, no inputs involved"]
 fn switch_calls() {
     run_case("switch_calls", include_str!("../cases/case_switch_calls.rs"));
 }
 
 /// Pinned inputs for `switch_calls`: the `break` arm, the `continue` arm,
 /// the `return` arm, zero and one trips, every starting selector class.
-/// Ignored with `switch_calls` (same compile-time panic).
+/// It was `#[ignore]`d with `switch_calls` (#1429, same compile-time panic)
+/// until the #1420 fix.
 #[test]
-#[ignore = "#1429: same compile-time panic as switch_calls ('missing liveness for block entry' at \
-            hir-analysis/src/analyses/spills.rs:1684 in TransformSpills, formerly the #1419 \
-            'AliasingViolationError', reached only when the guest has debug info); the pinned \
-            inputs never run"]
 fn switch_calls_edges() {
     run_case_with_inputs(
         "switch_calls_edges",

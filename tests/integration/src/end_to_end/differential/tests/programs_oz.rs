@@ -112,7 +112,7 @@ fn prog_sha512_oz_edges() {
 
 /// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
 /// campaign 26): the SHA-512 compression of [`prog_sha512_oz`] built without
-/// pinned flags panics with `invalid operand stack index (9): requires access
+/// pinned flags panicked with `invalid operand stack index (9): requires access
 /// to more than 16 elements` at codegen/masm/src/emit/mod.rs:623. F6 class:
 /// the spills trace (`MIDENC_TRACE='analysis:spills=trace,pass:spills=trace'`)
 /// shows 40 and 53 values spilled in the two analysis runs, FOUR "edges to
@@ -121,16 +121,12 @@ fn prog_sha512_oz_edges() {
 /// default PANIC (index 9), `--optimize=max` PANIC (index 12),
 /// `--optimize=basic` PANIC (index 10), `--optimize=size-min` PASSES (the
 /// pinned [`prog_sha512_oz`] above, deep-fuzzed at 512 pairs). Guest DWARF
-/// does not move it. This is the headline "-Oz is the only escape" row: no
+/// did not move it. This was the headline "-Oz is the only escape" row: no
 /// source change is involved, only the guest optimization level.
-/// Compile-time — no inputs involved. Un-ignore together with the other F6
-/// reproducers (`pressure::zero_trip_frontier`, `programs::prog_rkscan`).
+/// Compile-time — no inputs involved. It was `#[ignore]`d until the #1420 fix
+/// (the spill transform now recomputes dominance after splitting edges and
+/// prunes its unused phis) and now compiles.
 #[test]
-#[ignore = "#1420: compiler panic at the DEFAULT configuration: 'invalid operand stack index (9): \
-            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
-            class (4 split edges, 14 erased split reloads in the spills trace); also panics at \
-            --optimize=max (index 12) and --optimize=basic (index 10); compiles and passes at \
-            --optimize=size-min (prog_sha512_oz); compile-time, no inputs involved"]
 fn prog_sha512() {
     run_case("prog_sha512", include_str!("../cases/case_prog_sha512.rs"));
 }
@@ -268,7 +264,7 @@ fn prog_blake2b_nodwarf() {
 /// requires access to more than 16 elements` at
 /// codegen/masm/src/emit/mod.rs:623, identically with and WITHOUT guest DWARF
 /// — while the default level and `--optimize=basic` compile it and match
-/// native. At `--optimize=max` it panics differently: `failed to schedule
+/// native. At `--optimize=max` it panicked differently until the #1420 fix: `failed to schedule
 /// operands: [%739, %488] for inst 'arith.rotl' with error: NoSolution,
 /// constraints: [Move, Copy]` at codegen/masm/src/lower/lowering.rs:109 over
 /// an 8-operand / 15-felt stack.
@@ -283,8 +279,9 @@ fn prog_blake2b_nodwarf() {
 /// (`MIDENC_TRACE='codegen:operand-scheduling=trace'`) shows the failing op
 /// is the SPILL STORE itself, `hir.store_local %15` into spill slot 27: the
 /// value chosen for spilling already sits at operand index 11, past the
-/// window, when the store is emitted. The `--optimize=max` panic of the same
-/// source is a different class again, see [`prog_threefish_o3`].
+/// window, when the store is emitted. The former `--optimize=max` panic of the
+/// same source was a different class again; it compiles now, see
+/// [`prog_threefish_o3`].
 /// LADDER (all rungs value-checked natively, `scratch/c26gen_tf.py`): merging
 /// rotation rows to reduce the distinct-constant count does NOT give a
 /// boundary — 13, 12, 11, 9 and 6 constants all panic, 8 and 4 compile, so
@@ -312,7 +309,7 @@ fn prog_threefish_oz() {
     );
 }
 
-/// The `--optimize=max` face of [`prog_threefish_oz`]: the same source panics
+/// The `--optimize=max` face of [`prog_threefish_oz`]: the same source panicked
 /// with `failed to schedule operands: [%739, %488] for inst 'arith.rotl' with
 /// error: NoSolution, constraints: [Move, Copy]` at
 /// codegen/masm/src/lower/lowering.rs:109. The dumped operand stack holds
@@ -325,13 +322,11 @@ fn prog_threefish_oz() {
 /// reload is not a split-edge reload and the stale-dominator-tree defect
 /// (F6) is not involved. Kept so a corpus-wide `--optimize=max` sweep does
 /// not rediscover it as a new finding. Compile-time — no inputs involved.
-/// Un-ignore with `spills::rotl_window`.
+/// Filed under #1422; it stopped panicking with the #1420 fix (fresh
+/// dominator tree after edge splits, pruning of the transform's unused phis),
+/// was `#[ignore]`d until then, and no longer reproduces the panic it was
+/// filed for.
 #[test]
-#[ignore = "#1422: compiler panic at --optimize=max: 'failed to schedule operands ... for inst \
-            'arith.rotl' with error: NoSolution, constraints: [Move, Copy]' at \
-            codegen/masm/src/lower/lowering.rs:109 over an in-window 15-felt stack — the arity-2 \
-            solver gap (F2, rotl_window class; no edge splits in the spills trace); compile-time, \
-            no inputs involved"]
 fn prog_threefish_o3() {
     run_case_with_flags(
         "prog_threefish_o3",

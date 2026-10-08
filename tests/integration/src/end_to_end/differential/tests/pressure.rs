@@ -1,7 +1,8 @@
 //! Operand-scheduler and spill pressure ladders (campaign 10, 2026-09-02):
 //! per ladder, the largest shape that compiles and passes differentially is
 //! kept as a boundary guard, and every new failure class beyond a boundary
-//! is kept as an `#[ignore]`d minimal reproducer with its full signature.
+//! is kept as a minimal reproducer with its full signature (`#[ignore]`d
+//! while it fails).
 
 use super::super::harness::{run_case, run_case_with_inputs};
 
@@ -87,7 +88,7 @@ fn zero_trip_guard_repro() {
 }
 
 /// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-02): building this case
-/// panics with `called Option::unwrap() on a None value` at
+/// panicked with `called Option::unwrap() on a None value` at
 /// hir/src/ir/dominance/frontier.rs:123 (`DominanceFrontier::new`, called
 /// from `midenc_hir_transform::spill::rewrite_cfg_spills`). Shape: the
 /// `zero_trip_guard` case with ELEVEN shared rotate counts — counts shared
@@ -111,8 +112,9 @@ fn zero_trip_guard_repro() {
 /// involved). Bounded by: ten counts with the same two loops compile and
 /// pass on pinned zero-trip inputs (`zero_trip_guard`); the same shape with
 /// `% 97 + 3` bounds (no bypass edge; `spill_loop_mix`, sixteen counts)
-/// passes. Compile-time — no inputs involved. Un-ignore when this case
-/// compiles (the transform recomputes dominance after splitting edges).
+/// passes. Compile-time — no inputs involved. It was `#[ignore]`d until the
+/// #1420 fix (the spill transform now recomputes dominance after splitting
+/// edges and prunes its unused phis) and now compiles.
 ///
 /// Producer-set correction (campaign 20): a zero-trip-capable loop is NOT
 /// necessary for this unwrap, only a join with three or more predecessors
@@ -128,16 +130,12 @@ fn zero_trip_guard_repro() {
 /// shapes are now kept as runnable minimal reproducers of their own,
 /// `frontier_dispatch` and `frontier_seq` below (campaign 21).
 #[test]
-#[ignore = "#1420: compiler panic: 'called Option::unwrap() on a None value' at \
-            hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
-            spill::rewrite_cfg_spills) — the spill transform rebuilds SSA form from a dominator \
-            tree cached before its own edge splits (compile-time, no inputs involved)"]
 fn zero_trip_frontier() {
     run_case("zero_trip_frontier", include_str!("../cases/case_zero_trip_frontier.rs"));
 }
 
 /// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-02): building this case
-/// panics with `NoSolution` at codegen/masm/src/lower/lowering.rs:109 while
+/// panicked with `NoSolution` at codegen/masm/src/lower/lowering.rs:109 while
 /// scheduling `arith.rotl` with constraints `[Copy, Move]` over an
 /// EIGHTEEN-felt operand stack (two u64 rotate results above fourteen u32
 /// count values) — the emitter stack exceeds the K = 16 cap the spill
@@ -162,13 +160,11 @@ fn zero_trip_frontier() {
 /// loop, and `zero_trip_guard` for the two-loop shape); the `% 97 + 3` bound
 /// (no bypass edge) passes at every count tried; six counts with the
 /// `spill_switch` 6-way match body reach a 22-felt stack (`[Move, Move]` on
-/// `arith.bxor`), five pass. Compile-time — no inputs involved. Un-ignore
-/// when this case compiles.
+/// `arith.bxor`), five pass. Compile-time — no inputs involved. It was
+/// `#[ignore]`d until the #1420 fix (the spill transform now recomputes
+/// dominance after splitting edges and prunes its unused phis) and now
+/// compiles.
 #[test]
-#[ignore = "#1420: compiler panic: 'with error: NoSolution' at \
-            codegen/masm/src/lower/lowering.rs:109 on an 18-felt operand stack — the spill \
-            transform erases its split-edge reloads (stale dominator tree), so spilled counts stay \
-            live past a zero-trip-capable loop (compile-time, no inputs involved)"]
 fn zero_trip_overflow() {
     run_case("zero_trip_overflow", include_str!("../cases/case_zero_trip_overflow.rs"));
 }
@@ -208,27 +204,24 @@ fn select_chain() {
 /// of whose arms carry a dynamically impossible `panic!()` guard (the
 /// `SimplifyCondBrLikeSwitch` producer from `canon::trap_dispatch`), with NINE
 /// masked rotate count bands used before the loop, on the loop-carried
-/// accumulator inside it, and after it. Building it panics with `called
+/// accumulator inside it, and after it. Building it panicked with `called
 /// Option::unwrap() on a None value` at hir/src/ir/dominance/frontier.rs:123
 /// (`DominanceFrontier::new` from `spill::rewrite_cfg_spills`), the same
 /// defect `zero_trip_frontier` documents: the transform rebuilds SSA form from
 /// the dominator tree the spill ANALYSIS cached before the transform's own
 /// edge splits, and the many-predecessor join of the dispatch is reached
-/// through one of those split blocks. It is a DEFAULT-level-only failure —
-/// `--optimize=size-min` compiles the same source.
+/// through one of those split blocks. It was a DEFAULT-level-only failure —
+/// `--optimize=size-min` compiled the same source.
 /// Minimality (campaign 21, one probe per axis, all at the default level):
 /// removing the three impossible arms compiles, keeping only ONE of them
 /// compiles, eight arms with one impossible arm compiles, four arms compiles,
 /// eight bands instead of nine compiles, dropping the post-loop uses of the
 /// bands compiles, and dropping the in-loop uses compiles — so every
 /// ingredient is necessary at this size. Compile-time — no inputs involved.
-/// Un-ignore when the transform recomputes dominance after splitting edges.
+/// It was `#[ignore]`d until the #1420 fix (the spill transform now
+/// recomputes dominance after splitting edges and prunes its unused phis)
+/// and now compiles.
 #[test]
-#[ignore = "#1420: compiler panic: 'called `Option::unwrap()` on a `None` value' at \
-            hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
-            spill::rewrite_cfg_spills) — a 16-arm dispatch with three impossible arms and nine \
-            crossing count bands in a bottom-tested loop, no zero-trip loop involved; \
-            DEFAULT-level only (compiles at --optimize=size-min), compile-time, no inputs"]
 fn frontier_dispatch() {
     run_case("frontier_dispatch", include_str!("../cases/case_frontier_dispatch.rs"));
 }
@@ -240,18 +233,15 @@ fn frontier_dispatch() {
 /// where FOUR masked rotate count bands are used before the first loop and
 /// again only inside the second one. Same panic and same mechanism as
 /// `frontier_dispatch`, and likewise DEFAULT-level only (`--optimize=size-min`
-/// compiles it). Band ladder at the default level (campaign 21): two and three
-/// bands compile, four through eight panic; campaign 20 had only measured
+/// compiled it). Band ladder at the default level (campaign 21): two and three
+/// bands compiled, four through eight panicked; campaign 20 had only measured
 /// eight. Bounded by the same shape with the FIRST loop removed, which
 /// compiles at every band count tried — one loop is not enough, the bands must
 /// cross a loop before reaching the region that uses them. Compile-time — no
-/// inputs involved.
+/// inputs involved. It was `#[ignore]`d until the #1420 fix (the spill
+/// transform now recomputes dominance after splitting edges and prunes its
+/// unused phis) and now compiles.
 #[test]
-#[ignore = "#1420: compiler panic: 'called `Option::unwrap()` on a `None` value' at \
-            hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
-            spill::rewrite_cfg_spills) — two sequential bottom-tested loops with four count bands \
-            used before the first and only inside the second; DEFAULT-level only (compiles at \
-            --optimize=size-min), compile-time, no inputs"]
 fn frontier_seq() {
     run_case("frontier_seq", include_str!("../cases/case_frontier_seq.rs"));
 }
@@ -261,7 +251,7 @@ fn frontier_seq() {
 /// defined before a bottom-tested `(input1 % 7) + 2` loop, consumed inside it
 /// in ONE wide expression (so all four are live at a single program point) and
 /// used again after it, with ONE masked rotate count band used before, inside
-/// and after the same loop. Building it panics with `invalid operand stack
+/// and after the same loop. Building it panicked with `invalid operand stack
 /// index (10): requires access to more than 16 elements, which is not
 /// supported in Miden` at codegen/masm/src/emit/mod.rs:623.
 /// CLASSIFIED F6 by trace, not by site
@@ -272,19 +262,16 @@ fn frontier_seq() {
 /// reloads it placed there, so the spilled values stay live on the operand
 /// stack past their spills. Same defect as `zero_trip_frontier` /
 /// `frontier_seq`, met at the emitter instead of the dominance frontier.
-/// Panics at ALL FOUR optimization levels (emit/mod.rs:623 at the default
+/// Panicked at ALL FOUR optimization levels (emit/mod.rs:623 at the default
 /// level and at max, lowering.rs:109 at size-min and basic), so no `-O` escape
 /// exists for it. Bounded by `window_erased_guard` below, which removes the
 /// band (the same four values, same loop, same post-loop uses), and by the
 /// three-value/one-band rung, which also compiles; note the band axis is
 /// NON-MONOTONE here — two bands compile again at the default level.
-/// Compile-time — no inputs involved. Un-ignore when the transform recomputes
-/// dominance after splitting edges.
+/// Compile-time — no inputs involved. It was `#[ignore]`d until the #1420 fix
+/// (the spill transform now recomputes dominance after splitting edges and
+/// prunes its unused phis) and now compiles.
 #[test]
-#[ignore = "#1420: compiler panic: 'invalid operand stack index (10): requires access to more than \
-            16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 (edges to split = 1, six erased \
-            split reloads): four u64 values live across a bottom-tested loop plus one crossing \
-            count band; all four optimization levels, compile-time, no inputs"]
 fn window_erased_min() {
     run_case("window_erased_min", include_str!("../cases/case_window_erased_min.rs"));
 }
@@ -325,7 +312,7 @@ fn window_erased_guard_edges() {
 /// zero-trip-capable loop (campaign 28): 23 lines — [`window_erased_guard`]
 /// with one more u64 value in the cluster (five defined before the loop,
 /// joined in one wide expression inside it, used again after it) and no count
-/// band at all. Building it panics with `failed to schedule operands ... for
+/// band at all. Building it panicked with `failed to schedule operands ... for
 /// inst 'arith.rotl' with error: NoSolution` at
 /// codegen/masm/src/lower/lowering.rs:109, constraints `[Copy, Copy]`, over a
 /// SEVENTEEN-felt operand stack (six u64 operands and five u32 counts) — the
@@ -334,18 +321,15 @@ fn window_erased_guard_edges() {
 /// (`rotl_window`/F2). CLASSIFIED F6 by trace: `edges to split = 1` and SIX
 /// `erase unused reload` lines, the same stale-dominator-tree defect as
 /// `zero_trip_overflow` — which needed twelve counts and a zero-trip-capable
-/// loop for the same site. Panics at all four optimization levels. Bounded by
+/// loop for the same site. Panicked at all four optimization levels. Bounded by
 /// [`window_erased_guard`] (one cluster value fewer, no spills at all).
 /// Compile-time — no inputs involved. Re-verified failing 2026-09-17 on
 /// nightly-2026-09-01 guests (same site, same `[Copy, Copy]` constraints; the
 /// value ids move with the toolchain, which is why they are not pinned).
-/// Un-ignore when the transform recomputes dominance after splitting edges.
+/// It was `#[ignore]`d until the #1420 fix (the spill transform now
+/// recomputes dominance after splitting edges and prunes its unused phis)
+/// and now compiles.
 #[test]
-#[ignore = "#1420: compiler panic: 'failed to schedule operands ... for inst arith.rotl with \
-            error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 over a 17-felt stack — F6 \
-            (edges to split = 1, six erased split reloads): five u64 values live across a \
-            bottom-tested loop, no zero-trip loop and no count band; all four optimization levels, \
-            compile-time, no inputs"]
 fn overflow_cluster_min() {
     run_case("overflow_cluster_min", include_str!("../cases/case_overflow_cluster_min.rs"));
 }
