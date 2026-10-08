@@ -259,7 +259,12 @@ pub enum Predecessor {
     /// The predecessor of the point is cross-region control flow
     Region(OperationRef),
     /// The predecessor of the point is unstructured control flow
-    Block { op: OperationRef, index: u16 },
+    Block {
+        /// The branching operation
+        op: OperationRef,
+        /// The index of the successor of `op` that leads to the point
+        index: u16,
+    },
 }
 
 impl Predecessor {

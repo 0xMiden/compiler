@@ -22,6 +22,7 @@ pub struct OpOperandImpl {
     pub index: u16,
 }
 impl OpOperandImpl {
+    /// Create an operand of `owner` at position `index` of its operand list, using `value`
     #[inline]
     pub fn new(value: ValueRef, owner: OperationRef, index: u16) -> Self {
         Self {
@@ -54,6 +55,9 @@ impl OpOperandImpl {
         self.value().ty().clone()
     }
 
+    /// Get the index of the operand group of the owning operation that this operand belongs to
+    ///
+    /// Panics if the operand is not within any operand group of its owner.
     pub fn operand_group(&self) -> usize {
         let owner = self.owner.borrow();
         let operands = owner.operands();
