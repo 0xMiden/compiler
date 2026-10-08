@@ -88,16 +88,16 @@ fn prog_keccakf_oz_edges() {
 /// split-edge reloads at two-predecessor joins (the #1420 defect), and it
 /// stopped compiling once #1420 was fixed: with those spills materialized it
 /// panics with `invalid operand stack index (9): requires access to more than
-/// 16 elements` at codegen/masm/src/emit/mod.rs:620 after the second spills
+/// 16 elements` at codegen/masm/src/emit/mod.rs (OpEmitter::dup) after the second spills
 /// run (`edges to split = 0, values spilled = 11, reloads issued = 3`). What
 /// remains is the #1422 item 2 class (over-window pressure after the second
 /// spills run). Compile-time — no inputs involved.
 #[test]
 #[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (9): \
-            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:620 — \
-            over-window pressure after the second spills run (edges to split = 0, values spilled = \
-            11, reloads issued = 3); compiled before the #1420 fix only because split-edge reloads \
-            were dropped; compile-time, no inputs involved"]
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs \
+            (OpEmitter::dup) — over-window pressure after the second spills run (edges to split = \
+            0, values spilled = 11, reloads issued = 3); compiled before the #1420 fix only \
+            because split-edge reloads were dropped; compile-time, no inputs involved"]
 fn prog_sha512_oz() {
     run_case_with_flags("prog_sha512_oz", include_str!("../cases/case_prog_sha512.rs"), SIZE_MIN);
 }
@@ -108,8 +108,8 @@ fn prog_sha512_oz() {
 /// compile-time panic since the #1420 fix); the pinned inputs never run.
 #[test]
 #[ignore = "#1422: same compile-time panic as prog_sha512_oz ('invalid operand stack index (9)' at \
-            codegen/masm/src/emit/mod.rs:620 at --optimize=size-min, over-window pressure after \
-            the second spills run); the pinned inputs never run"]
+            codegen/masm/src/emit/mod.rs (OpEmitter::dup) at --optimize=size-min, over-window \
+            pressure after the second spills run); the pinned inputs never run"]
 fn prog_sha512_oz_edges() {
     run_case_with_flags_and_inputs(
         "prog_sha512_oz_edges",
@@ -368,16 +368,16 @@ fn prog_threefish_o3() {
 /// split-edge reloads at two-predecessor joins (the #1420 defect), and it
 /// stopped compiling at `-Oz` once #1420 was fixed: with those spills
 /// materialized it panics with `invalid operand stack index (10): requires
-/// access to more than 16 elements` at codegen/masm/src/emit/mod.rs:620 after
+/// access to more than 16 elements` at codegen/masm/src/emit/mod.rs (OpEmitter::dup) after
 /// the second spills run (`edges to split = 0, values spilled = 8, reloads
 /// issued = 2`). What remains is the #1422 item 2 class (over-window pressure
 /// after the second spills run). Compile-time — no inputs involved.
 #[test]
 #[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
-            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:620 — \
-            over-window pressure after the second spills run (edges to split = 0, values spilled = \
-            8, reloads issued = 2); compiled before the #1420 fix only because split-edge reloads \
-            were dropped; compile-time, no inputs involved"]
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs \
+            (OpEmitter::dup) — over-window pressure after the second spills run (edges to split = \
+            0, values spilled = 8, reloads issued = 2); compiled before the #1420 fix only because \
+            split-edge reloads were dropped; compile-time, no inputs involved"]
 fn prog_threefish_oz_guard() {
     run_case_with_flags(
         "prog_threefish_oz_guard",
@@ -392,8 +392,8 @@ fn prog_threefish_oz_guard() {
 /// panic since the #1420 fix); the pinned inputs never run.
 #[test]
 #[ignore = "#1422: same compile-time panic as prog_threefish_oz_guard ('invalid operand stack \
-            index (10)' at codegen/masm/src/emit/mod.rs:620 at --optimize=size-min, over-window \
-            pressure after the second spills run); the pinned inputs never run"]
+            index (10)' at codegen/masm/src/emit/mod.rs (OpEmitter::dup) at --optimize=size-min, \
+            over-window pressure after the second spills run); the pinned inputs never run"]
 fn prog_threefish_oz_guard_edges() {
     run_case_with_flags_and_inputs(
         "prog_threefish_oz_guard_edges",
