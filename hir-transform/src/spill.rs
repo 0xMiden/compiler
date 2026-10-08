@@ -8,7 +8,7 @@ use midenc_hir::{
     ValueRef,
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
-    dialects::debuginfo::{DebugValue, transform::erase_debug_value},
+    dialects::debuginfo::transform::erase_debug_info_with,
     dominance::{DomTreeNode, DominanceFrontier, DominanceTree},
     pass::PostPassStatus,
     patterns::{RewriterImpl, TracingRewriterListener},
@@ -122,12 +122,12 @@ pub trait ReloadLike {
 /// * Rewrites `op` such that all uses of a spilled value dominated by a reload, are rewritten to
 ///   use that reload, or in the case of crossing a dominance frontier, a materialized block
 ///   argument/phi representing the closest definition of that value from each predecessor.
-/// * Prunes the phis inserted for that purpose which no use was rewritten to, and checks that the
-///   values passed to the remaining ones dominate the branches passing them, failing with an
-///   internal error otherwise.
+/// * Prunes the phis inserted for that purpose that nothing but other pruned phis or debug info
+///   uses, and checks that the values passed to the remaining ones dominate the branches passing
+///   them, failing with an internal error otherwise.
 /// * Rewrites all spill and reload instructions to their primitive memory store/load ops.
-///   Dominance governs only the SSA use rewrite above; whether a spill is materialized or elided
-///   is decided by reachability to live reloads (see `erase_dead_spills`).
+///   Dominance governs the SSA use rewrite and the check above; whether a spill is materialized or
+///   elided is decided by reachability to live reloads (see `erase_dead_spills`).
 pub fn transform_spills(
     op: OperationRef,
     analysis: &mut SpillAnalysis,
@@ -461,6 +461,12 @@ fn rewrite_single_block_spills(
     }
 
     let context = { op.borrow().context_rc() };
+    // Erasing a dead spill can leave the reload its operand was rewritten to unused, and so another
+    // spill dead, so repeat until nothing is erased.
+    let mut rewriter = RewriterImpl::<TracingRewriterListener>::new(context.clone())
+        .with_listener(TracingRewriterListener);
+    let mut reachability = ReachabilityCache::default();
+    while erase_dead_spills(&mut rewriter, analysis, &mut reachability)? {}
     rewrite_spill_pseudo_instructions(context, analysis, interface, trace_target)
 }
 
@@ -579,16 +585,17 @@ fn rewrite_cfg_spills(
 
     // Spills that cannot reach a live reload are erased before the phis are pruned: the operand of
     // such a spill may have been rewritten to a phi, and must not keep it alive. Pruning in turn
-    // can leave reloads unused, and so spills dead, so the two alternate until nothing changes.
+    // can leave reloads unused, and so spills dead, and erasing a spill can do the same to the
+    // reload its operand was rewritten to; so the two alternate until neither changes anything.
     let mut rewriter = RewriterImpl::<TracingRewriterListener>::new(context.clone())
         .with_listener(TracingRewriterListener);
     let mut reachability = ReachabilityCache::default();
     let mut phis = inserted_phi_feeds(&inserted_phis);
     loop {
-        erase_dead_spills(&mut rewriter, analysis, &mut reachability)?;
-        let (kept, pruned_any) = prune_dead_phis(phis, trace_target);
+        let erased_any = erase_dead_spills(&mut rewriter, analysis, &mut reachability)?;
+        let (kept, pruned_any) = prune_dead_phis(phis, &mut rewriter, trace_target);
         phis = kept;
-        if !pruned_any {
+        if !erased_any && !pruned_any {
             break;
         }
     }
@@ -660,8 +667,8 @@ fn phi_index(phi: &ValueRef) -> usize {
         .index()
 }
 
-/// Remove the `phis` inserted by [insert_required_phis] which no use was rewritten to, returning
-/// the kept phis with their feeds, and whether any phi was removed.
+/// Remove the `phis` inserted by [insert_required_phis] that nothing but other removed phis or
+/// debug info uses, returning the kept phis with their feeds, and whether any phi was removed.
 ///
 /// The iterated dominance frontier of the reloads is a conservative placement: a spilled value
 /// need not be live at every block of it, so some of the inserted phis end up unused by the time
@@ -672,9 +679,13 @@ fn phi_index(phi: &ValueRef) -> usize {
 /// A phi is kept if it has a use other than feeding another inserted phi, or feeds a kept phi; so
 /// phis feeding only each other (e.g. around a loop) are removed as well. Uses by [Transparent]
 /// ops (debug info) do not keep a phi, as they do not keep a value live for the spill analysis
-/// either; such users of a removed phi are erased with it.
+/// either; the debug values of a removed phi are killed through `rewriter`.
+///
+/// This may be called repeatedly on the phis it kept: the argument indices are read anew each
+/// time, as [Block::erase_argument] renumbers the arguments behind an erased one.
 fn prune_dead_phis(
     phis: SmallVec<[(ValueRef, PhiFeeds); 4]>,
+    rewriter: &mut dyn Rewriter,
     trace_target: &TraceTarget,
 ) -> (SmallVec<[(ValueRef, PhiFeeds); 4]>, bool) {
     let feeds = phis.iter().map(|(phi, feeds)| (*phi, feeds)).collect::<FxHashMap<_, _>>();
@@ -716,7 +727,7 @@ fn prune_dead_phis(
             symbol = trace_target.relevant_symbol();
             "pruning unused phi {phi} in {block}"
         );
-        erase_transparent_users(*phi);
+        erase_debug_info_with(phi, rewriter);
         dead.entry(block).or_default().push(phi_index(phi));
     }
     for (block, indices) in dead.iter_mut() {
@@ -740,25 +751,6 @@ fn prune_dead_phis(
 
     let kept = phis.into_iter().filter(|(phi, _)| live.contains(phi)).collect();
     (kept, pruned_any)
-}
-
-/// Erase the [Transparent] users of `value`, as dead-code elimination does for a dead value.
-fn erase_transparent_users(value: ValueRef) {
-    let users = value
-        .borrow()
-        .iter_uses()
-        .map(|use_| use_.owner)
-        .filter(|user| user.borrow().implements::<dyn Transparent>())
-        .collect::<SmallVec<[OperationRef; 2]>>();
-    for mut user in users {
-        if user.borrow().is::<DebugValue>() {
-            erase_debug_value(user);
-        } else {
-            let mut op = user.borrow_mut();
-            op.drop_all_uses();
-            op.erase();
-        }
-    }
 }
 
 /// Rewrite uses of spilled values in `op` and any nested regions of `op`.
@@ -1018,7 +1010,11 @@ fn rewrite_inserted_phi_uses(
     }
 }
 
-/// Erase the spills that cannot reach a live reload of their value, unmarking them in `analysis`.
+/// Erase the spills that cannot reach a live reload of their value, setting their
+/// [SpillInfo::inst] to `None`, and return whether any was erased.
+///
+/// Reload liveness is snapshotted on entry, so a reload left unused by the spills erased here is
+/// only seen by the next call: callers repeat until nothing is erased.
 ///
 /// Dead spills exist because the spills analysis places spills per path: for a value to be spilled
 /// on all paths into a block where it was spilled along at least one of them, extra spills are
@@ -1035,13 +1031,12 @@ fn erase_dead_spills(
     rewriter: &mut dyn Rewriter,
     analysis: &mut SpillAnalysis,
     reachability: &mut ReachabilityCache,
-) -> Result<(), Report> {
+) -> Result<bool, Report> {
     // Index the live reloads by their spilled value once, so each spill only considers the
     // reloads it can possibly cover. Spills and reloads are paired through the analysis's value
     // bookkeeping rather than the spill op's current operand, which SSA reconstruction may
-    // rewrite (only reload operands are exempt). Liveness is snapshotted before any spills are
-    // erased, which errs toward keeping a spill whose reload only dies once the spills erased here
-    // leave it unused (see `rewrite_spill_pseudo_instructions`).
+    // rewrite (only reload operands are exempt). Like the spill analysis, debug info does not
+    // keep a reload live.
     let mut live_reloads = SmallDenseMap::<ValueRef, SmallVec<[OperationRef; 2]>, 8>::default();
     for rinfo in analysis.reloads() {
         let Some(reload_op) = rinfo.inst else {
@@ -1052,7 +1047,7 @@ fn erase_dead_spills(
             let rl = rop
                 .as_trait::<dyn ReloadLike>()
                 .expect("expected materialized reload op to implement ReloadLike");
-            rl.reloaded().borrow().is_used()
+            rl.reloaded().borrow().has_real_uses()
         };
         if reload_used {
             live_reloads.entry(rinfo.value).or_default().push(reload_op);
@@ -1061,6 +1056,7 @@ fn erase_dead_spills(
 
     // The reachability cache stays valid across calls: only operations and block arguments are
     // erased between them, never blocks.
+    let mut erased_any = false;
     for spill in analysis.spills.iter_mut() {
         let Some(operation) = spill.inst else {
             continue;
@@ -1100,15 +1096,16 @@ fn erase_dead_spills(
         if !is_used {
             rewriter.erase_op(operation);
             spill.inst = None;
+            erased_any = true;
         }
     }
 
-    Ok(())
+    Ok(erased_any)
 }
 
 /// Rewrite the remaining spill and reload pseudo-ops into primitive stores to, and loads from, a
-/// procedure local per spilled value, after eliding the dead spills (see [erase_dead_spills]) and
-/// the reloads that are unused.
+/// procedure local per spilled value. The dead spills have been erased by the caller (see
+/// [erase_dead_spills]); the reloads nothing but debug info uses are erased here.
 fn rewrite_spill_pseudo_instructions(
     context: Rc<Context>,
     analysis: &mut SpillAnalysis,
@@ -1118,9 +1115,6 @@ fn rewrite_spill_pseudo_instructions(
     let mut builder = RewriterImpl::<TracingRewriterListener>::new(context)
         .with_listener(TracingRewriterListener);
 
-    // Erase the dead spills (the CFG rewrite already did, before pruning its phis; on the
-    // single-block path this is the only pass) before materializing the stores.
-    erase_dead_spills(&mut builder, analysis, &mut ReachabilityCache::default())?;
     for spill in analysis.spills() {
         let Some(operation) = spill.inst else {
             continue;
@@ -1137,7 +1131,8 @@ fn rewrite_spill_pseudo_instructions(
         let reload_like = op
             .as_trait::<dyn ReloadLike>()
             .expect("expected materialized reload op to implement ReloadLike");
-        let is_used = reload_like.reloaded().borrow().is_used();
+        let reloaded = reload_like.reloaded();
+        let is_used = reloaded.borrow().has_real_uses();
         drop(op);
 
         // Avoid emitting loads for unused reloads
@@ -1157,6 +1152,7 @@ fn rewrite_spill_pseudo_instructions(
                 "erase unused reload {}",
                 reload.value
             );
+            erase_debug_info_with(&reloaded, &mut builder);
             builder.erase_op(operation);
         }
     }
