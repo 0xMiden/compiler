@@ -37,7 +37,8 @@ pub(crate) static CORE_TYPES_INTERFACE_ID: LazyLock<String> =
     LazyLock::new(|| format!("miden:base/{CORE_TYPES_INTERFACE}@1.0.0"));
 
 /// Whether the world being generated may declare imports named with the reserved `dyncall-`
-/// prefix.
+/// prefix, and so whether its functions are checked against the reserved `fpi-` and `dyncall-`
+/// prefixes at all.
 ///
 /// The exemption is a property of the generation path, not of the WIT being generated: only the
 /// world `#[component_storage]` builds from its own stored-procedure fields is exempt. Deciding
@@ -45,9 +46,9 @@ pub(crate) static CORE_TYPES_INTERFACE_ID: LazyLock<String> =
 /// by naming itself accordingly and have its functions dispatched dynamically instead of linked.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DyncallPolicy {
-    /// The prefix is reserved; reject every imported function that uses it.
+    /// The prefixes are reserved; reject every imported or exported function that uses one.
     Reserved,
-    /// The prefix is expected; skip the check.
+    /// The `dyncall-` prefix is expected; skip the check.
     Generated,
 }
 
@@ -789,15 +790,15 @@ fn reserved_import_prefix(wit_name: &str) -> Option<(&'static str, &'static str)
         .find(|(prefix, _)| wit_name.starts_with(prefix))
 }
 
-/// Rejects world functions named with a prefix the Wasm frontend reserves for generated imports.
+/// Rejects world functions named with a prefix the Wasm frontend reserves for generated imports
+/// (`fpi-` and `dyncall-`).
 ///
-/// The frontend classifies imports by name, so a dependency function that happened to use the
-/// `dyncall-` prefix would be dispatched as a dynamic call instead of linked. Exports are checked
-/// against every reserved prefix (`fpi-` and `dyncall-`): an export with one is an import with it
-/// in every consumer, where the diagnostic would blame the dependency. Imports are checked against
-/// `dyncall-` only, since the `fpi-` imports `#[account(...)]` needs are injected after this
-/// check. Only the world `#[component_storage]` generates for stored-procedure slots is exempt,
-/// and only because its caller says so through `policy`.
+/// The frontend classifies imports by name, so a dependency function that happened to use a
+/// reserved prefix would be lowered as a generated import instead of linked, and an export with
+/// one is an import with it in every consumer, where the diagnostic would blame the dependency.
+/// The `fpi-` imports `#[account(...)]` needs are injected after this check, so they are not
+/// seen here. Only the world `#[component_storage]` generates for stored-procedure slots is
+/// exempt, and only because its caller says so through `policy`.
 fn validate_reserved_import_prefixes(
     resolve: &Resolve,
     world_id: WorldId,
@@ -828,17 +829,14 @@ fn validate_reserved_import_prefixes(
             WorldItem::Type { .. } => continue,
         };
         let reserved = functions.iter().find_map(|function| {
-            reserved_import_prefix(&function.name)
-                .filter(|(prefix, _)| direction == "exported" || *prefix == DYNCALL_WIT_PREFIX)
-                .map(|reserved| (function, reserved))
+            reserved_import_prefix(&function.name).map(|reserved| (function, reserved))
         });
         if let Some((function, (prefix, purpose))) = reserved {
             return Err(Error::new(
                 Span::call_site(),
                 format!(
-                    "{origin} defines function `{}` with reserved prefix `{prefix}`; the compiler \
-                     lowers imports with that prefix as {purpose}s, so an {direction} function \
-                     must use a different name",
+                    "{origin} defines function `{}`, but the frontend reserves the `{prefix}` WIT \
+                     prefix for generated {purpose} imports; rename it",
                     function.name
                 ),
             ));
@@ -1576,7 +1574,7 @@ world notifier-world {
         let message = err.to_string();
         assert!(message.contains("`miden:notifier/api@1.0.0`"), "{message}");
         assert!(message.contains("`dyncall-notify`"), "{message}");
-        assert!(message.contains("reserved prefix `dyncall-`"), "{message}");
+        assert!(message.contains("reserves the `dyncall-` WIT prefix"), "{message}");
     }
 
     /// Denies a dependency the exemption by naming itself like the generated bindings package:
@@ -1618,7 +1616,7 @@ world spoofed-world {
             .unwrap_err();
         let message = err.to_string();
         assert!(message.contains("`dyncall-x`"), "{message}");
-        assert!(message.contains("reserved prefix `dyncall-`"), "{message}");
+        assert!(message.contains("reserves the `dyncall-` WIT prefix"), "{message}");
 
         // The same world passes only when the caller opts out, which only the
         // `#[component_storage]` expansion does.
@@ -1670,7 +1668,10 @@ world exporter-world {
         let message = err.to_string();
         assert!(message.contains("exported interface `miden:exporter/api@1.0.0`"), "{message}");
         assert!(message.contains("`dyncall-notify`"), "{message}");
-        assert!(message.contains("an exported function must use a different name"), "{message}");
+        assert!(
+            message.contains("for generated stored-procedure dispatch imports; rename it"),
+            "{message}"
+        );
 
         let (resolve, world) = parse_test_world(
             r#"
@@ -1689,10 +1690,9 @@ world world-level-export-world {
         assert!(message.contains("`dyncall-run`"), "{message}");
     }
 
-    /// Rejects an export with the reserved FPI prefix in hand-written WIT, while an import with
-    /// it (the shape of the generated FPI imports) still passes.
+    /// Rejects an export and an import with the reserved FPI prefix in hand-written WIT.
     #[test]
-    fn exported_functions_with_the_fpi_prefix_are_rejected() {
+    fn functions_with_the_fpi_prefix_are_rejected() {
         let (resolve, world) = parse_test_world(
             r#"
 package miden:fpi-exporter@1.0.0;
@@ -1715,8 +1715,12 @@ world fpi-exporter-world {
             "{message}"
         );
         assert!(message.contains("`fpi-x`"), "{message}");
-        assert!(message.contains("reserved prefix `fpi-`"), "{message}");
-        assert!(message.contains("foreign procedure invocations"), "{message}");
+        assert!(
+            message.contains(
+                "reserves the `fpi-` WIT prefix for generated foreign procedure invocation imports"
+            ),
+            "{message}"
+        );
 
         let (resolve, world) = parse_test_world(
             r#"
@@ -1732,8 +1736,16 @@ world fpi-importer-world {
 "#,
         );
 
-        validate_reserved_import_prefixes(&resolve, world, DyncallPolicy::Reserved)
-            .expect("an import with the `fpi-` prefix is accepted");
+        let message = validate_reserved_import_prefixes(&resolve, world, DyncallPolicy::Reserved)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains(
+                "imported interface `miden:fpi-importer/api@1.0.0` defines function `fpi-x`"
+            ),
+            "{message}"
+        );
+        assert!(message.contains("reserves the `fpi-` WIT prefix"), "{message}");
     }
 
     /// Rejects a written export name with the reserved dyncall prefix, and only that prefix.

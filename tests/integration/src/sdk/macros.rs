@@ -1251,7 +1251,8 @@ impl TestComponent for TestComponentStorage {
     assert!(!output.status.success(), "expected the reserved dyncall prefix to be rejected");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("reserved prefix `dyncall-`") && stderr.contains("`dyncall-notify`"),
+        stderr.contains("reserves the `dyncall-` WIT prefix")
+            && stderr.contains("`dyncall-notify`"),
         "unexpected stderr: {stderr}"
     );
 }
