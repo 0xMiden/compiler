@@ -989,7 +989,7 @@ fn prog_rkscan_guard_o1() {
 /// fingerprint words). Moving the search loop into an `#[inline(never)]`
 /// helper also works, but only when the fingerprint words are passed by
 /// reference: by value the call needs a seventeen-felt argument list and
-/// panics in the spill analysis instead (`calls::sig17` pins that limit).
+/// is rejected instead (`calls::sig17` pins that limit).
 /// Configuration note: this rescue holds at the default level, `size-min`,
 /// `max` and `basic`, but WITHOUT full guest DWARF the black-boxed scanner
 /// panicked in the F12 class instead (#1419, fixed; `AliasingViolationError` at
@@ -1235,7 +1235,7 @@ fn prog_feistel_guard_edges() {
 /// `prog_feistel_guard` (two round keys instead of six). Moving the round loop
 /// into an `#[inline(never)]` helper works as well, but only with the keys
 /// behind a `&[u64; 6]`: passing them by value makes the call argument list
-/// seventeen felts and the spill analysis panics instead.
+/// seventeen felts and the compiler rejects it instead (`calls::sig17`).
 #[test]
 fn prog_feistel_wa() {
     run_case("prog_feistel_wa", include_str!("../cases/case_prog_feistel_wa.rs"));

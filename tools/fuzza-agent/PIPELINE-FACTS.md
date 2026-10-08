@@ -252,8 +252,10 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 ## Spills, the operand window and the scheduler
 
 - The window is 16 felts. It bounds flat signatures, the sret pointer
-  included (16 compiles: `calls::call_sigs16`, `calls::wide_calls`; 17
-  panics: `calls::sig17`), `call_indirect` arguments (15), and helper state
+  included (16 compiles: `calls::call_sigs16`, `calls::wide_calls`; 17 is
+  rejected with "operation 'hir.exec' needs 17 operand stack elements at once
+  for its operands, but only 16 are addressable": `calls::sig17`),
+  `call_indirect` arguments (15), and helper state
   passed by value (pass `&[u64; N]` instead: `programs::prog_rle_wa`).
 - The only plain-Rust carrier of SSA values across blocks is the count band:
   the folder dedups constants function-wide and CSE merges identical `band`s
@@ -289,10 +291,10 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   are procedure locals (`locaddr`), one set per activation, numbered above the
   user locals, disjoint from linear memory (FMP starts at element 2^31)
   (`frames::frame_spills`, `frames::call_clobber`, `frames::rec_slots`).
-- The spill analysis reads operand group 0 only; `hir.exec_indirect` keeps its
-  arguments in group 1, so they are spilled, never reloaded, and the call is
-  budgeted as one felt (`hir-analysis/src/analyses/spills.rs`;
-  `calls::indirect_spill_bb`). Dispatches under pressure pass when every
+- The spill analysis models every operand group of a non-branch op (since
+  877c4fed7; before it read group 0 only, so `hir.exec_indirect`'s group-1
+  arguments were spilled and never reloaded)
+  (`hir-analysis/src/analyses/spills.rs`; `calls::indirect_spill_bb`). Dispatches under pressure pass when every
   argument is a plain local loaded right before the call
   (`calls::indirect_args`, `calls::dispatch_pressure`).
 - The solver (`codegen/masm/src/opt/operands/`) never checks that expected
@@ -375,10 +377,10 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   helper only moves the one), and one case per panic kind under freight (all
   kinds are the same `unreachable`: `trapspill::body_get`,
   `trapspill::body_div`).
-- Scale is free below the switch-width cap: about 800 blocks, 64 arms, 16
+- Scale is free: about 800 blocks, 64 arms, 16
   loop-carried variables, 12 nesting levels (`control_flow::blocks_max`,
-  `scale::match64`, `control_flow::sm16`, `scale::deep_nest`). A 255-target
-  `br_table` builds, 256 overflows the u8 successor-group index
+  `scale::match64`, `control_flow::sm16`, `scale::deep_nest`). A 255- and a
+  256-target `br_table` build (successor-group indices are u16 since #1421)
   (`control_flow::switch255`, `control_flow::switch256`). Short-circuit order
   survives end to end (`control_flow::shortcircuit`).
 
@@ -490,7 +492,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   `eq_ignore_ascii_case`, `[u8]::contains`, a hand-written `char_indices`
   splitter (`corelib::prog_expr_wa`).
 - Recursion is an assembler error (`found a cycle in the call graph`), not a
-  link failure, and does not kill the test process: `select_nth_unstable`
+  link failure (both are reported as ordinary test failures since #1421):
+  `select_nth_unstable`
   (`corelib::core_select_nth_nolink`), the STABLE sorts via
   `tiny::mergesort` (`heap::heap_sort_stable_nolink`), and the `Box`-list drop
   glue at basic only (`heap::heap_list_basic`). Unstable sorts link at every

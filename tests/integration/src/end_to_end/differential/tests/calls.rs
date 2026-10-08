@@ -1,6 +1,8 @@
 //! Function-call boundaries: sret aggregates, at-limit signatures, call placement.
 
-use super::super::harness::{run_case, run_case_rejected, run_case_with_flags, run_case_with_inputs};
+use super::super::harness::{
+    run_case, run_case_rejected, run_case_with_flags, run_case_with_inputs,
+};
 
 /// Non-inlined helper calls (multi-arg, u64, bool) plus reused selects —
 /// exercises call translation/lowering and select emitter variants.
@@ -228,23 +230,18 @@ fn indirect_spill() {
     run_case("indirect_spill", include_str!("../cases/case_indirect_spill.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC, the `indirect_spill` class re-armed for the
-/// nightly-2026-09-01 guest toolchain (campaign 31, 2026-09-17): the same
-/// seven-live-u64 loop dispatch, with the table read as
-/// `core::hint::black_box(&WIDES)[idx]` so LLVM cannot devirtualize it and the
-/// wasm keeps its `call_indirect`. The spill analysis still reads operand
-/// group 0 only (hir-analysis/src/analyses/spills.rs), and `hir.exec_indirect`
-/// still keeps its arguments in group 1 (dialects/hir/src/ops/invoke.rs), so
-/// spilled dispatch arguments are never reloaded and the call is budgeted as
-/// one felt while the emitter still holds them. Bounded exactly as
-/// `indirect_spill` was. Compile-time — no inputs involved. Un-ignore when the
-/// spill analysis counts every operand group of `hir.exec_indirect`.
+/// The `indirect_spill` class re-armed for the nightly-2026-09-01 guest
+/// toolchain (campaign 31, 2026-09-17): the same seven-live-u64 loop
+/// dispatch, with the table read as `core::hint::black_box(&WIDES)[idx]` so
+/// LLVM cannot devirtualize it and the wasm keeps its `call_indirect`. Until
+/// #1421 the spill analysis read operand group 0 only
+/// (hir-analysis/src/analyses/spills.rs) while `hir.exec_indirect` keeps its
+/// arguments in group 1 (dialects/hir/src/ops/invoke.rs), so spilled dispatch
+/// arguments were never reloaded and the call was budgeted as one felt while
+/// the emitter still held them (`NoSolution` at
+/// codegen/masm/src/lower/lowering.rs:109). The analysis now models every
+/// operand group of a non-branch op. Bounded exactly as `indirect_spill` was.
 #[test]
-#[ignore = "#1421: compiler panic: 'with error: NoSolution' at \
-            codegen/masm/src/lower/lowering.rs:109 — the spill analysis reads only operand group 0 \
-            and so never sees the arguments of hir.exec_indirect (group 1): spilled dispatch \
-            arguments are never reloaded and the call is budgeted as one felt (compile-time, no \
-            inputs involved)"]
 fn indirect_spill_bb() {
     run_case("indirect_spill_bb", include_str!("../cases/case_indirect_spill_bb.rs"));
 }

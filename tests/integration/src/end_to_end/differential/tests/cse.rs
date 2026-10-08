@@ -463,18 +463,10 @@ fn reload_write_edges() {
 /// since fab7b7db0 walks each nested block's ops back to front so users go
 /// before their definitions.
 ///
-/// FINDING (tooling, not codegen): this case cannot be traced with
-/// `MIDENC_TRACE='rewriter=trace'`. The compile then panics at
-/// `hir/src/program_point.rs:486:63` with
-/// `AliasingViolationError { kind: Immutable, location: dialects/scf/src/
-/// canonicalization/if_remove_unused_results.rs:86:32 }`, i.e. the
-/// `TracingRewriterListener` borrows an operation that
-/// `IfRemoveUnusedResults` already holds mutably. It is the trace alone:
-/// `midenc --release` on the same wasm exits 0, and so does the same run with
-/// `MIDENC_TRACE='pass:canonicalizer=trace'` and
-/// `-Z print-ir-after-pass=canonicalizer`. The case therefore stays
-/// un-ignored (it compiles and its values match on every configuration); the
-/// erase evidence below was taken on `dead_outer`, which traces cleanly.
+/// `MIDENC_TRACE='rewriter=trace'` traces this case since #1421; before it,
+/// the tracing listener panicked with an `AliasingViolationError` on the op
+/// `IfRemoveUnusedResults` was rewriting, so the erase evidence below was
+/// taken on `dead_outer`.
 #[test]
 fn dead_region() {
     run_case("cse_dead_region", include_str!("../cases/case_cse_dead_region.rs"));

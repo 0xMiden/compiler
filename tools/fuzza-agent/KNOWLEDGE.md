@@ -24,7 +24,8 @@ points: `run_case`; `run_case_with_inputs` (pinned grid, the `_edges` and
 guest debug level); `run_case_traps`, `run_case_traps_with_inputs`,
 `run_case_traps_with_flags` (trap parity: `TRAPPING_CASE_HEADER`, the host
 runs in a forked child that `_exit(101)`s on panic, each input must agree on
-value-or-trap, a trap on both sides is a match).
+value-or-trap, a trap on both sides is a match); `run_case_rejected` (MASM
+build only, asserts it fails with an error containing the expected text).
 
 ## Running and sweeping
 
@@ -65,7 +66,7 @@ value-or-trap, a trap on both sides is a match).
 - `MIDENC_TRACE='codegen:operand-scheduling=trace'`: `there are N used operands
   out of M`; the last `dropping unused operands at:` names the op the emitter
   was on when it panicked.
-- `rewriter=trace` can itself panic (`cse::dead_region`). `pass:local2reg=trace`
+- `pass:local2reg=trace`
   logs `found promotable local` BEFORE the debug check; subtract the `debug
   declarations cannot all be converted safely` lines.
 - `-Z print-ir-after-pass=<pass>` logs to target `pass:<pass>`: it needs the
@@ -116,10 +117,9 @@ build the masked-index control before calling a trap-edge variant new.
 
 ## Gotchas
 
-- A guest that fails to build or link makes midenc-compile `process::exit`,
-  killing the whole run with no summary (`error: test failed`, `Broken pipe`).
-  Run suspected non-linking cases alone. An assembler call-graph cycle is an
-  ordinary failure.
+- A guest that fails to build or link is reported as an error (since #1421),
+  so a non-linking case is an ordinary failed test, as is an assembler
+  call-graph cycle.
 - A passing test swallows its output (`--nocapture`); when tracing several
   tests in one run, log lines belong to the `test <name> ...` line above.
   Quote globs and `::` paths in zsh.

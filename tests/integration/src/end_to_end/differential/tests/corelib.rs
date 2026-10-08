@@ -50,20 +50,21 @@
 //! have carried BOTH defects — with 04-30 guests it still diverges at its
 //! sixteen-digit row.
 //!
-//! OPERATIONAL NOTE: a `*_nolink` case whose guest fails to LINK does not just
-//! fail — the guest build error ABORTS the whole `cargo test` process (no
-//! `test result` line is printed), so run them one at a time with
-//! `-- --ignored --exact <full::path>` and never in a batch with tests whose
-//! result you need. `core_select_nth_nolink` is the exception: its guest
-//! builds and the cycle is caught by the ASSEMBLER, so it fails as an ordinary
-//! test.
+//! OPERATIONAL NOTE: a `*_nolink` case whose guest fails to LINK is an
+//! ordinary failing test: the guest build error is reported (since #1421 it
+//! no longer ends the `cargo test` process). `core_select_nth_nolink` fails
+//! later, at the ASSEMBLER, which catches the call-graph cycle.
 //!
 //! Every case here was value-checked natively on the 1225-pair boundary grid
 //! before it was kept, and compiled at all four optimization levels; each
 //! doc comment records that table. Compile-time failures are `#[ignore]`d
-//! twins beside the compiling sibling, exactly as in [`super::programs`].
+//! twins beside the compiling sibling, exactly as in [`super::programs`]; a
+//! compile-time rejection itself can be pinned with `run_case_rejected` (see
+//! [`guest_link_failure`]).
 
-use super::super::harness::{run_case, run_case_rejected, run_case_with_flags, run_case_with_inputs};
+use super::super::harness::{
+    run_case, run_case_rejected, run_case_with_flags, run_case_with_inputs,
+};
 
 /// `--optimize=size-min` (LLVM `-Oz` for the guest).
 const SIZE_MIN: &[&str] = &["--optimize=size-min"];
