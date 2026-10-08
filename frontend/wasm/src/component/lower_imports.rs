@@ -60,13 +60,14 @@ enum ImportCallKind {
 /// The two paths of a component import function.
 pub struct ComponentImportPath {
     /// The component-model path `::<interface id>::<function>`, which matches the core import
-    /// to its `canon lower`; used to recognize FPI imports and in diagnostics.
+    /// to its `canon lower`; used to recognize FPI and dyncall imports and in diagnostics.
     pub cm_path: SymbolPath,
     /// The Miden path from the import's `external-id`; names the imported function, which is
-    /// declared in the stub component at the path's parent.
+    /// declared in the stub component at the path's parent unless the import is an FPI or
+    /// dyncall import (those declare nothing).
     pub path: SymbolPath,
-    /// The name (the `::`-joined namespace) of the component being translated; `path` must lie
-    /// outside of that namespace.
+    /// The name (the `::`-joined namespace) of the component being translated; the `path` of an
+    /// import other than an FPI or dyncall import must lie outside of that namespace.
     pub namespace: SymbolName,
 }
 
@@ -1031,8 +1032,9 @@ fn reject_tuple_parameter_import_lowering<T>(import_func_path: &SymbolPath) -> W
 ///
 /// * `call_kind` - How the import is reached (see [`build_import_call`]).
 ///
-/// * `import` - The component-model and Miden paths of the imported function. The function is
-///   declared in the stub component named by the parent of its Miden path.
+/// * `import` - The component-model and Miden paths of the imported function. A
+///   [`ImportCallKind::Call`] import is declared in the stub component named by the parent of its
+///   Miden path; a dyncall import declares nothing.
 ///
 /// * `import_func_ty` - The original Component Model function type with high-level types
 ///   (structs, records) before any flattening or transformation.
@@ -1168,8 +1170,9 @@ fn generate_lowering_with_transformation(
 /// * `call_kind` - How the import is reached: a declared `hir.call` target, or a `hir.dyncall` to
 ///   the procedure root passed as the leading arguments (see [`build_import_call`]).
 ///
-/// * `import` - The component-model and Miden paths of the imported function. The function is
-///   declared in the stub component named by the parent of its Miden path.
+/// * `import` - The component-model and Miden paths of the imported function. A
+///   [`ImportCallKind::Call`] import is declared in the stub component named by the parent of its
+///   Miden path; a dyncall import declares nothing.
 ///
 /// * `import_func_ty` - The Component Model function type. In this case, it should be simple
 ///   enough to not require transformation.
@@ -1256,6 +1259,12 @@ fn generate_direct_lowering(
 /// signatures agree, and an error is reported otherwise; a new declaration records the import's
 /// component-model path for that diagnostic. An import path inside the namespace of
 /// the component being translated is rejected: its stub component would nest in that namespace.
+///
+/// Only [`ImportCallKind::Call`] imports reach this function. FPI imports
+/// ([`generate_fpi_lowering`]) and dyncall imports (the [`ImportCallKind::Dyncall`] arm of
+/// [`build_import_call`]) reach their callee by its procedure root and declare nothing, which is
+/// why their paths may nest in the component's own namespace (`<namespace>::fpi::...`,
+/// `<namespace>::dyncall::...`).
 fn declare_import_function(
     world_builder: &mut WorldBuilder,
     import: &ComponentImportPath,
@@ -2345,6 +2354,97 @@ mod tests {
         assert_eq!(results, vec![Type::Felt]);
         assert_eq!(count_ops(function, |op| op.is::<midenc_dialect_hir::Call>()), 0);
         // Nothing is declared for a runtime target: the import's component does not exist
+        assert!(world_builder.find_component(stub_component).is_none());
+    }
+
+    /// Pairs the component-model path `cm_path` with the Miden path `path`, which nests in the
+    /// namespace `miden::test::app` of the component being translated.
+    fn own_namespace_import(cm_path: SymbolPath, path: &str) -> ComponentImportPath {
+        let (module, leaf) = path.rsplit_once("::").expect("a path with a module");
+        let mut path = SymbolPath::from_masm_module_id(module);
+        path.path.push(SymbolNameComponent::Leaf(SymbolName::intern(leaf)));
+        ComponentImportPath {
+            cm_path,
+            path,
+            namespace: SymbolName::intern("miden::test::app"),
+        }
+    }
+
+    /// An FPI import reaches its callee by root, so its path may nest in the component's own
+    /// namespace: it lowers without the own-namespace error and declares no stub component.
+    #[test]
+    fn fpi_import_in_the_own_namespace_is_lowered_without_a_stub_component() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let ir = FunctionType::new(
+            CallConv::ComponentModel,
+            fpi_params_with_user_args([Type::Felt]),
+            vec![Type::Felt],
+        );
+        let import_func_ty = ComponentFunctionType { ir };
+        let mut core_params = vec![AbiParam::new(Type::Felt); FPI_ABI_PREFIX_ARGS];
+        core_params.push(AbiParam::new(Type::Felt));
+        let core_func_sig = Signature {
+            params: core_params,
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::Wasm,
+        };
+        let import = own_namespace_import(
+            test_import_path("fpi-send"),
+            "miden::test::app::fpi::acme::wallet::wallet::send",
+        );
+        let stub_component = import.path.without_leaf().to_symbol_name();
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            import,
+            &import_func_ty,
+            core_function_path("fpi-send"),
+            SymbolName::intern("stub"),
+            core_func_sig,
+        )
+        .expect("an FPI import nested in the own namespace should lower");
+
+        let function = lowered.function_ref().expect("expected function lowering");
+        assert_eq!(count_ops(function, |op| op.is::<midenc_dialect_hir::Call>()), 0);
+        assert!(world_builder.find_component(stub_component).is_none());
+    }
+
+    /// A dyncall import reaches its callee by root, so its path may nest in the component's own
+    /// namespace: it lowers without the own-namespace error and declares no stub component.
+    #[test]
+    fn dyncall_import_in_the_own_namespace_is_lowered_without_a_stub_component() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let mut ir =
+            FunctionType::new(CallConv::Fast, vec![word_type(), Type::Felt], vec![Type::Felt]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::Felt); 5],
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::ComponentModel,
+        };
+        let import = own_namespace_import(
+            test_import_path("dyncall-authority"),
+            "miden::test::app::dyncall::authority",
+        );
+        let stub_component = import.path.without_leaf().to_symbol_name();
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            import,
+            &import_func_ty,
+            core_function_path("dyncall-authority"),
+            SymbolName::intern("stub"),
+            core_func_sig,
+        )
+        .expect("a dyncall import nested in the own namespace should lower");
+
+        let function = lowered.function_ref().expect("expected function lowering");
+        assert_eq!(dyncall_signatures(function).len(), 1, "expected exactly one hir.dyncall");
         assert!(world_builder.find_component(stub_component).is_none());
     }
 

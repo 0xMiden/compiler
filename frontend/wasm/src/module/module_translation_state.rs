@@ -64,7 +64,8 @@ impl<'a> ModuleTranslationState<'a> {
     /// `mod_types` - the Miden IR module types builder
     /// `module_args` - the module instantiation arguments, i.e. entities to "fill" module imports
     /// `namespace` - the name of the component being translated (its `::`-joined namespace path),
-    ///   which every component import must lie outside of
+    ///   which every component import called by path must lie outside of (FPI and dyncall
+    ///   imports, which declare no stub component, are exempt)
     /// `names` - the names of the functions backing component exports and lowering component
     ///   imports; every other function keeps its Wasm name
     #[allow(clippy::too_many_arguments)]
@@ -463,9 +464,9 @@ pub(crate) fn core_import_path(import: &super::ModuleImport) -> SymbolPath {
 
 /// Returns [`CallableFunction`] translated from the core Wasm module import.
 ///
-/// `stub_name` is the name assigned to the import when it lowers a component import; the Miden
-/// path of that component import must lie outside of the namespace `namespace` of the component
-/// being translated.
+/// `stub_name` is the name assigned to the import when it lowers a component import; unless that
+/// component import is an FPI or dyncall import, its Miden path must lie outside of the namespace
+/// `namespace` of the component being translated.
 #[allow(clippy::too_many_arguments)]
 fn process_import(
     module_builder: &mut ModuleBuilder,
@@ -499,8 +500,8 @@ fn process_import(
 /// the instantiation argument `module_arg` matched by the core import path `wasm_import_path`.
 ///
 /// A component import is lowered by an import stub defined in `module_builder` as `stub_name`;
-/// the import's Miden path must lie outside of the namespace `namespace` of the component being
-/// translated.
+/// unless it is an FPI or dyncall import, the import's Miden path must lie outside of the
+/// namespace `namespace` of the component being translated.
 #[allow(clippy::too_many_arguments)]
 fn process_module_arg(
     module_builder: &mut ModuleBuilder,

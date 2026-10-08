@@ -77,7 +77,7 @@ pub struct ComponentTranslator<'a> {
     result: ComponentBuilder,
 
     /// The name of the component being translated (its `::`-joined namespace path), which every
-    /// import must lie outside of.
+    /// import other than an FPI or dyncall import must lie outside of.
     namespace: SymbolName,
 
     context: Rc<Context>,
