@@ -212,6 +212,34 @@ pub(super) fn run_case_traps_with_flags(name: &str, source: &str, flags: &[&str]
     run_case_inner_with_flags(name, source, Inputs::Random16, flags, Traps::Compared);
 }
 
+/// Builds the case for MASM only and asserts that the build fails with an
+/// error mentioning `expected_error`.
+///
+/// Use it for shapes the compiler rejects by design (a call signature over
+/// the operand stack window, a guest that does not link): the case pins that
+/// the rejection is a diagnostic and not a panic or a process exit. There is
+/// no native build and nothing is run.
+pub(super) fn run_case_rejected(name: &str, source: &str, expected_error: &str) {
+    let pkg_name = format!("differential_{name}");
+    let _case_lock = case_lock(&pkg_name);
+    let masm_proj = project(&format!("{pkg_name}_masm"))
+        .file("miden-project.toml", &miden_project_toml(&pkg_name))
+        .file("Cargo.toml", &cargo_toml(&pkg_name))
+        .file("src/lib.rs", &format!("{CASE_HEADER}{source}"))
+        .build();
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        masm_proj.root(),
+        WasmTranslationConfig::default(),
+        [],
+    );
+    let error = test.compile_package_err();
+    assert!(
+        error.contains(expected_error),
+        "{name}: expected the build to fail with an error mentioning `{expected_error}`, got:\n\
+         {error}"
+    );
+}
+
 /// Shared body of [`run_case`] / [`run_case_with_inputs`]: build the case both
 /// natively and to MASM, then compare `entrypoint` outputs for the requested
 /// inputs.

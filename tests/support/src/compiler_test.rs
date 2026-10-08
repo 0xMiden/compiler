@@ -1026,6 +1026,16 @@ impl CompilerTest {
         }
     }
 
+    /// Runs the same full compilation as [`Self::compile_package`], but expects it to fail, and
+    /// returns the rendered error report.
+    pub fn compile_package_err(&mut self) -> String {
+        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED), None);
+        match self.package.as_ref().expect("a full run must produce a package").as_ref() {
+            Ok(_) => panic!("expected the compilation of '{}' to fail", self.artifact_name()),
+            Err(msg) => msg.clone(),
+        }
+    }
+
     /// The post-rewrite HIR component this build produced, **live**.
     ///
     /// Not a rendering: the caller evaluates it with `midenc_hir_eval::HirEvaluator` after the
