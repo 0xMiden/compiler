@@ -10,10 +10,11 @@ use midenc_hir::{
 
 use crate::*;
 
-/// Hoist any yielded results whose operands are defined outside an [If], to a [Select] instruction.
+/// Hoist any yielded results whose operands are defined outside an [If], to a `cf.select`.
 ///
-/// Only results of a type [Select] accepts are hoisted; the others (e.g. pointers) stay in the
-/// [If], together with the results computed inside its regions.
+/// A result yielding the same value from both branches is forwarded as is. Otherwise, only results
+/// of a type `cf.select` accepts are hoisted; the others (e.g. pointers) stay in the [If], together
+/// with the results computed inside its regions.
 pub struct ConvertTrivialIfToSelect {
     info: PatternInfo,
 }
@@ -80,13 +81,13 @@ impl RewritePattern for ConvertTrivialIfToSelect {
         for (true_value, false_value) in
             then_yield_args.iter().copied().zip(else_yield_args.iter().copied())
         {
-            let true_value = true_value.borrow();
-            let is_hoistable = true_value.parent_region().unwrap() != then_region
+            let true_value_ref = true_value.borrow();
+            let is_hoistable = true_value_ref.parent_region().unwrap() != then_region
                 && false_value.borrow().parent_region().unwrap() != else_region
-                && AnyInteger::get().matches(true_value.ty());
+                && (true_value == false_value || AnyInteger::get().matches(true_value_ref.ty()));
             hoistable.push(is_hoistable);
             if !is_hoistable {
-                non_hoistable.push(true_value.ty().clone());
+                non_hoistable.push(true_value_ref.ty().clone());
             }
         }
 
@@ -95,10 +96,8 @@ impl RewritePattern for ConvertTrivialIfToSelect {
             return Ok(false);
         }
 
-        // Create a new `scf.if` for the non-hoistable results, if there are any.
-        //
-        // Then, use either the new `scf.if`, or the original, as the anchor for inserting hoisted
-        // `hir.select`s.
+        // Create a new `scf.if` for the non-hoistable results (erased below if it ends up doing
+        // nothing), and use it as the anchor for inserting the hoisted `cf.select`s.
         let anchor = {
             // Create a new `scf.if` with the non-hoistable results
             let mut new_if = rewriter.r#if(cond, &non_hoistable, span)?;
@@ -108,7 +107,7 @@ impl RewritePattern for ConvertTrivialIfToSelect {
             new_if
         };
 
-        // Insert `scf.select` ops for each hoisted result
+        // Insert `cf.select` ops for each hoisted result
         let mut results = SmallVec::<[_; 4]>::with_capacity(num_results);
         assert_eq!(then_yield.borrow().num_operands(), num_results);
         assert_eq!(else_yield.borrow().num_operands(), num_results);
