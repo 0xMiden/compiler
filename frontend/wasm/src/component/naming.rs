@@ -11,11 +11,13 @@ use alloc::{
     vec::Vec,
 };
 
+use miden_mast_package::TargetType;
 use midenc_frontend_wasm_metadata::procedure_path::validate_procedure_path;
 use midenc_hir::{
     FxHashMap, SymbolName, SymbolNameComponent, SymbolPath,
     reserved_names::COMPONENT_INIT_PROCEDURE,
 };
+use midenc_package_interface::PackageInterface;
 use midenc_session::diagnostics::Report;
 
 use crate::{component::StaticComponentIndex, error::WasmResult};
@@ -89,6 +91,34 @@ pub(crate) fn exports_namespace<'a>(
             "the component's exports are under different namespaces ({}); every export must be \
              `<namespace>::<name>` for one namespace",
             namespaces.iter().map(|ns| format!("`{ns}`")).collect::<Vec<_>>().join(", ")
+        ))),
+    }
+}
+
+/// Rejects the component import at the Miden path `path` when it names a procedure of one of the
+/// `linked` library or kernel packages.
+///
+/// A component import is a cross-context `call` of another component's procedure, while a
+/// library procedure is reached natively, through a linker stub lowered to `exec`. Packages of the
+/// component kinds (account components, notes, transaction scripts) stay importable.
+pub(crate) fn reject_library_procedure_import(
+    path: &SymbolPath,
+    linked: &[PackageInterface],
+) -> WasmResult<()> {
+    if linked.is_empty() {
+        return Ok(());
+    }
+    let masm_path = path.to_library_path();
+    let library = linked
+        .iter()
+        .filter(|package| matches!(package.kind, TargetType::Library | TargetType::Kernel))
+        .find(|package| package.procedure(&masm_path).is_some());
+    match library {
+        None => Ok(()),
+        Some(package) => Err(Report::msg(format!(
+            "`{path}` is a procedure of the {} package `{}`; bind library procedures natively \
+             (`extern \"C\"` with `#[link_name]`), WIT imports name component procedures",
+            package.kind, package.name
         ))),
     }
 }
@@ -1089,6 +1119,73 @@ mod tests {
                 "unexpected diagnostic for `{read_id}`: {err}"
             );
         }
+    }
+
+    /// Translates `import_and_export_component` importing `acme::first::api::read` in `context`,
+    /// with a linked package of `kind` exporting that procedure.
+    fn translate_linking_read(
+        context: &Rc<Context>,
+        kind: TargetType,
+    ) -> WasmResult<crate::FrontendOutput> {
+        use alloc::sync::Arc;
+
+        use miden_mast_package::{PackageId, Version};
+        use midenc_package_interface::{ProcedureClass, ProcedureItem, SkipReason};
+        use midenc_session::miden_assembly_syntax::ast::{AttributeSet, Path};
+
+        let package = PackageInterface {
+            name: PackageId::from("first"),
+            version: Version::new(1, 0, 0),
+            kind,
+            digest: Default::default(),
+            modules: Vec::new(),
+            procedures: alloc::vec![ProcedureItem {
+                path: Arc::from(
+                    Path::new("::acme::first::api::read").to_path_buf().into_boxed_path()
+                ),
+                digest: Default::default(),
+                signature: None,
+                attributes: AttributeSet::default(),
+                class: ProcedureClass::Skipped(SkipReason::Untyped),
+            }],
+            types: Vec::new(),
+            constants: Vec::new(),
+        };
+        let config = WasmTranslationConfig {
+            linked_packages: Some(alloc::vec![package].into()),
+            ..Default::default()
+        };
+        let wasm = import_and_export_component("acme::first::api::read", "sum", "sum");
+        translate(&wasm, &config, context.clone())
+    }
+
+    #[test]
+    fn an_import_of_a_library_procedure_is_rejected() {
+        for kind in [TargetType::Library, TargetType::Kernel] {
+            let err = match translate_linking_read(&Rc::default(), kind) {
+                Ok(_) => panic!("an import of a {kind} procedure must be rejected"),
+                Err(err) => err.to_string(),
+            };
+            assert!(
+                err.contains(&format!(
+                    "`::acme::first::api::read` is a procedure of the {kind} package `first`; \
+                     bind library procedures natively"
+                )),
+                "unexpected diagnostic: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_import_of_an_account_component_procedure_is_lowered() {
+        let context = Rc::default();
+        let output = translate_linking_read(&context, TargetType::AccountComponent)
+            .expect("an import of an account component procedure should translate");
+        let hir = core_modules_of(&output);
+        assert!(
+            hir.contains("hir.call ::@acme::@first::@api::@read()"),
+            "the import must call the account component's procedure:\n{hir}"
+        );
     }
 
     #[test]

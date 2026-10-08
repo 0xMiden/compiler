@@ -33,7 +33,10 @@ use crate::{
     component::{
         ComponentItem, LocalInitializer, StaticComponentIndex, core_names,
         lift_exports::generate_export_lifting_function,
-        naming::{ExportPaths, external_id_path, world_level_function_import},
+        naming::{
+            ExportPaths, external_id_path, reject_library_procedure_import,
+            world_level_function_import,
+        },
     },
     error::WasmResult,
     module::{
@@ -894,6 +897,10 @@ impl<'a> ComponentTranslator<'a> {
                                      at path '{cm_path}' (Miden path '{path}')"
                                     , signature.ir
                                 );
+                                reject_library_procedure_import(
+                                    &path,
+                                    self.config.linked_packages.as_deref().unwrap_or_default(),
+                                )?;
                                 import_canon_lower_args.insert(
                                     cm_path,
                                     ModuleArgument::ComponentImport { signature, path },
