@@ -1,0 +1,10 @@
+builtin.function public extern("C") @if_remove_unused_results(%0: i1) -> u32 {
+    %2 = test.constant 2 : u32;
+    %4 = test.constant 4 : u32;
+    %7 = scf.if %0 then {
+        scf.yield %2 : (u32);
+    } else {
+        scf.yield %4 : (u32);
+    } : (i1) -> (u32);
+    builtin.ret %7 : (u32);
+};
