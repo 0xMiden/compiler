@@ -157,16 +157,18 @@ impl Drop for InstOpEmitter<'_> {
         // by name only, the error itself is reported by the caller.
         let stack = &mut self.emitter.stack;
         for (i, result) in self.inst.results().iter().copied().enumerate() {
+            let result = result as ValueRef;
+            if stack.try_retype(i, result) {
+                continue;
+            }
             if i >= stack.len() {
                 break;
             }
-            let result = result as ValueRef;
-            let result_size = result.borrow().ty().clone().to_raw_parts().map(|parts| parts.len());
-            if Some(stack[i].size()) == result_size {
-                stack.retype(i, result);
-            } else {
-                stack.rename(i, result);
-            }
+            log::trace!(
+                target: "codegen",
+                "binding {result} by name only: the operand on the stack does not have its size"
+            );
+            stack.rename(i, result);
         }
     }
 }
