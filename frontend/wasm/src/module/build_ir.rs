@@ -62,7 +62,9 @@ pub fn translate_module_as_component(
     };
     let mut world_builder = WorldBuilder::new(world_ref);
 
-    // The wrapper is rooted at the target namespace, or at the module's name when there is none
+    // The wrapper is rooted at the target namespace or, when there is none, at the module's name
+    // (`<module>_program` when that name nests with a reserved library tree, see
+    // `program_wrapper_name`)
     let module_name = parsed_module.module.name().as_str();
     let namespace = config.namespace.clone().unwrap_or_else(|| {
         SymbolPath::from_masm_module_id(&program_wrapper_name(module_name, &world_ref.borrow()))
@@ -101,6 +103,12 @@ pub fn translate_module_as_component(
 /// module's name, unless it would nest with one of the library trees in
 /// [`RESERVED_NAMESPACE_PREFIXES`], in which case the first of `<module>_program`,
 /// `<module>_program2`, … that `world` does not define yet.
+///
+/// Only the reserved library trees are avoided, not the roots of the linked packages: a program
+/// named like the root namespace of a Miden Assembly dependency it binds natively (a crate `acme`
+/// calling `acme::math::add`) gets a wrapper component `acme` that shadows the dependency's module
+/// tree, which fails with the component-shadowing error. A crate named like the root namespace of
+/// one of its dependencies is not supported, so the name is not derived from the linked packages.
 fn program_wrapper_name(module_name: &str, world: &World) -> String {
     // `zip` stops at the shorter path, so this holds when either path is a segment-prefix of the
     // other.
