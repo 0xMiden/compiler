@@ -670,7 +670,7 @@ fn blocks_max() {
     run_case("blocks_max", include_str!("../cases/case_blocks_max.rs"));
 }
 
-/// Campaign 11 ladder 6 boundary guard, the 255-arm rung: a 255-arm dense
+/// Campaign 11 ladder 6, the 255-arm rung: a 255-arm dense
 /// `match` (255 targets plus the default). One more arm, `switch256` below,
 /// builds too since #1421.
 #[test]

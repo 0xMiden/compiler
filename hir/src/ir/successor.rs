@@ -282,6 +282,7 @@ pub trait KeyedSuccessor {
 pub struct SuccessorInfo {
     pub block: BlockOperandRef,
     pub(crate) key: Option<AttributeRef>,
+    /// Index of the operand group holding the arguments forwarded to the successor block
     pub(crate) operand_group: u16,
 }
 
