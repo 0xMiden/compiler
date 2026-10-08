@@ -35,7 +35,8 @@ use std::collections::BTreeSet;
 
 use miden_mast_package::TargetType;
 use midenc_frontend_wasm_metadata::{
-    FPI_IMPORT_PREFIX, namespace::CORE_TYPES_PACKAGE, procedure_path::validate_procedure_path,
+    DYNCALL_IMPORT_PREFIX, FPI_IMPORT_PREFIX, namespace::CORE_TYPES_PACKAGE,
+    procedure_path::validate_procedure_path,
 };
 use midenc_hir_type::{FunctionType, StructRef, Type};
 use midenc_package_interface::{PackageInterface, ProcedureItem, Role};
@@ -330,13 +331,18 @@ fn function(
     }
     let name =
         naming::rust_ident(procedure.name()).map_err(|err| format!("the procedure name {err}"))?;
-    // The SDK rejects a dependency interface that has a function in the prefix its generated
-    // FPI imports use.
-    if name.starts_with(FPI_IMPORT_PREFIX) {
-        return Err(format!(
-            "the function name `{name}` starts with `{FPI_IMPORT_PREFIX}`, which the SDK reserves \
-             for its foreign procedure call imports"
-        ));
+    // The SDK rejects a dependency interface that has a function in a prefix its generated
+    // imports use: the foreign procedure call imports and the stored-procedure dispatch imports.
+    for (prefix, purpose) in [
+        (FPI_IMPORT_PREFIX, "foreign procedure call imports"),
+        (DYNCALL_IMPORT_PREFIX, "stored-procedure dispatch imports"),
+    ] {
+        if name.starts_with(prefix) {
+            return Err(format!(
+                "the function name `{name}` starts with `{prefix}`, which the SDK reserves for \
+                 its {purpose}"
+            ));
+        }
     }
     let mut types = types.clone();
 

@@ -498,7 +498,7 @@ end
     parse(&generated.wit, "my-component");
 }
 
-/// Procedures with no WIT name or a reserved `fpi-` name are left out with a reason.
+/// Procedures with no WIT name or a reserved `fpi-`/`dyncall-` name are left out with a reason.
 #[test]
 fn names_without_a_wit_form_are_skipped() {
     let iface = component(
@@ -510,6 +510,11 @@ end
 
 @account_procedure
 pub proc _1()
+    nop
+end
+
+@account_procedure
+pub proc dyncall_run()
     nop
 end
 
@@ -528,6 +533,11 @@ end
             (
                 "miden::test::my_component::_1",
                 "the procedure name `_1` has no WIT name (derived `1`)"
+            ),
+            (
+                "miden::test::my_component::dyncall_run",
+                "the function name `dyncall-run` starts with `dyncall-`, which the SDK reserves \
+                 for its stored-procedure dispatch imports"
             ),
             (
                 "miden::test::my_component::fpi_call",

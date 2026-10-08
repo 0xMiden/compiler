@@ -218,8 +218,9 @@ SDK macros derive its interface from the package manifest:
   with local types named `Guest` (wit-bindgen renames them) or `Option`, `Result`, `String` or
   `Vec` (they would clash with the Rust prelude in the bindings), whose names have no WIT form, clash,
   or would be a Rust keyword wit-bindgen does not escape (`gen`), with an export path that is not
-  a Miden procedure path, with a name whose kebab form starts with `fpi-` (reserved for the SDK's
-  foreign-procedure imports), or whose results occupy more than one stack element (not callable
+  a Miden procedure path, with a name whose kebab form starts with `fpi-` or `dyncall-` (reserved
+  for the SDK's foreign-procedure and stored-procedure imports), or whose results occupy more than
+  one stack element (not callable
   yet) are left out. The reasons are listed in the interface's doc comment, which the generated
   Rust bindings carry. Every derived procedure can also be called through FPI: a parameter list
   that no longer fits the stack with the six-element FPI prefix (the account id prefix and suffix
