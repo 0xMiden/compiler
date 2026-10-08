@@ -105,9 +105,10 @@ emitter panics) drop traces, then apply in order:
    the arity-2 gap (#1422), even if the function spilled elsewhere. The felt
    total alone does not decide at -Oz (dead, undropped operands are invisible
    to the analysis).
-3. An `internal error` from the spills transform (a phi feed that does not
-   dominate its branch, a spill and its reload in different regions): a new
-   spills-transform bug; file it.
+3. An `internal error` from the spills transform (`… is passed to … from …,
+   which its definition in … does not dominate`, `a spill of … and a reload
+   of it are in different functions`, `control flow between a spill of … and
+   a reload of it is not well-defined`): a new spills-transform bug; file it.
 4. `AliasingViolationError` at `rewriter.rs`: the last `trying to match` names
    the pattern.
 
@@ -148,7 +149,10 @@ build the masked-index control before calling a trap-edge variant new.
   filed as bugs). A class's reproducers, i.e. the un-ignore list of its fix
   PR: `grep -rn -A3 '#\[ignore'
   tests/integration/src/end_to_end/differential/tests/ | grep '#1422'`.
-  Completeness check (must print nothing): `grep -rn '^#\[ignore'
+  #1421 and #1429 have no ignored reproducer in the corpus any more: their
+  cases (`calls::indirect_spill_bb`; `compose::switch_calls`,
+  `compose::switch_calls_edges`) compile since the #1420 fix, although the
+  issues themselves are open. Completeness check (must print nothing): `grep -rn '^#\[ignore'
   tests/integration/src/end_to_end/differential/tests/ | grep -v
   '"\(#1[0-9]\{3\}\|gap\): '`. Twins follow the naming convention (`_repro`,
   `_edges`, `_guard`, `_oz`, `_o1`, `_basic`, `_max`, `_nodwarf`, `_min`);

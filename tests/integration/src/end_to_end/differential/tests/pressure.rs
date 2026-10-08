@@ -152,9 +152,9 @@ fn zero_trip_frontier() {
 /// and post-loop uses keep referring to the original values, which stay
 /// live on the operand stack past their spills, and the post-lift pass
 /// spills them a second time to no effect. The passing corpus cases with
-/// edge splits (`spill_split`, `spill_loop_mix`, `spill_switch`) lose their
-/// split-edge reloads the same way and pass only because the unrelieved
-/// pressure still fits the window. Not F1 (no "unused phi" warning) and not
+/// edge splits (`spill_split`, `spill_loop_mix`, `spill_switch`) lost their
+/// split-edge reloads the same way until the #1420 fix and passed only
+/// because the unrelieved pressure still fit the window. Not F1 (no "unused phi" warning) and not
 /// the `rotl_window` class (that one is in-contract, <= 16 felts). Bounded
 /// by: ten counts compile and pass with zero-trip inputs pinned (single
 /// loop, and `zero_trip_guard` for the two-loop shape); the `% 97 + 3` bound

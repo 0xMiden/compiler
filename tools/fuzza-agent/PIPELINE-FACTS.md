@@ -2,8 +2,9 @@
 
 One verified fact per bullet, with its proof: a differential test
 (`module::test`) or a source path and function. Panic sites are quoted as the
-ignore texts quote them; only `frontier.rs:123` and `stack.rs:80` were
-re-checked against the current tree. A `Dead end:` bullet or sentence is a
+ignore texts quote them and may have moved since; `frontier.rs:123` and
+`stack.rs:80` are sites of classes fixed by #1420 and no longer fire. A
+`Dead end:` bullet or sentence is a
 shape or lever verified to produce nothing; do not retry it. Open classes and
 their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 "Corpus map on demand").
@@ -302,26 +303,31 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   argument is a plain local loaded right before the call
   (`calls::indirect_args`, `calls::dispatch_pressure`).
 - The solver (`codegen/masm/src/opt/operands/`) never checks that expected
-  operands are on the stack: SSA-invalid input surfaces as an arity-2
+  operands are on the stack: SSA-invalid input surfaced as an arity-2
   `NoSolution` or an arity-3+ subtract overflow in `Stack::movdn`
-  (`stack.rs:80`, `spills::unroll_rotmix`). Arity 1 skips the solver and
+  (`stack.rs:80`, `spills::unroll_rotmix`) until the #1420 fix stopped the
+  spills transform from producing it. Arity 1 skips the solver and
   arity 3+ copies deepest-first, so neither fails in-window
   (`pressure::unary_window`); arity 2 has only `TwoArgs`, and a Copy operand
   near the bottom of a full window needs index 16: a chain passes at 18 shared
-  counts, fails at 20 (`pressure::chain_window`, `spills::rotl_window`).
+  counts, fails at 20 (`pressure::chain_window`). The loop form
+  `spills::rotl_window` compiles since the #1420 fix.
 - Dead end: solver interiors (`CopyAll`, `SwapAndMoveUp`, the first evict of
   `MoveDownAndSwap`, fuel exhaustion): operands stay adjacent to their op
   (`scale::chain300`). Terminator reloads, splits carrying successor
   arguments and pre-lift live-through are never reached (`spills::spill_loop`).
 - At -Oz bands stay un-hoisted: with N bands dying in the loop and M live
-  after it, N + M <= 11 compiles and M = 0 has no boundary
-  (`opt_levels::band_guard_oz`, `opt_levels::drop_batch_oz`,
-  `spills::spill_loop_mix_oz`). Local2Reg promotion does not move it.
+  after it, N + M <= 11 compiled before the #1420 fix and M = 0 has no
+  boundary (`opt_levels::band_guard_oz`, `opt_levels::drop_batch_oz`). The
+  sixteen-count `spills::spill_loop_mix_oz` that bounded it compiles since the
+  fix, so the upper boundary is unmeasured. Local2Reg promotion does not move
+  it.
 - Band boundaries are not monotone: the empty-`continue` cascade compiles at
   2 to 9 and 12 to 14 bands and panics at 10, 11, 15, 16; a real cipher panics
-  at 6, 9, 11, 12, 13 distinct constants and compiles at 4 and 8. The cause is
-  spill placement, not the wasm (`interact::cascade_spill`,
-  `programs_oz::prog_threefish_oz_guard`).
+  at 6, 9, 11, 12, 13 distinct constants and compiled at 4 and 8 before the
+  #1420 fix (the eight-constant `programs_oz::prog_threefish_oz_guard` is
+  ignored under #1422 item 2 since). The cause is spill placement, not the
+  wasm (`interact::cascade_spill`).
 - Realistic programs make bands by construction; at the default level the
   number of DISTINCT constants is the lever (`programs::prog_sponge_guard`), at
   -Oz the band results live as operands across the loop, so array-resident
@@ -331,8 +337,9 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   (`wide::coerce_const_bands`, `wide::wide_limbs_freight`); in a recursive
   frame the cluster is the expensive axis (`frames::rec_freight`).
 - Freight-tolerant: in-loop wide dispatch, chains of early-`break` scans
-  (`programs::prog_states`, `programs::prog_scanchain`). Fragile: return-heavy
-  loops in an outer loop, asymmetric diamonds, two passes sharing constants,
+  (`programs::prog_states`, `programs::prog_scanchain`). Fragile until the
+  #1420 fix (they compile at the default level since): return-heavy loops in
+  an outer loop, asymmetric diamonds, two passes sharing constants,
   three-level nests whose deepest arm is the only consumer
   (`programs::prog_rkscan`, `programs::prog_histogram`, `programs::prog_tlv`).
 - Workarounds with DWARF: `black_box` on every USE of the rotate/shift
@@ -342,9 +349,10 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   (`programs::prog_tlv_wa`). Opt level is not a safety ladder
   (`programs_oz::prog_sha512`, `programs_oz::prog_threefish_o3`).
 - Dead end: user fixes that fail: fewer distinct rotation constants
-  (non-monotone, `programs_oz::prog_threefish_oz_guard`), `[u64; N]` state,
-  hand-written rotates, flattening or splitting the program for the frontier
-  panic (`programs::prog_tlv_guard`), another `-O` (`programs_oz::prog_sha512`).
+  (non-monotone; `programs_oz::prog_threefish_oz_guard` is ignored under #1422
+  item 2 since the #1420 fix), `[u64; N]` state, hand-written rotates,
+  flattening or splitting the program for the former frontier panic
+  (`programs::prog_tlv_guard`), another `-O` (`programs_oz::prog_sha512`).
 - Callee pressure is independent of caller pressure; wide by-value results
   cross calls in every layout (`calls::callee_pressure`, `compose::sret_exits`).
 

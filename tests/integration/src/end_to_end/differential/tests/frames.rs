@@ -44,11 +44,11 @@ use super::super::harness::{run_case, run_case_with_inputs};
 /// Per-activation spill slots under recursion: an eight-u64 cluster live
 /// across the recursive call (which sits between the two loops that share the
 /// cluster), the cycle closed through a three-entry function-pointer table,
-/// depth `input1 % 6`. Spill evidence in `rec`: 3 spills, 6 reloads, 5 split
-/// edges — all six reloads land in split blocks and are erased again (the
-/// stale-dominator-tree erasure `pressure::zero_trip_overflow` blames its
-/// panic on), so the surviving-reload half of the hypothesis is `rec_freight`
-/// below.
+/// depth `input1 % 6`. Spill evidence in `rec` before the #1420 fix: 3
+/// spills, 6 reloads, 5 split edges — all six reloads landed in split blocks
+/// and were erased again (the stale-dominator-tree erasure
+/// `pressure::zero_trip_overflow` blamed its panic on), so the
+/// surviving-reload half of the hypothesis is `rec_freight` below.
 #[test]
 fn rec_slots() {
     run_case("rec_slots", include_str!("../cases/case_rec_slots.rs"));
