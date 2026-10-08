@@ -2028,7 +2028,7 @@ pub(crate) mod manifest {
             &compiler_opts.target_dir,
         );
         let env = cargo_env(filesystem_cache_dir, &extra_rust_flags);
-        let mut wasm_outputs = run_cargo(
+        let mut wasm_outputs = run_cargo_build(
             wasi,
             rustup_toolchain.as_deref(),
             &cargo_build_args,
@@ -2160,7 +2160,7 @@ pub(crate) mod manifest {
         }
     }
 
-    fn run_cargo<E>(
+    fn run_cargo_build<E>(
         wasi: &str,
         toolchain: Option<&str>,
         spawn_args: &[String],
