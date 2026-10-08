@@ -106,19 +106,25 @@ impl DominanceFrontier {
                 continue;
             };
 
-            // Only join blocks (two or more predecessors) can be in a dominance frontier
+            // Only join blocks (two or more predecessors) can be in a dominance frontier. Blocks
+            // unreachable from the entry are not in the tree and do not count as predecessors.
             let block = node_block.borrow();
-            let has_multiple_predecessors = block.predecessors().nth(1).is_some();
-            if !has_multiple_predecessors {
+            let mut predecessors = block
+                .predecessors()
+                .map(|pred| pred.predecessor())
+                .filter(|p| domtree.get(Some(*p)).is_some());
+            let Some(first) = predecessors.next() else {
                 continue;
-            }
+            };
+            let Some(second) = predecessors.next() else {
+                continue;
+            };
 
             let idom = node
                 .idom()
                 .expect("expected immediate dominator for block with multiple predecessors");
             let idom_block = idom.block().unwrap();
-            for pred in block.predecessors() {
-                let mut p = pred.predecessor();
+            for mut p in [first, second].into_iter().chain(predecessors) {
                 while p != idom_block {
                     this.dfs.entry(p).or_default().insert(node_block);
                     let node_p = domtree.get(Some(p)).unwrap();
