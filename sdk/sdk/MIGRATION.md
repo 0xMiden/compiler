@@ -178,7 +178,10 @@ takes part in naming, and the WIT package and interface ids derive from the name
   variant cases must be the UpperCamelCase of their WIT name (`Nft`, not `NFT`), and other
   spellings are rejected with the name to use. Methods, parameters and record fields named
   `r#gen` are rejected: wit-bindgen does not escape this Rust 2024 keyword in the generated
-  bindings.
+  bindings. A `#[note]` struct's storage-schema type name follows the `#[export_type]` rule: a
+  raw struct name loses its `r#`, and a struct named like a WIT keyword (e.g. `Map`, `Record`),
+  like the schema's `storage` alias, or like a core or `#[export_type]` type its fields use is
+  rejected with the name it clashes with instead of a WIT parse error.
 - `<namespace>::init` is reserved for the compiler's component initializer; rename any exported
   procedure, note entrypoint or note constructor called `init`.
 - `#[component]` methods and `#[note_constructor]` methods named with an `fpi_` prefix are now

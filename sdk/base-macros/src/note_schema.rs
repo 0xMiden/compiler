@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use heck::ToKebabCase;
 use midenc_frontend_wasm_metadata::{
     WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, namespace::CORE_TYPES_INTERFACE,
     pad_to_link_section_alignment,
@@ -18,7 +17,8 @@ use crate::{
     manifest_paths::SDK_WIT_SOURCE,
     types::{
         ExportedField, ExportedTypeDef, ExportedTypeKind, TypeRef, custom_type_shape_assertions,
-        doc_comments, map_type_to_type_ref, nominal_type_identity_guards, registered_export_types,
+        doc_comments, exported_type_wit_name, map_type_to_type_ref, nominal_type_identity_guards,
+        registered_export_types,
     },
     util::NOTE_NAMED_FIELDS_ERROR,
     wit_builder::{WitBody, WitBuilder},
@@ -30,6 +30,8 @@ use crate::{
 const CORE_TYPES_PACKAGE_NAME: &str = "miden:base";
 /// Component package of a crate without a `miden-project.toml`.
 const PLACEHOLDER_COMPONENT_PACKAGE: &str = "miden:empty";
+/// WIT type alias the schema declares for the note storage root.
+const NOTE_STORAGE_ALIAS: &str = "storage";
 /// Source name reported for generated schema validation errors.
 const NOTE_STORAGE_SCHEMA_SOURCE_NAME: &str = "note-storage-schema.wit";
 /// Storage types accepted by the note schema diagnostic.
@@ -185,6 +187,7 @@ fn render_note_storage_schema_with_registry_model(
         validate_note_storage_definition(definition, item_struct.ident.span())?;
     }
     let core_imports = required_core_type_imports(&root, &custom_types);
+    reject_note_root_name_collisions(item_struct, &root, &custom_types, &core_imports)?;
     let schema_package = schema_package_name(component_package);
 
     let mut wit = WitBuilder::new("#[note]", &schema_package, component_version);
@@ -207,7 +210,7 @@ fn render_note_storage_schema_with_registry_model(
         }
         render_type_definition(interface, &root);
         interface.blank_line();
-        interface.line(&format!("type storage = {};", root.wit_name));
+        interface.line(&format!("type {NOTE_STORAGE_ALIAS} = {};", root.wit_name));
     });
     wit.blank_line();
     render_core_types_package(&mut wit)?;
@@ -246,9 +249,36 @@ fn note_root_type(
     Ok(ExportedTypeDef {
         docs: doc_comments(&item_struct.attrs),
         rust_name: item_struct.ident.to_string(),
-        wit_name: item_struct.ident.to_string().to_kebab_case(),
+        wit_name: exported_type_wit_name(&item_struct.ident)?,
         kind: ExportedTypeKind::Record { fields },
     })
+}
+
+/// Rejects a note root struct whose WIT name is already taken in the `note-storage` interface:
+/// by the `storage` alias, an imported core type, or a referenced custom type.
+fn reject_note_root_name_collisions(
+    item_struct: &ItemStruct,
+    root: &ExportedTypeDef,
+    custom_types: &[ExportedTypeDef],
+    core_imports: &BTreeSet<String>,
+) -> Result<(), syn::Error> {
+    let taken_by = if root.wit_name == NOTE_STORAGE_ALIAS {
+        "the `storage` alias the schema declares for the note root"
+    } else if core_imports.contains(&root.wit_name) {
+        "an SDK core type the schema imports"
+    } else if custom_types.iter().any(|custom| custom.wit_name == root.wit_name) {
+        "an `#[export_type]` type the note storage references"
+    } else {
+        return Ok(());
+    };
+    Err(syn::Error::new(
+        item_struct.ident.span(),
+        format!(
+            "note struct `{}` produces the WIT type name `{}`, which is already used by \
+             {taken_by}; rename the struct",
+            item_struct.ident, root.wit_name
+        ),
+    ))
 }
 
 /// Checks one record or variant against the supported note storage type surface.
@@ -694,6 +724,7 @@ fn extract_interface_body<'a>(source: &'a str, interface_name: &str) -> Option<&
 
 #[cfg(test)]
 mod tests {
+    use heck::ToKebabCase;
     use midenc_expect_test::expect;
     use syn::parse_quote;
     use wit_bindgen_core::wit_parser::{Resolve, Type as WitType, TypeDefKind};
@@ -1237,18 +1268,126 @@ mod tests {
     fn expansion_surfaces_wit_parser_errors_with_type_context() {
         let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
+        // A custom type named `Storage` clashes with the schema's `storage` alias in WIT only.
+        let storage: syn::ItemStruct = parse_quote! {
+            struct Storage {
+                count: u64,
+            }
+        };
+        let storage = exported_type_from_struct(&storage).expect("record must map");
         let note: ItemStruct = parse_quote! {
-            struct Type {
+            struct AliasNote {
+                inner: Storage,
+            }
+        };
+        let rendered = render_note_storage_schema_with_registry_model(
+            &note,
+            "miden:alias-note",
+            &Version::new(1, 0, 0),
+            &[storage],
+        )
+        .expect("the schema renders");
+        let err = validate_rendered_note_storage_schema(&rendered)
+            .expect_err("a duplicate WIT type name must fail to resolve");
+
+        let message = err.to_string();
+        assert!(message.contains("failed to resolve note storage schema"), "{message}");
+        assert!(message.contains("type `"), "{message}");
+        assert!(message.contains("note-storage-schema.wit:"), "message is {message}");
+    }
+
+    /// Renders `note` against `registry` and returns the error message it must fail with.
+    fn note_schema_error(note: &ItemStruct, registry: &[ExportedTypeDef]) -> String {
+        render_note_storage_schema_with_registry(
+            note,
+            "miden:named-note",
+            &Version::new(1, 0, 0),
+            registry,
+        )
+        .expect_err("the note struct name must be rejected")
+        .to_string()
+    }
+
+    #[test]
+    fn rejects_note_structs_named_like_a_wit_keyword() {
+        let _registry_guard = lock_export_type_registry_for_tests();
+        reset_export_type_registry_for_tests();
+        for note in [
+            parse_quote!(
+                struct Map {
+                    value: u64,
+                }
+            ),
+            parse_quote!(
+                struct Record {
+                    value: u64,
+                }
+            ),
+        ] {
+            let message = note_schema_error(&note, &[]);
+            assert!(message.contains("which is a WIT keyword"), "{message}");
+        }
+    }
+
+    #[test]
+    fn rejects_note_structs_named_like_the_storage_alias() {
+        let _registry_guard = lock_export_type_registry_for_tests();
+        reset_export_type_registry_for_tests();
+        let note: ItemStruct = parse_quote! {
+            struct Storage {
                 value: u64,
             }
         };
-        let err = expand_note_storage_schema(&note)
-            .expect_err("a WIT keyword cannot be used as a record name");
+        let message = note_schema_error(&note, &[]);
+        assert!(message.contains("note struct `Storage`"), "{message}");
+        assert!(message.contains("the `storage` alias"), "{message}");
+    }
 
-        let message = err.to_string();
-        assert!(message.contains("failed to resolve note storage schema"));
-        assert!(message.contains("type `Type`"));
-        assert!(message.contains("note-storage-schema.wit:"), "message is {message}");
+    #[test]
+    fn rejects_note_structs_named_like_an_imported_core_type() {
+        let _registry_guard = lock_export_type_registry_for_tests();
+        reset_export_type_registry_for_tests();
+        let note: ItemStruct = parse_quote! {
+            struct Word {
+                value: Word,
+            }
+        };
+        let message = note_schema_error(&note, &[]);
+        assert!(message.contains("WIT type name `word`"), "{message}");
+        assert!(message.contains("an SDK core type the schema imports"), "{message}");
+    }
+
+    #[test]
+    fn rejects_note_structs_named_like_a_referenced_custom_type() {
+        let _registry_guard = lock_export_type_registry_for_tests();
+        reset_export_type_registry_for_tests();
+        let nested: syn::ItemStruct = parse_quote! {
+            struct Nested {
+                count: u64,
+            }
+        };
+        let nested = exported_type_from_struct(&nested).expect("record must map");
+        let note: ItemStruct = parse_quote! {
+            struct Nested {
+                inner: other::Nested,
+            }
+        };
+        let message = note_schema_error(&note, &[nested]);
+        assert!(message.contains("an `#[export_type]` type"), "{message}");
+    }
+
+    #[test]
+    fn raw_note_struct_names_lose_their_prefix() {
+        let _registry_guard = lock_export_type_registry_for_tests();
+        reset_export_type_registry_for_tests();
+        let note: ItemStruct = parse_quote! {
+            struct r#RawNote {
+                value: u64,
+            }
+        };
+        let source = render_note_storage_schema(&note, "miden:raw-note", &Version::new(1, 0, 0))
+            .expect("a raw note struct name renders");
+        assert_schema_root(&source, "raw-note");
     }
 
     #[test]
