@@ -1226,6 +1226,7 @@ impl EntityListItem for BlockOperand {
 }
 
 impl BlockOperand {
+    /// Create the `index`th successor operand of `owner`
     #[inline]
     pub fn new(owner: OperationRef, index: u16) -> Self {
         Self { owner, index }

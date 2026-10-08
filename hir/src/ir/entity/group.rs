@@ -5,7 +5,12 @@ use core::fmt;
 /// This is used so that individual groups can be grown or shrunk, while maintaining stability
 /// of references to items in other groups.
 #[derive(Default, Copy, Clone)]
-pub struct EntityGroup(u32);
+pub struct EntityGroup {
+    /// The index of the first item of the group in the containing vector
+    start: u16,
+    /// The number of items in the group
+    len: u16,
+}
 impl fmt::Debug for EntityGroup {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EntityGroup")
@@ -15,25 +20,20 @@ impl fmt::Debug for EntityGroup {
     }
 }
 impl EntityGroup {
-    const LEN_SHIFT: u32 = 16;
-    /// The start index occupies the low 16 bits, the length the high 16 bits.
-    const START_MASK: u32 = u16::MAX as u32;
-
     /// Create a new group of size `len`, starting at index `start`
     ///
     /// Panics if `start` or `len` overflows `u16::MAX`
     pub fn new(start: usize, len: usize) -> Self {
-        let start = u16::try_from(start).expect("too many items") as u32;
-        let len = u16::try_from(len).expect("group too large") as u32;
-        let group = start | (len << Self::LEN_SHIFT);
+        let start = u16::try_from(start).expect("too many items");
+        let len = u16::try_from(len).expect("group too large");
 
-        Self(group)
+        Self { start, len }
     }
 
     /// Get the start index in the containing vector
     #[inline]
     pub fn start(&self) -> usize {
-        (self.0 & Self::START_MASK) as usize
+        self.start as usize
     }
 
     /// Get the end index (exclusive) in the containing vector
@@ -51,7 +51,7 @@ impl EntityGroup {
     /// Get the number of items in this group
     #[inline]
     pub fn len(&self) -> usize {
-        (self.0 >> Self::LEN_SHIFT) as usize
+        self.len as usize
     }
 
     /// Get the [core::ops::Range] equivalent of this group
@@ -65,14 +65,12 @@ impl EntityGroup {
     ///
     /// Panics if the resulting size overflows `u16::MAX`
     pub fn grow(&mut self, n: usize) {
-        let len = u16::try_from(self.len() + n).expect("group is too large") as u32;
-        self.0 = (self.0 & Self::START_MASK) | (len << Self::LEN_SHIFT);
+        self.len = u16::try_from(self.len() + n).expect("group is too large");
     }
 
     /// Decrease the size of this group by `n` items, to no less than zero
     pub fn shrink(&mut self, n: usize) {
-        let len = self.len().saturating_sub(n) as u32;
-        self.0 = (self.0 & Self::START_MASK) | (len << Self::LEN_SHIFT);
+        self.len = self.len.saturating_sub(u16::try_from(n).unwrap_or(u16::MAX));
     }
 
     /// Shift the position of this group by `offset`
@@ -80,8 +78,7 @@ impl EntityGroup {
     /// Panics if the resulting start index is negative or overflows `u16::MAX`
     pub fn shift_start(&mut self, offset: isize) {
         let start = self.start().checked_add_signed(offset).expect("group offset is negative");
-        let start = u16::try_from(start).expect("group offset is too large") as u32;
-        self.0 = (self.0 & !Self::START_MASK) | start;
+        self.start = u16::try_from(start).expect("group offset is too large");
     }
 }
 
@@ -123,6 +120,7 @@ mod tests {
         assert_eq!(group.as_range(), 255..510);
     }
 
+    /// Groups past the 255-item mark keep their start and length up to `u16::MAX`
     #[test]
     fn entity_group_wide() {
         let group = EntityGroup::new(256, 300);
@@ -142,12 +140,14 @@ mod tests {
         assert_eq!(group.len(), u16::MAX as usize);
     }
 
+    /// A start index past `u16::MAX` is rejected when the group is created
     #[test]
     #[should_panic(expected = "too many items")]
     fn entity_group_start_overflow() {
         EntityGroup::new(u16::MAX as usize + 1, 0);
     }
 
+    /// Growing a group past `u16::MAX` items is rejected
     #[test]
     #[should_panic(expected = "group is too large")]
     fn entity_group_grow_overflow() {
@@ -155,6 +155,7 @@ mod tests {
         group.grow(1);
     }
 
+    /// Shifting a group before index zero is rejected
     #[test]
     #[should_panic(expected = "group offset is negative")]
     fn entity_group_shift_start_negative() {
