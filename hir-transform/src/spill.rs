@@ -1,16 +1,18 @@
 use alloc::{collections::VecDeque, format, rc::Rc};
 
 use midenc_hir::{
-    BlockArgument, BlockRef, Builder, Context, FxHashMap, FxHashSet, OpBuilder, OpOperand,
-    Operation, OperationRef, ProgramPoint, Reachability, ReachabilityCache, Region,
-    RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Rewriter, SmallVec, SourceSpan,
-    Spanned, StorableEntity, TraceTarget, Usable, ValueRange, ValueRef,
+    BlockArgument, BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, OpBuilder,
+    OpOperand, OpOperandImpl, Operation, OperationRef, ProgramPoint, Reachability,
+    ReachabilityCache, Region, RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report,
+    Rewriter, SmallVec, SourceSpan, Spanned, StorableEntity, TraceTarget, Usable, ValueRange,
+    ValueRef,
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
+    dialects::debuginfo::{DebugValue, transform::erase_debug_value},
     dominance::{DomTreeNode, DominanceFrontier, DominanceTree},
     pass::PostPassStatus,
     patterns::{RewriterImpl, TracingRewriterListener},
-    traits::{IsolatedFromAbove, SingleRegion},
+    traits::{IsolatedFromAbove, SingleRegion, Transparent},
 };
 use midenc_hir_analysis::analyses::{
     SpillAnalysis,
@@ -125,7 +127,7 @@ pub trait ReloadLike {
 ///   internal error otherwise.
 /// * Rewrites all spill and reload instructions to their primitive memory store/load ops.
 ///   Dominance governs only the SSA use rewrite above; whether a spill is materialized or elided
-///   is decided by reachability to live reloads (see `rewrite_spill_pseudo_instructions`).
+///   is decided by reachability to live reloads (see `erase_dead_spills`).
 pub fn transform_spills(
     op: OperationRef,
     analysis: &mut SpillAnalysis,
@@ -576,12 +578,21 @@ fn rewrite_cfg_spills(
     }
 
     // Spills that cannot reach a live reload are erased before the phis are pruned: the operand of
-    // such a spill may have been rewritten to a phi, and must not keep it alive.
+    // such a spill may have been rewritten to a phi, and must not keep it alive. Pruning in turn
+    // can leave reloads unused, and so spills dead, so the two alternate until nothing changes.
     let mut rewriter = RewriterImpl::<TracingRewriterListener>::new(context.clone())
         .with_listener(TracingRewriterListener);
-    erase_dead_spills(&mut rewriter, analysis)?;
-    let kept_phis = prune_dead_phis(&inserted_phis, trace_target);
-    verify_phi_feeds_dominate(&kept_phis, domtree)?;
+    let mut reachability = ReachabilityCache::default();
+    let mut phis = inserted_phi_feeds(&inserted_phis);
+    loop {
+        erase_dead_spills(&mut rewriter, analysis, &mut reachability)?;
+        let (kept, pruned_any) = prune_dead_phis(phis, trace_target);
+        phis = kept;
+        if !pruned_any {
+            break;
+        }
+    }
+    verify_phi_feeds_dominate(&phis, domtree)?;
 
     rewrite_spill_pseudo_instructions(context, analysis, interface, trace_target)
 }
@@ -621,8 +632,36 @@ fn verify_phi_feeds_dominate(
     Ok(())
 }
 
-/// Remove the phis inserted by [insert_required_phis] which no use was rewritten to, returning the
-/// kept phis with the operands feeding them.
+/// Collect the phis inserted by [insert_required_phis] with the operands feeding each of them.
+fn inserted_phi_feeds(
+    inserted_phis: &SmallDenseMap<BlockRef, SmallDenseMap<ValueRef, ValueRef, 8>, 8>,
+) -> SmallVec<[(ValueRef, PhiFeeds); 4]> {
+    let mut phis = SmallVec::default();
+    for (block, block_phis) in inserted_phis.iter() {
+        let block = block.borrow();
+        for (_, phi) in block_phis.iter() {
+            let index = phi_index(phi);
+            let mut feeds = PhiFeeds::default();
+            for pred in block.predecessors() {
+                let pred_op = pred.owner.borrow();
+                feeds.push(pred_op.successor(pred.index as usize).arguments[index]);
+            }
+            phis.push((*phi, feeds));
+        }
+    }
+    phis
+}
+
+/// The index of an inserted phi in the argument list of its block
+fn phi_index(phi: &ValueRef) -> usize {
+    phi.borrow()
+        .downcast_ref::<BlockArgument>()
+        .expect("inserted phi is a block argument")
+        .index()
+}
+
+/// Remove the `phis` inserted by [insert_required_phis] which no use was rewritten to, returning
+/// the kept phis with their feeds, and whether any phi was removed.
 ///
 /// The iterated dominance frontier of the reloads is a conservative placement: a spilled value
 /// need not be live at every block of it, so some of the inserted phis end up unused by the time
@@ -631,44 +670,28 @@ fn verify_phi_feeds_dominate(
 /// on an edge from a predecessor the original definition does not dominate is invalid SSA.
 ///
 /// A phi is kept if it has a use other than feeding another inserted phi, or feeds a kept phi; so
-/// phis feeding only each other (e.g. around a loop) are removed as well.
+/// phis feeding only each other (e.g. around a loop) are removed as well. Uses by [Transparent]
+/// ops (debug info) do not keep a phi, as they do not keep a value live for the spill analysis
+/// either; such users of a removed phi are erased with it.
 fn prune_dead_phis(
-    inserted_phis: &SmallDenseMap<BlockRef, SmallDenseMap<ValueRef, ValueRef, 8>, 8>,
+    phis: SmallVec<[(ValueRef, PhiFeeds); 4]>,
     trace_target: &TraceTarget,
-) -> SmallVec<[(ValueRef, PhiFeeds); 4]> {
-    let phi_index = |phi: &ValueRef| {
-        phi.borrow()
-            .downcast_ref::<BlockArgument>()
-            .expect("inserted phi is a block argument")
-            .index()
+) -> (SmallVec<[(ValueRef, PhiFeeds); 4]>, bool) {
+    let feeds = phis.iter().map(|(phi, feeds)| (*phi, feeds)).collect::<FxHashMap<_, _>>();
+    let feed_operands = phis
+        .iter()
+        .flat_map(|(_, feeds)| feeds.iter().copied())
+        .collect::<FxHashSet<_>>();
+    let is_real_use = |use_: EntityRef<'_, OpOperandImpl>| {
+        !feed_operands.contains(&use_.as_operand_ref())
+            && !use_.owner.borrow().implements::<dyn Transparent>()
     };
-
-    // The operands feeding each inserted phi from the predecessors of its block
-    let mut feeds = SmallDenseMap::<ValueRef, PhiFeeds, 8>::default();
-    let mut feed_operands = FxHashSet::<OpOperand>::default();
-    for (block, phis) in inserted_phis.iter() {
-        let block = block.borrow();
-        for (_, phi) in phis.iter() {
-            let index = phi_index(phi);
-            let operands = feeds.entry(*phi).or_default();
-            for pred in block.predecessors() {
-                let pred_op = pred.owner.borrow();
-                let operand = pred_op.successor(pred.index as usize).arguments[index];
-                operands.push(operand);
-                feed_operands.insert(operand);
-            }
-        }
-    }
 
     // Find the live phis
     let mut live = FxHashSet::<ValueRef>::default();
     let mut worklist = SmallVec::<[ValueRef; 8]>::default();
-    for (phi, _) in feeds.iter() {
-        let has_real_use = phi
-            .borrow()
-            .iter_uses()
-            .any(|use_| !feed_operands.contains(&use_.as_operand_ref()));
-        if has_real_use {
+    for (phi, _) in phis.iter() {
+        if phi.borrow().iter_uses().any(is_real_use) {
             live.insert(*phi);
             worklist.push(*phi);
         }
@@ -685,28 +708,19 @@ fn prune_dead_phis(
     // Erase the dead phis. Their feeds go first, as they may be the remaining uses of other dead
     // phis; the arguments of a block are erased from the highest index down, so that the indices
     // of the ones still to be erased stay valid.
-    let mut dead = SmallVec::<[(BlockRef, SmallVec<[usize; 4]>); 4]>::default();
-    for (block, phis) in inserted_phis.iter() {
-        let mut indices = phis
-            .iter()
-            .map(|(_, phi)| phi)
-            .filter(|phi| !live.contains(*phi))
-            .inspect(|phi| {
-                log::trace!(
-                    target: trace_target,
-                    symbol = trace_target.relevant_symbol();
-                    "pruning unused phi {phi} in {block}"
-                );
-            })
-            .map(&phi_index)
-            .collect::<SmallVec<[usize; 4]>>();
-        if indices.is_empty() {
-            continue;
-        }
-        indices.sort_unstable_by(|a, b| b.cmp(a));
-        dead.push((*block, indices));
+    let mut dead = SmallDenseMap::<BlockRef, SmallVec<[usize; 4]>, 4>::default();
+    for (phi, _) in phis.iter().filter(|(phi, _)| !live.contains(phi)) {
+        let block = phi.borrow().parent_block().expect("phi is a block argument");
+        log::trace!(
+            target: trace_target,
+            symbol = trace_target.relevant_symbol();
+            "pruning unused phi {phi} in {block}"
+        );
+        erase_transparent_users(*phi);
+        dead.entry(block).or_default().push(phi_index(phi));
     }
-    for (block, indices) in dead.iter() {
+    for (block, indices) in dead.iter_mut() {
+        indices.sort_unstable_by(|a, b| b.cmp(a));
         for pred in block.borrow().predecessors() {
             let (mut pred_op, succ_index) = (pred.owner, pred.index as usize);
             let mut pred_op = pred_op.borrow_mut();
@@ -716,6 +730,7 @@ fn prune_dead_phis(
             }
         }
     }
+    let pruned_any = !dead.is_empty();
     for (mut block, indices) in dead {
         let mut block = block.borrow_mut();
         for index in indices {
@@ -723,11 +738,27 @@ fn prune_dead_phis(
         }
     }
 
-    feeds
-        .iter()
-        .filter(|(phi, _)| live.contains(*phi))
-        .map(|(phi, operands)| (*phi, operands.clone()))
-        .collect()
+    let kept = phis.into_iter().filter(|(phi, _)| live.contains(phi)).collect();
+    (kept, pruned_any)
+}
+
+/// Erase the [Transparent] users of `value`, as dead-code elimination does for a dead value.
+fn erase_transparent_users(value: ValueRef) {
+    let users = value
+        .borrow()
+        .iter_uses()
+        .map(|use_| use_.owner)
+        .filter(|user| user.borrow().implements::<dyn Transparent>())
+        .collect::<SmallVec<[OperationRef; 2]>>();
+    for mut user in users {
+        if user.borrow().is::<DebugValue>() {
+            erase_debug_value(user);
+        } else {
+            let mut op = user.borrow_mut();
+            op.drop_all_uses();
+            op.erase();
+        }
+    }
 }
 
 /// Rewrite uses of spilled values in `op` and any nested regions of `op`.
@@ -1003,13 +1034,14 @@ fn rewrite_inserted_phi_uses(
 fn erase_dead_spills(
     rewriter: &mut dyn Rewriter,
     analysis: &mut SpillAnalysis,
+    reachability: &mut ReachabilityCache,
 ) -> Result<(), Report> {
     // Index the live reloads by their spilled value once, so each spill only considers the
     // reloads it can possibly cover. Spills and reloads are paired through the analysis's value
     // bookkeeping rather than the spill op's current operand, which SSA reconstruction may
     // rewrite (only reload operands are exempt). Liveness is snapshotted before any spills are
-    // erased, which errs toward keeping a spill whose reload only dies as part of the erasure
-    // cascade.
+    // erased, which errs toward keeping a spill whose reload only dies once the spills erased here
+    // leave it unused (see `rewrite_spill_pseudo_instructions`).
     let mut live_reloads = SmallDenseMap::<ValueRef, SmallVec<[OperationRef; 2]>, 8>::default();
     for rinfo in analysis.reloads() {
         let Some(reload_op) = rinfo.inst else {
@@ -1027,9 +1059,8 @@ fn erase_dead_spills(
         }
     }
 
-    // One reachability cache is shared across all pairings: only operations are erased, never
-    // blocks, so the cached block-reachability stays valid throughout.
-    let mut reachability = ReachabilityCache::default();
+    // The reachability cache stays valid across calls: only operations and block arguments are
+    // erased between them, never blocks.
     for spill in analysis.spills.iter_mut() {
         let Some(operation) = spill.inst else {
             continue;
@@ -1042,7 +1073,7 @@ fn erase_dead_spills(
             .unwrap_or_default()
         {
             let reload_op = *reload_op;
-            match Operation::reachability_cached(operation, reload_op, &mut reachability) {
+            match Operation::reachability_cached(operation, reload_op, reachability) {
                 Reachability::Guaranteed | Reachability::Maybe => {
                     is_used = true;
                     break;
@@ -1087,9 +1118,9 @@ fn rewrite_spill_pseudo_instructions(
     let mut builder = RewriterImpl::<TracingRewriterListener>::new(context)
         .with_listener(TracingRewriterListener);
 
-    // Reloads may have died since dead spills were last erased (the CFG rewrite prunes phis in
-    // between), so look again before materializing the stores.
-    erase_dead_spills(&mut builder, analysis)?;
+    // Erase the dead spills (the CFG rewrite already did, before pruning its phis; on the
+    // single-block path this is the only pass) before materializing the stores.
+    erase_dead_spills(&mut builder, analysis, &mut ReachabilityCache::default())?;
     for spill in analysis.spills() {
         let Some(operation) = spill.inst else {
             continue;
