@@ -762,7 +762,7 @@ impl PreparationBuilder {
         types: &[Type],
         span: SourceSpan,
     ) -> Result<Vec<StackValue>> {
-        if types.len() > u8::MAX as usize {
+        if types.len() > u16::MAX as usize {
             return Err(Report::msg(format!(
                 "control flow returns {} values, exceeding the HIR operand limit at {span:?}",
                 types.len()
@@ -775,7 +775,7 @@ impl PreparationBuilder {
             let mut owner = e.operations[op];
             for (index, (id, ty)) in ids.into_iter().zip(types).enumerate() {
                 let result =
-                    e.builder.builder().context().make_result(span, ty, owner, index as u8);
+                    e.builder.builder().context().make_result(span, ty, owner, index as u16);
                 owner.borrow_mut().results_mut().push(result);
                 e.set_value(id, result.borrow().as_value_ref());
             }
@@ -790,7 +790,7 @@ impl PreparationBuilder {
         result_types: Vec<Type>,
         span: SourceSpan,
     ) -> Result<PreparedLoop> {
-        if inits.len() > u8::MAX as usize {
+        if inits.len() > u16::MAX as usize {
             return Err(Report::msg(format!(
                 "loop has {} inputs, exceeding the HIR operand limit at {span:?}",
                 inits.len()

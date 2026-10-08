@@ -5982,7 +5982,7 @@ end
         .find(|skipped| skipped.path.as_str() == "::test::huge")
         .expect("expected huge procedure to be skipped");
     assert!(huge.reason.contains("returns 256 value(s)"));
-    assert!(huge.reason.contains("HIR operand limit"));
+    assert!(huge.reason.contains("lint analysis signature limit"));
 
     let caller = output
         .skipped_procedures
