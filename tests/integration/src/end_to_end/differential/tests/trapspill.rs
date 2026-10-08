@@ -304,18 +304,18 @@ fn second_loop_edges() {
 /// producing the cascade entirely, the unguarded one still fires it once —
 /// while `simplify-passthrough-cond-br` goes 10 vs 0, `split-critical-edges`
 /// 11 vs 2, `while-remove-unused-args` 3 vs 2, `simplify-cond-br-like-switch`
-/// 1 vs 0 and `convert-trivial-if-to-select` 3 vs 4. Freight: 57 spills, 86
-/// reloads, seven split edges, 34 erased split reloads (the original's 57 /
-/// 84 / 6 / 32). It compiles and agrees with native everywhere at the default
+/// 1 vs 0 and `convert-trivial-if-to-select` 3 vs 4. Freight before the #1420
+/// fix: 57 spills, 86 reloads, seven split edges, 34 erased split reloads (the
+/// original's 57 / 84 / 6 / 32). It compiles and agrees with native everywhere at the default
 /// level, at `--optimize=size-min`, at `--optimize=basic` and without guest
 /// DWARF.
 ///
 /// CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC (safe Rust,
 /// 2026-09-17), caused by the trapping edge alone: at `--optimize=max` this
-/// case panicked, until the #1420 fix, with "called `Option::unwrap()` on a `None` value" at
-/// hir/src/ir/dominance/frontier.rs:123, the F6 site, while
+/// case panicked, until the #1420 fix, with "called `Option::unwrap()` on a
+/// `None` value" at hir/src/ir/dominance/frontier.rs:123, the F6 site, while
 /// `interact::cascade_spill` — the same file WITHOUT the `assert!` in the
-/// `continue` arm — compiles at `--optimize=max` with 57 spills / 84 reloads /
+/// `continue` arm — compiled at `--optimize=max` with 57 spills / 84 reloads /
 /// 6 split edges / 32 erased split reloads. The trap twin dies inside the
 /// FIRST spill transform (one `edges to split = 6` line, then the unwrap; no
 /// `erase unused reload` and no `convert reload to load` line is ever

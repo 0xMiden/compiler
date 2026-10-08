@@ -2,10 +2,11 @@
 // capable loop: twelve shared masked rotate counts used before, inside
 // (rotates of the loop-carried accumulator) and after a `while i < input2 %
 // 97` loop. The spill pass spills the counts and places their reloads in
-// split-edge blocks, but its SSA reconstruction never visits the split
-// blocks (stale dominator tree) and erases those reloads, so the original
-// counts stay live on the operand stack past their spills and the emitter
-// ends up scheduling an 18-felt stack. See the `zero_trip_overflow` test.
+// split-edge blocks; until the #1420 fix its SSA reconstruction never visited
+// the split blocks (stale dominator tree) and erased those reloads, so the
+// original counts stayed live on the operand stack past their spills and the
+// emitter ended up scheduling an 18-felt stack. See the `zero_trip_overflow`
+// test, which compiles now.
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let m = (input1 | 1) as u64;

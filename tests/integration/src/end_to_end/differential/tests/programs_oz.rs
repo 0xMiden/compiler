@@ -318,10 +318,10 @@ fn prog_blake2b_nodwarf() {
 #[test]
 #[ignore = "#1422: compiler panic at --optimize=size-min (with AND without guest DWARF): 'invalid \
             operand stack index (11): requires access to more than 16 elements' at \
-            codegen/masm/src/emit/mod.rs:623 while emitting a spill store — over-window pressure \
-            with the spill analysis run, no edge splits, no erased reloads (ledger F17; not F6, \
-            not F2); the default level and --optimize=basic compile the same source; compile-time, \
-            no inputs involved"]
+            codegen/masm/src/emit/mod.rs (OpEmitter::copy_operand_to_position) while emitting a \
+            spill store — over-window pressure with the spill analysis run, no edge splits, no \
+            erased reloads (ledger F17; not F6, not F2); the default level and --optimize=basic \
+            compile the same source; compile-time, no inputs involved"]
 fn prog_threefish_oz() {
     run_case_with_flags(
         "prog_threefish_oz",

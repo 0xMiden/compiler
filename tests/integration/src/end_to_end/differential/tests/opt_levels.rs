@@ -238,15 +238,16 @@ fn deadfall_oz_edges() {
 /// compile this kernel), and adding freight at the default level does not
 /// produce F17 but F6 (a campaign-28 composition with a four-value u64 cluster
 /// panics at emit/mod.rs:623 WITH one split edge and six erased reloads).
-/// Bounded by [`spill_store_guard`] below (one rotation row fewer, compiled and
-/// matched native at -Oz until the #1420 fix). Compile-time — no inputs involved. Un-ignore when
-/// the spill placement keeps the spilled value inside the window.
+/// Bounded by [`spill_store_guard`] below (one rotation row fewer), which
+/// compiled and matched native at -Oz until the #1420 fix and is now ignored
+/// under #1422 item 2 as well. Compile-time — no inputs involved. Un-ignore
+/// when the spill placement keeps the spilled value inside the window.
 #[test]
 #[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
-            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F17 \
-            (seven 'additional spills required', edges to split = 0, no erased reloads; the \
-            failing op is the spill store hir.store_local into slot 12); compile-time, no inputs \
-            involved"]
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs \
+            (OpEmitter::copy_operand_to_position) — F17 (seven 'additional spills required', edges \
+            to split = 0, no erased reloads; the failing op is the spill store hir.store_local \
+            into slot 12); compile-time, no inputs involved"]
 fn spill_store_min() {
     run_case_with_flags(
         "spill_store_min",

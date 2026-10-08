@@ -2,9 +2,10 @@
 // FOUR u64 values defined before a bottom-tested loop, consumed inside it in
 // ONE wide expression (so all four are live at a single program point) and
 // used again after it, plus ONE masked rotate count band used before, inside
-// and after the same loop.  The spill transform splits one edge, erases the
-// six reloads it placed there, and the emitter then meets a stack deeper than
-// the sixteen-element window.  See the ignored test in tests/pressure.rs.
+// and after the same loop.  Until the #1420 fix the spill transform split one
+// edge, erased the six reloads it placed there, and the emitter then met a
+// stack deeper than the sixteen-element window.  See the test in
+// tests/pressure.rs, which compiles now.
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let m = (input1 | 1) as u64;
