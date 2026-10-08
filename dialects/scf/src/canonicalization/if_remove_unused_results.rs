@@ -154,6 +154,7 @@ mod tests {
 
     use super::*;
 
+    /// Strips trailing whitespace from every line and ends the text with a single newline
     fn normalize_hir(input: &str) -> String {
         let mut normalized = input.lines().map(str::trim_end).collect::<Vec<_>>().join("\n");
         normalized.push('\n');
@@ -161,8 +162,8 @@ mod tests {
     }
 
     /// Renders the insertion point of every inserted op, as the tracing rewriter listener does
-    /// under `MIDENC_TRACE=rewriter=trace`. Rendering a program point borrows its operation, so
-    /// the rewrite fails here if the pattern still borrows the op it is replacing.
+    /// under `MIDENC_TRACE=rewriter=trace`, while the pattern that made the insertion is still
+    /// running: the shape of the `AliasingViolationError` report in #1421.
     struct InsertionPointListener;
 
     impl Listener for InsertionPointListener {
