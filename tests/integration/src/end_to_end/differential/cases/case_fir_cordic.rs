@@ -4,7 +4,8 @@
 // fold) followed by an 8-iteration vectoring CORDIC on input-derived
 // coordinates. Passes at the default optimization level; at
 // `--optimize=max` LLVM unrolls the tap loop into one block and the build
-// panics in the emitter (see `fir_cordic_o3` in tests/programs.rs).
+// panicked in the emitter until the #1420 fix (see `fir_cordic_o3` in
+// tests/programs.rs).
 const HALF_PI: i32 = 102_944;
 const CORDIC_K: i32 = 39_797;
 

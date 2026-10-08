@@ -547,8 +547,8 @@ fn prog_iters_edges() {
     );
 }
 
-/// CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC (safe Rust, campaign
-/// 17, 2026-09-03): the realistic `prog_fixedpoint` program built with
+/// FORMER CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC (safe Rust,
+/// campaign 17, 2026-09-03): the realistic `prog_fixedpoint` program built with
 /// `--optimize=max` (guest opt-level 3; the default opt-level 2 and
 /// `--optimize=size-min` pass, and the 512-pair default sweep is clean)
 /// panicked in the MASM emitter: `invalid operand stack index (11): requires
@@ -594,8 +594,8 @@ fn fir_cordic() {
     run_case("fir_cordic", include_str!("../cases/case_fir_cordic.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC at `--optimize=max` before the #1420 fix — the
-/// minimized form of
+/// FORMER COMPILE-TIME COMPILER PANIC at `--optimize=max` (until the #1420
+/// fix) — the minimized form of
 /// `prog_fixedpoint_o3` (same signature, `invalid operand stack index (11)`
 /// at emit/mod.rs:623 from `StoreLocal::schedule_operands` in the FIR
 /// loop body). Ingredients, each necessary (ladder of 24 generated rungs,
@@ -819,8 +819,8 @@ fn prog_scanchain_edges() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
-/// campaign 21, 2026-09-09). Rabin-Karp substring scanner (cliff shape:
+/// FORMER COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe
+/// Rust, campaign 21, 2026-09-09). Rabin-Karp substring scanner (cliff shape:
 /// return-heavy inner loop nested in an outer loop; 6 u64 fingerprint words,
 /// 5 shared rotate constants): three needles are searched for in a 64-byte
 /// buffer with a rolling hash, the inner scan loop returning early on a
@@ -954,7 +954,7 @@ fn prog_rkscan_ref_nodwarf() {
     );
 }
 
-/// CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC: the reduced
+/// FORMER CONFIGURATION-DEPENDENT COMPILE-TIME COMPILER PANIC: the reduced
 /// `prog_rkscan_guard` panicked at `--optimize=basic` with `invalid
 /// operand stack index (10): requires access to more than 16 elements` at
 /// codegen/masm/src/emit/mod.rs:623 — the same F6 site as the full program.
@@ -1161,8 +1161,8 @@ fn prog_varint_wa_oz_nodwarf() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC AT EVERY OPTIMIZATION LEVEL (safe Rust,
-/// campaign 21, 2026-09-09). Conditional-round Feistel mixer (cliff shape:
+/// FORMER COMPILE-TIME COMPILER PANIC AT EVERY OPTIMIZATION LEVEL (safe
+/// Rust, campaign 21, 2026-09-09). Conditional-round Feistel mixer (cliff shape:
 /// asymmetric diamond in a hot loop; 6 u64 round keys, 4 shared rotate
 /// constants): 32 counter blocks are encrypted by a Feistel network whose
 /// round function runs only on the iterations the schedule selects, so the
@@ -1341,8 +1341,8 @@ fn prog_rle_wa_edges() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
-/// campaign 21, 2026-09-09). Two-pass entropy-coder front-end (cliff shape:
+/// FORMER COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe
+/// Rust, campaign 21, 2026-09-09). Two-pass entropy-coder front-end (cliff shape:
 /// sequential loops sharing constants; 6 u64 statistics, 8 shared shift
 /// constants): a histogram pass over a 96-byte buffer builds sixteen buckets
 /// and six statistics, and a second pass turns the histogram into cumulative
@@ -1429,8 +1429,8 @@ fn prog_histogram_wa_edges() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe Rust,
-/// campaign 21, 2026-09-09). Eight-lane sponge hash (cliff shape: sequential
+/// FORMER COMPILE-TIME COMPILER PANIC AT THE DEFAULT CONFIGURATION (safe
+/// Rust, campaign 21, 2026-09-09). Eight-lane sponge hash (cliff shape: sequential
 /// loops sharing constants; 8 u64 lanes, 8 shared rotation offsets): an absorb
 /// loop XORs message blocks into the rate lanes and runs six permutation
 /// rounds (column mix, lane rotations, chi), and a squeeze loop then extracts
@@ -1518,8 +1518,8 @@ fn prog_sponge_wa_edges() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC AT EVERY OPTIMIZATION LEVEL (safe Rust,
-/// campaign 21, 2026-09-09). Nested TLV record validator (cliff shape:
+/// FORMER COMPILE-TIME COMPILER PANIC AT EVERY OPTIMIZATION LEVEL (safe
+/// Rust, campaign 21, 2026-09-09). Nested TLV record validator (cliff shape:
 /// three-level diamond nest whose deepest arm is the only consumer of the
 /// accumulated words; 8 u64 digest words, 4 shared rotate constants): a
 /// 64-byte container is parsed as tag / length / value records behind three

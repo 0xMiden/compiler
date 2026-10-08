@@ -5,7 +5,8 @@
 // counts instead of sixteen: at `--optimize=size-min` LLVM keeps the count
 // bands un-hoisted, so ten or more shared counts push the Copy-constrained
 // count past the 16-felt window and the arity-2 scheduler panics with the
-// known `NoSolution` (see the ignored `spill_loop_mix_oz`); nine is the
+// known `NoSolution` until the #1420 fix (see the formerly ignored
+// `spill_loop_mix_oz`); nine is the
 // largest count that compiles, and it passes differentially at -Oz and O2.
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {

@@ -551,11 +551,12 @@ fn prog_slicealg_edges() {
 /// reload is erased.
 ///
 /// It compiles and matches native since the guest toolchain bump to
-/// nightly-2026-09-01, but F6 IS NOT FIXED: nightly-2026-04-30 guests
-/// reproduce the same `frontier.rs:123` unwrap (arbitrated 2026-09-17), and
-/// the class's minimal reproducers (`pressure::window_erased_min`,
-/// `pressure::overflow_cluster_min`) still panic with the current toolchain.
-/// Kept as the `--optimize=basic` guard of this program.
+/// nightly-2026-09-01, but F6 was NOT FIXED by that bump: nightly-2026-04-30
+/// guests reproduced the same `frontier.rs:123` unwrap (arbitrated
+/// 2026-09-17), and the class's minimal reproducers
+/// (`pressure::window_erased_min`, `pressure::overflow_cluster_min`) still
+/// panicked with the current toolchain until the #1420 fix. Kept as the
+/// `--optimize=basic` guard of this program.
 #[test]
 fn prog_slicealg_basic() {
     run_case_with_flags(
