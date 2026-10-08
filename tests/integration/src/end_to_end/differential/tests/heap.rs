@@ -383,11 +383,11 @@ fn heap_sort_edges() {
             assembler fails with 'found a cycle in the call graph' (surfacing as a panic at \
             tests/support/src/compiler_test.rs) at ALL FOUR optimization levels (default, \
             size-min, max, basic — each re-measured with scratch/c34probe.sh). Same family as \
-            corelib::core_select_nth_nolink, so it does NOT take the cargo test process down. \
-            sort_unstable / sort_unstable_by / sort_unstable_by_key are fine (heapsort under \
-            -Zbuild-std-features=optimize_for_size) — see heap_sort, which also shows a stable \
-            sort with its own scratch allocation works when written iteratively. Un-ignore when \
-            recursion is supported, or when core's stable sort stops recursing"]
+            corelib::core_select_nth_nolink. sort_unstable / sort_unstable_by / \
+            sort_unstable_by_key are fine (heapsort under -Zbuild-std-features=optimize_for_size) \
+            — see heap_sort, which also shows a stable sort with its own scratch allocation works \
+            when written iteratively. Un-ignore when recursion is supported, or when core's stable \
+            sort stops recursing"]
 fn heap_sort_stable_nolink() {
     run_case(
         "heap_sort_stable_nolink",

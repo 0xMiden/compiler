@@ -2,8 +2,8 @@
 // u64 values kept in wasm locals (each an argument of the dispatch AND used
 // after it) are live across a 7-u64 fn-pointer dispatch inside a loop with
 // a loop-carried table index — one local more than the passing
-// `case_dispatch_pressure.rs` shape. The spill analysis takes an op's
-// inputs from operand group 0 only; `hir.exec_indirect` keeps the table
+// `case_dispatch_pressure.rs` shape. The spill analysis took an op's
+// inputs from operand group 0 only (fixed by #1421); `hir.exec_indirect` keeps the table
 // index there and its seven arguments in group 1, so the analysis spills
 // arguments to make room, never reloads them and budgets the call as
 // consuming one felt, while the emitter's physical stack still holds them:
