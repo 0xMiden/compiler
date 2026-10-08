@@ -294,9 +294,10 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 - The spill analysis models every operand group of a non-branch op, so
   `hir.exec_indirect`'s group-1 arguments are spilled and reloaded like any
   other operand (`hir-analysis/src/analyses/spills.rs`;
-  `calls::indirect_spill_bb`). Dispatches under pressure pass when every
-  argument is a plain local loaded right before the call
-  (`calls::indirect_args`, `calls::dispatch_pressure`).
+  `calls::indirect_spill_bb`). Dispatches under pressure pass whether the
+  arguments are plain locals loaded right before the call
+  (`calls::indirect_args`, `calls::dispatch_pressure`) or values computed in
+  place right before it (`calls::indirect_spill_args`).
 - The solver (`codegen/masm/src/opt/operands/`) never checks that expected
   operands are on the stack: SSA-invalid input surfaces as an arity-2
   `NoSolution` or an arity-3+ subtract overflow in `Stack::movdn`
