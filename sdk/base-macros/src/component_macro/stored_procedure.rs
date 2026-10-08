@@ -105,8 +105,10 @@ pub(super) fn collect_stored_procedure_slots(
 ) -> Result<Vec<StoredProcedureSlot>, Error> {
     let mut slots = Vec::new();
     let mut errors = Vec::new();
-    // Every generated name is derived from the normalized field name, so two fields normalizing
-    // alike (`foo_bar`, `fooBar`, `foo__bar`) would generate the same items and imports.
+    // The generated Rust items and the `dyncall-<field>` WIT import name are derived from the
+    // normalized field name (only the slot name and the `@external-id` keep the field as
+    // written), so two fields normalizing alike (`foo_bar`, `fooBar`, `foo__bar`) would generate
+    // the same items and imports.
     let mut normalized_names = BTreeMap::<String, Ident>::new();
 
     for field in fields.named.iter_mut() {

@@ -264,7 +264,7 @@ Storage slot names follow a strict pattern. Getting it wrong often returns the d
 **Where the segments come from**: The `#[component_storage]` macro (NOT `#[component]`) processes the `#[storage]` fields and derives slot names. It loads `miden-project.toml` (next to your `Cargo.toml`, NOT `Cargo.toml` itself):
 
 - **Prefix** = the `[lib] namespace` value, a Miden path of exactly three segments (`miden::<package>::<interface>`), each a snake_case identifier (lowercase ASCII letters and digits in words joined by single `_`, starting with a letter) that is not a WIT or Rust 2024 keyword (e.g. `list`, `type`, `match`, `gen`); the last segment must not be `core_types`, which the SDK's own WIT interface uses. Any other shape is a macro error. This is deliberately decoupled from the Rust storage-struct name, so renaming the private struct cannot change deployed slot names. The struct name (`CounterContractStorage`, `AuthComponentStorage`, …) does NOT appear in the slot name.
-- **Last segment** = the `#[storage]` field name (a leading `_` is prefixed with `x`).
+- **Last segment** = the `#[storage]` field name as written (a raw identifier loses its `r#`); a field name starting with `_` is rejected.
 
 | `[lib] namespace` | Field | Storage Slot Name |
 |-------------------|-------|-------------------|

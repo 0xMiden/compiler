@@ -249,7 +249,7 @@ fn note_root_type(
     Ok(ExportedTypeDef {
         docs: doc_comments(&item_struct.attrs),
         rust_name: item_struct.ident.to_string(),
-        wit_name: exported_type_wit_name(&item_struct.ident)?,
+        wit_name: exported_type_wit_name(&item_struct.ident, "note struct")?,
         kind: ExportedTypeKind::Record { fields },
     })
 }
@@ -1373,6 +1373,7 @@ mod tests {
             ),
         ] {
             let message = note_schema_error(&note, &[]);
+            assert!(message.starts_with("note struct `"), "{message}");
             assert!(message.contains("which is a WIT keyword"), "{message}");
         }
     }

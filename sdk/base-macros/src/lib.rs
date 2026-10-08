@@ -282,10 +282,11 @@ pub fn component(
 /// account id expected as `[account_suffix, account_prefix]` is two `Felt` parameters in that
 /// order rather than one `AccountId` (which flattens to prefix, then suffix).
 ///
-/// The generated imports are named `dyncall-<field>`, with the field name kebab-cased (`last_sum`
-/// gives `dyncall-last-sum`), and carry the `@external-id` `<namespace>::dyncall::<field>`; that
-/// WIT name prefix is reserved, and a dependency interface defining a function with it is
-/// rejected.
+/// The generated imports are named `dyncall-<kebab-field>`, with the field name kebab-cased
+/// (`last_sum` gives `dyncall-last-sum`), and carry the `@external-id`
+/// `<namespace>::dyncall::<field>`, with the field name as written (without `r#`, so `last_sum`
+/// gives `<namespace>::dyncall::last_sum`); that WIT name prefix is reserved, and a dependency
+/// interface defining a function with it is rejected.
 #[proc_macro_attribute]
 pub fn component_storage(
     attr: proc_macro::TokenStream,

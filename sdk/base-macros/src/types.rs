@@ -931,17 +931,22 @@ fn extract_wit_type_name(line: &str, keyword: &str) -> Option<String> {
     if name.is_empty() { None } else { Some(name) }
 }
 
-/// Returns the WIT name of the exported type `ident`.
+/// Returns the WIT name of the type `ident` declared in generated WIT, such as an
+/// `#[export_type]` type or a `#[note]` storage root.
 ///
 /// Type declarations are rendered bare in the generated WIT, so the name must be a valid WIT
-/// identifier that is not a WIT keyword.
-pub(crate) fn exported_type_wit_name(ident: &syn::Ident) -> Result<String, syn::Error> {
+/// identifier that is not a WIT keyword. `item_kind` names the construct in the diagnostic, e.g.
+/// `"exported type"`.
+pub(crate) fn exported_type_wit_name(
+    ident: &syn::Ident,
+    item_kind: &str,
+) -> Result<String, syn::Error> {
     let wit_name = rust_ident_to_wit_name(ident)?;
     if WIT_KEYWORDS.contains(&wit_name.replace('-', "_").as_str()) {
         return Err(syn::Error::new(
             ident.span(),
             format!(
-                "exported type `{ident}` produces the WIT name `{wit_name}`, which is a WIT \
+                "{item_kind} `{ident}` produces the WIT name `{wit_name}`, which is a WIT \
                  keyword; rename the type"
             ),
         ));
@@ -996,14 +1001,14 @@ pub(crate) fn exported_type_from_struct(
             Ok(ExportedTypeDef {
                 docs: doc_comments(&item_struct.attrs),
                 rust_name: item_struct.ident.to_string(),
-                wit_name: exported_type_wit_name(&item_struct.ident)?,
+                wit_name: exported_type_wit_name(&item_struct.ident, "exported type")?,
                 kind: ExportedTypeKind::Record { fields },
             })
         }
         syn::Fields::Unit => Ok(ExportedTypeDef {
             docs: doc_comments(&item_struct.attrs),
             rust_name: item_struct.ident.to_string(),
-            wit_name: exported_type_wit_name(&item_struct.ident)?,
+            wit_name: exported_type_wit_name(&item_struct.ident, "exported type")?,
             kind: ExportedTypeKind::Record { fields: Vec::new() },
         }),
         syn::Fields::Unnamed(_) => Err(syn::Error::new(
@@ -1067,7 +1072,7 @@ pub(crate) fn exported_type_from_enum(
     Ok(ExportedTypeDef {
         docs: doc_comments(&item_enum.attrs),
         rust_name: item_enum.ident.to_string(),
-        wit_name: exported_type_wit_name(&item_enum.ident)?,
+        wit_name: exported_type_wit_name(&item_enum.ident, "exported type")?,
         kind: ExportedTypeKind::Variant { variants },
     })
 }

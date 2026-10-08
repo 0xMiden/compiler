@@ -2,7 +2,9 @@
 //!
 //! A Rust identifier maps to a canonical WIT name, which is written in explicit (`%`) form in the
 //! generated WIT, and which wit-bindgen maps back to the Rust identifier of the generated guest
-//! trait method.
+//! trait method. The module also derives the Rust identifier wit-bindgen generates for any WIT
+//! name, so code referring to a generated binding spells it the same way, and rejects exported
+//! functions named like a type of the same generated interface.
 
 use std::collections::BTreeSet;
 

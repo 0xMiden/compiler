@@ -45,8 +45,8 @@ pub const COMPONENT_INIT_PROCEDURE: &str = "init";
 
 /// Leaf name of a transaction script's entrypoint procedure, exported as `<namespace>::run`.
 ///
-/// `#[tx_script]` exports the entrypoint under this name, and the compiler session defaults a
-/// transaction-script project's entrypoint to it.
+/// `#[tx_script]` exports the entrypoint under this name, and the compiler session defaults the
+/// entrypoint of a Rust-rooted transaction-script project to it.
 pub const TX_SCRIPT_ENTRYPOINT_PROCEDURE: &str = "run";
 
 /// Prefix of the component-model function names of the foreign procedure invocation (FPI) imports

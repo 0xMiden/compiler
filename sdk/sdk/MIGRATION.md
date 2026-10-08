@@ -160,8 +160,10 @@ takes part in naming, and the WIT package and interface ids derive from the name
   these names, so deployed components are re-keyed; accounts deployed with the old slot names
   need a migration, and host code that builds `StorageSlotName`s must use the new names. The
   field name is used as written: a raw identifier loses its `r#` (`r#type` gives
-  `<namespace>::type`, previously `…::r_type`), and a field name starting with `_` is now
-  rejected instead of being rewritten to `x_<field>`; rename such a field. A `StoredProcedure`
+  `<namespace>::type`, previously `…::r_type`), a field name starting with `_` is now rejected
+  instead of being prefixed with `x` (`_count_map` gave `x_count_map`), and a non-ASCII field
+  name is rejected instead of having its non-ASCII characters replaced by `_` (a Rust identifier
+  has no other characters outside `[A-Za-z0-9_]`); rename such a field. A `StoredProcedure`
   slot's import path `<namespace>::dyncall::<field>` uses the same spelling.
 - Notes lose the accidental `miden-` interface prefix: a note that used
   `miden:p2id/miden-p2id@0.1.0` now declares `miden::p2id::p2id` and exports
