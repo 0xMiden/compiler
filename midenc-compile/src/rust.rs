@@ -121,7 +121,8 @@ pub fn run_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>
     let stdout = child.stdout.take().expect("no stdout");
     // The child is always waited for, even when its output cannot be read, so that an early
     // return never leaves a running cargo process behind, un-waited and holding the build
-    // directory lock.
+    // directory lock. A failed status is reported ahead of a truncated output stream, since
+    // the failure is what truncated it.
     let artifacts = collect_wasm_artifacts(stdout);
     let status = child.wait().map_err(|err| {
         Report::msg(format!(
@@ -129,7 +130,6 @@ pub fn run_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>
             cargo = cargo.display()
         ))
     })?;
-    let artifacts = artifacts?;
 
     if let Some(started) = timing {
         eprintln!(
@@ -146,7 +146,7 @@ pub fn run_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>
         )));
     }
 
-    Ok(artifacts)
+    artifacts
 }
 
 /// Reads Cargo's JSON message stream from `stdout` and collects the artifacts with a Wasm output.
