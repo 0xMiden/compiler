@@ -1328,12 +1328,12 @@ fn canon_lower_from_alias_export(
         let func_ty =
             convert_lifted_func_ty(CanonicalAbiMode::Import, &type_func_idx, component_types);
 
-        let mut path = module_path.clone();
-        path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));
+        let mut cm_path = module_path.clone();
+        cm_path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));
 
         log::debug!(target: "component-translator", "Created signature for '{func_name}' from type information: {}", func_ty.ir);
 
-        Ok((func_ty, path, miden_path))
+        Ok((func_ty, cm_path, miden_path))
     } else {
         log::error!(target: "component-translator",
             "Alias export from non-bypassed module instance {} - this should not happen",

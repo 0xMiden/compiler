@@ -1921,7 +1921,14 @@ mod tests {
     /// Pairs the component-model path `cm_path` with a Miden path under `::miden::test::test`.
     fn import_paths(cm_path: SymbolPath) -> ComponentImportPath {
         let leaf = cm_path.name().as_str().replace('-', "_");
-        let mut path = SymbolPath::from_masm_module_id("miden::test::test");
+        import_at(cm_path, &format!("miden::test::test::{leaf}"))
+    }
+
+    /// Pairs the component-model path `cm_path` with the Miden path `path`
+    /// (`<module>::<function>`), imported by a component in the namespace `miden::test::app`.
+    fn import_at(cm_path: SymbolPath, path: &str) -> ComponentImportPath {
+        let (module, leaf) = path.rsplit_once("::").expect("a path with a module");
+        let mut path = SymbolPath::from_masm_module_id(module);
         path.path.push(SymbolNameComponent::Leaf(SymbolName::intern(leaf)));
         ComponentImportPath {
             cm_path,
@@ -2357,19 +2364,6 @@ mod tests {
         assert!(world_builder.find_component(stub_component).is_none());
     }
 
-    /// Pairs the component-model path `cm_path` with the Miden path `path`, which nests in the
-    /// namespace `miden::test::app` of the component being translated.
-    fn own_namespace_import(cm_path: SymbolPath, path: &str) -> ComponentImportPath {
-        let (module, leaf) = path.rsplit_once("::").expect("a path with a module");
-        let mut path = SymbolPath::from_masm_module_id(module);
-        path.path.push(SymbolNameComponent::Leaf(SymbolName::intern(leaf)));
-        ComponentImportPath {
-            cm_path,
-            path,
-            namespace: SymbolName::intern("miden::test::app"),
-        }
-    }
-
     /// An FPI import reaches its callee by root, so its path may nest in the component's own
     /// namespace: it lowers without the own-namespace error and declares no stub component.
     #[test]
@@ -2389,7 +2383,7 @@ mod tests {
             results: vec![AbiParam::new(Type::Felt)],
             cc: CallConv::Wasm,
         };
-        let import = own_namespace_import(
+        let import = import_at(
             test_import_path("fpi-send"),
             "miden::test::app::fpi::acme::wallet::wallet::send",
         );
@@ -2426,7 +2420,7 @@ mod tests {
             results: vec![AbiParam::new(Type::Felt)],
             cc: CallConv::ComponentModel,
         };
-        let import = own_namespace_import(
+        let import = import_at(
             test_import_path("dyncall-authority"),
             "miden::test::app::dyncall::authority",
         );

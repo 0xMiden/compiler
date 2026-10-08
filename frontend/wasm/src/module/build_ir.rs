@@ -112,7 +112,9 @@ pub fn translate_module_as_component(
 /// one of its dependencies is not supported, so the name is not derived from the linked packages.
 fn program_wrapper_name(module_name: &str, world: &World) -> String {
     // `zip` stops at the shorter path, so this holds when either path is a segment-prefix of the
-    // other.
+    // other. `validate_namespace` is not reused: it accepts only three-segment namespaces and
+    // checks one direction (the namespace nesting under a reserved prefix), while a module name
+    // may have any number of segments and must not be a prefix of a reserved tree either.
     let nests_with_library = RESERVED_NAMESPACE_PREFIXES.iter().any(|prefix| {
         prefix
             .split("::")
