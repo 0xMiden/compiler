@@ -384,6 +384,15 @@ impl<'a> OpEmitter<'a> {
         self.stack.push_immediate(imm);
     }
 
+    /// Make the `n`th operand from the top of the stack `value`, whose type may differ from the
+    /// operand's but must occupy the same number of elements.
+    ///
+    /// See [OperandStack::retype].
+    #[inline(always)]
+    pub fn retype(&mut self, n: usize, value: ValueRef) {
+        self.stack.retype(n, value);
+    }
+
     #[inline(always)]
     pub fn pop(&mut self) -> Option<Operand> {
         self.stack.pop()
