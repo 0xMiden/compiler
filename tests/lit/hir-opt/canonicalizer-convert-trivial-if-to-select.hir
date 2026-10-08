@@ -9,7 +9,8 @@
 // `cf.select` only accepts integral operands, so a yielded value of another type (here a pointer)
 // is not hoisted, even when both branches yield values defined outside the `scf.if`: it stays a
 // result of the `scf.if`, next to the results computed inside the branches. This used to produce
-// an invalid `cf.select` of pointer type and leave the `scf.if` half-rewritten.
+// an invalid `cf.select` of pointer type and leave the `scf.if` half-rewritten. A value yielded
+// identically by both branches needs no select and is forwarded whatever its type.
 builtin.module private @convert_trivial_if_to_select {
     // The integer result is hoisted to a `cf.select`, the pointer result stays in the `scf.if`.
     // CHECK: @mixed_results(%[[C:\d+]]: i1, %[[P1:\d+]]: ptr<u32, element>, %[[P2:\d+]]: ptr<u32, element>, %[[A:\d+]]: u32, %[[B:\d+]]: u32)
@@ -31,6 +32,30 @@ builtin.module private @convert_trivial_if_to_select {
         %7 = hir.load %5;
         %8 = arith.add %7, %6 <{ overflow = #builtin.overflow<unchecked> }>;
         builtin.ret %8 : (u32);
+    };
+
+    // A pointer yielded identically by both branches is forwarded; the other pointer result
+    // stays in the `scf.if`.
+    // CHECK: @same_pointer(%[[C:\d+]]: i1, %[[P1:\d+]]: ptr<u32, element>, %[[P2:\d+]]: ptr<u32, element>)
+    // CHECK-NEXT: %[[P:\d+]] = scf.if %[[C]] then {
+    // CHECK-NEXT: scf.yield %[[P1]] : (ptr<u32, element>);
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT: scf.yield %[[P2]] : (ptr<u32, element>);
+    // CHECK-NEXT: } : (i1) -> (ptr<u32, element>);
+    // CHECK-NEXT: %[[L1:\d+]] = hir.load %[[P1]];
+    // CHECK-NEXT: %[[L2:\d+]] = hir.load %[[P]];
+    // CHECK-NEXT: %[[R:\d+]] = arith.add %[[L1]], %[[L2]]
+    // CHECK-NEXT: builtin.ret %[[R]] : (u32);
+    builtin.function public extern("C") @same_pointer(%0: i1, %1: ptr<u32, element>, %2: ptr<u32, element>) -> u32 {
+        %3, %4 = scf.if %0 then {
+            scf.yield %1, %1 : (ptr<u32, element>, ptr<u32, element>);
+        } else {
+            scf.yield %1, %2 : (ptr<u32, element>, ptr<u32, element>);
+        } : (i1) -> (ptr<u32, element>, ptr<u32, element>);
+        %5 = hir.load %3;
+        %6 = hir.load %4;
+        %7 = arith.add %5, %6 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %7 : (u32);
     };
 
     // Negative: the only result is a pointer, so the `scf.if` is left untouched.
