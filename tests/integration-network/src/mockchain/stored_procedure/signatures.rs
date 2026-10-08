@@ -58,6 +58,7 @@ fn dispatches_bool_wide_unit_and_word_signatures() {
     let names = DispatchProjectNames::new("stored_procedure_signatures");
     let (_target_project, target_package) =
         build_target_package(&names, "signature-target", TARGET_SOURCE);
+    let target_namespace = names.target_namespace("signature-target");
     let (dispatcher_project, dispatcher_package) =
         build_dispatcher_package(&names, DISPATCHER_SOURCE);
     let note_package = build_note_package(&names, "note", dispatcher_project.root(), NOTE_SOURCE);
@@ -87,25 +88,25 @@ fn dispatches_bool_wide_unit_and_word_signatures() {
         init_storage_data
             .insert_value(
                 StorageValueName::from_slot_name(&scale_slot),
-                lifted_export_root(&target_package, "scale"),
+                lifted_export_root(&target_package, &target_namespace, "scale"),
             )
             .unwrap();
         init_storage_data
             .insert_value(
                 StorageValueName::from_slot_name(&sum6_slot),
-                lifted_export_root(&target_package, "sum6"),
+                lifted_export_root(&target_package, &target_namespace, "sum6"),
             )
             .unwrap();
         init_storage_data
             .insert_value(
                 StorageValueName::from_slot_name(&bump_slot),
-                lifted_export_root(&target_package, "bump"),
+                lifted_export_root(&target_package, &target_namespace, "bump"),
             )
             .unwrap();
         init_storage_data
             .insert_value(
                 StorageValueName::from_slot_name(&pack_slot),
-                lifted_export_root(&target_package, "pack"),
+                lifted_export_root(&target_package, &target_namespace, "pack"),
             )
             .unwrap();
         // Every value slot needs an initial value, including the ones the dispatch writes.

@@ -41,6 +41,7 @@ fn rust_sibling() {
     let names = DispatchProjectNames::new("stored_procedure_rust_sibling");
     let (_counter_project, counter_package) =
         build_target_package(&names, "counter-contract", COUNTER_CONTRACT_SOURCE);
+    let counter_namespace = names.target_namespace("counter-contract");
     let (dispatcher_project, dispatcher_package) =
         build_dispatcher_package(&names, DISPATCHER_SOURCE);
     let note_package = build_note_package(&names, "note", dispatcher_project.root(), NOTE_SOURCE);
@@ -75,13 +76,13 @@ fn rust_sibling() {
         init_storage_data
             .insert_value(
                 StorageValueName::from_slot_name(&increment_slot),
-                lifted_export_root(&counter_package, "increment_count"),
+                lifted_export_root(&counter_package, &counter_namespace, "increment_count"),
             )
             .unwrap();
         init_storage_data
             .insert_value(
                 StorageValueName::from_slot_name(&add_slot),
-                lifted_export_root(&counter_package, "add_to_count"),
+                lifted_export_root(&counter_package, &counter_namespace, "add_to_count"),
             )
             .unwrap();
         AccountComponent::from_package(dispatcher_package.as_ref().clone(), &init_storage_data)

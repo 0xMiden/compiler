@@ -53,6 +53,11 @@ impl DispatchProjectNames {
         }
     }
 
+    /// Returns the `[lib].namespace` of the target component exporting `interface`.
+    pub fn target_namespace(&self, interface: &str) -> String {
+        account_component_namespace(&self.target_account_package, interface)
+    }
+
     /// Returns the storage slot name of the dispatcher's `field` stored-procedure slot.
     pub fn dispatcher_slot(&self, field: &str) -> StorageSlotName {
         storage_slot_name_for_field(&self.dispatcher_account_package, DISPATCHER_INTERFACE, field)
@@ -200,17 +205,16 @@ pub(super) fn build_note_package(
     compile_rust_package(project.root(), true)
 }
 
-/// Returns the MAST root of the export `leaf` of `package`.
+/// Returns the MAST root of the export `leaf` of `package`, whose `[lib].namespace` is
+/// `namespace`.
 ///
 /// A package manifest exports each component procedure once, at the Miden path
 /// `<[lib].namespace>::<leaf>` (`leaf` being the Rust method name); that lifted wrapper is the
 /// `dyncall` target.
-pub(super) fn lifted_export_root(package: &Package, leaf: &str) -> Word {
-    let suffix = format!("::{leaf}");
-    find_manifest_procedure(package, &format!("the export `{leaf}`"), |path| {
-        path.ends_with(&suffix)
-    })
-    .digest
+pub(super) fn lifted_export_root(package: &Package, namespace: &str, leaf: &str) -> Word {
+    let expected = format!("::{namespace}::{leaf}");
+    find_manifest_procedure(package, &format!("the export `{leaf}`"), |path| path == expected)
+        .digest
 }
 
 /// Asserts that every stored-procedure slot of `package` is described as a plain `word` value
