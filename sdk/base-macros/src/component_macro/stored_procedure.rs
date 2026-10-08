@@ -398,15 +398,22 @@ fn build_stored_procedure_wit(
     // Every name derived from a Rust identifier is rendered as an explicit WIT identifier, so a
     // struct, field or parameter named like a WIT keyword still yields a parsable world.
     let interface_wit_name = rust_ident_to_wit_name(struct_ident)?;
-    // The world `use`s the SDK core-types interface at package level, so an interface named like
-    // a reserved segment would collide with it.
-    if RESERVED_INTERFACE_SEGMENTS.contains(&interface_wit_name.replace('-', "_").as_str()) {
+    // The interface shares the package namespace with the world itself and with the SDK
+    // core-types interface the world `use`s, so it must not be named like either.
+    let reserved_for = if interface_wit_name == STORED_PROCEDURE_BINDINGS_WORLD {
+        Some("the generated world of the same name")
+    } else if RESERVED_INTERFACE_SEGMENTS.contains(&interface_wit_name.replace('-', "_").as_str()) {
+        Some("the SDK core types")
+    } else {
+        None
+    };
+    if let Some(reserved_for) = reserved_for {
         return Err(Error::new(
             struct_ident.span(),
             format!(
                 "storage struct `{struct_ident}` names the generated stored-procedure WIT \
-                 interface `{interface_wit_name}`, which is reserved for the SDK core types; \
-                 rename the struct"
+                 interface `{interface_wit_name}`, which is reserved for {reserved_for}; rename \
+                 the struct"
             ),
         ));
     }
@@ -984,6 +991,29 @@ world stored-procedure-bindings {
         let message = err.to_string();
         assert!(message.contains("storage struct `CoreTypes`"), "{message}");
         assert!(message.contains("interface `core-types`"), "{message}");
+    }
+
+    /// Rejects a storage struct naming the generated interface like the generated world, which
+    /// wit-parser would report as a duplicate item.
+    #[test]
+    fn rejects_a_storage_struct_named_like_the_generated_world() {
+        let mut fields = fields(quote! {
+            {
+                hook: StorageValue<StoredProcedure<fn()>>,
+            }
+        });
+        let slots = collect_stored_procedure_slots(&mut fields).unwrap();
+        let err = build_stored_procedure_wit(
+            &format_ident!("StoredProcedureBindings"),
+            &test_namespace(),
+            &slots,
+        )
+        .unwrap_err();
+
+        let message = err.to_string();
+        assert!(message.contains("storage struct `StoredProcedureBindings`"), "{message}");
+        assert!(message.contains("interface `stored-procedure-bindings`"), "{message}");
+        assert!(message.contains("the generated world of the same name"), "{message}");
     }
 
     /// Renders a unit-returning signature without a WIT result.
