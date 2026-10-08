@@ -4,7 +4,7 @@
 pub use midenc_integration_test_support::{
     self as support, CargoTest, CompilerTest, CompilerTestBuilder, Project, ProjectBuilder,
     RustcTest, WasmTest, assert_unique_protocol_export, cargo_proj, compiler_test, default_session,
-    find_manifest_procedure, project, testing,
+    project, testing,
 };
 
 #[cfg(test)]

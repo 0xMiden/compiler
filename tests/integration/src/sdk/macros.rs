@@ -2037,15 +2037,9 @@ impl TestComponent for TestComponentStorage {
         [],
     );
     let package = test.compile_package();
-    let exports = package
-        .manifest
-        .exports()
-        .map(|export| export.path().as_ref().as_str().to_string())
-        .collect::<Vec<_>>();
     let namespace = base::account_component_namespace(name, "test-component");
     for leaf in ["getURL", "type"] {
-        let expected = format!("::{namespace}::{leaf}");
-        assert!(exports.contains(&expected), "expected export `{expected}`, got {exports:?}");
+        find_export(&package, &namespace, leaf);
     }
 }
 

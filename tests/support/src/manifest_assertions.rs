@@ -11,7 +11,7 @@ use miden_mast_package::{Package, PackageExport, ProcedureExport};
 /// # Panics
 /// Panics unless exactly one procedure export matches; `description` names the search for the
 /// panic message.
-pub fn find_manifest_procedure<'a>(
+fn find_manifest_procedure<'a>(
     package: &'a Package,
     description: &str,
     mut predicate: impl FnMut(&str) -> bool,

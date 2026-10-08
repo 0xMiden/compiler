@@ -1,5 +1,7 @@
 //! Compiles components whose core modules are named like a procedure the component generates.
 
+use midenc_integration_test_support::find_export;
+
 use crate::CompilerTestBuilder;
 
 /// A core module named `init` gives way to the component's generated `init` procedure, which
@@ -28,15 +30,7 @@ fn a_core_module_named_init_compiles() {
     )
     .expect("component fixture must be valid WebAssembly text");
     let package = CompilerTestBuilder::from_wasm("init", wasm, []).build().compile_package();
-    let exports: Vec<_> = package
-        .manifest
-        .exports()
-        .filter_map(|export| export.as_procedure())
-        .map(|export| export.path.as_ref().as_str().to_owned())
-        .collect();
-    assert!(
-        exports.iter().any(|path| path == "::miden::counter::counter::get_count")
-            && exports.iter().any(|path| path == "::miden::counter::counter::init"),
-        "the export and the generated `init` are both exported: {exports:?}"
-    );
+    // The export and the generated `init` are both exported.
+    find_export(&package, "miden::counter::counter", "get_count");
+    find_export(&package, "miden::counter::counter", "init");
 }

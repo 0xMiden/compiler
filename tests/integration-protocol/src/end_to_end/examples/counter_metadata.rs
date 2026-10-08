@@ -5,7 +5,7 @@ use miden_mast_package::SectionId;
 use miden_protocol::account::AccountComponentMetadata;
 use midenc_expect_test::expect;
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_integration_test_support::CompilerTestBuilder;
+use midenc_integration_test_support::{CompilerTestBuilder, find_export};
 
 #[test]
 fn counter_contract() {
@@ -19,11 +19,7 @@ fn counter_contract() {
     let mut test_release = builder_release.build();
     let package = test_release.compile_package();
     // Exports are named `<[lib].namespace>::<Rust method name>`.
-    assert!(
-        package.manifest.exports().any(|export| export.path().as_ref().as_str()
-            == "::miden::counter_contract::counter_contract::get_count"),
-        "expected the counter contract to export `get_count` at its namespace"
-    );
+    find_export(&package, "miden::counter_contract::counter_contract", "get_count");
     let project_toml =
         std::fs::read_to_string("../../examples/counter-contract/miden-project.toml").unwrap();
     let namespace = project_toml

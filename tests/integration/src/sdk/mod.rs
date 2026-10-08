@@ -616,12 +616,6 @@ fn rust_sdk_cross_ctx_account_and_note() {
     );
     let account_package = test.compile_package();
     assert!(account_package.is_library());
-    let exports = account_package
-        .manifest
-        .exports()
-        .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
-        .map(|e| e.path().as_ref().as_str().to_string())
-        .collect::<Vec<_>>();
     assert!(
         !account_package.manifest.exports().any(|export| export
             .path()
@@ -630,14 +624,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
             .starts_with("intrinsics")),
         "expected no intrinsics in the exports"
     );
-    let expected_module_prefix = "::miden::cross_ctx_account::foo::";
-    let expected_function_suffix = "::process_felt";
-    assert!(
-        exports.iter().any(|export| export.starts_with(expected_module_prefix)
-            && export.ends_with(expected_function_suffix)),
-        "expected one of the exports to start with '{expected_module_prefix}' and end with \
-         '{expected_function_suffix}', got exports: {exports:?}"
-    );
+    find_export(&account_package, "miden::cross_ctx_account::foo", "process_felt");
     // Test that the package loads
     let bytes = account_package.to_bytes();
     let loaded_package = miden_mast_package::Package::read_from_bytes_trusted(&bytes).unwrap();
