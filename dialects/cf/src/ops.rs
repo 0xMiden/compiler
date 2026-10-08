@@ -417,6 +417,21 @@ mod tests {
         assert_eq!(switch_op.operands().all().len(), NUM_CASES + 1);
     }
 
+    /// A block holds more than 255 arguments (the entry block of a function with 256+
+    /// parameters), each keeping its position in the argument list.
+    #[test]
+    fn block_with_more_than_255_arguments() {
+        const NUM_PARAMS: usize = 300;
+
+        let test = Test::new("wide", &vec![Type::U32; NUM_PARAMS], &[]);
+        let function = test.function().borrow();
+        let entry = function.entry_block().borrow();
+        let args = entry.arguments();
+
+        assert_eq!(args.len(), NUM_PARAMS);
+        assert_eq!(args[NUM_PARAMS - 1].borrow().index(), NUM_PARAMS - 1);
+    }
+
     /// The value returned by the `builtin.ret` terminating `block`.
     fn returned_value(block: BlockRef) -> ValueRef {
         let block = block.borrow();

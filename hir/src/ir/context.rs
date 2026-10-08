@@ -318,7 +318,7 @@ impl Context {
         span: SourceSpan,
         ty: Type,
         owner: OperationRef,
-        index: u8,
+        index: u16,
     ) -> OpResultRef {
         let id = self.alloc_value_id();
         self.alloc(OpResult::new(span, id, ty, owner, index))
@@ -337,7 +337,7 @@ impl Context {
         index: u8,
     ) -> OpResultRef {
         let id = ValueId::from_symbol(name).with_result_index(index);
-        self.alloc(OpResult::new(span, id, ty, owner, index))
+        self.alloc(OpResult::new(span, id, ty, owner, index.into()))
     }
 
     /// Appends `value` as an argument to the `branch_inst` instruction arguments list if the

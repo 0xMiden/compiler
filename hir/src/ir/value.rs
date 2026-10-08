@@ -296,7 +296,7 @@ macro_rules! value_impl {
             $(#[doc $($owner_doc_args:tt)*])*
             owner: $OwnerTy:ty,
             $(#[doc $($index_doc_args:tt)*])*
-            index: u8,
+            index: u16,
             $(
                 $(#[$inner:ident $($args:tt)*])*
                 $Field:ident: $FieldTy:ty,
@@ -318,7 +318,7 @@ macro_rules! value_impl {
             ty: Type,
             uses: OpOperandList,
             owner: $OwnerTy,
-            index: u8,
+            index: u16,
             $(
                 $(#[$inner $($args)*])*
                 $Field: $FieldTy
@@ -332,7 +332,7 @@ macro_rules! value_impl {
                 id: ValueId,
                 ty: Type,
                 owner: $OwnerTy,
-                index: u8,
+                index: u16,
                 $(
                     $Field: $FieldTy
                 ),*
@@ -486,7 +486,7 @@ value_impl!(
         /// Get the [Block] to which this [BlockArgument] belongs
         owner: BlockRef,
         /// Get the index of this argument in the argument list of the owning [Block]
-        index: u8,
+        index: u16,
     }
 
     fn get_defining_op(&self) -> Option<OperationRef> {
@@ -538,7 +538,7 @@ value_impl!(
         /// Get the [Operation] to which this [OpResult] belongs
         owner: OperationRef,
         /// Get the index of this result in the result list of the owning [Operation]
-        index: u8,
+        index: u16,
     }
 
     fn get_defining_op(&self) -> Option<OperationRef> {

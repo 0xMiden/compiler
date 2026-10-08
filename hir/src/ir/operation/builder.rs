@@ -262,7 +262,7 @@ where
         let results = types
             .into_iter()
             .enumerate()
-            .map(|(idx, ty)| self.builder.context().make_result(span, ty, owner, idx as u8));
+            .map(|(idx, ty)| self.builder.context().make_result(span, ty, owner, idx as u16));
         let mut op = self.op.borrow_mut();
         op.results.clear();
         op.results.extend(results);
@@ -273,7 +273,7 @@ where
         let span = self.op.borrow().span;
         let owner = self.op;
         let index = { self.op.borrow().num_results() };
-        let result = self.builder.context().make_result(span, ty, owner, index as u8);
+        let result = self.builder.context().make_result(span, ty, owner, index as u16);
         let mut op = self.op.borrow_mut();
         op.results.push(result);
     }
