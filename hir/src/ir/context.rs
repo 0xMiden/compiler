@@ -301,7 +301,7 @@ impl Context {
         &self,
         mut block: BlockRef,
         owner: OperationRef,
-        index: u8,
+        index: u16,
     ) -> BlockOperandRef {
         let block_operand = self.alloc_tracked(BlockOperand::new(owner, index));
         let mut block = block.borrow_mut();

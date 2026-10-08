@@ -957,7 +957,7 @@ where
                 |(i, block)| PendingSuccessorInfo {
                     block,
                     key: None,
-                    operand_group: (i + 1) as u8,
+                    operand_group: (i + 1) as u16,
                     successor_group: 0,
                 },
             ));
@@ -972,7 +972,7 @@ where
                 PendingSuccessorInfo {
                     block,
                     key: None,
-                    operand_group: (i + 1) as u8,
+                    operand_group: (i + 1) as u16,
                     successor_group: 0,
                 }
             }));

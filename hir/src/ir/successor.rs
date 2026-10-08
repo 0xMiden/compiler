@@ -282,7 +282,7 @@ pub trait KeyedSuccessor {
 pub struct SuccessorInfo {
     pub block: BlockOperandRef,
     pub(crate) key: Option<AttributeRef>,
-    pub(crate) operand_group: u8,
+    pub(crate) operand_group: u16,
 }
 
 impl SuccessorInfo {
