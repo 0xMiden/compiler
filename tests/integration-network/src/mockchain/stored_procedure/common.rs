@@ -12,7 +12,7 @@ use miden_protocol::account::{
     AccountComponentMetadata, StorageSlotName,
     component::{StorageSlotSchema, storage::SchemaType},
 };
-use midenc_integration_test_support::{cargo_proj::Project, find_manifest_procedure, project};
+use midenc_integration_test_support::{cargo_proj::Project, find_export, project};
 
 /// The non-zero storage key the counter fixtures use (matching the note sources), shared with
 /// the sibling tests driving the same counter component.
@@ -53,23 +53,19 @@ impl DispatchProjectNames {
         }
     }
 
-    /// Returns the `[lib].namespace` of the target component exporting `interface`.
-    pub fn target_namespace(&self, interface: &str) -> String {
-        account_component_namespace(&self.target_account_package, interface)
-    }
-
     /// Returns the storage slot name of the dispatcher's `field` stored-procedure slot.
     pub fn dispatcher_slot(&self, field: &str) -> StorageSlotName {
         storage_slot_name_for_field(&self.dispatcher_account_package, DISPATCHER_INTERFACE, field)
     }
 }
 
-/// Generates and compiles the target (sibling) component exporting `interface`.
+/// Generates and compiles the target (sibling) component exporting `interface`; returns its
+/// project, its package and its `[lib].namespace`.
 pub(super) fn build_target_package(
     names: &DispatchProjectNames,
     interface: &str,
     source: &str,
-) -> (Project, Arc<Package>) {
+) -> (Project, Arc<Package>, String) {
     let project = project(&names.target_account_name)
         .file(
             "miden-project.toml",
@@ -86,7 +82,8 @@ pub(super) fn build_target_package(
         .file("src/lib.rs", source)
         .build();
     let package = compile_rust_package(project.root(), true);
-    (project, package)
+    let namespace = account_component_namespace(&names.target_account_package, interface);
+    (project, package, namespace)
 }
 
 /// Generates and compiles the dispatcher component, which depends on nothing: its call targets
@@ -212,9 +209,7 @@ pub(super) fn build_note_package(
 /// `<[lib].namespace>::<leaf>` (`leaf` being the Rust method name); that lifted wrapper is the
 /// `dyncall` target.
 pub(super) fn lifted_export_root(package: &Package, namespace: &str, leaf: &str) -> Word {
-    let expected = format!("::{namespace}::{leaf}");
-    find_manifest_procedure(package, &format!("the export `{leaf}`"), |path| path == expected)
-        .digest
+    find_export(package, namespace, leaf).digest
 }
 
 /// Asserts that every stored-procedure slot of `package` is described as a plain `word` value

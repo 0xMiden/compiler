@@ -38,6 +38,17 @@ pub fn find_manifest_procedure<'a>(
     matches[0]
 }
 
+/// Returns the manifest procedure export at exactly `::<namespace>::<leaf>` (a leading `::` on
+/// `namespace` is optional).
+///
+/// # Panics
+/// Panics unless exactly one procedure export has that path.
+pub fn find_export<'a>(package: &'a Package, namespace: &str, leaf: &str) -> &'a ProcedureExport {
+    let namespace = namespace.strip_prefix("::").unwrap_or(namespace);
+    let expected = format!("::{namespace}::{leaf}");
+    find_manifest_procedure(package, &format!("`{expected}`"), |path| path == expected)
+}
+
 /// Asserts that the exported procedure carrying `attribute` is unique and preserves its leaf
 /// export name.
 pub fn assert_unique_protocol_export(

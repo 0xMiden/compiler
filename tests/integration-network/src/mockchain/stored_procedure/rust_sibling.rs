@@ -39,9 +39,8 @@ use super::{
 #[test]
 fn rust_sibling() {
     let names = DispatchProjectNames::new("stored_procedure_rust_sibling");
-    let (_counter_project, counter_package) =
+    let (_counter_project, counter_package, counter_namespace) =
         build_target_package(&names, "counter-contract", COUNTER_CONTRACT_SOURCE);
-    let counter_namespace = names.target_namespace("counter-contract");
     let (dispatcher_project, dispatcher_package) =
         build_dispatcher_package(&names, DISPATCHER_SOURCE);
     let note_package = build_note_package(&names, "note", dispatcher_project.root(), NOTE_SOURCE);

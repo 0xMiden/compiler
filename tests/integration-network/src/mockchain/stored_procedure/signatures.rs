@@ -56,9 +56,8 @@ const PACK_B: u64 = 11;
 #[test]
 fn dispatches_bool_wide_unit_and_word_signatures() {
     let names = DispatchProjectNames::new("stored_procedure_signatures");
-    let (_target_project, target_package) =
+    let (_target_project, target_package, target_namespace) =
         build_target_package(&names, "signature-target", TARGET_SOURCE);
-    let target_namespace = names.target_namespace("signature-target");
     let (dispatcher_project, dispatcher_package) =
         build_dispatcher_package(&names, DISPATCHER_SOURCE);
     let note_package = build_note_package(&names, "note", dispatcher_project.root(), NOTE_SOURCE);

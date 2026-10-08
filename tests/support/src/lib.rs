@@ -32,7 +32,8 @@ pub use self::cargo_proj::project;
 pub use self::{
     compiler_test::{CargoTest, CompilerTest, CompilerTestBuilder, RustcTest, WasmTest},
     manifest_assertions::{
-        assert_exports_match_wit, assert_unique_protocol_export, find_manifest_procedure,
+        assert_exports_match_wit, assert_unique_protocol_export, find_export,
+        find_manifest_procedure,
     },
     testing::setup::default_session,
 };

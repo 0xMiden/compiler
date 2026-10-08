@@ -35,9 +35,8 @@ use super::{
 #[test]
 fn overhead() {
     let names = DispatchProjectNames::new("stored_procedure_overhead");
-    let (counter_project, counter_package) =
+    let (counter_project, counter_package, counter_namespace) =
         build_target_package(&names, "counter-contract", COUNTER_CONTRACT_SOURCE);
-    let counter_namespace = names.target_namespace("counter-contract");
     let dependencies = [(names.target_account_package.as_str(), counter_project.root())];
     let (dispatcher_project, dispatcher_package) =
         build_dispatcher_package_with_dependencies(&names, &dependencies, DISPATCHER_SOURCE);

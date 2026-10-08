@@ -13,8 +13,8 @@ use miden_mast_package::{Package, QualifiedProcedureName};
 use miden_protocol::note::NoteScript;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::{
-    CompilerTestBuilder, Project, cargo_proj::project, compiler_test::sdk_crate_path,
-    find_manifest_procedure, testing::executor_with_std,
+    CompilerTestBuilder, Project, cargo_proj::project, compiler_test::sdk_crate_path, find_export,
+    testing::executor_with_std,
 };
 
 /// Builds a minimal note project whose `probe` constructor returns `get_entrypoint_root()`.
@@ -102,12 +102,8 @@ impl ProbeNote {
 /// namespace, plus the component's `init`; the core-Wasm functions they lift are internal.
 /// Execution targets the lifted export at `<namespace>::<name>`.
 fn export_program(package: &Package, name: &str) -> Arc<Package> {
-    let expected = format!("::miden::note_script_root_probe::note_script_root_probe::{name}");
-    let procedure = find_manifest_procedure(
-        package,
-        &format!("the lifted component export '{name}'"),
-        |path| path == expected,
-    );
+    let procedure =
+        find_export(package, "miden::note_script_root_probe::note_script_root_probe", name);
     package
         .make_executable(&QualifiedProcedureName::from(procedure.path.clone()))
         .map(Arc::new)

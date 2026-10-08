@@ -5,14 +5,13 @@ use miden_core::serde::Serializable;
 use miden_mast_package::{Package, ProcedureExport, QualifiedProcedureName};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::{
-    assert_exports_match_wit, scrub_nested_cargo_env, write_masp_file_atomic,
+    assert_exports_match_wit, find_export, scrub_nested_cargo_env, write_masp_file_atomic,
 };
 
 use crate::{
     CompilerTest, CompilerTestBuilder,
     cargo_proj::project,
     compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
-    find_manifest_procedure,
     testing::executor_with_std,
 };
 
@@ -86,9 +85,7 @@ fn assert_struct_field_types(ty: &Type, expected_fields: &[&str]) {
 
 fn assert_component_export_signatures_match_wit(package: &miden_mast_package::Package) {
     let component_export =
-        find_manifest_procedure(package, "component export process-mixed", |name| {
-            name == "::miden::cross_ctx_account_word::foo::process_mixed"
-        });
+        find_export(package, "miden::cross_ctx_account_word::foo", "process_mixed");
     assert_eq!(
         component_export
             .signature
@@ -673,21 +670,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     let account_package = test.compile_package();
     assert!(account_package.is_library());
     assert_component_export_signatures_match_wit(account_package.as_ref());
-    let expected_module_prefix = "::miden::cross_ctx_account_word::foo::";
-    let expected_function_suffix = "::process_word";
-    let exports = account_package
-        .manifest
-        .exports()
-        .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
-        .map(|e| e.path().as_ref().as_str().to_string())
-        .collect::<Vec<_>>();
-    // dbg!(&exports);
-    assert!(
-        exports.iter().any(|export| export.starts_with(expected_module_prefix)
-            && export.ends_with(expected_function_suffix)),
-        "expected one of the exports to start with '{expected_module_prefix}' and end with \
-         '{expected_function_suffix}', got exports: {exports:?}"
-    );
+    find_export(&account_package, "miden::cross_ctx_account_word::foo", "process_word");
     // Test that the package loads
     let bytes = account_package.to_bytes();
     let _loaded_package = miden_mast_package::Package::read_from_bytes_trusted(&bytes).unwrap();
@@ -757,6 +740,9 @@ fn rust_sdk_account_package_build_is_deterministic() {
     }
 }
 
+/// The `[lib].namespace` of the basic wallet fixture of the FPI package-cache tests.
+const BASIC_WALLET_NAMESPACE: &str = "miden::basic_wallet::basic_wallet";
+
 /// A dependency package rewrite must invalidate the FPI roots embedded by `include_bytes!`.
 #[test]
 fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
@@ -771,10 +757,7 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
     let first_masm = first_build.masm_src();
     let first_cache = first_build.session.filesystem_package_cache_dir().unwrap().unwrap();
     let first_dependency = read_cached_dependency_package(&first_build, "basic-wallet");
-    let first_export =
-        find_manifest_procedure(&first_dependency, "basic-wallet receive-asset export", |path| {
-            path == "::miden::basic_wallet::basic_wallet::receive_asset"
-        });
+    let first_export = find_export(&first_dependency, BASIC_WALLET_NAMESPACE, "receive_asset");
     let first_root = first_export.digest;
     assert!(
         masm_contains_procedure_digest(&first_masm, &first_root),
@@ -800,10 +783,7 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
     let second_masm = second_build.masm_src();
     let second_cache = second_build.session.filesystem_package_cache_dir().unwrap().unwrap();
     let second_dependency = read_cached_dependency_package(&second_build, "basic-wallet");
-    let second_export =
-        find_manifest_procedure(&second_dependency, "basic-wallet receive-asset export", |path| {
-            path == "::miden::basic_wallet::basic_wallet::receive_asset"
-        });
+    let second_export = find_export(&second_dependency, BASIC_WALLET_NAMESPACE, "receive_asset");
     let second_root = second_export.digest;
 
     assert_ne!(
@@ -840,10 +820,7 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
     let mut third_build = CompilerTest::rust_source_cargo_miden(&consumer, config, []);
     let third_masm = third_build.masm_src();
     let third_dependency = read_cached_dependency_package(&third_build, "basic-wallet");
-    let third_export =
-        find_manifest_procedure(&third_dependency, "basic-wallet receive-asset export", |path| {
-            path == "::miden::basic_wallet::basic_wallet::receive_asset"
-        });
+    let third_export = find_export(&third_dependency, BASIC_WALLET_NAMESPACE, "receive_asset");
     let third_root = third_export.digest;
 
     for stale_root in [first_root, second_root] {
@@ -874,12 +851,7 @@ fn rust_sdk_fpi_reexpands_after_only_package_cache_env_changes() {
     let mut first_dependency_build =
         CompilerTest::rust_source_cargo_miden(&dependency, config.clone(), []);
     let first_package = first_dependency_build.compile_package();
-    let first_root = find_manifest_procedure(
-        &first_package,
-        "original basic-wallet receive-asset export",
-        |path| path == "::miden::basic_wallet::basic_wallet::receive_asset",
-    )
-    .digest;
+    let first_root = find_export(&first_package, BASIC_WALLET_NAMESPACE, "receive_asset").digest;
 
     let original_source = fs::read_to_string(&dependency_source).unwrap();
     assert_eq!(
@@ -898,12 +870,7 @@ fn rust_sdk_fpi_reexpands_after_only_package_cache_env_changes() {
     let mut second_dependency_build =
         CompilerTest::rust_source_cargo_miden(&dependency, config, []);
     let second_package = second_dependency_build.compile_package();
-    let second_root = find_manifest_procedure(
-        &second_package,
-        "changed basic-wallet receive-asset export",
-        |path| path == "::miden::basic_wallet::basic_wallet::receive_asset",
-    )
-    .digest;
+    let second_root = find_export(&second_package, BASIC_WALLET_NAMESPACE, "receive_asset").digest;
     assert_ne!(first_root, second_root, "the prepopulated packages must embed different roots");
 
     let first_cache = project.root().join("option-env-cache-a");
@@ -956,20 +923,7 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     );
     let account_package = test.compile_package();
     assert!(account_package.is_library());
-    let expected_module_prefix = "::miden::cross_ctx_account_word_arg::foo::";
-    let expected_function_suffix = "::process_word";
-    let exports = account_package
-        .manifest
-        .exports()
-        .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
-        .map(|e| e.path().as_ref().as_str().to_string())
-        .collect::<Vec<_>>();
-    assert!(
-        exports.iter().any(|export| export.starts_with(expected_module_prefix)
-            && export.ends_with(expected_function_suffix)),
-        "expected one of the exports to start with '{expected_module_prefix}' and end with \
-         '{expected_function_suffix}', got exports: {exports:?}"
-    );
+    find_export(&account_package, "miden::cross_ctx_account_word_arg::foo", "process_word");
 
     // Build counter note
     let builder = CompilerTestBuilder::rust_source_cargo_miden(
