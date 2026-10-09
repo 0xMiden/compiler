@@ -33,7 +33,7 @@ use midenc_dialect_scf as scf;
 use midenc_hir::{
     AddressSpace, ArrayType, CallConv, CallOpInterface, FunctionType, Immediate, Op, PointerType,
     Spanned, SymbolName, SymbolPath, SymbolTable, Type,
-    diagnostics::{Report, Severity},
+    diagnostics::{IntoDiagnostic, Report, Severity},
     dialects::builtin::{
         self, Function, UnrealizedConversionCast,
         attributes::{AdviceEffectDescriptor, AdviceResourceKind, Signature},
@@ -4239,6 +4239,55 @@ end
     let err = err.to_string();
     assert!(err.contains("dataflow solver exceeded worklist iteration budget"));
     assert!(err.contains("queued analyses:"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_analyzes_project_with_a_fully_skipped_child_module() -> Result<()> {
+    let root = temp_project_dir("midenc_masm_empty_child_analysis");
+    fs::create_dir_all(&root).into_diagnostic()?;
+    fs::write(
+        root.join("miden-project.toml"),
+        "[package]\nname = \"empty-child-analysis\"\nversion = \"0.0.0\"\n\n[lib]\nnamespace = \
+         \"empty_child_analysis\"\npath = \"mod.masm\"\n",
+    )
+    .into_diagnostic()?;
+    fs::write(
+        root.join("mod.masm"),
+        "pub mod broken\n\npub proc entry() -> u32\n    adv_push\n    push.1\n    \
+         u32wrapping_add\nend\n",
+    )
+    .into_diagnostic()?;
+    fs::write(
+        root.join("broken.masm"),
+        "@locals(1)\npub proc bad() -> felt\n    loc_load.1\nend\n",
+    )
+    .into_diagnostic()?;
+
+    let context = Rc::new(Context::default());
+    let output = disassemble_project_target_from_path_for_lint(
+        root.join("miden-project.toml"),
+        None,
+        &DisassemblerConfig::default(),
+        context,
+    );
+    fs::remove_dir_all(root).into_diagnostic()?;
+    let output = output?;
+    assert_eq!(output.skipped_procedures.len(), 1);
+    assert!(output.skipped_procedures[0].reason.contains("invalid local index 1"));
+
+    let analysis_manager = AnalysisManager::new(output.world.as_operation_ref(), None);
+    let mut config = DataFlowConfig::new();
+    config.set_interprocedural(true).set_max_worklist_iterations(Some(10_000));
+    let world = output.world.borrow();
+    let result = AdviceTaintAnalysis::run_with_config_allow_partial(
+        world.as_operation(),
+        analysis_manager,
+        config,
+    )?;
+    assert!(result.incomplete_reason.is_none());
+    assert_eq!(result.analysis.findings().len(), 1);
 
     Ok(())
 }
