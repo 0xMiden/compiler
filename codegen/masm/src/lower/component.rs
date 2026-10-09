@@ -43,7 +43,8 @@ pub trait ToMasmComponent {
 /// *components* as well. Handing a world's own operation to `MasmComponentBuilder`, which walks a
 /// component body, therefore panics the moment it meets the first `builtin.component`.
 ///
-/// So the shape of the world decides how it is lowered:
+/// So the shape of the world decides how it is lowered, counting only the components that define
+/// something (a declaration-only component is an external dependency, see below):
 ///
 /// - A world holding **no** component is treated as one logical component whose body is the
 ///   world's, which is what it has always meant here. This is the shape `frontend/masm`'s
@@ -59,7 +60,8 @@ pub trait ToMasmComponent {
 /// # Top-level items beside the component are normal, and are not an error
 ///
 /// A world is not "a component, optionally". It may hold a component — the current codegen unit —
-/// **plus any number of sibling interfaces and modules**, which are either
+/// **plus any number of sibling interfaces, modules and declaration-only components**, which are
+/// either
 ///
 /// - *external dependencies represented in the IR*, which hold declarations only and contribute
 ///   nothing to the generated Miden Assembly, or
@@ -71,9 +73,10 @@ pub trait ToMasmComponent {
 /// the MASM one included, legitimately produce several top-level items. **Neither kind of sibling
 /// may fail a build.**
 ///
-/// The first kind is recognized by `is_declaration_only` and ignored, silently, because that is
-/// exactly what it is worth. The second is translated beside the component, by handing it to the
-/// same `MasmComponentBuilder` the component is lowered by — which is what makes it share the
+/// The first kind is recognized by `is_declaration_only` (`Component::is_declaration_only` for a
+/// component, e.g. an import's stub) and ignored, silently, because that is exactly what it is
+/// worth. The second is translated beside the component, by handing it to the same
+/// `MasmComponentBuilder` the component is lowered by — which is what makes it share the
 /// component's `LinkInfo` rather than lay a layout of its own over it.
 ///
 /// The one shape left out is a top-level module that **owns memory**, i.e. declares a global
@@ -92,6 +95,8 @@ impl ToMasmComponent for builtin::World {
         let mut siblings = Vec::new();
         for op in self.body().entry().body().iter() {
             match op.as_operation_ref().try_downcast_op::<builtin::Component>() {
+                // An external dependency, e.g. an import's stub, contributes nothing
+                Ok(component) if component.borrow().is_declaration_only() => (),
                 Ok(component) => components.push(component),
                 Err(op) => siblings.push(op),
             }

@@ -102,8 +102,9 @@ impl SymbolTable for World {
 impl World {
     /// Returns an error when the world declares a module tree reaching the path the component name
     /// `component` spells, which the component would shadow, or another component whose name
-    /// nests with `component` (one is a segment-prefix of the other): resolution prefers the
-    /// longest registered name, so either would make paths ambiguous.
+    /// nests with `component` (one is a segment-prefix of the other) while the shorter of the two
+    /// is not declaration-only: resolution prefers the longest registered name, so either would
+    /// make paths ambiguous.
     ///
     /// The name is the component's namespace path, with its segments joined by `::`.
     pub fn reject_component_shadowing(&self, component: SymbolName) -> Result<(), Report> {
@@ -145,8 +146,57 @@ impl World {
     }
 
     /// Returns an error when a world-level component other than `component` has a name that is a
-    /// segment-prefix of `component`, or extends it.
+    /// segment-prefix of `component`, or extends it, unless the shorter of the two is
+    /// declaration-only (see [Component::is_declaration_only]).
+    ///
+    /// A component named `component` that the world does not hold yet counts as empty, i.e. as
+    /// declaration-only.
     fn reject_nested_components(&self, component: SymbolName) -> Result<(), Report> {
+        let body = self.body();
+        if body.is_empty() {
+            return Ok(());
+        }
+        for op in body.entry().body() {
+            let Some(existing_op) = op.downcast_ref::<Component>() else {
+                continue;
+            };
+            let existing = Symbol::name(existing_op);
+            let (shorter, longer) = if existing.as_str().len() < component.as_str().len() {
+                (existing, component)
+            } else {
+                (component, existing)
+            };
+            if !SymbolPath::nests_in(longer, shorter) {
+                continue;
+            }
+            // Resolution picks the longest registered name, so a path under `longer` can only be
+            // misrouted when `shorter` has a module tree of its own reaching that path. A
+            // declaration-only component holds leaf functions at its own level only, which the
+            // longer name never captures.
+            let shorter_is_declaration_only = if shorter == existing {
+                existing_op.is_declaration_only()
+            } else {
+                self.get(component).is_none_or(|symbol| {
+                    symbol
+                        .borrow()
+                        .as_symbol_operation()
+                        .downcast_ref::<Component>()
+                        .is_none_or(Component::is_declaration_only)
+                })
+            };
+            if !shorter_is_declaration_only {
+                return Err(nested_components_error(component, existing));
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns an error when a world-level component's name extends `component`, i.e. when
+    /// `component` must stay declaration-only because a longer component nests in it.
+    pub(crate) fn reject_definition_in_nesting_component(
+        &self,
+        component: SymbolName,
+    ) -> Result<(), Report> {
         let body = self.body();
         if body.is_empty() {
             return Ok(());
@@ -155,20 +205,27 @@ impl World {
             let Some(existing) = op.downcast_ref::<Component>().map(Symbol::name) else {
                 continue;
             };
-            let (shorter, longer) = if existing.as_str().len() < component.as_str().len() {
-                (existing, component)
-            } else {
-                (component, existing)
-            };
-            if SymbolPath::nests_in(longer, shorter) {
-                return Err(Report::msg(format!(
-                    "component `{component}` and component `{existing}` nest (`{shorter}` is a \
-                     prefix of `{longer}`); component namespaces must not nest"
-                )));
+            if SymbolPath::nests_in(existing, component) {
+                return Err(nested_components_error(component, existing));
             }
         }
         Ok(())
     }
+}
+
+/// The error for the components `component` and `existing`, whose names nest, where the shorter
+/// of the two is not declaration-only.
+fn nested_components_error(component: SymbolName, existing: SymbolName) -> Report {
+    let (shorter, longer) = if existing.as_str().len() < component.as_str().len() {
+        (existing, component)
+    } else {
+        (component, existing)
+    };
+    Report::msg(format!(
+        "component `{component}` and component `{existing}` nest (`{shorter}` is a prefix of \
+         `{longer}`); a component namespace may only have another nested in it while it holds \
+         declarations only"
+    ))
 }
 
 /// A world is built through `WorldBuilder`, which enforces the shadowing rule as it goes; parsed

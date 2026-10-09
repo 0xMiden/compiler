@@ -348,12 +348,16 @@ fn parsing_a_module_still_wraps_it_in_a_world() -> TestResult {
     Ok(())
 }
 
-/// Well-formed as text, ill-formed as IR: `builtin.function` carries the `SingleRegion` trait, so
-/// a function with no region at all parses (it is how a declaration is written) and then fails
-/// verification with "requires exactly one region, but got 0".
+/// Well-formed as text, ill-formed as IR: a world holding a component nested in a shorter
+/// component that holds a module parses, and then fails the world's verification.
 const UNVERIFIABLE_SOURCE: &str = "\
-builtin.module public @lib {
-    builtin.function public extern(\"C\") @main();
+builtin.world {
+    builtin.component private @acme::@app {
+        builtin.module public @main {
+        };
+    };
+    builtin.component private @acme::@app::@main {
+    };
 };";
 
 #[test]
@@ -380,8 +384,8 @@ fn parsing_verifies_what_it_parsed() {
         .expect("the source is well-formed as text — only verification rejects it");
 
     assert!(
-        err.contains("invalid operation builtin.function"),
-        "expected the verifier's rejection of the region-less function, got: {err}"
+        err.contains("component `acme::app` and component `acme::app::main` nest"),
+        "expected the verifier's rejection of the nested components, got: {err}"
     );
 }
 
@@ -560,24 +564,59 @@ builtin.world {
     );
 }
 
+/// A function written without a body parses as a declaration, so a world may hold two
+/// declaration-only components whose names nest.
+#[test]
+fn nested_declaration_only_components_parse() {
+    use crate::dialects::builtin::Component;
+
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.component private @x::@y {
+        builtin.function internal extern(\"C\") @f(%a: u32) -> u32;
+    };
+    builtin.component private @x::@y::@z {
+        builtin.function internal extern(\"C\") @g(%a: u32) -> u32;
+    };
+};";
+    let world = test
+        .parse_any("nested_stubs.hir", source)
+        .expect("nested declaration-only components parse")
+        .try_downcast_op::<World>()
+        .expect("the root is a world");
+    let world = world.borrow();
+    for name in ["x::y", "x::y::z"] {
+        let symbol = world.get(name.into()).unwrap_or_else(|| panic!("`{name}` is declared"));
+        let symbol = symbol.borrow();
+        let component =
+            symbol.as_symbol_operation().downcast_ref::<Component>().expect("a component");
+        assert!(component.is_declaration_only(), "`{name}` holds declarations only");
+    }
+}
+
+/// A component nested in a shorter component that holds a module is reported for parsed input.
 #[test]
 fn nested_component_names_are_reported() {
     let test = ParserTest::default();
     let source = "\
 builtin.world {
     builtin.component private @acme::@app {
+        builtin.module public @main {
+        };
     };
     builtin.component private @acme::@app::@main {
     };
 };";
     let err = test
         .parse_any("nesting.hir", source)
-        .expect_err("components with nesting names must not parse")
+        .expect_err("a component nested in one with a module must not parse")
         .to_string();
     assert!(
         err.contains(
             "component `acme::app` and component `acme::app::main` nest (`acme::app` is a prefix \
-             of `acme::app::main`); component namespaces must not nest"
+             of `acme::app::main`); a component namespace may only have another nested in it \
+             while it holds declarations only"
         ),
         "unexpected diagnostic: {err}"
     );

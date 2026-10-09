@@ -195,9 +195,12 @@ impl OpParser for Function {
         let advice_effects = parser.context_rc().create_attribute::<AdviceEffectArrayAttr, _>([]);
         state.add_attribute("advice_effects", advice_effects);
 
-        if let Some(body) = parser.parse_optional_region(&args, false)? {
-            state.add_region(body);
-        }
+        // A function without a body is a declaration, which still holds its (empty) body region
+        let body = match parser.parse_optional_region(&args, false)? {
+            Some(body) => body,
+            None => parser.context_rc().create_region(),
+        };
+        state.add_region(body);
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
         Ok(())
     }

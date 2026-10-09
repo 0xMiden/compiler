@@ -284,6 +284,30 @@ impl Component {
             .is_some_and(|attr| **attr.borrow())
     }
 
+    /// Returns true if this component holds declarations only: every item in it is a function or
+    /// global variable without a body, so it has no module tree and defines no code. This is the
+    /// shape of a stub standing in for an external component, e.g. an import's.
+    ///
+    /// An empty component is vacuously declaration-only. Anything unrecognized counts as a
+    /// definition.
+    pub fn is_declaration_only(&self) -> bool {
+        use crate::dialects::builtin::{Function, GlobalVariable};
+
+        let body = self.body();
+        if body.is_empty() {
+            return true;
+        }
+        body.entry().body().iter().all(|item| {
+            if let Some(function) = item.downcast_ref::<Function>() {
+                function.is_declaration()
+            } else if let Some(gv) = item.downcast_ref::<GlobalVariable>() {
+                gv.is_declaration()
+            } else {
+                false
+            }
+        })
+    }
+
     #[inline(always)]
     pub fn as_component_ref(&self) -> ComponentRef {
         unsafe { ComponentRef::from_raw(self) }
