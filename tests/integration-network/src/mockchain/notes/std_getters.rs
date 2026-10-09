@@ -3,7 +3,9 @@
 //! Each getter script calls a standard getter whose result occupies several stack elements and
 //! asserts every field against the values the host configured the account with, which pins the
 //! order in which a MASM callee's results come back. The role script passes an account id
-//! parameter, which pins the order in which its felts reach a MASM callee.
+//! parameter, which pins the order in which its felts reach a MASM callee. One getter script reads
+//! a foreign faucet through foreign procedure invocation, which pins the same order across the
+//! FPI boundary.
 
 use miden_core::Felt;
 use miden_field_repr::{FromFeltRepr, ToFeltRepr};
@@ -23,6 +25,17 @@ use super::super::support::{
 /// Host-side mirror of `TxScriptArgs` in `tests/fixtures/components/std-faucet-config-tx-script`.
 #[derive(FromFeltRepr, ToFeltRepr)]
 struct FaucetConfigArgs {
+    supply: miden_field::Felt,
+    max_supply: miden_field::Felt,
+    decimals: u8,
+    symbol: miden_field::Felt,
+}
+
+/// Host-side mirror of `TxScriptArgs` in `tests/fixtures/components/std-faucet-config-fpi-tx-script`.
+#[derive(FromFeltRepr, ToFeltRepr)]
+struct FaucetConfigFpiArgs {
+    faucet_suffix: miden_field::Felt,
+    faucet_prefix: miden_field::Felt,
     supply: miden_field::Felt,
     max_supply: miden_field::Felt,
     decimals: u8,
@@ -83,6 +96,44 @@ pub fn std_faucet_get_token_config_returns_the_configured_fields() {
     let mock_tx = apply_script_args(mock_tx_builder, &args).build().unwrap();
     let measurements = execute_tx_measurements(&mut chain, mock_tx);
     expect!["1759"].assert_eq(tx_script_processing_cycles(&measurements));
+}
+
+/// A Rust transaction script running on a wallet reads the four-field `token-config` record of a
+/// standard fungible faucet through foreign procedure invocation and finds every field where the
+/// faucet stores it.
+#[test]
+pub fn std_faucet_get_token_config_through_fpi_returns_the_configured_fields() {
+    let tx_script_package =
+        compile_rust_package("../fixtures/components/std-faucet-config-fpi-tx-script", true);
+
+    // Distinct values for every field, so a swapped pair cannot pass; the decimals are
+    // `miden-testing`'s default faucet decimals.
+    let (max_supply, supply, decimals) = (1_000_000_000u64, 12_345u64, 10u8);
+    let symbol = Felt::from(TokenSymbol::new("TEST").unwrap());
+    let mut builder = MockChain::builder();
+    let faucet_id = builder
+        .add_existing_basic_faucet(auth(), "TEST", max_supply, Some(supply))
+        .unwrap()
+        .id();
+    let wallet_id = builder.add_existing_wallet(auth()).unwrap().id();
+    let mut chain = builder.build().unwrap();
+    chain.prove_next_block().unwrap();
+
+    let args = FaucetConfigFpiArgs {
+        faucet_suffix: to_field_felt(faucet_id.suffix()),
+        faucet_prefix: to_field_felt(faucet_id.prefix().as_felt()),
+        supply: to_field_felt(Felt::new_unchecked(supply)),
+        max_supply: to_field_felt(Felt::new_unchecked(max_supply)),
+        decimals,
+        symbol: to_field_felt(symbol),
+    };
+    let mock_tx_builder = chain
+        .build_transaction(wallet_id)
+        .foreign_accounts([chain.get_foreign_account_inputs(faucet_id).unwrap()])
+        .tx_script(transaction_script_from_package(&tx_script_package));
+    let mock_tx = apply_script_args(mock_tx_builder, &args).build().unwrap();
+    let measurements = execute_tx_measurements(&mut chain, mock_tx);
+    expect!["4976"].assert_eq(tx_script_processing_cycles(&measurements));
 }
 
 /// A Rust transaction script reads the owner of a standard `ownable2step` component as a
