@@ -360,6 +360,17 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
         EntityMut::from_raw_parts(value, borrow.into_borrow_ref_mut())
     }
 
+    /// Try to get a dynamically-checked immutable reference to the underlying `T`
+    ///
+    /// Returns `None` if the entity is already borrowed mutably
+    pub fn try_borrow<'a, 'b: 'a>(&'a self) -> Option<EntityRef<'b, T>> {
+        let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
+        unsafe { (*core::ptr::addr_of!((*ptr).entity)).try_borrow().ok() }.map(|borrow| {
+            let value = unsafe { NonNull::new_unchecked(Self::as_ptr(self).cast_mut()) };
+            EntityRef::from_raw_parts(value, borrow.into_borrow_ref())
+        })
+    }
+
     /// Try to get a dynamically-checked mutable reference to the underlying `T`
     ///
     /// Returns `None` if the entity is already borrowed
