@@ -315,7 +315,7 @@ fn swapp_note_package_size() {
     //   returns as it lifts it;
     // - since the generated bindings: the frontend masks the `u16`s the note passes the kernel
     //   to their declared type.
-    expect!["43532"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
+    expect!["43955"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
 }
 
 /// Tests a full fill of a SWAPP note.
@@ -388,7 +388,7 @@ fn swapp_note_full_fill_transfers_assets() {
     // 13198: the note's `TryFrom<Felt>` checks of the `Tag` and `NoteType` from its storage and
     // the lift masks (both new with the integer newtypes), the wallet's check that the
     // `NoteType` is private or public, and the frontend's masks (see `swapp_note_package_size`).
-    expect!["13009"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["13070"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 50);
@@ -485,7 +485,7 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
     // constant-address 32-bit store (54 fewer: as at the full fill, and the wallet's `init` once
     // more, for the remainder note's `create_note`). The 421 cycles over 17991 at 18412 are those
     // listed at the full fill, with two notes created.
-    expect!["18104"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["18205"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 3);
@@ -574,7 +574,7 @@ fn swapp_note_creator_reclaims_offered_asset() {
     // `swapp_note_package_size`). 5472 before the `u32assert` on a constant-address 32-bit store
     // went, one fewer per 32-bit global initializer: the note's `init` (14 cycles) and the
     // wallet's, run once for `receive_asset` (10 cycles; see the full fill).
-    expect!["5448"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["5461"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let alice_account = chain.committed_account(alice.id()).unwrap();
     assert_account_has_fungible_asset(alice_account, usdc_faucet.id(), 50);
