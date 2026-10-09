@@ -435,6 +435,9 @@ impl Rebase<'_> {
         if let Some(path) = self.rebase(module.path()) {
             module.set_path(&path);
         }
+        for import in module.imports_mut() {
+            let _ = self.visit_mut_import(import);
+        }
         // The rewrite below never breaks out of the walk, so there is no outcome to inspect.
         let _ = self.visit_mut_module(module);
     }
@@ -497,6 +500,30 @@ impl Rebase<'_> {
 }
 
 impl masm::visit::VisitMut for Rebase<'_> {
+    fn visit_mut_import(&mut self, import: &mut masm::Import) -> ControlFlow<()> {
+        use masm::Spanned;
+
+        let path = import.module_path();
+        if let Some(rebased) = self.rebase(path.inner()) {
+            let path = Span::new(path.span(), Arc::from(rebased.into_boxed_path()));
+            match import {
+                masm::Import::Module(import) => import.set_module_path(path),
+                masm::Import::Item(import) => {
+                    let mut rebased = masm::ItemImport::new(
+                        import.span(),
+                        import.visibility(),
+                        path,
+                        import.source_name().clone(),
+                        import.local_name().clone(),
+                    );
+                    rebased.uses = import.uses;
+                    *import = rebased;
+                }
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
     /// Every call-like instruction reaches this, as `exec`, `call`, `syscall` and `procref` all
     /// funnel through it.
     fn visit_mut_invoke_target(&mut self, target: &mut InvocationTarget) -> ControlFlow<()> {
