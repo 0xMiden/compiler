@@ -3,11 +3,8 @@
 package miden:standards-auth-network-account@0.17.0;
 
 /// Left out: `miden::standards::components::auth::network_account::auth_network_transaction`: an auth procedure is invoked by the transaction kernel in the epilogue, not by notes or scripts
-/// Left out: `miden::standards::components::auth::network_account::estimate_note_fee`: results occupy 8 stack elements; multi-element results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::auth::network_account::get_fee_asset_id`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::auth::network_account::get_fee_policy`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
 interface network-account {
-    use miden:base/core-types@1.0.0.{word};
+    use miden:base/core-types@1.0.0.{asset, word};
 
     @external-id("miden::standards::components::auth::network_account::add_allowed_fee_policy")
     add-allowed-fee-policy: func(arg0: word);
@@ -17,6 +14,15 @@ interface network-account {
 
     @external-id("miden::standards::components::auth::network_account::add_allowed_tx_script")
     add-allowed-tx-script: func(arg0: word);
+
+    @external-id("miden::standards::components::auth::network_account::estimate_note_fee")
+    estimate-note-fee: func(arg0: word, arg1: word, arg2: word, arg3: u32, arg4: u32) -> asset;
+
+    @external-id("miden::standards::components::auth::network_account::get_fee_asset_id")
+    get-fee-asset-id: func() -> word;
+
+    @external-id("miden::standards::components::auth::network_account::get_fee_policy")
+    get-fee-policy: func() -> word;
 
     @external-id("miden::standards::components::auth::network_account::remove_allowed_fee_policy")
     remove-allowed-fee-policy: func(arg0: word);

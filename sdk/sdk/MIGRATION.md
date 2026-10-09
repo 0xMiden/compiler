@@ -61,7 +61,7 @@ A Rust-built account-component package without embedded WIT is no longer skipped
 advice: it now gets an interface derived from its manifest, too, in which the SDK types the
 component uses (`asset`, `word`, `felt`, `note-type`, ...) are the SDK's `core-types` items, as
 in a MASM component's interface. That interface has no other alias names, leaves out procedures
-for the reasons listed in the interface doc comment (multi-element results, 64-bit parameters,
+for the reasons listed in the interface doc comment (64-bit integer parameters or results,
 auth procedures, ...), and takes its WIT package id from the package name, so it can differ from
 the component's own WIT; rebuild the package with the current `cargo miden build` to restore its
 embedded interface.
