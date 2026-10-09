@@ -18,6 +18,10 @@ use crate::Event;
 pub(crate) const UNSET_STORED_PROCEDURE_SLOT_MESSAGE: &str =
     "stored procedure slot is unset: no procedure root to dyncall";
 
+/// The number of operand stack elements a `call`, `syscall` or `dyncall` hands to the callee,
+/// and that the callee hands back.
+const CALL_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
+
 impl OpEmitter<'_> {
     /// Push the caller procedure hash as a word.
     pub fn caller(&mut self, span: SourceSpan) {
@@ -479,18 +483,24 @@ impl OpEmitter<'_> {
     /// Expects `[args...]` on the operand stack in signature order. The scratch address is
     /// pushed on top and `dyncall` pops it before transferring control, so the callee observes
     /// `[args...]` in normal argument order and its results replace them.
+    ///
+    /// Like [`Self::call`], the callee receives exactly `[args, zeros]` as its 16-element window,
+    /// and the window's padding is discarded on return (see [`Self::pad_call_window`]).
     pub fn dyncall_dispatch(
         &mut self,
         root_scratch_addr: u32,
         signature: &Signature,
         span: SourceSpan,
     ) {
+        let (num_arg_felts, num_result_felts) = Self::call_window_felts(signature);
+        self.pad_call_window(num_arg_felts, span);
         // `dyncall` pops the element address and reads the callee MAST root word at it
         self.emit_push(root_scratch_addr, span);
         self.consume_exact_call_signature(signature, "dyncall");
         self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::DynCall, span);
         self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
+        self.discard_call_window_padding(num_result_felts, span);
     }
 
     /// Push the MAST root digest of `callee` onto the operand stack as one word.
@@ -507,31 +517,155 @@ impl OpEmitter<'_> {
     /// Execute the given procedure in a new context.
     ///
     /// A function called using this operation is invoked in a new memory context.
+    ///
+    /// The VM hands the callee exactly the top 16 operand stack elements and replaces them with
+    /// the 16 elements the callee returns. Callees follow the `[args, pad]` → `[results, pad]`
+    /// convention and may clobber anything under their arguments, so the window is padded to
+    /// `[args, zeros]` before the call, keeping every caller value below it, and the padding the
+    /// callee leaves under its results is discarded afterwards (see [`Self::pad_call_window`]).
     pub fn call(
         &mut self,
         callee: masm::InvocationTarget,
         signature: &Signature,
         span: SourceSpan,
     ) {
+        let (num_arg_felts, num_result_felts) = Self::call_window_felts(signature);
         self.process_call_signature(&callee, signature, span);
+        self.pad_call_window(num_arg_felts, span);
 
         self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::Call(callee), span);
         self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
+        self.discard_call_window_padding(num_result_felts, span);
     }
 
     /// Execute the given kernel procedure as a syscall.
+    ///
+    /// A `syscall` has the same 16-element window semantics as a `call`, so the window is padded
+    /// and its padding discarded exactly as described in [`Self::call`].
     pub fn syscall(
         &mut self,
         callee: masm::InvocationTarget,
         signature: &Signature,
         span: SourceSpan,
     ) {
+        let (num_arg_felts, num_result_felts) = Self::call_window_felts(signature);
         self.process_call_signature(&callee, signature, span);
+        self.pad_call_window(num_arg_felts, span);
 
         self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::SysCall(callee), span);
         self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
+        self.discard_call_window_padding(num_result_felts, span);
+    }
+
+    /// Returns the number of argument and result field elements a cross-context invocation of a
+    /// procedure with `signature` passes through the 16-element call window.
+    ///
+    /// Panics if either does not fit in the window: the frontend passes wider argument or result
+    /// lists indirectly, so a wider signature here is a compiler bug.
+    fn call_window_felts(signature: &Signature) -> (usize, usize) {
+        let num_arg_felts: usize = signature.params.iter().map(|p| p.ty.size_in_felts()).sum();
+        let num_result_felts: usize = signature.results.iter().map(|r| r.ty.size_in_felts()).sum();
+        assert!(
+            num_arg_felts <= CALL_WINDOW_FELTS,
+            "cross-context call arguments take {num_arg_felts} field elements, but the call \
+             window holds at most {CALL_WINDOW_FELTS}"
+        );
+        assert!(
+            num_result_felts <= CALL_WINDOW_FELTS,
+            "cross-context call results take {num_result_felts} field elements, but the call \
+             window holds at most {CALL_WINDOW_FELTS}"
+        );
+        (num_arg_felts, num_result_felts)
+    }
+
+    /// Pad the `num_arg_felts` argument elements on top of the operand stack with zeros, so that
+    /// the 16-element window a `call`/`syscall`/`dyncall` hands to the callee is exactly
+    /// `[args, zeros]` and every caller value under the arguments sits below the window.
+    ///
+    /// Only instructions are emitted: the padding exists between this and the matching
+    /// [`Self::discard_call_window_padding`] only, so the emulated operand stack never models it.
+    fn pad_call_window(&mut self, num_arg_felts: usize, span: SourceSpan) {
+        use masm::Instruction as I;
+
+        let num_pad_felts = CALL_WINDOW_FELTS - num_arg_felts;
+        match num_arg_felts {
+            16 => {}
+            // Word-sized argument lists move as whole words: [z.., args] -> [args, z..]
+            0 => self.emit_n(4, I::PadW, span),
+            4 => {
+                self.emit_n(3, I::PadW, span);
+                self.emit(I::MovUpW3, span);
+            }
+            8 => {
+                self.emit_n(2, I::PadW, span);
+                self.emit(I::SwapDw, span);
+            }
+            12 => {
+                self.emit(I::PadW, span);
+                self.emit(I::MovDnW3, span);
+            }
+            // Few pads: sink each zero under the arguments right after pushing it
+            n if n > 8 => {
+                for _ in 0..num_pad_felts {
+                    self.emit_push(Felt::ZERO, span);
+                    self.emit(super::movdn_from_offset(n), span);
+                }
+            }
+            // Few arguments: push all zeros, then raise the arguments from the window's bottom,
+            // the last one first, so the first argument ends on top
+            n => {
+                self.emit_n(num_pad_felts / 4, I::PadW, span);
+                for _ in 0..num_pad_felts % 4 {
+                    self.emit_push(Felt::ZERO, span);
+                }
+                self.emit_n(n, I::MovUp15, span);
+            }
+        }
+    }
+
+    /// Discard the padding a `call`/`syscall`/`dyncall` callee leaves under its
+    /// `num_result_felts` result elements, turning the returned window `[results, pad]` into
+    /// `[results]` on top of the caller values that were below the window.
+    ///
+    /// Like [`Self::pad_call_window`], only instructions are emitted: the emulated operand stack
+    /// already holds just the results there.
+    fn discard_call_window_padding(&mut self, num_result_felts: usize, span: SourceSpan) {
+        use masm::Instruction as I;
+
+        let num_pad_felts = CALL_WINDOW_FELTS - num_result_felts;
+        match num_result_felts {
+            16 => {}
+            // Word-sized result lists move as whole words: [results, p..] -> [p.., results]
+            0 => self.emit_n(4, I::DropW, span),
+            4 => {
+                self.emit(I::MovDnW3, span);
+                self.emit_n(3, I::DropW, span);
+            }
+            8 => {
+                self.emit(I::SwapDw, span);
+                self.emit_n(2, I::DropW, span);
+            }
+            12 => {
+                self.emit(I::MovUpW3, span);
+                self.emit(I::DropW, span);
+            }
+            // Little padding: raise and drop each pad element from under the results
+            m if m > 8 => {
+                for _ in 0..num_pad_felts {
+                    self.emit(super::movup_from_offset(m), span);
+                    self.emit(I::Drop, span);
+                }
+            }
+            // Few results: sink them to the window's bottom, the first one first so they keep
+            // their order, then drop the padding now on top
+            m => {
+                self.emit_n(m, I::MovDn15, span);
+                self.emit_n(num_pad_felts / 4, I::DropW, span);
+                self.emit_n(num_pad_felts % 4, I::Drop, span);
+            }
+        }
     }
 
     /// Consumes one argument per parameter of `signature` from the emulated stack and produces
@@ -833,7 +967,7 @@ mod tests {
                 op => panic!("unexpected non-instruction op: {op:?}"),
             })
             .collect::<Vec<_>>();
-        assert_eq!(insts.len(), 18);
+        assert_eq!(insts.len(), 32);
         // Unset-slot guard: fold `root[i] == 0` over the word, then assert the fold is false
         let is_eq_zero = |inst: &masm::Instruction| matches!(inst, masm::Instruction::EqImm(masm::Immediate::Value(value)) if *value.inner() == Felt::ZERO);
         assert_eq!(insts[0], masm::Instruction::Dup0);
@@ -859,15 +993,264 @@ mod tests {
             insts[12]
         );
         assert_eq!(insts[13], masm::Instruction::DropW);
+        // Pad the two argument felts to the 16-element call window
+        assert_eq!(&insts[14..21], pad_call_window_insts(2).as_slice());
         // Push the scratch address, then the frame-traced dyncall pops it
         assert!(
-            matches!(&insts[14], masm::Instruction::Push(masm::Immediate::Value(value)) if *value.inner() == scratch.into()),
+            matches!(&insts[21], masm::Instruction::Push(masm::Immediate::Value(value)) if *value.inner() == scratch.into()),
             "expected push of the scratch address, got {:?}",
-            insts[14]
+            insts[21]
         );
-        assert!(matches!(&insts[15], masm::Instruction::EmitImm(_)));
-        assert_eq!(insts[16], masm::Instruction::DynCall);
-        assert!(matches!(&insts[17], masm::Instruction::EmitImm(_)));
+        assert!(matches!(&insts[22], masm::Instruction::EmitImm(_)));
+        assert_eq!(insts[23], masm::Instruction::DynCall);
+        assert!(matches!(&insts[24], masm::Instruction::EmitImm(_)));
+        // Discard the padding under the one result felt
+        assert_eq!(&insts[25..], discard_call_window_padding_insts(1).as_slice());
+    }
+
+    /// The instructions of `block`, which must contain nothing else.
+    fn block_insts(block: &[Op]) -> Vec<masm::Instruction> {
+        block
+            .iter()
+            .map(|op| match op {
+                Op::Inst(inst) => inst.clone().into_inner(),
+                op => panic!("unexpected non-instruction op: {op:?}"),
+            })
+            .collect()
+    }
+
+    /// The instructions [`OpEmitter::pad_call_window`] emits for `n` argument felts.
+    fn pad_call_window_insts(n: usize) -> Vec<masm::Instruction> {
+        let mut block = Vec::default();
+        let mut stack = OperandStack::new(Rc::new(Context::default()));
+        let mut invoked = BTreeSet::default();
+        OpEmitter::new(&mut invoked, &mut block, &mut stack)
+            .pad_call_window(n, SourceSpan::default());
+        block_insts(&block)
+    }
+
+    /// The instructions [`OpEmitter::discard_call_window_padding`] emits for `m` result felts.
+    fn discard_call_window_padding_insts(m: usize) -> Vec<masm::Instruction> {
+        let mut block = Vec::default();
+        let mut stack = OperandStack::new(Rc::new(Context::default()));
+        let mut invoked = BTreeSet::default();
+        OpEmitter::new(&mut invoked, &mut block, &mut stack)
+            .discard_call_window_padding(m, SourceSpan::default());
+        block_insts(&block)
+    }
+
+    /// A procedure path for the call tests.
+    fn test_callee() -> masm::InvocationTarget {
+        let name = masm::ProcedureName::new("callee").unwrap();
+        let module = masm::LibraryPath::new("test").unwrap();
+        let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
+        masm::InvocationTarget::Path(masm::Span::new(SourceSpan::default(), qualified.into_inner()))
+    }
+
+    /// Run `insts` on a physical operand stack `stack` (top at index 0), handling a `call` the
+    /// way the VM and a convention-following callee do: the callee must observe exactly
+    /// `[args(n), zeros(16 - n)]`, and returns `[results(m), junk(16 - m)]`, where the results
+    /// are `1000 + i` and the junk is `2000 + i`.
+    fn run_call_sequence(
+        insts: &[masm::Instruction],
+        stack: &mut alloc::vec::Vec<u64>,
+        args: &[u64],
+        m: usize,
+    ) {
+        use masm::Instruction as I;
+
+        use crate::emit::{movdn_from_offset, movup_from_offset};
+
+        for inst in insts {
+            match inst {
+                I::EmitImm(_) => {}
+                I::PadW => stack.splice(0..0, [0; 4]).for_each(drop),
+                I::Push(masm::Immediate::Value(value)) => {
+                    assert_eq!(*value.inner(), Felt::ZERO.into(), "only zeros are pushed");
+                    stack.insert(0, 0);
+                }
+                I::Drop => {
+                    stack.remove(0);
+                }
+                I::DropW => stack.drain(0..4).for_each(drop),
+                I::SwapDw => {
+                    let top: alloc::vec::Vec<u64> = stack.drain(0..8).collect();
+                    stack.splice(8..8, top).for_each(drop);
+                }
+                I::MovUpW3 => {
+                    let word: alloc::vec::Vec<u64> = stack.drain(12..16).collect();
+                    stack.splice(0..0, word).for_each(drop);
+                }
+                I::MovDnW3 => {
+                    let word: alloc::vec::Vec<u64> = stack.drain(0..4).collect();
+                    stack.splice(12..12, word).for_each(drop);
+                }
+                I::Call(_) => {
+                    let window: alloc::vec::Vec<u64> = stack.drain(0..16).collect();
+                    assert_eq!(&window[..args.len()], args, "callee arguments");
+                    assert!(
+                        window[args.len()..].iter().all(|felt| *felt == 0),
+                        "the window under the arguments must be zeros: {window:?}"
+                    );
+                    let returned =
+                        (0..m as u64).map(|i| 1000 + i).chain((m as u64..16).map(|i| 2000 + i));
+                    stack.splice(0..0, returned).for_each(drop);
+                }
+                inst => {
+                    if let Some(i) = (2..16).find(|i| movup_from_offset(*i) == *inst) {
+                        let felt = stack.remove(i);
+                        stack.insert(0, felt);
+                    } else if let Some(i) = (2..16).find(|i| movdn_from_offset(*i) == *inst) {
+                        let felt = stack.remove(0);
+                        stack.insert(i, felt);
+                    } else {
+                        panic!("unexpected instruction in a call sequence: {inst:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Every argument/result width leaves the callee exactly `[args, zeros]` and the caller
+    /// exactly `[results, values below the arguments]`.
+    #[test]
+    fn call_pads_window_and_discards_padding_for_every_width() {
+        use midenc_hir::CallConv;
+
+        for n in 0..=16usize {
+            for m in 0..=16usize {
+                let mut block = Vec::default();
+                let context = Rc::new(Context::default());
+                let mut stack = OperandStack::new(context.clone());
+                let mut invoked = BTreeSet::default();
+                let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+                // Caller values the call must preserve, then the arguments
+                emitter.push(Type::U64);
+                emitter.push(Type::I1);
+                for _ in 0..n {
+                    emitter.push(Type::Felt);
+                }
+                let signature = Signature::with_convention(
+                    &context,
+                    CallConv::ComponentModel,
+                    vec![Type::Felt; n],
+                    vec![Type::Felt; m],
+                );
+                emitter.call(test_callee(), &signature, SourceSpan::default());
+
+                // The model holds the results on top of the preserved caller values
+                let model: alloc::vec::Vec<Type> = emitter
+                    .stack()
+                    .iter()
+                    .rev()
+                    .map(|operand| Type::try_from(operand).unwrap())
+                    .collect();
+                let expected_model: alloc::vec::Vec<Type> =
+                    core::iter::repeat_n(Type::Felt, m).chain([Type::I1, Type::U64]).collect();
+                assert_eq!(model, expected_model);
+
+                // The physical stack matches it: args 1.., caller values 100.. (I1 then U64
+                // limbs), and 20 elements of deeper stack 500..
+                let args: alloc::vec::Vec<u64> = (1..=n as u64).collect();
+                let below: alloc::vec::Vec<u64> = (100..103).chain(500..520).collect();
+                let mut physical: alloc::vec::Vec<u64> =
+                    args.iter().copied().chain(below.iter().copied()).collect();
+                run_call_sequence(&block_insts(&block), &mut physical, &args, m);
+                let expected: alloc::vec::Vec<u64> =
+                    (0..m as u64).map(|i| 1000 + i).chain(below.iter().copied()).collect();
+                assert_eq!(physical, expected, "stack after a call with {n} args, {m} results");
+            }
+        }
+    }
+
+    /// Pin the call sequence for two argument and two result felts: zeros pushed and the
+    /// arguments raised over them, then the results sunk to the window's bottom and the padding
+    /// dropped.
+    #[test]
+    fn call_with_two_args_and_two_results_emits_padding_sequence() {
+        use masm::Instruction as I;
+        use midenc_hir::CallConv;
+
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.push(Type::U64);
+        emitter.push(Type::Felt);
+        emitter.push(Type::U32);
+        let signature = Signature::with_convention(
+            &context,
+            CallConv::ComponentModel,
+            [Type::U32, Type::Felt],
+            [Type::Felt, Type::U32],
+        );
+        emitter.call(test_callee(), &signature, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 3);
+        assert_eq!(emitter.stack()[0], Type::Felt);
+        assert_eq!(emitter.stack()[1], Type::U32);
+        assert_eq!(emitter.stack()[2], Type::U64);
+
+        let zero = I::Push(masm::Immediate::Value(masm::Span::new(
+            SourceSpan::default(),
+            Felt::ZERO.into(),
+        )));
+        let insts = block_insts(&block);
+        assert_eq!(insts.len(), 17);
+        assert_eq!(
+            &insts[..7],
+            &[I::PadW, I::PadW, I::PadW, zero.clone(), zero, I::MovUp15, I::MovUp15]
+        );
+        assert!(matches!(&insts[7], I::EmitImm(_)));
+        assert_eq!(insts[8], I::Call(test_callee()));
+        assert!(matches!(&insts[9], I::EmitImm(_)));
+        assert_eq!(
+            &insts[10..],
+            &[I::MovDn15, I::MovDn15, I::DropW, I::DropW, I::DropW, I::Drop, I::Drop]
+        );
+    }
+
+    /// No arguments and no results: the window is all zeros going in and is dropped coming out.
+    #[test]
+    fn call_without_args_or_results_pads_and_drops_whole_window() {
+        use masm::Instruction as I;
+
+        assert_eq!(pad_call_window_insts(0), [I::PadW, I::PadW, I::PadW, I::PadW]);
+        assert_eq!(discard_call_window_padding_insts(0), [I::DropW, I::DropW, I::DropW, I::DropW]);
+    }
+
+    /// A full window needs neither padding nor dropping.
+    #[test]
+    fn call_with_full_window_emits_no_padding() {
+        assert!(pad_call_window_insts(16).is_empty());
+        assert!(discard_call_window_padding_insts(16).is_empty());
+    }
+
+    /// A syscall pads and discards exactly like a call.
+    #[test]
+    fn syscall_pads_window_and_discards_padding() {
+        use midenc_hir::CallConv;
+
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.push(Type::Felt);
+        let signature =
+            Signature::with_convention(&context, CallConv::Wasm, [Type::Felt], [Type::Felt]);
+        emitter.syscall(test_callee(), &signature, SourceSpan::default());
+
+        let insts = block_insts(&block);
+        let pad = pad_call_window_insts(1);
+        let discard = discard_call_window_padding_insts(1);
+        assert_eq!(&insts[..pad.len()], pad.as_slice());
+        assert_eq!(insts[pad.len() + 1], masm::Instruction::SysCall(test_callee()));
+        assert_eq!(&insts[pad.len() + 3..], discard.as_slice());
     }
 
     #[test]

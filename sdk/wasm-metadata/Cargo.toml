@@ -17,6 +17,8 @@ edition.workspace = true
 doctest = false
 
 [dependencies]
+# The upper camel case wit-bindgen spells type names in.
+heck.workspace = true
 miden-mast-package.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -1,5 +1,5 @@
 #[doc(hidden)]
-mod __miden_note_bindings_f74ea5e7a6e77b2d {
+mod __miden_note_bindings_b284481f494e95ad {
     #[doc(hidden)]
     trait __MidenNoteEncode {
         fn __write_note_felts(
@@ -223,8 +223,8 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
                 '_,
             >,
         ) -> ::miden_note_bindings::__private::miden_note_schema::Result<()> {
-            writer.write(self.prefix().as_felt());
             writer.write(self.suffix());
+            writer.write(self.prefix().as_felt());
             Ok(())
         }
     }
@@ -235,18 +235,18 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
                 '_,
             >,
         ) -> ::miden_note_bindings::__private::miden_note_schema::Result<Self> {
-            let prefix = reader
-                .read()
-                .map_err(|error| {
-                    ::miden_note_bindings::__private::miden_note_schema::Error::new(
-                        format!("failed to decode account-id prefix: {error}"),
-                    )
-                })?;
             let suffix = reader
                 .read()
                 .map_err(|error| {
                     ::miden_note_bindings::__private::miden_note_schema::Error::new(
                         format!("failed to decode account-id suffix: {error}"),
+                    )
+                })?;
+            let prefix = reader
+                .read()
+                .map_err(|error| {
+                    ::miden_note_bindings::__private::miden_note_schema::Error::new(
+                        format!("failed to decode account-id prefix: {error}"),
                     )
                 })?;
             ::miden_note_bindings::__private::miden_protocol::account::AccountId::try_from_elements(
@@ -390,7 +390,7 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
         }
     }
     #[doc(hidden)]
-    const __MIDEN_NOTE_STORAGE_SCHEMA_WIT: &str = "\npackage example:p2id-schema@1.0.0;\n\nuse miden:base/core-types@1.0.0;\n\ninterface note-storage {\n    use core-types.{account-id};\n\n    record p2id-note {\n        target-account-id: account-id,\n    }\n\n    type storage = p2id-note;\n}\n\npackage miden:base@1.0.0 {\n    interface core-types {\n        record felt { inner: f32 }\n        record account-id { prefix: felt, suffix: felt }\n    }\n}\n";
+    const __MIDEN_NOTE_STORAGE_SCHEMA_WIT: &str = "\npackage example:p2id-schema@1.0.0;\n\nuse miden:base/core-types@1.0.0;\n\ninterface note-storage {\n    use core-types.{account-id};\n\n    record p2id-note {\n        target-account-id: account-id,\n    }\n\n    type storage = p2id-note;\n}\n\npackage miden:base@1.0.0 {\n    interface core-types {\n        record felt { inner: f32 }\n        record account-id { suffix: felt, prefix: felt }\n    }\n}\n";
     /// Returns the resolved schema, which is parsed once for the whole process.
     #[doc(hidden)]
     fn __miden_note_storage_schema() -> ::miden_note_bindings::__private::miden_note_schema::Result<
@@ -512,4 +512,4 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
         }
     }
 }
-pub use __miden_note_bindings_f74ea5e7a6e77b2d::P2idNote;
+pub use __miden_note_bindings_b284481f494e95ad::P2idNote;

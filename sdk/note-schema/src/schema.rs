@@ -574,7 +574,7 @@ fn standard_leaf_fields(leaf: StandardLeaf) -> &'static [&'static str] {
     match leaf {
         StandardLeaf::Felt | StandardLeaf::AssetAmount => &["inner"],
         StandardLeaf::Word => &["a", "b", "c", "d"],
-        StandardLeaf::AccountId => &["prefix", "suffix"],
+        StandardLeaf::AccountId => &["suffix", "prefix"],
     }
 }
 

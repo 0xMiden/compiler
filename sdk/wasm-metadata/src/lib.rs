@@ -64,6 +64,11 @@ pub const FPI_IMPORT_PREFIX: &str = "fpi-";
 /// FPI import, its Miden path is exempt from the import nesting rule.
 pub const DYNCALL_IMPORT_PREFIX: &str = "dyncall-";
 
+/// WIT names of the parameters the SDK's FPI imports prepend to a dependency function's own
+/// parameters: the foreign account id prefix and suffix, and the foreign procedure root.
+pub const FPI_ABI_PARAM_NAMES: [&str; 3] =
+    ["account-id-prefix", "account-id-suffix", "foreign-proc-root"];
+
 /// Name of the Miden package (`.masp`) section that carries the component's public WIT source.
 pub const PACKAGE_WIT_SECTION_ID: &str = "wit";
 
@@ -137,7 +142,21 @@ pub mod package_cache {
     pub const DEPENDENCY_MANIFEST_DIR: &str = "miden-deps";
 
     /// Schema version of the dependency artifact map.
+    ///
+    /// In schema 1, an entry's `wit` key says whether the artifact may have a component
+    /// interface: embedded WIT, or an account component whose interface the SDK macros try to
+    /// synthesize from its manifest. Older writers recorded only embedded WIT; a reader sees
+    /// such an account component as a link-only package and reports that with a clear
+    /// diagnostic, never a wrong build, so the widened meaning does not bump the schema.
     pub const DEPENDENCY_MAP_SCHEMA: i64 = 1;
+
+    /// Whether `package` may have a component interface, the meaning of an artifact map entry's
+    /// `wit` key: it embeds component WIT, or it is an account component, whose interface the SDK
+    /// macros try to synthesize from its manifest (which fails for some components).
+    pub fn has_component_interface(package: &miden_mast_package::Package) -> bool {
+        package.kind == miden_mast_package::TargetType::AccountComponent
+            || super::package_wit(package).is_some()
+    }
 
     /// Schema version of the dependency build-input record.
     pub const BUILD_INPUTS_SCHEMA: u32 = 1;

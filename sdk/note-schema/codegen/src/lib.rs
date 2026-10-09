@@ -290,9 +290,9 @@ fn generate_helper_traits(runtime: &RuntimePaths) -> TokenStream {
                 &self,
                 writer: &mut #miden_field_repr::FeltWriter<'_>,
             ) -> #miden_note_schema::Result<()> {
-                // The WIT record declares prefix before suffix.
-                writer.write(self.prefix().as_felt());
+                // The WIT record declares suffix before prefix.
                 writer.write(self.suffix());
+                writer.write(self.prefix().as_felt());
                 Ok(())
             }
         }
@@ -301,17 +301,16 @@ fn generate_helper_traits(runtime: &RuntimePaths) -> TokenStream {
             fn __read_note_felts(
                 reader: &mut #miden_field_repr::FeltReader<'_>,
             ) -> #miden_note_schema::Result<Self> {
-                let prefix = reader.read().map_err(|error| {
-                    #miden_note_schema::Error::new(format!(
-                        "failed to decode account-id prefix: {error}"
-                    ))
-                })?;
                 let suffix = reader.read().map_err(|error| {
                     #miden_note_schema::Error::new(format!(
                         "failed to decode account-id suffix: {error}"
                     ))
                 })?;
-                // WIT declares prefix before suffix, but the constructor takes suffix first.
+                let prefix = reader.read().map_err(|error| {
+                    #miden_note_schema::Error::new(format!(
+                        "failed to decode account-id prefix: {error}"
+                    ))
+                })?;
                 #miden_protocol::account::AccountId::try_from_elements(suffix, prefix).map_err(
                     |error| {
                         #miden_note_schema::Error::new(format!(

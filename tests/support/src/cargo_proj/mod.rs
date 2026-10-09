@@ -520,7 +520,10 @@ impl Project {
 /// overwrites the variable, so both directories below are anchored to the same place whether the
 /// suite is invoked as `cargo test` (no ambient variable) or through `cargo make` (which sets one,
 /// `Makefile.toml`).
-fn test_target_dir() -> PathBuf {
+///
+/// Public so that test crates can stage their own shared artifacts next to the ones this crate
+/// keeps there.
+pub fn test_target_dir() -> PathBuf {
     static TARGET_DIR: OnceLock<PathBuf> = OnceLock::new();
     TARGET_DIR
         .get_or_init(|| {

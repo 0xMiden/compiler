@@ -52,3 +52,5 @@ wasmi = "1.1.0"
 wat.workspace = true
 wit-bindgen-core.workspace = true
 midenc-frontend-wasm-metadata.workspace = true
+# Assembles the MASM account-component fixtures the macro tests depend on
+midenc-package-interface = { workspace = true, features = ["testing"] }

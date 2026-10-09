@@ -139,8 +139,8 @@ impl ConsumerTypeCodec for AccountIdCodec {
             .map_err(|err| Error::new(format!("invalid account-id: {err}")))?;
         let mut felts = Vec::with_capacity(2);
         let mut writer = FeltWriter::new(&mut felts);
-        writer.write(account_id.prefix().as_felt());
         writer.write(account_id.suffix());
+        writer.write(account_id.prefix().as_felt());
         Ok(felts)
     }
 
@@ -214,16 +214,15 @@ fn read_repr<T: FromFeltRepr>(felts: &[Felt]) -> Result<T> {
 /// Decodes and validates an account ID in WIT record field order.
 fn read_account_id(felts: &[Felt]) -> Result<AccountId> {
     let mut reader = FeltReader::new(felts);
-    let prefix = reader
+    let suffix = reader
         .read()
         .map_err(|err| Error::new(format!("invalid account-id representation: {err}")))?;
-    let suffix = reader
+    let prefix = reader
         .read()
         .map_err(|err| Error::new(format!("invalid account-id representation: {err}")))?;
     reader
         .ensure_eof()
         .map_err(|err| Error::new(format!("invalid account-id representation: {err}")))?;
-    // WIT declares prefix before suffix, but the constructor takes suffix first.
     AccountId::try_from_elements(suffix, prefix)
         .map_err(|err| Error::new(format!("invalid account-id representation: {err}")))
 }
@@ -289,13 +288,13 @@ mod tests {
     }
 
     #[test]
-    fn account_id_codec_uses_prefix_suffix_field_order() {
+    fn account_id_codec_uses_suffix_prefix_field_order() {
         let codec = AccountIdCodec;
         let (account_id, bech32) = account_id();
         let felts = codec.parse(&bech32).unwrap();
         let hex_felts = codec.parse(&account_id.to_hex()).unwrap();
 
-        assert_eq!(felts, [account_id.prefix().as_felt(), account_id.suffix()]);
+        assert_eq!(felts, [account_id.suffix(), account_id.prefix().as_felt()]);
         assert_eq!(hex_felts, felts);
         assert_eq!(codec.display(&felts).unwrap(), bech32);
     }

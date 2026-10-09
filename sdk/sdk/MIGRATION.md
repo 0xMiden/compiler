@@ -12,6 +12,94 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## 0.15.0-rc.3 -> unreleased
 
+### MASM account-component dependencies need no `wit` override
+
+A dependency on an account component written in Miden Assembly (e.g. the standard basic wallet)
+no longer needs a hand-written WIT file in `package.metadata.miden.dependencies.<name>.wit`: the
+SDK macros derive the interface from the package manifest. Remove the override:
+
+```toml
+# Before
+[dependencies]
+miden-standards-wallets-basic-wallet = "0.17.0"
+
+[package.metadata.miden.dependencies]
+miden-standards-wallets-basic-wallet = { wit = "wit/basic-wallet.wit" }
+
+# After
+[dependencies]
+miden-standards-wallets-basic-wallet = "0.17.0"
+```
+
+The `#[account]` reference stays the same:
+
+```rust
+#[account(miden_standards_wallets_basic_wallet::BasicWallet)]
+pub struct Wallet;
+```
+
+Call sites may need to pass inner values where the hand-written WIT used `core-types` aliases:
+the derived interface takes the manifest's types, and type aliases are not recoverable, so a
+`Tag` becomes its `.inner` (a `u32`; a `NoteTag` already is one), an `AssetAmount` its
+`.as_felt()`, and a `Recipient` its `.inner` word. Results change the same way: `create_note`
+now returns a plain `u16` instead of a `NoteIdx`, which `move_asset_to_note` takes as is. See
+`examples/std-wallet-tx-script`:
+
+```rust
+// Before (hand-written WIT taking `tag` and `recipient`)
+let note_idx = account.create_note(args.tag, args.note_type, args.recipient);
+
+// After
+let note_idx = account.create_note(args.tag.inner, args.note_type, args.recipient.inner);
+```
+
+The override is still available, and still takes precedence, for packages that embed no WIT and
+for components whose derived interface does not fit (see "Depending on MASM account components"
+in the `cargo miden` documentation).
+
+A Rust-built account-component package without embedded WIT is no longer skipped with rebuild
+advice: it now gets an interface derived from its manifest, too, in which the SDK types the
+component uses (`asset`, `word`, `felt`, `note-type`, ...) are the SDK's `core-types` items, as
+in a MASM component's interface. That interface has no other alias names, leaves out procedures
+for the reasons listed in the interface doc comment (64-bit integer parameters or results,
+auth procedures, ...), and takes its WIT package id from the package name, so it can differ from
+the component's own WIT; rebuild the package with the current `cargo miden build` to restore its
+embedded interface.
+
+Declaring a MASM account-component dependency in `miden-project.toml` now generates its bindings
+in every SDK macro of the crate (`#[component]`, `#[note]`, `#[tx_script]`), whether or not a
+macro references it, as for a dependency with embedded WIT.
+
+### `AccountId` is laid out suffix first, as in the protocol
+
+The `account-id` record of `miden:base/core-types` is now `{ suffix: felt, prefix: felt }`, and
+the fields of `miden::AccountId` follow the same order (`AccountId::new(prefix, suffix)` and the
+`prefix`/`suffix` fields keep their names). This is the protocol's order: the kernel returns an
+account id as `[suffix, prefix]` and the standard components and notes take and store it suffix
+first. As a result, the standard components' `AccountId` is now the SDK's: procedures such as
+`ownable2step::get_owner` or `rbac::has_role` take and return a `miden::AccountId` instead of a
+dependency-local `AccountId` type.
+
+This is a breaking layout change:
+
+- an account id passed to or returned from another component, or through a foreign procedure
+  invocation, is flattened suffix first, so every component, note and script exchanging one must
+  be recompiled together;
+- a Rust note stores its `AccountId` fields suffix first, so a note created by a previous build of
+  a note cannot be consumed by the new build of the same note;
+- a host that encodes such note storage by hand must swap the two felts:
+
+```rust
+// Before
+let storage = vec![account_id.prefix().as_felt(), account_id.suffix()];
+
+// After
+let storage = vec![account_id.suffix(), account_id.prefix().as_felt()];
+```
+
+The note storage schema embedded in the package, and the host bindings generated from it, follow
+the new order on their own.
+
 ### The `extern_*` procedures are gone; the generated `miden::raw` modules replace them
 
 The bindings to the core library, the protocol and the standards are now generated from the
@@ -219,8 +307,9 @@ interface foo {
 ```
 
 The parent of an imported function's path names a dependency component, so the parents of a
-component's imports must not nest in one another or in the component's own namespace: importing
-both `acme::math::add` and `acme::math::u64::add` is rejected. The FPI imports `#[account(...)]`
+component's imports must not nest in the component's own namespace: a component in the namespace
+`acme::app` importing `acme::app::util::add` is rejected. The parents of the imports may nest in
+one another, e.g. `acme::math::add` and `acme::math::u64::add`. The FPI imports `#[account(...)]`
 generates (`<namespace>::fpi::<dependency path>::<function>`) and the stored-procedure imports
 `#[component_storage]` generates for `StoredProcedure` slots (`<namespace>::dyncall::<field>`) nest
 in the component's namespace by design and are exempt, since they declare no dependency component.

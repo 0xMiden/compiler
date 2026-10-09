@@ -141,7 +141,7 @@ fn main() {{
     let storage = typed.to_note_storage().unwrap();
     assert_eq!(
         storage.items(),
-        &[account_id.prefix().as_felt(), account_id.suffix()],
+        &[account_id.suffix(), account_id.prefix().as_felt()],
     );
     typed.validate().unwrap();
     assert_eq!(

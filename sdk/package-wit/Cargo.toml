@@ -1,0 +1,39 @@
+[package]
+name = "midenc-package-wit"
+description = "WIT interface generation from the manifest of a compiled Miden account-component package"
+version = "0.15.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+# The kebab case the SDK macros convert Rust identifiers with.
+heck.workspace = true
+# `TargetType`, the package kind the generator checks.
+miden-mast-package.workspace = true
+# The WIT and Rust keyword lists and the namespace segment rule the generated names are checked
+# against, `FPI_IMPORT_PREFIX`, and `validate_procedure_path`.
+midenc-frontend-wasm-metadata.workspace = true
+midenc-hir-type.workspace = true
+midenc-package-interface.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+# The 33 standard account components, for the snapshot tests.
+miden-standards = { workspace = true, features = ["std"] }
+# `check_generated`, the snapshot comparison shared with the SDK binding tests.
+midenc-integration-test-support.workspace = true
+midenc-package-interface = { workspace = true, features = ["testing"] }
+# `to_rust_ident`, to check `UNESCAPED_RUST_KEYWORDS` against the bindings generator.
+wit-bindgen-rust.workspace = true
+wit-parser.workspace = true

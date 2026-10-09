@@ -104,8 +104,8 @@ fn masm_standard() {
     }
     let [member_cycles, non_member_cycles]: [String; 2] =
         note_cycles.try_into().expect("one measurement per consumed note");
-    expect!["3671"].assert_eq(&member_cycles);
-    expect!["3576"].assert_eq(&non_member_cycles);
+    expect!["3762"].assert_eq(&member_cycles);
+    expect!["3667"].assert_eq(&non_member_cycles);
 }
 
 /// Returns the MAST root of the procedure `leaf` exported by a standards component.
@@ -131,9 +131,9 @@ fn standards_procedure_root(code: &AccountComponentCode, leaf: &str) -> Word {
 }
 
 /// Note storage layout of the role-check note: the role symbol, the queried account id in the
-/// note's `AccountId` field order (prefix, suffix), and the expected answer.
+/// note's `AccountId` field order (suffix, prefix), and the expected answer.
 fn role_check_storage(role: Felt, queried: AccountId, expected: Felt) -> Vec<Felt> {
-    vec![role, queried.prefix().as_felt(), queried.suffix(), expected]
+    vec![role, queried.suffix(), queried.prefix().as_felt(), expected]
 }
 
 /// Dispatcher component holding the root of the standards `has_role` procedure.

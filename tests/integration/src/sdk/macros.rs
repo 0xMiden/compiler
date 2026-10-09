@@ -656,9 +656,9 @@ fn account_component_project_with_sibling_dep(
 
 /// Builds an account component project with one sibling component dependency named `test-sibling`.
 ///
-/// `sibling_wit` is embedded into the WIT section of the dependency's synthesized `.masp`
-/// package. Passing `None` omits the section, reproducing a dependency package built by a
-/// toolchain that predates embedded WIT.
+/// `sibling_wit` is embedded into the WIT section of the dependency's `.masp` package, a library
+/// assembled from MASM. Passing `None` omits the section: a library gets no WIT synthesized from
+/// its manifest (only an account component does), so the dependency has no interface.
 fn account_component_project_with_sibling_dep_inner(
     name: &str,
     lib_rs: &str,
@@ -1000,8 +1000,9 @@ impl TestComponent for TestComponentStorage {
 
 #[test]
 fn component_sibling_reports_dependency_package_without_embedded_wit() {
-    // The dependency package exists but predates embedded WIT (no `wit` section). Expansion
-    // should tell the user to rebuild the dependency with the current toolchain.
+    // The dependency package exists but is a library without a `wit` section, so no WIT is
+    // synthesized for it either. Expansion should say it is not an account component and tell the
+    // user to rebuild the dependency with the current toolchain.
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
@@ -1037,7 +1038,7 @@ impl TestComponent for TestComponentStorage {
 
     assert!(stderr.contains("does not embed component WIT"), "unexpected stderr: {stderr}");
     assert!(stderr.contains("cargo miden build"), "unexpected stderr: {stderr}");
-    assert!(stderr.contains("provide the WIT manually"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains("is not an account component"), "unexpected stderr: {stderr}");
 }
 
 /// The sibling-consumer source shared by the `wit`-key escape-hatch tests.
@@ -1106,6 +1107,135 @@ fn component_sibling_wit_key_conflicts_with_embedded_wit() {
 
     assert!(stderr.contains("embeds component WIT"), "unexpected stderr: {stderr}");
     assert!(stderr.contains("remove the `wit` key"), "unexpected stderr: {stderr}");
+}
+
+/// `cargo check` of a note project `name` that references, with
+/// `#[account(test_wallet::<iface>)]`, a MASM account component whose procedures live in
+/// `dependency_namespace`: its package embeds no WIT and the manifest sets no `wit` key, so the
+/// macros try to synthesize its interface from the package manifest, which may succeed or fail.
+fn check_masm_account_component_dependency(
+    name: &str,
+    dependency_namespace: &str,
+    iface: &str,
+) -> std::process::Output {
+    use miden_core::serde::Serializable;
+
+    const DEPENDENCY: &str = "test-wallet";
+    const SOURCE: &str =
+        "@account_procedure\npub proc receive_asset(asset: word)\n    dropw\nend\n";
+    let sdk_path = sdk_crate_path();
+    let namespace = component_namespace(name);
+    let component_package = format!("miden:{}", name.replace('_', "-"));
+    let miden_project_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+
+[lib]
+kind = "note"
+namespace = "{namespace}"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+{DEPENDENCY} = {{ path = "package-cache/{DEPENDENCY}.masp" }}
+"#
+    );
+    let cargo_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{sdk_path}" }}
+
+[package.metadata.component]
+package = "{component_package}"
+"#,
+        sdk_path = sdk_path.display(),
+    );
+    // The interface is named after the last namespace segment.
+    let lib_rs = format!(
+        r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{{account, note, Word}};
+
+#[account(test_wallet::{iface})]
+pub struct TestAccount;
+
+#[note]
+struct ReceiveNote;
+
+#[note]
+impl ReceiveNote {{
+    #[note_script]
+    pub fn script(self, arg: Word, account: &mut TestAccount) {{
+        account.receive_asset(arg);
+    }}
+}}
+"#
+    );
+
+    let cargo_proj = project(name)
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
+        .file("src/lib.rs", &lib_rs)
+        .build();
+    let mut wallet = (*midenc_package_interface::testing::assemble_fixture(
+        DEPENDENCY,
+        dependency_namespace,
+        SOURCE,
+    ))
+    .clone();
+    wallet.kind = miden_mast_package::TargetType::AccountComponent;
+    let package_dir = cargo_proj.root().join("package-cache");
+    std::fs::create_dir_all(&package_dir).expect("the package cache must be created");
+    std::fs::write(package_dir.join(format!("{DEPENDENCY}.masp")), wallet.to_bytes())
+        .expect("the wallet package must be written");
+
+    cargo_check_miden_target(&cargo_proj)
+}
+
+/// A Miden Assembly account-component dependency without WIT is usable from `#[account]`.
+#[test]
+fn masm_account_component_dependency_needs_no_wit() {
+    let output = check_masm_account_component_dependency(
+        "masm_account_component_dependency",
+        "miden::test_wallet::wallet",
+        "Wallet",
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected the MASM account component to be usable without WIT: {stderr}"
+    );
+}
+
+/// A Miden Assembly component with a keyword interface name fails where `#[account]` uses it.
+#[test]
+fn masm_account_component_with_a_keyword_interface_is_reported_at_its_reference() {
+    // The interface would be named `list`, a WIT keyword, so no WIT is synthesized and the
+    // dependency is skipped; the reason surfaces where `#[account]` references it.
+    let output = check_masm_account_component_dependency(
+        "masm_account_component_keyword_interface",
+        "miden::test_wallet::list",
+        "List",
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "expected the keyword interface to be rejected");
+    assert!(
+        stderr.contains("the module `list` is a WIT keyword"),
+        "unexpected stderr: {stderr}"
+    );
 }
 
 #[test]

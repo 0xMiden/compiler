@@ -1,0 +1,13 @@
+[package]
+name = "std-faucet-config-tx-script"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+namespace = "miden::std_faucet_config_tx_script::std_faucet_config_tx_script"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+miden-standards-faucets-fungible-faucet = "0.17.0"

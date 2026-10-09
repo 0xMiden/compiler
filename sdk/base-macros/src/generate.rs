@@ -5,7 +5,9 @@ use std::{
     sync::LazyLock,
 };
 
-use midenc_frontend_wasm_metadata::{FPI_IMPORT_PREFIX, namespace::CORE_TYPES_INTERFACE};
+use midenc_frontend_wasm_metadata::FPI_IMPORT_PREFIX;
+/// Fully-qualified WIT interface path for Miden SDK core types, `miden:base/core-types@1.0.0`.
+pub(crate) use midenc_frontend_wasm_metadata::namespace::CORE_TYPES_INTERFACE_ID;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use syn::{
@@ -24,17 +26,13 @@ use wit_bindgen_core::{
 };
 use wit_bindgen_rust::{Opts, WithOption};
 
-use crate::{fpi, manifest_paths};
+use crate::{dependency_package::WitOrigin, fpi, manifest_paths};
 
 /// WIT package name of the inline world `#[component_storage]` generates for stored-procedure
 /// slots.
 pub(crate) const STORED_PROCEDURE_BINDINGS_PACKAGE: &str = "miden:stored-procedure-bindings";
 /// WIT function-name prefix the Wasm frontend reserves for stored-procedure dispatch imports.
 pub(crate) const DYNCALL_WIT_PREFIX: &str = midenc_frontend_wasm_metadata::DYNCALL_IMPORT_PREFIX;
-
-/// Fully-qualified WIT interface path for Miden SDK core types, `miden:base/core-types@1.0.0`.
-pub(crate) static CORE_TYPES_INTERFACE_ID: LazyLock<String> =
-    LazyLock::new(|| format!("miden:base/{CORE_TYPES_INTERFACE}@1.0.0"));
 
 /// Whether the world being generated may declare imports named with the reserved `dyncall-`
 /// prefix, and so whether its functions are checked against the reserved `fpi-` and `dyncall-`
@@ -214,7 +212,7 @@ fn local_wit_link_section(
             format!("failed to read WIT file '{}': {err}", local_wit_path.display()),
         )
     })?;
-    if crate::wit_world::parse_dependency_wit_source(&wit_source).is_err() {
+    if crate::wit_world::parse_dependency_wit_source(&wit_source, "local WIT").is_err() {
         return Ok(TokenStream2::new());
     }
     // The emitter and the Wasm frontend accept exactly one top-level package declaration.
@@ -630,13 +628,21 @@ fn load_wit_sources(
         let owner =
             format!("dependency `{}` (package '{}')", source.name, source.package_path.display());
         let load_error = |err: String| {
-            Error::new(
-                Span::call_site(),
-                format!(
-                    "failed to load WIT embedded in dependency package '{}': {err}",
-                    source.package_path.display()
+            let (name, path) = (&source.name, source.package_path.display());
+            let message = match &source.origin {
+                WitOrigin::Embedded => {
+                    format!("failed to load the WIT embedded in dependency package '{path}': {err}")
+                }
+                WitOrigin::Override(_) => {
+                    format!("failed to load the WIT override of dependency package '{path}': {err}")
+                }
+                WitOrigin::Synthesized => format!(
+                    "failed to load the WIT synthesized for dependency '{name}' from the manifest \
+                     of package '{path}': {err}; provide a WIT via \
+                     package.metadata.miden.dependencies.{name}.wit in miden-project.toml"
                 ),
-            )
+            };
+            Error::new(Span::call_site(), message)
         };
         let group = UnresolvedPackageGroup::parse(format!("{}.wit", source.name), &source.wit)
             .map_err(|(map, err)| load_error(err.render(&map)))?;
@@ -645,7 +651,7 @@ fn load_wit_sources(
         record_package_owners(&resolve, &mut owners, &owner);
         packages.push(pkg);
         files.push(source.package_path.clone());
-        if let Some(wit_override_path) = &source.wit_override_path {
+        if let WitOrigin::Override(wit_override_path) = &source.origin {
             files.push(wit_override_path.clone());
         }
     }
@@ -755,7 +761,7 @@ fn push_custom_with_entries(opts: &mut Opts, entries: &[(String, WithOption)]) {
 
 /// Pushes default `with` entries that map Miden base types to SDK types.
 fn push_default_with_entries(opts: &mut Opts) {
-    let core_types = CORE_TYPES_INTERFACE_ID.as_str();
+    let core_types = CORE_TYPES_INTERFACE_ID;
     opts.with.push((core_types.to_string(), WithOption::Generate));
     push_path_entry(opts, &format!("{core_types}/felt"), "::miden::Felt");
     push_path_entry(opts, &format!("{core_types}/word"), "::miden::Word");
@@ -885,7 +891,7 @@ fn world_uses_miden_core_types(resolve: &Resolve, world_id: WorldId) -> bool {
         .imports
         .values()
         .chain(world.exports.values())
-        .any(|item| world_item_uses_interface(resolve, item, &CORE_TYPES_INTERFACE_ID))
+        .any(|item| world_item_uses_interface(resolve, item, CORE_TYPES_INTERFACE_ID))
 }
 
 /// Returns true when a world item references a type from `interface_path`.

@@ -2442,6 +2442,36 @@ mod tests {
         assert!(world_builder.find_component(stub_component).is_none());
     }
 
+    /// Imports whose stub components nest (`x::y` and `x::y::z`, as for two dependencies whose
+    /// namespaces nest) are declared into one world, each in the stub its path's parent names,
+    /// and each path resolves to its own declaration.
+    #[test]
+    fn imports_with_nested_stub_components_are_declared_in_one_world() {
+        let (_context, mut world_builder, _module_builder) = world_with_core_module();
+        let signature = Signature {
+            params: vec![AbiParam::new(Type::Felt)],
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::ComponentModel,
+        };
+
+        for (cm_name, path) in [("f", "x::y::f"), ("g", "x::y::z::g")] {
+            let import = import_at(test_import_path(cm_name), path);
+            let function = declare_import_function(&mut world_builder, &import, &signature)
+                .unwrap_or_else(|err| panic!("`{path}` should be declared: {err}"));
+            let stub = world_builder
+                .find_component(import.path.without_leaf().to_symbol_name())
+                .expect("the stub component is defined");
+            assert!(stub.borrow().is_declaration_only());
+            let resolved =
+                world_builder.world.borrow().resolve(&import.path).expect("the import resolves");
+            assert_eq!(
+                resolved.borrow().as_symbol_operation().as_operation_ref(),
+                function.as_operation_ref(),
+                "`{path}` resolves to its own declaration"
+            );
+        }
+    }
+
     /// A dyncall import whose results need the canonical out-pointer keeps that transformation:
     /// the root is still consumed as the dyncall operand and the flat results are stored out.
     #[test]

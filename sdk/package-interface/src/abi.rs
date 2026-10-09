@@ -147,6 +147,11 @@ pub fn flatten_type(ty: &Type) -> Result<Vec<Flattened>, Type> {
     Ok(out)
 }
 
+/// Whether `ty` is `[felt; 4]`, the type the SDK calls `Word`.
+pub fn is_word(ty: &Type) -> bool {
+    matches!(ty, Type::Array(array) if array.ty == Type::Felt && array.len == 4)
+}
+
 fn flatten_into(
     ty: &Type,
     path: &mut SmallVec<[FieldStep; 2]>,

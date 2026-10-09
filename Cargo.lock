@@ -3201,6 +3201,8 @@ dependencies = [
  "miden-protocol",
  "midenc-expect-test",
  "midenc-frontend-wasm-metadata",
+ "midenc-package-interface",
+ "midenc-package-wit",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -4456,6 +4458,7 @@ dependencies = [
 name = "midenc-frontend-wasm-metadata"
 version = "0.15.0"
 dependencies = [
+ "heck",
  "miden-mast-package",
  "serde",
  "serde_json",
@@ -4613,6 +4616,7 @@ dependencies = [
  "midenc-frontend-wasm-metadata",
  "midenc-integration-test-support",
  "rand 0.10.2",
+ "sha2",
  "tokio",
 ]
 
@@ -4685,6 +4689,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-eval",
  "midenc-integration-test-support",
+ "midenc-package-interface",
  "midenc-session",
  "num-traits",
  "proptest",
@@ -4717,6 +4722,22 @@ dependencies = [
  "miden-mast-package",
  "miden-thiserror",
  "smallvec",
+]
+
+[[package]]
+name = "midenc-package-wit"
+version = "0.15.0"
+dependencies = [
+ "heck",
+ "miden-mast-package",
+ "miden-standards",
+ "miden-thiserror",
+ "midenc-frontend-wasm-metadata",
+ "midenc-hir-type",
+ "midenc-integration-test-support",
+ "midenc-package-interface",
+ "wit-bindgen-rust",
+ "wit-parser 0.259.0",
 ]
 
 [[package]]

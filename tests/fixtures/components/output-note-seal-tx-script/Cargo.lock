@@ -1819,6 +1819,8 @@ dependencies = [
  "miden-project",
  "miden-protocol",
  "midenc-frontend-wasm-metadata",
+ "midenc-package-interface",
+ "midenc-package-wit",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -2316,6 +2318,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-thiserror"
+version = "1.0.59"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "183ff8de338956ecfde3a38573241eb7a6f3d44d73866c210e5629c07fa00253"
+dependencies = [
+ "miden-thiserror-impl",
+]
+
+[[package]]
+name = "miden-thiserror-impl"
+version = "1.0.59"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ee4176a0f2e7d29d2a8ee7e60b6deb14ce67a20e94c3e2c7275cdb8804e1862"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "miden-tx-script-args"
 version = "0.15.0"
 dependencies = [
@@ -2390,6 +2412,7 @@ dependencies = [
 name = "midenc-frontend-wasm-metadata"
 version = "0.15.0"
 dependencies = [
+ "heck",
  "miden-mast-package",
  "serde",
  "serde_json",
@@ -2405,6 +2428,28 @@ dependencies = [
  "miden-serde-utils",
  "smallvec",
  "thiserror",
+]
+
+[[package]]
+name = "midenc-package-interface"
+version = "0.15.0"
+dependencies = [
+ "miden-assembly-syntax",
+ "miden-mast-package",
+ "miden-thiserror",
+ "smallvec",
+]
+
+[[package]]
+name = "midenc-package-wit"
+version = "0.15.0"
+dependencies = [
+ "heck",
+ "miden-mast-package",
+ "miden-thiserror",
+ "midenc-frontend-wasm-metadata",
+ "midenc-hir-type",
+ "midenc-package-interface",
 ]
 
 [[package]]

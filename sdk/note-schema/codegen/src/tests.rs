@@ -22,7 +22,7 @@ interface note-storage {
 package miden:base@1.0.0 {
     interface core-types {
         record felt { inner: f32 }
-        record account-id { prefix: felt, suffix: felt }
+        record account-id { suffix: felt, prefix: felt }
     }
 }
 "#;
@@ -56,7 +56,7 @@ interface note-storage {
 package miden:base@1.0.0 {
     interface core-types {
         record felt { inner: f32 }
-        record account-id { prefix: felt, suffix: felt }
+        record account-id { suffix: felt, prefix: felt }
     }
 }
 "#;
@@ -100,7 +100,10 @@ fn maps_protocol_leaf_and_root_type() {
     assert!(!has_nested_named_types);
     assert!(source.contains("pub target_account_id: ::miden_protocol::account::AccountId"));
     assert!(source.contains("pub const WIT_FQN"));
-    assert!(source.contains("self.prefix().as_felt()"));
+    // The account id is written in its WIT field order, suffix first.
+    let suffix = source.find("writer.write(self.suffix())").unwrap();
+    let prefix = source.find("writer.write(self.prefix().as_felt())").unwrap();
+    assert!(suffix < prefix);
 }
 
 #[test]
