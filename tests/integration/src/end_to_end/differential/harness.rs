@@ -389,7 +389,7 @@ fn run_case_inner_with_flags(
 
 /// Writes the MASM side of a case as a generated `cargo-miden` project and
 /// returns the compiler test that builds it with `midenc_flags`.
-fn masm_build(
+pub(crate) fn masm_build(
     pkg_name: &str,
     manifest: &str,
     full_source: &str,
