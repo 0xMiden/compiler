@@ -329,19 +329,41 @@ fn library_target(namespace: &str) -> midenc_session::miden_project::Target {
     )
 }
 
-/// Assemble `component` as a library and return its complete, sorted public procedure surface.
+fn assemble_library(
+    context: &Rc<Context>,
+    component: &MasmComponent,
+    namespace: &str,
+) -> Box<miden_mast_package::Package> {
+    let target = library_target(namespace);
+    let sources = component
+        .source_inputs(&target, context.session())
+        .expect("the lowered component should provide assembler inputs");
+    let mut assembler = miden_assembly::Assembler::new(context.session().source_manager.clone());
+    if component.init.is_some() {
+        assembler
+            .link_package(
+                crate::intrinsics::load(context.session()).expect("the intrinsics should load"),
+                miden_assembly::Linkage::Static,
+            )
+            .unwrap();
+        assembler
+            .link_package(
+                midenc_session::LinkLibrary::core().load(&context.session().options).unwrap(),
+                miden_assembly::Linkage::Dynamic,
+            )
+            .unwrap();
+    }
+    assembler
+        .assemble_library(namespace, sources.root, sources.support)
+        .expect("the lowered component should assemble as a library")
+}
+
 fn assembled_library_exports(
     context: &Rc<Context>,
     component: &MasmComponent,
     namespace: &str,
 ) -> Vec<String> {
-    let target = library_target(namespace);
-    let sources = component
-        .source_inputs(&target, context.session())
-        .expect("the lowered component should provide assembler inputs");
-    let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
-        .assemble_library(namespace, sources.root, sources.support)
-        .expect("the lowered component should assemble as a library");
+    let package = assemble_library(context, component, namespace);
     let mut exports = package
         .manifest
         .exports()
@@ -572,6 +594,433 @@ fn component_init(component: &MasmComponent) -> &masm::Procedure {
         .procedures()
         .find(|procedure| procedure.name().as_str() == "init")
         .expect("a marked component must define `init`")
+}
+
+fn alias_import<'a>(module: &'a masm::Module, name: &str) -> &'a masm::ItemImport {
+    let masm::Import::Item(import) = module.get_import(name).expect("alias must be an import")
+    else {
+        panic!("alias must be an item import");
+    };
+    import
+}
+
+#[test]
+fn cross_module_alias_to_sibling_lowers_and_assembles_from_world() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(
+        &context,
+        r#"
+builtin.world {
+    builtin.module public @lib {
+        builtin.module public @api {
+            builtin.function_alias public @foo -> ::@lib::@implementation::@body;
+        };
+        builtin.module public @implementation {
+            builtin.function public extern("C") @body() {
+                hir.exec @helper() : extern("C") () -> ();
+                builtin.ret;
+            };
+            builtin.function private extern("C") @helper() { builtin.ret; };
+        };
+    };
+};
+"#,
+    );
+    let lowered = lower_world(world).expect("an alias to a sibling module's function must lower");
+
+    let api = lowered.modules.iter().find(|module| module.name() == "api").unwrap();
+    assert_eq!(api.procedures().count(), 0);
+    assert_eq!(alias_import(api, "foo").source_name().as_str(), "body");
+
+    let package = assemble_library(&context, &lowered, "lib");
+    let body = package.get_procedure_root_by_path("::lib::implementation::body").unwrap();
+    assert_eq!(package.get_procedure_root_by_path("::lib::api::foo"), Some(body));
+}
+
+#[test]
+fn world_function_alias_uses_emitted_root_module() {
+    for nested in [false, true] {
+        let context = Rc::new(Context::default());
+        let alias = "builtin.function_alias public @alias -> ::@body;";
+        let alias_module = if nested {
+            format!("builtin.module public @api {{ {alias} }};")
+        } else {
+            alias.to_string()
+        };
+        let source = format!(
+            r#"
+builtin.world {{
+    builtin.function public extern("C") @body() {{ builtin.ret; }};
+    builtin.module public @lib {{
+        {alias_module}
+    }};
+}};
+"#
+        );
+        let lowered = lower_world(parse_world(&context, &source)).unwrap();
+        let module = if nested {
+            lowered.modules.iter().find(|module| module.name() == "api").unwrap()
+        } else {
+            &lowered.modules[0]
+        };
+        let import = alias_import(module, "alias");
+        assert_eq!(import.source_name().as_str(), "body");
+        assert_eq!(import.module_path().inner().as_str(), if nested { "::lib" } else { "self" });
+        let alias_path = if nested {
+            "::lib::api::alias"
+        } else {
+            "::lib::alias"
+        };
+        let package = assemble_library(&context, &lowered, "lib");
+        let body = package.get_procedure_root_by_path("::lib::body").unwrap();
+        assert_eq!(package.get_procedure_root_by_path(alias_path), Some(body));
+    }
+}
+
+#[test]
+fn cross_module_alias_to_ancestor_lowers_and_assembles() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @implementation {
+        builtin.function public extern("C") @body() { builtin.ret; };
+        builtin.module public @api {
+            builtin.function_alias public @foo -> ::@"hir_ns:test@1.0.0"::@implementation::@body;
+        };
+    };
+};
+"#,
+    )
+    .expect("an alias to an ancestor module's function must lower");
+
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(
+        exports.iter().any(|path| path.ends_with("::implementation::api::foo")),
+        "{exports:?}"
+    );
+}
+
+#[test]
+fn cross_module_alias_chain_lowers_and_assembles() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @api {
+        builtin.function_alias public @foo -> @forward;
+        builtin.function_alias private @forward -> ::@"hir_ns:test@1.0.0"::@implementation::@exposed;
+    };
+    builtin.module public @implementation {
+        builtin.function_alias public @exposed -> @body;
+        builtin.function public extern("C") @body() { builtin.ret; };
+    };
+};
+"#,
+    )
+    .expect("an alias chain with a canonical target in a sibling module must lower");
+
+    let api = lowered.modules.iter().find(|module| module.name() == "api").unwrap();
+    for name in ["foo", "forward"] {
+        assert_eq!(alias_import(api, name).source_name().as_str(), "exposed");
+    }
+    assert_eq!(api.procedures().count(), 0);
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(exports.iter().any(|path| path.ends_with("::api::foo")), "{exports:?}");
+    assert!(!exports.iter().any(|path| path.ends_with("::api::forward")), "{exports:?}");
+}
+
+#[test]
+fn cross_module_alias_in_interface_lowers_and_component_assembles() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.interface @api {
+        builtin.function_alias public @foo -> ::@"hir_ns:test@1.0.0"::@implementation::@body;
+    };
+    builtin.module public @implementation {
+        builtin.function public extern("C") @body() { builtin.ret; };
+    };
+};
+"#,
+    )
+    .expect("an interface alias to a sibling module's function must lower");
+
+    let interface = lowered
+        .modules
+        .iter()
+        .find(|module| module.path().as_str().ends_with("::api"))
+        .expect("the interface must have a MASM module");
+    assert_eq!(interface.procedures().count(), 0);
+    assert_eq!(alias_import(interface, "foo").source_name().as_str(), "body");
+    assert!(lowered.modules[0].submodules().iter().any(|module| {
+        module.name.as_str() == "api" && module.visibility == masm::Visibility::Public
+    }));
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(exports.iter().any(|path| path.ends_with("::api::foo")), "{exports:?}");
+}
+
+#[test]
+fn interface_function_is_exported_from_component() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.interface @api {
+        builtin.function public extern("C") @body() { builtin.ret; };
+    };
+};
+"#,
+    )
+    .unwrap();
+
+    assert!(lowered.modules[0].submodules().iter().any(|module| {
+        module.name.as_str() == "api" && module.visibility == masm::Visibility::Public
+    }));
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(exports.iter().any(|path| path.ends_with("::api::body")), "{exports:?}");
+}
+
+#[test]
+fn local_aliases_preserve_names_and_flatten_private_chains() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.function_alias public @exported -> @forward;
+    builtin.function_alias internal @internal_alias -> @forward;
+    builtin.function_alias private @forward -> @body;
+    builtin.function public extern("C") @body() { builtin.ret; };
+    builtin.function public extern("C") @caller() -> (felt, felt, felt, felt) {
+        hir.exec @forward() : extern("C") () -> ();
+        %r0, %r1, %r2, %r3 = hir.procedure_root @forward;
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    };
+};
+"#,
+    )
+    .unwrap();
+
+    let module = &lowered.modules[0];
+    for name in ["exported", "internal_alias", "forward"] {
+        let import = alias_import(module, name);
+        assert_eq!(import.source_name().as_str(), "body");
+        assert_eq!(import.module_path().inner().as_str(), "self");
+        assert_eq!(import.visibility().is_public(), name != "forward");
+    }
+    assert_eq!(module.procedures().count(), 2);
+    let caller = module.procedures().find(|proc| proc.name().as_str() == "caller").unwrap();
+    assert_eq!(exec_paths(caller.body()), ["forward"]);
+    assert!(caller.invoked().any(|invoke| {
+        invoke.kind == masm::InvokeKind::ProcRef
+            && matches!(&invoke.target, masm::InvocationTarget::Symbol(name) if name.as_str() == "forward")
+    }));
+
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(exports.iter().any(|path| path.ends_with("::exported")), "{exports:?}");
+    assert!(exports.iter().any(|path| path.ends_with("::internal_alias")), "{exports:?}");
+    assert!(!exports.iter().any(|path| path.ends_with("::forward")), "{exports:?}");
+    assert!(exports.iter().any(|path| path.ends_with("::body")), "{exports:?}");
+}
+
+fn private_local_alias_component(extra_items: &str) -> String {
+    format!(
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {{
+    builtin.module public @core {{
+        builtin.function_alias private @alias -> @forward;
+        builtin.function_alias private @forward -> @body;
+        builtin.function private extern("C") @body() {{ builtin.ret; }};
+        {extra_items}
+    }};
+}};
+"#
+    )
+}
+
+#[test]
+fn private_local_alias_calls_and_procedure_roots_assemble() {
+    let context = Rc::new(Context::default());
+    let source = private_local_alias_component(
+        r#"
+        builtin.function public extern("C") @caller() -> (felt, felt, felt, felt) {
+            hir.exec @alias() : extern("C") () -> ();
+            %r0, %r1, %r2, %r3 = hir.procedure_root @alias;
+            builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+        };
+"#,
+    );
+    let lowered = lower_component(&context, &source).unwrap();
+    let module = lowered.modules.iter().find(|module| module.name() == "core").unwrap();
+    for name in ["alias", "forward"] {
+        let import = alias_import(module, name);
+        assert_eq!(import.source_name().as_str(), "body");
+        assert_eq!(import.module_path().inner().as_str(), "self");
+        assert_eq!(import.visibility(), masm::Visibility::Private);
+    }
+    let caller = module.procedures().find(|proc| proc.name().as_str() == "caller").unwrap();
+    assert_eq!(exec_paths(caller.body()), ["alias"]);
+    assert!(caller.invoked().any(|invoke| {
+        invoke.kind == masm::InvokeKind::ProcRef
+            && matches!(&invoke.target, masm::InvocationTarget::Symbol(name) if name.as_str() == "alias")
+    }));
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert_eq!(exports, ["::\"hir_ns:test@1.0.0\"::core::caller"]);
+}
+
+#[test]
+fn private_alias_function_table_references_assemble() {
+    let context = Rc::new(Context::default());
+    let source = private_local_alias_component(
+        r#"
+        builtin.function_table private @table : 1 {
+            builtin.function_table_entry 0 @alias tag 1;
+        };
+"#,
+    );
+    let lowered = lower_component(&context, &source).unwrap();
+
+    let module = lowered.modules.iter().find(|module| module.name() == "core").unwrap();
+    let initializer = module
+        .procedures()
+        .find(|proc| proc.name().as_str() == FUNCTION_TABLE_INIT_PROC)
+        .unwrap();
+    assert!(initializer.invoked().any(|invoke| {
+        invoke.kind == masm::InvokeKind::ProcRef
+            && matches!(&invoke.target, masm::InvocationTarget::Symbol(name) if name.as_str() == "alias")
+    }));
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(!exports.iter().any(|path| path.ends_with("::alias")), "{exports:?}");
+    assert!(!exports.iter().any(|path| path.ends_with("::body")), "{exports:?}");
+}
+
+#[test]
+fn child_alias_preserves_root_canonical_abi_initialization() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.function public extern("component-model") @body() { builtin.ret; };
+    builtin.module public @api {
+        builtin.function_alias public @alias -> ::@"hir_ns:test@1.0.0"::@body;
+    };
+    builtin.module private @core {
+        builtin.global_variable private @g : i32 {
+            builtin.ret_imm 1 : i32;
+        };
+    };
+};
+"#,
+    )
+    .unwrap();
+
+    assert!(lowered.init.is_some());
+    let body = lowered.modules[0]
+        .procedures()
+        .find(|proc| proc.name().as_str() == "body")
+        .unwrap();
+    assert_eq!(exec_paths(body.body()).first().map(String::as_str), Some("init"));
+    let api = lowered.modules.iter().find(|module| module.name() == "api").unwrap();
+    assert_eq!(api.procedures().count(), 0);
+    assert_eq!(alias_import(api, "alias").source_name().as_str(), "body");
+
+    let package = assemble_library(&context, &lowered, "hir_ns:test@1.0.0");
+    let body = package.get_procedure_root_by_path("::\"hir_ns:test@1.0.0\"::body").unwrap();
+    assert_eq!(
+        package.get_procedure_root_by_path("::\"hir_ns:test@1.0.0\"::api::alias"),
+        Some(body)
+    );
+}
+
+#[test]
+fn cross_module_alias_imports_follow_namespace_rebasing() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(
+        &context,
+        r#"
+builtin.world {
+    builtin.module public @lib {
+        builtin.module public @api {
+            builtin.function_alias public @alias -> ::@lib::@implementation::@body;
+        };
+        builtin.module public @implementation {
+            builtin.function public extern("C") @body() { builtin.ret; };
+        };
+    };
+};
+"#,
+    );
+    let lowered = lower_world(world).unwrap();
+    let sources = lowered.source_inputs(&library_target("renamed"), context.session()).unwrap();
+    let api = sources.support.iter().find(|module| module.name() == "api").unwrap();
+    assert_eq!(
+        alias_import(api, "alias").module_path().inner().as_str(),
+        "::renamed::implementation"
+    );
+
+    let package = assemble_library(&context, &lowered, "renamed");
+    let body = package.get_procedure_root_by_path("::renamed::implementation::body").unwrap();
+    assert_eq!(package.get_procedure_root_by_path("::renamed::api::alias"), Some(body));
+}
+
+fn cross_module_call_via_alias_source(target_visibility: &str) -> String {
+    format!(
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {{
+    builtin.module public @a {{
+        builtin.function public extern("C") @caller() {{
+            hir.exec ::@"hir_ns:test@1.0.0"::@b::@alias() : extern("C") () -> ();
+            builtin.ret;
+        }};
+    }};
+    builtin.module public @b {{
+        builtin.function {target_visibility} extern("C") @target() {{ builtin.ret; }};
+        builtin.function_alias public @alias -> @target;
+    }};
+}};
+"#
+    )
+}
+
+#[test]
+fn public_alias_to_private_function_is_rejected_before_lowering() {
+    let context = Rc::new(Context::default());
+    let err = midenc_hir::parse::parse_any(
+        midenc_hir::parse::ParserConfig::new(context.clone()),
+        Uri::new("alias_visibility.hir"),
+        &cross_module_call_via_alias_source("private"),
+    )
+    .err()
+    .expect("verification must reject the alias before assembly");
+    assert!(err.to_string().contains("public alias cannot expose private target"), "{err}");
+}
+
+#[test]
+fn cross_module_call_preserves_public_alias_of_public_function() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(&context, &cross_module_call_via_alias_source("public"))
+        .expect("calls through public aliases must lower");
+
+    let caller = lowered
+        .modules
+        .iter()
+        .flat_map(|module| module.procedures())
+        .find(|procedure| procedure.name().as_str() == "caller")
+        .unwrap();
+    let calls = exec_paths(caller.body());
+    assert!(calls.iter().any(|path| path.ends_with("::b::alias")), "{calls:?}");
+    assert!(!calls.iter().any(|path| path.ends_with("::b::target")), "{calls:?}");
+
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(exports.iter().any(|path| path.ends_with("::b::alias")), "{exports:?}");
+    assert!(exports.iter().any(|path| path.ends_with("::b::target")), "{exports:?}");
 }
 
 /// A world holding a single component lowers to exactly what that component lowers to.
@@ -928,6 +1377,59 @@ fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
         init < harness && harness < entry,
         "generated main must preserve init -> harness -> entry ordering"
     );
+}
+
+#[test]
+fn canonical_alias_entrypoint_uses_target_calling_convention() {
+    let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::alias");
+    let op = parse(
+        &context,
+        r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.function_alias public @alias -> @entry;
+    builtin.function public extern("component-model") @entry() {
+        builtin.ret;
+    };
+    builtin.module private @core {
+        builtin.global_variable private @g : i32 {
+            builtin.ret_imm 1 : i32;
+        };
+        builtin.function public extern("C") @component_start() {
+            builtin.ret;
+        };
+        builtin.function public extern("C") @core_entry() {
+            builtin.ret;
+        };
+    };
+};
+"#,
+    );
+    mark_start_function(&context, op, "component_start");
+
+    let component = op.try_downcast_op::<builtin::Component>().unwrap();
+    let lowered = component
+        .borrow()
+        .to_masm_component(AnalysisManager::new(op, None))
+        .expect("an alias to a canonical entrypoint must lower through its private copy");
+
+    let import = alias_import(&lowered.modules[0], "alias");
+    assert_eq!(import.source_name().as_str(), "entry");
+    assert_eq!(import.module_path().inner().as_str(), "self");
+    assert_eq!(import.visibility(), masm::Visibility::Public);
+    let public_entry = lowered.modules[0]
+        .procedures()
+        .find(|procedure| procedure.name().as_str() == "entry")
+        .unwrap();
+    assert_eq!(exec_paths(public_entry.body()).first().map(String::as_str), Some("init"));
+
+    // A copy is emitted only if the alias's target, not the alias, carries the canonical ABI.
+    let private_entry = lowered
+        .executable_entrypoint_without_init
+        .as_ref()
+        .expect("the alias's resolved calling convention must select a no-init entry body");
+
+    // `main` owns init, so the executable-only copy must not repeat it
+    assert!(!exec_paths(private_entry.body()).iter().any(|target| target == "init"));
 }
 
 #[test]

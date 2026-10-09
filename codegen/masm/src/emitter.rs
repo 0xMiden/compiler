@@ -2,7 +2,7 @@ use alloc::collections::BTreeSet;
 
 use miden_assembly::diagnostics::WrapErr;
 use midenc_hir::{
-    Block, Operation, ProgramPoint, TraceTarget, ValueRange, ValueRef,
+    Block, Operation, OperationRef, ProgramPoint, TraceTarget, ValueRange, ValueRef,
     dialects::{
         builtin::{Function, attributes::LocalVariable},
         debuginfo::attributes::{INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChainAttr},
@@ -84,6 +84,7 @@ pub(crate) fn has_inline_call_chain(operation: &Operation) -> bool {
 }
 
 pub(crate) struct BlockEmitter<'b> {
+    pub module_owner: Option<OperationRef>,
     pub liveness: &'b LivenessAnalysis,
     pub emit_inline_calls: bool,
     /// Layout of the current procedure's locals frame.
@@ -98,6 +99,7 @@ pub(crate) struct BlockEmitter<'b> {
 impl BlockEmitter<'_> {
     pub fn nest<'nested, 'current: 'nested>(&'current mut self) -> BlockEmitter<'nested> {
         BlockEmitter {
+            module_owner: self.module_owner,
             liveness: self.liveness,
             emit_inline_calls: self.emit_inline_calls,
             frame: self.frame,
@@ -590,6 +592,7 @@ mod tests {
 
         let mut invoked = Default::default();
         let mut emitter = BlockEmitter {
+            module_owner: None,
             frame: Default::default(),
             liveness: &liveness,
             emit_inline_calls: false,

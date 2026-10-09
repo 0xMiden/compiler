@@ -48,7 +48,7 @@ pub enum InvalidSymbolRefError {
     },
     #[error("invalid symbol reference: expected callable")]
     NotCallable {
-        #[label("expected this symbol to implement the CallableOpInterface")]
+        #[label("expected this symbol to be callable")]
         symbol: crate::SourceSpan,
     },
     #[error("invalid symbol reference: symbol is not the correct type")]

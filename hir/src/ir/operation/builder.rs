@@ -106,7 +106,7 @@ where
     }
 
     /// Like [Self::with_symbol], but further constrains the range of valid input symbols to those
-    /// which are valid [crate::CallableOpInterface] implementations.
+    /// which are valid [crate::CallableSymbol] implementations.
     #[inline]
     pub fn with_callable_symbol(
         &mut self,

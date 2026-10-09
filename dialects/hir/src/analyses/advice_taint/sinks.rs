@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 
 use midenc_hir::{
     CallOpInterface, Operation, Symbol, Type,
-    dialects::builtin,
     effects::{AdviceEffect, AdviceEffectOpInterface},
     traits::{
         ValueRangeConstraint, is_unconstrained_value_type, operation_operand_range_requirement,
@@ -18,13 +17,7 @@ pub(super) fn is_external_call(call: &dyn CallOpInterface) -> bool {
     if targets.is_empty() {
         return false;
     }
-    targets.iter().any(|target| {
-        let target = target.borrow();
-        target
-            .as_symbol_operation()
-            .downcast_ref::<builtin::Function>()
-            .is_none_or(Symbol::is_declaration)
-    })
+    targets.iter().any(|target| target.callable_region().is_none())
 }
 
 pub(super) fn external_call_param_types(call: &dyn CallOpInterface) -> Option<Vec<Type>> {
@@ -43,11 +36,10 @@ pub(super) fn external_call_result_has_unconstrained_advice_effect(
         return false;
     };
     targets.iter().any(|target| {
-        let target = target.borrow();
-        let Some(function) = target.as_symbol_operation().downcast_ref::<builtin::Function>()
-        else {
+        let Some(function) = target.as_function() else {
             return false;
         };
+        let function = function.borrow();
         if !function.is_declaration() {
             return false;
         }
