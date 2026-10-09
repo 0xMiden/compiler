@@ -70,6 +70,36 @@ Declaring a MASM account-component dependency in `miden-project.toml` now genera
 in every SDK macro of the crate (`#[component]`, `#[note]`, `#[tx_script]`), whether or not a
 macro references it, as for a dependency with embedded WIT.
 
+### `AccountId` is laid out suffix first, as in the protocol
+
+The `account-id` record of `miden:base/core-types` is now `{ suffix: felt, prefix: felt }`, and
+the fields of `miden::AccountId` follow the same order (`AccountId::new(prefix, suffix)` and the
+`prefix`/`suffix` fields keep their names). This is the protocol's order: the kernel returns an
+account id as `[suffix, prefix]` and the standard components and notes take and store it suffix
+first. As a result, the standard components' `AccountId` is now the SDK's: procedures such as
+`ownable2step::get_owner` or `rbac::has_role` take and return a `miden::AccountId` instead of a
+dependency-local `AccountId` type.
+
+This is a breaking layout change:
+
+- an account id passed to or returned from another component, or through a foreign procedure
+  invocation, is flattened suffix first, so every component, note and script exchanging one must
+  be recompiled together;
+- a Rust note stores its `AccountId` fields suffix first, so a note created by a previous build of
+  a note cannot be consumed by the new build of the same note;
+- a host that encodes such note storage by hand must swap the two felts:
+
+```rust
+// Before
+let storage = vec![account_id.prefix().as_felt(), account_id.suffix()];
+
+// After
+let storage = vec![account_id.suffix(), account_id.prefix().as_felt()];
+```
+
+The note storage schema embedded in the package, and the host bindings generated from it, follow
+the new order on their own.
+
 ### The `extern_*` procedures are gone; the generated `miden::raw` modules replace them
 
 The bindings to the core library, the protocol and the standards are now generated from the

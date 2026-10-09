@@ -282,7 +282,7 @@ fn build_no_auth_transaction(packages: &ScenarioPackages) -> Result<MockTransact
     let note_root: Word = NoteScript::from_package(note_package)?.root().into();
     let note = NoteBuilder::new(account.id(), RandomCoin::new(note_root))
         .package((**note_package).clone())
-        .note_storage(vec![account.id().prefix().as_felt(), account.id().suffix()])?
+        .note_storage(vec![account.id().suffix(), account.id().prefix().as_felt()])?
         .tag(NoteTag::with_account_target(account.id()).into())
         .build()?;
     builder.add_output_note(RawOutputNote::Full(note.clone()));
@@ -316,7 +316,7 @@ fn build_rpo_auth_transaction(packages: &ScenarioPackages) -> Result<MockTransac
     let note_root: Word = NoteScript::from_package(note_package)?.root().into();
     let note = NoteBuilder::new(account.id(), RandomCoin::new(note_root))
         .package((**note_package).clone())
-        .note_storage(vec![account.id().prefix().as_felt(), account.id().suffix()])?
+        .note_storage(vec![account.id().suffix(), account.id().prefix().as_felt()])?
         .tag(NoteTag::with_account_target(account.id()).into())
         .build()?;
     builder.add_output_note(RawOutputNote::Full(note.clone()));
@@ -371,7 +371,7 @@ fn build_counter_transaction(packages: &ScenarioPackages) -> Result<MockTransact
 
 fn build_p2id_consumption(packages: &ScenarioPackages) -> Result<MockTransaction> {
     build_note_consumption(packages, P2ID_NOTE, |account_id| {
-        vec![account_id.prefix().as_felt(), account_id.suffix()]
+        vec![account_id.suffix(), account_id.prefix().as_felt()]
     })
 }
 
@@ -383,7 +383,7 @@ fn build_p2ide_consumption(packages: &ScenarioPackages) -> Result<MockTransactio
 
 fn build_dex_consumption(packages: &ScenarioPackages) -> Result<MockTransaction> {
     build_note_consumption(packages, DEX_NOTE, |account_id| {
-        let mut storage = vec![account_id.prefix().as_felt(), account_id.suffix()];
+        let mut storage = vec![account_id.suffix(), account_id.prefix().as_felt()];
         let price = DexLimitPrice {
             numerator: 3,
             denominator: 2,
@@ -543,7 +543,7 @@ fn build_wallet_transfer_context(packages: &ScenarioPackages) -> Result<WalletTr
     let funding_note = NoteBuilder::new(faucet.id(), &mut random_coin)
         .package((*note).clone())
         .add_assets([asset])
-        .note_storage(vec![sender.id().prefix().as_felt(), sender.id().suffix()])?
+        .note_storage(vec![sender.id().suffix(), sender.id().prefix().as_felt()])?
         .tag(NoteTag::with_account_target(sender.id()).into())
         .build()?;
     builder.add_output_note(RawOutputNote::Full(funding_note.clone()));
@@ -622,7 +622,7 @@ fn build_p2id_note(
     Ok(NoteBuilder::new(context.sender_id, RandomCoin::new(serial_number))
         .serial_number(serial_number)
         .package((*context.note).clone())
-        .note_storage(vec![context.recipient_id.prefix().as_felt(), context.recipient_id.suffix()])?
+        .note_storage(vec![context.recipient_id.suffix(), context.recipient_id.prefix().as_felt()])?
         .add_assets([context.asset])
         .tag(0)
         .build()?)

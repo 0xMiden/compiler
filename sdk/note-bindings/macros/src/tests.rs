@@ -23,7 +23,7 @@ interface note-storage {
 package miden:base@1.0.0 {
     interface core-types {
         record felt { inner: f32 }
-        record account-id { prefix: felt, suffix: felt }
+        record account-id { suffix: felt, prefix: felt }
     }
 }
 "#;
@@ -59,7 +59,7 @@ interface note-storage {
 package miden:base@1.0.0 {
     interface core-types {
         record felt { inner: f32 }
-        record account-id { prefix: felt, suffix: felt }
+        record account-id { suffix: felt, prefix: felt }
     }
 }
 "#;

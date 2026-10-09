@@ -4,12 +4,7 @@ package miden:standards-faucets-policies-transfer-blocklist-manager@0.17.0;
 
 /// Left out: none
 interface manager {
-    use miden:base/core-types@1.0.0.{felt};
-
-    record account-id {
-        suffix: felt,
-        prefix: felt,
-    }
+    use miden:base/core-types@1.0.0.{account-id};
 
     @external-id("miden::standards::components::faucets::policies::transfer::blocklist::manager::block_account")
     block-account: func(account-id: account-id);

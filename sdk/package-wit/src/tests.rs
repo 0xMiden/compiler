@@ -11,7 +11,7 @@ const MIDEN_WIT: &str = include_str!("../../base-macros/wit/miden.wit");
 /// A component exercising every mapping and skip rule.
 const COMPONENT: &str = r#"
 pub type Asset = struct { id: word, value: word }
-pub type AccountId = struct { suffix: felt, prefix: felt }
+pub type AccountId = struct { prefix: felt, suffix: felt }
 pub type Nested = struct { owner: AccountId, amount: u32 }
 
 pub enum NoteType : u8 {
@@ -177,8 +177,8 @@ interface my-component {{
     use miden:base/core-types@1.0.0.{{asset, felt, note-type, word}};
 
     record account-id {{
-        suffix: felt,
         prefix: felt,
+        suffix: felt,
     }}
 
     enum mode {{
@@ -236,7 +236,7 @@ world my-component-world {{
 fn an_account_id_in_core_order_uses_the_core_type() {
     let iface = component(
         r#"
-pub type AccountId = struct { prefix: felt, suffix: felt }
+pub type AccountId = struct { suffix: felt, prefix: felt }
 
 @account_procedure
 pub proc set_owner(id: AccountId)
@@ -792,8 +792,8 @@ fn only_types_of_kept_functions_shadow_a_function() {
     // one `set_owner` uses, so it is left out and `mode` stays a function name.
     let iface = component(
         r#"
-pub type Account_Id = struct { prefix: felt, suffix: felt }
-pub type AccountId = struct { suffix: felt, prefix: felt }
+pub type Account_Id = struct { suffix: felt, prefix: felt }
+pub type AccountId = struct { prefix: felt, suffix: felt }
 
 pub enum Mode : u8 {
     A = 0,

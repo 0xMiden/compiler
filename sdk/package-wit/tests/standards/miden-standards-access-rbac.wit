@@ -4,12 +4,7 @@ package miden:standards-access-rbac@0.17.0;
 
 /// Left out: none
 interface rbac {
-    use miden:base/core-types@1.0.0.{felt};
-
-    record account-id {
-        suffix: felt,
-        prefix: felt,
-    }
+    use miden:base/core-types@1.0.0.{account-id, felt};
 
     @external-id("miden::standards::components::access::rbac::get_role_admin")
     get-role-admin: func(arg0: felt) -> felt;
