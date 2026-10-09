@@ -150,22 +150,7 @@ fn the_component_interface() {
                 "an auth procedure is invoked by the transaction kernel in the epilogue, not by \
                  notes or scripts"
             ),
-            (
-                "miden::test::my_component::digest",
-                "results occupy 4 stack elements; multi-element results of Miden Assembly \
-                 components are not supported yet"
-            ),
             ("miden::test::my_component::halves", "unsupported type `[felt; 2]`"),
-            (
-                "miden::test::my_component::owner",
-                "results occupy 2 stack elements; multi-element results of Miden Assembly \
-                 components are not supported yet"
-            ),
-            (
-                "miden::test::my_component::pair",
-                "results occupy 2 stack elements; multi-element results of Miden Assembly \
-                 components are not supported yet"
-            ),
             (
                 "miden::test::my_component::sparse",
                 "unsupported type `Sparse`: an enum with non-contiguous discriminants"
@@ -184,24 +169,21 @@ fn the_component_interface() {
 package miden:test-my-component@0.0.0;
 
 /// Left out: `miden::test::my_component::auth_tx`: an auth procedure is invoked by the transaction kernel in the epilogue, not by notes or scripts
-/// Left out: `miden::test::my_component::digest`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
 /// Left out: `miden::test::my_component::halves`: unsupported type `[felt; 2]`
-/// Left out: `miden::test::my_component::owner`: results occupy 2 stack elements; multi-element results of Miden Assembly components are not supported yet
-/// Left out: `miden::test::my_component::pair`: results occupy 2 stack elements; multi-element results of Miden Assembly components are not supported yet
 /// Left out: `miden::test::my_component::sparse`: unsupported type `Sparse`: an enum with non-contiguous discriminants
 /// Left out: `miden::test::my_component::too_wide`: parameters flatten to 17 stack elements, more than the 16 a direct call can pass
 /// Left out: `miden::test::my_component::untyped`: no typed signature
 interface my-component {{
     use miden:base/core-types@1.0.0.{{asset, felt, note-type, word}};
 
-    enum mode {{
-        fast,
-        slow-and-steady,
-    }}
-
     record account-id {{
         suffix: felt,
         prefix: felt,
+    }}
+
+    enum mode {{
+        fast,
+        slow-and-steady,
     }}
 
     record nested {{
@@ -211,6 +193,15 @@ interface my-component {{
 
     @external-id("miden::test::my_component::create_note")
     create-note: func(arg0: u32, note-type: note-type, arg2: word) -> u16;
+
+    @external-id("miden::test::my_component::digest")
+    digest: func() -> word;
+
+    @external-id("miden::test::my_component::owner")
+    owner: func() -> account-id;
+
+    @external-id("miden::test::my_component::pair")
+    pair: func() -> tuple<felt, felt>;
 
     @external-id("miden::test::my_component::receive_asset")
     receive-asset: func(asset: asset);
@@ -233,7 +224,7 @@ world my-component-world {{
     assert_eq!(generated.wit, expected);
 
     let functions = parse(&generated.wit, "my-component");
-    assert_eq!(functions.len(), 5);
+    assert_eq!(functions.len(), 8);
     assert!(functions.contains(&(
         "receive-asset".to_owned(),
         "miden::test::my_component::receive_asset".to_owned()
@@ -682,7 +673,7 @@ fn a_component_whose_every_procedure_is_left_out_has_no_interface() {
     let iface = component(
         r#"
 @account_procedure
-pub proc digest() -> word
+pub proc nonce() -> u64
     nop
 end
 
@@ -699,9 +690,9 @@ end
     assert_eq!(skipped.len(), 2);
     assert_eq!(
         err.to_string(),
-        "every interface procedure is left out:\n  `miden::test::my_component::digest`: results \
-         occupy 4 stack elements; multi-element results of Miden Assembly components are not \
-         supported yet\n  `miden::test::my_component::untyped`: no typed signature"
+        "every interface procedure is left out:\n  `miden::test::my_component::nonce`: results of \
+         64-bit integer type are not supported yet\n  `miden::test::my_component::untyped`: no \
+         typed signature"
     );
 }
 
@@ -774,8 +765,7 @@ end
         [
             (
                 "miden::test::my_component::nonce",
-                "results occupy 2 stack elements; multi-element results of Miden Assembly \
-                 components are not supported yet"
+                "results of 64-bit integer type are not supported yet"
             ),
             (
                 "miden::test::my_component::set_nonce",
@@ -843,4 +833,51 @@ end
             ("set-owner".to_owned(), "miden::test::my_component::set_owner".to_owned()),
         ]
     );
+}
+
+/// Several results become one tuple in manifest order, and results beyond the stack budget are
+/// left out.
+#[test]
+fn several_results_become_a_tuple() {
+    let iface = component(
+        r#"
+pub type ConversionRate = struct { num: felt, den: felt }
+pub type Asset = struct { id: word, value: word }
+
+@account_procedure
+pub proc get_conversion_rate() -> (i1, ConversionRate)
+    nop
+end
+
+@account_procedure
+pub proc assets() -> (Asset, Asset, felt)
+    nop
+end
+"#,
+    );
+    let generated = generate(&iface).unwrap();
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(
+        skipped,
+        [(
+            "miden::test::my_component::assets",
+            "results occupy 17 stack elements, more than the 16 a call can return"
+        )]
+    );
+    assert!(
+        generated
+            .wit
+            .contains("    get-conversion-rate: func() -> tuple<bool, conversion-rate>;\n"),
+        "{}",
+        generated.wit
+    );
+    assert!(
+        generated.wit.contains(
+            "    record conversion-rate {\n        num: felt,\n        den: felt,\n    }\n"
+        ),
+        "{}",
+        generated.wit
+    );
+    parse(&generated.wit, "my-component");
 }
