@@ -551,7 +551,10 @@ impl DeadCodeAnalysis {
             let symbol_table_op = sym_table.as_symbol_table_operation();
             log::trace!(target: self.debug_name(), "analyzing symbol table '{}'", symbol_table_op.name());
             let symbol_table_region = symbol_table_op.region(0);
-            let symbol_table_block = symbol_table_region.entry();
+            let Some(symbol_table_block) = symbol_table_region.entry_block_ref() else {
+                return;
+            };
+            let symbol_table_block = symbol_table_block.borrow();
 
             let mut found_callable_symbol = false;
             for candidate in symbol_table_block.body().iter() {
