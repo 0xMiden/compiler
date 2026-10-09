@@ -214,7 +214,7 @@ SDK macros derive its interface from the package manifest:
 - auth procedures, procedures without a typed signature, outside the interface module, with
   parameters or results beyond 16 stack elements, with a 64-bit integer (`u64`/`s64`) parameter or
   result or a record containing a 64-bit integer field (not callable yet), with types WIT cannot express,
-  with local types named `Guest` (wit-bindgen renames them) or `Option`, `Result`, `String` or
+  with local types named `Option`, `Result`, `String` or
   `Vec` (they would clash with the Rust prelude in the bindings), whose names have no WIT form, clash,
   or would be a Rust keyword wit-bindgen does not escape (`gen`), with an export path that is not
   a Miden procedure path, with a name whose kebab form starts with `fpi-` or `dyncall-` (reserved

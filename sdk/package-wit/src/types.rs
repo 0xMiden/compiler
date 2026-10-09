@@ -381,8 +381,8 @@ impl TypeSet {
 const PRELUDE_TYPES: &[&str] = &["Option", "Result", "String", "Vec"];
 
 /// The WIT spelling of the local declaration of the manifest type `name`, or why it has none: it
-/// has no WIT spelling, or its Rust spelling (see [`naming::rust_type_ident`]) is `Self`,
-/// `Guest_` or one of the [`PRELUDE_TYPES`].
+/// has no WIT spelling, or its Rust spelling (see [`naming::rust_type_ident`]) is `Self` or
+/// one of the [`PRELUDE_TYPES`].
 fn local_ident(name: &str) -> Result<String, String> {
     let short = naming::short_name(name);
     let ident = naming::ident(short).map_err(|err| format!("unsupported type `{name}`: {err}"))?;
@@ -392,14 +392,6 @@ fn local_ident(name: &str) -> Result<String, String> {
         return Err(format!(
             "unsupported type `{name}`: its Rust name `{rust}` clashes with the Rust prelude's \
              `{rust}`, which the SDK's foreign procedure call bindings leave unqualified"
-        ));
-    }
-    // The SDK's foreign procedure call bindings name a dependency's types in plain upper camel
-    // case, so they would miss the type wit-bindgen renames.
-    if rust == "Guest_" {
-        return Err(format!(
-            "unsupported type `{name}`: wit-bindgen renames it to `Guest_` in the generated \
-             bindings, which the SDK's foreign procedure call bindings do not follow"
         ));
     }
     Ok(ident)
@@ -557,12 +549,6 @@ mod tests {
             set.map(&rust_cases).unwrap_err(),
             "unsupported type `Slots`: cases `SLOT1` and `SLOT_1` both have the Rust name `Slot1`"
         );
-        let guest = record("Guest", &[("x", Type::Felt)]);
-        assert_eq!(
-            set.map(&guest).unwrap_err(),
-            "unsupported type `Guest`: wit-bindgen renames it to `Guest_` in the generated \
-             bindings, which the SDK's foreign procedure call bindings do not follow"
-        );
         let self_type = record("Self_", &[("x", Type::Felt)]);
         assert_eq!(
             set.map(&self_type).unwrap_err(),
@@ -589,6 +575,16 @@ mod tests {
             "types `slot1` and `slot-1` in one interface both have the Rust name `Slot1`"
         );
         assert_eq!(set.locals.len(), 1);
+    }
+
+    /// A local type named `Guest` is offered: the SDK's foreign procedure call bindings follow
+    /// wit-bindgen's `Guest_` spelling of it.
+    #[test]
+    fn local_type_named_guest_is_offered() {
+        let mut set = TypeSet::default();
+        let guest = record("Guest", &[("value", Type::Felt)]);
+        assert_eq!(set.map(&guest).unwrap().wit, "guest");
+        assert_eq!(set.locals.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(), ["guest"]);
     }
 
     /// A record's flat value and stack element counts are the sums over its fields.

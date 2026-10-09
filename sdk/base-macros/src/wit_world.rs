@@ -526,7 +526,7 @@ pub(crate) fn dependency_wit_error_message(source: &DependencyWitSource, details
 #[derive(Debug)]
 pub(crate) struct DependencyWit {
     /// The interfaces the dependency's WIT exports.
-    interfaces: Vec<DependencyInterface>,
+    pub(crate) interfaces: Vec<DependencyInterface>,
 }
 
 /// Parses dependency WIT source and returns metadata for its exported interfaces.

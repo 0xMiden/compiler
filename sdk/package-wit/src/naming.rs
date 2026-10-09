@@ -61,15 +61,9 @@ pub fn upper_camel(ident: &str) -> String {
     ident.trim_start_matches('%').to_upper_camel_case()
 }
 
-/// The Rust spelling wit-bindgen gives a type whose WIT spelling is `ident` (see [`ident`]):
-/// [`upper_camel`], except `guest`, which becomes `Guest_` because wit-bindgen reserves `Guest`
-/// for the traits of exported interfaces.
-pub fn rust_type_name(ident: &str) -> String {
-    match ident.trim_start_matches('%') {
-        "guest" => "Guest_".to_owned(),
-        _ => upper_camel(ident),
-    }
-}
+/// The Rust spelling wit-bindgen gives a type whose WIT spelling is `ident` (see [`ident`]); see
+/// [`midenc_frontend_wasm_metadata::namespace::rust_type_name`].
+pub use midenc_frontend_wasm_metadata::namespace::rust_type_name;
 
 /// The [`rust_type_name`] Rust spelling of the type `name` whose WIT spelling is `ident`; or,
 /// when that spelling is the Rust keyword `Self`, the reason `name` has none.
