@@ -455,7 +455,9 @@ impl Spanned for ProgramPoint {
                     block.borrow().body().back().get().map(|op| op.span()).unwrap_or_default()
                 }
             },
-            Self::Op { op, .. } => op.borrow().span(),
+            // The span is written after allocation, so it cannot be read without a borrow; a
+            // point whose op is currently borrowed mutably reports no span rather than failing.
+            Self::Op { op, .. } => op.try_borrow().map(|op| op.span()).unwrap_or_default(),
         }
     }
 }
