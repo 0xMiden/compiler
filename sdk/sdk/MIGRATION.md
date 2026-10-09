@@ -277,8 +277,9 @@ interface foo {
 ```
 
 The parent of an imported function's path names a dependency component, so the parents of a
-component's imports must not nest in one another or in the component's own namespace: importing
-both `acme::math::add` and `acme::math::u64::add` is rejected. The FPI imports `#[account(...)]`
+component's imports must not nest in the component's own namespace: a component in the namespace
+`acme::app` importing `acme::app::util::add` is rejected. The parents of the imports may nest in
+one another, e.g. `acme::math::add` and `acme::math::u64::add`. The FPI imports `#[account(...)]`
 generates (`<namespace>::fpi::<dependency path>::<function>`) and the stored-procedure imports
 `#[component_storage]` generates for `StoredProcedure` slots (`<namespace>::dyncall::<field>`) nest
 in the component's namespace by design and are exempt, since they declare no dependency component.
