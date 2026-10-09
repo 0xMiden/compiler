@@ -2,12 +2,21 @@
 // Dependency commitment: 0x9ca31b9098022146211b4261fc2bfe271453d0e258c2ff128c82b5876b1b59de.
 package miden:standards-faucets-policies-policy-manager@0.17.0;
 
-/// Left out: `miden::standards::components::faucets::policies::policy_manager::get_burn_policy`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::faucets::policies::policy_manager::get_mint_policy`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::faucets::policies::policy_manager::get_receive_policy`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::faucets::policies::policy_manager::get_send_policy`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
+/// Left out: none
 interface policy-manager {
     use miden:base/core-types@1.0.0.{asset, felt, word};
+
+    @external-id("miden::standards::components::faucets::policies::policy_manager::get_burn_policy")
+    get-burn-policy: func() -> word;
+
+    @external-id("miden::standards::components::faucets::policies::policy_manager::get_mint_policy")
+    get-mint-policy: func() -> word;
+
+    @external-id("miden::standards::components::faucets::policies::policy_manager::get_receive_policy")
+    get-receive-policy: func() -> word;
+
+    @external-id("miden::standards::components::faucets::policies::policy_manager::get_send_policy")
+    get-send-policy: func() -> word;
 
     @external-id("miden::standards::components::faucets::policies::policy_manager::invoke_receive_policy")
     invoke-receive-policy: func(asset: asset, arg1: felt);

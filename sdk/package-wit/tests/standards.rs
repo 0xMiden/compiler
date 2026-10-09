@@ -73,17 +73,12 @@ fn components() -> Vec<&'static miden_mast_package::Package> {
     .collect()
 }
 
-/// The components whose every interface procedure is left out, so they have no interface: the
-/// auth components' only procedure is their auth procedure, and each procedure of the others has
-/// results occupying more than one stack element.
-const WITHOUT_INTERFACE: [&str; 7] = [
+/// The components whose every interface procedure is left out, so they have no interface: each
+/// one's only procedure is its auth procedure.
+const WITHOUT_INTERFACE: [&str; 3] = [
     "miden-standards-auth-no-auth",
     "miden-standards-auth-singlesig",
     "miden-standards-auth-tx-fee-collector",
-    "miden-standards-faucets-policies-mint-allow-all",
-    "miden-standards-faucets-policies-mint-owner-controlled-owner-only",
-    "miden-standards-fees-policies-basic-constant-fee",
-    "miden-standards-inspection-schema-commitment",
 ];
 
 /// The generation result of every component, keyed by package name.
@@ -185,8 +180,8 @@ fn every_interface_parses_with_external_ids() {
     }
 }
 
-/// The standards yield the expected function and left-out counts, all for auth procedures or
-/// multi-element results.
+/// The standards yield the expected function and left-out counts, the left-out ones all auth
+/// procedures.
 #[test]
 fn generated_and_skipped_totals() {
     let generated = generated();
@@ -200,19 +195,12 @@ fn generated_and_skipped_totals() {
         .flat_map(|(_, generated)| &generated.skipped)
         .chain(left_out.iter().flat_map(|(_, skipped)| skipped))
         .collect();
-    assert_eq!((functions, skipped.len()), (86, 34));
-    // Every standard procedure has a typed signature the mapping covers; the ones left out are
-    // the auth procedures and those with results occupying more than one stack element (a word,
-    // an asset, a struct, or several results).
-    let auth_procedures = skipped
-        .iter()
-        .filter(|skipped| skipped.reason.starts_with("an auth procedure is invoked "))
-        .count();
-    assert_eq!(auth_procedures, 7);
+    assert_eq!((functions, skipped.len()), (113, 7));
+    // Every standard procedure has a typed signature the mapping covers and results within the
+    // stack budget; the ones left out are the auth procedures.
     for skipped in skipped {
         assert!(
-            skipped.reason.starts_with("results occupy ")
-                || skipped.reason.starts_with("an auth procedure is invoked "),
+            skipped.reason.starts_with("an auth procedure is invoked "),
             "{}: {}",
             skipped.path,
             skipped.reason

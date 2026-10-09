@@ -2,8 +2,7 @@
 // Dependency commitment: 0x1eecfe94d36dd32564cd73d6390454a36fb26f491e45e19b7af26d50d3353304.
 package miden:standards-access-ownable2step@0.17.0;
 
-/// Left out: `miden::standards::components::access::ownable2step::get_nominated_owner`: results occupy 2 stack elements; multi-element results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::access::ownable2step::get_owner`: results occupy 2 stack elements; multi-element results of Miden Assembly components are not supported yet
+/// Left out: none
 interface ownable2step {
     use miden:base/core-types@1.0.0.{felt};
 
@@ -14,6 +13,12 @@ interface ownable2step {
 
     @external-id("miden::standards::components::access::ownable2step::accept_ownership")
     accept-ownership: func();
+
+    @external-id("miden::standards::components::access::ownable2step::get_nominated_owner")
+    get-nominated-owner: func() -> account-id;
+
+    @external-id("miden::standards::components::access::ownable2step::get_owner")
+    get-owner: func() -> account-id;
 
     @external-id("miden::standards::components::access::ownable2step::renounce_ownership")
     renounce-ownership: func();

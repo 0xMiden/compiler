@@ -7,9 +7,9 @@
 //! where they match exactly or are named by their `core-types` id (as in a Rust-built component),
 //! and declared locally otherwise. A procedure the interface cannot offer
 //! (an auth procedure, no typed signature, outside the interface module, unsupported or clashing
-//! names and types, parameters beyond the stack budget, 64-bit integer parameters, results
-//! occupying more than one stack element, reserved or invalid names) is left out and reported in
-//! [`Generated::skipped`] and in the interface's doc comment. A package fails as a whole only when
+//! names and types, parameters or results beyond the stack budget, 64-bit integer parameters or
+//! results, reserved or invalid names) is left out and reported in [`Generated::skipped`] and in
+//! the interface's doc comment. A procedure with several results returns them as one tuple. A package fails as a whole only when
 //! it is not an account component ([`Error::NotAComponent`]), has no interface procedures
 //! ([`Error::NoInterfaceProcedures`]), has no usable WIT package id or interface name
 //! ([`Error::Namespace`]), or has every interface procedure left out
@@ -43,8 +43,9 @@ use midenc_package_interface::{PackageInterface, ProcedureItem, Role};
 
 use self::{emit::Function, types::TypeSet};
 
-/// The most operand stack elements the parameters of a direct cross-context call may occupy.
-const MAX_PARAM_FELTS: usize = midenc_package_interface::abi::MAX_STACK_ELEMENTS;
+/// The most operand stack elements the parameters or the results of a direct cross-context call
+/// may occupy.
+const MAX_STACK_ELEMENTS: usize = midenc_package_interface::abi::MAX_STACK_ELEMENTS;
 
 /// Why an `@auth_script` procedure that is not also an `@account_procedure` is left out.
 ///
@@ -353,7 +354,7 @@ fn function(
         let mapped = types.map(ty)?;
         let param_name = param_names.next(index, types::type_name(ty).as_deref());
         // Only a 64-bit integer occupies more stack elements than it flattens to core values.
-        // Like for results, the stack convention of its two limbs in a call to a MASM callee has
+        // As for results, the stack convention of its two limbs in a call to a MASM callee has
         // not been validated yet: no binding exercises it.
         if mapped.felts > mapped.values {
             return Err(match wide_field(ty) {
@@ -373,27 +374,45 @@ fn function(
         results.push(types.map(ty)?);
     }
 
-    if param_felts > MAX_PARAM_FELTS {
+    if param_felts > MAX_STACK_ELEMENTS {
         return Err(format!(
-            "parameters flatten to {param_felts} stack elements, more than the {MAX_PARAM_FELTS} \
-             a direct call can pass"
+            "parameters flatten to {param_felts} stack elements, more than the \
+             {MAX_STACK_ELEMENTS} a direct call can pass"
         ));
     }
-    // Only a result that is one core value occupying one operand stack element is offered. This
-    // is a deliberate restriction, not a compiler limit (multi-value import results are lowered
-    // through an out-pointer): the stack convention for results of MASM callees that occupy more
-    // than one element (several values, or the two limbs of a `u64`/`s64`) has not been validated
-    // yet.
+    // Results are offered when they contain no 64-bit integer and occupy at most the stack
+    // elements a call can return. The callee leaves its results on the stack with the first
+    // flattened value on top, which is how the caller reads several values back; the stack
+    // convention of a 64-bit integer's two limbs has not been validated yet.
     let result_felts: usize = results.iter().map(|mapped| mapped.felts).sum();
+    if let Some((ty, _)) = signature
+        .results
+        .iter()
+        .zip(&results)
+        .find(|(_, mapped)| mapped.felts > mapped.values)
+    {
+        return Err(match wide_field(ty) {
+            Some(field) => format!(
+                "a result contains a 64-bit integer field `{field}`, which is not supported yet"
+            ),
+            None => "results of 64-bit integer type are not supported yet".to_owned(),
+        });
+    }
+    if result_felts > MAX_STACK_ELEMENTS {
+        return Err(format!(
+            "results occupy {result_felts} stack elements, more than the {MAX_STACK_ELEMENTS} a \
+             call can return"
+        ));
+    }
+    // Several manifest results become one tuple, whose elements flatten in order, as the results
+    // lie on the stack.
     let result = match results.as_slice() {
         [] => None,
-        [single] if single.values == 1 && single.felts == 1 => Some(single.wit.clone()),
-        _ => {
-            return Err(format!(
-                "results occupy {result_felts} stack elements; multi-element results of Miden \
-                 Assembly components are not supported yet"
-            ));
-        }
+        [single] => Some(single.wit.clone()),
+        several => Some(format!(
+            "tuple<{}>",
+            several.iter().map(|mapped| mapped.wit.as_str()).collect::<Vec<_>>().join(", ")
+        )),
     };
 
     Ok((

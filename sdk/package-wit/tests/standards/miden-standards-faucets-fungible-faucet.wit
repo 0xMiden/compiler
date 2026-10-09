@@ -2,17 +2,43 @@
 // Dependency commitment: 0x292d0e9cd514304057095ccc5aae1b07f0a291909ac5c9a5092e0e7dca15d37e.
 package miden:standards-faucets-fungible-faucet@0.17.0;
 
-/// Left out: `miden::standards::components::faucets::fungible_faucet::get_mutability_config`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::faucets::fungible_faucet::get_name`: results occupy 8 stack elements; multi-element results of Miden Assembly components are not supported yet
-/// Left out: `miden::standards::components::faucets::fungible_faucet::get_token_config`: results occupy 4 stack elements; multi-element results of Miden Assembly components are not supported yet
+/// Left out: none
 interface fungible-faucet {
     use miden:base/core-types@1.0.0.{asset, felt, note-type, word};
+
+    record mutability-config {
+        description: bool,
+        logo-uri: bool,
+        external-link: bool,
+        max-supply: bool,
+    }
+
+    record token-name {
+        first: word,
+        second: word,
+    }
+
+    record token-config {
+        supply: felt,
+        max-supply: felt,
+        decimals: u8,
+        symbol: felt,
+    }
 
     @external-id("miden::standards::components::faucets::fungible_faucet::get_decimals")
     get-decimals: func() -> u8;
 
     @external-id("miden::standards::components::faucets::fungible_faucet::get_max_supply")
     get-max-supply: func() -> felt;
+
+    @external-id("miden::standards::components::faucets::fungible_faucet::get_mutability_config")
+    get-mutability-config: func() -> mutability-config;
+
+    @external-id("miden::standards::components::faucets::fungible_faucet::get_name")
+    get-name: func() -> token-name;
+
+    @external-id("miden::standards::components::faucets::fungible_faucet::get_token_config")
+    get-token-config: func() -> token-config;
 
     @external-id("miden::standards::components::faucets::fungible_faucet::get_token_supply")
     get-token-supply: func() -> felt;
