@@ -1,0 +1,31 @@
+// RUN: midenc %s --emit=masm=- --stop-after=lower 2>&1 | filecheck %s
+//
+// Two declaration-only components whose names nest (`x::y` and `x::y::z`), the shape of two
+// import stubs, are accepted in one world, and a call into each resolves to its own component.
+// The declaration-only components contribute nothing to the generated Miden Assembly.
+
+builtin.world {
+    builtin.component private @x::@y {
+        builtin.function internal extern("C") @f(%a: u32) -> u32;
+    };
+    builtin.component private @x::@y::@z {
+        builtin.function internal extern("C") @g(%a: u32) -> u32;
+    };
+    builtin.component public @app::@main {
+        builtin.module public @m {
+            builtin.function public extern("C") @entry(%a: u32) -> u32 {
+                %b = hir.exec ::@x::@y::@f(%a) : extern("C") (u32) -> (u32);
+                %c = hir.exec ::@x::@y::@z::@g(%b) : extern("C") (u32) -> (u32);
+                builtin.ret %c : (u32);
+            };
+        };
+    };
+};
+
+// CHECK-NOT: namespace x::y
+// CHECK: namespace app::main::m
+// CHECK-LABEL: pub proc entry
+// CHECK: exec.::x::y::f
+// CHECK: exec.::x::y::z::g
+// CHECK: end
+// CHECK-NOT: namespace x::y
