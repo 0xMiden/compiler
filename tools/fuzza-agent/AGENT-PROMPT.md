@@ -278,7 +278,7 @@ cargo make fuzza-cov-clean
 #   which canonicalization patterns fired ("trying to match '<name>'" then
 #   "pattern matched successfully"):
 MIDENC_TRACE='pattern-rewrite-driver=trace' cargo test -p midenc-integration-tests <test> -- --exact <full::path> --nocapture
-#   spills, reloads, edge splits, erased split reloads, unused phis:
+#   spills, reloads, edge splits, erased reloads, pruned phis:
 MIDENC_TRACE='analysis:spills=trace,pass:spills=trace' cargo test ... --nocapture
 #   emitter operand drops:
 MIDENC_TRACE='codegen:operand-scheduling=trace' cargo test ... --nocapture

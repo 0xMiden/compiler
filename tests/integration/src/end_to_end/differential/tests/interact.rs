@@ -29,12 +29,12 @@
 //! (`MIDENC_TRACE='analysis:spills=trace,pass:spills=trace'`) shows spills,
 //! reloads and edge splits in every case, and the pass converts each reload to
 //! a spill-slot `hir.load_local` ("convert reload to load"), which is the form
-//! the post-lift canonicalizer then sees inside the regions it rewrites. Several
-//! cases also carry the erased split-edge reloads and the dead "unused phi"
-//! block arguments that the ignored `pressure::zero_trip_frontier` /
-//! `pressure::zero_trip_overflow` reproducers blame their panics on: here the
-//! same defects are present and the program still computes the right answer,
-//! which is what these cases pin.
+//! the post-lift canonicalizer then sees inside the regions it rewrites. Before
+//! the #1420 fix several cases also carried the erased split-edge reloads and
+//! the dead "unused phi" block arguments that the then-ignored
+//! `pressure::zero_trip_frontier` / `pressure::zero_trip_overflow` reproducers
+//! blamed their panics on: here the same defects were present and the program
+//! still computed the right answer, which is what these cases pin.
 
 use super::super::harness::{run_case, run_case_with_inputs};
 
@@ -134,13 +134,15 @@ fn passthru_spill_edges() {
 /// `SimplifySwitchFallbackOverlap` rebuilds the in-loop `cf.switch` without all
 /// five overlapping cases at once (one rewrite at both opt levels, exactly as
 /// the freight-free `canon::arms_merge`), while twenty spills and twenty
-/// reloads cross the same loop and four split-edge reloads are erased.
+/// reloads cross the same loop (before the #1420 fix four split-edge reloads
+/// were erased).
 ///
-/// Boundary (campaign 20): twelve bands still compile at the default level but
-/// panic at `--optimize=size-min`, and sixteen bands panic at both levels — at
-/// `hir/src/ir/dominance/frontier.rs:123`, the unwrap the ignored
-/// `pressure::zero_trip_frontier` documents, without any zero-trip-capable loop
-/// in the program. A six-u64 cluster on top of four bands panics as well.
+/// Boundary (campaign 20, before the #1420 fix): twelve bands still compiled
+/// at the default level but panicked at `--optimize=size-min`, and sixteen
+/// bands panicked at both levels — at `hir/src/ir/dominance/frontier.rs:123`,
+/// the unwrap the formerly ignored `pressure::zero_trip_frontier` documents,
+/// without any zero-trip-capable loop in the program. A six-u64 cluster on top
+/// of four bands panicked as well.
 #[test]
 fn dispatch_spill() {
     run_case("dispatch_spill", include_str!("../cases/case_dispatch_spill.rs"));

@@ -144,8 +144,31 @@ impl DerefMut for InstOpEmitter<'_> {
 }
 impl Drop for InstOpEmitter<'_> {
     fn drop(&mut self) {
+        // A lowering that panicked leaves the stack in an arbitrary state; binding results to it
+        // would only turn the unwinding into an abort.
+        if std::thread::panicking() {
+            return;
+        }
+        // Bind the results to the operands the lowering left on top of the stack. The operands
+        // are retyped, not just renamed: a lowering may push a result's bit pattern as a value of
+        // another type of the same size (e.g. a pointer as a `u32` immediate), and the element
+        // types recorded on the stack must be those of the result. A lowering that failed with an
+        // error may have left fewer operands, or operands of another size, behind: those are bound
+        // by name only, the error itself is reported by the caller.
+        let stack = &mut self.emitter.stack;
         for (i, result) in self.inst.results().iter().copied().enumerate() {
-            self.emitter.stack.rename(i, result as ValueRef);
+            let result = result as ValueRef;
+            if stack.try_retype(i, result) {
+                continue;
+            }
+            if i >= stack.len() {
+                break;
+            }
+            log::trace!(
+                target: "codegen",
+                "binding {result} by name only: the operand on the stack does not have its size"
+            );
+            stack.rename(i, result);
         }
     }
 }

@@ -98,6 +98,10 @@ pub struct DominanceFrontier {
 }
 
 impl DominanceFrontier {
+    /// Compute the dominance frontiers of all blocks reachable from the root of `domtree`.
+    ///
+    /// Only join blocks (two or more predecessors) can be in a dominance frontier, and blocks
+    /// unreachable from the entry, which are not in the tree, do not count as predecessors.
     pub fn new(domtree: &DominanceTree) -> Self {
         let mut this = Self::default();
 
@@ -107,17 +111,22 @@ impl DominanceFrontier {
             };
 
             let block = node_block.borrow();
-            let has_multiple_predecessors = block.predecessors().enumerate().any(|(i, _)| i > 1);
-            if !has_multiple_predecessors {
+            let mut predecessors = block
+                .predecessors()
+                .map(|pred| pred.predecessor())
+                .filter(|p| domtree.is_reachable_from_entry(*p));
+            let Some(first) = predecessors.next() else {
                 continue;
-            }
+            };
+            let Some(second) = predecessors.next() else {
+                continue;
+            };
 
             let idom = node
                 .idom()
                 .expect("expected immediate dominator for block with multiple predecessors");
             let idom_block = idom.block().unwrap();
-            for pred in block.predecessors() {
-                let mut p = pred.predecessor();
+            for mut p in [first, second].into_iter().chain(predecessors) {
                 while p != idom_block {
                     this.dfs.entry(p).or_default().insert(node_block);
                     let node_p = domtree.get(Some(p)).unwrap();

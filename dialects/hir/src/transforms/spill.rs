@@ -77,12 +77,7 @@ impl Pass for TransformSpills {
         let op = function.as_operation_ref();
         drop(function);
 
-        let transform_result = transforms::transform_spills(
-            op,
-            analysis,
-            &mut interface,
-            state.analysis_manager().clone(),
-        )?;
+        let transform_result = transforms::transform_spills(op, analysis, &mut interface)?;
 
         state.set_post_pass_status(transform_result);
 

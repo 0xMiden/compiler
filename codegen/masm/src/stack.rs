@@ -369,6 +369,22 @@ impl OperandStack {
         self.stack[index] = operand;
     }
 
+    /// Like [Self::retype], but leaves the stack unchanged and returns `false` when there is no
+    /// `n`th operand, or it does not occupy the same number of elements as `value`.
+    pub fn try_retype(&mut self, n: usize, value: ValueRef) -> bool {
+        let len = self.stack.len();
+        if n >= len {
+            return false;
+        }
+        let index = len - n - 1;
+        let size = value.borrow().ty().clone().to_raw_parts().map(|parts| parts.len());
+        if size != Some(self.stack[index].size()) {
+            return false;
+        }
+        self.stack[index] = Operand::from(value);
+        true
+    }
+
     /// Searches for the position on the stack containing the operand corresponding to `value`,
     /// the topmost if there are several, or `None` if `value` is not on the stack.
     pub fn find(&self, value: &ValueRef) -> Option<usize> {

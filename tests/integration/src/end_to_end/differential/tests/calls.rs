@@ -187,9 +187,11 @@ fn dispatch_pressure() {
 /// guest wasm contains ZERO `call_indirect` and the case never reaches
 /// `hir.exec_indirect` at all. Arbitrated 2026-09-17 by rebuilding the guest
 /// with nightly-2026-04-30, which reproduces the original `NoSolution` at
-/// codegen/masm/src/lower/lowering.rs:109 verbatim. The class keeps a
+/// codegen/masm/src/lower/lowering.rs:109 verbatim. The class kept a
 /// default-level reproducer in `indirect_spill_bb`, which reads the table
-/// through `core::hint::black_box(&WIDES)` and stays indirect at every level;
+/// through `core::hint::black_box(&WIDES)` and stays indirect at every level
+/// (it no longer panics since the #1420 fix, although #1421 itself is not
+/// fixed);
 /// `--optimize=basic` does not devirtualize either, which is why
 /// `indirect_spill_args` and `indirect_spill_line` still panic there. This
 /// test stays as the devirtualized-dispatch guard. What it used to do:
@@ -228,7 +230,7 @@ fn indirect_spill() {
     run_case("indirect_spill", include_str!("../cases/case_indirect_spill.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC, the `indirect_spill` class re-armed for the
+/// FORMER COMPILE-TIME COMPILER PANIC, the `indirect_spill` class re-armed for the
 /// nightly-2026-09-01 guest toolchain (campaign 31, 2026-09-17): the same
 /// seven-live-u64 loop dispatch, with the table read as
 /// `core::hint::black_box(&WIDES)[idx]` so LLVM cannot devirtualize it and the
@@ -237,14 +239,11 @@ fn indirect_spill() {
 /// still keeps its arguments in group 1 (dialects/hir/src/ops/invoke.rs), so
 /// spilled dispatch arguments are never reloaded and the call is budgeted as
 /// one felt while the emitter still holds them. Bounded exactly as
-/// `indirect_spill` was. Compile-time — no inputs involved. Un-ignore when the
-/// spill analysis counts every operand group of `hir.exec_indirect`.
+/// `indirect_spill` was. Compile-time — no inputs involved. Filed under #1421;
+/// it stopped panicking with the #1420 fix (fresh dominator tree after edge
+/// splits, pruning of the spill transform's unused phis), was `#[ignore]`d
+/// until then, and no longer reproduces the panic it was filed for.
 #[test]
-#[ignore = "#1421: compiler panic: 'with error: NoSolution' at \
-            codegen/masm/src/lower/lowering.rs:109 — the spill analysis reads only operand group 0 \
-            and so never sees the arguments of hir.exec_indirect (group 1): spilled dispatch \
-            arguments are never reloaded and the call is budgeted as one felt (compile-time, no \
-            inputs involved)"]
 fn indirect_spill_bb() {
     run_case("indirect_spill_bb", include_str!("../cases/case_indirect_spill_bb.rs"));
 }
@@ -371,7 +370,8 @@ fn direct_loop() {
 /// 'hir.exec_indirect'`, constraints all `Move`, fires again (measured
 /// 2026-09-17); `--optimize=max`, `--optimize=size-min` and the no-DWARF build
 /// devirtualize like the default level. The class's default-level reproducer
-/// is `indirect_spill_bb`. What it used to do (campaign 14 attempt 2,
+/// was `indirect_spill_bb` (no longer panics since the #1420 fix). What it
+/// used to do (campaign 14 attempt 2,
 /// 2026-09-03): a
 /// straight-line 7-u64 fn-pointer dispatch with two single-use u64 helper
 /// results computed before it and consumed after it (LLVM stackifies them
@@ -403,8 +403,9 @@ fn direct_line() {
 /// because the table read is devirtualized (zero `call_indirect` in the wasm);
 /// nightly-2026-04-30 guests still abort at emit/mod.rs:623 index 10, and so
 /// does `--optimize=basic` with the current toolchain (measured 2026-09-17 —
-/// -O1 does not devirtualize). The class's default-level reproducer is
-/// `indirect_spill_bb`. What it used to do (campaign 14 attempt 2,
+/// -O1 does not devirtualize). The class's default-level reproducer was
+/// `indirect_spill_bb` (no longer panics since the #1420 fix). What it used
+/// to do (campaign 14 attempt 2,
 /// 2026-09-03): a loop-free 7-u64 fn-pointer
 /// dispatch whose fourth and sixth arguments are rotated IN PLACE from two
 /// more u64 locals by runtime counts, so the argument setup alone loads

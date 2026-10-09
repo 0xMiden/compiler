@@ -22,8 +22,9 @@ const SIZE_MIN: &[&str] = &["--optimize=size-min"];
 /// shape (masked rotate counts shared between pre-loop code and rotates of
 /// the loop-carried accumulator, plus the 28/30 live-through pair and a light
 /// second loop) with NINE shared counts. At -Oz ten or more shared counts hit
-/// the known arity-2 `NoSolution` panic (the ignored `spill_loop_mix_oz` in
-/// `spills.rs` is the sixteen-count reproducer); nine is the largest count
+/// the known arity-2 `NoSolution` panic until the #1420 fix (the formerly
+/// ignored `spill_loop_mix_oz` in `spills.rs` was the sixteen-count
+/// reproducer); nine is the largest count
 /// that compiles, and the same source also passes at O2. At -Oz the count
 /// bands stay un-hoisted, so the nine dead bands are dropped AFTER the loop
 /// (the post-op drop site's used/unused interleave arms).
@@ -237,15 +238,16 @@ fn deadfall_oz_edges() {
 /// compile this kernel), and adding freight at the default level does not
 /// produce F17 but F6 (a campaign-28 composition with a four-value u64 cluster
 /// panics at emit/mod.rs:623 WITH one split edge and six erased reloads).
-/// Bounded by [`spill_store_guard`] below (one rotation row fewer, compiles and
-/// matches native at -Oz). Compile-time — no inputs involved. Un-ignore when
-/// the spill placement keeps the spilled value inside the window.
+/// Bounded by [`spill_store_guard`] below (one rotation row fewer), which
+/// compiled and matched native at -Oz until the #1420 fix and is now ignored
+/// under #1422 item 2 as well. Compile-time — no inputs involved. Un-ignore
+/// when the spill placement keeps the spilled value inside the window.
 #[test]
 #[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
-            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F17 \
-            (seven 'additional spills required', edges to split = 0, no erased reloads; the \
-            failing op is the spill store hir.store_local into slot 12); compile-time, no inputs \
-            involved"]
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs \
+            (OpEmitter::copy_operand_to_position) — F17 (seven 'additional spills required', edges \
+            to split = 0, no erased reloads; the failing op is the spill store hir.store_local \
+            into slot 12); compile-time, no inputs involved"]
 fn spill_store_min() {
     run_case_with_flags(
         "spill_store_min",
@@ -254,14 +256,30 @@ fn spill_store_min() {
     );
 }
 
-/// Passing sibling of [`spill_store_min`]: the same ARX kernel with SEVEN
-/// rotation rows (fourteen constants) instead of eight. It compiles at -Oz and
-/// matches native, so the one ingredient that crosses the F17 boundary in this
-/// kernel is the last rotation row — while the constant ladder itself is
-/// non-monotone (campaign 26 measured 13, 12, 11, 9 panicking and 8, 4
-/// compiling on the full Threefish), so this rung bounds the reproducer
+/// Former passing sibling of [`spill_store_min`]: the same ARX kernel with
+/// SEVEN rotation rows (fourteen constants) instead of eight. It compiled at
+/// -Oz and matched native, so the one ingredient that crossed the F17 boundary
+/// in this kernel was the last rotation row — while the constant ladder itself
+/// is non-monotone (campaign 26 measured 13, 12, 11, 9 panicking and 8, 4
+/// compiling on the full Threefish), so this rung bounded the reproducer
 /// without being a user rule.
+///
+/// It compiled before the #1420 fix only because the spill transform dropped
+/// its split-edge reloads at two-predecessor joins (the #1420 defect), and it
+/// stopped compiling once #1420 was fixed: with those spills materialized it
+/// panics with `invalid operand stack index (10): requires access to more
+/// than 16 elements` at codegen/masm/src/emit/mod.rs
+/// (OpEmitter::copy_operand_to_position) after the second spills run
+/// (`edges to split = 0, values spilled = 2, reloads issued = 0`). What
+/// remains is the #1422 item 2 class (over-window pressure after the second
+/// spills run). Compile-time — no inputs involved.
 #[test]
+#[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs \
+            (OpEmitter::copy_operand_to_position) — over-window pressure after the second spills \
+            run (edges to split = 0, values spilled = 2, reloads issued = 0); compiled before the \
+            #1420 fix only because split-edge reloads were dropped; compile-time, no inputs \
+            involved"]
 fn spill_store_guard() {
     run_case_with_flags(
         "spill_store_guard",
