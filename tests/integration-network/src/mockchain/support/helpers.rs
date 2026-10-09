@@ -31,7 +31,9 @@ use miden_standards::{testing::note::NoteBuilder, tx_script::SendNotesTransactio
 use miden_testing::{MockChain, MockTransaction, MockTransactionBuilder};
 use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_integration_test_support::{CompilerTestBuilder, example_build_lock, workspace_root};
+use midenc_integration_test_support::{
+    CompilerTest, CompilerTestBuilder, example_build_lock, workspace_root,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Host-side mirror of the transaction-script arguments declared in
@@ -115,8 +117,22 @@ pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
 
 /// Compiles a Rust project and returns its Miden package.
 pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool) -> Arc<Package> {
+    with_rust_package_test(project_path.as_ref(), release, CompilerTest::compile_package)
+}
+
+/// Compiles a Rust project that is expected to be rejected and returns the compilation error.
+pub(crate) fn compile_rust_package_err(project_path: impl AsRef<Path>, release: bool) -> String {
+    with_rust_package_test(project_path.as_ref(), release, CompilerTest::compile_package_err)
+}
+
+/// Builds the compiler test for a Rust project and runs `compile` on it under the example build
+/// lock.
+fn with_rust_package_test<T>(
+    project_path: &Path,
+    release: bool,
+    compile: impl FnOnce(&mut CompilerTest) -> T,
+) -> T {
     let _build_lock = example_build_lock(&workspace_root());
-    let project_path = project_path.as_ref();
     let config = WasmTranslationConfig::default();
     let mut builder = CompilerTestBuilder::rust_source_cargo_miden(project_path, config, []);
 
@@ -124,8 +140,7 @@ pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool
         builder.with_release(true);
     }
 
-    let mut test = builder.build();
-    test.compile_package()
+    compile(&mut builder.build())
 }
 
 /// Returns the root of the note script exported by the compiled package.
