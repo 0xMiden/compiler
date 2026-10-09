@@ -1,0 +1,13 @@
+[package]
+name = "std-owner-tx-script"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+namespace = "miden::std_owner_tx_script::std_owner_tx_script"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+miden-standards-access-ownable2step = "0.17.0"
