@@ -1628,8 +1628,6 @@ fn dependency_functions(
 pub(crate) fn dependency_type_with_entries(
     dependencies: &[SelectedDependency],
 ) -> Vec<(String, wit_bindgen_rust::WithOption)> {
-    use heck::ToUpperCamelCase;
-
     dependencies
         .iter()
         .flat_map(|dependency| {
@@ -1641,7 +1639,7 @@ pub(crate) fn dependency_type_with_entries(
                     wit_bindgen_rust::WithOption::Path(format!(
                         "crate::bindings::{}::{}",
                         module_path,
-                        wit_type.to_upper_camel_case()
+                        midenc_frontend_wasm_metadata::namespace::rust_type_name(wit_type)
                     )),
                 )
             })
@@ -1763,6 +1761,84 @@ mod tests {
             assert!(wit.contains(&format!("import {};", spec.source_import())));
             assert!(!wit.contains(spec.synthetic_import()));
         }
+    }
+
+    /// A dependency type named `guest` is remapped to `Guest_`, the name wit-bindgen gives it in
+    /// the dependency's native bindings.
+    #[test]
+    fn dependency_type_named_guest_is_remapped_to_wit_bindgen_name() {
+        const DEPENDENCY_WIT: &str = r#"
+package miden:guest-dep@0.1.0;
+
+use miden:base/core-types@1.0.0;
+
+interface api {
+    use core-types.{felt};
+
+    record guest {
+        value: felt,
+    }
+
+    @external-id("miden::guest_dep::api::get_guest")
+    get-guest: func() -> guest;
+}
+
+world guest-dep-world {
+    export api;
+}
+"#;
+        let mut dependency_wit =
+            wit_world::parse_dependency_wit_source(DEPENDENCY_WIT, "embedded dependency WIT")
+                .unwrap();
+        let dependency = SelectedDependency {
+            package_path: PathBuf::from("/tmp/guest-dep/target/miden/debug/guest_dep.masp"),
+            package: crate::test_support::build_package("guest-dep", Some(DEPENDENCY_WIT)),
+            interface: dependency_wit.interfaces.remove(0),
+        };
+
+        let entries = dependency_type_with_entries(&[dependency]);
+        let paths = entries
+            .iter()
+            .map(|(wit, with)| match with {
+                wit_bindgen_rust::WithOption::Path(path) => (wit.as_str(), path.as_str()),
+                other => panic!("unexpected `with` option for `{wit}`: {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            paths,
+            [(
+                "miden:guest-dep/api@0.1.0/guest",
+                "crate::bindings::miden::guest_dep::api::Guest_"
+            )]
+        );
+
+        // The remap target is the name wit-bindgen actually generates for the type.
+        let mut resolve = Resolve::default();
+        resolve.push_str("miden.wit", crate::manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_str("dep.wit", DEPENDENCY_WIT).unwrap();
+        let package = resolve
+            .push_str(
+                "world.wit",
+                "package miden:guest-user@0.1.0;\nworld w {\n    import \
+                 miden:guest-dep/api@0.1.0;\n}\n",
+            )
+            .unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+        let mut files = wit_bindgen_core::Files::default();
+        wit_bindgen_core::WorldGenerator::generate(
+            &mut wit_bindgen_rust::Opts {
+                generate_all: true,
+                ..Default::default()
+            }
+            .build(),
+            &mut resolve,
+            world,
+            &mut files,
+        )
+        .unwrap();
+        let (_, source) = files.iter().next().unwrap();
+        let source = std::str::from_utf8(source).unwrap();
+        assert!(source.contains("pub struct Guest_ {"), "generated bindings: {source}");
     }
 
     /// Rejects dependency identifiers which cannot define a canonical synthetic package.
