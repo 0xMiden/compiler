@@ -133,7 +133,7 @@ impl SwapTerms {
     }
 
     /// Encodes the swap terms into the SWAPP note storage layout expected by the note script:
-    /// `[requested_asset_id (4), requested_total, creator_prefix, creator_suffix, note_type,
+    /// `[requested_asset_id (4), requested_total, creator_suffix, creator_prefix, note_type,
     /// p2id_tag, p2id_script_root (4)]`.
     fn to_storage_felts(&self) -> Vec<Felt> {
         let requested_id: [Felt; 4] = self.requested_asset.to_id_word().into();

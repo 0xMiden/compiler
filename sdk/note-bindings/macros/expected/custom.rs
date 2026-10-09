@@ -1,5 +1,5 @@
 #[doc(hidden)]
-mod __miden_note_bindings_a3280bdaca3ec21e {
+mod __miden_note_bindings_0fe04a583df7798e {
     #[doc(hidden)]
     trait __MidenNoteEncode {
         fn __write_note_felts(
@@ -223,8 +223,8 @@ mod __miden_note_bindings_a3280bdaca3ec21e {
                 '_,
             >,
         ) -> ::miden_note_bindings::__private::miden_note_schema::Result<()> {
-            writer.write(self.prefix().as_felt());
             writer.write(self.suffix());
+            writer.write(self.prefix().as_felt());
             Ok(())
         }
     }
@@ -235,18 +235,18 @@ mod __miden_note_bindings_a3280bdaca3ec21e {
                 '_,
             >,
         ) -> ::miden_note_bindings::__private::miden_note_schema::Result<Self> {
-            let prefix = reader
-                .read()
-                .map_err(|error| {
-                    ::miden_note_bindings::__private::miden_note_schema::Error::new(
-                        format!("failed to decode account-id prefix: {error}"),
-                    )
-                })?;
             let suffix = reader
                 .read()
                 .map_err(|error| {
                     ::miden_note_bindings::__private::miden_note_schema::Error::new(
                         format!("failed to decode account-id suffix: {error}"),
+                    )
+                })?;
+            let prefix = reader
+                .read()
+                .map_err(|error| {
+                    ::miden_note_bindings::__private::miden_note_schema::Error::new(
+                        format!("failed to decode account-id prefix: {error}"),
                     )
                 })?;
             ::miden_note_bindings::__private::miden_protocol::account::AccountId::try_from_elements(
@@ -524,7 +524,7 @@ mod __miden_note_bindings_a3280bdaca3ec21e {
         }
     }
     #[doc(hidden)]
-    const __MIDEN_NOTE_STORAGE_SCHEMA_WIT: &str = "\npackage example:dex-schema@1.0.0;\n\nuse miden:base/core-types@1.0.0;\n\ninterface note-storage {\n    use core-types.{account-id};\n\n    /// A ratio used as an order limit.\n    record limit-price {\n        numerator: u64,\n        denominator: u64,\n    }\n\n    /// Selects order execution.\n    variant order-kind {\n        market,\n        limit(limit-price),\n    }\n\n    record dex-note {\n        target: account-id,\n        kind: order-kind,\n    }\n\n    type storage = dex-note;\n}\n\npackage miden:base@1.0.0 {\n    interface core-types {\n        record felt { inner: f32 }\n        record account-id { prefix: felt, suffix: felt }\n    }\n}\n";
+    const __MIDEN_NOTE_STORAGE_SCHEMA_WIT: &str = "\npackage example:dex-schema@1.0.0;\n\nuse miden:base/core-types@1.0.0;\n\ninterface note-storage {\n    use core-types.{account-id};\n\n    /// A ratio used as an order limit.\n    record limit-price {\n        numerator: u64,\n        denominator: u64,\n    }\n\n    /// Selects order execution.\n    variant order-kind {\n        market,\n        limit(limit-price),\n    }\n\n    record dex-note {\n        target: account-id,\n        kind: order-kind,\n    }\n\n    type storage = dex-note;\n}\n\npackage miden:base@1.0.0 {\n    interface core-types {\n        record felt { inner: f32 }\n        record account-id { suffix: felt, prefix: felt }\n    }\n}\n";
     /// Returns the resolved schema, which is parsed once for the whole process.
     #[doc(hidden)]
     fn __miden_note_storage_schema() -> ::miden_note_bindings::__private::miden_note_schema::Result<
@@ -646,4 +646,4 @@ mod __miden_note_bindings_a3280bdaca3ec21e {
         }
     }
 }
-pub use __miden_note_bindings_a3280bdaca3ec21e::{DexNote, OrderKind, LimitPrice};
+pub use __miden_note_bindings_0fe04a583df7798e::{DexNote, OrderKind, LimitPrice};

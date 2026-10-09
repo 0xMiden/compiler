@@ -1,0 +1,13 @@
+[package]
+name = "std-rbac-tx-script"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+namespace = "miden::std_rbac_tx_script::std_rbac_tx_script"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+miden-standards-access-rbac = "0.17.0"

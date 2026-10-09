@@ -27,13 +27,13 @@ pub struct TxScriptArgs {
 
 /// Reads the account's owner and asserts it equals the expected one.
 ///
-/// The component's `AccountId` record has the fields `{ suffix, prefix }`, so it is the
-/// dependency's own type rather than `miden::AccountId`.
+/// The component's `AccountId` record has the core field order `{ suffix, prefix }`, so
+/// `get_owner` returns a `miden::AccountId`.
 #[tx_script]
 fn run(args: TxScriptArgs, account: &mut Ownable) {
     // The expected values are read before the call and compared after it, so they stay live on
     // the caller's side across the call.
-    let owner = account.get_owner();
+    let owner: AccountId = account.get_owner();
     assert_eq(owner.suffix, args.owner_suffix);
     assert_eq(owner.prefix, args.owner_prefix);
 }

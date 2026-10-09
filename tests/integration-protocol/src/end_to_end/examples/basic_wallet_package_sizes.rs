@@ -90,7 +90,7 @@ fn basic_wallet_and_p2id() {
     // 46 bytes fewer (20436 before) with no `u32assert` on a constant-address 32-bit store: one
     // fewer per 32-bit global initializer. The note's `init` stores four such globals, 11 bytes
     // per assertion and 2 padding `noop`s its shorter block no longer needs.
-    expect!["20538"].assert_eq(stripped_mast_size_str(&note_package).as_str());
+    expect!["20537"].assert_eq(stripped_mast_size_str(&note_package).as_str());
     // The note package exports both the note script and the `build_recipient` constructor; the
     // constructor must not interfere with the `@note_script`-attributed export selection.
     assert!(
@@ -111,5 +111,5 @@ fn basic_wallet_and_p2id() {
     // that undo each other, such as `swap.1 swap.1` (51 bytes fewer). 16374 before the
     // `u32assert` on a constant-address 32-bit store went, one fewer per 32-bit global
     // initializer: 46 bytes fewer, as for the P2ID note above.
-    expect!["16476"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
+    expect!["16474"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
 }

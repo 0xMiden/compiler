@@ -206,11 +206,9 @@ SDK macros derive its interface from the package manifest:
   `NoteTag` or `Tag` is a `u32`, an `AssetAmount` a `felt`. Parameters are named after their
   type, else `argN`;
 - a manifest type matching a `core-types` item exactly (same name and field layout) uses that
-  item; any other named type becomes a type local to the dependency's interface. The standards'
-  `AccountId` has the fields `{ suffix, prefix }`, the reverse of the SDK's `AccountId`, so it
-  becomes a local `account-id` record: a caller of such a procedure (e.g. in the `rbac` or
-  `ownable2step` components) builds the dependency module's own `AccountId` type rather than
-  passing a `miden::AccountId`. A Rust-built component's manifest names the SDK types it uses by
+  item; any other named type becomes a type local to the dependency's interface (the standards'
+  `AccountId` matches the core `account-id`, so such procedures take and return
+  `miden::AccountId`). A Rust-built component's manifest names the SDK types it uses by
   their `core-types` id (`miden:base/core-types@1.0.0/asset`), and those map to the `core-types`
   items; a type named by another WIT id is not supported;
 - auth procedures, procedures without a typed signature, outside the interface module, with

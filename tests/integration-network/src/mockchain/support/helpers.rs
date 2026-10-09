@@ -50,9 +50,9 @@ struct TxScriptArgs {
     asset_value: miden_field::Word,
 }
 
-/// Converts a value's felt representation into `miden_core::Felt` elements.
+/// Encodes an account id the way a Rust note stores its `AccountId` field: suffix, then prefix.
 pub(crate) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
-    vec![value.prefix().as_felt(), value.suffix()]
+    vec![value.suffix(), value.prefix().as_felt()]
 }
 
 // FIELD <-> PROTOCOL FELT CONVERSIONS
