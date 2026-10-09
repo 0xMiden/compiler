@@ -35,7 +35,7 @@ use super::{
 #[test]
 fn overhead() {
     let names = DispatchProjectNames::new("stored_procedure_overhead");
-    let (counter_project, counter_package) =
+    let (counter_project, counter_package, counter_namespace) =
         build_target_package(&names, "counter-contract", COUNTER_CONTRACT_SOURCE);
     let dependencies = [(names.target_account_package.as_str(), counter_project.root())];
     let (dispatcher_project, dispatcher_package) =
@@ -65,13 +65,13 @@ fn overhead() {
         init_storage_data
             .insert_value(
                 StorageValueName::from_slot_name(&names.dispatcher_slot("increment")),
-                lifted_export_root(&counter_package, "increment-count"),
+                lifted_export_root(&counter_package, &counter_namespace, "increment_count"),
             )
             .unwrap();
         init_storage_data
             .insert_value(
                 StorageValueName::from_slot_name(&names.dispatcher_slot("add")),
-                lifted_export_root(&counter_package, "add-to-count"),
+                lifted_export_root(&counter_package, &counter_namespace, "add_to_count"),
             )
             .unwrap();
         AccountComponent::from_package(dispatcher_package.as_ref().clone(), &init_storage_data)

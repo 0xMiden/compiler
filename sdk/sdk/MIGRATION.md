@@ -119,6 +119,131 @@ fn main() {
 and includes `concat!(env!("OUT_DIR"), "/my-lib.rs")` in a module of its own; the crate root
 needs `#![cfg_attr(all(target_family = "wasm", miden), feature(linkage))]`.
 
+### `[lib].namespace` is a three-segment Miden path that names everything
+
+`[lib].namespace` in `miden-project.toml` is now a Miden path of exactly three segments,
+`<namespace>::<package>::<interface>`, each a snake_case identifier: lowercase ASCII letters and
+digits in words joined by single `_`, starting with a letter (`[a-z][a-z0-9]*(_[a-z0-9]+)*`), and
+not a WIT or Rust 2024 keyword such as `list`, `type`, `match` or `gen`; the interface segment
+cannot be `core_types`, which names the SDK's own WIT interface. The namespace must neither be nor
+lie under a library that components link against: `miden::base` (the SDK's own WIT package),
+`miden::protocol`, `miden::core`, `intrinsics` and `std`. The component-model id used before is
+rejected by the SDK macros with an error that shows the expected shape. `cargo miden new` writes
+`miden::<package>::<package>` (package name snake-cased) for account, note and
+transaction-script projects, and refuses a project name that yields an invalid namespace. The
+first two segments form the WIT package id, so they must be unique among all crates a consumer
+links, whatever their versions.
+
+```toml
+# before
+[lib]
+namespace = "miden:counter-contract/counter-contract@0.1.0"
+# after
+[lib]
+namespace = "miden::counter_contract::counter_contract"
+```
+
+The namespace is the single source of every generated name; the component trait name no longer
+takes part in naming, and the WIT package and interface ids derive from the namespace
+(`miden:counter-contract/counter-contract@<[package].version>`). No version appears in a path.
+
+- Exported procedures are `::<namespace>::<leaf>`, where the leaf is the Rust identifier as
+  written (without `r#`), not its kebab-case WIT name:
+  `::"miden:counter-contract/counter-contract@0.1.0"::"get-count"` becomes
+  `::miden::counter_contract::counter_contract::get_count`. Code that looks up exports by path in
+  a package manifest, or `call`s them from MASM, needs the new path. Calls into dependencies use
+  the dependency's paths, e.g. `call ::miden::basic_wallet::basic_wallet::receive_asset`.
+- Storage slot names are `<namespace>::<field>` instead of
+  `<[package].name>::<interface>::<field>` (each segment sanitized, with the `[package].name` of
+  `miden-project.toml`): `counter_contract::counter_contract::count_map` becomes
+  `miden::counter_contract::counter_contract::count_map`. Storage slot ids derive from
+  these names, so deployed components are re-keyed; accounts deployed with the old slot names
+  need a migration, and host code that builds `StorageSlotName`s must use the new names. The
+  field name is used as written: a raw identifier loses its `r#` (`r#type` gives
+  `<namespace>::type`, previously `…::r_type`), a field name starting with `_` is now rejected
+  instead of being prefixed with `x` (`_count_map` gave `x_count_map`), and a non-ASCII field
+  name is rejected instead of having its non-ASCII characters replaced by `_` (a Rust identifier
+  has no other characters outside `[A-Za-z0-9_]`); rename such a field. A `StoredProcedure`
+  slot's import path `<namespace>::dyncall::<field>` uses the same spelling.
+- Notes lose the accidental `miden-` interface prefix: a note that used
+  `miden:p2id/miden-p2id@0.1.0` now declares `miden::p2id::p2id` and exports
+  `::miden::p2id::p2id::<entrypoint>`. The binding module a consumer generates for the note
+  changes with it: `bindings::miden::p2id::miden_p2id` becomes `bindings::miden::p2id::p2id`.
+- Transaction scripts export their own interface: `namespace = "miden:base/transaction-script@1.0.0"`
+  becomes the script's own namespace (e.g. `miden::p2id_tx_script::p2id_tx_script`), and the
+  entrypoint is `<namespace>::run`. The SDK WIT no longer defines the `transaction-script`
+  interface or the `base-world` world.
+- `#[component]` methods, `#[note_script]` entrypoints and `#[note_constructor]` methods no
+  longer need snake_case names: any ASCII Rust identifier whose kebab-case form is a valid WIT
+  name works, e.g. `getURL` or `r#type`. The
+  generated WIT spells Rust-derived method and parameter names in explicit `%` form
+  (`%get-url: func(%type: u32) -> u32;`). `#[export_type]` record fields and variant cases are
+  spelled the same way (`record point { %x: felt, %record: bool, }`), so fields and cases named
+  like a WIT keyword (e.g. `record`, `flags`, `Variant`) now work. Record fields must still be
+  snake_case and not a Rust keyword (the generated bindings access them by that spelling), so
+  fields such as `r#type` or `getURL` are rejected with the name to use instead. Likewise,
+  variant cases must be the UpperCamelCase of their WIT name (`Nft`, not `NFT`), and other
+  spellings are rejected with the name to use. Methods, parameters and record fields named
+  `r#gen` are rejected: wit-bindgen does not escape this Rust 2024 keyword in the generated
+  bindings. A `#[note]` struct's storage-schema type name follows the `#[export_type]` rule: a
+  raw struct name loses its `r#`, and a struct named like a WIT keyword (e.g. `Map`, `Record`),
+  like the schema's `storage` alias, or like a core or `#[export_type]` type its fields use is
+  rejected with the name it clashes with instead of a WIT parse error.
+- `<namespace>::init` is reserved for the compiler's component initializer; rename any exported
+  procedure, note entrypoint or note constructor called `init`.
+- Exported WIT function names must not start with `fpi-` or `dyncall-` (`fpi_`/`dyncall_` in
+  Rust): `#[component]` methods, `#[note_script]` entrypoints, `#[note_constructor]` methods and
+  hand-written WIT exports with the `fpi-` prefix are now rejected, as `dyncall-` ones already
+  were, since the compiler reserves both prefixes for the imports the SDK macros generate. Rename
+  such a function (e.g. `fpi_transfer` to `transfer_fpi`).
+
+### Hand-written WIT needs `@external-id` on every function
+
+Crates that call `miden::generate!()` over a hand-written WIT interface must annotate every
+function with its full Miden path, `<[lib].namespace>::<function>`; the compiler rejects a
+component function without one, and an export outside the namespace. The same holds for a
+dependency's WIT supplied through a `wit = ...` override file
+(`[package.metadata.miden.dependencies.<name>]`): annotate each function with its full Miden path
+in the dependency, or `#[account(...)]` bindings to that dependency are rejected.
+
+```wit
+// before
+interface foo {
+    get-asset-qty: func(asset: asset) -> asset-amount;
+}
+// after, with `[lib].namespace = "miden::storage_example::foo"`
+interface foo {
+    @external-id("miden::storage_example::foo::get_asset_qty")
+    get-asset-qty: func(asset: asset) -> asset-amount;
+}
+```
+
+The parent of an imported function's path names a dependency component, so the parents of a
+component's imports must not nest in one another or in the component's own namespace: importing
+both `acme::math::add` and `acme::math::u64::add` is rejected. The FPI imports `#[account(...)]`
+generates (`<namespace>::fpi::<dependency path>::<function>`) and the stored-procedure imports
+`#[component_storage]` generates for `StoredProcedure` slots (`<namespace>::dyncall::<field>`) nest
+in the component's namespace by design and are exempt, since they declare no dependency component.
+A WIT import names a procedure of another component. In a library package (the core library or a
+Miden Assembly library dependency), procedures tagged with a protocol role attribute
+(`@account_procedure`, `@note_script`, `@auth_script`, `@tx_script`), such as the standard account
+components of the `miden-standards` library, stay importable through WIT, and every other
+procedure of a library package is rejected: bind a plain library procedure natively with an
+`extern "C"` function carrying its Miden path in `#[link_name]` (see "Binding a Miden Assembly
+dependency from Rust" above). The procedures of component packages stay importable.
+
+The core Wasm module of a component, named after the crate, now gives way to an export of the same
+name (a crate `swap` exporting `swap`): the module is renamed `<name>_core`, which only appears in
+the package's internal MASM paths.
+
+`midenc-frontend-wasm-metadata` follows the same naming: the `FrontendMetadata` variants carry the
+export's full Miden path in `path` instead of `export_name`, `FrontendMetadata::export_name()` is
+replaced by `path()`, and `protocol_export_kind_for` takes the full Miden path of the export.
+
+The bindings generator moved to wit-bindgen 0.62 (wit-parser and wit-component 0.259), which
+understands the attribute; crates that depend on `wit-bindgen` directly should move to the same
+version.
+
 ## 0.14.0 -> 0.15.0
 
 ### `compute_commitment` moved to `native_account` (protocol 0.17.0-rc.6)

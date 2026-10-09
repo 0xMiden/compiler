@@ -213,6 +213,17 @@ impl Module {
         index.index() < self.num_imported_funcs
     }
 
+    /// Returns the import declaring the function `index`, or `None` if it is not imported.
+    ///
+    /// [Module::imports] holds the imports of every kind in declaration order, so it is not
+    /// indexed by function index.
+    pub fn function_import(&self, index: FuncIndex) -> Option<&ModuleImport> {
+        if !self.is_imported_function(index) {
+            return None;
+        }
+        self.imports.iter().find(|import| import.index == EntityIndex::Function(index))
+    }
+
     pub fn is_exported(&self, entity: EntityIndex) -> bool {
         self.exports.values().any(|export| *export == entity)
     }
@@ -331,7 +342,12 @@ impl Module {
             .expect("No module name in the name section and no fallback name is set")
     }
 
-    /// Returns the unique name of the given function
+    /// Returns the linkage name of the given function, unique within the module (see
+    /// [`Self::resolve_func_symbols`]).
+    ///
+    /// The HIR function is defined under this name, except in a component, which names the
+    /// functions backing its exports and lowering its imports after their Miden paths (see
+    /// `core_names::assign`).
     pub fn func_name(&self, index: FuncIndex) -> Symbol {
         if let Some(sym) = self.func_linkages.get(index).copied() {
             return sym;
@@ -375,18 +391,20 @@ impl Module {
             .is_some_and(|name| self.duplicate_source_names.contains(name))
     }
 
-    /// Resolves unique HIR linkage names for all functions in the module.
+    /// Resolves linkage names, unique within the module, for all functions in the module.
     ///
-    /// WebAssembly function export names define the public interface and take precedence as
-    /// the primary HIR linkage symbol. Unexported functions use their name-section name (or
-    /// `func{index}` fallback if absent), disambiguated via `{name}_func{index}` (with `_` appended
-    /// to resolve collisions) if they conflict with an export name, a global variable name, or
-    /// another function with the same source name.
+    /// These name the HIR functions, except in a component, which names the functions backing its
+    /// exports and lowering its imports after their Miden paths (see `core_names::assign`).
+    ///
+    /// WebAssembly function export names take precedence as the linkage name. Unexported
+    /// functions use their name-section name (or `func{index}` fallback if absent), disambiguated
+    /// via `{name}_func{index}` (with `_` appended to resolve collisions) if they conflict with an
+    /// export name, a global variable name, or another function with the same source name.
     ///
     /// Intrinsics and Miden ABI linker stubs are identified by name (see
     /// [`maybe_lower_linker_stub`]) and considered internal, so an export or duplicate name that
-    /// identifies one — per [`names_a_linker_stub`], against the packages `config` links — is an
-    /// error.
+    /// identifies one — per [`names_a_linker_stub`], against the packages `config` links — is
+    /// an error.
     ///
     /// This method is idempotent.
     ///

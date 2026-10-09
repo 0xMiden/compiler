@@ -10,9 +10,12 @@ use cranelift_entity::PrimaryMap;
 use gimli::Section;
 use indexmap::IndexMap;
 use midenc_hir::{FxBuildHasher, FxHashMap};
-use midenc_session::{Session, diagnostics::IntoDiagnostic};
+use midenc_session::{
+    Session,
+    diagnostics::{IntoDiagnostic, Report},
+};
 use wasmparser::{
-    Chunk, ComponentImportName, Encoding, Parser, Payload, Validator,
+    Chunk, ComponentExternName, Encoding, Parser, Payload, Validator,
     component_types::{
         AliasableResourceId, ComponentEntityType, ComponentFuncTypeId, ComponentInstanceTypeId,
     },
@@ -85,7 +88,7 @@ pub struct ComponentParser<'a, 'data> {
 
     /// The byte offset where the first module starts within the component.
     /// Used to adjust DWARF addresses when looking up source locations.
-    first_module_base_offset: Option<usize>,
+    first_module_base_offset: Option<u64>,
 }
 
 pub struct ParsedRootComponent<'data> {
@@ -183,6 +186,9 @@ pub struct ParsedComponent<'data> {
     /// index into an index space of what's being exported.
     pub exports: IndexMap<&'data str, ComponentItem>,
 
+    /// The `external-id` attribute of each export that carries one, keyed by the export name.
+    pub export_external_ids: FxHashMap<&'data str, &'data str>,
+
     /// Type information produced by `wasmparser` for this component.
     ///
     /// This type information is available after the parsing of the entire
@@ -222,7 +228,7 @@ pub struct ComponentInstantiation<'data> {
 #[derive(Debug)]
 pub enum LocalInitializer<'data> {
     // imports
-    Import(ComponentImportName<'data>, ComponentEntityType),
+    Import(ComponentExternName<'data>, ComponentEntityType),
 
     // canonical function sections
     Lower(CanonLower),
@@ -233,7 +239,6 @@ pub enum LocalInitializer<'data> {
     ResourceNew(AliasableResourceId, SignatureIndex),
     ResourceRep(AliasableResourceId, SignatureIndex),
     ResourceDrop(AliasableResourceId, SignatureIndex),
-    ResourceDropAsync(AliasableResourceId, SignatureIndex),
 
     // core wasm modules
     ModuleStatic(StaticModuleIndex),
@@ -353,7 +358,11 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
 
             match self.parse_payload(payload, component)? {
                 Action::KeepGoing => {}
-                Action::Skip(n) => remaining = &remaining[n..],
+                Action::Skip(n) => {
+                    remaining = remaining
+                        .get(n..)
+                        .ok_or_else(|| Report::msg("module range exceeds component size"))?;
+                }
                 Action::Done => break,
             }
         }
@@ -371,7 +380,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 first_module.debuginfo = self.component_debuginfo;
                 // Store the module's base offset for DWARF address translation
                 if let Some(base_offset) = self.first_module_base_offset {
-                    first_module.wasm_file.module_base_offset = base_offset as u64;
+                    first_module.wasm_file.module_base_offset = base_offset;
                 }
             }
         }
@@ -437,7 +446,8 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 unchecked_range: range,
             } => {
                 self.module_section(range.clone(), parser, component)?;
-                return Ok(Action::Skip(range.end - range.start));
+                let len = usize::try_from(range.end - range.start).into_diagnostic()?;
+                return Ok(Action::Skip(len));
             }
             Payload::ComponentSection {
                 parser,
@@ -520,7 +530,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         for import in s {
             let import = import.into_diagnostic()?;
             let types = self.validator.types(0).unwrap();
-            let ty = types.component_entity_type_of_import(import.name.0).unwrap();
+            let ty = types.component_item_for_import(import.name.name).unwrap().ty;
             self.result.initializers.push(LocalInitializer::Import(import.name, ty));
         }
         Ok(())
@@ -578,59 +588,16 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                     core_func_index += 1;
                     LocalInitializer::ResourceDrop(resource, ty)
                 }
-                wasmparser::CanonicalFunction::ResourceDropAsync { resource } => {
-                    let resource = types.component_any_type_at(resource).unwrap_resource();
-                    let ty = self.core_func_signature(core_func_index);
-                    core_func_index += 1;
-                    LocalInitializer::ResourceDropAsync(resource, ty)
-                }
                 wasmparser::CanonicalFunction::ResourceRep { resource } => {
                     let resource = types.component_any_type_at(resource).unwrap_resource();
                     let ty = self.core_func_signature(core_func_index);
                     core_func_index += 1;
                     LocalInitializer::ResourceRep(resource, ty)
                 }
-                wasmparser::CanonicalFunction::ErrorContextNew { .. }
-                | wasmparser::CanonicalFunction::ErrorContextDrop
-                | wasmparser::CanonicalFunction::ErrorContextDebugMessage { .. }
-                | wasmparser::CanonicalFunction::ThreadSpawnRef { .. }
-                | wasmparser::CanonicalFunction::ThreadSpawnIndirect { .. }
-                | wasmparser::CanonicalFunction::ThreadNewIndirect { .. }
-                | wasmparser::CanonicalFunction::ThreadAvailableParallelism
-                | wasmparser::CanonicalFunction::ThreadIndex
-                | wasmparser::CanonicalFunction::ThreadSuspend { .. }
-                | wasmparser::CanonicalFunction::ThreadSuspendTo { .. }
-                | wasmparser::CanonicalFunction::ThreadSuspendToSuspended { .. }
-                | wasmparser::CanonicalFunction::ThreadUnsuspend
-                | wasmparser::CanonicalFunction::ThreadYield { .. }
-                | wasmparser::CanonicalFunction::ThreadYieldToSuspended { .. }
-                | wasmparser::CanonicalFunction::BackpressureInc
-                | wasmparser::CanonicalFunction::BackpressureDec
-                | wasmparser::CanonicalFunction::WaitableJoin
-                | wasmparser::CanonicalFunction::WaitableSetNew
-                | wasmparser::CanonicalFunction::WaitableSetDrop
-                | wasmparser::CanonicalFunction::WaitableSetPoll { .. }
-                | wasmparser::CanonicalFunction::WaitableSetWait { .. }
-                | wasmparser::CanonicalFunction::FutureNew { .. }
-                | wasmparser::CanonicalFunction::FutureRead { .. }
-                | wasmparser::CanonicalFunction::FutureWrite { .. }
-                | wasmparser::CanonicalFunction::FutureCancelRead { .. }
-                | wasmparser::CanonicalFunction::FutureCancelWrite { .. }
-                | wasmparser::CanonicalFunction::FutureDropWritable { .. }
-                | wasmparser::CanonicalFunction::FutureDropReadable { .. }
-                | wasmparser::CanonicalFunction::SubtaskDrop
-                | wasmparser::CanonicalFunction::SubtaskCancel { .. }
-                | wasmparser::CanonicalFunction::ContextGet { .. }
-                | wasmparser::CanonicalFunction::ContextSet { .. }
-                | wasmparser::CanonicalFunction::TaskCancel
-                | wasmparser::CanonicalFunction::TaskReturn { .. }
-                | wasmparser::CanonicalFunction::StreamNew { .. }
-                | wasmparser::CanonicalFunction::StreamRead { .. }
-                | wasmparser::CanonicalFunction::StreamWrite { .. }
-                | wasmparser::CanonicalFunction::StreamCancelRead { .. }
-                | wasmparser::CanonicalFunction::StreamCancelWrite { .. }
-                | wasmparser::CanonicalFunction::StreamDropWritable { .. }
-                | wasmparser::CanonicalFunction::StreamDropReadable { .. } => unimplemented!(),
+                other => unsupported_diag!(
+                    &self.session.diagnostics,
+                    "canonical function is not supported: {other:?}"
+                ),
             };
             log::debug!(target: "component-parser", "Adding canonical initializer: {init:?}");
             self.result.initializers.push(init);
@@ -640,7 +607,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
 
     fn module_section(
         &mut self,
-        range: std::ops::Range<usize>,
+        range: std::ops::Range<u64>,
         parser: Parser,
         component: &'data [u8],
     ) -> WasmResult<()> {
@@ -665,11 +632,13 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             self.validator,
             self.types.module_types_builder_mut(),
         );
-        let parsed_module = module_environment.parse(
-            parser,
-            &component[range.start..range.end],
-            &self.session.diagnostics,
-        )?;
+        let start = usize::try_from(range.start).into_diagnostic()?;
+        let end = usize::try_from(range.end).into_diagnostic()?;
+        let module_bytes = component
+            .get(start..end)
+            .ok_or_else(|| Report::msg("module range exceeds component size"))?;
+        let parsed_module =
+            module_environment.parse(parser, module_bytes, &self.session.diagnostics)?;
         let static_idx = self.static_modules.push(parsed_module);
         self.result.initializers.push(LocalInitializer::ModuleStatic(static_idx));
         // Set a fallback name for the newly added parsed module to be used if
@@ -682,11 +651,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         Ok(())
     }
 
-    fn component_section(
-        &mut self,
-        range: std::ops::Range<usize>,
-        parser: Parser,
-    ) -> WasmResult<()> {
+    fn component_section(&mut self, range: std::ops::Range<u64>, parser: Parser) -> WasmResult<()> {
         // When a sub-component is found then the current parsing state
         // is pushed onto the `lexical_scopes` stack. This will subsequently
         // get popped as part of `Payload::End` processing above.
@@ -768,9 +733,12 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         for export in s {
             let export = export.into_diagnostic()?;
             let item = self.kind_to_item(export.kind, export.index)?;
-            let prev = self.result.exports.insert(export.name.0, item);
+            let prev = self.result.exports.insert(export.name.name, item);
             assert!(prev.is_none());
-            self.result.initializers.push(LocalInitializer::Export(export.name.0, item));
+            if let Some(external_id) = export.name.external_id {
+                self.result.export_external_ids.insert(export.name.name, external_id);
+            }
+            self.result.initializers.push(LocalInitializer::Export(export.name.name, item));
         }
         Ok(())
     }
@@ -840,7 +808,7 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         let mut map = FxHashMap::with_capacity_and_hasher(exports.len(), FxBuildHasher);
         for export in exports {
             let idx = self.kind_to_item(export.kind, export.index)?;
-            map.insert(export.name.0, idx);
+            map.insert(export.name.name, idx);
         }
 
         Ok(LocalInitializer::ComponentSynthetic(map))
@@ -993,6 +961,38 @@ mod tests {
 
     use super::*;
     use crate::supported_component_model_features;
+
+    /// Parses `component` with a validator enabling `features`, returning the diagnostic.
+    fn parse_error(component: &[u8], features: wasmparser::WasmFeatures) -> String {
+        let context = Context::default();
+        let config = WasmTranslationConfig::default();
+        let mut validator = Validator::new_with_features(features);
+        let mut types = ComponentTypesBuilder::default();
+        let parser = ComponentParser::new(&config, context.session(), &mut validator, &mut types);
+        match parser.parse(component) {
+            Ok(_) => panic!("parsing should fail"),
+            Err(err) => err.to_string(),
+        }
+    }
+
+    #[test]
+    fn an_unsupported_canonical_function_is_a_diagnostic() {
+        let component = wat::parse_str("(component (core func (canon task.cancel)))")
+            .expect("component wat should compile");
+
+        // The validator rejects async canonical functions, since the frontend does not enable
+        // the async component-model feature.
+        let err = parse_error(&component, supported_component_model_features());
+        assert!(err.contains("requires the component model async feature"), "unexpected: {err}");
+
+        // Past the validator, the parser reports the construct instead of panicking.
+        let features = supported_component_model_features() | wasmparser::WasmFeatures::CM_ASYNC;
+        let err = parse_error(&component, features);
+        assert!(
+            err.contains("canonical function is not supported: TaskCancel"),
+            "unexpected: {err}"
+        );
+    }
 
     #[test]
     fn injects_component_level_dwarf_into_first_module() {

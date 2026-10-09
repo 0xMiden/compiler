@@ -5,6 +5,7 @@ use miden:base/core-types@1.0.0;
 interface foo {
     use core-types.{felt};
 
+    @external-id("miden::cross_ctx_account::foo::process_felt")
     process-felt: func(input: felt) -> felt;
 }
 

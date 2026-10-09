@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "note"
-namespace = "miden:swapp-note/miden-swapp-note@0.1.0"
+namespace = "miden::swapp_note::swapp_note"
 path = "src/lib.rs"
 
 [dependencies]

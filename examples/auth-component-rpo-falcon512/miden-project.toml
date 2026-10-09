@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "account-component"
-namespace = "miden:auth-component-rpo-falcon512/auth-component@0.1.0"
+namespace = "miden::auth_component_rpo_falcon512::auth_component"
 path = "src/lib.rs"
 
 [profile.release]

@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
-use heck::ToSnakeCase;
 use quote::quote;
-use syn::{Field, Type, spanned::Spanned};
+use syn::{Field, Type, ext::IdentExt, spanned::Spanned};
 
 use crate::{
     account_component_metadata::AccountComponentMetadataBuilder, component_macro::stored_procedure,
-    types::StorageFieldType,
+    namespace::ComponentNamespace, types::StorageFieldType,
 };
 
 /// Rust crate the supported storage field types are expected to come from.
@@ -16,51 +15,37 @@ const TYPENAME_MAP: &str = "StorageMap";
 /// Rust type name of a storage value slot.
 const TYPENAME_VALUE: &str = "StorageValue";
 
-/// Normalizes a storage slot name component into a valid identifier-like segment.
+/// Returns the name of the storage field `field` as written, without the `r#` of a raw
+/// identifier: the one spelling its storage slot name and, for a `StoredProcedure` slot, the
+/// `@external-id` of its dispatch import are built from.
 ///
-/// This is a lossy transformation: characters outside `[A-Za-z0-9_]` are replaced with `_`, and
-/// empty/leading-underscore components are prefixed to avoid invalid identifiers. Callers should
-/// ensure the resulting slot names remain unique.
-fn sanitize_slot_name_component(component: &str) -> String {
-    let mut out: String = component
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-
-    if out.is_empty() {
-        out.push('x');
+/// Returns an error at the field when the name starts with `_`, which `StorageSlotName` rejects
+/// in a path segment.
+pub(super) fn storage_field_name(field: &syn::Ident) -> syn::Result<String> {
+    let name = field.unraw().to_string();
+    if name.starts_with('_') {
+        return Err(syn::Error::new(
+            field.span(),
+            format!(
+                "storage field `{field}` starts with `_`, but its name becomes a segment of the \
+                 storage slot name, and slot name segments cannot start with an underscore; \
+                 rename the field"
+            ),
+        ));
     }
-    if out.starts_with('_') {
-        out.insert(0, 'x');
-    }
-
-    out
+    Ok(name)
 }
 
 /// Derives the full storage slot name for a component field.
 ///
-/// Slot names are part of the on-chain storage ABI, so this intentionally ignores any optional
-/// version suffix in `storage_namespace` and keeps the format stable as
-/// `component_package_or_name::component_interface::field_name`. The middle segment is the
-/// component's `[lib].namespace` interface segment, so private Rust renames cannot change
-/// deployed slot names.
+/// Slot names are part of the on-chain storage ABI: they are `<namespace>::<field_name>`, where
+/// the namespace is the component's `[lib].namespace`, so private Rust renames of the storage
+/// struct cannot change deployed slot names.
 fn derive_storage_slot_name(
-    storage_namespace: &str,
-    component_interface: &str,
-    field_name: &str,
-) -> String {
-    let storage_namespace = storage_namespace.split('@').next().unwrap_or(storage_namespace);
-    let namespace = sanitize_slot_name_component(storage_namespace);
-    let interface_component = sanitize_slot_name_component(&component_interface.to_snake_case());
-    let field_component = sanitize_slot_name_component(field_name);
-
-    format!("{namespace}::{interface_component}::{field_component}")
+    namespace: &ComponentNamespace,
+    field: &syn::Ident,
+) -> syn::Result<String> {
+    Ok(namespace.storage_slot_name(&storage_field_name(field)?))
 }
 
 /// Parsed arguments collected from a `#[storage(...)]` attribute.
@@ -138,8 +123,7 @@ fn slot_id_tokens(id: miden_protocol::account::StorageSlotId) -> proc_macro2::To
 pub fn process_storage_fields(
     fields: &mut syn::FieldsNamed,
     builder: &mut AccountComponentMetadataBuilder,
-    storage_namespace: &str,
-    component_interface: &str,
+    namespace: Option<&ComponentNamespace>,
 ) -> Result<Vec<proc_macro2::TokenStream>, syn::Error> {
     let mut field_infos = Vec::new();
     let mut errors = Vec::new();
@@ -188,9 +172,19 @@ pub fn process_storage_fields(
                 errors.push(err);
                 continue;
             }
+            // Without a project manifest there is no namespace; the caller reports that once
+            // field validation is done.
+            let Some(namespace) = namespace else {
+                continue;
+            };
             // `StorageSlotId` values are derived from slot names, so keep this format stable.
-            let slot_name_str =
-                derive_storage_slot_name(storage_namespace, component_interface, &field_name_str);
+            let slot_name_str = match derive_storage_slot_name(namespace, field_name) {
+                Ok(slot_name) => slot_name,
+                Err(err) => {
+                    errors.push(err);
+                    continue;
+                }
+            };
             if let Some(existing_field) = slot_names.get(&slot_name_str) {
                 errors.push(syn::Error::new(
                     field.span(),
@@ -353,13 +347,20 @@ fn reject_stored_procedure_type_override(
 
 #[cfg(test)]
 mod tests {
+    use proc_macro2::Span;
     use quote::quote;
-    use syn::parse::Parser;
+    use syn::{parse::Parser, parse_quote};
 
     use super::{
         StorageFieldType, derive_storage_slot_name, reject_stored_procedure_in_map,
         reject_stored_procedure_type_override, typecheck_storage_field,
     };
+    use crate::namespace::ComponentNamespace;
+
+    fn counter_namespace() -> ComponentNamespace {
+        ComponentNamespace::parse("miden::counter_contract::counter_contract", Span::call_site())
+            .unwrap()
+    }
 
     /// Pins the map-slot diagnostic: a stored root is bound to the one slot whose signature the
     /// macro generated, so it cannot be a map key or value.
@@ -403,22 +404,33 @@ mod tests {
     }
 
     #[test]
-    fn derives_slot_name_from_component_package_interface_and_field() {
+    fn derives_slot_name_from_namespace_and_field() {
         assert_eq!(
-            derive_storage_slot_name("miden:counter-contract", "counter-contract", "count_map"),
-            "miden_counter_contract::counter_contract::count_map"
+            derive_storage_slot_name(&counter_namespace(), &parse_quote!(count_map)).unwrap(),
+            "miden::counter_contract::counter_contract::count_map"
+        );
+    }
+
+    /// The field name is used as written: a raw identifier loses only its `r#`, and other
+    /// spellings are not normalized.
+    #[test]
+    fn slot_names_use_the_field_name_as_written() {
+        assert_eq!(
+            derive_storage_slot_name(&counter_namespace(), &parse_quote!(r#type)).unwrap(),
+            "miden::counter_contract::counter_contract::type"
+        );
+        assert_eq!(
+            derive_storage_slot_name(&counter_namespace(), &parse_quote!(hookA)).unwrap(),
+            "miden::counter_contract::counter_contract::hookA"
         );
     }
 
     #[test]
-    fn ignores_component_package_version_when_deriving_slot_name() {
-        assert_eq!(
-            derive_storage_slot_name(
-                "miden:counter-contract@1.2.3",
-                "counter-contract",
-                "count_map"
-            ),
-            "miden_counter_contract::counter_contract::count_map"
-        );
+    fn rejects_leading_underscore_field_names() {
+        let err = derive_storage_slot_name(&counter_namespace(), &parse_quote!(_count_map))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("storage field `_count_map` starts with `_`"), "{err}");
+        assert!(err.contains("cannot start with an underscore"), "{err}");
     }
 }

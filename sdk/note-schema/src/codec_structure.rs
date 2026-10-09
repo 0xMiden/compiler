@@ -759,6 +759,8 @@ mod tests {
             compact_imports,
             cm_map,
             cm64,
+            cm_implements,
+            cm_canon_names,
         } = NOTE_CODEC_WASM_FEATURES.inflate();
 
         for (name, required) in [
@@ -805,6 +807,8 @@ mod tests {
             ("component model gc", cm_gc),
             ("component model maps", cm_map),
             ("component model 64-bit contexts", cm64),
+            ("component model implements", cm_implements),
+            ("component model canonical names", cm_canon_names),
             ("custom descriptors", custom_descriptors),
             ("compact imports", compact_imports),
         ] {

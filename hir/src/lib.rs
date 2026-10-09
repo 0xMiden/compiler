@@ -76,6 +76,7 @@ pub mod matchers;
 pub mod pass;
 pub mod patterns;
 mod program_point;
+pub mod reserved_names;
 pub mod testing;
 
 pub use midenc_session::diagnostics;
@@ -85,7 +86,7 @@ pub use self::{
         Attribute, AttributeName, AttributeRef, AttributeRegistration, AttributeValue,
         NamedAttribute, NamedAttributeList,
     },
-    dialects::builtin::attributes::{Location, Overflow, Visibility, version},
+    dialects::builtin::attributes::{Location, Overflow, Visibility},
     direction::{Backward, Direction, Forward},
     eq::{DynPartialEq, PartialEqable},
     folder::OperationFolder,

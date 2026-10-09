@@ -1,5 +1,5 @@
 builtin.module private @noname attributes { reserved_memory = #builtin.u64<65536> } {
-    builtin.function private extern("C") @lib::add(%0: felt, %1: felt) -> felt {
+    builtin.function private extern("C") @"lib::add"(%0: felt, %1: felt) -> felt {
         %2 = hir.exec ::@lib::@add(%0, %1) : extern("C") (felt, felt) -> felt;
         cf.br ^block5(%2 : felt);
     ^block5(%3: felt):
@@ -10,7 +10,7 @@ builtin.module private @noname attributes { reserved_memory = #builtin.u64<65536
         hir.store_local %5 <{ local = #builtin.local_variable<1, felt> }> : (felt);
         %7 = hir.load_local <{ local = #builtin.local_variable<0, felt> }>;
         %8 = hir.load_local <{ local = #builtin.local_variable<1, felt> }>;
-        %9 = hir.exec ::@root_ns:root@1.0.0::@noname::@lib::add(%7, %8) : extern("C") (felt, felt) -> felt;
+        %9 = hir.exec ::@noname::@noname::@"lib::add"(%7, %8) : extern("C") (felt, felt) -> felt;
         cf.br ^block7(%9 : felt);
     ^block7(%6: felt):
         builtin.ret %6 : (felt);

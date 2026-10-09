@@ -6,13 +6,14 @@ use core::cell::RefCell;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{Dyncall, ExecFpi, HirOpBuilder};
+use midenc_frontend_wasm_metadata::{DYNCALL_IMPORT_PREFIX, FPI_IMPORT_PREFIX};
 use midenc_hir::{
-    Builder, Context, FunctionType, Op, SmallVec, SourceSpan, SymbolPath, Type, ValueRef,
-    Visibility,
+    Builder, Context, FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolName, SymbolPath,
+    SymbolTable, Type, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
-        BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
-        attributes::{AbiParam, Signature},
+        BuiltinOpBuilder, ComponentBuilder, Function, FunctionRef, ModuleBuilder, WorldBuilder,
+        attributes::{AbiParam, Signature, StringAttr},
     },
 };
 use midenc_session::diagnostics::Report;
@@ -36,10 +37,9 @@ use crate::{
     },
 };
 
-const FPI_IMPORT_PREFIX: &str = "fpi-";
-/// Name prefix marking a synthesized import that dispatches to a procedure root passed as its
-/// leading `word` parameter, lowered to `hir.dyncall` instead of a declared `hir.call` target.
-const DYNCALL_IMPORT_PREFIX: &str = "dyncall-";
+/// The attribute recording, on a declared import function, the component-model path of the
+/// import that declared it, so a later clashing import can name it. Its value is a `StringAttr`.
+const COMPONENT_IMPORT_PATH_ATTR: &str = "wasm_component_import_path";
 const FPI_ABI_PREFIX_ARGS: usize = ExecFpi::PREFIX_FELTS;
 /// Field elements the callee's procedure root occupies, both as the leading flat parameters of a
 /// dyncall import's lowering function and as the root operand of the `hir.dyncall` it emits.
@@ -57,30 +57,47 @@ enum ImportCallKind {
     Dyncall,
 }
 
-/// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import function.
+/// The two paths of a component import function.
+pub struct ComponentImportPath {
+    /// The component-model path `::<interface id>::<function>`, which matches the core import
+    /// to its `canon lower`; used to recognize FPI and dyncall imports and in diagnostics.
+    pub cm_path: SymbolPath,
+    /// The Miden path from the import's `external-id`; names the imported function, which is
+    /// declared in the stub component at the path's parent unless the import is an FPI or
+    /// dyncall import (those declare nothing).
+    pub path: SymbolPath,
+    /// The name (the `::`-joined namespace) of the component being translated; the `path` of an
+    /// import other than an FPI or dyncall import must lie outside of that namespace.
+    pub namespace: SymbolName,
+}
+
+/// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import
+/// function, defined in the core module as `stub_name`.
 pub fn generate_import_lowering_function(
     world_builder: &mut WorldBuilder,
     module_builder: &mut ModuleBuilder,
-    import_func_path: SymbolPath,
+    import: ComponentImportPath,
     import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
+    stub_name: SymbolName,
     core_func_sig: Signature,
 ) -> WasmResult<CallableFunction> {
+    let import_func_path = &import.cm_path;
     let context = module_builder.builder().context_rc();
     // FPI imports bypass canonical ABI validation and classification: they use their own
     // typed-signature checks, and oversized argument lists take the FPI indirect lowering
     // path instead of tupled parameters. The typed checks run before canonical flattening so
     // unsupported types fail with FPI diagnostics instead of flattening errors.
-    let is_fpi = is_fpi_import(&import_func_path, &import_func_ty.ir)?;
-    let call_kind = if is_dyncall_import(&import_func_path, &import_func_ty.ir)? {
+    let is_fpi = is_fpi_import(import_func_path, &import_func_ty.ir)?;
+    let call_kind = if is_dyncall_import(import_func_path, &import_func_ty.ir)? {
         ImportCallKind::Dyncall
     } else {
         ImportCallKind::Call
     };
     if is_fpi {
-        validate_fpi_typed_signature(&import_func_path, &import_func_ty.ir)?;
+        validate_fpi_typed_signature(import_func_path, &import_func_ty.ir)?;
     } else {
-        reject_unsupported_import_canonical_abi_types(&import_func_path, import_func_ty)?;
+        reject_unsupported_import_canonical_abi_types(import_func_path, import_func_ty)?;
     }
     // A dyncall import's leading `word` is the callee's root, not an argument: it is split off
     // so canonical flattening and classification see the argument list alone, and spliced back
@@ -88,7 +105,7 @@ pub fn generate_import_lowering_function(
     let (budgeted_ty, root_flat_params) = match call_kind {
         ImportCallKind::Call => (import_func_ty.ir.clone(), Vec::new()),
         ImportCallKind::Dyncall => {
-            split_dyncall_root(&context, &import_func_path, &import_func_ty.ir)?
+            split_dyncall_root(&context, import_func_path, &import_func_ty.ir)?
         }
     };
     let mut import_lowered_sig =
@@ -117,7 +134,7 @@ pub fn generate_import_lowering_function(
         if call_kind == ImportCallKind::Dyncall {
             reject_oversized_dyncall_call_site(
                 &context,
-                &import_func_path,
+                import_func_path,
                 &budgeted_ty,
                 transformation,
             )?;
@@ -126,7 +143,7 @@ pub fn generate_import_lowering_function(
         // final flattened parameter list can exceed the budget even when classification
         // reported no parameter tuple.
         if transformation.has_param_tuple() || flat_params_need_tuple(import_lowered_sig.params()) {
-            return reject_tuple_parameter_import_lowering(&import_func_path);
+            return reject_tuple_parameter_import_lowering(import_func_path);
         }
         Some(transformation)
     };
@@ -135,7 +152,7 @@ pub fn generate_import_lowering_function(
     import_lowered_sig.params.splice(0..0, root_flat_params);
 
     let core_func_ref = module_builder
-        .define_function(core_func_path.name().into(), Visibility::Internal, core_func_sig.clone())
+        .define_function(stub_name.into(), Visibility::Internal, core_func_sig.clone())
         .expect("failed to define the core function");
 
     let (span, context) = {
@@ -174,7 +191,7 @@ pub fn generate_import_lowering_function(
         CanonicalAbiIndirection::None => generate_direct_lowering(
             world_builder,
             call_kind,
-            &import_func_path,
+            &import,
             import_func_ty,
             core_func_path,
             core_func_sig,
@@ -187,7 +204,7 @@ pub fn generate_import_lowering_function(
         CanonicalAbiIndirection::Out => generate_lowering_with_transformation(
             world_builder,
             call_kind,
-            &import_func_path,
+            &import,
             import_func_ty,
             core_func_path,
             core_func_sig,
@@ -941,15 +958,16 @@ fn reject_oversized_dyncall_call_site(
 
 /// Emits the call from a lowering function to its import and returns the call's results.
 ///
-/// For [ImportCallKind::Call] the import is declared on its component (defining the component
-/// if needed) and reached with `hir.call`, to be resolved by path at assembly time. For
+/// For [ImportCallKind::Call] the import is declared at its Miden path (see
+/// [`declare_import_function`]) and reached with `hir.call`, to be resolved by path at assembly
+/// time. For
 /// [ImportCallKind::Dyncall] the leading four flat arguments are the callee's MAST root and the
 /// rest its arguments, reached with `hir.dyncall` under the signature with the root removed;
 /// nothing is declared, as the target is runtime data.
 fn build_import_call(
     world_builder: &mut WorldBuilder,
     call_kind: ImportCallKind,
-    import_func_path: &SymbolPath,
+    import: &ComponentImportPath,
     import_func_sig: Signature,
     args: Vec<ValueRef>,
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
@@ -957,24 +975,7 @@ fn build_import_call(
 ) -> WasmResult<Vec<ValueRef>> {
     let results = match call_kind {
         ImportCallKind::Call => {
-            let id = ComponentId::try_from(import_func_path)
-                .wrap_err("path does not start with a valid component id")?;
-            let component_ref = if let Some(component_ref) = world_builder.find_component(&id) {
-                component_ref
-            } else {
-                world_builder
-                    .define_component(id.namespace.into(), id.name.into(), id.version)
-                    .expect("failed to define the component")
-            };
-            let mut component_builder = ComponentBuilder::new(component_ref);
-            let import_func_ref = component_builder
-                .define_function(
-                    import_func_path.name().into(),
-                    Visibility::Internal,
-                    import_func_sig.clone(),
-                )
-                .expect("failed to define the import function");
-
+            let import_func_ref = declare_import_function(world_builder, import, &import_func_sig)?;
             let call = fb.call(import_func_ref, import_func_sig, args, span)?;
             let call = call.borrow();
             call.results().iter().map(|op_res| op_res.borrow().as_value_ref()).collect()
@@ -983,7 +984,8 @@ fn build_import_call(
             assert!(
                 args.len() >= DYNCALL_ROOT_FELTS
                     && import_func_sig.params.len() >= DYNCALL_ROOT_FELTS,
-                "dyncall import `{import_func_path}` lost its procedure-root parameter"
+                "dyncall import `{}` lost its procedure-root parameter",
+                import.cm_path
             );
             let (root, call_args) = args.split_at(DYNCALL_ROOT_FELTS);
             let root: [ValueRef; DYNCALL_ROOT_FELTS] = root.try_into().unwrap();
@@ -1030,8 +1032,9 @@ fn reject_tuple_parameter_import_lowering<T>(import_func_path: &SymbolPath) -> W
 ///
 /// * `call_kind` - How the import is reached (see [`build_import_call`]).
 ///
-/// * `import_func_path` - The full symbol path to the imported function, including namespace,
-///   component name, and function name (e.g., "miden:component/interface@1.0.0#function").
+/// * `import` - The component-model and Miden paths of the imported function. A
+///   [`ImportCallKind::Call`] import is declared in the stub component named by the parent of its
+///   Miden path; a dyncall import declares nothing.
 ///
 /// * `import_func_ty` - The original Component Model function type with high-level types
 ///   (structs, records) before any flattening or transformation.
@@ -1055,7 +1058,7 @@ fn reject_tuple_parameter_import_lowering<T>(import_func_path: &SymbolPath) -> W
 fn generate_lowering_with_transformation(
     world_builder: &mut WorldBuilder,
     call_kind: ImportCallKind,
-    import_func_path: &SymbolPath,
+    import: &ComponentImportPath,
     import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
@@ -1065,6 +1068,7 @@ fn generate_lowering_with_transformation(
     args: &[ValueRef],
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
+    let import_func_path = &import.cm_path;
     assert!(
         import_func_sig_flat.params().last().unwrap().is_sret_param(),
         "The flattened component import function {import_func_path} signature should have the \
@@ -1121,7 +1125,7 @@ fn generate_lowering_with_transformation(
     let results = build_import_call(
         world_builder,
         call_kind,
-        import_func_path,
+        import,
         new_import_func_sig,
         args_without_ptr,
         fb,
@@ -1166,8 +1170,9 @@ fn generate_lowering_with_transformation(
 /// * `call_kind` - How the import is reached: a declared `hir.call` target, or a `hir.dyncall` to
 ///   the procedure root passed as the leading arguments (see [`build_import_call`]).
 ///
-/// * `import_func_path` - The full symbol path to the imported function in Component Model
-///   format (e.g., "miden:component/interface@1.0.0#function").
+/// * `import` - The component-model and Miden paths of the imported function. A
+///   [`ImportCallKind::Call`] import is declared in the stub component named by the parent of its
+///   Miden path; a dyncall import declares nothing.
 ///
 /// * `import_func_ty` - The Component Model function type. In this case, it should be simple
 ///   enough to not require transformation.
@@ -1196,7 +1201,7 @@ fn generate_lowering_with_transformation(
 fn generate_direct_lowering(
     world_builder: &mut WorldBuilder,
     call_kind: ImportCallKind,
-    import_func_path: &SymbolPath,
+    import: &ComponentImportPath,
     import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
@@ -1206,6 +1211,7 @@ fn generate_direct_lowering(
     args: &[ValueRef],
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
+    let import_func_path = &import.cm_path;
     validate_flat_variants(fb, &import_func_ty.ir.params, args, span)?;
 
     check_core_wasm_signature_equivalence(&core_func_sig, &import_func_sig_flat).map_err(
@@ -1219,7 +1225,7 @@ fn generate_direct_lowering(
     let results = build_import_call(
         world_builder,
         call_kind,
-        import_func_path,
+        import,
         import_func_sig_flat,
         args.to_vec(),
         fb,
@@ -1244,6 +1250,79 @@ fn generate_direct_lowering(
         function_ref: core_func_ref,
         signature: core_func_sig,
     })
+}
+
+/// Declares the imported function at the Miden path `import.path` with `signature` in the stub
+/// component named by the path's parent.
+///
+/// When an earlier import already declared that path, its declaration is returned if the
+/// signatures agree, and an error is reported otherwise; a new declaration records the import's
+/// component-model path for that diagnostic. An import path inside the namespace of
+/// the component being translated is rejected: its stub component would nest in that namespace.
+///
+/// Only [`ImportCallKind::Call`] imports reach this function. FPI imports
+/// ([`generate_fpi_lowering`]) and dyncall imports (the [`ImportCallKind::Dyncall`] arm of
+/// [`build_import_call`]) reach their callee by its procedure root and declare nothing, which is
+/// why their paths may nest in the component's own namespace (`<namespace>::fpi::...`,
+/// `<namespace>::dyncall::...`).
+fn declare_import_function(
+    world_builder: &mut WorldBuilder,
+    import: &ComponentImportPath,
+    signature: &Signature,
+) -> WasmResult<FunctionRef> {
+    let import_path = &import.path;
+    let component_name = import_path.without_leaf().to_symbol_name();
+    let inside_namespace = component_name == import.namespace
+        || SymbolPath::nests_in(component_name, import.namespace);
+    if inside_namespace {
+        let namespace = SymbolPath::from_masm_module_id(import.namespace.as_str());
+        return Err(Report::msg(format!(
+            "import `{import_path}` lies inside this component's own namespace `{namespace}`"
+        )));
+    }
+    let component_ref = match world_builder.find_component(component_name) {
+        Some(component_ref) => component_ref,
+        None => world_builder.define_component(Ident::with_empty_span(component_name))?,
+    };
+    let existing = component_ref.borrow().get(import_path.name());
+    if let Some(existing) = existing {
+        let existing = existing.borrow();
+        let Some(function) = existing.as_symbol_operation().downcast_ref::<Function>() else {
+            return Err(Report::msg(format!(
+                "`{import_path}` is already declared as a non-function symbol"
+            )));
+        };
+        if *function.get_signature() == *signature {
+            return Ok(function.as_function_ref());
+        }
+        let first_cm_path = function
+            .as_operation()
+            .get_typed_attribute::<StringAttr>(COMPONENT_IMPORT_PATH_ATTR)
+            .map(|attr| (**attr.borrow()).clone())
+            .filter(|first| first.as_str() != import.cm_path.to_string());
+        return Err(Report::msg(match first_cm_path {
+            Some(first) => format!(
+                "imports `{first}` and `{}` both lower to `{import_path}` with different \
+                 signatures",
+                import.cm_path
+            ),
+            // Declared by an earlier translation into the same world, or not by an import
+            None => format!(
+                "import `{}` lowers to `{import_path}`, which is already declared with a \
+                 different signature",
+                import.cm_path
+            ),
+        }));
+    }
+    let context = world_builder.context_rc();
+    let mut function_ref = ComponentBuilder::new(component_ref).define_function(
+        import_path.name().into(),
+        Visibility::Internal,
+        signature.clone(),
+    )?;
+    let cm_path = context.create_attribute::<StringAttr, _>(import.cm_path.to_string());
+    function_ref.borrow_mut().set_attribute(COMPONENT_IMPORT_PATH_ATTR, cm_path);
+    Ok(function_ref)
 }
 
 /// Rejects component import signatures containing unsupported canonical ABI shapes.
@@ -1839,12 +1918,31 @@ mod tests {
         );
     }
 
-    fn component_import_path(function: &str) -> SymbolPath {
-        SymbolPath::from_iter([
+    /// Pairs the component-model path `cm_path` with a Miden path under `::miden::test::test`.
+    fn import_paths(cm_path: SymbolPath) -> ComponentImportPath {
+        let leaf = cm_path.name().as_str().replace('-', "_");
+        import_at(cm_path, &format!("miden::test::test::{leaf}"))
+    }
+
+    /// Pairs the component-model path `cm_path` with the Miden path `path`
+    /// (`<module>::<function>`), imported by a component in the namespace `miden::test::app`.
+    fn import_at(cm_path: SymbolPath, path: &str) -> ComponentImportPath {
+        let (module, leaf) = path.rsplit_once("::").expect("a path with a module");
+        let mut path = SymbolPath::from_masm_module_id(module);
+        path.path.push(SymbolNameComponent::Leaf(SymbolName::intern(leaf)));
+        ComponentImportPath {
+            cm_path,
+            path,
+            namespace: SymbolName::intern("miden::test::app"),
+        }
+    }
+
+    fn component_import_path(function: &str) -> ComponentImportPath {
+        import_paths(SymbolPath::from_iter([
             SymbolNameComponent::Root,
             SymbolNameComponent::Component(SymbolName::intern("miden:test@1.0.0")),
             SymbolNameComponent::Leaf(SymbolName::intern(function)),
-        ])
+        ]))
     }
 
     fn core_function_path(function: &str) -> SymbolPath {
@@ -1880,6 +1978,7 @@ mod tests {
             component_import_path("too_many_params"),
             &import_func_ty,
             core_function_path("too_many_params"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -1915,6 +2014,7 @@ mod tests {
             component_import_path("too_many_params_with_result"),
             &import_func_ty,
             core_function_path("too_many_params_with_result"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -1951,6 +2051,7 @@ mod tests {
             component_import_path("roundtrip"),
             &import_func_ty,
             core_function_path("roundtrip"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("import lowering should build");
@@ -1984,6 +2085,7 @@ mod tests {
             component_import_path("variant_result"),
             &import_func_ty,
             core_function_path("variant_result"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("import lowering should build");
@@ -2021,9 +2123,10 @@ mod tests {
         let lowered = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            test_import_path("fpi-send-variant"),
+            import_paths(test_import_path("fpi-send-variant")),
             &import_func_ty,
             core_function_path("fpi-send-variant"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("FPI import lowering should build");
@@ -2057,9 +2160,10 @@ mod tests {
         let lowered = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            test_import_path("fpi-send-variant-indirect"),
+            import_paths(test_import_path("fpi-send-variant-indirect")),
             &import_func_ty,
             core_function_path("fpi-send-variant-indirect"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("FPI import lowering should build");
@@ -2091,9 +2195,10 @@ mod tests {
         let lowered = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            test_import_path("fpi-get-variant"),
+            import_paths(test_import_path("fpi-get-variant")),
             &import_func_ty,
             core_function_path("fpi-get-variant"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("FPI import lowering should build");
@@ -2128,9 +2233,10 @@ mod tests {
         let result = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            test_import_path("fpi-get-u256"),
+            import_paths(test_import_path("fpi-get-u256")),
             &import_func_ty,
             core_function_path("fpi-get-u256"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2168,9 +2274,10 @@ mod tests {
         let result = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            test_import_path("fpi-send-pointer-enum"),
+            import_paths(test_import_path("fpi-send-pointer-enum")),
             &import_func_ty,
             core_function_path("fpi-send-pointer-enum"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2230,14 +2337,16 @@ mod tests {
             results: vec![AbiParam::new(Type::Felt)],
             cc: CallConv::ComponentModel,
         };
-        let import_func_path = component_import_path("dyncall-authority");
+        let import = component_import_path("dyncall-authority");
+        let stub_component = import.path.without_leaf().to_symbol_name();
 
         let lowered = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
-            import_func_path.clone(),
+            import,
             &import_func_ty,
             core_function_path("dyncall-authority"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("dyncall import lowering should build");
@@ -2252,8 +2361,85 @@ mod tests {
         assert_eq!(results, vec![Type::Felt]);
         assert_eq!(count_ops(function, |op| op.is::<midenc_dialect_hir::Call>()), 0);
         // Nothing is declared for a runtime target: the import's component does not exist
-        let id = ComponentId::try_from(&import_func_path).expect("valid component id");
-        assert!(world_builder.find_component(&id).is_none());
+        assert!(world_builder.find_component(stub_component).is_none());
+    }
+
+    /// An FPI import reaches its callee by root, so its path may nest in the component's own
+    /// namespace: it lowers without the own-namespace error and declares no stub component.
+    #[test]
+    fn fpi_import_in_the_own_namespace_is_lowered_without_a_stub_component() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let ir = FunctionType::new(
+            CallConv::ComponentModel,
+            fpi_params_with_user_args([Type::Felt]),
+            vec![Type::Felt],
+        );
+        let import_func_ty = ComponentFunctionType { ir };
+        let mut core_params = vec![AbiParam::new(Type::Felt); FPI_ABI_PREFIX_ARGS];
+        core_params.push(AbiParam::new(Type::Felt));
+        let core_func_sig = Signature {
+            params: core_params,
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::Wasm,
+        };
+        let import = import_at(
+            test_import_path("fpi-send"),
+            "miden::test::app::fpi::acme::wallet::wallet::send",
+        );
+        let stub_component = import.path.without_leaf().to_symbol_name();
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            import,
+            &import_func_ty,
+            core_function_path("fpi-send"),
+            SymbolName::intern("stub"),
+            core_func_sig,
+        )
+        .expect("an FPI import nested in the own namespace should lower");
+
+        let function = lowered.function_ref().expect("expected function lowering");
+        assert_eq!(count_ops(function, |op| op.is::<midenc_dialect_hir::Call>()), 0);
+        assert!(world_builder.find_component(stub_component).is_none());
+    }
+
+    /// A dyncall import reaches its callee by root, so its path may nest in the component's own
+    /// namespace: it lowers without the own-namespace error and declares no stub component.
+    #[test]
+    fn dyncall_import_in_the_own_namespace_is_lowered_without_a_stub_component() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let mut ir =
+            FunctionType::new(CallConv::Fast, vec![word_type(), Type::Felt], vec![Type::Felt]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::Felt); 5],
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::ComponentModel,
+        };
+        let import = import_at(
+            test_import_path("dyncall-authority"),
+            "miden::test::app::dyncall::authority",
+        );
+        let stub_component = import.path.without_leaf().to_symbol_name();
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            import,
+            &import_func_ty,
+            core_function_path("dyncall-authority"),
+            SymbolName::intern("stub"),
+            core_func_sig,
+        )
+        .expect("a dyncall import nested in the own namespace should lower");
+
+        let function = lowered.function_ref().expect("expected function lowering");
+        assert_eq!(dyncall_signatures(function).len(), 1, "expected exactly one hir.dyncall");
+        assert!(world_builder.find_component(stub_component).is_none());
     }
 
     /// A dyncall import whose results need the canonical out-pointer keeps that transformation:
@@ -2284,6 +2470,7 @@ mod tests {
             component_import_path("dyncall-pair"),
             &import_func_ty,
             core_function_path("dyncall-pair"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("dyncall import lowering should build");
@@ -2345,6 +2532,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("a 12-felt argument list should be accepted");
@@ -2368,6 +2556,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2398,6 +2587,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2431,6 +2621,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2463,6 +2654,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         )
         .expect("an 11-felt argument list with a returned pointer should be accepted");
@@ -2489,6 +2681,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2535,6 +2728,7 @@ mod tests {
             component_import_path("dyncall-wide"),
             &import_func_ty,
             core_function_path("dyncall-wide"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2572,6 +2766,7 @@ mod tests {
             component_import_path("mismatched_result"),
             &import_func_ty,
             core_function_path("mismatched_result"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2609,6 +2804,7 @@ mod tests {
             component_import_path("mismatched_params"),
             &import_func_ty,
             core_function_path("mismatched_params"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2647,6 +2843,7 @@ mod tests {
             component_import_path("list_param"),
             &import_func_ty,
             core_function_path("list_param"),
+            SymbolName::intern("stub"),
             core_func_sig,
         );
 
@@ -2659,5 +2856,36 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn import_stub_is_defined_under_the_given_name() {
+        let (context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let variant_ty = unit_only_variant_type();
+        let result_ty = two_field_record_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![variant_ty], vec![result_ty]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::zext(Type::I32, &context), AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        // `::miden::test::test::roundtrip`
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("roundtrip"),
+            &import_func_ty,
+            core_function_path("miden:test@1.0.0#roundtrip"),
+            SymbolName::intern("test_roundtrip"),
+            core_func_sig,
+        )
+        .expect("import lowering should build");
+        let function_ref = lowered.function_ref().expect("expected function lowering");
+        assert_eq!(function_ref.borrow().name().as_str(), "test_roundtrip");
+        assert!(module_builder.get_function("miden:test@1.0.0#roundtrip").is_none());
     }
 }

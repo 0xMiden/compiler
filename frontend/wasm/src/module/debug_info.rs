@@ -73,10 +73,16 @@ impl FunctionDebugInfo {
     }
 }
 
+/// Collects the debug info of every function defined in `module`.
+///
+/// `function_names` maps a function to the name of the HIR function it is translated into; each
+/// subprogram is named after the function's name-section name and carries the HIR function name
+/// (falling back to the Wasm linkage name for unmapped functions) as its linkage name.
 pub fn collect_function_debug_info(
     parsed_module: &ParsedModule,
     module_types: &ModuleTypesBuilder,
     module: &Module,
+    function_names: &FxHashMap<FuncIndex, Symbol>,
     addr2line: &Context<DwarfReader<'_>>,
     diagnostics: &DiagnosticsHandler,
 ) -> FxHashMap<FuncIndex, Rc<RefCell<FunctionDebugInfo>>> {
@@ -92,11 +98,16 @@ pub fn collect_function_debug_info(
     for (defined_idx, body) in parsed_module.function_body_inputs.iter() {
         let func_index = module.func_index(defined_idx);
         let source_name = module.source_func_name(func_index);
+        let linkage_name = function_names
+            .get(&func_index)
+            .copied()
+            .unwrap_or_else(|| module.func_name(func_index));
         if let Some(info) = build_function_debug_info(
             parsed_module,
             module_types,
             module,
             func_index,
+            linkage_name,
             body,
             addr2line,
             diagnostics,
@@ -124,6 +135,7 @@ fn build_function_debug_info(
     module_types: &ModuleTypesBuilder,
     module: &Module,
     func_index: FuncIndex,
+    linkage_name: Symbol,
     body: &FunctionBodyData,
     addr2line: &Context<DwarfReader<'_>>,
     diagnostics: &DiagnosticsHandler,
@@ -131,7 +143,6 @@ fn build_function_debug_info(
     scheduled_vars: Option<&Vec<DwarfLocalData>>,
 ) -> Option<FunctionDebugInfo> {
     let source_name = module.source_func_name(func_index);
-    let linkage_name = module.func_name(func_index);
 
     let dwarf_offset = parsed_module.wasm_file.dwarf_offset(body.body_offset);
     let (file_symbol, directory_symbol) =

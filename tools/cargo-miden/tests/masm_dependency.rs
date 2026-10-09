@@ -173,11 +173,9 @@ name = "{name}"
 version = "0.1.0"
 
 [lib]
-# A core Wasm module carries the Wasm frontend's synthetic wrapper component identity, which
-# the assembler requires the declared namespace to match. See
-# `tests/integration/src/end_to_end/support.rs`, which writes the same namespace for the same
-# reason.
-namespace = "root_ns:root@1.0.0"
+# The namespace the Wasm frontend roots the core Wasm module's wrapper component at; any
+# namespace that does not shadow a kernel or standard-library module path.
+namespace = "root"
 path = "src/lib.rs"
 
 [dependencies]
