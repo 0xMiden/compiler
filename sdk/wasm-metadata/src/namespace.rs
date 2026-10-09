@@ -7,6 +7,8 @@
 use alloc::string::{String, ToString};
 use core::fmt;
 
+use heck::ToUpperCamelCase;
+
 /// The WIT keywords, spelled as snake_case segments; a keyword cannot name a WIT package,
 /// interface or type.
 ///
@@ -73,6 +75,16 @@ pub const RUST_KEYWORDS: &[&str] = &[
     "return", "self", "static", "struct", "super", "trait", "true", "try", "type", "typeof",
     "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
 ];
+
+/// The Rust name wit-bindgen gives the WIT type `wit_name` (with or without the `%` keyword
+/// escape): its upper camel case, except `guest`, which becomes `Guest_` because wit-bindgen
+/// reserves `Guest` for the traits of exported interfaces.
+pub fn rust_type_name(wit_name: &str) -> String {
+    match wit_name.trim_start_matches('%') {
+        "guest" => "Guest_".to_string(),
+        name => name.to_upper_camel_case(),
+    }
+}
 
 /// The name of the SDK's WIT interface, in the `miden:base` package, that defines the core types
 /// (`felt`, `word`, ...).
@@ -251,6 +263,15 @@ pub fn validate_namespace(namespace: &str) -> Result<(), NamespaceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Type names are upper camel case, and `guest` alone is renamed to `Guest_`.
+    #[test]
+    fn rust_type_names() {
+        assert_eq!(rust_type_name("token-config"), "TokenConfig");
+        assert_eq!(rust_type_name("%record"), "Record");
+        assert_eq!(rust_type_name("guest"), "Guest_");
+        assert_eq!(rust_type_name("guest-list"), "GuestList");
+    }
 
     #[test]
     fn validates_whole_namespaces() {
