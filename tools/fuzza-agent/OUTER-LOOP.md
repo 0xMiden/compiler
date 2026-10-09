@@ -94,8 +94,7 @@ and keep it complete; thin briefs make agents re-derive known facts. Blocks:
    conventions, doc-comment content, which fact file gets which durable
    fact (bug detail stays at the test site).
 5. **Operational notes**: the hard rules (no git, no pattern kills, one
-   filter per invocation, one case at a time when a link failure is
-   possible), the allowed file set, the scratch log path, the budget.
+   filter per invocation), the allowed file set, the scratch log path, the budget.
 6. **Deliverable**: fixed section names, every claim marked verified or not.
 
 ## Processing a campaign

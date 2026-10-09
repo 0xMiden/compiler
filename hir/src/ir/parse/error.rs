@@ -176,7 +176,7 @@ pub enum ParserError {
     ResultCountMismatch {
         span: SourceSpan,
         count: usize,
-        expected: u8,
+        expected: usize,
     },
     #[error("invalid successor list")]
     #[diagnostic()]

@@ -1,7 +1,8 @@
 //! Differential cases. One `#[test]` per file under `cases/`, driven by
 //! `run_case`, grouped into thematic modules. File a new case by the surface
 //! its doc comment says it exercises; `_repro`/`_edges` companions stay next
-//! to their base case.
+//! to their base case. Cases the compiler must reject are pinned with
+//! `run_case_rejected`.
 
 mod arith;
 mod boundaries;

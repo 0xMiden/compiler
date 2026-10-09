@@ -100,9 +100,11 @@ impl OperationFolder {
             return FoldResult::Failed;
         }
 
-        // Try to fold the operation
+        // Try to fold the operation. The borrow is released before the listeners are notified
+        // below, which a `match` on the borrowed call would keep alive for its whole body.
         let mut fold_results = SmallVec::default();
-        match op.borrow_mut().fold(&mut fold_results) {
+        let folded = op.borrow().fold(&mut fold_results);
+        match folded {
             FoldResult::InPlace => {
                 // Folding API does not notify listeners, so we need to do so manually
                 self.rewriter.notify_operation_modified(op);

@@ -169,7 +169,7 @@ impl fmt::Debug for OperationRef {
 
 impl fmt::Display for OperationRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.borrow().name())
+        write!(f, "{}", self.name())
     }
 }
 
@@ -1047,7 +1047,7 @@ impl Operation {
             operands
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| context.make_operand(value, owner, index as u8)),
+                .map(|(index, value)| context.make_operand(value, owner, index as u16)),
         );
     }
 

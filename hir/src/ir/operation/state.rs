@@ -23,14 +23,18 @@ pub struct OperationState {
     pub successors: SmallVec<[PendingSuccessorInfo; 1]>,
 }
 
+/// A successor recorded by [OperationState] before the operation is built
 #[derive(Debug)]
 pub struct PendingSuccessorInfo {
+    /// The destination block
     pub block: BlockRef,
+    /// The key selecting this successor, for keyed successors such as the cases of a switch
     pub key: Option<AttributeRef>,
-    pub operand_group: u8,
+    /// The index of the operand group holding the arguments forwarded to `block`
+    pub operand_group: u16,
     /// The successor group this successor belongs to, matching the grouping expected by the
     /// operation's successor accessors (e.g. a `cf.switch`'s cases vs. its fallback).
-    pub successor_group: u8,
+    pub successor_group: u16,
 }
 
 impl OperationState {
@@ -73,7 +77,8 @@ impl OperationState {
         self.regions.push(region);
     }
 
-    pub fn add_successor(&mut self, block: BlockRef, operand_group: u8, successor_group: u8) {
+    /// Add `block` as a successor in `successor_group`, with its arguments in `operand_group`
+    pub fn add_successor(&mut self, block: BlockRef, operand_group: u16, successor_group: u16) {
         self.successors.push(PendingSuccessorInfo {
             block,
             key: None,
@@ -82,12 +87,13 @@ impl OperationState {
         });
     }
 
+    /// Add `block` as a successor selected by `key`, e.g. one case of a switch
     pub fn add_keyed_successor(
         &mut self,
         key: AttributeRef,
         block: BlockRef,
-        operand_group: u8,
-        successor_group: u8,
+        operand_group: u16,
+        successor_group: u16,
     ) {
         self.successors.push(PendingSuccessorInfo {
             block,

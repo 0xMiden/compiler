@@ -12,6 +12,8 @@
 //! against an explicit list of inputs, for pinning a known divergence.
 //! [`run_case_traps`] and its variants compare trap-or-value outcomes instead
 //! of plain values, for cases that deliberately panic on some inputs.
+//! [`run_case_rejected`] builds a case for MASM only and asserts the build
+//! fails with an expected error.
 
 use std::{
     fmt,
@@ -212,6 +214,26 @@ pub(super) fn run_case_traps_with_flags(name: &str, source: &str, flags: &[&str]
     run_case_inner_with_flags(name, source, Inputs::Random16, flags, Traps::Compared);
 }
 
+/// Builds the case for MASM only and asserts that the build fails with an
+/// error mentioning `expected_error`.
+///
+/// Use it for shapes the compiler rejects by design (a call signature over
+/// the operand stack window, a guest that does not link): the case pins that
+/// the rejection is a diagnostic and not a panic or a process exit. There is
+/// no native build and nothing is run.
+pub(super) fn run_case_rejected(name: &str, source: &str, expected_error: &str) {
+    let pkg_name = format!("differential_{name}");
+    let _case_lock = case_lock(&pkg_name);
+    let source = format!("{CASE_HEADER}{source}");
+    let error =
+        masm_build(&pkg_name, &cargo_toml(&pkg_name), &source, vec![]).compile_package_err();
+    assert!(
+        error.contains(expected_error),
+        "{name}: expected the build to fail with an error mentioning `{expected_error}`, \
+         got:\n{error}"
+    );
+}
+
 /// Shared body of [`run_case`] / [`run_case_with_inputs`]: build the case both
 /// natively and to MASM, then compare `entrypoint` outputs for the requested
 /// inputs.
@@ -268,23 +290,13 @@ fn run_case_inner_with_flags(
     let midenc_flags: Vec<String> =
         all_flags.into_iter().filter(|f| !f.starts_with(GUEST_DEBUG_FLAG)).collect();
     let manifest = cargo_toml_with_guest_debug(&pkg_name, guest_debug.as_deref());
-    let miden_project_manifest = miden_project_toml(&pkg_name);
     let header = match traps {
         Traps::Forbidden => CASE_HEADER,
         Traps::Compared => TRAPPING_CASE_HEADER,
     };
     let full_source = format!("{header}{source}");
 
-    let masm_proj = project(&format!("{pkg_name}_masm"))
-        .file("miden-project.toml", &miden_project_manifest)
-        .file("Cargo.toml", &manifest)
-        .file("src/lib.rs", &full_source)
-        .build();
-    let mut test = CompilerTest::rust_source_cargo_miden(
-        masm_proj.root(),
-        WasmTranslationConfig::default(),
-        midenc_flags,
-    );
+    let mut test = masm_build(&pkg_name, &manifest, &full_source, midenc_flags);
     let package = test.compile_package();
 
     let native_proj = project(&format!("{pkg_name}_native"))
@@ -373,6 +385,26 @@ fn run_case_inner_with_flags(
             }
         }
     }
+}
+
+/// Writes the MASM side of a case as a generated `cargo-miden` project and
+/// returns the compiler test that builds it with `midenc_flags`.
+pub(crate) fn masm_build(
+    pkg_name: &str,
+    manifest: &str,
+    full_source: &str,
+    midenc_flags: Vec<String>,
+) -> CompilerTest {
+    let masm_proj = project(&format!("{pkg_name}_masm"))
+        .file("miden-project.toml", &miden_project_toml(pkg_name))
+        .file("Cargo.toml", manifest)
+        .file("src/lib.rs", full_source)
+        .build();
+    CompilerTest::rust_source_cargo_miden(
+        masm_proj.root(),
+        WasmTranslationConfig::default(),
+        midenc_flags,
+    )
 }
 
 /// Serializes cases that share a generated package name.

@@ -670,31 +670,36 @@ fn blocks_max() {
     run_case("blocks_max", include_str!("../cases/case_blocks_max.rs"));
 }
 
-/// Campaign 11 ladder 6 boundary guard: the widest `br_table` that builds —
-/// a 255-arm dense `match` (255 targets plus the default). One more arm is
-/// `switch256` below.
+/// Campaign 11 ladder 6, the 255-arm rung: a 255-arm dense
+/// `match` (255 targets plus the default). One more arm, `switch256` below,
+/// builds too since #1421.
 #[test]
 fn switch255() {
     run_case("switch255", include_str!("../cases/case_switch255.rs"));
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-02, campaign 11): building
-/// this case panics with `too many operand groups: TryFromIntError(
-/// PosOverflow)` at hir/src/ir/operation/builder.rs:224 (the successor
-/// operand-group index of an op is a `u8`, so a `cf.switch` cannot hold
-/// more than 256 successors). Shape: a 256-arm dense `match` on `input1 %
-/// 256` — LLVM emits one `br_table` with 256 targets plus a default, and
-/// the wasm frontend's `translate_br_table` builds a `cf.switch` with one
-/// successor group per target. Bounded by: `switch255` (255 arms) compiles
-/// and passes; the 253- and 254-arm rungs pass too. Compile-time, no inputs
-/// involved. Un-ignore when this case compiles (wider group index, or the
-/// frontend splitting oversized switches).
+/// One arm past `switch255`: a 256-arm dense `match` on `input1 % 256`, for
+/// which LLVM emits one `br_table` with 256 targets plus a default, and the
+/// wasm frontend's `translate_br_table` builds a `cf.switch` with one
+/// successor operand group per target. Until #1421 the successor and
+/// operand-group indices of an op were `u8`, so building it panicked with
+/// `too many operand groups: TryFromIntError(PosOverflow)` at
+/// hir/src/ir/operation/builder.rs:224.
 #[test]
-#[ignore = "#1421: compiler panic: 'too many operand groups: TryFromIntError(PosOverflow)' at \
-            hir/src/ir/operation/builder.rs:224 — a br_table with 256 targets overflows the u8 \
-            successor operand-group index (compile-time, no inputs involved)"]
 fn switch256() {
     run_case("switch256", include_str!("../cases/case_switch256.rs"));
+}
+
+/// `switch256` with both inputs live across the join of the 256-arm `match`
+/// (in `switch256` nothing but the arm results crosses it). The spill
+/// analysis counts, per live value, the predecessors it arrives from when it
+/// reconciles a join; the 8-bit count it used to keep overflowed at 256
+/// predecessors (#1421, pinned on the unstructured shape by the lit test
+/// `transform-spills-wide-join.hir`). This case keeps the end-to-end shape:
+/// the switch is lifted to `scf.index_switch` before the analysis runs.
+#[test]
+fn switch256_live() {
+    run_case("switch256_live", include_str!("../cases/case_switch256_live.rs"));
 }
 
 /// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case

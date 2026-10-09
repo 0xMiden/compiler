@@ -285,7 +285,7 @@ impl Context {
     /// NOTE: This inserts the operand as a user of `value`, but does _not_ add the operand to
     /// `owner`'s operand storage, the caller is expected to do that. This makes this function a
     /// more useful primitive.
-    pub fn make_operand(&self, mut value: ValueRef, owner: OperationRef, index: u8) -> OpOperand {
+    pub fn make_operand(&self, mut value: ValueRef, owner: OperationRef, index: u16) -> OpOperand {
         let op_operand = self.alloc_tracked(OpOperandImpl::new(value, owner, index));
         let mut value = value.borrow_mut();
         value.insert_use(op_operand);
@@ -301,7 +301,7 @@ impl Context {
         &self,
         mut block: BlockRef,
         owner: OperationRef,
-        index: u8,
+        index: u16,
     ) -> BlockOperandRef {
         let block_operand = self.alloc_tracked(BlockOperand::new(owner, index));
         let mut block = block.borrow_mut();
@@ -318,7 +318,7 @@ impl Context {
         span: SourceSpan,
         ty: Type,
         owner: OperationRef,
-        index: u8,
+        index: u16,
     ) -> OpResultRef {
         let id = self.alloc_value_id();
         self.alloc(OpResult::new(span, id, ty, owner, index))
@@ -337,7 +337,7 @@ impl Context {
         index: u8,
     ) -> OpResultRef {
         let id = ValueId::from_symbol(name).with_result_index(index);
-        self.alloc(OpResult::new(span, id, ty, owner, index))
+        self.alloc(OpResult::new(span, id, ty, owner, index.into()))
     }
 
     /// Appends `value` as an argument to the `branch_inst` instruction arguments list if the
@@ -363,12 +363,8 @@ impl Context {
             .map(|succ| succ.operand_group as usize)
             .collect();
         for dest_group in dest_operand_groups {
-            let current_dest_operands_len = op.operands.group(dest_group).len();
-            let operand = self.make_operand(
-                value,
-                op.as_operation_ref(),
-                (current_dest_operands_len + 1) as u8,
-            );
+            // The operand index is assigned when the operand is stored in its group
+            let operand = self.make_operand(value, op.as_operation_ref(), 0);
             op.operands_mut().extend_group(dest_group, [operand]);
         }
     }
@@ -501,5 +497,26 @@ impl<T: AttributeRegistration + Marker> UniquedAttribute for T {
             }
             Entry::Occupied(entry) => entry.get().try_downcast_attr().unwrap(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+
+    use crate::{Type, testing::Test};
+
+    /// A block holds more than 255 arguments, each keeping its position in the argument list.
+    #[test]
+    fn block_with_more_than_255_arguments() {
+        const NUM_PARAMS: usize = 300;
+
+        let test = Test::new("wide", &vec![Type::U32; NUM_PARAMS], &[]);
+        let function = test.function().borrow();
+        let entry = function.entry_block().borrow();
+        let args = entry.arguments();
+
+        assert_eq!(args.len(), NUM_PARAMS);
+        assert_eq!(args[NUM_PARAMS - 1].borrow().index(), NUM_PARAMS - 1);
     }
 }

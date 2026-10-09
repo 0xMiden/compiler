@@ -50,20 +50,21 @@
 //! have carried BOTH defects — with 04-30 guests it still diverges at its
 //! sixteen-digit row.
 //!
-//! OPERATIONAL NOTE: a `*_nolink` case whose guest fails to LINK does not just
-//! fail — the guest build error ABORTS the whole `cargo test` process (no
-//! `test result` line is printed), so run them one at a time with
-//! `-- --ignored --exact <full::path>` and never in a batch with tests whose
-//! result you need. `core_select_nth_nolink` is the exception: its guest
-//! builds and the cycle is caught by the ASSEMBLER, so it fails as an ordinary
-//! test.
+//! OPERATIONAL NOTE: a `*_nolink` case whose guest fails to LINK is an
+//! ordinary failing test: the guest build error is reported (since #1421 it
+//! no longer ends the `cargo test` process). `core_select_nth_nolink` fails
+//! later, at the ASSEMBLER, which catches the call-graph cycle.
 //!
 //! Every case here was value-checked natively on the 1225-pair boundary grid
 //! before it was kept, and compiled at all four optimization levels; each
 //! doc comment records that table. Compile-time failures are `#[ignore]`d
-//! twins beside the compiling sibling, exactly as in [`super::programs`].
+//! twins beside the compiling sibling, exactly as in [`super::programs`]; a
+//! compile-time rejection itself can be pinned with `run_case_rejected` (see
+//! [`guest_link_failure`]).
 
-use super::super::harness::{run_case, run_case_with_flags, run_case_with_inputs};
+use super::super::harness::{
+    run_case, run_case_rejected, run_case_with_flags, run_case_with_inputs,
+};
 
 /// `--optimize=size-min` (LLVM `-Oz` for the guest).
 const SIZE_MIN: &[&str] = &["--optimize=size-min"];
@@ -117,15 +118,30 @@ fn core_select_nth_nolink() {
 /// `--optimize=basic`, with the constant-size array compares becoming
 /// `memcmp` only at `--optimize=size-min` (`core_eq_reach_oz`); since the
 /// nightly-2026-09-01 toolchain bump the default level outlines them too, so
-/// the guest no longer links. A guest build failure exits the whole test
-/// process (`midenc-compile` calls `process::exit` on a failed `cargo
-/// build`), so this stays ignored rather than failing.
+/// the guest no longer links (`guest_link_failure` pins how that is reported).
 #[test]
 #[ignore = "gap: F13: constant-size array `==` becomes a memcmp libcall at the default level on \
             nightly-2026-09-01 (it did only at -Oz on nightly-2026-04-30); rust-lld: undefined \
             symbol: memcmp"]
 fn core_eq_reach() {
     run_case("core_eq_reach", include_str!("../cases/case_core_eqreach.rs"));
+}
+
+/// A guest that does not link (it calls an `extern "C"` symbol nothing
+/// defines, the shape of the `memcmp` gap above) fails the build with an
+/// error. Until #1421 `midenc-compile` ended the process with Cargo's exit
+/// status instead, which took `cargo miden` and this test binary down with
+/// it, so a failing guest left no test summary at all. The assertion pins
+/// only that the failure arrives as an error carrying Cargo's status; the
+/// linker's own message goes to the inherited stderr and is not captured.
+#[test]
+fn guest_link_failure() {
+    run_case_rejected(
+        "guest_link_failure",
+        include_str!("../cases/case_guest_link_failure.rs"),
+        // Cargo's own status for a build that fails inside `rustc`/`rust-lld`.
+        "failed with exit status: 101",
+    );
 }
 
 /// [`core_eq_reach`] at `--optimize=size-min`: the constant-size array

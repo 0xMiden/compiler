@@ -27,7 +27,7 @@ fn infer_results_from_signature(
     let span = op.span;
     let owner = op.as_operation_ref();
     for (i, result) in signature.results().iter().enumerate() {
-        let value = context.make_result(span, result.ty.clone(), owner, i as u8);
+        let value = context.make_result(span, result.ty.clone(), owner, i as u16);
         op.results.push(value);
     }
     Ok(())
@@ -279,7 +279,7 @@ impl InferTypeOpInterface for ExecFpi {
             let span = self.span();
             let owner = self.as_operation_ref();
             for i in 0..Self::EXECUTOR_RESULT_FELTS {
-                let value = context.make_result(span, Type::Felt, owner, i as u8);
+                let value = context.make_result(span, Type::Felt, owner, i as u16);
                 self.op.results.push(value);
             }
         } else {
@@ -339,7 +339,7 @@ impl InferTypeOpInterface for ProcedureRoot {
             let span = self.span();
             let owner = self.as_operation_ref();
             for i in 0..Self::DIGEST_FELTS {
-                let value = context.make_result(span, Type::Felt, owner, i as u8);
+                let value = context.make_result(span, Type::Felt, owner, i as u16);
                 self.op.results.push(value);
             }
         } else {

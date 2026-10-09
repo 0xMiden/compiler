@@ -196,9 +196,9 @@ fn heap_list() {
 #[ignore = "gap: configuration-dependent compile failure at --optimize=basic only: the guest keeps \
             core::ptr::drop_glue::<Node> for the Box-linked list, which calls itself through the \
             Option<Box<Node>> link, and the assembler rejects it with 'found a cycle in the call \
-            graph' (panic at tests/support/src/compiler_test.rs:1024). The case already drops \
-            every node iteratively with an Option::take loop, which IS enough at the default \
-            level, --optimize=max and --optimize=size-min (heap_list passes at all three, swept \
+            graph' (panic in `CompilerTest::compile_package`). The case already drops every node \
+            iteratively with an Option::take loop, which IS enough at the default level, \
+            --optimize=max and --optimize=size-min (heap_list passes at all three, swept \
             2026-09-17) — cargo's opt-level 1 simply does not prove the glue dead. Known \
             limitation (recursive call graphs are unsupported), recorded here because it makes the \
             opt level a correctness cliff for a plain recursive data type. Un-ignore when \
@@ -383,11 +383,11 @@ fn heap_sort_edges() {
             assembler fails with 'found a cycle in the call graph' (surfacing as a panic at \
             tests/support/src/compiler_test.rs) at ALL FOUR optimization levels (default, \
             size-min, max, basic — each re-measured with scratch/c34probe.sh). Same family as \
-            corelib::core_select_nth_nolink, so it does NOT take the cargo test process down. \
-            sort_unstable / sort_unstable_by / sort_unstable_by_key are fine (heapsort under \
-            -Zbuild-std-features=optimize_for_size) — see heap_sort, which also shows a stable \
-            sort with its own scratch allocation works when written iteratively. Un-ignore when \
-            recursion is supported, or when core's stable sort stops recursing"]
+            corelib::core_select_nth_nolink. sort_unstable / sort_unstable_by / \
+            sort_unstable_by_key are fine (heapsort under -Zbuild-std-features=optimize_for_size) \
+            — see heap_sort, which also shows a stable sort with its own scratch allocation works \
+            when written iteratively. Un-ignore when recursion is supported, or when core's stable \
+            sort stops recursing"]
 fn heap_sort_stable_nolink() {
     run_case(
         "heap_sort_stable_nolink",

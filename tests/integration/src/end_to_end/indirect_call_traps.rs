@@ -4,11 +4,9 @@
 //! these can be a differential case, since all are undefined behavior when executed natively.
 
 use miden_core::Felt;
-use midenc_frontend_wasm::WasmTranslationConfig;
 
-use super::differential::harness::{CASE_HEADER, cargo_toml, miden_project_toml};
+use super::differential::harness::{CASE_HEADER, cargo_toml, masm_build};
 use crate::{
-    CompilerTest, project,
     testing::executor_with_std,
     trap_helpers::{panic_message, trap_matches},
 };
@@ -58,17 +56,8 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
 #[test]
 fn indirect_call_runtime_traps() {
     let pkg_name = "indirect_call_traps";
-    let manifest = cargo_toml(pkg_name);
-    let miden_project_manifest = miden_project_toml(pkg_name);
     let full_source = format!("{CASE_HEADER}{SOURCE}");
-
-    let proj = project(&format!("{pkg_name}_masm"))
-        .file("miden-project.toml", &miden_project_manifest)
-        .file("Cargo.toml", &manifest)
-        .file("src/lib.rs", &full_source)
-        .build();
-    let mut test =
-        CompilerTest::rust_source_cargo_miden(proj.root(), WasmTranslationConfig::default(), []);
+    let mut test = masm_build(pkg_name, &cargo_toml(pkg_name), &full_source, vec![]);
     let package = test.compile_package();
     let source_manager = test.session.source_manager.clone();
 

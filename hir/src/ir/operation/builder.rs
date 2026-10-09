@@ -140,7 +140,7 @@ where
         // Record SuccessorInfo for this successor in the op, in the successor group expected
         // by the operation's accessors. Pending successors must be added in non-decreasing
         // successor group order.
-        let succ_index = u8::try_from(op.successors.len()).expect("too many successors");
+        let succ_index = u16::try_from(op.successors.len()).expect("too many successors");
         let successor = self.builder.context().make_block_operand(succ.block, owner, succ_index);
         op.successors.push_to_group(
             succ.successor_group as usize,
@@ -164,10 +164,10 @@ where
             arguments
                 .into_iter()
                 .enumerate()
-                .map(|(index, arg)| self.builder.context().make_operand(arg, owner, index as u8)),
+                .map(|(index, arg)| self.builder.context().make_operand(arg, owner, index as u16)),
         );
         // Record SuccessorInfo for this successor in the op
-        let succ_index = u8::try_from(op.successors.len()).expect("too many successors");
+        let succ_index = u16::try_from(op.successors.len()).expect("too many successors");
         let successor = self.builder.context().make_block_operand(dest, owner, succ_index);
         op.successors.push(SuccessorInfo {
             block: successor,
@@ -188,7 +188,7 @@ where
         let mut op = self.op.borrow_mut();
         let mut group = vec![];
         for (i, (block, args)) in succs.into_iter().enumerate() {
-            let block = self.builder.context().make_block_operand(block, owner, i as u8);
+            let block = self.builder.context().make_block_operand(block, owner, i as u16);
             let operands = args
                 .into_iter()
                 .map(|value_ref| self.builder.context().make_operand(value_ref, owner, 0));
@@ -213,7 +213,7 @@ where
         let mut group = vec![];
         for (i, successor) in succs.into_iter().enumerate() {
             let (key, block, args) = successor.into_parts();
-            let block = self.builder.context().make_block_operand(block, owner, i as u8);
+            let block = self.builder.context().make_block_operand(block, owner, i as u16);
             let operands = args
                 .into_iter()
                 .map(|value_ref| self.builder.context().make_operand(value_ref, owner, 0));
@@ -236,7 +236,7 @@ where
         let operands = operands
             .into_iter()
             .enumerate()
-            .map(|(index, value)| self.builder.context().make_operand(value, owner, index as u8));
+            .map(|(index, value)| self.builder.context().make_operand(value, owner, index as u16));
         let mut op = self.op.borrow_mut();
         op.operands.extend(operands);
     }
@@ -250,7 +250,7 @@ where
         let operands = operands
             .into_iter()
             .enumerate()
-            .map(|(index, value)| self.builder.context().make_operand(value, owner, index as u8));
+            .map(|(index, value)| self.builder.context().make_operand(value, owner, index as u16));
         let mut op = self.op.borrow_mut();
         op.operands.extend_group(group, operands);
     }
@@ -262,7 +262,7 @@ where
         let results = types
             .into_iter()
             .enumerate()
-            .map(|(idx, ty)| self.builder.context().make_result(span, ty, owner, idx as u8));
+            .map(|(idx, ty)| self.builder.context().make_result(span, ty, owner, idx as u16));
         let mut op = self.op.borrow_mut();
         op.results.clear();
         op.results.extend(results);
@@ -273,7 +273,7 @@ where
         let span = self.op.borrow().span;
         let owner = self.op;
         let index = { self.op.borrow().num_results() };
-        let result = self.builder.context().make_result(span, ty, owner, index as u8);
+        let result = self.builder.context().make_result(span, ty, owner, index as u16);
         let mut op = self.op.borrow_mut();
         op.results.push(result);
     }

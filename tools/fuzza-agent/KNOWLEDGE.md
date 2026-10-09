@@ -24,7 +24,8 @@ points: `run_case`; `run_case_with_inputs` (pinned grid, the `_edges` and
 guest debug level); `run_case_traps`, `run_case_traps_with_inputs`,
 `run_case_traps_with_flags` (trap parity: `TRAPPING_CASE_HEADER`, the host
 runs in a forked child that `_exit(101)`s on panic, each input must agree on
-value-or-trap, a trap on both sides is a match).
+value-or-trap, a trap on both sides is a match); `run_case_rejected` (MASM
+build only, asserts it fails with an error containing the expected text).
 
 ## Running and sweeping
 
@@ -32,8 +33,8 @@ value-or-trap, a trap on both sides is a match).
   <filter> -- --test-threads=8`. One filter per invocation: names after `--`
   are OR-ed with the first filter.
 - `--exact` needs the FULL path `end_to_end::differential::tests::<module>::<test>`
-  (a partial path runs zero tests). `--ignored` runs ignored tests; run them
-  one per invocation. `--skip` is a substring filter.
+  (a partial path runs zero tests). `--ignored` runs ignored tests. `--skip`
+  is a substring filter.
 - Env knobs: `MIDENC_DIFF_FLAGS='<flags>'` (whitespace-split, appended after
   the case's flags; an option the case pins keeps the case's value, keyed on
   the text before `=`), `FUZZA_GUEST_DEBUG=0|1|2` (default 2),
@@ -41,8 +42,6 @@ value-or-trap, a trap on both sides is a match).
 - `--optimize=`: default = LLVM 2, `size-min` z, `max` 3, `basic` 1.
   `RUST_MIN_STACK=8388608` for max sweeps (big unrolled guests overflow the
   2 MiB test thread in the assembler; not a finding).
-- Link skips for a whole-corpus sweep: only `corelib`, `--skip core_str_find`
-  at size-min, plus `--skip core_str_patterns` at basic.
 - Machine time (about 700 tests): default run about 6 min, a flag sweep 8 to
   9 min, `FUZZA_INPUT_PAIRS=256` about 73 min (over half in `programs`,
   `programs_oz`, `memory`). A warm case about 2 s; Keccak-f[800] about 4 s
@@ -65,9 +64,9 @@ value-or-trap, a trap on both sides is a match).
 - `MIDENC_TRACE='codegen:operand-scheduling=trace'`: `there are N used operands
   out of M`; the last `dropping unused operands at:` names the op the emitter
   was on when it panicked.
-- `rewriter=trace` can itself panic (`cse::dead_region`). `pass:local2reg=trace`
-  logs `found promotable local` BEFORE the debug check; subtract the `debug
-  declarations cannot all be converted safely` lines.
+- `MIDENC_TRACE='pass:local2reg=trace'` logs `found promotable local` BEFORE
+  the debug check; subtract the `debug declarations cannot all be converted
+  safely` lines.
 - `-Z print-ir-after-pass=<pass>` logs to target `pass:<pass>`: it needs the
   flag, `MIDENC_TRACE='pass:<pass>=trace'` and `--nocapture`. Pass names:
   `canonicalizer`, `cse`, `sparse-conditional-constant-propagation`,
@@ -116,10 +115,8 @@ build the masked-index control before calling a trap-edge variant new.
 
 ## Gotchas
 
-- A guest that fails to build or link makes midenc-compile `process::exit`,
-  killing the whole run with no summary (`error: test failed`, `Broken pipe`).
-  Run suspected non-linking cases alone. An assembler call-graph cycle is an
-  ordinary failure.
+- A guest that fails to build or link is reported as an ordinary failed test,
+  as is an assembler call-graph cycle; cargo's diagnostics go to stderr.
 - A passing test swallows its output (`--nocapture`); when tracing several
   tests in one run, log lines belong to the `test <name> ...` line above.
   Quote globs and `::` paths in zsh.

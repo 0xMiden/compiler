@@ -707,7 +707,7 @@ trim-paths = [\"diagnostics\", \"object\"]
     cargo.stdout(std::process::Stdio::piped());
     cargo.stderr(std::process::Stdio::inherit());
 
-    let artifacts = crate::rust::spawn_cargo(cargo, cargo_path)?;
+    let artifacts = crate::rust::run_cargo(cargo, cargo_path)?;
 
     let mut outputs: Vec<PathBuf> = artifacts
         .into_iter()
@@ -2028,7 +2028,7 @@ pub(crate) mod manifest {
             &compiler_opts.target_dir,
         );
         let env = cargo_env(filesystem_cache_dir, &extra_rust_flags);
-        let mut wasm_outputs = run_cargo(
+        let mut wasm_outputs = run_cargo_build(
             wasi,
             rustup_toolchain.as_deref(),
             &cargo_build_args,
@@ -2160,7 +2160,7 @@ pub(crate) mod manifest {
         }
     }
 
-    fn run_cargo<E>(
+    fn run_cargo_build<E>(
         wasi: &str,
         toolchain: Option<&str>,
         spawn_args: &[String],
@@ -2201,7 +2201,7 @@ pub(crate) mod manifest {
         cargo.stdout(std::process::Stdio::piped());
         cargo.stderr(std::process::Stdio::inherit());
 
-        let artifacts = crate::rust::spawn_cargo(cargo, cargo_path)?;
+        let artifacts = crate::rust::run_cargo(cargo, cargo_path)?;
 
         let outputs: Vec<PathBuf> = artifacts
             .into_iter()

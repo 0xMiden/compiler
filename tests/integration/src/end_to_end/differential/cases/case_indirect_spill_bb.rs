@@ -1,4 +1,5 @@
-// COMPILE-TIME COMPILER PANIC REPRODUCER (campaign 31, 2026-09-17): the
+// Compile-time compiler panic reproducer (campaign 31, 2026-09-17; fixed by
+// #1421, the spill analysis now models every operand group of a call): the
 // `case_indirect_spill.rs` shape with the fn-pointer table read through
 // `core::hint::black_box(&WIDES)`, which is what keeps the dispatch
 // INDIRECT on the nightly-2026-09-01 guest toolchain — LLVM devirtualizes a
@@ -6,10 +7,10 @@
 // so the original case no longer emits a single `call_indirect` and no
 // longer reaches `hir.exec_indirect` at all. Everything else is identical:
 // seven u64 values live across a 7-u64 dispatch inside a loop with a
-// loop-carried table index, so the spill analysis (which reads operand
-// group 0 only and therefore never sees `hir.exec_indirect`'s arguments in
-// group 1) spills arguments, never reloads them, and budgets the call as
-// one felt while the emitter still holds them. See the ignored test in
+// loop-carried table index, so the spill analysis (which read operand
+// group 0 only and therefore never saw `hir.exec_indirect`'s arguments in
+// group 1) spilled arguments, never reloaded them, and budgeted the call as
+// one felt while the emitter still held them. See the test in
 // tests/calls.rs.
 type Wide = fn(u64, u64, u64, u64, u64, u64, u64) -> u64;
 

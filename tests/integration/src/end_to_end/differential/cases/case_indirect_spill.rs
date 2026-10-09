@@ -1,16 +1,16 @@
-// COMPILE-TIME COMPILER PANIC REPRODUCER (campaign 14, 2026-09-02): seven
-// u64 values kept in wasm locals (each an argument of the dispatch AND used
-// after it) are live across a 7-u64 fn-pointer dispatch inside a loop with
-// a loop-carried table index — one local more than the passing
-// `case_dispatch_pressure.rs` shape. The spill analysis takes an op's
-// inputs from operand group 0 only; `hir.exec_indirect` keeps the table
-// index there and its seven arguments in group 1, so the analysis spills
-// arguments to make room, never reloads them and budgets the call as
-// consuming one felt, while the emitter's physical stack still holds them:
-// the loop body's `arith.bxor` is scheduled over a 17-felt stack (eight
-// u64 + the loaded fn pointer) and fails with `NoSolution`. See the
-// ignored test in tests/calls.rs. Generated from scratch/c14gen_dp.py
-// (N = 7).
+// Regression case for a compile-time compiler panic (campaign 14,
+// 2026-09-02; fixed by #1421): seven u64 values kept in wasm locals (each
+// an argument of the dispatch AND used after it) are live across a 7-u64
+// fn-pointer dispatch inside a loop with a loop-carried table index — one
+// local more than the passing `case_dispatch_pressure.rs` shape. The spill
+// analysis took an op's inputs from operand group 0 only, while
+// `hir.exec_indirect` keeps the table index there and its seven arguments
+// in group 1, so the analysis spilled arguments to make room, never
+// reloaded them and budgeted the call as consuming one felt, while the
+// emitter's physical stack still held them: the loop body's `arith.bxor`
+// was scheduled over a 17-felt stack (eight u64 + the loaded fn pointer)
+// and failed with `NoSolution`. See the `indirect_spill` test in
+// tests/calls.rs. Generated from scratch/c14gen_dp.py (N = 7).
 type Wide = fn(u64, u64, u64, u64, u64, u64, u64) -> u64;
 
 #[inline(never)]

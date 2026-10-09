@@ -1,16 +1,20 @@
 //! Foreign procedure invocation rejection tests for records whose `u64` fields expand too wide.
 
-use super::super::common::build_fpi_test_packages;
+use super::super::common::build_fpi_test_packages_err;
 
-/// Rejects FPI signatures whose direct wrapper call would not fit on the operand stack.
+/// Rejects FPI signatures whose direct wrapper call would not fit on the operand stack with a
+/// diagnostic.
 ///
 /// The record expands to 20 operand stack felts (6 prefix felts, six double-felt `u64` fields,
 /// one felt, and the canonical ABI output pointer), which no MASM call can pass at once.
 #[test]
-#[should_panic(expected = "direct FPI calls support at most 16")]
 pub fn six_u64_struct_rejects_direct_width() {
-    let _ =
-        build_fpi_test_packages("six_u64_struct", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
+    let error = build_fpi_test_packages_err(
+        "six_u64_struct",
+        COUNTER_CONTRACT_SOURCE,
+        COUNTER_CALLER_SOURCE,
+    );
+    assert!(error.contains("direct FPI calls support at most 16"), "{error}");
 }
 
 /// Minimal counter account component source used by the six-`u64` record FPI test.

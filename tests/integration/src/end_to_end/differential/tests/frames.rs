@@ -36,8 +36,8 @@
 //! -> `dynexec`, which stays in the caller's memory context and therefore
 //! shares one FMP chain with it — only the new-context `dyncall` resets FMP).
 //! Each dispatch takes two arguments so the argument-blindness panic of
-//! `calls::indirect_spill` (the spill analysis reads only operand group 0)
-//! stays out of the way.
+//! `calls::indirect_spill` (the spill analysis read only operand group 0
+//! until #1421) stays out of the way.
 
 use super::super::harness::{run_case, run_case_with_inputs};
 

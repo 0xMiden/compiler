@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    Op, OpBuilder, Spanned,
+    Listener, ListenerType, Op, OpBuilder, Spanned,
     dialects::{
         builtin::BuiltinOpBuilder,
         debuginfo::attributes::{
@@ -8,7 +8,7 @@ use crate::{
         },
         test::TestOpBuilder,
     },
-    patterns::NoopRewriterListener,
+    patterns::{NoopRewriterListener, RewriterListener},
     testing::Test,
 };
 
@@ -171,4 +171,54 @@ impl Dialect for ForwardingDialect {
             .get_or_register_dialect::<crate::dialects::test::TestDialect>()
             .materialize_constant(builder, value, ty, span)
     }
+}
+
+/// Borrows every op it is notified about, as a verifying listener does.
+struct BorrowingListener;
+
+impl Listener for BorrowingListener {
+    fn kind(&self) -> ListenerType {
+        ListenerType::Rewriter
+    }
+
+    fn notify_operation_inserted(&self, op: OperationRef, _prev: ProgramPoint) {
+        let _ = op.borrow();
+    }
+}
+
+impl RewriterListener for BorrowingListener {
+    fn notify_operation_modified(&self, op: OperationRef) {
+        let _ = op.borrow();
+    }
+
+    fn notify_operation_replaced_with_values(
+        &self,
+        op: OperationRef,
+        _replacement: &[Option<ValueRef>],
+    ) {
+        let _ = op.borrow();
+    }
+
+    fn notify_operation_erased(&self, op: OperationRef) {
+        let _ = op.borrow();
+    }
+}
+
+/// Folding an op notifies the listeners only after its borrow of the op is released.
+#[test]
+fn folding_releases_the_op_before_notifying_listeners() {
+    let mut test = Test::new("fold_listener", &[], &[Type::U32, Type::U32]);
+    let (first, second) = {
+        let mut builder = test.function_builder();
+        let first = builder.u32(42, SourceSpan::UNKNOWN).unwrap();
+        let second = builder.u32(42, SourceSpan::UNKNOWN).unwrap();
+        builder.ret([first, second], SourceSpan::UNKNOWN).unwrap();
+        (first, second)
+    };
+    let first_op = first.borrow().get_defining_op().unwrap();
+    let second_op = second.borrow().get_defining_op().unwrap();
+    let mut folder = OperationFolder::new(test.context_rc(), BorrowingListener);
+    assert!(folder.insert_known_constant(first_op, None));
+    // The duplicate constant folds to the known one, which erases it and replaces its uses
+    assert!(matches!(folder.try_fold(second_op), FoldResult::Ok(())));
 }
