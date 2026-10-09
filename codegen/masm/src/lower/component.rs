@@ -10,7 +10,8 @@ use alloc::{
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
 use midenc_hir::{
-    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, Type, ValueRef,
+    FunctionIdent, Op, OpExt, OperationRef, SourceSpan, Span, Symbol, SymbolRef,
+    SymbolResolutionError, TraceTarget, Type, ValueRef,
     diagnostics::IntoDiagnostic,
     dialects::{builtin, debuginfo::attributes::SubprogramAttr},
     interner,
@@ -25,7 +26,7 @@ use crate::{
     artifact::MasmComponent,
     emitter::{BlockEmitter, FrameLayout, has_inline_call_chain},
     linker::{FunctionTableLayout, LinkInfo, Linker},
-    lower::lowering::invocation_target_from_symbol_path,
+    lower::lowering::{invocation_target_from_symbol, invocation_target_from_symbol_path},
     masm,
 };
 
@@ -528,6 +529,7 @@ fn world_body_to_masm_component(
         source_manager: context.session().source_manager.clone(),
         init_body: Default::default(),
         invoked_from_init: Default::default(),
+        init_owner: world.as_operation_ref(),
     };
 
     // A world declaring no component has no siblings *beside* one: every top-level module in it
@@ -677,6 +679,7 @@ fn component_to_masm_component(
         source_manager: context.session().source_manager.clone(),
         init_body: Default::default(),
         invoked_from_init: Default::default(),
+        init_owner: component.as_operation_ref(),
     };
 
     builder.build(component.as_operation(), supporting)?;
@@ -827,6 +830,7 @@ struct MasmComponentBuilder<'a> {
     source_manager: Arc<dyn midenc_session::SourceManager>,
     init_body: Vec<masm::Op>,
     invoked_from_init: BTreeSet<masm::Invoke>,
+    init_owner: OperationRef,
 }
 
 impl MasmComponentBuilder<'_> {
@@ -1088,21 +1092,27 @@ impl MasmComponentBuilder<'_> {
         } else {
             interface.path().to_library_path()
         };
-        let mut masm_module =
-            Box::new(masm::Module::new(masm::ModuleKind::Library, interface_path));
+        let interface_path = interface_path.to_absolute().unwrap();
+        // The assembler exposes interface functions and re-exports only through public
+        // submodule declarations reachable from the package root.
+        let module_index = if let Some(rest) = interface_path.strip_prefix(&self.component.root) {
+            self.define_module_tree(rest, Some(0), masm::Visibility::Public)?
+        } else {
+            self.define_module_tree(&interface_path, None, masm::Visibility::Public)?
+        };
+        let masm_module = Arc::get_mut(&mut self.component.modules[module_index])
+            .expect("expected unique reference");
         let builder = MasmModuleBuilder {
-            module: &mut masm_module,
+            module: masm_module,
+            init_owner: self.init_owner,
             analysis_manager: self.analysis_manager.clone(),
             link_info: self.link_info,
             source_manager: self.source_manager.clone(),
             init_body: &mut self.init_body,
             invoked_from_init: &mut self.invoked_from_init,
+            root_module: &self.component.root,
         };
-        builder.build_from_interface(interface)?;
-
-        self.component.modules.push(Arc::from(masm_module));
-
-        Ok(())
+        builder.build_from_interface(interface)
     }
 
     fn define_module(&mut self, module: &builtin::Module) -> Result<(), Report> {
@@ -1148,11 +1158,13 @@ impl MasmComponentBuilder<'_> {
             .expect("expected unique reference");
         let builder = MasmModuleBuilder {
             module: masm_module,
+            init_owner: self.init_owner,
             analysis_manager: self.analysis_manager.clone(),
             link_info: self.link_info,
             source_manager: self.source_manager.clone(),
             init_body: &mut self.init_body,
             invoked_from_init: &mut self.invoked_from_init,
+            root_module: &self.component.root,
         };
         let nested = builder.build(module)?;
         for nested_module in nested {
@@ -1255,36 +1267,13 @@ impl MasmComponentBuilder<'_> {
     }
 
     fn define_function_alias(&mut self, alias: &builtin::FunctionAlias) -> Result<(), Report> {
-        let target_ref = alias
-            .resolve_target()
-            .and_then(builtin::FunctionAlias::canonicalize)
-            .and_then(|sym| {
-                let op = sym.borrow();
-                op.as_symbol_operation()
-                    .downcast_ref::<builtin::Function>()
-                    .map(|f| f.as_function_ref())
-            })
-            .ok_or_else(|| {
-                Report::msg(format!(
-                    "invalid function alias '{}': target does not resolve to a function",
-                    alias.get_name().as_symbol().as_str()
-                ))
-            })?;
-        let target = target_ref.borrow();
-        let builder = MasmFunctionBuilder::new_for_alias(alias, &target)?;
-        let procedure = builder.build(
-            &target,
-            self.analysis_manager.nest(target.as_operation_ref()),
-            self.link_info,
-            FunctionLoweringMode::Normal,
-        )?;
+        let import = lower_function_alias(alias, self.init_owner, &self.component.root)?;
         let module =
             Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
         module
-            .define_procedure(procedure, self.source_manager.clone())
+            .define_import(import)
             .into_diagnostic()
-            .wrap_err("failed to define MASM procedure for alias")?;
-        Ok(())
+            .wrap_err("failed to define MASM import for alias")
     }
 
     /// Emit the sequence of instructions necessary to consume rodata from the advice stack and
@@ -1416,8 +1405,11 @@ impl MasmComponentBuilder<'_> {
                     )));
                 };
                 let callee_path = callee.borrow().path();
-                let target =
-                    super::lowering::invocation_target_from_symbol_path(&callee_path, span);
+                let target = invocation_target_from_symbol(
+                    callee,
+                    callee.borrow().as_symbol_operation().nearest_symbol_table(),
+                    span,
+                );
 
                 // The fragment belongs to the module defining the callee: `procref` there needs
                 // no visibility beyond what the callee already has
@@ -1466,8 +1458,87 @@ struct FunctionTableFragment {
     a_callee: String,
 }
 
+/// Resolve an alias to the symbol its MASM import should reference.
+///
+/// Stop at the first symbol in another module so the import targets a symbol available through
+/// that module.
+fn resolve_alias_import_target(alias: &builtin::FunctionAlias) -> Result<SymbolRef, Report> {
+    let canonical = alias
+        .as_operation()
+        .as_symbol_ref()
+        .expect("function aliases are symbols")
+        .resolve_function()
+        .into_diagnostic()?;
+    if canonical.borrow().is_declaration() {
+        return Err(function_without_a_body(&canonical.borrow()));
+    }
+
+    let owner = alias
+        .as_operation()
+        .nearest_symbol_table()
+        .ok_or(SymbolResolutionError::NoSymbolTable)
+        .into_diagnostic()?;
+    let mut target = alias.resolve_target().expect("canonical resolution validated the target");
+    loop {
+        let symbol = target.borrow();
+        let target_owner = symbol
+            .as_symbol_operation()
+            .nearest_symbol_table()
+            .ok_or(SymbolResolutionError::NoSymbolTable)
+            .into_diagnostic()?;
+        if !crate::legalization::share_masm_module(owner, target_owner) {
+            return Ok(target);
+        }
+        let Some(local_alias) =
+            symbol.as_symbol_operation().downcast_ref::<builtin::FunctionAlias>()
+        else {
+            return Ok(target);
+        };
+        target = local_alias
+            .resolve_target()
+            .expect("canonical resolution validated the local alias chain");
+    }
+}
+
+fn lower_function_alias(
+    alias: &builtin::FunctionAlias,
+    root_owner: OperationRef,
+    root_module: &masm::Path,
+) -> Result<masm::Import, Report> {
+    let target = resolve_alias_import_target(alias)?;
+    let target = target.borrow();
+    let owner = alias.as_operation().nearest_symbol_table().unwrap();
+    let target_owner = target.as_symbol_operation().nearest_symbol_table().unwrap();
+    let module_path = if crate::legalization::share_masm_module(owner, target_owner) {
+        Arc::from(masm::Path::new("self"))
+    } else if target_owner == root_owner {
+        Arc::from(root_module)
+    } else {
+        let path = target.path().without_leaf().to_library_path();
+        Arc::from(path.to_absolute().unwrap().into_owned().into_boxed_path())
+    };
+    let visibility = match alias.visibility() {
+        midenc_hir::Visibility::Private => masm::Visibility::Private,
+        midenc_hir::Visibility::Public | midenc_hir::Visibility::Internal => {
+            masm::Visibility::Public
+        }
+    };
+    let span = alias.span();
+    let source_name = masm::Ident::from_raw_parts(Span::new(span, target.name().as_str().into()));
+    let local_name = masm::Ident::from_raw_parts(Span::new(span, alias.name().as_str().into()));
+    Ok(masm::Import::Item(masm::ItemImport::new(
+        span,
+        visibility,
+        Span::new(span, module_path),
+        source_name,
+        local_name,
+    )))
+}
+
 struct MasmModuleBuilder<'a> {
     module: &'a mut masm::Module,
+    root_module: &'a masm::Path,
+    init_owner: OperationRef,
     /// Shared world/component analysis root, covering cross-module alias targets.
     analysis_manager: AnalysisManager,
     link_info: &'a LinkInfo,
@@ -1550,40 +1621,11 @@ impl MasmModuleBuilder<'_> {
         Ok(())
     }
 
-    /// Lower an alias by emitting a duplicate procedure with the alias name/visibility
-    /// but the canonical target body.
     fn define_function_alias(&mut self, alias: &builtin::FunctionAlias) -> Result<(), Report> {
-        let target_ref = alias
-            .resolve_target()
-            .and_then(builtin::FunctionAlias::canonicalize)
-            .and_then(|sym| {
-                let op = sym.borrow();
-                op.as_symbol_operation()
-                    .downcast_ref::<builtin::Function>()
-                    .map(|f| f.as_function_ref())
-            })
-            .ok_or_else(|| {
-                Report::msg(format!(
-                    "invalid function alias '{}': target does not resolve to a function",
-                    alias.get_name().as_symbol().as_str()
-                ))
-            })?;
-
-        let target = target_ref.borrow();
-        let builder = MasmFunctionBuilder::new_for_alias(alias, &target)?;
-
-        let procedure = builder.build(
-            &target,
-            self.analysis_manager.nest(target.as_operation_ref()),
-            self.link_info,
-            FunctionLoweringMode::Normal,
-        )?;
-
         self.module
-            .define_procedure(procedure, self.source_manager.clone())
-            .map_err(|e| Report::msg(e.to_string()))?;
-
-        Ok(())
+            .define_import(lower_function_alias(alias, self.init_owner, self.root_module)?)
+            .into_diagnostic()
+            .wrap_err("failed to define MASM import for alias")
     }
 
     fn emit_global_variable_initializer(
@@ -1604,6 +1646,7 @@ impl MasmModuleBuilder<'_> {
         let initializer_block = initializer_region.entry();
 
         let mut block_emitter = BlockEmitter {
+            module_owner: Some(self.init_owner),
             frame: Default::default(),
             liveness: &liveness,
             emit_inline_calls: has_inline_call_chain(gv.as_operation()),
@@ -1710,54 +1753,6 @@ impl MasmFunctionBuilder {
         })
     }
 
-    /// Prepare to translate `alias` by emitting the `target` body under the alias name.
-    pub fn new_for_alias(
-        alias: &builtin::FunctionAlias,
-        target: &builtin::Function,
-    ) -> Result<Self, Report> {
-        use midenc_hir::Visibility;
-
-        if target.is_declaration() {
-            return Err(function_without_a_body(target));
-        }
-
-        let alias_name = *alias.get_name();
-        let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(Span::new(
-            alias_name.span,
-            alias_name.as_ref().into(),
-        )));
-        let visibility = match *alias.get_linkage() {
-            Visibility::Public => masm::Visibility::Public,
-            Visibility::Internal => masm::Visibility::Public,
-            Visibility::Private => masm::Visibility::Private,
-        };
-        let locals_required = target.locals().iter().map(|ty| ty.size_in_felts()).sum::<usize>();
-        let num_locals = u16::try_from(locals_required).map_err(|_| {
-            let context = target.as_operation().context();
-            context
-                .diagnostics()
-                .diagnostic(miden_assembly::diagnostics::Severity::Error)
-                .with_message("cannot emit masm for function alias")
-                .with_primary_label(
-                    alias.span(),
-                    "local storage exceeds procedure limit: no more than u16::MAX elements are \
-                     supported",
-                )
-                .into_report()
-        })?;
-
-        let signature =
-            semantic_debug_signature(target).unwrap_or_else(|| lowered_signature(target));
-
-        Ok(Self {
-            span: alias.span(),
-            name,
-            signature,
-            visibility,
-            num_locals,
-        })
-    }
-
     pub fn build(
         self,
         function: &builtin::Function,
@@ -1790,6 +1785,10 @@ impl MasmFunctionBuilder {
         // code and the debug locations read this table.
         let local_offsets = crate::emitter::local_offsets(function);
         let mut emitter = BlockEmitter {
+            module_owner: match mode {
+                FunctionLoweringMode::Normal => function.as_operation().nearest_symbol_table(),
+                FunctionLoweringMode::ExecutableEntrypointWithoutInit => None,
+            },
             frame: FrameLayout::new(&local_offsets, self.num_locals),
             liveness: &liveness,
             emit_inline_calls: has_inline_call_chain(function.as_operation()),

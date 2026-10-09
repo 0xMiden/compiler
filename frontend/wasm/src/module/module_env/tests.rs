@@ -350,7 +350,9 @@ fn multiple_exports_for_single_function_become_aliases() {
         .exports
         .insert("export_2".to_string(), EntityIndex::Function(FuncIndex::new(0)));
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     // First export in Wasm order is primary, the rest are aliases.
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "export_1");

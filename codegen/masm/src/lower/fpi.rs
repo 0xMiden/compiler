@@ -215,6 +215,7 @@ mod tests {
         };
 
         let mut emitter = BlockEmitter {
+            module_owner: None,
             frame: crate::emitter::FrameLayout::new(&local_offsets, num_locals),
             liveness: &liveness,
             emit_inline_calls: false,

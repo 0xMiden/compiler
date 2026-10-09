@@ -7,8 +7,8 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    Felt, Immediate, Op, OpExt, Operation, SmallVec, Span, SymbolTable, Type, Value, ValueRange,
-    ValueRef,
+    AsCallableSymbolRef, Felt, Immediate, Op, OpExt, Operation, SmallVec, Span, SymbolTable, Type,
+    Value, ValueRange, ValueRef,
     dialects::{builtin, debuginfo},
     traits::{BinaryOp, Commutative},
 };
@@ -36,6 +36,34 @@ pub(super) fn invocation_target_from_symbol_path(
     let module = callee_path.without_leaf().to_library_path();
     let qualified = masm::QualifiedProcedureName::new(module.as_path(), proc_name);
     masm::InvocationTarget::Path(masm::Span::new(span, qualified.into_inner()))
+}
+
+/// Builds a MASM invocation target for a resolved HIR symbol.
+///
+///
+/// `module_owner` is the HIR symbol-table owner corresponding to the emitted caller's MASM module.
+/// Passing `None` disables unqualified-name emission.
+pub(super) fn invocation_target_from_symbol(
+    symbol: midenc_hir::SymbolRef,
+    module_owner: Option<midenc_hir::OperationRef>,
+    span: midenc_hir::SourceSpan,
+) -> masm::InvocationTarget {
+    // Private aliases in the caller's MASM module use an unqualified name because MASM
+    // does not resolve private imports through module-qualified paths. All other targets
+    // use a qualified path.
+    let symbol = symbol.borrow();
+    if symbol.is_private()
+        && symbol.as_symbol_operation().is::<builtin::FunctionAlias>()
+        && let Some(owner) = module_owner
+        && let Some(target_owner) = symbol.as_symbol_operation().nearest_symbol_table()
+        && crate::legalization::share_masm_module(owner, target_owner)
+    {
+        return masm::InvocationTarget::Symbol(masm::Ident::from_raw_parts(Span::new(
+            span,
+            symbol.name().as_str().into(),
+        )));
+    }
+    invocation_target_from_symbol_path(&symbol.path(), span)
 }
 
 fn resolve_invocation_callee(
@@ -968,11 +996,12 @@ impl HirLowering for arith::Sext {
 impl HirLowering for hir::Exec {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let callee = resolve_invocation_callee(self)?;
-        let callee_path = callee.named_symbol().borrow().path();
         let signature = callee.signature();
-
-        // Convert the symbol path to a fully-qualified procedure path
-        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
+        let callee = invocation_target_from_symbol(
+            callee.as_callable_symbol_ref(),
+            emitter.module_owner,
+            self.span(),
+        );
         emitter.inst_emitter(self.as_operation()).exec(callee, &signature, self.span());
         Ok(())
     }
@@ -981,9 +1010,7 @@ impl HirLowering for hir::Exec {
 impl HirLowering for hir::ProcedureRoot {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let symbol = crate::legalization::validate_procedure_root(self)?;
-        let callee_path = symbol.borrow().path();
-
-        let target = invocation_target_from_symbol_path(&callee_path, self.span());
+        let target = invocation_target_from_symbol(symbol, emitter.module_owner, self.span());
         emitter.inst_emitter(self.as_operation()).procedure_root(target, self.span());
 
         Ok(())
@@ -1117,11 +1144,12 @@ impl HirLowering for hir::Dyncall {
 impl HirLowering for hir::Call {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let callee = resolve_invocation_callee(self)?;
-        let callee_path = callee.named_symbol().borrow().path();
         let signature = callee.signature();
-
-        // Convert the symbol path to a fully-qualified procedure path
-        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
+        let callee = invocation_target_from_symbol(
+            callee.as_callable_symbol_ref(),
+            emitter.module_owner,
+            self.span(),
+        );
         emitter.inst_emitter(self.as_operation()).call(callee, &signature, self.span());
 
         Ok(())
@@ -1131,11 +1159,12 @@ impl HirLowering for hir::Call {
 impl HirLowering for hir::Syscall {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let callee = resolve_invocation_callee(self)?;
-        let callee_path = callee.named_symbol().borrow().path();
         let signature = callee.signature();
-
-        // Convert the symbol path to a fully-qualified procedure path
-        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
+        let callee = invocation_target_from_symbol(
+            callee.as_callable_symbol_ref(),
+            emitter.module_owner,
+            self.span(),
+        );
         emitter
             .inst_emitter(self.as_operation())
             .syscall(callee, &signature, self.span());

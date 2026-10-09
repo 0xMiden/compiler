@@ -19,7 +19,13 @@
 ;; HIR: builtin.function_alias public @bar -> {{.*}}@foo
 ;; HIR-NOT: builtin.function {{.*}} @impl_source
 
+;; MASM-FOO-NOT: pub proc bar
+;; MASM-FOO: pub use {foo as bar} from self
+;; MASM-FOO-NOT: pub proc bar
 ;; MASM-FOO: pub proc foo
-;; MASM-FOO: pub proc bar
+;; MASM-FOO-NOT: pub proc bar
+;; MASM-BAR-NOT: pub proc bar
+;; MASM-BAR: pub use {foo as bar} from self
+;; MASM-BAR-NOT: pub proc bar
 ;; MASM-BAR: pub proc foo
-;; MASM-BAR: pub proc bar
+;; MASM-BAR-NOT: pub proc bar

@@ -61,7 +61,7 @@ impl DerefMut for EvalTest {
 
 const ALIAS_TEST_SOURCE: &str = r#"
 builtin.module public @test {
-    builtin.function private extern("C") @body(%x: u32) -> u32 { builtin.ret %x : (u32); };
+    builtin.function internal extern("C") @body(%x: u32) -> u32 { builtin.ret %x : (u32); };
     builtin.function_alias private @first -> @body;
     builtin.function_alias public @api -> @first;
     builtin.function public extern("C") @caller(%x: u32) -> u32 {

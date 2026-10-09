@@ -915,11 +915,11 @@ impl CallOpInterface for Dyncall {
         self.operands_mut().group_mut(1)
     }
 
-    fn resolve(&self) -> Option<SymbolRef> {
+    fn resolve(&self) -> Option<CanonicalCallableRef> {
         None
     }
 
-    fn resolve_in_symbol_table(&self, _symbols: &dyn SymbolTable) -> Option<SymbolRef> {
+    fn resolve_in_symbol_table(&self, _symbols: &dyn SymbolTable) -> Option<CanonicalCallableRef> {
         None
     }
 
@@ -932,7 +932,7 @@ impl CallOpInterface for Dyncall {
 
     /// The root is runtime data (it need not even name a procedure of this program), so the
     /// callee set is unknown: analyses must treat this op as an external call.
-    fn possible_callees(&self) -> Option<SmallVec<[SymbolRef; 2]>> {
+    fn possible_callees(&self) -> Option<SmallVec<[CanonicalCallableRef; 2]>> {
         None
     }
 }
@@ -1057,7 +1057,7 @@ mod tests {
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
         CallConv, CallOpInterface, Ident, Op, Operation, SourceSpan, Symbol, SymbolTable, Type,
-        Usable, Visibility,
+        UnsafeIntrusiveEntityRef, Usable, Visibility,
         conversion::{
             TypeConversion, TypeConverter, converted_resolved_call_signature_1_to_1,
             verify_call_signature_operands_and_results,

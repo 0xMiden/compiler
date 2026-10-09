@@ -390,9 +390,11 @@ Blocks in the function body must be terminated with one of two operations:
 
 ### Function Aliases
 
-A function alias (`builtin.function_alias`) gives a function an additional name within the same module, without a body of its own. The signature and body belong to the canonical target. Aliases may chain.
+A function alias (`builtin.function_alias`) gives a function another name in the same or a different module. It has no body of its own. The signature and body belong to the canonical target. Aliases may chain, with each hop resolved in that alias's symbol table.
 
-The alias's visibility is independent of the target's: a public alias exposes a private target under the alias name. During code generation this is realized by emitting a duplicate procedure with the alias name/visibility and the canonical target's body.
+Private symbols cannot be targeted from another symbol table. Public and internal aliases to private canonical targets are unsupported, including through chains.
+
+Code generation emits MASM item imports (`use` or `pub use`), not duplicate procedures. It preserves every alias name but flattens local alias chains when choosing import targets. It stops at the first symbol in another module. The function body stays in its original module, so its references keep their original context.
 
 ### Global Variables
 

@@ -261,7 +261,7 @@ pub(crate) fn validate_procedure_root(
 }
 
 /// Whether two HIR symbol-table owners emit procedures into the same MASM module.
-fn share_masm_module(lhs: OperationRef, rhs: OperationRef) -> bool {
+pub(crate) fn share_masm_module(lhs: OperationRef, rhs: OperationRef) -> bool {
     if lhs == rhs {
         return true;
     }
