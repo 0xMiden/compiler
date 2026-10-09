@@ -4,12 +4,7 @@ package miden:standards-access-ownable2step@0.17.0;
 
 /// Left out: none
 interface ownable2step {
-    use miden:base/core-types@1.0.0.{felt};
-
-    record account-id {
-        suffix: felt,
-        prefix: felt,
-    }
+    use miden:base/core-types@1.0.0.{account-id};
 
     @external-id("miden::standards::components::access::ownable2step::accept_ownership")
     accept-ownership: func();

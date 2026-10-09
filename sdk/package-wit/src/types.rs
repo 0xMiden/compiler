@@ -76,7 +76,7 @@ const CORE_ITEMS: &[CoreItem] = &[
     },
     CoreItem {
         name: "account-id",
-        matches: |ty| struct_shape(ty, &[("prefix", Type::is_felt), ("suffix", Type::is_felt)]),
+        matches: |ty| struct_shape(ty, &[("suffix", Type::is_felt), ("prefix", Type::is_felt)]),
         felts: 2,
     },
     CoreItem {
@@ -466,14 +466,14 @@ mod tests {
         let mut set = TypeSet::default();
         let asset = record("Asset", &[("id", word()), ("value", word())]);
         assert_eq!(set.map(&asset).unwrap().wit, "asset");
-        let id = record("AccountId", &[("prefix", Type::Felt), ("suffix", Type::Felt)]);
+        let id = record("AccountId", &[("suffix", Type::Felt), ("prefix", Type::Felt)]);
         assert_eq!(set.map(&id).unwrap().wit, "account-id");
         assert_eq!(set.core.iter().collect::<Vec<_>>(), ["account-id", "asset"]);
         assert!(set.locals.is_empty());
 
-        // Field order is part of the shape: the standards' `{suffix, prefix}` is a local record.
+        // Field order is part of the shape: a `{prefix, suffix}` account id is a local record.
         let mut set = TypeSet::default();
-        let swapped = record("AccountId", &[("suffix", Type::Felt), ("prefix", Type::Felt)]);
+        let swapped = record("AccountId", &[("prefix", Type::Felt), ("suffix", Type::Felt)]);
         let mapped = set.map(&swapped).unwrap();
         assert_eq!((mapped.wit.as_str(), mapped.felts), ("account-id", 2));
         assert_eq!(set.core.iter().collect::<Vec<_>>(), ["felt"]);
@@ -482,8 +482,8 @@ mod tests {
             [(
                 "account-id".to_owned(),
                 Decl::Record(vec![
-                    ("suffix".to_owned(), "felt".to_owned()),
-                    ("prefix".to_owned(), "felt".to_owned())
+                    ("prefix".to_owned(), "felt".to_owned()),
+                    ("suffix".to_owned(), "felt".to_owned())
                 ])
             )]
         );

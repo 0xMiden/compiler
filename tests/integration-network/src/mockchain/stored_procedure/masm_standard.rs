@@ -131,9 +131,9 @@ fn standards_procedure_root(code: &AccountComponentCode, leaf: &str) -> Word {
 }
 
 /// Note storage layout of the role-check note: the role symbol, the queried account id in the
-/// note's `AccountId` field order (prefix, suffix), and the expected answer.
+/// note's `AccountId` field order (suffix, prefix), and the expected answer.
 fn role_check_storage(role: Felt, queried: AccountId, expected: Felt) -> Vec<Felt> {
-    vec![role, queried.prefix().as_felt(), queried.suffix(), expected]
+    vec![role, queried.suffix(), queried.prefix().as_felt(), expected]
 }
 
 /// Dispatcher component holding the root of the standards `has_role` procedure.

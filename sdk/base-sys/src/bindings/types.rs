@@ -39,14 +39,21 @@ pub fn felt_from_padded_word(value: Word) -> Result<Felt, &'static str> {
 }
 
 /// Unique identifier for a Miden account, composed of two field elements.
+///
+/// The fields follow the protocol's order, suffix first (the kernel returns an account id as
+/// `[suffix, prefix]`): this order is the account id's felt representation (e.g. in note
+/// storage) and its canonical-ABI layout in component calls.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 pub struct AccountId {
-    pub prefix: Felt,
+    /// The suffix of the account id, the first element of the kernel's `[suffix, prefix]` output.
     pub suffix: Felt,
+    /// The prefix of the account id, the second element of the kernel's `[suffix, prefix]` output.
+    pub prefix: Felt,
 }
 
 impl AccountId {
-    /// Creates a new AccountId from prefix and suffix Felt values.
+    /// Creates a new AccountId from prefix and suffix Felt values (prefix first, unlike the field
+    /// order).
     pub fn new(prefix: Felt, suffix: Felt) -> Self {
         Self { prefix, suffix }
     }
@@ -86,8 +93,8 @@ impl TryFrom<Word> for AccountId {
         }
 
         Ok(Self {
-            prefix: value[3],
             suffix: value[2],
+            prefix: value[3],
         })
     }
 }
