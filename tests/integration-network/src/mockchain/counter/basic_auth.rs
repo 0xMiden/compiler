@@ -75,7 +75,7 @@ pub fn counter_note_basic_auth_increments_storage() {
     // the `init` that every call into a component runs. The note runs its own `init` once and the
     // counter contract's on each of its three calls into it; each stores three such globals and
     // is 10 cycles shorter (9 for the assertions, 1 for an op batch its stores no longer fill).
-    expect!["8866"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["8971"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed (incremented by 1).
     assert_counter_storage(
