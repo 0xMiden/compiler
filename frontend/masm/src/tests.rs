@@ -2403,11 +2403,23 @@ end
 "#,
         "test",
         &DisassemblerConfig::default(),
-        context,
+        context.clone(),
     )?;
     assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
     let findings = advice_taint_findings(output.module)?;
-    assert!(!findings.is_empty());
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+    assert!(findings[0].contexts.iter().any(|context| {
+        context.kind == midenc_dialect_hir::analyses::AdviceTaintContextKind::CallResult
+    }));
+    let source = context
+        .source_manager()
+        .get(findings[0].advice_span.source_id())
+        .into_diagnostic()?;
+    assert_eq!(
+        source.source_slice(findings[0].advice_span.into_slice_index()),
+        Some("adv_push")
+    );
     Ok(())
 }
 
