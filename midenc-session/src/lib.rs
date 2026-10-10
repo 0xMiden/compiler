@@ -214,7 +214,7 @@ impl Session {
         {
             #[cfg(feature = "std")]
             {
-                let tmp = std::env::temp_dir().canonicalize().unwrap();
+                let tmp = canonical_temp_dir()?;
                 let project_dir = tmp.join(&name).join("src");
                 let project_remap_target = if path.is_absolute() {
                     Some(
@@ -927,6 +927,30 @@ fn infer_rust_entrypoint(manifest: &ProjectManifest, options: &mut Options) -> R
     Ok(())
 }
 
+/// The system temporary directory, resolved to its canonical form.
+///
+/// Callers want the resolved form because on macOS [`std::env::temp_dir`] is not it: `TMPDIR` is
+/// a symlink into `/private/var`, so the temporary directory and the paths `rustc` reports in
+/// debug information disagree until one of them is canonicalized.
+///
+/// Resolving it reads the filesystem, and fails when the directory does not exist or cannot be
+/// traversed. [`std::env::temp_dir`] hands back whatever `TMPDIR` (or `TEMP`/`TMP` on Windows)
+/// names without checking that anything is there, so an unusable setting used to reach a panic
+/// on this path. Both call sites return a `Result` and report every other filesystem failure
+/// they hit, so this one reports too.
+#[cfg(feature = "std")]
+pub fn canonical_temp_dir() -> Result<PathBuf, Report> {
+    canonicalize_directory(&std::env::temp_dir())
+}
+
+/// The absolute, symlink-resolved form of `dir`, or why it could not be resolved.
+#[cfg(feature = "std")]
+fn canonicalize_directory(dir: &Path) -> Result<PathBuf, Report> {
+    dir.canonicalize().map_err(|err| {
+        Report::msg(format!("unable to canonicalize directory '{}': {err}", dir.display()))
+    })
+}
+
 #[cfg(feature = "std")]
 fn create_target_dir(path: &Path) {
     if !path.exists() {
@@ -946,6 +970,39 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    // `canonical_temp_dir` reads `TMPDIR` from the process environment, which no single test can
+    // own; `canonicalize_directory` is the whole filesystem decision it makes, and is what a
+    // missing temporary directory exercises.
+    #[cfg(feature = "std")]
+    #[test]
+    fn canonicalizing_a_directory_distinguishes_a_real_one_from_a_missing_one() {
+        let temp = TempDir::new().unwrap();
+        let missing = temp.path().join("no-such-child");
+
+        assert_eq!(
+            canonicalize_directory(temp.path()).unwrap(),
+            temp.path().canonicalize().unwrap(),
+            "a directory that exists resolves to its canonical form"
+        );
+
+        let error = canonicalize_directory(&missing).unwrap_err().to_string();
+        assert!(
+            error.starts_with("unable to canonicalize directory"),
+            "a missing directory is a diagnostic naming the failed operation, got: {error}"
+        );
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn the_process_temporary_directory_canonicalizes() {
+        let temp_dir = canonical_temp_dir().unwrap();
+        assert!(
+            temp_dir.is_absolute(),
+            "canonical form is absolute, got: {}",
+            temp_dir.display()
+        );
+    }
 
     #[test]
     fn relative_manifest_locator_uses_the_configured_current_directory() {
