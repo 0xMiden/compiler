@@ -508,21 +508,31 @@ impl ModuleRegistry {
                                             &self.context,
                                             &self.linker,
                                             &self.signatures,
+                                            config.lint,
                                         )?,
                                     };
 
-                                    if config.lint {
-                                        infer::validate_declared_signature(
-                                            gid,
-                                            &p,
+                                    let signature = if config.lint {
+                                        let signature = physical_lint_signature(
                                             &self.context,
-                                            &self.linker,
-                                            &self.signatures,
+                                            &self.item_path(gid),
                                             &signature,
                                         )?;
-                                        validate_lint_signature(&self.item_path(gid), &signature)?;
-                                    }
-
+                                        for physical_stack in [true, false] {
+                                            infer::validate_declared_signature(
+                                                gid,
+                                                &p,
+                                                &self.context,
+                                                &self.linker,
+                                                &self.signatures,
+                                                &signature,
+                                                physical_stack,
+                                            )?;
+                                        }
+                                        signature
+                                    } else {
+                                        signature
+                                    };
                                     Ok(signature)
                                 })();
                                 (span, signature)
@@ -552,9 +562,14 @@ impl ModuleRegistry {
                             }
                             .and_then(|signature| {
                                 if config.lint {
-                                    validate_lint_signature(&self.item_path(gid), &signature)?;
+                                    physical_lint_signature(
+                                        &self.context,
+                                        &self.item_path(gid),
+                                        &signature,
+                                    )
+                                } else {
+                                    Ok(signature)
                                 }
-                                Ok(signature)
                             });
                             match signature {
                                 Ok(signature) => {
@@ -673,7 +688,7 @@ impl ModuleRegistry {
                     {
                         continue;
                     }
-                    (p.span(), ProcedurePreparer::new(gid, &p, self).prepare())
+                    (p.span(), ProcedurePreparer::new(gid, &p, self, config.lint).prepare())
                 };
                 match result {
                     Ok(procedure) => {
@@ -749,6 +764,87 @@ impl ModuleRegistry {
                 Err(Report::msg(format!("unresolved callee '{target}' from '{path}'")))
             }
         }
+    }
+}
+
+fn physical_lint_signature(
+    context: &Rc<Context>,
+    path: &ast::Path,
+    signature: &Signature,
+) -> Result<Signature> {
+    validate_lint_signature(path, signature)?;
+    // Bound expansion before allocating stack parts, including nested arrays.
+    for values in [signature.params(), signature.results()] {
+        let mut count = 0;
+        for value in values {
+            let size = bounded_lint_type_bits(&value.ty)
+                .map(|bits| bits.div_ceil(32))
+                .unwrap_or(LINT_SIGNATURE_VALUE_LIMIT + 1);
+            if size > LINT_SIGNATURE_VALUE_LIMIT - count {
+                return Err(Report::msg(format!(
+                    "procedure '{path}' has a physical stack footprint exceeding the lint \
+                     analysis signature limit of {LINT_SIGNATURE_VALUE_LIMIT}"
+                )));
+            }
+            count += size;
+        }
+    }
+    let physical = Signature::with_convention(
+        context,
+        signature.calling_convention().clone(),
+        signature.params().iter().flat_map(|param| physical_lint_type_parts(&param.ty)),
+        signature
+            .results()
+            .iter()
+            .flat_map(|result| physical_lint_type_parts(&result.ty)),
+    );
+    validate_lint_signature(path, &physical)?;
+    Ok(physical)
+}
+
+pub(super) fn bounded_lint_type_bits(ty: &Type) -> Option<usize> {
+    let bits = match ty {
+        Type::Array(array) => match array.len() {
+            0 => 0,
+            1 => bounded_lint_type_bits(array.element_type())?,
+            len => {
+                let element = bounded_lint_type_bits(array.element_type())?;
+                if element == 0 {
+                    return Some(0);
+                }
+                let alignment = array.element_type().min_alignment().checked_mul(8)?;
+                let stride = element.checked_next_multiple_of(alignment)?;
+                element.checked_add(stride.checked_mul(len - 1)?)?
+            }
+        },
+        Type::Struct(ty) => ty.size().checked_mul(8)?,
+        Type::Enum(ty) => ty.size_in_bytes().checked_mul(8)?,
+        _ => ty.size_in_bits(),
+    };
+    (bits <= LINT_SIGNATURE_VALUE_LIMIT * 32).then_some(bits)
+}
+
+fn physical_lint_type_parts(ty: &Type) -> Vec<Type> {
+    match ty {
+        Type::I64 | Type::U64 => vec![Type::U32; 2],
+        Type::I128 | Type::U128 => vec![Type::U32; 4],
+        Type::U256 => vec![Type::U32; 8],
+        Type::Ptr(_) => vec![Type::U32],
+        Type::Array(_) if bounded_lint_type_bits(ty) == Some(0) => vec![],
+        Type::Array(array) => {
+            let parts = (0..array.len())
+                .flat_map(|_| physical_lint_type_parts(array.element_type()))
+                .take(LINT_SIGNATURE_VALUE_LIMIT + 1)
+                .collect::<Vec<_>>();
+            // Packed byte arrays occupy fewer stack elements than their field count.
+            // Keep them first-class until their packing is modeled by the lifter.
+            if Some(parts.len()) == bounded_lint_type_bits(ty).map(|bits| bits.div_ceil(32)) {
+                parts
+            } else {
+                vec![ty.clone()]
+            }
+        }
+        _ => vec![ty.clone()],
     }
 }
 
@@ -893,15 +989,22 @@ struct ProcedurePreparer<'a> {
     item: GlobalItemIndex,
     procedure: &'a Procedure,
     registry: &'a ModuleRegistry,
+    lint: bool,
     stack: Vec<StackValue>,
 }
 
 impl<'a> ProcedurePreparer<'a> {
-    fn new(item: GlobalItemIndex, procedure: &'a Procedure, registry: &'a ModuleRegistry) -> Self {
+    fn new(
+        item: GlobalItemIndex,
+        procedure: &'a Procedure,
+        registry: &'a ModuleRegistry,
+        lint: bool,
+    ) -> Self {
         Self {
             item,
             procedure,
             registry,
+            lint,
             stack: Vec::new(),
         }
     }
@@ -1476,7 +1579,12 @@ impl<'a> ProcedurePreparer<'a> {
             MemStream => self.mem_stream(span, builder),
             Caller => {
                 let value = builder.caller(span)?;
-                self.push_value(value, span);
+                if self.lint {
+                    let parts = builder.unpack_word(value, span)?;
+                    self.push_results_top_to_bottom(parts, span);
+                } else {
+                    self.push_value(value, span);
+                }
                 Ok(())
             }
             Clk => {
@@ -1853,9 +1961,11 @@ impl<'a> ProcedurePreparer<'a> {
         builder: &mut PreparationBuilder,
         span: SourceSpan,
     ) -> Result<Vec<Value>> {
-        let signature = &self.registry.signatures[&self.item];
-        let result_types: Vec<_> =
-            signature.results().iter().map(|result| result.ty.clone()).collect();
+        let result_types: Vec<_> = self.registry.signatures[&self.item]
+            .results()
+            .iter()
+            .map(|result| result.ty.clone())
+            .collect();
         let mut results = Vec::with_capacity(result_types.len());
         for result_ty in result_types {
             let value = self.pop(span)?;

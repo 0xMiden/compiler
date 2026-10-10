@@ -30,8 +30,11 @@ pub(crate) fn infer_signature(
     context: &Rc<Context>,
     linker: &Linker,
     signatures: &FxHashMap<GlobalItemIndex, Signature>,
+    physical_stack: bool,
 ) -> Result<Signature> {
     let mut state = InferState::new(gid, context, linker, signatures);
+    state.physical_stack = physical_stack;
+    state.caller_fields = physical_stack;
     state.infer_block(procedure.body())?;
 
     let params = state.inputs.iter().map(AbstractValue::ty_or_felt);
@@ -47,13 +50,19 @@ pub(crate) fn validate_declared_signature(
     linker: &Linker,
     signatures: &FxHashMap<GlobalItemIndex, Signature>,
     signature: &Signature,
+    physical_stack: bool,
 ) -> Result<()> {
     let mut state = InferState::new(gid, context, linker, signatures);
-    state.stack = signature
-        .params()
-        .iter()
+    state.physical_stack = physical_stack;
+    state.caller_fields = true;
+    let mut params = Vec::new();
+    for param in signature.params() {
+        params.extend(state.stack_types(&param.ty)?);
+    }
+    state.stack = params
+        .into_iter()
         .rev()
-        .map(|param| AbstractValue::typed(param.ty.clone(), procedure.span()))
+        .map(|ty| AbstractValue::typed(ty, procedure.span()))
         .collect();
     state.infer_block(procedure.body())?;
 
@@ -68,7 +77,11 @@ pub(crate) fn validate_declared_signature(
         )));
     }
 
-    let expected_results = signature.results().len();
+    let mut result_types = Vec::new();
+    for result in signature.results() {
+        result_types.extend(state.stack_types(&result.ty)?);
+    }
+    let expected_results = result_types.len();
     if state.stack.len() < expected_results {
         return Err(Report::msg(format!(
             "declared signature for '{}::{}' expects {} result value(s), but the body leaves only \
@@ -81,12 +94,25 @@ pub(crate) fn validate_declared_signature(
         )));
     }
 
-    for result in signature.results() {
+    for result_ty in result_types {
         let value = state
             .stack
             .pop()
             .expect("declared signature result count was checked before popping");
-        value.constrain(result.ty.clone(), procedure.span());
+        let actual_ty = value.ty();
+        if (result_ty.is_array() || actual_ty.as_ref().is_some_and(Type::is_array))
+            && actual_ty.as_ref().and_then(crate::lift::bounded_lint_type_bits)
+                != crate::lift::bounded_lint_type_bits(&result_ty)
+        {
+            return Err(Report::msg(format!(
+                "declared signature for '{}::{}' has a first-class array result with a mismatched \
+                 physical footprint at {}",
+                linker[gid.module].path(),
+                procedure.name(),
+                state.format_span(procedure.span())
+            )));
+        }
+        value.constrain(result_ty, procedure.span());
     }
 
     if !state.stack.is_empty() {
@@ -203,6 +229,8 @@ struct InferState<'a> {
     linker: &'a Linker,
     source_manager: Arc<dyn SourceManager>,
     signatures: &'a FxHashMap<GlobalItemIndex, Signature>,
+    physical_stack: bool,
+    caller_fields: bool,
 }
 
 impl<'a> InferState<'a> {
@@ -220,6 +248,8 @@ impl<'a> InferState<'a> {
             linker,
             source_manager: context.session().source_manager.clone(),
             signatures,
+            physical_stack: false,
+            caller_fields: false,
         }
     }
 
@@ -232,6 +262,8 @@ impl<'a> InferState<'a> {
             linker: self.linker,
             source_manager: self.source_manager.clone(),
             signatures: self.signatures,
+            physical_stack: self.physical_stack,
+            caller_fields: self.caller_fields,
         }
     }
 
@@ -586,12 +618,14 @@ impl<'a> InferState<'a> {
                 validate_memory_word_address(immediate_value(addr)?, span)?;
                 self.store_memory_word(false, span)
             }
-            Caller => {
-                self.push(Type::from(ArrayType::new(Type::Felt, 4)));
-                Ok(())
-            }
-            ProcRef(_) => {
-                self.push(Type::from(ArrayType::new(Type::Felt, 4)));
+            Caller | ProcRef(_) => {
+                if self.caller_fields {
+                    for _ in 0..4 {
+                        self.push(Type::Felt);
+                    }
+                } else {
+                    self.push(Type::from(ArrayType::new(Type::Felt, 4)));
+                }
                 Ok(())
             }
             Clk => {
@@ -911,12 +945,26 @@ impl<'a> InferState<'a> {
         };
 
         for param in signature.params() {
-            self.pop_with_type(param.ty.clone(), span)?;
+            for ty in self.stack_types(&param.ty)? {
+                self.pop_with_type(ty, span)?;
+            }
         }
         for result in signature.results().iter().rev() {
-            self.push(result.ty.clone());
+            for ty in self.stack_types(&result.ty)? {
+                self.push(ty);
+            }
         }
         Ok(())
+    }
+
+    fn stack_types(&self, ty: &Type) -> Result<Vec<Type>> {
+        if !self.physical_stack {
+            return Ok(vec![ty.clone()]);
+        }
+        let bits = crate::lift::bounded_lint_type_bits(ty).ok_or_else(|| {
+            Report::msg("physical stack type exceeds the lint signature footprint limit")
+        })?;
+        Ok(vec![Type::Felt; bits.div_ceil(32)])
     }
 
     fn push(&mut self, ty: Type) {

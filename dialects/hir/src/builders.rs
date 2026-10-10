@@ -196,6 +196,19 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    /// View a word as four field elements in operand-stack order.
+    fn unpack_word(&mut self, word: ValueRef, span: SourceSpan) -> Result<[ValueRef; 4], Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::UnpackWord, _>(span);
+        let op = op_builder(word)?;
+        let op = op.borrow();
+        Ok([
+            op.result0().as_value_ref(),
+            op.result1().as_value_ref(),
+            op.result2().as_value_ref(),
+            op.result3().as_value_ref(),
+        ])
+    }
+
     /// Return the current VM clock cycle.
     fn clk(&mut self, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Clk, _>(span);

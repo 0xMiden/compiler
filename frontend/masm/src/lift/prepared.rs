@@ -455,6 +455,12 @@ impl PreparationBuilder {
         )[0])
     }
 
+    pub(super) fn unpack_word(&mut self, word: Value, span: SourceSpan) -> Result<Vec<Value>> {
+        Ok(self.record(vec![word], vec![Type::Felt; 4], move |b, v| {
+            Ok(b.unpack_word(v[0], span)?.into_iter().collect())
+        }))
+    }
+
     pub(super) fn clk(&mut self, span: SourceSpan) -> Result<Value> {
         Ok(self.record(vec![], vec![Type::Felt], move |b, _| Ok(vec![b.clk(span)?]))[0])
     }

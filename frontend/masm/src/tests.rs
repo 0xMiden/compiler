@@ -1457,7 +1457,8 @@ end
         unreachable!()
     };
     let capture = capture.borrow();
-    let signature = infer::infer_signature(capture_id, &capture, &context, &linker, &signatures)?;
+    let signature =
+        infer::infer_signature(capture_id, &capture, &context, &linker, &signatures, false)?;
 
     assert_eq!(signature.params().len(), 0);
     assert_eq!(signature.results().len(), 1);
@@ -2214,6 +2215,253 @@ end
 
     Ok(())
 }
+#[test]
+fn lint_uses_physical_stack_parts_for_declared_signatures() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc reverse_word(value: word) -> word
+    reversew
+end
+
+pub proc swap_u64_halves(value: u64) -> u64
+    swap
+end
+
+pub proc reverse_nested(value: [[felt; 2]; 2]) -> [[felt; 2]; 2]
+    reversew
+end
+
+pub proc check_pointer(value: ptr<felt>) -> ptr<felt>
+    u32assert
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
+    for (name, count, ty) in [
+        ("reverse_word", 4, Type::Felt),
+        ("swap_u64_halves", 2, Type::U32),
+        ("reverse_nested", 4, Type::Felt),
+        ("check_pointer", 1, Type::U32),
+    ] {
+        let signature = find_function(output.module, name).borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), count);
+        assert_eq!(signature.results().len(), count);
+        assert!(signature.params().iter().all(|param| param.ty == ty));
+        assert!(signature.results().iter().all(|result| result.ty == ty));
+    }
+
+    Ok(())
+}
+
+#[test]
+fn lint_bounds_physical_array_signature_expansion() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc huge(value: [felt; 1000000]) -> [felt; 1000000]
+    nop
+end
+
+pub proc caller(value: [felt; 1000000]) -> [felt; 1000000]
+    exec.huge
+end
+
+pub proc clean(value: felt) -> felt
+    add.1
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    assert_eq!(output.skipped_procedures.len(), 2);
+    assert!(output.skipped_procedures.iter().any(|skipped| {
+        skipped.reason.contains("physical stack footprint")
+            && skipped.reason.contains("signature limit of 8")
+    }));
+    assert!(
+        output
+            .skipped_procedures
+            .iter()
+            .any(|skipped| { skipped.reason.contains("depends on skipped procedure") })
+    );
+    assert_eq!(find_function(output.module, "clean").borrow().get_signature().params().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn lint_preserves_caller_words_and_their_sink_findings() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc get_caller() -> word
+    caller
+end
+
+pub proc caller_with_word(value: word) -> (word, word)
+    caller
+end
+
+pub proc advice_before_caller() -> word
+    adv_push push.1 u32wrapping_add drop
+    caller
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
+    assert_eq!(top_level_op_count::<hir::Caller>(find_function(output.module, "get_caller")), 1);
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("advice_before_caller"));
+    Ok(())
+}
+
+#[test]
+fn lint_tracks_advice_after_partially_consuming_a_callee_word() -> Result<()> {
+    for declaration in ["() -> word", ""] {
+        let source = format!(
+            "proc get_caller{declaration}\n    caller\nend\n\npub proc entry() -> u32\n    \
+             exec.get_caller\n    drop drop drop\n    adv_push u32wrapping_add\nend\n"
+        );
+        let context = Rc::new(Context::default());
+        let output = disassemble_source_for_lint(
+            &source,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+        assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
+        let findings = advice_taint_findings(output.module)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+        assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+    }
+    Ok(())
+}
+
+#[test]
+fn lint_rejects_array_footprints_that_overflow_usize() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc huge(value: [[[felt; 1000000000]; 1000000000]; 1000000000]) -> felt
+    drop push.1
+end
+
+pub proc clean() -> felt
+    push.1
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    assert_eq!(output.skipped_procedures.len(), 1);
+    assert!(output.skipped_procedures[0].reason.contains("physical stack footprint"));
+    assert!(!module_has_function(output.module, "huge"));
+    let _ = find_function(output.module, "clean");
+    Ok(())
+}
+
+#[test]
+fn lint_does_not_cast_a_scalar_result_to_a_word() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        "pub proc bad() -> word\n    push.1\nend\n\npub proc clean() -> felt\n    push.1\nend\n",
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    assert_eq!(output.skipped_procedures.len(), 1);
+    assert!(!module_has_function(output.module, "bad"));
+    Ok(())
+}
+
+#[test]
+fn lint_keeps_advice_tainted_through_wide_scalar_identity() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+proc identity(value: u64) -> u64
+    nop
+end
+
+pub proc entry() -> u32
+    push.1 adv_push
+    exec.identity
+    u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
+    let findings = advice_taint_findings(output.module)?;
+    assert!(!findings.is_empty());
+    Ok(())
+}
+
+#[test]
+fn lint_preserves_same_size_packed_array_result_casts() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        "pub proc packed(value: [u8; 4]) -> felt\n    nop\nend\n",
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
+    let _ = find_function(output.module, "packed");
+    Ok(())
+}
+
+#[test]
+fn lint_bounds_nested_zero_sized_array_expansion() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let ty = (0..12).fold("[felt; 0]".to_string(), |ty, _| format!("[{ty}; 1000000000]"));
+    let source = format!("pub proc empty(value: {ty})\n    nop\nend\n");
+    let output =
+        disassemble_source_for_lint(&source, "test", &DisassemblerConfig::default(), context)?;
+    assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
+    assert!(
+        find_function(output.module, "empty")
+            .borrow()
+            .get_signature()
+            .params()
+            .is_empty()
+    );
+    Ok(())
+}
+
+#[test]
+fn lint_rejects_partial_consumption_of_compound_stack_values() -> Result<()> {
+    for bad in [
+        "pub proc bad(value: word) -> word\n    drop caller\nend\n",
+        "pub proc bad(value: [u8; 8])\n    drop\nend\n",
+    ] {
+        let source = format!("{bad}\npub proc clean() -> felt\n    push.1\nend\n");
+        let output = disassemble_source_for_lint(
+            &source,
+            "test",
+            &DisassemblerConfig::default(),
+            Rc::new(Context::default()),
+        )?;
+        assert_eq!(output.skipped_procedures.len(), 1, "{bad}");
+        assert!(!module_has_function(output.module, "bad"));
+    }
+    Ok(())
+}
+
 #[test]
 fn known_signature_array_alias_preserves_first_class_stack_value() -> Result<()> {
     let context = Rc::new(Context::default());
