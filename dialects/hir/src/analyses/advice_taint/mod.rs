@@ -77,8 +77,19 @@ impl AdviceTaintAnalysis {
         &self.external_call_findings
     }
 
-    pub fn diagnostics(&self, source_manager: &dyn SourceManager) -> Vec<AdviceTaintDiagnostic> {
+    /// Return sink findings selected for user-facing diagnostics.
+    ///
+    /// Structured renderers share the same selection as `diagnostics` and `reports`.
+    /// The `findings` accessor retains all raw solver findings.
+    pub fn diagnostic_findings(
+        &self,
+        source_manager: &dyn SourceManager,
+    ) -> Vec<&AdviceTaintFinding> {
         diagnostics::visible_advice_findings(&self.findings, source_manager)
+    }
+
+    pub fn diagnostics(&self, source_manager: &dyn SourceManager) -> Vec<AdviceTaintDiagnostic> {
+        self.diagnostic_findings(source_manager)
             .into_iter()
             .map(|finding| finding.diagnostic(source_manager))
             .chain(self.exit_findings.iter().map(|finding| finding.diagnostic(source_manager)))
@@ -91,7 +102,7 @@ impl AdviceTaintAnalysis {
     }
 
     pub fn reports(&self, source_manager: &dyn SourceManager) -> Vec<Report> {
-        diagnostics::visible_advice_findings(&self.findings, source_manager)
+        self.diagnostic_findings(source_manager)
             .into_iter()
             .map(|finding| finding.into_report(source_manager))
             .chain(self.exit_findings.iter().map(|finding| finding.into_report(source_manager)))
@@ -443,4 +454,67 @@ fn same_external_call_finding(
         && lhs.argument_index == rhs.argument_index
         && lhs.origin == rhs.origin
         && lhs.function == rhs.function
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+
+    use midenc_hir::{
+        Context, OperationName, SourceSpan, diagnostics::SourceLanguage, interner::Symbol,
+    };
+
+    use super::*;
+
+    #[test]
+    fn diagnostic_selection_prefers_user_source_without_changing_raw_findings() {
+        let context = Context::default();
+        let sources = context.source_manager();
+        let user = sources.load(
+            SourceLanguage::Rust,
+            "/project/main.rs".into(),
+            "let value = 0;\n".into(),
+        );
+        let internal = sources.load(
+            SourceLanguage::Rust,
+            "/compiler/sdk/internal.rs".into(),
+            "let value = 0;\n".into(),
+        );
+        let user_span = SourceSpan::new(user.id(), 0..1);
+        let internal_span = SourceSpan::new(internal.id(), 0..1);
+        let contexts = vec![AdviceTaintContext {
+            span: SourceSpan::new(user.id(), 4..5),
+            kind: AdviceTaintContextKind::CallArgument,
+        }];
+        let user_finding = AdviceTaintFinding {
+            sink: OperationName::new::<midenc_dialect_arith::Add>(Symbol::intern("arith"), vec![]),
+            sink_span: user_span,
+            advice_span: user_span,
+            origin: AdviceTaintOrigin::advice(user_span),
+            contexts: contexts.clone(),
+            function: None,
+        };
+        let internal_finding = AdviceTaintFinding {
+            sink: OperationName::new::<crate::ops::IntToPtr>(Symbol::intern("hir"), vec![]),
+            sink_span: internal_span,
+            ..user_finding.clone()
+        };
+        for findings in [
+            vec![internal_finding.clone(), user_finding.clone()],
+            vec![user_finding, internal_finding],
+        ] {
+            let analysis = AdviceTaintAnalysis {
+                findings,
+                ..Default::default()
+            };
+            let selected = analysis.diagnostic_findings(sources.as_ref());
+            assert_eq!(selected.len(), 1);
+            assert_eq!(selected[0].sink.to_string(), "arith.add");
+            assert_eq!(selected[0].sink_span, user_span);
+            assert_eq!(selected[0].contexts, contexts);
+            assert_eq!(analysis.findings().len(), 2);
+            assert_eq!(analysis.diagnostics(sources.as_ref()).len(), 1);
+            assert_eq!(analysis.reports(sources.as_ref()).len(), 1);
+        }
+    }
 }
