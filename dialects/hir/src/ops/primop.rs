@@ -28,6 +28,38 @@ impl InferTypeOpInterface for Caller {
     }
 }
 
+/// View a first-class word as four field elements in operand-stack order.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct UnpackWord {
+    #[operand]
+    word: AnyArrayOf<IntFelt>,
+    #[result]
+    result0: IntFelt,
+    #[result]
+    result1: IntFelt,
+    #[result]
+    result2: IntFelt,
+    #[result]
+    result3: IntFelt,
+}
+
+impl InferTypeOpInterface for UnpackWord {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        if self.word().ty() != Type::from(ArrayType::new(Type::Felt, 4)) {
+            return Err(Report::msg("hir.unpack_word requires a four-felt word"));
+        }
+        self.result0_mut().set_type(Type::Felt);
+        self.result1_mut().set_type(Type::Felt);
+        self.result2_mut().set_type(Type::Felt);
+        self.result3_mut().set_type(Type::Felt);
+        Ok(())
+    }
+}
+
 /// Return the current VM clock cycle.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(

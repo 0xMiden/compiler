@@ -176,8 +176,12 @@ mod tests {
 
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        Op, SourceSpan, Type, ValueRef,
-        dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, attributes::Signature},
+        ArrayType, Op, SourceSpan, Type, ValueRef,
+        dialects::builtin::{
+            BuiltinOpBuilder, FunctionBuilder,
+            attributes::{AdviceEffectDescriptor, AdviceResourceKind, Signature},
+        },
+        effects::AdviceEffect,
         pass::AnalysisManager,
         testing::Test,
     };
@@ -207,6 +211,38 @@ mod tests {
         let findings = advice_taint_findings(&test)?;
         assert!(findings.is_empty(), "checked cast should sanitize raw advice");
 
+        Ok(())
+    }
+
+    #[test]
+    fn unpack_word_preserves_unconstrained_external_results() -> Result<(), midenc_hir::Report> {
+        let span = SourceSpan::UNKNOWN;
+        for index in 0..4 {
+            let mut test = Test::named("unpack_external_word").in_module("m");
+            let word = Type::from(ArrayType::new(Type::Felt, 4));
+            let mut source =
+                test.define_function("external_word", &[], core::slice::from_ref(&word));
+            source.borrow_mut().advice_effects_mut().push(AdviceEffectDescriptor {
+                effect: AdviceEffect::Read,
+                resource: AdviceResourceKind::Stack,
+                argument: None,
+                result: Some(0),
+            });
+            let signature = Signature::new(&test.context_rc(), [], [word]);
+            let entry = test.define_function("entry", &[], &[Type::U32]);
+            {
+                let mut builder = FunctionBuilder::new(entry, test.builder_mut());
+                let call = builder.exec(source, signature, [], span)?;
+                let result = call.borrow().results().iter().next().unwrap().borrow().as_value_ref();
+                let part = builder.unpack_word(result, span)?[index];
+                let part = builder.unrealized_conversion_cast(part, Type::U32, span)?;
+                let one = builder.u32(1, span);
+                let sum = builder.add(part, one, span)?;
+                builder.ret([sum], span)?;
+            }
+            let findings = module_advice_taint_findings(&test)?;
+            assert_eq!(sink_names(&findings), ["arith.add"], "word element {index}");
+        }
         Ok(())
     }
 
