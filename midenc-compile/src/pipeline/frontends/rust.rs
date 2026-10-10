@@ -37,7 +37,9 @@ use miden_mast_package::Package as MastPackage;
 use midenc_frontend_wasm_metadata::package_cache;
 use midenc_hir::{Context, formatter::DisplayMany};
 use midenc_package_interface::PackageInterface;
-use midenc_session::{FileType, InputFile, InputType, Options, Session, diagnostics::Report};
+use midenc_session::{
+    FileType, InputFile, InputType, Options, Session, canonical_temp_dir, diagnostics::Report,
+};
 
 use super::wasm::{WasmFrontend, WasmSource};
 use crate::{
@@ -551,7 +553,7 @@ fn prepare_temporary_cargo_project(
     filename: &OsStr,
     session: &Session,
 ) -> CompilerResult<PathBuf> {
-    let tmp = std::env::temp_dir().canonicalize().unwrap();
+    let tmp = canonical_temp_dir()?;
     let project_dir = tmp.join(session.name.as_str());
     let src_dir = project_dir.join("src");
     let tmp_rs = src_dir.join(filename);
