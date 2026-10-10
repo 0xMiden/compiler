@@ -508,6 +508,55 @@ mod tests {
     use super::*;
     use crate::{OperandStack, linker::LinkInfo};
 
+    #[test]
+    fn unpack_word_preserves_each_element_in_vm_execution() -> Result<(), Report> {
+        use miden_processor::{DefaultHost, FastProcessor, Felt, StackInputs};
+        use midenc_hir::ArrayType;
+
+        let mut test = Test::new(
+            "unpack_word_order",
+            &[Type::from(ArrayType::new(Type::Felt, 4))],
+            &[const { Type::Felt }; 4],
+        );
+        let function_ref = test.function();
+        let word = {
+            let mut builder = test.function_builder();
+            let word = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let parts = builder.unpack_word(word, SourceSpan::UNKNOWN)?;
+            builder.ret([parts[2], parts[0], parts[3], parts[1]], SourceSpan::UNKNOWN)?;
+            word
+        };
+        let manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
+        let liveness = manager.get_analysis::<LivenessAnalysis>()?;
+        let link_info = LinkInfo::new(None);
+        let mut stack = OperandStack::new(test.context_rc());
+        stack.push(word);
+        let mut invoked = Default::default();
+        let emitter = BlockEmitter {
+            frame: Default::default(),
+            liveness: &liveness,
+            emit_inline_calls: false,
+            link_info: &link_info,
+            invoked: &mut invoked,
+            target: Default::default(),
+            stack,
+            trace_target: TraceTarget::category("codegen"),
+        };
+        let function = function_ref.borrow();
+        let body = emitter.emit(&function.entry_block().borrow()).to_pretty_string();
+        let package = miden_assembly::Assembler::default()
+            .assemble_program("unpack_word_order", format!("begin{body}\nend"))?;
+        let program = package.try_into_program()?;
+        let values = [11, 22, 33, 44].map(Felt::new_unchecked);
+        let output = FastProcessor::new(StackInputs::new(&values).unwrap())
+            .execute_sync(&program, &mut DefaultHost::default())
+            .map_err(|error| Report::msg(error.to_string()))?;
+        for (index, expected) in [33, 11, 44, 22].into_iter().enumerate() {
+            assert_eq!(output.stack.get_element(index), Some(Felt::new_unchecked(expected)));
+        }
+        Ok(())
+    }
+
     #[derive(Copy, Clone)]
     enum UnaryAssertionKind {
         Assert,
