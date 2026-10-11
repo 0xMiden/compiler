@@ -8,7 +8,9 @@ sidebar_position: 2
 The `midenc` executable is the command-line interface for the compiler driver. Use the separate
 `miden-debug` executable to execute and debug compiled packages.
 
-While it is a lower-level tool compared to `cargo-miden`, just like the difference between `rustc` and `cargo`, it provides a lot of functionality for emitting diagnostic information, controlling the output of the compiler, and configuring the compilation pipeline. Most users will want to use `cargo-miden`, but understanding `midenc` is helpful for those times where you need to get your hands dirty.
+`midenc` exposes compiler options for diagnostics and each compilation phase.
+Most projects use `cargo-miden`. Use `midenc` to compile an existing Wasm module
+or inspect intermediate output.
 
 ## Installation
 
@@ -17,7 +19,7 @@ To install `midenc`, you have two choices:
 1. Install via [`midenup`](https://github.com/0xMiden/midenup), which also handles other toolchain components that you'll likely want.
 2. Install from source
 
-We'll cover installation from source here - see the `midenup` README for details on how to install Miden components that way.
+The commands below install from source. See the `midenup` README for installation through its toolchain manager.
 
 
 First, clone the compiler repo:
@@ -69,7 +71,7 @@ Options:
 ..snip..
 ```
 
-The actual help output covers quite a bit more than that - see the actual command output for the full picture.
+Run `midenc --help` to see the full set of options.
 
 ## Compilation
 
@@ -101,7 +103,11 @@ Lastly, we're configuring the output:
 midenc --stop-after=transform --emit=hir=- foo.wasm
 ```
 
-`CHECKPOINT` is either an alias — `parse`, `analyze`, `transform`, `lower`, `assemble` — or a fully-qualified checkpoint id such as `hir.initial`. Which names are valid depends on the input: each frontend declares its own route, and a name that route does not reach is reported along with the names it does accept. A Miden Assembly input, for example, has no `transform` phase.
+`CHECKPOINT` accepts an alias such as `transform` or a fully-qualified id such as
+`hir.initial`. Other aliases include `parse` and `analyze` for early phases, with
+`lower` and `assemble` for later phases. Each frontend declares the
+checkpoints it reaches. An invalid name is reported along with the accepted names.
+A Miden Assembly input, for example, has no `transform` phase.
 
 ## Debugging
 
@@ -125,6 +131,6 @@ cargo miden new my-account --account  # a single account component
 
 The available templates are `--account`, `--note`, `--tx-script`,
 `--auth-component`, and `--program`. Their sources live in this repository under
-[`extra/templates`](https://github.com/0xMiden/compiler/tree/main/extra/templates)
+[`extra/.templates`](https://github.com/0xMiden/compiler/tree/main/extra/.templates)
 and are released independently of the compiler, so `cargo miden new` picks up
 template updates without you reinstalling `cargo-miden`.

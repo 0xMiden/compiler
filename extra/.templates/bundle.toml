@@ -24,7 +24,7 @@ sdk-requirement = "0.15"
 # What goes into the released archive.
 #
 # Only the templates themselves: the directories a generated project is rendered
-# from. Everything else under `extra/templates/rust` -- the README, LICENSE,
+# from. Everything else under `extra/.templates/rust` -- the README, LICENSE,
 # .gitignore, rust-toolchain, and the .github workflows inherited from the
 # imported repository -- is repository furniture, not template content.
 #

@@ -15,7 +15,7 @@ use crate::utils::current_dir_lock;
 
 const CANONICAL_BUILD_SCRIPT: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../extra/templates/rust/account/template/build.rs"
+    "/../../extra/.templates/rust/account/template/build.rs"
 ));
 
 fn scratch(label: &str) -> std::path::PathBuf {

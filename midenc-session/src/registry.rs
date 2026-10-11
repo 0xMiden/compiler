@@ -1,6 +1,6 @@
 use alloc::{collections::BTreeMap, format, sync::Arc};
 
-#[cfg(any(test, feature = "std"))]
+#[cfg(feature = "std")]
 use anyhow::anyhow;
 use miden_assembly_syntax::{
     Report,
@@ -23,7 +23,7 @@ enum InstallPackageError {
         package: PackageId,
         version: miden_project::Version,
     },
-    #[cfg(any(test, feature = "std"))]
+    #[cfg(feature = "std")]
     #[error("failed to write {package} to filesystem cache: {err}")]
     FilesystemCacheInsertion {
         package: PackageId,
@@ -40,7 +40,7 @@ enum InstallPackageError {
 pub struct HybridPackageRegistry {
     packages: FxHashMap<PackageId, PackageVersions>,
     artifacts: FxHashMap<PackageId, BTreeMap<miden_package_registry::Version, Arc<Package>>>,
-    #[cfg(any(test, feature = "std"))]
+    #[cfg(feature = "std")]
     filesystem_cache: Option<std::path::PathBuf>,
     /// Keeps the owning session's package-cache lease alive for this registry's lifetime.
     ///
@@ -52,7 +52,7 @@ pub struct HybridPackageRegistry {
 }
 
 impl HybridPackageRegistry {
-    #[cfg(any(test, feature = "std"))]
+    #[cfg(feature = "std")]
     pub fn filesystem_cache_dir(&self) -> Option<&std::path::Path> {
         self.filesystem_cache.as_deref()
     }
@@ -74,7 +74,7 @@ impl HybridPackageRegistry {
         Self {
             packages: Default::default(),
             artifacts: Default::default(),
-            #[cfg(any(test, feature = "std"))]
+            #[cfg(feature = "std")]
             filesystem_cache: None,
             #[cfg(feature = "std")]
             _filesystem_cache_lease: None,
@@ -82,7 +82,7 @@ impl HybridPackageRegistry {
     }
 
     /// Get a new instance of the registry, using the current compiler options
-    #[cfg(any(test, feature = "std"))]
+    #[cfg(feature = "std")]
     pub fn new(options: &crate::Options) -> Result<Self, Report> {
         Self::new_with_filesystem_cache(options, None)
     }
@@ -98,7 +98,7 @@ impl HybridPackageRegistry {
     /// A creation failure keeps the cache configured, so the first package publication
     /// reports the concrete filesystem error to the caller instead of silently compiling
     /// without a package exchange.
-    #[cfg(any(test, feature = "std"))]
+    #[cfg(feature = "std")]
     pub fn new_with_filesystem_cache(
         options: &crate::Options,
         filesystem_cache: Option<std::path::PathBuf>,
@@ -116,7 +116,7 @@ impl HybridPackageRegistry {
     }
 
     /// Builds the registry with system libraries, link libraries, and the given cache state.
-    #[cfg(any(test, feature = "std"))]
+    #[cfg(feature = "std")]
     fn construct(
         options: &crate::Options,
         filesystem_cache: Option<std::path::PathBuf>,
@@ -158,7 +158,7 @@ impl HybridPackageRegistry {
     /// based package store.
     ///
     /// This returns an error if `--sysroot` was not provided/set.
-    #[cfg(any(test, feature = "std"))]
+    #[cfg(feature = "std")]
     pub fn from_local_registry(options: &crate::Options) -> Result<Self, Report> {
         let mut registry = Self::empty();
         registry.load_local_registry(options)?;
@@ -170,7 +170,7 @@ impl HybridPackageRegistry {
     /// Unlike [`Self::from_local_registry`], this preserves the receiver's configured
     /// filesystem cache, so callers that publish an artifact exchange can configure it before
     /// any sysroot package is installed.
-    #[cfg(any(test, feature = "std"))]
+    #[cfg(feature = "std")]
     fn load_local_registry(&mut self, options: &crate::Options) -> Result<(), Report> {
         use alloc::string::ToString;
 
@@ -263,7 +263,7 @@ impl HybridPackageRegistry {
         // failed write leaves both untouched and the two can never disagree about what is
         // installed. The incumbent's cached file is protected by the digest conflict check
         // above, which returns before reaching here.
-        #[cfg(any(test, feature = "std"))]
+        #[cfg(feature = "std")]
         if let Some(filesystem_cache) = self.filesystem_cache.as_deref() {
             write_package_atomically_as(&package, filesystem_cache, _published_file_name).map_err(
                 |err| InstallPackageError::FilesystemCacheInsertion {
@@ -322,7 +322,7 @@ impl HybridPackageRegistry {
 /// `#[account(..)]` proc macro of a dependent crate deserializes a dependency's `.masp` while a
 /// parallel build of that dependency may be rewriting it — and the rename guarantees a reader
 /// only ever observes a complete artifact.
-#[cfg(any(test, feature = "std"))]
+#[cfg(feature = "std")]
 pub fn write_package_atomically(
     package: &Package,
     out_dir: &std::path::Path,
@@ -331,7 +331,7 @@ pub fn write_package_atomically(
 }
 
 /// Publishes `package` atomically, using `file_name` when one is supplied.
-#[cfg(any(test, feature = "std"))]
+#[cfg(feature = "std")]
 pub fn write_package_atomically_as(
     package: &Package,
     out_dir: &std::path::Path,
@@ -356,7 +356,7 @@ pub fn write_package_atomically_as(
 /// [`write_package_atomically`], for the other files the compiler places into the shared
 /// cache directory — the recorded dependency resolution, whose readers are the same
 /// population as the packages'.
-#[cfg(any(test, feature = "std"))]
+#[cfg(feature = "std")]
 pub fn write_file_atomically(path: &std::path::Path, bytes: &[u8]) -> anyhow::Result<()> {
     persist_atomically(path, |temp_path| {
         std::fs::write(temp_path, bytes).map_err(|err| anyhow!("failed to write to file: {err}"))
@@ -368,7 +368,7 @@ pub fn write_file_atomically(path: &std::path::Path, bytes: &[u8]) -> anyhow::Re
 /// Temporary files default to mode 0o600, and the published file must stay readable by the
 /// other build processes that share the cache directory, so the mode is widened to 0o666
 /// (the process umask still applies).
-#[cfg(any(test, feature = "std"))]
+#[cfg(feature = "std")]
 pub fn persist_atomically(
     path: &std::path::Path,
     write: impl FnOnce(&std::path::Path) -> anyhow::Result<()>,
@@ -476,7 +476,7 @@ impl PackageStore for HybridPackageRegistry {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 pub(crate) mod tests {
     use alloc::boxed::Box;
 

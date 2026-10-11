@@ -65,7 +65,13 @@ pub enum InvalidComponentIdError {
     MissingVersion,
     #[error("invalid component version: {0}")]
     #[diagnostic()]
-    InvalidVersion(#[from] crate::version::semver::Error),
+    InvalidVersion(#[cfg_attr(feature = "std", source)] crate::version::semver::Error),
+}
+
+impl From<crate::version::semver::Error> for InvalidComponentIdError {
+    fn from(error: crate::version::semver::Error) -> Self {
+        Self::InvalidVersion(error)
+    }
 }
 
 impl TryFrom<&SymbolPath> for ComponentId {

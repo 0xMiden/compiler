@@ -6,9 +6,9 @@
 //! to the released `templates/v*` archive by comparing that digest.
 //!
 //! The archive is committed at `templates.tar.gz` rather than generated here
-//! from `extra/templates`. That is not a preference: this crate is published,
+//! from `extra/.templates`. That is not a preference: this crate is published,
 //! and a `.crate` cannot contain files from outside the package directory, so
-//! a build script reading `../../extra/templates` would work in this repository
+//! a build script reading `../../extra/.templates` would work in this repository
 //! and fail for everyone building from crates.io.
 //!
 //! The archive is produced by `release-tool bundle`, and `release-tool lint`
@@ -56,7 +56,7 @@ fn main() {
 /// Read `version` out of the `bundle.toml` inside the archive.
 ///
 /// The manifest is inside the gzipped tar, which is the only copy this crate
-/// has: `extra/templates/bundle.toml` lives outside the package directory and
+/// has: `extra/.templates/bundle.toml` lives outside the package directory and
 /// is unreadable when building from a published `.crate`.
 fn bundle_version(archive: &[u8]) -> String {
     use std::io::Read;

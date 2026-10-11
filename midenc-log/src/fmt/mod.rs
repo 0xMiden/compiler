@@ -250,6 +250,9 @@ struct StyledValue<T> {
     value: T,
 }
 
+#[cfg(all(not(feature = "color"), feature = "kv"))]
+type StyledValue<T> = T;
+
 #[cfg(feature = "color")]
 impl<T: Display> Display for StyledValue<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -263,9 +266,6 @@ impl<T: Display> Display for StyledValue<T> {
         Ok(())
     }
 }
-
-#[cfg(not(feature = "color"))]
-type StyledValue<T> = T;
 
 /// A [custom format][crate::Builder::format] with settings for which fields to show
 pub struct ConfigurableFormat {

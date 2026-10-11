@@ -1,15 +1,20 @@
 use alloc::sync::Arc;
-use core::{fmt, ops::ControlFlow};
+use core::fmt;
+#[cfg(any(feature = "std", test))]
+use core::ops::ControlFlow;
 
-use miden_assembly::{Path, ProjectSourceInputs, ast::InvocationTarget};
+use miden_assembly::Path;
+#[cfg(any(feature = "std", test))]
+use miden_assembly::{ProjectSourceInputs, ast::InvocationTarget};
 use miden_core::Word;
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
-use midenc_session::{
-    Emit, OutputMode, OutputType, Session, Writer,
-    diagnostics::{IntoDiagnostic, Report, SourceSpan, Span, WrapErr},
-};
+#[cfg(any(feature = "std", test))]
+use midenc_session::diagnostics::{IntoDiagnostic, Report, SourceSpan, Span, WrapErr};
+use midenc_session::{Emit, OutputMode, OutputType, Session, Writer};
 
-use crate::{Event, lower::NativePtr, masm};
+#[cfg(any(feature = "std", test))]
+use crate::Event;
+use crate::{lower::NativePtr, masm};
 
 pub struct MasmComponent {
     pub id: Option<builtin::ComponentId>,
@@ -164,6 +169,7 @@ impl fmt::Display for MasmComponent {
     }
 }
 
+#[cfg(any(feature = "std", test))]
 impl MasmComponent {
     pub fn source_inputs(
         &self,
@@ -422,11 +428,13 @@ impl MasmComponent {
 ///
 /// Paths that are not under `from` — the intrinsics and the core library, notably — are left
 /// alone, which is what confines this to the component's own modules.
+#[cfg(any(feature = "std", test))]
 struct Rebase<'a> {
     from: &'a Path,
     to: &'a Path,
 }
 
+#[cfg(any(feature = "std", test))]
 impl Rebase<'_> {
     /// Move `module`, and everything it refers to within the component, under [`Self::to`].
     fn apply(&mut self, module: &mut masm::Module) {
@@ -496,6 +504,7 @@ impl Rebase<'_> {
     }
 }
 
+#[cfg(any(feature = "std", test))]
 impl masm::visit::VisitMut for Rebase<'_> {
     /// Every call-like instruction reaches this, as `exec`, `call`, `syscall` and `procref` all
     /// funnel through it.

@@ -1,3 +1,5 @@
+#![cfg(feature = "std")]
+
 use std::{path::Path, rc::Rc};
 
 use miden_assembly::{ProjectSourceProvenanceInputs, SourceFileProvenance};

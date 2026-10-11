@@ -23,7 +23,7 @@ changelog = "sdk/CHANGELOG.md"
 changelog-headings = ["Added", "Changed", "Fixed", "Migration and breaking changes"]
 
 # Publishes an archive rather than crates, so no package is ever assigned to it.
-# Its version lives in `extra/templates/bundle.toml`.
+# Its version lives in `extra/.templates/bundle.toml`.
 [units.templates]
 kind = "artifact"
 tag = "templates/v{version}"
@@ -32,7 +32,8 @@ changelog-headings = ["Templates", "SDK compatibility"]
 assets = ["templates.tar.gz"]
 
 [units.templates.source]
-directory = "extra/templates"
+# Cargo's Git package discovery skips hidden directories containing template manifests.
+directory = "extra/.templates"
 # The manifest is the include list: the archive must contain everything
 # `cargo miden new` renders from and nothing else. Repository furniture beside
 # the templates would confuse a generated project or fail to resolve outside

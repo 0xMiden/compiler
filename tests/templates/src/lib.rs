@@ -130,7 +130,7 @@ fn workspace_root() -> PathBuf {
 
 /// The directory holding the `rust/` templates this crate builds.
 fn templates_root() -> PathBuf {
-    workspace_root().join("extra/templates/rust")
+    workspace_root().join("extra/.templates/rust")
 }
 
 /// Builds the `cargo miden new` argument vector for `template` into a project
@@ -139,7 +139,7 @@ fn templates_root() -> PathBuf {
 fn new_project_args(name: &str, template: Option<&str>) -> Vec<String> {
     let template_path = match template {
         Some(template) => templates_root().join(template),
-        None => workspace_root().join("extra/templates/project"),
+        None => workspace_root().join("extra/.templates/project"),
     };
     let compiler_path = workspace_root();
     vec![

@@ -612,6 +612,25 @@ args = [
     "warnings",
 ]
 
+[tasks.lint]
+category = "Development"
+description = "Checks formatting and Rust lints across the workspace"
+dependencies = ["check-format", "clippy"]
+
+[tasks.check-features]
+category = "Test"
+description = "Checks each workspace feature with warnings denied"
+env.RUSTFLAGS = "-D warnings"
+script = ['''
+#!/usr/bin/env bash
+set -euo pipefail
+# The symbol crate supports no_std only on WebAssembly; check its host std and Wasm features below.
+cargo hack check --locked --workspace --exclude midenc-hir-symbol --each-feature --exclude-features default
+cargo hack check --locked --workspace --exclude midenc-hir-symbol --each-feature --exclude-features default --all-targets
+cargo hack check --locked --manifest-path hir-symbol/Cargo.toml --each-feature --features std --exclude-features default --all-targets
+cargo hack check --locked --manifest-path hir-symbol/Cargo.toml --target wasm32-unknown-unknown --each-feature --exclude-features default,std --all-targets
+''']
+
 [tasks.publish-dry-run]
 category = "Test"
 description = "Simulate publishing to uncover any build errors when each crate folder is built in isolation"

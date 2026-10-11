@@ -476,9 +476,12 @@ impl Options {
             return;
         };
         let sysroot = home.join("toolchains").join(toolchain);
-        let lib_dir = sysroot.join("lib");
-        if lib_dir.try_exists().is_ok_and(|exists| exists) {
-            self.search_paths.push(lib_dir);
+        #[cfg(feature = "std")]
+        {
+            let lib_dir = sysroot.join("lib");
+            if lib_dir.try_exists().is_ok_and(|exists| exists) {
+                self.search_paths.push(lib_dir);
+            }
         }
         self.sysroot = Some(sysroot);
     }

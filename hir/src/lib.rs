@@ -43,7 +43,7 @@
 
 extern crate alloc;
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", test))]
 extern crate std;
 
 extern crate self as midenc_hir;

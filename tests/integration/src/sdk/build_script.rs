@@ -27,7 +27,7 @@ use crate::cargo_proj::project;
 /// The canonical contract build-script wrapper; every template ships these exact bytes.
 const TEMPLATE_BUILD_SCRIPT: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../extra/templates/rust/account/template/build.rs"
+    "/../../extra/.templates/rust/account/template/build.rs"
 ));
 
 /// Returns the repository root of this workspace.
@@ -48,7 +48,7 @@ fn build_script_support_crate_path() -> PathBuf {
 /// contain no protocol details that can drift independently.
 #[test]
 fn template_build_scripts_are_identical() {
-    let templates = workspace_root().join("extra").join("templates");
+    let templates = workspace_root().join("extra").join(".templates");
     let mut copies = Vec::new();
 
     // Every cargo-generate contract template must carry the script; discovery instead of a

@@ -864,6 +864,7 @@ impl ProjectManifest {
         }
     }
 
+    #[cfg(feature = "std")]
     fn parse(source: Arc<diagnostics::SourceFile>) -> Result<Self, Report> {
         let package = match miden_project::ast::MidenProject::parse(source)? {
             miden_project::ast::MidenProject::Package(package) => package,
@@ -889,6 +890,11 @@ impl ProjectManifest {
                 .map(Span::into_inner)
                 .collect(),
         })
+    }
+
+    #[cfg(not(feature = "std"))]
+    fn parse(_source: Arc<diagnostics::SourceFile>) -> Result<Self, Report> {
+        Err(Report::msg("project manifest parsing requires the std feature"))
     }
 }
 
@@ -939,7 +945,7 @@ fn create_target_dir(path: &Path) {
 #[cfg(not(feature = "std"))]
 fn create_target_dir(_path: &Path) {}
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use alloc::sync::Arc;
 
