@@ -464,6 +464,14 @@ jobs:
         # unification and avoid surprises on publishing the crates.
         run: |
           cargo make check-each --release --all-features
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: cargo-hack@0.6.44
+      - name: Check feature configurations
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo make check-features
 
   dependency_tiers:
     name: Compiler unit should not depend on Miden packages, protocol, or client crates
