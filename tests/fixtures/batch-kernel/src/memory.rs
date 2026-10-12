@@ -24,15 +24,27 @@ pub const MAX_TRANSACTIONS_PER_BATCH: usize = 1024;
 /// Equals `MAX_INPUT_NOTES_PER_BATCH` = `MAX_OUTPUT_NOTES_PER_BATCH` in the protocol.
 pub const MAX_NOTES_PER_BATCH: usize = 1024;
 
+/// Number of felts in a word.
+pub const WORD_FELT_LEN: usize = 4;
+
 /// Number of felts each transaction tuple occupies in the Layer 1 piped data.
 pub const TX_TUPLE_FELT_LEN: usize = 8;
+
+/// Number of words each transaction tuple occupies in the Layer 1 piped data.
+pub const TX_TUPLE_WORD_LEN: usize = TX_TUPLE_FELT_LEN / WORD_FELT_LEN;
 
 /// Number of felts each transaction header occupies in the Layer 2 piped data. This must match
 /// the felt-sequence layout of `TransactionId::new`.
 pub const TX_HEADER_FELT_LEN: usize = 16;
 
+/// Number of words each transaction header occupies in the Layer 2 piped data.
+pub const TX_HEADER_WORD_LEN: usize = TX_HEADER_FELT_LEN / WORD_FELT_LEN;
+
 /// Number of felts each note occupies in a sorted note list entry (KEY word + VALUE word).
 pub const NOTE_ENTRY_FELT_LEN: usize = 8;
+
+/// A sorted note list entry: the KEY word followed by the VALUE word.
+pub type NoteEntry = [Felt; NOTE_ENTRY_FELT_LEN];
 
 /// Stride of the parallel input-note flag array: `[erasure, consumed]` per entry.
 pub const INPUT_FLAGS_STRIDE: usize = 2;
@@ -71,30 +83,52 @@ pub fn erasure_erased() -> Felt {
 // FLAT LIST ACCESSORS
 // =================================================================================================
 
-/// Returns the KEY word (the first 4 felts) of entry `index` of a flat note list.
+// The accessors view flat buffers as fixed-size arrays (`as_chunks`) and index those: one bounds
+// check per entry, and the words inside an entry are reached at constant offsets with no checks
+// at all, where slicing `buffer[start..start + 4]` costs an overflow check, two bounds compares
+// and a length check per word.
+
+/// Views a flat note list as its entries. The list length is a multiple of the entry length (the
+/// loaders assert it), so no felts are left over.
+#[inline(always)]
+pub fn note_entries(list: &[Felt]) -> &[NoteEntry] {
+    list.as_chunks().0
+}
+
+/// Returns the KEY word (the first 4 felts) of a note entry.
+#[inline(always)]
+pub fn entry_key(entry: &NoteEntry) -> &[Felt; 4] {
+    entry.first_chunk().unwrap()
+}
+
+/// Returns the VALUE word (the last 4 felts) of a note entry.
+#[inline(always)]
+pub fn entry_value(entry: &NoteEntry) -> &[Felt; 4] {
+    entry.last_chunk().unwrap()
+}
+
+/// Returns the KEY word of entry `index` of a flat note list.
 #[inline(always)]
 pub fn note_key(list: &[Felt], index: usize) -> &[Felt; 4] {
-    word_at(list, index * NOTE_ENTRY_FELT_LEN)
+    entry_key(&note_entries(list)[index])
 }
 
-/// Returns the VALUE word (the last 4 felts) of entry `index` of a flat note list.
+/// Returns the VALUE word of entry `index` of a flat note list.
 #[inline(always)]
 pub fn note_value(list: &[Felt], index: usize) -> &[Felt; 4] {
-    word_at(list, index * NOTE_ENTRY_FELT_LEN + 4)
+    entry_value(&note_entries(list)[index])
 }
 
-/// Returns the 4-felt word at felt offset `start` of a flat felt buffer.
+/// Returns word `index` of a flat felt buffer whose length is a multiple of the word length.
 #[inline(always)]
-pub fn word_at(buffer: &[Felt], start: usize) -> &[Felt; 4] {
-    (&buffer[start..start + 4]).try_into().unwrap()
+pub fn nth_word(buffer: &[Felt], index: usize) -> &[Felt; 4] {
+    &buffer.as_chunks().0[index]
 }
 
-/// Copies the 4-felt word at felt offset `start` of a flat felt buffer into a [`Word`] (needed
-/// where an intrinsic takes a `Word` by value).
+/// Copies a 4-felt word into a [`Word`] (needed where an intrinsic takes a `Word` by value).
 #[inline(always)]
-pub fn load_word(buffer: &[Felt], start: usize) -> Word {
-    let felts = word_at(buffer, start);
-    Word::from([felts[0], felts[1], felts[2], felts[3]])
+pub fn to_word(felts: &[Felt; 4]) -> Word {
+    Word::from(*felts)
 }
 
 /// Returns whether the 4-felt word `word` is the empty word.
@@ -155,19 +189,19 @@ impl BatchMemory {
     /// Returns the verified `TransactionId` of transaction `tx_index`.
     #[inline(always)]
     pub fn tx_id(&self, tx_index: usize) -> Word {
-        load_word(&self.tx_tuples, tx_index * TX_TUPLE_FELT_LEN)
+        to_word(nth_word(&self.tx_tuples, tx_index * TX_TUPLE_WORD_LEN))
     }
 
     /// Returns the verified per-transaction `INPUT_NOTES_COMMITMENT` for transaction `tx_index`.
     #[inline(always)]
     pub fn tx_input_notes_commitment(&self, tx_index: usize) -> &[Felt; 4] {
-        word_at(&self.tx_headers, tx_index * TX_HEADER_FELT_LEN + 8)
+        nth_word(&self.tx_headers, tx_index * TX_HEADER_WORD_LEN + 2)
     }
 
     /// Returns the verified per-transaction `OUTPUT_NOTES_COMMITMENT` for transaction `tx_index`.
     #[inline(always)]
     pub fn tx_output_notes_commitment(&self, tx_index: usize) -> &[Felt; 4] {
-        word_at(&self.tx_headers, tx_index * TX_HEADER_FELT_LEN + 12)
+        nth_word(&self.tx_headers, tx_index * TX_HEADER_WORD_LEN + 3)
     }
 
     /// Returns the offset of the output-note flags within the shared flag buffer.

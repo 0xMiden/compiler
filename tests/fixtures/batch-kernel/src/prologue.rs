@@ -16,6 +16,7 @@ use crate::{
     memory::{
         self, BatchMemory, INPUT_FLAGS_STRIDE, MAX_NOTES_PER_BATCH, MAX_TRANSACTIONS_PER_BATCH,
         NOTE_ENTRY_FELT_LEN, OUTPUT_FLAGS_STRIDE, TX_HEADER_FELT_LEN, TX_TUPLE_FELT_LEN,
+        TX_TUPLE_WORD_LEN,
     },
     note_tracker,
 };
@@ -77,13 +78,13 @@ fn load_note_list(key: Word) -> Vec<Felt> {
 /// no duplicate keys.
 #[inline(always)]
 fn assert_list_strictly_sorted(list: &[Felt]) {
-    let mut entries = list.chunks_exact(NOTE_ENTRY_FELT_LEN);
+    let mut entries = memory::note_entries(list).iter();
     let Some(mut previous) = entries.next() else {
         return;
     };
     for current in entries {
         assert!(
-            note_tracker::word_lt(memory::word_at(previous, 0), memory::word_at(current, 0)),
+            note_tracker::word_lt(memory::entry_key(previous), memory::entry_key(current)),
             "a batch note list is not strictly sorted by its key"
         );
         previous = current;
@@ -190,7 +191,7 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
 
     let mut tx_headers: Vec<Felt> = Vec::with_capacity(num_transactions * TX_HEADER_FELT_LEN);
     for tx_index in 0..num_transactions {
-        let tx_id = memory::load_word(&tx_tuples, tx_index * TX_TUPLE_FELT_LEN);
+        let tx_id = memory::to_word(memory::nth_word(&tx_tuples, tx_index * TX_TUPLE_WORD_LEN));
         let len_felts = adv_push_mapvaln(tx_id).as_canonical_u64() as usize;
         // Headers occupy fixed 16-felt slots in the MASM kernel.
         assert!(
