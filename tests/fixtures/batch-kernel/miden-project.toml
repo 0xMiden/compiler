@@ -8,3 +8,9 @@ path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"
+
+# `release` code plus the package debug-info section, for the `batch_kernel_profile` cycle
+# profiler (callstack frame names and source locations in the debug executor).
+[profile.profiling]
+inherits = "release"
+debug = true

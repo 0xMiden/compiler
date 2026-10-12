@@ -647,7 +647,7 @@ trim-paths = [\"diagnostics\", \"object\"]
 
     let cargo_build_args = build_cargo_args(
         Some(&manifest_path),
-        options.profile == "release",
+        &options.profile,
         options.workspace,
         &options.packages,
         (options.cargo_locked, options.cargo_offline),
@@ -856,9 +856,13 @@ fn rustc(
 }
 
 /// Builds the shared argument vector for a nested `cargo build` invocation.
+///
+/// `profile` is the Miden build profile, which selects the Cargo profile of the same name: `dev`
+/// and `release` are Cargo's built-ins, any other name must be defined by the `Cargo.toml`
+/// (typically inheriting `release`), exactly as `cargo build --profile` requires.
 pub(super) fn build_cargo_args<P: core::fmt::Display>(
     manifest_path: Option<&Path>,
-    release: bool,
+    profile: &str,
     workspace: bool,
     packages: &[P],
     cargo_policy: (bool, bool),
@@ -905,8 +909,10 @@ pub(super) fn build_cargo_args<P: core::fmt::Display>(
     }
 
     // Forward cargo-specific options
-    if release {
-        args.push("--release".to_string());
+    match profile {
+        "dev" => {}
+        "release" => args.push("--release".to_string()),
+        custom => args.extend(["--profile".to_string(), custom.to_string()]),
     }
     args.extend(
         crate::cargo::apply_cargo_policy(cargo_policy.0, cargo_policy.1).map(ToString::to_string),
@@ -2009,7 +2015,7 @@ pub(crate) mod manifest {
         let rustup_toolchain = crate::rust::rustup_toolchain();
         let cargo_build_args = super::build_cargo_args(
             cargo_opts.manifest_path.as_deref(),
-            cargo_opts.release,
+            &cargo_opts.profile,
             cargo_opts.workspace,
             &cargo_opts.packages,
             (cargo_opts.locked, cargo_opts.offline),
@@ -3916,13 +3922,14 @@ path = "lib.rs"
     #[test]
     fn the_cargo_resolution_policy_is_handed_to_the_nested_build() {
         let options = crate::cargo::CargoOptions {
+            profile: "dev".to_string(),
             locked: true,
             offline: true,
             ..Default::default()
         };
         let args = build_cargo_args(
             options.manifest_path.as_deref(),
-            options.release,
+            &options.profile,
             options.workspace,
             &options.packages,
             (options.locked, options.offline),
@@ -3931,6 +3938,24 @@ path = "lib.rs"
 
         assert!(args.iter().any(|arg| arg == "--locked"));
         assert!(args.iter().any(|arg| arg == "--offline"));
+    }
+
+    /// The Miden build profile selects the Cargo profile of the same name.
+    #[test]
+    fn the_build_profile_selects_the_cargo_profile_of_the_same_name() {
+        let args_for = |profile: &str| {
+            build_cargo_args::<String>(None, profile, false, &[], (false, false), "2")
+        };
+
+        let dev = args_for("dev");
+        assert!(!dev.iter().any(|arg| arg == "--release" || arg == "--profile"));
+
+        assert!(args_for("release").iter().any(|arg| arg == "--release"));
+
+        let custom = args_for("profiling");
+        let at = custom.iter().position(|arg| arg == "--profile").expect("--profile");
+        assert_eq!(custom[at + 1], "profiling");
+        assert!(!custom.iter().any(|arg| arg == "--release"));
     }
 
     /// A WebAssembly module with a body, for the lowering half of the entry point.

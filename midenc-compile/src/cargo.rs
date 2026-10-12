@@ -59,8 +59,8 @@ struct StagedNotePackage {
 /// runs; the compiler reads them for nothing else.
 #[derive(Debug, Default)]
 pub struct CargoOptions {
-    /// Build in release mode
-    pub release: bool,
+    /// The build profile: `dev`, `release`, or a profile the project's manifests define.
+    pub profile: String,
     /// Path to Cargo.toml
     pub manifest_path: Option<PathBuf>,
     /// Build all packages in the workspace
@@ -138,7 +138,7 @@ impl CargoOptions {
             .collect::<CompilerResult<Vec<_>>>()?;
 
         Ok(Self {
-            release: options.profile == "release",
+            profile: options.profile.clone(),
             manifest_path: options.manifest_path.clone(),
             workspace: options.workspace,
             packages,
@@ -280,8 +280,9 @@ pub(crate) fn cargo_build(
     if nested_options.target_requires_protocol() {
         nested_options.link_libraries.push(LinkLibrary::protocol());
     }
-    // Inherit release/debug profile from parent build
-    if cargo_opts.release {
+    // Inherit release/debug profile from parent build. A profile the parent's manifest defines
+    // is not inherited: the dependency's manifests know nothing about it.
+    if cargo_opts.profile == "release" {
         nested_options.profile = "release".to_string();
     }
 

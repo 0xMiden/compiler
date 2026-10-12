@@ -19,7 +19,7 @@ use midenc_expect_test::expect;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
 use crate::{
-    CompilerTest,
+    CompilerTest, CompilerTestBuilder,
     testing::{executor_with_std, stripped_mast_size_str},
 };
 
@@ -314,6 +314,17 @@ fn many_notes_batch() -> Vec<MockTransaction> {
         .collect()
 }
 
+/// The valid scenarios as `(name, transactions)`, richest last.
+fn valid_scenarios() -> Vec<(&'static str, Vec<MockTransaction>)> {
+    vec![
+        ("two transactions", two_tx_batch()),
+        ("partial erasure", erasure_batch(true)),
+        ("all inputs erased", erasure_batch(false)),
+        ("no notes", vec![transaction(1)]),
+        ("eight transactions, 64 notes", many_notes_batch()),
+    ]
+}
+
 /// Serializes a strictly key-sorted global note list after inserting a phantom entry.
 fn with_extra_note(blob: &[Felt], key: Word) -> Vec<Felt> {
     let mut entries: Vec<Vec<Felt>> =
@@ -403,13 +414,7 @@ fn batch_kernel() {
         writeln!(metrics, "{name}: {cycles}").unwrap();
     };
 
-    for (name, transactions) in [
-        ("two transactions", two_tx_batch()),
-        ("partial erasure", erasure_batch(true)),
-        ("all inputs erased", erasure_batch(false)),
-        ("no notes", vec![transaction(1)]),
-        ("eight transactions, 64 notes", many_notes_batch()),
-    ] {
+    for (name, transactions) in valid_scenarios() {
         check(name, &transactions, build_advice_inputs(&transactions), true);
     }
 
@@ -541,4 +546,98 @@ fn read_word(trace: &miden_debug::ExecutionTrace, byte_addr: u32) -> Word {
         .read_from_rust_memory(byte_addr)
         .unwrap_or_else(|| panic!("failed to read output word at {byte_addr:#x}"));
     Word::from([felts[0].0, felts[1].0, felts[2].0, felts[3].0])
+}
+
+/// Cycle profiler for one valid scenario (default: the richest). A tool for compiler optimization
+/// work, not a regression test; run it with
+/// `cargo make test-rust -- --run-ignored only --no-capture batch_kernel_profile`. Select the
+/// scenario with `BATCH_KERNEL_PROFILE_SCENARIO=<name>`; set
+/// `CARGO_PROFILE_PROFILING_DEBUG=line-tables-only` to resolve Rust source lines (this perturbs
+/// the generated code slightly).
+///
+/// Builds with the fixture's `profiling` profile (release code plus the package debug-info
+/// section, which the `release` profile omits) and writes to `target/batch_kernel_profile/`:
+/// - `folded.txt`: flamegraph folded stacks (`outer;inner <cycles>`),
+/// - `procedures.txt`: self cycles per innermost procedure,
+/// - `locations.txt`: self cycles per innermost resolved source location,
+/// - `ops.txt`: the executed VM operations in order, one per line, for pattern counting.
+#[test]
+#[ignore = "profiling tool, run on demand"]
+fn batch_kernel_profile() {
+    use std::{collections::BTreeMap, fmt::Write as _};
+
+    let mut scenarios = valid_scenarios();
+    let (name, transactions) = match std::env::var("BATCH_KERNEL_PROFILE_SCENARIO") {
+        Ok(wanted) => scenarios
+            .into_iter()
+            .find(|(name, _)| *name == wanted)
+            .unwrap_or_else(|| panic!("unknown scenario {wanted:?}")),
+        Err(_) => scenarios.pop().unwrap(),
+    };
+
+    // `--profile` and the harness's default `--release` exclude each other.
+    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
+        "../fixtures/batch-kernel",
+        WasmTranslationConfig::default(),
+        ["--entrypoint", "batch_kernel::entrypoint", "--profile", "profiling"].map(String::from),
+    );
+    builder.with_release(false);
+    let mut test = builder.build();
+    let package = test.compile_package();
+    let source_manager = test.session.source_manager.clone();
+    let mut exec = executor_with_std(build_args(word(101, 102, 103, 104), batch_id(&transactions)));
+    exec.with_advice_inputs(build_advice_inputs(&transactions));
+    let mut executor = exec.into_debug(package, source_manager.clone());
+
+    let mut folded: BTreeMap<String, usize> = BTreeMap::new();
+    let mut procedures: BTreeMap<String, usize> = BTreeMap::new();
+    let mut locations: BTreeMap<String, usize> = BTreeMap::new();
+    let mut ops = String::new();
+    let mut total = 0;
+    while !executor.stopped {
+        let before = executor.cycle;
+        executor.step().unwrap_or_else(|err| panic!("{name}: {err}"));
+        let cycles = executor.cycle.saturating_sub(before);
+        if cycles == 0 {
+            continue;
+        }
+        total += cycles;
+        let frames = executor.callstack.frames();
+        let names: Vec<String> = frames
+            .iter()
+            .map(|frame| frame.procedure("").map_or_else(|| "?".into(), |p| p.to_string()))
+            .collect();
+        *folded.entry(names.join(";")).or_default() += cycles;
+        *procedures.entry(names.last().cloned().unwrap_or_default()).or_default() += cycles;
+        if let Some(frame) = frames.last() {
+            let location = frame
+                .last_resolved(source_manager.as_ref())
+                .map_or_else(|| "<unresolved>".into(), |l| l.to_string());
+            *locations.entry(location).or_default() += cycles;
+            if let Some(op) = frame.recent().back() {
+                writeln!(ops, "{}", op.display()).unwrap();
+            }
+        }
+    }
+
+    let dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/batch_kernel_profile");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut text = String::new();
+    for (stack, cycles) in &folded {
+        writeln!(text, "{stack} {cycles}").unwrap();
+    }
+    std::fs::write(dir.join("folded.txt"), text).unwrap();
+    std::fs::write(dir.join("ops.txt"), ops).unwrap();
+    for (file, counts) in [("procedures.txt", procedures), ("locations.txt", locations)] {
+        let mut rows: Vec<_> = counts.into_iter().collect();
+        rows.sort_by_key(|(_, cycles)| std::cmp::Reverse(*cycles));
+        let mut text = format!("{name}: {total} cycles\n");
+        for (key, cycles) in rows {
+            let share = cycles as f64 * 100.0 / total as f64;
+            writeln!(text, "{cycles:>8} {share:5.1}% {key}").unwrap();
+        }
+        std::fs::write(dir.join(file), text).unwrap();
+    }
+    eprintln!("{name}: {total} cycles, profile written to {}", dir.display());
 }
