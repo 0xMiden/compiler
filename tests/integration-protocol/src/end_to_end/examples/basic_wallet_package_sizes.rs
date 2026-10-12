@@ -65,7 +65,10 @@ fn basic_wallet_and_p2id() {
     // 21 bytes fewer (15259 before) with no `u32assert` on a constant-address 32-bit store: one
     // fewer per 32-bit global initializer. The script's `init` stores two such globals, 11 bytes
     // per assertion, less a padding `noop` its shorter block needs.
-    expect!["15238"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
+    //
+    // 468 bytes more (15238 before) with the spill fixes for structured
+    // branches and loops (#1422).
+    expect!["15706"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
 
     let note_package = compile_project(Path::new("../../examples/p2id-note"));
     assert!(note_package.is_library(), "expected library");

@@ -945,6 +945,8 @@ fn prog_rkscan_guard_nodwarf() {
 /// Kept to pin that `prog_rkscan_wa`'s "pass the fingerprint words by
 /// reference" rescue now also holds without DWARF. The former panic was
 /// compile-time — no inputs involved.
+/// Also guards #1422: spilled loop captures need region-local reloads so uses on later iterations
+/// do not keep their original definitions on the operand stack through a spill.
 #[test]
 fn prog_rkscan_ref_nodwarf() {
     run_case_with_flags(

@@ -98,24 +98,10 @@ fn switch_loop_oz() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-02, campaign 11), -Oz
-/// twin of `control_flow::deep_nest_overflow`: the eight-level loop nest
-/// that passes at the default opt-level (`control_flow::nest8`) panics at
-/// -Oz with `implicit operand stack overflow along incoming control flow
-/// edges of after(scf.if in ^block137)` at
-/// hir-analysis/src/analyses/spills.rs:1533. At -Oz LLVM keeps every level
-/// as a loop (no peeling of the `% 3 + 1` levels), so cfg-to-scf's
-/// exit-dispatch result columns reach the 16-felt budget one nesting level
-/// earlier than at O2: the generated `% 3` nests fail from depth SEVEN at
-/// -Oz (six passes) versus depth nine at O2. Compile-time, no inputs
-/// involved. Re-verified failing 2026-09-17 on nightly-2026-09-01 guests (the
-/// block label moved from `^block129` to `^block137`; site and mechanism
-/// unchanged). Un-ignore together with `deep_nest_overflow`.
+/// Deeply nested control flow must report an unsupported region-exit budget.
+/// The compilation harness panics with the returned diagnostic; a compiler panic does not match.
 #[test]
-#[ignore = "#1422: compiler panic: 'implicit operand stack overflow along incoming control flow \
-            edges of after(scf.if in ^block137)' at hir-analysis/src/analyses/spills.rs:1533 at \
-            -Oz — cfg-to-scf exit-dispatch result columns of the eight-deep nest exceed the \
-            16-felt budget (compile-time, no inputs involved)"]
+#[should_panic(expected = "its region results")]
 fn nest8_oz() {
     run_case_with_flags("nest8_oz", include_str!("../cases/case_nest8.rs"), SIZE_MIN);
 }
@@ -216,38 +202,9 @@ fn deadfall_oz_edges() {
     );
 }
 
-/// MINIMAL `-Oz` REPRODUCER of F17 (campaign 28), reduced from
-/// `programs_oz::prog_threefish_oz` (16 rounds, a block loop, a chain array,
-/// output whitening) to four u64 words mixed by EIGHT rotation rows — sixteen
-/// distinct rotation constants — inside a kept two-trip round-group loop, with
-/// subkey and tweak injection from a `[u64; 5]` and a `[u64; 3]`. At
-/// `--optimize=size-min` building it panics with `invalid operand stack index
-/// (10): requires access to more than 16 elements` at
-/// codegen/masm/src/emit/mod.rs:623.
-/// CLASSIFIED F17 by trace, not by site: the spills trace shows the analysis
-/// DID run and spill (3 and 5 values) with SEVEN `max usage on exit exceeds K
-/// (16), additional spills required` lines, `edges to split = 0` in both runs
-/// and ZERO `erase unused reload` lines — so it is not the stale-dominator-tree
-/// defect (F6) — and the stack is over the window, so it is not the in-window
-/// arity-2 solver gap (F2). The emitter drop trace
-/// (`MIDENC_TRACE='codegen:operand-scheduling=trace'`) shows the failing op is
-/// the SPILL STORE itself: the last `dropping unused operands at:` line is
-/// `hir.store_local %15 <{ local = local_variable<12, u32> }>`, i.e. the value
-/// chosen for spilling is already at operand index 10 when its store is
-/// emitted. Reproduces ONLY at `-Oz` (the default level, max and basic all
-/// compile this kernel), and adding freight at the default level does not
-/// produce F17 but F6 (a campaign-28 composition with a four-value u64 cluster
-/// panics at emit/mod.rs:623 WITH one split edge and six erased reloads).
-/// Bounded by [`spill_store_guard`] below (one rotation row fewer), which
-/// compiled and matched native at -Oz until the #1420 fix and is now ignored
-/// under #1422 item 2 as well. Compile-time — no inputs involved. Un-ignore
-/// when the spill placement keeps the spilled value inside the window.
+/// Reduced Threefish kernel with eight rotation rows at `-Oz`.
+/// Regression for #1422: a nested spill must end the live range outside its region.
 #[test]
-#[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
-            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs \
-            (OpEmitter::copy_operand_to_position) — F17 (seven 'additional spills required', edges \
-            to split = 0, no erased reloads; the failing op is the spill store hir.store_local \
-            into slot 12); compile-time, no inputs involved"]
 fn spill_store_min() {
     run_case_with_flags(
         "spill_store_min",
@@ -256,30 +213,8 @@ fn spill_store_min() {
     );
 }
 
-/// Former passing sibling of [`spill_store_min`]: the same ARX kernel with
-/// SEVEN rotation rows (fourteen constants) instead of eight. It compiled at
-/// -Oz and matched native, so the one ingredient that crossed the F17 boundary
-/// in this kernel was the last rotation row — while the constant ladder itself
-/// is non-monotone (campaign 26 measured 13, 12, 11, 9 panicking and 8, 4
-/// compiling on the full Threefish), so this rung bounded the reproducer
-/// without being a user rule.
-///
-/// It compiled before the #1420 fix only because the spill transform dropped
-/// its split-edge reloads at two-predecessor joins (the #1420 defect), and it
-/// stopped compiling once #1420 was fixed: with those spills materialized it
-/// panics with `invalid operand stack index (10): requires access to more
-/// than 16 elements` at codegen/masm/src/emit/mod.rs
-/// (OpEmitter::copy_operand_to_position) after the second spills run
-/// (`edges to split = 0, values spilled = 2, reloads issued = 0`). What
-/// remains is the #1422 item 2 class (over-window pressure after the second
-/// spills run). Compile-time — no inputs involved.
+/// Seven-row sibling of [`spill_store_min`], checking the neighboring pressure case.
 #[test]
-#[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
-            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs \
-            (OpEmitter::copy_operand_to_position) — over-window pressure after the second spills \
-            run (edges to split = 0, values spilled = 2, reloads issued = 0); compiled before the \
-            #1420 fix only because split-edge reloads were dropped; compile-time, no inputs \
-            involved"]
 fn spill_store_guard() {
     run_case_with_flags(
         "spill_store_guard",
