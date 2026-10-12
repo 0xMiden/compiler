@@ -2,11 +2,11 @@ use super::{super::OperandMovementConstraintSolver, *};
 
 /// This tactic is for specifically optimising binary operators, especially those which are
 /// commutative.  The best case scenario for commutative ops is no work needs to be done.
-/// Otherwise binary ops may be solved with a single swap, move or dupe, and at worst two swaps,
-/// moves or dupes.
+/// The specialized schedule uses at most two swaps, moves or dupes.
 ///
 /// Requires an arity of exactly two. If copying operands would make the specialized schedule
-/// exceed MASM's addressable stack window, uses [LinearStackWindow] instead.
+/// exceed MASM's addressable stack window, uses [LinearStackWindow] instead, which may require
+/// additional actions.
 #[derive(Default)]
 pub struct TwoArgs;
 
