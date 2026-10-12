@@ -185,10 +185,10 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
     // buffer is kept as-is as the tuple region.
     let tx_tuples = adv_load_preimage(Felt::from((len_felts / 4) as u32), batch_id);
 
-    // Layer 2: for each transaction, pipe + verify its header into the flat header buffer.
+    // Layer 2: for each transaction, pipe + verify its header, keeping each header as piped.
     // ---------------------------------------------------------------------------------------------
 
-    let mut tx_headers: Vec<Felt> = Vec::with_capacity(num_transactions * TX_HEADER_FELT_LEN);
+    let mut tx_headers: Vec<Vec<Felt>> = Vec::with_capacity(num_transactions);
     for tx_index in 0..num_transactions {
         let tx_id = memory::to_word(memory::nth_word(&tx_tuples, tx_index * TX_TUPLE_WORD_LEN));
         let len_felts = adv_push_mapvaln(tx_id).as_canonical_u64() as usize;
@@ -199,8 +199,7 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
         );
 
         // Pipe the header into memory, asserting its sequential hash equals TX_ID.
-        let header_data = adv_load_preimage(Felt::from((TX_HEADER_FELT_LEN / 4) as u32), tx_id);
-        tx_headers.extend_from_slice(&header_data);
+        tx_headers.push(adv_load_preimage(Felt::from((TX_HEADER_FELT_LEN / 4) as u32), tx_id));
     }
 
     // Note lists: load the sorted note lists and assert each is strictly sorted by its key.

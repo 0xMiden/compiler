@@ -149,11 +149,11 @@ pub struct BatchMemory {
     /// ([`TX_TUPLE_FELT_LEN`] felts per transaction). The account pair is verified as part of
     /// the Layer 1 pre-image but not otherwise used until account updates are aggregated.
     pub tx_tuples: Vec<Felt>,
-    /// Layer 2 piped data: the verified per-transaction headers, in batch order
-    /// ([`TX_HEADER_FELT_LEN`] felts per transaction: `[INIT, FINAL, INPUT_NOTES_COMMITMENT,
+    /// Layer 2 piped data: the verified per-transaction headers, in batch order, each kept as
+    /// piped ([`TX_HEADER_FELT_LEN`] felts: `[INIT, FINAL, INPUT_NOTES_COMMITMENT,
     /// OUTPUT_NOTES_COMMITMENT]`). The account commitments are verified as part of the pre-image
     /// but not otherwise used until account updates are aggregated.
-    pub tx_headers: Vec<Felt>,
+    pub tx_headers: Vec<Vec<Felt>>,
     /// The nullifier-sorted input-note list: 8-felt `[KEY, VALUE]` entries where KEY is the
     /// nullifier and VALUE is the note id (for unauthenticated notes) or the empty word. The
     /// VALUE word doubles as the second half of the `(nullifier, note_id_or_empty)` tuple hashed
@@ -192,13 +192,13 @@ impl BatchMemory {
     /// Returns the verified per-transaction `INPUT_NOTES_COMMITMENT` for transaction `tx_index`.
     #[inline(always)]
     pub fn tx_input_notes_commitment(&self, tx_index: usize) -> &[Felt; 4] {
-        nth_word(&self.tx_headers, tx_index * TX_HEADER_WORD_LEN + 2)
+        nth_word(&self.tx_headers[tx_index], 2)
     }
 
     /// Returns the verified per-transaction `OUTPUT_NOTES_COMMITMENT` for transaction `tx_index`.
     #[inline(always)]
     pub fn tx_output_notes_commitment(&self, tx_index: usize) -> &[Felt; 4] {
-        nth_word(&self.tx_headers, tx_index * TX_HEADER_WORD_LEN + 3)
+        nth_word(&self.tx_headers[tx_index], 3)
     }
 
     /// Returns input-note entry `index`'s `erasure` flag.
