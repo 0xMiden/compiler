@@ -1,0 +1,8 @@
+builtin.module public @advice_alias {
+    builtin.function internal extern("C") @body() -> felt {
+        %value = hir.advice_pop;
+        builtin.ret %value : (felt);
+    };
+    builtin.function_alias public @api -> @forward;
+    builtin.function_alias private @forward -> @body;
+};

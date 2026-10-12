@@ -15,7 +15,8 @@ use alloc::{
 use core::any::Any;
 
 use midenc_hir::{
-    CallOpInterface, Operation, Report, Spanned, Symbol, SymbolName,
+    CallOpInterface, FxHashMap, Op, Operation, OperationRef, Report, Span, Spanned, Symbol,
+    SymbolName, SymbolPath,
     diagnostics::SourceManager,
     dialects::builtin,
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
@@ -244,7 +245,32 @@ fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintF
     findings
 }
 
+fn collect_public_exposure(op: &Operation) -> FxHashMap<OperationRef, Vec<Span<SymbolPath>>> {
+    let mut exposed = FxHashMap::default();
+    op.prewalk_all(|operation| {
+        if let Some(function) = operation.downcast_ref::<builtin::Function>() {
+            if Symbol::is_public(function) {
+                exposed.entry(operation.as_operation_ref()).or_insert_with(Vec::new);
+            }
+        } else if let Some(alias) = operation.downcast_ref::<builtin::FunctionAlias>()
+            && Symbol::is_public(alias)
+            && let Some(target) =
+                operation.as_symbol_ref().and_then(|symbol| symbol.resolve_function().ok())
+        {
+            let target = target.borrow();
+            if !Symbol::is_public(&*target) {
+                exposed
+                    .entry(target.as_operation_ref())
+                    .or_insert_with(Vec::new)
+                    .push(Span::new(alias.span(), alias.path()));
+            }
+        }
+    });
+    exposed
+}
+
 fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintExitFinding> {
+    let exposed = collect_public_exposure(op);
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
         let Some(ret) = operation.downcast_ref::<builtin::Ret>() else {
@@ -254,9 +280,9 @@ fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceT
             return;
         };
         let function = function_ref.borrow();
-        if !Symbol::is_public(&*function) {
+        let Some(public_aliases) = exposed.get(&function.as_operation_ref()) else {
             return;
-        }
+        };
 
         let function_name = Symbol::name(&*function);
         let function_span = function.as_symbol_operation().span();
@@ -271,6 +297,7 @@ fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceT
             for origin in taint.unreported_origins() {
                 let finding = AdviceTaintExitFinding {
                     function: function_name,
+                    public_aliases: public_aliases.clone(),
                     function_span,
                     return_span,
                     result_index,
@@ -439,4 +466,192 @@ fn same_external_call_finding(
         && lhs.argument_index == rhs.argument_index
         && lhs.origin == rhs.origin
         && lhs.function == rhs.function
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{format, string::ToString, vec::Vec};
+
+    use midenc_hir::{
+        Report,
+        diagnostics::Uri,
+        dialects::builtin,
+        parse::{ParserConfig, parse},
+        pass::AnalysisManager,
+        testing::Test,
+    };
+
+    use super::{AdviceTaintAnalysis, AdviceTaintDiagnostic, AdviceTaintExitFinding};
+
+    type ExitResults = (Vec<AdviceTaintExitFinding>, Vec<AdviceTaintDiagnostic>);
+
+    fn analyze_source(source: &str) -> Result<ExitResults, Report> {
+        let test = Test::default();
+        test.context().get_or_register_dialect::<crate::HirDialect>();
+        let module = parse::<builtin::Module>(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("advice_alias_exit.hir"),
+            source,
+        )?;
+        let manager = AnalysisManager::new(module.as_operation_ref(), None);
+        let analysis = manager.get_analysis::<AdviceTaintAnalysis>()?;
+        let findings = analysis.exit_findings().to_vec();
+        let diagnostics = findings
+            .iter()
+            .map(|finding| finding.diagnostic(test.context().session().source_manager.as_ref()))
+            .collect();
+        Ok((findings, diagnostics))
+    }
+
+    fn analyze_aliases(visibility: &str, aliases: &str) -> Result<ExitResults, Report> {
+        analyze_source(&format!(
+            r#"
+    builtin.module public @test {{
+        builtin.function {visibility} extern("C") @body() -> felt {{
+            %value = hir.advice_pop;
+            builtin.ret %value : (felt);
+        }};
+        {aliases}
+    }};
+    "#
+        ))
+    }
+
+    fn assert_alias_exit(aliases: &str) -> Result<(), Report> {
+        let (findings, diagnostics) = analyze_aliases("internal", aliases)?;
+        assert_eq!(findings.len(), 1, "{findings:#?}");
+        let finding = &findings[0];
+        assert_eq!(finding.function.as_str(), "body");
+        assert_eq!(finding.result_index, 0);
+        assert_eq!(finding.public_aliases.len(), 1);
+        assert_eq!(finding.public_aliases[0].inner().to_string(), "test/api");
+        assert!(!finding.public_aliases[0].span().is_unknown());
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "function 'body', exposed through public alias 'test/api', returns unconstrained \
+             advice value as result #0"
+        );
+        assert_eq!(
+            diagnostics[0].label_messages().collect::<Vec<_>>(),
+            [
+                "publicly exposed function returns unconstrained advice via result #0",
+                "unconstrained advice originates here",
+                "public alias 'test/api' exposes 'body' to callers",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn public_alias_reports_internal_function_exit() -> Result<(), Report> {
+        assert_alias_exit("builtin.function_alias public @api -> @body;")
+    }
+
+    #[test]
+    fn public_alias_chain_reports_internal_function_exit() -> Result<(), Report> {
+        assert_alias_exit(
+            r#"
+        builtin.function_alias public @api -> @forward;
+        builtin.function_alias private @forward -> @body;
+    "#,
+        )
+    }
+
+    #[test]
+    fn multiple_public_aliases_share_one_exit_finding() -> Result<(), Report> {
+        let (findings, diagnostics) = analyze_aliases(
+            "internal",
+            r#"
+        builtin.module public @a {
+            builtin.function_alias public @api -> ::@test::@body;
+        };
+        builtin.module public @b {
+            builtin.function_alias public @api -> ::@test::@body;
+        };
+    "#,
+        )?;
+        assert_eq!(findings.len(), 1, "{findings:#?}");
+        assert_eq!(findings[0].public_aliases.len(), 2);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "function 'body', exposed through public aliases 'test/a/api', 'test/b/api', returns \
+             unconstrained advice value as result #0"
+        );
+        let labels = diagnostics[0].label_messages().collect::<Vec<_>>();
+        assert!(labels.contains(&"public alias 'test/a/api' exposes 'body' to callers"));
+        assert!(labels.contains(&"public alias 'test/b/api' exposes 'body' to callers"));
+        Ok(())
+    }
+
+    #[test]
+    fn internal_function_without_public_exposure_has_no_exit_finding() -> Result<(), Report> {
+        for aliases in [
+            "",
+            "builtin.function_alias private @api -> @body;",
+            "builtin.function_alias internal @api -> @body;",
+        ] {
+            let (findings, diagnostics) = analyze_aliases("internal", aliases)?;
+            assert!(findings.is_empty(), "{aliases}: {findings:#?}");
+            assert!(diagnostics.is_empty());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn directly_public_function_keeps_existing_exit_diagnostic() -> Result<(), Report> {
+        for aliases in [
+            "",
+            "builtin.function_alias public @api -> @body;",
+            "builtin.function_alias public @api -> @forward;
+             builtin.function_alias private @forward -> @body;",
+        ] {
+            let (findings, diagnostics) = analyze_aliases("public", aliases)?;
+            assert_eq!(findings.len(), 1, "{findings:#?}");
+            assert!(findings[0].public_aliases.is_empty());
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(
+                diagnostics[0].message(),
+                "public function 'body' returns unconstrained advice value as result #0"
+            );
+            assert_eq!(
+                diagnostics[0].label_messages().collect::<Vec<_>>(),
+                [
+                    "public function returns unconstrained advice via result #0",
+                    "unconstrained advice originates here",
+                ]
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn public_alias_reports_unconstrained_external_result_exit() -> Result<(), Report> {
+        let (findings, diagnostics) = analyze_source(
+            r#"
+    builtin.module public @test {
+        builtin.function internal extern("C") @body(%r0: felt, %r1: felt, %r2: felt, %r3: felt) -> felt {
+            %value = hir.dyncall [%r0, %r1, %r2, %r3]() : extern("component-model") () -> felt;
+            builtin.ret %value : (felt);
+        };
+        builtin.function_alias public @api -> @body;
+    };
+    "#,
+        )?;
+        assert_eq!(findings.len(), 1, "{findings:#?}");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "function 'body', exposed through public alias 'test/api', returns unconstrained \
+             external call result as result #0"
+        );
+        let labels = diagnostics[0].label_messages().collect::<Vec<_>>();
+        assert!(labels.contains(
+            &"publicly exposed function returns an unconstrained external call result via result \
+              #0"
+        ));
+        assert!(labels.contains(&"public alias 'test/api' exposes 'body' to callers"));
+        Ok(())
+    }
 }

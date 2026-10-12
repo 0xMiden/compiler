@@ -7,7 +7,7 @@ use alloc::{
 };
 
 use midenc_hir::{
-    OperationName, Report, SourceSpan, SymbolName, Type,
+    OperationName, Report, SourceSpan, Span, SymbolName, SymbolPath, Type,
     diagnostics::{Diagnostic, LabeledSpan, RelatedLabel, SourceFile, SourceManager, miette},
 };
 
@@ -40,11 +40,15 @@ impl AdviceTaintFinding {
     }
 }
 
-/// A public/exported function returns an unconstrained value.
+/// A publicly exposed function returns an unconstrained value.
+///
+/// Public exposure includes internal functions exposed through a public function alias.
 #[derive(Debug, Clone)]
 pub struct AdviceTaintExitFinding {
-    /// The public/exported function that returns the unconstrained value.
+    /// The publicly exposed function that returns the unconstrained value.
     pub function: SymbolName,
+    /// Public aliases exposing this function.
+    pub public_aliases: Vec<Span<SymbolPath>>,
     /// The span of the function operation.
     pub function_span: SourceSpan,
     /// The return operation span.
@@ -279,22 +283,28 @@ impl AdviceTaintDiagnostic {
     }
 
     fn new_exit(finding: &AdviceTaintExitFinding, source_manager: &dyn SourceManager) -> Self {
+        let exposure = if finding.public_aliases.is_empty() {
+            "public function"
+        } else {
+            "publicly exposed function"
+        };
         let (subject, return_label, origin_label, help) = match finding.origin.kind {
             AdviceTaintOriginKind::Advice => (
                 "unconstrained advice value",
                 format!(
-                    "public function returns unconstrained advice via result #{}",
+                    "{exposure} returns unconstrained advice via result #{}",
                     finding.result_index
                 ),
                 "unconstrained advice originates here".to_string(),
-                "constrain this value before returning it from a public function, or require \
-                 callers to validate it before any constrained use"
-                    .to_string(),
+                format!(
+                    "constrain this value before returning it from a {exposure}, or require \
+                     callers to validate it before any constrained use"
+                ),
             ),
             AdviceTaintOriginKind::ExternalCall => (
                 "unconstrained external call result",
                 format!(
-                    "public function returns an unconstrained external call result via result #{}",
+                    "{exposure} returns an unconstrained external call result via result #{}",
                     finding.result_index
                 ),
                 "external call result is modeled as unconstrained here".to_string(),
@@ -304,11 +314,26 @@ impl AdviceTaintDiagnostic {
             ),
         };
         let sink_source = source_manager.get(finding.function_span.source_id()).ok();
-        let message = format!(
-            "public function '{}' returns {subject} as result #{}",
-            finding.function.as_str(),
-            finding.result_index
-        );
+        let function = if finding.public_aliases.is_empty() {
+            format!("public function '{}'", finding.function.as_str())
+        } else {
+            let aliases = finding
+                .public_aliases
+                .iter()
+                .map(|alias| format!("'{}'", alias.inner()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let kind = if finding.public_aliases.len() == 1 {
+                "alias"
+            } else {
+                "aliases"
+            };
+            format!(
+                "function '{}', exposed through public {kind} {aliases},",
+                finding.function.as_str()
+            )
+        };
+        let message = format!("{function} returns {subject} as result #{}", finding.result_index);
         let label = LabeledSpan::new_primary_with_span(Some(return_label), finding.return_span);
         let mut labels = vec![label];
         let mut related = vec![];
@@ -318,6 +343,21 @@ impl AdviceTaintDiagnostic {
                 finding.origin.span,
                 &origin_label,
                 "unconstrained advice",
+                &mut labels,
+                &mut related,
+                source_manager,
+            );
+        }
+        for alias in &finding.public_aliases {
+            push_label_or_related(
+                finding.function_span,
+                alias.span(),
+                &format!(
+                    "public alias '{}' exposes '{}' to callers",
+                    alias.inner(),
+                    finding.function.as_str()
+                ),
+                "public alias exposure",
                 &mut labels,
                 &mut related,
                 source_manager,
