@@ -125,7 +125,8 @@ pub struct SymbolMap {
     symbols: FxHashMap<SymbolName, SymbolRef>,
     /// Used to unique symbol names when conflicts are detected
     uniquing_count: usize,
-    /// The largest number of `::`-separated segments of any name registered in this map.
+    /// The largest number of segments of any name registered in this map, each name read as a
+    /// canonical key (see [SymbolPath::segments_of]).
     ///
     /// This is only an upper bound (it never decreases on removal) that keeps the common case of
     /// single-segment names at one lookup per path component in [SymbolMap::lookup_prefix].
@@ -212,7 +213,8 @@ impl SymbolMap {
     /// namespace, but rather a symbol defined in the global namespace. This means that only
     /// children of that symbol are possibly resolvable (as we have no way to reach other symbols
     /// defined in the global namespace). In short, we only attempt to resolve absolute paths whose
-    /// leading components spell the `::`-separated segments of the root symbol's name. If they do,
+    /// leading components spell the segments of the root symbol's name, a canonical key (see
+    /// [SymbolPath::segments_of]). If they do,
     /// then the symbol is resolved normally from there, otherwise `None` is returned.
     ///
     /// Path components are matched against symbol names as described in

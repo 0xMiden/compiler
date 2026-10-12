@@ -127,7 +127,8 @@ impl OpParser for Component {
         state
             .add_attribute("visibility", context.create_attribute::<VisibilityAttr, _>(visibility));
 
-        // The name is the whole (possibly multi-segment) path, joined with `::`
+        // The name is the canonical key of the whole (possibly multi-segment) path (see
+        // `SymbolPath::to_symbol_name`)
         let (span, path) = parser.parse_symbol_path()?.into_parts();
         let name = path.to_symbol_name();
         state.add_attribute(

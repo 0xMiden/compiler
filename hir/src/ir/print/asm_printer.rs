@@ -580,15 +580,8 @@ impl<'a> AsmPrinter<'a> {
         if is_valid_bare_identifier(name) {
             self.document += text(format!("@{name}"));
         } else {
-            let mut quoted = String::with_capacity(name.len() + 3);
-            quoted.push_str("@\"");
-            for c in name.chars() {
-                if matches!(c, '"' | '\\') {
-                    quoted.push('\\');
-                }
-                quoted.push(c);
-            }
-            quoted.push('"');
+            let mut quoted = String::from("@");
+            crate::ir::symbols::push_quoted(&mut quoted, name);
             self.document += text(quoted);
         }
     }

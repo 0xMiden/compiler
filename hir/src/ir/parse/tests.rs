@@ -583,9 +583,9 @@ builtin.world {
     );
 }
 
-/// A component prints its name as a symbol path, one segment per `::`-separated segment of the
-/// name, quoting a segment that is not a bare identifier, and that text parses back to the same
-/// name.
+/// A component prints its name as a symbol path, one segment per segment of the name's canonical
+/// key (see `SymbolPath::to_symbol_name`), quoting a segment that is not a bare identifier, and
+/// that text parses back to the same name.
 #[test]
 fn component_name_roundtrips_through_the_printer() -> TestResult {
     use crate::{

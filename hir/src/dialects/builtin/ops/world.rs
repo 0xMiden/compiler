@@ -105,7 +105,8 @@ impl World {
     /// nests with `component` (one is a segment-prefix of the other): resolution prefers the
     /// longest registered name, so either would make paths ambiguous.
     ///
-    /// The name is the component's namespace path, with its segments joined by `::`.
+    /// The name is the canonical key of the component's namespace path (see
+    /// [SymbolPath::to_symbol_name]).
     pub fn reject_component_shadowing(&self, component: SymbolName) -> Result<(), Report> {
         self.reject_nested_components(component)?;
         let mut segments = SymbolPath::segments_of(component).into_iter();
@@ -125,8 +126,8 @@ impl World {
         Err(shadowing_error(component, component, component))
     }
 
-    /// Returns the name of the world-level component named by the `::`-joined module path `path`
-    /// or by a segment-prefix of it, i.e. the component that would shadow a module tree reaching
+    /// Returns the name of the world-level component named by the module path `path`, given as
+    /// its canonical key (see [SymbolPath::to_symbol_name]), or by a segment-prefix of it, i.e. the component that would shadow a module tree reaching
     /// `path`.
     pub(crate) fn component_shadowing(&self, path: SymbolName) -> Option<SymbolName> {
         let body = self.body();

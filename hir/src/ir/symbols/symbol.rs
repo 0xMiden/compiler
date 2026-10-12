@@ -37,7 +37,7 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
     /// Get the fully-qualified (absolute) path of this symbol
     ///
     /// The name of this symbol is the `Leaf` of the path, and is never split. Each named ancestor
-    /// symbol table contributes one `Component` per `::`-separated segment of its name (see
+    /// symbol table contributes one `Component` per segment of its name, a canonical key (see
     /// [SymbolPath::segments_of]), so a function `f` in module `m` of a component named
     /// `miden::a::b` has the path `::miden::a::b::m::f`.
     ///
