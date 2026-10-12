@@ -13,7 +13,8 @@ use miden_stdlib_sys::{
 };
 
 use crate::memory::{
-    self, BatchMemory, MAX_NOTES_PER_BATCH, NOTE_ENTRY_FELT_LEN, erasure_erased, erasure_expected,
+    self, BatchMemory, MAX_NOTES_PER_BATCH, NOTE_ENTRY_FELT_LEN, NoteEntry, erasure_erased,
+    erasure_expected,
 };
 
 // SORTED NOTE LIST LOOKUP
@@ -162,10 +163,10 @@ fn flip_input_erasure_created(memory: &mut BatchMemory, idx: usize) {
 /// the note-id-sorted output-note list: derives its note id, looks it up, marks it created, and —
 /// if it erases an input note — advances that input note's erasure flag.
 #[inline(always)]
-fn bind_one_output_note(memory: &mut BatchMemory, note: &[Felt]) {
+fn bind_one_output_note(memory: &mut BatchMemory, note: &NoteEntry) {
     // Derive the output note's id as merge(details_commitment, metadata_commitment).
-    let details_commitment = Digest::from_word(memory::load_word(note, 0));
-    let metadata_commitment = Digest::from_word(memory::load_word(note, 4));
+    let details_commitment = Digest::from_word(memory::to_word(memory::entry_key(note)));
+    let metadata_commitment = Digest::from_word(memory::to_word(memory::entry_value(note)));
     let note_id = Word::from(merge([details_commitment, metadata_commitment]));
     let note_id = [note_id[0], note_id[1], note_id[2], note_id[3]];
 
@@ -191,10 +192,9 @@ fn process_tx_output_notes(memory: &mut BatchMemory, tx_index: usize) {
         // Empty commitment: the transaction has no output notes, so there is nothing to bind.
         return;
     }
-    let commitment =
-        memory::load_word(&memory.tx_headers, tx_index * crate::memory::TX_HEADER_FELT_LEN + 12);
+    let commitment = memory::to_word(memory.tx_output_notes_commitment(tx_index));
     let notes = load_tx_note_tuples(commitment);
-    for note in notes.chunks_exact(NOTE_ENTRY_FELT_LEN) {
+    for note in memory::note_entries(&notes) {
         bind_one_output_note(memory, note);
     }
 }
@@ -227,14 +227,14 @@ fn assert_input_not_consumed_before_created(memory: &BatchMemory, idx: usize) {
 /// nullifier-sorted input-note list: looks it up by nullifier, asserts it is present and that its
 /// note id matches, enforces the erasure ordering gate, then marks it consumed.
 #[inline(always)]
-fn bind_one_input_note(memory: &mut BatchMemory, note: &[Felt]) {
+fn bind_one_input_note(memory: &mut BatchMemory, note: &NoteEntry) {
     // Look the per-transaction note up in the nullifier-sorted input-note list by its nullifier.
-    let idx = find_key(&memory.input_notes, memory::word_at(note, 0))
+    let idx = find_key(&memory.input_notes, memory::entry_key(note))
         .expect("a transaction input note is missing from the nullifier-sorted input-note list");
 
     // Assert the list entry's note id equals the per-transaction note's, binding the id as well
     // as the nullifier (so an unauthenticated note cannot be matched to the wrong list entry).
-    assert_eq_word(memory::note_value(&memory.input_notes, idx), memory::word_at(note, 4));
+    assert_eq_word(memory::note_value(&memory.input_notes, idx), memory::entry_value(note));
 
     // Enforce the erasure ordering gate (reject consume-before-create), then mark the entry
     // consumed.
@@ -251,10 +251,9 @@ fn process_tx_input_notes(memory: &mut BatchMemory, tx_index: usize) {
         // Empty commitment: the transaction has no input notes, so there is nothing to bind.
         return;
     }
-    let commitment =
-        memory::load_word(&memory.tx_headers, tx_index * crate::memory::TX_HEADER_FELT_LEN + 8);
+    let commitment = memory::to_word(memory.tx_input_notes_commitment(tx_index));
     let notes = load_tx_note_tuples(commitment);
-    for note in notes.chunks_exact(NOTE_ENTRY_FELT_LEN) {
+    for note in memory::note_entries(&notes) {
         bind_one_input_note(memory, note);
     }
 }
