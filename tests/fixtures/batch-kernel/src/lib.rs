@@ -105,13 +105,19 @@ pub extern "C" fn entrypoint(
     let (input_notes_commitment, batch_note_tree_root) = epilogue::finalize(memory);
 
     // Lay the output words out at `out_ptr`: [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT].
-    for (offset, felt) in input_notes_commitment
-        .as_elements()
-        .iter()
-        .chain(batch_note_tree_root.as_elements().iter())
-        .enumerate()
-    {
-        unsafe { out_ptr.add(offset).write(*felt) };
+    // Eight explicit stores: a chained iterator loop keeps its state in memory-backed VM locals
+    // and costs about ten times as many cycles as the stores themselves.
+    let commitment = input_notes_commitment.as_elements();
+    let root = batch_note_tree_root.as_elements();
+    unsafe {
+        out_ptr.write(commitment[0]);
+        out_ptr.add(1).write(commitment[1]);
+        out_ptr.add(2).write(commitment[2]);
+        out_ptr.add(3).write(commitment[3]);
+        out_ptr.add(4).write(root[0]);
+        out_ptr.add(5).write(root[1]);
+        out_ptr.add(6).write(root[2]);
+        out_ptr.add(7).write(root[3]);
     }
 
     batch_expiration_block_num
