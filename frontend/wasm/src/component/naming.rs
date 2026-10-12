@@ -1133,8 +1133,8 @@ mod tests {
         let err = error_of(&two_imports_of_one_path_component("u64", "i64"), None);
         assert!(
             err.contains(
-                "imports `::acme:first/api::read` and `::acme:second/api::read` both lower to \
-                 `::acme::shared::api::read` with different signatures"
+                "imports `::\"acme:first/api\"::read` and `::\"acme:second/api\"::read` both \
+                 lower to `::acme::shared::api::read` with different signatures"
             ),
             "unexpected diagnostic: {err}"
         );

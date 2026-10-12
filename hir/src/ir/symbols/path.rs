@@ -427,9 +427,10 @@ impl SymbolPath {
 }
 
 /// Prints the path as its segments joined with `::`, with a leading `::` when the path is
-/// absolute. A component segment that contains `::` is written in the quoted form of a canonical
-/// key (see [SymbolPath::segments_of]), e.g. `::"acme::pkg"::app`; a leaf is written as is. For
-/// the Miden Assembly spelling use [SymbolPath::to_library_path].
+/// absolute. A component segment that contains `:` or starts with `"` is written in the quoted
+/// form of a multi-segment canonical key (see [SymbolPath::segments_of]), e.g. `::"acme::pkg"::app`
+/// or `::"acme:first/api"::read`, so distinct paths display distinctly; a leaf is written as is.
+/// For the Miden Assembly spelling use [SymbolPath::to_library_path].
 impl fmt::Display for SymbolPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut components = self.path.iter();
@@ -451,11 +452,14 @@ impl fmt::Display for SymbolPath {
     }
 }
 
-/// Writes `component` for [SymbolPath]'s `Display`: a component segment containing `::` quoted,
-/// anything else (a leaf in particular, which is opaque and never split) as is.
+/// Writes `component` for [SymbolPath]'s `Display`: a component segment is quoted under the rule
+/// of a multi-segment key (it contains `:` or starts with `"`), so two different paths never
+/// display alike; anything else (a leaf in particular, which is opaque and never split) as is.
 fn write_segment(f: &mut fmt::Formatter<'_>, component: &SymbolNameComponent) -> fmt::Result {
     match component {
-        SymbolNameComponent::Component(segment) if segment.as_str().contains("::") => {
+        SymbolNameComponent::Component(segment)
+            if segment.as_str().contains(':') || segment.as_str().starts_with('"') =>
+        {
             let mut quoted = String::new();
             push_quoted(&mut quoted, segment.as_str());
             f.write_str(&quoted)
@@ -695,7 +699,8 @@ mod tests {
         assert_eq!(right_split, ["a", ":b"]);
     }
 
-    /// A component segment containing `::` prints quoted; a leaf is opaque and prints raw.
+    /// A component segment containing `:` prints quoted, as in a multi-segment key, so `a:` + `b`
+    /// and `a` + `:b` display differently; a leaf is opaque and prints raw.
     #[test]
     fn display_quotes_only_component_segments() {
         let path = SymbolPath::from_iter([
@@ -704,6 +709,15 @@ mod tests {
             SymbolNameComponent::Leaf(SymbolName::intern("core::ptr::drop_in_place<T>")),
         ]);
         assert_eq!(path.to_string(), r#"::"acme::pkg"::core::ptr::drop_in_place<T>"#);
+
+        let display = |segments: &[&str]| {
+            SymbolPath::from_iter(
+                segments.iter().map(|s| SymbolNameComponent::Component(SymbolName::intern(s))),
+            )
+            .to_string()
+        };
+        assert_eq!(display(&["acme:first/api", "read"]), r#""acme:first/api"::read"#);
+        assert_ne!(display(&["a:", "b"]), display(&["a", ":b"]));
     }
 
     #[test]
