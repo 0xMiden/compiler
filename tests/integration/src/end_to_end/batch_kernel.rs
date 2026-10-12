@@ -560,7 +560,8 @@ fn read_word(trace: &miden_debug::ExecutionTrace, byte_addr: u32) -> Word {
 /// - `folded.txt`: flamegraph folded stacks (`outer;inner <cycles>`),
 /// - `procedures.txt`: self cycles per innermost procedure,
 /// - `locations.txt`: self cycles per innermost resolved source location,
-/// - `ops.txt`: the executed VM operations in order, one per line, for pattern counting.
+/// - `ops.txt`: the executed VM operations in order, one `<op>\t<location>` per line, for
+///   pattern counting.
 #[test]
 #[ignore = "profiling tool, run on demand"]
 fn batch_kernel_profile() {
@@ -613,10 +614,10 @@ fn batch_kernel_profile() {
             let location = frame
                 .last_resolved(source_manager.as_ref())
                 .map_or_else(|| "<unresolved>".into(), |l| l.to_string());
-            *locations.entry(location).or_default() += cycles;
             if let Some(op) = frame.recent().back() {
-                writeln!(ops, "{}", op.display()).unwrap();
+                writeln!(ops, "{}\t{location}", op.display()).unwrap();
             }
+            *locations.entry(location).or_default() += cycles;
         }
     }
 
