@@ -170,9 +170,9 @@ and every other procedure of a library package is rejected: bind a plain library
 natively with an `extern "C"` function carrying its path in `#[link_name]`. The procedures of
 component packages stay importable.
 
-The core Wasm module of a component is named after the crate, so a crate named like one of its
-exported functions (a crate `swap` exporting `swap`) or named `init` is rejected: rename the crate
-or the function.
+The core Wasm module of a component is named after the crate, so a crate named like the Miden path
+leaf of one of its exports (a crate `swap` exporting `miden::swap::swap::swap`) or named `init` is
+rejected: rename the crate (or, for an export clash, the function).
 
 When compiling a bare `.wasm` or `.wat` component without a manifest or an explicit namespace, the
 namespace is inferred only when every export has the same parent path, which becomes the

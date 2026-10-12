@@ -591,7 +591,7 @@ fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<Vec<String>>> {
             if before.chars().next_back().is_some_and(is_hir_identifier_char) {
                 continue;
             }
-            declared.push(hir_declared_name(rest)?);
+            declared.push(hir_declared_name(rest, op_name == HIR_COMPONENT_OP)?);
         }
     }
     Some(declared)
@@ -601,10 +601,11 @@ fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<Vec<String>>> {
 ///
 /// One function for both operations because they are written alike: `builtin.component` and
 /// `builtin.module` each parse a visibility keyword and then a symbol name, in that order. A
-/// component's name may be a run `@a::@b::@c` of symbol names, optionally preceded by `::`, which
-/// is returned as one unescaped segment per symbol name and without that leading marker. The
-/// segments are not joined: an unescaped segment may itself contain `::` (`@"a::b"`).
-fn hir_declared_name(rest: &str) -> Option<Vec<String>> {
+/// component's name (`is_component`) may be a run `@a::@b::@c` of symbol names, optionally
+/// preceded by `::`, which is returned as one unescaped segment per symbol name and without that
+/// leading marker; a module's name may not start with `::`. The segments are not joined: an
+/// unescaped segment may itself contain `::` (`@"a::b"`).
+fn hir_declared_name(rest: &str, is_component: bool) -> Option<Vec<String>> {
     // A keyword only when a separator follows it, exactly as in Miden Assembly.
     let rest = rest.strip_prefix(char::is_whitespace)?.trim_start();
     // The visibility is not optional in either grammar, so it is not optional here.
@@ -616,13 +617,23 @@ fn hir_declared_name(rest: &str) -> Option<Vec<String>> {
         })?
         .trim_start();
 
-    // The parser accepts a leading `::` (an absolute path), which names the same component: the
-    // root marker is dropped when the path is joined into the component's name. The printer never
-    // writes it, so this only matters for hand-written input.
-    let rest = rest.strip_prefix("::").unwrap_or(rest);
+    // The component parser accepts a leading `::` (an absolute path), which names the same
+    // component: the root marker is dropped when the path is joined into the component's name.
+    // The printer never writes it, so this only matters for hand-written input. A module's name
+    // is a single symbol name (`parse_symbol_name`), so a module scanned with more than one
+    // segment is not taken as a declaration by the caller. The lexer skips whitespace between
+    // tokens, so it may surround every `::`.
+    let rest = match rest.strip_prefix("::") {
+        Some(tail) if is_component => tail.trim_start(),
+        _ => rest,
+    };
     let (first, mut rest) = hir_symbol_name(rest)?;
     let mut segments = vec![first];
-    while let Some((segment, tail)) = rest.strip_prefix("::").and_then(hir_symbol_name) {
+    while let Some((segment, tail)) = rest
+        .trim_start()
+        .strip_prefix("::")
+        .and_then(|tail| hir_symbol_name(tail.trim_start()))
+    {
         segments.push(segment);
         rest = tail;
     }
@@ -634,7 +645,8 @@ fn hir_symbol_name(rest: &str) -> Option<(String, &str)> {
     // `symbol-ref-id ::= '@' (bare-id | string-literal)`, which is what the lexer accepts.
     let name = rest.strip_prefix('@')?;
     match name.strip_prefix('"') {
-        Some(quoted) => hir_quoted_name(quoted),
+        // Unescaped as the lexer unescapes a quoted symbol name.
+        Some(quoted) => midenc_hir::unescape_quoted(quoted),
         None => {
             // The lexer's bare symbol name (`lex_identifier`): a letter or `_`, then letters,
             // digits, `_`, `$` and `.`; unlike a keyword, no `-`.
@@ -647,24 +659,6 @@ fn hir_symbol_name(rest: &str) -> Option<(String, &str)> {
             Some((name[..end].to_string(), &name[end..]))
         }
     }
-}
-
-/// The unescaped name of the quoted symbol name whose opening quote precedes `quoted`, and the
-/// text following its closing quote.
-///
-/// A `\` takes the character after it literally, as the lexer's unescaping does
-/// (`lex_at_identifier`); the printer escapes `"` and `\` that way.
-fn hir_quoted_name(quoted: &str) -> Option<(String, &str)> {
-    let mut name = String::new();
-    let mut chars = quoted.char_indices();
-    while let Some((at, c)) = chars.next() {
-        match c {
-            '"' => return Some((name, &quoted[at + 1..])),
-            '\\' => name.push(chars.next()?.1),
-            c => name.push(c),
-        }
-    }
-    None
 }
 
 /// Whether `c` may appear in a HIR identifier, and so cannot end one thing and begin another.
@@ -2595,6 +2589,10 @@ namespace = "miden::prepare_fixture::prepare_fixture"
             // The same path written absolute, which the parser accepts and the printer never
             // writes: the root marker names no segment, so the name is the same.
             ("builtin.component private ::@a::@b {\n};\n", Some("a::b")),
+            // The lexer skips whitespace between tokens, also around `::`.
+            ("builtin.component private :: @a :: @b {\n};\n", Some("a::b")),
+            // Only a component's name may be absolute: the module parser rejects the `::`.
+            ("builtin.module public ::@lib {\n};\n", None),
             // A quoted segment holding `::` is one segment, which the library path quotes.
             ("builtin.component private @\"a::b\"::@c {\n};\n", Some("\"a::b\"::c")),
             // Nested in a world and holding a module, which is the shape `--emit=hir` writes —

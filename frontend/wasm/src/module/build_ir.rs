@@ -113,21 +113,25 @@ pub fn translate_module_as_component(
 /// tree, which fails with the component-shadowing error. A crate named like the root namespace of
 /// one of its dependencies is not supported.
 fn ensure_program_name_is_free(module_name: &str) -> WasmResult<()> {
-    // `zip` stops at the shorter path, so this holds when either path is a segment-prefix of the
-    // other. `validate_namespace` is not reused: it accepts only three-segment namespaces and
-    // checks one direction (the namespace nesting under a reserved prefix), while a module name
-    // may have any number of segments and must not be a prefix of a reserved tree either.
-    let reserved = RESERVED_NAMESPACE_PREFIXES.iter().find(|prefix| {
-        prefix
-            .split("::")
-            .zip(module_name.split("::"))
-            .all(|(reserved, segment)| reserved == segment)
-    });
-    match reserved {
-        None => Ok(()),
-        Some(reserved) => Err(Report::msg(format!(
-            "the program module `{module_name}` is named like the reserved library root \
-             `{reserved}`; rename the crate or give the program a target namespace"
+    // A module name is a single segment (`Module::validate_name` rejects `::`), so it nests with
+    // a reserved tree exactly when it is the tree's first segment. `validate_namespace` is not
+    // reused: it accepts only three-segment namespaces and checks one direction (the namespace
+    // nesting under a reserved prefix).
+    let reserved = RESERVED_NAMESPACE_PREFIXES
+        .iter()
+        .filter(|prefix| prefix.split("::").next() == Some(module_name))
+        .map(|prefix| format!("`{prefix}`"))
+        .collect::<Vec<_>>();
+    match reserved.as_slice() {
+        [] => Ok(()),
+        [tree] => Err(Report::msg(format!(
+            "the program module `{module_name}` nests with the reserved library tree {tree}; \
+             rename the crate"
+        ))),
+        trees => Err(Report::msg(format!(
+            "the program module `{module_name}` nests with the reserved library trees {}; rename \
+             the crate",
+            trees.join(", ")
         ))),
     }
 }
@@ -397,8 +401,33 @@ mod tests {
         let err = err.to_string();
         assert!(
             err.contains(
-                "the program module `intrinsics` is named like the reserved library root \
-                 `intrinsics`; rename the crate or give the program a target namespace"
+                "the program module `intrinsics` nests with the reserved library tree \
+                 `intrinsics`; rename the crate"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// A program module named like the first segment of several reserved trees names them all.
+    #[test]
+    fn a_program_named_like_a_shared_reserved_root_names_every_tree() {
+        let wasm = wat::parse_str(
+            r#"
+            (module $miden
+                (func $entrypoint)
+                (export "entrypoint" (func $entrypoint))
+            )"#,
+        )
+        .unwrap();
+        let context = Rc::new(Context::default());
+        let Err(err) = translate(&wasm, &WasmTranslationConfig::default(), context) else {
+            panic!("translation should fail");
+        };
+        let err = err.to_string();
+        assert!(
+            err.contains(
+                "the program module `miden` nests with the reserved library trees `miden::base`, \
+                 `miden::protocol`, `miden::core`; rename the crate"
             ),
             "unexpected diagnostic: {err}"
         );

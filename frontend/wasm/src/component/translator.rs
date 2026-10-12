@@ -633,17 +633,17 @@ impl<'a> ComponentTranslator<'a> {
             let module_name = parsed_module.module.name().name;
             if module_name == COMPONENT_INIT_PROCEDURE {
                 return Err(Report::msg(format!(
-                    "the core module `{module_name}` (named after the crate) is named like the \
-                     generated `{COMPONENT_INIT_PROCEDURE}` procedure; rename the crate"
+                    "the core module `{module_name}` (the crate name for a Rust build) is named \
+                     like the generated `{COMPONENT_INIT_PROCEDURE}` procedure; rename the crate"
                 )));
             }
             if let Some(export) =
                 self.pending_exports.iter().find(|export| export.path.name() == module_name)
             {
                 return Err(Report::msg(format!(
-                    "the core module `{module_name}` (named after the crate) is named like the \
-                     export `{}`; a core module and an export cannot share a name, rename the \
-                     crate or the function",
+                    "the core module `{module_name}` (the crate name for a Rust build) is named \
+                     like the export `{}`; a core module and an export cannot share a name, \
+                     rename the crate or the function",
                     export.path
                 )));
             }

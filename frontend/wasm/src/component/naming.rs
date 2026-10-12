@@ -983,9 +983,9 @@ mod tests {
         let err = error_of(&wasm, None);
         assert!(
             err.contains(
-                "the core module `swap` (named after the crate) is named like the export \
-                 `::miden::swap::swap::swap`; a core module and an export cannot share a name, \
-                 rename the crate or the function"
+                "the core module `swap` (the crate name for a Rust build) is named like the \
+                 export `::miden::swap::swap::swap`; a core module and an export cannot share a \
+                 name, rename the crate or the function"
             ),
             "unexpected diagnostic: {err}"
         );
