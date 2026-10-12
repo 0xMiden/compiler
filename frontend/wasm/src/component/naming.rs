@@ -5,11 +5,7 @@
 //! function names only pair `canon lift`/`canon lower` with core functions and appear in
 //! diagnostics.
 
-use alloc::{
-    format,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{format, vec::Vec};
 
 use midenc_frontend_wasm_metadata::procedure_path::validate_procedure_path;
 use midenc_hir::{
@@ -51,8 +47,8 @@ pub(crate) fn external_id_path(
     Ok(path)
 }
 
-/// The Miden paths of the function exports of the nested components, keyed by the nested
-/// component and the component-model name of the export.
+/// The Miden paths of the function exports of the nested components whose instances the root
+/// component exports, keyed by the nested component and the component-model name of the export.
 pub(crate) type ExportPaths<'a> = FxHashMap<(StaticComponentIndex, &'a str), SymbolPath>;
 
 /// Returns the namespace shared by `exports`, the component-model names of the component's
@@ -145,18 +141,6 @@ pub(crate) fn world_level_function_import(name: &str) -> Report {
     Report::msg(format!(
         "world-level function import `{name}` is not supported; import it through an interface"
     ))
-}
-
-/// Names the interface a nested component's exports go through, for diagnostics.
-///
-/// The root component exports the instances of its nested components under their interface
-/// names; with a single one it is unambiguous, otherwise the nested component's
-/// `StaticComponentIndex` is used.
-pub(crate) fn interface_hint(root_instance_exports: &[&str], nested_component: u32) -> String {
-    match root_instance_exports {
-        [single] => single.to_string(),
-        _ => format!("<nested component {nested_component}>"),
-    }
 }
 
 #[cfg(test)]
@@ -690,6 +674,83 @@ mod tests {
             err.contains("`::miden::other::other`") && err.contains("`::miden::counter::counter`"),
             "unexpected diagnostic: {err}"
         );
+    }
+
+    /// A component exporting `run` (at `miden::app::api::run`) through the interface
+    /// `miden:app/api`, which also defines the nested component `$helper`, whose exports carry a
+    /// foreign namespace and no `@external-id`. `helper_use` is spliced in after the definition.
+    fn component_with_helper(helper_use: &str) -> Vec<u8> {
+        wat::parse_str(format!(
+            r#"
+            (component
+                (core module $m
+                    (func (export "run") (result i32) i32.const 0)
+                )
+                (core instance $i (instantiate $m))
+                (func $lifted (result u32) (canon lift (core func $i "run")))
+                (component $api
+                    (import "import-func-run" (func $f (result u32)))
+                    (export "run" (external-id "miden::app::api::run") (func $f))
+                )
+                (component $helper
+                    (import "import-func-helper" (func $f (result u32)))
+                    (import "import-func-bare" (func $g (result u32)))
+                    (export "helper" (external-id "other::api::helper") (func $f))
+                    (export "bare" (func $g))
+                )
+                {helper_use}
+                (instance $exports (instantiate $api (with "import-func-run" (func $lifted))))
+                (export "miden:app/api" (instance $exports))
+            )
+            "#
+        ))
+        .expect("component WAT should compile")
+    }
+
+    /// Translates `wasm`, which must root at `miden::app::api` and define `run`.
+    fn assert_only_the_exported_interface_is_named(wasm: &[u8]) {
+        assert_eq!(
+            declared_namespace(wasm).expect("the scan should succeed"),
+            Some(SymbolPath::from_masm_module_id("miden::app::api"))
+        );
+        let context = Rc::default();
+        let output = translate_with(&context, wasm, None).expect("component should translate");
+        let hir = core_modules_of(&output);
+        assert!(hir.contains(r#"extern("C") @run()"#), "the export is lifted:\n{hir}");
+    }
+
+    #[test]
+    fn an_unused_nested_component_is_not_scanned() {
+        assert_only_the_exported_interface_is_named(&component_with_helper(""));
+    }
+
+    #[test]
+    fn an_instantiated_but_unexported_nested_component_is_not_scanned() {
+        assert_only_the_exported_interface_is_named(&component_with_helper(
+            r#"(instance $helper-instance (instantiate $helper
+                (with "import-func-helper" (func $lifted))
+                (with "import-func-bare" (func $lifted))
+            ))"#,
+        ));
+    }
+
+    #[test]
+    fn exported_interfaces_under_different_namespaces_are_rejected() {
+        let wasm = component_with_helper(
+            r#"(component $other
+                    (import "import-func-helper" (func $f (result u32)))
+                    (export "helper" (external-id "other::api::helper") (func $f))
+                )
+                (instance $other-instance
+                    (instantiate $other (with "import-func-helper" (func $lifted))))
+                (export "other:api/api" (instance $other-instance))"#,
+        );
+        let expected = "the component's exports are under different namespaces (`::other::api`, \
+                        `::miden::app::api`)";
+        let err = error_of(&wasm, None);
+        assert!(err.contains(expected), "unexpected diagnostic: {err}");
+        let err = declared_namespace(&wasm).expect_err("the scan should fail").to_string();
+        assert!(err.contains(expected), "unexpected scan diagnostic: {err}");
     }
 
     #[test]

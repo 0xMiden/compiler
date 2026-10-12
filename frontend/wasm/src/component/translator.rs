@@ -522,8 +522,9 @@ impl<'a> ComponentTranslator<'a> {
                             ))
                         },
                     )?;
-                // The pre-scan sees each nested component's exports once, so a component
-                // instantiated twice and exported as two interfaces is only caught here.
+                // The pre-scan sees the exports of each root-exported nested component once, so
+                // a component instantiated twice and exported as two interfaces is only caught
+                // here.
                 if let Some(previous) =
                     self.pending_exports.iter().find(|export| export.path == path)
                 {
