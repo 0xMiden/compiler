@@ -507,7 +507,8 @@ const HIR_MODULE_OP: &str = "builtin.module";
 ///
 /// A component is printed as `@a::@b::@c`, one `@`-name per segment, each either bare or quoted
 /// (a segment that is not a bare identifier is quoted, e.g. `@"a b"`). The whole run
-/// is scanned and joined with `::`, exactly as the op's parser joins it.
+/// is scanned and joined with `::`, exactly as the op's parser joins it; a leading `::`, which the
+/// parser accepts as the root marker and drops from the name, is skipped the same way.
 ///
 /// # What it does not accept
 ///
@@ -594,7 +595,8 @@ fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<String>> {
 ///
 /// One function for both operations because they are written alike: `builtin.component` and
 /// `builtin.module` each parse a visibility keyword and then a symbol name, in that order. A
-/// component's name may be a run `@a::@b::@c` of symbol names, which is returned joined with `::`.
+/// component's name may be a run `@a::@b::@c` of symbol names, optionally preceded by `::`, which
+/// is returned joined with `::` and without that leading marker.
 fn hir_declared_name(rest: &str) -> Option<String> {
     // A keyword only when a separator follows it, exactly as in Miden Assembly.
     let rest = rest.strip_prefix(char::is_whitespace)?.trim_start();
@@ -607,6 +609,10 @@ fn hir_declared_name(rest: &str) -> Option<String> {
         })?
         .trim_start();
 
+    // The parser accepts a leading `::` (an absolute path), which names the same component: the
+    // root marker is dropped when the path is joined into the component's name. The printer never
+    // writes it, so this only matters for hand-written input.
+    let rest = rest.strip_prefix("::").unwrap_or(rest);
     let (mut name, mut rest) = hir_symbol_name(rest)?;
     while let Some((segment, tail)) = rest.strip_prefix("::").and_then(hir_symbol_name) {
         name.push_str("::");
@@ -2579,6 +2585,9 @@ namespace = "miden::prepare_fixture::prepare_fixture"
                 "builtin.component private @miden::@counter_contract::@counter_contract {\n};\n",
                 Some("miden::counter_contract::counter_contract"),
             ),
+            // The same path written absolute, which the parser accepts and the printer never
+            // writes: the root marker names no segment, so the name is the same.
+            ("builtin.component private ::@a::@b {\n};\n", Some("a::b")),
             // Nested in a world and holding a module, which is the shape `--emit=hir` writes —
             // and the shape that decides the *order* of the two scans: the component's name wins,
             // and the module inside it is never read as a top-level one.
