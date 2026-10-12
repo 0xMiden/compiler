@@ -127,8 +127,8 @@ impl World {
     }
 
     /// Returns the name of the world-level component named by the module path `path`, given as
-    /// its canonical key (see [SymbolPath::to_symbol_name]), or by a segment-prefix of it, i.e. the component that would shadow a module tree reaching
-    /// `path`.
+    /// its canonical key (see [SymbolPath::to_symbol_name]), or by a segment-prefix of it, i.e.
+    /// the component that would shadow a module tree reaching `path`.
     pub(crate) fn component_shadowing(&self, path: SymbolName) -> Option<SymbolName> {
         let body = self.body();
         if body.is_empty() {
@@ -164,7 +164,7 @@ impl World {
             if SymbolPath::nests_in(longer, shorter) {
                 return Err(Report::msg(format!(
                     "component `{component}` and component `{existing}` nest (`{shorter}` is a \
-                     prefix of `{longer}`); component namespaces must not nest"
+                     segment-prefix of `{longer}`); component namespaces must not nest"
                 )));
             }
         }

@@ -40,9 +40,9 @@ impl WorldBuilder {
 
     /// Define a new world-level component `name`.
     ///
-    /// The name is the component's namespace path, with its segments joined by `::`, e.g.
-    /// `miden::counter_contract::counter_contract`. Callers holding a [SymbolPath] use
-    /// [SymbolPath::to_symbol_name].
+    /// The name is the canonical key of the component's namespace path (see
+    /// [SymbolPath::to_symbol_name]), e.g. `miden::counter_contract::counter_contract`. Callers
+    /// holding a [SymbolPath] use [SymbolPath::to_symbol_name].
     ///
     /// Returns an error when the world declares a module tree reaching the path the name spells,
     /// which the component would shadow, or another component whose name nests with this one (one
@@ -347,8 +347,8 @@ mod tests {
             assert_eq!(
                 err.to_string(),
                 alloc::format!(
-                    "component `{second}` and component `{first}` nest (`{shorter}` is a prefix \
-                     of `{longer}`); component namespaces must not nest"
+                    "component `{second}` and component `{first}` nest (`{shorter}` is a \
+                     segment-prefix of `{longer}`); component namespaces must not nest"
                 )
             );
         }

@@ -576,8 +576,8 @@ builtin.world {
         .to_string();
     assert!(
         err.contains(
-            "component `acme::app` and component `acme::app::main` nest (`acme::app` is a prefix \
-             of `acme::app::main`); component namespaces must not nest"
+            "component `acme::app` and component `acme::app::main` nest (`acme::app` is a \
+             segment-prefix of `acme::app::main`); component namespaces must not nest"
         ),
         "unexpected diagnostic: {err}"
     );

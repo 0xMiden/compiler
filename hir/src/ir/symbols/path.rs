@@ -183,7 +183,7 @@ impl SymbolPath {
     }
 
     /// Returns the segments of the name of a symbol-table op, the inverse of
-    /// [SymbolPath::to_symbol_name].
+    /// [SymbolPath::to_symbol_name] (with one degenerate exception, see below).
     ///
     /// A component may be *named* by a multi-segment path; such a name occupies one entry in its
     /// parent's symbol table, but contributes one [SymbolNameComponent::Component] per segment to
@@ -197,6 +197,10 @@ impl SymbolPath {
     /// So `["acme::pkg", "app"]` is keyed `"acme::pkg"::app`, and a name without `::` is a single
     /// segment, as written. Module names cannot contain `::`, so they are always one segment. Leaf
     /// symbol names (functions, globals) are opaque and must never be split with this function.
+    ///
+    /// The exception: no segments and one empty segment both have the key `""`
+    /// (`join_components(&[]) == join_components(&[""])`). Only a root-only path has no segments;
+    /// [SymbolPath::new] rejects the empty path.
     pub fn segments_of(name: SymbolName) -> SmallVec<[SymbolName; 3]> {
         let s = name.as_str();
         if !s.contains("::") {
@@ -205,11 +209,24 @@ impl SymbolPath {
         split_key(s)
     }
 
+    /// Returns the absolute path of the component keyed `key` (see [SymbolPath::segments_of]):
+    /// the root followed by one [SymbolNameComponent::Component] per segment of the key.
+    pub fn from_symbol_name(key: SymbolName) -> SymbolPath {
+        Self::from_iter(
+            core::iter::once(SymbolNameComponent::Root)
+                .chain(Self::segments_of(key).into_iter().map(SymbolNameComponent::Component)),
+        )
+    }
+
     /// Returns true when the name `inner` nests in the name `outer`, i.e. when `outer` is a strict
     /// segment-prefix of `inner`: `a::bc` nests in `a` but not in `a::b`, and no name nests in
     /// itself. Both are canonical keys (see [SymbolPath::segments_of]) and are compared segment by
     /// segment: `"acme::pkg"::app` nests in `"acme::pkg"`, not in `acme`.
     pub fn nests_in(inner: SymbolName, outer: SymbolName) -> bool {
+        // A one-segment name nests in nothing; skip splitting (and interning) both names.
+        if !inner.as_str().contains("::") {
+            return false;
+        }
         let (inner, outer) = (Self::segments_of(inner), Self::segments_of(outer));
         inner.len() > outer.len() && inner.starts_with(&outer)
     }
@@ -234,6 +251,8 @@ impl SymbolPath {
             // `segments_of` reads a key without `::` as one segment, as written, so a lone segment
             // is quoted only when it contains `::`, even when it starts with `"`. A raw lone key
             // never contains `::` and a multi-segment key always does, so the two cannot collide.
+            // A quoted lone key closes at its end, while the first quoted segment of a
+            // multi-segment key is followed by `::`, so those cannot collide either.
             [single] => {
                 let name = single.as_symbol_name();
                 if !name.as_str().contains("::") {
@@ -472,8 +491,8 @@ fn split_key(key: &str) -> SmallVec<[SymbolName; 3]> {
 /// Reads the quoted segment whose opening `"` precedes `quoted` (see [unescape_quoted]).
 ///
 /// Returns the segment and the text after the `::` that follows its closing `"`, or `None` for
-/// that text when the key ends there; `None` when the segment does not close before `::` or the
-/// end of the key.
+/// that text when the key ends there; `None` when the segment has no closing `"`, or its closing
+/// `"` is followed by anything but `::` or the end of the key.
 fn unquote_segment(quoted: &str) -> Option<(String, Option<&str>)> {
     let (segment, after) = unescape_quoted(quoted)?;
     if after.is_empty() {
@@ -700,8 +719,8 @@ mod tests {
         );
     }
 
-    /// A key that is not canonical is still split: a quote that does not close a segment before
-    /// `::` or the end leaves the segment raw.
+    /// A key that is not canonical is still split: a quoted segment that has no closing `"`, or
+    /// whose closing `"` is followed by anything but `::` or the end, is read raw.
     #[test]
     fn a_malformed_quoted_segment_is_read_raw() {
         let segments = |key: &str| {
@@ -731,10 +750,7 @@ mod tests {
             &[SymbolName::intern("acme::pkg"), SymbolName::intern("app")]
         );
 
-        let rebuilt = SymbolPath::from_iter(
-            core::iter::once(SymbolNameComponent::Root)
-                .chain(segments.into_iter().map(SymbolNameComponent::Component)),
-        );
+        let rebuilt = SymbolPath::from_symbol_name(key);
         assert_eq!(rebuilt, path);
         assert_eq!(rebuilt.to_string(), source);
         assert_eq!(rebuilt.to_library_path().to_string(), source);

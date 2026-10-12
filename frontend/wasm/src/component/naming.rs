@@ -686,8 +686,9 @@ mod tests {
     }
 
     /// A component exporting `run` (at `miden::app::api::run`) through the interface
-    /// `miden:app/api`, which also defines the nested component `$helper`, whose exports carry a
-    /// foreign namespace and no `@external-id`. `helper_use` is spliced in after the definition.
+    /// `miden:app/api`, which also defines the nested component `$helper`, whose export `helper`
+    /// carries the foreign `@external-id` `other::api::helper` and whose export `bare` has none.
+    /// `helper_use` is spliced in after the definition.
     fn component_with_helper(helper_use: &str) -> Vec<u8> {
         wat::parse_str(format!(
             r#"

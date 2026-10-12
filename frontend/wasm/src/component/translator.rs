@@ -77,8 +77,8 @@ pub struct ComponentTranslator<'a> {
     result: ComponentBuilder,
 
     /// The name of the component being translated (the canonical key of its namespace path, see
-    /// `SymbolPath::to_symbol_name`), which every
-    /// import other than an FPI or dyncall import must lie outside of.
+    /// `SymbolPath::to_symbol_name`), which every import other than an FPI or dyncall import must
+    /// lie outside of.
     namespace: SymbolName,
 
     context: Rc<Context>,

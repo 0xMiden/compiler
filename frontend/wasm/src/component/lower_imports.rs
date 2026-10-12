@@ -67,8 +67,8 @@ pub struct ComponentImportPath {
     /// dyncall import (those declare nothing).
     pub path: SymbolPath,
     /// The name (the canonical key of the namespace path, see `SymbolPath::to_symbol_name`) of
-    /// the component being translated; the `path` of an
-    /// import other than an FPI or dyncall import must lie outside of that namespace.
+    /// the component being translated; the `path` of an import other than an FPI or dyncall
+    /// import must lie outside of that namespace.
     pub namespace: SymbolName,
 }
 
@@ -1276,13 +1276,7 @@ fn declare_import_function(
     let inside_namespace = component_name == import.namespace
         || SymbolPath::nests_in(component_name, import.namespace);
     if inside_namespace {
-        let namespace = SymbolPath::from_iter(
-            core::iter::once(midenc_hir::SymbolNameComponent::Root).chain(
-                SymbolPath::segments_of(import.namespace)
-                    .into_iter()
-                    .map(midenc_hir::SymbolNameComponent::Component),
-            ),
-        );
+        let namespace = SymbolPath::from_symbol_name(import.namespace);
         return Err(Report::msg(format!(
             "import `{import_path}` lies inside this component's own namespace `{namespace}`"
         )));
