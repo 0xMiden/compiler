@@ -188,12 +188,13 @@ fn bind_one_output_note(memory: &mut BatchMemory, note: &NoteEntry) {
 /// batch output-note list (see [`bind_per_tx_notes`] for what binding proves).
 #[inline(always)]
 fn process_tx_output_notes(memory: &mut BatchMemory, tx_index: usize) {
-    if memory::is_empty_word(memory.tx_output_notes_commitment(tx_index)) {
+    // Read the commitment word once; the emptiness test and the advice lookup share the copy.
+    let commitment = *memory.tx_output_notes_commitment(tx_index);
+    if memory::is_empty_word(&commitment) {
         // Empty commitment: the transaction has no output notes, so there is nothing to bind.
         return;
     }
-    let commitment = memory::to_word(memory.tx_output_notes_commitment(tx_index));
-    let notes = load_tx_note_tuples(commitment);
+    let notes = load_tx_note_tuples(Word::from(commitment));
     for note in memory::note_entries(&notes) {
         bind_one_output_note(memory, note);
     }
@@ -247,12 +248,13 @@ fn bind_one_input_note(memory: &mut BatchMemory, note: &NoteEntry) {
 /// input-note list (see [`bind_per_tx_notes`] for what binding proves).
 #[inline(always)]
 fn process_tx_input_notes(memory: &mut BatchMemory, tx_index: usize) {
-    if memory::is_empty_word(memory.tx_input_notes_commitment(tx_index)) {
+    // Read the commitment word once; the emptiness test and the advice lookup share the copy.
+    let commitment = *memory.tx_input_notes_commitment(tx_index);
+    if memory::is_empty_word(&commitment) {
         // Empty commitment: the transaction has no input notes, so there is nothing to bind.
         return;
     }
-    let commitment = memory::to_word(memory.tx_input_notes_commitment(tx_index));
-    let notes = load_tx_note_tuples(commitment);
+    let notes = load_tx_note_tuples(Word::from(commitment));
     for note in memory::note_entries(&notes) {
         bind_one_input_note(memory, note);
     }
