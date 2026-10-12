@@ -122,18 +122,15 @@ fn ensure_program_name_is_free(module_name: &str) -> WasmResult<()> {
         .filter(|prefix| prefix.split("::").next() == Some(module_name))
         .map(|prefix| format!("`{prefix}`"))
         .collect::<Vec<_>>();
-    match reserved.as_slice() {
-        [] => Ok(()),
-        [tree] => Err(Report::msg(format!(
-            "the program module `{module_name}` nests with the reserved library tree {tree}; \
-             rename the crate"
-        ))),
-        trees => Err(Report::msg(format!(
-            "the program module `{module_name}` nests with the reserved library trees {}; rename \
-             the crate",
-            trees.join(", ")
-        ))),
+    if reserved.is_empty() {
+        return Ok(());
     }
+    let plural = if reserved.len() == 1 { "" } else { "s" };
+    Err(Report::msg(format!(
+        "the program module `{module_name}` nests with the reserved library tree{plural} {}; \
+         rename the crate",
+        reserved.join(", ")
+    )))
 }
 
 pub fn build_ir_module(
@@ -372,6 +369,7 @@ fn build_data_segments(
 mod tests {
     use std::rc::Rc;
 
+    use midenc_frontend_wasm_metadata::namespace::RESERVED_NAMESPACE_PREFIXES;
     use midenc_hir::Context;
 
     use crate::{WasmTranslationConfig, translate};
@@ -424,12 +422,16 @@ mod tests {
             panic!("translation should fail");
         };
         let err = err.to_string();
-        assert!(
-            err.contains(
-                "the program module `miden` nests with the reserved library trees `miden::base`, \
-                 `miden::protocol`, `miden::core`; rename the crate"
-            ),
-            "unexpected diagnostic: {err}"
+        let trees = RESERVED_NAMESPACE_PREFIXES
+            .iter()
+            .filter(|prefix| prefix.split("::").next() == Some("miden"))
+            .map(|prefix| format!("`{prefix}`"))
+            .collect::<Vec<_>>();
+        assert!(trees.len() > 1, "several reserved trees share the root `miden`");
+        let expected = format!(
+            "the program module `miden` nests with the reserved library trees {}; rename the crate",
+            trees.join(", ")
         );
+        assert!(err.contains(&expected), "unexpected diagnostic: {err}");
     }
 }

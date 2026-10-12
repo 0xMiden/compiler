@@ -136,6 +136,15 @@ pub(crate) fn world_level_function_export(name: &str) -> Report {
     ))
 }
 
+/// The error for the instance or component `name` exported by the nested component that the root
+/// component exports as the interface `interface`.
+pub(crate) fn nested_instance_export(interface: &str, name: &str) -> Report {
+    Report::msg(format!(
+        "interface `{interface}` exports the nested instance `{name}`; nested instance exports \
+         are not supported"
+    ))
+}
+
 /// The error for the function import `name` of the root component, which no interface carries.
 pub(crate) fn world_level_function_import(name: &str) -> Report {
     Report::msg(format!(
@@ -740,7 +749,8 @@ mod tests {
     }
 
     /// An unexported helper may itself export an instance of its own nested component; that
-    /// instance export is the helper's, not the root's, so nothing of it is lifted.
+    /// instance export is the helper's, not the root's, so it is accepted and nothing of it is
+    /// lifted.
     #[test]
     fn a_nested_components_own_instance_export_is_not_lifted() {
         assert_only_the_exported_interface_is_named(&component_with_helper(
@@ -758,6 +768,31 @@ mod tests {
             (instance $outer-instance (instantiate $outer
                 (with "import-func-help" (func $lifted))))"#,
         ));
+    }
+
+    /// A root-exported component that exports an instance of its own nested component is
+    /// rejected rather than lifting only its function exports.
+    #[test]
+    fn a_root_exported_components_instance_export_is_rejected() {
+        let wasm = component_with_helper(
+            r#"(component $outer
+                (import "import-func-help" (func $f (result u32)))
+                (component $inner
+                    (import "import-func-help" (func $g (result u32)))
+                    (export "help" (external-id "miden::app::api::help") (func $g)))
+                (instance $inner-instance (instantiate $inner
+                    (with "import-func-help" (func $f))))
+                (export "help-iface" (instance $inner-instance)))
+            (instance $outer-instance (instantiate $outer
+                (with "import-func-help" (func $lifted))))
+            (export "miden:app/outer" (instance $outer-instance))"#,
+        );
+        let expected = "interface `miden:app/outer` exports the nested instance `help-iface`; \
+                        nested instance exports are not supported";
+        let err = error_of(&wasm, None);
+        assert!(err.contains(expected), "unexpected diagnostic: {err}");
+        let err = declared_namespace(&wasm).expect_err("the scan should fail").to_string();
+        assert!(err.contains(expected), "unexpected scan diagnostic: {err}");
     }
 
     #[test]

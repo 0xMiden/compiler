@@ -34,7 +34,7 @@ use crate::{
         ComponentItem, LocalInitializer, StaticComponentIndex, core_names,
         lift_exports::generate_export_lifting_function,
         naming::{
-            ExportPaths, external_id_path, reject_library_procedure_import,
+            ExportPaths, external_id_path, nested_instance_export, reject_library_procedure_import,
             world_level_function_import,
         },
     },
@@ -459,7 +459,15 @@ impl<'a> ComponentTranslator<'a> {
                 // Do nothing, assuming Rust compiled code having one memory instance.
             }
             LocalInitializer::AliasComponentExport(component_instance_idx, name) => {
-                let import = &frame.component_instances[*component_instance_idx].unwrap_import();
+                let ComponentInstanceDef::Import(import) =
+                    &frame.component_instances[*component_instance_idx]
+                else {
+                    unsupported_diag!(
+                        self.context.diagnostics(),
+                        "aliasing an export of a component instance that is not imported is not \
+                         supported"
+                    )
+                };
                 let def = ComponentItemDef::from_import(
                     name,
                     types[import.ty].exports[*name],
@@ -515,11 +523,22 @@ impl<'a> ComponentTranslator<'a> {
         interface: &str,
         component_instance_idx: ComponentInstanceIndex,
     ) -> WasmResult<()> {
-        let instance = &frame.component_instances[component_instance_idx].unwrap_instantiated();
+        let ComponentInstanceDef::Instantiated(instance) =
+            &frame.component_instances[component_instance_idx]
+        else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "exporting an imported or aliased component instance is not supported"
+            )
+        };
         let static_component_idx = frame.components[instance.component].index;
         let parsed_component = &self.nested_components[static_component_idx];
         self.register_component_export_type_names(parsed_component, types)?;
         for (name, item) in parsed_component.exports.iter() {
+            if let ComponentItem::ComponentInstance(_) | ComponentItem::Component(_) = item {
+                // `declared_exports` rejects this first; kept in case the two walks diverge.
+                return Err(nested_instance_export(interface, name));
+            }
             if let ComponentItem::Func(f) = item {
                 // `exported_components` pre-scans the same root-exported instances, so a
                 // missing path means the two walks disagree.
@@ -1354,21 +1373,6 @@ enum ComponentInstanceDef<'a> {
     Import(ComponentInstanceImport),
     Instantiated(ComponentInstantiation<'a>),
     Export,
-}
-impl ComponentInstanceDef<'_> {
-    fn unwrap_import(&self) -> ComponentInstanceImport {
-        match self {
-            ComponentInstanceDef::Import(import) => import.clone(),
-            _ => panic!("expected import"),
-        }
-    }
-
-    fn unwrap_instantiated(&self) -> &ComponentInstantiation<'_> {
-        match self {
-            ComponentInstanceDef::Instantiated(i) => i,
-            _ => panic!("expected instantiated"),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

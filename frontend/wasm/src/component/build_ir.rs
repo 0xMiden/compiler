@@ -9,7 +9,10 @@ use wasmparser::component_types::ComponentEntityType;
 use super::{
     ComponentIndex, ComponentInstanceIndex, ComponentItem, ComponentTypesBuilder, LocalInitializer,
     ParsedComponent, ParsedRootComponent, StaticComponentIndex,
-    naming::{ExportPaths, exports_namespace, external_id_path, world_level_function_export},
+    naming::{
+        ExportPaths, exports_namespace, external_id_path, nested_instance_export,
+        world_level_function_export,
+    },
     translator::ComponentTranslator,
 };
 use crate::{
@@ -113,8 +116,8 @@ fn component_namespace<'data>(
 /// the root component of `parsed` exports, or `None` when there are none, with the Miden paths of
 /// those exports.
 ///
-/// Fails when the root component exports a function itself, or as [`exports_namespace`] and
-/// [`external_id_path`] do.
+/// Fails when the root component exports a function itself, when one of those nested components
+/// exports an instance or a component, or as [`exports_namespace`] and [`external_id_path`] do.
 fn declared_exports<'data>(
     parsed: &ParsedRootComponent<'data>,
 ) -> WasmResult<(Option<SymbolPath>, ExportPaths<'data>)> {
@@ -130,9 +133,15 @@ fn declared_exports<'data>(
     for (interface, index) in exported_components(&parsed.root_component) {
         let component = &parsed.static_components[index];
         for (name, item) in component.exports.iter() {
-            if matches!(item, ComponentItem::Func(_)) {
-                let external_id = component.export_external_ids.get(name).copied();
-                exports.push(((index, *name), external_id_path(interface, name, external_id)?));
+            match item {
+                ComponentItem::Func(_) => {
+                    let external_id = component.export_external_ids.get(name).copied();
+                    exports.push(((index, *name), external_id_path(interface, name, external_id)?));
+                }
+                ComponentItem::ComponentInstance(_) | ComponentItem::Component(_) => {
+                    return Err(nested_instance_export(interface, name));
+                }
+                _ => {}
             }
         }
     }
@@ -144,7 +153,8 @@ fn declared_exports<'data>(
 /// with the interface name of its first export, in export order.
 ///
 /// An exported instance that does not instantiate a nested component (an imported or aliased
-/// instance) contributes nothing, and a nested component reached twice is returned once.
+/// instance) contributes nothing (the translation rejects it), and a nested component reached
+/// twice is returned once.
 fn exported_components<'data>(
     root: &ParsedComponent<'data>,
 ) -> Vec<(&'data str, StaticComponentIndex)> {
