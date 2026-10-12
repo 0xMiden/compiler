@@ -113,8 +113,8 @@ pub fn translate_module_as_component(
 /// tree, which fails with the component-shadowing error. A crate named like the root namespace of
 /// one of its dependencies is not supported.
 fn ensure_program_name_is_free(module_name: &str) -> WasmResult<()> {
-    // A module name is a single segment (`Module::validate_name` rejects `::`), so it nests with
-    // a reserved tree exactly when it is the tree's first segment. `validate_namespace` is not
+    // A module name with `::` is rejected by `define_module` below, so a name that passes it nests
+    // with a reserved tree exactly when it is the tree's first segment. `validate_namespace` is not
     // reused: it accepts only three-segment namespaces and checks one direction (the namespace
     // nesting under a reserved prefix).
     let reserved = RESERVED_NAMESPACE_PREFIXES
@@ -127,8 +127,8 @@ fn ensure_program_name_is_free(module_name: &str) -> WasmResult<()> {
     }
     let plural = if reserved.len() == 1 { "" } else { "s" };
     Err(Report::msg(format!(
-        "the program module `{module_name}` nests with the reserved library tree{plural} {}; \
-         rename the crate",
+        "the program module `{module_name}` (the crate name for a Rust build) nests with the \
+         reserved library tree{plural} {}; rename the crate or the module",
         reserved.join(", ")
     )))
 }
@@ -399,8 +399,8 @@ mod tests {
         let err = err.to_string();
         assert!(
             err.contains(
-                "the program module `intrinsics` nests with the reserved library tree \
-                 `intrinsics`; rename the crate"
+                "the program module `intrinsics` (the crate name for a Rust build) nests with the \
+                 reserved library tree `intrinsics`; rename the crate or the module"
             ),
             "unexpected diagnostic: {err}"
         );
@@ -429,7 +429,8 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(trees.len() > 1, "several reserved trees share the root `miden`");
         let expected = format!(
-            "the program module `miden` nests with the reserved library trees {}; rename the crate",
+            "the program module `miden` (the crate name for a Rust build) nests with the reserved \
+             library trees {}; rename the crate or the module",
             trees.join(", ")
         );
         assert!(err.contains(&expected), "unexpected diagnostic: {err}");

@@ -653,7 +653,8 @@ impl<'a> ComponentTranslator<'a> {
             if module_name == COMPONENT_INIT_PROCEDURE {
                 return Err(Report::msg(format!(
                     "the core module `{module_name}` (the crate name for a Rust build) is named \
-                     like the generated `{COMPONENT_INIT_PROCEDURE}` procedure; rename the crate"
+                     like the generated `{COMPONENT_INIT_PROCEDURE}` procedure; rename the crate \
+                     or the module"
                 )));
             }
             if let Some(export) =

@@ -234,7 +234,9 @@ dependency from Rust" above). The procedures of component packages stay importab
 
 The core Wasm module of a component is named after the crate, and a crate named like the Miden
 path leaf of one of its exports (a crate `swap` exporting `miden::swap::swap::swap`) or named
-`init` is now rejected: rename the crate (or, for an export clash, the function).
+`init` is now rejected: rename the crate (or, for an export clash, the function). An executable
+without a target namespace is rooted at its crate name, which must not be a reserved library root
+(`miden`, `intrinsics`, `std`); rename the crate.
 
 `midenc-frontend-wasm-metadata` follows the same naming: the `FrontendMetadata` variants carry the
 export's full Miden path in `path` instead of `export_name`, `FrontendMetadata::export_name()` is
