@@ -3,15 +3,17 @@ use std::rc::Rc;
 
 use midenc_frontend_wasm_metadata::namespace::RESERVED_NAMESPACE_PREFIXES;
 use midenc_hir::{
-    Builder, BuilderExt, Context, FunctionIdent, FxHashMap, Ident, Op, OpBuilder, SymbolName,
-    SymbolPath, SymbolTable, Visibility,
+    Builder, BuilderExt, Context, FunctionIdent, FxHashMap, Ident, Op, OpBuilder, SymbolPath,
+    Visibility,
     constants::ConstantData,
     dialects::builtin::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
         attributes::U64Attr,
     },
 };
-use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
+use midenc_session::diagnostics::{
+    DiagnosticsHandler, IntoDiagnostic, Report, Severity, SourceSpan,
+};
 use wasmparser::Validator;
 
 use super::{
@@ -29,7 +31,6 @@ use crate::{
         module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule, collect_package_sections},
         types::ir_type,
     },
-    translation_utils::first_free_name,
 };
 
 /// Translate a validated core Wasm module into a HIR component, including imports
@@ -63,13 +64,16 @@ pub fn translate_module_as_component(
     };
     let mut world_builder = WorldBuilder::new(world_ref);
 
-    // The wrapper is rooted at the target namespace or, when there is none, at the module's name
-    // (`<module>_program` when that name nests with a reserved library tree, see
-    // `program_wrapper_name`)
+    // The wrapper is rooted at the target namespace or, when there is none, at the module's name,
+    // which must not nest with a reserved library tree (see `ensure_program_name_is_free`)
     let module_name = parsed_module.module.name().as_str();
-    let namespace = config.namespace.clone().unwrap_or_else(|| {
-        SymbolPath::from_masm_module_id(&program_wrapper_name(module_name, &world_ref.borrow()))
-    });
+    let namespace = match config.namespace.clone() {
+        Some(namespace) => namespace,
+        None => {
+            ensure_program_name_is_free(module_name)?;
+            SymbolPath::from_masm_module_id(module_name)
+        }
+    };
     let component_name = namespace.to_symbol_name();
     let mut component_ref =
         world_builder.define_component(Ident::with_empty_span(component_name))?;
@@ -100,38 +104,32 @@ pub fn translate_module_as_component(
     })
 }
 
-/// Returns the name of the wrapper component of a program without a target namespace: the core
-/// module's name, unless it would nest with one of the library trees in
-/// [`RESERVED_NAMESPACE_PREFIXES`], in which case the first of `<module>_program`,
-/// `<module>_program2`, … that `world` does not define yet.
+/// Reports an error when `module_name`, the root of the wrapper component of a program without a
+/// target namespace, nests with one of the library trees in [`RESERVED_NAMESPACE_PREFIXES`].
 ///
-/// Only the reserved library trees are avoided, not the roots of the linked packages: a program
+/// Only the reserved library trees are detected, not the roots of the linked packages: a program
 /// named like the root namespace of a Miden Assembly dependency it binds natively (a crate `acme`
 /// calling `acme::math::add`) gets a wrapper component `acme` that shadows the dependency's module
 /// tree, which fails with the component-shadowing error. A crate named like the root namespace of
-/// one of its dependencies is not supported, so the name is not derived from the linked packages.
-fn program_wrapper_name(module_name: &str, world: &World) -> String {
+/// one of its dependencies is not supported.
+fn ensure_program_name_is_free(module_name: &str) -> WasmResult<()> {
     // `zip` stops at the shorter path, so this holds when either path is a segment-prefix of the
     // other. `validate_namespace` is not reused: it accepts only three-segment namespaces and
     // checks one direction (the namespace nesting under a reserved prefix), while a module name
     // may have any number of segments and must not be a prefix of a reserved tree either.
-    let nests_with_library = RESERVED_NAMESPACE_PREFIXES.iter().any(|prefix| {
+    let reserved = RESERVED_NAMESPACE_PREFIXES.iter().find(|prefix| {
         prefix
             .split("::")
             .zip(module_name.split("::"))
             .all(|(reserved, segment)| reserved == segment)
     });
-    if !nests_with_library {
-        return module_name.to_string();
+    match reserved {
+        None => Ok(()),
+        Some(reserved) => Err(Report::msg(format!(
+            "the program module `{module_name}` is named like the reserved library root \
+             `{reserved}`; rename the crate or give the program a target namespace"
+        ))),
     }
-    let name = first_free_name(&format!("{module_name}_program"), |candidate| {
-        world.get(SymbolName::intern(candidate)).is_none()
-    });
-    log::debug!(
-        "program module `{module_name}` is named like a library root, naming its wrapper \
-         component `{name}`"
-    );
-    name
 }
 
 pub fn build_ir_module(
@@ -375,10 +373,9 @@ mod tests {
     use crate::{WasmTranslationConfig, translate};
 
     /// A program module named like a library root (here `intrinsics`, which declares the
-    /// `intrinsics::crypto` stub tree it calls into) gets a wrapper name that does not nest with
-    /// that library.
+    /// `intrinsics::crypto` stub tree it calls into) is rejected.
     #[test]
-    fn a_program_named_like_a_library_root_gets_a_distinct_wrapper() {
+    fn a_program_named_like_a_library_root_is_rejected() {
         let wasm = wat::parse_str(
             r#"
             (module $intrinsics
@@ -394,8 +391,16 @@ mod tests {
         )
         .unwrap();
         let context = Rc::new(Context::default());
-        let output = translate(&wasm, &WasmTranslationConfig::default(), context)
-            .unwrap_or_else(|err| panic!("translation failed: {err}"));
-        assert_eq!(output.component.borrow().name().as_str(), "intrinsics_program");
+        let Err(err) = translate(&wasm, &WasmTranslationConfig::default(), context) else {
+            panic!("translation should fail");
+        };
+        let err = err.to_string();
+        assert!(
+            err.contains(
+                "the program module `intrinsics` is named like the reserved library root \
+                 `intrinsics`; rename the crate or give the program a target namespace"
+            ),
+            "unexpected diagnostic: {err}"
+        );
     }
 }
