@@ -499,42 +499,42 @@ fn batch_kernel() {
     check("same transaction erasure", &same_tx, build_advice_inputs(&same_tx), false);
 
     expect![[r#"
-        MAST bytes: 100279
+        MAST bytes: 103289
         VM cycles:
-        two transactions: 29072
-        partial erasure: 25849
-        all inputs erased: 20759
-        no notes: 11794
-        eight transactions, 64 notes: 257539
+        two transactions: 29005
+        partial erasure: 25515
+        all inputs erased: 20516
+        no notes: 11761
+        eight transactions, 64 notes: 253015
         tampered batch: 1088
         tampered header: 2189
-        tampered input preimage: 14505
-        tampered output preimage: 16570
+        tampered input preimage: 14716
+        tampered output preimage: 16660
         empty batch: 342
         too many transactions: 325
         unaligned transactions: 301
         short header: 1827
         long header: 1827
-        too many input notes: 14097
-        too many output notes: 16167
-        unaligned input preimage: 14073
-        unaligned output preimage: 16143
-        missing input list: 14555
+        too many input notes: 14324
+        too many output notes: 16273
+        unaligned input preimage: 14300
+        unaligned output preimage: 16249
+        missing input list: 14753
         duplicated input list: 6665
         descending input list: 6487
-        phantom input list: 26573
+        phantom input list: 26454
         oversized input list: 4573
         unaligned input list: 4549
-        missing output list: 23785
+        missing output list: 23809
         duplicated output list: 8736
         descending output list: 8558
-        phantom output list: 26074
+        phantom output list: 25944
         oversized output list: 6632
         unaligned output list: 6608
-        input note id mismatch: 19987
-        phantom erasure: 21791
-        consume before create: 14442
-        same transaction erasure: 12893
+        input note id mismatch: 20044
+        phantom erasure: 21594
+        consume before create: 14289
+        same transaction erasure: 12740
     "#]]
     .assert_eq(&metrics);
 }

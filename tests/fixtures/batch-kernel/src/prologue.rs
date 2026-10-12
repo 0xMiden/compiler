@@ -14,9 +14,8 @@ use miden_stdlib_sys::{
 
 use crate::{
     memory::{
-        self, BatchMemory, INPUT_FLAGS_STRIDE, MAX_NOTES_PER_BATCH, MAX_TRANSACTIONS_PER_BATCH,
-        NOTE_ENTRY_FELT_LEN, OUTPUT_FLAGS_STRIDE, TX_HEADER_FELT_LEN, TX_TUPLE_FELT_LEN,
-        TX_TUPLE_WORD_LEN,
+        self, BatchMemory, InputFlags, MAX_NOTES_PER_BATCH, MAX_TRANSACTIONS_PER_BATCH,
+        NOTE_ENTRY_FELT_LEN, OutputFlags, TX_HEADER_FELT_LEN, TX_TUPLE_FELT_LEN, TX_TUPLE_WORD_LEN,
     },
     note_tracker,
 };
@@ -209,14 +208,12 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
 
     let input_notes = prepare_input_note_list();
     let output_notes = prepare_output_note_list();
-    // One shared buffer for both parallel flag arrays: the input-note flags
-    // (`[erasure = 0, consumed = 0]` per entry) followed by the output-note flags
-    // (`[will_be_erased = 0, is_created = 0, linked_input_index = 0]` per entry).
-    let output_flags_base = (input_notes.len() / NOTE_ENTRY_FELT_LEN) * INPUT_FLAGS_STRIDE;
-    let note_flags = alloc::vec![
-        felt!(0);
-        output_flags_base + (output_notes.len() / NOTE_ENTRY_FELT_LEN) * OUTPUT_FLAGS_STRIDE
-    ];
+    // The parallel flag arrays, all flags cleared: `[erasure, consumed]` per input entry and
+    // `[will_be_erased, is_created, linked_input_index]` per output entry.
+    let input_flags: Vec<InputFlags> =
+        alloc::vec![[felt!(0); 2]; input_notes.len() / NOTE_ENTRY_FELT_LEN];
+    let output_flags: Vec<OutputFlags> =
+        alloc::vec![[felt!(0); 3]; output_notes.len() / NOTE_ENTRY_FELT_LEN];
 
     // Expirations: accumulate the running minimum of the transactions' expiration block numbers.
     // ---------------------------------------------------------------------------------------------
@@ -228,8 +225,8 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
         tx_headers,
         input_notes,
         output_notes,
-        note_flags,
-        output_flags_base,
+        input_flags,
+        output_flags,
         batch_expiration_block_num,
     }
 }
