@@ -232,9 +232,9 @@ procedure of a library package is rejected: bind a plain library procedure nativ
 `extern "C"` function carrying its Miden path in `#[link_name]` (see "Binding a Miden Assembly
 dependency from Rust" above). The procedures of component packages stay importable.
 
-The core Wasm module of a component, named after the crate, now gives way to an export of the same
-name (a crate `swap` exporting `swap`): the module is renamed `<name>_core`, which only appears in
-the package's internal MASM paths.
+The core Wasm module of a component is named after the crate, and a crate named like one of its
+exported functions (a crate `swap` exporting `swap`) or named `init` is now rejected: rename the
+crate or the function.
 
 `midenc-frontend-wasm-metadata` follows the same naming: the `FrontendMetadata` variants carry the
 export's full Miden path in `path` instead of `export_name`, `FrontendMetadata::export_name()` is

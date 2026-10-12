@@ -49,7 +49,6 @@ use crate::{
         module_translation_state::{ModuleTranslationState, core_import_path},
         types::{EntityIndex, FuncIndex},
     },
-    translation_utils::first_free_name,
     unsupported_diag,
 };
 
@@ -607,39 +606,34 @@ impl<'a> ComponentTranslator<'a> {
     fn translate_pending(&mut self, types: &ComponentTypesBuilder) -> WasmResult<()> {
         let mut core_funcs: FxHashMap<(StaticModuleIndex, FuncIndex), FunctionRef> =
             FxHashMap::default();
-        let pending_modules = core::mem::take(&mut self.pending_modules);
-        // Name every module up front, so a module that gives way below also avoids the names of
-        // the modules defined after it.
-        let mut module_names = Vec::with_capacity(pending_modules.len());
-        for pending in &pending_modules {
-            let parsed_module = self.nested_modules.get_mut(pending.static_module_idx).unwrap();
+        for PendingModule {
+            static_module_idx,
+            import_canon_lower_args,
+        } in core::mem::take(&mut self.pending_modules)
+        {
+            let parsed_module = self.nested_modules.get_mut(static_module_idx).unwrap();
             parsed_module.module.set_name_fallback(self.config.source_name.clone());
             if let Some(name_override) = self.config.override_name.as_ref() {
                 parsed_module.module.set_name_override(name_override.clone());
             }
-            module_names.push(parsed_module.module.name().name);
-        }
-        for PendingModule {
-            static_module_idx,
-            import_canon_lower_args,
-        } in pending_modules
-        {
-            let parsed_module = self.nested_modules.get_mut(static_module_idx).unwrap();
             // The core module shares the component's symbol table with the lifted exports and
-            // the generated `init` procedure. The module's name is internal while theirs are the
-            // component's contract, so the module gives way; renaming it before its functions are
-            // named keeps every derived path in sync.
+            // the generated `init` procedure, so it cannot share a name with any of them.
             let module_name = parsed_module.module.name().name;
-            if module_name == COMPONENT_INIT_PROCEDURE
-                || self.pending_exports.iter().any(|export| export.path.name() == module_name)
+            if module_name == COMPONENT_INIT_PROCEDURE {
+                return Err(Report::msg(format!(
+                    "the core module `{module_name}` (named after the crate) is named like the \
+                     generated `{COMPONENT_INIT_PROCEDURE}` procedure; rename the crate"
+                )));
+            }
+            if let Some(export) =
+                self.pending_exports.iter().find(|export| export.path.name() == module_name)
             {
-                let free_name = free_core_module_name(
-                    &self.pending_exports,
-                    &module_names,
-                    &self.result,
-                    module_name,
-                );
-                parsed_module.module.set_name_override(free_name.into());
+                return Err(Report::msg(format!(
+                    "the core module `{module_name}` (named after the crate) is named like the \
+                     export `{}`; a core module and an export cannot share a name, rename the \
+                     crate or the function",
+                    export.path
+                )));
             }
 
             let module = &parsed_module.module;
@@ -729,7 +723,7 @@ impl<'a> ComponentTranslator<'a> {
     /// Reports an internal error when the component already holds a symbol named by the leaf of
     /// the export path `path`.
     ///
-    /// Neither clash is expected: a core module named like an export is renamed before it is
+    /// Neither clash is expected: a core module named like an export is rejected before it is
     /// defined, and two exports sharing one path are rejected earlier, by the export pre-scan or,
     /// for one component exported through two interfaces, when the exports are recorded.
     fn ensure_export_leaf_is_free(&self, path: &SymbolPath) -> WasmResult<()> {
@@ -739,10 +733,10 @@ impl<'a> ComponentTranslator<'a> {
             return Ok(());
         };
         let message = if symbol.borrow().as_symbol_operation().is::<Module>() {
-            // Internal error: a core module named like an export is renamed before it is defined.
+            // Internal error: a core module named like an export is rejected before it is defined.
             format!(
                 "export `{leaf}` of `{}` clashes with the core module `{leaf}` of the same name \
-                 (the core module should have been renamed)",
+                 (the core module should have been rejected)",
                 component.namespace_path()
             )
         } else {
@@ -1580,25 +1574,6 @@ impl<'a> ComponentFrame<'a> {
             ComponentItemDef::Type(_ty) => {}
         }
     }
-}
-
-/// Returns the first of `<name>_core`, `<name>_core2`, `<name>_core3`, ... that is neither the
-/// leaf of one of `pending_exports`, nor the name of one of the `module_names` of the component's
-/// core modules, nor a symbol already defined in `component`.
-fn free_core_module_name(
-    pending_exports: &[PendingExport],
-    module_names: &[SymbolName],
-    component: &ComponentBuilder,
-    name: SymbolName,
-) -> String {
-    let component = component.component.borrow();
-    let is_free = |candidate: &str| {
-        let candidate = SymbolName::intern(candidate);
-        !pending_exports.iter().any(|export| export.path.name() == candidate)
-            && !module_names.contains(&candidate)
-            && component.get(candidate).is_none()
-    };
-    first_free_name(&format!("{name}_core"), is_free)
 }
 
 #[cfg(test)]

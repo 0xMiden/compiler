@@ -1,13 +1,13 @@
 //! Compiles components whose core modules are named like a procedure the component generates.
 
-use midenc_integration_test_support::find_export;
+use std::panic::{self, AssertUnwindSafe};
 
-use crate::CompilerTestBuilder;
+use crate::{CompilerTestBuilder, trap_helpers::panic_message};
 
-/// A core module named `init` gives way to the component's generated `init` procedure, which
-/// the module's globals and data segment make codegen emit next to the exports.
+/// A core module named `init` is rejected: it would clash with the component's generated `init`
+/// procedure, which the module's globals and data segment make codegen emit next to the exports.
 #[test]
-fn a_core_module_named_init_compiles() {
+fn a_core_module_named_init_is_rejected() {
     let wasm = wat::parse_str(
         r#"
         (component
@@ -29,8 +29,13 @@ fn a_core_module_named_init_compiles() {
         "#,
     )
     .expect("component fixture must be valid WebAssembly text");
-    let package = CompilerTestBuilder::from_wasm("init", wasm, []).build().compile_package();
-    // The export and the generated `init` are both exported.
-    find_export(&package, "miden::counter::counter", "get_count");
-    find_export(&package, "miden::counter::counter", "init");
+    let mut test = CompilerTestBuilder::from_wasm("init", wasm, []).build();
+    let err = panic::catch_unwind(AssertUnwindSafe(move || test.compile_package()))
+        .map(|_| ())
+        .expect_err("a core module named `init` must be rejected");
+    let err = panic_message(err);
+    assert!(
+        err.contains("is named like the generated `init` procedure"),
+        "unexpected diagnostic: {err}"
+    );
 }
