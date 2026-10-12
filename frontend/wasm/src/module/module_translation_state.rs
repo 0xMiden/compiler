@@ -63,7 +63,8 @@ impl<'a> ModuleTranslationState<'a> {
     /// `world_builder` - the Miden IR World builder
     /// `mod_types` - the Miden IR module types builder
     /// `module_args` - the module instantiation arguments, i.e. entities to "fill" module imports
-    /// `namespace` - the name of the component being translated (its `::`-joined namespace path),
+    /// `namespace` - the name of the component being translated (the canonical key of its
+    ///   namespace path, see `SymbolPath::to_symbol_name`),
     ///   which every component import called by path must lie outside of (FPI and dyncall
     ///   imports, which declare no stub component, are exempt)
     /// `names` - the names of the functions backing component exports and lowering component

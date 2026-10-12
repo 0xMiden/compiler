@@ -707,7 +707,8 @@ mod tests {
         .expect("component WAT should compile")
     }
 
-    /// Translates `wasm`, which must root at `miden::app::api` and define `run`.
+    /// Translates `wasm`, which must root at `miden::app::api` and lift `run` and nothing of
+    /// the helper components.
     fn assert_only_the_exported_interface_is_named(wasm: &[u8]) {
         assert_eq!(
             declared_namespace(wasm).expect("the scan should succeed"),
@@ -715,8 +716,12 @@ mod tests {
         );
         let context = Rc::default();
         let output = translate_with(&context, wasm, None).expect("component should translate");
-        let hir = core_modules_of(&output);
-        assert!(hir.contains(r#"extern("C") @run()"#), "the export is lifted:\n{hir}");
+        let component = output.component.borrow();
+        let run = component.get(SymbolName::intern("run")).expect("the export is lifted");
+        assert!(!run.borrow().as_symbol_operation().is::<Module>(), "`run` is the lift");
+        for name in ["helper", "bare", "help"] {
+            assert!(component.get(SymbolName::intern(name)).is_none(), "`{name}` is not lifted");
+        }
     }
 
     #[test]
@@ -731,6 +736,27 @@ mod tests {
                 (with "import-func-helper" (func $lifted))
                 (with "import-func-bare" (func $lifted))
             ))"#,
+        ));
+    }
+
+    /// An unexported helper may itself export an instance of its own nested component; that
+    /// instance export is the helper's, not the root's, so nothing of it is lifted.
+    #[test]
+    fn a_nested_components_own_instance_export_is_not_lifted() {
+        assert_only_the_exported_interface_is_named(&component_with_helper(
+            r#"(component $outer
+                (import "import-func-help" (func $f (result u32)))
+                (component $inner
+                    (import "import-func-help" (func $g (result u32)))
+                    (import "import-func-bare" (func $h (result u32)))
+                    (export "help" (external-id "other::api::help") (func $g))
+                    (export "bare" (func $h)))
+                (instance $inner-instance (instantiate $inner
+                    (with "import-func-help" (func $f))
+                    (with "import-func-bare" (func $f))))
+                (export "help-iface" (instance $inner-instance)))
+            (instance $outer-instance (instantiate $outer
+                (with "import-func-help" (func $lifted))))"#,
         ));
     }
 

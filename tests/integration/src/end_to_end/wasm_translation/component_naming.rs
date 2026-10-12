@@ -1,4 +1,4 @@
-//! Compiles components whose core modules are named like a procedure the component generates.
+//! Rejects components whose core modules are named like a procedure the component generates.
 
 use std::panic::{self, AssertUnwindSafe};
 

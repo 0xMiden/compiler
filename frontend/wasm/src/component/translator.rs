@@ -76,7 +76,8 @@ pub struct ComponentTranslator<'a> {
     world_builder: WorldBuilder,
     result: ComponentBuilder,
 
-    /// The name of the component being translated (its `::`-joined namespace path), which every
+    /// The name of the component being translated (the canonical key of its namespace path, see
+    /// `SymbolPath::to_symbol_name`), which every
     /// import other than an FPI or dyncall import must lie outside of.
     namespace: SymbolName,
 
@@ -86,7 +87,8 @@ pub struct ComponentTranslator<'a> {
     /// translation.
     component_frontend_metadata: Vec<FrontendMetadata>,
 
-    /// The Miden paths of the function exports of the nested components.
+    /// The Miden paths of the function exports of the nested components whose instances the root
+    /// component exports.
     export_paths: ExportPaths<'a>,
 
     /// Miden paths of the component exports for which a lifting shim was emitted.
@@ -172,9 +174,9 @@ impl<'a> ComponentTranslator<'a> {
         );
     }
 
-    /// Creates a translator that defines the component `name` (its `::`-joined namespace path)
-    /// in the configured world, or in a new one, naming the lifted exports of the nested
-    /// components by `export_paths`.
+    /// Creates a translator that defines the component `name` (the canonical key of its
+    /// namespace path) in the configured world, or in a new one, naming the lifted exports of the
+    /// root-exported nested components by `export_paths`.
     pub fn new(
         name: SymbolName,
         export_paths: ExportPaths<'a>,
@@ -223,7 +225,7 @@ impl<'a> ComponentTranslator<'a> {
         self.detect_shim_modules(root_component);
         self.register_component_export_type_names(root_component, types)?;
 
-        let mut frame = ComponentFrame::new(root_component.types_ref(), FxHashMap::default());
+        let mut frame = ComponentFrame::root(root_component.types_ref());
 
         for init in &root_component.initializers {
             self.initializer(&mut frame, types, init)?;
@@ -481,9 +483,14 @@ impl<'a> ComponentTranslator<'a> {
                 ComponentItem::Func(i) => {
                     frame.component_funcs.push(frame.component_funcs[*i].clone());
                 }
-                ComponentItem::ComponentInstance(_) => {
+                ComponentItem::ComponentInstance(_) if frame.is_root => {
                     let unwrap_instance = component_item.unwrap_instance();
                     self.component_export(frame, types, name, unwrap_instance)?;
+                }
+                ComponentItem::ComponentInstance(_) => {
+                    // A nested component's instance export is not an export of the component
+                    // being translated; it only takes the next instance index.
+                    frame.component_instances.push(ComponentInstanceDef::Export);
                 }
                 ComponentItem::Type(ty) => {
                     let ty = types.convert_type(frame.types, *ty).map_err(Report::msg)?;
@@ -500,7 +507,7 @@ impl<'a> ComponentTranslator<'a> {
     }
 
     /// Lifts every function exported by the component instance `component_instance_idx`, which
-    /// the root component exports as the interface `interface`.
+    /// the root component exports as the interface `interface`. Called from the root frame only.
     fn component_export(
         &mut self,
         frame: &mut ComponentFrame<'a>,
@@ -514,11 +521,15 @@ impl<'a> ComponentTranslator<'a> {
         self.register_component_export_type_names(parsed_component, types)?;
         for (name, item) in parsed_component.exports.iter() {
             if let ComponentItem::Func(f) = item {
+                // `exported_components` pre-scans the same root-exported instances, so a
+                // missing path means the two walks disagree.
                 let path =
                     self.export_paths.get(&(static_component_idx, *name)).cloned().ok_or_else(
                         || {
                             Report::msg(format!(
-                                "export `{name}` of interface `{interface}` has no Miden path"
+                                "internal error: `exported_components` found no Miden path for \
+                                 export `{name}` of static component {} (interface `{interface}`)",
+                                static_component_idx.as_u32()
                             ))
                         },
                     )?;
@@ -1481,6 +1492,10 @@ impl<'a> ComponentItemDef<'a> {
 struct ComponentFrame<'a> {
     types: TypesRef<'a>,
 
+    /// Whether this is the frame of the root component, the only one whose instance exports are
+    /// the component's exports.
+    is_root: bool,
+
     /// The "closure arguments" to this component, or otherwise the maps indexed
     /// by `ModuleUpvarIndex` and `ComponentUpvarIndex`. This is created when
     /// a component is created and stored as part of a component's state during
@@ -1509,9 +1524,19 @@ struct ComponentFrame<'a> {
 }
 
 impl<'a> ComponentFrame<'a> {
+    /// The frame of the root component, which has no arguments.
+    fn root(types: TypesRef<'a>) -> Self {
+        Self {
+            is_root: true,
+            ..Self::new(types, FxHashMap::default())
+        }
+    }
+
+    /// The frame of a nested component instantiated with `args`.
     fn new(types: TypesRef<'a>, args: FxHashMap<&'a str, ComponentItemDef<'a>>) -> Self {
         Self {
             types,
+            is_root: false,
             funcs: PrimaryMap::new(),
             component_funcs: PrimaryMap::new(),
             component_instances: PrimaryMap::new(),
