@@ -179,7 +179,8 @@ impl SymbolMap {
 
     /// Records that `name` is registered in this map, see [SymbolMap::max_name_segments].
     fn note_name(&mut self, name: SymbolName) {
-        // Counts the segments `SymbolPath::segments_of` would produce, without interning them
+        // Bounds the segments `SymbolPath::segments_of` would produce, without interning them; a
+        // quoted segment holding `::` makes this an overcount, which only costs a lookup
         let segments = name.as_str().matches("::").count() + 1;
         self.max_name_segments = self.max_name_segments.max(segments);
     }
@@ -300,9 +301,9 @@ impl SymbolMap {
     /// returns it together with the components that remain to be resolved inside it.
     ///
     /// A leading `Leaf` is looked up as-is: leaf names are opaque, even when they contain `::`.
-    /// Otherwise, the lookup matches the **longest run of leading `Component`s whose `::`-join is
-    /// the registered name of a symbol table**, since a symbol-table op may be named by a
-    /// `::`-joined path (see [SymbolPath::segments_of]). For example, a component named
+    /// Otherwise, the lookup matches the **longest run of leading `Component`s whose canonical key
+    /// is the registered name of a symbol table**, since a symbol-table op may be named by a
+    /// multi-segment path (see [SymbolPath::segments_of]). For example, a component named
     /// `miden::a::b` coexists with a module tree rooted at `miden` in the same table; the path
     /// `miden::a::b::m::f` resolves through the component, because the longest registered name
     /// wins.
@@ -312,13 +313,13 @@ impl SymbolMap {
     ) -> Option<(OperationRef, &'a [SymbolNameComponent])> {
         match components.first()? {
             SymbolNameComponent::Leaf(name) => Some((self.get_op(*name)?, &components[1..])),
-            SymbolNameComponent::Component(first) => {
+            SymbolNameComponent::Component(_) => {
                 let run = components
                     .iter()
                     .take_while(|c| matches!(c, SymbolNameComponent::Component(_)))
                     .count();
-                // Multi-segment names first, longest first; a one-segment name is the plain
-                // lookup of `first` below, which also covers a run of one `Component`.
+                // Multi-segment names first, longest first; a one-segment name is the lookup of
+                // the first component below, which also covers a run of one `Component`.
                 for len in (2..=run.min(self.max_name_segments)).rev() {
                     let name = SymbolPath::join_components(&components[..len]);
                     // Only a symbol table can have the remaining components resolved inside
@@ -330,7 +331,9 @@ impl SymbolMap {
                         return Some((op, &components[len..]));
                     }
                 }
-                Some((self.get_op(*first)?, &components[1..]))
+                // The canonical key of one segment, which is `first` itself unless it holds `::`
+                let name = SymbolPath::join_components(&components[..1]);
+                Some((self.get_op(name)?, &components[1..]))
             }
             SymbolNameComponent::Root => {
                 unreachable!("root component should have already been consumed")

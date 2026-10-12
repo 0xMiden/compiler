@@ -155,6 +155,10 @@ impl SymbolPath {
     /// Converts a [str] representing a fully-qualified Miden Assembly module path, to it's
     /// equivalent [SymbolPath] representation.
     ///
+    /// The id is split on every `::`, so this is meant for ids whose segments contain none; a
+    /// segment is kept as written, quotes included. A path with a quoted segment containing `::`
+    /// (`::"acme::pkg"::app`) must go through [SymbolPath::from_library_path] instead.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -177,24 +181,32 @@ impl SymbolPath {
         )
     }
 
-    /// Returns the `::`-separated segments of the name of a symbol-table op.
+    /// Returns the segments of the name of a symbol-table op, the inverse of
+    /// [SymbolPath::to_symbol_name].
     ///
-    /// A symbol path segment never contains `::`. A component may be *named* by a `::`-joined
-    /// path (module names cannot contain `::`); such a name occupies one entry in its parent's
-    /// symbol table, but contributes one [SymbolNameComponent::Component] per segment to every
-    /// [SymbolPath] that passes through it. Leaf symbol names (functions, globals) are opaque and
-    /// must never be split with this function.
+    /// A component may be *named* by a multi-segment path; such a name occupies one entry in its
+    /// parent's symbol table, but contributes one [SymbolNameComponent::Component] per segment to
+    /// every [SymbolPath] that passes through it. The name is the canonical key of the path:
+    ///
+    /// * the segments are joined with `::`;
+    /// * a segment containing `::`, or one starting with `"` in a multi-segment key, is written
+    ///   quoted, `"..."`, with `"` and `\` escaped by a `\`; any other segment is written raw.
+    ///
+    /// So `["acme::pkg", "app"]` is keyed `"acme::pkg"::app`, and a name without `::` is a single
+    /// segment, as written. Module names cannot contain `::`, so they are always one segment. Leaf
+    /// symbol names (functions, globals) are opaque and must never be split with this function.
     pub fn segments_of(name: SymbolName) -> SmallVec<[SymbolName; 3]> {
         let s = name.as_str();
         if !s.contains("::") {
             return smallvec![name];
         }
-        s.split("::").map(SymbolName::intern).collect()
+        split_key(s)
     }
 
-    /// Returns true when the `::`-joined name `inner` nests in the `::`-joined name `outer`, i.e.
-    /// when `outer` is a strict segment-prefix of `inner`: `a::bc` nests in `a` but not in `a::b`,
-    /// and no name nests in itself.
+    /// Returns true when the name `inner` nests in the name `outer`, i.e. when `outer` is a strict
+    /// segment-prefix of `inner`: `a::bc` nests in `a` but not in `a::b`, and no name nests in
+    /// itself. Both are canonical keys (see [SymbolPath::segments_of]), which keeps a quoted
+    /// segment whole: `"acme::pkg"::app` nests in `"acme::pkg"`, not in `acme`.
     pub fn nests_in(inner: SymbolName, outer: SymbolName) -> bool {
         inner
             .as_str()
@@ -203,10 +215,10 @@ impl SymbolPath {
             .is_some_and(|rest| !rest.is_empty())
     }
 
-    /// Returns all non-root components of this path (leaf included) joined with `::`.
+    /// Returns the canonical key of all non-root components of this path (leaf included).
     ///
     /// This is the symbol-table key of a component named by this path, and the inverse of
-    /// [SymbolPath::segments_of].
+    /// [SymbolPath::segments_of], which describes the spelling.
     pub fn to_symbol_name(&self) -> SymbolName {
         let components = self
             .path
@@ -217,17 +229,32 @@ impl SymbolPath {
         Self::join_components(&components)
     }
 
-    /// Joins the names of `components` with `::`.
+    /// Returns the canonical key of the names of `components` (see [SymbolPath::segments_of]).
     pub(crate) fn join_components(components: &[SymbolNameComponent]) -> SymbolName {
         match components {
-            [single] => single.as_symbol_name(),
+            [single] => {
+                let name = single.as_symbol_name();
+                if !name.as_str().contains("::") {
+                    return name;
+                }
+                let mut quoted = String::new();
+                push_quoted(&mut quoted, name.as_str());
+                SymbolName::intern(quoted)
+            }
             _ => {
                 let mut joined = String::new();
                 for (i, component) in components.iter().enumerate() {
                     if i > 0 {
                         joined.push_str("::");
                     }
-                    joined.push_str(component.as_symbol_name().as_str());
+                    let segment = component.as_symbol_name();
+                    let segment = segment.as_str();
+                    // A raw segment starting with `"` would be read back as a quoted one
+                    if segment.contains("::") || segment.starts_with('"') {
+                        push_quoted(&mut joined, segment);
+                    } else {
+                        joined.push_str(segment);
+                    }
                 }
                 SymbolName::intern(joined)
             }
@@ -376,7 +403,8 @@ impl SymbolPath {
 }
 
 /// Prints the path Miden Assembly style: segments joined by `::`, with a leading `::` when the
-/// path is absolute.
+/// path is absolute. A segment containing `::` is printed quoted, as in a canonical key (see
+/// [SymbolPath::segments_of]), e.g. `::"acme::pkg"::app`; any other segment is printed as is.
 impl fmt::Display for SymbolPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut components = self.path.iter();
@@ -386,16 +414,91 @@ impl fmt::Display for SymbolPath {
             f.write_str("::")?;
         }
 
+        fn write_segment(
+            f: &mut fmt::Formatter<'_>,
+            component: &SymbolNameComponent,
+        ) -> fmt::Result {
+            let segment = component.as_symbol_name();
+            let segment = segment.as_str();
+            if segment.contains("::") {
+                let mut quoted = String::new();
+                push_quoted(&mut quoted, segment);
+                f.write_str(&quoted)
+            } else {
+                f.write_str(segment)
+            }
+        }
         match components.next() {
-            Some(component) => f.write_str(component.as_symbol_name().as_str())?,
+            Some(component) => write_segment(f, component)?,
             None => return Ok(()),
         }
         for component in components {
             f.write_str("::")?;
-            f.write_str(component.as_symbol_name().as_str())?;
+            write_segment(f, component)?;
         }
         Ok(())
     }
+}
+
+/// Appends `segment` to `out` quoted, `"..."`, with `"` and `\` escaped by a `\`.
+fn push_quoted(out: &mut String, segment: &str) {
+    out.push('"');
+    for c in segment.chars() {
+        if matches!(c, '"' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
+}
+
+/// Splits the canonical key `key` into its segments (see [SymbolPath::segments_of]).
+///
+/// A segment starting with `"` runs to the next unescaped `"`, which must be followed by `::` or
+/// the end of the key; any other segment, or a quoted one that does not close that way, runs to
+/// the next `::` or the end of the key.
+fn split_key(key: &str) -> SmallVec<[SymbolName; 3]> {
+    let mut segments = SmallVec::new();
+    let mut rest = key;
+    loop {
+        let (segment, tail) = match rest.strip_prefix('"').and_then(unquote_segment) {
+            Some((segment, tail)) => (SymbolName::intern(segment), tail),
+            None => match rest.split_once("::") {
+                Some((segment, tail)) => (SymbolName::intern(segment), Some(tail)),
+                None => (SymbolName::intern(rest), None),
+            },
+        };
+        segments.push(segment);
+        match tail {
+            Some(tail) => rest = tail,
+            None => return segments,
+        }
+    }
+}
+
+/// Reads the quoted segment whose opening `"` precedes `quoted`, unescaping `\"` and `\\`.
+///
+/// Returns the segment and the text after the `::` that follows its closing `"`, or `None` for
+/// that text when the key ends there; `None` when the segment does not close before `::` or the
+/// end of the key.
+fn unquote_segment(quoted: &str) -> Option<(String, Option<&str>)> {
+    let mut segment = String::new();
+    let mut chars = quoted.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '\\' => segment.push(chars.next()?.1),
+            '"' => {
+                let after = &quoted[i + 1..];
+                return if after.is_empty() {
+                    Some((segment, None))
+                } else {
+                    Some((segment, Some(after.strip_prefix("::")?)))
+                };
+            }
+            c => segment.push(c),
+        }
+    }
+    None
 }
 
 impl fmt::Debug for SymbolPath {
@@ -540,5 +643,91 @@ mod tests {
         assert!(!nests("a", "a::b"));
         assert!(!nests("a::bc", "a::b"));
         assert!(!nests("ab", "a"));
+        assert!(nests("\"acme::pkg\"::app", "\"acme::pkg\""));
+        assert!(!nests("\"acme::pkg\"::app", "acme"));
+    }
+
+    /// Joins `segments` into a canonical key and splits it back.
+    fn round_trip(segments: &[&str]) -> (SymbolName, alloc::vec::Vec<String>) {
+        let components = segments
+            .iter()
+            .map(|segment| SymbolNameComponent::Component(SymbolName::intern(segment)))
+            .collect::<SmallVec<[SymbolNameComponent; 4]>>();
+        let key = SymbolPath::join_components(&components);
+        let split = SymbolPath::segments_of(key).iter().map(|s| s.as_str().to_string()).collect();
+        (key, split)
+    }
+
+    #[test]
+    fn canonical_keys_round_trip() {
+        for (segments, key) in [
+            (&["app"][..], "app"),
+            (&["miden", "a", "b"][..], "miden::a::b"),
+            (&["acme::pkg", "app"][..], r#""acme::pkg"::app"#),
+            (&["acme::pkg"][..], r#""acme::pkg""#),
+            (&["::"][..], r#""::""#),
+            (&["a", "::", "b"][..], r#"a::"::"::b"#),
+            (&[r#"q"u\o"#, "x"][..], r#"q"u\o::x"#),
+            (&[r#""masm-dep""#][..], r#""masm-dep""#),
+            (&[r#""masm-dep""#, "x"][..], r#""\"masm-dep\""::x"#),
+            (&[r#"a::"b\"#, "c"][..], r#""a::\"b\\"::c"#),
+        ] {
+            let (joined, split) = round_trip(segments);
+            assert_eq!(joined.as_str(), key, "the key of {segments:?}");
+            assert_eq!(split, segments, "the segments of `{key}`");
+        }
+    }
+
+    #[test]
+    fn segments_of_an_empty_path_and_a_single_segment() {
+        assert_eq!(SymbolPath::join_components(&[]).as_str(), "");
+        assert_eq!(
+            SymbolPath::segments_of(SymbolName::intern("")).as_slice(),
+            &[SymbolName::intern("")]
+        );
+        assert_eq!(
+            SymbolPath::segments_of(SymbolName::intern("app")).as_slice(),
+            &[SymbolName::intern("app")]
+        );
+    }
+
+    /// A key that is not canonical is still split: a quote that does not close a segment before
+    /// `::` or the end leaves the segment raw.
+    #[test]
+    fn a_malformed_quoted_segment_is_read_raw() {
+        let segments = |key: &str| {
+            SymbolPath::segments_of(SymbolName::intern(key))
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect::<alloc::vec::Vec<_>>()
+        };
+        assert_eq!(segments(r#""a::b"#), [r#""a"#, "b"]);
+        assert_eq!(segments(r#""a"b::c"#), [r#""a"b"#, "c"]);
+    }
+
+    /// A quoted Miden Assembly segment holding `::` stays one segment through the component key,
+    /// the printed path and the library path.
+    #[test]
+    fn a_quoted_library_path_segment_survives_the_component_key() {
+        use midenc_session::miden_assembly_syntax::Path;
+
+        let source = "::\"acme::pkg\"::app";
+        let path = SymbolPath::from_library_path(Path::new(source));
+        let key = path.to_symbol_name();
+        assert_eq!(key.as_str(), r#""acme::pkg"::app"#);
+
+        let segments = SymbolPath::segments_of(key);
+        assert_eq!(
+            segments.as_slice(),
+            &[SymbolName::intern("acme::pkg"), SymbolName::intern("app")]
+        );
+
+        let rebuilt = SymbolPath::from_iter(
+            core::iter::once(SymbolNameComponent::Root)
+                .chain(segments.into_iter().map(SymbolNameComponent::Component)),
+        );
+        assert_eq!(rebuilt, path);
+        assert_eq!(rebuilt.to_string(), source);
+        assert_eq!(rebuilt.to_library_path().to_string(), source);
     }
 }

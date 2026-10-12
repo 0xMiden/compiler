@@ -491,7 +491,7 @@ const HIR_MODULE_OP: &str = "builtin.module";
 ///
 /// # The names are re-rendered, not echoed
 ///
-/// A component's name is a Miden namespace path: its `::`-separated segments (see
+/// A component's name is a Miden namespace path: its segments (see
 /// [`SymbolPath::segments_of`](midenc_hir::SymbolPath::segments_of)) become one path component
 /// each, rendered by the very same `SymbolPath::to_library_path` codegen calls, which quotes a
 /// segment that is not a bare identifier. So `@miden::@a::@b` becomes `miden::a::b`, and
@@ -506,9 +506,10 @@ const HIR_MODULE_OP: &str = "builtin.module";
 /// # A component name is a run of symbol names
 ///
 /// A component is printed as `@a::@b::@c`, one `@`-name per segment, each either bare or quoted
-/// (a segment that is not a bare identifier is quoted, e.g. `@"a b"`). The whole run
-/// is scanned and joined with `::`, exactly as the op's parser joins it; a leading `::`, which the
-/// parser accepts as the root marker and drops from the name, is skipped the same way.
+/// (a segment that is not a bare identifier is quoted, e.g. `@"a b"`). The whole run is scanned
+/// into one path component per `@`-name, exactly the segments the op's parser joins into the
+/// name; a leading `::`, which the parser accepts as the root marker and drops from the name, is
+/// skipped the same way.
 ///
 /// # What it does not accept
 ///
@@ -542,29 +543,34 @@ fn hir_declared_namespace(source: &str) -> Option<String> {
 
     let components = hir_declarations(source, HIR_COMPONENT_OP)?;
     if !components.is_empty() {
-        let [name] = &components[..] else {
+        let [segments] = &components[..] else {
             return None;
         };
         let path = SymbolPath::from_iter(
-            SymbolPath::segments_of(Symbol::intern(name))
-                .into_iter()
-                .map(SymbolNameComponent::Component),
+            segments
+                .iter()
+                .map(|segment| SymbolNameComponent::Component(Symbol::intern(segment))),
         );
         return Some(path.to_library_path().to_string());
     }
 
+    // A module name is a single symbol name
     let [module] = &hir_declarations(source, HIR_MODULE_OP)?[..] else {
         return None;
     };
-    Some(module.clone())
+    match &module[..] {
+        [name] => Some(name.clone()),
+        _ => None,
+    }
 }
 
-/// The names declared by every `op_name` declaration in `source`, in order.
+/// The names declared by every `op_name` declaration in `source`, in order, each as its segments
+/// (see [`hir_declared_name`]).
 ///
 /// `None` — rather than a shorter list — when any occurrence of `op_name` cannot be read as a
 /// declaration, because a scan that skipped what it could not understand would report a *count*
 /// the file does not have, and the count is what decides whether anything is declared at all.
-fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<String>> {
+fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<Vec<String>>> {
     let mut declared = Vec::new();
     for line in source.lines() {
         // `//` runs to the end of the line, so everything after it is trivia — as it is to the
@@ -591,13 +597,14 @@ fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<String>> {
     Some(declared)
 }
 
-/// The symbol name declared by `rest`, the text following an operation name.
+/// The segments of the symbol name declared by `rest`, the text following an operation name.
 ///
 /// One function for both operations because they are written alike: `builtin.component` and
 /// `builtin.module` each parse a visibility keyword and then a symbol name, in that order. A
 /// component's name may be a run `@a::@b::@c` of symbol names, optionally preceded by `::`, which
-/// is returned joined with `::` and without that leading marker.
-fn hir_declared_name(rest: &str) -> Option<String> {
+/// is returned as one unescaped segment per symbol name and without that leading marker. The
+/// segments are not joined: an unescaped segment may itself contain `::` (`@"a::b"`).
+fn hir_declared_name(rest: &str) -> Option<Vec<String>> {
     // A keyword only when a separator follows it, exactly as in Miden Assembly.
     let rest = rest.strip_prefix(char::is_whitespace)?.trim_start();
     // The visibility is not optional in either grammar, so it is not optional here.
@@ -613,13 +620,13 @@ fn hir_declared_name(rest: &str) -> Option<String> {
     // root marker is dropped when the path is joined into the component's name. The printer never
     // writes it, so this only matters for hand-written input.
     let rest = rest.strip_prefix("::").unwrap_or(rest);
-    let (mut name, mut rest) = hir_symbol_name(rest)?;
+    let (first, mut rest) = hir_symbol_name(rest)?;
+    let mut segments = vec![first];
     while let Some((segment, tail)) = rest.strip_prefix("::").and_then(hir_symbol_name) {
-        name.push_str("::");
-        name.push_str(&segment);
+        segments.push(segment);
         rest = tail;
     }
-    Some(name)
+    Some(segments)
 }
 
 /// The `@`-prefixed symbol name at the start of `rest`, unescaped, and the text following it.
@@ -2573,7 +2580,7 @@ namespace = "miden::prepare_fixture::prepare_fixture"
     fn what_counts_as_a_hir_namespace_declaration() {
         // The scan stands in for a parse, so what it accepts has to be what the grammar
         // accepts. Every row here is a claim about the *parser*: a name this rejects is one the
-        // parser rejects too, and a name renders one path component per `::`-separated segment,
+        // parser rejects too, and a name renders one path component per segment,
         // exactly as codegen roots the component.
         for (source, declared) in [
             (
@@ -2588,6 +2595,8 @@ namespace = "miden::prepare_fixture::prepare_fixture"
             // The same path written absolute, which the parser accepts and the printer never
             // writes: the root marker names no segment, so the name is the same.
             ("builtin.component private ::@a::@b {\n};\n", Some("a::b")),
+            // A quoted segment holding `::` is one segment, which the library path quotes.
+            ("builtin.component private @\"a::b\"::@c {\n};\n", Some("\"a::b\"::c")),
             // Nested in a world and holding a module, which is the shape `--emit=hir` writes —
             // and the shape that decides the *order* of the two scans: the component's name wins,
             // and the module inside it is never read as a top-level one.
@@ -2679,6 +2688,11 @@ namespace = "miden::prepare_fixture::prepare_fixture"
                 "prepare_standalone_hir_oracle_escaped",
                 COMPONENT.replace("@hir_ns::@test", r#"@hir_ns::@"te\\st""#),
             ),
+            // A quoted segment holding `::`, which stays one segment.
+            (
+                "prepare_standalone_hir_oracle_quoted_path",
+                COMPONENT.replace("@hir_ns::@test", r#"@"hir::ns"::@test"#),
+            ),
             ("prepare_standalone_hir_oracle_module", MODULE.replace("@lib", "@renamed")),
         ] {
             let prepared =
@@ -2746,6 +2760,25 @@ namespace = "miden::prepare_fixture::prepare_fixture"
                 .unwrap_or_else(|err| panic!("`{file}` should lower: {err}"));
             assert_eq!(inputs.root.path(), prepared.target.namespace.inner().as_ref());
         }
+    }
+
+    #[test]
+    fn a_core_module_is_rooted_at_a_namespace_with_a_quoted_segment() {
+        // The quoted segment holds `::`, so it must stay one segment through the wrapper
+        // component's name, or the root module lands at `::acme::pkg::app` and the assembler
+        // rejects the build.
+        let prepared = prepare_standalone_source(
+            "prepare_standalone_quoted_namespace",
+            "lib.wat",
+            "(module (func (export \"f\")))",
+            &registry(),
+            |options| options.name = Some("\"acme::pkg\"::app".to_string()),
+        )
+        .expect("a `.wat` file is a standalone input this registry's frontend handles");
+        assert_eq!(prepared.target.namespace.inner().as_str(), "::\"acme::pkg\"::app");
+
+        let inputs = lower_prepared(&prepared, &WASM_FRONTEND).expect("the module should lower");
+        assert_eq!(inputs.root.path(), prepared.target.namespace.inner().as_ref());
     }
 
     #[test]

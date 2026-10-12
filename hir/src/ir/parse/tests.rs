@@ -617,3 +617,36 @@ fn component_name_roundtrips_through_the_printer() -> TestResult {
 
     Ok(())
 }
+
+/// A component named by a path whose segment contains `::` prints that segment quoted, and the
+/// text parses back to a component with the same segments.
+#[test]
+fn component_name_with_a_quoted_segment_roundtrips_through_the_printer() -> TestResult {
+    use midenc_session::miden_assembly_syntax::Path;
+
+    use crate::{
+        Op, SymbolPath,
+        dialects::builtin::{Component, WorldBuilder},
+    };
+
+    let test = ParserTest::default();
+    let path = SymbolPath::from_library_path(Path::new("::\"acme::pkg\"::app"));
+    let world = test.context_rc().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+    let component = WorldBuilder::new(world).define_component(path.to_symbol_name().into())?;
+
+    let flags = Default::default();
+    let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+    printer.print_operation(component.as_operation_ref().borrow());
+    let printed = printer.finish().to_string();
+    assert!(
+        printed.starts_with(r#"builtin.component private @"acme::pkg"::@app {"#),
+        "unexpected printed form:\n{printed}"
+    );
+
+    let reparsed = test.parse::<Component>("component_roundtrip.hir", &printed)?;
+    let namespace = reparsed.borrow().namespace_path();
+    assert_eq!(namespace, path);
+    assert_eq!(namespace.components().len(), 3, "the root and two segments: {namespace:?}");
+
+    Ok(())
+}

@@ -44,7 +44,7 @@ pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
 ///
 /// * A [Component] corresponds to a Miden Assembly namespace, and a Miden package. The name of the
 ///   component IS that namespace path, e.g. `miden::counter_contract::counter_contract`: its
-///   `::`-separated segments are the leading components of the path of every symbol inside it
+///   segments are the leading components of the path of every symbol inside it
 ///   (see [Component::namespace_path]).
 /// * Component-level functions are emitted to a MASM module corresponding to the root of the
 ///   namespace, i.e. as if defined in `mod.masm` at the root of a MASM source project.
@@ -94,8 +94,8 @@ impl OpPrinter for Component {
         printer.print_space();
         printer.print_keyword(self.get_visibility().as_str());
         printer.print_space();
-        // Printed one `@`-prefixed segment per `::`-separated segment of the name
-        // (`@miden::@a::@b`), the symbol-path form the parser reads back and re-joins.
+        // Printed one `@`-prefixed segment per segment of the name (`@miden::@a::@b`,
+        // `@"acme::pkg"::@app`), the symbol-path form the parser reads back and re-joins.
         let path = SymbolPath::from_iter(
             SymbolPath::segments_of(Symbol::name(self))
                 .into_iter()
@@ -251,13 +251,20 @@ impl Component {
     /// declared.
     pub const SYNTHETIC_WRAPPER_ATTR: &'static str = "synthetic_wrapper";
 
-    /// Returns the absolute path this component is rooted at, with one component per `::`-separated
-    /// segment of its name; every symbol inside the component has it as a prefix.
+    /// Returns the absolute path this component is rooted at, with one component per segment of
+    /// its name (see [SymbolPath::segments_of]); every symbol inside the component has it as a
+    /// prefix.
     ///
     /// Note that `Symbol::path()` of the component itself ends in a single `Leaf` holding its
     /// whole name instead.
     pub fn namespace_path(&self) -> SymbolPath {
-        SymbolPath::from_masm_module_id(Symbol::name(self).as_str())
+        SymbolPath::from_iter(
+            core::iter::once(SymbolNameComponent::Root).chain(
+                SymbolPath::segments_of(Symbol::name(self))
+                    .into_iter()
+                    .map(SymbolNameComponent::Component),
+            ),
+        )
     }
 
     /// Mark this component as the compiler's wrapper around a bare core module.
