@@ -31,12 +31,24 @@ fn find_key(list: &[Felt], key: &[Felt; 4]) -> Option<usize> {
     while lo < hi {
         let mid = lo + (hi - lo) / 2;
         let mid_key = memory::note_key(list, mid);
-        if word_lt(mid_key, key) {
-            lo = mid + 1;
-        } else if word_lt(key, mid_key) {
-            hi = mid;
+        // One three-way comparison per step: the first differing felt (most significant first)
+        // decides the direction with a single felt `<`, and no difference is a hit. Two `word_lt`
+        // calls would reload both words and repeat the equality chain to tell equal from greater.
+        let (mid_felt, key_felt) = if mid_key[3] != key[3] {
+            (mid_key[3], key[3])
+        } else if mid_key[2] != key[2] {
+            (mid_key[2], key[2])
+        } else if mid_key[1] != key[1] {
+            (mid_key[1], key[1])
+        } else if mid_key[0] != key[0] {
+            (mid_key[0], key[0])
         } else {
             return Some(mid);
+        };
+        if mid_felt < key_felt {
+            lo = mid + 1;
+        } else {
+            hi = mid;
         }
     }
     None
