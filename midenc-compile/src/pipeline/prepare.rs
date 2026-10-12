@@ -629,11 +629,11 @@ fn hir_declared_name(rest: &str, is_component: bool) -> Option<Vec<String>> {
     };
     let (first, mut rest) = hir_symbol_name(rest)?;
     let mut segments = vec![first];
-    while let Some((segment, tail)) = rest
-        .trim_start()
-        .strip_prefix("::")
-        .and_then(|tail| hir_symbol_name(tail.trim_start()))
-    {
+    // A `::` must be followed by a symbol name on the same line: the parser rejects a dangling
+    // one, and a name continued on the next line is beyond this line-oriented scan. Stopping
+    // before the `::` would return a shorter, wrong name.
+    while let Some(tail) = rest.trim_start().strip_prefix("::") {
+        let (segment, tail) = hir_symbol_name(tail.trim_start())?;
         segments.push(segment);
         rest = tail;
     }
@@ -2574,7 +2574,8 @@ namespace = "miden::prepare_fixture::prepare_fixture"
     fn what_counts_as_a_hir_namespace_declaration() {
         // The scan stands in for a parse, so what it accepts has to be what the grammar
         // accepts. Every row here is a claim about the *parser*: a name this rejects is one the
-        // parser rejects too, and a name renders one path component per segment,
+        // parser rejects too (except the fail-closed rows marked below), and a name renders
+        // one path component per segment,
         // exactly as codegen roots the component.
         for (source, declared) in [
             (
@@ -2591,6 +2592,15 @@ namespace = "miden::prepare_fixture::prepare_fixture"
             ("builtin.component private ::@a::@b {\n};\n", Some("a::b")),
             // The lexer skips whitespace between tokens, also around `::`.
             ("builtin.component private :: @a :: @b {\n};\n", Some("a::b")),
+            // A `::` not followed by a symbol name is a parse error, not the end of the name.
+            ("builtin.component private @a ::{\n};\n", None),
+            // Fail-closed rows the parser accepts and the scan does not; the printer writes
+            // neither. The scan is line-oriented, so a name continuing on the next line is not
+            // read (and not cut short to `a` either).
+            ("builtin.component private @a::\n@b {\n};\n", None),
+            // The lexer ends the visibility keyword at `:`, but the scan wants whitespace after
+            // it.
+            ("builtin.component private::@a::@b {\n};\n", None),
             // Only a component's name may be absolute: the module parser rejects the `::`.
             ("builtin.module public ::@lib {\n};\n", None),
             // A quoted segment holding `::` is one segment, which the library path quotes.
