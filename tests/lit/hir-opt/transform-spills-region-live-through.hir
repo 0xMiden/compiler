@@ -1,4 +1,5 @@
 // RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(transform-spills))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(transform-spills,transform-spills))' | filecheck %s
 
 // A spill inside one arm must end the captured value's live range outside the if as well.
 // The bypass arm must initialize the same slot, so the store belongs before the if and the
@@ -72,6 +73,37 @@ builtin.module public @test {
             scf.yield %7 : (u32);
         } : (u32) -> (u32);
         builtin.ret %3 : (u32);
+    };
+    // Later evictions reuse the initialized spill slot, but each region still needs to end
+    // the enclosing live range. All three boundaries must be handled by a single pass.
+    // CHECK-LABEL: @successive_regions
+    // CHECK: hir.store_local %{{\d+}} <{ local = #builtin.local_variable<[[SHARED_SLOT:\d+]], u32> }>
+    // CHECK: scf.if
+    // CHECK: %[[FIRST_RELOAD:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[SHARED_SLOT]], u32> }>;
+    // CHECK: hir.store_local %[[FIRST_RELOAD]] <{ local = #builtin.local_variable<[[SHARED_SLOT]], u32> }>
+    // CHECK: scf.if
+    // CHECK: %[[SECOND_RELOAD:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[SHARED_SLOT]], u32> }>;
+    // CHECK: hir.store_local %[[SECOND_RELOAD]] <{ local = #builtin.local_variable<[[SHARED_SLOT]], u32> }>
+    // CHECK: scf.if
+    // CHECK: %[[FINAL_RELOAD:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[SHARED_SLOT]], u32> }>;
+    // CHECK-NEXT: builtin.ret %[[FINAL_RELOAD]] : (u32);
+    builtin.function public extern("C") @successive_regions(%0: i1, %1: u32) -> u32 {
+        scf.if %0 then {
+            %2 = arith.constant 1 : u128;
+            %3 = hir.exec ::@test::@consume(%2, %2, %2, %2) : extern("C") (u128, u128, u128, u128) -> u32;
+            scf.yield : ();
+        } else { scf.yield : (); } : (i1) -> ();
+        scf.if %0 then {
+            %4 = arith.constant 1 : u128;
+            %5 = hir.exec ::@test::@consume(%4, %4, %4, %4) : extern("C") (u128, u128, u128, u128) -> u32;
+            scf.yield : ();
+        } else { scf.yield : (); } : (i1) -> ();
+        scf.if %0 then {
+            %6 = arith.constant 1 : u128;
+            %7 = hir.exec ::@test::@consume(%6, %6, %6, %6) : extern("C") (u128, u128, u128, u128) -> u32;
+            scf.yield : ();
+        } else { scf.yield : (); } : (i1) -> ();
+        builtin.ret %1 : (u32);
     };
     builtin.function public extern("C") @consume(%0: u128, %1: u128, %2: u128, %3: u128) -> u32 {
         %4 = arith.constant 0 : u32;

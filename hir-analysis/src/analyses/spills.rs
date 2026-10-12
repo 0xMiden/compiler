@@ -233,6 +233,8 @@ pub struct SpillAnalysis {
     spill_ids: FxHashMap<(Placement, ValueRef), Spill>,
     // Index reloads by (placement, spilled value) for fast global deduplication.
     reload_ids: FxHashMap<(Placement, ValueRef), Reload>,
+    // Resident-value evictions, including those that reuse an existing spill slot.
+    evictions: SmallVec<[ValueRef; 4]>,
     // The set of operands in registers on entry to a given program point
     w_entries: FxHashMap<ProgramPoint, SmallSet<ValueOrAlias, 4>>,
     // The set of operands that have been spilled upon entry to a given program point
@@ -1030,6 +1032,7 @@ impl SpillAnalysis {
         if result_usage > K {
             return Err(operand_stack_overflow(op, result_usage, "its region results"));
         }
+        let first_eviction = self.evictions.len();
         let before_op = ProgramPoint::before(op);
         let place = Placement::At(before_op);
         let span = op.span();
@@ -1116,6 +1119,7 @@ impl SpillAnalysis {
 
             // Remove spilled values from W
             w.remove(spill);
+            self.evictions.push(spill.value());
         }
 
         // Emit reloads for those operands of I not yet in W
@@ -1161,7 +1165,6 @@ impl SpillAnalysis {
             }
         }
 
-        let first_nested_spill = self.spills.len();
         for successor in branch.get_entry_successor_regions(&operands) {
             // Fixup W and S based on successor operands
             let branch_point = *successor.branch_point();
@@ -1235,9 +1238,10 @@ impl SpillAnalysis {
         // A reload inside a region cannot replace uses outside that region. End the enclosing
         // live range as well, and initialize its slot even on paths that bypass the inner spill.
         let loop_like = op.as_trait::<dyn LoopLikeOpInterface>();
-        let escaped_spills = self.spills[first_nested_spill..]
+        let escaped_spills = self.evictions[first_eviction..]
             .iter()
-            .map(|spill| ValueOrAlias::new(spill.value))
+            .copied()
+            .map(ValueOrAlias::new)
             .filter(|value| {
                 liveness.is_live_before(value, op)
                     && (loop_like.is_some() || liveness.is_live_after(value, op))
@@ -1375,6 +1379,7 @@ impl SpillAnalysis {
             let value =
                 ordered.pop().expect("expected at least one value when spilling over-K usage");
             take.remove(&value);
+            self.evictions.push(value.value());
             usage = usage.checked_sub(value.stack_size()).expect("spill usage underflow");
             self.spill(place, value.value(), value.value().borrow().span());
         }
@@ -2187,11 +2192,16 @@ impl SpillAnalysis {
         // This can occur when B is a loop header, and the computed W^entry(B) does not include values
         // in W^exit(P) that are live-through the loop, typically because of loop pressure within the
         // loop requiring us to place spills of those values outside the loop.
-        let must_spill = w_exitp.difference(&info.w_entry).into_difference(s_exitp);
+        let evicted = w_exitp.difference(&info.w_entry);
         let next_uses = liveness
             .next_uses_at(&info.point)
             .expect("missing liveness info for program point");
-        to_spill.extend(must_spill.into_iter().filter(|o| next_uses.is_live(o)));
+        for value in evicted.into_iter().filter(|o| next_uses.is_live(o)) {
+            self.evictions.push(value.value());
+            if !s_exitp.contains(&value) {
+                to_spill.insert(value);
+            }
+        }
 
         // We expect any block parameters present to be in `to_reload` at this point, as they will never
         // be in W^exit(P) (the parameters are not in scope at the end of P). The arguments provided in
@@ -2536,6 +2546,7 @@ impl SpillAnalysis {
 
             // Remove spilled values from W
             w.remove(spill);
+            self.evictions.push(spill.value());
         }
 
         // Emit reloads for those operands of I not yet in W
