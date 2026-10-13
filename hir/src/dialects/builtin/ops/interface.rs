@@ -1,9 +1,10 @@
 use midenc_session::LibraryPath;
 
 use crate::{
-    IdentAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol,
-    SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
-    UnsafeIntrusiveEntityRef, Usable, Visibility,
+    Context, IdentAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface,
+    Report, Symbol, SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolNameComponent,
+    SymbolPath, SymbolRef, SymbolTable, SymbolTableKind, SymbolUseList, UnsafeIntrusiveEntityRef,
+    Usable, Verify, Visibility,
     derive::operation,
     dialects::builtin::{self, BuiltinDialect},
     traits::{
@@ -62,7 +63,12 @@ pub struct Interface {
 impl OpPrinter for Interface {
     fn print(&self, printer: &mut crate::print::AsmPrinter<'_>) {
         printer.print_space();
-        printer.print_symbol_name(self.get_name().as_symbol());
+        // Printed as its raw segment, which the parser re-spells
+        let name = self.get_name().as_symbol();
+        match SymbolPath::segments_of(name).as_slice() {
+            [segment] => printer.print_symbol_name(*segment),
+            _ => printer.print_symbol_name(name),
+        }
         printer.print_space();
         printer.print_region(&self.body());
     }
@@ -73,7 +79,9 @@ impl OpParser for Interface {
         state: &mut crate::OperationState,
         parser: &mut dyn crate::OpAsmParser<'_>,
     ) -> crate::ParseResult {
+        // The name is the Miden Assembly spelling of the parsed raw segment
         let name = parser.parse_symbol_name()?;
+        let name = crate::Ident::new(Interface::canonical_name(name.name), name.span);
         state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
 
         let region = parser.context().create_region();
@@ -162,7 +170,27 @@ impl SymbolTable for Interface {
     }
 }
 
+/// Interfaces are built through the builtin builders, which spell and validate their names;
+/// parsed input is not, so the name is checked here as well.
+impl Verify<dyn SymbolTable> for Interface {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        Self::validate_name(Symbol::name(self))
+    }
+}
+
 impl Interface {
+    /// Returns the name an interface given the raw segment `name` gets: its Miden Assembly
+    /// spelling (see [SymbolPath::segments_of]), e.g. `"my-api"` for `my-api`.
+    pub fn canonical_name(name: SymbolName) -> SymbolName {
+        SymbolPath::join_components(&[SymbolNameComponent::Component(name)])
+    }
+
+    /// Returns an error when `name` cannot name an interface: it is not the Miden Assembly
+    /// spelling of one raw segment (see [SymbolPath::segments_of]), or that segment contains `::`.
+    pub fn validate_name(name: SymbolName) -> Result<(), Report> {
+        SymbolPath::validate_table_name(SymbolTableKind::Interface, name)
+    }
+
     /// Get the Miden Assembly [LibraryPath] that uniquely identifies this interface.
     pub fn library_path(&self) -> Option<LibraryPath> {
         let parent = self.as_operation().parent_op()?;

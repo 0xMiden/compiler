@@ -11,7 +11,13 @@ use crate::{
 };
 
 pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
+    /// Create an [Interface] named by the raw segment `name`, spelled as
+    /// [Interface::canonical_name] does.
+    ///
+    /// Returns an error when `name` contains `::`, see [Interface::validate_name].
     fn create_interface(&mut self, name: Ident) -> Result<InterfaceRef, Report> {
+        let name = Ident::new(Interface::canonical_name(name.name), name.span);
+        Interface::validate_name(name.name)?;
         let op_builder = self.builder_mut().create::<Interface, (_,)>(name.span());
         op_builder(name)
     }

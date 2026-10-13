@@ -1,9 +1,8 @@
-use alloc::format;
-
 use crate::{
     Context, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Report, Symbol,
     SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolNameComponent, SymbolPath,
-    SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable, Verify, Visibility,
+    SymbolRef, SymbolTable, SymbolTableKind, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
+    Verify, Visibility,
     derive::operation,
     dialects::builtin::{
         BuiltinDialect,
@@ -111,16 +110,7 @@ impl Module {
     /// Only components are named by `::`-joined paths: a module's name is a single segment of the
     /// path of every symbol it contains.
     pub fn validate_name(name: SymbolName) -> Result<(), Report> {
-        let segments = SymbolPath::spelled_segments("module", name)?;
-        let segment = match segments.as_slice() {
-            [segment] if !segment.as_str().contains("::") => return Ok(()),
-            [segment] => *segment,
-            _ => name,
-        };
-        Err(Report::msg(format!(
-            "module `{segment}`: a module name cannot contain `::` (only components are named by \
-             `::`-joined paths)"
-        )))
+        SymbolPath::validate_table_name(SymbolTableKind::Module, name)
     }
 }
 

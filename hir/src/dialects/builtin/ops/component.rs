@@ -4,7 +4,8 @@ pub use self::interface::{ComponentExport, ComponentInterface, ModuleExport, Mod
 use crate::{
     Context, Ident, IdentAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface,
     Report, Symbol, SymbolManager, SymbolManagerMut, SymbolMap, SymbolNameComponent, SymbolPath,
-    SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable, Verify, Visibility,
+    SymbolRef, SymbolTable, SymbolTableKind, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
+    Verify, Visibility,
     derive::operation,
     dialects::builtin::{BuiltinDialect, attributes::VisibilityAttr},
     interner,
@@ -148,7 +149,7 @@ impl OpParser for Component {
 /// the name is checked here as well (see [SymbolPath::segments_of]).
 impl Verify<dyn SymbolTable> for Component {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
-        SymbolPath::spelled_segments("component", Symbol::name(self)).map(|_| ())
+        SymbolPath::validate_table_name(SymbolTableKind::Component, Symbol::name(self))
     }
 }
 

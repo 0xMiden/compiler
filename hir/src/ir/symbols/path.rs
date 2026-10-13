@@ -240,13 +240,14 @@ impl SymbolPath {
         Self::join_components(&components)
     }
 
-    /// Returns `name`, the name of a component or module (named a `kind`), split into its raw
-    /// segments, or an error when the name is not the Miden Assembly spelling of its segments, or
-    /// a segment cannot be spelled in Miden Assembly at all.
-    pub(crate) fn spelled_segments(
-        kind: &str,
+    /// Returns an error when `name` cannot name a symbol-table op of `kind`: it is not the Miden
+    /// Assembly spelling of its raw segments, a segment cannot be spelled in Miden Assembly at
+    /// all, or `kind` is named by one segment (see [SymbolTableKind::is_named_by_a_path]) and the
+    /// name has several, or one containing `::`.
+    pub(crate) fn validate_table_name(
+        kind: SymbolTableKind,
         name: SymbolName,
-    ) -> Result<SmallVec<[SymbolName; 3]>, Report> {
+    ) -> Result<(), Report> {
         let segments = Self::segments_of(name);
         // A quoted Miden Assembly segment ends at the next `"` and has no escapes
         if let Some(segment) = segments.iter().find(|s| s.as_str().contains(['"', '\\'])) {
@@ -261,7 +262,18 @@ impl SymbolPath {
                  components and modules through `SymbolPath::to_symbol_name`"
             )));
         }
-        Ok(segments)
+        if kind.is_named_by_a_path() {
+            return Ok(());
+        }
+        let segment = match segments.as_slice() {
+            [segment] if !segment.as_str().contains("::") => return Ok(()),
+            [segment] => *segment,
+            _ => name,
+        };
+        Err(Report::msg(format!(
+            "{kind} `{segment}`: a {kind} name cannot contain `::` (only components are named by \
+             `::`-joined paths)"
+        )))
     }
 
     /// Returns the absolute path of the component keyed `key` (see [SymbolPath::segments_of]):
@@ -509,6 +521,33 @@ impl Ord for SymbolPath {
 impl core::hash::Hash for SymbolPath {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.path.hash(state);
+    }
+}
+
+/// The symbol-table ops named by the Miden Assembly spelling of their raw segments (see
+/// [SymbolPath::segments_of]).
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum SymbolTableKind {
+    Component,
+    Module,
+    Interface,
+}
+
+impl SymbolTableKind {
+    /// Returns true when an op of this kind may be named by a multi-segment path; the others are
+    /// named by one segment.
+    pub fn is_named_by_a_path(self) -> bool {
+        matches!(self, Self::Component)
+    }
+}
+
+impl fmt::Display for SymbolTableKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Component => "component",
+            Self::Module => "module",
+            Self::Interface => "interface",
+        })
     }
 }
 

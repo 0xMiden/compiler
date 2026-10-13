@@ -28,6 +28,11 @@ impl ComponentBuilder {
         Self { component, builder }
     }
 
+    /// Define a new interface `name` in this component, spelled as
+    /// [crate::dialects::builtin::Interface::canonical_name] does.
+    ///
+    /// Returns an error when `name` contains `::`, see
+    /// [crate::dialects::builtin::Interface::validate_name].
     pub fn define_interface(&mut self, name: Ident) -> Result<InterfaceRef, Report> {
         self.builder.create_interface(name)
     }

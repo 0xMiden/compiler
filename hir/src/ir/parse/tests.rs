@@ -655,3 +655,65 @@ fn component_name_with_a_quoted_segment_roundtrips_through_the_printer() -> Test
 
     Ok(())
 }
+
+/// A component with an interface whose name needs quoting.
+const INTERFACE_SOURCE: &str = "\
+builtin.world {
+    builtin.component private @app {
+        builtin.interface @\"my-api\" {
+            builtin.function public extern(\"C\") @f() {
+                builtin.ret;
+            };
+        };
+    };
+};";
+
+/// An interface is named by the Miden Assembly spelling of its raw segment, prints that raw
+/// segment, and the printed text parses back to the same name.
+#[test]
+fn interface_name_roundtrips_through_the_printer() -> TestResult {
+    use crate::dialects::builtin::Interface;
+
+    let test = ParserTest::default();
+    let source = "\
+builtin.interface @\"my-api\" {
+    builtin.function public extern(\"C\") @f() {
+        builtin.ret;
+    };
+};";
+    let interface = test.parse::<Interface>("interface_roundtrip.hir", source)?;
+    assert_eq!(Symbol::name(&*interface.borrow()).as_str(), "\"my-api\"");
+
+    let flags = Default::default();
+    let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+    printer.print_operation(interface.as_operation_ref().borrow());
+    let printed = printer.finish().to_string();
+    assert!(
+        printed.starts_with("builtin.interface @\"my-api\" {"),
+        "unexpected printed form:\n{printed}"
+    );
+
+    let reparsed = test.parse::<Interface>("interface_roundtrip2.hir", &printed)?;
+    assert_eq!(Symbol::name(&*reparsed.borrow()).as_str(), "\"my-api\"");
+    Ok(())
+}
+
+/// A path through an interface whose name needs quoting resolves to the function inside it.
+#[test]
+fn a_path_through_a_quoted_interface_resolves() -> TestResult {
+    use crate::{SymbolNameComponent, SymbolPath, dialects::builtin::Function};
+
+    let test = ParserTest::default();
+    let world = test.parse_any("interface_resolution.hir", INTERFACE_SOURCE)?;
+    let path = SymbolPath::from_iter([
+        SymbolNameComponent::Root,
+        SymbolNameComponent::Component("app".into()),
+        SymbolNameComponent::Component("my-api".into()),
+        SymbolNameComponent::Leaf("f".into()),
+    ]);
+    let world = world.try_downcast_op::<World>().expect("expected a world");
+    let resolved = world.borrow().resolve(&path).expect("`::app::\"my-api\"::f` should resolve");
+    assert!(resolved.borrow().as_symbol_operation().is::<Function>());
+    assert_eq!(resolved.borrow().path(), path);
+    Ok(())
+}
