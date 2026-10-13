@@ -322,6 +322,14 @@ impl SymbolPath {
             && segment.chars().all(|c| c.is_ascii_graphic() && !matches!(c, '"' | '\\'))
     }
 
+    /// Returns the Miden Assembly spelling of the raw segment `segment`, i.e. the name of a
+    /// symbol table named by it, or `None` when Miden Assembly cannot spell it (see
+    /// [SymbolPath::is_spellable]).
+    pub(crate) fn spell_segment(segment: SymbolName) -> Option<SymbolName> {
+        Self::is_spellable(segment.as_str())
+            .then(|| Self::join_components(&[SymbolNameComponent::Component(segment)]))
+    }
+
     /// Returns an error when Miden Assembly cannot spell `segment`, a raw segment of the name of a
     /// symbol-table op of `kind` (see [SymbolPath::is_spellable]).
     pub(crate) fn validate_segment(kind: SymbolTableKind, segment: &str) -> Result<(), Report> {

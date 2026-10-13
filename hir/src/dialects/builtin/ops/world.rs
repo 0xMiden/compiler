@@ -1,4 +1,4 @@
-use alloc::format;
+use alloc::{format, vec::Vec};
 
 use crate::{
     Context, OpPrinter, Operation, RegionKind, RegionKindInterface, Report, Symbol, SymbolManager,
@@ -100,36 +100,52 @@ impl SymbolTable for World {
 }
 
 impl World {
-    /// Returns an error when the world declares a module tree reaching the path the component name
-    /// `component` spells, which the component would shadow, or another component whose name
-    /// nests with `component` (one is a segment-prefix of the other): resolution prefers the
-    /// longest registered name, so either would make paths ambiguous.
+    /// Returns an error when the world declares a module tree with a symbol at the path the
+    /// component name `component` spells (a module, or a function or global named by the raw last
+    /// segment), which the component would shadow, or another component whose name nests with
+    /// `component` (one is a segment-prefix of the other) or names the same raw path: resolution
+    /// prefers the longest registered name, so any of them would make paths ambiguous.
     ///
     /// The name is the Miden Assembly spelling of the component's namespace path (see
     /// [SymbolPath::to_symbol_name]).
     pub fn reject_component_shadowing(&self, component: SymbolName) -> Result<(), Report> {
         self.reject_nested_components(component)?;
-        let mut segments = SymbolPath::segments_of(component).into_iter();
-        let Some(mut module) = segments
-            .next()
-            .and_then(|first| self.get(Module::canonical_name(first).ok()?))
-            .and_then(as_module)
-        else {
+        let segments = SymbolPath::segments_of(component);
+        let Some((last, modules)) = segments.split_last() else {
             return Ok(());
         };
-        for segment in segments {
-            let Some(next) = Module::canonical_name(segment)
+        let mut table = self.op.as_operation_ref();
+        for segment in modules {
+            let Some(next) = Module::canonical_name(*segment)
                 .ok()
-                .and_then(|name| module.borrow().get(name))
+                .and_then(|name| table.borrow().as_trait::<dyn SymbolTable>()?.get(name))
                 .and_then(as_module)
             else {
                 return Ok(());
             };
-            module = next;
+            table = next.as_operation_ref();
         }
-        // The module tree reaches the component's whole path, so that path is at once the
-        // component, the shadowed module path and their shared prefix.
-        Err(shadowing_error(component, component, component))
+        let shadowed = {
+            let table = table.borrow();
+            let table = table.as_trait::<dyn SymbolTable>().expect("a world or a module");
+            table.symbol_manager().symbols().get_leaf(*last)
+        };
+        // At the world level, the component found by its own name is not shadowed
+        let Some(shadowed) = shadowed.filter(|op| !op.borrow().is::<Component>()) else {
+            return Ok(());
+        };
+        let shadowed = shadowed.borrow();
+        if shadowed.is::<Module>() {
+            // The module tree reaches the component's whole path, so that path is at once the
+            // component, the shadowed module path and their shared prefix.
+            return Err(shadowing_error(component, component, component));
+        }
+        let path = shadowed.as_symbol().expect("only symbols are registered").path();
+        Err(Report::msg(format!(
+            "component `{component}` and `{}` `{path}` have the same path; a component name must \
+             not shadow a module tree",
+            shadowed.name()
+        )))
     }
 
     /// Returns the name of the world-level component named by the module path `path`, given as
@@ -153,16 +169,35 @@ impl World {
     }
 
     /// Returns an error when a world-level component other than `component` has a name that is a
-    /// segment-prefix of `component`, or extends it.
+    /// segment-prefix of `component`, or extends it, or whose raw segments joined with `::` read
+    /// the same as those of `component` (`"a::b"` and `a::b`).
     fn reject_nested_components(&self, component: SymbolName) -> Result<(), Report> {
         let body = self.body();
         if body.is_empty() {
             return Ok(());
         }
+        let joined = |name: SymbolName| {
+            SymbolPath::segments_of(name)
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join("::")
+        };
         for op in body.entry().body() {
             let Some(existing) = op.downcast_ref::<Component>().map(Symbol::name) else {
                 continue;
             };
+            // Only a quoted segment can join to the text of different segments
+            if existing != component
+                && (existing.as_str().contains('"') || component.as_str().contains('"'))
+                && joined(existing) == joined(component)
+            {
+                return Err(Report::msg(format!(
+                    "component `{component}` and component `{existing}` both join to the segments \
+                     `{}`; component namespaces must be distinct",
+                    joined(component)
+                )));
+            }
             let (shorter, longer) = if existing.as_str().len() < component.as_str().len() {
                 (existing, component)
             } else {

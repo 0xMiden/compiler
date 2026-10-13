@@ -536,6 +536,40 @@ mod tests {
         assert_eq!(Symbol::name(&*second.borrow()).as_str(), "\"masm-dep_1\"");
     }
 
+    /// Renaming a component rewrites the raw segments its uses end in, so a use still resolves.
+    #[test]
+    fn a_renamed_component_is_still_resolved_by_its_uses() {
+        use alloc::string::ToString;
+
+        use crate::{
+            AsSymbolRef, Symbol, SymbolUse,
+            dialects::builtin::attributes::{SymbolRef, SymbolRefAttr},
+        };
+
+        let (mut world, mut world_builder) = empty_world();
+        let context = world.borrow().as_operation().context_rc();
+        let component = world_builder
+            .define_component(Ident::from("miden::a::b"))
+            .expect("failed to define component");
+        let owner = world_builder
+            .define_component(Ident::from("other"))
+            .expect("failed to define component");
+        let path = component.borrow().path();
+        let mut attr = context.create_attribute::<SymbolRefAttr, _>(SymbolRef::new(path, None));
+        let user = context.alloc_tracked(SymbolUse::new(owner.as_operation_ref(), attr));
+        attr.borrow_mut().set_user(user);
+        attr.borrow_mut().link(component.as_symbol_ref());
+
+        world
+            .borrow_mut()
+            .rename("miden::a::b".into(), "miden::a::b_1".into())
+            .expect("failed to rename component");
+        let path = attr.borrow().path().clone();
+        assert_eq!(path.to_string(), "::miden::a::b_1");
+        let resolved = world.borrow().resolve(&path).expect("the use should resolve");
+        assert_eq!(resolved.borrow().as_operation_ref(), component.as_operation_ref());
+    }
+
     /// The module verifier reads a quoted name for its raw segment, which must not hold `::`.
     #[test]
     fn the_module_verifier_rejects_a_quoted_path() {

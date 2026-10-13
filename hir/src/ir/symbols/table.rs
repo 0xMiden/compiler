@@ -1,9 +1,9 @@
-use midenc_session::miden_assembly_syntax::ast::Ident;
 use smallvec::SmallVec;
 
 use super::{Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, generate_symbol_name};
 use crate::{
-    FxHashMap, Op, Operation, OperationRef, ProgramPoint, Report, UnsafeIntrusiveEntityRef,
+    FxHashMap, FxHashSet, Op, Operation, OperationRef, ProgramPoint, Report,
+    UnsafeIntrusiveEntityRef,
     traits::{GraphRegionNoTerminator, NoTerminator, Terminator},
 };
 
@@ -124,6 +124,9 @@ impl dyn SymbolTable {
 pub struct SymbolMap {
     /// A low-level mapping of symbols to operations found in this table
     symbols: FxHashMap<SymbolName, SymbolRef>,
+    /// The names in `symbols` registered to symbol-table ops, which are named by the Miden
+    /// Assembly spelling of their raw segments, while any other symbol is named by its raw name
+    tables: FxHashSet<SymbolName>,
     /// Used to unique symbol names when conflicts are detected
     uniquing_count: usize,
     /// The largest number of segments of any name registered in this map, each name read as the
@@ -139,6 +142,7 @@ impl Default for SymbolMap {
     fn default() -> Self {
         Self {
             symbols: Default::default(),
+            tables: Default::default(),
             uniquing_count: 0,
             max_name_segments: 1,
         }
@@ -179,12 +183,44 @@ impl SymbolMap {
         Ok(map)
     }
 
-    /// Records that `name` is registered in this map, see [SymbolMap::max_name_segments].
-    fn note_name(&mut self, name: SymbolName) {
+    /// Registers `symbol` as `name`, a symbol table when `is_table`, see [SymbolMap::tables] and
+    /// [SymbolMap::max_name_segments].
+    fn register(&mut self, name: SymbolName, symbol: SymbolRef, is_table: bool) {
+        self.symbols.insert(name, symbol);
+        if is_table {
+            self.tables.insert(name);
+        }
         // Bounds the segments `SymbolPath::segments_of` would produce, without interning them; a
         // quoted segment holding `::` makes this an overcount, which only costs a lookup
         let segments = name.as_str().matches("::").count() + 1;
         self.max_name_segments = self.max_name_segments.max(segments);
+    }
+
+    /// Returns the name under which a symbol of the other kind than a symbol named `name` (a
+    /// symbol table when `is_table`) would have the same path.
+    ///
+    /// A symbol table named by one segment that needs quoting (`"my-mod"`) and a plain symbol
+    /// named by that raw segment (`my-mod`) both have the path `[Leaf(my-mod)]` (see
+    /// [Symbol::path]), although their names differ.
+    fn path_alias(name: SymbolName, is_table: bool) -> Option<SymbolName> {
+        if is_table {
+            match SymbolPath::segments_of(name).as_slice() {
+                [segment] if *segment != name => Some(*segment),
+                _ => None,
+            }
+        } else {
+            SymbolPath::spell_segment(name).filter(|spelled| *spelled != name)
+        }
+    }
+
+    /// Returns true when a symbol named `name`, a symbol table when `is_table`, can be registered
+    /// in this map: no symbol has that name, and no symbol of the other kind has the same path
+    /// (see [SymbolMap::path_alias]).
+    fn is_free(&self, name: SymbolName, is_table: bool) -> bool {
+        !self.symbols.contains_key(&name)
+            && Self::path_alias(name, is_table).is_none_or(|alias| {
+                !self.symbols.contains_key(&alias) || self.tables.contains(&alias) == is_table
+            })
     }
 
     /// Get the symbol named `name`, or `None` if undefined.
@@ -244,15 +280,9 @@ impl SymbolMap {
             // absolute symbol paths which are children of `root`, as we cannot reach any other
             // symbols in the root namespace.
             if let Some(root_symbol) = root_op.as_trait::<dyn Symbol>() {
-                let root_name = root_symbol.name();
-                // The root symbol itself, named whole; otherwise its raw segments are matched
-                // below, the last one possibly as the leaf (as `Symbol::path` spells it)
-                if let [SymbolNameComponent::Leaf(name)] = components
-                    && *name == root_name
-                {
-                    return Some(root);
-                }
-                let segments = SymbolPath::segments_of(root_name);
+                // The raw segments of the root symbol's name are matched, the last one possibly
+                // as the leaf (as `Symbol::path` gives it)
+                let segments = SymbolPath::segments_of(root_symbol.name());
                 for (i, segment) in segments.iter().enumerate() {
                     match components.get(i)? {
                         SymbolNameComponent::Component(name) if name == segment => {}
@@ -306,60 +336,76 @@ impl SymbolMap {
     /// Looks up the symbol named by the leading components of `components` in this map, and
     /// returns it together with the components that remain to be resolved inside it.
     ///
-    /// A leading `Leaf` is looked up as-is: leaf names are opaque, even when they contain `::`.
-    /// When that misses, it is read as the raw last segment of a symbol table (see
-    /// [Symbol::path]) and looked up by its Miden Assembly spelling.
+    /// A leading `Leaf` names the symbol whose path relative to this map it is (see
+    /// [SymbolMap::get_leaf]).
     ///
     /// Otherwise, the lookup matches the **longest run of leading `Component`s whose Miden
-    /// Assembly spelling is the registered name of a symbol table**, since a symbol-table op may be named by a
-    /// multi-segment path (see [SymbolPath::segments_of]). For example, a component named
-    /// `miden::a::b` coexists with a module tree rooted at `miden` in the same table; the path
-    /// `miden::a::b::m::f` resolves through the component, because the longest registered name
-    /// wins. The run may end in the `Leaf` holding the raw last segment of the symbol table the
-    /// path names.
+    /// Assembly spelling is the registered name of a symbol table**, since a symbol-table op may
+    /// be named by a multi-segment path (see [SymbolPath::segments_of]). For example, a component
+    /// named `miden::a::b` coexists with a module tree rooted at `miden` in the same table; the
+    /// path `miden::a::b::m::f` resolves through the component, because the longest registered
+    /// name wins. The run may end in the `Leaf` holding the raw last segment of the symbol table
+    /// the path names. A component Miden Assembly cannot spell names no symbol table, so it ends
+    /// the run.
     fn lookup_prefix<'a>(
         &self,
         components: &'a [SymbolNameComponent],
     ) -> Option<(OperationRef, &'a [SymbolNameComponent])> {
         match components.first()? {
-            SymbolNameComponent::Leaf(name) => {
-                let op = self.get_op(*name).or_else(|| {
-                    if !Ident::requires_quoting(name.as_str()) {
-                        return None;
-                    }
-                    let spelled = SymbolPath::join_components(&components[..1]);
-                    self.get_op(spelled).filter(|op| op.borrow().implements::<dyn SymbolTable>())
-                })?;
-                Some((op, &components[1..]))
-            }
+            SymbolNameComponent::Leaf(name) => Some((self.get_leaf(*name)?, &components[1..])),
             SymbolNameComponent::Component(_) => {
+                // Only raw segments are spelled: a quoted raw segment (`"my-mod"`) would
+                // otherwise pass through as the spelling of the segment it quotes
+                let spellable =
+                    |c: &SymbolNameComponent| SymbolPath::is_spellable(c.as_symbol_name().as_str());
                 let run = components
                     .iter()
-                    .take_while(|c| matches!(c, SymbolNameComponent::Component(_)))
+                    .take_while(|c| matches!(c, SymbolNameComponent::Component(_)) && spellable(c))
                     .count();
-                // A symbol table's own path ends in the leaf holding its last segment
-                let run = run + usize::from(components.get(run).is_some_and(|c| c.is_leaf()));
-                // Multi-segment names first, longest first; a one-segment name is the lookup of
-                // the first component below, which also covers a run of one `Component`.
-                for len in (2..=run.min(self.max_name_segments)).rev() {
-                    let name = SymbolPath::join_components(&components[..len]);
-                    // Only a symbol table can have the remaining components resolved inside
-                    // it; any other symbol whose opaque name happens to spell the joined path
-                    // must not capture the lookup.
-                    if let Some(op) = self.get_op(name)
-                        && op.borrow().implements::<dyn SymbolTable>()
-                    {
-                        return Some((op, &components[len..]));
-                    }
+                if run == 0 {
+                    return None;
                 }
-                // The name of one segment, which is `first` itself when it is a bare identifier
-                let name = SymbolPath::join_components(&components[..1]);
-                Some((self.get_op(name)?, &components[1..]))
+                // A symbol table's own path ends in the leaf holding its last segment
+                let run = run
+                    + usize::from(components.get(run).is_some_and(|c| c.is_leaf() && spellable(c)));
+                // Longest first, down to the name of the first segment alone. Only a symbol table
+                // can have the remaining components resolved inside it; any other symbol whose
+                // opaque name happens to spell the joined path must not capture the lookup.
+                (1..=run.min(self.max_name_segments)).rev().find_map(|len| {
+                    let name = SymbolPath::join_components(&components[..len]);
+                    if !self.tables.contains(&name) {
+                        return None;
+                    }
+                    Some((self.get_op(name)?, &components[len..]))
+                })
             }
             SymbolNameComponent::Root => {
                 unreachable!("root component should have already been consumed")
             }
         }
+    }
+
+    /// Returns the symbol whose path relative to this map is the lone leaf `name` (see
+    /// [Symbol::path]): a plain symbol named `name`, or a symbol table whose one raw segment is
+    /// `name`.
+    ///
+    /// Leaf names are opaque, even when they contain `::`, so a plain symbol is looked up as is.
+    /// A symbol table is named by the Miden Assembly spelling of its raw segment instead, which
+    /// is `name` itself when it is a bare identifier; a leaf Miden Assembly cannot spell names no
+    /// symbol table. Each lookup only accepts its kind of symbol: a plain symbol whose opaque
+    /// name happens to be a spelling (`"my-mod"`, `a::b`) must not capture the path of a symbol
+    /// table, nor the other way around.
+    pub(crate) fn get_leaf(&self, name: SymbolName) -> Option<OperationRef> {
+        if !self.tables.contains(&name)
+            && let Some(op) = self.get_op(name)
+        {
+            return Some(op);
+        }
+        let spelled = SymbolPath::spell_segment(name)?;
+        if !self.tables.contains(&spelled) {
+            return None;
+        }
+        self.get_op(spelled)
     }
 
     /// Returns true if a symbol named `name` is in the map
@@ -374,22 +420,25 @@ impl SymbolMap {
     /// Remove the entry for `name` from this map, if present.
     #[inline]
     pub fn remove(&mut self, name: SymbolName) -> Option<SymbolRef> {
+        self.tables.remove(&name);
         self.symbols.remove(&name)
     }
 
-    /// Inserts `symbol` in the map, as `name`, so long as `name` is not already in the map.
-    #[inline]
+    /// Inserts `symbol` in the map, as `name`, so long as no symbol has `name` or the path a
+    /// symbol named `name` would have (a symbol table named `"my-mod"` and a function named
+    /// `my-mod` share the path `my-mod`, see [Symbol::path]).
     pub fn insert_new(&mut self, name: SymbolName, symbol: SymbolRef) -> bool {
-        let inserted = self.symbols.try_insert(name, symbol).is_ok();
+        let is_table = is_symbol_table(&symbol);
+        let inserted = self.is_free(name, is_table);
         if inserted {
-            self.note_name(name);
+            self.register(name, symbol, is_table);
         }
         inserted
     }
 
-    /// Inserts `symbol` in the map, with `name` if that name is not already registered in the map.
-    /// Otherwise, a unique variation of `name` is generated, and `symbol` is inserted in the map
-    /// with that name instead.
+    /// Inserts `symbol` in the map, with `name` if [SymbolMap::insert_new] would accept that
+    /// name. Otherwise, a unique variation of `name` is generated, and `symbol` is inserted in
+    /// the map with that name instead.
     ///
     /// If `name` is modified to make it unique, `symbol` is updated with the new name on insertion.
     ///
@@ -397,38 +446,31 @@ impl SymbolMap {
     ///
     /// NOTE: If `symbol` is already in the map with `name`, this is a no-op.
     pub fn insert(&mut self, name: SymbolName, mut symbol: SymbolRef) -> SymbolName {
-        // Add the symbol to the symbol map
-        // let sym = symbol.borrow();
-        match self.symbols.try_insert(name, symbol) {
-            Ok(_) => {
-                symbol.borrow_mut().set_name(name);
-                self.note_name(name);
-                name
-            }
-            Err(err) => {
-                // If this exact symbol was already in the table, do nothing
-                if err.entry.get() == &symbol {
-                    assert_eq!(
-                        symbol.borrow().name(),
-                        name,
-                        "name does not match what was registered with the symbol table"
-                    );
-                    return name;
-                }
-
-                // Otherwise, we need to make the symbol name unique
-                let uniqued =
-                    generate_unique_name(&symbol, name, &mut self.uniquing_count, |name| {
-                        !self.symbols.contains_key(&name)
-                    });
-                // drop(sym);
-                symbol.borrow_mut().set_name(uniqued);
-                // TODO: visit uses? symbol should be unused AFAICT
-                self.symbols.insert(uniqued, symbol);
-                self.note_name(uniqued);
-                uniqued
-            }
+        // If this exact symbol was already in the table, do nothing
+        if self.symbols.get(&name) == Some(&symbol) {
+            assert_eq!(
+                symbol.borrow().name(),
+                name,
+                "name does not match what was registered with the symbol table"
+            );
+            return name;
         }
+
+        let is_table = is_symbol_table(&symbol);
+        let name = if self.is_free(name, is_table) {
+            name
+        } else {
+            let mut counter = self.uniquing_count;
+            let uniqued = generate_unique_name(is_table, name, &mut counter, |name| {
+                self.is_free(name, is_table)
+            });
+            self.uniquing_count = counter;
+            uniqued
+        };
+        // TODO: visit uses? a uniqued symbol should be unused AFAICT
+        symbol.borrow_mut().set_name(name);
+        self.register(name, symbol, is_table);
+        name
     }
 
     /// Ensures that the given symbol name is unique within this symbol map, as well as all of the
@@ -439,13 +481,14 @@ impl SymbolMap {
     pub fn make_unique(&mut self, op: &SymbolRef, tables: &[SymbolManager<'_>]) -> SymbolName {
         // Determine new name that is unique in all symbol tables.
         let name = { op.borrow().name() };
+        let is_table = is_symbol_table(op);
 
-        generate_unique_name(op, name, &mut self.uniquing_count, |name| {
-            if self.symbols.contains_key(&name) {
-                return false;
-            }
-            !tables.iter().any(|t| t.symbols.contains_key(&name))
-        })
+        let mut counter = self.uniquing_count;
+        let uniqued = generate_unique_name(is_table, name, &mut counter, |name| {
+            self.is_free(name, is_table) && tables.iter().all(|t| t.symbols.is_free(name, is_table))
+        });
+        self.uniquing_count = counter;
+        uniqued
     }
 
     /// Get an iterator of [SymbolRef] corresponding to the [Symbol] operations in this map
@@ -454,14 +497,19 @@ impl SymbolMap {
     }
 }
 
-/// Returns a variation of `name`, the name of `symbol`, that `is_unique` accepts (see
-/// [generate_symbol_name]).
+/// Returns true when `symbol` is a symbol-table op.
+fn is_symbol_table(symbol: &SymbolRef) -> bool {
+    symbol.borrow().as_symbol_operation().implements::<dyn SymbolTable>()
+}
+
+/// Returns a variation of `name`, the name of a symbol (a symbol table when `is_table`), that
+/// `is_unique` accepts (see [generate_symbol_name]).
 ///
 /// The name of a symbol-table op is the Miden Assembly spelling of its raw segments (see
 /// [SymbolPath::segments_of]), so the suffix goes on its raw last segment and the result is
 /// spelled again: `"masm-dep"` becomes `"masm-dep_1"`, not `"masm-dep"_1`.
 fn generate_unique_name<F>(
-    symbol: &SymbolRef,
+    is_table: bool,
     name: SymbolName,
     counter: &mut usize,
     is_unique: F,
@@ -472,7 +520,7 @@ where
     // Candidates are interned before the lookup: a `SymbolName` hashes differently from its
     // string, so a map keyed by `SymbolName` cannot be queried with a `&str`
     let mut segments = SmallVec::<[SymbolNameComponent; 4]>::new();
-    if symbol.borrow().as_symbol_operation().implements::<dyn SymbolTable>() {
+    if is_table {
         segments
             .extend(SymbolPath::segments_of(name).into_iter().map(SymbolNameComponent::Component));
     }
@@ -697,7 +745,7 @@ impl<'a> SymbolManagerMut<'a> {
     /// This function will panic if `symbol` is already attached to another operation.
     pub fn insert_new(&mut self, symbol: SymbolRef, ip: ProgramPoint) -> bool {
         let name = symbol.borrow().name();
-        if self.symbols.contains_key(&name) {
+        if !self.symbols.is_free(name, is_symbol_table(&symbol)) {
             return false;
         }
 
@@ -807,7 +855,7 @@ impl<'a> SymbolManagerMut<'a> {
                 "current name does not resolve to `op`"
             );
             assert!(
-                !self.symbols.contains_key(&to),
+                self.symbols.is_free(to, is_symbol_table(&op)),
                 "new symbol name given by `to` is already in use"
             );
             name
@@ -836,17 +884,46 @@ impl<'a> SymbolManagerMut<'a> {
 
     /// Replaces the symbol name stored in all uses of the symbol `op`.
     ///
+    /// `to` is the name as stored, see [Symbol::set_name]. The name of a symbol-table op ends a
+    /// path as its raw segments (see [Symbol::path]), so those segments of each use are replaced
+    /// by the raw segments of `to`.
+    ///
     /// NOTE: This is not the same as replacing uses of one symbol with another, this used while
     /// renaming the symbol name of `op`, while preserving its uses.
     pub fn replace_all_symbol_uses(&mut self, op: SymbolRef, to: SymbolName) -> Result<(), Report> {
-        // Visit all users of `symbol`, and rewrite the name used with `to`
         let symbol = op.borrow();
+        // For a symbol table, the number of trailing components naming it in a path, and the
+        // components replacing them
+        let table_segments =
+            symbol.as_symbol_operation().implements::<dyn SymbolTable>().then(|| {
+                let mut new = SymbolPath::segments_of(to)
+                    .into_iter()
+                    .map(SymbolNameComponent::Component)
+                    .collect::<SmallVec<[_; 3]>>();
+                if let Some(last) = new.last_mut() {
+                    *last = SymbolNameComponent::Leaf(last.as_symbol_name());
+                }
+                (SymbolPath::segments_of(symbol.name()).len(), new)
+            });
+
+        // Visit all users of `symbol`, and rewrite the name used with `to`
         let mut users = symbol.uses().front();
         while let Some(user) = users.as_pointer() {
             users.move_next();
 
             let mut attr = user.borrow().attr;
-            attr.borrow_mut().path_mut().set_name(to);
+            let mut attr = attr.borrow_mut();
+            let path = attr.path_mut();
+            match &table_segments {
+                None => path.set_name(to),
+                Some((old_len, new)) => {
+                    let path = &mut path.path;
+                    let keep =
+                        path.len().saturating_sub(*old_len).max(usize::from(path[0].is_root()));
+                    path.truncate(keep);
+                    path.extend(new.iter().copied());
+                }
+            }
         }
 
         Ok(())

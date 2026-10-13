@@ -792,7 +792,7 @@ builtin.world {
         component.as_operation_ref()
     );
 
-    // A standalone component, the root itself, named whole or by its raw segment
+    // A standalone component, the root itself, named by its raw segment only
     let source = "builtin.component private @\"hir_ns:test@1.0.0\" {\n};";
     let component = test.parse::<Component>("leaf_root.hir", source)?;
     let root = component.as_operation_ref();
@@ -803,7 +803,122 @@ builtin.world {
             .map(|symbol| symbol.borrow().as_symbol_operation().as_operation_ref())
     };
     assert_eq!(resolve(&leaf(&["hir_ns:test@1.0.0"])), Some(root));
-    assert_eq!(resolve(&leaf(&["\"hir_ns:test@1.0.0\""])), Some(root));
+    assert_eq!(resolve(&leaf(&["\"hir_ns:test@1.0.0\""])), None);
     assert_eq!(resolve(&component.borrow().path()), Some(root));
+    Ok(())
+}
+
+/// A component whose path is the path of a function in a module tree is rejected, as is a
+/// component renamed away from it: paths identify symbols uniquely.
+#[test]
+fn a_component_at_the_path_of_a_module_tree_function_is_reported() -> TestResult {
+    let source = |component: &str| {
+        format!(
+            "\
+builtin.world {{
+    builtin.module public @miden {{
+        builtin.module public @a {{
+            builtin.function public extern(\"C\") @f() {{
+                builtin.ret;
+            }};
+        }};
+    }};
+    builtin.component private {component} {{
+    }};
+}};"
+        )
+    };
+    let test = ParserTest::default();
+    let err = test
+        .parse_any("shadow.hir", &source("@miden::@a::@f"))
+        .expect_err("the component shadows the function `f`")
+        .to_string();
+    assert_eq!(
+        err,
+        "component `miden::a::f` and `builtin.function` `::miden::a::f` have the same path; a \
+         component name must not shadow a module tree"
+    );
+    test.parse_any("shadow_ctrl.hir", &source("@other"))?;
+    Ok(())
+}
+
+/// A module and a function whose raw names are equal have the same path, so they cannot both be
+/// defined in one symbol table, whatever their definition order.
+#[test]
+fn a_module_and_a_function_with_one_raw_name_are_reported() {
+    let module = "\
+        builtin.module private @\"my-mod\" {
+            builtin.function public extern(\"C\") @g() {
+                builtin.ret;
+            };
+        };";
+    let function = "\
+        builtin.function public extern(\"C\") @\"my-mod\"() {
+            builtin.ret;
+        };";
+    let test = ParserTest::default();
+    for (first, second, name) in [(module, function, "my-mod"), (function, module, "\"my-mod\"")] {
+        let source = format!(
+            "builtin.world {{\n    builtin.component private @app {{\n{first}\n{second}\n    \
+             }};\n}};"
+        );
+        let err = test
+            .parse_any("crosskind.hir", &source)
+            .expect_err("the module and the function share the path `::app::my-mod`")
+            .to_string();
+        assert_eq!(err, format!("redefinition of symbol {name}"), "{source}");
+    }
+}
+
+/// A one-segment component name holding `::` and the two-segment name it reads like cannot both
+/// be defined.
+#[test]
+fn components_joining_to_the_same_segments_are_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.component private @\"a::b\" {
+    };
+    builtin.component private @a::@b {
+    };
+};";
+    let err = test
+        .parse_any("joined.hir", source)
+        .expect_err("`\"a::b\"` and `a::b` must not coexist")
+        .to_string();
+    assert!(
+        err.contains("both join to the segments `a::b`; component namespaces must be distinct"),
+        "unexpected diagnostic: {err}"
+    );
+}
+
+/// A reference spells only raw segments: a segment wrapped in quotes is not read as the segment
+/// it quotes.
+#[test]
+fn a_quoted_raw_segment_in_a_reference_does_not_resolve() -> TestResult {
+    use crate::{SymbolName, SymbolNameComponent, SymbolPath};
+
+    let source = "\
+builtin.world {
+    builtin.component private @app {
+        builtin.module private @\"my-mod\" {
+            builtin.global_variable public @v : i32;
+        };
+    };
+};";
+    let test = ParserTest::default();
+    let world = test.parse_any("modq.hir", source)?;
+    let world = world.try_downcast_op::<World>().expect("expected a world");
+    let resolves = |module: &str| {
+        let path = SymbolPath::from_iter([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component("app".into()),
+            SymbolNameComponent::Component(SymbolName::intern(module)),
+            SymbolNameComponent::Leaf("v".into()),
+        ]);
+        world.borrow().resolve(&path).is_some()
+    };
+    assert!(resolves("my-mod"));
+    assert!(!resolves("\"my-mod\""));
     Ok(())
 }
