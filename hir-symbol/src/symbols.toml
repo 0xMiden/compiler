@@ -96,6 +96,7 @@ constant = {}
 
 [attributes]
 inline = {}
+extension = {}
 
 [dialects]
 arith = {}

@@ -1,4 +1,4 @@
-use alloc::{format, vec::Vec};
+use alloc::format;
 
 use smallvec::{SmallVec, smallvec};
 
@@ -104,9 +104,9 @@ impl SymbolTable for World {
 impl World {
     /// Returns an error when the world declares a tree of modules or interfaces with a symbol at
     /// the path the component name `component` spells (a module, or a function or global named by
-    /// the raw last segment), which the component would shadow, or another component whose name nests with
-    /// `component` (one is a segment-prefix of the other) or names the same raw path: resolution
-    /// prefers the longest registered name, so any of them would make paths ambiguous.
+    /// the raw last segment), which the component would shadow, or another component whose name
+    /// nests with `component` (one is a segment-prefix of the other): resolution prefers the
+    /// longest registered name, so either would make paths ambiguous.
     ///
     /// The name is the Miden Assembly spelling of the component's namespace path (see
     /// [SymbolPath::to_symbol_name]).
@@ -227,35 +227,19 @@ impl World {
     }
 
     /// Returns an error when a world-level component other than `component` has a name that is a
-    /// segment-prefix of `component`, or extends it, or whose raw segments joined with `::` read
-    /// the same as those of `component` (`"a::b"` and `a::b`).
+    /// segment-prefix of `component`, or extends it.
+    ///
+    /// Raw segments are compared, not their text: `"a::b"` (one segment) and `a::b` (two) are
+    /// different paths, in Miden Assembly as here.
     fn reject_nested_components(&self, component: SymbolName) -> Result<(), Report> {
         let body = self.body();
         if body.is_empty() {
             return Ok(());
         }
-        let joined = |name: SymbolName| {
-            SymbolPath::segments_of(name)
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>()
-                .join("::")
-        };
         for op in body.entry().body() {
             let Some(existing) = op.downcast_ref::<Component>().map(Symbol::name) else {
                 continue;
             };
-            // Only a quoted segment can join to the text of different segments
-            if existing != component
-                && (existing.as_str().contains('"') || component.as_str().contains('"'))
-                && joined(existing) == joined(component)
-            {
-                return Err(Report::msg(format!(
-                    "component `{component}` and component `{existing}` both join to the segments \
-                     `{}`; component namespaces must be distinct",
-                    joined(component)
-                )));
-            }
             let (shorter, longer) = if existing.as_str().len() < component.as_str().len() {
                 (existing, component)
             } else {

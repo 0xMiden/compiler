@@ -60,7 +60,7 @@ impl WorldBuilder {
                 .can_define(name.name, &kind)
                 .map_err(Report::msg)?;
         }
-        // `name` is spelled already, so it is not spelled again by `create_component`
+        // `name` is spelled already, so the op is created with it as is
         let op_builder = self.builder.create::<Component, (_,)>(name.span);
         op_builder(name)
     }

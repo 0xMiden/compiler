@@ -909,28 +909,6 @@ fn a_module_and_a_function_with_one_raw_name_are_reported() {
     }
 }
 
-/// A one-segment component name holding `::` and the two-segment name it reads like cannot both
-/// be defined.
-#[test]
-fn components_joining_to_the_same_segments_are_reported() {
-    let test = ParserTest::default();
-    let source = "\
-builtin.world {
-    builtin.component private @\"a::b\" {
-    };
-    builtin.component private @a::@b {
-    };
-};";
-    let err = test
-        .parse_any("joined.hir", source)
-        .expect_err("`\"a::b\"` and `a::b` must not coexist")
-        .to_string();
-    assert!(
-        err.contains("both join to the segments `a::b`; component namespaces must be distinct"),
-        "unexpected diagnostic: {err}"
-    );
-}
-
 /// A reference spells only raw segments: a segment wrapped in quotes is not read as the segment
 /// it quotes.
 #[test]

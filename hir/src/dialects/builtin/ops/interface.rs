@@ -75,15 +75,7 @@ impl OpParser for Interface {
         state: &mut crate::OperationState,
         parser: &mut dyn crate::OpAsmParser<'_>,
     ) -> crate::ParseResult {
-        // The name is the Miden Assembly spelling of the parsed raw segment
-        let name = parser.parse_symbol_name()?;
-        let name = crate::Ident::new(
-            Interface::canonical_name(name.name).map_err(|err| {
-                crate::parse::ParserError::invalid_symbol_table_name(name.span, err)
-            })?,
-            name.span,
-        );
-        state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+        super::parse_segment_name(state, parser, SymbolTableKind::Interface)?;
 
         let region = parser.context().create_region();
         parser.parse_region(region, &[], true)?;

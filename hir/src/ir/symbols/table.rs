@@ -195,8 +195,8 @@ pub struct SymbolMap {
     tables: FxHashSet<SymbolName>,
     /// Used to unique symbol names when conflicts are detected
     uniquing_count: usize,
-    /// The largest number of segments of any name registered in this map, each name read as the
-    /// Miden Assembly spelling of its segments (see [SymbolPath::segments_of]).
+    /// The largest number of segments of the name of any symbol table registered in this map, each
+    /// name read as the Miden Assembly spelling of its segments (see [SymbolPath::segments_of]).
     ///
     /// This is only an upper bound (it never decreases on removal) that keeps the common case of
     /// single-segment names at one lookup per path component in [SymbolMap::lookup_prefix].
@@ -260,9 +260,11 @@ impl SymbolMap {
     /// [SymbolMap::max_name_segments].
     fn register(&mut self, name: SymbolName, symbol: SymbolRef, is_table: bool) {
         self.symbols.insert(name, symbol);
-        if is_table {
-            self.tables.insert(name);
+        if !is_table {
+            // Only a symbol table can match a run of path components
+            return;
         }
+        self.tables.insert(name);
         // Bounds the segments `SymbolPath::segments_of` would produce, without interning them; a
         // quoted segment holding `::` makes this an overcount, which only costs a lookup
         let segments = name.as_str().matches("::").count() + 1;
@@ -292,6 +294,11 @@ impl SymbolMap {
     fn conflict(&self, name: SymbolName, is_table: bool) -> Option<SymbolRef> {
         if let Some(existing) = self.symbols.get(&name) {
             return Some(*existing);
+        }
+        // Without symbol tables, no symbol has the path of a plain symbol under another name;
+        // skipping the alias spares spelling (and interning) the name
+        if !is_table && self.tables.is_empty() {
+            return None;
         }
         let alias = Self::path_alias(name, is_table)?;
         self.symbols
@@ -820,11 +827,13 @@ impl<'a> SymbolManagerMut<'a> {
     /// This function will panic if `symbol` is already attached to another operation.
     pub fn insert_new(&mut self, symbol: SymbolRef, ip: ProgramPoint) -> bool {
         let name = symbol.borrow().name();
-        if !self.symbols.is_free(name, is_symbol_table(&symbol)) {
+        let is_table = is_symbol_table(&symbol);
+        if !self.symbols.is_free(name, is_table) {
             return false;
         }
 
-        assert_eq!(self.insert(symbol, ip), name, "expected insertion to preserve original name");
+        self.place(symbol, ip);
+        self.symbols.register(name, symbol, is_table);
 
         true
     }
@@ -840,7 +849,19 @@ impl<'a> SymbolManagerMut<'a> {
     /// # Panics
     ///
     /// This function will panic if `symbol` is already attached to another operation.
-    pub fn insert(&mut self, symbol: SymbolRef, mut ip: ProgramPoint) -> SymbolName {
+    pub fn insert(&mut self, symbol: SymbolRef, ip: ProgramPoint) -> SymbolName {
+        let name = self.place(symbol, ip);
+        // Add the symbol to the symbol map
+        self.symbols.insert(name, symbol)
+    }
+
+    /// Makes `symbol` a child of the symbol table op, at `ip` if set, unless it already is one,
+    /// and returns its name. The symbol map is left to the caller.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `symbol` is already attached to another operation.
+    fn place(&mut self, symbol: SymbolRef, mut ip: ProgramPoint) -> SymbolName {
         // The symbol cannot be the child of another op, and must be the child of the symbol table
         // after insertion.
         let (name, symbol_op) = {
@@ -905,8 +926,7 @@ impl<'a> SymbolManagerMut<'a> {
             }
         }
 
-        // Add the symbol to the symbol map
-        self.symbols.insert(name, symbol)
+        name
     }
 
     /// Renames the given operation, and updates the symbol table and all uses of the old name.

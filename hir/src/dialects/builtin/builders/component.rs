@@ -47,11 +47,11 @@ impl ComponentBuilder {
         (&*self.component.borrow() as &dyn SymbolTable).find::<Module>(name)
     }
 
+    /// Resolve the module at `path` from this component (see [SymbolTable::resolve]), if it is
+    /// one.
     pub fn resolve_module(&self, path: &SymbolPath) -> Option<ModuleRef> {
-        self.component.borrow().resolve(path).and_then(|symbol_ref| {
-            let op = symbol_ref.borrow();
-            op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
-        })
+        let op = self.component.borrow().symbol_manager().lookup_symbol_ref(path)?;
+        op.try_downcast_op::<Module>().ok()
     }
 
     /// Declare a new [crate::dialects::builtin::Function] in this component with the given name and

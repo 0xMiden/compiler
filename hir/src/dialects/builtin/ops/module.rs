@@ -143,7 +143,7 @@ impl OpParser for Module {
         state: &mut crate::OperationState,
         parser: &mut dyn crate::OpAsmParser<'_>,
     ) -> crate::ParseResult {
-        use crate::parse::{ParserError, Token};
+        use crate::parse::Token;
 
         let visibility = parser
             .parse_keyword_from(&[
@@ -159,14 +159,7 @@ impl OpParser for Module {
             parser.context_rc().create_attribute::<VisibilityAttr, _>(visibility),
         );
 
-        // The name is the Miden Assembly spelling of the parsed raw segment
-        let name = parser.parse_symbol_name()?;
-        let name = crate::Ident::new(
-            Module::canonical_name(name.name)
-                .map_err(|err| ParserError::invalid_symbol_table_name(name.span, err))?,
-            name.span,
-        );
-        state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+        super::parse_segment_name(state, parser, SymbolTableKind::Module)?;
 
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 

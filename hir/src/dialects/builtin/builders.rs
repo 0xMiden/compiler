@@ -12,15 +12,6 @@ use crate::{
 };
 
 pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
-    /// Create a [Component] named `name`, spelled as [Component::canonical_name] does.
-    ///
-    /// Returns an error when Miden Assembly cannot spell a segment of `name`.
-    fn create_component(&mut self, name: Ident) -> Result<ComponentRef, Report> {
-        let name = Ident::new(Component::canonical_name(name.name)?, name.span);
-        let op_builder = self.builder_mut().create::<Component, (_,)>(name.span());
-        op_builder(name)
-    }
-
     /// Create an [Interface] named by the raw segment `name`, spelled as
     /// [Interface::canonical_name] does.
     ///
