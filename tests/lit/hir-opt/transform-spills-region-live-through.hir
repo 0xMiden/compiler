@@ -2,13 +2,15 @@
 // RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(transform-spills,transform-spills))' | filecheck %s
 
 // A spill inside one arm must end the captured value's live range outside the if as well.
-// The bypass arm must initialize the same slot, so the store belongs before the if and the
-// reload after it. Without this, the unused inner spill is erased and %1 stays on the stack
-// across the call's sixteen felt operands.
+// The bypass arm must initialize the same slot, so the store belongs before the if, and the
+// value is reloaded at its next use after it. Without this, the unused inner spill is erased
+// and %1 stays on the stack across the call's sixteen felt operands. The inner spill is not
+// kept either: the store before the if dominates it.
 // CHECK-LABEL: @live_through
 // CHECK: hir.store_local %[[LIVE:\d+]] <{ local = #builtin.local_variable<[[SLOT:\d+]], u32> }>
 // CHECK-NEXT: scf.if
 // CHECK: hir.exec
+// CHECK-NOT: hir.store_local
 // CHECK: } else {
 // CHECK: } : (i1) -> ();
 // CHECK-NEXT: %[[RELOADED:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[SLOT]], u32> }>;
@@ -74,18 +76,22 @@ builtin.module public @test {
         } : (u32) -> (u32);
         builtin.ret %3 : (u32);
     };
-    // Later evictions reuse the initialized spill slot, but each region still needs to end
-    // the enclosing live range. All three boundaries must be handled by a single pass.
+    // A value captured by several regions is stored once, before the first region that evicts
+    // it, and reloaded at each later use: the condition before every if, the returned value
+    // once at the end. No region stores either value again. All three boundaries must be
+    // handled by a single pass.
     // CHECK-LABEL: @successive_regions
-    // CHECK: hir.store_local %{{\d+}} <{ local = #builtin.local_variable<[[SHARED_SLOT:\d+]], u32> }>
-    // CHECK: scf.if
-    // CHECK: %[[FIRST_RELOAD:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[SHARED_SLOT]], u32> }>;
-    // CHECK: hir.store_local %[[FIRST_RELOAD]] <{ local = #builtin.local_variable<[[SHARED_SLOT]], u32> }>
-    // CHECK: scf.if
-    // CHECK: %[[SECOND_RELOAD:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[SHARED_SLOT]], u32> }>;
-    // CHECK: hir.store_local %[[SECOND_RELOAD]] <{ local = #builtin.local_variable<[[SHARED_SLOT]], u32> }>
-    // CHECK: scf.if
-    // CHECK: %[[FINAL_RELOAD:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[SHARED_SLOT]], u32> }>;
+    // CHECK: hir.store_local %{{\d+}} <{ local = #builtin.local_variable<[[KEPT_SLOT:\d+]], u32> }>
+    // CHECK: hir.store_local %[[COND:\d+]] <{ local = #builtin.local_variable<[[COND_SLOT:\d+]], i1> }>
+    // CHECK-NEXT: scf.if %[[COND]]
+    // CHECK-NOT: hir.store_local
+    // CHECK: %[[COND1:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[COND_SLOT]], i1> }>;
+    // CHECK-NEXT: scf.if %[[COND1]]
+    // CHECK-NOT: hir.store_local
+    // CHECK: %[[COND2:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[COND_SLOT]], i1> }>;
+    // CHECK-NEXT: scf.if %[[COND2]]
+    // CHECK-NOT: hir.store_local
+    // CHECK: %[[FINAL_RELOAD:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[KEPT_SLOT]], u32> }>;
     // CHECK-NEXT: builtin.ret %[[FINAL_RELOAD]] : (u32);
     builtin.function public extern("C") @successive_regions(%0: i1, %1: u32) -> u32 {
         scf.if %0 then {

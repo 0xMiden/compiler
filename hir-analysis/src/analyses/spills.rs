@@ -1226,7 +1226,7 @@ impl SpillAnalysis {
 
         // Then, derive S^exit(branch)
         let ProgramPointInfo {
-            w_entry: w_exit,
+            w_entry: mut w_exit,
             s_entry: mut s_exit,
             ..
         } = self.op_exit_info(
@@ -1251,9 +1251,11 @@ impl SpillAnalysis {
             if self.w_entries[&before_op].contains(&value) {
                 self.spill(Placement::At(before_op), value.value(), span);
             }
-            if w_exit.contains(&value) {
-                self.reload(Placement::At(ProgramPoint::after(op)), value.value(), span);
-            }
+            // The value leaves the operand stack at that spill, so it is not resident after `op`
+            // either. Its next use reloads it like any other spilled operand, which costs nothing
+            // on paths that never use it again.
+            w_exit.remove(&value);
+            s_exit.remove(&value);
             if let Some(loop_like) = loop_like {
                 // Captures are also live across backedges. Give each region its own definition
                 // so a use on the next iteration cannot keep the pre-loop value on the stack.
@@ -1265,8 +1267,8 @@ impl SpillAnalysis {
                     }
                 }
             }
-            s_exit.insert(value);
         }
+        self.w_exits.insert(ProgramPoint::after(op), w_exit.clone());
 
         *w = w_exit;
         *s = s_exit;
@@ -1570,6 +1572,9 @@ impl SpillAnalysis {
             "unexpected unresolved region predecessors"
         );
         let operation = branch.as_operation_ref();
+        // A value reloaded inside a region is a definition local to that region: it cannot be on
+        // the operand stack after the op unless it was already there on entry.
+        let entry_resident = &self.w_entries[&ProgramPoint::before(operation)];
         for predecessor in predecessors.known_predecessors().iter().copied() {
             if predecessor == operation {
                 predecessor_count += 1;
@@ -1595,7 +1600,7 @@ impl SpillAnalysis {
             log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "examining exit predecessor {end_of_pred}");
             for o in self.w_exits[&end_of_pred].iter().copied() {
                 // Do not add candidates which are not live-after the predecessor
-                if liveness.is_live_at_end(o, predecessor_block) {
+                if entry_resident.contains(&o) && liveness.is_live_at_end(o, predecessor_block) {
                     *freq.entry(o).or_insert(0) += 1;
                     cand.insert(o);
                 }

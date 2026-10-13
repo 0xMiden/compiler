@@ -9,7 +9,7 @@ use midenc_hir::{
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
     dialects::debuginfo::transform::erase_debug_info_with,
-    dominance::{DomTreeNode, DominanceFrontier, DominanceTree},
+    dominance::{DomTreeNode, DominanceFrontier, DominanceInfo, DominanceTree},
     pass::PostPassStatus,
     patterns::{RewriterImpl, TracingRewriterListener},
     traits::{IsolatedFromAbove, SingleRegion, Transparent},
@@ -314,6 +314,16 @@ pub fn transform_spills(
         "op after inserting spills: {}",
         op.borrow()
     );
+
+    // A spilled value is immutable and all of its spills target one slot, so a spill that another
+    // spill of the same value dominates stores what the slot already holds. Erase those before
+    // reconstructing SSA form, which then only wires the reloads to the remaining spills.
+    {
+        let dominfo = DominanceInfo::new(&op.borrow());
+        let mut rewriter = RewriterImpl::<TracingRewriterListener>::new(builder.context_rc())
+            .with_listener(TracingRewriterListener);
+        erase_dominated_spills(&mut rewriter, analysis, &dominfo);
+    }
 
     let region = op.borrow().regions().front().as_pointer().unwrap();
     if region.borrow().has_one_block() {
@@ -1107,6 +1117,45 @@ fn erase_dead_spills(
     }
 
     Ok(erased_any)
+}
+
+/// Erase every materialized spill that another spill of the same value properly dominates.
+///
+/// All spills of a value store that value to the same slot, so the dominated one stores what the
+/// slot already holds on every path that reaches it, and any reload it covers is covered by the
+/// dominating spill as well.
+fn erase_dominated_spills(
+    rewriter: &mut dyn Rewriter,
+    analysis: &mut SpillAnalysis,
+    dominfo: &DominanceInfo,
+) {
+    let mut by_value = SmallDenseMap::<ValueRef, SmallVec<[usize; 2]>, 8>::default();
+    for (index, spill) in analysis.spills.iter().enumerate() {
+        if spill.inst.is_some() {
+            by_value.entry(spill.value).or_default().push(index);
+        }
+    }
+
+    for (_, spills) in by_value.iter().filter(|(_, spills)| spills.len() > 1) {
+        for &dominated in spills.iter() {
+            let Some(dominated_op) = analysis.spills[dominated].inst else {
+                continue;
+            };
+            // Dominance is transitive, so a spill erased earlier in this loop is still covered by
+            // whichever spill dominated it.
+            let is_dominated = spills.iter().any(|&dominating| {
+                dominating != dominated
+                    && analysis.spills[dominating].inst.is_some_and(|dominating_op| {
+                        dominfo
+                            .properly_dominates(&*dominating_op.borrow(), &*dominated_op.borrow())
+                    })
+            });
+            if is_dominated {
+                rewriter.erase_op(dominated_op);
+                analysis.spills[dominated].inst = None;
+            }
+        }
+    }
 }
 
 /// Rewrite the remaining spill and reload pseudo-ops into primitive stores to, and loads from, a
