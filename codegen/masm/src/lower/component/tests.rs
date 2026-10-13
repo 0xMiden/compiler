@@ -604,6 +604,119 @@ fn alias_import<'a>(module: &'a masm::Module, name: &str) -> &'a masm::ItemImpor
     import
 }
 
+/// Lower a world containing a selected component and a declaration-only dependency sibling. The
+/// component exports a direct alias or a chain through a private alias to the dependency. This
+/// shape keeps the target resolvable in HIR without emitting its module, leaving its implementation
+/// to a linked MASM package.
+fn lower_external_declaration_alias(context: &Rc<Context>, chain: bool) -> MasmComponent {
+    let aliases = if chain {
+        "builtin.function_alias public @exported -> @forward;
+         builtin.function_alias private @forward -> ::@external_dep::@body;"
+    } else {
+        "builtin.function_alias public @exported -> ::@external_dep::@body;"
+    };
+    let source = format!(
+        r#"
+builtin.world {{
+    builtin.component private @"hir_ns:test@1.0.0" {{
+        builtin.module public @api {{
+            {aliases}
+        }};
+    }};
+    builtin.module public @external_dep {{
+        builtin.function public extern("C") @body() {{}};
+    }};
+}};
+"#
+    );
+    let lowered = lower_world(parse_world(context, &source))
+        .expect("aliases to external declarations must lower without a HIR body");
+
+    // The implementation comes from the linked MASM dependency, so this declaration-only
+    // sibling must not become an emitted source module.
+    assert!(!module_paths(&lowered).contains(&String::from("::external_dep")));
+    let api = lowered.modules.iter().find(|module| module.name() == "api").unwrap();
+    assert_eq!(api.procedures().count(), 0);
+    for (name, is_public) in if chain {
+        &[("exported", true), ("forward", false)][..]
+    } else {
+        &[("exported", true)][..]
+    } {
+        let import = alias_import(api, name);
+        assert_eq!(import.source_name().as_str(), "body");
+        assert_eq!(import.module_path().inner().as_str(), "::external_dep");
+        assert_eq!(import.visibility().is_public(), *is_public);
+    }
+    lowered
+}
+
+fn external_alias_dependency(context: &Rc<Context>) -> Arc<miden_mast_package::Package> {
+    let source_manager = context.session().source_manager.clone();
+    let module = miden_assembly::ModuleParser::new(Some(masm::ModuleKind::Library))
+        .parse_str(
+            Some(masm::Path::new("external_dep")),
+            "pub proc body()\n    push.1 drop\nend",
+            source_manager.clone(),
+        )
+        .expect("the synthetic dependency must parse");
+    miden_assembly::Assembler::new(source_manager)
+        .assemble_library("external_dep", module, None::<Box<masm::Module>>)
+        .expect("the synthetic dependency must assemble")
+        .into()
+}
+
+fn assemble_external_declaration_alias(
+    context: &Rc<Context>,
+    lowered: &MasmComponent,
+    dependency: Option<Arc<miden_mast_package::Package>>,
+) -> Result<Box<miden_mast_package::Package>, Report> {
+    let target = library_target("hir_ns:test@1.0.0");
+    let sources = lowered.source_inputs(&target, context.session())?;
+    let mut assembler = miden_assembly::Assembler::new(context.session().source_manager.clone());
+    if let Some(dependency) = dependency {
+        assembler.link_package(dependency, miden_assembly::Linkage::Static)?;
+    }
+    assembler.assemble_library("hir_ns:test@1.0.0", sources.root, sources.support)
+}
+
+fn assert_external_declaration_alias_assembles(chain: bool) {
+    let context = Rc::new(Context::default());
+    let lowered = lower_external_declaration_alias(&context, chain);
+    let dependency = external_alias_dependency(&context);
+    let body = dependency.get_procedure_root_by_path("::external_dep::body").unwrap();
+    let package = assemble_external_declaration_alias(&context, &lowered, Some(dependency))
+        .expect("an alias to a linked external declaration must assemble");
+    assert_eq!(
+        package.get_procedure_root_by_path("::\"hir_ns:test@1.0.0\"::api::exported"),
+        Some(body)
+    );
+    assert!(
+        package
+            .get_procedure_root_by_path("::\"hir_ns:test@1.0.0\"::api::forward")
+            .is_none()
+    );
+}
+
+#[test]
+fn alias_to_linked_external_declaration_assembles() {
+    assert_external_declaration_alias_assembles(false);
+}
+
+#[test]
+fn alias_chain_to_linked_external_declaration_assembles() {
+    assert_external_declaration_alias_assembles(true);
+}
+
+#[test]
+fn alias_to_external_declaration_without_implementation_fails_at_assembly() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_external_declaration_alias(&context, false);
+    let err = assemble_external_declaration_alias(&context, &lowered, None)
+        .expect_err("an unlinked external declaration must fail assembler resolution");
+    let diagnostic = format!("{err:?}");
+    assert!(diagnostic.contains("undefined item '::external_dep::body'"), "{diagnostic}");
+}
+
 #[test]
 fn cross_module_alias_to_sibling_lowers_and_assembles_from_world() {
     let context = Rc::new(Context::default());
@@ -995,10 +1108,9 @@ fn public_alias_to_private_function_is_rejected_before_lowering() {
     let err = midenc_hir::parse::parse_any(
         midenc_hir::parse::ParserConfig::new(context.clone()),
         Uri::new("alias_visibility.hir"),
-        &cross_module_call_via_alias_source("private"),
+        cross_module_call_via_alias_source("private"),
     )
-    .err()
-    .expect("verification must reject the alias before assembly");
+    .expect_err("verification must reject the alias before assembly");
     assert!(err.to_string().contains("public alias cannot expose private target"), "{err}");
 }
 

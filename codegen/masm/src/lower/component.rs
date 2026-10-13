@@ -1463,15 +1463,12 @@ struct FunctionTableFragment {
 /// Stop at the first symbol in another module so the import targets a symbol available through
 /// that module.
 fn resolve_alias_import_target(alias: &builtin::FunctionAlias) -> Result<SymbolRef, Report> {
-    let canonical = alias
+    alias
         .as_operation()
         .as_symbol_ref()
         .expect("function aliases are symbols")
         .resolve_function()
         .into_diagnostic()?;
-    if canonical.borrow().is_declaration() {
-        return Err(function_without_a_body(&canonical.borrow()));
-    }
 
     let owner = alias
         .as_operation()
