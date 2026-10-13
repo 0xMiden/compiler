@@ -777,9 +777,8 @@ fn physical_lint_signature(
     for values in [signature.params(), signature.results()] {
         let mut count = 0;
         for value in values {
-            let size = bounded_lint_type_bits(&value.ty)
-                .map(|bits| bits.div_ceil(32))
-                .unwrap_or(LINT_SIGNATURE_VALUE_LIMIT + 1);
+            let size =
+                bounded_lint_stack_slots(&value.ty).unwrap_or(LINT_SIGNATURE_VALUE_LIMIT + 1);
             if size > LINT_SIGNATURE_VALUE_LIMIT - count {
                 return Err(Report::msg(format!(
                     "procedure '{path}' has a physical stack footprint exceeding the lint \
@@ -802,7 +801,12 @@ fn physical_lint_signature(
     Ok(physical)
 }
 
-pub(super) fn bounded_lint_type_bits(ty: &Type) -> Option<usize> {
+/// Count VM stack elements without expanding oversized or overflowing types.
+pub(super) fn bounded_lint_stack_slots(ty: &Type) -> Option<usize> {
+    bounded_lint_type_bits(ty).map(|bits| bits.div_ceil(32))
+}
+
+fn bounded_lint_type_bits(ty: &Type) -> Option<usize> {
     let bits = match ty {
         Type::Array(array) => match array.len() {
             0 => 0,
@@ -838,7 +842,7 @@ fn physical_lint_type_parts(ty: &Type) -> Vec<Type> {
                 .collect::<Vec<_>>();
             // Packed byte arrays occupy fewer stack elements than their field count.
             // Keep them first-class until their packing is modeled by the lifter.
-            if Some(parts.len()) == bounded_lint_type_bits(ty).map(|bits| bits.div_ceil(32)) {
+            if Some(parts.len()) == bounded_lint_stack_slots(ty) {
                 parts
             } else {
                 vec![ty.clone()]

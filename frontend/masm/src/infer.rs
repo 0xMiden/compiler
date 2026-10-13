@@ -101,8 +101,8 @@ pub(crate) fn validate_declared_signature(
             .expect("declared signature result count was checked before popping");
         let actual_ty = value.ty();
         if (result_ty.is_array() || actual_ty.as_ref().is_some_and(Type::is_array))
-            && actual_ty.as_ref().and_then(crate::lift::bounded_lint_type_bits)
-                != crate::lift::bounded_lint_type_bits(&result_ty)
+            && actual_ty.as_ref().and_then(crate::lift::bounded_lint_stack_slots)
+                != crate::lift::bounded_lint_stack_slots(&result_ty)
         {
             return Err(Report::msg(format!(
                 "declared signature for '{}::{}' has a first-class array result with a mismatched \
@@ -961,10 +961,10 @@ impl<'a> InferState<'a> {
         if !self.physical_stack {
             return Ok(vec![ty.clone()]);
         }
-        let bits = crate::lift::bounded_lint_type_bits(ty).ok_or_else(|| {
+        let slots = crate::lift::bounded_lint_stack_slots(ty).ok_or_else(|| {
             Report::msg("physical stack type exceeds the lint signature footprint limit")
         })?;
-        Ok(vec![Type::Felt; bits.div_ceil(32)])
+        Ok(vec![Type::Felt; slots])
     }
 
     fn push(&mut self, ty: Type) {

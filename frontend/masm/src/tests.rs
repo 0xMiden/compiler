@@ -2424,16 +2424,75 @@ end
 }
 
 #[test]
-fn lint_preserves_same_size_packed_array_result_casts() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source_for_lint(
-        "pub proc packed(value: [u8; 4]) -> felt\n    nop\nend\n",
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-    assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
-    let _ = find_function(output.module, "packed");
+fn lint_preserves_packed_array_result_casts_with_equal_stack_footprints() -> Result<()> {
+    for (param, result) in [
+        ("[u8; 2]", "felt"),
+        ("[u8; 3]", "felt"),
+        ("[u8; 4]", "felt"),
+        ("felt", "[u8; 2]"),
+        ("[u8; 2]", "[u8; 3]"),
+        ("[u8; 5]", "[u8; 8]"),
+    ] {
+        let source = format!("pub proc packed(value: {param}) -> {result}\n    nop\nend\n");
+        let output = disassemble_source_for_lint(
+            &source,
+            "test",
+            &DisassemblerConfig::default(),
+            Rc::new(Context::default()),
+        )?;
+        assert!(
+            output.skipped_procedures.is_empty(),
+            "{source}: {:?}",
+            output.skipped_procedures
+        );
+        let _ = find_function(output.module, "packed");
+    }
+    Ok(())
+}
+
+#[test]
+fn lint_rejects_packed_array_result_casts_with_different_stack_footprints() -> Result<()> {
+    for (param, result) in [("[u8; 5]", "felt"), ("felt", "[u8; 5]")] {
+        let source = format!(
+            "pub proc packed(value: {param}) -> {result}\n    nop\nend\n\npub proc clean() -> \
+             felt\n    push.1\nend\n"
+        );
+        let output = disassemble_source_for_lint(
+            &source,
+            "test",
+            &DisassemblerConfig::default(),
+            Rc::new(Context::default()),
+        )?;
+        assert_eq!(output.skipped_procedures.len(), 1, "{source}");
+        assert!(!module_has_function(output.module, "packed"));
+    }
+    Ok(())
+}
+
+#[test]
+fn lint_keeps_advice_tainted_through_packed_array_result_casts() -> Result<()> {
+    for length in [2, 3] {
+        let source = format!(
+            "proc unpack(value: [u8; {length}]) -> felt\n    nop\nend\n\npub proc entry() -> \
+             u32\n    adv_push\n    exec.unpack\n    push.1\n    u32wrapping_add\nend\n"
+        );
+        let output = disassemble_source_for_lint(
+            &source,
+            "test",
+            &DisassemblerConfig::default(),
+            Rc::new(Context::default()),
+        )?;
+        assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
+        let findings = advice_taint_findings(output.module)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+        assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+        assert!(
+            findings[0]
+                .contexts
+                .iter()
+                .any(|context| { context.kind == AdviceTaintContextKind::CallResult })
+        );
+    }
     Ok(())
 }
 
