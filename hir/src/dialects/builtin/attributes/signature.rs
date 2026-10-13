@@ -215,11 +215,11 @@ impl AbiParam {
     }
 
     pub fn is_sret_param(&self) -> bool {
-        self.attrs.contains("sret")
+        self.attrs.contains(&crate::interner::symbols::Sret)
     }
 
     pub fn extension(&self) -> ArgumentExtension {
-        match self.attrs.find("extension").get() {
+        match self.attrs.find(&crate::interner::Symbol::intern("extension")).get() {
             None => ArgumentExtension::None,
             Some(attr) => {
                 let value = attr.value.borrow();

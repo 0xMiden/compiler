@@ -7,13 +7,13 @@ pub type SymbolName = crate::interner::Symbol;
 /// not detect any conflict.
 pub fn generate_symbol_name<F>(name: SymbolName, counter: &mut usize, is_unique: F) -> SymbolName
 where
-    F: Fn(&str) -> bool,
+    F: Fn(SymbolName) -> bool,
 {
     use core::fmt::Write;
 
     use crate::CompactString;
 
-    if is_unique(name.as_str()) {
+    if is_unique(name) {
         return name;
     }
 
@@ -26,8 +26,9 @@ where
         buf.push('_');
         write!(&mut buf, "{counter}").unwrap();
 
-        if is_unique(buf.as_str()) {
-            break SymbolName::intern(buf);
+        let candidate = SymbolName::intern(buf.as_str());
+        if is_unique(candidate) {
+            break candidate;
         }
     }
 }

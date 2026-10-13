@@ -252,7 +252,7 @@ impl SymbolPath {
     }
 
     /// Returns the Miden Assembly spelling of the raw `segments`.
-    fn spell(segments: &[SymbolName]) -> SymbolName {
+    pub(crate) fn spell(segments: &[SymbolName]) -> SymbolName {
         let components = segments
             .iter()
             .copied()

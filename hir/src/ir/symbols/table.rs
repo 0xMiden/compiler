@@ -410,11 +410,8 @@ impl SymbolMap {
 
     /// Returns true if a symbol named `name` is in the map
     #[inline]
-    pub fn contains_key<K>(&self, name: &K) -> bool
-    where
-        K: ?Sized + core::hash::Hash + hashbrown::Equivalent<SymbolName>,
-    {
-        self.symbols.contains_key(name)
+    pub fn contains_key(&self, name: impl Into<SymbolName>) -> bool {
+        self.symbols.contains_key(&name.into())
     }
 
     /// Remove the entry for `name` from this map, if present.
@@ -517,27 +514,20 @@ fn generate_unique_name<F>(
 where
     F: Fn(SymbolName) -> bool,
 {
-    // Candidates are interned before the lookup: a `SymbolName` hashes differently from its
-    // string, so a map keyed by `SymbolName` cannot be queried with a `&str`
-    let mut segments = SmallVec::<[SymbolNameComponent; 4]>::new();
-    if is_table {
-        segments
-            .extend(SymbolPath::segments_of(name).into_iter().map(SymbolNameComponent::Component));
+    if !is_table {
+        return generate_symbol_name(name, counter, is_unique);
     }
-    let Some(last) = segments.pop() else {
-        return generate_symbol_name(name, counter, |candidate| {
-            is_unique(SymbolName::intern(candidate))
-        });
+    let mut segments = SymbolPath::segments_of(name);
+    let last = segments.len() - 1;
+    let spell = |segment: SymbolName| {
+        let mut segments = segments.clone();
+        segments[last] = segment;
+        SymbolPath::spell(&segments)
     };
-    let spell = |last: SymbolName| {
-        let mut components = segments.clone();
-        components.push(SymbolNameComponent::Component(last));
-        SymbolPath::join_components(&components)
-    };
-    let last = generate_symbol_name(last.as_symbol_name(), counter, |candidate| {
-        is_unique(spell(SymbolName::intern(candidate)))
-    });
-    spell(last)
+    let segment =
+        generate_symbol_name(segments[last], counter, |candidate| is_unique(spell(candidate)));
+    segments[last] = segment;
+    SymbolPath::spell(&segments)
 }
 
 /// This type is used to abstract over ownership of an immutable [SymbolMap].
@@ -877,7 +867,7 @@ impl<'a> SymbolManagerMut<'a> {
             self.lookup(to).is_some_and(|o| o == op),
             "new name does not resolve to renamed op"
         );
-        assert!(!self.symbols.contains_key(&name), "old name still exists");
+        assert!(!self.symbols.contains_key(name), "old name still exists");
 
         Ok(())
     }
