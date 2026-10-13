@@ -66,7 +66,8 @@ pub struct ComponentImportPath {
     /// declared in the stub component at the path's parent unless the import is an FPI or
     /// dyncall import (those declare nothing).
     pub path: SymbolPath,
-    /// The name (the canonical key of the namespace path, see `SymbolPath::to_symbol_name`) of
+    /// The name (the Miden Assembly spelling of the namespace path, see
+    /// `SymbolPath::to_symbol_name`) of
     /// the component being translated; the `path` of an import other than an FPI or dyncall
     /// import must lie outside of that namespace.
     pub namespace: SymbolName,

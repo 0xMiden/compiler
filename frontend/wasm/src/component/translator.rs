@@ -76,8 +76,9 @@ pub struct ComponentTranslator<'a> {
     world_builder: WorldBuilder,
     result: ComponentBuilder,
 
-    /// The name of the component being translated (the canonical key of its namespace path, see
-    /// `SymbolPath::to_symbol_name`), which every import other than an FPI or dyncall import must
+    /// The name of the component being translated (the Miden Assembly spelling of its namespace
+    /// path, see `SymbolPath::to_symbol_name`), which every import other than an FPI or dyncall
+    /// import must
     /// lie outside of.
     namespace: SymbolName,
 
@@ -174,8 +175,8 @@ impl<'a> ComponentTranslator<'a> {
         );
     }
 
-    /// Creates a translator that defines the component `name` (the canonical key of its
-    /// namespace path) in the configured world, or in a new one, naming the lifted exports of the
+    /// Creates a translator that defines the component `name` (the Miden Assembly spelling of
+    /// its namespace path) in the configured world, or in a new one, naming the lifted exports of the
     /// root-exported nested components by `export_paths`.
     pub fn new(
         name: SymbolName,

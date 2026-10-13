@@ -15,7 +15,7 @@ use crate::{
 /// instead, this is used by the compiler to reason about what components are available, what is
 /// required, and whether or not all requirements can be met.
 pub struct ComponentInterface {
-    /// The name of the component, i.e. the canonical key of its namespace path (see
+    /// The name of the component, i.e. the Miden Assembly spelling of its namespace path (see
     /// `SymbolPath::to_symbol_name`)
     name: SymbolName,
     /// The visibility of this component in the interface (public or internal)
@@ -121,7 +121,8 @@ impl ComponentInterface {
         }
     }
 
-    /// Returns the name of the component, i.e. the canonical key of its namespace path (see
+    /// Returns the name of the component, i.e. the Miden Assembly spelling of its namespace path
+    /// (see
     /// `SymbolPath::to_symbol_name`)
     pub fn name(&self) -> SymbolName {
         self.name

@@ -860,7 +860,7 @@ fn estimated_op_hir_operation_count(op: &Op, cap: usize) -> usize {
 /// The absolute symbol path of the module at `path`, with one raw component per segment, whether
 /// or not `path` is absolute.
 fn masm_module_symbol_path(path: &ast::Path) -> SymbolPath {
-    SymbolPath::from_masm_module_id(path.to_relative().as_str())
+    SymbolPath::from_masm_module_id(path.as_str())
 }
 
 fn ensure_op_region(context: &Rc<Context>, op: &mut dyn HirOp) {

@@ -105,7 +105,7 @@ impl World {
     /// nests with `component` (one is a segment-prefix of the other): resolution prefers the
     /// longest registered name, so either would make paths ambiguous.
     ///
-    /// The name is the canonical key of the component's namespace path (see
+    /// The name is the Miden Assembly spelling of the component's namespace path (see
     /// [SymbolPath::to_symbol_name]).
     pub fn reject_component_shadowing(&self, component: SymbolName) -> Result<(), Report> {
         self.reject_nested_components(component)?;
@@ -133,7 +133,8 @@ impl World {
     }
 
     /// Returns the name of the world-level component named by the module path `path`, given as
-    /// its canonical key (see [SymbolPath::to_symbol_name]), or by a segment-prefix of it, i.e.
+    /// its Miden Assembly spelling (see [SymbolPath::to_symbol_name]), or by a segment-prefix of
+    /// it, i.e.
     /// the component that would shadow a module tree reaching `path`.
     pub(crate) fn component_shadowing(&self, path: SymbolName) -> Option<SymbolName> {
         let body = self.body();

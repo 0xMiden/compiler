@@ -220,8 +220,9 @@ const COMPONENT_NAME: &str = "test";
 /// `tests/fixtures/components/cross-ctx-account` declares
 /// `namespace = "miden::cross_ctx_account::foo"`, the namespace of its components.
 ///
-/// The name is joined with a plain `::`, which is the canonical key (see
-/// `SymbolPath::to_symbol_name`) only while every segment of `namespace` is a bare identifier.
+/// The name is joined with a plain `::`, which is the Miden Assembly spelling of the segments
+/// (see `SymbolPath::to_symbol_name`) only while every segment of `namespace` is a bare
+/// identifier.
 pub(crate) fn component_target_namespace(namespace: &str) -> alloc::string::String {
     format!("{namespace}::{COMPONENT_NAME}")
 }

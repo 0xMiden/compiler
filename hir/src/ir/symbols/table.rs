@@ -126,8 +126,8 @@ pub struct SymbolMap {
     symbols: FxHashMap<SymbolName, SymbolRef>,
     /// Used to unique symbol names when conflicts are detected
     uniquing_count: usize,
-    /// The largest number of segments of any name registered in this map, each name read as a
-    /// canonical key (see [SymbolPath::segments_of]).
+    /// The largest number of segments of any name registered in this map, each name read as the
+    /// Miden Assembly spelling of its segments (see [SymbolPath::segments_of]).
     ///
     /// This is only an upper bound (it never decreases on removal) that keeps the common case of
     /// single-segment names at one lookup per path component in [SymbolMap::lookup_prefix].
@@ -214,8 +214,8 @@ impl SymbolMap {
     /// namespace, but rather a symbol defined in the global namespace. This means that only
     /// children of that symbol are possibly resolvable (as we have no way to reach other symbols
     /// defined in the global namespace). In short, we only attempt to resolve absolute paths whose
-    /// leading components spell the segments of the root symbol's name, a canonical key (see
-    /// [SymbolPath::segments_of]). If they do, then the symbol is resolved normally from there,
+    /// leading components are the raw segments of the root symbol's name, the Miden Assembly
+    /// spelling of those segments (see [SymbolPath::segments_of]). If they do, then the symbol is resolved normally from there,
     /// otherwise `None` is returned.
     ///
     /// Path components are matched against symbol names as described in
@@ -310,8 +310,8 @@ impl SymbolMap {
     /// When that misses, it is read as the raw last segment of a symbol table (see
     /// [Symbol::path]) and looked up by its Miden Assembly spelling.
     ///
-    /// Otherwise, the lookup matches the **longest run of leading `Component`s whose canonical key
-    /// is the registered name of a symbol table**, since a symbol-table op may be named by a
+    /// Otherwise, the lookup matches the **longest run of leading `Component`s whose Miden
+    /// Assembly spelling is the registered name of a symbol table**, since a symbol-table op may be named by a
     /// multi-segment path (see [SymbolPath::segments_of]). For example, a component named
     /// `miden::a::b` coexists with a module tree rooted at `miden` in the same table; the path
     /// `miden::a::b::m::f` resolves through the component, because the longest registered name
