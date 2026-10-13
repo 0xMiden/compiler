@@ -8,7 +8,7 @@ use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
     AsCallableSymbolRef, Felt, Immediate, Op, OpExt, Operation, SmallVec, Span, Symbol,
-    SymbolTable, Type, Value, ValueRange, ValueRef,
+    SymbolTable, Type, Usable, Value, ValueRange, ValueRef,
     dialects::{builtin, debuginfo},
     traits::{BinaryOp, Commutative},
 };
@@ -623,12 +623,101 @@ impl HirLowering for scf::Condition {
 
 impl HirLowering for arith::Constant {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        // A constant consumed only as an immediate operand is folded into its user and never
+        // placed on the operand stack.
+        if is_immediate_only_constant(self) {
+            return Ok(());
+        }
+
         let value = *self.get_value();
 
         emitter.inst_emitter(self.as_operation()).literal(value, self.span());
 
         Ok(())
     }
+}
+
+/// Returns the shift count of `op`, an `arith.shl` or `arith.shr`, when the lowering can use the
+/// immediate form of the shift: the count is a constant below 32 used only by this shift in the
+/// same block, and the shifted value has a type with a cheap immediate shift.
+///
+/// The constant is then skipped by the lowering of `arith.constant`, see
+/// [is_immediate_only_constant]; both sides of that contract live here.
+fn immediate_shift_count(op: &Operation) -> Option<u32> {
+    let shift = if let Some(shl) = op.downcast_ref::<arith::Shl>() {
+        if !matches!(shl.lhs().ty(), Type::U32 | Type::I32) {
+            return None;
+        }
+        shl.shift().as_value_ref()
+    } else {
+        let shr = op.downcast_ref::<arith::Shr>()?;
+        if !matches!(shr.lhs().ty(), Type::U32 | Type::U16 | Type::U8) {
+            return None;
+        }
+        shr.shift().as_value_ref()
+    };
+    let shift = shift.borrow();
+    let defining_op = shift.get_defining_op()?;
+    let defining_op = defining_op.borrow();
+    if defining_op.parent() != op.parent() {
+        return None;
+    }
+    let mut uses = shift.iter_uses();
+    if uses.next().is_none() || uses.next().is_some() {
+        return None;
+    }
+    let count = defining_op.downcast_ref::<arith::Constant>()?.value().as_u32()?;
+    (count < 32).then_some(count)
+}
+
+/// Returns true if `constant` is consumed only as an immediate operand, see
+/// [immediate_shift_count].
+fn is_immediate_only_constant(constant: &arith::Constant) -> bool {
+    let result = constant.result();
+    let mut uses = result.iter_uses();
+    let Some(user) = uses.next() else {
+        return false;
+    };
+    if uses.next().is_some() {
+        return false;
+    }
+    let user = user.owner.borrow();
+    immediate_shift_count(&user).is_some()
+}
+
+/// Schedules only the shifted value of `op` when its count is an immediate, see
+/// [immediate_shift_count]; otherwise schedules both operands as for any binary op.
+fn schedule_shift_operands(op: &Operation, emitter: &mut BlockEmitter<'_>) {
+    if immediate_shift_count(op).is_none() {
+        schedule_operands_or_panic(
+            op,
+            emitter,
+            ValueRange::from(op.operands().all()),
+            SolverOptions {
+                strict: true,
+                ..Default::default()
+            },
+            "operands",
+            |args, constraints| {
+                // Binary ops expect the right-hand operand on top of the stack
+                args.swap(0, 1);
+                constraints.swap(0, 1);
+            },
+        );
+        return;
+    }
+    let lhs = op.operands()[0].borrow().as_value_ref();
+    schedule_operands_or_panic(
+        op,
+        emitter,
+        ValueRange::from_iter([lhs]),
+        SolverOptions {
+            strict: true,
+            ..Default::default()
+        },
+        "operands",
+        |_, _| {},
+    );
 }
 
 impl HirLowering for hir::Assert {
@@ -922,15 +1011,31 @@ impl HirLowering for arith::Bxor {
 }
 
 impl HirLowering for arith::Shl {
+    fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        schedule_shift_operands(self.as_operation(), emitter);
+        Ok(())
+    }
+
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).shl(self.span());
+        match immediate_shift_count(self.as_operation()) {
+            Some(count) => emitter.inst_emitter(self.as_operation()).shl_imm(count, self.span()),
+            None => emitter.inst_emitter(self.as_operation()).shl(self.span()),
+        }
         Ok(())
     }
 }
 
 impl HirLowering for arith::Shr {
+    fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        schedule_shift_operands(self.as_operation(), emitter);
+        Ok(())
+    }
+
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).shr(self.span());
+        match immediate_shift_count(self.as_operation()) {
+            Some(count) => emitter.inst_emitter(self.as_operation()).shr_imm(count, self.span()),
+            None => emitter.inst_emitter(self.as_operation()).shr(self.span()),
+        }
         Ok(())
     }
 }

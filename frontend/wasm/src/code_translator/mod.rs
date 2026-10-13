@@ -23,6 +23,7 @@ use midenc_hir::{
     Type::{self, *},
     ValueRef,
     dialects::builtin::BuiltinOpBuilder,
+    matchers::{self, Matcher},
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, SourceSpan};
 use wasmparser::{MemArg, Operator};
@@ -1045,6 +1046,17 @@ fn mask_movement_count<B: ?Sized + Builder>(
     value_width: u32,
     span: SourceSpan,
 ) -> Result<ValueRef, Report> {
+    // A constant count is masked at compile time, so that the shift reaches the backend with an
+    // immediate count and lowers to the cheap immediate form.
+    let constant_count = count.borrow().get_defining_op().and_then(|defining_op| {
+        matchers::constant_of::<Immediate>()
+            .matches(&*defining_op.borrow())
+            .and_then(|imm| imm.as_u64())
+    });
+    if let Some(constant_count) = constant_count {
+        return Ok(builder.u32((constant_count % value_width as u64) as u32, span));
+    }
+
     let count_ty = count.borrow().ty().clone();
     let count = match count_ty {
         Type::I32 => builder.bitcast(count, U32, span)?,
