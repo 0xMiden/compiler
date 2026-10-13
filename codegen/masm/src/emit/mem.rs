@@ -7,6 +7,26 @@ use midenc_hir::{
 use super::{OpEmitter, masm};
 use crate::{OperandStack, lower::NativePtr};
 
+/// Whether a value of type `ty` is represented by a single stack element that an element-aligned
+/// memory access can read or write as-is.
+///
+/// Sub-word integers are already a single `u32`-valued element on the operand stack, and an
+/// element-address-space location holds a whole element, so they need no byte packing.
+fn is_single_element_scalar(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Felt
+            | Type::I32
+            | Type::U32
+            | Type::Ptr(_)
+            | Type::I16
+            | Type::U16
+            | Type::I8
+            | Type::U8
+            | Type::I1
+    )
+}
+
 /// How a copy between two memory ranges treats ranges that overlap.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum CopyOverlap {
@@ -201,12 +221,10 @@ impl OpEmitter<'_> {
                     ptr_ty.pointee()
                 );
                 // Element-address-space pointers (e.g. procedure locals) are element-aligned
-                // with no byte offset by construction, so element-sized scalars load directly
-                // from the address; the dynamic-offset intrinsics exist for the byte-addressable
-                // address space.
-                if !ptr_ty.is_byte_pointer()
-                    && matches!(ty, Type::Felt | Type::I32 | Type::U32 | Type::Ptr(_))
-                {
+                // with no byte offset by construction, so scalars that fit an element load
+                // directly from the address; the dynamic-offset intrinsics exist for the
+                // byte-addressable address space.
+                if !ptr_ty.is_byte_pointer() && is_single_element_scalar(&ty) {
                     self.emit(masm::Instruction::MemLoad, span);
                     self.push(ty);
                     return;
@@ -710,12 +728,10 @@ impl OpEmitter<'_> {
                     ptr_ty.pointee()
                 );
                 // Element-address-space pointers (e.g. procedure locals) are element-aligned
-                // with no byte offset by construction, so element-sized scalars store directly
-                // to the address; the dynamic-offset intrinsics exist for the byte-addressable
-                // address space.
-                if !ptr_ty.is_byte_pointer()
-                    && matches!(value_ty, Type::Felt | Type::I32 | Type::U32 | Type::Ptr(_))
-                {
+                // with no byte offset by construction, so scalars that fit an element store
+                // directly to the address; the dynamic-offset intrinsics exist for the
+                // byte-addressable address space.
+                if !ptr_ty.is_byte_pointer() && is_single_element_scalar(&value_ty) {
                     self.emit(masm::Instruction::MemStore, span);
                     return;
                 }
