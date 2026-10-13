@@ -56,6 +56,20 @@ where
 /// Callers must therefore not treat the returned pointer value as a byte address (e.g. for
 /// pointer arithmetic).
 ///
+/// An element-aligned access with an element-aligned `memarg` offset converts the base address
+/// first and applies the offset in elements, so that every access through the same base shares
+/// one conversion and alignment check. This relies on the Wasm semantics of the `memarg` offset,
+/// which is added without wrapping (an access past the end of the address space traps), so the
+/// offset can be applied after the conversion. Such an access does not trap when `base + offset`
+/// leaves the 32-bit address space: the compiler performs no bounds checks on linear memory, and
+/// the resulting element address stays within the addresses reserved for the compiler, out of
+/// reach of guest pointers.
+///
+/// A constant the program itself added to the address (an `i32.add` of a constant) is NOT folded
+/// into the offset: `i32.add` wraps, and producers do rely on that (e.g. a table walked with a
+/// negative induction variable and the table address folded into the add), so the sum must be
+/// converted as a whole.
+///
 /// Alignment promises are enforced: when `memarg.align > 0`, an access whose effective address
 /// violates the promised alignment traps with [assertions::ASSERT_FAILED_ALIGNMENT]. This is a
 /// deliberate deviation from Wasm semantics, where the alignment immediate is only a hint that
@@ -80,6 +94,30 @@ pub fn prepare_addr<'a, B: ?Sized + Builder>(
         "pointer address must have type I32, got {addr_int_ty}"
     );
     let addr_u32 = builder.bitcast(addr_int, Type::U32, span)?;
+    let element_offset = memarg.and_then(|memarg| {
+        let offset = memarg.offset as u32;
+        (is_element_access(ptr_ty, memarg.align) && offset.is_multiple_of(ELEMENT_SIZE_BYTES))
+            .then_some(offset / ELEMENT_SIZE_BYTES)
+    });
+    if let Some(element_offset) = element_offset {
+        let memarg = memarg.unwrap();
+        let (element_addr, address_space) =
+            enforce_alignment(addr_u32, ptr_ty, memarg.align, builder, span)?;
+        // The element address is below 2^30 and the offset is small, so the sum does not wrap in
+        // the field, and the VM rejects any address outside the 32-bit range.
+        let element_addr = if element_offset == 0 {
+            element_addr
+        } else {
+            let imm = builder.imm(Immediate::U32(element_offset), span);
+            builder.add_unchecked(element_addr, imm, span)?
+        };
+        return builder.inttoptr(
+            element_addr,
+            Type::from(PointerType::new_with_address_space(ptr_ty.clone(), address_space)),
+            span,
+        );
+    }
+
     let mut full_addr_int = addr_u32;
     let mut address_space = AddressSpace::Byte;
     if let Some(memarg) = memarg {
@@ -109,6 +147,12 @@ pub fn prepare_addr<'a, B: ?Sized + Builder>(
 /// nearly free. The alignment assertion in that branch is load-bearing, not a debugging aid: the
 /// quotient is used as the address, so without the assertion a misaligned access would silently
 /// target the containing element instead of trapping.
+/// Returns true if an access of `ptr_ty` promising alignment `align` (a base-2 logarithm) is
+/// performed in the element address space.
+fn is_element_access(ptr_ty: &Type, align: u8) -> bool {
+    align >= ELEMENT_ALIGNMENT_LOG2 && matches!(ptr_ty, Type::Felt | Type::I32 | Type::U32)
+}
+
 fn enforce_alignment<'a, B: ?Sized + Builder>(
     addr: ValueRef,
     ptr_ty: &Type,
@@ -116,7 +160,7 @@ fn enforce_alignment<'a, B: ?Sized + Builder>(
     builder: &mut (impl WasmMemOpBuilder<'a, B> + ?Sized),
     span: SourceSpan,
 ) -> Result<(ValueRef, AddressSpace), Report> {
-    if align >= ELEMENT_ALIGNMENT_LOG2 && matches!(ptr_ty, Type::Felt | Type::I32 | Type::U32) {
+    if is_element_access(ptr_ty, align) {
         // A successful divmod both proves natural alignment and converts the byte address
         // to the element address consumed directly by Miden memory operations.
         let element_size = builder.imm(Immediate::U32(ELEMENT_SIZE_BYTES), span);
