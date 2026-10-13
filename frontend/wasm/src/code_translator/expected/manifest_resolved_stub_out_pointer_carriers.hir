@@ -1,5 +1,5 @@
 builtin.module private @noname attributes { reserved_memory = #builtin.u64<65536> } {
-    builtin.function private extern("C") @lib::pair(%0: felt, %1: i32) {
+    builtin.function private extern("C") @"lib::pair"(%0: felt, %1: i32) {
         %2, %3 = hir.exec ::@lib::@pair(%0) : extern("C") (felt) -> (u16, u16);
         %4 = arith.zext %2 <{ ty = #builtin.type<u32> }>;
         %5 = hir.bitcast %4 <{ ty = #builtin.type<i32> }>;
@@ -21,7 +21,7 @@ builtin.module private @noname attributes { reserved_memory = #builtin.u64<65536
         hir.store_local %14 <{ local = #builtin.local_variable<1, i32> }> : (i32);
         %15 = hir.load_local <{ local = #builtin.local_variable<0, felt> }>;
         %16 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
-        hir.exec ::@root_ns:root@1.0.0::@noname::@lib::pair(%15, %16) : extern("C") (felt, i32) -> ();
+        hir.exec ::@noname::@noname::@"lib::pair"(%15, %16) : extern("C") (felt, i32) -> ();
         cf.br ^block7;
     ^block7:
         builtin.ret;

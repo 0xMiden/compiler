@@ -46,7 +46,7 @@ match err {
 
     run_canonabi_case("result_felt_u64", account_source, note_body, |wit| {
         assert!(
-            wit.contains("roundtrip: func(value: result<felt, u64>) -> result<felt, u64>;"),
+            wit.contains("%roundtrip: func(%value: result<felt, u64>) -> result<felt, u64>;"),
             "generated WIT did not use result<felt, u64>:\n{wit}"
         );
     });
@@ -93,7 +93,7 @@ match err {
 
     run_canonabi_case("result_large_felt_u32", account_source, note_body, |wit| {
         assert!(
-            wit.contains("roundtrip: func(value: result<felt, u32>) -> result<felt, u32>;"),
+            wit.contains("%roundtrip: func(%value: result<felt, u32>) -> result<felt, u32>;"),
             "generated WIT did not use result<felt, u32>:\n{wit}"
         );
     });
@@ -140,7 +140,7 @@ match err {
 
     run_canonabi_case("result_large_felt_u64", account_source, note_body, |wit| {
         assert!(
-            wit.contains("roundtrip: func(value: result<felt, u64>) -> result<felt, u64>;"),
+            wit.contains("%roundtrip: func(%value: result<felt, u64>) -> result<felt, u64>;"),
             "generated WIT did not use result<felt, u64>:\n{wit}"
         );
     });
@@ -203,7 +203,7 @@ match err {
             "generated WIT did not import word for result<word, felt>:\n{wit}"
         );
         assert!(
-            wit.contains("roundtrip: func(value: result<word, felt>) -> result<word, felt>;"),
+            wit.contains("%roundtrip: func(%value: result<word, felt>) -> result<word, felt>;"),
             "generated WIT did not use result<word, felt>:\n{wit}"
         );
     });
@@ -316,7 +316,7 @@ match err {
         );
         assert!(
             wit.contains(
-                "roundtrip: func(payload: result<result-ok-payload, result-err-payload>) -> \
+                "%roundtrip: func(%payload: result<result-ok-payload, result-err-payload>) -> \
                  result<result-ok-payload, result-err-payload>;"
             ),
             "generated WIT did not use result<result-ok-payload, result-err-payload>:\n{wit}"
@@ -402,11 +402,13 @@ if err.flag { assert_eq!(felt!(0), felt!(1)); }"#;
             "generated WIT did not define result-field-payload record:\n{wit}"
         );
         assert!(
-            wit.contains("outcome: result<felt, u32>,"),
+            wit.contains("%outcome: result<felt, u32>,"),
             "generated WIT did not use result<felt, u32> for the record field:\n{wit}"
         );
         assert!(
-            wit.contains("roundtrip: func(payload: result-field-payload) -> result-field-payload;"),
+            wit.contains(
+                "%roundtrip: func(%payload: result-field-payload) -> result-field-payload;"
+            ),
             "generated WIT did not use result-field-payload in roundtrip:\n{wit}"
         );
     });

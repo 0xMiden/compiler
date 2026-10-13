@@ -5,13 +5,17 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use heck::{ToKebabCase, ToUpperCamelCase};
+use heck::ToUpperCamelCase;
+use midenc_frontend_wasm_metadata::namespace::WIT_KEYWORDS;
 use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
 use syn::{Attribute, ItemStruct, Type, ext::IdentExt, spanned::Spanned};
 use wit_bindgen_core::wit_parser::Type as WitType;
 
-use crate::manifest_paths::SDK_WIT_SOURCE;
+use crate::{
+    manifest_paths::SDK_WIT_SOURCE,
+    wit_names::{rust_ident_to_wit_name, wit_bindgen_guest_ident},
+};
 
 /// Exported types grouped by the crate currently being expanded.
 static EXPORTED_TYPES: OnceLock<Mutex<HashMap<String, Vec<RegisteredExportType>>>> =
@@ -57,13 +61,15 @@ impl TypeRef {
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedField {
     pub(crate) docs: Vec<String>,
-    pub(crate) name: String,
+    /// Canonical WIT name of the field; wit-bindgen maps it back to the Rust field name.
+    pub(crate) wit_name: String,
     pub(crate) ty: TypeRef,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedVariant {
     pub(crate) docs: Vec<String>,
+    /// Canonical WIT name of the variant case.
     pub(crate) wit_name: String,
     pub(crate) payload: Option<TypeRef>,
 }
@@ -213,8 +219,7 @@ fn exported_type_shapes_match(left: &ExportedTypeDef, right: &ExportedTypeDef) -
         ) => {
             left_fields.len() == right_fields.len()
                 && left_fields.iter().zip(right_fields).all(|(left, right)| {
-                    left.name.to_kebab_case() == right.name.to_kebab_case()
-                        && type_ref_shapes_match(&left.ty, &right.ty)
+                    left.wit_name == right.wit_name && type_ref_shapes_match(&left.ty, &right.ty)
                 })
         }
         (
@@ -262,7 +267,7 @@ pub(crate) fn describe_exported_type_shape(def: &ExportedTypeDef) -> String {
             def.wit_name,
             fields
                 .iter()
-                .map(|field| format!("{}: {}", field.name.to_kebab_case(), field.ty.wit_name))
+                .map(|field| format!("{}: {}", field.wit_name, field.ty.wit_name))
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
@@ -712,8 +717,6 @@ pub(crate) fn map_type_to_type_ref(
                 ));
             }
 
-            let wit_name = ident.to_kebab_case();
-
             if let Some(wit_type) = rust_type_to_wit_type(&ident) {
                 return Ok(TypeRef {
                     wit_name: wit_type_name(wit_type).to_string(),
@@ -723,6 +726,9 @@ pub(crate) fn map_type_to_type_ref(
                     dependencies: Vec::new(),
                 });
             }
+
+            // Must agree with the name `#[export_type]` registers for the definition.
+            let wit_name = rust_ident_to_wit_name(&last.ident)?;
 
             if exported_types.contains_key(&ident) {
                 return Ok(TypeRef {
@@ -925,6 +931,54 @@ fn extract_wit_type_name(line: &str, keyword: &str) -> Option<String> {
     if name.is_empty() { None } else { Some(name) }
 }
 
+/// Returns the WIT name of the type `ident` declared in generated WIT, such as an
+/// `#[export_type]` type or a `#[note]` storage root.
+///
+/// Type declarations are rendered bare in the generated WIT, so the name must be a valid WIT
+/// identifier that is not a WIT keyword. `item_kind` names the construct in the diagnostic, e.g.
+/// `"exported type"`.
+pub(crate) fn exported_type_wit_name(
+    ident: &syn::Ident,
+    item_kind: &str,
+) -> Result<String, syn::Error> {
+    let wit_name = rust_ident_to_wit_name(ident)?;
+    if WIT_KEYWORDS.contains(&wit_name.replace('-', "_").as_str()) {
+        return Err(syn::Error::new(
+            ident.span(),
+            format!(
+                "{item_kind} `{ident}` produces the WIT name `{wit_name}`, which is a WIT \
+                 keyword; rename the type"
+            ),
+        ));
+    }
+    Ok(wit_name)
+}
+
+/// Derives the canonical WIT name of a field of the exported record `type_ident`.
+///
+/// Returns an error at the field's span unless the field is spelled the way the generated
+/// bindings access it, i.e. the snake_case Rust spelling of its WIT name, which is not a Rust
+/// keyword.
+fn exported_field_wit_name(
+    field_ident: &syn::Ident,
+    type_ident: &syn::Ident,
+) -> Result<String, syn::Error> {
+    let wit_name = rust_ident_to_wit_name(field_ident)?;
+    // The generated lowering code reads the user's struct fields by wit-bindgen's own Rust
+    // spelling of the WIT name, so any other spelling fails to compile inside the bindings.
+    let rust_ident = wit_bindgen_guest_ident(&wit_name, field_ident)?;
+    if rust_ident != field_ident.unraw() {
+        return Err(syn::Error::new(
+            field_ident.span(),
+            format!(
+                "field `{field_ident}` of exported type `{type_ident}` would be accessed as \
+                 `{rust_ident}` by the generated bindings; rename it to `{rust_ident}`"
+            ),
+        ));
+    }
+    Ok(wit_name)
+}
+
 pub(crate) fn exported_type_from_struct(
     item_struct: &ItemStruct,
 ) -> Result<ExportedTypeDef, syn::Error> {
@@ -939,7 +993,7 @@ pub(crate) fn exported_type_from_struct(
                 let field_ty = map_type_to_type_ref(&field.ty, &known_exported)?;
                 fields.push(ExportedField {
                     docs: doc_comments(&field.attrs),
-                    name: field_ident.to_string(),
+                    wit_name: exported_field_wit_name(field_ident, &item_struct.ident)?,
                     ty: field_ty,
                 });
             }
@@ -947,14 +1001,14 @@ pub(crate) fn exported_type_from_struct(
             Ok(ExportedTypeDef {
                 docs: doc_comments(&item_struct.attrs),
                 rust_name: item_struct.ident.to_string(),
-                wit_name: item_struct.ident.to_string().to_kebab_case(),
+                wit_name: exported_type_wit_name(&item_struct.ident, "exported type")?,
                 kind: ExportedTypeKind::Record { fields },
             })
         }
         syn::Fields::Unit => Ok(ExportedTypeDef {
             docs: doc_comments(&item_struct.attrs),
             rust_name: item_struct.ident.to_string(),
-            wit_name: item_struct.ident.to_string().to_kebab_case(),
+            wit_name: exported_type_wit_name(&item_struct.ident, "exported type")?,
             kind: ExportedTypeKind::Record { fields: Vec::new() },
         }),
         syn::Fields::Unnamed(_) => Err(syn::Error::new(
@@ -973,7 +1027,20 @@ pub(crate) fn exported_type_from_enum(
     let known_exported = registered_export_type_map();
     let mut variants = Vec::new();
     for variant in &item_enum.variants {
-        let wit_name = variant.ident.to_string().to_kebab_case();
+        let wit_name = rust_ident_to_wit_name(&variant.ident)?;
+        // The generated bindings name the user's enum cases by wit-bindgen's UpperCamelCase
+        // spelling of the WIT name, so any other spelling fails to compile inside the bindings.
+        let expected = wit_name.to_upper_camel_case();
+        if variant.ident.unraw() != expected {
+            return Err(syn::Error::new(
+                variant.ident.span(),
+                format!(
+                    "case `{}` of exported type `{}` would be accessed as `{expected}` by the \
+                     generated bindings; rename it to `{expected}`",
+                    variant.ident, item_enum.ident
+                ),
+            ));
+        }
         let payload = match &variant.fields {
             syn::Fields::Unit => None,
             syn::Fields::Unnamed(fields) => {
@@ -1005,36 +1072,9 @@ pub(crate) fn exported_type_from_enum(
     Ok(ExportedTypeDef {
         docs: doc_comments(&item_enum.attrs),
         rust_name: item_enum.ident.to_string(),
-        wit_name: item_enum.ident.to_string().to_kebab_case(),
+        wit_name: exported_type_wit_name(&item_enum.ident, "exported type")?,
         kind: ExportedTypeKind::Variant { variants },
     })
-}
-
-/// Converts a Rust identifier to its canonical WIT spelling before WIT escaping is applied.
-///
-/// Raw identifiers lose their `r#` prefix: `r#type` and `type` name the same WIT item, which
-/// [`explicit_wit_identifier`] then renders in a form the WIT parser accepts for keywords.
-pub(crate) fn rust_ident_to_wit_name(ident: &syn::Ident) -> String {
-    ident.unraw().to_string().to_kebab_case()
-}
-
-/// Renders WIT's explicit identifier form.
-///
-/// Explicit identifiers are valid for both keywords and ordinary identifiers, and the `%` is
-/// syntax only: the resolved name, which the Wasm frontend and wit-bindgen see, is unchanged.
-/// Using this form for every Rust-derived name keeps generated interfaces valid without
-/// duplicating WIT's evolving keyword list in the macro.
-pub(crate) fn explicit_wit_identifier(name: &str) -> String {
-    format!("%{name}")
-}
-
-/// Returns the Rust identifier wit-bindgen generates for a canonical WIT name.
-///
-/// Generated code that calls into (or implements) the bindings must spell the name exactly as
-/// wit-bindgen does, so derive it from the WIT name rather than from the Rust identifier the WIT
-/// name came from.
-pub(crate) fn wit_bindgen_rust_ident(wit_name: &str, span: Span) -> syn::Ident {
-    syn::Ident::new(&wit_bindgen_rust::to_rust_ident(wit_name), span)
 }
 
 /// Rejects a type that maps to an `#[export_type]` custom type, including one nested in an

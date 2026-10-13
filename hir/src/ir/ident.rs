@@ -192,13 +192,6 @@ impl alloc::borrow::Borrow<Symbol> for Ident {
     }
 }
 
-impl alloc::borrow::Borrow<str> for Ident {
-    #[inline]
-    fn borrow(&self) -> &str {
-        self.as_str()
-    }
-}
-
 impl Ord for Ident {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {

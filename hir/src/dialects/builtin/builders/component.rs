@@ -28,27 +28,30 @@ impl ComponentBuilder {
         Self { component, builder }
     }
 
+    /// Define a new interface named by the raw segment `name` in this component, see
+    /// [BuiltinOpBuilder::create_interface].
     pub fn define_interface(&mut self, name: Ident) -> Result<InterfaceRef, Report> {
         self.builder.create_interface(name)
     }
 
+    /// Define a new module named by the raw segment `name` in this component, see
+    /// [BuiltinOpBuilder::create_module].
     pub fn define_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
-        let module_ref = self.builder.create_module(name)?;
-        Ok(module_ref)
+        self.builder.create_module(name)
     }
 
+    /// Resolve the module named by the raw segment `name` in this component (see
+    /// [Module::canonical_name]), if defined.
     pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
-        self.component.borrow().get(name).and_then(|symbol_ref| {
-            let op = symbol_ref.borrow();
-            op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
-        })
+        let name = Module::canonical_name(name).ok()?;
+        (&*self.component.borrow() as &dyn SymbolTable).find::<Module>(name)
     }
 
+    /// Resolve the module at `path` from this component (see [SymbolTable::resolve]), if it is
+    /// one.
     pub fn resolve_module(&self, path: &SymbolPath) -> Option<ModuleRef> {
-        self.component.borrow().resolve(path).and_then(|symbol_ref| {
-            let op = symbol_ref.borrow();
-            op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
-        })
+        let op = self.component.borrow().symbol_manager().lookup_symbol_ref(path)?;
+        op.try_downcast_op::<Module>().ok()
     }
 
     /// Declare a new [crate::dialects::builtin::Function] in this component with the given name and

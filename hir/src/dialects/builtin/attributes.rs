@@ -12,7 +12,6 @@ mod string;
 mod symbol_ref;
 mod r#type;
 mod unit;
-pub mod version;
 mod visibility;
 
 pub use self::{
@@ -36,7 +35,6 @@ pub use self::{
     symbol_ref::{SymbolRef, SymbolRefAttr},
     r#type::{FunctionTypeAttr, TypeAttr},
     unit::UnitAttr,
-    version::VersionAttr,
     visibility::{Visibility, VisibilityAttr},
 };
 pub use crate::ir::{IdentAttr, ImmediateAttr};

@@ -43,6 +43,7 @@ flate2.workspace = true
 midenc-driver = { workspace = true, features = ["std"] }
 midenc-session.workspace = true
 midenc-log.workspace = true
+midenc-frontend-wasm-metadata.workspace = true
 log.workspace = true
 clap.workspace = true
 anyhow.workspace = true
@@ -59,7 +60,6 @@ sha2.workspace = true
 
 [dev-dependencies]
 miden-mast-package = { workspace = true, features = ["std"] }
-midenc-frontend-wasm-metadata.workspace = true
 midenc-integration-test-support.workspace = true
 wit-component.workspace = true
 wit-parser.workspace = true

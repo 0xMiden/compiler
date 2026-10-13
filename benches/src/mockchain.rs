@@ -298,7 +298,7 @@ fn build_rpo_auth_transaction(packages: &ScenarioPackages) -> Result<MockTransac
     let public_key: Word = secret_key.public_key().to_commitment().into();
     let mut auth_storage = InitStorageData::default();
     auth_storage.insert_value(
-        "auth_component_rpo_falcon512::auth_component::owner_public_key",
+        "miden::auth_component_rpo_falcon512::auth_component::owner_public_key",
         public_key,
     )?;
     let auth_component = AccountComponent::from_package(
@@ -331,7 +331,8 @@ fn build_rpo_auth_transaction(packages: &ScenarioPackages) -> Result<MockTransac
 }
 
 fn build_counter_transaction(packages: &ScenarioPackages) -> Result<MockTransaction> {
-    let counter_slot = StorageSlotName::new("counter_contract::counter_contract::count_map")?;
+    let counter_slot =
+        StorageSlotName::new("miden::counter_contract::counter_contract::count_map")?;
     let mut counter_storage = InitStorageData::default();
     counter_storage.insert_map_entry(counter_slot.clone(), COUNTER_STORAGE_KEY, 1_u64)?;
     let counter_component = AccountComponent::from_package(

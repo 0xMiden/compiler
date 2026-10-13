@@ -13,8 +13,8 @@ use miden_mast_package::{Package, QualifiedProcedureName};
 use miden_protocol::note::NoteScript;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::{
-    CompilerTestBuilder, Project, cargo_proj::project, compiler_test::sdk_crate_path,
-    find_manifest_procedure, testing::executor_with_std,
+    CompilerTestBuilder, Project, cargo_proj::project, compiler_test::sdk_crate_path, find_export,
+    testing::executor_with_std,
 };
 
 /// Builds a minimal note project whose `probe` constructor returns `get_entrypoint_root()`.
@@ -55,7 +55,7 @@ version = "0.1.0"
 [lib]
 kind = "note"
 path = "src/lib.rs"
-namespace = "miden:note-script-root-probe/miden-note-script-root-probe@0.1.0"
+namespace = "miden::note_script_root_probe::note_script_root_probe"
 
 [dependencies]
 miden-core = "*"
@@ -98,17 +98,12 @@ impl ProbeNote {
 
 /// Rebuilds an executable program from the lifted component export with the given leaf name.
 ///
-/// A package manifest exposes two exports per component function under the same leaf name: the
-/// core-Wasm function (under its `namespace::interface` path) and the compiler-lifted component
-/// export (under the component-id root module). They have different digests and calling
-/// conventions; execution must target the lifted export, recognizable by its module segment
-/// holding the full `ns:pkg/interface@version` component id (the only segment containing `/`).
+/// A package manifest exports exactly the WIT-declared procedures, directly under the component
+/// namespace, plus the component's `init`; the core-Wasm functions they lift are internal.
+/// Execution targets the lifted export at `<namespace>::<name>`.
 fn export_program(package: &Package, name: &str) -> Arc<Package> {
-    let procedure = find_manifest_procedure(
-        package,
-        &format!("the lifted component export '{name}'"),
-        |path| path.contains('/') && path.ends_with(&format!("::{name}")),
-    );
+    let procedure =
+        find_export(package, "miden::note_script_root_probe::note_script_root_probe", name);
     package
         .make_executable(&QualifiedProcedureName::from(procedure.path.clone()))
         .map(Arc::new)

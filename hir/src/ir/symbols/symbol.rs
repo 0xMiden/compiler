@@ -36,18 +36,39 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
     fn name(&self) -> SymbolName;
     /// Get the fully-qualified (absolute) path of this symbol
     ///
+    /// Each named ancestor symbol table contributes one `Component` per raw segment of its name,
+    /// the Miden Assembly spelling of those segments (see [SymbolPath::segments_of]), so a
+    /// function `f` in module `m` of a component named `miden::a::b` has the path
+    /// `::miden::a::b::m::f`.
+    ///
+    /// The name of this symbol ends the path as its `Leaf`. The name of a function or global is
+    /// opaque and is never split; the name of a symbol table is split like an ancestor's, its
+    /// raw last segment being the `Leaf`, so a module named `"my-mod"` has the leaf `my-mod` and
+    /// the component `miden::a::b` itself has the path `::miden::a::b`.
+    ///
     /// # Panics
     ///
     /// This function traverses the parents of this operation to the top level. If called while
     /// mutably borrowing any of the ancestors of this operation, a panic will occur.
     fn path(&self) -> SymbolPath {
-        let mut parts = VecDeque::from_iter([SymbolNameComponent::Leaf(self.name())]);
+        let name = self.name();
+        let mut parts = VecDeque::new();
+        if self.as_symbol_operation().implements::<dyn SymbolTable>() {
+            let mut segments = SymbolPath::segments_of(name);
+            let leaf = segments.pop().unwrap_or(name);
+            parts.extend(segments.into_iter().map(SymbolNameComponent::Component));
+            parts.push_back(SymbolNameComponent::Leaf(leaf));
+        } else {
+            parts.push_back(SymbolNameComponent::Leaf(name));
+        }
         let mut symbol_table = self.as_symbol_operation().nearest_symbol_table();
 
         while let Some(parent_symbol_table) = symbol_table.take() {
             let sym_table_op = parent_symbol_table.borrow();
             if let Some(sym) = sym_table_op.as_symbol() {
-                parts.push_front(SymbolNameComponent::Component(sym.name()));
+                for segment in SymbolPath::segments_of(sym.name()).into_iter().rev() {
+                    parts.push_front(SymbolNameComponent::Component(segment));
+                }
                 symbol_table = sym_table_op.nearest_symbol_table();
             } else {
                 // This is an anonymous symbol table - for now we require all symbol tables to be
@@ -64,6 +85,11 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
         SymbolPath::from_iter(parts)
     }
     /// Set the name of this symbol
+    ///
+    /// `name` is stored as given, in the form [Symbol::name] returns: for a symbol-table op, the
+    /// Miden Assembly spelling of its raw segments (see [SymbolPath::segments_of]), which callers
+    /// get from the op's `canonical_name`. It is not spelled here; the symbol-table verifiers
+    /// reject a name that is not spelled.
     fn set_name(&mut self, name: SymbolName);
     /// Get the visibility of this symbol
     fn visibility(&self) -> Visibility;

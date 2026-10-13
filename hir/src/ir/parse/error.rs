@@ -1,4 +1,9 @@
-use alloc::{format, string::String, vec, vec::Vec};
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 
 use crate::{
     BlockId, CompactString, Type, ValueId,
@@ -260,12 +265,14 @@ pub enum ParserError {
         span: SourceSpan,
         name: BlockId,
     },
-    #[error("redefinition of symbol {name}")]
+    /// A symbol table defines two symbols with one name, or with one path (see
+    /// [crate::SymbolConflict])
+    #[error("{conflict}")]
     #[diagnostic()]
-    SymbolAlreadyDefined {
+    SymbolConflict {
         #[label]
         span: SourceSpan,
-        name: interner::Symbol,
+        conflict: crate::SymbolConflict,
     },
     #[error("too many arguments specified in argument list")]
     #[diagnostic()]
@@ -325,9 +332,30 @@ pub enum ParserError {
         span: SourceSpan,
         key: CompactString,
     },
+    /// The name of a component, module or interface cannot name it, e.g. Miden Assembly cannot
+    /// spell one of its segments.
+    #[error("{reason}")]
+    #[diagnostic()]
+    InvalidSymbolTableName {
+        /// The span of the name
+        #[label("this name is invalid")]
+        span: SourceSpan,
+        /// Why the name is invalid
+        reason: String,
+    },
     #[error(transparent)]
     #[diagnostic(transparent)]
     Report(#[from] RelatedError),
+}
+
+impl ParserError {
+    /// The name at `span` cannot name a symbol-table op, for the reason `error` gives.
+    pub fn invalid_symbol_table_name(span: SourceSpan, error: Report) -> Self {
+        Self::InvalidSymbolTableName {
+            span,
+            reason: error.to_string(),
+        }
+    }
 }
 
 impl From<Report> for ParserError {

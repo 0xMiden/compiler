@@ -2,6 +2,7 @@
 //! source of truth. The same instruction is then compiled into a program executable on Miden VM
 //! and it is asserted that executing that program produces the same result/trap as the interpreter.
 
+mod component_naming;
 mod component_start;
 pub(super) mod i32;
 mod i64;

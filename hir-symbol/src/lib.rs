@@ -136,12 +136,6 @@ impl AsRef<str> for Symbol {
         self.as_str()
     }
 }
-impl core::borrow::Borrow<str> for Symbol {
-    #[inline(always)]
-    fn borrow(&self) -> &str {
-        self.as_str()
-    }
-}
 impl<T: Deref<Target = str>> PartialEq<T> for Symbol {
     fn eq(&self, other: &T) -> bool {
         self.as_str() == other.deref()

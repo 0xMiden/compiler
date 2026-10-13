@@ -91,7 +91,7 @@ version = "0.1.0"
 
 [lib]
 kind = "account-component"
-namespace = "miden:{account_slug}/canonabi-component@0.1.0"
+namespace = "miden::{account_package_module}::canonabi_component"
 path = "src/lib.rs"
 
 [dependencies]
@@ -102,7 +102,7 @@ miden-protocol = "*"
 supported-types = ["RegularAccountUpdatableCode"]
 "#,
         account_crate = names.account_crate,
-        account_slug = names.account_slug,
+        account_package_module = names.account_package_module,
     );
 
     project(&names.account_crate)
@@ -161,7 +161,7 @@ version = "0.1.0"
 
 [lib]
 kind = "note"
-namespace = "miden:{note_slug}/miden-{note_slug}@0.1.0"
+namespace = "miden::{note_module}::{note_module}"
 path = "src/lib.rs"
 
 [dependencies]
@@ -170,7 +170,7 @@ miden-protocol = "*"
 {account_crate} = {{ path = "{account_root}" }}
 "#,
         note_crate = names.note_crate,
-        note_slug = names.note_slug,
+        note_module = names.note_crate,
         account_crate = names.account_crate,
         account_root = account_root.display(),
     );

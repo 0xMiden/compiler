@@ -1,5 +1,11 @@
-use std::{collections::HashSet, env, fs, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    env, fs,
+    path::PathBuf,
+    sync::LazyLock,
+};
 
+use midenc_frontend_wasm_metadata::{FPI_IMPORT_PREFIX, namespace::CORE_TYPES_INTERFACE};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use syn::{
@@ -12,8 +18,8 @@ use syn::{
 use wit_bindgen_core::{
     WorldGenerator,
     wit_parser::{
-        Function, Handle, InterfaceId, PackageId, Resolve, Type as WitType, TypeDefKind, TypeId,
-        TypeOwner, UnresolvedPackageGroup, WorldId, WorldItem,
+        Function, Handle, InterfaceId, PackageId, PackageName, Resolve, Type as WitType,
+        TypeDefKind, TypeId, TypeOwner, UnresolvedPackageGroup, WorldId, WorldItem,
     },
 };
 use wit_bindgen_rust::{Opts, WithOption};
@@ -24,13 +30,15 @@ use crate::{fpi, manifest_paths};
 /// slots.
 pub(crate) const STORED_PROCEDURE_BINDINGS_PACKAGE: &str = "miden:stored-procedure-bindings";
 /// WIT function-name prefix the Wasm frontend reserves for stored-procedure dispatch imports.
-pub(crate) const DYNCALL_WIT_PREFIX: &str = "dyncall-";
+pub(crate) const DYNCALL_WIT_PREFIX: &str = midenc_frontend_wasm_metadata::DYNCALL_IMPORT_PREFIX;
 
-/// Fully-qualified WIT interface path for Miden SDK core types.
-pub(crate) const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
+/// Fully-qualified WIT interface path for Miden SDK core types, `miden:base/core-types@1.0.0`.
+pub(crate) static CORE_TYPES_INTERFACE_ID: LazyLock<String> =
+    LazyLock::new(|| format!("miden:base/{CORE_TYPES_INTERFACE}@1.0.0"));
 
 /// Whether the world being generated may declare imports named with the reserved `dyncall-`
-/// prefix.
+/// prefix, and so whether its functions are checked against the reserved `fpi-` and `dyncall-`
+/// prefixes at all.
 ///
 /// The exemption is a property of the generation path, not of the WIT being generated: only the
 /// world `#[component_storage]` builds from its own stored-procedure fields is exempt. Deciding
@@ -38,9 +46,9 @@ pub(crate) const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
 /// by naming itself accordingly and have its functions dispatched dynamically instead of linked.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DyncallPolicy {
-    /// The prefix is reserved; reject every imported function that uses it.
+    /// The prefixes are reserved; reject every imported or exported function that uses one.
     Reserved,
-    /// The prefix is expected; skip the check.
+    /// The `dyncall-` prefix is expected; skip the check.
     Generated,
 }
 
@@ -317,7 +325,7 @@ fn generate_bindings_from_sources(
         .resolve
         .select_world(&wit_sources.packages, world)
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
-    validate_reserved_dyncall_namespace(&wit_sources.resolve, world_id, dyncall_policy)?;
+    validate_reserved_import_prefixes(&wit_sources.resolve, world_id, dyncall_policy)?;
     fpi::inject_imports(&mut wit_sources.resolve, world_id, fpi_imports)?;
     #[cfg(feature = "internal-wit-emit")]
     if inline_source.is_some() {
@@ -578,6 +586,8 @@ fn load_wit_sources(
     let mut resolve = Resolve::default();
     let mut packages = Vec::new();
     let mut files = Vec::new();
+    // The source that registered each WIT package, for the duplicate-package diagnostic.
+    let mut owners = sdk_package_owners();
 
     let push_path = |resolve: &mut Resolve,
                      packages: &mut Vec<PackageId>,
@@ -605,6 +615,7 @@ fn load_wit_sources(
     // resolver with type definitions those sources may depend on.
     if let Some(prelude_dir) = &config.prelude_dir {
         push_path(&mut resolve, &mut packages, &mut files, PathBuf::from(prelude_dir))?;
+        record_package_owners(&resolve, &mut owners, "the Miden SDK WIT");
     }
 
     // Load WIT definitions embedded in the compiled packages of Miden dependencies. The
@@ -616,7 +627,9 @@ fn load_wit_sources(
         files.push(map_path.clone());
     }
     for source in &config.dependency_sources {
-        let pkg = resolve.push_str(format!("{}.wit", source.name), &source.wit).map_err(|err| {
+        let owner =
+            format!("dependency `{}` (package '{}')", source.name, source.package_path.display());
+        let load_error = |err: String| {
             Error::new(
                 Span::call_site(),
                 format!(
@@ -624,7 +637,12 @@ fn load_wit_sources(
                     source.package_path.display()
                 ),
             )
-        })?;
+        };
+        let group = UnresolvedPackageGroup::parse(format!("{}.wit", source.name), &source.wit)
+            .map_err(|(map, err)| load_error(err.render(&map)))?;
+        ensure_new_packages(&owners, &group, &owner)?;
+        let pkg = resolve.push_group(group).map_err(|err| load_error(err.to_string()))?;
+        record_package_owners(&resolve, &mut owners, &owner);
         packages.push(pkg);
         files.push(source.package_path.clone());
         if let Some(wit_override_path) = &source.wit_override_path {
@@ -634,7 +652,16 @@ fn load_wit_sources(
 
     // Load the crate's own `wit/` directory last so it can reference the dependency packages.
     if let Some(local_wit_root) = &config.local_wit_root {
+        let owner = format!("this crate's WIT directory '{}'", local_wit_root.display());
+        // Parsed here only to name the owner of a duplicate package before resolving it. The
+        // directory is loaded through `push_path`, which also resolves its `deps/` directory and
+        // reports the files it read, so it cannot reuse this group; it re-parses the directory
+        // and reports any parse error, which is therefore safe to ignore here.
+        if let Ok(group) = UnresolvedPackageGroup::parse_dir(manifest_dir.join(local_wit_root)) {
+            ensure_new_packages(&owners, &group, &owner)?;
+        }
         push_path(&mut resolve, &mut packages, &mut files, local_wit_root.clone())?;
+        record_package_owners(&resolve, &mut owners, &owner);
     }
 
     if let Some(src) = inline_source {
@@ -645,6 +672,7 @@ fn load_wit_sources(
         packages.clear();
         let group = UnresolvedPackageGroup::parse("inline", src)
             .map_err(|(sm, err)| Error::new(Span::call_site(), err.render(&sm)))?;
+        ensure_new_packages(&owners, &group, "this crate (from its `[lib].namespace`)")?;
         let pkg = resolve
             .push_group(group)
             .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
@@ -658,6 +686,68 @@ fn load_wit_sources(
     })
 }
 
+/// The source that registered each WIT package, keyed by the package's `namespace:name`
+/// without its version, for the duplicate-package diagnostic.
+type PackageOwners = HashMap<(String, String), (PackageName, String)>;
+
+/// The owners map with the packages of the bundled SDK WIT registered as owned by the Miden SDK.
+fn sdk_package_owners() -> PackageOwners {
+    // Parsed once per compiler process rather than on every macro expansion.
+    static SDK_OWNERS: LazyLock<PackageOwners> = LazyLock::new(|| {
+        let mut owners = PackageOwners::new();
+        let sdk = UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE)
+            .expect("the bundled SDK WIT parses");
+        for package in core::iter::once(&sdk.main).chain(&sdk.nested) {
+            record_package_owner(&mut owners, &package.name, "the Miden SDK");
+        }
+        owners
+    });
+    SDK_OWNERS.clone()
+}
+
+/// Records `owner` as the source of the package `name`, unless it already has one.
+fn record_package_owner(owners: &mut PackageOwners, name: &PackageName, owner: &str) {
+    owners
+        .entry((name.namespace.clone(), name.name.clone()))
+        .or_insert_with(|| (name.clone(), owner.to_owned()));
+}
+
+/// Records `owner` as the source of every package of `resolve` without a recorded source.
+fn record_package_owners(resolve: &Resolve, owners: &mut PackageOwners, owner: &str) {
+    for name in resolve.package_names.keys() {
+        record_package_owner(owners, name, owner);
+    }
+}
+
+/// Fails when a package of `group`, loaded from `owner`, shares its `namespace:name` with a
+/// package another source registered, whatever the two versions.
+///
+/// The WIT package id of a crate is derived from the first two segments of its
+/// `[lib].namespace`, so two crates sharing them define packages of one `namespace:name`, which
+/// wit-bindgen tells apart only by mangling their module paths with the versions.
+fn ensure_new_packages(
+    owners: &PackageOwners,
+    group: &UnresolvedPackageGroup,
+    owner: &str,
+) -> Result<(), Error> {
+    let names = core::iter::once(&group.main).chain(&group.nested).map(|package| &package.name);
+    for name in names {
+        let key = (name.namespace.clone(), name.name.clone());
+        if let Some((previous_name, previous)) = owners.get(&key) {
+            return Err(Error::new(
+                Span::call_site(),
+                format!(
+                    "WIT package `{name}` of {owner} clashes with `{previous_name}` defined by \
+                     {previous}; the first two segments of `[lib].namespace` (`ns::pkg`) form the \
+                     WIT package id and must be unique among all linked crates regardless of \
+                     version"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Pushes user-provided `with` entries to the wit-bindgen options.
 fn push_custom_with_entries(opts: &mut Opts, entries: &[(String, WithOption)]) {
     opts.with.extend(entries.iter().cloned());
@@ -665,35 +755,51 @@ fn push_custom_with_entries(opts: &mut Opts, entries: &[(String, WithOption)]) {
 
 /// Pushes default `with` entries that map Miden base types to SDK types.
 fn push_default_with_entries(opts: &mut Opts) {
-    opts.with.push((CORE_TYPES_INTERFACE.to_string(), WithOption::Generate));
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/felt"), "::miden::Felt");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/word"), "::miden::Word");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/digest"), "::miden::Digest");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset-id"), "::miden::AssetId");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset"), "::miden::Asset");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset-amount"), "::miden::AssetAmount");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/account-id"), "::miden::AccountId");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/tag"), "::miden::Tag");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/note-type"), "::miden::NoteType");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/recipient"), "::miden::Recipient");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/note-idx"), "::miden::NoteIdx");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/nonce"), "::miden::Nonce");
-    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/block-number"), "::miden::BlockNumber");
+    let core_types = CORE_TYPES_INTERFACE_ID.as_str();
+    opts.with.push((core_types.to_string(), WithOption::Generate));
+    push_path_entry(opts, &format!("{core_types}/felt"), "::miden::Felt");
+    push_path_entry(opts, &format!("{core_types}/word"), "::miden::Word");
+    push_path_entry(opts, &format!("{core_types}/digest"), "::miden::Digest");
+    push_path_entry(opts, &format!("{core_types}/asset-id"), "::miden::AssetId");
+    push_path_entry(opts, &format!("{core_types}/asset"), "::miden::Asset");
+    push_path_entry(opts, &format!("{core_types}/asset-amount"), "::miden::AssetAmount");
+    push_path_entry(opts, &format!("{core_types}/account-id"), "::miden::AccountId");
+    push_path_entry(opts, &format!("{core_types}/tag"), "::miden::Tag");
+    push_path_entry(opts, &format!("{core_types}/note-type"), "::miden::NoteType");
+    push_path_entry(opts, &format!("{core_types}/recipient"), "::miden::Recipient");
+    push_path_entry(opts, &format!("{core_types}/note-idx"), "::miden::NoteIdx");
+    push_path_entry(opts, &format!("{core_types}/nonce"), "::miden::Nonce");
+    push_path_entry(opts, &format!("{core_types}/block-number"), "::miden::BlockNumber");
 }
 
 fn push_path_entry(opts: &mut Opts, key: &str, value: &str) {
     opts.with.push((key.to_string(), WithOption::Path(value.to_string())));
 }
 
-/// Rejects functions named with the `dyncall-` prefix the Wasm frontend reserves for
-/// stored-procedure dispatch imports.
+/// WIT function-name prefixes the Wasm frontend reserves for generated imports, each with the
+/// kind of import it marks.
+const RESERVED_IMPORT_PREFIXES: [(&str, &str); 2] = [
+    (FPI_IMPORT_PREFIX, "foreign procedure invocation"),
+    (DYNCALL_WIT_PREFIX, "stored-procedure dispatch"),
+];
+
+/// Returns the reserved import prefix `wit_name` starts with, and the kind of import it marks.
+fn reserved_import_prefix(wit_name: &str) -> Option<(&'static str, &'static str)> {
+    RESERVED_IMPORT_PREFIXES
+        .into_iter()
+        .find(|(prefix, _)| wit_name.starts_with(prefix))
+}
+
+/// Rejects world functions named with a prefix the Wasm frontend reserves for generated imports
+/// (`fpi-` and `dyncall-`).
 ///
-/// The frontend classifies those imports by name, so a dependency function that happened to use
-/// the prefix would be dispatched as a dynamic call instead of linked. Exports are checked as
-/// well: an export with the prefix is an import with the prefix in every consumer, where the
-/// diagnostic would blame the dependency. Only the world `#[component_storage]` generates for
-/// stored-procedure slots is exempt, and only because its caller says so through `policy`.
-fn validate_reserved_dyncall_namespace(
+/// The frontend classifies imports by name, so a dependency function that happened to use a
+/// reserved prefix would be lowered as a generated import instead of linked, and an export with
+/// one is an import with it in every consumer, where the diagnostic would blame the dependency.
+/// The `fpi-` imports `#[account(...)]` needs are injected after this check, so they are not
+/// seen here. Only the world `#[component_storage]` generates for stored-procedure slots is
+/// exempt, and only because its caller says so through `policy`.
+fn validate_reserved_import_prefixes(
     resolve: &Resolve,
     world_id: WorldId,
     policy: DyncallPolicy,
@@ -722,15 +828,15 @@ fn validate_reserved_dyncall_namespace(
             WorldItem::Function(function) => (format!("world `{}`", world.name), vec![function]),
             WorldItem::Type { .. } => continue,
         };
-        if let Some(function) =
-            functions.iter().find(|function| function.name.starts_with(DYNCALL_WIT_PREFIX))
-        {
+        let reserved = functions.iter().find_map(|function| {
+            reserved_import_prefix(&function.name).map(|reserved| (function, reserved))
+        });
+        if let Some((function, (prefix, purpose))) = reserved {
             return Err(Error::new(
                 Span::call_site(),
                 format!(
-                    "{origin} defines function `{}` with reserved prefix `{DYNCALL_WIT_PREFIX}`; \
-                     the compiler lowers imports with that prefix as stored-procedure dispatches, \
-                     so an {direction} function must use a different name",
+                    "{origin} defines function `{}`, but the frontend reserves the `{prefix}` WIT \
+                     prefix for generated {purpose} imports; rename it",
                     function.name
                 ),
             ));
@@ -739,31 +845,35 @@ fn validate_reserved_dyncall_namespace(
     Ok(())
 }
 
-/// Rejects an exported function whose WIT name carries the prefix reserved for stored-procedure
-/// dispatch.
+/// Rejects an exported function whose WIT name carries a prefix the Wasm frontend reserves for
+/// generated imports: `fpi-` (foreign procedure invocation) or `dyncall-` (stored-procedure
+/// dispatch).
 ///
-/// The Wasm frontend classifies imports named `dyncall-…` as dynamic calls on a stored procedure
-/// root, so exporting such a name only breaks the package's consumers — and there the diagnostic
-/// blames the dependency. Reject it where the name is written instead. `item_kind` names the
-/// construct that carries the name, e.g. `"component method"`.
+/// The frontend classifies imports by these prefixes, so exporting such a name only breaks the
+/// package's consumers — and there the diagnostic blames the dependency. Reject it where the name
+/// is written instead. `item_kind` names the construct that carries the name, e.g.
+/// `"component method"`.
 ///
-/// `wit_name` must be the un-rawed WIT spelling of `fn_ident` (see
-/// [`rust_ident_to_wit_name`](crate::types::rust_ident_to_wit_name)): a raw identifier keeps its
-/// `r#` through plain kebab-casing and would slip past the prefix comparison.
-pub(crate) fn reject_reserved_dyncall_export(
+/// `wit_name` must be the WIT spelling of `fn_ident` as produced by
+/// [`rust_ident_to_wit_name`](crate::wit_names::rust_ident_to_wit_name), which strips the `r#` of
+/// a raw identifier: plain kebab-casing turns `r#dyncall_notify` into `r-dyncall-notify`, which
+/// would slip past the prefix comparison.
+pub(crate) fn reject_reserved_import_prefix_export(
     fn_ident: &syn::Ident,
     wit_name: &str,
     item_kind: &str,
 ) -> syn::Result<()> {
-    if !wit_name.starts_with(DYNCALL_WIT_PREFIX) {
+    let Some((prefix, purpose)) = reserved_import_prefix(wit_name) else {
         return Ok(());
-    }
+    };
 
+    let rust_prefix = prefix.replace('-', "_");
     Err(Error::new(
         fn_ident.span(),
         format!(
-            "{item_kind} `{fn_ident}` is exported as `{wit_name}`, but the `{DYNCALL_WIT_PREFIX}` \
-             WIT prefix (`dyncall_` in Rust) is reserved for stored-procedure dispatch; rename it"
+            "{item_kind} `{fn_ident}` is exported as `{wit_name}`, but the frontend reserves the \
+             `{prefix}` WIT prefix (`{rust_prefix}` in Rust) for generated {purpose} imports; \
+             rename it"
         ),
     ))
 }
@@ -775,7 +885,7 @@ fn world_uses_miden_core_types(resolve: &Resolve, world_id: WorldId) -> bool {
         .imports
         .values()
         .chain(world.exports.values())
-        .any(|item| world_item_uses_interface(resolve, item, CORE_TYPES_INTERFACE))
+        .any(|item| world_item_uses_interface(resolve, item, &CORE_TYPES_INTERFACE_ID))
 }
 
 /// Returns true when a world item references a type from `interface_path`.
@@ -1069,6 +1179,85 @@ pub(crate) fn format_module_path(path: &[syn::Ident]) -> String {
 mod tests {
     use super::*;
 
+    /// Namespace of the component importing the FPI dependencies in these tests.
+    fn test_consumer() -> crate::namespace::ComponentNamespace {
+        crate::namespace::ComponentNamespace::parse("miden::acme::acme", Span::call_site()).unwrap()
+    }
+
+    /// Parses a WIT package `package` with one interface `iface`.
+    fn package_group(package: &str, iface: &str) -> UnresolvedPackageGroup {
+        let wit = format!("package {package};\ninterface {iface} {{ ping: func(); }}\n");
+        UnresolvedPackageGroup::parse("dep.wit", &wit).unwrap()
+    }
+
+    /// Two crates sharing `ns::pkg` define the same WIT package; the second is reported with
+    /// both sources instead of reaching wit-parser's duplicate-package assertion.
+    #[test]
+    fn a_wit_package_defined_twice_is_reported_with_both_sources() {
+        let mut resolve = Resolve::default();
+        let mut owners = sdk_package_owners();
+        let wallet = || package_group("miden:my-account@0.1.0", "wallet");
+        ensure_new_packages(&owners, &wallet(), "dependency `wallet`").unwrap();
+        resolve.push_group(wallet()).unwrap();
+        record_package_owners(&resolve, &mut owners, "dependency `wallet`");
+
+        let err = ensure_new_packages(
+            &owners,
+            &package_group("miden:my-account@0.1.0", "auth"),
+            "dependency `auth`",
+        )
+        .expect_err("the second definition of the package must be rejected")
+        .to_string();
+        assert!(
+            err.contains("`miden:my-account@0.1.0`")
+                && err.contains("dependency `auth`")
+                && err.contains("dependency `wallet`")
+                && err.contains("must be unique among all linked crates regardless of version"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// Packages of one `namespace:name` at two versions clash too: wit-bindgen would mangle
+    /// their module paths with the versions, breaking the paths the macros generate.
+    #[test]
+    fn a_wit_package_at_another_version_is_rejected() {
+        let mut resolve = Resolve::default();
+        let mut owners = sdk_package_owners();
+        let core = || package_group("miden:wallet@0.1.0", "core");
+        resolve.push_group(core()).unwrap();
+        record_package_owners(&resolve, &mut owners, "dependency `wallet`");
+
+        let err = ensure_new_packages(
+            &owners,
+            &package_group("miden:wallet@0.2.0", "main"),
+            "this crate",
+        )
+        .expect_err("the package at another version must be rejected")
+        .to_string();
+        assert!(
+            err.contains("`miden:wallet@0.2.0` of this crate clashes with `miden:wallet@0.1.0`")
+                && err.contains("dependency `wallet`"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// The SDK's own packages are registered up front, so a crate namespace `miden::base::x`
+    /// cannot define a package that clashes with them.
+    #[test]
+    fn a_wit_package_of_the_sdk_is_rejected() {
+        let err = ensure_new_packages(
+            &sdk_package_owners(),
+            &package_group("miden:base@0.1.0", "x"),
+            "this crate",
+        )
+        .expect_err("the SDK package must not be redefined")
+        .to_string();
+        assert!(
+            err.contains("clashes with `miden:base@1.0.0` defined by the Miden SDK"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
     /// Produces portable, non-empty inline-WIT artifact names.
     #[test]
     fn inline_wit_filename_components_are_sanitized() {
@@ -1115,14 +1304,17 @@ mod tests {
 package miden:wallet@1.0.0;
 
 interface api {
+    @external-id("miden::wallet::api::ping")
     ping: func(value: u32) -> u32;
+    @external-id("miden::wallet::api::type")
+    %type: func() -> u32;
 }
 "#,
         )
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("foreign-account-bindings-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1134,6 +1326,14 @@ interface api {
         assert!(rendered.contains("import miden:fpi-v1-wallet/api@1.0.0;"));
         assert!(rendered.contains("package miden:fpi-v1-wallet@1.0.0 {"));
         assert!(rendered.contains("fpi-ping: func("));
+        assert!(
+            rendered.contains("@external-id(\"miden::acme::acme::fpi::miden::wallet::api::ping\")"),
+            "the FPI function must carry its Miden path: {rendered}"
+        );
+        assert!(
+            rendered.contains("@external-id(\"miden::acme::acme::fpi::miden::wallet::api::type\")"),
+            "the FPI leaf is the leaf of the dependency function's own path: {rendered}"
+        );
         UnresolvedPackageGroup::parse("emitted.wit", &rendered).unwrap();
     }
 
@@ -1369,12 +1569,12 @@ world notifier-world {
         let package = resolve.push_group(group).unwrap();
         let world = resolve.select_world(&[package], None).unwrap();
 
-        let err = validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Reserved)
+        let err = validate_reserved_import_prefixes(&resolve, world, DyncallPolicy::Reserved)
             .unwrap_err();
         let message = err.to_string();
         assert!(message.contains("`miden:notifier/api@1.0.0`"), "{message}");
         assert!(message.contains("`dyncall-notify`"), "{message}");
-        assert!(message.contains("reserved prefix `dyncall-`"), "{message}");
+        assert!(message.contains("reserves the `dyncall-` WIT prefix"), "{message}");
     }
 
     /// Denies a dependency the exemption by naming itself like the generated bindings package:
@@ -1412,15 +1612,15 @@ world spoofed-world {
         let package = resolve.push_group(group).unwrap();
         let world = resolve.select_world(&[package], None).unwrap();
 
-        let err = validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Reserved)
+        let err = validate_reserved_import_prefixes(&resolve, world, DyncallPolicy::Reserved)
             .unwrap_err();
         let message = err.to_string();
         assert!(message.contains("`dyncall-x`"), "{message}");
-        assert!(message.contains("reserved prefix `dyncall-`"), "{message}");
+        assert!(message.contains("reserves the `dyncall-` WIT prefix"), "{message}");
 
         // The same world passes only when the caller opts out, which only the
         // `#[component_storage]` expansion does.
-        validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Generated)
+        validate_reserved_import_prefixes(&resolve, world, DyncallPolicy::Generated)
             .expect("the generated stored-procedure world may declare `dyncall-` imports");
     }
 
@@ -1437,7 +1637,7 @@ world world-level-world {
 "#,
         );
 
-        let err = validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Reserved)
+        let err = validate_reserved_import_prefixes(&resolve, world, DyncallPolicy::Reserved)
             .unwrap_err();
         let message = err.to_string();
         assert!(message.contains("world `world-level-world`"), "{message}");
@@ -1463,12 +1663,15 @@ world exporter-world {
 "#,
         );
 
-        let err = validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Reserved)
+        let err = validate_reserved_import_prefixes(&resolve, world, DyncallPolicy::Reserved)
             .unwrap_err();
         let message = err.to_string();
         assert!(message.contains("exported interface `miden:exporter/api@1.0.0`"), "{message}");
         assert!(message.contains("`dyncall-notify`"), "{message}");
-        assert!(message.contains("an exported function must use a different name"), "{message}");
+        assert!(
+            message.contains("for generated stored-procedure dispatch imports; rename it"),
+            "{message}"
+        );
 
         let (resolve, world) = parse_test_world(
             r#"
@@ -1480,26 +1683,103 @@ world world-level-export-world {
 "#,
         );
 
-        let message = validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Reserved)
+        let message = validate_reserved_import_prefixes(&resolve, world, DyncallPolicy::Reserved)
             .unwrap_err()
             .to_string();
         assert!(message.contains("world `world-level-export-world`"), "{message}");
         assert!(message.contains("`dyncall-run`"), "{message}");
     }
 
-    /// Rejects a written export name with the reserved prefix, and only that prefix.
+    /// Rejects an export and an import with the reserved FPI prefix in hand-written WIT.
+    #[test]
+    fn functions_with_the_fpi_prefix_are_rejected() {
+        let (resolve, world) = parse_test_world(
+            r#"
+package miden:fpi-exporter@1.0.0;
+
+interface api {
+    fpi-x: func(amount: u32);
+}
+
+world fpi-exporter-world {
+    export api;
+}
+"#,
+        );
+
+        let message = validate_reserved_import_prefixes(&resolve, world, DyncallPolicy::Reserved)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("exported interface `miden:fpi-exporter/api@1.0.0`"),
+            "{message}"
+        );
+        assert!(message.contains("`fpi-x`"), "{message}");
+        assert!(
+            message.contains(
+                "reserves the `fpi-` WIT prefix for generated foreign procedure invocation imports"
+            ),
+            "{message}"
+        );
+
+        let (resolve, world) = parse_test_world(
+            r#"
+package miden:fpi-importer@1.0.0;
+
+interface api {
+    fpi-x: func(amount: u32);
+}
+
+world fpi-importer-world {
+    import api;
+}
+"#,
+        );
+
+        let message = validate_reserved_import_prefixes(&resolve, world, DyncallPolicy::Reserved)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains(
+                "imported interface `miden:fpi-importer/api@1.0.0` defines function `fpi-x`"
+            ),
+            "{message}"
+        );
+        assert!(message.contains("reserves the `fpi-` WIT prefix"), "{message}");
+    }
+
+    /// Rejects a written export name with the reserved dyncall prefix, and only that prefix.
     #[test]
     fn reserved_dyncall_export_names_are_rejected_by_name() {
         let ident = syn::Ident::new("dyncall_notify", Span::call_site());
-        let message = reject_reserved_dyncall_export(&ident, "dyncall-notify", "note constructor")
-            .unwrap_err()
-            .to_string();
+        let message =
+            reject_reserved_import_prefix_export(&ident, "dyncall-notify", "note constructor")
+                .unwrap_err()
+                .to_string();
         assert!(message.contains("note constructor `dyncall_notify`"), "{message}");
         assert!(message.contains("exported as `dyncall-notify`"), "{message}");
-        assert!(message.contains("reserved for stored-procedure dispatch"), "{message}");
+        assert!(message.contains("`dyncall-` WIT prefix (`dyncall_` in Rust)"), "{message}");
+        assert!(message.contains("stored-procedure dispatch imports"), "{message}");
 
-        reject_reserved_dyncall_export(&ident, "notify", "note constructor")
+        reject_reserved_import_prefix_export(&ident, "notify", "note constructor")
             .expect("an unrelated export name is accepted");
+    }
+
+    /// Rejects a written export name with the reserved FPI prefix.
+    #[test]
+    fn reserved_fpi_export_names_are_rejected_by_name() {
+        let ident = syn::Ident::new("fpi_transfer", Span::call_site());
+        let message =
+            reject_reserved_import_prefix_export(&ident, "fpi-transfer", "note constructor")
+                .unwrap_err()
+                .to_string();
+        assert!(message.contains("note constructor `fpi_transfer`"), "{message}");
+        assert!(message.contains("exported as `fpi-transfer`"), "{message}");
+        assert!(message.contains("`fpi-` WIT prefix (`fpi_` in Rust)"), "{message}");
+        assert!(message.contains("foreign procedure invocation imports"), "{message}");
+
+        reject_reserved_import_prefix_export(&ident, "fpitransfer", "note constructor")
+            .expect("a name merely starting with `fpi` is accepted");
     }
 
     /// Parses a test WIT world with the bundled SDK WIT available in the resolver.
@@ -1611,12 +1891,19 @@ interface api {
     type maybe-request = option<request>;
     type nested-result = result<payload, mode>;
 
+    @external-id("miden::typed_dependency::api::primitive_roundtrip")
     primitive-roundtrip: func(value: u64) -> u32;
+    @external-id("miden::typed_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
+    @external-id("miden::typed_dependency::api::choose")
     choose: func(value: request) -> request;
+    @external-id("miden::typed_dependency::api::set_mode")
     set-mode: func(value: mode) -> mode;
+    @external-id("miden::typed_dependency::api::set_permissions")
     set-permissions: func(value: permissions) -> permissions;
+    @external-id("miden::typed_dependency::api::core_roundtrip")
     core-roundtrip: func(value: word) -> felt;
+    @external-id("miden::typed_dependency::api::nested_roundtrip")
     nested-roundtrip: func(value: maybe-request) -> nested-result;
 }
 "#,
@@ -1624,7 +1911,7 @@ interface api {
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("fpi-type-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1765,10 +2052,15 @@ interface api {
         key: word,
     }
 
+    @external-id("miden::anonymous_dependency::api::many")
     many: func(values: list<payload>) -> list<payload>;
+    @external-id("miden::anonymous_dependency::api::find")
     find: func(key: word) -> option<payload>;
+    @external-id("miden::anonymous_dependency::api::try_get")
     try-get: func(flag: bool) -> result<payload, felt>;
+    @external-id("miden::anonymous_dependency::api::pair")
     pair: func() -> tuple<felt, payload>;
+    @external-id("miden::anonymous_dependency::api::words")
     words: func(values: list<word>) -> u32;
 }
 "#,
@@ -1776,7 +2068,7 @@ interface api {
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("fpi-anonymous-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1814,6 +2106,81 @@ interface api {
         assert_eq!(foreign.functions.len(), native.functions.len());
     }
 
+    /// Pairs the FPI variant of a keyword-named dependency function with its native binding.
+    #[test]
+    fn synthetic_fpi_interface_pairs_keyword_named_functions() {
+        const SOURCE_IMPORT: &str = "miden:keyword-dependency/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "keyword-dependency.wit",
+            r#"
+package miden:keyword-dependency@1.0.0;
+
+interface api {
+    @external-id("miden::keyword_dependency::api::type")
+    %type: func() -> u32;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
+        let inline = fpi::import_world_wit("fpi-keyword-test", &specs);
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+        resolve.assert_valid();
+
+        let mut opts = Opts {
+            generate_all: true,
+            runtime_path: Some("::miden::wit_bindgen::rt".to_string()),
+            default_bindings_module: Some("bindings".to_string()),
+            ..Opts::default()
+        };
+        push_default_with_entries(&mut opts);
+
+        let mut generated_files = wit_bindgen_core::Files::default();
+        opts.build().generate(&mut resolve, world, &mut generated_files).unwrap();
+        let (_, source) = generated_files.iter().next().unwrap();
+        let file: syn::File = syn::parse_str(std::str::from_utf8(source).unwrap()).unwrap();
+        let native_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_plain_import_function).unwrap();
+        let foreign_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_fpi_import_function).unwrap();
+        let native = native_modules
+            .iter()
+            .find(|module| module.path_string == "miden::keyword_dependency::api")
+            .expect("native keyword bindings");
+        let foreign = foreign_modules
+            .iter()
+            .find(|module| module.path_string == specs[0].synthetic_module_path())
+            .expect("synthetic keyword bindings");
+
+        let native_names = native
+            .functions
+            .iter()
+            .map(|function| function.sig.ident.to_string())
+            .collect::<Vec<_>>();
+        let foreign_names = foreign
+            .functions
+            .iter()
+            .map(|function| function.sig.ident.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(native_names, ["type_"]);
+        assert_eq!(foreign_names, ["fpi_type"]);
+        assert_eq!(
+            crate::wit_names::wit_bindgen_rust_ident("type", proc_macro2::Span::call_site()),
+            "type_"
+        );
+    }
+
     /// Preserves aliases imported from a sibling WIT interface.
     #[test]
     fn synthetic_fpi_interface_preserves_cross_interface_use_aliases() {
@@ -1836,6 +2203,7 @@ interface types {
 
 interface api {
     use types.{payload};
+    @external-id("miden::shared_types_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1843,7 +2211,7 @@ interface api {
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()], &test_consumer()).unwrap();
         let inline = fpi::import_world_wit("fpi-use-alias-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -1971,6 +2339,7 @@ interface api {
 package miden:first-dependency@1.0.0;
 interface api {
     record payload { value: u32 }
+    @external-id("miden::first_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1981,6 +2350,7 @@ interface api {
 package miden:second-dependency@1.0.0;
 interface api {
     variant payload { none, value(u64) }
+    @external-id("miden::second_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -1991,6 +2361,7 @@ interface api {
 package miden:versioned-dependency@1.0.0;
 interface api {
     record payload { value: u32 }
+    @external-id("miden::versioned_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -2001,6 +2372,7 @@ interface api {
 package miden:versioned-dependency@2.0.0;
 interface api {
     record payload { value: u64 }
+    @external-id("miden::versioned_dependency::api::roundtrip")
     roundtrip: func(value: payload) -> payload;
 }
 "#,
@@ -2012,7 +2384,7 @@ interface api {
 
         let (source, specs) = match imports {
             Some(imports) => {
-                let specs = fpi::import_specs(imports).unwrap();
+                let specs = fpi::import_specs(imports, &test_consumer()).unwrap();
                 let world_name = fpi::import_world_name("foreign-account-bindings", &specs);
                 (fpi::import_world_wit(&world_name, &specs), Some(specs))
             }

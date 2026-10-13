@@ -1909,7 +1909,7 @@ fn a_resolved_callee_is_declared_with_the_effects_the_compiler_knows() {
 /// named `my-lib` is `::"my-lib"` — resolves like any other. The frontend compares the identifier
 /// rather than its spelling (`names_a_linked_namespace`), and gives the local stub a linkage name
 /// without the quotes, since the assembler cannot read a quoted procedure name that nests them;
-/// the import it `exec`s keeps the MASM spelling.
+/// the import it `exec`s is the raw segment `my-lib`, which HIR prints as `@"my-lib"`.
 #[test]
 fn manifest_resolved_stub_in_a_quoted_namespace() {
     use midenc_hir::{CallConv, FunctionType, Type};
