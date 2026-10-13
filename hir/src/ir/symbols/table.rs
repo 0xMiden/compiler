@@ -1,9 +1,11 @@
+use core::fmt;
+
 use smallvec::SmallVec;
 
 use super::{Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, generate_symbol_name};
 use crate::{
-    FxHashMap, FxHashSet, Op, Operation, OperationRef, ProgramPoint, Report,
-    UnsafeIntrusiveEntityRef,
+    FxHashMap, FxHashSet, Op, Operation, OperationName, OperationRef, ProgramPoint, Report,
+    UnsafeIntrusiveEntityRef, interner,
     traits::{GraphRegionNoTerminator, NoTerminator, Terminator},
 };
 
@@ -43,14 +45,16 @@ pub trait SymbolTable {
         found.as_trait_ref::<dyn Symbol>()
     }
 
-    /// Insert `entry` in the symbol table, but only if no other symbol with the same name exists.
+    /// Insert `entry` in the symbol table, but only if no other symbol has the same name or the
+    /// same path (see [SymbolMap::insert_new]).
     ///
     /// If provided, the symbol will be inserted at the given insertion point in the body of the
     /// symbol table operation.
     ///
     /// This function will panic if the symbol is attached to another symbol table.
     ///
-    /// Returns `true` if successful, `false` if the symbol is already defined
+    /// Returns `true` if successful, `false` if a symbol with the same name or path is already
+    /// defined
     fn insert_new(&mut self, entry: SymbolRef, ip: ProgramPoint) -> bool {
         self.symbol_manager_mut().insert_new(entry, ip)
     }
@@ -110,7 +114,69 @@ impl dyn SymbolTable {
             .try_downcast_op::<T>()
             .ok()
     }
+
+    /// Returns an error naming the symbol that keeps a symbol named `name`, an op of `kind`, from
+    /// being defined in this table: a symbol with that name, or a symbol of the other kind
+    /// (symbol table or not) with the path the new symbol would have (see
+    /// [SymbolMap::insert_new]).
+    pub fn can_define(&self, name: SymbolName, kind: &OperationName) -> Result<(), SymbolConflict> {
+        let is_table = kind.implements::<dyn SymbolTable>();
+        match self.symbol_manager().symbols().conflict(name, is_table) {
+            None => Ok(()),
+            Some(existing) => Err(SymbolConflict::new(kind.name(), name, &existing)),
+        }
+    }
 }
+
+/// A symbol that cannot be defined in a symbol table, because another symbol there has its name,
+/// or the same path (see [SymbolTable::insert_new]).
+#[derive(Debug, Clone)]
+pub struct SymbolConflict {
+    /// The opcode of the symbol that cannot be defined, e.g. `module`
+    pub kind: interner::Symbol,
+    /// The name of the symbol that cannot be defined
+    pub name: SymbolName,
+    /// The opcode of the symbol already defined
+    pub existing_kind: interner::Symbol,
+    /// The name of the symbol already defined
+    pub existing_name: SymbolName,
+    /// The path of the symbol already defined, which the new symbol would have too
+    pub path: SymbolPath,
+}
+
+impl SymbolConflict {
+    /// The conflict of a symbol named `name`, an op with the opcode `kind`, with `existing`.
+    ///
+    /// # Panics
+    ///
+    /// This function computes the path of `existing`, so it panics when an ancestor of `existing`
+    /// is mutably borrowed (see [Symbol::path]).
+    pub fn new(kind: interner::Symbol, name: SymbolName, existing: &SymbolRef) -> Self {
+        let existing = existing.borrow();
+        Self {
+            kind,
+            name,
+            existing_kind: existing.as_symbol_operation().name().name(),
+            existing_name: existing.name(),
+            path: existing.path(),
+        }
+    }
+}
+
+impl fmt::Display for SymbolConflict {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.name == self.existing_name {
+            return write!(f, "redefinition of symbol {}", self.name);
+        }
+        write!(
+            f,
+            "`{} {}` and `{} {}` have the same path `{}`",
+            self.kind, self.name, self.existing_kind, self.existing_name, self.path
+        )
+    }
+}
+
+impl core::error::Error for SymbolConflict {}
 
 /// A [SymbolMap] is a low-level datastructure used in implementing a [SymbolTable] operation.
 ///
@@ -157,13 +223,18 @@ impl SymbolMap {
         Self::try_build(op).expect("expected region to contain uniquely named symbol operations")
     }
 
-    /// Like [`SymbolMap::build`], but reports the offending name instead of panicking when the
-    /// same symbol is defined twice.
+    /// Like [`SymbolMap::build`], but reports the conflict instead of panicking when two symbols
+    /// have the same name or the same path (see [SymbolMap::insert_new]).
     ///
     /// Callers handling parsed text must use this: a duplicate there is something the author
     /// wrote, not a broken invariant. An operation with no region, or whose region has no blocks,
     /// defines no symbols and yields an empty map.
-    pub fn try_build(op: &Operation) -> Result<Self, SymbolName> {
+    ///
+    /// # Panics
+    ///
+    /// Reporting a conflict computes the path of a symbol in `op` (see [SymbolConflict::new]), so
+    /// `op` must not be mutably borrowed.
+    pub fn try_build(op: &Operation) -> Result<Self, SymbolConflict> {
         let mut map = Self::default();
 
         let Some(region) = op.regions().front().get() else {
@@ -173,9 +244,11 @@ impl SymbolMap {
             for op in region.entry().body() {
                 if let Some(symbol_ref) = op.as_symbol_ref() {
                     let name = symbol_ref.borrow().name();
-                    if !map.insert_new(name, symbol_ref) {
-                        return Err(name);
+                    let is_table = is_symbol_table(&symbol_ref);
+                    if let Some(existing) = map.conflict(name, is_table) {
+                        return Err(SymbolConflict::new(op.name().name(), name, &existing));
                     }
+                    map.register(name, symbol_ref, is_table);
                 }
             }
         }
@@ -213,14 +286,24 @@ impl SymbolMap {
         }
     }
 
+    /// Returns the symbol that keeps a symbol named `name`, a symbol table when `is_table`, from
+    /// being registered in this map: the symbol with that name, or the symbol of the other kind
+    /// with the same path (see [SymbolMap::path_alias]).
+    fn conflict(&self, name: SymbolName, is_table: bool) -> Option<SymbolRef> {
+        if let Some(existing) = self.symbols.get(&name) {
+            return Some(*existing);
+        }
+        let alias = Self::path_alias(name, is_table)?;
+        self.symbols
+            .get(&alias)
+            .filter(|_| self.tables.contains(&alias) != is_table)
+            .copied()
+    }
+
     /// Returns true when a symbol named `name`, a symbol table when `is_table`, can be registered
-    /// in this map: no symbol has that name, and no symbol of the other kind has the same path
-    /// (see [SymbolMap::path_alias]).
+    /// in this map (see [SymbolMap::conflict]).
     fn is_free(&self, name: SymbolName, is_table: bool) -> bool {
-        !self.symbols.contains_key(&name)
-            && Self::path_alias(name, is_table).is_none_or(|alias| {
-                !self.symbols.contains_key(&alias) || self.tables.contains(&alias) == is_table
-            })
+        self.conflict(name, is_table).is_none()
     }
 
     /// Get the symbol named `name`, or `None` if undefined.
@@ -727,9 +810,10 @@ impl<'a> SymbolManagerMut<'a> {
         self.symbols.remove(name);
     }
 
-    /// Inserts a new symbol into the table, as long as the symbol name is unique.
+    /// Inserts a new symbol into the table, as long as no symbol has its name or its path (see
+    /// [SymbolMap::insert_new]).
     ///
-    /// Returns `false` if an existing symbol with the same name is already in the table.
+    /// Returns `false` if a symbol with the same name or path is already in the table.
     ///
     /// # Panics
     ///

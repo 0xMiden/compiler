@@ -531,8 +531,8 @@ builtin.world {
         .to_string();
     assert!(
         err.contains(
-            "component `miden::a` and module path `miden::a` share the prefix `miden::a`; a \
-             component name must not shadow a module tree"
+            "component `miden::a` and `builtin.module` `::miden::a` have the same path; a \
+             component must not share its path with another symbol"
         ),
         "unexpected diagnostic: {err}"
     );
@@ -837,10 +837,39 @@ builtin.world {{
     assert_eq!(
         err,
         "component `miden::a::f` and `builtin.function` `::miden::a::f` have the same path; a \
-         component name must not shadow a module tree"
+         component must not share its path with another symbol"
     );
     test.parse_any("shadow_ctrl.hir", &source("@other"))?;
     Ok(())
+}
+
+/// A component whose path is the path of a function in a world-level interface is rejected,
+/// whichever of the two is defined first.
+#[test]
+fn a_component_at_the_path_of_an_interface_function_is_reported() {
+    let interface = "\
+    builtin.interface @api {
+        builtin.function public extern(\"C\") @f() {
+            builtin.ret;
+        };
+    };";
+    let component = "\
+    builtin.component private @api::@f {
+    };";
+    let test = ParserTest::default();
+    for (first, second) in [(interface, component), (component, interface)] {
+        let source = format!("builtin.world {{\n{first}\n{second}\n}};");
+        let err = test
+            .parse_any("iface_shadow.hir", &source)
+            .expect_err("the component shadows the interface function `f`")
+            .to_string();
+        assert_eq!(
+            err,
+            "component `api::f` and `builtin.function` `::api::f` have the same path; a component \
+             must not share its path with another symbol",
+            "{source}"
+        );
+    }
 }
 
 /// A module and a function whose raw names are equal have the same path, so they cannot both be
@@ -858,7 +887,11 @@ fn a_module_and_a_function_with_one_raw_name_are_reported() {
             builtin.ret;
         };";
     let test = ParserTest::default();
-    for (first, second, name) in [(module, function, "my-mod"), (function, module, "\"my-mod\"")] {
+    let (module_kind, function_kind) = ("module \"my-mod\"", "function my-mod");
+    for (first, second, expected) in [
+        (module, function, (function_kind, module_kind)),
+        (function, module, (module_kind, function_kind)),
+    ] {
         let source = format!(
             "builtin.world {{\n    builtin.component private @app {{\n{first}\n{second}\n    \
              }};\n}};"
@@ -867,7 +900,12 @@ fn a_module_and_a_function_with_one_raw_name_are_reported() {
             .parse_any("crosskind.hir", &source)
             .expect_err("the module and the function share the path `::app::my-mod`")
             .to_string();
-        assert_eq!(err, format!("redefinition of symbol {name}"), "{source}");
+        let (new, existing) = expected;
+        assert_eq!(
+            err,
+            format!("`{new}` and `{existing}` have the same path `::app::\"my-mod\"`"),
+            "{source}"
+        );
     }
 }
 

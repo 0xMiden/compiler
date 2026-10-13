@@ -52,7 +52,14 @@ impl WorldBuilder {
     /// the other): resolution prefers the longest registered name.
     pub fn define_component(&mut self, name: Ident) -> Result<ComponentRef, Report> {
         let name = Ident::new(Component::canonical_name(name.name)?, name.span);
-        self.world.borrow().reject_component_shadowing(name.name)?;
+        {
+            let world = self.world.borrow();
+            world.reject_component_shadowing(name.name)?;
+            let kind = self.builder.context().get_registered_name::<Component>();
+            (&*world as &dyn SymbolTable)
+                .can_define(name.name, &kind)
+                .map_err(Report::msg)?;
+        }
         // `name` is spelled already, so it is not spelled again by `create_component`
         let op_builder = self.builder.create::<Component, (_,)>(name.span);
         op_builder(name)
@@ -107,28 +114,31 @@ impl WorldBuilder {
         let mut parts = path.components().peekable();
         parts.next_if_eq(&SymbolNameComponent::Root);
 
+        let module_kind = self.builder.context().get_registered_name::<Module>();
         let mut current_symbol_table = self.world.as_operation_ref();
         let mut leaf_module = None;
         let mut spelled = spelled.into_iter();
         while let Some(SymbolNameComponent::Component(module_name)) = parts.next() {
             let spelled = spelled.next().expect("one spelling per component");
-            let symbol = current_symbol_table.borrow().as_symbol_table().unwrap().get(spelled);
-            if symbol.is_some_and(|sym| !sym.borrow().as_symbol_operation().is::<Module>()) {
-                return Err(Report::msg(format!(
-                    "could not declare module path component '{module_name}': a non-module symbol \
-                     with that name already exists"
-                )));
-            }
-
-            let module = symbol.and_then(|symbol_ref| {
-                symbol_ref
-                    .borrow()
-                    .as_symbol_operation()
-                    .downcast_ref::<Module>()
-                    .map(|m| m.as_module_ref())
-            });
+            let existing = {
+                let table = current_symbol_table.borrow();
+                let table = table.as_trait::<dyn SymbolTable>().unwrap();
+                // Any other symbol with the name or the path of the module is a conflict
+                match table.find::<Module>(spelled) {
+                    Some(module) => Some(module),
+                    None => {
+                        if table.can_define(spelled, &module_kind).is_err() {
+                            return Err(Report::msg(format!(
+                                "could not declare module path component '{module_name}': a \
+                                 non-module symbol with that name already exists"
+                            )));
+                        }
+                        None
+                    }
+                }
+            };
             let is_parent_module = current_symbol_table.borrow().is::<Module>();
-            let module = match module {
+            let module = match existing {
                 Some(module) => module,
                 None if is_parent_module => {
                     let parent_module = {
@@ -310,8 +320,8 @@ mod tests {
             assert_eq!(
                 err.to_string(),
                 alloc::format!(
-                    "component `{name}` and module path `{name}` share the prefix `{name}`; a \
-                     component name must not shadow a module tree"
+                    "component `{name}` and `builtin.module` `::{name}` have the same path; a \
+                     component must not share its path with another symbol"
                 )
             );
         }
@@ -420,8 +430,8 @@ mod tests {
         };
         assert_eq!(
             err.to_string(),
-            "component `\"masm-dep\"` and module path `\"masm-dep\"` share the prefix \
-             `\"masm-dep\"`; a component name must not shadow a module tree"
+            "component `\"masm-dep\"` and `builtin.module` `::\"masm-dep\"` have the same path; a \
+             component must not share its path with another symbol"
         );
 
         let (_world, mut world_builder) = empty_world();
@@ -652,5 +662,149 @@ mod tests {
         world_builder
             .declare_module_tree(&SymbolPath::from_masm_module_id("miden::protocol::tx"))
             .expect("a module tree beside the component is accepted");
+    }
+
+    /// A module and a function whose raw names are equal have the same path: the builders report
+    /// the second one, whichever it is, and a second symbol with the same name, instead of
+    /// creating it.
+    #[test]
+    fn a_symbol_with_the_name_or_path_of_another_one_is_reported() {
+        use alloc::string::{String, ToString};
+
+        use crate::{
+            Visibility,
+            dialects::builtin::{ComponentBuilder, attributes::Signature},
+        };
+
+        let (world, mut world_builder) = empty_world();
+        let context = world.borrow().as_operation().context_rc();
+        let signature = || Signature::new(&context, [], []);
+        let module_first = world_builder
+            .define_component(Ident::from("first"))
+            .expect("failed to define component");
+        let function_first = world_builder
+            .define_component(Ident::from("second"))
+            .expect("failed to define component");
+
+        let mut builder = ComponentBuilder::new(module_first);
+        builder.define_module(Ident::from("my-mod")).expect("failed to define module");
+        let err = builder
+            .define_function(Ident::from("my-mod"), Visibility::Public, signature())
+            .map(|_| ())
+            .map_err(|err| err.to_string());
+        assert_eq!(
+            err,
+            Err(String::from(
+                "`function my-mod` and `module \"my-mod\"` have the same path \
+                 `::first::\"my-mod\"`"
+            ))
+        );
+
+        let mut builder = ComponentBuilder::new(function_first);
+        builder
+            .define_function(Ident::from("my-mod"), Visibility::Public, signature())
+            .expect("failed to define function");
+        let err = builder
+            .define_module(Ident::from("my-mod"))
+            .map(|_| ())
+            .map_err(|err| err.to_string());
+        assert_eq!(
+            err,
+            Err(String::from(
+                "`module \"my-mod\"` and `function my-mod` have the same path \
+                 `::second::\"my-mod\"`"
+            ))
+        );
+        let err = builder
+            .define_function(Ident::from("my-mod"), Visibility::Public, signature())
+            .map(|_| ())
+            .map_err(|err| err.to_string());
+        assert_eq!(err, Err(String::from("redefinition of symbol my-mod")));
+    }
+
+    /// A module tree segment whose raw name is the name of a function beside it is reported as a
+    /// conflict.
+    #[test]
+    fn a_module_tree_segment_at_the_path_of_a_function_is_reported() {
+        use alloc::string::{String, ToString};
+
+        use crate::{Visibility, dialects::builtin::attributes::Signature};
+
+        let (world, mut world_builder) = empty_world();
+        let context = world.borrow().as_operation().context_rc();
+        let math = world_builder
+            .declare_module_tree(&SymbolPath::from_masm_module_id("acme::math"))
+            .expect("failed to declare module tree");
+        ModuleBuilder::new(math)
+            .define_function(
+                Ident::from("add-x"),
+                Visibility::Public,
+                Signature::new(&context, [], []),
+            )
+            .expect("failed to define function");
+        let err = world_builder
+            .declare_module_tree(&SymbolPath::from_masm_module_id("acme::math::\"add-x\"::inner"))
+            .map(|_| ())
+            .map_err(|err| err.to_string());
+        assert_eq!(
+            err,
+            Err(String::from(
+                "could not declare module path component 'add-x': a non-module symbol with that \
+                 name already exists"
+            ))
+        );
+    }
+
+    /// A function defined in a module tree at the path of a component defined before it is
+    /// reported, as is a module tree below that component.
+    #[test]
+    fn a_function_at_the_path_of_a_component_is_reported() {
+        use alloc::string::{String, ToString};
+
+        use crate::{Visibility, dialects::builtin::attributes::Signature};
+
+        let (world, mut world_builder) = empty_world();
+        let context = world.borrow().as_operation().context_rc();
+        world_builder
+            .define_component(Ident::from("acme::math::add"))
+            .expect("failed to define component");
+        let math = world_builder
+            .declare_module_tree(&SymbolPath::from_masm_module_id("acme::math"))
+            .expect("failed to declare module tree");
+        let mut builder = ModuleBuilder::new(math);
+        let err = builder
+            .define_function(
+                Ident::from("add"),
+                Visibility::Public,
+                Signature::new(&context, [], []),
+            )
+            .map(|_| ())
+            .map_err(|err| err.to_string());
+        assert_eq!(
+            err,
+            Err(String::from(
+                "component `acme::math::add` and `builtin.function` `::acme::math::add` have the \
+                 same path; a component must not share its path with another symbol"
+            ))
+        );
+        let err = builder
+            .declare_module(Ident::from("add"))
+            .and_then(|add| ModuleBuilder::new(add).declare_module(Ident::from("inner")))
+            .map(|_| ())
+            .map_err(|err| err.to_string());
+        assert_eq!(
+            err,
+            Err(String::from(
+                "component `acme::math::add` and `builtin.module` `::acme::math::add` have the \
+                 same path; a component must not share its path with another symbol"
+            ))
+        );
+        builder
+            .define_function(
+                Ident::from("sub"),
+                Visibility::Public,
+                Signature::new(&context, [], []),
+            )
+            .expect("a function beside the component is accepted");
     }
 }

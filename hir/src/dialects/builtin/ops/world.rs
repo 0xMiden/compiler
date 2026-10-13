@@ -1,11 +1,13 @@
 use alloc::{format, vec::Vec};
 
+use smallvec::{SmallVec, smallvec};
+
 use crate::{
-    Context, OpPrinter, Operation, RegionKind, RegionKindInterface, Report, Symbol, SymbolManager,
-    SymbolManagerMut, SymbolMap, SymbolName, SymbolPath, SymbolRef, SymbolTable, SymbolUseList,
-    UnsafeIntrusiveEntityRef, Usable, Verify,
+    Context, OpPrinter, Operation, OperationName, OperationRef, RegionKind, RegionKindInterface,
+    Report, Symbol, SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolPath, SymbolRef,
+    SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable, Verify,
     derive::{OpParser, OpPrinter, operation},
-    dialects::builtin::{BuiltinDialect, Component, Module, ModuleRef},
+    dialects::builtin::{BuiltinDialect, Component, Module},
     traits::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
@@ -100,9 +102,9 @@ impl SymbolTable for World {
 }
 
 impl World {
-    /// Returns an error when the world declares a module tree with a symbol at the path the
-    /// component name `component` spells (a module, or a function or global named by the raw last
-    /// segment), which the component would shadow, or another component whose name nests with
+    /// Returns an error when the world declares a tree of modules or interfaces with a symbol at
+    /// the path the component name `component` spells (a module, or a function or global named by
+    /// the raw last segment), which the component would shadow, or another component whose name nests with
     /// `component` (one is a segment-prefix of the other) or names the same raw path: resolution
     /// prefers the longest registered name, so any of them would make paths ambiguous.
     ///
@@ -111,23 +113,28 @@ impl World {
     pub fn reject_component_shadowing(&self, component: SymbolName) -> Result<(), Report> {
         self.reject_nested_components(component)?;
         let segments = SymbolPath::segments_of(component);
-        let Some((last, modules)) = segments.split_last() else {
+        let Some((last, tables)) = segments.split_last() else {
             return Ok(());
         };
+        // Walk the symbol tables (modules, interfaces) named by the leading segments; a component
+        // is not walked into, since components do not nest
         let mut table = self.op.as_operation_ref();
-        for segment in modules {
-            let Some(next) = Module::canonical_name(*segment)
-                .ok()
+        for segment in tables {
+            let Some(next) = SymbolPath::spell_segment(*segment)
                 .and_then(|name| table.borrow().as_trait::<dyn SymbolTable>()?.get(name))
-                .and_then(as_module)
+                .map(|symbol| symbol.borrow().as_operation_ref())
+                .filter(|op| {
+                    let op = op.borrow();
+                    op.implements::<dyn SymbolTable>() && !op.is::<Component>()
+                })
             else {
                 return Ok(());
             };
-            table = next.as_operation_ref();
+            table = next;
         }
         let shadowed = {
             let table = table.borrow();
-            let table = table.as_trait::<dyn SymbolTable>().expect("a world or a module");
+            let table = table.as_trait::<dyn SymbolTable>().expect("a world or a symbol table");
             table.symbol_manager().symbols().get_leaf(*last)
         };
         // At the world level, the component found by its own name is not shadowed
@@ -135,17 +142,69 @@ impl World {
             return Ok(());
         };
         let shadowed = shadowed.borrow();
-        if shadowed.is::<Module>() {
-            // The module tree reaches the component's whole path, so that path is at once the
-            // component, the shadowed module path and their shared prefix.
-            return Err(shadowing_error(component, component, component));
-        }
         let path = shadowed.as_symbol().expect("only symbols are registered").path();
-        Err(Report::msg(format!(
-            "component `{component}` and `{}` `{path}` have the same path; a component name must \
-             not shadow a module tree",
-            shadowed.name()
-        )))
+        Err(same_path_error(component, &shadowed.name(), &path))
+    }
+
+    /// Returns an error when a symbol named `name`, an op of `kind` about to be defined in the
+    /// symbol table `table`, would be at or below the path of a world-level component: `table` is
+    /// the world or a module of a world-level module tree, and the component is named by the path
+    /// of the symbol or of one of its enclosing modules (see [World::component_shadowing]).
+    ///
+    /// Symbols defined anywhere else (in a component, say) are not checked, nor is anything
+    /// spelled when the world holds no component.
+    pub(crate) fn reject_symbol_shadowed_by_component(
+        table: OperationRef,
+        name: SymbolName,
+        kind: &OperationName,
+    ) -> Result<(), Report> {
+        let is_table = kind.implements::<dyn SymbolTable>();
+        // The raw segments of the path of the new symbol, leaf first
+        let mut segments: SmallVec<[SymbolName; 4]> = smallvec![if is_table {
+            SymbolPath::raw_segment(name)
+        } else {
+            name
+        }];
+        let mut current = table;
+        loop {
+            let parent = {
+                let op = current.borrow();
+                if op.is::<World>() {
+                    break;
+                }
+                let Some(module) = op.downcast_ref::<Module>() else {
+                    return Ok(());
+                };
+                segments.push(SymbolPath::raw_segment(Symbol::name(module)));
+                op.parent_op()
+            };
+            let Some(parent) = parent else {
+                return Ok(());
+            };
+            current = parent;
+        }
+        let world = current.borrow();
+        let world = world.downcast_ref::<World>().expect("the loop ends at a world");
+        let body = world.body();
+        if body.is_empty() || !body.entry().body().iter().any(|op| op.is::<Component>()) {
+            return Ok(());
+        }
+        drop(body);
+        // No component has a segment Miden Assembly cannot spell
+        if !segments.iter().all(|segment| SymbolPath::is_spellable(segment.as_str())) {
+            return Ok(());
+        }
+        segments.reverse();
+        let path = SymbolPath::spell(&segments);
+        let Some(component) = world.component_shadowing(path) else {
+            return Ok(());
+        };
+        if component == path {
+            return Err(same_path_error(component, kind, &SymbolPath::from_symbol_name(path)));
+        }
+        // The component is a strict prefix of the path, so it shadows the enclosing module tree
+        let module_path = SymbolPath::spell(&segments[..segments.len() - usize::from(!is_table)]);
+        Err(shadowing_error(component, module_path, component))
     }
 
     /// Returns the name of the world-level component named by the module path `path`, given as
@@ -213,8 +272,11 @@ impl World {
     }
 }
 
-/// A world is built through `WorldBuilder`, which enforces the shadowing rule as it goes; parsed
-/// input is not, so the rule is checked here as well.
+/// The builders reject a component that shadows a symbol, or a symbol a component shadows, when
+/// the second one of the two is defined through `WorldBuilder::define_component`,
+/// `WorldBuilder::declare_module_tree` or the module, interface, function and global builders.
+/// Parsed input, and ops built or renamed otherwise, are not checked, so the rule is checked here
+/// as well.
 impl Verify<dyn SymbolTable> for World {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
         let body = self.body();
@@ -230,13 +292,12 @@ impl Verify<dyn SymbolTable> for World {
     }
 }
 
-/// The module `symbol` refers to, if it is one.
-fn as_module(symbol: SymbolRef) -> Option<ModuleRef> {
-    symbol
-        .borrow()
-        .as_symbol_operation()
-        .downcast_ref::<Module>()
-        .map(|m| m.as_module_ref())
+/// The error for a component named `component` at the path `path` of a symbol of `kind`.
+fn same_path_error(component: SymbolName, kind: &OperationName, path: &SymbolPath) -> Report {
+    Report::msg(format!(
+        "component `{component}` and `{kind}` `{path}` have the same path; a component must not \
+         share its path with another symbol"
+    ))
 }
 
 /// The error for a component named `component` that shadows the module path `module_path`, the

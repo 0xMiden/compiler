@@ -205,15 +205,15 @@ impl EntityListItem for Operation {
 
                 let symbol_ref = this.borrow().as_symbol_ref().unwrap();
 
+                // Builders check this before creating the op (see `<dyn SymbolTable>::can_define`)
                 let is_new = sym_manager.insert_new(symbol_ref, ProgramPoint::Invalid);
                 assert!(
                     is_new,
-                    "Unable to insert {} in symbol table of {}: symbol {} is already registered \
-                     to another operation {}.",
+                    "unable to insert {} `{}` in the symbol table of {}: a symbol with the same \
+                     name or path is already registered",
                     this.name(),
-                    parent.name(),
                     symbol_ref.borrow().name(),
-                    sym_manager.lookup(symbol_ref.borrow().name()).unwrap().borrow().name()
+                    parent.name(),
                 );
             }
         }

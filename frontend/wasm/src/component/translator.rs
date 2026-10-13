@@ -4,11 +4,11 @@ use cranelift_entity::PrimaryMap;
 use midenc_dialect_hir::WASM_COMPONENT_START_ATTR;
 use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
 use midenc_hir::{
-    self as hir2, BuilderExt, Context, FxHashMap, FxHashSet, Ident, OpExt, SymbolName,
-    SymbolNameComponent, SymbolPath, SymbolTable,
+    self as hir2, BuilderExt, Context, FxHashMap, FxHashSet, Ident, OpExt, OpRegistration,
+    SymbolName, SymbolNameComponent, SymbolPath, SymbolTable,
     diagnostics::Report,
     dialects::builtin::{
-        ComponentBuilder, FunctionRef, Module, ModuleBuilder, World, WorldBuilder,
+        ComponentBuilder, Function, FunctionRef, Module, ModuleBuilder, World, WorldBuilder,
         attributes::UnitAttr,
     },
     formatter::DisplayValues,
@@ -752,8 +752,8 @@ impl<'a> ComponentTranslator<'a> {
         Ok(())
     }
 
-    /// Reports an internal error when the component already holds a symbol named by the leaf of
-    /// the export path `path`.
+    /// Reports an internal error when the component already holds a symbol with the name or the
+    /// path of the function lifting the export path `path`, named by its leaf.
     ///
     /// Neither clash is expected: a core module named like an export is rejected before it is
     /// defined, and two exports sharing one path are rejected earlier, by the export pre-scan or,
@@ -761,10 +761,11 @@ impl<'a> ComponentTranslator<'a> {
     fn ensure_export_leaf_is_free(&self, path: &SymbolPath) -> WasmResult<()> {
         let leaf = path.name();
         let component = self.result.component.borrow();
-        let Some(symbol) = component.get(leaf) else {
+        let function = self.context.get_registered_name::<Function>();
+        let Err(conflict) = (&*component as &dyn SymbolTable).can_define(leaf, &function) else {
             return Ok(());
         };
-        let message = if symbol.borrow().as_symbol_operation().is::<Module>() {
+        let message = if conflict.existing_kind == <Module as OpRegistration>::name() {
             // Internal error: a core module named like an export is rejected before it is defined.
             format!(
                 "export `{leaf}` of `{}` clashes with the core module `{leaf}` of the same name \

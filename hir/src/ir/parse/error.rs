@@ -265,12 +265,14 @@ pub enum ParserError {
         span: SourceSpan,
         name: BlockId,
     },
-    #[error("redefinition of symbol {name}")]
+    /// A symbol table defines two symbols with one name, or with one path (see
+    /// [crate::SymbolConflict])
+    #[error("{conflict}")]
     #[diagnostic()]
-    SymbolAlreadyDefined {
+    SymbolConflict {
         #[label]
         span: SourceSpan,
-        name: interner::Symbol,
+        conflict: crate::SymbolConflict,
     },
     #[error("too many arguments specified in argument list")]
     #[diagnostic()]

@@ -68,20 +68,24 @@ pub fn translate_module_as_component(
     // The wrapper is rooted at the target namespace or, when there is none, at the module's name,
     // which must not nest with a reserved library tree (see `ensure_program_name_is_free`)
     let module_name = parsed_module.module.name().as_str();
-    // The author did not write a component or module name, so say where the name came from
-    let unspellable_name = |err: Report| {
-        err.wrap_err(format!(
-            "the Wasm module name `{module_name}` (from {}) cannot be spelled in Miden Assembly",
-            parsed_module.module.name_origin()
-        ))
-    };
+    // The author did not write a component or module name, so say where the name came from. The
+    // module name is validated before the wrapper is defined, so a bad name leaves no wrapper
+    // behind in the world. A spellable name is rejected for holding `::`.
+    builtin::Module::canonical_name(module_name.into()).map_err(|err| {
+        let origin = parsed_module.module.name_origin();
+        let reason = if SymbolPath::is_spellable(module_name) {
+            "contains `::`, which a module name cannot"
+        } else {
+            "cannot be spelled in Miden Assembly"
+        };
+        err.wrap_err(format!("the Wasm module name `{module_name}` (from {origin}) {reason}"))
+    })?;
     let component_name = match config.namespace.as_ref() {
         Some(namespace) => namespace.to_symbol_name()?,
         None => {
             ensure_program_name_is_free(module_name)?;
-            SymbolPath::from_masm_module_id(module_name)
-                .to_symbol_name()
-                .map_err(unspellable_name)?
+            // The name is one spellable segment, validated above
+            SymbolPath::from_masm_module_id(module_name).to_symbol_name()?
         }
     };
     let mut component_ref =
@@ -92,7 +96,7 @@ pub fn translate_module_as_component(
     component_ref.borrow_mut().mark_synthetic_wrapper();
 
     let mut cb = ComponentBuilder::new(component_ref);
-    let module_ref = cb.define_module(Ident::from(module_name)).map_err(unspellable_name)?;
+    let module_ref = cb.define_module(Ident::from(module_name))?;
 
     let mut module_builder = ModuleBuilder::new(module_ref);
     let mut module_state = ModuleTranslationState::new(
@@ -477,13 +481,22 @@ mod tests {
         }
     }
 
-    /// A module whose name Miden Assembly cannot spell is rejected, naming where the name came
-    /// from, whether it roots the wrapper component or not.
+    /// A module whose name Miden Assembly cannot spell, or that holds `::`, is rejected with the
+    /// cause, naming where the name came from, whether it roots the wrapper component or not. No
+    /// wrapper component is left in the world.
     #[test]
-    fn an_unspellable_module_name_is_reported_with_its_origin() {
-        for (name, namespace) in
-            [("my lib", None), ("a#b", None), ("my lib", Some("acme::app::app"))]
-        {
+    fn an_invalid_module_name_is_reported_with_its_origin() {
+        use midenc_hir::{BuilderExt, dialects::builtin::World};
+
+        const UNSPELLABLE: &str = "cannot be spelled in Miden Assembly";
+        const SEPARATOR: &str = "contains `::`, which a module name cannot";
+        for (name, namespace, reason) in [
+            ("my lib", None, UNSPELLABLE),
+            ("a#b", None, UNSPELLABLE),
+            ("my lib", Some("acme::app::app"), UNSPELLABLE),
+            ("a::b", None, SEPARATOR),
+            ("a::b", Some("acme::app::app"), SEPARATOR),
+        ] {
             let wasm = wat::parse_str(format!(
                 r#"
                 (module $"{name}"
@@ -492,19 +505,23 @@ mod tests {
                 )"#
             ))
             .unwrap();
+            let context = Rc::new(Context::default());
+            let world =
+                context.clone().builder().create::<World, ()>(Default::default())().unwrap();
             let config = WasmTranslationConfig {
                 namespace: namespace.map(midenc_hir::SymbolPath::from_masm_module_id),
+                world: Some(world),
                 ..Default::default()
             };
-            let context = Rc::new(Context::default());
             let Err(err) = translate(&wasm, &config, context) else {
                 panic!("translation of `{name}` should fail");
             };
-            let expected = format!(
-                "the Wasm module name `{name}` (from the module's name section) cannot be spelled \
-                 in Miden Assembly"
-            );
+            let expected =
+                format!("the Wasm module name `{name}` (from the module's name section) {reason}");
             assert_eq!(err.to_string(), expected, "{namespace:?}");
+            assert!(
+                world.borrow().body().is_empty() || world.borrow().body().entry().body().is_empty()
+            );
         }
     }
 }
