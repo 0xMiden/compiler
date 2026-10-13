@@ -181,6 +181,15 @@ pub trait CFGToSCFInterface {
         loop_body: RegionRef,
     ) -> Result<OperationRef, Report>;
 
+    /// Creates a constant boolean operation with a result representing `value`, suitable as the
+    /// condition of `create_conditional_branch` and `create_structured_do_while_loop_op`.
+    fn get_cfg_bool_value(
+        &self,
+        span: SourceSpan,
+        builder: &mut OpBuilder,
+        value: bool,
+    ) -> ValueRef;
+
     /// Creates a constant operation with a result representing `value` that is suitable as flag
     /// for `create_cfg_switch_op`.
     fn get_cfg_switch_value(
@@ -252,7 +261,11 @@ pub trait CFGToSCFInterface {
         self.create_cfg_switch_op(span, builder, dummy_flag, &[], &[], &[], destination, arguments)
     }
 
-    /// Helper function to create a conditional branch using [Self::create_cfg_switch_op].
+    /// Creates a conditional branch on `condition`, the boolean produced by
+    /// [Self::get_cfg_bool_value].
+    ///
+    /// The default implementation uses [Self::create_cfg_switch_op] with `condition` as the flag;
+    /// an implementation whose switch flag type differs from its boolean type must override it.
     #[allow(clippy::too_many_arguments)]
     fn create_conditional_branch(
         &self,

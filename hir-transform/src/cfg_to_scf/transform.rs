@@ -33,6 +33,8 @@ pub struct TransformationContext<'a> {
     // The transformation only creates all values in the range of 0 to max(num_successors).
     // Therefore using a vector instead of a map.
     switch_value_cache: SmallVec<[Option<ValueRef>; 2]>,
+    /// The `false` and `true` constants used as the `should_repeat` flag of loop latches.
+    bool_value_cache: [Option<ValueRef>; 2],
     return_like_to_combined_exit: FxHashMap<ReturnLikeOpKey, BlockRef>,
 }
 
@@ -55,6 +57,7 @@ impl<'a> TransformationContext<'a> {
             dominance_info,
             typed_undef_cache: Default::default(),
             switch_value_cache: Default::default(),
+            bool_value_cache: Default::default(),
             return_like_to_combined_exit: Default::default(),
         };
 
@@ -133,9 +136,22 @@ impl<'a> TransformationContext<'a> {
         result
     }
 
+    /// Returns the cached boolean constant `value`, creating it at the start of the entry block.
+    pub fn get_bool_value(&mut self, value: bool) -> ValueRef {
+        if let Some(val) = self.bool_value_cache[value as usize] {
+            return val;
+        }
+        let mut constant_builder = OpBuilder::new(self.context.clone());
+        constant_builder.set_insertion_point_to_start(self.entry);
+        let result = self.interface.get_cfg_bool_value(self.span, &mut constant_builder, value);
+        self.bool_value_cache[value as usize] = Some(result);
+        result
+    }
+
     pub fn garbage_collect(&mut self) {
-        // If any of the temporary switch values we created are unused, remove them now
-        for value in self.switch_value_cache.drain(..).flatten() {
+        // If any of the temporary switch or boolean values we created are unused, remove them now
+        let bool_values = self.bool_value_cache.iter_mut().map(Option::take);
+        for value in self.switch_value_cache.drain(..).chain(bool_values).flatten() {
             let mut defining_op = {
                 let val = value.borrow();
                 if val.is_used() {
@@ -1214,7 +1230,7 @@ impl<'a> TransformationContext<'a> {
         successors.extend(back_edges.iter().map(|edge| edge.get_successor()));
         successors.extend(exit_edges.iter().map(|edge| edge.get_successor()));
 
-        let extra_args = [self.get_switch_value(0).borrow().ty().clone()];
+        let extra_args = [Type::I1];
         let context = self.context.clone();
         let mut multiplexer = EdgeMultiplexer::create(self, span, &successors, &extra_args);
 
@@ -1230,15 +1246,15 @@ impl<'a> TransformationContext<'a> {
         // Redirect the edges prior to creating the switch op. We guarantee that predecessors are up
         // to date.
 
-        // Redirecting back edges with `should_repeat` as 1.
+        // Redirecting back edges with `should_repeat` as true.
         for edge in back_edges {
-            let extra_args = [multiplexer.transform().get_switch_value(1)];
+            let extra_args = [multiplexer.transform().get_bool_value(true)];
             multiplexer.redirect_edge(edge, &extra_args);
         }
 
-        // Redirecting exits edges with `should_repeat` as 0.
+        // Redirecting exits edges with `should_repeat` as false.
         for edge in exit_edges {
-            let extra_args = [multiplexer.transform().get_switch_value(0)];
+            let extra_args = [multiplexer.transform().get_bool_value(false)];
             multiplexer.redirect_edge(edge, &extra_args);
         }
 

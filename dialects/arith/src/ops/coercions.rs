@@ -1,4 +1,4 @@
-use alloc::{format, string::ToString};
+use alloc::{format, rc::Rc, string::ToString};
 
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
@@ -55,6 +55,15 @@ impl InferTypeOpInterface for Trunc {
         let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
+    }
+}
+
+impl Canonicalizable for Trunc {
+    fn get_canonicalization_patterns(
+        rewrites: &mut patterns::RewritePatternSet,
+        context: Rc<Context>,
+    ) {
+        rewrites.push(crate::canonicalization::SimplifyTruncToBool::new(context));
     }
 }
 

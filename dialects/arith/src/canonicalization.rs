@@ -7,7 +7,9 @@ use alloc::rc::Rc;
 
 use midenc_hir::{
     interner::Symbol,
+    matchers::Matcher,
     patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
+    traits::TransparentCast,
     *,
 };
 
@@ -141,6 +143,250 @@ impl RewritePattern for CanonicalizeI64RotateBy32ToSwap {
         };
 
         guard.replace_op_with_values(operation, &[Some(joined)]);
+        Ok(true)
+    }
+}
+
+/// How many widening/transparent-cast operations [widened_bool] looks through.
+const MAX_WIDENING_DEPTH: usize = 4;
+
+/// Returns the `i1` value that `value` is a widening of.
+///
+/// Looks through `arith.zext` and transparent casts between integer types, which preserve the
+/// integer value 0/1 of a widened boolean. Returns `value` itself when it is already an `i1`.
+fn widened_bool(value: ValueRef) -> Option<ValueRef> {
+    let mut current = value;
+    for _ in 0..MAX_WIDENING_DEPTH {
+        if current.borrow().ty() == &Type::I1 {
+            return Some(current);
+        }
+        let defining_op = current.borrow().get_defining_op()?;
+        let op = defining_op.borrow();
+        let is_widening =
+            op.downcast_ref::<Zext>().is_some() || op.implements::<dyn TransparentCast>();
+        if !is_widening || op.num_operands() != 1 {
+            return None;
+        }
+        let operand = op.operands()[0].borrow().as_value_ref();
+        if !operand.borrow().ty().is_integer() {
+            return None;
+        }
+        current = operand;
+    }
+    None
+}
+
+/// Returns the boolean a constant 0 or 1 integer `value` stands for, or `None` for anything else.
+fn constant_bit(value: ValueRef) -> Option<bool> {
+    let defining_op = value.borrow().get_defining_op()?;
+    let imm = matchers::constant_of::<Immediate>().matches(&*defining_op.borrow())?;
+    match imm.as_u64()? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+/// Returns true if `value` has exactly one use.
+fn has_single_use(value: ValueRef) -> bool {
+    let value = value.borrow();
+    let mut uses = value.iter_uses();
+    uses.next().is_some() && uses.next().is_none()
+}
+
+/// Simplifies `arith.eq`/`arith.neq` of a widened boolean against a constant 0 or 1 to the
+/// boolean itself or its negation.
+///
+/// The Wasm frontend represents every boolean as an `i32` (`zext` + `bitcast` of the `i1`
+/// comparison result) and tests it against 0 again before every branch or select, so these
+/// comparisons are common, and each one costs several VM ops while the boolean is already at hand:
+///
+/// * `neq(x, 0)` and `eq(x, 1)` become `b`
+/// * `eq(x, 0)` and `neq(x, 1)` become `not b`
+///
+/// where `b` is the `i1` that `x` widens (see [widened_bool]).
+pub(crate) struct SimplifyBoolCompare {
+    info: PatternInfo,
+}
+
+impl SimplifyBoolCompare {
+    /// Create the pattern for `op`, which must be `arith.eq` or `arith.neq`.
+    pub fn for_op(context: Rc<Context>, op: OperationName) -> Self {
+        Self {
+            info: PatternInfo::new(
+                context,
+                "simplify-bool-compare",
+                PatternKind::Operation(op),
+                PatternBenefit::MAX,
+            ),
+        }
+    }
+}
+
+impl Pattern for SimplifyBoolCompare {
+    fn info(&self) -> &PatternInfo {
+        &self.info
+    }
+}
+
+impl RewritePattern for SimplifyBoolCompare {
+    fn match_and_rewrite(
+        &self,
+        operation: OperationRef,
+        rewriter: &mut dyn Rewriter,
+    ) -> Result<bool, Report> {
+        let (span, is_eq, lhs, rhs) = {
+            let op = operation.borrow();
+            let span = op.span();
+            let (is_eq, lhs, rhs) = if let Some(eq) = op.downcast_ref::<Eq>() {
+                (true, eq.lhs().as_value_ref(), eq.rhs().as_value_ref())
+            } else if let Some(neq) = op.downcast_ref::<Neq>() {
+                (false, neq.lhs().as_value_ref(), neq.rhs().as_value_ref())
+            } else {
+                return Ok(false);
+            };
+            (span, is_eq, lhs, rhs)
+        };
+
+        let (bool_value, bit) = if let Some(bit) = constant_bit(rhs) {
+            (widened_bool(lhs), bit)
+        } else if let Some(bit) = constant_bit(lhs) {
+            (widened_bool(rhs), bit)
+        } else {
+            return Ok(false);
+        };
+        let Some(bool_value) = bool_value else {
+            return Ok(false);
+        };
+
+        // `eq(b, true)`/`neq(b, false)` is `b`; the other two combinations negate it.
+        let replacement = if is_eq == bit {
+            bool_value
+        } else {
+            rewriter.set_insertion_point_before(operation);
+            rewriter.not(bool_value, span)?
+        };
+        rewriter.replace_op_with_values(operation, &[Some(replacement)]);
+        Ok(true)
+    }
+}
+
+/// Simplifies `arith.not` of a single-use `arith.eq`/`arith.neq` into the complementary
+/// comparison, so the negation disappears from the generated code.
+pub(crate) struct SimplifyNotCompare {
+    info: PatternInfo,
+}
+
+impl SimplifyNotCompare {
+    pub fn new(context: Rc<Context>) -> Self {
+        let not_op = context
+            .get_or_register_dialect::<ArithDialect>()
+            .expect_registered_name::<Not>();
+        Self {
+            info: PatternInfo::new(
+                context,
+                "simplify-not-compare",
+                PatternKind::Operation(not_op),
+                PatternBenefit::MAX,
+            ),
+        }
+    }
+}
+
+impl Pattern for SimplifyNotCompare {
+    fn info(&self) -> &PatternInfo {
+        &self.info
+    }
+}
+
+impl RewritePattern for SimplifyNotCompare {
+    fn match_and_rewrite(
+        &self,
+        operation: OperationRef,
+        rewriter: &mut dyn Rewriter,
+    ) -> Result<bool, Report> {
+        let (span, operand) = {
+            let op = operation.borrow();
+            let Some(not) = op.downcast_ref::<Not>() else {
+                return Ok(false);
+            };
+            (op.span(), not.operand().as_value_ref())
+        };
+        if !has_single_use(operand) {
+            return Ok(false);
+        }
+        let Some(compare) = operand.borrow().get_defining_op() else {
+            return Ok(false);
+        };
+        let (is_eq, lhs, rhs) = {
+            let compare = compare.borrow();
+            if let Some(eq) = compare.downcast_ref::<Eq>() {
+                (true, eq.lhs().as_value_ref(), eq.rhs().as_value_ref())
+            } else if let Some(neq) = compare.downcast_ref::<Neq>() {
+                (false, neq.lhs().as_value_ref(), neq.rhs().as_value_ref())
+            } else {
+                return Ok(false);
+            }
+        };
+
+        rewriter.set_insertion_point_before(operation);
+        let replacement = if is_eq {
+            rewriter.neq(lhs, rhs, span)?
+        } else {
+            rewriter.eq(lhs, rhs, span)?
+        };
+        rewriter.replace_op_with_values(operation, &[Some(replacement)]);
+        Ok(true)
+    }
+}
+
+/// Simplifies `arith.trunc` to `i1` of a widened boolean into the boolean itself.
+pub(crate) struct SimplifyTruncToBool {
+    info: PatternInfo,
+}
+
+impl SimplifyTruncToBool {
+    pub fn new(context: Rc<Context>) -> Self {
+        let trunc_op = context
+            .get_or_register_dialect::<ArithDialect>()
+            .expect_registered_name::<Trunc>();
+        Self {
+            info: PatternInfo::new(
+                context,
+                "simplify-trunc-to-bool",
+                PatternKind::Operation(trunc_op),
+                PatternBenefit::MAX,
+            ),
+        }
+    }
+}
+
+impl Pattern for SimplifyTruncToBool {
+    fn info(&self) -> &PatternInfo {
+        &self.info
+    }
+}
+
+impl RewritePattern for SimplifyTruncToBool {
+    fn match_and_rewrite(
+        &self,
+        operation: OperationRef,
+        rewriter: &mut dyn Rewriter,
+    ) -> Result<bool, Report> {
+        let operand = {
+            let op = operation.borrow();
+            let Some(trunc) = op.downcast_ref::<Trunc>() else {
+                return Ok(false);
+            };
+            if trunc.result().ty() != &Type::I1 {
+                return Ok(false);
+            }
+            trunc.operand().as_value_ref()
+        };
+        let Some(bool_value) = widened_bool(operand) else {
+            return Ok(false);
+        };
+        rewriter.replace_op_with_values(operation, &[Some(bool_value)]);
         Ok(true)
     }
 }

@@ -1,0 +1,122 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns="simplify-bool-compare;simplify-not-compare;simplify-trunc-to-bool"}))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns="simplify-bool-compare;simplify-not-compare;simplify-trunc-to-bool"}))' | hir-opt --verify - | filecheck %s
+
+// Coverage for the boolean simplifications of `arith.eq`, `arith.neq`, `arith.not` and
+// `arith.trunc`. The canonicalizer is restricted to those patterns (the greedy driver still folds
+// and erases trivially dead operations). The second RUN line re-parses and verifies the rewritten
+// IR, so every printed form must be valid input.
+//
+// The Wasm frontend widens every boolean to an `i32` (`arith.zext` + `hir.bitcast`) and tests it
+// against 0 again before using it as a condition; the patterns look through the widening.
+builtin.module private @bool_compare {
+    // `neq(x, 0)` of a widened boolean is the boolean itself.
+    // CHECK: @neq_zero(%[[A:\d+]]: i32, %[[B:\d+]]: i32)
+    // CHECK-NEXT: %[[C:\d+]] = arith.neq %[[A]], %[[B]];
+    // CHECK-NEXT: builtin.ret %[[C]] : (i1);
+    builtin.function public extern("C") @neq_zero(%0: i32, %1: i32) -> i1 {
+        %2 = arith.constant 0 : i32;
+        %3 = arith.neq %0, %1;
+        %4 = arith.zext %3 <{ ty = #builtin.type<u32> }>;
+        %5 = hir.bitcast %4 <{ ty = #builtin.type<i32> }>;
+        %6 = arith.neq %5, %2;
+        builtin.ret %6 : (i1);
+    };
+
+    // `eq(x, 1)` is the boolean itself; the constant may be on either side.
+    // CHECK: @eq_one_lhs(%[[A:\d+]]: i32, %[[B:\d+]]: i32)
+    // CHECK-NEXT: %[[C:\d+]] = arith.eq %[[A]], %[[B]];
+    // CHECK-NEXT: builtin.ret %[[C]] : (i1);
+    builtin.function public extern("C") @eq_one_lhs(%0: i32, %1: i32) -> i1 {
+        %2 = arith.constant 1 : i32;
+        %3 = arith.eq %0, %1;
+        %4 = arith.zext %3 <{ ty = #builtin.type<u32> }>;
+        %5 = hir.bitcast %4 <{ ty = #builtin.type<i32> }>;
+        %6 = arith.eq %2, %5;
+        builtin.ret %6 : (i1);
+    };
+
+    // `eq(x, 0)` negates the boolean, and `not` of a single-use comparison becomes the
+    // complementary comparison.
+    // CHECK: @eq_zero(%[[A:\d+]]: i32, %[[B:\d+]]: i32)
+    // CHECK-NEXT: %[[C:\d+]] = arith.gte %[[A]], %[[B]];
+    // CHECK-NEXT: %[[N:\d+]] = arith.not %[[C]];
+    // CHECK-NEXT: builtin.ret %[[N]] : (i1);
+    builtin.function public extern("C") @eq_zero(%0: i32, %1: i32) -> i1 {
+        %2 = arith.constant 0 : i32;
+        %3 = arith.gte %0, %1;
+        %4 = arith.zext %3 <{ ty = #builtin.type<u32> }>;
+        %5 = hir.bitcast %4 <{ ty = #builtin.type<i32> }>;
+        %6 = arith.eq %5, %2;
+        builtin.ret %6 : (i1);
+    };
+
+    // `neq(x, 1)` of a single-use equality becomes the inequality.
+    // CHECK: @neq_one(%[[A:\d+]]: i32, %[[B:\d+]]: i32)
+    // CHECK-NEXT: %[[C:\d+]] = arith.neq %[[A]], %[[B]];
+    // CHECK-NEXT: builtin.ret %[[C]] : (i1);
+    builtin.function public extern("C") @neq_one(%0: i32, %1: i32) -> i1 {
+        %2 = arith.constant 1 : i32;
+        %3 = arith.eq %0, %1;
+        %4 = arith.zext %3 <{ ty = #builtin.type<u32> }>;
+        %5 = hir.bitcast %4 <{ ty = #builtin.type<i32> }>;
+        %6 = arith.neq %5, %2;
+        builtin.ret %6 : (i1);
+    };
+
+    // A comparison with other uses is kept, so its negation stays an `arith.not`.
+    // CHECK: @not_shared_compare(%[[A:\d+]]: i32, %[[B:\d+]]: i32)
+    // CHECK-NEXT: %[[C:\d+]] = arith.eq %[[A]], %[[B]];
+    // CHECK-NEXT: %[[N:\d+]] = arith.not %[[C]];
+    // CHECK-NEXT: builtin.ret %[[C]], %[[N]] : (i1, i1);
+    builtin.function public extern("C") @not_shared_compare(%0: i32, %1: i32) -> (i1, i1) {
+        %2 = arith.eq %0, %1;
+        %3 = arith.not %2;
+        builtin.ret %2, %3 : (i1, i1);
+    };
+
+    // `not (not b)` folds to `b`, and `not` of a constant folds.
+    // CHECK: @not_not(%[[A:\d+]]: i1)
+    // CHECK-NEXT: %[[F:\d+]] = arith.constant 0 : i1;
+    // CHECK-NEXT: builtin.ret %[[A]], %[[F]] : (i1, i1);
+    builtin.function public extern("C") @not_not(%0: i1) -> (i1, i1) {
+        %1 = arith.constant 1 : i1;
+        %2 = arith.not %0;
+        %3 = arith.not %2;
+        %4 = arith.not %1;
+        builtin.ret %3, %4 : (i1, i1);
+    };
+
+    // `trunc` to `i1` of a widened boolean is the boolean itself.
+    // CHECK: @trunc_widened(%[[A:\d+]]: i32, %[[B:\d+]]: i32)
+    // CHECK-NEXT: %[[C:\d+]] = arith.lt %[[A]], %[[B]];
+    // CHECK-NEXT: builtin.ret %[[C]] : (i1);
+    builtin.function public extern("C") @trunc_widened(%0: i32, %1: i32) -> i1 {
+        %2 = arith.lt %0, %1;
+        %3 = arith.zext %2 <{ ty = #builtin.type<u32> }>;
+        %4 = hir.bitcast %3 <{ ty = #builtin.type<i32> }>;
+        %5 = arith.trunc %4 <{ ty = #builtin.type<i1> }>;
+        builtin.ret %5 : (i1);
+    };
+
+    // A comparison against a constant other than 0 or 1, or of a value that is not a widened
+    // boolean, is left alone.
+    // CHECK: @unrelated(%[[A:\d+]]: i32, %[[B:\d+]]: i32)
+    // CHECK-NEXT: %[[TWO:\d+]] = arith.constant 2 : i32;
+    // CHECK-NEXT: %[[ZERO:\d+]] = arith.constant 0 : i32;
+    // CHECK-NEXT: %[[C:\d+]] = arith.eq %[[A]], %[[B]];
+    // CHECK-NEXT: %[[Z:\d+]] = arith.zext %[[C]]
+    // CHECK-NEXT: %[[W:\d+]] = hir.bitcast %[[Z]]
+    // CHECK-NEXT: %[[X:\d+]] = arith.neq %[[W]], %[[TWO]];
+    // CHECK-NEXT: %[[Y:\d+]] = arith.neq %[[A]], %[[ZERO]];
+    // CHECK-NEXT: builtin.ret %[[X]], %[[Y]] : (i1, i1);
+    builtin.function public extern("C") @unrelated(%0: i32, %1: i32) -> (i1, i1) {
+        %2 = arith.constant 2 : i32;
+        %3 = arith.constant 0 : i32;
+        %4 = arith.eq %0, %1;
+        %5 = arith.zext %4 <{ ty = #builtin.type<u32> }>;
+        %6 = hir.bitcast %5 <{ ty = #builtin.type<i32> }>;
+        %7 = arith.neq %6, %2;
+        %8 = arith.neq %0, %3;
+        builtin.ret %7, %8 : (i1, i1);
+    };
+};
