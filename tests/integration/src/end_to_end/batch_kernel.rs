@@ -499,42 +499,42 @@ fn batch_kernel() {
     check("same transaction erasure", &same_tx, build_advice_inputs(&same_tx), false);
 
     expect![[r#"
-        MAST bytes: 98938
+        MAST bytes: 98499
         VM cycles:
-        two transactions: 25693
-        partial erasure: 22307
-        all inputs erased: 17657
-        no notes: 9384
-        eight transactions, 64 notes: 239627
-        tampered batch: 1082
-        tampered header: 2287
-        tampered input preimage: 13737
-        tampered output preimage: 15623
-        empty batch: 342
-        too many transactions: 325
-        unaligned transactions: 301
-        short header: 1877
-        long header: 1877
-        too many input notes: 13352
-        too many output notes: 15230
-        unaligned input preimage: 13328
-        unaligned output preimage: 15219
-        missing input list: 13794
-        duplicated input list: 5822
-        descending input list: 5662
-        phantom input list: 25270
-        oversized input list: 3799
-        unaligned input list: 3775
-        missing output list: 22700
-        duplicated output list: 7842
-        descending output list: 7682
-        phantom output list: 24769
-        oversized output list: 5807
-        unaligned output list: 5783
-        input note id mismatch: 19034
-        phantom erasure: 20523
-        consume before create: 13297
-        same transaction erasure: 12164
+        two transactions: 24896
+        partial erasure: 21641
+        all inputs erased: 17127
+        no notes: 9148
+        eight transactions, 64 notes: 231164
+        tampered batch: 1062
+        tampered header: 2232
+        tampered input preimage: 13370
+        tampered output preimage: 15175
+        empty batch: 336
+        too many transactions: 320
+        unaligned transactions: 298
+        short header: 1835
+        long header: 1835
+        too many input notes: 13003
+        too many output notes: 14800
+        unaligned input preimage: 12981
+        unaligned output preimage: 14791
+        missing input list: 13444
+        duplicated input list: 5663
+        descending input list: 5516
+        phantom input list: 24470
+        oversized input list: 3703
+        unaligned input list: 3681
+        missing output list: 21973
+        duplicated output list: 7628
+        descending output list: 7481
+        phantom output list: 23990
+        oversized output list: 5657
+        unaligned output list: 5635
+        input note id mismatch: 18458
+        phantom erasure: 19905
+        consume before create: 12932
+        same transaction erasure: 11829
     "#]]
     .assert_eq(&metrics);
 }

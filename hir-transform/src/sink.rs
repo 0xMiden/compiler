@@ -8,7 +8,7 @@ use midenc_hir::{
     dominance::DominanceInfo,
     matchers::{self, Matcher},
     pass::{Pass, PassExecutionState, PostPassStatus},
-    traits::{ConstantLike, Transparent},
+    traits::{BinaryOp, ConstantLike, Transparent},
 };
 
 /// Check whether `operation` is the sole _non-transparent_ user of `value`.
@@ -252,7 +252,8 @@ impl Pass for SinkOperandDefs {
             //
             // In both cases, to the extent possible, we order operand dependencies such that the
             // values will be on the Miden operand stack in the correct order. This means that we
-            // visit operands in reverse order, and move defining ops directly before `op` when
+            // visit operands in the order the lowering expects them on the stack (see
+            // `OpOperandSink::operand_index`), and move defining ops directly before `op` when
             // possible. Some values may be block arguments, or refer to op's we're unable to move,
             // and thus those values be out of position on the operand stack, but the overall
             // result will reduce the amount of unnecessary stack movement.
@@ -352,7 +353,7 @@ impl Pass for SinkOperandDefs {
             }
 
             // If we've already worked this operation, skip it
-            if !visited.insert(operation) && sink_state.next_operand_index == op.num_operands() {
+            if !visited.insert(operation) && sink_state.next_operand_index == 0 {
                 log::trace!(target: Self::NAME, "already visited {}", operation.borrow());
                 continue;
             } else {
@@ -361,15 +362,15 @@ impl Pass for SinkOperandDefs {
 
             let mut builder = OpBuilder::new(op.context_rc());
             builder.set_insertion_point(sink_state.ip);
-            // The next operand index starts at `op.num_operands()` when first initialized, so
-            // we subtract 1 immediately to get the actual index of the current operand
-            'next_operand: while let Some(next_operand_index) =
-                sink_state.next_operand_index.checked_sub(1)
-            {
+            // Each definition is placed directly before `op`, so the operand visited last ends up
+            // deepest on the operand stack. Operands are visited in the order that leaves them
+            // where the lowering expects them: see `OpOperandSink::operand_index`.
+            'next_operand: while sink_state.next_operand_index < op.num_operands() {
+                let next_operand_index = sink_state.operand_index(&op);
                 log::debug!(target: Self::NAME, "  sinking next operand def for {op} at index {next_operand_index}");
 
                 let mut operand = op.operands()[next_operand_index];
-                sink_state.next_operand_index = next_operand_index;
+                sink_state.next_operand_index += 1;
                 let operand_value = operand.borrow().as_value_ref();
                 log::trace!(target: Self::NAME, "  visiting operand {operand_value}");
 
@@ -509,6 +510,7 @@ struct OpOperandSink {
     operation: OperationRef,
     ip: ProgramPoint,
     replacements: SmallDenseMap<ValueRef, ValueRef, 4>,
+    /// The number of operands visited so far; see [`Self::operand_index`].
     next_operand_index: usize,
 }
 
@@ -518,7 +520,22 @@ impl OpOperandSink {
             operation,
             ip: ProgramPoint::before(operation),
             replacements: SmallDenseMap::new(),
-            next_operand_index: operation.borrow().num_operands(),
+            next_operand_index: 0,
+        }
+    }
+
+    /// Returns the index of the operand to visit next.
+    ///
+    /// Definitions are moved directly before the operation, so the operand visited last is
+    /// materialized first and ends up deepest on the operand stack. The lowering expects the first
+    /// operand on top of the stack, except for binary operations, whose right-hand operand is on
+    /// top (see `schedule_operands` in the MASM backend), so operands are visited in reverse order
+    /// in general, and in operand order for binary operations.
+    fn operand_index(&self, op: &Operation) -> usize {
+        if op.implements::<dyn BinaryOp>() {
+            self.next_operand_index
+        } else {
+            op.num_operands() - 1 - self.next_operand_index
         }
     }
 }
