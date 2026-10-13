@@ -636,7 +636,7 @@ fn component_name_with_a_quoted_segment_roundtrips_through_the_printer() -> Test
     let test = ParserTest::default();
     let path = SymbolPath::from_library_path(Path::new("::\"acme::pkg\"::app"));
     let world = test.context_rc().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
-    let component = WorldBuilder::new(world).define_component(path.to_symbol_name().into())?;
+    let component = WorldBuilder::new(world).define_component(path.to_symbol_name()?.into())?;
 
     let flags = Default::default();
     let mut printer = AsmPrinter::new(test.context_rc(), &flags);
@@ -716,4 +716,31 @@ fn a_path_through_a_quoted_interface_resolves() -> TestResult {
     assert!(resolved.borrow().as_symbol_operation().is::<Function>());
     assert_eq!(resolved.borrow().path(), path);
     Ok(())
+}
+
+/// A symbol-table op whose raw segment Miden Assembly cannot spell does not parse, a raw segment
+/// wrapped in quotes included: it is not read as the segment it quotes.
+#[test]
+fn an_unspellable_symbol_table_name_is_reported() {
+    let test = ParserTest::default();
+    for (source, kind, segment) in [
+        ("builtin.component private @\"q\\\"u\" {};", "component", "q\"u"),
+        ("builtin.component private @\"\\\"x-y\\\"\" {};", "component", "\"x-y\""),
+        ("builtin.component private @app::@\"a b\" {};", "component", "a b"),
+        ("builtin.module public @\"a\\\\b\" {};", "module", "a\\b"),
+        ("builtin.module public @\"\\\"m\\\"\" {};", "module", "\"m\""),
+        ("builtin.interface @\"a\\\\b\" {};", "interface", "a\\b"),
+    ] {
+        let err = test
+            .parse_any("unspellable.hir", source)
+            .expect_err("an unspellable name must not parse")
+            .to_string();
+        assert_eq!(
+            err,
+            format!(
+                "invalid {kind} name: the segment `{segment}` cannot be spelled in Miden Assembly"
+            ),
+            "{source}"
+        );
+    }
 }

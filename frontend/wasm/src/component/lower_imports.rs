@@ -1272,7 +1272,7 @@ fn declare_import_function(
     signature: &Signature,
 ) -> WasmResult<FunctionRef> {
     let import_path = &import.path;
-    let component_name = import_path.without_leaf().to_symbol_name();
+    let component_name = import_path.without_leaf().to_symbol_name()?;
     let inside_namespace = component_name == import.namespace
         || SymbolPath::nests_in(component_name, import.namespace);
     if inside_namespace {
@@ -2339,7 +2339,7 @@ mod tests {
             cc: CallConv::ComponentModel,
         };
         let import = component_import_path("dyncall-authority");
-        let stub_component = import.path.without_leaf().to_symbol_name();
+        let stub_component = import.path.without_leaf().to_symbol_name().unwrap();
 
         let lowered = generate_import_lowering_function(
             &mut world_builder,
@@ -2388,7 +2388,7 @@ mod tests {
             test_import_path("fpi-send"),
             "miden::test::app::fpi::acme::wallet::wallet::send",
         );
-        let stub_component = import.path.without_leaf().to_symbol_name();
+        let stub_component = import.path.without_leaf().to_symbol_name().unwrap();
 
         let lowered = generate_import_lowering_function(
             &mut world_builder,
@@ -2425,7 +2425,7 @@ mod tests {
             test_import_path("dyncall-authority"),
             "miden::test::app::dyncall::authority",
         );
-        let stub_component = import.path.without_leaf().to_symbol_name();
+        let stub_component = import.path.without_leaf().to_symbol_name().unwrap();
 
         let lowered = generate_import_lowering_function(
             &mut world_builder,

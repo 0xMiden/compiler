@@ -11,18 +11,31 @@ use crate::{
 };
 
 pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
+    /// Create a [Component] named `name`, spelled as [Component::canonical_name] does.
+    ///
+    /// Returns an error when Miden Assembly cannot spell a segment of `name`.
+    fn create_component(&mut self, name: Ident) -> Result<ComponentRef, Report> {
+        let name = Ident::new(Component::canonical_name(name.name)?, name.span);
+        let op_builder = self.builder_mut().create::<Component, (_,)>(name.span());
+        op_builder(name)
+    }
+
     /// Create an [Interface] named by the raw segment `name`, spelled as
     /// [Interface::canonical_name] does.
     ///
-    /// Returns an error when `name` contains `::`, see [Interface::validate_name].
+    /// Returns an error when Miden Assembly cannot spell `name`, or it contains `::`.
     fn create_interface(&mut self, name: Ident) -> Result<InterfaceRef, Report> {
-        let name = Ident::new(Interface::canonical_name(name.name), name.span);
-        Interface::validate_name(name.name)?;
+        let name = Ident::new(Interface::canonical_name(name.name)?, name.span);
         let op_builder = self.builder_mut().create::<Interface, (_,)>(name.span());
         op_builder(name)
     }
 
+    /// Create a [Module] named by the raw segment `name`, spelled as [Module::canonical_name]
+    /// does.
+    ///
+    /// Returns an error when Miden Assembly cannot spell `name`, or it contains `::`.
     fn create_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
+        let name = Ident::new(Module::canonical_name(name.name)?, name.span);
         let op_builder = self.builder_mut().create::<Module, (_,)>(name.span());
         op_builder(name)
     }

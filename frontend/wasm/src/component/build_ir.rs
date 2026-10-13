@@ -46,7 +46,7 @@ pub fn translate_component(
     dialect.expect_registered_name::<midenc_hir::dialects::builtin::Component>();
     let (namespace, export_paths) = component_namespace(&parsed_root_component, config)?;
     let translator = ComponentTranslator::new(
-        namespace.to_symbol_name(),
+        namespace.to_symbol_name()?,
         export_paths,
         &mut parsed_root_component.static_modules,
         &parsed_root_component.static_components,

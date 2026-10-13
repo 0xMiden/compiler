@@ -28,29 +28,24 @@ impl ComponentBuilder {
         Self { component, builder }
     }
 
-    /// Define a new interface `name` in this component, spelled as
-    /// [crate::dialects::builtin::Interface::canonical_name] does.
-    ///
-    /// Returns an error when `name` contains `::`, see
-    /// [crate::dialects::builtin::Interface::validate_name].
+    /// Define a new interface named by the raw segment `name` in this component, see
+    /// [BuiltinOpBuilder::create_interface].
     pub fn define_interface(&mut self, name: Ident) -> Result<InterfaceRef, Report> {
         self.builder.create_interface(name)
     }
 
-    /// Define a new module `name` in this component, spelled as [Module::canonical_name] does.
-    ///
-    /// Returns an error when `name` contains `::`, see [Module::validate_name].
+    /// Define a new module named by the raw segment `name` in this component, see
+    /// [BuiltinOpBuilder::create_module].
     pub fn define_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
-        let name = Ident::new(Module::canonical_name(name.name), name.span);
-        Module::validate_name(name.name)?;
-        let module_ref = self.builder.create_module(name)?;
-        Ok(module_ref)
+        self.builder.create_module(name)
     }
 
+    /// Resolve the module named by the raw segment `name` in this component (see
+    /// [Module::canonical_name]), if defined.
     pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
         self.component
             .borrow()
-            .get(Module::canonical_name(name))
+            .get(Module::canonical_name(name).ok()?)
             .and_then(|symbol_ref| {
                 let op = symbol_ref.borrow();
                 op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())

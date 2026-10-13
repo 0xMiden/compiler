@@ -128,10 +128,12 @@ impl OpParser for Component {
         state
             .add_attribute("visibility", context.create_attribute::<VisibilityAttr, _>(visibility));
 
-        // The name is the Miden Assembly spelling of the whole (possibly multi-segment) path (see
-        // `SymbolPath::to_symbol_name`)
+        // The name is the Miden Assembly spelling of the whole (possibly multi-segment) path of raw
+        // segments (see `SymbolPath::to_symbol_name`)
         let (span, path) = parser.parse_symbol_path()?.into_parts();
-        let name = path.to_symbol_name();
+        let name = path
+            .to_symbol_name()
+            .map_err(|err| crate::parse::ParserError::invalid_symbol_table_name(span, err))?;
         state.add_attribute(
             "name",
             context.create_attribute::<IdentAttr, _>(Ident::new(name, span)),
@@ -145,8 +147,9 @@ impl OpParser for Component {
     }
 }
 
-/// Components are built through `WorldBuilder`, which spells their names; parsed input is not, so
-/// the name is checked here as well (see [SymbolPath::segments_of]).
+/// Components are built through the builtin builders and the parser, which spell and validate
+/// their names; a name set afterwards is not, so it is checked here as well (see
+/// [SymbolPath::segments_of]).
 impl Verify<dyn SymbolTable> for Component {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
         SymbolPath::validate_table_name(SymbolTableKind::Component, Symbol::name(self))
@@ -260,6 +263,16 @@ impl Component {
     /// a name an author may equally give a component of theirs, with the module visibility they
     /// declared.
     pub const SYNTHETIC_WRAPPER_ATTR: &'static str = "synthetic_wrapper";
+
+    /// Returns the name a component given `name` gets: `name` itself when it already is the Miden
+    /// Assembly spelling of its segments (`miden::a::b`, `"acme::pkg"::app`), otherwise the
+    /// spelling of `name` read as one raw segment (`masm-dep` is named `"masm-dep"`).
+    ///
+    /// Returns an error when Miden Assembly cannot spell a segment (see
+    /// [SymbolPath::is_spellable]).
+    pub fn canonical_name(name: interner::Symbol) -> Result<interner::Symbol, Report> {
+        SymbolPath::table_name(SymbolTableKind::Component, name)
+    }
 
     /// Returns the absolute path this component is rooted at, with one component per segment of
     /// its name (see [SymbolPath::segments_of]); every symbol inside the component has it as a

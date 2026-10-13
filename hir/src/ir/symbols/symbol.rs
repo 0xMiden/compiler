@@ -71,6 +71,11 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
         SymbolPath::from_iter(parts)
     }
     /// Set the name of this symbol
+    ///
+    /// `name` is stored as given, in the form [Symbol::name] returns: for a symbol-table op, the
+    /// Miden Assembly spelling of its raw segments (see [SymbolPath::segments_of]), which callers
+    /// get from the op's `canonical_name`. It is not spelled here; the symbol-table verifiers
+    /// reject a name that is not spelled.
     fn set_name(&mut self, name: SymbolName);
     /// Get the visibility of this symbol
     fn visibility(&self) -> Visibility;

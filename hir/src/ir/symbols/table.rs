@@ -398,9 +398,10 @@ impl SymbolMap {
                 }
 
                 // Otherwise, we need to make the symbol name unique
-                let uniqued = generate_symbol_name(name, &mut self.uniquing_count, |name| {
-                    !self.symbols.contains_key(name)
-                });
+                let uniqued =
+                    generate_unique_name(&symbol, name, &mut self.uniquing_count, |name| {
+                        !self.symbols.contains_key(&name)
+                    });
                 // drop(sym);
                 symbol.borrow_mut().set_name(uniqued);
                 // TODO: visit uses? symbol should be unused AFAICT
@@ -420,11 +421,11 @@ impl SymbolMap {
         // Determine new name that is unique in all symbol tables.
         let name = { op.borrow().name() };
 
-        generate_symbol_name(name, &mut self.uniquing_count, |name| {
-            if self.symbols.contains_key(name) {
+        generate_unique_name(op, name, &mut self.uniquing_count, |name| {
+            if self.symbols.contains_key(&name) {
                 return false;
             }
-            !tables.iter().any(|t| t.symbols.contains_key(name))
+            !tables.iter().any(|t| t.symbols.contains_key(&name))
         })
     }
 
@@ -432,6 +433,44 @@ impl SymbolMap {
     pub fn symbols(&self) -> impl Iterator<Item = SymbolRef> + '_ {
         self.symbols.values().cloned()
     }
+}
+
+/// Returns a variation of `name`, the name of `symbol`, that `is_unique` accepts (see
+/// [generate_symbol_name]).
+///
+/// The name of a symbol-table op is the Miden Assembly spelling of its raw segments (see
+/// [SymbolPath::segments_of]), so the suffix goes on its raw last segment and the result is
+/// spelled again: `"masm-dep"` becomes `"masm-dep_1"`, not `"masm-dep"_1`.
+fn generate_unique_name<F>(
+    symbol: &SymbolRef,
+    name: SymbolName,
+    counter: &mut usize,
+    is_unique: F,
+) -> SymbolName
+where
+    F: Fn(SymbolName) -> bool,
+{
+    // Candidates are interned before the lookup: a `SymbolName` hashes differently from its
+    // string, so a map keyed by `SymbolName` cannot be queried with a `&str`
+    let mut segments = SmallVec::<[SymbolNameComponent; 4]>::new();
+    if symbol.borrow().as_symbol_operation().implements::<dyn SymbolTable>() {
+        segments
+            .extend(SymbolPath::segments_of(name).into_iter().map(SymbolNameComponent::Component));
+    }
+    let Some(last) = segments.pop() else {
+        return generate_symbol_name(name, counter, |candidate| {
+            is_unique(SymbolName::intern(candidate))
+        });
+    };
+    let spell = |last: SymbolName| {
+        let mut components = segments.clone();
+        components.push(SymbolNameComponent::Component(last));
+        SymbolPath::join_components(&components)
+    };
+    let last = generate_symbol_name(last.as_symbol_name(), counter, |candidate| {
+        is_unique(spell(SymbolName::intern(candidate)))
+    });
+    spell(last)
 }
 
 /// This type is used to abstract over ownership of an immutable [SymbolMap].
@@ -729,6 +768,8 @@ impl<'a> SymbolManagerMut<'a> {
     }
 
     /// Renames the given operation, and updates the symbol table and all uses of the old name.
+    ///
+    /// `to` is the name as stored, see [Symbol::set_name].
     ///
     /// Returns `Err` if not all uses could be updated.
     pub fn rename_symbol(&mut self, mut op: SymbolRef, to: SymbolName) -> Result<(), Report> {

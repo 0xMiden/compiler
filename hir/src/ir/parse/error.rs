@@ -1,4 +1,9 @@
-use alloc::{format, string::String, vec, vec::Vec};
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 
 use crate::{
     BlockId, CompactString, Type, ValueId,
@@ -325,9 +330,26 @@ pub enum ParserError {
         span: SourceSpan,
         key: CompactString,
     },
+    #[error("{reason}")]
+    #[diagnostic()]
+    InvalidSymbolTableName {
+        #[label("this name is invalid")]
+        span: SourceSpan,
+        reason: String,
+    },
     #[error(transparent)]
     #[diagnostic(transparent)]
     Report(#[from] RelatedError),
+}
+
+impl ParserError {
+    /// The name at `span` cannot name a symbol-table op, for the reason `error` gives.
+    pub fn invalid_symbol_table_name(span: SourceSpan, error: Report) -> Self {
+        Self::InvalidSymbolTableName {
+            span,
+            reason: error.to_string(),
+        }
+    }
 }
 
 impl From<Report> for ParserError {

@@ -2,9 +2,9 @@ use midenc_session::LibraryPath;
 
 use crate::{
     Context, IdentAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface,
-    Report, Symbol, SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolNameComponent,
-    SymbolPath, SymbolRef, SymbolTable, SymbolTableKind, SymbolUseList, UnsafeIntrusiveEntityRef,
-    Usable, Verify, Visibility,
+    Report, Symbol, SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolPath, SymbolRef,
+    SymbolTable, SymbolTableKind, SymbolUseList, UnsafeIntrusiveEntityRef, Usable, Verify,
+    Visibility,
     derive::operation,
     dialects::builtin::{self, BuiltinDialect},
     traits::{
@@ -81,7 +81,12 @@ impl OpParser for Interface {
     ) -> crate::ParseResult {
         // The name is the Miden Assembly spelling of the parsed raw segment
         let name = parser.parse_symbol_name()?;
-        let name = crate::Ident::new(Interface::canonical_name(name.name), name.span);
+        let name = crate::Ident::new(
+            Interface::canonical_name(name.name).map_err(|err| {
+                crate::parse::ParserError::invalid_symbol_table_name(name.span, err)
+            })?,
+            name.span,
+        );
         state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
 
         let region = parser.context().create_region();
@@ -170,8 +175,8 @@ impl SymbolTable for Interface {
     }
 }
 
-/// Interfaces are built through the builtin builders, which spell and validate their names;
-/// parsed input is not, so the name is checked here as well.
+/// Interfaces are built through the builtin builders and the parser, which spell and validate
+/// their names; a name set afterwards is not, so it is checked here as well.
 impl Verify<dyn SymbolTable> for Interface {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
         Self::validate_name(Symbol::name(self))
@@ -180,9 +185,13 @@ impl Verify<dyn SymbolTable> for Interface {
 
 impl Interface {
     /// Returns the name an interface given the raw segment `name` gets: its Miden Assembly
-    /// spelling (see [SymbolPath::segments_of]), e.g. `"my-api"` for `my-api`.
-    pub fn canonical_name(name: SymbolName) -> SymbolName {
-        SymbolPath::join_components(&[SymbolNameComponent::Component(name)])
+    /// spelling (see [SymbolPath::segments_of]), e.g. `"my-api"` for `my-api` and `api` for `api`.
+    ///
+    /// `name` is always read as one raw segment, never as a spelled name: `"my-api"` is not the
+    /// segment `my-api`. Returns an error when Miden Assembly cannot spell the segment (see
+    /// [SymbolPath::is_spellable]) or it contains `::`.
+    pub fn canonical_name(name: SymbolName) -> Result<SymbolName, Report> {
+        SymbolPath::table_name(SymbolTableKind::Interface, name)
     }
 
     /// Returns an error when `name` cannot name an interface: it is not the Miden Assembly

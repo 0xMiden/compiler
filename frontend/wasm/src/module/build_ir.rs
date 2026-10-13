@@ -74,7 +74,7 @@ pub fn translate_module_as_component(
             SymbolPath::from_masm_module_id(module_name)
         }
     };
-    let component_name = namespace.to_symbol_name();
+    let component_name = namespace.to_symbol_name()?;
     let mut component_ref =
         world_builder.define_component(Ident::with_empty_span(component_name))?;
 

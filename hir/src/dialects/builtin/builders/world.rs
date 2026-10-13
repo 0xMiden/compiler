@@ -1,11 +1,12 @@
 use alloc::{format, rc::Rc};
 
+use super::BuiltinOpBuilder;
 use crate::{
-    Builder, Context, Ident, Op, OpBuilder, Report, SmallVec, Spanned, SymbolName,
-    SymbolNameComponent, SymbolPath, SymbolTable,
+    Builder, Context, Ident, Op, OpBuilder, Report, SmallVec, SymbolName, SymbolNameComponent,
+    SymbolPath, SymbolTable,
     dialects::builtin::{
-        Component, ComponentRef, Module, ModuleBuilder, ModuleRef, PrimComponentBuilder,
-        PrimModuleBuilder, World, WorldRef, ops::shadowing_error,
+        Component, ComponentRef, Module, ModuleBuilder, ModuleRef, World, WorldRef,
+        ops::shadowing_error,
     },
 };
 
@@ -42,18 +43,17 @@ impl WorldBuilder {
     ///
     /// The name is the Miden Assembly spelling of the component's namespace path (see
     /// [SymbolPath::to_symbol_name]), e.g. `miden::counter_contract::counter_contract`. Callers
-    /// holding a [SymbolPath] use [SymbolPath::to_symbol_name]. A raw single segment is re-spelled
-    /// (see [SymbolPath::canonical_name]).
+    /// holding a [SymbolPath] use [SymbolPath::to_symbol_name]. Any other name is one raw segment,
+    /// which is spelled (see [Component::canonical_name]).
     ///
-    /// Returns an error when the world declares a module tree reaching the path the name spells,
-    /// which the component would shadow, or another component whose name nests with this one (one
-    /// is a segment-prefix of the other): resolution prefers the longest registered name.
+    /// Returns an error when Miden Assembly cannot spell a segment of the name, when the world
+    /// declares a module tree reaching the path the name spells, which the component would
+    /// shadow, or another component whose name nests with this one (one is a segment-prefix of
+    /// the other): resolution prefers the longest registered name.
     pub fn define_component(&mut self, name: Ident) -> Result<ComponentRef, Report> {
-        let name = Ident::new(SymbolPath::canonical_name(name.name), name.span);
+        let name = Ident::new(Component::canonical_name(name.name)?, name.span);
         self.world.borrow().reject_component_shadowing(name.name)?;
-        let builder = PrimComponentBuilder::new(&mut self.builder, name.span());
-        let component_ref = builder(name)?;
-        Ok(component_ref)
+        self.builder.create_component(name)
     }
 
     /// Resolve a world-level component with `name`, if defined.
@@ -62,7 +62,7 @@ impl WorldBuilder {
     pub fn find_component(&self, name: SymbolName) -> Option<ComponentRef> {
         self.world
             .borrow()
-            .get(SymbolPath::canonical_name(name))
+            .get(Component::canonical_name(name).ok()?)
             .and_then(|symbol_ref| {
                 let op = symbol_ref.borrow();
                 op.as_symbol_operation()
@@ -71,23 +71,22 @@ impl WorldBuilder {
             })
     }
 
-    /// Declare a new world-level module `name`, spelled as [Module::canonical_name] does.
-    ///
-    /// Returns an error when `name` contains `::`, see [Module::validate_name].
+    /// Declare a new world-level module named by the raw segment `name`, see
+    /// [BuiltinOpBuilder::create_module].
     pub fn declare_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
-        let name = Ident::new(Module::canonical_name(name.name), name.span);
-        Module::validate_name(name.name)?;
-        let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
-        let module_ref = builder(name)?;
-        Ok(module_ref)
+        self.builder.create_module(name)
     }
 
-    /// Resolve a world-level module with `name`, if declared/defined
+    /// Resolve the world-level module named by the raw segment `name` (see
+    /// [Module::canonical_name]), if declared/defined
     pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
-        self.world.borrow().get(Module::canonical_name(name)).and_then(|symbol_ref| {
-            let op = symbol_ref.borrow();
-            op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
-        })
+        self.world
+            .borrow()
+            .get(Module::canonical_name(name).ok()?)
+            .and_then(|symbol_ref| {
+                let op = symbol_ref.borrow();
+                op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
+            })
     }
 
     /// Recursively declare a hierarchy of modules, given a [SymbolPath] which contains the modules
@@ -104,6 +103,9 @@ impl WorldBuilder {
             .components()
             .filter(|component| matches!(component, SymbolNameComponent::Component(_)))
             .collect::<SmallVec<[_; 4]>>();
+        for module in &modules {
+            Module::canonical_name(module.as_symbol_name())?;
+        }
         let module_path = SymbolPath::join_components(&modules);
         let shadowing = self.world.borrow().component_shadowing(module_path);
         if let Some(component) = shadowing {
@@ -120,7 +122,7 @@ impl WorldBuilder {
                 .borrow()
                 .as_symbol_table()
                 .unwrap()
-                .get(Module::canonical_name(module_name));
+                .get(Module::canonical_name(module_name)?);
             if symbol.is_some_and(|sym| !sym.borrow().as_symbol_operation().is::<Module>()) {
                 return Err(Report::msg(format!(
                     "could not declare module path component '{module_name}': a non-module symbol \
@@ -422,7 +424,8 @@ mod tests {
         world_builder
             .declare_module_tree(&stub_tree)
             .expect("failed to declare module tree");
-        let Err(err) = world_builder.define_component(namespace.to_symbol_name().into()) else {
+        let name = namespace.to_symbol_name().expect("the segments are spellable");
+        let Err(err) = world_builder.define_component(name.into()) else {
             panic!("the component shadows the stub module tree");
         };
         assert_eq!(
@@ -432,9 +435,7 @@ mod tests {
         );
 
         let (_world, mut world_builder) = empty_world();
-        world_builder
-            .define_component(namespace.to_symbol_name().into())
-            .expect("failed to define component");
+        world_builder.define_component(name.into()).expect("failed to define component");
         let Err(err) = world_builder.declare_module_tree(&stub_tree) else {
             panic!("the component shadows the stub module tree");
         };
@@ -442,7 +443,7 @@ mod tests {
     }
 
     /// The component verifier rejects a name that is not the Miden Assembly spelling of its
-    /// segments, and a segment Miden Assembly cannot spell.
+    /// segments, and the builder a segment Miden Assembly cannot spell.
     #[test]
     fn the_component_verifier_rejects_a_misspelled_name() {
         use alloc::string::{String, ToString};
@@ -465,19 +466,74 @@ mod tests {
             verify(component),
             Err(String::from(
                 "component `masm-dep` is not the Miden Assembly spelling of its segments; name \
-                 components and modules through `SymbolPath::to_symbol_name`"
+                 components through `SymbolPath::to_symbol_name`"
             ))
         );
 
-        let quoted = world_builder
-            .define_component(Ident::from(r#"q"u"#))
+        // A name that already is a Miden Assembly spelling (`"x-y"`) is taken as is, so a raw
+        // segment wrapped in quotes cannot be passed here; one that is not is one raw segment
+        for raw in [r#"q"u"#, r#"a"b"#, r"a\b", "my lib", ""] {
+            let err = world_builder
+                .define_component(Ident::from(raw))
+                .map(|_| ())
+                .map_err(|err| err.to_string());
+            assert_eq!(
+                err,
+                Err(alloc::format!(
+                    "invalid component name: the segment `{raw}` cannot be spelled in Miden \
+                     Assembly"
+                )),
+                "`{raw}`"
+            );
+        }
+    }
+
+    /// A module or interface builder reads its name as one raw segment, and rejects a segment
+    /// Miden Assembly cannot spell, a quoted one included.
+    #[test]
+    fn a_module_name_miden_assembly_cannot_spell_is_rejected() {
+        use alloc::string::ToString;
+
+        use crate::dialects::builtin::ComponentBuilder;
+
+        let (_world, mut world_builder) = empty_world();
+        let component = world_builder
+            .define_component(Ident::from("app"))
             .expect("failed to define component");
-        assert_eq!(
-            verify(quoted),
-            Err(String::from(
-                r#"component `"q"u"`: the segment `"q"u"` cannot be spelled in Miden Assembly (it contains `"` or `\`)"#
-            ))
-        );
+        for raw in [r#""app""#, r"a\b", "ü", ""] {
+            let module = world_builder
+                .declare_module(Ident::from(raw))
+                .map(|_| ())
+                .map_err(|err| err.to_string());
+            let interface = ComponentBuilder::new(component)
+                .define_interface(Ident::from(raw))
+                .map(|_| ())
+                .map_err(|err| err.to_string());
+            let expected = |kind: &str| {
+                Err(alloc::format!(
+                    "invalid {kind} name: the segment `{raw}` cannot be spelled in Miden Assembly"
+                ))
+            };
+            assert_eq!(module, expected("module"), "`{raw}`");
+            assert_eq!(interface, expected("interface"), "`{raw}`");
+        }
+        assert!(world_builder.find_module(r#""app""#.into()).is_none());
+    }
+
+    /// A symbol table uniqued on insertion gets the suffix on its raw last segment, spelled again.
+    #[test]
+    fn a_uniqued_module_name_is_spelled() {
+        use crate::{AsSymbolRef, Symbol, SymbolMap, dialects::builtin::BuiltinOpBuilder};
+
+        let mut builder = OpBuilder::new(Rc::new(Context::default()));
+        let mut module =
+            || builder.create_module(Ident::from("masm-dep")).expect("failed to create module");
+        let (first, second) = (module(), module());
+        let mut symbols = SymbolMap::default();
+        let name = Symbol::name(&*first.borrow());
+        assert_eq!(symbols.insert(name, first.as_symbol_ref()).as_str(), "\"masm-dep\"");
+        assert_eq!(symbols.insert(name, second.as_symbol_ref()).as_str(), "\"masm-dep_1\"");
+        assert_eq!(Symbol::name(&*second.borrow()).as_str(), "\"masm-dep_1\"");
     }
 
     /// The module verifier reads a quoted name for its raw segment, which must not hold `::`.

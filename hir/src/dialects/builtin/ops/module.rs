@@ -1,8 +1,7 @@
 use crate::{
     Context, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Report, Symbol,
-    SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolNameComponent, SymbolPath,
-    SymbolRef, SymbolTable, SymbolTableKind, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
-    Verify, Visibility,
+    SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolPath, SymbolRef, SymbolTable,
+    SymbolTableKind, SymbolUseList, UnsafeIntrusiveEntityRef, Usable, Verify, Visibility,
     derive::operation,
     dialects::builtin::{
         BuiltinDialect,
@@ -98,10 +97,13 @@ impl Module {
     }
 
     /// Returns the name a module given the raw segment `name` gets: its Miden Assembly spelling
-    /// (see [SymbolPath::segments_of]), e.g. `"masm-dep"` for `masm-dep`. A name already spelled
-    /// that way is returned as is.
-    pub fn canonical_name(name: SymbolName) -> SymbolName {
-        SymbolPath::join_components(&[SymbolNameComponent::Component(name)])
+    /// (see [SymbolPath::segments_of]), e.g. `"masm-dep"` for `masm-dep` and `m` for `m`.
+    ///
+    /// `name` is always read as one raw segment, never as a spelled name: `"masm-dep"` is not
+    /// the segment `masm-dep`. Returns an error when Miden Assembly cannot spell the segment (see
+    /// [SymbolPath::is_spellable]) or it contains `::`.
+    pub fn canonical_name(name: SymbolName) -> Result<SymbolName, Report> {
+        SymbolPath::table_name(SymbolTableKind::Module, name)
     }
 
     /// Returns an error when `name` cannot name a module: it is not the Miden Assembly spelling of
@@ -114,8 +116,8 @@ impl Module {
     }
 }
 
-/// Modules are built through the builtin builders, which spell and validate their names; parsed
-/// input is not, so the name is checked here as well.
+/// Modules are built through the builtin builders and the parser, which spell and validate their
+/// names; a name set afterwards is not, so it is checked here as well.
 impl Verify<dyn SymbolTable> for Module {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
         Self::validate_name(Symbol::name(self))
@@ -152,7 +154,7 @@ impl OpParser for Module {
         state: &mut crate::OperationState,
         parser: &mut dyn crate::OpAsmParser<'_>,
     ) -> crate::ParseResult {
-        use crate::parse::Token;
+        use crate::parse::{ParserError, Token};
 
         let visibility = parser
             .parse_keyword_from(&[
@@ -170,7 +172,11 @@ impl OpParser for Module {
 
         // The name is the Miden Assembly spelling of the parsed raw segment
         let name = parser.parse_symbol_name()?;
-        let name = crate::Ident::new(Module::canonical_name(name.name), name.span);
+        let name = crate::Ident::new(
+            Module::canonical_name(name.name)
+                .map_err(|err| ParserError::invalid_symbol_table_name(name.span, err))?,
+            name.span,
+        );
         state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
 
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;

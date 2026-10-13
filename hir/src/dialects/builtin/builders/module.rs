@@ -2,12 +2,12 @@ use alloc::format;
 
 use super::BuiltinOpBuilder;
 use crate::{
-    AsCallableSymbolRef, Builder, BuilderExt, Ident, Op, OpBuilder, Report, SourceSpan, Spanned,
-    SymbolName, SymbolTable, Type, UnsafeIntrusiveEntityRef, Visibility,
+    AsCallableSymbolRef, Builder, BuilderExt, Ident, Op, OpBuilder, Report, SourceSpan, SymbolName,
+    SymbolTable, Type, UnsafeIntrusiveEntityRef, Visibility,
     constants::ConstantData,
     dialects::builtin::{
         Function, FunctionRef, FunctionTableEntry, FunctionTableRef, GlobalVariable,
-        GlobalVariableRef, Module, ModuleRef, PrimModuleBuilder, Segment, attributes::Signature,
+        GlobalVariableRef, Module, ModuleRef, Segment, attributes::Signature,
     },
 };
 
@@ -195,22 +195,21 @@ impl ModuleBuilder {
         })
     }
 
-    /// Declare a new nested module `name`, spelled as [Module::canonical_name] does.
-    ///
-    /// Returns an error when `name` contains `::`, see [Module::validate_name].
+    /// Declare a new nested module named by the raw segment `name`, see
+    /// [BuiltinOpBuilder::create_module].
     pub fn declare_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
-        let name = Ident::new(Module::canonical_name(name.name), name.span);
-        Module::validate_name(name.name)?;
-        let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
-        let module_ref = builder(name)?;
-        Ok(module_ref)
+        self.builder.create_module(name)
     }
 
-    /// Resolve a nested module with `name`, if declared/defined
+    /// Resolve the nested module named by the raw segment `name` (see [Module::canonical_name]),
+    /// if declared/defined
     pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
-        self.module.borrow().get(Module::canonical_name(name)).and_then(|symbol_ref| {
-            let op = symbol_ref.borrow();
-            op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
-        })
+        self.module
+            .borrow()
+            .get(Module::canonical_name(name).ok()?)
+            .and_then(|symbol_ref| {
+                let op = symbol_ref.borrow();
+                op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
+            })
     }
 }
