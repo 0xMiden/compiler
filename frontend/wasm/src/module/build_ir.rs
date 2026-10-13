@@ -514,7 +514,7 @@ mod tests {
                 world: Some(world),
                 ..Default::default()
             };
-            let Err(err) = translate(&wasm, &config, context) else {
+            let Err(err) = translate(&wasm, &config, context.clone()) else {
                 panic!("translation of `{name}` should fail");
             };
             let expected =

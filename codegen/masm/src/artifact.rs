@@ -205,10 +205,15 @@ impl MasmComponent {
         // Re-rooting is correct rather than merely expedient, for that same reason. The target's
         // namespace is the name the author *did* choose, and is where they expect this library's
         // procedures to be addressable from; the root being replaced is one the compiler picked
-        // on their behalf and never told them about. A component is left exactly where it is:
+        // on their behalf and never told them about. A component keeps its declared namespace:
         // its path is part of the code's own identity (the frontend roots it at the target
         // namespace in the first place), and moving it would silently rename the procedures every
         // dependent addresses.
+        //
+        // Equivalent namespaces can still differ in quoting. Use the target's exact spelling in
+        // that case, including in support modules and calls: this preserves the namespace's
+        // identity while satisfying the assembler's string comparison. `strip_prefix` compares
+        // raw segments, so a quoted segment containing `::` stays distinct from a path separator.
         //
         // Nothing is done here for an executable, which is handled above: its root is discarded
         // in favor of the generated `$exec` module, so its namespace already agrees.
@@ -226,7 +231,10 @@ impl MasmComponent {
         // only read by `generate_main` on the executable branch above — so they are left as they
         // are rather than rewritten to no effect.
         let namespace = target.namespace.inner();
-        if self.has_no_authored_identity() && self.root.as_ref() != namespace.as_ref() {
+        if self.root.as_ref() != namespace.as_ref()
+            && (self.has_no_authored_identity()
+                || self.root.strip_prefix(namespace).is_some_and(|rest| rest.is_empty()))
+        {
             let mut rebase = Rebase {
                 from: &self.root,
                 to: namespace,
@@ -249,8 +257,9 @@ impl MasmComponent {
     /// placeholder constant `::init` for zero or several top-level modules, and that module's own
     /// name for exactly one.
     ///
-    /// Every component is the complement, and is left where it is: its path is part of the
-    /// code's identity, and moving it would rename the procedures every dependent addresses. This
+    /// Every component is the complement, and keeps its namespace identity: moving it to a
+    /// different namespace would rename the procedures every dependent addresses. Its path may
+    /// still be respelled to match an equivalent target namespace in [`Self::source_inputs`]. This
     /// includes the synthetic wrapper the Wasm frontend builds around a *core* Wasm module, which
     /// the frontend already roots at the target namespace.
     ///
@@ -441,7 +450,22 @@ impl Rebase<'_> {
 
     /// The path `path` becomes under [`Self::to`], or `None` if it is not under [`Self::from`].
     fn rebase(&self, path: &Path) -> Option<masm::LibraryPath> {
-        path.strip_prefix(self.from).map(|rest| self.to.join(rest))
+        path.strip_prefix(self.from).map(|rest| {
+            let mut rebased = self.to.to_path_buf();
+            for component in rest.components() {
+                match component.expect("invalid path suffix") {
+                    // Preserve the spelling: `as_str()` would unquote a literal `"::"`, which
+                    // `push_component` would then mistake for a root marker.
+                    masm::LibraryPathComponent::Normal(spelling) => {
+                        rebased.push_component(spelling)
+                    }
+                    masm::LibraryPathComponent::Root => {
+                        unreachable!("a stripped absolute prefix leaves a relative suffix")
+                    }
+                }
+            }
+            rebased
+        })
     }
 
     /// Move `target` under [`Self::to`] if it names something in the component, reporting whether
@@ -869,6 +893,67 @@ mod tests {
                  called"
             );
             assert_eq!(paths(&sources.support[0]), expected);
+        }
+
+        #[test]
+        fn equivalent_namespace_spellings_use_the_targets_spelling() {
+            for synthetic_wrapper in [false, true] {
+                let context = context();
+                let target = Target::library(
+                    Arc::<Path>::from(Path::new("::\"acme\"::pkg::app")),
+                    Uri::new("lib.wasm"),
+                );
+                let mut component = component(SymbolPath::from_masm_module_id("acme::pkg::app"));
+                component.synthetic_wrapper = synthetic_wrapper;
+                let child = Arc::make_mut(&mut component.modules[1]);
+                let source_manager = context.session().source_manager.clone();
+                child.define_procedure(procedure("\"::\"", []), source_manager.clone()).unwrap();
+                child
+                    .define_procedure(
+                        procedure(
+                            "literal_caller",
+                            [Path::new("::acme::pkg::app::child::\"::\"").to_path_buf()],
+                        ),
+                        source_manager,
+                    )
+                    .unwrap();
+                let decorated = decorations(&component.modules[1], "caller");
+
+                let sources = component.source_inputs(&target, context.session()).unwrap();
+
+                assert_eq!(sources.root.path(), target.namespace.inner().as_ref());
+                assert_eq!(
+                    paths(&sources.support[0]),
+                    vec![
+                        "::\"acme\"::pkg::app::child",
+                        "::\"acme\"::pkg::app::child::callee",
+                        "::intrinsics::mem::heap_init",
+                        "::\"acme\"::pkg::app::child::callee",
+                        "::intrinsics::mem::heap_init",
+                        "::\"acme\"::pkg::app::child::\"::\"",
+                        "::\"acme\"::pkg::app::child::\"::\"",
+                    ],
+                );
+                assert_eq!(decorations(&sources.support[0], "caller"), decorated);
+            }
+        }
+
+        #[test]
+        fn quoted_separators_do_not_make_distinct_namespaces_equivalent() {
+            for (root, namespace) in
+                [("acme::pkg::app", "::\"acme::pkg\"::app"), ("app", "::\"::\"::app")]
+            {
+                let context = context();
+                let target =
+                    Target::library(Arc::<Path>::from(Path::new(namespace)), Uri::new("lib.wasm"));
+                let component = component(SymbolPath::from_masm_module_id(root));
+                let expected = paths(&component.modules[1]);
+
+                let sources = component.source_inputs(&target, context.session()).unwrap();
+
+                assert_eq!(sources.root.path(), component.root.as_ref());
+                assert_eq!(paths(&sources.support[0]), expected);
+            }
         }
 
         /// A component-less world's library is rooted at the target's namespace too.
