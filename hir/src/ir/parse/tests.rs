@@ -583,9 +583,9 @@ builtin.world {
     );
 }
 
-/// A component prints its name as a symbol path, one segment per segment of the name's canonical
-/// key (see `SymbolPath::to_symbol_name`), quoting a segment that is not a bare identifier, and
-/// that text parses back to the same name.
+/// A component prints its name as a symbol path, one raw segment per segment of the name (see
+/// `SymbolPath::to_symbol_name`), quoting a segment that is not a bare HIR identifier, and that
+/// text parses back to the same name: the Miden Assembly spelling of the segments.
 #[test]
 fn component_name_roundtrips_through_the_printer() -> TestResult {
     use crate::{
@@ -594,16 +594,20 @@ fn component_name_roundtrips_through_the_printer() -> TestResult {
     };
 
     let test = ParserTest::default();
-    for (name, header) in [
-        ("miden::a::b", "builtin.component private @miden::@a::@b {"),
-        ("hir_ns:test@1.0.0", "builtin.component private @\"hir_ns:test@1.0.0\" {"),
-        ("$kernel", "builtin.component private @\"$kernel\" {"),
-        ("1st", "builtin.component private @\"1st\" {"),
-        ("a-b", "builtin.component private @\"a-b\" {"),
-        (r#"q"u\o\"te"#, r#"builtin.component private @"q\"u\\o\\\"te" {"#),
+    for (raw, name, header) in [
+        ("miden::a::b", "miden::a::b", "builtin.component private @miden::@a::@b {"),
+        (
+            "hir_ns:test@1.0.0",
+            "\"hir_ns:test@1.0.0\"",
+            "builtin.component private @\"hir_ns:test@1.0.0\" {",
+        ),
+        ("$kernel", "$kernel", "builtin.component private @\"$kernel\" {"),
+        ("1st", "\"1st\"", "builtin.component private @\"1st\" {"),
+        ("a-b", "\"a-b\"", "builtin.component private @\"a-b\" {"),
     ] {
         let world = test.context_rc().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
-        let component = WorldBuilder::new(world).define_component(name.into())?;
+        let component = WorldBuilder::new(world).define_component(raw.into())?;
+        assert_eq!(Symbol::name(&*component.borrow()).as_str(), name);
 
         let flags = Default::default();
         let mut printer = AsmPrinter::new(test.context_rc(), &flags);
@@ -644,6 +648,7 @@ fn component_name_with_a_quoted_segment_roundtrips_through_the_printer() -> Test
     );
 
     let reparsed = test.parse::<Component>("component_roundtrip.hir", &printed)?;
+    assert_eq!(Symbol::name(&*reparsed.borrow()).as_str(), r#""acme::pkg"::app"#);
     let namespace = reparsed.borrow().namespace_path();
     assert_eq!(namespace, path);
     assert_eq!(namespace.components().len(), 3, "the root and two segments: {namespace:?}");

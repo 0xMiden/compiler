@@ -2,9 +2,9 @@ mod interface;
 
 pub use self::interface::{ComponentExport, ComponentInterface, ModuleExport, ModuleInterface};
 use crate::{
-    Ident, IdentAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol,
-    SymbolManager, SymbolManagerMut, SymbolMap, SymbolNameComponent, SymbolPath, SymbolRef,
-    SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable, Visibility,
+    Context, Ident, IdentAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface,
+    Report, Symbol, SymbolManager, SymbolManagerMut, SymbolMap, SymbolNameComponent, SymbolPath,
+    SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable, Verify, Visibility,
     derive::operation,
     dialects::builtin::{BuiltinDialect, attributes::VisibilityAttr},
     interner,
@@ -127,7 +127,7 @@ impl OpParser for Component {
         state
             .add_attribute("visibility", context.create_attribute::<VisibilityAttr, _>(visibility));
 
-        // The name is the canonical key of the whole (possibly multi-segment) path (see
+        // The name is the Miden Assembly spelling of the whole (possibly multi-segment) path (see
         // `SymbolPath::to_symbol_name`)
         let (span, path) = parser.parse_symbol_path()?.into_parts();
         let name = path.to_symbol_name();
@@ -141,6 +141,14 @@ impl OpParser for Component {
         state.add_region(region);
 
         Ok(())
+    }
+}
+
+/// Components are built through `WorldBuilder`, which spells their names; parsed input is not, so
+/// the name is checked here as well (see [SymbolPath::segments_of]).
+impl Verify<dyn SymbolTable> for Component {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        SymbolPath::spelled_segments("component", Symbol::name(self)).map(|_| ())
     }
 }
 

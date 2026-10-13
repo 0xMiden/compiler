@@ -1,6 +1,6 @@
 builtin.module private @noname attributes { reserved_memory = #builtin.u64<65536> } {
     builtin.function private extern("C") @"my-lib::add"(%0: felt, %1: felt) -> felt {
-        %2 = hir.exec ::@"\"my-lib\""::@add(%0, %1) : extern("C") (felt, felt) -> felt;
+        %2 = hir.exec ::@"my-lib"::@add(%0, %1) : extern("C") (felt, felt) -> felt;
         cf.br ^block5(%2 : felt);
     ^block5(%3: felt):
         builtin.ret %3 : (felt);

@@ -1,5 +1,5 @@
-//! The quoted spelling of a name shared by the HIR printer, the lexer and canonical component
-//! keys: `"..."`, with `"` and `\` escaped by a `\`.
+//! The quoted spelling of a HIR symbol name shared by the HIR printer and the lexer: `"..."`, with
+//! `"` and `\` escaped by a `\`.
 
 use alloc::string::String;
 

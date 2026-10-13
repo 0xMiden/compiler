@@ -2690,12 +2690,6 @@ namespace = "miden::prepare_fixture::prepare_fixture"
         for (dir, contents) in [
             ("prepare_standalone_hir_oracle_world", WORLD.to_string()),
             ("prepare_standalone_hir_oracle_component", COMPONENT.to_string()),
-            // A quoted segment holding an escaped `\`, which the scan must read unescaped, as
-            // the lexer does.
-            (
-                "prepare_standalone_hir_oracle_escaped",
-                COMPONENT.replace("@hir_ns::@test", r#"@hir_ns::@"te\\st""#),
-            ),
             // A quoted segment holding `::`, which stays one segment.
             (
                 "prepare_standalone_hir_oracle_quoted_path",

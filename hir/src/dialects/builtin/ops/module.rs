@@ -2,8 +2,8 @@ use alloc::format;
 
 use crate::{
     Context, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Report, Symbol,
-    SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
-    UnsafeIntrusiveEntityRef, Usable, Verify, Visibility,
+    SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolNameComponent, SymbolPath,
+    SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable, Verify, Visibility,
     derive::operation,
     dialects::builtin::{
         BuiltinDialect,
@@ -98,23 +98,34 @@ impl Module {
         unsafe { ModuleRef::from_raw(self) }
     }
 
-    /// Returns an error when `name` cannot name a module because it contains `::`.
+    /// Returns the name a module given the raw segment `name` gets: its Miden Assembly spelling
+    /// (see [SymbolPath::segments_of]), e.g. `"masm-dep"` for `masm-dep`. A name already spelled
+    /// that way is returned as is.
+    pub fn canonical_name(name: SymbolName) -> SymbolName {
+        SymbolPath::join_components(&[SymbolNameComponent::Component(name)])
+    }
+
+    /// Returns an error when `name` cannot name a module: it is not the Miden Assembly spelling of
+    /// one raw segment (see [SymbolPath::segments_of]), or that segment contains `::`.
     ///
     /// Only components are named by `::`-joined paths: a module's name is a single segment of the
     /// path of every symbol it contains.
     pub fn validate_name(name: SymbolName) -> Result<(), Report> {
-        if name.as_str().contains("::") {
-            return Err(Report::msg(format!(
-                "module `{name}`: a module name cannot contain `::` (only components are named by \
-                 `::`-joined paths)"
-            )));
-        }
-        Ok(())
+        let segments = SymbolPath::spelled_segments("module", name)?;
+        let segment = match segments.as_slice() {
+            [segment] if !segment.as_str().contains("::") => return Ok(()),
+            [segment] => *segment,
+            _ => name,
+        };
+        Err(Report::msg(format!(
+            "module `{segment}`: a module name cannot contain `::` (only components are named by \
+             `::`-joined paths)"
+        )))
     }
 }
 
-/// Modules are built through the builtin builders, which validate their names; parsed input is
-/// not, so the name is checked here as well.
+/// Modules are built through the builtin builders, which spell and validate their names; parsed
+/// input is not, so the name is checked here as well.
 impl Verify<dyn SymbolTable> for Module {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
         Self::validate_name(Symbol::name(self))
@@ -128,7 +139,12 @@ impl OpPrinter for Module {
         printer.print_space();
         printer.print_keyword(self.get_visibility().as_str());
         printer.print_space();
-        printer.print_symbol_name(self.get_name().as_symbol());
+        // Printed as its raw segment, which the parser re-spells
+        let name = self.get_name().as_symbol();
+        match SymbolPath::segments_of(name).as_slice() {
+            [segment] => printer.print_symbol_name(*segment),
+            _ => printer.print_symbol_name(name),
+        }
         printer.print_space();
         if self.op.has_attributes() {
             *printer += const_text("attributes ");
@@ -162,7 +178,9 @@ impl OpParser for Module {
             parser.context_rc().create_attribute::<VisibilityAttr, _>(visibility),
         );
 
+        // The name is the Miden Assembly spelling of the parsed raw segment
         let name = parser.parse_symbol_name()?;
+        let name = crate::Ident::new(Module::canonical_name(name.name), name.span);
         state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
 
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
@@ -176,8 +194,9 @@ impl OpParser for Module {
 }
 
 impl midenc_session::Emit for Module {
+    /// The raw segment of the module name, which is file-name friendly.
     fn name(&self) -> Option<midenc_hir_symbol::Symbol> {
-        Some(self.name().as_symbol())
+        SymbolPath::segments_of(self.name().as_symbol()).last().copied()
     }
 
     fn output_type(&self, _mode: midenc_session::OutputMode) -> midenc_session::OutputType {

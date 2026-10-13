@@ -32,20 +32,24 @@ impl ComponentBuilder {
         self.builder.create_interface(name)
     }
 
-    /// Define a new module `name` in this component.
+    /// Define a new module `name` in this component, spelled as [Module::canonical_name] does.
     ///
     /// Returns an error when `name` contains `::`, see [Module::validate_name].
     pub fn define_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
+        let name = Ident::new(Module::canonical_name(name.name), name.span);
         Module::validate_name(name.name)?;
         let module_ref = self.builder.create_module(name)?;
         Ok(module_ref)
     }
 
     pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
-        self.component.borrow().get(name).and_then(|symbol_ref| {
-            let op = symbol_ref.borrow();
-            op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
-        })
+        self.component
+            .borrow()
+            .get(Module::canonical_name(name))
+            .and_then(|symbol_ref| {
+                let op = symbol_ref.borrow();
+                op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
+            })
     }
 
     pub fn resolve_module(&self, path: &SymbolPath) -> Option<ModuleRef> {

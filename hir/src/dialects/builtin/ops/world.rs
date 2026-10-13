@@ -110,13 +110,17 @@ impl World {
     pub fn reject_component_shadowing(&self, component: SymbolName) -> Result<(), Report> {
         self.reject_nested_components(component)?;
         let mut segments = SymbolPath::segments_of(component).into_iter();
-        let Some(mut module) =
-            segments.next().and_then(|first| self.get(first)).and_then(as_module)
+        let Some(mut module) = segments
+            .next()
+            .and_then(|first| self.get(Module::canonical_name(first)))
+            .and_then(as_module)
         else {
             return Ok(());
         };
         for segment in segments {
-            let Some(next) = module.borrow().get(segment).and_then(as_module) else {
+            let Some(next) =
+                module.borrow().get(Module::canonical_name(segment)).and_then(as_module)
+            else {
                 return Ok(());
             };
             module = next;

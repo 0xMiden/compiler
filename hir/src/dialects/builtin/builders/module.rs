@@ -195,10 +195,11 @@ impl ModuleBuilder {
         })
     }
 
-    /// Declare a new nested module `name`
+    /// Declare a new nested module `name`, spelled as [Module::canonical_name] does.
     ///
     /// Returns an error when `name` contains `::`, see [Module::validate_name].
     pub fn declare_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
+        let name = Ident::new(Module::canonical_name(name.name), name.span);
         Module::validate_name(name.name)?;
         let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
         let module_ref = builder(name)?;
@@ -207,7 +208,7 @@ impl ModuleBuilder {
 
     /// Resolve a nested module with `name`, if declared/defined
     pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
-        self.module.borrow().get(name).and_then(|symbol_ref| {
+        self.module.borrow().get(Module::canonical_name(name)).and_then(|symbol_ref| {
             let op = symbol_ref.borrow();
             op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
         })

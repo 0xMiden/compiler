@@ -333,7 +333,7 @@ impl SymbolMap {
                         return Some((op, &components[len..]));
                     }
                 }
-                // The canonical key of one segment, which is `first` itself unless it holds `::`
+                // The name of one segment, which is `first` itself when it is a bare identifier
                 let name = SymbolPath::join_components(&components[..1]);
                 Some((self.get_op(name)?, &components[1..]))
             }
