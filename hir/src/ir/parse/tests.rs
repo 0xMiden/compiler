@@ -744,3 +744,66 @@ fn an_unspellable_symbol_table_name_is_reported() {
         );
     }
 }
+
+/// A lone leaf naming a symbol table is its raw last segment, which `Symbol::path` gives the
+/// table and which resolves to it, from its parent and as a standalone root.
+#[test]
+fn a_lone_leaf_naming_a_symbol_table_resolves() -> TestResult {
+    use crate::{
+        Op, SymbolName, SymbolNameComponent, SymbolPath,
+        dialects::builtin::{Component, WorldBuilder},
+    };
+
+    let test = ParserTest::default();
+    let leaf = |segments: &[&str]| {
+        let (last, rest) = segments.split_last().unwrap();
+        SymbolPath::from_iter(
+            core::iter::once(SymbolNameComponent::Root)
+                .chain(rest.iter().map(|s| SymbolNameComponent::Component(SymbolName::intern(s))))
+                .chain([SymbolNameComponent::Leaf(SymbolName::intern(last))]),
+        )
+    };
+
+    // A module whose name needs quoting, in a world
+    let source = "\
+builtin.world {
+    builtin.module public @\"my-mod\" {
+    };
+};";
+    let world = test.parse_any("leaf_module.hir", source)?;
+    let world = world.try_downcast_op::<World>().expect("expected a world");
+    let module = world.borrow().resolve(&leaf(&["my-mod"])).expect("`::\"my-mod\"` resolves");
+    assert!(module.borrow().as_symbol_operation().is::<Module>());
+    let path = module.borrow().path();
+    assert_eq!(path, leaf(&["my-mod"]));
+    let flags = Default::default();
+    let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+    printer.print_symbol_path(&path);
+    assert_eq!(printer.finish().to_string(), "::@\"my-mod\"");
+
+    // A component named by several segments, in a world
+    let world = test.context_rc().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+    let component = WorldBuilder::new(world).define_component("miden::a::b".into())?;
+    let path = component.borrow().path();
+    assert_eq!(path, leaf(&["miden", "a", "b"]));
+    let resolved = world.borrow().resolve(&path).expect("`::miden::a::b` resolves");
+    assert_eq!(
+        resolved.borrow().as_symbol_operation().as_operation_ref(),
+        component.as_operation_ref()
+    );
+
+    // A standalone component, the root itself, named whole or by its raw segment
+    let source = "builtin.component private @\"hir_ns:test@1.0.0\" {\n};";
+    let component = test.parse::<Component>("leaf_root.hir", source)?;
+    let root = component.as_operation_ref();
+    let resolve = |path: &SymbolPath| {
+        component
+            .borrow()
+            .resolve(path)
+            .map(|symbol| symbol.borrow().as_symbol_operation().as_operation_ref())
+    };
+    assert_eq!(resolve(&leaf(&["hir_ns:test@1.0.0"])), Some(root));
+    assert_eq!(resolve(&leaf(&["\"hir_ns:test@1.0.0\""])), Some(root));
+    assert_eq!(resolve(&component.borrow().path()), Some(root));
+    Ok(())
+}

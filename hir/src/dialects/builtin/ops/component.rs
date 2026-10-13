@@ -278,8 +278,8 @@ impl Component {
     /// its name (see [SymbolPath::segments_of]); every symbol inside the component has it as a
     /// prefix.
     ///
-    /// Note that `Symbol::path()` of the component itself ends in a single `Leaf` holding its
-    /// whole name instead.
+    /// `Symbol::path()` of the component itself has the same segments, its last one being a
+    /// `Leaf`.
     pub fn namespace_path(&self) -> SymbolPath {
         SymbolPath::from_symbol_name(Symbol::name(self))
     }

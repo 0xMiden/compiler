@@ -36,17 +36,31 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
     fn name(&self) -> SymbolName;
     /// Get the fully-qualified (absolute) path of this symbol
     ///
-    /// The name of this symbol is the `Leaf` of the path, and is never split. Each named ancestor
-    /// symbol table contributes one `Component` per segment of its name, a canonical key (see
-    /// [SymbolPath::segments_of]), so a function `f` in module `m` of a component named
-    /// `miden::a::b` has the path `::miden::a::b::m::f`.
+    /// Each named ancestor symbol table contributes one `Component` per raw segment of its name,
+    /// the Miden Assembly spelling of those segments (see [SymbolPath::segments_of]), so a
+    /// function `f` in module `m` of a component named `miden::a::b` has the path
+    /// `::miden::a::b::m::f`.
+    ///
+    /// The name of this symbol ends the path as its `Leaf`. The name of a function or global is
+    /// opaque and is never split; the name of a symbol table is split like an ancestor's, its
+    /// raw last segment being the `Leaf`, so a module named `"my-mod"` has the leaf `my-mod` and
+    /// the component `miden::a::b` itself has the path `::miden::a::b`.
     ///
     /// # Panics
     ///
     /// This function traverses the parents of this operation to the top level. If called while
     /// mutably borrowing any of the ancestors of this operation, a panic will occur.
     fn path(&self) -> SymbolPath {
-        let mut parts = VecDeque::from_iter([SymbolNameComponent::Leaf(self.name())]);
+        let name = self.name();
+        let mut parts = VecDeque::new();
+        if self.as_symbol_operation().implements::<dyn SymbolTable>() {
+            let mut segments = SymbolPath::segments_of(name);
+            let leaf = segments.pop().unwrap_or(name);
+            parts.extend(segments.into_iter().map(SymbolNameComponent::Component));
+            parts.push_back(SymbolNameComponent::Leaf(leaf));
+        } else {
+            parts.push_back(SymbolNameComponent::Leaf(name));
+        }
         let mut symbol_table = self.as_symbol_operation().nearest_symbol_table();
 
         while let Some(parent_symbol_table) = symbol_table.take() {

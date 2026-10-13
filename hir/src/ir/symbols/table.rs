@@ -1,3 +1,4 @@
+use midenc_session::miden_assembly_syntax::ast::Ident;
 use smallvec::SmallVec;
 
 use super::{Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, generate_symbol_name};
@@ -244,9 +245,12 @@ impl SymbolMap {
             // symbols in the root namespace.
             if let Some(root_symbol) = root_op.as_trait::<dyn Symbol>() {
                 let root_name = root_symbol.name();
-                // The root symbol itself, as spelled by `Symbol::path`
-                if let [SymbolNameComponent::Leaf(name)] = components {
-                    return (*name == root_name).then_some(root);
+                // The root symbol itself, named whole; otherwise its raw segments are matched
+                // below, the last one possibly as the leaf (as `Symbol::path` spells it)
+                if let [SymbolNameComponent::Leaf(name)] = components
+                    && *name == root_name
+                {
+                    return Some(root);
                 }
                 let segments = SymbolPath::segments_of(root_name);
                 for (i, segment) in segments.iter().enumerate() {
@@ -303,23 +307,38 @@ impl SymbolMap {
     /// returns it together with the components that remain to be resolved inside it.
     ///
     /// A leading `Leaf` is looked up as-is: leaf names are opaque, even when they contain `::`.
+    /// When that misses, it is read as the raw last segment of a symbol table (see
+    /// [Symbol::path]) and looked up by its Miden Assembly spelling.
+    ///
     /// Otherwise, the lookup matches the **longest run of leading `Component`s whose canonical key
     /// is the registered name of a symbol table**, since a symbol-table op may be named by a
     /// multi-segment path (see [SymbolPath::segments_of]). For example, a component named
     /// `miden::a::b` coexists with a module tree rooted at `miden` in the same table; the path
     /// `miden::a::b::m::f` resolves through the component, because the longest registered name
-    /// wins.
+    /// wins. The run may end in the `Leaf` holding the raw last segment of the symbol table the
+    /// path names.
     fn lookup_prefix<'a>(
         &self,
         components: &'a [SymbolNameComponent],
     ) -> Option<(OperationRef, &'a [SymbolNameComponent])> {
         match components.first()? {
-            SymbolNameComponent::Leaf(name) => Some((self.get_op(*name)?, &components[1..])),
+            SymbolNameComponent::Leaf(name) => {
+                let op = self.get_op(*name).or_else(|| {
+                    if !Ident::requires_quoting(name.as_str()) {
+                        return None;
+                    }
+                    let spelled = SymbolPath::join_components(&components[..1]);
+                    self.get_op(spelled).filter(|op| op.borrow().implements::<dyn SymbolTable>())
+                })?;
+                Some((op, &components[1..]))
+            }
             SymbolNameComponent::Component(_) => {
                 let run = components
                     .iter()
                     .take_while(|c| matches!(c, SymbolNameComponent::Component(_)))
                     .count();
+                // A symbol table's own path ends in the leaf holding its last segment
+                let run = run + usize::from(components.get(run).is_some_and(|c| c.is_leaf()));
                 // Multi-segment names first, longest first; a one-segment name is the lookup of
                 // the first component below, which also covers a run of one `Component`.
                 for len in (2..=run.min(self.max_name_segments)).rev() {
