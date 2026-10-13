@@ -105,22 +105,15 @@ impl Module {
     pub fn canonical_name(name: SymbolName) -> Result<SymbolName, Report> {
         SymbolPath::table_name(SymbolTableKind::Module, name)
     }
-
-    /// Returns an error when `name` cannot name a module: it is not the Miden Assembly spelling of
-    /// one raw segment (see [SymbolPath::segments_of]), or that segment contains `::`.
-    ///
-    /// Only components are named by `::`-joined paths: a module's name is a single segment of the
-    /// path of every symbol it contains.
-    pub fn validate_name(name: SymbolName) -> Result<(), Report> {
-        SymbolPath::validate_table_name(SymbolTableKind::Module, name)
-    }
 }
 
 /// Modules are built through the builtin builders and the parser, which spell and validate their
-/// names; a name set afterwards is not, so it is checked here as well.
+/// names; a name set afterwards is not, so it is checked here as well. Only components are named
+/// by `::`-joined paths: a module's name is a single segment of the path of every symbol it
+/// contains.
 impl Verify<dyn SymbolTable> for Module {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
-        Self::validate_name(Symbol::name(self))
+        SymbolPath::validate_table_name(SymbolTableKind::Module, Symbol::name(self))
     }
 }
 
@@ -132,11 +125,7 @@ impl OpPrinter for Module {
         printer.print_keyword(self.get_visibility().as_str());
         printer.print_space();
         // Printed as its raw segment, which the parser re-spells
-        let name = self.get_name().as_symbol();
-        match SymbolPath::segments_of(name).as_slice() {
-            [segment] => printer.print_symbol_name(*segment),
-            _ => printer.print_symbol_name(name),
-        }
+        printer.print_symbol_name(SymbolPath::raw_segment(self.get_name().as_symbol()));
         printer.print_space();
         if self.op.has_attributes() {
             *printer += const_text("attributes ");
@@ -192,7 +181,7 @@ impl OpParser for Module {
 impl midenc_session::Emit for Module {
     /// The raw segment of the module name, which is file-name friendly.
     fn name(&self) -> Option<midenc_hir_symbol::Symbol> {
-        SymbolPath::segments_of(self.name().as_symbol()).last().copied()
+        Some(SymbolPath::raw_segment(self.name().as_symbol()))
     }
 
     fn output_type(&self, _mode: midenc_session::OutputMode) -> midenc_session::OutputType {

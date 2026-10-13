@@ -2615,7 +2615,7 @@ namespace = "miden::prepare_fixture::prepare_fixture"
             ),
             // A quoted name is read unescaped, as the lexer reads it: an escaped `"` does not end
             // it, and `\\` stands for one backslash. (It renders as codegen renders it; a `"` has
-            // no Miden Assembly spelling, so the component parser rejects the name first.)
+            // no Miden Assembly spelling, so preparation then rejects the namespace.)
             ("builtin.component private @\"a\\\"b\\\\c\" {\n};\n", Some("\"a\"b\\c\"")),
             // No version is invented: the name is the namespace.
             ("builtin.component internal @\"a:b\" {\n};\n", Some("\"a:b\"")),

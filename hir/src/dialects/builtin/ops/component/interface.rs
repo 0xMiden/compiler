@@ -122,8 +122,7 @@ impl ComponentInterface {
     }
 
     /// Returns the name of the component, i.e. the Miden Assembly spelling of its namespace path
-    /// (see
-    /// `SymbolPath::to_symbol_name`)
+    /// (see `SymbolPath::to_symbol_name`)
     pub fn name(&self) -> SymbolName {
         self.name
     }

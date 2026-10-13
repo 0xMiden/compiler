@@ -251,8 +251,9 @@ impl SymbolMap {
     /// children of that symbol are possibly resolvable (as we have no way to reach other symbols
     /// defined in the global namespace). In short, we only attempt to resolve absolute paths whose
     /// leading components are the raw segments of the root symbol's name, the Miden Assembly
-    /// spelling of those segments (see [SymbolPath::segments_of]). If they do, then the symbol is resolved normally from there,
-    /// otherwise `None` is returned.
+    /// spelling of those segments (see [SymbolPath::segments_of]), the last one possibly as the
+    /// leaf. If they are, then the symbol is resolved normally from there, otherwise `None` is
+    /// returned.
     ///
     /// Path components are matched against symbol names as described in
     /// [SymbolMap::lookup_prefix].

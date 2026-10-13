@@ -64,11 +64,7 @@ impl OpPrinter for Interface {
     fn print(&self, printer: &mut crate::print::AsmPrinter<'_>) {
         printer.print_space();
         // Printed as its raw segment, which the parser re-spells
-        let name = self.get_name().as_symbol();
-        match SymbolPath::segments_of(name).as_slice() {
-            [segment] => printer.print_symbol_name(*segment),
-            _ => printer.print_symbol_name(name),
-        }
+        printer.print_symbol_name(SymbolPath::raw_segment(self.get_name().as_symbol()));
         printer.print_space();
         printer.print_region(&self.body());
     }
@@ -179,7 +175,7 @@ impl SymbolTable for Interface {
 /// their names; a name set afterwards is not, so it is checked here as well.
 impl Verify<dyn SymbolTable> for Interface {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
-        Self::validate_name(Symbol::name(self))
+        SymbolPath::validate_table_name(SymbolTableKind::Interface, Symbol::name(self))
     }
 }
 
@@ -192,12 +188,6 @@ impl Interface {
     /// [SymbolPath::is_spellable]) or it contains `::`.
     pub fn canonical_name(name: SymbolName) -> Result<SymbolName, Report> {
         SymbolPath::table_name(SymbolTableKind::Interface, name)
-    }
-
-    /// Returns an error when `name` cannot name an interface: it is not the Miden Assembly
-    /// spelling of one raw segment (see [SymbolPath::segments_of]), or that segment contains `::`.
-    pub fn validate_name(name: SymbolName) -> Result<(), Report> {
-        SymbolPath::validate_table_name(SymbolTableKind::Interface, name)
     }
 
     /// Get the Miden Assembly [LibraryPath] that uniquely identifies this interface.

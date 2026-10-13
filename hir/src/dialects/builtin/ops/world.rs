@@ -150,8 +150,7 @@ impl World {
 
     /// Returns the name of the world-level component named by the module path `path`, given as
     /// its Miden Assembly spelling (see [SymbolPath::to_symbol_name]), or by a segment-prefix of
-    /// it, i.e.
-    /// the component that would shadow a module tree reaching `path`.
+    /// it, i.e. the component that would shadow a module tree reaching `path`.
     pub(crate) fn component_shadowing(&self, path: SymbolName) -> Option<SymbolName> {
         let body = self.body();
         if body.is_empty() {

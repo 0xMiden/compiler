@@ -330,11 +330,15 @@ pub enum ParserError {
         span: SourceSpan,
         key: CompactString,
     },
+    /// The name of a component, module or interface cannot name it, e.g. Miden Assembly cannot
+    /// spell one of its segments.
     #[error("{reason}")]
     #[diagnostic()]
     InvalidSymbolTableName {
+        /// The span of the name
         #[label("this name is invalid")]
         span: SourceSpan,
+        /// Why the name is invalid
         reason: String,
     },
     #[error(transparent)]

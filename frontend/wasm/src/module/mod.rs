@@ -342,6 +342,18 @@ impl Module {
             .expect("No module name in the name section and no fallback name is set")
     }
 
+    /// Returns where [`Self::name`] comes from, for diagnostics: the name override, the module's
+    /// name section, or the fallback name (the file name).
+    pub fn name_origin(&self) -> &'static str {
+        if self.name_override.is_some() {
+            "the name override"
+        } else if self.name_section.module_name.is_some() {
+            "the module's name section"
+        } else {
+            "the file name"
+        }
+    }
+
     /// Returns the linkage name of the given function, unique within the module (see
     /// [`Self::resolve_func_symbols`]).
     ///

@@ -647,13 +647,24 @@ pub trait Parser<'input> {
     /// If `context` is provided with the name of an attribute, then the use of this symbol will
     /// be tracked for the current operation.
     fn parse_symbol_path(&mut self) -> ParseResult<Span<SymbolPath>> {
-        let start = self.current_location();
+        // The span runs from the first token of the path to the end of its last identifier; the
+        // lexer has already peeked past both
+        let root_start = match self.token_stream_mut().peek()? {
+            Some((start, Token::ColonColon, _)) => Some(start),
+            _ => None,
+        };
         let mut components = SmallVec::<[SymbolNameComponent; 2]>::new_const();
         if self.token_stream_mut().next_if_eq(Token::ColonColon)? {
             components.push(SymbolNameComponent::Root);
         }
+        let mut span = None::<SourceSpan>;
         loop {
             let component = self.parse_at_identifier()?;
+            let first = *span.get_or_insert(component.span);
+            span = Some(SourceSpan::new(
+                first.source_id(),
+                root_start.unwrap_or(first.start().to_u32())..component.span.end().to_u32(),
+            ));
             if self.token_stream_mut().next_if_eq(Token::ColonColon)? {
                 components.push(SymbolNameComponent::Component(component.name));
             } else {
@@ -661,8 +672,7 @@ pub trait Parser<'input> {
                 break;
             }
         }
-        let end = self.token_stream().current_position();
-        let span = SourceSpan::new(start.source_id(), start.start()..end);
+        let span = span.expect("a path has at least one identifier");
 
         let path = SymbolPath::new(components).map_err(|err| {
             ParserError::Report(RelatedError::new(Report::from(diagnostic!(

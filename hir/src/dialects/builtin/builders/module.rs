@@ -204,12 +204,7 @@ impl ModuleBuilder {
     /// Resolve the nested module named by the raw segment `name` (see [Module::canonical_name]),
     /// if declared/defined
     pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
-        self.module
-            .borrow()
-            .get(Module::canonical_name(name).ok()?)
-            .and_then(|symbol_ref| {
-                let op = symbol_ref.borrow();
-                op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
-            })
+        let name = Module::canonical_name(name).ok()?;
+        (&*self.module.borrow() as &dyn SymbolTable).find::<Module>(name)
     }
 }

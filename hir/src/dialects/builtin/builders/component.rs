@@ -43,13 +43,8 @@ impl ComponentBuilder {
     /// Resolve the module named by the raw segment `name` in this component (see
     /// [Module::canonical_name]), if defined.
     pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
-        self.component
-            .borrow()
-            .get(Module::canonical_name(name).ok()?)
-            .and_then(|symbol_ref| {
-                let op = symbol_ref.borrow();
-                op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
-            })
+        let name = Module::canonical_name(name).ok()?;
+        (&*self.component.borrow() as &dyn SymbolTable).find::<Module>(name)
     }
 
     pub fn resolve_module(&self, path: &SymbolPath) -> Option<ModuleRef> {

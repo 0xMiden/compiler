@@ -78,8 +78,7 @@ pub struct ComponentTranslator<'a> {
 
     /// The name of the component being translated (the Miden Assembly spelling of its namespace
     /// path, see `SymbolPath::to_symbol_name`), which every import other than an FPI or dyncall
-    /// import must
-    /// lie outside of.
+    /// import must lie outside of.
     namespace: SymbolName,
 
     context: Rc<Context>,
@@ -176,8 +175,8 @@ impl<'a> ComponentTranslator<'a> {
     }
 
     /// Creates a translator that defines the component `name` (the Miden Assembly spelling of
-    /// its namespace path) in the configured world, or in a new one, naming the lifted exports of the
-    /// root-exported nested components by `export_paths`.
+    /// its namespace path) in the configured world, or in a new one, naming the lifted exports of
+    /// the root-exported nested components by `export_paths`.
     pub fn new(
         name: SymbolName,
         export_paths: ExportPaths<'a>,
@@ -1358,7 +1357,11 @@ fn canon_lower_from_alias_export(
         let mut cm_path = module_path.clone();
         cm_path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));
 
-        log::debug!(target: "component-translator", "Created signature for '{func_name}' from type information: {}", func_ty.ir);
+        log::debug!(
+            target: "component-translator",
+            "Created signature for '{func_name}' from type information: {}",
+            func_ty.ir
+        );
 
         Ok((func_ty, cm_path, miden_path))
     } else {
