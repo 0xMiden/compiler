@@ -1,5 +1,6 @@
 use alloc::{borrow::Cow, vec::Vec};
 
+use midenc_hir::SymbolPath;
 use midenc_session::RemapPathPrefix;
 
 /// Configuration for the WASM translation.
@@ -31,6 +32,8 @@ pub struct WasmTranslationConfig {
     /// nothing else. `None` means no package is linked, which is what standalone unit tests want:
     /// a stub rooted in the `miden` namespace is then reported as unresolvable.
     pub linked_packages: Option<alloc::sync::Arc<[midenc_package_interface::PackageInterface]>>,
+    /// The target namespace the component must be rooted at, when the build knows it.
+    pub namespace: Option<SymbolPath>,
 }
 
 impl core::fmt::Debug for WasmTranslationConfig {
@@ -44,6 +47,7 @@ impl core::fmt::Debug for WasmTranslationConfig {
             .field("generate_native_debuginfo", &self.generate_native_debuginfo)
             .field("parse_wasm_debuginfo", &self.parse_wasm_debuginfo)
             .field("linked_packages", &self.linked_packages.as_ref().map(|p| p.len()))
+            .field("namespace", &self.namespace)
             .finish()
     }
 }
@@ -58,6 +62,7 @@ impl Default for WasmTranslationConfig {
             generate_native_debuginfo: false,
             parse_wasm_debuginfo: true,
             linked_packages: None,
+            namespace: None,
         }
     }
 }

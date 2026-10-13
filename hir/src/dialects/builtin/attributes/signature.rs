@@ -191,12 +191,12 @@ impl AbiParam {
 
     pub fn zext(ty: Type, context: &Rc<Context>) -> Self {
         let zext = context.create_attribute::<ZextAttr, _>(());
-        Self::new_with_attrs(ty, [NamedAttribute::new("extension", zext)])
+        Self::new_with_attrs(ty, [NamedAttribute::new(crate::interner::symbols::Extension, zext)])
     }
 
     pub fn sext(ty: Type, context: &Rc<Context>) -> Self {
         let sext = context.create_attribute::<SextAttr, _>(());
-        Self::new_with_attrs(ty, [NamedAttribute::new("extension", sext)])
+        Self::new_with_attrs(ty, [NamedAttribute::new(crate::interner::symbols::Extension, sext)])
     }
 
     pub fn sret(ty: Type, context: &Rc<Context>) -> Self {
@@ -215,11 +215,11 @@ impl AbiParam {
     }
 
     pub fn is_sret_param(&self) -> bool {
-        self.attrs.contains("sret")
+        self.attrs.contains(&crate::interner::symbols::Sret)
     }
 
     pub fn extension(&self) -> ArgumentExtension {
-        match self.attrs.find("extension").get() {
+        match self.attrs.find(&crate::interner::symbols::Extension).get() {
             None => ArgumentExtension::None,
             Some(attr) => {
                 let value = attr.value.borrow();

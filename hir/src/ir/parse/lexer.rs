@@ -409,7 +409,16 @@ impl<'input> Lexer<'input> {
             let Token::String(s) = self.lex_string()? else {
                 unreachable!()
             };
-            Ok(Token::AtIdent(s))
+            if !s.contains('\\') {
+                return Ok(Token::AtIdent(s));
+            }
+            // The printer escapes `"` and `\` in a quoted symbol name, and nothing else. The
+            // current token runs from after the opening quote through the closing one, which is
+            // what `unescape_quoted` reads. The unescaped name is interned, as the token cannot
+            // borrow it from the input.
+            let (name, _) = crate::unescape_quoted(self.slice())
+                .expect("`lex_string` returns a string only once its quote is closed");
+            Ok(Token::AtIdent(crate::interner::Symbol::intern(name).as_str()))
         } else {
             let Token::BareIdent(s) = self.lex_identifier()? else {
                 unreachable!()
@@ -489,7 +498,7 @@ impl<'input> Lexer<'input> {
                     is_identifier = false;
                     self.skip();
                     match self.read() {
-                        '"' | '\n' => {
+                        '"' | '\\' | '\n' => {
                             self.skip();
                         }
                         _ => (),

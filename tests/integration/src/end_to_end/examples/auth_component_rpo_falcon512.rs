@@ -13,7 +13,7 @@ fn auth_component_rpo_falcon512() {
     );
     let auth_comp_package = test.compile_package();
     assert!(auth_comp_package.is_library());
-    assert_unique_protocol_export(auth_comp_package.as_ref(), "auth_script", "check-signature");
+    assert_unique_protocol_export(auth_comp_package.as_ref(), "auth_script", "check_signature");
 
     // Test that the package loads
     let bytes = auth_comp_package.to_bytes();

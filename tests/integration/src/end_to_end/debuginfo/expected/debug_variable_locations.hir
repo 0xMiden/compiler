@@ -1,4 +1,4 @@
-builtin.component private @root_ns:root@1.0.0 {
+builtin.component private @test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b {
     builtin.module private @test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b attributes { reserved_memory = #builtin.u64<1114112> } {
         builtin.function private extern("C") @__wasm_call_ctors() {
             cf.br ^block6;
@@ -6,7 +6,7 @@ builtin.component private @root_ns:root@1.0.0 {
             builtin.ret;
         } attributes { di.compile_unit = #di.compile_unit<{ language = "wasm", file = "unknown", producer = "midenc-frontend-wasm", optimized = false }>, di.subprogram = #di.subprogram<{ name = "__wasm_call_ctors", file = "unknown", line = 0, definition = true, local = false }> };
         builtin.function public extern("C") @_initialize() {
-            %0 = builtin.global_symbol ::@root_ns:root@1.0.0::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@__memory_base : ptr<u8, byte>;
+            %0 = builtin.global_symbol ::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@__memory_base : ptr<u8, byte>;
             %1 = hir.bitcast %0 <{ ty = #builtin.type<ptr<i32, byte>> }>;
             %2 = hir.load %1;
             %3 = arith.constant 1048576 : i32;
@@ -27,7 +27,7 @@ builtin.component private @root_ns:root@1.0.0 {
         ^block8:
             builtin.ret;
         ^block9:
-            %18 = builtin.global_symbol ::@root_ns:root@1.0.0::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@__memory_base : ptr<u8, byte>;
+            %18 = builtin.global_symbol ::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@__memory_base : ptr<u8, byte>;
             %19 = hir.bitcast %18 <{ ty = #builtin.type<ptr<i32, byte>> }>;
             %20 = hir.load %19;
             %21 = arith.constant 1048576 : i32;
@@ -39,7 +39,7 @@ builtin.component private @root_ns:root@1.0.0 {
             %28 = hir.assertz %26 <{ code = #builtin.u32<250>, message = #builtin.string<""> }>;
             %29 = hir.int_to_ptr %27 <{ ty = #builtin.type<ptr<i32, element>> }>;
             hir.store %29, %23 : (ptr<i32, element>, i32);
-            hir.exec ::@root_ns:root@1.0.0::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@__wasm_call_ctors() : extern("C") () -> ();
+            hir.exec ::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@__wasm_call_ctors() : extern("C") () -> ();
             cf.br ^block8;
         ^block10:
             ub.unreachable;
@@ -49,7 +49,7 @@ builtin.component private @root_ns:root@1.0.0 {
             di.debug_declare <{ variable = #di.variable<{ name = "n", file = "test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b.rs", line = 19, arg = 0, ty = i32 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 1+12)]> }>;
             di.debug_declare <{ variable = #di.variable<{ name = "sum", file = "test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b.rs", line = 20 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 1+4)]> }>;
             di.debug_declare <{ variable = #di.variable<{ name = "i", file = "test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b.rs", line = 21 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 1+8)]> }>;
-            %32 = builtin.global_symbol ::@root_ns:root@1.0.0::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@__stack_pointer : ptr<u8, byte>;
+            %32 = builtin.global_symbol ::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b::@__stack_pointer : ptr<u8, byte>;
             %33 = hir.bitcast %32 <{ ty = #builtin.type<ptr<i32, byte>> }>;
             %34 = hir.load %33;
             %35 = arith.constant 16 : i32;

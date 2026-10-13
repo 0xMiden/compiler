@@ -298,6 +298,7 @@ pub(crate) fn cargo_build(
     crate::pipeline::frontends::rust::compile_manifest(
         &manifest_path,
         filesystem_cache_dir,
+        crate::pipeline::frontends::wasm::target_namespace(target),
         context,
         dependencies,
     )

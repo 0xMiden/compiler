@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "note"
-namespace = "miden:counter-note/miden-counter-note@0.1.0"
+namespace = "miden::counter_note::counter_note"
 path = "src/lib.rs"
 
 [profile.release]

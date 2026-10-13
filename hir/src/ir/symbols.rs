@@ -1,5 +1,6 @@
 mod name;
 mod path;
+mod quoting;
 mod symbol;
 mod symbol_use;
 mod table;
@@ -10,9 +11,11 @@ use core::ptr::{DynMetadata, Pointee};
 use midenc_session::diagnostics::{Diagnostic, miette};
 use smallvec::SmallVec;
 
+pub(crate) use self::quoting::push_quoted;
 pub use self::{
     name::*,
     path::*,
+    quoting::unescape_quoted,
     symbol::{Symbol, SymbolRef},
     symbol_use::*,
     table::*,

@@ -1,7 +1,7 @@
 use crate::{
-    OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
-    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
-    UnsafeIntrusiveEntityRef, Usable, Visibility,
+    Context, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Report, Symbol,
+    SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolPath, SymbolRef, SymbolTable,
+    SymbolTableKind, SymbolUseList, UnsafeIntrusiveEntityRef, Usable, Verify, Visibility,
     derive::operation,
     dialects::builtin::{
         BuiltinDialect,
@@ -141,6 +141,26 @@ impl Module {
     pub fn as_module_ref(&self) -> ModuleRef {
         unsafe { ModuleRef::from_raw(self) }
     }
+
+    /// Returns the name a module given the raw segment `name` gets: its Miden Assembly spelling
+    /// (see [SymbolPath::segments_of]), e.g. `"masm-dep"` for `masm-dep` and `m` for `m`.
+    ///
+    /// `name` is always read as one raw segment, never as a spelled name: `"masm-dep"` is not
+    /// the segment `masm-dep`. Returns an error when Miden Assembly cannot spell the segment (see
+    /// [SymbolPath::is_spellable]) or it contains `::`.
+    pub fn canonical_name(name: SymbolName) -> Result<SymbolName, Report> {
+        SymbolPath::table_name(SymbolTableKind::Module, name)
+    }
+}
+
+/// Modules are built through the builtin builders and the parser, which spell and validate their
+/// names; a name set afterwards is not, so it is checked here as well. Only components are named
+/// by `::`-joined paths: a module's name is a single segment of the path of every symbol it
+/// contains.
+impl Verify<dyn SymbolTable> for Module {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        SymbolPath::validate_table_name(SymbolTableKind::Module, Symbol::name(self))
+    }
 }
 
 impl OpPrinter for Module {
@@ -150,7 +170,8 @@ impl OpPrinter for Module {
         printer.print_space();
         printer.print_keyword(self.get_visibility().as_str());
         printer.print_space();
-        printer.print_symbol_name(self.get_name().as_symbol());
+        // Printed as its raw segment, which the parser re-spells
+        printer.print_symbol_name(SymbolPath::raw_segment(self.get_name().as_symbol()));
         printer.print_space();
         if self.op.has_attributes() {
             *printer += const_text("attributes ");
@@ -184,8 +205,7 @@ impl OpParser for Module {
             parser.context_rc().create_attribute::<VisibilityAttr, _>(visibility),
         );
 
-        let name = parser.parse_symbol_name()?;
-        state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+        super::parse_segment_name(state, parser, SymbolTableKind::Module)?;
 
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 
@@ -198,8 +218,10 @@ impl OpParser for Module {
 }
 
 impl midenc_session::Emit for Module {
+    /// The raw segment of the module name, without the quotes of its Miden Assembly spelling
+    /// (`masm-dep` for `"masm-dep"`). It may hold any spellable character, `/` and `:` included.
     fn name(&self) -> Option<midenc_hir_symbol::Symbol> {
-        Some(self.name().as_symbol())
+        Some(SymbolPath::raw_segment(self.name().as_symbol()))
     }
 
     fn output_type(&self, _mode: midenc_session::OutputMode) -> midenc_session::OutputType {

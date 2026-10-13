@@ -1,6 +1,7 @@
 use core::{mem, str::FromStr};
 use std::rc::Rc;
 
+use midenc_frontend_wasm_metadata::namespace::RESERVED_NAMESPACE_PREFIXES;
 use midenc_hir::{
     Builder, BuilderExt, Context, FunctionIdent, FxHashMap, Ident, Op, OpBuilder, SymbolPath,
     Visibility,
@@ -9,9 +10,11 @@ use midenc_hir::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
         attributes::U64Attr,
     },
-    version::Version,
 };
-use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
+use midenc_session::{
+    diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity, SourceSpan},
+    miden_assembly_syntax::Path,
+};
 use wasmparser::Validator;
 
 use super::{
@@ -62,18 +65,39 @@ pub fn translate_module_as_component(
     };
     let mut world_builder = WorldBuilder::new(world_ref);
 
-    let ns = Ident::from("root_ns");
-    let name = Ident::from("root");
-    let ver = Version::parse("1.0.0").unwrap();
-    let mut component_ref = world_builder.define_component(ns, name, ver)?;
+    // The wrapper is rooted at the target namespace or, when there is none, at the module's name,
+    // which must neither be the reserved root `$kernel` or `$exec` nor nest with a reserved
+    // library tree (see `ensure_program_name_is_free`)
+    let module_name = parsed_module.module.name().as_str();
+    // The author did not write a component or module name, so say where the name came from. The
+    // module name is validated before the wrapper is defined, so a bad name leaves no wrapper
+    // behind in the world. A spellable name is rejected for holding `::`.
+    builtin::Module::canonical_name(module_name.into()).map_err(|err| {
+        let origin = parsed_module.module.name_origin();
+        let reason = if SymbolPath::is_spellable(module_name) {
+            "contains `::`, which a module name cannot"
+        } else {
+            "cannot be spelled in Miden Assembly"
+        };
+        err.wrap_err(format!("the Wasm module name `{module_name}` (from {origin}) {reason}"))
+    })?;
+    let component_name = match config.namespace.as_ref() {
+        Some(namespace) => namespace.to_symbol_name()?,
+        None => {
+            ensure_program_name_is_free(module_name)?;
+            // The name is one spellable segment, validated above
+            SymbolPath::from_masm_module_id(module_name).to_symbol_name()?
+        }
+    };
+    let mut component_ref =
+        world_builder.define_component(Ident::with_empty_span(component_name))?;
 
     // Mark this as the compiler's wrapper: nothing downstream should have to infer it by
-    // comparing the id, which an author may legitimately use.
+    // comparing the name, which an author may legitimately use.
     component_ref.borrow_mut().mark_synthetic_wrapper();
 
     let mut cb = ComponentBuilder::new(component_ref);
-    let module_name = parsed_module.module.name().as_str();
-    let module_ref = cb.define_module(Ident::from(module_name)).unwrap();
+    let module_ref = cb.define_module(Ident::from(module_name))?;
 
     let mut module_builder = ModuleBuilder::new(module_ref);
     let mut module_state = ModuleTranslationState::new(
@@ -82,6 +106,8 @@ pub fn translate_module_as_component(
         &mut world_builder,
         &module_types,
         FxHashMap::default(),
+        component_name,
+        &FxHashMap::default(),
         context.diagnostics(),
     )?;
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context)?;
@@ -90,6 +116,42 @@ pub fn translate_module_as_component(
         component: component_ref,
         sections,
     })
+}
+
+/// Reports an error when `module_name`, the root of the wrapper component of a program without a
+/// target namespace, is one of the reserved Miden Assembly roots `$kernel` and `$exec`, or nests
+/// with one of the library trees in [`RESERVED_NAMESPACE_PREFIXES`].
+///
+/// Only the reserved library trees are detected, not the roots of the linked packages: a program
+/// named like the root namespace of a Miden Assembly dependency it binds natively (a crate `acme`
+/// calling `acme::math::add`) gets a wrapper component `acme` that shadows the dependency's module
+/// tree, which fails with the component-shadowing error. A crate named like the root namespace of
+/// one of its dependencies is not supported.
+fn ensure_program_name_is_free(module_name: &str) -> WasmResult<()> {
+    if [Path::KERNEL_PATH, Path::EXEC_PATH].contains(&module_name) {
+        return Err(Report::msg(format!(
+            "the program module `{module_name}` (the crate name for a Rust build) is a reserved \
+             Miden Assembly root; rename the crate or the module"
+        )));
+    }
+    // A module name with `::` is rejected by `define_module` below, so a name that passes it nests
+    // with a reserved tree exactly when it is the tree's first segment. `validate_namespace` is not
+    // reused: it accepts only three-segment namespaces and checks one direction (the namespace
+    // nesting under a reserved prefix).
+    let reserved = RESERVED_NAMESPACE_PREFIXES
+        .iter()
+        .filter(|prefix| prefix.split("::").next() == Some(module_name))
+        .map(|prefix| format!("`{prefix}`"))
+        .collect::<Vec<_>>();
+    if reserved.is_empty() {
+        return Ok(());
+    }
+    let plural = if reserved.len() == 1 { "" } else { "s" };
+    Err(Report::msg(format!(
+        "the program module `{module_name}` (the crate name for a Rust build) nests with the \
+         reserved library tree{plural} {}; rename the crate or the module",
+        reserved.join(", ")
+    )))
 }
 
 pub fn build_ir_module(
@@ -135,10 +197,17 @@ pub fn build_ir_module(
     .into_diagnostic()?;
     parsed_module.function_debug =
         if context.session().options.debug == midenc_session::DebugInfo::Full {
+            // A function may be defined under a name other than its Wasm name (see
+            // `ModuleTranslationState::new`); its subprogram is linked by the HIR function name.
+            let function_names = module_state
+                .defined_functions()
+                .map(|(index, function)| (index, function.borrow().name().as_symbol()))
+                .collect();
             collect_function_debug_info(
                 parsed_module,
                 module_types,
                 &parsed_module.module,
+                &function_names,
                 &addr2line,
                 context.diagnostics(),
             )
@@ -205,11 +274,14 @@ pub fn build_ir_module(
         }
 
         let func_index = parsed_module.module.func_index(defined_func_idx);
-        let func_name = parsed_module.module.func_name(func_index).as_str();
-
+        // The function may be defined under a name other than its Wasm name (see
+        // `ModuleTranslationState::new`), so it is found by index.
         let function_ref =
-            module_state.module_builder.get_function(func_name).unwrap_or_else(|| {
-                panic!("cannot build {func_name} function, since it is not defined in the module.")
+            module_state.get_direct_func(func_index)?.function_ref().unwrap_or_else(|| {
+                panic!(
+                    "cannot build {} function, since it is not defined in the module.",
+                    parsed_module.module.func_name(func_index)
+                )
             });
 
         // If this is a linker stub that needs a synthesized body (function-type intrinsics,
@@ -312,4 +384,145 @@ fn build_data_segments(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use midenc_frontend_wasm_metadata::namespace::RESERVED_NAMESPACE_PREFIXES;
+    use midenc_hir::Context;
+
+    use crate::{WasmTranslationConfig, translate};
+
+    /// A program module named like a library root (here `intrinsics`, which declares the
+    /// `intrinsics::crypto` stub tree it calls into) is rejected.
+    #[test]
+    fn a_program_named_like_a_library_root_is_rejected() {
+        let wasm = wat::parse_str(
+            r#"
+            (module $intrinsics
+                (memory (;0;) 16384)
+                (func $intrinsics::crypto::hmerge (param i32 i32)
+                    unreachable)
+                (func $entrypoint (param i32 i32)
+                    local.get 0
+                    local.get 1
+                    call $intrinsics::crypto::hmerge)
+                (export "entrypoint" (func $entrypoint))
+            )"#,
+        )
+        .unwrap();
+        let context = Rc::new(Context::default());
+        let Err(err) = translate(&wasm, &WasmTranslationConfig::default(), context) else {
+            panic!("translation should fail");
+        };
+        let err = err.to_string();
+        assert!(
+            err.contains(
+                "the program module `intrinsics` (the crate name for a Rust build) nests with the \
+                 reserved library tree `intrinsics`; rename the crate or the module"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// A program module named like the first segment of several reserved trees names them all.
+    #[test]
+    fn a_program_named_like_a_shared_reserved_root_names_every_tree() {
+        let wasm = wat::parse_str(
+            r#"
+            (module $miden
+                (func $entrypoint)
+                (export "entrypoint" (func $entrypoint))
+            )"#,
+        )
+        .unwrap();
+        let context = Rc::new(Context::default());
+        let Err(err) = translate(&wasm, &WasmTranslationConfig::default(), context) else {
+            panic!("translation should fail");
+        };
+        let err = err.to_string();
+        let trees = RESERVED_NAMESPACE_PREFIXES
+            .iter()
+            .filter(|prefix| prefix.split("::").next() == Some("miden"))
+            .map(|prefix| format!("`{prefix}`"))
+            .collect::<Vec<_>>();
+        assert!(trees.len() > 1, "several reserved trees share the root `miden`");
+        let expected = format!(
+            "the program module `miden` (the crate name for a Rust build) nests with the reserved \
+             library trees {}; rename the crate or the module",
+            trees.join(", ")
+        );
+        assert!(err.contains(&expected), "unexpected diagnostic: {err}");
+    }
+
+    /// A program module named like a reserved Miden Assembly root is rejected.
+    #[test]
+    fn a_program_named_like_a_reserved_miden_assembly_root_is_rejected() {
+        for name in ["$kernel", "$exec"] {
+            let wasm = wat::parse_str(format!(
+                r#"
+                (module $"{name}"
+                    (func $entrypoint)
+                    (export "entrypoint" (func $entrypoint))
+                )"#
+            ))
+            .unwrap();
+            let context = Rc::new(Context::default());
+            let Err(err) = translate(&wasm, &WasmTranslationConfig::default(), context) else {
+                panic!("translation of `{name}` should fail");
+            };
+            let err = err.to_string();
+            let expected = format!(
+                "the program module `{name}` (the crate name for a Rust build) is a reserved \
+                 Miden Assembly root; rename the crate or the module"
+            );
+            assert!(err.contains(&expected), "unexpected diagnostic: {err}");
+        }
+    }
+
+    /// A module whose name Miden Assembly cannot spell, or that holds `::`, is rejected with the
+    /// cause, naming where the name came from, whether it roots the wrapper component or not. No
+    /// wrapper component is left in the world.
+    #[test]
+    fn an_invalid_module_name_is_reported_with_its_origin() {
+        use midenc_hir::{BuilderExt, dialects::builtin::World};
+
+        const UNSPELLABLE: &str = "cannot be spelled in Miden Assembly";
+        const SEPARATOR: &str = "contains `::`, which a module name cannot";
+        for (name, namespace, reason) in [
+            ("my lib", None, UNSPELLABLE),
+            ("a#b", None, UNSPELLABLE),
+            ("my lib", Some("acme::app::app"), UNSPELLABLE),
+            ("a::b", None, SEPARATOR),
+            ("a::b", Some("acme::app::app"), SEPARATOR),
+        ] {
+            let wasm = wat::parse_str(format!(
+                r#"
+                (module $"{name}"
+                    (func $entrypoint)
+                    (export "entrypoint" (func $entrypoint))
+                )"#
+            ))
+            .unwrap();
+            let context = Rc::new(Context::default());
+            let world =
+                context.clone().builder().create::<World, ()>(Default::default())().unwrap();
+            let config = WasmTranslationConfig {
+                namespace: namespace.map(midenc_hir::SymbolPath::from_masm_module_id),
+                world: Some(world),
+                ..Default::default()
+            };
+            let Err(err) = translate(&wasm, &config, context.clone()) else {
+                panic!("translation of `{name}` should fail");
+            };
+            let expected =
+                format!("the Wasm module name `{name}` (from the module's name section) {reason}");
+            assert_eq!(err.to_string(), expected, "{namespace:?}");
+            assert!(
+                world.borrow().body().is_empty() || world.borrow().body().entry().body().is_empty()
+            );
+        }
+    }
 }

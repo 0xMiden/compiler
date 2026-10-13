@@ -1,6 +1,6 @@
 use alloc::{collections::BTreeMap, vec::Vec};
 
-use midenc_hir::{AddressSpace, Felt, Report, SourceSpan, Type, dialects::builtin::ComponentId};
+use midenc_hir::{AddressSpace, Felt, Report, SourceSpan, SymbolName, Type};
 use midenc_session::diagnostics::WrapErr;
 
 use super::memory::{self, Cells, MemoryAddress, ReadFailed, WriteFailed};
@@ -14,11 +14,11 @@ const MAX_ADDRESSABLE_HEAP: usize = (2usize.pow(30) - 1) * 4;
 /// The execution context associated with Miden context boundaries
 #[derive(Default)]
 pub struct ExecutionContext {
-    /// The identifier for this context, if known
+    /// The name of the component this context belongs to, if known
     ///
     /// The root context never has an identifier
     #[allow(unused)]
-    id: Option<ComponentId>,
+    id: Option<SymbolName>,
     /// Heap memory
     memory: BTreeMap<u32, Felt>,
     /// Pages requested through memory_grow; independent of materialized bytes.
@@ -26,7 +26,8 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-    pub fn new(id: ComponentId) -> Self {
+    /// Creates an empty execution context for the component named `id`.
+    pub fn new(id: SymbolName) -> Self {
         Self {
             id: Some(id),
             ..Default::default()

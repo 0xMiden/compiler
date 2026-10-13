@@ -105,7 +105,7 @@ pub const COUNTER_STORAGE_KEY: Word = Word::new([Felt::ZERO, Felt::ZERO, Felt::Z
 /// # Errors
 /// Returns an error if the fixed storage slot name is invalid.
 pub fn counter_storage_slot() -> Result<StorageSlotName> {
-    StorageSlotName::new("counter_account::counter_contract::count_map")
+    StorageSlotName::new("miden::counter_account::counter_contract::count_map")
         .context("invalid counter storage slot name")
 }
 

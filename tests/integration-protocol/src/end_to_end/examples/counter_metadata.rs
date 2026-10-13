@@ -5,7 +5,7 @@ use miden_mast_package::SectionId;
 use miden_protocol::account::AccountComponentMetadata;
 use midenc_expect_test::expect;
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_integration_test_support::CompilerTestBuilder;
+use midenc_integration_test_support::{CompilerTestBuilder, find_export};
 
 #[test]
 fn counter_contract() {
@@ -18,6 +18,16 @@ fn counter_contract() {
     builder_release.with_release(true);
     let mut test_release = builder_release.build();
     let package = test_release.compile_package();
+    // Exports are named `<[lib].namespace>::<Rust method name>`.
+    find_export(&package, "miden::counter_contract::counter_contract", "get_count");
+    let project_toml =
+        std::fs::read_to_string("../../examples/counter-contract/miden-project.toml").unwrap();
+    let namespace = project_toml
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("namespace = \""))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .expect("the example must declare `[lib].namespace`");
+    midenc_integration_test_support::assert_exports_match_wit(&package, namespace);
     let account_component_metadata_bytes = package
         .as_ref()
         .sections
@@ -40,7 +50,7 @@ fn counter_contract() {
         version = "0.1.0"
 
         [[storage.slots]]
-        name = "counter_contract::counter_contract::count_map"
+        name = "miden::counter_contract::counter_contract::count_map"
         description = "counter contract storage map"
 
         [storage.slots.type]

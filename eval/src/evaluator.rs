@@ -12,9 +12,9 @@ use alloc::{
 
 use midenc_hir::{
     CallableOpInterface, Context, Felt, Immediate, Operation, OperationRef, RegionBranchPoint,
-    RegionRef, Report, SmallVec, SourceSpan, Spanned, SymbolPath, Type, Value as _, ValueRange,
-    ValueRef,
-    dialects::builtin::{ComponentId, FunctionAlias, attributes::LocalVariable},
+    RegionRef, Report, SmallVec, SourceSpan, Spanned, SymbolName, SymbolPath, Type, Value as _,
+    ValueRange, ValueRef,
+    dialects::builtin::{FunctionAlias, attributes::LocalVariable},
     formatter::DisplayValues,
     smallvec,
 };
@@ -99,7 +99,7 @@ impl HirEvaluator {
     }
 
     /// Enter a fresh execution context (i.e. memory, registers), with an optional identifier
-    pub fn enter_context(&mut self, id: Option<ComponentId>) {
+    pub fn enter_context(&mut self, id: Option<SymbolName>) {
         self.contexts.push(id.map(ExecutionContext::new).unwrap_or_default());
     }
 

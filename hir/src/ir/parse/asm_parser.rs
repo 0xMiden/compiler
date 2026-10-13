@@ -124,9 +124,12 @@ impl AsmParserState {
         // Populate symbol tables before resolving the collected uses during finalization.
         if is_symbol_table {
             {
+                // Reporting a conflict borrows `op` to compute a path, so it is not borrowed
+                // mutably until the map is built
+                let symbol_table = SymbolMap::try_build(&op.borrow()).map_err(|conflict| {
+                    super::ParserError::SymbolConflict { span: at, conflict }
+                })?;
                 let mut op = op.borrow_mut();
-                let symbol_table = SymbolMap::try_build(&op)
-                    .map_err(|name| super::ParserError::SymbolAlreadyDefined { span: at, name })?;
                 if let Some(op_symbol_table) = op.as_trait_mut::<dyn SymbolTable>() {
                     **op_symbol_table.symbol_manager_mut().symbols_mut() = symbol_table;
                 }

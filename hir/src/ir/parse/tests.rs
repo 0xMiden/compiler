@@ -348,7 +348,7 @@ fn parsing_a_world_yields_that_world_rather_than_nesting_it() -> TestResult {
         let module = module.downcast_ref::<Module>().expect("expected 'lib' to be a module");
         let path = module.path();
         assert!(path.is_absolute(), "a symbol path is rooted at the world");
-        assert_eq!(path.to_string(), "lib");
+        assert_eq!(path.to_string(), "::lib");
     }
 
     // The function's path crosses two symbol tables, so it also pins that the world contributes
@@ -360,7 +360,7 @@ fn parsing_a_world_yields_that_world_rather_than_nesting_it() -> TestResult {
     };
     let function = function.borrow();
     let function = function.downcast_ref::<Function>().expect("expected 'main' to be a function");
-    assert_eq!(function.path().to_string(), "lib/main");
+    assert_eq!(function.path().to_string(), "::lib::main");
 
     Ok(())
 }
@@ -388,7 +388,7 @@ fn parsing_a_module_still_wraps_it_in_a_world() -> TestResult {
 
     let path = module.borrow().path();
     assert!(path.is_absolute(), "a symbol path is rooted at the wrapper world");
-    assert_eq!(path.to_string(), "lib");
+    assert_eq!(path.to_string(), "::lib");
 
     Ok(())
 }
@@ -554,4 +554,456 @@ builtin.module public @t {
     };
 };";
     assert!(test.parse_any("dup.hir", source).is_err(), "a duplicate symbol must not parse");
+}
+
+/// A parsed world is held to the rule `WorldBuilder` enforces: a component name must not shadow
+/// a module tree.
+#[test]
+fn a_component_shadowing_a_module_tree_is_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.module public @miden {
+        builtin.module public @a {
+        };
+    };
+    builtin.component private @miden::@a {
+    };
+};";
+    let err = test
+        .parse_any("shadowing.hir", source)
+        .expect_err("a component shadowing a module tree must not parse")
+        .to_string();
+    assert!(
+        err.contains(
+            "component `miden::a` and `builtin.module` `::miden::a` have the same path; a \
+             component must not share its path with another symbol"
+        ),
+        "unexpected diagnostic: {err}"
+    );
+}
+
+/// A parsed module is held to the rule the builders enforce: a module name has no `::`.
+#[test]
+fn a_module_named_by_a_path_is_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.module public @\"a::b\" {
+    };
+};";
+    let err = test
+        .parse_any("module_path.hir", source)
+        .expect_err("a module named by a path must not parse")
+        .to_string();
+    assert!(
+        err.contains(
+            "module `a::b`: a module name cannot contain `::` (only components are named by \
+             `::`-joined paths)"
+        ),
+        "unexpected diagnostic: {err}"
+    );
+}
+
+#[test]
+fn nested_component_names_are_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.component private @acme::@app {
+    };
+    builtin.component private @acme::@app::@main {
+    };
+};";
+    let err = test
+        .parse_any("nesting.hir", source)
+        .expect_err("components with nesting names must not parse")
+        .to_string();
+    assert!(
+        err.contains(
+            "component `acme::app` and component `acme::app::main` nest (`acme::app` is a \
+             segment-prefix of `acme::app::main`); component namespaces must not nest"
+        ),
+        "unexpected diagnostic: {err}"
+    );
+}
+
+/// A component prints its name as a symbol path, one raw segment per segment of the name (see
+/// `SymbolPath::to_symbol_name`), quoting a segment that is not a bare HIR identifier, and that
+/// text parses back to the same name: the Miden Assembly spelling of the segments.
+#[test]
+fn component_name_roundtrips_through_the_printer() -> TestResult {
+    use crate::{
+        Op,
+        dialects::builtin::{Component, WorldBuilder},
+    };
+
+    let test = ParserTest::default();
+    for (raw, name, header) in [
+        ("miden::a::b", "miden::a::b", "builtin.component private @miden::@a::@b {"),
+        (
+            "hir_ns:test@1.0.0",
+            "\"hir_ns:test@1.0.0\"",
+            "builtin.component private @\"hir_ns:test@1.0.0\" {",
+        ),
+        ("$kernel", "$kernel", "builtin.component private @\"$kernel\" {"),
+        ("1st", "\"1st\"", "builtin.component private @\"1st\" {"),
+        ("a-b", "\"a-b\"", "builtin.component private @\"a-b\" {"),
+    ] {
+        let world = test.context_rc().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+        let component = WorldBuilder::new(world).define_component(raw.into())?;
+        assert_eq!(Symbol::name(&*component.borrow()).as_str(), name);
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(component.as_operation_ref().borrow());
+        let printed = printer.finish().to_string();
+        assert!(printed.starts_with(header), "unexpected printed form:\n{printed}");
+
+        let reparsed = test.parse::<Component>("component_roundtrip.hir", &printed)?;
+        assert_eq!(Symbol::name(&*reparsed.borrow()).as_str(), name);
+    }
+
+    Ok(())
+}
+
+/// A component named by a path whose segment contains `::` prints that segment quoted, and the
+/// text parses back to a component with the same segments.
+#[test]
+fn component_name_with_a_quoted_segment_roundtrips_through_the_printer() -> TestResult {
+    use midenc_session::miden_assembly_syntax::Path;
+
+    use crate::{
+        Op, SymbolPath,
+        dialects::builtin::{Component, WorldBuilder},
+    };
+
+    let test = ParserTest::default();
+    let path = SymbolPath::from_library_path(Path::new("::\"acme::pkg\"::app"));
+    let world = test.context_rc().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+    let component = WorldBuilder::new(world).define_component(path.to_symbol_name()?.into())?;
+
+    let flags = Default::default();
+    let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+    printer.print_operation(component.as_operation_ref().borrow());
+    let printed = printer.finish().to_string();
+    assert!(
+        printed.starts_with(r#"builtin.component private @"acme::pkg"::@app {"#),
+        "unexpected printed form:\n{printed}"
+    );
+
+    let reparsed = test.parse::<Component>("component_roundtrip.hir", &printed)?;
+    assert_eq!(Symbol::name(&*reparsed.borrow()).as_str(), r#""acme::pkg"::app"#);
+    let namespace = reparsed.borrow().namespace_path();
+    assert_eq!(namespace, path);
+    assert_eq!(namespace.components().len(), 3, "the root and two segments: {namespace:?}");
+
+    Ok(())
+}
+
+/// A component with an interface whose name needs quoting.
+const INTERFACE_SOURCE: &str = "\
+builtin.world {
+    builtin.component private @app {
+        builtin.interface @\"my-api\" {
+            builtin.function public extern(\"C\") @f() {
+                builtin.ret;
+            };
+        };
+    };
+};";
+
+/// An interface is named by the Miden Assembly spelling of its raw segment, prints that raw
+/// segment, and the printed text parses back to the same name.
+#[test]
+fn interface_name_roundtrips_through_the_printer() -> TestResult {
+    use crate::dialects::builtin::Interface;
+
+    let test = ParserTest::default();
+    let source = "\
+builtin.interface @\"my-api\" {
+    builtin.function public extern(\"C\") @f() {
+        builtin.ret;
+    };
+};";
+    let interface = test.parse::<Interface>("interface_roundtrip.hir", source)?;
+    assert_eq!(Symbol::name(&*interface.borrow()).as_str(), "\"my-api\"");
+
+    let flags = Default::default();
+    let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+    printer.print_operation(interface.as_operation_ref().borrow());
+    let printed = printer.finish().to_string();
+    assert!(
+        printed.starts_with("builtin.interface @\"my-api\" {"),
+        "unexpected printed form:\n{printed}"
+    );
+
+    let reparsed = test.parse::<Interface>("interface_roundtrip2.hir", &printed)?;
+    assert_eq!(Symbol::name(&*reparsed.borrow()).as_str(), "\"my-api\"");
+    Ok(())
+}
+
+/// A path through an interface whose name needs quoting resolves to the function inside it.
+#[test]
+fn a_path_through_a_quoted_interface_resolves() -> TestResult {
+    use crate::{SymbolNameComponent, SymbolPath, dialects::builtin::Function};
+
+    let test = ParserTest::default();
+    let world = test.parse_any("interface_resolution.hir", INTERFACE_SOURCE)?;
+    let path = SymbolPath::from_iter([
+        SymbolNameComponent::Root,
+        SymbolNameComponent::Component("app".into()),
+        SymbolNameComponent::Component("my-api".into()),
+        SymbolNameComponent::Leaf("f".into()),
+    ]);
+    let world = world.try_downcast_op::<World>().expect("expected a world");
+    let resolved = world.borrow().resolve(&path).expect("`::app::\"my-api\"::f` should resolve");
+    assert!(resolved.borrow().as_symbol_operation().is::<Function>());
+    assert_eq!(resolved.borrow().path(), path);
+    Ok(())
+}
+
+/// A symbol-table op whose raw segment Miden Assembly cannot spell does not parse, a raw segment
+/// wrapped in quotes included: it is not read as the segment it quotes.
+#[test]
+fn an_unspellable_symbol_table_name_is_reported() {
+    let test = ParserTest::default();
+    for (source, kind, segment) in [
+        ("builtin.component private @\"q\\\"u\" {};", "component", "q\"u"),
+        ("builtin.component private @\"\\\"x-y\\\"\" {};", "component", "\"x-y\""),
+        ("builtin.component private @app::@\"a b\" {};", "component", "a b"),
+        ("builtin.module public @\"a\\\\b\" {};", "module", "a\\b"),
+        ("builtin.module public @\"\\\"m\\\"\" {};", "module", "\"m\""),
+        ("builtin.module public @\"a#b\" {};", "module", "a#b"),
+        ("builtin.interface @\"a\\\\b\" {};", "interface", "a\\b"),
+    ] {
+        let err = test
+            .parse_any("unspellable.hir", source)
+            .expect_err("an unspellable name must not parse")
+            .to_string();
+        assert_eq!(
+            err,
+            format!(
+                "invalid {kind} name: the segment `{segment}` cannot be spelled in Miden Assembly"
+            ),
+            "{source}"
+        );
+    }
+}
+
+/// The diagnostic for a component name underlines the whole symbol path: from its root `::`, or
+/// from its first identifier (after the `@` sigil) when it has no root, to the end of its last
+/// identifier.
+#[test]
+fn a_symbol_path_diagnostic_spans_the_whole_path() {
+    let test = ParserTest::default();
+    // The path, and where its span starts
+    for (path, first) in [("@app::@\"a b\"", "app"), ("::@app::@\"a b\"", "::")] {
+        let source = format!("builtin.component private {path} {{}};");
+        let err = test
+            .parse_any("span.hir", &source)
+            .expect_err("an unspellable name must not parse");
+        let labels = err
+            .labels()
+            .expect("the diagnostic is labelled")
+            .map(|label| (label.offset(), label.offset() + label.len()))
+            .collect::<alloc::vec::Vec<_>>();
+        let path_start = source.find(path).unwrap();
+        let start = path_start + path.find(first).unwrap();
+        assert_eq!(labels, [(start, path_start + path.len())], "{source}");
+    }
+}
+
+/// A lone leaf naming a symbol table is its raw last segment, which `Symbol::path` gives the
+/// table and which resolves to it, from its parent and as a standalone root.
+#[test]
+fn a_lone_leaf_naming_a_symbol_table_resolves() -> TestResult {
+    use crate::{
+        Op, SymbolName, SymbolNameComponent, SymbolPath,
+        dialects::builtin::{Component, WorldBuilder},
+    };
+
+    let test = ParserTest::default();
+    let leaf = |segments: &[&str]| {
+        let (last, rest) = segments.split_last().unwrap();
+        SymbolPath::from_iter(
+            core::iter::once(SymbolNameComponent::Root)
+                .chain(rest.iter().map(|s| SymbolNameComponent::Component(SymbolName::intern(s))))
+                .chain([SymbolNameComponent::Leaf(SymbolName::intern(last))]),
+        )
+    };
+
+    // A module whose name needs quoting, in a world
+    let source = "\
+builtin.world {
+    builtin.module public @\"my-mod\" {
+    };
+};";
+    let world = test.parse_any("leaf_module.hir", source)?;
+    let world = world.try_downcast_op::<World>().expect("expected a world");
+    let module = world.borrow().resolve(&leaf(&["my-mod"])).expect("`::\"my-mod\"` resolves");
+    assert!(module.borrow().as_symbol_operation().is::<Module>());
+    let path = module.borrow().path();
+    assert_eq!(path, leaf(&["my-mod"]));
+    let flags = Default::default();
+    let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+    printer.print_symbol_path(&path);
+    assert_eq!(printer.finish().to_string(), "::@\"my-mod\"");
+
+    // A component named by several segments, in a world
+    let world = test.context_rc().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+    let component = WorldBuilder::new(world).define_component("miden::a::b".into())?;
+    let path = component.borrow().path();
+    assert_eq!(path, leaf(&["miden", "a", "b"]));
+    let resolved = world.borrow().resolve(&path).expect("`::miden::a::b` resolves");
+    assert_eq!(
+        resolved.borrow().as_symbol_operation().as_operation_ref(),
+        component.as_operation_ref()
+    );
+
+    // A standalone component, the root itself, named by its raw segment only
+    let source = "builtin.component private @\"hir_ns:test@1.0.0\" {\n};";
+    let component = test.parse::<Component>("leaf_root.hir", source)?;
+    let root = component.as_operation_ref();
+    let resolve = |path: &SymbolPath| {
+        component
+            .borrow()
+            .resolve(path)
+            .map(|symbol| symbol.borrow().as_symbol_operation().as_operation_ref())
+    };
+    assert_eq!(resolve(&leaf(&["hir_ns:test@1.0.0"])), Some(root));
+    assert_eq!(resolve(&leaf(&["\"hir_ns:test@1.0.0\""])), None);
+    assert_eq!(resolve(&component.borrow().path()), Some(root));
+    Ok(())
+}
+
+/// A component whose path is the path of a function in a module tree is rejected, while a
+/// component at another path is accepted: paths identify symbols uniquely.
+#[test]
+fn a_component_at_the_path_of_a_module_tree_function_is_reported() -> TestResult {
+    let source = |component: &str| {
+        format!(
+            "\
+builtin.world {{
+    builtin.module public @miden {{
+        builtin.module public @a {{
+            builtin.function public extern(\"C\") @f() {{
+                builtin.ret;
+            }};
+        }};
+    }};
+    builtin.component private {component} {{
+    }};
+}};"
+        )
+    };
+    let test = ParserTest::default();
+    let err = test
+        .parse_any("shadow.hir", &source("@miden::@a::@f"))
+        .expect_err("the component shadows the function `f`")
+        .to_string();
+    assert_eq!(
+        err,
+        "component `miden::a::f` and `builtin.function` `::miden::a::f` have the same path; a \
+         component must not share its path with another symbol"
+    );
+    test.parse_any("shadow_ctrl.hir", &source("@other"))?;
+    Ok(())
+}
+
+/// A component whose path is the path of a function in a world-level interface is rejected,
+/// whichever of the two is defined first.
+#[test]
+fn a_component_at_the_path_of_an_interface_function_is_reported() {
+    let interface = "\
+    builtin.interface @api {
+        builtin.function public extern(\"C\") @f() {
+            builtin.ret;
+        };
+    };";
+    let component = "\
+    builtin.component private @api::@f {
+    };";
+    let test = ParserTest::default();
+    for (first, second) in [(interface, component), (component, interface)] {
+        let source = format!("builtin.world {{\n{first}\n{second}\n}};");
+        let err = test
+            .parse_any("iface_shadow.hir", &source)
+            .expect_err("the component shadows the interface function `f`")
+            .to_string();
+        assert_eq!(
+            err,
+            "component `api::f` and `builtin.function` `::api::f` have the same path; a component \
+             must not share its path with another symbol",
+            "{source}"
+        );
+    }
+}
+
+/// A module and a function whose raw names are equal have the same path, so they cannot both be
+/// defined in one symbol table, whatever their definition order.
+#[test]
+fn a_module_and_a_function_with_one_raw_name_are_reported() {
+    let module = "\
+        builtin.module private @\"my-mod\" {
+            builtin.function public extern(\"C\") @g() {
+                builtin.ret;
+            };
+        };";
+    let function = "\
+        builtin.function public extern(\"C\") @\"my-mod\"() {
+            builtin.ret;
+        };";
+    let test = ParserTest::default();
+    let (module_kind, function_kind) = ("module \"my-mod\"", "function my-mod");
+    for (first, second, expected) in [
+        (module, function, (function_kind, module_kind)),
+        (function, module, (module_kind, function_kind)),
+    ] {
+        let source = format!(
+            "builtin.world {{\n    builtin.component private @app {{\n{first}\n{second}\n    \
+             }};\n}};"
+        );
+        let err = test
+            .parse_any("crosskind.hir", &source)
+            .expect_err("the module and the function share the path `::app::my-mod`")
+            .to_string();
+        let (new, existing) = expected;
+        assert_eq!(
+            err,
+            format!("`{new}` and `{existing}` have the same path `::app::\"my-mod\"`"),
+            "{source}"
+        );
+    }
+}
+
+/// A reference spells only raw segments: a segment wrapped in quotes is not read as the segment
+/// it quotes.
+#[test]
+fn a_quoted_raw_segment_in_a_reference_does_not_resolve() -> TestResult {
+    use crate::{SymbolName, SymbolNameComponent, SymbolPath};
+
+    let source = "\
+builtin.world {
+    builtin.component private @app {
+        builtin.module private @\"my-mod\" {
+            builtin.global_variable public @v : i32;
+        };
+    };
+};";
+    let test = ParserTest::default();
+    let world = test.parse_any("modq.hir", source)?;
+    let world = world.try_downcast_op::<World>().expect("expected a world");
+    let resolves = |module: &str| {
+        let path = SymbolPath::from_iter([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component("app".into()),
+            SymbolNameComponent::Component(SymbolName::intern(module)),
+            SymbolNameComponent::Leaf("v".into()),
+        ]);
+        world.borrow().resolve(&path).is_some()
+    };
+    assert!(resolves("my-mod"));
+    assert!(!resolves("\"my-mod\""));
+    Ok(())
 }

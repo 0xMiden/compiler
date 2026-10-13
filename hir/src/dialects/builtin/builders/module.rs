@@ -3,13 +3,13 @@ use alloc::format;
 use super::BuiltinOpBuilder;
 use crate::{
     AsCallableSymbolRef, Builder, BuilderExt, Ident, Op, OpBuilder, Report, ResolvedSymbolCallee,
-    SourceSpan, Spanned, SymbolName, SymbolNameComponent, SymbolPath, SymbolResolutionError,
-    SymbolTable, Type, UnsafeIntrusiveEntityRef, Visibility,
+    SourceSpan, SymbolName, SymbolNameComponent, SymbolPath, SymbolResolutionError, SymbolTable,
+    Type, UnsafeIntrusiveEntityRef, Visibility,
     constants::ConstantData,
     dialects::builtin::{
         Function, FunctionAlias, FunctionAliasRef, FunctionRef, FunctionTableEntry,
-        FunctionTableRef, GlobalVariable, GlobalVariableRef, Module, ModuleRef, PrimModuleBuilder,
-        Segment, attributes::Signature,
+        FunctionTableRef, GlobalVariable, GlobalVariableRef, Module, ModuleRef, Segment,
+        attributes::Signature,
     },
 };
 
@@ -213,18 +213,16 @@ impl ModuleBuilder {
         })
     }
 
-    /// Declare a new nested module `name`
+    /// Declare a new nested module named by the raw segment `name`, see
+    /// [BuiltinOpBuilder::create_module].
     pub fn declare_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
-        let builder = PrimModuleBuilder::new(&mut self.builder, name.span());
-        let module_ref = builder(name)?;
-        Ok(module_ref)
+        self.builder.create_module(name)
     }
 
-    /// Resolve a nested module with `name`, if declared/defined
+    /// Resolve the nested module named by the raw segment `name` (see [Module::canonical_name]),
+    /// if declared/defined
     pub fn find_module(&self, name: SymbolName) -> Option<ModuleRef> {
-        self.module.borrow().get(name).and_then(|symbol_ref| {
-            let op = symbol_ref.borrow();
-            op.as_symbol_operation().downcast_ref::<Module>().map(|m| m.as_module_ref())
-        })
+        let name = Module::canonical_name(name).ok()?;
+        (&*self.module.borrow() as &dyn SymbolTable).find::<Module>(name)
     }
 }

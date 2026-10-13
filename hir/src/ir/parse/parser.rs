@@ -647,13 +647,27 @@ pub trait Parser<'input> {
     /// If `context` is provided with the name of an attribute, then the use of this symbol will
     /// be tracked for the current operation.
     fn parse_symbol_path(&mut self) -> ParseResult<Span<SymbolPath>> {
-        let start = self.current_location();
+        // The span runs from the first token of the path (the root `::` when there is one, the
+        // first identifier otherwise) to the end of its last identifier. The start of the root
+        // is read by peeking at it, before it is consumed below.
+        let root_start = match self.token_stream_mut().peek()? {
+            Some((start, Token::ColonColon, _)) => Some(start),
+            _ => None,
+        };
         let mut components = SmallVec::<[SymbolNameComponent; 2]>::new_const();
         if self.token_stream_mut().next_if_eq(Token::ColonColon)? {
             components.push(SymbolNameComponent::Root);
         }
+        let mut span = None::<SourceSpan>;
         loop {
             let component = self.parse_at_identifier()?;
+            // The span of the path up to the previous identifier, which starts where the path
+            // does unless there is a root, or the span of the first identifier
+            let so_far = *span.get_or_insert(component.span);
+            span = Some(SourceSpan::new(
+                so_far.source_id(),
+                root_start.unwrap_or(so_far.start().to_u32())..component.span.end().to_u32(),
+            ));
             if self.token_stream_mut().next_if_eq(Token::ColonColon)? {
                 components.push(SymbolNameComponent::Component(component.name));
             } else {
@@ -661,8 +675,7 @@ pub trait Parser<'input> {
                 break;
             }
         }
-        let end = self.token_stream().current_position();
-        let span = SourceSpan::new(start.source_id(), start.start()..end);
+        let span = span.expect("a path has at least one identifier");
 
         let path = SymbolPath::new(components).map_err(|err| {
             ParserError::Report(RelatedError::new(Report::from(diagnostic!(
