@@ -96,19 +96,11 @@ fn names_a_linked_namespace(path: &SymbolPath, config: &WasmTranslationConfig) -
     let Some(linked) = config.linked_packages.as_deref() else {
         return false;
     };
-    // A symbol path keeps a quoted MASM component as written (`"masm-dep"`), while a package's
-    // namespaces come through `PathComponent::as_str`, which strips the quotes; compare the
-    // identifier, not its spelling.
-    let namespace = unquoted(namespace.as_str());
-    linked.iter().any(|package| package.root_namespaces().contains(namespace))
-}
-
-/// `component` without the quotes a MASM path puts around an identifier that needs them.
-fn unquoted(component: &str) -> &str {
-    component
-        .strip_prefix('"')
-        .and_then(|rest| rest.strip_suffix('"'))
-        .unwrap_or(component)
+    // Both hold the raw identifier: a symbol path component and a package's namespaces (which
+    // come through `PathComponent::as_str`) carry no quotes
+    linked
+        .iter()
+        .any(|package| package.root_namespaces().contains(namespace.as_str()))
 }
 
 /// Whether `path` is a name the frontend recognizes as a linker stub: a compiler intrinsic, the
