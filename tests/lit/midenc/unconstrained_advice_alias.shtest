@@ -3,8 +3,8 @@
 # Warnings must not cause a failed exit.
 # RUN: midenc -Zlint -Canalyze-only %S/../../fixtures/hir/unconstrained_advice_alias.hir
 
-CHECK: function 'body', exposed through public alias 'advice_alias/api',
+CHECK: function 'body', exposed through public alias '::advice_alias::api',
 CHECK: unconstrained advice value as result #0
 CHECK-DAG: publicly exposed function returns unconstrained advice via result #0
 CHECK-DAG: unconstrained advice originates here
-CHECK-DAG: public alias 'advice_alias/api' exposes 'body' to callers
+CHECK-DAG: public alias '::advice_alias::api' exposes 'body' to callers

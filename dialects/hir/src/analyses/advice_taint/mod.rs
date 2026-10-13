@@ -524,12 +524,12 @@ mod tests {
         assert_eq!(finding.function.as_str(), "body");
         assert_eq!(finding.result_index, 0);
         assert_eq!(finding.public_aliases.len(), 1);
-        assert_eq!(finding.public_aliases[0].inner().to_string(), "test/api");
+        assert_eq!(finding.public_aliases[0].inner().to_string(), "::test::api");
         assert!(!finding.public_aliases[0].span().is_unknown());
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(
             diagnostics[0].message(),
-            "function 'body', exposed through public alias 'test/api', returns unconstrained \
+            "function 'body', exposed through public alias '::test::api', returns unconstrained \
              advice value as result #0"
         );
         assert_eq!(
@@ -537,7 +537,7 @@ mod tests {
             [
                 "publicly exposed function returns unconstrained advice via result #0",
                 "unconstrained advice originates here",
-                "public alias 'test/api' exposes 'body' to callers",
+                "public alias '::test::api' exposes 'body' to callers",
             ]
         );
         Ok(())
@@ -576,12 +576,12 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(
             diagnostics[0].message(),
-            "function 'body', exposed through public aliases 'test/a/api', 'test/b/api', returns \
-             unconstrained advice value as result #0"
+            "function 'body', exposed through public aliases '::test::a::api', '::test::b::api', \
+             returns unconstrained advice value as result #0"
         );
         let labels = diagnostics[0].label_messages().collect::<Vec<_>>();
-        assert!(labels.contains(&"public alias 'test/a/api' exposes 'body' to callers"));
-        assert!(labels.contains(&"public alias 'test/b/api' exposes 'body' to callers"));
+        assert!(labels.contains(&"public alias '::test::a::api' exposes 'body' to callers"));
+        assert!(labels.contains(&"public alias '::test::b::api' exposes 'body' to callers"));
         Ok(())
     }
 
@@ -643,7 +643,7 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(
             diagnostics[0].message(),
-            "function 'body', exposed through public alias 'test/api', returns unconstrained \
+            "function 'body', exposed through public alias '::test::api', returns unconstrained \
              external call result as result #0"
         );
         let labels = diagnostics[0].label_messages().collect::<Vec<_>>();
@@ -651,7 +651,7 @@ mod tests {
             &"publicly exposed function returns an unconstrained external call result via result \
               #0"
         ));
-        assert!(labels.contains(&"public alias 'test/api' exposes 'body' to callers"));
+        assert!(labels.contains(&"public alias '::test::api' exposes 'body' to callers"));
         Ok(())
     }
 }

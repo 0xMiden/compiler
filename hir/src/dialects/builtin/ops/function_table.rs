@@ -370,12 +370,12 @@ builtin.module public @c {
         // `resolve_callee` returns the *named* symbol
         let named = entry.resolve_callee().expect("the alias should resolve");
         assert!(named.borrow().as_symbol_operation().downcast_ref::<FunctionAlias>().is_some(),);
-        assert_eq!(named.borrow().path().to_string(), "b/alias");
+        assert_eq!(named.borrow().path().to_string(), "::b::alias");
 
         // `resolve_callable` follows the alias hop from `@b` to the function in `@c`.
         let target = entry.resolve_callable().unwrap().target().as_symbol_ref();
         assert!(target.borrow().as_symbol_operation().downcast_ref::<Function>().is_some(),);
-        assert_eq!(target.borrow().path().to_string(), "c/body");
+        assert_eq!(target.borrow().path().to_string(), "::c::body");
         assert!(named != target);
     }
 }

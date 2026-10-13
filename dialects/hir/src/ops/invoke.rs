@@ -1634,12 +1634,12 @@ builtin.world {
                 {
                     assert_eq!(
                         target.unwrap().as_symbol_ref().borrow().path().to_string(),
-                        "b/target"
+                        "::b::target"
                     );
                 }
                 assert_eq!(
                     call.callee().resolve().unwrap().borrow().path().to_string(),
-                    "b/callee"
+                    "::b::callee"
                 );
                 checked = true;
             }
