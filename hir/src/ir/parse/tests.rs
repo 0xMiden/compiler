@@ -729,6 +729,7 @@ fn an_unspellable_symbol_table_name_is_reported() {
         ("builtin.component private @app::@\"a b\" {};", "component", "a b"),
         ("builtin.module public @\"a\\\\b\" {};", "module", "a\\b"),
         ("builtin.module public @\"\\\"m\\\"\" {};", "module", "\"m\""),
+        ("builtin.module public @\"a#b\" {};", "module", "a#b"),
         ("builtin.interface @\"a\\\\b\" {};", "interface", "a\\b"),
     ] {
         let err = test

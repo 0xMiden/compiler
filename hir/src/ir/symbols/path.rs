@@ -313,13 +313,14 @@ impl SymbolPath {
     }
 
     /// Returns true when Miden Assembly can spell the raw segment `segment`: it is not empty, and
-    /// every character is ASCII graphic and neither `"` nor `\`.
+    /// every character is ASCII graphic and neither `"`, `\` nor `#`.
     ///
-    /// This mirrors the Miden Assembly lexer, which reads quoted text as an identifier only when
-    /// it is made of such characters (`lex_quoted`); anything else is a string, not an identifier.
+    /// The characters are the Miden Assembly lexer's rule for quoted identifiers (`lex_quoted`
+    /// reads quoted text made of anything else as a string) narrowed by `Ident::validate`, which
+    /// rejects `#`.
     pub fn is_spellable(segment: &str) -> bool {
         !segment.is_empty()
-            && segment.chars().all(|c| c.is_ascii_graphic() && !matches!(c, '"' | '\\'))
+            && segment.chars().all(|c| c.is_ascii_graphic() && !matches!(c, '"' | '\\' | '#'))
     }
 
     /// Returns the Miden Assembly spelling of the raw segment `segment`, i.e. the name of a
@@ -819,13 +820,13 @@ mod tests {
     }
 
     /// Miden Assembly reads quoted text as an identifier only when it is made of ASCII graphic
-    /// characters other than `"` and `\`.
+    /// characters other than `"`, `\` and `#`.
     #[test]
     fn spellable_segments_mirror_the_miden_assembly_lexer() {
         for segment in ["app", "masm-dep", "a:b@1.0.0", "::", "$kernel", "1st"] {
             assert!(SymbolPath::is_spellable(segment), "`{segment}`");
         }
-        for segment in ["", "q\"u", "\"x-y\"", "a\\b", "my lib", "ü", "a\tb"] {
+        for segment in ["", "q\"u", "\"x-y\"", "a\\b", "a#b", "my lib", "ü", "a\tb"] {
             assert!(!SymbolPath::is_spellable(segment), "`{segment}`");
         }
     }

@@ -11,8 +11,9 @@ use midenc_hir::{
         attributes::U64Attr,
     },
 };
-use midenc_session::diagnostics::{
-    DiagnosticsHandler, IntoDiagnostic, Report, Severity, SourceSpan,
+use midenc_session::{
+    diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity, SourceSpan},
+    miden_assembly_syntax::Path,
 };
 use wasmparser::Validator;
 
@@ -105,7 +106,8 @@ pub fn translate_module_as_component(
 }
 
 /// Reports an error when `module_name`, the root of the wrapper component of a program without a
-/// target namespace, nests with one of the library trees in [`RESERVED_NAMESPACE_PREFIXES`].
+/// target namespace, is one of the reserved Miden Assembly roots `$kernel` and `$exec`, or nests
+/// with one of the library trees in [`RESERVED_NAMESPACE_PREFIXES`].
 ///
 /// Only the reserved library trees are detected, not the roots of the linked packages: a program
 /// named like the root namespace of a Miden Assembly dependency it binds natively (a crate `acme`
@@ -113,6 +115,12 @@ pub fn translate_module_as_component(
 /// tree, which fails with the component-shadowing error. A crate named like the root namespace of
 /// one of its dependencies is not supported.
 fn ensure_program_name_is_free(module_name: &str) -> WasmResult<()> {
+    if [Path::KERNEL_PATH, Path::EXEC_PATH].contains(&module_name) {
+        return Err(Report::msg(format!(
+            "the program module `{module_name}` (the crate name for a Rust build) is a reserved \
+             Miden Assembly root; rename the crate or the module"
+        )));
+    }
     // A module name with `::` is rejected by `define_module` below, so a name that passes it nests
     // with a reserved tree exactly when it is the tree's first segment. `validate_namespace` is not
     // reused: it accepts only three-segment namespaces and checks one direction (the namespace
@@ -434,5 +442,52 @@ mod tests {
             trees.join(", ")
         );
         assert!(err.contains(&expected), "unexpected diagnostic: {err}");
+    }
+
+    /// A program module named like a reserved Miden Assembly root is rejected.
+    #[test]
+    fn a_program_named_like_a_reserved_miden_assembly_root_is_rejected() {
+        for name in ["$kernel", "$exec"] {
+            let wasm = wat::parse_str(format!(
+                r#"
+                (module $"{name}"
+                    (func $entrypoint)
+                    (export "entrypoint" (func $entrypoint))
+                )"#
+            ))
+            .unwrap();
+            let context = Rc::new(Context::default());
+            let Err(err) = translate(&wasm, &WasmTranslationConfig::default(), context) else {
+                panic!("translation of `{name}` should fail");
+            };
+            let err = err.to_string();
+            let expected = format!(
+                "the program module `{name}` (the crate name for a Rust build) is a reserved \
+                 Miden Assembly root; rename the crate or the module"
+            );
+            assert!(err.contains(&expected), "unexpected diagnostic: {err}");
+        }
+    }
+
+    /// A program module whose name Miden Assembly cannot spell is rejected.
+    #[test]
+    fn a_program_module_named_with_a_hash_is_rejected() {
+        let wasm = wat::parse_str(
+            r#"
+            (module $"a#b"
+                (func $entrypoint)
+                (export "entrypoint" (func $entrypoint))
+            )"#,
+        )
+        .unwrap();
+        let context = Rc::new(Context::default());
+        let Err(err) = translate(&wasm, &WasmTranslationConfig::default(), context) else {
+            panic!("translation should fail");
+        };
+        let err = err.to_string();
+        assert!(
+            err.contains("the segment `a#b` cannot be spelled in Miden Assembly"),
+            "unexpected diagnostic: {err}"
+        );
     }
 }

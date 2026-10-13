@@ -1183,7 +1183,12 @@ impl MasmComponentBuilder<'_> {
                     // Create the submodule
                     let submodule =
                         Box::new(masm::Module::new(masm::ModuleKind::Library, module_path));
-                    let name = masm::Ident::new(submodule.name()).unwrap();
+                    let name = masm::Ident::new(submodule.name()).map_err(|err| {
+                        Report::msg(format!(
+                            "invalid module name `{}` in `{module_path}`: {err}",
+                            submodule.name()
+                        ))
+                    })?;
                     log::debug!(target: &trace_target, "declaring submodule '{name}' of '{}'", parent_module.path());
                     parent_module.declare_submodule(name, visibility)?;
                     parent = Some(self.component.modules.len());
