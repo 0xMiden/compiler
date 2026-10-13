@@ -157,7 +157,8 @@ impl Verify<dyn SymbolTable> for Component {
 }
 
 impl midenc_session::Emit for Component {
-    /// The last segment of the component name, which is file-name friendly.
+    /// The raw last segment of the component name, without the quotes of its Miden Assembly
+    /// spelling. It may hold any spellable character, `/` and `:` included.
     fn name(&self) -> Option<midenc_hir_symbol::Symbol> {
         SymbolPath::segments_of(self.get_name().as_symbol()).last().copied()
     }

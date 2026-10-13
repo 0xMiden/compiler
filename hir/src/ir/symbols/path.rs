@@ -588,7 +588,8 @@ impl fmt::Display for SymbolPath {
 /// are validated before they get here, but opaque leaf names and the components of a reference
 /// are not, and only a spellable segment round-trips. Three cases follow
 /// `PathBuf::push_component`: a leading `$kernel` or `$exec` makes the path absolute, a segment
-/// wrapped in `"` is taken as already quoted, and an empty segment is dropped.
+/// wrapped in `"` is taken as already quoted and loses the quotes it does not need (`"app"` is
+/// pushed as `app`), and an empty segment (`""` too) is dropped.
 fn push_segment(path: &mut LibraryPath, segment: &str) {
     match segment {
         // `push_component` reads a lone `::` as the root, not as a segment
@@ -848,10 +849,11 @@ mod tests {
         );
     }
 
-    /// Miden Assembly reads quoted text as an identifier only when it is made of ASCII graphic
-    /// characters other than `"`, `\` and `#`.
+    /// A segment is spellable when it is made of ASCII graphic characters other than `"` and `\`
+    /// (the Miden Assembly lexer's rule for quoted identifiers) and `#` (which `Ident::validate`
+    /// rejects, although the lexer accepts it).
     #[test]
-    fn spellable_segments_mirror_the_miden_assembly_lexer() {
+    fn spellable_segments_mirror_the_miden_assembly_identifier_rules() {
         for segment in ["app", "masm-dep", "a:b@1.0.0", "::", "$kernel", "1st"] {
             assert!(SymbolPath::is_spellable(segment), "`{segment}`");
         }

@@ -66,7 +66,8 @@ pub fn translate_module_as_component(
     let mut world_builder = WorldBuilder::new(world_ref);
 
     // The wrapper is rooted at the target namespace or, when there is none, at the module's name,
-    // which must not nest with a reserved library tree (see `ensure_program_name_is_free`)
+    // which must neither be the reserved root `$kernel` or `$exec` nor nest with a reserved
+    // library tree (see `ensure_program_name_is_free`)
     let module_name = parsed_module.module.name().as_str();
     // The author did not write a component or module name, so say where the name came from. The
     // module name is validated before the wrapper is defined, so a bad name leaves no wrapper

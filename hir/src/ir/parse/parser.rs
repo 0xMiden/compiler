@@ -647,8 +647,9 @@ pub trait Parser<'input> {
     /// If `context` is provided with the name of an attribute, then the use of this symbol will
     /// be tracked for the current operation.
     fn parse_symbol_path(&mut self) -> ParseResult<Span<SymbolPath>> {
-        // The span runs from the first token of the path to the end of its last identifier; the
-        // lexer has already peeked past both
+        // The span runs from the first token of the path (the root `::` when there is one, the
+        // first identifier otherwise) to the end of its last identifier. The start of the root
+        // is read by peeking at it, before it is consumed below.
         let root_start = match self.token_stream_mut().peek()? {
             Some((start, Token::ColonColon, _)) => Some(start),
             _ => None,
@@ -660,10 +661,12 @@ pub trait Parser<'input> {
         let mut span = None::<SourceSpan>;
         loop {
             let component = self.parse_at_identifier()?;
-            let first = *span.get_or_insert(component.span);
+            // The span of the path up to the previous identifier, which starts where the path
+            // does unless there is a root, or the span of the first identifier
+            let so_far = *span.get_or_insert(component.span);
             span = Some(SourceSpan::new(
-                first.source_id(),
-                root_start.unwrap_or(first.start().to_u32())..component.span.end().to_u32(),
+                so_far.source_id(),
+                root_start.unwrap_or(so_far.start().to_u32())..component.span.end().to_u32(),
             ));
             if self.token_stream_mut().next_if_eq(Token::ColonColon)? {
                 components.push(SymbolNameComponent::Component(component.name));

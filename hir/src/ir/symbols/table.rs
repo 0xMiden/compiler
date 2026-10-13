@@ -301,6 +301,8 @@ impl SymbolMap {
             return None;
         }
         let alias = Self::path_alias(name, is_table)?;
+        // A symbol of the same kind named `alias` has another path: a plain symbol named
+        // `"my-mod"` has the leaf `"my-mod"`, a symbol table named `my-mod` the leaf `my-mod`
         self.symbols
             .get(&alias)
             .filter(|_| self.tables.contains(&alias) != is_table)
@@ -533,6 +535,9 @@ impl SymbolMap {
     /// Returns the name `symbol` has after insertion.
     ///
     /// NOTE: If `symbol` is already in the map with `name`, this is a no-op.
+    ///
+    /// Unsupported: a uniqued name is not checked against the nesting rules of a world (see
+    /// [SymbolMap::make_unique]).
     pub fn insert(&mut self, name: SymbolName, mut symbol: SymbolRef) -> SymbolName {
         // If this exact symbol was already in the table, do nothing
         if self.symbols.get(&name) == Some(&symbol) {
@@ -555,7 +560,8 @@ impl SymbolMap {
             self.uniquing_count = counter;
             uniqued
         };
-        // TODO: visit uses? a uniqued symbol should be unused AFAICT
+        // The uses of a uniqued symbol are not rewritten: a symbol is inserted before it is used,
+        // and `SymbolManagerMut::rename_symbol` rewrites the uses of a symbol renamed afterwards
         symbol.borrow_mut().set_name(name);
         self.register(name, symbol, is_table);
         name
@@ -566,6 +572,10 @@ impl SymbolMap {
     ///
     /// Returns the unique name, but this function does not modify the map or rename the symbol
     /// itself, that is expected to be done from [SymbolManagerMut].
+    ///
+    /// Unsupported: like [SymbolMap::insert], uniquing only consults the symbol maps, not the
+    /// nesting rules of a world (see `World::reject_component_shadowing`), so a component `a::b`
+    /// may be uniqued to `a::b_1` beside a component `a::b_1::x`.
     pub fn make_unique(&mut self, op: &SymbolRef, tables: &[SymbolManager<'_>]) -> SymbolName {
         // Determine new name that is unique in all symbol tables.
         let name = { op.borrow().name() };
@@ -985,6 +995,10 @@ impl<'a> SymbolManagerMut<'a> {
     ///
     /// NOTE: This is not the same as replacing uses of one symbol with another, this used while
     /// renaming the symbol name of `op`, while preserving its uses.
+    ///
+    /// Unsupported: only the direct uses of `op` are rewritten. A use of a symbol nested in a
+    /// renamed symbol table (`::miden::a::b::m::f` after renaming the component `miden::a::b`)
+    /// keeps the old path, and no longer resolves.
     pub fn replace_all_symbol_uses(&mut self, op: SymbolRef, to: SymbolName) -> Result<(), Report> {
         let symbol = op.borrow();
         // For a symbol table, the number of trailing components naming it in a path, and the
@@ -1013,6 +1027,8 @@ impl<'a> SymbolManagerMut<'a> {
                 None => path.set_name(to),
                 Some((old_len, new)) => {
                     let path = &mut path.path;
+                    // Keep what precedes the components naming `op`, and at least the root of an
+                    // absolute path, so the rewritten use stays absolute
                     let keep =
                         path.len().saturating_sub(*old_len).max(usize::from(path[0].is_root()));
                     path.truncate(keep);

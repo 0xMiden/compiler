@@ -47,9 +47,11 @@ impl WorldBuilder {
     /// which is spelled (see [Component::canonical_name]).
     ///
     /// Returns an error when Miden Assembly cannot spell a segment of the name, when the world
-    /// declares a module tree reaching the path the name spells, which the component would
-    /// shadow, or another component whose name nests with this one (one is a segment-prefix of
-    /// the other): resolution prefers the longest registered name.
+    /// declares a tree of modules or interfaces reaching the path the name spells (a module, or a
+    /// function or global named by the raw last segment), which the component would shadow, when
+    /// the name of another component nests with this one (one is a segment-prefix of the other),
+    /// since resolution prefers the longest registered name, or when a world-level symbol has the
+    /// name or the path of the component (see [World::reject_component_shadowing]).
     pub fn define_component(&mut self, name: Ident) -> Result<ComponentRef, Report> {
         let name = Ident::new(Component::canonical_name(name.name)?, name.span);
         {
@@ -100,7 +102,8 @@ impl WorldBuilder {
             .components()
             .filter(|component| matches!(component, SymbolNameComponent::Component(_)))
             .collect::<SmallVec<[_; 4]>>();
-        // Each raw segment is validated here, once, and looked up by its spelling below
+        // Each raw segment is validated before anything is declared, and looked up by its
+        // spelling below; a module declared there is validated again by its builder
         let spelled = modules
             .iter()
             .map(|module| Module::canonical_name(module.as_symbol_name()))

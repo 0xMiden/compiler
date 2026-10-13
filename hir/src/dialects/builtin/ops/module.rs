@@ -172,7 +172,8 @@ impl OpParser for Module {
 }
 
 impl midenc_session::Emit for Module {
-    /// The raw segment of the module name, which is file-name friendly.
+    /// The raw segment of the module name, without the quotes of its Miden Assembly spelling
+    /// (`masm-dep` for `"masm-dep"`). It may hold any spellable character, `/` and `:` included.
     fn name(&self) -> Option<midenc_hir_symbol::Symbol> {
         Some(SymbolPath::raw_segment(self.name().as_symbol()))
     }

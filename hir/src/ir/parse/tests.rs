@@ -746,6 +746,29 @@ fn an_unspellable_symbol_table_name_is_reported() {
     }
 }
 
+/// The diagnostic for a component name underlines the whole symbol path: from its root `::`, or
+/// from its first identifier (after the `@` sigil) when it has no root, to the end of its last
+/// identifier.
+#[test]
+fn a_symbol_path_diagnostic_spans_the_whole_path() {
+    let test = ParserTest::default();
+    // The path, and where its span starts
+    for (path, first) in [("@app::@\"a b\"", "app"), ("::@app::@\"a b\"", "::")] {
+        let source = format!("builtin.component private {path} {{}};");
+        let err = test
+            .parse_any("span.hir", &source)
+            .expect_err("an unspellable name must not parse");
+        let labels = err
+            .labels()
+            .expect("the diagnostic is labelled")
+            .map(|label| (label.offset(), label.offset() + label.len()))
+            .collect::<alloc::vec::Vec<_>>();
+        let path_start = source.find(path).unwrap();
+        let start = path_start + path.find(first).unwrap();
+        assert_eq!(labels, [(start, path_start + path.len())], "{source}");
+    }
+}
+
 /// A lone leaf naming a symbol table is its raw last segment, which `Symbol::path` gives the
 /// table and which resolves to it, from its parent and as a standalone root.
 #[test]
@@ -809,8 +832,8 @@ builtin.world {
     Ok(())
 }
 
-/// A component whose path is the path of a function in a module tree is rejected, as is a
-/// component renamed away from it: paths identify symbols uniquely.
+/// A component whose path is the path of a function in a module tree is rejected, while a
+/// component at another path is accepted: paths identify symbols uniquely.
 #[test]
 fn a_component_at_the_path_of_a_module_tree_function_is_reported() -> TestResult {
     let source = |component: &str| {
