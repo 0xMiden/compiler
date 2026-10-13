@@ -38,32 +38,37 @@ pub(super) fn invocation_target_from_symbol_path(
     masm::InvocationTarget::Path(masm::Span::new(span, qualified.into_inner()))
 }
 
-/// Builds a MASM invocation target for a resolved HIR symbol.
-///
+/// Builds a MASM invocation target for a resolved HIR callable.
 ///
 /// `module_owner` is the HIR symbol-table owner corresponding to the emitted caller's MASM module.
-/// Passing `None` disables unqualified-name emission.
+/// Passing `None` disables unqualified-name emission. Private aliases outside that module are
+/// followed to a reachable symbol, since MASM cannot resolve private imports by qualified path.
 pub(super) fn invocation_target_from_symbol(
-    symbol: midenc_hir::SymbolRef,
+    mut symbol: midenc_hir::SymbolRef,
     module_owner: Option<midenc_hir::OperationRef>,
     span: midenc_hir::SourceSpan,
 ) -> masm::InvocationTarget {
-    // Private aliases in the caller's MASM module use an unqualified name because MASM
-    // does not resolve private imports through module-qualified paths. All other targets
-    // use a qualified path.
-    let symbol = symbol.borrow();
-    if symbol.is_private()
-        && symbol.as_symbol_operation().is::<builtin::FunctionAlias>()
-        && let Some(owner) = module_owner
-        && let Some(target_owner) = symbol.as_symbol_operation().nearest_symbol_table()
-        && crate::legalization::share_masm_module(owner, target_owner)
-    {
-        return masm::InvocationTarget::Symbol(masm::Ident::from_raw_parts(Span::new(
-            span,
-            symbol.name().as_str().into(),
-        )));
+    loop {
+        let callee = symbol.borrow();
+        let alias = callee.as_symbol_operation().downcast_ref::<builtin::FunctionAlias>();
+        let Some(alias) = alias.filter(|_| callee.is_private()) else {
+            return invocation_target_from_symbol_path(&callee.path(), span);
+        };
+
+        if let Some(owner) = module_owner
+            && let Some(target_owner) = alias.as_operation().nearest_symbol_table()
+            && crate::legalization::share_masm_module(owner, target_owner)
+        {
+            return masm::InvocationTarget::Symbol(masm::Ident::from_raw_parts(Span::new(
+                span,
+                callee.name().as_str().into(),
+            )));
+        }
+
+        // Alias verification validates the chain before emission. Follow each hop in the
+        // alias's own symbol table, preserving the first accessible name.
+        symbol = alias.resolve_target().expect("canonical resolution validated the alias target");
     }
-    invocation_target_from_symbol_path(&symbol.path(), span)
 }
 
 fn resolve_invocation_callee(

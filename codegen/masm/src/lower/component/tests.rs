@@ -3380,3 +3380,97 @@ fn every_module_defining_a_table_callee_is_initialized_exactly_once() {
         );
     }
 }
+
+#[test]
+fn relocated_executable_entrypoint_private_aliases_assemble() {
+    for callee in ["helper", "forward", "alias"] {
+        let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::entry");
+        let source = format!(
+            r#"
+builtin.component private @"hir_ns:test@1.0.0" {{
+    builtin.function public extern("C") @helper() {{ builtin.ret; }};
+    builtin.function_alias private @forward -> @helper;
+    builtin.function_alias private @alias -> @forward;
+    builtin.function public extern("component-model") @entry() {{
+        hir.exec @{callee}() : extern("C") () -> ();
+        builtin.ret;
+    }};
+    builtin.module private @core {{
+        builtin.function public extern("C") @component_start() {{ builtin.ret; }};
+    }};
+}};
+"#
+        );
+        let op = parse(&context, &source);
+        mark_start_function(&context, op, "component_start");
+        let component = op.try_downcast_op::<builtin::Component>().unwrap();
+        let lowered = component.borrow().to_masm_component(AnalysisManager::new(op, None)).unwrap();
+        assert!(lowered.executable_entrypoint_without_init.is_some());
+        let target = midenc_session::miden_project::Target::executable(
+            "private-alias",
+            Uri::new("private-alias.hir"),
+        );
+        let sources = lowered.source_inputs(&target, context.session()).unwrap();
+        let mut assembler =
+            miden_assembly::Assembler::new(context.session().source_manager.clone());
+        assembler
+            .link_package(
+                crate::intrinsics::load(context.session()).unwrap(),
+                miden_assembly::Linkage::Static,
+            )
+            .unwrap();
+        assembler
+            .link_package(
+                midenc_session::LinkLibrary::core().load(&context.session().options).unwrap(),
+                miden_assembly::Linkage::Dynamic,
+            )
+            .unwrap();
+        assembler.compile_and_statically_link_all(sources.support).unwrap();
+        assembler
+            .assemble_program("private-alias", sources.root)
+            .unwrap_or_else(|err| panic!("callee {callee}: {err:?}"));
+    }
+}
+
+#[test]
+fn relocated_global_initializer_private_aliases_assemble() {
+    for (callee, target) in [
+        ("helper", "helper"),
+        ("forward", "helper"),
+        ("alias", "helper"),
+        ("via_public", "exported"),
+        ("via_internal", "internal_export"),
+    ] {
+        let context = Rc::new(Context::default());
+        let source = format!(
+            r#"
+builtin.component private @"hir_ns:test@1.0.0" {{
+    builtin.module public @core {{
+        builtin.function public extern("C") @helper() -> i32 {{
+            builtin.ret_imm 1 : i32;
+        }};
+        builtin.function_alias private @forward -> @helper;
+        builtin.function_alias private @alias -> @forward;
+        builtin.function_alias public @exported -> @helper;
+        builtin.function_alias internal @internal_export -> @helper;
+        builtin.function_alias private @via_public -> @exported;
+        builtin.function_alias private @via_internal -> @internal_export;
+        builtin.global_variable private @g : i32 {{
+            %value = hir.exec @{callee}() : extern("C") () -> i32;
+            builtin.ret %value : (i32);
+        }};
+    }};
+}};
+"#
+        );
+        let lowered = lower_component(&context, &source).unwrap();
+        let init = lowered.modules[0]
+            .procedures()
+            .find(|procedure| procedure.name().as_str() == "init")
+            .unwrap();
+        assert!(
+            exec_paths(init.body()).contains(&format!("::\"hir_ns:test@1.0.0\"::core::{target}"))
+        );
+        assemble_library(&context, &lowered, "hir_ns:test@1.0.0");
+    }
+}
