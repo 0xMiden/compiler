@@ -355,8 +355,9 @@ impl HirLowering for builtin::UnrealizedConversionCast {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let result = self.result().as_value_ref();
         let result_operand = crate::Operand::from(result);
-        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
-        let operand = inst_emitter.pop().expect("operand stack is empty");
+        // The shape check must come before the inst emitter is created, as binding the result
+        // requires an operand of its size on the stack.
+        let operand = emitter.stack.peek().expect("operand stack is empty");
         if operand.size() != result_operand.size() {
             return Err(Report::msg(format!(
                 "cannot lower builtin.unrealized_conversion_cast from {} to {}: VM stack shape \
@@ -367,6 +368,8 @@ impl HirLowering for builtin::UnrealizedConversionCast {
                 result_operand.size()
             )));
         }
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+        inst_emitter.pop();
         inst_emitter.push(result_operand);
         Ok(())
     }
@@ -719,44 +722,39 @@ impl HirLowering for ub::Poison {
         // for should we ever wish to do so. We could also catch the evaluation of poison under an
         // emulator for the IR itself.
         let span = self.span();
-        let mut op_emitter = emitter.inst_emitter(self.as_operation());
-        op_emitter.literal(
-            {
-                match self.value().as_immediate() {
-                    Some(imm) => imm,
-                    None => match self.value().as_value() {
-                        Type::U256 => {
-                            return Err(self
-                                .as_operation()
-                                .context()
-                                .diagnostics()
-                                .diagnostic(Severity::Error)
-                                .with_message("invalid operation")
-                                .with_primary_label(
-                                    span,
-                                    "the lowering for u256 immediates is not yet implemented",
-                                )
-                                .into_report());
-                        }
-                        Type::F64 => {
-                            return Err(self
-                                .as_operation()
-                                .context()
-                                .diagnostics()
-                                .diagnostic(Severity::Error)
-                                .with_message("invalid operation")
-                                .with_primary_label(
-                                    span,
-                                    "the lowering for f64 immediates is not yet implemented",
-                                )
-                                .into_report());
-                        }
-                        ty => panic!("unexpected poison type: {ty}"),
-                    },
+        let imm = match self.value().as_immediate() {
+            Some(imm) => imm,
+            None => match self.value().as_value() {
+                Type::U256 => {
+                    return Err(self
+                        .as_operation()
+                        .context()
+                        .diagnostics()
+                        .diagnostic(Severity::Error)
+                        .with_message("invalid operation")
+                        .with_primary_label(
+                            span,
+                            "the lowering for u256 immediates is not yet implemented",
+                        )
+                        .into_report());
                 }
+                Type::F64 => {
+                    return Err(self
+                        .as_operation()
+                        .context()
+                        .diagnostics()
+                        .diagnostic(Severity::Error)
+                        .with_message("invalid operation")
+                        .with_primary_label(
+                            span,
+                            "the lowering for f64 immediates is not yet implemented",
+                        )
+                        .into_report());
+                }
+                ty => panic!("unexpected poison type: {ty}"),
             },
-            span,
-        );
+        };
+        emitter.inst_emitter(self.as_operation()).literal(imm, span);
 
         Ok(())
     }

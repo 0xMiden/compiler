@@ -1015,9 +1015,11 @@ fn coerce_const_bands() {
 /// This is the rung where the wide-arithmetic ladder stops being about wide
 /// arithmetic: it compiles and matches native at the default level, at
 /// `--optimize=max`, at `--optimize=basic` and without guest DWARF, and stops
-/// at `--optimize=size-min` in the F6 spill cluster ([`wide_limbs_freight_oz`]).
-/// So the class that now bounds wide-arithmetic freight is a spill-placement
-/// class, not a wide-arithmetic one.
+/// at `--optimize=size-min` ([`wide_limbs_freight_oz`]) — first in the F6
+/// spill cluster, and since the #1420 fix in the #1422 item 2 class
+/// (over-window pressure at the emitter). So the class that now bounds
+/// wide-arithmetic freight is a spill-placement class, not a wide-arithmetic
+/// one.
 #[test]
 fn wide_limbs_freight() {
     run_case("wide_limbs_freight", include_str!("../cases/case_wide_limbs_freight.rs"));
@@ -1035,13 +1037,23 @@ fn wide_limbs_freight() {
 /// the stale-dominator-tree erasure is what leaves it stranded outside the
 /// window rather than an independent placement miss. The other three
 /// optimization levels and the no-DWARF build compile the same source.
-/// Compile-time — no inputs involved. Un-ignore with the other F6
-/// reproducers.
+/// Compile-time — no inputs involved.
+///
+/// RECLASSIFIED after the #1420 fix: the erased reload %55 it was filed on is
+/// gone (the trace shows no `erase unused reload` and no unused phi), but the
+/// case still panics at `--optimize=size-min`, now with `invalid operand
+/// stack index (9): requires access to more than 16 elements` at
+/// codegen/masm/src/emit/mod.rs (OpEmitter::copy_operand_to_position) after
+/// the second spills run (`edges to split = 0, values spilled = 17, reloads
+/// issued = 15`). What remains is the #1422 item 2 class (over-window
+/// pressure after the second spills run), the class of
+/// `programs_oz::prog_threefish_oz`.
 #[test]
-#[ignore = "#1420: compiler panic at --optimize=size-min: 'invalid operand stack index (10): \
-            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs:623 — F6 \
-            (edges to split = 1, the erased reload %55 is the operand of the failing spill store); \
-            compile-time, no inputs involved"]
+#[ignore = "#1422: compiler panic at --optimize=size-min: 'invalid operand stack index (9): \
+            requires access to more than 16 elements' at codegen/masm/src/emit/mod.rs \
+            (OpEmitter::copy_operand_to_position) — over-window pressure after the second spills \
+            run (edges to split = 0, values spilled = 17, reloads issued = 15); filed under #1420 \
+            for the erased reload %55, which that fix removed; compile-time, no inputs involved"]
 fn wide_limbs_freight_oz() {
     run_case_with_flags(
         "wide_limbs_freight_oz",

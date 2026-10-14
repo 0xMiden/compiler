@@ -539,6 +539,11 @@ impl BlockEmitter<'_> {
         self.target.push(op);
     }
 
+    /// Get an emitter for the lowering of `inst`, which binds the results of `inst` to the
+    /// operands left on top of the stack when it is dropped.
+    ///
+    /// Each result must then be on the stack, in order, as an operand of its size; so a lowering
+    /// that can fail must do so before creating the emitter.
     #[inline(always)]
     pub fn inst_emitter<'short, 'long: 'short>(
         &'long mut self,

@@ -3,8 +3,9 @@
 // diamond while NAMED u64 locals carry values through it. The spill
 // transform's edge splits/reloads now run interleaved with DebugVar + Nop
 // lowering — debug info must never change scheduling semantics. Freight is
-// kept around six felts, clear of the known ten-band `rotl_window` scheduler
-// panic (see the ignored reproducers in the spills module).
+// kept around six felts, clear of the ten-band `rotl_window` scheduler panic
+// (see the formerly ignored reproducers in the spills module, which compile
+// since the #1420 fix).
 
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {

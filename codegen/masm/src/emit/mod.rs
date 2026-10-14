@@ -98,7 +98,7 @@ use alloc::collections::BTreeSet;
 use core::ops::{Deref, DerefMut};
 
 use miden_assembly::ast::InvokeKind;
-use midenc_hir::{Context, Immediate, Operation, SourceSpan, Type, ValueRef};
+use midenc_hir::{Context, Immediate, Operation, Overflow, SourceSpan, Type, ValueRef};
 
 use super::{Operand, OperandStack};
 use crate::{
@@ -144,8 +144,18 @@ impl DerefMut for InstOpEmitter<'_> {
 }
 impl Drop for InstOpEmitter<'_> {
     fn drop(&mut self) {
+        // A lowering that panicked leaves the stack in an arbitrary state; binding results to it
+        // would only turn the unwinding into an abort.
+        if std::thread::panicking() {
+            return;
+        }
+        // Bind the results to the operands the lowering left on top of the stack. The operands
+        // are retyped, not just renamed: a lowering may push a result's bit pattern as a value of
+        // another type of the same size (e.g. a pointer as a `u32` immediate), and the element
+        // types recorded on the stack must be those of the result. An operand of another size, or
+        // a missing one, is a bug in the lowering (see `BlockEmitter::inst_emitter`).
         for (i, result) in self.inst.results().iter().copied().enumerate() {
-            self.emitter.stack.rename(i, result as ValueRef);
+            self.emitter.stack.retype(i, result as ValueRef);
         }
     }
 }
@@ -382,6 +392,14 @@ impl<'a> OpEmitter<'a> {
         let imm = imm.into();
         self.push_immediate(imm, span);
         self.stack.push_immediate(imm);
+    }
+
+    /// Emit the false flag required by overflowing arithmetic when its result cannot overflow.
+    /// Like the other primitive emitters, this does not update the modeled operand stack.
+    fn emit_no_overflow_flag(&mut self, overflow: Overflow, span: SourceSpan) {
+        if overflow.is_overflowing() {
+            self.emit_push(0u32, span);
+        }
     }
 
     #[inline(always)]
@@ -1116,16 +1134,15 @@ mod tests {
 
         emitter.add_imm(one, Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
 
-        emitter.swap(1, SourceSpan::default());
         emitter.drop(SourceSpan::default());
         emitter.dup(0, SourceSpan::default());
         emitter.add(Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
     }
 
     #[test]
@@ -1153,16 +1170,15 @@ mod tests {
 
         emitter.sub_imm(one, Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
 
-        emitter.swap(1, SourceSpan::default());
         emitter.drop(SourceSpan::default());
         emitter.dup(0, SourceSpan::default());
         emitter.sub(Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
     }
 
     #[test]
@@ -1190,16 +1206,15 @@ mod tests {
 
         emitter.mul_imm(one, Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
 
-        emitter.swap(1, SourceSpan::default());
         emitter.drop(SourceSpan::default());
         emitter.dup(0, SourceSpan::default());
         emitter.mul(Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
     }
 
     #[test]
