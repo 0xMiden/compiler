@@ -21,6 +21,39 @@ use crate::{
 type TestResult<T = ()> = Result<T, Report>;
 
 #[test]
+fn generic_parser_reserves_operand_groups_for_provided_successors() -> TestResult {
+    use super::{
+        DefaultParser, OperationState, ParserState, Scanner, TokenStream,
+        operation::OperationParser,
+    };
+
+    let context = Rc::new(Context::default());
+    let world = context.clone().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+    let tokens = TokenStream::new(super::SourceId::UNKNOWN, Scanner::new(": () -> ()"));
+    let parser = DefaultParser::new(ParserState::new(ParserConfig::new(context.clone()), tokens));
+    let mut parser = OperationParser::new(parser, world);
+    let mut state = OperationState::new(SourceSpan::UNKNOWN, context.get_registered_name::<Ret>());
+    let successors = [context.create_block(), context.create_block()];
+    parser.parse_generic_operation_after_name(
+        &mut state,
+        Some(&[]),
+        Some(&successors),
+        None,
+        None,
+        None,
+    )?;
+
+    assert_eq!(state.operands.len(), 3);
+    assert!(state.operands.iter().all(|group| group.is_empty()));
+    assert_eq!(state.successors.len(), 2);
+    for (i, successor) in state.successors.iter().enumerate() {
+        assert_eq!(successor.block, successors[i]);
+        assert_eq!(successor.operand_group as usize, i + 1);
+    }
+    Ok(())
+}
+
+#[test]
 fn parse_simple_function() -> TestResult {
     let mut test = ParserTest::default();
 

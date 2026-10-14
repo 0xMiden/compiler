@@ -967,9 +967,6 @@ where
             self.parse_optional_ssa_use_list(&mut operand_info)?;
             self.parser.parse_rparen()?;
         }
-        if !operand_info.is_empty() {
-            result.operands.push(Default::default());
-        }
 
         // Parse the successor list, if not explicitly provided.
         if let Some(provided_succs) = parsed_successors {
@@ -997,6 +994,10 @@ where
                 });
             }
         }
+
+        // Generic operations keep their own operands in group 0, followed by one group per
+        // successor. These groups must exist even when they have no operands.
+        result.operands.resize_with(result.successors.len() + 1, Default::default);
 
         // Parse the region list, if not explicitly provided.
         if let Some(provided_regions) = parsed_regions {

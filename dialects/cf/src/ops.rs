@@ -318,6 +318,7 @@ mod tests {
         Type,
         diagnostics::Report,
         dialects::builtin::Ret,
+        print::AsmPrinter,
         testing::{Test, parse_function_fixpoint},
     };
 
@@ -502,6 +503,67 @@ builtin.function public extern(\"C\") @wide(%s: u32) -> u32 {{
         let values = ret.values();
         let operand = values.iter().next().expect("expected builtin.ret to have an operand");
         operand.borrow().as_value_ref()
+    }
+
+    #[test]
+    fn parse_generic_br_with_bare_successor() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = r#"
+builtin.function public extern("C") @branch(%a: u32) -> u32 {
+    "cf.br"()[^dest] : () -> ();
+^dest:
+    builtin.ret %a : (u32);
+};"#;
+        let (function, _) = parse_function_fixpoint(&context, "parse_generic_br.hir", source)?;
+        let function = function.borrow();
+        let body = function.body();
+        let entry = body.entry();
+        let arg = entry.arguments()[0] as ValueRef;
+        let branch = entry.terminator().unwrap().try_downcast_op::<Br>().unwrap();
+        let branch = branch.borrow();
+        let target = branch.target();
+        assert!(target.arguments.is_empty());
+        assert_eq!(returned_value(target.successor()), arg);
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(context.clone(), &flags);
+        printer.print_operation_generic(branch.as_operation());
+        expect![[r#""cf.br"() [ ^block2 ] : () -> ();"#]]
+            .assert_eq(&format!("{}", printer.finish()));
+        Ok(())
+    }
+
+    #[test]
+    fn parse_generic_cond_br_with_bare_successors() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = r#"
+builtin.function public extern("C") @branch(%c: i1, %a: u32, %b: u32) -> u32 {
+    "cf.cond_br"(%c)[^yes, ^no] : (i1) -> ();
+^yes:
+    builtin.ret %a : (u32);
+^no:
+    builtin.ret %b : (u32);
+};"#;
+        let (function, _) = parse_function_fixpoint(&context, "parse_generic_cond_br.hir", source)?;
+        let function = function.borrow();
+        let body = function.body();
+        let entry = body.entry();
+        let branch = entry.terminator().unwrap().try_downcast_op::<CondBr>().unwrap();
+        let branch = branch.borrow();
+        assert_eq!(branch.condition().as_value_ref(), entry.arguments()[0] as ValueRef);
+        let then_dest = branch.then_dest();
+        let else_dest = branch.else_dest();
+        assert!(then_dest.arguments.is_empty());
+        assert!(else_dest.arguments.is_empty());
+        assert_eq!(returned_value(then_dest.successor()), entry.arguments()[1] as ValueRef);
+        assert_eq!(returned_value(else_dest.successor()), entry.arguments()[2] as ValueRef);
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(context.clone(), &flags);
+        printer.print_operation_generic(branch.as_operation());
+        expect![[r#""cf.cond_br"(%0) [ ^block2, ^block3 ] : i1 -> ();"#]]
+            .assert_eq(&format!("{}", printer.finish()));
+        Ok(())
     }
 
     /// Statically-known successor lists (`cf.cond_br %c ^a, ^b`) parse with the `, ` separator
