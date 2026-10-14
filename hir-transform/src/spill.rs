@@ -908,6 +908,12 @@ fn insert_required_phis(
             (value.ty().clone(), value.span())
         };
         for mut b in idf_r {
+            // The entry block is in the frontier when it has back edges, but its arguments are the
+            // function's parameters: a value carried into it along a back edge is one of them
+            // already, and every other value is defined anew below the entry's top.
+            if b.borrow().is_entry_block() {
+                continue;
+            }
             // Allocate new block parameter/phi, if one is not already present
             let phis = inserted_phis.entry(b).or_default();
             if let Entry::Vacant(entry) = phis.entry(value) {
