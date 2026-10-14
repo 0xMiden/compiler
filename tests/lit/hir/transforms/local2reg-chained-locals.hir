@@ -1,0 +1,18 @@
+// RUN: hir-opt %s --pass-pipeline 'builtin.module(builtin.function(local2reg))' | filecheck %s
+
+// Slot 1 stores the value loaded from slot 0. Locals are promoted in index order, so promoting
+// slot 0 replaces that load with the entry argument before slot 1 is visited, and promoting slot 1
+// forwards what its store holds by then: the entry argument.
+builtin.module public @local2reg_chained_locals {
+builtin.function public extern("C") @l2r_chain(%0: u32) -> u32 {
+    hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+    %1 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+    hir.store_local %1 <{ local = #builtin.local_variable<1, u32> }> : (u32);
+    %2 = hir.load_local <{ local = #builtin.local_variable<1, u32> }>;
+    builtin.ret %2 : (u32);
+};
+
+// CHECK: builtin.function public extern("C") @l2r_chain(%0: u32) -> u32 {
+// CHECK-NEXT:     builtin.ret %0 : (u32);
+// CHECK-NEXT: };
+};

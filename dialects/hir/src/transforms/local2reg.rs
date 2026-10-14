@@ -18,6 +18,17 @@ use midenc_hir::{
 
 use crate::{ExecFpi, LoadLocal, StoreLocal};
 
+/// The value `store` writes, read from the operation: a promotion earlier in the same run may have
+/// replaced it, and the operation, not a copy taken during the scan, holds the current one.
+fn stored_value(store: OperationRef) -> ValueRef {
+    store
+        .borrow()
+        .downcast_ref::<StoreLocal>()
+        .expect("only `hir.store_local` is recorded")
+        .value()
+        .as_value_ref()
+}
+
 /// Rewrite debug references to `local` so they follow the promoted SSA values.
 ///
 /// When a local is promoted to an SSA value (or its dead stores are erased), the memory slot the
@@ -32,7 +43,7 @@ fn convert_debug_references_for_local<R: Rewriter>(
     rewriter: &mut R,
     function_op: OperationRef,
     local: &LocalVariable,
-    stores: &[(OperationRef, ValueRef)],
+    stores: &[OperationRef],
 ) -> bool {
     let local_index = local.as_usize() as u32;
     let mut declares = SmallVec::<[OperationRef; 2]>::new();
@@ -99,10 +110,10 @@ fn convert_debug_references_for_local<R: Rewriter>(
             let op = declare_op.borrow();
             op.downcast_ref::<DebugDeclare>().unwrap().variable().as_value().clone()
         };
-        for (store, stored_value) in stores {
+        for store in stores {
             let span = store.borrow().span();
             rewriter.set_insertion_point_before(*store);
-            let _ = rewriter.debug_value(*stored_value, variable.clone(), span);
+            let _ = rewriter.debug_value(stored_value(*store), variable.clone(), span);
         }
         rewriter.erase_op(declare_op);
     }
@@ -191,8 +202,7 @@ impl Pass for Local2Reg {
             .with_listener(TracingRewriterListener);
 
         let mut loaded = FxHashMap::<LocalVariable, SmallVec<[OperationRef; 2]>>::default();
-        let mut stored =
-            FxHashMap::<LocalVariable, SmallVec<[(OperationRef, ValueRef); 2]>>::default();
+        let mut stored = FxHashMap::<LocalVariable, SmallVec<[OperationRef; 2]>>::default();
         // Locals whose values are read through op attributes rather than `LoadLocal`; their
         // stores are live even though no load op refers to them, and they cannot be promoted.
         let mut pinned = FxHashSet::<LocalVariable>::default();
@@ -211,15 +221,15 @@ impl Pass for Local2Reg {
                 );
                 loaded.entry(local).or_default().push(op);
             } else if let Some(store) = operation.downcast_ref::<StoreLocal>() {
-                let stored_value = store.value().as_value_ref();
+                let value = store.value().as_value_ref();
                 let local = *store.get_local();
                 log::trace!(
                     target: &trace_target,
                     sym = trace_target.relevant_symbol();
-                    "found store of {stored_value} to local {local} @ {}",
+                    "found store of {value} to local {local} @ {}",
                     ProgramPoint::before(op),
                 );
-                stored.entry(local).or_default().push((op, stored_value));
+                stored.entry(local).or_default().push(op);
             }
         });
 
@@ -298,9 +308,10 @@ impl Pass for Local2Reg {
                 // following criteria:
                 //
                 // 1. The load and store are in the same block
-                // 2. There is no control flow between the store and load, including function calls
+                // 2. The store precedes the load
+                // 3. There is no control flow between the store and load, including function calls
                 let load = loads[0];
-                let (store, stored_value) = stores.last().unwrap();
+                let store = *stores.last().unwrap();
 
                 // 1.
                 if load.parent() != store.parent() {
@@ -312,7 +323,18 @@ impl Pass for Local2Reg {
                     continue;
                 }
 
-                // 2.
+                // 2. A load that precedes the store reads what the slot held before the store,
+                // not the stored value
+                if !store.borrow().is_before_in_block(&load) {
+                    log::trace!(
+                        target: &trace_target,
+                        sym = trace_target.relevant_symbol();
+                        "ignoring {local}: loaded before it is stored",
+                    );
+                    continue;
+                }
+
+                // 3.
                 let mut next_op = store.next();
                 while let Some(current) = next_op.take() {
                     if current == load {
@@ -346,12 +368,7 @@ impl Pass for Local2Reg {
                 //
                 // Any debug declaration pointing at the promoted slot must follow the value into
                 // its SSA register, since the slot will no longer be written.
-                if !convert_debug_references_for_local(
-                    &mut rewriter,
-                    op,
-                    &local,
-                    &[(*store, *stored_value)],
-                ) {
+                if !convert_debug_references_for_local(&mut rewriter, op, &local, &[store]) {
                     log::trace!(
                         target: &trace_target,
                         sym = trace_target.relevant_symbol();
@@ -359,8 +376,10 @@ impl Pass for Local2Reg {
                     );
                     continue;
                 }
-                rewriter.erase_op(*store);
-                rewriter.replace_all_op_uses_with_values(load, &[Some(*stored_value)]);
+                // Read before erasing: erasing an operation clears its operands
+                let value = stored_value(store);
+                rewriter.erase_op(store);
+                rewriter.replace_all_op_uses_with_values(load, &[Some(value)]);
                 rewriter.erase_op(load);
                 changed = PostPassStatus::Changed;
             } else if let Some(stores) = stored.get(&local) {
@@ -377,7 +396,7 @@ impl Pass for Local2Reg {
                     );
                     continue;
                 }
-                for (store, _) in stores.iter() {
+                for store in stores.iter() {
                     changed = PostPassStatus::Changed;
                     log::trace!(
                         target: &trace_target,
@@ -460,6 +479,74 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
     }
 
     #[test]
+    fn promotes_a_chain_of_locals_to_the_first_stored_value() {
+        use alloc::vec::Vec;
+
+        // Each chain lists, in program order, the slots the entry argument passes through: it is
+        // stored to the first slot, loaded, the load stored to the next slot, and so on. Locals
+        // are promoted in index order, so in every order but the descending one, a slot is
+        // promoted after the slot whose load it stores: by then its store holds that load's
+        // replacement, and that is the value the promotion forwards.
+        for chain in [&[1, 0][..], &[0, 1], &[0, 2, 1]] {
+            let mut test = Test::new("promotes_chain", &[Type::U32], &[Type::U32]);
+            {
+                let mut builder = test.function_builder();
+                let locals =
+                    chain.iter().map(|_| builder.alloc_local(Type::U32)).collect::<Vec<_>>();
+                let mut value = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                for &slot in chain {
+                    builder.store_local(locals[slot], value, SourceSpan::UNKNOWN).unwrap();
+                    value = builder.load_local(locals[slot], SourceSpan::UNKNOWN).unwrap();
+                }
+                builder.ret([value], SourceSpan::UNKNOWN).unwrap();
+            }
+
+            test.apply_pass::<Local2Reg>(true).expect("invalid ir");
+
+            let output = format!("{}", test.function().borrow().as_operation());
+            std::println!("chain {chain:?}: {output}");
+            filecheck!(
+                output,
+                r#"
+// CHECK-LABEL: builtin.function public extern("C") @promotes_chain
+// CHECK-NEXT: builtin.ret %0 : (u32);
+                "#
+            );
+        }
+
+        // One load stored to two slots, each loaded once
+        let mut test = Test::new("promotes_fan_out", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::U32);
+            let local1 = builder.alloc_local(Type::U32);
+            let local2 = builder.alloc_local(Type::U32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            builder.store_local(local0, v0, SourceSpan::UNKNOWN).unwrap();
+            let v1 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local1, v1, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local2, v1, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.load_local(local1, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.load_local(local2, SourceSpan::UNKNOWN).unwrap();
+            let v4 = builder.add(v2, v3, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v4], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
+
+        let output = format!("{}", test.function().borrow().as_operation());
+        std::println!("{output}");
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.function public extern("C") @promotes_fan_out
+// CHECK-NEXT: [[V4:%\d+]] = arith.add %0, %0 <{ overflow = #builtin.overflow<checked> }>;
+// CHECK-NEXT: builtin.ret [[V4]] : (u32);
+            "#
+        );
+    }
+
+    #[test]
     fn converts_debug_declares_for_promoted_locals() {
         use midenc_hir::{
             dialects::{
@@ -508,6 +595,63 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
 // CHECK-NOT: hir.store_local
             "#
         );
+    }
+
+    #[test]
+    fn converts_debug_declares_along_a_chain_of_locals() {
+        use midenc_hir::{
+            dialects::debuginfo::{
+                DIBuilder, DebugInfoDialect,
+                attributes::{Expression, ExpressionOp, Variable},
+            },
+            interner::Symbol,
+        };
+
+        // `y` is declared in slot 1, which stores slot 0's load, and promoting slot 0 replaces
+        // that load. Slot 1 is promoted when it is loaded, and its store is dead when it is not;
+        // either way the declaration follows the value slot 0 stored.
+        for loaded in [true, false] {
+            let mut test = Test::new("declares_chain", &[Type::U32], &[Type::U32]);
+            test.context().get_or_register_dialect::<DebugInfoDialect>();
+            {
+                let mut builder = test.function_builder();
+                let local0 = builder.alloc_local(Type::U32);
+                let local1 = builder.alloc_local(Type::U32);
+                let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                builder.store_local(local0, v0, SourceSpan::UNKNOWN).unwrap();
+                let v1 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+                builder.store_local(local1, v1, SourceSpan::UNKNOWN).unwrap();
+                let variable =
+                    Variable::new(Symbol::intern("y"), Symbol::intern("test.rs"), 2, None);
+                let expr = Expression::with_ops(alloc::vec![ExpressionOp::LocalSlot(1)]);
+                BuiltinOpBuilder::builder_mut(&mut builder)
+                    .debug_declare(variable, expr, SourceSpan::UNKNOWN)
+                    .unwrap();
+                let v2 = if loaded {
+                    builder.load_local(local1, SourceSpan::UNKNOWN).unwrap()
+                } else {
+                    v0
+                };
+                let v3 = builder.add(v2, v0, SourceSpan::UNKNOWN).unwrap();
+                builder.ret([v3], SourceSpan::UNKNOWN).unwrap();
+            }
+
+            test.apply_pass::<Local2Reg>(true).expect("invalid ir");
+
+            let output = format!("{}", test.function().borrow().as_operation());
+            std::println!("loaded = {loaded}: {output}");
+            filecheck!(
+                output,
+                r#"
+// CHECK-LABEL: builtin.function public extern("C") @declares_chain
+// CHECK-NEXT: di.debug_value %0 <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+// CHECK-NEXT: [[V3:%\d+]] = arith.add %0, %0 <{ overflow = #builtin.overflow<checked> }>;
+// CHECK-NEXT: builtin.ret [[V3]] : (u32);
+// CHECK-NOT: di.debug_declare
+// CHECK-NOT: hir.store_local
+                "#
+            );
+        }
     }
 
     #[test]
@@ -754,6 +898,103 @@ builtin.function public extern("C") @ignores_poison_loads(%0: i32, %1: i32) -> i
     // CHECK-NEXT: builtin.ret [[V3]] : (i32);
     builtin.ret %3 : (i32);
 };
+            "#
+        );
+    }
+
+    #[test]
+    fn does_not_promote_a_load_that_precedes_its_store() {
+        let mut test = Test::new("ignores_load_before_store", &[Type::I32], &[Type::I32]);
+
+        // The load reads the slot before the store writes it, and its use follows the store
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let v1 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.add(v0, v0, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local0, v2, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.mul(v1, v0, SourceSpan::UNKNOWN).unwrap();
+            let v4 = builder.add(v3, v2, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v4], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
+
+        let output = format!("{}", test.function().borrow().as_operation());
+        std::println!("{output}");
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.function public extern("C") @ignores_load_before_store
+// CHECK-NEXT: [[V1:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+// CHECK-NEXT: [[V2:%\d+]] = arith.add %0, %0 <{ overflow = #builtin.overflow<checked> }>;
+// CHECK-NEXT: hir.store_local [[V2]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
+// CHECK-NEXT: [[V3:%\d+]] = arith.mul [[V1]], %0 <{ overflow = #builtin.overflow<checked> }>;
+            "#
+        );
+    }
+
+    #[test]
+    fn does_not_promote_a_load_used_before_its_store() {
+        let mut test = Test::new("ignores_use_before_store", &[Type::I32], &[Type::I32]);
+
+        // The load and its use both precede the store
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let v1 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.mul(v1, v0, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.add(v0, v0, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local0, v3, SourceSpan::UNKNOWN).unwrap();
+            let v4 = builder.add(v2, v3, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v4], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
+
+        let output = format!("{}", test.function().borrow().as_operation());
+        std::println!("{output}");
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.function public extern("C") @ignores_use_before_store
+// CHECK-NEXT: [[V1:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+// CHECK-NEXT: [[V2:%\d+]] = arith.mul [[V1]], %0 <{ overflow = #builtin.overflow<checked> }>;
+// CHECK-NEXT: [[V3:%\d+]] = arith.add %0, %0 <{ overflow = #builtin.overflow<checked> }>;
+// CHECK-NEXT: hir.store_local [[V3]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
+            "#
+        );
+    }
+
+    #[test]
+    fn does_not_promote_a_load_stored_back_to_its_local() {
+        let mut test = Test::new("ignores_self_store", &[Type::I32], &[Type::I32]);
+
+        // The only store writes back the value the only load read
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let v1 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local0, v1, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.add(v1, v0, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v2], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
+
+        let output = format!("{}", test.function().borrow().as_operation());
+        std::println!("{output}");
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.function public extern("C") @ignores_self_store
+// CHECK-NEXT: [[V1:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+// CHECK-NEXT: hir.store_local [[V1]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
+// CHECK-NEXT: [[V2:%\d+]] = arith.add [[V1]], %0 <{ overflow = #builtin.overflow<checked> }>;
+// CHECK-NEXT: builtin.ret [[V2]] : (i32);
             "#
         );
     }
