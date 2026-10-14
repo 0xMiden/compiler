@@ -151,6 +151,64 @@ builtin.world {
     Ok(())
 }
 
+#[test]
+fn absolute_forward_symbol_uses_preserve_each_owner() -> TestResult {
+    use crate::dialects::builtin::attributes::SymbolRefAttr;
+
+    let source = r#"
+builtin.module public @outer {
+    builtin.module public @first attributes { reference = #builtin.symbol<::@outer::@target> } {};
+    builtin.module public @second attributes { reference = #builtin.symbol<::@outer::@target> } {};
+    builtin.module public @target {};
+};
+"#;
+    for mode in ["module", "world"] {
+        let test = ParserTest::default();
+        let parsed = match mode {
+            "module" => test.parse_any("forward_uses.hir", source)?,
+            "world" => {
+                test.parse_any("forward_uses.hir", &format!("builtin.world {{ {source} }};"))?
+            }
+            _ => unreachable!(),
+        };
+        let module = if parsed.borrow().is::<Module>() {
+            parsed
+        } else {
+            parsed
+                .borrow()
+                .as_symbol_table()
+                .unwrap()
+                .symbol_manager()
+                .lookup_op("outer")
+                .unwrap()
+        };
+        let module = module.borrow();
+        let symbols = module.as_symbol_table().unwrap().symbol_manager();
+        let target = symbols.lookup_op("target").unwrap();
+        let target = target.borrow();
+        let uses = target.as_symbol().unwrap().iter_uses().collect::<alloc::vec::Vec<_>>();
+        assert_eq!(uses.len(), 2, "{mode}");
+        for name in ["first", "second"] {
+            let owner = symbols.lookup_op(name).unwrap();
+            let reference =
+                owner.borrow().get_typed_attribute::<SymbolRefAttr>("reference").unwrap();
+            assert_eq!(
+                uses.iter()
+                    .filter(|usage| usage.owner == owner && usage.attr == reference)
+                    .count(),
+                1
+            );
+            let reference = reference.borrow();
+            assert_eq!(reference.user().borrow().owner, owner);
+            assert_eq!(
+                reference.resolve().unwrap().borrow().as_operation_ref(),
+                target.as_operation_ref()
+            );
+        }
+    }
+    Ok(())
+}
+
 /// The `reserved_memory` module attribute and the function-table ops are inputs to the linker's
 /// memory layout, so they must survive a print/parse round-trip of the textual HIR.
 #[test]

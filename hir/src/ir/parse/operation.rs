@@ -190,7 +190,7 @@ where
 
         // If we are populating the parser state, prepare it for parsing.
         if let Some(state) = this.parser.state_mut().asm_state.as_deref_mut() {
-            state.initialize(top_level.as_operation_ref());
+            state.initialize();
         }
 
         this
@@ -894,7 +894,7 @@ where
 
         // If we are populating the parser state, start a new operation definition.
         if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
-            asm_state.start_operation_definition(&op_name);
+            asm_state.start_operation_definition();
         }
 
         let mut result = OperationState::new(span, op_name);
@@ -1137,7 +1137,7 @@ where
 
         // If we are populating the parser state, start a new operation definition.
         if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
-            asm_state.start_operation_definition(&op_state.name);
+            asm_state.start_operation_definition();
         }
 
         // Have the op implementation take a crack and parsing this.
@@ -1215,11 +1215,6 @@ where
         // Parse the '{'.
         self.parser.parse_lbrace()?;
 
-        // If we are populating the parser state, start a new region definition.
-        if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
-            asm_state.start_region_definition();
-        }
-
         // Parse the region body.
         if !entry_arguments.is_empty()
             || self.token_stream_mut().is_next(|tok| !matches!(tok, Token::Rbrace))
@@ -1229,11 +1224,6 @@ where
         }
 
         self.parser.parse_rbrace()?;
-
-        // If we are populating the parser state, finalize this region.
-        if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
-            asm_state.finalize_region_definition();
-        }
 
         Ok(())
     }

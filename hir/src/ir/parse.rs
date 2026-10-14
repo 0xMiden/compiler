@@ -360,11 +360,7 @@ fn parse_anchored_source(
     let span = parser.current_location();
     let world = parser.builder_mut().create::<World, ()>(span)()?;
     let anchor = world.as_operation_ref();
-    let mut asm_state = Box::<AsmParserState>::default();
-    {
-        asm_state.initialize(anchor);
-        parser.state_mut().asm_state = Some(asm_state);
-    }
+    parser.state_mut().asm_state = Some(Box::<AsmParserState>::default());
     let mut operation_parser = operation::OperationParser::new(parser, world);
     let op = operation_parser
         .parse_operation()
