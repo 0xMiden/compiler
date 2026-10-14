@@ -1065,3 +1065,28 @@ builtin.world {
     assert!(!resolves("\"my-mod\""));
     Ok(())
 }
+
+/// A generic-form operation with more successors than the 16-bit operand-group index can address
+/// is rejected by the parser instead of wrapping a successor onto an earlier operand group.
+#[test]
+fn parse_generic_operation_with_too_many_successors_is_rejected() {
+    let test = ParserTest::default();
+    // The op's own operands take group 0, so the successors fill the remaining 65,535 groups
+    // and the last one needs group 65,536
+    let successors = alloc::vec!["^dest"; u16::MAX as usize + 1].join(", ");
+    let source = format!(
+        "\
+builtin.function public extern(\"C\") @entrypoint(%a: i32) -> i32 {{
+    \"builtin.ret\"(%a)[{successors}] : (i32) -> ();
+^dest:
+    builtin.ret %a : (i32);
+}};"
+    );
+
+    let error = test
+        .parse::<Function>("parse_generic_too_many_successors.hir", &source)
+        .err()
+        .expect("expected the operation to be rejected");
+    let message = format!("{error}");
+    assert!(message.contains("too many operand groups"), "{message}");
+}

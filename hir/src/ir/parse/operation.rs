@@ -115,6 +115,17 @@ impl OpOrArgument {
     }
 }
 
+/// The operand group of the `index`th successor of a generic-form operation, whose successor
+/// operands follow the single operand group of the op itself.
+///
+/// Fails when the group index does not fit the 16-bit index an operation stores.
+fn successor_operand_group(index: usize, span: SourceSpan) -> ParseResult<u16> {
+    u16::try_from(index + 1).map_err(|_| ParserError::TooManyOperandGroups {
+        span,
+        limit: u16::MAX as usize,
+    })
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct ResultRecord {
     pub loc: SourceSpan,
@@ -962,14 +973,14 @@ where
 
         // Parse the successor list, if not explicitly provided.
         if let Some(provided_succs) = parsed_successors {
-            result.successors.extend(provided_succs.iter().copied().enumerate().map(
-                |(i, block)| PendingSuccessorInfo {
+            for (i, block) in provided_succs.iter().copied().enumerate() {
+                result.successors.push(PendingSuccessorInfo {
                     block,
                     key: None,
-                    operand_group: (i + 1) as u16,
+                    operand_group: successor_operand_group(i, result.span)?,
                     successor_group: 0,
-                },
-            ));
+                });
+            }
         } else if self.parser.token_stream_mut().is_next(|tok| matches!(tok, Token::Lbracket)) {
             // Check if the operation is not a known terminator.
             if !result.name.implements::<dyn Terminator>() {
@@ -977,14 +988,14 @@ where
             }
             let mut successors = SmallVec::<[_; 2]>::default();
             self.parse_successors(&mut successors)?;
-            result.successors.extend(successors.into_iter().enumerate().map(|(i, block)| {
-                PendingSuccessorInfo {
+            for (i, block) in successors.into_iter().enumerate() {
+                result.successors.push(PendingSuccessorInfo {
                     block,
                     key: None,
-                    operand_group: (i + 1) as u16,
+                    operand_group: successor_operand_group(i, result.span)?,
                     successor_group: 0,
-                }
-            }));
+                });
+            }
         }
 
         // Parse the region list, if not explicitly provided.

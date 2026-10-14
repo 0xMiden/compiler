@@ -209,6 +209,13 @@ pub enum ParserError {
         #[label("non-terminator operations cannot have successors")]
         span: SourceSpan,
     },
+    #[error("too many operand groups")]
+    #[diagnostic()]
+    TooManyOperandGroups {
+        #[label("this successor needs an operand group past the limit of {limit}")]
+        span: SourceSpan,
+        limit: usize,
+    },
     #[error("invalid operation type")]
     #[diagnostic()]
     InvalidOperationType {

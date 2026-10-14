@@ -311,7 +311,7 @@ impl Foldable for Select {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec;
+    use alloc::{format, string::String, vec, vec::Vec};
 
     use midenc_expect_test::expect;
     use midenc_hir::{
@@ -415,6 +415,80 @@ mod tests {
         assert_eq!(last_case.arguments().len(), 1);
         assert_eq!(last_case.arguments()[0].borrow().as_value_ref(), selector);
         assert_eq!(switch_op.operands().all().len(), NUM_CASES + 1);
+    }
+
+    /// The source of a function whose `cf.switch` has `num_cases` zero-argument keyed cases and a
+    /// zero-argument fallback, all targeting one block.
+    fn wide_switch_source(num_cases: usize) -> String {
+        let cases = (0..num_cases)
+            .map(|i| format!("#builtin.u32<{i}> -> ^dest"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "\
+builtin.function public extern(\"C\") @wide(%s: u32) -> u32 {{
+    cf.switch %s [{cases}], ^dest : (u32);
+^dest:
+    builtin.ret %s : (u32);
+}};"
+        )
+    }
+
+    /// Parses `source` as a function in a fresh context, keeping the context alive with it.
+    fn parse_wide_switch(
+        name: &str,
+        source: &str,
+    ) -> Result<(Rc<Context>, midenc_hir::dialects::builtin::FunctionRef), Report> {
+        let context = Rc::new(Context::default());
+        let config = midenc_hir::parse::ParserConfig::new(context.clone());
+        let function = midenc_hir::parse::parse::<midenc_hir::dialects::builtin::Function>(
+            config,
+            midenc_hir::diagnostics::Uri::new(name),
+            source,
+        )?;
+        Ok((context, function))
+    }
+
+    /// The widest keyed `cf.switch` the textual IR accepts: the selector and the fallback take
+    /// the two reserved operand groups, and the cases fill the remaining 16-bit group indices
+    /// without any case wrapping onto the selector's group.
+    #[test]
+    fn parse_switch_with_the_most_representable_cases() -> Result<(), Report> {
+        const NUM_CASES: usize = u16::MAX as usize - 1;
+
+        let (_context, function) =
+            parse_wide_switch("parse_switch_widest.hir", &wide_switch_source(NUM_CASES))?;
+        let function = function.borrow();
+        let switch_op = function
+            .body()
+            .entry()
+            .terminator()
+            .unwrap()
+            .try_downcast_op::<Switch>()
+            .expect("expected entry block to terminate with cf.switch");
+        let switch_op = switch_op.borrow();
+
+        let cases = switch_op.cases();
+        assert_eq!(cases.len(), NUM_CASES);
+        assert!(cases.get(NUM_CASES - 1).unwrap().arguments().is_empty());
+        assert!(switch_op.fallback().arguments.is_empty());
+        // The selector is the only operand: no case forwards anything
+        assert_eq!(switch_op.operands().all().len(), 1);
+
+        Ok(())
+    }
+
+    /// One keyed case past the 16-bit operand-group limit is a parse error, not a case that
+    /// silently shares the selector's operand group.
+    #[test]
+    fn parse_switch_with_too_many_cases_is_rejected() {
+        const NUM_CASES: usize = u16::MAX as usize;
+
+        let error = parse_wide_switch("parse_switch_too_wide.hir", &wide_switch_source(NUM_CASES))
+            .err()
+            .expect("expected the switch to be rejected");
+        let message = format!("{error}");
+        assert!(message.contains("too many operand groups"), "{message}");
     }
 
     /// The value returned by the `builtin.ret` terminating `block`.
