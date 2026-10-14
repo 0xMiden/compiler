@@ -826,6 +826,12 @@ where
             Ok(true)
         })?;
 
+        // The ids are resolved after the list is parsed, since the list parser holds the parser
+        for id in succ_ids {
+            let (span, id) = id.into_parts();
+            destinations.push(self.get_block_named(id, span).into_inner());
+        }
+
         if destinations.is_empty() {
             let source_id = self.source_id();
             let at = self.parser.token_stream().current_position();
