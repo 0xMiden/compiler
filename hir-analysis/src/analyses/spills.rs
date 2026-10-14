@@ -692,10 +692,14 @@ impl SpillAnalysis {
         liveness: &LivenessAnalysis,
         analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
-        // Visit the blocks of the CFG in reverse postorder (top-down)
+        // Visit the blocks of the CFG in reverse postorder (top-down). A block the dead-code
+        // analysis proved unreachable is skipped: no control flows into it, so it has no
+        // predecessor state to derive W^entry from, and no spill or reload placed in it could run.
         let mut block_q = VecDeque::with_capacity(32);
         for block in midenc_hir::PostOrderBlockIter::new(domtree.root()) {
-            block_q.push_front(block);
+            if liveness.is_block_executable(block) {
+                block_q.push_front(block);
+            }
         }
         log::debug!(
             target: &self.trace_target,
@@ -1848,9 +1852,12 @@ impl SpillAnalysis {
             for pred in block.predecessors() {
                 let predecessor = pred.predecessor();
 
-                // Skip control edges that aren't executable.
+                // Skip control edges that aren't executable, and the edges out of blocks that
+                // aren't: those blocks are never visited.
                 let edge = CfgEdge::new(predecessor, pred.successor(), block.span());
-                if !liveness.solver().get::<Executable, _>(&edge).is_none_or(|exe| exe.is_live()) {
+                if !liveness.solver().get::<Executable, _>(&edge).is_none_or(|exe| exe.is_live())
+                    || !liveness.is_block_executable(predecessor)
+                {
                     continue;
                 }
 

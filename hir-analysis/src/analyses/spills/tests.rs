@@ -1,7 +1,7 @@
 use alloc::{format, string::ToString, sync::Arc, vec};
 
 use midenc_dialect_arith::ArithOpBuilder as Arith;
-use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
+use midenc_dialect_cf::{ControlFlowOpBuilder as Cf, SwitchCase};
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder as Scf;
 use midenc_expect_test::expect_file;
@@ -871,4 +871,62 @@ fn reports_an_operation_whose_operands_exceed_the_operand_stack() {
     assert!(message.contains("hir.dyncall"), "{message}");
     assert!(message.contains("needs 17 operand stack elements at once"), "{message}");
     assert!(message.contains("only 16 are addressable"), "{message}");
+}
+
+/// The `cf.switch` selector is a constant, so the dead-code analysis marks only the successor it
+/// selects executable: the other two blocks are dead, and nothing records a predecessor for them.
+/// The analysis visits the executable blocks only, and the dead ones get no state; the selected
+/// successor and the dead one both branch to a join, which is visited from the live edge alone.
+#[test]
+fn spills_cfg_with_dead_blocks() -> AnalysisResult<()> {
+    let mut test = Test::named("spills_cfg_with_dead_blocks").in_module("test");
+
+    let span = SourceSpan::UNKNOWN;
+
+    test.with_function("spills_cfg_with_dead_blocks", &[Type::U32], &[Type::U32]);
+    let func = test.function();
+
+    let (live, dead, fallback, join, value);
+    {
+        let mut b = test.function_builder();
+        value = b.current_block().borrow().arguments()[0] as ValueRef;
+        let selector = b.u32(0, span);
+        live = b.create_block();
+        dead = b.create_block();
+        fallback = b.create_block();
+        join = b.create_block();
+        let cases = [SwitchCase::create(0, live, vec![]), SwitchCase::create(1, dead, vec![])];
+        b.switch(selector, cases, fallback, [], span)?;
+
+        b.switch_to_block(live);
+        b.br(join, [], span)?;
+
+        b.switch_to_block(dead);
+        b.br(join, [], span)?;
+
+        b.switch_to_block(fallback);
+        let sum = b.add(value, value, span)?;
+        b.ret(Some(sum), span)?;
+
+        b.switch_to_block(join);
+        b.ret(Some(value), span)?;
+    }
+
+    let am = AnalysisManager::new(func.as_operation_ref(), None);
+    let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
+
+    assert!(!spills.has_spills(), "no point of this function holds more than K values");
+    for block in [dead, fallback] {
+        assert!(
+            !spills.w_entries.contains_key(&ProgramPoint::at_start_of(block)),
+            "{block} is dead, so the analysis does not visit it"
+        );
+    }
+    let w_entry = spills.w_entry(&ProgramPoint::at_start_of(join));
+    assert!(
+        w_entry.iter().any(|operand| operand.value() == value),
+        "the join is visited, with the argument it returns on the operand stack"
+    );
+
+    Ok(())
 }
