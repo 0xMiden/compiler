@@ -1271,6 +1271,7 @@ macro_rules! impl_simple_hir_lowering {
 }
 
 impl_simple_hir_lowering!(hir::Caller => caller);
+impl_simple_hir_lowering!(hir::UnpackWord => unpack_word);
 impl_simple_hir_lowering!(hir::Clk => clk);
 impl_simple_hir_lowering!(hir::AdvicePop => advice_pop);
 impl_simple_hir_lowering!(hir::AdviceLoadWord => advice_load_word);
