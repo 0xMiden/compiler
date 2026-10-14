@@ -152,23 +152,10 @@ impl Drop for InstOpEmitter<'_> {
         // Bind the results to the operands the lowering left on top of the stack. The operands
         // are retyped, not just renamed: a lowering may push a result's bit pattern as a value of
         // another type of the same size (e.g. a pointer as a `u32` immediate), and the element
-        // types recorded on the stack must be those of the result. A lowering that failed with an
-        // error may have left fewer operands, or operands of another size, behind: those are bound
-        // by name only, the error itself is reported by the caller.
-        let stack = &mut self.emitter.stack;
+        // types recorded on the stack must be those of the result. An operand of another size, or
+        // a missing one, is a bug in the lowering (see `BlockEmitter::inst_emitter`).
         for (i, result) in self.inst.results().iter().copied().enumerate() {
-            let result = result as ValueRef;
-            if stack.try_retype(i, result) {
-                continue;
-            }
-            if i >= stack.len() {
-                break;
-            }
-            log::trace!(
-                target: "codegen",
-                "binding {result} by name only: the operand on the stack does not have its size"
-            );
-            stack.rename(i, result);
+            self.emitter.stack.retype(i, result as ValueRef);
         }
     }
 }
