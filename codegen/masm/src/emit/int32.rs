@@ -649,6 +649,21 @@ impl OpEmitter<'_> {
             },
             span,
         );
+        if overflow.is_overflowing() {
+            self.emit_u32_mul_overflow_flag(span);
+        }
+    }
+
+    /// Convert a widened product `[low, high]` into `[overflow, low]`, with a boolean flag.
+    fn emit_u32_mul_overflow_flag(&mut self, span: SourceSpan) {
+        self.emit_all(
+            [
+                masm::Instruction::Swap1,
+                masm::Instruction::EqImm(Felt::ZERO.into()),
+                masm::Instruction::Not,
+            ],
+            span,
+        );
     }
 
     /// Pops two i32 values off the stack, `b` and `a`, and performs `a * b`.
@@ -704,6 +719,9 @@ impl OpEmitter<'_> {
                     },
                     span,
                 );
+                if overflow.is_overflowing() {
+                    self.emit_u32_mul_overflow_flag(span);
+                }
             }
         }
     }

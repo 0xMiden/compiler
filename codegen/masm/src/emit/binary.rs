@@ -1851,4 +1851,68 @@ mod tests {
     fn overflowing_sub_imm_u16_preserves_results_in_vm() -> Result<(), Report> {
         assert_narrow_overflowing_sub_in_vm(U16_SUB_CASES, |n| Immediate::U16(n as u16), true)
     }
+
+    fn assert_overflowing_mul_u32_in_vm(immediate: bool) -> Result<(), Report> {
+        // Hand-checked (lhs, rhs, wrapped result, overflow flag) cases. A high product limb
+        // greater than one must still produce a boolean flag, independent of the low limb.
+        for (lhs, rhs, result, flag) in [
+            (65_536u32, 65_536u32, 0u32, 1u32),
+            (3, 5, 15, 0),
+            (65_535, 65_535, 4_294_836_225, 0),
+            (u32::MAX, 2, 4_294_967_294, 1),
+            (u32::MAX, u32::MAX, 1, 1),
+            (0, u32::MAX, 0, 0),
+            (u32::MAX, 0, 0, 0),
+            (u32::MAX, 1, u32::MAX, 0),
+            (1, u32::MAX, u32::MAX, 0),
+            (0, 0, 0, 0),
+        ] {
+            let mut stack = OperandStack::new(Rc::new(Context::default()));
+            let mut invoked = BTreeSet::new();
+            let mut instructions = Vec::new();
+            let span = SourceSpan::UNKNOWN;
+            {
+                let mut emitter = OpEmitter::new(&mut invoked, &mut instructions, &mut stack);
+                emitter.literal(17u32, span);
+                emitter.literal(lhs, span);
+                if immediate {
+                    emitter.mul_imm(Immediate::U32(rhs), Overflow::Overflowing, span);
+                } else {
+                    emitter.literal(rhs, span);
+                    emitter.mul(Overflow::Overflowing, span);
+                }
+                assert_eq!(emitter.stack().len(), 3);
+                assert_eq!(emitter.stack()[0].ty(), Type::I1);
+                assert_eq!(emitter.stack()[1].ty(), Type::U32);
+            }
+            let body = masm::Block::new(span, instructions).to_pretty_string();
+            // Clear padding beneath the outputs so the VM's overflow stack is empty.
+            let package = miden_assembly::Assembler::default().assemble_program(
+                "overflowing_mul_u32",
+                format!("begin{body}\nrepeat.4 movup.15 drop end\nend"),
+            )?;
+            let program = package.try_into_program()?;
+            let output = FastProcessor::new(StackInputs::default())
+                .execute_sync(&program, &mut DefaultHost::default())
+                .map_err(|error| Report::msg(error.to_string()))?;
+            for (index, expected) in [flag, result, 17].into_iter().enumerate() {
+                assert_eq!(
+                    output.stack.get_element(index),
+                    Some(Felt::new_unchecked(expected as u64)),
+                    "{lhs} * {rhs}, immediate = {immediate}, index = {index}",
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn overflowing_mul_u32_preserves_results_in_vm() -> Result<(), Report> {
+        assert_overflowing_mul_u32_in_vm(false)
+    }
+
+    #[test]
+    fn overflowing_mul_imm_u32_preserves_results_in_vm() -> Result<(), Report> {
+        assert_overflowing_mul_u32_in_vm(true)
+    }
 }
