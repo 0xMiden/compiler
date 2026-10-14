@@ -1,18 +1,20 @@
 // RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(transform-spills))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(transform-spills))' | hir-opt --verify - | filecheck %s
 
-// COM: The rewritten IR is not re-parsed here, unlike in the sibling tests: the printer leaves the
-// COM: entry block unlabelled even when branches target it, so its output does not parse back.
 // Both arms branch back to the entry block, which therefore has two predecessors and lies in its
 // own dominance frontier, although it has no immediate dominator. The frontier computation used
 // to expect one and panic. The spilled value is reloaded in the arm that needs it, and no block
 // argument is added to the entry: its arguments are the function's parameters, so the signature
-// must stay as it is.
+// must stay as it is. The second RUN line re-parses the output: the printer labels the entry
+// block, as the back edges target it.
 
 // CHECK: @entry_backedge() -> u32 {
+// CHECK-NEXT: ^[[ENTRY:block\d+]]:
 // CHECK: hir.store_local %[[V:\d+]] <{ local = #builtin.local_variable<[[L:\d+]], u32> }>
 // CHECK: hir.exec ::@test::@example
 // CHECK: hir.load_local <{ local = #builtin.local_variable<[[L]], u32> }>
-// CHECK-NOT: cf.br ^{{[a-z0-9]+}}(
+// CHECK: cf.br ^[[ENTRY]];
+// CHECK: cf.br ^[[ENTRY]];
 builtin.module public @test {
     builtin.function public extern("C") @entry_backedge() -> u32 {
     ^entry:

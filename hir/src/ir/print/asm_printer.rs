@@ -370,7 +370,11 @@ impl<'a> AsmPrinter<'a> {
             return;
         }
 
-        let elide_entry_block_label = if self.flags.print_entry_block_headers {
+        let elide_entry_block_label = if self.flags.print_entry_block_headers
+            || region
+                .entry_block_ref()
+                .is_some_and(|entry| Self::is_labelled_entry_target(&entry.borrow()))
+        {
             false
         } else {
             // This is the entry region - if we have the parent operation, and that operation
@@ -412,16 +416,28 @@ impl<'a> AsmPrinter<'a> {
         self.document += nl() + const_text("}");
     }
 
-    /// Print a single block
-    pub fn print_block(&mut self, block: &Block) {
-        let is_entry_block = block.is_entry_block() && !self.flags.print_entry_block_headers;
+    /// Returns true if `block` is an entry block that branches target, and so needs its label for
+    /// the printed form to parse back.
+    ///
+    /// The parser only accepts a labelled entry block without arguments, so an entry block with
+    /// arguments stays unlabelled even when it is a branch target.
+    fn is_labelled_entry_target(block: &Block) -> bool {
+        block.is_entry_block() && crate::Usable::is_used(block) && !block.has_arguments()
+    }
 
-        if is_entry_block {
-            self.print_block_body(block.body());
-        } else {
+    /// Print a single block
+    ///
+    /// An entry block is printed without its label, unless the flags ask for it or branches target
+    /// it (see [Self::is_labelled_entry_target]).
+    pub fn print_block(&mut self, block: &Block) {
+        let print_label = !block.is_entry_block()
+            || self.flags.print_entry_block_headers
+            || Self::is_labelled_entry_target(block);
+
+        if print_label {
             self.print_block_label_and_arguments(block);
-            self.print_block_body(block.body());
         }
+        self.print_block_body(block.body());
     }
 
     /// Print the body of a block, i.e. a sequence of newline-separated operations, indented by 4
