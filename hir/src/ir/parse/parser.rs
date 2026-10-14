@@ -627,25 +627,16 @@ pub trait Parser<'input> {
     }
 
     /// Parse an @-identifier and return it (without the '@') as an [Ident]
-    ///
-    /// If `context` is provided with the name of an attribute, then the use of this symbol will
-    /// be tracked for the current operation.
     fn parse_symbol_name(&mut self) -> ParseResult<Ident> {
         self.parse_at_identifier()
     }
 
     /// Parse an @-identifier and return it (without the '@') as an [Ident]
-    ///
-    /// If `context` is provided with the name of an attribute, then the use of this symbol will
-    /// be tracked for the current operation.
     fn parse_optional_symbol_name(&mut self) -> ParseResult<Option<Ident>> {
         self.parse_optional_at_identifier()
     }
 
     /// Parse a symbol path.
-    ///
-    /// If `context` is provided with the name of an attribute, then the use of this symbol will
-    /// be tracked for the current operation.
     fn parse_symbol_path(&mut self) -> ParseResult<Span<SymbolPath>> {
         // The span runs from the first token of the path (the root `::` when there is one, the
         // first identifier otherwise) to the end of its last identifier. The start of the root
@@ -690,16 +681,15 @@ pub trait Parser<'input> {
 
     /// Parse a symbol reference.
     ///
-    /// If `context` is provided with the name of an attribute, then the use of this symbol will
-    /// be tracked for the current operation.
+    /// When assembly parser state is enabled, track this use on the current operation.
     fn parse_symbol_ref(&mut self) -> ParseResult<Span<UnsafeIntrusiveEntityRef<SymbolRefAttr>>> {
         let (span, path) = self.parse_symbol_path()?.into_parts();
 
-        let attr = self.context_rc().create_attribute::<SymbolRefAttr, _>(
-            builtin::attributes::SymbolRef::new(path.clone(), None),
-        );
+        let attr = self
+            .context_rc()
+            .create_attribute::<SymbolRefAttr, _>(builtin::attributes::SymbolRef::new(path, None));
         if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
-            asm_state.add_symbol_use(&path, attr, span);
+            asm_state.add_symbol_use(attr);
         }
         Ok(Span::new(span, attr))
     }

@@ -123,6 +123,10 @@ pub(crate) fn validate_procedure_roots(root: &Operation) -> Result<(), Report> {
 
 /// Resolve and validate one `hir.procedure_root` for MASM lowering.
 ///
+/// If the callee path names a `builtin.function_alias`, the alias itself is returned, and
+/// linkability checks apply to the alias's own visibility. HIR verification prevents non-private
+/// aliases from exposing private canonical targets.
+///
 /// A private procedure is linkable only from within the MASM module that defines it. HIR symbol
 /// tables are the ownership boundaries lowered to MASM modules for components, interfaces, and
 /// modules. The one exception is a component-less world with exactly one module: its world-level
@@ -257,7 +261,7 @@ pub(crate) fn validate_procedure_root(
 }
 
 /// Whether two HIR symbol-table owners emit procedures into the same MASM module.
-fn share_masm_module(lhs: OperationRef, rhs: OperationRef) -> bool {
+pub(crate) fn share_masm_module(lhs: OperationRef, rhs: OperationRef) -> bool {
     if lhs == rhs {
         return true;
     }
@@ -534,6 +538,7 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
         .add_legal_op::<builtin::Module>()
         .add_legal_op::<builtin::Interface>()
         .add_legal_op::<builtin::Function>()
+        .add_legal_op::<builtin::FunctionAlias>()
         .add_legal_op::<builtin::GlobalVariable>()
         .add_legal_op::<builtin::Segment>()
         .add_dynamically_legal_op::<builtin::FunctionTable, _>(|op| {

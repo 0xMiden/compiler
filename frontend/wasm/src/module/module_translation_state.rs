@@ -18,7 +18,7 @@ use super::{
     types::{ModuleTypesBuilder, WasmRefType},
 };
 use crate::{
-    callable::CallableFunction,
+    callable::CallableFunction::{self, Function},
     component::{
         SignatureIndex,
         lower_imports::{ComponentImportPath, generate_import_lowering_function},
@@ -97,6 +97,13 @@ impl<'a> ModuleTranslationState<'a> {
             } else {
                 Visibility::Private
             };
+            // Component imports and exports use their assigned Miden names. Their raw Wasm
+            // export names must not survive as additional core-module exports.
+            let aliases = if names.contains_key(&index) {
+                &[][..]
+            } else {
+                module.func_aliases(index)
+            };
             let sig = sig_from_func_type(&ir_func_type, CallConv::C);
             if let Some(import) = module.function_import(index) {
                 let func = process_import(
@@ -104,12 +111,30 @@ impl<'a> ModuleTranslationState<'a> {
                     world_builder,
                     &module_args,
                     namespace,
-                    path,
+                    path.clone(),
                     names.get(&index).copied(),
                     sig,
                     import,
                     diagnostics,
                 )?;
+                // Handle imports that are re-exported
+                if let Function { function_ref, .. } = &func {
+                    let target = *function_ref;
+                    for alias_sym in aliases {
+                        module_builder
+                            .define_function_alias((*alias_sym).into(), Visibility::Public, target)
+                            .map_err(|e| {
+                                diagnostics
+                                    .diagnostic(Severity::Error)
+                                    .with_message(format!(
+                                        "Failed to add function alias '{alias_sym}' for '{}': \
+                                         {e:?}",
+                                        path.name()
+                                    ))
+                                    .into_report()
+                            })?;
+                    }
+                }
                 functions.insert(index, func);
             } else {
                 let function_ref = module_builder
@@ -123,6 +148,23 @@ impl<'a> ModuleTranslationState<'a> {
                             ))
                             .into_report()
                     })?;
+                for alias_sym in aliases {
+                    module_builder
+                        .define_function_alias(
+                            (*alias_sym).into(),
+                            Visibility::Public,
+                            function_ref,
+                        )
+                        .map_err(|e| {
+                            diagnostics
+                                .diagnostic(Severity::Error)
+                                .with_message(format!(
+                                    "Failed to add function alias '{alias_sym}' for '{}': {e:?}",
+                                    path.name()
+                                ))
+                                .into_report()
+                        })?;
+                }
                 let defined_function = CallableFunction::Function {
                     wasm_id: path,
                     function_ref,

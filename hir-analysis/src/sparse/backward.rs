@@ -200,59 +200,55 @@ where
         log::trace!(target: analysis.analysis.debug_name(), "op implements CallOpInterface - handling as special case");
 
         // TODO: resolve_in_symbol_table
-        if let Some(callable_symbol) = call.resolve() {
-            let callable_symbol = callable_symbol.borrow();
-            log::trace!(target: analysis.analysis.debug_name(), "resolved callee as {}", callable_symbol.name());
-            let callable_op = callable_symbol.as_symbol_operation();
-            if let Some(callable) = callable_op.as_trait::<dyn CallableOpInterface>() {
-                log::trace!(target: analysis.analysis.debug_name(), "{} implements CallableOpInterface", callable_symbol.name());
-                // Not all operands of a call op forward to arguments. Such operands are stored in
-                // `unaccounted`.
-                let mut unaccounted = bitvec![1; op.num_operands()];
+        if let Some(target) = call.resolve() {
+            let callable = target.borrow();
+            log::trace!(target: analysis.analysis.debug_name(), "resolved callee as {}", target.as_symbol_ref());
+            // Not all operands of a call op forward to arguments. Such operands are stored in
+            // `unaccounted`.
+            let mut unaccounted = bitvec![1; op.num_operands()];
 
-                // If the call invokes an external function (or a function treated as external due to
-                // config), defer to the corresponding extension hook. By default, it just does
-                // `visit_call_operand` for all operands.
-                let arg_operands = call.arguments();
-                let region = callable.get_callable_region();
-                if region.as_ref().is_none_or(|region| {
-                    region.borrow().is_empty() || !solver.config().is_interprocedural()
-                }) {
-                    log::trace!(target: analysis.analysis.debug_name(), "{} is an external callee", callable_symbol.name());
-                    analysis.visit_external_call(call, &mut operands, &results, solver);
-                    return Ok(());
-                }
-
-                // Otherwise, propagate information from the entry point of the function back to
-                // operands whenever possible.
-                log::trace!(target: analysis.analysis.debug_name(), "propagating value lattices from callee entry to call operands");
-                let region = region.unwrap();
-                let region = region.borrow();
-                let block = region.entry();
-                for (block_arg, arg_operand) in block.arguments().iter().zip(arg_operands.iter()) {
-                    let mut arg_lattice = get_lattice_element_mut::<A>(
-                        analysis,
-                        arg_operand.borrow().as_value_ref(),
-                        solver,
-                    );
-                    let result_lattice = get_lattice_element_for::<A>(
-                        analysis,
-                        current_point,
-                        block_arg.borrow().as_value_ref(),
-                        solver,
-                    );
-                    arg_lattice.meet(result_lattice.lattice());
-                    unaccounted.set(arg_operand.borrow().index as usize, false);
-                }
-
-                // Handle the operands of the call op that aren't forwarded to any arguments.
-                for index in unaccounted.iter_ones() {
-                    let operand = op.operands().all()[index].borrow();
-                    analysis.visit_call_operand(&operand, solver);
-                }
-
+            // If the call invokes an external function (or a function treated as external due to
+            // config), defer to the corresponding extension hook. By default, it just does
+            // `visit_call_operand` for all operands.
+            let arg_operands = call.arguments();
+            let region = callable.get_callable_region();
+            if region.as_ref().is_none_or(|region| {
+                region.borrow().is_empty() || !solver.config().is_interprocedural()
+            }) {
+                log::trace!(target: analysis.analysis.debug_name(), "{} is an external callee", target.as_symbol_ref());
+                analysis.visit_external_call(call, &mut operands, &results, solver);
                 return Ok(());
             }
+
+            // Otherwise, propagate information from the entry point of the function back to
+            // operands whenever possible.
+            log::trace!(target: analysis.analysis.debug_name(), "propagating value lattices from callee entry to call operands");
+            let region = region.unwrap();
+            let region = region.borrow();
+            let block = region.entry();
+            for (block_arg, arg_operand) in block.arguments().iter().zip(arg_operands.iter()) {
+                let mut arg_lattice = get_lattice_element_mut::<A>(
+                    analysis,
+                    arg_operand.borrow().as_value_ref(),
+                    solver,
+                );
+                let result_lattice = get_lattice_element_for::<A>(
+                    analysis,
+                    current_point,
+                    block_arg.borrow().as_value_ref(),
+                    solver,
+                );
+                arg_lattice.meet(result_lattice.lattice());
+                unaccounted.set(arg_operand.borrow().index as usize, false);
+            }
+
+            // Handle the operands of the call op that aren't forwarded to any arguments.
+            for index in unaccounted.iter_ones() {
+                let operand = op.operands().all()[index].borrow();
+                analysis.visit_call_operand(&operand, solver);
+            }
+
+            return Ok(());
         }
     }
 

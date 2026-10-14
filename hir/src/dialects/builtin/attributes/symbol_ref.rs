@@ -104,11 +104,39 @@ impl SymbolRefAttr {
 
     /// Resolves this symbol reference relative to the operation that owns the tracked use.
     ///
+    /// This resolves the *named* symbol only, without following aliases: if the path names a
+    /// [`FunctionAlias`], the alias itself is returned. Use [Self::resolve_callable] to obtain both
+    /// the named symbol and its canonical callable, or [`SymbolRef::resolve_canonical`] for other
+    /// symbols.
+    ///
     /// This immutably borrows the tracked user while resolving the containing symbol table. Callers
     /// must not hold a mutable borrow of that user when invoking this API, or the borrow check will
     /// report an aliasing violation.
+    ///
+    /// [`FunctionAlias`]: crate::dialects::builtin::FunctionAlias
+    /// [`SymbolRef::resolve_canonical`]: crate::SymbolRef::resolve_canonical
     pub fn resolve(&self) -> Option<crate::SymbolRef> {
         self.user().resolve_symbol(self.path())
+    }
+
+    /// Resolve this reference as a callable, retaining its named symbol and canonical target.
+    /// This has the same borrowing requirements as [Self::resolve].
+    pub fn resolve_callable(
+        &self,
+    ) -> Result<crate::ResolvedSymbolCallee, crate::SymbolResolutionError> {
+        let user =
+            self.value.user.ok_or_else(|| crate::SymbolResolutionError::UntrackedSymbol {
+                path: self.path().clone(),
+            })?;
+        let owner = user.borrow().owner;
+        let table = owner
+            .nearest_symbol_table()
+            .ok_or(crate::SymbolResolutionError::NoSymbolTable)?;
+        table
+            .borrow()
+            .as_symbol_table()
+            .ok_or(crate::SymbolResolutionError::NoSymbolTable)?
+            .resolve_callable(self.path())
     }
 
     /// Unlinks the tracked use from its current symbol, if it is linked.

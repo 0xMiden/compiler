@@ -7,8 +7,8 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    Felt, Immediate, Op, OpExt, Operation, SmallVec, Span, SymbolTable, Type, Value, ValueRange,
-    ValueRef,
+    AsCallableSymbolRef, Felt, Immediate, Op, OpExt, Operation, SmallVec, Span, Symbol,
+    SymbolTable, Type, Value, ValueRange, ValueRef,
     dialects::{builtin, debuginfo},
     traits::{BinaryOp, Commutative},
 };
@@ -24,18 +24,122 @@ use crate::{
     opt::operands::SolverOptions,
 };
 
-/// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
+/// The module containing world-level procedures when no component declares its own namespace.
+pub(super) fn world_root_module(world: &builtin::World) -> masm::PathBuf {
+    let body = world.body();
+    let entry = body.entry();
+    let mut modules = entry.body().iter().filter(|op| op.is::<builtin::Module>());
+    if let Some(module) = modules.next()
+        && modules.next().is_none()
+    {
+        return module
+            .downcast_ref::<builtin::Module>()
+            .unwrap()
+            .path()
+            .to_library_path()
+            .to_absolute()
+            .unwrap()
+            .into_owned();
+    }
+    masm::PathBuf::from(masm::Path::new("::init"))
+}
+
+/// Map a HIR symbol's owner to the module where its MASM definition is emitted.
+///
+/// A world has no path segment of its own, but its procedures and aliases live in the chosen
+/// root module. Imports, calls, and function-table fragments must all use that same mapping.
+pub(super) fn symbol_module_path(symbol: &dyn Symbol) -> masm::PathBuf {
+    if let Some(owner) = symbol.as_symbol_operation().nearest_symbol_table()
+        && let Some(world) = owner.borrow().downcast_ref::<builtin::World>()
+    {
+        return world_root_module(world);
+    }
+    symbol
+        .path()
+        .without_leaf()
+        .to_library_path()
+        .to_absolute()
+        .unwrap()
+        .into_owned()
+}
+
+/// Convert a fixed HIR path, such as an external intrinsic, to a MASM invocation target.
 pub(super) fn invocation_target_from_symbol_path(
-    callee_path: &midenc_hir::SymbolPath,
+    path: &midenc_hir::SymbolPath,
     span: midenc_hir::SourceSpan,
 ) -> masm::InvocationTarget {
-    let proc_name = callee_path.name();
+    masm::InvocationTarget::Path(Span::new(span, path.to_library_path().into_boxed_path().into()))
+}
+
+/// The fully qualified name of a callable in its emitted MASM module.
+pub(super) fn qualified_invocation_target(
+    callee: &dyn Symbol,
+    span: midenc_hir::SourceSpan,
+) -> masm::InvocationTarget {
+    let proc_name = callee.name();
     let proc_name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
         masm::Span::new(span, proc_name.as_ref().into()),
     ));
-    let module = callee_path.without_leaf().to_library_path();
+    let module = symbol_module_path(callee);
     let qualified = masm::QualifiedProcedureName::new(module.as_path(), proc_name);
     masm::InvocationTarget::Path(masm::Span::new(span, qualified.into_inner()))
+}
+
+/// Builds a MASM invocation target for a resolved HIR callable.
+///
+/// `module_owner` is the HIR symbol-table owner corresponding to the emitted caller's MASM module.
+/// Passing `None` disables unqualified-name emission. Private aliases outside that module are
+/// followed to a reachable symbol, since MASM cannot resolve private imports by qualified path.
+pub(super) fn invocation_target_from_symbol(
+    mut symbol: midenc_hir::SymbolRef,
+    module_owner: Option<midenc_hir::OperationRef>,
+    span: midenc_hir::SourceSpan,
+) -> masm::InvocationTarget {
+    loop {
+        let callee = symbol.borrow();
+        let alias = callee.as_symbol_operation().downcast_ref::<builtin::FunctionAlias>();
+        let Some(alias) = alias.filter(|_| callee.is_private()) else {
+            return qualified_invocation_target(&*callee, span);
+        };
+
+        if let Some(owner) = module_owner
+            && let Some(target_owner) = alias.as_operation().nearest_symbol_table()
+            && crate::legalization::share_masm_module(owner, target_owner)
+        {
+            return masm::InvocationTarget::Symbol(masm::Ident::from_raw_parts(Span::new(
+                span,
+                callee.name().as_str().into(),
+            )));
+        }
+
+        // Alias verification validates the chain before emission. Follow each hop in the
+        // alias's own symbol table, preserving the first accessible name.
+        symbol = alias.resolve_target().expect("canonical resolution validated the alias target");
+    }
+}
+
+fn resolve_invocation_callee(
+    call: &dyn midenc_hir::CallOpInterface,
+) -> Result<midenc_hir::ResolvedSymbolCallee, Report> {
+    call.resolve_symbol_callee().map_err(|err| {
+        let mut diagnostic = call
+            .as_operation()
+            .context()
+            .diagnostics()
+            .diagnostic(Severity::Error)
+            .with_message(format!(
+                "invalid {}: unable to resolve callee",
+                call.as_operation().name()
+            ))
+            .with_primary_label(call.as_operation().span(), err.to_string());
+        if matches!(err, midenc_hir::SymbolResolutionError::UnknownSymbol { .. }) {
+            diagnostic = diagnostic.with_help(
+                "Make sure that all referenced symbols are reachable via the root symbol table, \
+                 and use absolute paths to refer to symbols in ancestor/sibling modules",
+            );
+        }
+        diagnostic.into_report()
+    })
 }
 
 /// This trait is registered with all ops, of all dialects, which are legal for lowering to MASM.
@@ -943,50 +1047,14 @@ impl HirLowering for arith::Sext {
 
 impl HirLowering for hir::Exec {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        use midenc_hir::{CallOpInterface, CallableOpInterface};
-
-        let callee = self.resolve().ok_or_else(|| {
-            let context = self.as_operation().context();
-            context
-                .diagnostics()
-                .diagnostic(Severity::Error)
-                .with_message("invalid call operation: unable to resolve callee")
-                .with_primary_label(
-                    self.span(),
-                    "this symbol path is not resolvable from this operation",
-                )
-                .with_help(
-                    "Make sure that all referenced symbols are reachable via the root symbol \
-                     table, and use absolute paths to refer to symbols in ancestor/sibling modules",
-                )
-                .into_report()
-        })?;
-        let callee = callee.borrow();
-        let callee_path = callee.path();
-        let signature = match callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>() {
-            Some(callable) => callable.signature(),
-            None => {
-                let context = self.as_operation().context();
-                return Err(context
-                    .diagnostics()
-                    .diagnostic(Severity::Error)
-                    .with_message("invalid call operation: callee is not a callable op")
-                    .with_primary_label(
-                        self.span(),
-                        format!(
-                            "this symbol resolved to a '{}' op, which does not implement Callable",
-                            callee.as_symbol_operation().name()
-                        ),
-                    )
-                    .into_report());
-            }
-        };
-
-        // Convert the symbol path to a fully-qualified procedure path
-        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
-
+        let callee = resolve_invocation_callee(self)?;
+        let signature = callee.signature();
+        let callee = invocation_target_from_symbol(
+            callee.as_callable_symbol_ref(),
+            emitter.module_owner,
+            self.span(),
+        );
         emitter.inst_emitter(self.as_operation()).exec(callee, &signature, self.span());
-
         Ok(())
     }
 }
@@ -994,9 +1062,7 @@ impl HirLowering for hir::Exec {
 impl HirLowering for hir::ProcedureRoot {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let symbol = crate::legalization::validate_procedure_root(self)?;
-        let callee_path = symbol.borrow().path();
-
-        let target = invocation_target_from_symbol_path(&callee_path, self.span());
+        let target = invocation_target_from_symbol(symbol, emitter.module_owner, self.span());
         emitter.inst_emitter(self.as_operation()).procedure_root(target, self.span());
 
         Ok(())
@@ -1129,48 +1195,13 @@ impl HirLowering for hir::Dyncall {
 
 impl HirLowering for hir::Call {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        use midenc_hir::{CallOpInterface, CallableOpInterface};
-
-        let callee = self.resolve().ok_or_else(|| {
-            let context = self.as_operation().context();
-            context
-                .diagnostics()
-                .diagnostic(Severity::Error)
-                .with_message("invalid call operation: unable to resolve callee")
-                .with_primary_label(
-                    self.span(),
-                    "this symbol path is not resolvable from this operation",
-                )
-                .with_help(
-                    "Make sure that all referenced symbols are reachable via the root symbol \
-                     table, and use absolute paths to refer to symbols in ancestor/sibling modules",
-                )
-                .into_report()
-        })?;
-        let callee = callee.borrow();
-        let callee_path = callee.path();
-        let signature = match callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>() {
-            Some(callable) => callable.signature(),
-            None => {
-                let context = self.as_operation().context();
-                return Err(context
-                    .diagnostics()
-                    .diagnostic(Severity::Error)
-                    .with_message("invalid call operation: callee is not a callable op")
-                    .with_primary_label(
-                        self.span(),
-                        format!(
-                            "this symbol resolved to a '{}' op, which does not implement Callable",
-                            callee.as_symbol_operation().name()
-                        ),
-                    )
-                    .into_report());
-            }
-        };
-
-        // Convert the symbol path to a fully-qualified procedure path
-        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
-
+        let callee = resolve_invocation_callee(self)?;
+        let signature = callee.signature();
+        let callee = invocation_target_from_symbol(
+            callee.as_callable_symbol_ref(),
+            emitter.module_owner,
+            self.span(),
+        );
         emitter.inst_emitter(self.as_operation()).call(callee, &signature, self.span());
 
         Ok(())
@@ -1179,48 +1210,13 @@ impl HirLowering for hir::Call {
 
 impl HirLowering for hir::Syscall {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        use midenc_hir::{CallOpInterface, CallableOpInterface};
-
-        let callee = self.resolve().ok_or_else(|| {
-            let context = self.as_operation().context();
-            context
-                .diagnostics()
-                .diagnostic(Severity::Error)
-                .with_message("invalid syscall operation: unable to resolve callee")
-                .with_primary_label(
-                    self.span(),
-                    "this symbol path is not resolvable from this operation",
-                )
-                .with_help(
-                    "Make sure that all referenced symbols are reachable via the root symbol \
-                     table, and use absolute paths to refer to symbols in ancestor/sibling modules",
-                )
-                .into_report()
-        })?;
-        let callee = callee.borrow();
-        let callee_path = callee.path();
-        let signature = match callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>() {
-            Some(callable) => callable.signature(),
-            None => {
-                let context = self.as_operation().context();
-                return Err(context
-                    .diagnostics()
-                    .diagnostic(Severity::Error)
-                    .with_message("invalid syscall operation: callee is not a callable op")
-                    .with_primary_label(
-                        self.span(),
-                        format!(
-                            "this symbol resolved to a '{}' op, which does not implement Callable",
-                            callee.as_symbol_operation().name()
-                        ),
-                    )
-                    .into_report());
-            }
-        };
-
-        // Convert the symbol path to a fully-qualified procedure path
-        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
-
+        let callee = resolve_invocation_callee(self)?;
+        let signature = callee.signature();
+        let callee = invocation_target_from_symbol(
+            callee.as_callable_symbol_ref(),
+            emitter.module_owner,
+            self.span(),
+        );
         emitter
             .inst_emitter(self.as_operation())
             .syscall(callee, &signature, self.span());

@@ -25,7 +25,7 @@ use crate::{
 /// imported function). Otherwise the name is the first free candidate among the path's leaf and
 /// the leaf prefixed by progressively more of its parent segments (`read`, `api_read`,
 /// `second_api_read`, ...). A name is free when no defined function outside the named set, no
-/// global and no already named function holds it, and it is not one of the procedure names the
+/// global, no retained function alias and no already named function holds it, and it is not one of the procedure names the
 /// backend generates ([`RESERVED_PROCEDURE_NAMES`]). Imported functions outside the named set do
 /// not block a name: they define no HIR function in the module, as every reachable import is a
 /// lowered component import, and thus in the named set. Fails when every candidate is taken.
@@ -44,7 +44,10 @@ pub(crate) fn assign<'p>(
         .functions
         .keys()
         .filter(|index| !module.is_imported_function(*index) && !named.contains(index))
-        .map(|index| module.func_name(index))
+        .flat_map(|index| {
+            core::iter::once(module.func_name(index))
+                .chain(module.func_aliases(index).iter().copied())
+        })
         .chain(module.globals.keys().map(|index| module.global_name(index)))
         .chain(RESERVED_PROCEDURE_NAMES.iter().copied().map(SymbolName::intern))
         .collect();
@@ -177,6 +180,23 @@ mod tests {
         let names = assign(&module, [(func(1), &a), (func(0), &b)], []).unwrap();
         assert_eq!(names[&func(1)].as_str(), "a");
         assert_eq!(names[&func(0)].as_str(), "b");
+    }
+
+    #[test]
+    fn retained_aliases_reserve_names_but_renamed_aliases_do_not() {
+        let module = module_of(
+            r#"
+            (module $m
+                (func $renamed (export "component#entry") (export "api_read"))
+                (func $retained (export "retained") (export "read"))
+            )
+            "#,
+        );
+        let export = path("acme::app::api::read");
+        let names = assign(&module, [(func(0), &export)], []).unwrap();
+        // `read` remains an alias of the other function. `api_read` is available because
+        // renaming the component's backing function also removes its raw Wasm aliases.
+        assert_eq!(names[&func(0)].as_str(), "api_read");
     }
 
     #[test]

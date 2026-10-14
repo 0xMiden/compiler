@@ -58,6 +58,9 @@ pub const TRANSACTION_SCRIPT_EXPORT_ATTR: &str = "transaction_script";
 /// rustc's component linker. Consumed by MASM codegen, which executes the marked function as the
 /// final phase of per-context component initialization. The marker's value must be a
 /// `builtin::UnitAttr`.
+///
+/// The marker must be attached to the resolved `builtin::Function` definition, never a
+/// `builtin::FunctionAlias`, even when the startup adapter imports a secondary export name.
 pub const WASM_COMPONENT_START_ATTR: &str = "wasm_component_start";
 
 #[derive(Debug, DialectRegistration)]

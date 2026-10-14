@@ -1289,7 +1289,7 @@ impl quote::ToTokens for OpSymbolFns<'_> {
                             let symbol = symbol.as_callable_symbol_ref();
                             let (data_ptr, _) = ::midenc_hir::SymbolRef::as_ptr(&symbol).to_raw_parts();
                             if core::ptr::addr_eq(data_ptr, (self as *const Self as *const ())) {
-                                if !self.op.implements::<dyn ::midenc_hir::CallableOpInterface>() {
+                                if !self.op.implements::<dyn ::midenc_hir::CallableSymbol>() {
                                     return Err(::midenc_hir::InvalidSymbolRefError::NotCallable {
                                         symbol: self.span(),
                                     });
@@ -1297,7 +1297,7 @@ impl quote::ToTokens for OpSymbolFns<'_> {
                             } else {
                                 let symbol = symbol.borrow();
                                 let symbol_op = symbol.as_symbol_operation();
-                                if !symbol_op.implements::<dyn ::midenc_hir::CallableOpInterface>() {
+                                if !symbol_op.implements::<dyn ::midenc_hir::CallableSymbol>() {
                                     return Err(::midenc_hir::InvalidSymbolRefError::NotCallable {
                                         symbol: symbol_op.span(),
                                     });

@@ -1,3 +1,4 @@
+mod alias;
 mod cast;
 mod component;
 mod function;
@@ -12,6 +13,7 @@ pub(crate) use self::world::shadowing_error;
 // The op builders of components, modules and interfaces are not exported: they would create ops
 // with names that skip the spelling and the checks of the builtin builders
 pub use self::{
+    alias::{FunctionAlias, FunctionAliasRef},
     cast::UnrealizedConversionCast,
     component::{
         Component, ComponentExport, ComponentInterface, ComponentRef, ModuleExport, ModuleInterface,
