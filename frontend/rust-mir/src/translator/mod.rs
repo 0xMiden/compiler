@@ -15,18 +15,11 @@ use std::rc::Rc;
 use midenc_hir::{
     BuilderExt, Context, Ident, Report, SourceSpan,
     dialects::builtin::{ComponentBuilder, ComponentRef, ModuleBuilder, World, WorldBuilder},
-    version::Version,
 };
 use rustc_public::{ItemKind, mir::mono::Instance};
 
-/// The namespace of the component that holds the translated functions.
-const COMPONENT_NAMESPACE: &str = "root_ns";
-
 /// The name of the component that holds the translated functions.
 const COMPONENT_NAME: &str = "root";
-
-/// The version of the component that holds the translated functions.
-const COMPONENT_VERSION: &str = "1.0.0";
 
 /// Translates every local, non-generic function of the analyzed crate into one Miden IR
 /// component.
@@ -39,13 +32,7 @@ pub(crate) fn translate_crate(
 ) -> Result<ComponentRef, Report> {
     let world = context.clone().builder().create::<World, ()>(SourceSpan::default())()?;
     let mut world_builder = WorldBuilder::new(world);
-    let component = world_builder.define_component(
-        Ident::from(COMPONENT_NAMESPACE),
-        Ident::from(COMPONENT_NAME),
-        Version::parse(COMPONENT_VERSION).map_err(|err| {
-            Report::msg(format!("rust mir frontend: invalid component version: {err}"))
-        })?,
-    )?;
+    let component = world_builder.define_component(Ident::from(COMPONENT_NAME))?;
 
     let mut component_builder = ComponentBuilder::new(component);
     let module = component_builder.define_module(Ident::from(module_name))?;
