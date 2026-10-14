@@ -1248,12 +1248,15 @@ impl SpillAnalysis {
             })
             .collect::<SmallSet<_, 4>>();
         for value in escaped_spills {
-            if self.w_entries[&before_op].contains(&value) {
+            // Entry residency includes reloads issued in phase 1. Reuse an initialized slot:
+            // another store here would precede those reloads and revive the original live range.
+            if self.w_entries[&before_op].contains(&value)
+                && !self.s_entries[&before_op].contains(&value)
+            {
                 self.spill(Placement::At(before_op), value.value(), span);
             }
-            // The value leaves the operand stack at that spill, so it is not resident after `op`
-            // either. Its next use reloads it like any other spilled operand, which costs nothing
-            // on paths that never use it again.
+            // The value is no longer resident after `op`. Its next use reloads it like any other
+            // spilled operand, which costs nothing on paths that never use it again.
             w_exit.remove(&value);
             s_exit.remove(&value);
             if let Some(loop_like) = loop_like {
