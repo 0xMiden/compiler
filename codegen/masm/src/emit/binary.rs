@@ -1563,8 +1563,9 @@ impl OpEmitter<'_> {
 mod tests {
     use alloc::{collections::BTreeSet, rc::Rc};
 
+    use miden_processor::{DefaultHost, FastProcessor, StackInputs};
     use midenc_dialect_arith::ArithOpBuilder;
-    use midenc_hir::{Builder, Context, OpBuilder, ValueRef};
+    use midenc_hir::{Builder, Context, OpBuilder, Report, ValueRef, formatter::PrettyPrint};
 
     use super::*;
     use crate::{OperandStack, emit::InstOpEmitter};
@@ -1645,5 +1646,119 @@ mod tests {
             |emitter, span| emitter.mul(Overflow::Overflowing, span),
             |emitter, imm, span| emitter.mul_imm(imm, Overflow::Overflowing, span),
         );
+    }
+
+    fn assert_immediate_shortcut_in_vm(
+        emit: impl Fn(&mut OpEmitter<'_>, Immediate, Overflow, SourceSpan),
+        immediate: u32,
+        zero_result: bool,
+    ) -> Result<(), Report> {
+        // These are the input's VM limbs, top first, independent of the operand model.
+        let cases: &[(Immediate, &[u64])] = &[
+            (Immediate::U8(0), &[0]),
+            (Immediate::U8(u8::MAX), &[255]),
+            (Immediate::U16(u16::MAX), &[65_535]),
+            (Immediate::U32(0), &[0]),
+            (Immediate::U32(u32::MAX), &[4_294_967_295]),
+            (Immediate::I32(i32::MIN), &[2_147_483_648]),
+            (Immediate::I32(-1), &[4_294_967_295]),
+            (Immediate::I32(i32::MAX), &[2_147_483_647]),
+            (Immediate::I64(0), &[0, 0]),
+            (Immediate::I64(i64::MIN), &[0, 2_147_483_648]),
+            (Immediate::I64(-1), &[4_294_967_295, 4_294_967_295]),
+            (Immediate::I64(i64::MAX), &[4_294_967_295, 2_147_483_647]),
+            (Immediate::I64(0x1234_5678_9abc_def0), &[2_596_069_104, 305_419_896]),
+        ];
+        for &(input, limbs) in cases {
+            let imm = match input {
+                Immediate::U8(_) => Immediate::U8(immediate as u8),
+                Immediate::U16(_) => Immediate::U16(immediate as u16),
+                Immediate::U32(_) => Immediate::U32(immediate),
+                Immediate::I32(_) => Immediate::I32(immediate as i32),
+                Immediate::I64(_) => Immediate::I64(immediate as i64),
+                _ => unreachable!(),
+            };
+            for overflow in [
+                Overflow::Unchecked,
+                Overflow::Checked,
+                Overflow::Wrapping,
+                Overflow::Overflowing,
+            ] {
+                let context = Rc::new(Context::default());
+                let mut stack = OperandStack::new(context);
+                let mut invoked = BTreeSet::new();
+                let mut instructions = Vec::new();
+                let span = SourceSpan::UNKNOWN;
+                {
+                    let mut emitter = OpEmitter::new(&mut invoked, &mut instructions, &mut stack);
+                    // A sentinel catches a missing flag even when all result limbs are zero.
+                    emitter.literal(17u32, span);
+                    emitter.literal(input, span);
+                    emit(&mut emitter, imm, overflow, span);
+                }
+                let body = masm::Block::new(span, instructions).to_pretty_string();
+                // Remove padding beneath the at-most-four outputs to clear the VM overflow stack.
+                let package = miden_assembly::Assembler::default().assemble_program(
+                    "immediate_shortcut",
+                    format!("begin{body}\nrepeat.4 movup.15 drop end\nend"),
+                )?;
+                let program = package.try_into_program()?;
+                let output = FastProcessor::new(StackInputs::default())
+                    .execute_sync(&program, &mut DefaultHost::default())
+                    .map_err(|error| Report::msg(error.to_string()))?;
+
+                let mut expected = Vec::new();
+                if overflow.is_overflowing() {
+                    expected.push(0);
+                }
+                expected.extend(limbs.iter().map(|&limb| if zero_result { 0 } else { limb }));
+                expected.push(17);
+                for (index, expected) in expected.into_iter().enumerate() {
+                    assert_eq!(
+                        output.stack.get_element(index),
+                        Some(Felt::new_unchecked(expected)),
+                        "{input:?}, immediate = {immediate}, overflow = {overflow:?}, index = \
+                         {index}"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn immediate_add_zero_preserves_results_in_vm() -> Result<(), Report> {
+        assert_immediate_shortcut_in_vm(
+            |emitter, imm, overflow, span| emitter.add_imm(imm, overflow, span),
+            0,
+            false,
+        )
+    }
+
+    #[test]
+    fn immediate_sub_zero_preserves_results_in_vm() -> Result<(), Report> {
+        assert_immediate_shortcut_in_vm(
+            |emitter, imm, overflow, span| emitter.sub_imm(imm, overflow, span),
+            0,
+            false,
+        )
+    }
+
+    #[test]
+    fn immediate_mul_zero_preserves_results_in_vm() -> Result<(), Report> {
+        assert_immediate_shortcut_in_vm(
+            |emitter, imm, overflow, span| emitter.mul_imm(imm, overflow, span),
+            0,
+            true,
+        )
+    }
+
+    #[test]
+    fn immediate_mul_one_preserves_results_in_vm() -> Result<(), Report> {
+        assert_immediate_shortcut_in_vm(
+            |emitter, imm, overflow, span| emitter.mul_imm(imm, overflow, span),
+            1,
+            false,
+        )
     }
 }

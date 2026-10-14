@@ -98,7 +98,7 @@ use alloc::collections::BTreeSet;
 use core::ops::{Deref, DerefMut};
 
 use miden_assembly::ast::InvokeKind;
-use midenc_hir::{Context, Immediate, Operation, SourceSpan, Type, ValueRef};
+use midenc_hir::{Context, Immediate, Operation, Overflow, SourceSpan, Type, ValueRef};
 
 use super::{Operand, OperandStack};
 use crate::{
@@ -392,6 +392,14 @@ impl<'a> OpEmitter<'a> {
         let imm = imm.into();
         self.push_immediate(imm, span);
         self.stack.push_immediate(imm);
+    }
+
+    /// Emit the false flag required by overflowing arithmetic when its result cannot overflow.
+    /// Like the other primitive emitters, this does not update the modeled operand stack.
+    fn emit_no_overflow_flag(&mut self, overflow: Overflow, span: SourceSpan) {
+        if overflow.is_overflowing() {
+            self.emit_push(0u32, span);
+        }
     }
 
     #[inline(always)]
