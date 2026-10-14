@@ -69,7 +69,7 @@ fn basic_wallet_and_p2id() {
     // 48 bytes more (15238 before) with the spill fixes for structured branches (#1422): the
     // script's last `scf.if` evicts its own condition, which is used again after the if, so the
     // condition is stored before the if and reloaded at that use.
-    expect!["15286"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
+    expect!["15314"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
 
     let note_package = compile_project(Path::new("../../examples/p2id-note"));
     assert!(note_package.is_library(), "expected library");
