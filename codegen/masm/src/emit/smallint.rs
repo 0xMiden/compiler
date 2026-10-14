@@ -191,6 +191,12 @@ impl OpEmitter<'_> {
     pub fn sub_uint(&mut self, n: u32, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Unchecked => self.sub_u32(overflow, span),
+            Overflow::Overflowing => {
+                // Underflow wraps outside the N-bit range. Let the width check produce the
+                // flag from that result, rather than passing it a u32 borrow flag.
+                self.sub_u32(Overflow::Wrapping, span);
+                self.handle_uint_overflow(n, overflow, span);
+            }
             overflow => {
                 self.sub_u32(overflow, span);
                 self.handle_uint_overflow(n, overflow, span);
@@ -211,6 +217,10 @@ impl OpEmitter<'_> {
         }
         match overflow {
             Overflow::Unchecked => self.sub_imm_u32(imm, overflow, span),
+            Overflow::Overflowing => {
+                self.sub_imm_u32(imm, Overflow::Wrapping, span);
+                self.handle_uint_overflow(n, overflow, span);
+            }
             overflow => {
                 self.sub_imm_u32(imm, overflow, span);
                 self.handle_uint_overflow(n, overflow, span);

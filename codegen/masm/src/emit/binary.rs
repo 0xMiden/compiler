@@ -1761,4 +1761,94 @@ mod tests {
             false,
         )
     }
+
+    // Hand-checked (lhs, rhs, wrapped result, overflow flag) cases for each width.
+    const U8_SUB_CASES: &[(u32, u32, u32, u32)] = &[
+        (2, 1, 1, 0),
+        (0, 1, 255, 1),
+        (1, 2, 255, 1),
+        (0, 255, 1, 1),
+        (255, 1, 254, 0),
+        (255, 0, 255, 0),
+        (255, 255, 0, 0),
+        (0, 0, 0, 0),
+    ];
+    const U16_SUB_CASES: &[(u32, u32, u32, u32)] = &[
+        (2, 1, 1, 0),
+        (0, 1, 65_535, 1),
+        (1, 2, 65_535, 1),
+        (0, 65_535, 1, 1),
+        (65_535, 1, 65_534, 0),
+        (65_535, 0, 65_535, 0),
+        (65_535, 65_535, 0, 0),
+        (0, 0, 0, 0),
+    ];
+
+    fn assert_narrow_overflowing_sub_in_vm(
+        cases: &[(u32, u32, u32, u32)],
+        into_immediate: impl Fn(u32) -> Immediate,
+        immediate: bool,
+    ) -> Result<(), Report> {
+        for &(lhs, rhs, result, flag) in cases {
+            let context = Rc::new(Context::default());
+            let mut stack = OperandStack::new(context);
+            let mut invoked = BTreeSet::new();
+            let mut instructions = Vec::new();
+            let span = SourceSpan::UNKNOWN;
+            {
+                let mut emitter = OpEmitter::new(&mut invoked, &mut instructions, &mut stack);
+                // Check that exactly the flag and result are produced above the existing stack.
+                emitter.literal(17u32, span);
+                emitter.literal(into_immediate(lhs), span);
+                if immediate {
+                    emitter.sub_imm(into_immediate(rhs), Overflow::Overflowing, span);
+                } else {
+                    emitter.literal(into_immediate(rhs), span);
+                    emitter.sub(Overflow::Overflowing, span);
+                }
+                assert_eq!(emitter.stack().len(), 3);
+                assert_eq!(emitter.stack()[0].ty(), Type::I1);
+                assert_eq!(emitter.stack()[1].ty(), into_immediate(lhs).ty());
+            }
+            let body = masm::Block::new(span, instructions).to_pretty_string();
+            // Clear padding beneath the outputs so the VM's overflow stack is empty.
+            let package = miden_assembly::Assembler::default().assemble_program(
+                "narrow_overflowing_sub",
+                format!("begin{body}\nrepeat.4 movup.15 drop end\nend"),
+            )?;
+            let program = package.try_into_program()?;
+            let output = FastProcessor::new(StackInputs::default())
+                .execute_sync(&program, &mut DefaultHost::default())
+                .map_err(|error| Report::msg(error.to_string()))?;
+            for (index, expected) in [flag, result, 17].into_iter().enumerate() {
+                assert_eq!(
+                    output.stack.get_element(index),
+                    Some(Felt::new_unchecked(expected as u64)),
+                    "{:?} - {rhs}, immediate = {immediate}, index = {index}",
+                    into_immediate(lhs),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn overflowing_sub_u8_preserves_results_in_vm() -> Result<(), Report> {
+        assert_narrow_overflowing_sub_in_vm(U8_SUB_CASES, |n| Immediate::U8(n as u8), false)
+    }
+
+    #[test]
+    fn overflowing_sub_imm_u8_preserves_results_in_vm() -> Result<(), Report> {
+        assert_narrow_overflowing_sub_in_vm(U8_SUB_CASES, |n| Immediate::U8(n as u8), true)
+    }
+
+    #[test]
+    fn overflowing_sub_u16_preserves_results_in_vm() -> Result<(), Report> {
+        assert_narrow_overflowing_sub_in_vm(U16_SUB_CASES, |n| Immediate::U16(n as u16), false)
+    }
+
+    #[test]
+    fn overflowing_sub_imm_u16_preserves_results_in_vm() -> Result<(), Report> {
+        assert_narrow_overflowing_sub_in_vm(U16_SUB_CASES, |n| Immediate::U16(n as u16), true)
+    }
 }
