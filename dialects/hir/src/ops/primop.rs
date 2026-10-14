@@ -28,6 +28,41 @@ impl InferTypeOpInterface for Caller {
     }
 }
 
+/// View a first-class word as four field elements in operand-stack order.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct UnpackWord {
+    #[operand]
+    word: AnyArrayOf<IntFelt>,
+    #[result]
+    result0: IntFelt,
+    #[result]
+    result1: IntFelt,
+    #[result]
+    result2: IntFelt,
+    #[result]
+    result3: IntFelt,
+}
+
+impl InferTypeOpInterface for UnpackWord {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        if self.word().ty() != Type::from(ArrayType::new(Type::Felt, 4)) {
+            return Err(Report::msg(format!(
+                "hir.unpack_word requires a four-felt word, got {}",
+                self.word().ty()
+            )));
+        }
+        self.result0_mut().set_type(Type::Felt);
+        self.result1_mut().set_type(Type::Felt);
+        self.result2_mut().set_type(Type::Felt);
+        self.result3_mut().set_type(Type::Felt);
+        Ok(())
+    }
+}
+
 /// Return the current VM clock cycle.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
@@ -210,14 +245,25 @@ pub struct PrintLn {
 /// Verifier tests of the memory primitives.
 #[cfg(test)]
 mod tests {
-    use alloc::format;
+    use alloc::{format, string::ToString};
 
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        Op, PointerType, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, testing::Test,
+        Op, PointerType, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder,
+        testing::Test,
     };
 
     use crate::HirOpBuilder;
+
+    #[test]
+    fn unpack_word_rejects_an_array_with_the_wrong_length() {
+        let ty = Type::from(midenc_hir::ArrayType::new(Type::Felt, 3));
+        let mut test = Test::new("invalid_word", &[ty], &[]);
+        let mut builder = test.function_builder();
+        let word = builder.entry_block().borrow().arguments()[0] as ValueRef;
+        let error = builder.unpack_word(word, SourceSpan::UNKNOWN).unwrap_err();
+        assert_eq!(error.to_string(), "hir.unpack_word requires a four-felt word, got [felt; 3]");
+    }
 
     /// The copy operations under test.
     #[derive(Copy, Clone)]

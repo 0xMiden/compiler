@@ -179,6 +179,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::LoadLocal, dyn HirLowering>();
     info.register_operation_trait::<hir::LocalAddress, dyn HirLowering>();
     info.register_operation_trait::<hir::Caller, dyn HirLowering>();
+    info.register_operation_trait::<hir::UnpackWord, dyn HirLowering>();
     info.register_operation_trait::<hir::Clk, dyn HirLowering>();
     info.register_operation_trait::<hir::AdvicePop, dyn HirLowering>();
     info.register_operation_trait::<hir::AdviceLoadWord, dyn HirLowering>();

@@ -25,6 +25,15 @@ impl OpEmitter<'_> {
         self.push(Type::from(ArrayType::new(Type::Felt, 4)));
     }
 
+    /// Split the word's shadow-stack entry without changing VM stack contents.
+    pub fn unpack_word(&mut self, _span: SourceSpan) {
+        let word = self.pop().expect("unpack_word operand is missing");
+        assert_eq!(word.ty(), Type::from(ArrayType::new(Type::Felt, 4)));
+        for _ in 0..4 {
+            self.push(Type::Felt);
+        }
+    }
+
     /// Push the current VM clock cycle.
     pub fn clk(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::Clk, span);
@@ -695,6 +704,23 @@ mod tests {
 
         assert_eq!(emitter.stack_len(), 1);
         assert_eq!(emitter.stack()[0], Type::from(ArrayType::new(Type::Felt, 4)));
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Caller)));
+    }
+
+    #[test]
+    fn unpack_word_preserves_vm_stack_contents() {
+        let mut block = Vec::default();
+        let mut stack = OperandStack::new(Rc::new(Context::default()));
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+        let span = SourceSpan::default();
+        emitter.caller(span);
+        emitter.unpack_word(span);
+        assert_eq!(emitter.stack_len(), 4);
+        for index in 0..4 {
+            assert_eq!(emitter.stack()[index], Type::Felt);
+        }
+        assert_eq!(block.len(), 1);
         assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Caller)));
     }
 
