@@ -369,10 +369,10 @@ impl OpEmitter<'_> {
             }
             ty => unimplemented!("add is not yet implemented for {ty}"),
         }
+        self.push(ty);
         if overflow.is_overflowing() {
             self.push(Type::I1);
         }
-        self.push(ty);
     }
 
     #[allow(unused)]
@@ -403,10 +403,10 @@ impl OpEmitter<'_> {
             }
             ty => unimplemented!("add is not yet implemented for {ty}"),
         }
+        self.push(ty);
         if overflow.is_overflowing() {
             self.push(Type::I1);
         }
-        self.push(ty);
     }
 
     pub fn sub(&mut self, overflow: Overflow, span: SourceSpan) {
@@ -438,10 +438,10 @@ impl OpEmitter<'_> {
             }
             ty => unimplemented!("sub is not yet implemented for {ty}"),
         }
+        self.push(ty);
         if overflow.is_overflowing() {
             self.push(Type::I1);
         }
-        self.push(ty);
     }
 
     #[allow(unused)]
@@ -471,10 +471,10 @@ impl OpEmitter<'_> {
             }
             ty => unimplemented!("sub is not yet implemented for {ty}"),
         }
+        self.push(ty);
         if overflow.is_overflowing() {
             self.push(Type::I1);
         }
-        self.push(ty);
     }
 
     pub fn mul(&mut self, overflow: Overflow, span: SourceSpan) {
@@ -504,10 +504,10 @@ impl OpEmitter<'_> {
             }
             ty => unimplemented!("mul for {ty} is not supported"),
         }
+        self.push(ty);
         if overflow.is_overflowing() {
             self.push(Type::I1);
         }
-        self.push(ty);
     }
 
     #[allow(unused)]
@@ -539,10 +539,10 @@ impl OpEmitter<'_> {
             }
             ty => unimplemented!("mul for {ty} is not supported"),
         }
+        self.push(ty);
         if overflow.is_overflowing() {
             self.push(Type::I1);
         }
-        self.push(ty);
     }
 
     pub fn checked_div(&mut self, span: SourceSpan) {
@@ -1556,5 +1556,94 @@ impl OpEmitter<'_> {
             ty => unimplemented!("max for {ty} is not supported"),
         }
         self.push(ty);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{collections::BTreeSet, rc::Rc};
+
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{Builder, Context, OpBuilder, ValueRef};
+
+    use super::*;
+    use crate::{OperandStack, emit::InstOpEmitter};
+
+    fn assert_overflowing_result_order(
+        build: impl Fn(&mut OpBuilder, ValueRef, ValueRef, SourceSpan) -> (ValueRef, ValueRef),
+        emit: impl Fn(&mut InstOpEmitter<'_>, SourceSpan),
+        emit_imm: impl Fn(&mut InstOpEmitter<'_>, Immediate, SourceSpan),
+    ) {
+        for (ty, imm) in [
+            (Type::U32, Immediate::U32(2)),
+            (Type::I32, Immediate::I32(2)),
+            (Type::U64, Immediate::U64(2)),
+            (Type::I64, Immediate::I64(2)),
+        ] {
+            for immediate in [false, true] {
+                let context = Rc::new(Context::default());
+                let block = context.create_block_with_params([ty.clone(), ty.clone()]);
+                let [lhs, rhs] = [0, 1].map(|index| block.borrow().arguments()[index] as ValueRef);
+                let mut builder = OpBuilder::new(context.clone());
+                builder.set_insertion_point_to_end(block);
+                let span = SourceSpan::UNKNOWN;
+                let (flag, result) = build(&mut builder, lhs, rhs, span);
+                let operation = flag.borrow().get_defining_op().unwrap();
+                let operation = operation.borrow();
+
+                let mut stack = OperandStack::new(context);
+                if !immediate {
+                    stack.push(rhs);
+                }
+                stack.push(lhs);
+                let mut invoked = BTreeSet::new();
+                let mut instructions = Vec::new();
+                {
+                    let mut emitter =
+                        InstOpEmitter::new(&operation, &mut invoked, &mut instructions, &mut stack);
+                    if immediate {
+                        emit_imm(&mut emitter, imm, span);
+                    } else {
+                        emit(&mut emitter, span);
+                    }
+                    // Binding can retype equal-sized operands, so check the unbound model too.
+                    assert_eq!(emitter.stack()[0].ty(), Type::I1);
+                    assert_eq!(emitter.stack()[1].ty(), ty);
+                }
+
+                assert_eq!(stack.len(), 2, "{ty}, immediate = {immediate}");
+                assert_eq!(stack[0].as_value(), Some(flag));
+                assert_eq!(stack[0].ty(), Type::I1);
+                assert_eq!(stack[1].as_value(), Some(result));
+                assert_eq!(stack[1].ty(), ty);
+            }
+        }
+    }
+
+    #[test]
+    fn overflowing_add_results_follow_vm_stack_order() {
+        assert_overflowing_result_order(
+            |builder, lhs, rhs, span| builder.add_overflowing(lhs, rhs, span).unwrap(),
+            |emitter, span| emitter.add(Overflow::Overflowing, span),
+            |emitter, imm, span| emitter.add_imm(imm, Overflow::Overflowing, span),
+        );
+    }
+
+    #[test]
+    fn overflowing_sub_results_follow_vm_stack_order() {
+        assert_overflowing_result_order(
+            |builder, lhs, rhs, span| builder.sub_overflowing(lhs, rhs, span).unwrap(),
+            |emitter, span| emitter.sub(Overflow::Overflowing, span),
+            |emitter, imm, span| emitter.sub_imm(imm, Overflow::Overflowing, span),
+        );
+    }
+
+    #[test]
+    fn overflowing_mul_results_follow_vm_stack_order() {
+        assert_overflowing_result_order(
+            |builder, lhs, rhs, span| builder.mul_overflowing(lhs, rhs, span).unwrap(),
+            |emitter, span| emitter.mul(Overflow::Overflowing, span),
+            |emitter, imm, span| emitter.mul_imm(imm, Overflow::Overflowing, span),
+        );
     }
 }

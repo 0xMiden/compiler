@@ -1126,16 +1126,15 @@ mod tests {
 
         emitter.add_imm(one, Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
 
-        emitter.swap(1, SourceSpan::default());
         emitter.drop(SourceSpan::default());
         emitter.dup(0, SourceSpan::default());
         emitter.add(Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
     }
 
     #[test]
@@ -1163,16 +1162,15 @@ mod tests {
 
         emitter.sub_imm(one, Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
 
-        emitter.swap(1, SourceSpan::default());
         emitter.drop(SourceSpan::default());
         emitter.dup(0, SourceSpan::default());
         emitter.sub(Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
     }
 
     #[test]
@@ -1200,16 +1198,15 @@ mod tests {
 
         emitter.mul_imm(one, Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
 
-        emitter.swap(1, SourceSpan::default());
         emitter.drop(SourceSpan::default());
         emitter.dup(0, SourceSpan::default());
         emitter.mul(Overflow::Overflowing, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
-        assert_eq!(emitter.stack()[0], Type::U32);
-        assert_eq!(emitter.stack()[1], Type::I1);
+        assert_eq!(emitter.stack()[0], Type::I1);
+        assert_eq!(emitter.stack()[1], Type::U32);
     }
 
     #[test]
