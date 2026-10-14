@@ -40,6 +40,8 @@ struct OperationInfo {
     alloc_default: AllocDefaultFn,
     /// The custom assembly parser for this operation
     parse_assembly: Option<ParseAssemblyFn>,
+    /// Whether generic assembly can represent the declared successor layout
+    supports_generic_successors: bool,
 }
 
 type AttrValueGetRaw = unsafe fn(*const (), &AttrInfo) -> AttributeRef;
@@ -253,6 +255,7 @@ impl OperationName {
             get_canonicalization_patterns,
             alloc_default,
             parse_assembly,
+            supports_generic_successors: T::supports_generic_successors(),
         }))
     }
 
@@ -282,6 +285,12 @@ impl OperationName {
     #[inline(always)]
     pub fn parse_assembly_fn(&self) -> Option<ParseAssemblyFn> {
         self.0.parse_assembly
+    }
+
+    /// Returns whether generic assembly can represent this operation's successor layout.
+    #[inline]
+    pub fn supports_generic_successors(&self) -> bool {
+        self.0.supports_generic_successors
     }
 
     /// Populates `rewrites` with the set of canonicalization patterns registered for this operation

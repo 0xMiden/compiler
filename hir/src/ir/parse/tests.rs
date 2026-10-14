@@ -9,16 +9,68 @@ use crate::{
     Symbol, SymbolTable, Type, UnsafeIntrusiveEntityRef, ValueRef, Visibility,
     attributes::IntegerLikeAttr,
     diagnostics::{Report, SourceSpan, Uri},
-    dialects::builtin::{
-        BuiltinOpBuilder, Function, Module, Ret, RetImm, UnrealizedConversionCast, World, WorldRef,
-        attributes::{AbiParam, Signature},
+    dialects::{
+        builtin::{
+            BuiltinOpBuilder, Function, Module, Ret, RetImm, UnrealizedConversionCast, World,
+            WorldRef,
+            attributes::{AbiParam, Signature},
+        },
+        test::TestDialect,
     },
     parse::{self, ParseResult, ParserConfig},
     print::AsmPrinter,
     testing::Test,
+    traits::Terminator,
 };
 
 type TestResult<T = ()> = Result<T, Report>;
+
+#[crate::derive::operation(
+    dialect = TestDialect,
+    traits(Terminator)
+)]
+pub struct GroupedSuccessors {
+    #[successors()]
+    destinations: crate::Successor,
+    #[successor]
+    fallback: crate::Successor,
+}
+
+#[test]
+fn generic_parser_rejects_provided_successors_with_multiple_groups() -> TestResult {
+    use super::{
+        DefaultParser, OperationState, ParserState, Scanner, TokenStream,
+        operation::OperationParser,
+    };
+
+    let context = Rc::new(Context::default());
+    context.get_or_register_dialect::<crate::dialects::test::TestDialect>();
+    let world = context.clone().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+    let tokens = TokenStream::new(super::SourceId::UNKNOWN, Scanner::new(": () -> ()"));
+    let parser = DefaultParser::new(ParserState::new(ParserConfig::new(context.clone()), tokens));
+    let mut parser = OperationParser::new(parser, world);
+    let mut state = OperationState::new(
+        SourceSpan::UNKNOWN,
+        context.get_registered_name::<GroupedSuccessors>(),
+    );
+    let error = parser
+        .parse_generic_operation_after_name(
+            &mut state,
+            Some(&[]),
+            Some(&[context.create_block()]),
+            None,
+            None,
+            None,
+        )
+        .expect_err("generic parsing must not flatten distinct successor groups");
+    assert!(
+        error
+            .to_string()
+            .contains("generic assembly cannot represent the successor layout"),
+        "{error}"
+    );
+    Ok(())
+}
 
 #[test]
 fn generic_parser_reserves_operand_groups_for_provided_successors() -> TestResult {

@@ -24,6 +24,14 @@ pub trait OpRegistration: Op {
     fn traits() -> Box<[TraitInfo]>;
     /// The set of statically known attributes for this op
     fn attrs() -> Box<[AttrInfo]>;
+    /// Whether the successor layout can be represented by generic assembly's single unkeyed
+    /// successor list. Operations with multiple successor groups or keyed successors cannot.
+    ///
+    /// The `operation` macro derives this from the successor declarations. Hand-written
+    /// registrations conservatively reject generic parsing unless they opt in.
+    fn supports_generic_successors() -> bool {
+        false
+    }
     /// Allocate a new, default-initialized instance of this op in `context`
     fn alloc_uninit(context: Rc<Context>) -> OperationRef;
 }

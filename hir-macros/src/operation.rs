@@ -1005,6 +1005,10 @@ impl quote::ToTokens for OpDefinition {
         let traits = &self.traits;
         let implements = &self.implements;
         let attrs = WithAttrInfos(self);
+        let supports_generic_successors = matches!(
+            self.successors.as_slice(),
+            [] | [SuccessorGroup::Unnamed(_)] | [SuccessorGroup::Named(_)]
+        );
         tokens.extend(quote_spanned! { op_span =>
             impl #impl_generics ::midenc_hir::Op for #op_ident #ty_generics #where_clause {
                 #[inline]
@@ -1034,6 +1038,10 @@ impl quote::ToTokens for OpDefinition {
                     ::alloc::boxed::Box::from([
                         #attrs
                     ])
+                }
+
+                fn supports_generic_successors() -> bool {
+                    #supports_generic_successors
                 }
 
                 fn traits() -> ::alloc::boxed::Box<[::midenc_hir::traits::TraitInfo]> {
@@ -1625,7 +1633,7 @@ impl quote::ToTokens for OpSuccessorFns<'_> {
                         #[doc = #group_mut_doc]
                         #[inline]
                         pub fn #group_mut(&mut self) -> ::midenc_hir::OpSuccessorRangeMut<'_> {
-                            self.op.successor_group(#group_index)
+                            self.op.successor_group_mut(#group_index)
                         }
                     });
                 }

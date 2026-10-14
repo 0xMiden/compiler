@@ -209,6 +209,13 @@ pub enum ParserError {
         #[label("non-terminator operations cannot have successors")]
         span: SourceSpan,
     },
+    #[error("generic assembly cannot represent the successor layout of '{name}'")]
+    #[diagnostic(help("use the operation's custom assembly syntax instead"))]
+    UnsupportedGenericSuccessorLayout {
+        #[label("generic successors cannot encode keys or multiple successor groups")]
+        span: SourceSpan,
+        name: String,
+    },
     #[error("too many operand groups")]
     #[diagnostic()]
     TooManyOperandGroups {

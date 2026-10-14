@@ -958,6 +958,13 @@ where
         parsed_attributes: Option<ParsedAttrs>,
         parsed_fn_type: Option<FunctionType>,
     ) -> ParseResult {
+        if !result.name.supports_generic_successors() {
+            return Err(ParserError::UnsupportedGenericSuccessorLayout {
+                span: result.span,
+                name: result.name.to_string(),
+            });
+        }
+
         // Parse the operand list, if not explicitly provided.
         let mut operand_info = SmallVec::<[UnresolvedOperand; 8]>::default();
         if let Some(provided_use_info) = parsed_operand_use_info {

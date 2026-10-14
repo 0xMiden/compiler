@@ -566,6 +566,43 @@ builtin.function public extern("C") @branch(%c: i1, %a: u32, %b: u32) -> u32 {
         Ok(())
     }
 
+    #[test]
+    fn parse_generic_switch_rejects_unsupported_successor_layout() {
+        use midenc_hir::{
+            diagnostics::Uri,
+            dialects::builtin::Function,
+            parse::{ParserConfig, parse},
+        };
+
+        // A flat successor list cannot distinguish the keyed cases from the fallback. Omitting
+        // the list must not bypass the diagnostic and produce missing successor groups either.
+        for successors in ["[^dest]", "[^dest, ^dest]", "[]", ""] {
+            let context = Rc::new(Context::default());
+            context.get_or_register_dialect::<ControlFlowDialect>();
+            let source = format!(
+                r#"builtin.function public extern("C") @branch(%s: u32) -> u32 {{
+    "cf.switch"(%s){successors} : (u32) -> ();
+^dest:
+    builtin.ret %s : (u32);
+}};"#
+            );
+            let Err(error) = parse::<Function>(
+                ParserConfig::new(context.clone()),
+                Uri::new("parse_generic_switch.hir"),
+                source,
+            ) else {
+                panic!("expected generic cf.switch with successors '{successors}' to be rejected");
+            };
+            let message = format!("{error}");
+            assert!(
+                message.contains(
+                    "generic assembly cannot represent the successor layout of 'cf.switch'"
+                ),
+                "{message}"
+            );
+        }
+    }
+
     /// Statically-known successor lists (`cf.cond_br %c ^a, ^b`) parse with the `, ` separator
     /// the printer emits between successors, and the condition operand stays attached to the
     /// operation rather than leaking into the first successor's operand group.
