@@ -98,6 +98,12 @@ pub struct DominanceFrontier {
 }
 
 impl DominanceFrontier {
+    /// Compute the dominance frontiers of all blocks reachable from the root of `domtree`.
+    ///
+    /// Only join blocks (two or more predecessors) can be in a dominance frontier, and blocks
+    /// unreachable from the entry, which are not in the tree, do not count as predecessors. The
+    /// root itself is a join when it has back edges; it then lies in the frontier of every block
+    /// on the way up from those predecessors, itself included.
     pub fn new(domtree: &DominanceTree) -> Self {
         let mut this = Self::default();
 
@@ -107,18 +113,22 @@ impl DominanceFrontier {
             };
 
             let block = node_block.borrow();
-            let has_multiple_predecessors = block.predecessors().enumerate().any(|(i, _)| i > 1);
-            if !has_multiple_predecessors {
+            let mut predecessors = block
+                .predecessors()
+                .map(|pred| pred.predecessor())
+                .filter(|p| domtree.is_reachable_from_entry(*p));
+            let Some(first) = predecessors.next() else {
                 continue;
-            }
+            };
+            let Some(second) = predecessors.next() else {
+                continue;
+            };
 
-            let idom = node
-                .idom()
-                .expect("expected immediate dominator for block with multiple predecessors");
-            let idom_block = idom.block().unwrap();
-            for pred in block.predecessors() {
-                let mut p = pred.predecessor();
-                while p != idom_block {
+            // The root has no immediate dominator: the walk from its predecessors goes all the way
+            // up to the root, which dominates them without strictly dominating itself.
+            let idom_block = node.idom().map(|idom| idom.block().unwrap());
+            for mut p in [first, second].into_iter().chain(predecessors) {
+                while Some(p) != idom_block {
                     this.dfs.entry(p).or_default().insert(node_block);
                     let node_p = domtree.get(Some(p)).unwrap();
                     let Some(idom_p) = node_p.idom() else {

@@ -57,8 +57,8 @@ value-or-trap, a trap on both sides is a match).
 ## Evidence commands
 
 - `MIDENC_TRACE='analysis:spills=trace,pass:spills=trace'`: spills, reloads,
-  `edges to split = N`, `erase unused reload`, `unused phi`, `additional spills
-  required`, `convert reload to load`.
+  `edges to split = N`, `erase unused reload`, `pruning unused phi`,
+  `additional spills required`, `convert reload to load`.
 - `MIDENC_TRACE='pattern-rewrite-driver=trace'`: `trying to match '<pattern>'`
   before each attempt, `pattern matched successfully` after a rewrite (lines
   carry `dialect=`/`op=`).
@@ -94,16 +94,21 @@ value-or-trap, a trap on both sides is a match).
 
 The crash site does not name the mechanism. Take the spills, pattern and (for
 emitter panics) drop traces, then apply in order:
-1. `edges to split > 0` plus `erase unused reload`: stale dominator tree
-   (#1420), whatever the site (`frontier.rs:123`, `lowering.rs` `NoSolution`,
-   `emit/mod.rs` index overflow).
+1. Index overflow in `codegen/masm/src/emit/mod.rs
+   (OpEmitter::copy_operand_to_position)` after a second spills run (after
+   control-flow lifting) that reports `edges to split = 0`, spills a few
+   values and logs `additional spills required`: over-window pressure the
+   analysis did not relieve (#1422 item 2). The last drop-trace op is often
+   the spill `hir.store_local` itself. Split-edge reloads are no longer
+   dropped, so `erase unused reload` is not a marker of any open class.
 2. Arity-2 `NoSolution` with a Copy constraint on a stack of at most 16 felts:
    the arity-2 gap (#1422), even if the function spilled elsewhere. The felt
    total alone does not decide at -Oz (dead, undropped operands are invisible
    to the analysis).
-3. `emit/mod.rs` index overflow with `additional spills required`, no splits,
-   no erasure, last drop-trace op a spill `hir.store_local`: spill placement
-   past the window (#1422).
+3. An `internal error` from the spills transform (`… is passed to … from …,
+   which its definition in … does not dominate`, `a spill of … and a reload
+   of it are in different functions`, `control flow between a spill of … and
+   a reload of it is not well-defined`): a new spills-transform bug; file it.
 4. `AliasingViolationError` at `rewriter.rs`: the last `trying to match` names
    the pattern.
 
@@ -140,11 +145,14 @@ build the masked-index control before calling a trap-edge variant new.
   `report.json` snapshots, never with the rendered "newly-exercised" count
   (a test-crate-rebuild artifact).
 - Corpus map on demand: every `#[ignore = "..."]` string starts with its
-  filed issue (`#1420`: ...) or `gap: ` (diagnostic gaps and link limits, not
+  filed issue (`#1422`: ...) or `gap: ` (diagnostic gaps and link limits, not
   filed as bugs). A class's reproducers, i.e. the un-ignore list of its fix
   PR: `grep -rn -A3 '#\[ignore'
-  tests/integration/src/end_to_end/differential/tests/ | grep '#1420'`.
-  Completeness check (must print nothing): `grep -rn '^#\[ignore'
+  tests/integration/src/end_to_end/differential/tests/ | grep '#1422'`.
+  #1421 and #1429 have no ignored reproducer in the corpus any more: their
+  cases (`calls::indirect_spill_bb`; `compose::switch_calls`,
+  `compose::switch_calls_edges`) compile since the #1420 fix, although the
+  issues themselves are open. Completeness check (must print nothing): `grep -rn '^#\[ignore'
   tests/integration/src/end_to_end/differential/tests/ | grep -v
   '"\(#1[0-9]\{3\}\|gap\): '`. Twins follow the naming convention (`_repro`,
   `_edges`, `_guard`, `_oz`, `_o1`, `_basic`, `_max`, `_nodwarf`, `_min`);

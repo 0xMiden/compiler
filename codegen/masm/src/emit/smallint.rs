@@ -191,6 +191,12 @@ impl OpEmitter<'_> {
     pub fn sub_uint(&mut self, n: u32, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Unchecked => self.sub_u32(overflow, span),
+            Overflow::Overflowing => {
+                // Underflow wraps outside the N-bit range. Let the width check produce the
+                // flag from that result, rather than passing it a u32 borrow flag.
+                self.sub_u32(Overflow::Wrapping, span);
+                self.handle_uint_overflow(n, overflow, span);
+            }
             overflow => {
                 self.sub_u32(overflow, span);
                 self.handle_uint_overflow(n, overflow, span);
@@ -202,14 +208,19 @@ impl OpEmitter<'_> {
     ///
     /// See the [Overflow] type for how overflow semantics can change the operation.
     ///
-    /// Subtracting zero is a no-op.
+    /// Subtracting zero preserves the input and emits a false flag for overflowing arithmetic.
     #[inline]
     pub fn sub_imm_uint(&mut self, imm: u32, n: u32, overflow: Overflow, span: SourceSpan) {
         if imm == 0 {
+            self.emit_no_overflow_flag(overflow, span);
             return;
         }
         match overflow {
             Overflow::Unchecked => self.sub_imm_u32(imm, overflow, span),
+            Overflow::Overflowing => {
+                self.sub_imm_u32(imm, Overflow::Wrapping, span);
+                self.handle_uint_overflow(n, overflow, span);
+            }
             overflow => {
                 self.sub_imm_u32(imm, overflow, span);
                 self.handle_uint_overflow(n, overflow, span);

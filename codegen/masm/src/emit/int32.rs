@@ -491,10 +491,11 @@ impl OpEmitter<'_> {
     ///
     /// See the [Overflow] type for how overflow semantics can change the operation.
     ///
-    /// Adding zero is a no-op.
+    /// Adding zero preserves the input and emits a false flag for overflowing arithmetic.
     #[inline]
     pub fn add_imm_u32(&mut self, imm: u32, overflow: Overflow, span: SourceSpan) {
         if imm == 0 {
+            self.emit_no_overflow_flag(overflow, span);
             return;
         }
         self.emit(
@@ -523,10 +524,11 @@ impl OpEmitter<'_> {
     ///
     /// See the [Overflow] type for how overflow semantics can change the operation.
     ///
-    /// Adding zero is a no-op.
+    /// Adding zero preserves the input and emits a false flag for overflowing arithmetic.
     #[inline]
     pub fn add_imm_i32(&mut self, imm: i32, overflow: Overflow, span: SourceSpan) {
         if imm == 0 {
+            self.emit_no_overflow_flag(overflow, span);
             return;
         }
         match overflow {
@@ -577,10 +579,11 @@ impl OpEmitter<'_> {
     ///
     /// See the [Overflow] type for how overflow semantics can change the operation.
     ///
-    /// Subtracting zero is a no-op.
+    /// Subtracting zero preserves the input and emits a false flag for overflowing arithmetic.
     #[inline]
     pub fn sub_imm_u32(&mut self, imm: u32, overflow: Overflow, span: SourceSpan) {
         if imm == 0 {
+            self.emit_no_overflow_flag(overflow, span);
             return;
         }
         self.emit(
@@ -608,10 +611,11 @@ impl OpEmitter<'_> {
     ///
     /// See the [Overflow] type for how overflow semantics can change the operation.
     ///
-    /// Subtracting zero is a no-op.
+    /// Subtracting zero preserves the input and emits a false flag for overflowing arithmetic.
     #[inline]
     pub fn sub_imm_i32(&mut self, imm: i32, overflow: Overflow, span: SourceSpan) {
         if imm == 0 {
+            self.emit_no_overflow_flag(overflow, span);
             return;
         }
         match overflow {
@@ -645,6 +649,21 @@ impl OpEmitter<'_> {
             },
             span,
         );
+        if overflow.is_overflowing() {
+            self.emit_u32_mul_overflow_flag(span);
+        }
+    }
+
+    /// Convert a widened product `[low, high]` into `[overflow, low]`, with a boolean flag.
+    fn emit_u32_mul_overflow_flag(&mut self, span: SourceSpan) {
+        self.emit_all(
+            [
+                masm::Instruction::Swap1,
+                masm::Instruction::EqImm(Felt::ZERO.into()),
+                masm::Instruction::Not,
+            ],
+            span,
+        );
     }
 
     /// Pops two i32 values off the stack, `b` and `a`, and performs `a * b`.
@@ -667,15 +686,17 @@ impl OpEmitter<'_> {
     /// Multiplying by zero is transformed into a sequence which drops the input value
     /// and pushes a constant zero on the stack.
     ///
-    /// Multiplying by one is a no-op.
+    /// Multiplying by one preserves the input. Both shortcuts emit a false flag for
+    /// overflowing arithmetic.
     #[inline]
     pub fn mul_imm_u32(&mut self, imm: u32, overflow: Overflow, span: SourceSpan) {
         match imm {
             0 => {
                 self.emit(masm::Instruction::Drop, span);
                 self.emit_push(0u32, span);
+                self.emit_no_overflow_flag(overflow, span);
             }
-            1 => (),
+            1 => self.emit_no_overflow_flag(overflow, span),
             imm => {
                 self.emit(
                     match overflow {
@@ -698,6 +719,9 @@ impl OpEmitter<'_> {
                     },
                     span,
                 );
+                if overflow.is_overflowing() {
+                    self.emit_u32_mul_overflow_flag(span);
+                }
             }
         }
     }
@@ -709,15 +733,17 @@ impl OpEmitter<'_> {
     /// Multiplying by zero is transformed into a sequence which drops the input value
     /// and pushes a constant zero on the stack.
     ///
-    /// Multiplying by one is a no-op.
+    /// Multiplying by one preserves the input. Both shortcuts emit a false flag for
+    /// overflowing arithmetic.
     #[inline]
     pub fn mul_imm_i32(&mut self, imm: i32, overflow: Overflow, span: SourceSpan) {
         match imm {
             0 => {
                 self.emit(masm::Instruction::Drop, span);
                 self.emit_push(0u32, span);
+                self.emit_no_overflow_flag(overflow, span);
             }
-            1 => (),
+            1 => self.emit_no_overflow_flag(overflow, span),
             imm => match overflow {
                 Overflow::Unchecked | Overflow::Wrapping => {
                     self.emit_push(imm as u32, span);
