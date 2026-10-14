@@ -141,7 +141,7 @@ fn load_tx_expirations(num_transactions: usize) -> Felt {
 /// Performs the following steps:
 /// - Layer 1: pipes the `(tx_id, account_id)` tuples from the advice map keyed by `BATCH_ID`,
 ///   asserting that the sequential hash of the piped data matches `BATCH_ID`. The number of
-///   transactions is derived from the piped length.
+///   transactions is derived from the piped length and must be between 1 and 1024.
 /// - Layer 2: for each transaction, pipes its pre-image from the advice map keyed by the verified
 ///   `tx_id`, asserting that the sequential hash of the piped data matches the `tx_id`.
 /// - Note lists: loads the input-note list (sorted by nullifier) and the output-note list (sorted
@@ -152,6 +152,8 @@ fn load_tx_expirations(num_transactions: usize) -> Felt {
 ///   accumulates the running minimum.
 ///
 /// Panics if:
+/// - the batch has no transactions or exceeds the transaction limit.
+/// - a transaction header does not contain exactly 16 felts.
 /// - the `(tx_id, account_id)` tuple list piped from the advice map does not hash to `BATCH_ID`.
 /// - a transaction's `(INIT, FINAL, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT)` data piped
 ///   from the advice map does not hash to its `tx_id`.
@@ -177,6 +179,8 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
         "the batch contains more transactions than the maximum allowed"
     );
 
+    assert!(num_transactions != 0, "the batch contains no transactions");
+
     // Pipe the tuples into memory, asserting their sequential hash equals BATCH_ID; the piped
     // buffer is kept as-is as the tuple region.
     let tx_tuples = adv_load_preimage(Felt::from((len_felts / 4) as u32), batch_id);
@@ -188,11 +192,10 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
     for tx_index in 0..num_transactions {
         let tx_id = memory::load_word(&tx_tuples, tx_index * TX_TUPLE_FELT_LEN);
         let len_felts = adv_push_mapvaln(tx_id).as_canonical_u64() as usize;
-        // The MASM kernel stores each header in a fixed 16-felt slot; the length is implicitly
-        // pinned by the hash check against the `TransactionId::new` pre-image.
+        // Headers occupy fixed 16-felt slots in the MASM kernel.
         assert!(
             len_felts == TX_HEADER_FELT_LEN,
-            "a transaction header does not match the TransactionId pre-image layout"
+            "a transaction header does not have the expected length"
         );
 
         // Pipe the header into memory, asserting its sequential hash equals TX_ID.

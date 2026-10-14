@@ -1,4 +1,4 @@
-//! Smoke tests for the Rust implementation of the Miden protocol batch kernel
+//! Correctness and compiler-cost regression tests for the Rust Miden protocol batch kernel
 //! (`tests/fixtures/batch-kernel`).
 //!
 //! The fixture mirrors the MASM batch kernel of the protocol repository
@@ -8,10 +8,12 @@
 //! `BatchKernel::prepare_inputs` does, executes the compiled kernel on the VM, and checks the
 //! outputs against commitments computed with the host hasher.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
+use miden_assembly::SourceManager;
 use miden_core::{EMPTY_WORD, Felt, Word, crypto::hash::Poseidon2, utils::hash_string_to_word};
 use miden_debug::{DebugQuery, Felt as TestFelt};
+use miden_mast_package::Package;
 use miden_processor::advice::AdviceInputs;
 use midenc_expect_test::expect;
 use midenc_frontend_wasm::WasmTranslationConfig;
@@ -92,7 +94,7 @@ impl MockTransaction {
         Poseidon2::hash_elements(&elements)
     }
 
-    /// Mirrors `TransactionId::input_elements`: the felt sequence hashed into the transaction id.
+    /// Mirrors `TransactionCommitments::elements`: the felt sequence hashed into the transaction id.
     fn header_elements(&self) -> Vec<Felt> {
         let mut elements = Vec::with_capacity(16);
         elements.extend_from_slice(self.init_account_commitment.as_elements());
@@ -121,15 +123,15 @@ fn batch_id(transactions: &[MockTransaction]) -> Word {
     Poseidon2::hash_elements(&layer1_elements(transactions))
 }
 
-/// Mirrors `BatchId::hash_input_elements`: for each transaction,
-/// `[transaction_id[4], account_id_prefix, account_id_suffix, 0, 0]`.
+/// Mirrors `OrderedTransactionHeaders::hash_input_elements`: for each transaction,
+/// `[transaction_id[4], account_id_suffix, account_id_prefix, 0, 0]`.
 fn layer1_elements(transactions: &[MockTransaction]) -> Vec<Felt> {
     let mut elements = Vec::with_capacity(transactions.len() * 8);
     for tx in transactions {
         elements.extend_from_slice(tx.id().as_elements());
         elements.extend_from_slice(&[
-            tx.account_id[0],
             tx.account_id[1],
+            tx.account_id[0],
             Felt::new_unchecked(0),
             Felt::new_unchecked(0),
         ]);
@@ -250,18 +252,107 @@ fn expected_input_notes_commitment(transactions: &[MockTransaction]) -> Word {
     Poseidon2::hash_elements(&elements)
 }
 
-// SMOKE TESTS
+// DIFFERENTIAL SCENARIOS
 // =================================================================================================
 
-/// Compiles the batch kernel fixture and executes it against mock batches:
+/// A small transaction with distinct account states and no notes.
+fn transaction(seed: u64) -> MockTransaction {
+    MockTransaction {
+        account_id: [Felt::new_unchecked(seed), Felt::new_unchecked(seed + 1)],
+        init_account_commitment: word(seed, 1, 1, 1),
+        final_account_commitment: word(seed, 2, 2, 2),
+        input_notes: vec![],
+        output_notes: vec![],
+        expiration_block_num: 1234,
+    }
+}
+
+/// The protocol's two-transaction scenario, with authenticated and external unauthenticated
+/// inputs and three outputs. Transaction order deliberately differs from nullifier order.
+fn two_tx_batch() -> Vec<MockTransaction> {
+    let mut first = transaction(10);
+    first.input_notes = vec![(word(2000, 0, 0, 2), EMPTY_WORD)];
+    first.output_notes = vec![(word(80, 0, 0, 80), word(81, 0, 0, 81))];
+    let mut second = transaction(20);
+    second.input_notes = vec![(word(1000, 0, 0, 1), word(90, 0, 0, 90))];
+    second.output_notes = vec![
+        (word(82, 0, 0, 82), word(83, 0, 0, 83)),
+        (word(84, 0, 0, 84), word(85, 0, 0, 85)),
+    ];
+    second.expiration_block_num = 800;
+    vec![first, second]
+}
+
+/// A creator followed by a consumer, optionally retaining an authenticated input after erasure.
+fn erasure_batch(retain_input: bool) -> Vec<MockTransaction> {
+    let mut first = transaction(10);
+    let details = word(50, 0, 0, 50);
+    let metadata = word(51, 0, 0, 51);
+    first.output_notes = vec![(details, metadata)];
+    first.expiration_block_num = 900;
+    if retain_input {
+        first.input_notes = vec![(word(1000, 0, 0, 1), EMPTY_WORD)];
+    }
+    let mut second = transaction(20);
+    second.input_notes = vec![(word(2000, 0, 0, 2), note_id(details, metadata))];
+    vec![first, second]
+}
+
+/// A larger batch exercising repeated per-transaction loading and deeper sorted-list lookups.
+fn many_notes_batch() -> Vec<MockTransaction> {
+    (0..8)
+        .map(|i| {
+            let mut tx = transaction(i + 1);
+            for j in 0..4 {
+                let seed = i * 4 + j + 1;
+                tx.input_notes.push((word(seed, 0, 0, 0), EMPTY_WORD));
+                tx.output_notes.push((word(seed, 1, 2, 3), word(seed, 4, 5, 6)));
+            }
+            tx
+        })
+        .collect()
+}
+
+/// Serializes a strictly key-sorted global note list after inserting a phantom entry.
+fn with_extra_note(blob: &[Felt], key: Word) -> Vec<Felt> {
+    let mut entries: Vec<Vec<Felt>> =
+        blob.as_chunks::<8>().0.iter().map(|entry| entry.to_vec()).collect();
+    let mut entry = key.as_elements().to_vec();
+    entry.extend_from_slice(EMPTY_WORD.as_elements());
+    entries.push(entry);
+    entries.sort_by_key(|entry| Word::from(<[Felt; 4]>::try_from(&entry[..4]).unwrap()));
+    entries.into_iter().flatten().collect()
+}
+
+/// VM trace and cycles on success, or the VM rejection and its cycle on failure.
+type ExecutionOutcome = Result<(miden_debug::ExecutionTrace, usize), (String, usize)>;
+
+/// Executes the compiled kernel with a bounded VM cycle budget.
+fn execute(
+    package: Arc<Package>,
+    source_manager: Arc<dyn SourceManager>,
+    args: Vec<Felt>,
+    advice: AdviceInputs,
+) -> ExecutionOutcome {
+    let mut exec = executor_with_std(args);
+    exec.with_advice_inputs(advice);
+    let mut executor = exec.into_debug(package, source_manager);
+    while !executor.stopped {
+        assert!(executor.cycle < 5_000_000, "batch kernel exceeded the cycle budget");
+        if let Err(err) = executor.step() {
+            return Err((err.to_string(), executor.cycle));
+        }
+    }
+    let cycles = executor.cycle;
+    Ok((executor.into_execution_trace(), cycles))
+}
+
+/// Checks the protocol's kernel success/rejection scenarios and snapshots compiler costs.
 ///
-/// 1. a two-transaction batch without intra-batch notes, checking `INPUT_NOTES_COMMITMENT`,
-///    `BATCH_NOTE_TREE_ROOT` and `batch_expiration_block_num`;
-/// 2. a batch where one transaction creates a note a later transaction consumes, checking the
-///    note is erased from `INPUT_NOTES_COMMITMENT`;
-/// 3. a batch with a tampered `BATCH_ID` pre-image, checking the kernel rejects it;
-/// 4. a batch where a note is consumed before the transaction that creates it, checking the
-///    kernel rejects it.
+/// Scenarios follow protocol PR #2905 at `dfb246fb2e42284280891776d44095639031987c`.
+/// Host-only executor and prover tests are outside this compiler fixture's scope. Extra cases
+/// cover empty batches, malformed tuple lengths, complete erasure and larger sorted lists.
+/// Cycles include the entrypoint/ABI and the expiration minimum extension from #3019.
 #[test]
 fn batch_kernel() {
     let mut test = CompilerTest::rust_source_cargo_miden(
@@ -270,268 +361,177 @@ fn batch_kernel() {
         ["--entrypoint".to_string(), "batch_kernel::entrypoint".to_string()],
     );
     let package = test.compile_package();
-
-    // The serialized size of the compiled kernel's MAST forest, with debug info stripped.
-    //
-    // 63 bytes more than the hand tables produced: `poseidon2::hash_elements` and `hash_words`
-    // resolve from the core manifest, which types their addresses as element-space pointers, and
-    // the casts that give the stubs' `i32` arguments those types cost each stub a redundant
-    // `swap.1 swap.1` in operand scheduling. No address is changed and nothing else is emitted;
-    // the same two instructions are the two extra cycles per hash in the counts below.
-    //
-    // A further 760 bytes (116337 before) since `miden-stdlib-sys` calls the core library
-    // through its generated bindings: `ElementPtr::from_ptr` checks the addresses the kernel's
-    // buffers give `hash_elements`, `hash_words` and the `pipe_*` procedures for element
-    // alignment, and the word count reaches both `pipe_*` procedures as the `u32` their manifest
-    // declares, converted from the felt the kernel passes.
-    //
-    // The first generated bindings came to 119426 bytes. Their wrappers converted every address
-    // themselves: each call also range-checked the end pointer `mem::pipe_words_to_memory` and
-    // `mem::pipe_preimage_to_memory` return, which the kernel ignores (`ElementPtr::to_ptr`, a
-    // branch to a trap), and `hash_words` got its end address as a byte address divided by 4. The
-    // wrappers now pass and return element addresses unconverted, and `miden-stdlib-sys` computes
-    // the end address in element space. The cycle counts below moved with both changes (the
-    // earlier counts are noted at each).
-    //
-    // One byte more (117097 before) since the three `mem::pipe_*` procedures resolve from the
-    // core manifest instead of the deleted transitional table, which declared their addresses as
-    // `i32`. The casts that give the stubs' `i32` carriers the manifest's element-space pointer
-    // types cost the `pipe_preimage_to_memory` and `pipe_words_to_memory` stubs the same
-    // redundant `swap.1 swap.1` before the `exec` as the hash stubs, and the
-    // `pipe_words_to_memory` stub a `swap.1`/`movup.2` pair where it stores the end pointer the
-    // procedure returns. No address changes. The cycle counts below moved with these operations
-    // and the basic-block padding they shift (the earlier counts are noted at each).
-    //
-    // 650 bytes fewer (117098 before) since LLVM's store merging is off (the mandatory rustflag
-    // `-C llvm-args=-combiner-store-merging=false`). `miden-stdlib-sys::pipe_words_to_memory`
-    // copies the `Word` it returns (`state.rate0`), which LLVM moved as two `i64` loads and
-    // stores: each was a byte-address alignment check and a call to `intrinsics::mem::load_dw` or
-    // `store_dw`, where the four felts it moves now are each an element load and store. And the
-    // entrypoint stores a constant pair of `i32`s (`0`, `4`) as two `i32` stores, not one `i64`.
-    // Other 64-bit accesses remain, so the kernel still links both intrinsics. The three cycle
-    // counts below that run past these stores fell by 459 each; scenario 3 traps before them.
-    //
-    // 683 bytes fewer (116448 before) since codegen lowers a cast that changes only a value's
-    // type (`hir.ptr_to_int`, `hir.int_to_ptr`, `hir.bitcast`) by renaming its operand where it
-    // stands instead of moving it to the top of the stack (214 bytes, more than the 64 the
-    // stubs' redundant moves described above cost: their shape is the one the rename test
-    // `a_transparent_inttoptr_moves_nothing` in `midenc-codegen-masm` reduces to nothing; the
-    // kernel's MASM was not inspected); and a peephole over the emitted MASM deletes adjacent
-    // stack operations that undo each other (`swap.n swap.n`, `movup.n movdn.n`,
-    // `movdn.n movup.n`, `push.x drop`, `dup.n drop`) wherever operand scheduling leaves them
-    // (469 bytes). The cycle counts below fell with both.
-    //
-    // 47 bytes fewer (115765 before) with no `u32assert` on a constant-address 32-bit store: one
-    // fewer per 32-bit global initializer. The kernel's `init` stores two such globals, and the
-    // size fits its block being in the forest twice, as the `init` procedure and merged into
-    // `main`'s first block (the assembler inlines a procedure that is one small basic block; the
-    // kernel's MAST was not inspected): 11 bytes per assertion in each copy, and 3 padding
-    // `noop`s `init`'s copy no longer needs. The cycle counts below fell by the 6 cycles of the
-    // two assertions, which `main` runs once.
-    expect!["115718"].assert_eq(&stripped_mast_size_str(&package));
-
-    // The reference block commitment is dropped by the kernel (verification is still a TODO
-    // there), so any word will do.
+    let source_manager = test.session.source_manager.clone();
     let block_commitment = word(101, 102, 103, 104);
-
-    // Executes the kernel and returns the resulting trace along with the consumed VM cycles, or
-    // the execution error along with the cycle at which the kernel rejected the batch; this is
-    // `Executor::execute` unrolled through the debug executor to observe the cycle counter.
-    type ExecutionOutcome = Result<(miden_debug::ExecutionTrace, usize), (String, usize)>;
-    let execute = |transactions: &[MockTransaction], advice: AdviceInputs| -> ExecutionOutcome {
-        let mut exec = executor_with_std(build_args(block_commitment, batch_id(transactions)));
-        exec.with_advice_inputs(advice);
-        let mut executor = exec.into_debug(package.clone(), test.session.source_manager.clone());
-        while !executor.stopped {
-            if let Err(err) = executor.step() {
-                return Err((err.to_string(), executor.cycle));
-            }
-        }
-        let cycles = executor.cycle;
-        Ok((executor.into_execution_trace(), cycles))
+    let mut metrics = format!("MAST bytes: {}\nVM cycles:\n", stripped_mast_size_str(&package));
+    let mut check = |name: &str,
+                     transactions: &[MockTransaction],
+                     advice: AdviceInputs,
+                     valid: bool| {
+        let id = batch_id(transactions);
+        let rust = execute(
+            package.clone(),
+            source_manager.clone(),
+            build_args(block_commitment, id),
+            advice,
+        );
+        let cycles = if valid {
+            let (rust, rust_cycles) =
+                rust.unwrap_or_else(|err| panic!("{name}: Rust rejected: {err:?}"));
+            let expected = expected_input_notes_commitment(transactions);
+            assert_eq!(read_word(&rust, OUT_ADDR), expected, "{name}: Rust input commitment");
+            assert_eq!(read_word(&rust, OUT_ADDR + 16), EMPTY_WORD, "{name}: Rust output root");
+            let expiration: Felt = rust.parse_result().expect("expiration output");
+            assert_eq!(
+                expiration,
+                Felt::from(transactions.iter().map(|tx| tx.expiration_block_num).min().unwrap()),
+                "{name}: expiration"
+            );
+            rust_cycles
+        } else {
+            let (rust_error, rust_cycles) =
+                rust.err().unwrap_or_else(|| panic!("{name}: Rust accepted invalid advice"));
+            // Missing advice, stack underflow, and host errors must not masquerade as validation.
+            assert!(
+                rust_error.contains("assertion"),
+                "{name}: unexpected Rust error: {rust_error}"
+            );
+            rust_cycles
+        };
+        use std::fmt::Write;
+        writeln!(metrics, "{name}: {cycles}").unwrap();
     };
 
-    // Scenario 1: two transactions, no intra-batch note relationships.
-    // - tx1 consumes one authenticated note (empty note id) and creates one note.
-    // - tx2 consumes one unauthenticated note whose note id is not created in this batch, and
-    //   creates two notes.
-    {
-        let transactions = [
-            MockTransaction {
-                account_id: [Felt::new_unchecked(10), Felt::new_unchecked(11)],
-                init_account_commitment: word(1, 1, 1, 1),
-                final_account_commitment: word(2, 2, 2, 2),
-                input_notes: vec![(word(1000, 0, 0, 1), EMPTY_WORD)],
-                output_notes: vec![(word(80, 0, 0, 80), word(81, 0, 0, 81))],
-                expiration_block_num: 1234,
-            },
-            MockTransaction {
-                account_id: [Felt::new_unchecked(20), Felt::new_unchecked(21)],
-                init_account_commitment: word(3, 3, 3, 3),
-                final_account_commitment: word(4, 4, 4, 4),
-                input_notes: vec![(word(2000, 0, 0, 2), word(90, 0, 0, 90))],
-                output_notes: vec![
-                    (word(82, 0, 0, 82), word(83, 0, 0, 83)),
-                    (word(84, 0, 0, 84), word(85, 0, 0, 85)),
-                ],
-                expiration_block_num: 800,
-            },
-        ];
-
-        let (trace, cycles) = execute(&transactions, build_advice_inputs(&transactions))
-            .expect("kernel should accept the batch");
-
-        // The VM cycles consumed by the kernel for this two-transaction batch (32570 before the
-        // generated core bindings, 33292 with the first ones, 32919 before the transitional table
-        // was deleted, 32942 before store merging was turned off, 32483 before casts became
-        // renames and the stack peephole was added, 302 and 649 cycles of the 951; 31532 before
-        // the `u32assert` on a constant-address 32-bit store went, one fewer per 32-bit global
-        // initializer; see the size above).
-        expect!["31526"].assert_eq(&cycles.to_string());
-
-        let input_notes_commitment = read_word(&trace, OUT_ADDR);
-        assert_eq!(
-            input_notes_commitment,
-            expected_input_notes_commitment(&transactions),
-            "kernel INPUT_NOTES_COMMITMENT should match the commitment derived on the host"
-        );
-
-        let batch_note_tree_root = read_word(&trace, OUT_ADDR + 16);
-        assert_eq!(
-            batch_note_tree_root, EMPTY_WORD,
-            "BATCH_NOTE_TREE_ROOT is not wired up yet and should be the empty word"
-        );
-
-        let expiration: miden_core::Felt =
-            trace.parse_result().expect("kernel should return batch_expiration_block_num");
-        assert_eq!(
-            expiration,
-            Felt::new_unchecked(800),
-            "batch_expiration_block_num should be the minimum over the transactions"
-        );
+    for (name, transactions) in [
+        ("two transactions", two_tx_batch()),
+        ("partial erasure", erasure_batch(true)),
+        ("all inputs erased", erasure_batch(false)),
+        ("no notes", vec![transaction(1)]),
+        ("eight transactions, 64 notes", many_notes_batch()),
+    ] {
+        check(name, &transactions, build_advice_inputs(&transactions), true);
     }
 
-    // Scenario 2: tx1 creates a note that tx2 consumes unauthenticated; the note is erased and
-    // only tx1's authenticated input note remains in the commitment.
-    {
-        let details = word(50, 0, 0, 50);
-        let metadata = word(51, 0, 0, 51);
-        let transactions = [
-            MockTransaction {
-                account_id: [Felt::new_unchecked(10), Felt::new_unchecked(11)],
-                init_account_commitment: word(1, 1, 1, 1),
-                final_account_commitment: word(2, 2, 2, 2),
-                input_notes: vec![(word(1000, 0, 0, 1), EMPTY_WORD)],
-                output_notes: vec![(details, metadata)],
-                expiration_block_num: 900,
-            },
-            MockTransaction {
-                account_id: [Felt::new_unchecked(20), Felt::new_unchecked(21)],
-                init_account_commitment: word(3, 3, 3, 3),
-                final_account_commitment: word(4, 4, 4, 4),
-                input_notes: vec![(word(2000, 0, 0, 2), note_id(details, metadata))],
-                output_notes: vec![],
-                expiration_block_num: 1000,
-            },
-        ];
-
-        let (trace, cycles) = execute(&transactions, build_advice_inputs(&transactions))
-            .expect("kernel should accept the batch");
-
-        // The VM cycles consumed for a batch that erases a note (28683 before the generated core
-        // bindings, 29365 with the first ones, 29034 before the transitional table was deleted,
-        // 29055 before store merging was turned off, 28596 before casts became renames and the
-        // stack peephole was added, 267 and 585 cycles of the 852, 27744 before the `u32assert`
-        // on a constant-address 32-bit store went, one fewer per 32-bit global initializer).
-        expect!["27738"].assert_eq(&cycles.to_string());
-
-        let expected = expected_input_notes_commitment(&transactions);
-        assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");
-        assert_eq!(
-            read_word(&trace, OUT_ADDR),
-            expected,
-            "the erased note should be excluded from INPUT_NOTES_COMMITMENT"
-        );
-
-        let expiration: miden_core::Felt =
-            trace.parse_result().expect("kernel should return batch_expiration_block_num");
-        assert_eq!(expiration, Felt::new_unchecked(900));
+    let transactions = two_tx_batch();
+    let advice = build_advice_inputs(&transactions);
+    let tx = &transactions[0];
+    let batch_key = batch_id(&transactions);
+    let input_key = hash_string_to_word(INPUT_NOTE_LIST_KEY_MESSAGE);
+    let output_key = hash_string_to_word(OUTPUT_NOTE_LIST_KEY_MESSAGE);
+    for (name, key) in [
+        ("tampered batch", batch_key),
+        ("tampered header", tx.id()),
+        ("tampered input preimage", tx.input_notes_commitment()),
+        ("tampered output preimage", tx.output_notes_commitment()),
+    ] {
+        let mut blob = advice.map().get(&key).unwrap().to_vec();
+        blob[0] += Felt::ONE;
+        check(name, &transactions, advice.clone().with_map([(key, blob)]), false);
     }
-
-    // Scenario 3: a tampered BATCH_ID pre-image must be rejected by the Layer 1 hash check.
-    {
-        let transactions = [MockTransaction {
-            account_id: [Felt::new_unchecked(10), Felt::new_unchecked(11)],
-            init_account_commitment: word(1, 1, 1, 1),
-            final_account_commitment: word(2, 2, 2, 2),
-            input_notes: vec![(word(1000, 0, 0, 1), EMPTY_WORD)],
-            output_notes: vec![],
-            expiration_block_num: 900,
-        }];
-
-        let mut advice = build_advice_inputs(&transactions);
-        let key = batch_id(&transactions);
-        let mut tampered: Vec<Felt> =
-            advice.map().get(&key).expect("layer 1 advice entry").to_vec();
-        tampered[0] += Felt::new_unchecked(1);
-        advice = advice.with_map([(key, tampered)]);
-
-        let cycles = match execute(&transactions, advice) {
-            Err((_, cycles)) => cycles,
-            Ok(_) => panic!("kernel should reject a tampered BATCH_ID pre-image"),
-        };
-
-        // The cycle at which the Layer 1 hash check rejects the tampered pre-image (1089 before the
-        // generated core bindings, 1082 with the first ones). It is later now because the range
-        // check of the end pointer `mem::pipe_preimage_to_memory` returns is gone: without that
-        // branch after the call, LLVM computes the transaction count (`len_felts >> 3`, a 20-cycle
-        // `u32shr` in the VM) before the call instead of after it, and this path traps in the
-        // call. 1121 before the transitional table was deleted: the trap comes after the
-        // `pipe_preimage_to_memory` stub's two extra operations (see the size above). 1123
-        // before casts became renames and the stack peephole was added, which took 7 and 8 cycles
-        // off the path to the trap. 1108 before the `u32assert` on a constant-address 32-bit store
-        // went, one fewer per 32-bit global initializer: `init` runs before the trap.
-        expect!["1102"].assert_eq(&cycles.to_string());
+    for (name, key, blob) in [
+        ("empty batch", batch_key, vec![]),
+        ("too many transactions", batch_key, vec![Felt::ZERO; 1025 * 8]),
+        ("unaligned transactions", batch_key, vec![Felt::ZERO; 9]),
+        ("short header", tx.id(), vec![Felt::ZERO; 8]),
+        ("long header", tx.id(), vec![Felt::ZERO; 32]),
+        ("too many input notes", tx.input_notes_commitment(), vec![Felt::ZERO; 1025 * 8]),
+        (
+            "too many output notes",
+            tx.output_notes_commitment(),
+            vec![Felt::ZERO; 1025 * 8],
+        ),
+        ("unaligned input preimage", tx.input_notes_commitment(), vec![Felt::ZERO; 9]),
+        ("unaligned output preimage", tx.output_notes_commitment(), vec![Felt::ZERO; 9]),
+    ] {
+        check(name, &transactions, advice.clone().with_map([(key, blob)]), false);
     }
-
-    // Scenario 4: tx1 consumes a note that only tx2 creates; the consume-before-create ordering
-    // gate must reject the batch.
-    {
-        let details = word(50, 0, 0, 50);
-        let metadata = word(51, 0, 0, 51);
-        let transactions = [
-            MockTransaction {
-                account_id: [Felt::new_unchecked(10), Felt::new_unchecked(11)],
-                init_account_commitment: word(1, 1, 1, 1),
-                final_account_commitment: word(2, 2, 2, 2),
-                input_notes: vec![(word(2000, 0, 0, 2), note_id(details, metadata))],
-                output_notes: vec![],
-                expiration_block_num: 900,
-            },
-            MockTransaction {
-                account_id: [Felt::new_unchecked(20), Felt::new_unchecked(21)],
-                init_account_commitment: word(3, 3, 3, 3),
-                final_account_commitment: word(4, 4, 4, 4),
-                input_notes: vec![],
-                output_notes: vec![(details, metadata)],
-                expiration_block_num: 1000,
-            },
-        ];
-
-        let advice = build_advice_inputs(&transactions);
-        let cycles = match execute(&transactions, advice) {
-            Err((_, cycles)) => cycles,
-            Ok(_) => panic!("kernel should reject a note consumed before it is created"),
-        };
-
-        // The cycle at which the consume-before-create ordering gate rejects the batch (15809
-        // before the generated core bindings, 16362 with the first ones, 16140 before the
-        // transitional table was deleted, 16157 before store merging was turned off, 15698
-        // before casts became renames and the stack peephole was added, 158 and 311 cycles of
-        // the 469, 15229 before the `u32assert` on a constant-address 32-bit store went, one
-        // fewer per 32-bit global initializer).
-        expect!["15223"].assert_eq(&cycles.to_string());
+    for (kind, key) in [("input", input_key), ("output", output_key)] {
+        let blob = advice.map().get(&key).unwrap().to_vec();
+        let mut duplicated = blob[..8].to_vec();
+        duplicated.extend_from_slice(&blob);
+        let mut descending = blob[8..16].to_vec();
+        descending.extend_from_slice(&blob[..8]);
+        descending.extend_from_slice(&blob[16..]);
+        for (name, data) in [
+            ("missing", blob[..blob.len() - 8].to_vec()),
+            ("duplicated", duplicated),
+            ("descending", descending),
+            ("phantom", with_extra_note(&blob, word(u32::MAX as u64, 0, 0, 0))),
+            ("oversized", vec![Felt::ZERO; 1025 * 8]),
+            ("unaligned", vec![Felt::ZERO; 9]),
+        ] {
+            check(
+                &format!("{name} {kind} list"),
+                &transactions,
+                advice.clone().with_map([(key, data)]),
+                false,
+            );
+        }
     }
+    let mut mismatch = advice.map().get(&input_key).unwrap().to_vec();
+    mismatch[4] += Felt::ONE;
+    check(
+        "input note id mismatch",
+        &transactions,
+        advice.clone().with_map([(input_key, mismatch)]),
+        false,
+    );
+    let phantom_creation =
+        with_extra_note(advice.map().get(&output_key).unwrap(), transactions[1].input_notes[0].1);
+    check(
+        "phantom erasure",
+        &transactions,
+        advice.with_map([(output_key, phantom_creation)]),
+        false,
+    );
+
+    let mut reversed = erasure_batch(false);
+    reversed.reverse();
+    check("consume before create", &reversed, build_advice_inputs(&reversed), false);
+    let mut same_tx = erasure_batch(false);
+    same_tx[0].input_notes = core::mem::take(&mut same_tx[1].input_notes);
+    same_tx.truncate(1);
+    check("same transaction erasure", &same_tx, build_advice_inputs(&same_tx), false);
+
+    expect![[r#"
+        MAST bytes: 112257
+        VM cycles:
+        two transactions: 32454
+        partial erasure: 27897
+        all inputs erased: 22214
+        no notes: 11678
+        eight transactions, 64 notes: 304016
+        tampered batch: 1087
+        tampered header: 2173
+        tampered input preimage: 14824
+        tampered output preimage: 17338
+        empty batch: 341
+        too many transactions: 324
+        unaligned transactions: 300
+        short header: 1811
+        long header: 1811
+        too many input notes: 14409
+        too many output notes: 16928
+        unaligned input preimage: 14385
+        unaligned output preimage: 16904
+        missing input list: 14875
+        duplicated input list: 6603
+        descending input list: 6425
+        phantom input list: 29148
+        oversized input list: 4544
+        unaligned input list: 4520
+        missing output list: 26083
+        duplicated output list: 8647
+        descending output list: 8469
+        phantom output list: 28728
+        oversized output list: 6576
+        unaligned output list: 6552
+        input note id mismatch: 21722
+        phantom erasure: 23968
+        consume before create: 15346
+        same transaction erasure: 13793
+    "#]]
+    .assert_eq(&metrics);
 }
 
 /// Reads a word the kernel wrote to Rust memory at `byte_addr`.

@@ -11,7 +11,6 @@ use miden_stdlib_sys::{Felt, Word, felt, hash_elements};
 
 use crate::memory::{
     BatchMemory, INPUT_FLAGS_STRIDE, NOTE_ENTRY_FELT_LEN, OUTPUT_FLAGS_STRIDE, erasure_erased,
-    erasure_expected,
 };
 
 // ASSERTIONS
@@ -21,8 +20,8 @@ use crate::memory::{
 /// binding, this proves the list is exactly the union of the per-transaction output notes, so a
 /// host cannot fabricate an erasure with a note no transaction creates).
 ///
-/// The matching input-note checks (every entry consumed exactly once, none left pending-erasure)
-/// are folded into the single pass in [`compute_input_notes_commitment`].
+/// The matching input-note check (every entry consumed exactly once)
+/// is folded into the single pass in [`compute_input_notes_commitment`].
 #[inline(always)]
 fn assert_all_output_notes_created(memory: &BatchMemory) {
     for flags in memory.output_note_flags().chunks_exact(OUTPUT_FLAGS_STRIDE) {
@@ -41,8 +40,7 @@ fn assert_all_output_notes_created(memory: &BatchMemory) {
 /// erasure flag `Erased` are skipped).
 ///
 /// The pass over the input entries also enforces the epilogue invariants on each entry: it was
-/// consumed exactly once and is not left expected-to-be-erased (i.e. any created-and-consumed
-/// note had its creator processed).
+/// consumed exactly once. The note tracker already rejects pending erasure at consumption.
 ///
 /// The MASM kernel absorbs the entries into an incremental hasher state persisted in memory;
 /// here the sorted note list buffer is handed to `hash_elements` whole in the common no-erasure
@@ -55,16 +53,12 @@ fn compute_input_notes_commitment(memory: BatchMemory) -> Word {
     let mut num_erased = 0;
 
     for flags in memory.input_note_flags().chunks_exact(INPUT_FLAGS_STRIDE) {
-        // Assert this entry was consumed exactly once and is not left expected-to-be-erased.
+        // Binding has already checked erasure ordering for every consumed entry.
         assert!(
             flags[1] != felt!(0),
             "an input-note list entry was not consumed by any transaction"
         );
         let erasure = flags[0];
-        assert!(
-            erasure != erasure_expected(),
-            "an erased input note was consumed before the transaction that creates it"
-        );
         if erasure == erasure_erased() {
             num_erased += 1;
         }
@@ -117,7 +111,7 @@ fn compute_output_notes_commitment(_memory: &BatchMemory) -> Word {
 /// buffer becomes the hash input in the no-erasure case).
 ///
 /// Asserts every output-note list entry was created, then computes the input- and output-notes
-/// commitments. The per-input-entry invariants (consumed exactly once, no pending erasure) are
+/// commitments. The per-input-entry invariant (consumed exactly once) is
 /// enforced inside the input-commitment pass.
 ///
 /// TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain
