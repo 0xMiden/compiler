@@ -455,9 +455,7 @@ impl Spanned for ProgramPoint {
                     block.borrow().body().back().get().map(|op| op.span()).unwrap_or_default()
                 }
             },
-            // The span is written after allocation, so it cannot be read without a borrow; a
-            // point whose op is currently borrowed mutably reports no span rather than failing.
-            Self::Op { op, .. } => op.try_borrow().map(|op| op.span()).unwrap_or_default(),
+            Self::Op { op, .. } => op.borrow().span(),
         }
     }
 }
@@ -510,12 +508,19 @@ impl fmt::Debug for ProgramPoint {
             Self::Op {
                 op,
                 position: point,
-            } => f
-                .debug_struct("Op")
-                .field("block", &op.parent().map(|blk| blk.borrow().id()))
-                .field("point", point)
-                .field("op", &op.name())
-                .finish(),
+            } => {
+                let mut debug = f.debug_struct("Op");
+                debug
+                    .field("block", &op.parent().map(|blk| blk.borrow().id()))
+                    .field("point", point);
+                // The full op is shown whenever it can be borrowed; while a rewrite holds it
+                // mutably only its name is available, and the fallback says so.
+                match op.try_borrow() {
+                    Some(borrowed) => debug.field("op", &*borrowed),
+                    None => debug.field("op", &format_args!("<borrowed> {}", op.name())),
+                };
+                debug.finish()
+            }
         }
     }
 }
@@ -538,8 +543,15 @@ mod tests {
 
         let before = format!("{}", ProgramPoint::before(op));
         let after = format!("{}", ProgramPoint::after(op));
+        let debug = format!("{:?}", ProgramPoint::before(op));
 
         assert!(before.starts_with("before(builtin.function in "), "{before}");
         assert!(after.starts_with("after(builtin.function in "), "{after}");
+        assert!(debug.contains("op: <borrowed> builtin.function"), "{debug}");
+
+        // Once the op is released again, the point shows the whole op
+        drop(_guard);
+        let debug = format!("{:?}", ProgramPoint::before(op));
+        assert!(debug.contains("op: Operation {"), "{debug}");
     }
 }
