@@ -755,6 +755,61 @@ builtin.world {{
 }
 
 #[test]
+fn world_alias_calls_and_procedure_roots_use_emitted_module() {
+    for (sibling, namespace) in [
+        ("", "lib"),
+        (
+            "builtin.module public @other { builtin.function public extern(\"C\") @other() { \
+             builtin.ret; }; };",
+            "init",
+        ),
+    ] {
+        for visibility in ["public", "internal"] {
+            let context = Rc::new(Context::default());
+            let source = format!(
+                r#"
+builtin.world {{
+    builtin.function_alias {visibility} @alias -> ::@lib::@body;
+    builtin.module public @lib {{
+        builtin.function public extern("C") @body() {{ builtin.ret; }};
+        builtin.function public extern("C") @caller() -> (felt, felt, felt, felt) {{
+            hir.exec ::@alias() : extern("C") () -> ();
+            %r0, %r1, %r2, %r3 = hir.procedure_root ::@alias;
+            builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+        }};
+    }};
+    {sibling}
+}};
+"#,
+            );
+            let lowered = lower_world(parse_world(&context, &source)).unwrap();
+            assemble_library(&context, &lowered, namespace);
+        }
+    }
+}
+
+#[test]
+fn world_alias_function_table_uses_emitted_module() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(
+        &context,
+        r#"
+builtin.world {
+    builtin.function_alias public @alias -> ::@lib::@body;
+    builtin.module public @lib {
+        builtin.function public extern("C") @body() { builtin.ret; };
+        builtin.function_table private @table : 1 {
+            builtin.function_table_entry 0 ::@alias tag 1;
+        };
+    };
+};
+"#,
+    );
+    let lowered = lower_world(world).unwrap();
+    assemble_library(&context, &lowered, "lib");
+}
+
+#[test]
 fn cross_module_alias_to_ancestor_lowers_and_assembles() {
     let context = Rc::new(Context::default());
     let lowered = lower_component(

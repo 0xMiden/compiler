@@ -28,7 +28,10 @@ use crate::{
     artifact::MasmComponent,
     emitter::{BlockEmitter, FrameLayout, has_inline_call_chain},
     linker::{FunctionTableLayout, LinkInfo, Linker},
-    lower::lowering::{invocation_target_from_symbol, invocation_target_from_symbol_path},
+    lower::lowering::{
+        invocation_target_from_symbol, qualified_invocation_target, symbol_module_path,
+        world_root_module,
+    },
     masm,
 };
 
@@ -443,30 +446,10 @@ fn world_body_to_masm_component(
     // require a component initializer function, as well as a module to hold component-level
     // functions such as init
     let requires_init = link_info.requires_init();
-    let toplevel_namespaces = world
-        .body()
-        .entry()
-        .body()
-        .iter()
-        // Only modules: this function is reached only for a world that declares no component,
-        // so a `builtin::Component` arm here would be unreachable.
-        .filter_map(|op| {
-            if op.is::<builtin::Module>() {
-                Some(op.as_operation_ref())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
+    let root: Arc<masm::Path> = world_root_module(world).into_boxed_path().into();
     let init = if requires_init {
         let name = masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap();
-        let qualified = match toplevel_namespaces.len() {
-            1 => {
-                let namespace = toplevel_namespaces[0].borrow().symbol_name_if_symbol().unwrap();
-                masm::QualifiedProcedureName::new(format!("::{namespace}").as_str(), name)
-            }
-            _ => masm::QualifiedProcedureName::new("::init", name),
-        };
+        let qualified = masm::QualifiedProcedureName::new(&root, name);
         Some(masm::InvocationTarget::Path(Span::new(
             SourceSpan::default(),
             qualified.into_inner(),
@@ -478,17 +461,6 @@ fn world_body_to_masm_component(
     // Define the initial component modules set
     //
     // The top-level component module is always defined, but may be empty
-    let root = match toplevel_namespaces.len() {
-        1 => {
-            let namespace = toplevel_namespaces[0].borrow().symbol_name_if_symbol().unwrap();
-            Arc::from(
-                masm::PathBuf::new(&format!("::{namespace}"))
-                    .expect("invalid namespace")
-                    .into_boxed_path(),
-            )
-        }
-        _ => Arc::<masm::Path>::from(masm::Path::new("::init")),
-    };
     let init_module = Arc::new(masm::Module::new(masm::ModuleKind::Library, &root));
     let modules = vec![init_module];
 
@@ -737,7 +709,7 @@ fn classify_marked_canonical_abi_entrypoint(
             // Entrypoints may name an alias. Resolve to the canonical function so
             // `--entrypoint=...::alias` works like the primary name.
             if let Some(alias) = op.downcast_ref::<builtin::FunctionAlias>() {
-                let alias_path = invocation_target_from_symbol_path(&alias.path(), alias.span());
+                let alias_path = qualified_invocation_target(alias, alias.span());
                 if alias_path.unwrap_path() == entrypoint_path.as_ref()
                     && let Some(target) = alias
                         .resolve_target()
@@ -755,8 +727,7 @@ fn classify_marked_canonical_abi_entrypoint(
                 return;
             }
 
-            let function_target =
-                invocation_target_from_symbol_path(&function.path(), function.span());
+            let function_target = qualified_invocation_target(function, function.span());
             if function_target.unwrap_path() == entrypoint_path.as_ref() {
                 canonical_entrypoint = Some(function.as_function_ref());
             }
@@ -1023,10 +994,7 @@ impl MasmComponentBuilder<'_> {
             // same MASM context that `init` is preparing.
             if let Some(start) = self.link_info.component_start() {
                 let start = start.borrow();
-                let target = super::lowering::invocation_target_from_symbol_path(
-                    &start.path(),
-                    start.span(),
-                );
+                let target = qualified_invocation_target(&*start, start.span());
                 self.invoked_from_init
                     .insert(masm::Invoke::new(masm::InvokeKind::Exec, target.clone()));
                 self.init_body
@@ -1099,7 +1067,6 @@ impl MasmComponentBuilder<'_> {
             source_manager: self.source_manager.clone(),
             init_body: &mut self.init_body,
             invoked_from_init: &mut self.invoked_from_init,
-            root_module: &self.component.root,
         };
         builder.build_from_interface(interface)
     }
@@ -1153,7 +1120,6 @@ impl MasmComponentBuilder<'_> {
             source_manager: self.source_manager.clone(),
             init_body: &mut self.init_body,
             invoked_from_init: &mut self.invoked_from_init,
-            root_module: &self.component.root,
         };
         let nested = builder.build(module)?;
         for nested_module in nested {
@@ -1260,7 +1226,7 @@ impl MasmComponentBuilder<'_> {
     }
 
     fn define_function_alias(&mut self, alias: &builtin::FunctionAlias) -> Result<(), Report> {
-        let import = lower_function_alias(alias, self.init_owner, &self.component.root)?;
+        let import = lower_function_alias(alias)?;
         let module =
             Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
         module
@@ -1406,8 +1372,7 @@ impl MasmComponentBuilder<'_> {
 
                 // The fragment belongs to the module defining the callee: `procref` there needs
                 // no visibility beyond what the callee already has
-                let owner = callee_path.without_leaf().to_library_path();
-                let owner = owner.to_absolute().unwrap().into_owned();
+                let owner = symbol_module_path(&*callee.borrow());
                 let fragment = fragments.entry(owner).or_insert_with(|| FunctionTableFragment {
                     body: Default::default(),
                     invoked: Default::default(),
@@ -1490,22 +1455,15 @@ fn resolve_alias_import_target(alias: &builtin::FunctionAlias) -> Result<SymbolR
     }
 }
 
-fn lower_function_alias(
-    alias: &builtin::FunctionAlias,
-    root_owner: OperationRef,
-    root_module: &masm::Path,
-) -> Result<masm::Import, Report> {
+fn lower_function_alias(alias: &builtin::FunctionAlias) -> Result<masm::Import, Report> {
     let target = resolve_alias_import_target(alias)?;
     let target = target.borrow();
     let owner = alias.as_operation().nearest_symbol_table().unwrap();
     let target_owner = target.as_symbol_operation().nearest_symbol_table().unwrap();
     let module_path = if crate::legalization::share_masm_module(owner, target_owner) {
         Arc::from(masm::Path::new("self"))
-    } else if target_owner == root_owner {
-        Arc::from(root_module)
     } else {
-        let path = target.path().without_leaf().to_library_path();
-        Arc::from(path.to_absolute().unwrap().into_owned().into_boxed_path())
+        Arc::from(symbol_module_path(&*target).into_boxed_path())
     };
     let visibility = match alias.visibility() {
         midenc_hir::Visibility::Private => masm::Visibility::Private,
@@ -1527,7 +1485,6 @@ fn lower_function_alias(
 
 struct MasmModuleBuilder<'a> {
     module: &'a mut masm::Module,
-    root_module: &'a masm::Path,
     init_owner: OperationRef,
     /// Shared world/component analysis root, covering cross-module alias targets.
     analysis_manager: AnalysisManager,
@@ -1613,7 +1570,7 @@ impl MasmModuleBuilder<'_> {
 
     fn define_function_alias(&mut self, alias: &builtin::FunctionAlias) -> Result<(), Report> {
         self.module
-            .define_import(lower_function_alias(alias, self.init_owner, self.root_module)?)
+            .define_import(lower_function_alias(alias)?)
             .into_diagnostic()
             .wrap_err("failed to define MASM import for alias")
     }

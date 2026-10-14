@@ -7,8 +7,8 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    AsCallableSymbolRef, Felt, Immediate, Op, OpExt, Operation, SmallVec, Span, SymbolTable, Type,
-    Value, ValueRange, ValueRef,
+    AsCallableSymbolRef, Felt, Immediate, Op, OpExt, Operation, SmallVec, Span, Symbol,
+    SymbolTable, Type, Value, ValueRange, ValueRef,
     dialects::{builtin, debuginfo},
     traits::{BinaryOp, Commutative},
 };
@@ -24,16 +24,63 @@ use crate::{
     opt::operands::SolverOptions,
 };
 
-/// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
+/// The module containing world-level procedures when no component declares its own namespace.
+pub(super) fn world_root_module(world: &builtin::World) -> masm::PathBuf {
+    let body = world.body();
+    let entry = body.entry();
+    let mut modules = entry.body().iter().filter(|op| op.is::<builtin::Module>());
+    if let Some(module) = modules.next()
+        && modules.next().is_none()
+    {
+        return module
+            .downcast_ref::<builtin::Module>()
+            .unwrap()
+            .path()
+            .to_library_path()
+            .to_absolute()
+            .unwrap()
+            .into_owned();
+    }
+    masm::PathBuf::from(masm::Path::new("::init"))
+}
+
+/// Map a HIR symbol's owner to the module where its MASM definition is emitted.
+///
+/// A world has no path segment of its own, but its procedures and aliases live in the chosen
+/// root module. Imports, calls, and function-table fragments must all use that same mapping.
+pub(super) fn symbol_module_path(symbol: &dyn Symbol) -> masm::PathBuf {
+    if let Some(owner) = symbol.as_symbol_operation().nearest_symbol_table()
+        && let Some(world) = owner.borrow().downcast_ref::<builtin::World>()
+    {
+        return world_root_module(world);
+    }
+    symbol
+        .path()
+        .without_leaf()
+        .to_library_path()
+        .to_absolute()
+        .unwrap()
+        .into_owned()
+}
+
+/// Convert a fixed HIR path, such as an external intrinsic, to a MASM invocation target.
 pub(super) fn invocation_target_from_symbol_path(
-    callee_path: &midenc_hir::SymbolPath,
+    path: &midenc_hir::SymbolPath,
     span: midenc_hir::SourceSpan,
 ) -> masm::InvocationTarget {
-    let proc_name = callee_path.name();
+    masm::InvocationTarget::Path(Span::new(span, path.to_library_path().into_boxed_path().into()))
+}
+
+/// The fully qualified name of a callable in its emitted MASM module.
+pub(super) fn qualified_invocation_target(
+    callee: &dyn Symbol,
+    span: midenc_hir::SourceSpan,
+) -> masm::InvocationTarget {
+    let proc_name = callee.name();
     let proc_name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
         masm::Span::new(span, proc_name.as_ref().into()),
     ));
-    let module = callee_path.without_leaf().to_library_path();
+    let module = symbol_module_path(callee);
     let qualified = masm::QualifiedProcedureName::new(module.as_path(), proc_name);
     masm::InvocationTarget::Path(masm::Span::new(span, qualified.into_inner()))
 }
@@ -52,7 +99,7 @@ pub(super) fn invocation_target_from_symbol(
         let callee = symbol.borrow();
         let alias = callee.as_symbol_operation().downcast_ref::<builtin::FunctionAlias>();
         let Some(alias) = alias.filter(|_| callee.is_private()) else {
-            return invocation_target_from_symbol_path(&callee.path(), span);
+            return qualified_invocation_target(&*callee, span);
         };
 
         if let Some(owner) = module_owner
