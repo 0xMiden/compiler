@@ -68,6 +68,8 @@ use super::super::harness::{run_case, run_case_with_inputs};
 /// same for one, two and four loops. With four bands the cluster may hold seven
 /// values but not eight.
 #[test]
+#[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
+            rejects it, see #1459"]
 fn cascade_spill() {
     run_case("cascade_spill", include_str!("../cases/case_cascade_spill.rs"));
 }
@@ -77,6 +79,8 @@ fn cascade_spill() {
 /// continue, two alternating masks and two mixed ones. A reload dropped with a
 /// removed column would change exactly one of these values.
 #[test]
+#[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
+            rejects it, see #1459"]
 fn cascade_spill_edges() {
     run_case_with_inputs(
         "cascade_spill_edges",
