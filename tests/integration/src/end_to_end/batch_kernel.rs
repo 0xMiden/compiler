@@ -561,7 +561,7 @@ fn read_word(trace: &miden_debug::ExecutionTrace, byte_addr: u32) -> Word {
 /// - `procedures.txt`: self cycles per innermost procedure,
 /// - `locations.txt`: self cycles per innermost resolved source location,
 /// - `ops.txt`: the executed VM operations in order, one `<op>\t<location>` per line, for
-///   pattern counting.
+///   pattern counting; a control-flow cycle (block entry/exit) is logged as `<control-flow>`.
 #[test]
 #[ignore = "profiling tool, run on demand"]
 fn batch_kernel_profile() {
@@ -610,15 +610,19 @@ fn batch_kernel_profile() {
             .collect();
         *folded.entry(names.join(";")).or_default() += cycles;
         *procedures.entry(names.last().cloned().unwrap_or_default()).or_default() += cycles;
-        if let Some(frame) = frames.last() {
-            let location = frame
-                .last_resolved(source_manager.as_ref())
-                .map_or_else(|| "<unresolved>".into(), |l| l.to_string());
-            if let Some(op) = frame.recent().back() {
-                writeln!(ops, "{}\t{location}", op.display()).unwrap();
-            }
-            *locations.entry(location).or_default() += cycles;
-        }
+        let location = frames
+            .last()
+            .and_then(|frame| frame.last_resolved(source_manager.as_ref()))
+            .map_or_else(|| "<unresolved>".to_string(), |l| l.to_string());
+        // `current_op` is the operation this step executed; the frame's `recent()` history
+        // skips no-ops and does not advance on control-flow steps, so it would repeat the
+        // previous op for those cycles. A step without an operation is a control-flow cycle
+        // (block entry/exit), logged as such so the dump still accounts for every cycle.
+        let op = executor
+            .current_op
+            .map_or_else(|| "<control-flow>".to_string(), |op| op.to_string());
+        writeln!(ops, "{op}\t{location}").unwrap();
+        *locations.entry(location).or_default() += cycles;
     }
 
     let dir =
