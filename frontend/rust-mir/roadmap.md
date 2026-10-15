@@ -2,7 +2,7 @@
 
 This file maps the future stages of this frontend beyond the current smoke test.
 
-One principle holds through all stages: the translator consumes only `rustc_public` types. The driver in front of it can change; the translator carries over.
+One principle holds through all stages: the extraction phase reads only `rustc_public` types, and the translator reads only the extracted data. The driver in front of them can change; the extraction and the translator carry over.
 
 ## 1. Full function bodies
 

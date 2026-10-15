@@ -54,9 +54,31 @@ fn apply_local2reg(component: &builtin::ComponentRef, context: &Rc<Context>) {
     }
 }
 
-/// Evaluates the translated `add` function with the HIR interpreter.
+/// Returns the function of a component that has the given symbol.
+fn function_by_symbol(component: &builtin::ComponentRef, symbol: &str) -> builtin::FunctionRef {
+    functions(component)
+        .into_iter()
+        .find(|function| function.borrow().name().as_str() == symbol)
+        .unwrap_or_else(|| panic!("the component has no function `{symbol}`"))
+}
+
+/// Evaluates a function of a component with the HIR interpreter.
 ///
 /// The interpreter receives 1 and 2 and returns the single result of the function.
+fn eval_function(component: &builtin::ComponentRef, symbol: &str, context: Rc<Context>) -> Value {
+    let function = function_by_symbol(component, symbol);
+    let mut evaluator = HirEvaluator::new(context);
+    let callable = function.borrow();
+    let results = evaluator
+        .eval_callable(&*callable, [1u32.into(), 2u32.into()])
+        .map_err(|err| midenc_session::diagnostics::PrintDiagnostic::new(err).to_string())
+        .unwrap();
+
+    assert_eq!(results.len(), 1, "`{symbol}` must return one result");
+    results[0]
+}
+
+/// Evaluates the translated `add` function with the HIR interpreter.
 fn eval_add(run_local2reg: bool) -> Value {
     let context = Rc::new(Context::default());
     let component = translate_fixture("add.rs", context.clone());
@@ -65,16 +87,7 @@ fn eval_add(run_local2reg: bool) -> Value {
         apply_local2reg(&component, &context);
     }
 
-    let function = functions(&component).pop().expect("the fixture has one function");
-    let mut evaluator = HirEvaluator::new(context);
-    let callable = function.borrow();
-    let results = evaluator
-        .eval_callable(&*callable, [1u32.into(), 2u32.into()])
-        .map_err(|err| midenc_session::diagnostics::PrintDiagnostic::new(err).to_string())
-        .unwrap();
-
-    assert_eq!(results.len(), 1, "add must return one result");
-    results[0]
+    eval_function(&component, "add", context)
 }
 
 #[test]
@@ -85,6 +98,26 @@ fn add_evaluates_raw() {
 #[test]
 fn add_evaluates_after_local2reg() {
     assert_eq!(eval_add(true), Value::Immediate(3u32.into()));
+}
+
+/// Functions with the same name in different modules get different symbols.
+#[test]
+fn same_name_in_two_modules() {
+    let context = Rc::new(Context::default());
+    let component = translate_fixture("same_name_modules.rs", context.clone());
+
+    let mut symbols: Vec<String> = functions(&component)
+        .iter()
+        .map(|function| function.borrow().name().as_str().to_string())
+        .collect();
+    symbols.sort();
+    assert_eq!(symbols, ["m1::add", "m2::add"]);
+
+    assert_eq!(
+        eval_function(&component, "m1::add", context.clone()),
+        Value::Immediate(3u32.into())
+    );
+    assert_eq!(eval_function(&component, "m2::add", context), Value::Immediate(13u32.into()));
 }
 
 #[test]

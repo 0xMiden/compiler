@@ -7,7 +7,16 @@ use std::{path::Path, process::Command, rc::Rc};
 
 use midenc_hir::{Context, Report};
 
-use crate::{FrontendOutput, RustMirTranslationConfig, translator};
+use crate::{
+    FrontendOutput, RustMirTranslationConfig, extract, extracted::ExtractedCrate, translator,
+};
+
+/// The rustc target triple that supplies the data layout.
+///
+/// The Miden target has no target specification yet, thus the frontend borrows the 32-bit data
+/// layout of `wasm32-unknown-unknown`. The type mapping assumes 32-bit `isize` and `usize`, thus
+/// the target is not configurable.
+const TARGET: &str = "wasm32-unknown-unknown";
 
 /// The stack size of the thread that runs rustc.
 ///
@@ -50,54 +59,22 @@ pub fn translate(
     };
 
     let args = rustc_args(source_path, config, &crate_name, &out_dir)?;
-    let component = run_translation(args, crate_name, context)?;
+    let extracted = run_extraction(args)?;
+    let component = translator::translate_crate(&crate_name, &extracted, context)?;
 
     Ok(FrontendOutput { component })
 }
 
-/// Moves a value to the thread that runs rustc, and moves the result back.
+/// Runs rustc over the given argument vector and extracts the MIR of the compiled crate.
 ///
-/// Miden IR entities and the [Context] are not [Send], but the rustc driver requires its
-/// callback and the callback result to be [Send].
-struct ThreadHandoff<T>(T);
-
-// SAFETY: The caller builds the value, hands it to exactly one worker thread, and then blocks
-// in `JoinHandle::join` until that thread stops. While the worker runs, the caller thread is
-// blocked, thus it cannot touch aliases of the shared state inside the value (for example
-// other `Rc` clones of the same `Context`), and safe code cannot have moved such aliases to a
-// third thread because the aliases are not `Send`. Therefore only one thread accesses the
-// shared allocations at a time, and the join gives the happens-before relation that the
-// non-atomic reference counts need. The same argument covers the second hop into the thread
-// that the rustc driver spawns, because the driver joins that thread before it returns.
-unsafe impl<T> Send for ThreadHandoff<T> {}
-
-impl<T> ThreadHandoff<T> {
-    /// Takes the value out of the handoff.
-    ///
-    /// A closure that reads the field directly captures the field alone, which drops the [Send]
-    /// property of the handoff. A method call captures the whole handoff instead.
-    fn into_inner(self) -> T {
-        self.0
-    }
-}
-
-/// Runs rustc over the given argument vector and translates the MIR of the compiled crate.
-fn run_translation(
-    args: Vec<String>,
-    module_name: String,
-    context: Rc<Context>,
-) -> Result<midenc_hir::dialects::builtin::ComponentRef, Report> {
-    let inputs = ThreadHandoff((module_name, context));
-
+/// rustc runs on its own thread, and the MIR is only reachable inside the driver callback, thus
+/// the callback copies the MIR into plain [Send] data. The caller thread builds the Miden IR
+/// from that data, so the [Context] never leaves the caller thread.
+fn run_extraction(args: Vec<String>) -> Result<ExtractedCrate, Report> {
     let worker = std::thread::Builder::new()
         .stack_size(WORKER_STACK_SIZE)
         .spawn(move || {
-            let inputs = inputs;
-            rustc_public::run!(&args, move || {
-                let (module_name, context) = inputs.into_inner();
-                let result = translator::translate_crate(&module_name, context);
-                ControlFlow::<(), _>::Continue(ThreadHandoff(result))
-            })
+            rustc_public::run!(&args, || ControlFlow::<(), _>::Continue(extract::extract_crate()))
         })
         .map_err(|err| {
             Report::msg(format!("rust mir frontend: could not start the rustc thread: {err}"))
@@ -108,7 +85,7 @@ fn run_translation(
         .map_err(|_| Report::msg("rust mir frontend: the rustc thread panicked"))?;
 
     match outcome {
-        Ok(result) => result.into_inner(),
+        Ok(result) => result.map_err(Report::msg),
         Err(rustc_public::CompilerError::Failed) => {
             Err(Report::msg("rust mir frontend: rustc rejected the input file"))
         }
@@ -138,7 +115,7 @@ fn rustc_args(
         format!("--crate-name={crate_name}"),
         // Metadata is the only output that is needed. It stops rustc before code generation.
         "--emit=metadata".to_string(),
-        format!("--target={}", config.target),
+        format!("--target={TARGET}"),
         // Overflow checks turn every addition into a checked addition and a branch. The
         // frontend does not support that lowering yet.
         "-Coverflow-checks=off".to_string(),

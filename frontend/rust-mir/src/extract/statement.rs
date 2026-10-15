@@ -1,32 +1,28 @@
-//! Translates MIR statements.
+//! Extracts MIR statements.
 
-use midenc_dialect_hir::HirOpBuilder;
-use midenc_hir::{Report, SourceSpan};
 use rustc_public::mir::{Statement, StatementKind};
 
-use super::{body::BodyTranslator, rvalue};
+use super::{ExtractResult, body, rvalue};
+use crate::extracted::Assign;
 
-/// Translates one MIR statement into Miden IR.
-pub(crate) fn translate_statement(
-    translator: &mut BodyTranslator<'_>,
-    statement: &Statement,
-) -> Result<(), Report> {
+/// Extracts one MIR statement.
+///
+/// Returns `None` for a statement that the Miden IR does not need.
+pub(super) fn extract_statement(statement: &Statement) -> ExtractResult<Option<Assign>> {
     match &statement.kind {
-        StatementKind::Assign(place, value) => {
-            let slot = translator.place_slot(place)?;
-            let value = rvalue::translate_rvalue(translator, value)?;
-            translator.builder.store_local(slot, value, SourceSpan::UNKNOWN)?;
-            Ok(())
-        }
+        StatementKind::Assign(place, value) => Ok(Some(Assign {
+            dest: body::place_local(place)?,
+            value: rvalue::extract_rvalue(value)?,
+        })),
         // The local slots live for the whole function, thus the storage markers say nothing that
         // the Miden IR needs.
         StatementKind::StorageLive(_) | StatementKind::StorageDead(_) | StatementKind::Nop => {
-            Ok(())
+            Ok(None)
         }
-        kind => Err(Report::msg(format!(
+        kind => Err(format!(
             "rust mir frontend: unsupported MIR statement: {}",
             statement_name(kind)
-        ))),
+        )),
     }
 }
 
