@@ -785,7 +785,7 @@ mod tests {
         let pipeline = textual_pipeline(component.world.as_operation_ref(), context);
         let functions = "canonicalizer,cse,sccp,sink-operand-defs,local2reg,transform-spills,\
                          cfg-to-scf,canonicalizer";
-        let last = "sink-operand-defs,transform-spills";
+        let last = "sink-operand-defs,narrow-region-ops,transform-spills";
         assert_eq!(
             pipeline,
             alloc::format!(
