@@ -9,7 +9,7 @@ use midenc_session::{
     diagnostics::{IntoDiagnostic, Report, SourceSpan, Span, WrapErr},
 };
 
-use crate::{Event, lower::NativePtr, masm};
+use crate::{lower::NativePtr, masm};
 
 pub struct MasmComponent {
     /// The namespace path of the component, see
@@ -319,10 +319,8 @@ impl MasmComponent {
             }
 
             // Invoke the program entrypoint
-            block.push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameStart.into()))));
             invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, entrypoint.clone()));
             block.push(Op::Inst(Span::new(span, Inst::Exec(entrypoint))));
-            block.push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameEnd.into()))));
 
             // Truncate the stack to 16 elements on exit
             let truncate_stack = {
@@ -388,9 +386,7 @@ impl MasmComponent {
         loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
         loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
         // => [C, B, A, dest_ptr, inits'] on operand stack
-        loop_body.push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameStart.into()))));
         loop_body.push(Op::Inst(Span::new(span, Inst::Exec(pipe_words_to_memory))));
-        loop_body.push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameEnd.into()))));
         // Drop C, B, A
         loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
         loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));

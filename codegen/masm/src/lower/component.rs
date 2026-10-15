@@ -24,7 +24,7 @@ use midenc_session::diagnostics::{Report, Spanned, WrapErr};
 use smallvec::SmallVec;
 
 use crate::{
-    Event, OperandStack,
+    OperandStack,
     artifact::MasmComponent,
     emitter::{BlockEmitter, FrameLayout, has_inline_call_chain},
     linker::{FunctionTableLayout, LinkInfo, Linker},
@@ -828,11 +828,7 @@ impl MasmComponentBuilder<'_> {
                 let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
                 InvocationTarget::Path(Span::new(span, qualified.into_inner()))
             };
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameStart.into()))));
             self.init_body.push(Op::Inst(Span::new(span, Inst::Exec(heap_init))));
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameEnd.into()))));
 
             // Data segment initialization
             //
@@ -1282,11 +1278,7 @@ impl MasmComponentBuilder<'_> {
             )));
             // [num_words, write_ptr, COM, ..] -> [write_ptr']
             self.init_body
-                .push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameStart.into()))));
-            self.init_body
                 .push(Op::Inst(Span::new(span, Inst::Exec(pipe_preimage_to_memory.clone()))));
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameEnd.into()))));
             // drop write_ptr'
             self.init_body.push(Op::Inst(Span::new(span, Inst::Drop)));
         }
@@ -1669,8 +1661,7 @@ impl MasmFunctionBuilder {
         )));
         let visibility = match function.visibility() {
             Visibility::Public => masm::Visibility::Public,
-            // TODO(pauls): Support internal visibility in MASM
-            Visibility::Internal => masm::Visibility::Public,
+            Visibility::Internal => masm::Visibility::Internal,
             Visibility::Private => masm::Visibility::Private,
         };
         let locals_required = function.locals().iter().map(|ty| ty.size_in_felts()).sum::<usize>();

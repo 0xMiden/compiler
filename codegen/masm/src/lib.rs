@@ -39,7 +39,7 @@ use midenc_hir::{
 pub(crate) use self::lower::HirLowering;
 pub use self::{
     artifact::{MasmComponent, Rodata},
-    events::{Event, FRAME_END_EVENT, FRAME_START_EVENT, PRINT_LN_EVENT},
+    events::{Event, PRINT_LN_EVENT},
     legalization::{
         CheckMasmLegality, LegalizeForMasm, masm_legalization_target,
         populate_masm_legalization_target,

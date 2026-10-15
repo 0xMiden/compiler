@@ -708,9 +708,7 @@ mod tests {
         assert_lowers_to(
             &test,
             expect![[r#"
-                push.1093736776208885424 emit drop
                 exec.::miden::core::math::u64::wrapping_add
-                push.6229491882474008289 emit drop
             "#]],
         );
     }
@@ -788,9 +786,7 @@ mod tests {
             expect![[r#"
                 dup.3
                 dup.3
-                push.1093736776208885424 emit drop
                 exec.::miden::core::math::u64::wrapping_add
-                push.6229491882474008289 emit drop
             "#]],
         );
     }

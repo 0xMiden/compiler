@@ -341,9 +341,7 @@ impl OpEmitter<'_> {
     ) {
         self.process_call_signature(&callee, signature, span);
 
-        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::Exec(callee), span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     /// Execute the procedure whose MAST root is stored in slot `index` (stack top) of a function
@@ -422,9 +420,7 @@ impl OpEmitter<'_> {
         self.consume_exact_call_signature(signature, "exec_indirect");
 
         // `dynexec` pops the element address and reads the callee MAST root word at it
-        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::DynExec, span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     /// Check and spill the callee root of a `dyncall`, the first half of its lowering.
@@ -497,9 +493,7 @@ impl OpEmitter<'_> {
         // `dyncall` pops the element address and reads the callee MAST root word at it
         self.emit_push(root_scratch_addr, span);
         self.consume_exact_call_signature(signature, "dyncall");
-        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::DynCall, span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     /// Push the MAST root digest of `callee` onto the operand stack as one word.
@@ -524,9 +518,7 @@ impl OpEmitter<'_> {
     ) {
         self.process_call_signature(&callee, signature, span);
 
-        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::Call(callee), span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     /// Execute the given kernel procedure as a syscall.
@@ -538,9 +530,7 @@ impl OpEmitter<'_> {
     ) {
         self.process_call_signature(&callee, signature, span);
 
-        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::SysCall(callee), span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     /// Consumes one argument per parameter of `signature` from the emulated stack and produces
@@ -726,7 +716,7 @@ mod tests {
 
     /// Pin the exact instruction sequence and stack effect of an indirect call: the bounds
     /// check, the in-place index-to-address rewrite, the signature-tag check, and the
-    /// frame-traced `dynexec`.
+    /// `dynexec`.
     #[test]
     fn exec_indirect_emits_bounds_check_tag_check_and_dynexec() {
         use midenc_hir::{CallConv, Felt};
@@ -764,7 +754,7 @@ mod tests {
                 op => panic!("unexpected non-instruction op: {op:?}"),
             })
             .collect::<Vec<_>>();
-        assert_eq!(insts.len(), 14);
+        assert_eq!(insts.len(), 12);
         // Bounds check: duplicate the index and assert it is in bounds
         assert_eq!(insts[0], masm::Instruction::Dup0);
         assert!(
@@ -807,15 +797,12 @@ mod tests {
             "expected signature-check assertion, got {:?}",
             insts[10]
         );
-        // Frame-traced dynexec, which itself pops the slot address
-        assert!(matches!(&insts[11], masm::Instruction::EmitImm(_)));
-        assert_eq!(insts[12], masm::Instruction::DynExec);
-        assert!(matches!(&insts[13], masm::Instruction::EmitImm(_)));
+        assert_eq!(insts[11], masm::Instruction::DynExec);
     }
 
     /// Pin the exact instruction sequence and stack effect of a dynamic cross-context call: the
     /// unset-slot guard, the root spill to the scratch word, the address push, and the
-    /// frame-traced `dyncall`. The two halves are emitted back to back here; the lowering
+    /// `dyncall`. The two halves are emitted back to back here; the lowering
     /// schedules the arguments in between.
     #[test]
     fn dyncall_emits_unset_guard_root_spill_and_dyncall() {
@@ -859,7 +846,7 @@ mod tests {
                 op => panic!("unexpected non-instruction op: {op:?}"),
             })
             .collect::<Vec<_>>();
-        assert_eq!(insts.len(), 18);
+        assert_eq!(insts.len(), 16);
         // Unset-slot guard: fold `root[i] == 0` over the word, then assert the fold is false
         let is_eq_zero = |inst: &masm::Instruction| matches!(inst, masm::Instruction::EqImm(masm::Immediate::Value(value)) if *value.inner() == Felt::ZERO);
         assert_eq!(insts[0], masm::Instruction::Dup0);
@@ -885,15 +872,13 @@ mod tests {
             insts[12]
         );
         assert_eq!(insts[13], masm::Instruction::DropW);
-        // Push the scratch address, then the frame-traced dyncall pops it
+        // Push the scratch address, then dyncall pops it
         assert!(
             matches!(&insts[14], masm::Instruction::Push(masm::Immediate::Value(value)) if *value.inner() == scratch.into()),
             "expected push of the scratch address, got {:?}",
             insts[14]
         );
-        assert!(matches!(&insts[15], masm::Instruction::EmitImm(_)));
-        assert_eq!(insts[16], masm::Instruction::DynCall);
-        assert!(matches!(&insts[17], masm::Instruction::EmitImm(_)));
+        assert_eq!(insts[15], masm::Instruction::DynCall);
     }
 
     #[test]
