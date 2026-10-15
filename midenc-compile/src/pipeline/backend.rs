@@ -20,7 +20,7 @@ use alloc::{boxed::Box, rc::Rc, sync::Arc};
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs};
 use midenc_codegen_masm::{CheckMasmLegality, LegalizeForMasm, MasmComponent, ToMasmComponent};
-use midenc_dialect_hir::transforms::{Local2Reg, TransformSpills};
+use midenc_dialect_hir::transforms::{Local2Reg, NarrowRegionOps, TransformSpills};
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_frontend_wasm_metadata::PackageSections;
 use midenc_hir::{
@@ -319,6 +319,7 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             let mut module_pm = component_pm.nest::<builtin::Module>();
             let mut func_pm = module_pm.nest::<builtin::Function>();
             func_pm.add_pass(Box::new(SinkOperandDefs));
+            func_pm.add_pass(Box::new(NarrowRegionOps));
             func_pm.add_pass(Box::new(TransformSpills));
             //func_pm.add_pass(Box::new(ControlFlowSink));
             //func_pm.add_pass(Box::new(DeadCodeElimination));
@@ -326,6 +327,7 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
         {
             let mut func_pm = component_pm.nest::<builtin::Function>();
             func_pm.add_pass(Box::new(SinkOperandDefs));
+            func_pm.add_pass(Box::new(NarrowRegionOps));
             func_pm.add_pass(Box::new(TransformSpills));
             //func_pm.add_pass(Box::new(ControlFlowSink));
             //func_pm.add_pass(Box::new(DeadCodeElimination));

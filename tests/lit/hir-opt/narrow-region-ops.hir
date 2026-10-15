@@ -1,0 +1,110 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(narrow-region-ops))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(narrow-region-ops))' | hir-opt --verify -
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(narrow-region-ops,transform-spills))' | hir-opt --verify -
+
+// The values an scf.while forwards through its condition are on the operand stack at once, with
+// the condition flag: nine iteration arguments forwarded unchanged plus nine values computed by
+// the body are 18 felts, two more than the window holds. The pass moves the three cheapest
+// columns to procedure locals: the forwarded iteration arguments are unused in the after region,
+// so they go first, lowest index first. Each is stored before the condition and loaded after the
+// loop where its result was used; the loop keeps nine inits and forwards fifteen values.
+// CHECK-LABEL: @wide_while
+// CHECK: scf.while %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}} before {
+// CHECK-NEXT: ^{{[a-z0-9]+}}(%[[A0:\d+]]: u32, %[[A1:\d+]]: u32, %[[A2:\d+]]: u32, %[[A3:\d+]]: u32
+// CHECK: hir.store_local %[[A0]] <{ local = #builtin.local_variable<0, u32> }>
+// CHECK-NEXT: hir.store_local %[[A1]] <{ local = #builtin.local_variable<1, u32> }>
+// CHECK-NEXT: hir.store_local %[[A2]] <{ local = #builtin.local_variable<2, u32> }>
+// CHECK-NEXT: scf.condition %{{\d+}}, %[[A3]], %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}}, %{{\d+}} : (i1, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
+// CHECK: } after {
+// CHECK-NEXT: ^{{[a-z0-9]+}}(%{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32, %{{\d+}}: u32):
+// CHECK: } : (u32, u32, u32, u32, u32, u32, u32, u32, u32) -> (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
+// CHECK-DAG: %[[L0:\d+]] = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+// CHECK-DAG: %[[L2:\d+]] = hir.load_local <{ local = #builtin.local_variable<2, u32> }>;
+// CHECK: arith.add %[[L0]], %[[L2]]
+builtin.module public @test {
+    builtin.function public extern("C") @wide_while(%0: u32, %1: u32, %2: u32, %3: u32, %4: u32, %5: u32, %6: u32, %7: u32, %8: u32) -> u32 {
+        %9, %10, %11, %12, %13, %14, %15, %16, %17, %18, %19, %20, %21, %22, %23, %24, %25, %26 = scf.while %0, %1, %2, %3, %4, %5, %6, %7, %8 before {
+        ^before(%27: u32, %28: u32, %29: u32, %30: u32, %31: u32, %32: u32, %33: u32, %34: u32, %35: u32):
+            %36 = arith.lt %27, %35;
+            %37 = arith.add %27, %28 <{ overflow = #builtin.overflow<wrapping> }>;
+            %38 = arith.add %28, %29 <{ overflow = #builtin.overflow<wrapping> }>;
+            %39 = arith.add %29, %30 <{ overflow = #builtin.overflow<wrapping> }>;
+            %40 = arith.add %30, %31 <{ overflow = #builtin.overflow<wrapping> }>;
+            %41 = arith.add %31, %32 <{ overflow = #builtin.overflow<wrapping> }>;
+            %42 = arith.add %32, %33 <{ overflow = #builtin.overflow<wrapping> }>;
+            %43 = arith.add %33, %34 <{ overflow = #builtin.overflow<wrapping> }>;
+            %44 = arith.add %34, %35 <{ overflow = #builtin.overflow<wrapping> }>;
+            %45 = arith.add %35, %27 <{ overflow = #builtin.overflow<wrapping> }>;
+            scf.condition %36, %27, %28, %29, %30, %31, %32, %33, %34, %35, %37, %38, %39, %40, %41, %42, %43, %44, %45 : (i1, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
+        } after {
+        ^after(%46: u32, %47: u32, %48: u32, %49: u32, %50: u32, %51: u32, %52: u32, %53: u32, %54: u32, %55: u32, %56: u32, %57: u32, %58: u32, %59: u32, %60: u32, %61: u32, %62: u32, %63: u32):
+            scf.yield %55, %56, %57, %58, %59, %60, %61, %62, %63 : (u32, u32, u32, u32, u32, u32, u32, u32, u32);
+        } : (u32, u32, u32, u32, u32, u32, u32, u32, u32) -> (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
+        %64 = arith.add %9, %11 <{ overflow = #builtin.overflow<wrapping> }>;
+        %65 = arith.add %64, %26 <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %65 : (u32);
+    };
+
+    // Nine u64 results are 18 felts. A result nobody reads after the op is the cheapest to move
+    // (one store per region, no load), so the first unused one goes, and the op keeps eight.
+    // CHECK-LABEL: @wide_if
+    // CHECK: scf.if
+    // CHECK: hir.store_local %[[T:\d+]] <{ local = #builtin.local_variable<0, u64> }>
+    // CHECK-NEXT: scf.yield %[[T]], %[[T]], %[[T]], %[[T]], %[[T]], %[[T]], %[[T]], %[[T]] : (u64, u64, u64, u64, u64, u64, u64, u64);
+    // CHECK: } else {
+    // CHECK: hir.store_local %[[E:\d+]] <{ local = #builtin.local_variable<0, u64> }>
+    // CHECK-NEXT: scf.yield %[[E]], %[[E]], %[[E]], %[[E]], %[[E]], %[[E]], %[[E]], %[[E]] : (u64, u64, u64, u64, u64, u64, u64, u64);
+    // CHECK: } : (i1) -> (u64, u64, u64, u64, u64, u64, u64, u64);
+    // CHECK-NOT: hir.load_local
+    // CHECK: builtin.ret
+    builtin.function public extern("C") @wide_if(%0: i1, %1: u64) -> u64 {
+        %2, %3, %4, %5, %6, %7, %8, %9, %10 = scf.if %0 then {
+            scf.yield %1, %1, %1, %1, %1, %1, %1, %1, %1 : (u64, u64, u64, u64, u64, u64, u64, u64, u64);
+        } else {
+            %11 = arith.constant 7 : u64;
+            scf.yield %11, %11, %11, %11, %11, %11, %11, %11, %11 : (u64, u64, u64, u64, u64, u64, u64, u64, u64);
+        } : (i1) -> (u64, u64, u64, u64, u64, u64, u64, u64, u64);
+        %12 = arith.add %2, %10 <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %12 : (u64);
+    };
+
+    // Seventeen u32 results: the one whose use is furthest away goes to a local, stored before
+    // the yield of every region and loaded where it was used.
+    // CHECK-LABEL: @wide_switch
+    // CHECK: scf.index_switch
+    // CHECK: hir.store_local %{{\d+}} <{ local = #builtin.local_variable<0, u32> }>
+    // CHECK-NEXT: scf.yield
+    // CHECK: default {
+    // CHECK: hir.store_local %{{\d+}} <{ local = #builtin.local_variable<0, u32> }>
+    // CHECK-NEXT: scf.yield
+    // CHECK: } : (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
+    // CHECK: %[[S:\d+]] = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+    // CHECK: arith.add %{{\d+}}, %[[S]]
+    builtin.function public extern("C") @wide_switch(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 3 : u32;
+        %3, %4, %5, %6, %7, %8, %9, %10, %11, %12, %13, %14, %15, %16, %17, %18, %19 = scf.index_switch %0
+        case 1 {
+            scf.yield %1, %1, %1, %1, %1, %1, %1, %1, %1, %1, %1, %1, %1, %1, %1, %1, %1 : (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
+        }
+        default {
+            scf.yield %2, %2, %2, %2, %2, %2, %2, %2, %2, %2, %2, %2, %2, %2, %2, %2, %2 : (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
+        } : (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
+        %20 = arith.add %3, %4 <{ overflow = #builtin.overflow<wrapping> }>;
+        %21 = arith.add %20, %5 <{ overflow = #builtin.overflow<wrapping> }>;
+        %22 = arith.add %21, %6 <{ overflow = #builtin.overflow<wrapping> }>;
+        %23 = arith.add %22, %7 <{ overflow = #builtin.overflow<wrapping> }>;
+        %24 = arith.add %23, %8 <{ overflow = #builtin.overflow<wrapping> }>;
+        %25 = arith.add %24, %9 <{ overflow = #builtin.overflow<wrapping> }>;
+        %26 = arith.add %25, %10 <{ overflow = #builtin.overflow<wrapping> }>;
+        %27 = arith.add %26, %11 <{ overflow = #builtin.overflow<wrapping> }>;
+        %28 = arith.add %27, %12 <{ overflow = #builtin.overflow<wrapping> }>;
+        %29 = arith.add %28, %13 <{ overflow = #builtin.overflow<wrapping> }>;
+        %30 = arith.add %29, %14 <{ overflow = #builtin.overflow<wrapping> }>;
+        %31 = arith.add %30, %15 <{ overflow = #builtin.overflow<wrapping> }>;
+        %32 = arith.add %31, %16 <{ overflow = #builtin.overflow<wrapping> }>;
+        %33 = arith.add %32, %17 <{ overflow = #builtin.overflow<wrapping> }>;
+        %34 = arith.add %33, %18 <{ overflow = #builtin.overflow<wrapping> }>;
+        %35 = arith.add %34, %19 <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %35 : (u32);
+    };
+};
