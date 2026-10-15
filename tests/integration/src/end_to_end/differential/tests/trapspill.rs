@@ -22,8 +22,8 @@
 //! First, **the guard KIND is invisible to the spill analysis.** The five W1
 //! cases below differ only in what traps — an index, a `get().unwrap()`, a
 //! zero divisor, a `checked_add().unwrap()` and an `assert!` — and all five
-//! produce exactly the same spill freight. Under `-Cpanic=immediate-abort` every one of
-//! them is the same wasm `unreachable`.
+//! produce exactly the same spill freight. Under `-Cpanic=immediate-abort`
+//! every one of them is the same wasm `unreachable`.
 //!
 //! Second, **LLVM merges every trapping edge of a function into ONE wasm
 //! `unreachable`.** Every case here — including `both_kinds`, which has an
@@ -40,10 +40,10 @@
 //! `ub.unreachable`; the no-trap control of the same shape has three fewer
 //! blocks, three fewer `scf` ops and no `cf.switch` at all.
 //!
-//! Fourth, **a trap edge does not move the spill numbers of the interaction
+//! Fourth, **a trap edge does not move the spill freight of the interaction
 //! shapes.** `dispatch_arm`, `select_arm`, `scan_break` and `second_loop`
-//! reproduce their `interact.rs` originals' spill/reload/split/erase counts
-//! exactly. It DOES move which canonicalization patterns fire — see the case
+//! spill, reload, split and erase the same as their `interact.rs` originals.
+//! It DOES move which canonicalization patterns fire — see the case
 //! comments — and at one guard position it moves a compile-time boundary,
 //! which is what `guard_above` and `guard_above_masked` pin.
 
@@ -56,12 +56,11 @@ use super::super::harness::{
 /// accumulator, at the end of the body, with an eight-u64 cluster and eight
 /// count bands live across it.
 ///
-/// Lift: 1 `ub.unreachable`
-/// before and 1 after; 11 blocks / 11 `cf` ops before, 6 blocks / 18 `scf` + 2
-/// `cf` ops after, the second `cf` being the exit `cf.switch` that dispatches
-/// the loop's trap column to the unreachable block. The no-trap control of the
-/// same shape (`A31[g & 15]`) has 3 blocks and 15 `scf` ops after
-/// the lift and no `cf.switch`. Verdict: agrees on every row.
+/// Lift: 1 `ub.unreachable` before and 1 after; 11 blocks / 11 `cf` ops before,
+/// 6 blocks / 18 `scf` + 2 `cf` ops after, the second `cf` being the exit
+/// `cf.switch` that dispatches the loop's trap column to the unreachable block.
+/// The no-trap control of the same shape (`A31[g & 15]`) has 3 blocks and 15
+/// `scf` ops after the lift and no `cf.switch`. Verdict: agrees on every row.
 #[test]
 fn body_index() {
     run_case_traps("ts_body_index", include_str!("../cases/case_ts_body_index.rs"));
@@ -89,9 +88,9 @@ fn body_index_edges() {
 
 /// The same freight and the same guard position as [`body_index`] with the
 /// panic coming from `Option::unwrap` on a slice `get` instead of from an
-/// index expression. Identical freight and an
-/// identical native value/trap map to `body_index`'s, which is the sharpest
-/// statement of "the guard kind is invisible below the frontend".
+/// index expression. Identical freight and an identical native value/trap map
+/// to `body_index`'s, which is the sharpest statement of "the guard kind is
+/// invisible below the frontend".
 #[test]
 fn body_get() {
     run_case_traps("ts_body_get", include_str!("../cases/case_ts_body_get.rs"));
@@ -118,9 +117,9 @@ fn body_get_edges() {
 
 /// Guard kind DIVISION BY A BAND: the trapping edge is the zero-divisor test
 /// in front of a `u32 /` whose divisor is a five-bit mask of the loop-carried
-/// accumulator. Lift 1 -> 1 `ub.unreachable` — the same
-/// as [`body_index`] even though the guard also drags a division into
-/// the loop body.
+/// accumulator. Freight and lift (1 -> 1 `ub.unreachable`) are the same as
+/// [`body_index`]'s even though the guard also drags a division into the loop
+/// body.
 #[test]
 fn body_div() {
     run_case_traps("ts_body_div", include_str!("../cases/case_ts_body_div.rs"));
@@ -187,10 +186,9 @@ fn body_assert_edges() {
 /// file with the index masked into range — the same load, the same mask, the
 /// same live cluster, no trapping edge — and it COMPILES and passes. So the
 /// boundary is moved by the edge, not by the guard's work or its position.
-/// Compile-time — no inputs
-/// involved. It was `#[ignore]`d until the #1420 fix (the spill transform now
-/// recomputes dominance after splitting edges and prunes its unused phis) and
-/// now compiles.
+/// Compile-time — no inputs involved. It was `#[ignore]`d until the #1420 fix
+/// (the spill transform now recomputes dominance after splitting edges and
+/// prunes its unused phis) and now compiles.
 #[test]
 fn guard_above() {
     run_case_traps("ts_guard_above", include_str!("../cases/case_ts_guard_above.rs"));
@@ -227,8 +225,8 @@ fn guard_above_masked_edges() {
 /// the trapping edge is a successor of the loop's exit block rather than of a
 /// block inside the region.
 ///
-/// Lift: 1 `ub.unreachable` before and after,
-/// 14 blocks -> 5, 21 `scf` ops, 2 `cf` ops. Verdict: agrees on every row.
+/// Lift: 1 `ub.unreachable` before and after, 14 blocks -> 5, 21 `scf` ops, 2
+/// `cf` ops. Verdict: agrees on every row.
 #[test]
 fn exit_guard() {
     run_case_traps("ts_exit_guard", include_str!("../cases/case_ts_exit_guard.rs"));
@@ -250,8 +248,8 @@ fn exit_guard_edges() {
 /// unwrap through a three-predecessor join.
 ///
 /// The case is `interact::cascade_spill` plus one guard at the end of the
-/// second loop's body. Lift:
-/// 1 `ub.unreachable` before and after, 20 blocks -> 9, 33 `scf` + 3 `cf`.
+/// second loop's body. Lift: 1 `ub.unreachable` before and after, 20 blocks ->
+/// 9, 33 `scf` + 3 `cf`.
 #[test]
 fn second_loop() {
     run_case_traps("ts_second_loop", include_str!("../cases/case_ts_second_loop.rs"));
@@ -334,8 +332,8 @@ fn cascade_cont_edges() {
 /// `#[inline(never)]` callee, so `entrypoint` itself has ZERO `ub.unreachable`
 /// before and after the lift and the callee has the one — the only case in
 /// this module where the freight region and the trapping edge are in different
-/// functions. The call boundary forces a spill of everything live. Same native value/trap
-/// map as [`body_index`].
+/// functions. The call boundary forces a spill of everything live. Same native
+/// value/trap map as [`body_index`].
 #[test]
 fn helper_arg() {
     run_case_traps("ts_helper_arg", include_str!("../cases/case_ts_helper_arg.rs"));
@@ -383,8 +381,8 @@ fn helper_ret_edges() {
 /// Trap edge in a `match` ARM of the dispatch shape — `interact::dispatch_spill`
 /// with an `assert!` at the head of arm 15.
 ///
-/// The pattern the shape is about still fires:
-/// `simplify-switch-fallback-overlap`, as without the trap.
+/// The pattern the shape is about, `simplify-switch-fallback-overlap`, still
+/// fires, as without the trap.
 #[test]
 fn dispatch_arm() {
     run_case_traps("ts_dispatch_arm", include_str!("../cases/case_ts_dispatch_arm.rs"));
@@ -405,8 +403,7 @@ fn dispatch_arm_edges() {
 /// Trap edge in one ARM of the if-to-select diamond — `interact::select_spill`
 /// with an `assert!` at the head of the heavy then-arm.
 ///
-/// `ConvertTrivialIfToSelect` STILL FIRES with an `unreachable` arm in the
-/// diamond.
+/// `ConvertTrivialIfToSelect` STILL FIRES with an `unreachable` arm in the diamond.
 #[test]
 fn select_arm() {
     run_case_traps("ts_select_arm", include_str!("../cases/case_ts_select_arm.rs"));

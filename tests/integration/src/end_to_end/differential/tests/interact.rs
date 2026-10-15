@@ -3,10 +3,11 @@
 //!
 //! The function pass pipeline (`midenc-compile/src/pipeline/backend.rs`) runs
 //! Canonicalizer → CSE → SCCP → SinkOperandDefs → Local2Reg → TransformSpills →
-//! LiftControlFlowToSCF → Canonicalizer → SinkOperandDefs → TransformSpills, so
-//! the post-lift canonicalizer rewrites regions on IR that the *pre-lift* spill
-//! transform has already rewritten, and the post-lift SinkOperandDefs and
-//! TransformSpills then run on the rewritten regions. Every case here is one of
+//! LiftControlFlowToSCF → Canonicalizer → SinkOperandDefs → NarrowRegionOps →
+//! TransformSpills, so the post-lift canonicalizer rewrites regions on IR that
+//! the *pre-lift* spill transform has already rewritten, and the post-lift
+//! SinkOperandDefs, NarrowRegionOps and TransformSpills then run on the
+//! rewritten regions. Every case here is one of
 //! the known canonicalization producers (`canon.rs`) loaded with spill freight:
 //! CSE-merged masked rotate count bands used before the region, on the region's
 //! carried value inside it, and after it, plus — where noted — a cluster of u64
@@ -51,6 +52,12 @@ use super::super::harness::{run_case, run_case_with_inputs};
 /// adds after the user locals, and the dump taken after the POST-LIFT
 /// canonicalizer has such slot accesses inside the two `scf.index_switch`
 /// regions that `IndexSwitchRemoveUnusedResults` rebuilt.
+///
+/// Boundary (campaign 20): with the u64 cluster removed, this shape panicked at
+/// 10, 11, 15 and 16 shared bands while compiling at the counts around them —
+/// the band count is NOT a monotone boundary — and the failing rungs were the
+/// same for one, two and four loops. With four bands the cluster could hold
+/// seven values but not eight.
 #[test]
 fn cascade_spill() {
     run_case("cascade_spill", include_str!("../cases/case_cascade_spill.rs"));
@@ -87,6 +94,13 @@ fn cascade_spill_edges() {
 /// "unused phi" warnings from the spill transform's own SSA reconstruction —
 /// the F1 marker and the F6 marker both present in a program that computes the
 /// right answer on every pinned path.
+///
+/// Boundary (campaign 20): the band axis had no boundary at the default level
+/// through sixteen bands, but `--optimize=size-min` panicked from fourteen up;
+/// making the outer loop zero-trip-capable did not move either. The u64
+/// cluster is what broke this shape — four values at four bands already
+/// panicked, which made the passthrough frame by far the least freight-tolerant
+/// of the composed shapes.
 #[test]
 fn passthru_spill() {
     run_case("passthru_spill", include_str!("../cases/case_passthru_spill.rs"));
@@ -148,8 +162,14 @@ fn dispatch_spill_edges() {
 /// whose else-arm reloads none. The pressure difference is what makes the spill
 /// analysis reconcile the two edges — a value in the join's `W^entry` that one
 /// predecessor does not carry gets a reload split onto that edge — so the
-/// diamond `ConvertTrivialIfToSelect` collapses has
-/// band traffic on one side only.
+/// diamond that `ConvertTrivialIfToSelect` collapses has band traffic on one
+/// side only.
+///
+/// Boundary (campaign 20): eight bands still compiled at the default level but
+/// panicked at `--optimize=size-min`; making the arms SYMMETRIC (both reloading
+/// every band) panicked at eight bands at BOTH levels, so the asymmetry this
+/// case is built around is what let eight bands compile at the default level at
+/// all. A six-u64 cluster on four bands panicked at both levels.
 #[test]
 fn select_spill() {
     run_case("select_spill", include_str!("../cases/case_select_spill.rs"));
@@ -203,6 +223,11 @@ fn select_spill_edges() {
 /// crossing the nest — not the nest — that leaves an `scf.if` result with no
 /// real use. This is the only pattern in the corpus whose fire count freight
 /// changes from zero to non-zero.
+///
+/// Boundary (campaign 20): twelve bands are fine in this arm shape, but moving
+/// the consuming region from an arm to the SECOND of two sequential loops
+/// panicked with only eight — at the default level (`frontier.rs:123`) while
+/// still compiling at `--optimize=size-min`.
 #[test]
 fn sink_spill() {
     run_case("sink_spill", include_str!("../cases/case_sink_spill.rs"));
@@ -227,6 +252,11 @@ fn sink_spill_edges() {
 /// because LLVM unrolls the scans away there; the band traffic in the body is
 /// what keeps the loops rolled at O2, so the composition also widens where the
 /// pattern fires at all.
+///
+/// Boundary (campaign 20): on the cluster axis, the PREDICATE of the break
+/// matters — with an accumulator-derived break condition the same four loops
+/// carry a ten-u64 cluster, while with this case's input-bit-driven break a
+/// six-u64 cluster already panicked.
 #[test]
 fn scan_spill() {
     run_case("scan_spill", include_str!("../cases/case_scan_spill.rs"));

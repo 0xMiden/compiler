@@ -311,10 +311,10 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             // Re-run canonicalization to clean up generated structured control flow
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
         }
-        // The last rewrite, before operand sinking and spill placement
+        // The last rewrite, before operand sinking, region narrowing and spill placement
         component_pm.add_pass(Box::new(LegalizeForMasm));
-        // Operand sinking and spill placement for module-level functions, then component-level
-        // ones: the last passes before lowering
+        // Operand sinking, region narrowing and spill placement for module-level functions, then
+        // component-level ones: the last passes before lowering
         {
             let mut module_pm = component_pm.nest::<builtin::Module>();
             let mut func_pm = module_pm.nest::<builtin::Function>();

@@ -157,7 +157,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 - Fixed pipeline at every level, on a function pass manager
   (`midenc-compile/src/pipeline/backend.rs`): Canonicalizer → CSE → SCCP →
   SinkOperandDefs → Local2Reg → TransformSpills → LiftControlFlowToSCF →
-  Canonicalizer → SinkOperandDefs → TransformSpills. `ControlFlowSink` and
+  Canonicalizer → SinkOperandDefs → NarrowRegionOps → TransformSpills.
+  `ControlFlowSink` and
   DCE are commented out; there is no middle-end knob: `--optimize` sets only
   the guest LLVM level (`cargo_profile_opt_level`,
   `midenc-compile/src/pipeline/frontends/rust.rs`). Dead end: middle-end

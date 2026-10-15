@@ -100,8 +100,8 @@ fn switch_loop_oz() {
 
 /// Deeply nested control flow at `-Oz`. The lifted loops forwarded more values than the
 /// operand stack window holds and the case pinned the "its region results" diagnostic until
-/// #1459; `narrow-region-ops` now moves the excess to procedure locals and the case compiles and
-/// agrees with native.
+/// #1459. The spill analysis no longer lets a loop's entry fill keep live-through values resident
+/// that the loop body cannot hold, so the case now compiles and agrees with native.
 #[test]
 fn nest8_oz() {
     run_case_with_flags("nest8_oz", include_str!("../cases/case_nest8.rs"), SIZE_MIN);
