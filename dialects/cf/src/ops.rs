@@ -636,6 +636,43 @@ builtin.function public extern("C") @branch(%c: i1, %a: u32, %b: u32) -> u32 {
     }
 
     #[test]
+    fn parse_cond_br_rejects_non_boolean_condition() {
+        use midenc_hir::{
+            diagnostics::Uri,
+            dialects::builtin::Function,
+            parse::{ParserConfig, parse},
+        };
+
+        for branch in [
+            r#""cf.cond_br"(%c)[^yes, ^no] : (u32) -> ();"#,
+            "cf.cond_br %c ^yes, ^no : (u32);",
+        ] {
+            let context = Rc::new(Context::default());
+            context.get_or_register_dialect::<ControlFlowDialect>();
+            let source = format!(
+                r#"builtin.function public extern("C") @branch(%c: u32) {{
+    {branch}
+^yes:
+    builtin.ret;
+^no:
+    builtin.ret;
+}};"#
+            );
+            let error = parse::<Function>(
+                ParserConfig::new(context.clone()),
+                Uri::new("parse_non_boolean_condition.hir"),
+                &source,
+            )
+            .err()
+            .expect("non-boolean branch conditions must be rejected");
+            let message = format!("{error}");
+            assert!(message.contains("invalid operand"), "{message}");
+            assert!(message.contains("1-bit integral type"), "{message}");
+            assert!(message.contains("got u32"), "{message}");
+        }
+    }
+
+    #[test]
     fn parse_generic_switch_rejects_unsupported_successor_layout() {
         use midenc_hir::{
             diagnostics::Uri,

@@ -556,62 +556,82 @@ impl quote::ToTokens for WithOperands<'_> {
                     let group_index =
                         syn::Lit::Int(syn::LitInt::new(&format!("{group_index}usize"), group_span));
                     let operand_name = operands.iter().map(|o| &o.name).collect::<Vec<_>>();
-                    let operand_constraint = operands.iter().map(|o| &o.constraint);
-                    let constraint_violation = operands.iter().map(|o| {
-                        syn::Lit::Str(syn::LitStr::new(
-                            &format!("type constraint violation for '{}'", o.name),
-                            o.name.span(),
-                        ))
-                    });
                     tokens.extend(quote_spanned! { group_span =>
-                        #(
+                        op_builder.with_operands_in_group(#group_index, [#(#operand_name),*]);
+                    });
+                }
+                OpOperandGroup::Named(group_name, _) => {
+                    let group_span = group_name.span();
+                    let group_index =
+                        syn::Lit::Int(syn::LitInt::new(&format!("{group_index}usize"), group_span));
+                    tokens.extend(quote_spanned! { group_span =>
+                        let #group_name = #group_name.into_iter().collect::<::alloc::vec::Vec<_>>();
+                        op_builder.with_operands_in_group(#group_index, #group_name);
+                    });
+                }
+            }
+        }
+    }
+}
+
+struct VerifyOperandTypes<'a>(&'a OpDefinition);
+impl quote::ToTokens for VerifyOperandTypes<'_> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        for (group_index, group) in self.0.operands.iter().enumerate() {
+            match group {
+                OpOperandGroup::Unnamed(operands) => {
+                    for (operand_index, operand) in operands.iter().enumerate() {
+                        let span = operand.name.span();
+                        let constraint = &operand.constraint;
+                        let label = syn::Lit::Str(syn::LitStr::new(
+                            &format!("type constraint violation for '{}'", operand.name),
+                            span,
+                        ));
+                        tokens.extend(quote_spanned! { span =>
                             {
-                                let value = #operand_name.borrow();
+                                let operand = self.op.operands().group(#group_index)[#operand_index].borrow();
+                                let value = operand.value();
                                 let value_ty = value.ty();
-                                let constraint = <#operand_constraint as ::midenc_hir::traits::TypeConstraint>::get();
-                                if !<#operand_constraint as ::midenc_hir::traits::TypeConstraint>::matches(&constraint, value_ty) {
-                                    let expected = <#operand_constraint as ::midenc_hir::traits::TypeConstraint>::description(&constraint);
-                                    return Err(builder.context()
+                                let constraint = <#constraint as ::midenc_hir::traits::TypeConstraint>::get();
+                                if !<#constraint as ::midenc_hir::traits::TypeConstraint>::matches(&constraint, value_ty) {
+                                    let expected = <#constraint as ::midenc_hir::traits::TypeConstraint>::description(&constraint);
+                                    return Err(self.op.context()
                                         .session()
                                         .diagnostics
                                         .diagnostic(::midenc_hir::diagnostics::Severity::Error)
-                                        .with_message("invalid operand")
-                                        .with_primary_label(span, #constraint_violation)
+                                        .with_message(::alloc::format!("invalid operand for '{}': expected {expected}, got {value_ty}", self.op.name()))
+                                        .with_primary_label(::midenc_hir::diagnostics::Spanned::span(&self.op), #label)
                                         .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
                                         .into_report());
                                 }
                             }
-                        )*
-                        op_builder.with_operands_in_group(#group_index, [#(#operand_name),*]);
-                    });
+                        });
+                    }
                 }
-                OpOperandGroup::Named(group_name, group_constraint) => {
-                    let group_span = group_name.span();
-                    let group_index =
-                        syn::Lit::Int(syn::LitInt::new(&format!("{group_index}usize"), group_span));
-                    let constraint_violation = syn::Lit::Str(syn::LitStr::new(
+                OpOperandGroup::Named(group_name, constraint) => {
+                    let span = group_name.span();
+                    let label = syn::Lit::Str(syn::LitStr::new(
                         &format!("type constraint violation for operand in '{group_name}'"),
-                        group_span,
+                        span,
                     ));
-                    tokens.extend(quote_spanned! { group_span =>
-                        let #group_name = #group_name.into_iter().collect::<::alloc::vec::Vec<_>>();
-                        for operand in #group_name.iter() {
-                            let value = operand.borrow();
+                    tokens.extend(quote_spanned! { span =>
+                        for operand in self.op.operands().group(#group_index) {
+                            let operand = operand.borrow();
+                            let value = operand.value();
                             let value_ty = value.ty();
-                            let constraint = <#group_constraint as ::midenc_hir::traits::TypeConstraint>::get();
-                            if !<#group_constraint as ::midenc_hir::traits::TypeConstraint>::matches(&constraint, value_ty) {
-                                let expected = <#group_constraint as ::midenc_hir::traits::TypeConstraint>::description(&constraint);
-                                return Err(builder.context()
+                            let constraint = <#constraint as ::midenc_hir::traits::TypeConstraint>::get();
+                            if !<#constraint as ::midenc_hir::traits::TypeConstraint>::matches(&constraint, value_ty) {
+                                let expected = <#constraint as ::midenc_hir::traits::TypeConstraint>::description(&constraint);
+                                return Err(self.op.context()
                                     .session()
                                     .diagnostics
                                     .diagnostic(::midenc_hir::diagnostics::Severity::Error)
-                                    .with_message("invalid operand")
-                                    .with_primary_label(span, #constraint_violation)
+                                    .with_message(::alloc::format!("invalid operand for '{}': expected {expected}, got {value_ty}", self.op.name()))
+                                    .with_primary_label(::midenc_hir::diagnostics::Spanned::span(&self.op), #label)
                                     .with_secondary_label(value.span(), ::alloc::format!("this value has type '{value_ty}', but expected '{expected}'"))
                                     .into_report());
                             }
                         }
-                        op_builder.with_operands_in_group(#group_index, #group_name);
                     });
                 }
             }
@@ -1005,6 +1025,7 @@ impl quote::ToTokens for OpDefinition {
         let traits = &self.traits;
         let implements = &self.implements;
         let attrs = WithAttrInfos(self);
+        let verify_operand_types = VerifyOperandTypes(self);
         let operand_group_sizes = self.operands.iter().map(|group| match group {
             OpOperandGroup::Unnamed(operands) => {
                 let count = operands.len();
@@ -1036,6 +1057,11 @@ impl quote::ToTokens for OpDefinition {
                 #[inline(always)]
                 fn as_operation_mut(&mut self) -> &mut ::midenc_hir::Operation {
                     &mut self.op
+                }
+
+                fn verify_operand_types(&self) -> Result<(), ::midenc_hir::diagnostics::Report> {
+                    #verify_operand_types
+                    Ok(())
                 }
             }
 
@@ -2200,7 +2226,8 @@ impl quote::ToTokens for OpVerifierImpl {
                 impl ::midenc_hir::OpVerifier for #op {
                     #[inline(always)]
                     fn verify(&self, _context: &::midenc_hir::Context) -> Result<(), ::midenc_hir::diagnostics::Report> {
-                        self.op.verify_operand_cardinality()
+                        self.op.verify_operand_cardinality()?;
+                        <Self as ::midenc_hir::Op>::verify_operand_types(self)
                     }
                 }
             });
@@ -2247,6 +2274,7 @@ impl quote::ToTokens for OpVerifierImpl {
             impl ::midenc_hir::OpVerifier for #op {
                 fn verify(&self, context: &::midenc_hir::Context) -> Result<(), ::midenc_hir::diagnostics::Report> {
                     self.op.verify_operand_cardinality()?;
+                    <Self as ::midenc_hir::Op>::verify_operand_types(self)?;
                     /// This type represents the concrete set of derived traits for some op `T`, paired with a
                     /// type-erased [::midenc_hir::Operation] reference for an instance of that op.
                     ///

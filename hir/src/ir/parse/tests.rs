@@ -55,7 +55,7 @@ pub struct GroupedOperands {
     #[operand]
     first: crate::traits::AnyType,
     #[operands]
-    middle: crate::traits::AnyType,
+    middle: crate::traits::Bool,
     #[operand]
     last: crate::traits::AnyType,
 }
@@ -102,6 +102,42 @@ fn declared_operand_cardinality_is_checked_before_building_and_verifying() -> Te
 }
 
 #[test]
+fn variadic_operand_types_are_checked_when_building_and_verifying() -> TestResult {
+    use crate::{GenericOperationBuilder, Op, OpVerifier};
+
+    let test = Test::new("operand_types", &[Type::I1, Type::U32], &[]);
+    let context = test.context_rc();
+    context.get_or_register_dialect::<TestDialect>();
+    let (boolean, integer) = {
+        let function = test.function();
+        let function = function.borrow();
+        let entry = function.entry_block();
+        let entry = entry.borrow();
+        (entry.arguments()[0] as ValueRef, entry.arguments()[1] as ValueRef)
+    };
+    let name = context.get_registered_name::<GroupedOperands>();
+
+    let mut builder = context.clone().builder();
+    let op = name.alloc_default(context.clone());
+    let mut op_builder = GenericOperationBuilder::new(&mut builder, op);
+    op_builder.with_operands_in_group(0, [boolean]);
+    op_builder.with_operands_in_group(1, [integer]);
+    op_builder.with_operands_in_group(2, [boolean]);
+    assert!(op_builder.build().is_err(), "u32 must not satisfy the variadic Bool constraint");
+
+    let op = name.alloc_default(context.clone());
+    let mut op_builder = GenericOperationBuilder::new(&mut builder, op);
+    op_builder.with_operands_in_group(0, [boolean]);
+    op_builder.with_operands_in_group(1, []);
+    op_builder.with_operands_in_group(2, [boolean]);
+    let mut op = op_builder.build()?;
+    let invalid_operand = context.make_operand(integer, op, 0);
+    op.borrow_mut().operands_mut().push_to_group(1, invalid_operand);
+    assert!(op.borrow().downcast_ref::<GroupedOperands>().unwrap().verify(&context).is_err());
+    Ok(())
+}
+
+#[test]
 fn generic_operand_cardinality_is_checked_before_type_inference() {
     let test = ParserTest::default();
     test.context().get_or_register_dialect::<TestDialect>();
@@ -113,8 +149,7 @@ fn generic_operand_cardinality_is_checked_before_type_inference() {
 };"#;
     let error = test
         .parse_any_unverified("missing_inference_operand.hir", source)
-        .err()
-        .expect("missing operands must not reach type inference");
+        .expect_err("missing operands must not reach type inference");
     assert!(error.to_string().contains("invalid operand count"), "{error}");
 }
 

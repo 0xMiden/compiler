@@ -69,6 +69,14 @@ pub trait Op: AsAny + OpVerifier {
     fn as_operation(&self) -> &Operation;
     fn as_operation_mut(&mut self) -> &mut Operation;
 
+    /// Check operand types against this operation's declared constraints.
+    ///
+    /// The operation derive supplies this check for declared operand groups. It runs after
+    /// cardinality validation, before type inference or other verifiers inspect operands.
+    fn verify_operand_types(&self) -> Result<(), crate::Report> {
+        Ok(())
+    }
+
     fn print(&self, flags: &OpPrintingFlags) -> crate::formatter::Document {
         use print::OpPrinter;
 

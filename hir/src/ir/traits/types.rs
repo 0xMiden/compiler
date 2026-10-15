@@ -528,9 +528,11 @@ impl<const N: usize> TypeConstraint for SizedInt<N> {
     }
 
     fn matches(&self, ty: &crate::Type) -> bool {
-        ty.is_integer()
+        // Felt has a 32-bit memory layout but a wider value range than a 32-bit integer.
+        ty.is_integer() && !ty.is_felt() && ty.size_in_bits() == N
     }
 }
+
 impl BuildableTypeConstraint for SizedInt<8> {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::I8
@@ -745,5 +747,24 @@ impl<T: TypeConstraint, U: TypeConstraint> TypeConstraint for Or<T, U> {
     #[inline]
     fn matches(&self, ty: &crate::Type) -> bool {
         <T as TypeConstraint>::get().matches(ty) || <U as TypeConstraint>::get().matches(ty)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Bool, Int32, TypeConstraint};
+    use crate::Type;
+
+    #[test]
+    fn sized_integer_constraints_require_the_declared_width() {
+        let boolean = Bool::get();
+        assert!(boolean.matches(&Type::I1));
+        assert!(!boolean.matches(&Type::U32));
+
+        let int32 = Int32::get();
+        assert!(int32.matches(&Type::I32));
+        assert!(int32.matches(&Type::U32));
+        assert!(!int32.matches(&Type::I1));
+        assert!(!int32.matches(&Type::Felt));
     }
 }

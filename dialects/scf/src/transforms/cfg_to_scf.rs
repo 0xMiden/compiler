@@ -342,21 +342,6 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         Ok(())
     }
 
-    fn create_conditional_branch(
-        &self,
-        span: midenc_hir::SourceSpan,
-        builder: &mut midenc_hir::OpBuilder,
-        condition: midenc_hir::ValueRef,
-        true_dest: midenc_hir::BlockRef,
-        true_args: ValueRange<'_, 2>,
-        false_dest: midenc_hir::BlockRef,
-        false_args: ValueRange<'_, 2>,
-    ) -> Result<(), Report> {
-        builder.cond_br(condition, true_dest, true_args, false_dest, false_args, span)?;
-
-        Ok(())
-    }
-
     /// Creates a `ub.poison` op of the given type.
     fn get_undef_value(
         &self,
