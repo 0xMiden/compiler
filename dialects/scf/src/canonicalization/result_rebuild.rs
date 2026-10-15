@@ -7,7 +7,7 @@
 
 use alloc::vec::Vec;
 
-use midenc_hir::{dialects::debuginfo::transform::erase_debug_info_with, patterns::Rewriter, *};
+use midenc_hir::{patterns::Rewriter, *};
 
 use crate::*;
 
@@ -16,7 +16,7 @@ use crate::*;
 ///
 /// `results` has one entry per result of the original op: the index of the result of the new op
 /// that replaces it, or `None` if the result is dropped without replacement, which requires that
-/// it has no real uses (the `di.debug_value` operations using it become `di.debug_kill`). Every
+/// it has no real uses (the `di.debug_value` operations using it are erased with the op). Every
 /// result of the new op must replace at least one result of the original one; when it replaces
 /// several, every region must yield them the same value.
 ///
@@ -43,7 +43,9 @@ pub fn rebuild_if(
         )
     };
 
-    // Creating the new op is the only fallible step; nothing has been modified before it.
+    // Creating the new op is the only fallible step; nothing has been modified before it. It takes
+    // the place of the original, wherever the rewriter was positioned by the caller.
+    rewriter.set_insertion_point_before(operation);
     let new_if = rewriter.r#if(condition, &result_types, span)?;
     let new_regions = {
         let new_if = new_if.borrow();
@@ -93,7 +95,9 @@ pub fn rebuild_index_switch(
         )
     };
 
-    // Creating the new op is the only fallible step; nothing has been modified before it.
+    // Creating the new op is the only fallible step; nothing has been modified before it. It takes
+    // the place of the original, wherever the rewriter was positioned by the caller.
+    rewriter.set_insertion_point_before(operation);
     let new_switch = rewriter.index_switch(selector, cases, &result_types, span)?;
     let new_regions = {
         let new_switch = new_switch.borrow();
@@ -182,10 +186,10 @@ fn finish_rebuild(
         }
     }
 
-    // A dropped value has no real uses, but debug info may still describe a variable through it.
+    // A dropped result has no real uses; the `di.debug_value` operations that may still describe
+    // a variable through it are erased together with the op below.
     for value in dropped.iter() {
         debug_assert!(!value.borrow().has_real_uses(), "cannot drop a result with real uses");
-        erase_debug_info_with(value, rewriter);
     }
 
     let result_values = {

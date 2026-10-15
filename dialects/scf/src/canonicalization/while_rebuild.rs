@@ -94,7 +94,9 @@ pub fn rebuild_while(
         new_result_types.push(while_op.results()[index].borrow().ty().clone());
     }
 
-    // Creating the new op is the only fallible step; nothing has been modified before it.
+    // Creating the new op is the only fallible step; nothing has been modified before it. It takes
+    // the place of the original, wherever the rewriter was positioned by the caller.
+    rewriter.set_insertion_point_before(operation);
     let new_while =
         rewriter.r#while(new_inits.iter().copied(), &new_result_types, while_op.span())?;
 
