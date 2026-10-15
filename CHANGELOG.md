@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- [BREAKING] Prepare compiler debug-info generation and inspection for VM 0.36: retain package-private
+  MASM visibility and display compact inline-call operation ranges.
 - Benchmark contract examples through deterministic MockChain transactions, comparing VM cycles
   against `next` and retaining replay snapshots and cycle-weighted flamegraphs.
 - The MASM frontend now reports advice taint findings from supported procedures even when it skips

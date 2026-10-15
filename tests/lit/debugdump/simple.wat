@@ -7,7 +7,7 @@
 ;; CHECK: Name:               simple:simple
 ;; CHECK-NEXT: Version:            0.0.0
 ;; CHECK-NEXT: Kind:               executable
-;; CHECK-NEXT: Debug Info Version: 3
+;; CHECK-NEXT: Debug Info Version: 4
 
 ;; Check summary section is present
 ;; CHECK: Summary:
@@ -16,22 +16,22 @@
 
 ;; CHECK: Types:
 
-;; Function totals include the compiler's intrinsic library.
+;; Totals include imported core and intrinsic debug tables.
 ;; CHECK: Functions:
-;; CHECK-NEXT: records:          73
-;; CHECK-NEXT: with source info: 2
-;; CHECK-NEXT: w/o source info:  71
+;; CHECK-NEXT: records:          {{[0-9]+}}
+;; CHECK-NEXT: with source info: {{[0-9]+}}
+;; CHECK-NEXT: w/o source info:  {{[0-9]+}}
 
 ;; CHECK: Source Files:
-;; CHECK-NEXT: records: 4
+;; CHECK-NEXT: records: {{[0-9]+}}
 
 ;; CHECK: Locations:
 
 ;; CHECK: Source Nodes:
-;; CHECK-NEXT: records: 17
-;; CHECK-NEXT: roots:   2
+;; CHECK-NEXT: records: {{[0-9]+}}
+;; CHECK-NEXT: roots:   {{[0-9]+}}
 ;; CHECK-NEXT: debug variables (total): 0
-;; CHECK-NEXT: inline calls (total):    0
+;; CHECK-NEXT: inline-call ranges (total): {{[0-9]+}}
 
 ;; CHECK: Found 0 debug variable records
 

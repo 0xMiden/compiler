@@ -72,7 +72,10 @@ pub fn dump(config: &Config) -> Result<(), DumpError> {
         Some(Section::Types) => print_types(&debug_info, config.raw),
         Some(Section::Files) => print_files(&debug_info, config.raw),
         Some(Section::Functions) => {
-            print_functions(&debug_info, package.mast_forest(), config.raw, config.verbose)
+            print_functions(&debug_info, package.mast_forest(), config.raw, config.verbose);
+            if config.verbose {
+                print_inline_ranges(&debug_info, config.raw);
+            }
         }
         Some(Section::Variables) => print_variables(&debug_info, package.mast_forest(), config.raw),
         Some(Section::Locations) => print_locations(&debug_info),
@@ -88,6 +91,9 @@ pub fn dump(config: &Config) -> Result<(), DumpError> {
             print_files(&debug_info, config.raw);
             println!();
             print_functions(&debug_info, mast_forest, config.raw, config.verbose);
+            if config.verbose {
+                print_inline_ranges(&debug_info, config.raw);
+            }
             println!();
             print_locations(&debug_info);
         }
@@ -148,7 +154,7 @@ fn print_summary(debug_info: &PackageDebugInfo) {
     println!("  | records: {}", debug_info.nodes().len());
     println!("  | roots:   {}", debug_info.roots().len());
     println!("  | debug variables (total): {total_vars}");
-    println!("  | inline calls (total):    {total_inlined}");
+    println!("  | inline-call ranges (total): {total_inlined}");
     println!();
 
     // Count debug vars in MAST
@@ -486,36 +492,6 @@ fn print_function(
                 print_variable(var, debug_info, raw, verbose);
             }
         }
-        // Inlined calls
-        if !source_node.inline_calls.is_empty() && verbose {
-            println!("         Inlined calls ({}):", source_node.inline_calls.len());
-            for call in source_node.inline_calls.iter() {
-                let callee = if raw {
-                    format!("func[{}]", call.callee_idx).into_boxed_str().into()
-                } else {
-                    debug_info
-                        .get_function(call.callee_idx)
-                        .and_then(|f| debug_info.get_string(f.name_idx))
-                        .unwrap_or_else(|| "<unknown>".into())
-                };
-                let loc = debug_info.get_location(call.loc_idx);
-                let call_file = if raw {
-                    format!("loc[{}]", call.loc_idx).into_boxed_str().into()
-                } else {
-                    loc.clone()
-                        .map(|loc| Arc::<str>::from(loc.uri))
-                        .unwrap_or_else(|| "<unknown>".into())
-                };
-                if let Some(loc) = loc {
-                    println!(
-                        "           - {callee} inlined at {call_file}:{}..{}",
-                        loc.start, loc.end
-                    );
-                } else {
-                    println!("           - {callee} inlined at {call_file}:?..?",);
-                }
-            }
-        }
     }
 }
 
@@ -576,6 +552,36 @@ fn print_variables(debug_info: &PackageDebugInfo, mast_forest: &MastForest, raw:
             print_variable(var, debug_info, raw, /*verbose=*/ false);
         }
         println!();
+    }
+}
+
+fn print_inline_ranges(debug_info: &PackageDebugInfo, raw: bool) {
+    println!(".debug_inline contents (operation ranges):");
+    for (source, node) in debug_info.nodes().iter().enumerate() {
+        if node.inline_calls.is_empty() {
+            continue;
+        }
+        println!("  [source-node#{source}] Inline-call ranges ({}):", node.inline_calls.len());
+        for row in &node.inline_calls {
+            let callee = if raw {
+                format!("func[{}]", row.callee_idx)
+            } else {
+                debug_info
+                    .get_function(row.callee_idx)
+                    .and_then(|function| debug_info.get_string(function.name_idx))
+                    .map_or_else(|| "<unknown>".to_string(), |name| name.to_string())
+            };
+            let location = debug_info.get_location(row.loc_idx);
+            let site = if raw {
+                format!("loc[{}]", row.loc_idx)
+            } else {
+                location.map_or_else(
+                    || "<unknown>".to_string(),
+                    |location| format!("{}:{}..{}", location.uri, location.start, location.end),
+                )
+            };
+            println!("    {callee} ops[{}..{}) inlined at {site}", row.op_idx, row.op_end);
+        }
     }
 }
 
