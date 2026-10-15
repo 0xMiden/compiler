@@ -1,12 +1,14 @@
 //! Maps Rust MIR types to Miden IR types.
 
-use midenc_hir::{Report, Type};
+use midenc_hir::Type;
 use rustc_public::ty::{IntTy, RigidTy, Ty, TyKind, UintTy};
+
+use super::ExtractResult;
 
 /// Maps a Rust MIR type to a Miden IR type.
 ///
 /// The frontend compiles for a 32-bit target, thus `isize` and `usize` are 32 bits wide.
-pub(crate) fn translate_ty(ty: Ty) -> Result<Type, Report> {
+pub(super) fn extract_ty(ty: Ty) -> ExtractResult<Type> {
     let kind = ty.kind();
     match &kind {
         TyKind::RigidTy(RigidTy::Bool) => Ok(Type::I1),
@@ -26,18 +28,17 @@ pub(crate) fn translate_ty(ty: Ty) -> Result<Type, Report> {
             UintTy::U64 => Type::U64,
             UintTy::U128 => Type::U128,
         }),
-        kind => Err(unsupported_type(kind)),
+        kind => Err(format!("rust mir frontend: unsupported type in MIR: {kind:?}")),
     }
 }
 
-/// Tells whether a Rust MIR type is the unit type.
+/// Maps the type of a value to a Miden IR type, or to `None` for the unit type.
 ///
-/// A local of the unit type carries no data, thus it gets no local slot.
-pub(crate) fn is_unit(ty: Ty) -> bool {
-    ty.kind().is_unit()
-}
-
-/// Builds the error for a type that the frontend cannot map.
-pub(crate) fn unsupported_type(kind: &TyKind) -> Report {
-    Report::msg(format!("rust mir frontend: unsupported type in MIR: {kind:?}"))
+/// A value of the unit type carries no data, thus it has no Miden IR type.
+pub(super) fn extract_value_ty(ty: Ty) -> ExtractResult<Option<Type>> {
+    if ty.kind().is_unit() {
+        Ok(None)
+    } else {
+        extract_ty(ty).map(Some)
+    }
 }

@@ -3,6 +3,10 @@
 //! The frontend reads Rust MIR in-process through `rustc_public`, the stable-MIR API, and
 //! builds Miden IR from it. It does not go through WebAssembly.
 //!
+//! The translation has two phases. The extraction phase runs inside the rustc driver callback
+//! and copies the supported MIR into plain data. The translation phase then builds the Miden IR
+//! from that data on the caller thread.
+//!
 //! # Status
 //!
 //! This frontend is an experiment. It supports a small part of Rust MIR: integer and boolean
@@ -26,6 +30,8 @@ extern crate rustc_public_bridge;
 
 mod config;
 mod driver;
+mod extract;
+mod extracted;
 #[cfg(test)]
 mod tests;
 mod translator;

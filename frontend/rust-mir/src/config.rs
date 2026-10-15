@@ -5,12 +5,6 @@ use std::path::PathBuf;
 /// The default Rust edition used to compile the input file.
 const DEFAULT_EDITION: &str = "2024";
 
-/// The default rustc target.
-///
-/// The Miden target has no target specification yet, thus the frontend borrows the 32-bit data
-/// layout of `wasm32-unknown-unknown`.
-const DEFAULT_TARGET: &str = "wasm32-unknown-unknown";
-
 /// Controls how the Rust MIR frontend runs rustc over the input file.
 #[derive(Debug, Clone)]
 pub struct RustMirTranslationConfig {
@@ -25,8 +19,6 @@ pub struct RustMirTranslationConfig {
     pub out_dir: Option<PathBuf>,
     /// The Rust edition of the input file.
     pub edition: String,
-    /// The rustc target triple that supplies the data layout.
-    pub target: String,
 }
 
 impl Default for RustMirTranslationConfig {
@@ -35,7 +27,6 @@ impl Default for RustMirTranslationConfig {
             crate_name: None,
             out_dir: None,
             edition: DEFAULT_EDITION.to_string(),
-            target: DEFAULT_TARGET.to_string(),
         }
     }
 }
