@@ -1,10 +1,11 @@
-use alloc::{rc::Rc, vec::Vec};
+use alloc::rc::Rc;
 
 use midenc_hir::{
     patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
     *,
 };
 
+use super::{if_remove_unused_results::used_results, result_rebuild::rebuild_index_switch};
 use crate::*;
 
 /// Remove unused results of an [IndexSwitch] instruction.
@@ -27,35 +28,6 @@ impl IndexSwitchRemoveUnusedResults {
             ),
         }
     }
-
-    fn transfer_body(
-        &self,
-        src: BlockRef,
-        dest: BlockRef,
-        used_results: &[OpResultRef],
-        rewriter: &mut dyn Rewriter,
-    ) {
-        // Move all operations to the destination block.
-        rewriter.merge_blocks(src, dest, &[]);
-
-        // Replace the yield op with one that returns only the used values.
-        let op = { dest.borrow().terminator().unwrap() };
-        let mut yield_op = op.try_downcast_op::<Yield>().unwrap();
-
-        let mut used_operands = SmallVec::<[ValueRef; 4]>::with_capacity(used_results.len());
-        {
-            let yield_ = yield_op.borrow();
-            for used_result in used_results {
-                let operand = yield_.operands()[used_result.borrow().index()];
-                used_operands.push(operand.borrow().as_value_ref());
-            }
-        }
-
-        let _guard = rewriter.modify_op_in_place(op);
-        let mut yield_ = yield_op.borrow_mut();
-        let context = yield_.as_operation().context_rc();
-        yield_.yielded_mut().set_operands(used_operands, op, &context);
-    }
 }
 
 impl Pattern for IndexSwitchRemoveUnusedResults {
@@ -70,77 +42,18 @@ impl RewritePattern for IndexSwitchRemoveUnusedResults {
         operation: OperationRef,
         rewriter: &mut dyn Rewriter,
     ) -> Result<bool, Report> {
-        let (used_results, num_results, selector, cases, result_types, old_regions, span) = {
+        let results = {
             let op = operation.borrow();
-            let Some(switch_op) = op.downcast_ref::<IndexSwitch>() else {
+            if !op.is::<IndexSwitch>() {
+                return Ok(false);
+            }
+            let Some(results) = used_results(&op) else {
                 return Ok(false);
             };
-
-            // Compute the list of used results.
-            let used_results = op
-                .results()
-                .iter()
-                .copied()
-                .filter(|result| result.borrow().has_real_uses())
-                .collect::<SmallVec<[_; 4]>>();
-
-            // Replace the operation if only a subset of its results have uses.
-            let num_results = op.num_results();
-            if used_results.len() == num_results {
-                return Ok(false);
-            }
-
-            let result_types = used_results
-                .iter()
-                .map(|result| result.borrow().ty().clone())
-                .collect::<SmallVec<[_; 4]>>();
-
-            (
-                used_results,
-                num_results,
-                switch_op.selector().as_value_ref(),
-                switch_op.cases().iter().copied().collect::<Vec<_>>(),
-                result_types,
-                switch_op
-                    .regions()
-                    .iter()
-                    .map(|region| region.as_region_ref())
-                    .collect::<Vec<_>>(),
-                switch_op.span(),
-            )
+            results
         };
 
-        // Create a replacement operation with empty regions.
-        let new_switch = rewriter.index_switch(selector, cases, &result_types, span)?;
-        let new_switch_op = new_switch.as_operation_ref();
-        let new_regions = {
-            let switch_op = new_switch.borrow();
-            switch_op
-                .regions()
-                .iter()
-                .map(|region| region.as_region_ref())
-                .collect::<Vec<_>>()
-        };
-
-        for (old_region, new_region) in old_regions.into_iter().zip(new_regions) {
-            let old_entry = old_region.borrow().entry_block_ref().unwrap();
-            let new_entry = rewriter.create_block(new_region, None, &[]);
-            self.transfer_body(old_entry, new_entry, &used_results, rewriter);
-        }
-
-        // Replace the operation by the new one.
-        let mut replaced_results = SmallVec::<[_; 4]>::with_capacity(num_results);
-        replaced_results.resize(num_results, None);
-        {
-            let new_switch_op = new_switch_op.borrow();
-            for (index, result) in used_results.into_iter().enumerate() {
-                replaced_results[result.borrow().index()] =
-                    Some(new_switch_op.results()[index] as ValueRef);
-            }
-        }
-        rewriter.replace_op_with_values(operation, &replaced_results);
-
-        Ok(true)
+        rebuild_index_switch(rewriter, operation, &results)
     }
 }
 
