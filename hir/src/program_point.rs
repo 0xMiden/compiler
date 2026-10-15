@@ -481,13 +481,11 @@ impl fmt::Display for ProgramPoint {
                     .parent()
                     .map(|blk| display(blk.borrow().id()))
                     .unwrap_or_else(|| const_text("null"));
+                // The op is read without borrowing it: a program point is rendered by the
+                // tracing rewriter listener while a pattern may still hold the op mutably.
                 match point {
-                    Position::Before => {
-                        write!(f, "before({} in {block})", op.borrow().name())
-                    }
-                    Position::After => {
-                        write!(f, "after({} in {block})", op.borrow().name())
-                    }
+                    Position::Before => write!(f, "before({} in {block})", op.name()),
+                    Position::After => write!(f, "after({} in {block})", op.name()),
                 }
             }
         }
@@ -510,12 +508,50 @@ impl fmt::Debug for ProgramPoint {
             Self::Op {
                 op,
                 position: point,
-            } => f
-                .debug_struct("Op")
-                .field("block", &op.parent().map(|blk| blk.borrow().id()))
-                .field("point", point)
-                .field("op", &op.borrow())
-                .finish(),
+            } => {
+                let mut debug = f.debug_struct("Op");
+                debug
+                    .field("block", &op.parent().map(|blk| blk.borrow().id()))
+                    .field("point", point);
+                // The full op is shown whenever it can be borrowed; while a rewrite holds it
+                // mutably only its name is available, and the fallback says so.
+                match op.try_borrow() {
+                    Some(borrowed) => debug.field("op", &*borrowed),
+                    None => debug.field("op", &format_args!("<borrowed> {}", op.name())),
+                };
+                debug.finish()
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::format;
+
+    use super::ProgramPoint;
+    use crate::{Op, testing::Test};
+
+    /// A program point renders while its operation is mutably borrowed, as happens when the
+    /// tracing rewriter listener reports an insertion made by a pattern that holds the op.
+    #[test]
+    fn program_point_renders_a_mutably_borrowed_op() {
+        let test = Test::new("borrowed", &[], &[]);
+        let mut function = test.function();
+        let op = function.borrow().as_operation_ref();
+        let _guard = function.borrow_mut();
+
+        let before = format!("{}", ProgramPoint::before(op));
+        let after = format!("{}", ProgramPoint::after(op));
+        let debug = format!("{:?}", ProgramPoint::before(op));
+
+        assert!(before.starts_with("before(builtin.function in "), "{before}");
+        assert!(after.starts_with("after(builtin.function in "), "{after}");
+        assert!(debug.contains("op: <borrowed> builtin.function"), "{debug}");
+
+        // Once the op is released again, the point shows the whole op
+        drop(_guard);
+        let debug = format!("{:?}", ProgramPoint::before(op));
+        assert!(debug.contains("op: Operation {"), "{debug}");
     }
 }

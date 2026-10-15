@@ -311,13 +311,14 @@ impl Foldable for Select {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec;
+    use alloc::{format, string::String, vec, vec::Vec};
 
     use midenc_expect_test::expect;
     use midenc_hir::{
         Type,
         diagnostics::Report,
         dialects::builtin::Ret,
+        print::AsmPrinter,
         testing::{Test, parse_function_fixpoint},
     };
 
@@ -381,6 +382,116 @@ mod tests {
         assert_eq!(switch_op.cases().len(), 0);
     }
 
+    /// A `cf.switch` with more than 255 cases, each forwarding an argument to a shared
+    /// destination, so that the op holds more than 255 successors, operand groups and operands at
+    /// once.
+    #[test]
+    fn switch_building_with_more_than_255_cases_and_arguments() {
+        const NUM_CASES: usize = 300;
+
+        let mut test = Test::new("foo", &[Type::U32], &[]);
+        let context = test.context_rc();
+        let selector = test.function().borrow().entry_block().borrow().arguments()[0] as ValueRef;
+        let mut builder = test.function_builder();
+        let dest = builder.create_block();
+        builder.append_block_param(dest, Type::U32, SourceSpan::UNKNOWN);
+        let fallback = builder.create_block();
+        let cases = (0..NUM_CASES)
+            .map(|i| SwitchCase {
+                value: context.create_attribute::<U32Attr, _>(i as u32),
+                successor: dest,
+                arguments: vec![selector],
+            })
+            .collect::<Vec<_>>();
+
+        let op = builder.switch(selector, cases, fallback, [], SourceSpan::UNKNOWN).unwrap();
+        let switch_op = op.borrow();
+
+        assert_eq!(switch_op.fallback().successor(), fallback);
+        let cases = switch_op.cases();
+        assert_eq!(cases.len(), NUM_CASES);
+        let last_case = cases.get(NUM_CASES - 1).unwrap();
+        assert_eq!(last_case.block(), dest);
+        assert_eq!(*last_case.key(), (NUM_CASES - 1) as u32);
+        assert_eq!(last_case.arguments().len(), 1);
+        assert_eq!(last_case.arguments()[0].borrow().as_value_ref(), selector);
+        assert_eq!(switch_op.operands().all().len(), NUM_CASES + 1);
+    }
+
+    /// The source of a function whose `cf.switch` has `num_cases` zero-argument keyed cases and a
+    /// zero-argument fallback, all targeting one block.
+    fn wide_switch_source(num_cases: usize) -> String {
+        let cases = (0..num_cases)
+            .map(|i| format!("#builtin.u32<{i}> -> ^dest"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "\
+builtin.function public extern(\"C\") @wide(%s: u32) -> u32 {{
+    cf.switch %s [{cases}], ^dest : (u32);
+^dest:
+    builtin.ret %s : (u32);
+}};"
+        )
+    }
+
+    /// Parses `source` as a function in a fresh context, keeping the context alive with it.
+    fn parse_wide_switch(
+        name: &str,
+        source: &str,
+    ) -> Result<(Rc<Context>, midenc_hir::dialects::builtin::FunctionRef), Report> {
+        let context = Rc::new(Context::default());
+        let config = midenc_hir::parse::ParserConfig::new(context.clone());
+        let function = midenc_hir::parse::parse::<midenc_hir::dialects::builtin::Function>(
+            config,
+            midenc_hir::diagnostics::Uri::new(name),
+            source,
+        )?;
+        Ok((context, function))
+    }
+
+    /// The widest keyed `cf.switch` the textual IR accepts: the selector and the fallback take
+    /// the two reserved operand groups, and the cases fill the remaining 16-bit group indices
+    /// without any case wrapping onto the selector's group.
+    #[test]
+    fn parse_switch_with_the_most_representable_cases() -> Result<(), Report> {
+        const NUM_CASES: usize = u16::MAX as usize - 1;
+
+        let (_context, function) =
+            parse_wide_switch("parse_switch_widest.hir", &wide_switch_source(NUM_CASES))?;
+        let function = function.borrow();
+        let switch_op = function
+            .body()
+            .entry()
+            .terminator()
+            .unwrap()
+            .try_downcast_op::<Switch>()
+            .expect("expected entry block to terminate with cf.switch");
+        let switch_op = switch_op.borrow();
+
+        let cases = switch_op.cases();
+        assert_eq!(cases.len(), NUM_CASES);
+        assert!(cases.get(NUM_CASES - 1).unwrap().arguments().is_empty());
+        assert!(switch_op.fallback().arguments.is_empty());
+        // The selector is the only operand: no case forwards anything
+        assert_eq!(switch_op.operands().all().len(), 1);
+
+        Ok(())
+    }
+
+    /// One keyed case past the 16-bit operand-group limit is a parse error, not a case that
+    /// silently shares the selector's operand group.
+    #[test]
+    fn parse_switch_with_too_many_cases_is_rejected() {
+        const NUM_CASES: usize = u16::MAX as usize;
+
+        let error = parse_wide_switch("parse_switch_too_wide.hir", &wide_switch_source(NUM_CASES))
+            .err()
+            .expect("expected the switch to be rejected");
+        let message = format!("{error}");
+        assert!(message.contains("too many operand groups"), "{message}");
+    }
+
     /// The value returned by the `builtin.ret` terminating `block`.
     fn returned_value(block: BlockRef) -> ValueRef {
         let block = block.borrow();
@@ -392,6 +503,210 @@ mod tests {
         let values = ret.values();
         let operand = values.iter().next().expect("expected builtin.ret to have an operand");
         operand.borrow().as_value_ref()
+    }
+
+    #[test]
+    fn parse_generic_br_with_bare_successor() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = r#"
+builtin.function public extern("C") @branch(%a: u32) -> u32 {
+    "cf.br"()[^dest] : () -> ();
+^dest:
+    builtin.ret %a : (u32);
+};"#;
+        let (function, _) = parse_function_fixpoint(&context, "parse_generic_br.hir", source)?;
+        let function = function.borrow();
+        let body = function.body();
+        let entry = body.entry();
+        let arg = entry.arguments()[0] as ValueRef;
+        let branch = entry.terminator().unwrap().try_downcast_op::<Br>().unwrap();
+        let branch = branch.borrow();
+        let target = branch.target();
+        assert!(target.arguments.is_empty());
+        assert_eq!(returned_value(target.successor()), arg);
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(context.clone(), &flags);
+        printer.print_operation_generic(branch.as_operation());
+        expect![[r#""cf.br"() [ ^block2 ] : () -> ();"#]]
+            .assert_eq(&format!("{}", printer.finish()));
+        Ok(())
+    }
+
+    #[test]
+    fn parse_generic_cond_br_with_bare_successors() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = r#"
+builtin.function public extern("C") @branch(%c: i1, %a: u32, %b: u32) -> u32 {
+    "cf.cond_br"(%c)[^yes, ^no] : (i1) -> ();
+^yes:
+    builtin.ret %a : (u32);
+^no:
+    builtin.ret %b : (u32);
+};"#;
+        let (function, _) = parse_function_fixpoint(&context, "parse_generic_cond_br.hir", source)?;
+        let function = function.borrow();
+        let body = function.body();
+        let entry = body.entry();
+        let branch = entry.terminator().unwrap().try_downcast_op::<CondBr>().unwrap();
+        let branch = branch.borrow();
+        assert_eq!(branch.condition().as_value_ref(), entry.arguments()[0] as ValueRef);
+        let then_dest = branch.then_dest();
+        let else_dest = branch.else_dest();
+        assert!(then_dest.arguments.is_empty());
+        assert!(else_dest.arguments.is_empty());
+        assert_eq!(returned_value(then_dest.successor()), entry.arguments()[1] as ValueRef);
+        assert_eq!(returned_value(else_dest.successor()), entry.arguments()[2] as ValueRef);
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(context.clone(), &flags);
+        printer.print_operation_generic(branch.as_operation());
+        expect![[r#""cf.cond_br"(%0) [ ^block2, ^block3 ] : i1 -> ();"#]]
+            .assert_eq(&format!("{}", printer.finish()));
+        Ok(())
+    }
+
+    #[test]
+    fn parse_generic_branches_reject_incorrect_successor_counts() {
+        use midenc_hir::{
+            diagnostics::Uri,
+            dialects::builtin::Function,
+            parse::{ParserConfig, parse},
+        };
+
+        for (name, operands, types, successors) in [
+            ("cf.cond_br", "%c", "i1", "[^dest]"),
+            ("cf.cond_br", "%c", "i1", "[^dest, ^dest, ^dest]"),
+            ("cf.cond_br", "%c", "i1", ""),
+            ("cf.br", "", "", ""),
+            ("cf.br", "", "", "[^dest, ^dest]"),
+            ("builtin.ret", "", "", "[^dest]"),
+        ] {
+            let context = Rc::new(Context::default());
+            context.get_or_register_dialect::<ControlFlowDialect>();
+            let source = format!(
+                r#"builtin.function public extern("C") @branch(%c: i1) {{
+    "{name}"({operands}){successors} : ({types}) -> ();
+^dest:
+    builtin.ret;
+}};"#
+            );
+            let error = parse::<Function>(
+                ParserConfig::new(context.clone()),
+                Uri::new("parse_generic_successor_count.hir"),
+                &source,
+            )
+            .err()
+            .expect("incorrect successor counts must be rejected during parsing");
+            let message = format!("{error}");
+            assert!(message.contains("invalid successor count"), "{message}");
+        }
+    }
+
+    #[test]
+    fn parse_generic_cond_br_rejects_incorrect_operand_counts() {
+        use midenc_hir::{
+            diagnostics::Uri,
+            dialects::builtin::Function,
+            parse::{ParserConfig, parse},
+        };
+
+        for (operands, types) in [("", ""), ("%c, %c", "i1, i1")] {
+            let context = Rc::new(Context::default());
+            context.get_or_register_dialect::<ControlFlowDialect>();
+            let source = format!(
+                r#"builtin.function public extern("C") @branch(%c: i1) {{
+    "cf.cond_br"({operands})[^yes, ^no] : ({types}) -> ();
+^yes:
+    builtin.ret;
+^no:
+    builtin.ret;
+}};"#
+            );
+            let error = parse::<Function>(
+                ParserConfig::new(context.clone()),
+                Uri::new("parse_generic_operand_count.hir"),
+                &source,
+            )
+            .err()
+            .expect("incorrect operand counts must be rejected");
+            let message = format!("{error}");
+            assert!(message.contains("invalid operand count"), "{message}");
+        }
+    }
+
+    #[test]
+    fn parse_cond_br_rejects_non_boolean_condition() {
+        use midenc_hir::{
+            diagnostics::Uri,
+            dialects::builtin::Function,
+            parse::{ParserConfig, parse},
+        };
+
+        for branch in [
+            r#""cf.cond_br"(%c)[^yes, ^no] : (u32) -> ();"#,
+            "cf.cond_br %c ^yes, ^no : (u32);",
+        ] {
+            let context = Rc::new(Context::default());
+            context.get_or_register_dialect::<ControlFlowDialect>();
+            let source = format!(
+                r#"builtin.function public extern("C") @branch(%c: u32) {{
+    {branch}
+^yes:
+    builtin.ret;
+^no:
+    builtin.ret;
+}};"#
+            );
+            let error = parse::<Function>(
+                ParserConfig::new(context.clone()),
+                Uri::new("parse_non_boolean_condition.hir"),
+                &source,
+            )
+            .err()
+            .expect("non-boolean branch conditions must be rejected");
+            let message = format!("{error}");
+            assert!(message.contains("invalid operand"), "{message}");
+            assert!(message.contains("1-bit integral type"), "{message}");
+            assert!(message.contains("got u32"), "{message}");
+        }
+    }
+
+    #[test]
+    fn parse_generic_switch_rejects_unsupported_successor_layout() {
+        use midenc_hir::{
+            diagnostics::Uri,
+            dialects::builtin::Function,
+            parse::{ParserConfig, parse},
+        };
+
+        // A flat successor list cannot distinguish the keyed cases from the fallback. Omitting
+        // the list must not bypass the diagnostic and produce missing successor groups either.
+        for successors in ["[^dest]", "[^dest, ^dest]", "[]", ""] {
+            let context = Rc::new(Context::default());
+            context.get_or_register_dialect::<ControlFlowDialect>();
+            let source = format!(
+                r#"builtin.function public extern("C") @branch(%s: u32) -> u32 {{
+    "cf.switch"(%s){successors} : (u32) -> ();
+^dest:
+    builtin.ret %s : (u32);
+}};"#
+            );
+            let Err(error) = parse::<Function>(
+                ParserConfig::new(context.clone()),
+                Uri::new("parse_generic_switch.hir"),
+                source,
+            ) else {
+                panic!("expected generic cf.switch with successors '{successors}' to be rejected");
+            };
+            let message = format!("{error}");
+            assert!(
+                message.contains(
+                    "generic assembly cannot represent the successor layout of 'cf.switch'"
+                ),
+                "{message}"
+            );
+        }
     }
 
     /// Statically-known successor lists (`cf.cond_br %c ^a, ^b`) parse with the `, ` separator

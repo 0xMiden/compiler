@@ -9,16 +9,262 @@ use crate::{
     Symbol, SymbolTable, Type, UnsafeIntrusiveEntityRef, ValueRef, Visibility,
     attributes::IntegerLikeAttr,
     diagnostics::{Report, SourceSpan, Uri},
-    dialects::builtin::{
-        BuiltinOpBuilder, Function, Module, Ret, RetImm, UnrealizedConversionCast, World, WorldRef,
-        attributes::{AbiParam, Signature},
+    dialects::{
+        builtin::{
+            BuiltinOpBuilder, Function, Module, Ret, RetImm, UnrealizedConversionCast, World,
+            WorldRef,
+            attributes::{AbiParam, Signature},
+        },
+        test::TestDialect,
     },
     parse::{self, ParseResult, ParserConfig},
     print::AsmPrinter,
     testing::Test,
+    traits::Terminator,
 };
 
 type TestResult<T = ()> = Result<T, Report>;
+
+#[crate::derive::operation(
+    dialect = TestDialect,
+    traits(Terminator)
+)]
+pub struct GroupedSuccessors {
+    #[successors()]
+    destinations: crate::Successor,
+    #[successor]
+    fallback: crate::Successor,
+}
+
+#[crate::derive::operation(dialect = TestDialect, traits(Terminator))]
+pub struct VariadicSuccessors {
+    #[successors()]
+    destinations: crate::Successor,
+}
+
+#[crate::derive::operation(dialect = TestDialect, traits(Terminator))]
+pub struct FixedSuccessors {
+    #[successor]
+    first: crate::Successor,
+    #[successor]
+    second: crate::Successor,
+}
+
+#[crate::derive::operation(dialect = TestDialect)]
+pub struct GroupedOperands {
+    #[operand]
+    first: crate::traits::AnyType,
+    #[operands]
+    middle: crate::traits::Bool,
+    #[operand]
+    last: crate::traits::AnyType,
+}
+
+#[test]
+fn declared_operand_cardinality_is_checked_before_building_and_verifying() -> TestResult {
+    use crate::{GenericOperationBuilder, Op, OpVerifier};
+
+    let test = Test::new("operand_groups", &[Type::I1], &[]);
+    let context = test.context_rc();
+    context.get_or_register_dialect::<TestDialect>();
+    let value = test.function().borrow().entry_block().borrow().arguments()[0] as ValueRef;
+    let name = context.get_registered_name::<GroupedOperands>();
+
+    // Fixed groups must have exactly one operand; the intervening variadic group may be empty.
+    for (sizes, valid) in [
+        (&[1, 0, 1][..], true),
+        (&[1, 3, 1][..], true),
+        (&[0, 0, 1][..], false),
+        (&[2, 0, 1][..], false),
+        (&[1, 0][..], false),
+        (&[1, 0, 1, 1][..], false),
+    ] {
+        let mut builder = context.clone().builder();
+        let op = name.alloc_default(context.clone());
+        let mut op_builder = GenericOperationBuilder::new(&mut builder, op);
+        for (group, count) in sizes.iter().copied().enumerate() {
+            op_builder.with_operands_in_group(group, core::iter::repeat_n(value, count));
+        }
+        assert_eq!(op_builder.build().is_ok(), valid, "operand groups: {sizes:?}");
+    }
+
+    // Verification must catch corruption after construction, even for ops without trait verifiers.
+    let mut builder = context.clone().builder();
+    let op = name.alloc_default(context.clone());
+    let mut op_builder = GenericOperationBuilder::new(&mut builder, op);
+    op_builder.with_operands_in_group(0, [value]);
+    op_builder.with_operands_in_group(1, []);
+    op_builder.with_operands_in_group(2, [value]);
+    let mut op = op_builder.build()?;
+    op.borrow_mut().operands_mut().group_mut(0).clear();
+    assert!(op.borrow().downcast_ref::<GroupedOperands>().unwrap().verify(&context).is_err());
+    Ok(())
+}
+
+#[test]
+fn variadic_operand_types_are_checked_when_building_and_verifying() -> TestResult {
+    use crate::{GenericOperationBuilder, Op, OpVerifier};
+
+    let test = Test::new("operand_types", &[Type::I1, Type::U32], &[]);
+    let context = test.context_rc();
+    context.get_or_register_dialect::<TestDialect>();
+    let (boolean, integer) = {
+        let function = test.function();
+        let function = function.borrow();
+        let entry = function.entry_block();
+        let entry = entry.borrow();
+        (entry.arguments()[0] as ValueRef, entry.arguments()[1] as ValueRef)
+    };
+    let name = context.get_registered_name::<GroupedOperands>();
+
+    let mut builder = context.clone().builder();
+    let op = name.alloc_default(context.clone());
+    let mut op_builder = GenericOperationBuilder::new(&mut builder, op);
+    op_builder.with_operands_in_group(0, [boolean]);
+    op_builder.with_operands_in_group(1, [integer]);
+    op_builder.with_operands_in_group(2, [boolean]);
+    assert!(op_builder.build().is_err(), "u32 must not satisfy the variadic Bool constraint");
+
+    let op = name.alloc_default(context.clone());
+    let mut op_builder = GenericOperationBuilder::new(&mut builder, op);
+    op_builder.with_operands_in_group(0, [boolean]);
+    op_builder.with_operands_in_group(1, []);
+    op_builder.with_operands_in_group(2, [boolean]);
+    let mut op = op_builder.build()?;
+    let invalid_operand = context.make_operand(integer, op, 0);
+    op.borrow_mut().operands_mut().push_to_group(1, invalid_operand);
+    assert!(op.borrow().downcast_ref::<GroupedOperands>().unwrap().verify(&context).is_err());
+    Ok(())
+}
+
+#[test]
+fn generic_operand_cardinality_is_checked_before_type_inference() {
+    let test = ParserTest::default();
+    test.context().get_or_register_dialect::<TestDialect>();
+    // Shl infers its result type from lhs. Missing operands must be rejected before that
+    // accessor runs, even when recursive verification is disabled.
+    let source = r#"builtin.function public extern("C") @missing() -> u32 {
+    %result = "test.shl"() : () -> u32;
+    builtin.ret %result : (u32);
+};"#;
+    let error = test
+        .parse_any_unverified("missing_inference_operand.hir", source)
+        .expect_err("missing operands must not reach type inference");
+    assert!(error.to_string().contains("invalid operand count"), "{error}");
+}
+
+#[test]
+fn generic_parser_rejects_incorrect_provided_successor_counts() -> TestResult {
+    use super::{
+        DefaultParser, OperationState, ParserState, Scanner, TokenStream,
+        operation::OperationParser,
+    };
+
+    for count in [0, 1, 3] {
+        let context = Rc::new(Context::default());
+        context.get_or_register_dialect::<TestDialect>();
+        let world = context.clone().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+        let tokens = TokenStream::new(super::SourceId::UNKNOWN, Scanner::new(": () -> ()"));
+        let parser =
+            DefaultParser::new(ParserState::new(ParserConfig::new(context.clone()), tokens));
+        let mut parser = OperationParser::new(parser, world);
+        let mut state = OperationState::new(
+            SourceSpan::UNKNOWN,
+            context.get_registered_name::<FixedSuccessors>(),
+        );
+        let successors = alloc::vec![context.create_block(); count];
+        let error = parser
+            .parse_generic_operation_after_name(
+                &mut state,
+                Some(&[]),
+                Some(&successors),
+                None,
+                None,
+                None,
+            )
+            .expect_err("provided successors must satisfy the declared count");
+        assert!(error.to_string().contains("invalid successor count"), "{error}");
+    }
+    Ok(())
+}
+
+#[test]
+fn generic_parser_rejects_provided_successors_with_multiple_groups() -> TestResult {
+    use super::{
+        DefaultParser, OperationState, ParserState, Scanner, TokenStream,
+        operation::OperationParser,
+    };
+
+    let context = Rc::new(Context::default());
+    context.get_or_register_dialect::<crate::dialects::test::TestDialect>();
+    let world = context.clone().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+    let tokens = TokenStream::new(super::SourceId::UNKNOWN, Scanner::new(": () -> ()"));
+    let parser = DefaultParser::new(ParserState::new(ParserConfig::new(context.clone()), tokens));
+    let mut parser = OperationParser::new(parser, world);
+    let mut state = OperationState::new(
+        SourceSpan::UNKNOWN,
+        context.get_registered_name::<GroupedSuccessors>(),
+    );
+    let error = parser
+        .parse_generic_operation_after_name(
+            &mut state,
+            Some(&[]),
+            Some(&[context.create_block()]),
+            None,
+            None,
+            None,
+        )
+        .expect_err("generic parsing must not flatten distinct successor groups");
+    assert!(
+        error
+            .to_string()
+            .contains("generic assembly cannot represent the successor layout"),
+        "{error}"
+    );
+    Ok(())
+}
+
+#[test]
+fn generic_parser_reserves_operand_groups_for_provided_successors() -> TestResult {
+    use super::{
+        DefaultParser, OperationState, ParserState, Scanner, TokenStream,
+        operation::OperationParser,
+    };
+
+    let context = Rc::new(Context::default());
+    context.get_or_register_dialect::<TestDialect>();
+    let world = context.clone().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+    for (name, count) in [
+        (context.get_registered_name::<VariadicSuccessors>(), 0),
+        (context.get_registered_name::<VariadicSuccessors>(), 3),
+        (context.get_registered_name::<FixedSuccessors>(), 2),
+        (context.get_registered_name::<Ret>(), 0),
+    ] {
+        let tokens = TokenStream::new(super::SourceId::UNKNOWN, Scanner::new(": () -> ()"));
+        let parser =
+            DefaultParser::new(ParserState::new(ParserConfig::new(context.clone()), tokens));
+        let mut parser = OperationParser::new(parser, world);
+        let mut state = OperationState::new(SourceSpan::UNKNOWN, name);
+        let successors = alloc::vec![context.create_block(); count];
+        parser.parse_generic_operation_after_name(
+            &mut state,
+            Some(&[]),
+            Some(&successors),
+            None,
+            None,
+            None,
+        )?;
+
+        assert_eq!(state.operands.len(), count + 1);
+        assert!(state.operands.iter().all(|group| group.is_empty()));
+        assert_eq!(state.successors.len(), count);
+        for (i, successor) in state.successors.iter().enumerate() {
+            assert_eq!(successor.block, successors[i]);
+            assert_eq!(successor.operand_group as usize, i + 1);
+        }
+    }
+    Ok(())
+}
 
 #[test]
 fn parse_simple_function() -> TestResult {
@@ -1064,4 +1310,31 @@ builtin.world {
     assert!(resolves("my-mod"));
     assert!(!resolves("\"my-mod\""));
     Ok(())
+}
+
+/// A generic-form operation with more successors than the 16-bit operand-group index can address
+/// is rejected by the parser instead of wrapping a successor onto an earlier operand group.
+#[test]
+fn parse_generic_operation_with_too_many_successors_is_rejected() {
+    let test = ParserTest::default();
+    test.context().get_or_register_dialect::<TestDialect>();
+    let name = test.context().get_registered_name::<VariadicSuccessors>();
+    // The op's own operands take group 0, so the successors fill the remaining 65,535 groups
+    // and the last one needs group 65,536
+    let successors = alloc::vec!["^dest"; u16::MAX as usize + 1].join(", ");
+    let source = format!(
+        "\
+builtin.function public extern(\"C\") @entrypoint(%a: i32) -> i32 {{
+    \"{name}\"()[{successors}] : () -> ();
+^dest:
+    builtin.ret %a : (i32);
+}};"
+    );
+
+    let error = test
+        .parse::<Function>("parse_generic_too_many_successors.hir", &source)
+        .err()
+        .expect("expected the operation to be rejected");
+    let message = format!("{error}");
+    assert!(message.contains("too many operand groups"), "{message}");
 }

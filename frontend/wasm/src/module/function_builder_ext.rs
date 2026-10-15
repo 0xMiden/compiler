@@ -107,7 +107,7 @@ impl Listener for SSABuilderListener {
         ListenerType::Builder
     }
 
-    fn notify_operation_inserted(&self, mut op: OperationRef, prev: ProgramPoint) {
+    fn notify_operation_inserted(&self, mut op: OperationRef, _prev: ProgramPoint) {
         let inline_calls = self.active_inline_calls.borrow().clone();
         if !inline_calls.is_empty() {
             let context = op.borrow().context_rc();
@@ -120,7 +120,7 @@ impl Listener for SSABuilderListener {
         let op = op.borrow();
         let mut builder = self.builder.borrow_mut();
 
-        let block = prev.block().expect("invalid program point");
+        let block = op.parent().expect("inserted operation has no parent block");
         if builder.is_pristine(&block) {
             builder.status.insert(block, BlockStatus::Partial);
         } else {

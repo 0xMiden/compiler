@@ -102,40 +102,13 @@ pub fn get_sysroot(toolchain: Option<&str>) -> CompilerResult<PathBuf> {
     Ok(sysroot)
 }
 
-/// Runs a Cargo command and exits the process with Cargo's status when the build fails.
+/// Runs a Cargo command and collects its Wasm artifacts, returning an error when the build fails.
 ///
-/// The frontend build paths use this so a failed user build ends the tool with Cargo's own
-/// exit code. Callers that must report the failure themselves use [`run_cargo`].
-pub fn spawn_cargo(cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>> {
-    let (status, artifacts) = run_cargo_inner(cmd, cargo)?;
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
-    }
-    Ok(artifacts)
-}
-
-/// Runs a Cargo command and returns an error when the build fails.
-///
-/// Nested builds such as the note codec build use this so their error context and recovery
-/// guidance reach the user instead of the process ending with Cargo's status.
-pub fn run_cargo(cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>> {
-    let (status, artifacts) = run_cargo_inner(cmd, cargo)?;
-    if !status.success() {
-        return Err(Report::msg(format!(
-            "`{cargo}` failed with {status}",
-            cargo = cargo.display()
-        )));
-    }
-    Ok(artifacts)
-}
-
-/// Spawns a Cargo command and collects its Wasm artifacts together with the exit status.
-fn run_cargo_inner(
-    mut cmd: Command,
-    cargo: &Path,
-) -> CompilerResult<(std::process::ExitStatus, Vec<Artifact>)> {
-    use std::io::BufRead;
-
+/// A failed build is reported, never turned into a process exit: `midenc` is embedded in-process
+/// by `cargo miden` and by the test harness, and only the embedding program owns the process.
+/// Cargo's own diagnostics reach the user through the inherited stderr; the returned report
+/// carries the exit status.
+pub fn run_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>> {
     log::debug!(target: "driver", "spawning command {cmd:?}");
 
     let timing = std::env::var("MIDENC_TEST_TIMINGS")
@@ -145,34 +118,12 @@ fn run_cargo_inner(
         Report::msg(format!("failed to spawn `{cargo}`: {err}", cargo = cargo.display()))
     })?;
 
-    let mut artifacts = Vec::new();
     let stdout = child.stdout.take().expect("no stdout");
-    let reader = std::io::BufReader::new(stdout);
-    for line in reader.lines() {
-        let line =
-            line.map_err(|err| Report::msg(format!("failed to read output from `cargo`: {err}")))?;
-
-        if line.is_empty() {
-            continue;
-        }
-
-        for message in Message::parse_stream(line.as_bytes()) {
-            let message = message
-                .map_err(|err| Report::msg(format!("unexpected JSON message from cargo: {err}")))?;
-            if let Message::CompilerArtifact(artifact) = message {
-                for path in &artifact.filenames {
-                    match path.extension() {
-                        Some("wasm") => {
-                            artifacts.push(artifact);
-                            break;
-                        }
-                        _ => continue,
-                    }
-                }
-            }
-        }
-    }
-
+    // The child is always waited for, even when its output cannot be read, so that an early
+    // return never leaves a running cargo process behind, un-waited and holding the build
+    // directory lock. Preserve output errors alongside a failed status: closing the output
+    // stream early can itself cause the child to fail.
+    let artifacts = collect_wasm_artifacts(stdout);
     let status = child.wait().map_err(|err| {
         Report::msg(format!(
             "failed to wait for `{cargo}` to finish: {err}",
@@ -188,7 +139,41 @@ fn run_cargo_inner(
         );
     }
 
-    Ok((status, artifacts))
+    if !status.success() {
+        let message = format!("`{cargo}` failed with {status}", cargo = cargo.display());
+        return Err(match artifacts {
+            Ok(_) => Report::msg(message),
+            Err(error) => error.wrap_err(message),
+        });
+    }
+
+    artifacts
+}
+
+/// Reads Cargo's JSON message stream from `stdout` and collects the artifacts with a Wasm output.
+fn collect_wasm_artifacts(stdout: std::process::ChildStdout) -> CompilerResult<Vec<Artifact>> {
+    use std::io::BufRead;
+
+    let mut artifacts = Vec::new();
+    for line in std::io::BufReader::new(stdout).lines() {
+        let line =
+            line.map_err(|err| Report::msg(format!("failed to read output from `cargo`: {err}")))?;
+
+        if line.is_empty() {
+            continue;
+        }
+
+        for message in Message::parse_stream(line.as_bytes()) {
+            let message = message
+                .map_err(|err| Report::msg(format!("unexpected JSON message from cargo: {err}")))?;
+            if let Message::CompilerArtifact(artifact) = message
+                && artifact.filenames.iter().any(|path| path.extension() == Some("wasm"))
+            {
+                artifacts.push(artifact);
+            }
+        }
+    }
+    Ok(artifacts)
 }
 
 pub fn rustup_toolchain() -> Option<String> {
@@ -283,5 +268,33 @@ mod tests {
         let error = run_cargo(cmd, Path::new("sh")).unwrap_err().to_string();
 
         assert!(error.contains("failed with"), "unexpected error: {error}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn run_cargo_preserves_output_errors_when_the_child_fails() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", r"printf '\377\n'; exit 3"])
+            .stdout(std::process::Stdio::piped());
+
+        let error = run_cargo(cmd, Path::new("sh")).unwrap_err();
+        let diagnostic = format!("{error:#}");
+
+        assert!(diagnostic.contains("failed to read output"), "unexpected error: {diagnostic}");
+        assert!(diagnostic.contains("UTF-8"), "unexpected error: {diagnostic}");
+        assert!(diagnostic.contains("exit status: 3"), "unexpected error: {diagnostic}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn run_cargo_preserves_output_errors_when_the_child_succeeds() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", r"printf '\377\n'"]).stdout(std::process::Stdio::piped());
+
+        let error = run_cargo(cmd, Path::new("sh")).unwrap_err();
+        let diagnostic = format!("{error:#}");
+
+        assert!(diagnostic.contains("failed to read output"), "unexpected error: {diagnostic}");
+        assert!(diagnostic.contains("UTF-8"), "unexpected error: {diagnostic}");
     }
 }

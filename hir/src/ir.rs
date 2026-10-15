@@ -53,7 +53,7 @@ pub use self::{
     },
     ident::{FunctionIdent, Ident, IdentAttr},
     immediates::{Felt, Immediate, ImmediateAttr},
-    op::{BuildableOp, Op, OpExt, OpRegistration},
+    op::{BuildableOp, GenericSuccessorLayout, Op, OpExt, OpRegistration},
     operands::{
         OpOperand, OpOperandImpl, OpOperandList, OpOperandRange, OpOperandRangeMut,
         OpOperandStorage,

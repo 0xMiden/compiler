@@ -160,7 +160,7 @@ impl InferTypeOpInterface for AdvicePipe {
             let span = self.span();
             let owner = self.as_operation_ref();
             for i in 0..WINDOW_SIZE {
-                let value = context.make_result(span, Type::Felt, owner, i as u8);
+                let value = context.make_result(span, Type::Felt, owner, i as u16);
                 self.op.results.push(value);
             }
         } else {

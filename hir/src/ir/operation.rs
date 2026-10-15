@@ -169,7 +169,7 @@ impl fmt::Debug for OperationRef {
 
 impl fmt::Display for OperationRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.borrow().name())
+        write!(f, "{}", self.name())
     }
 }
 
@@ -445,6 +445,69 @@ impl Operation {
 
 /// Verification
 impl Operation {
+    /// Check the operand group cardinalities declared by this operation's registration.
+    ///
+    /// This structural check runs before type inference and trait verification, both of which
+    /// may access operands by their declared indices. Successor argument groups are independent
+    /// of ordinary operands and are checked by the branch interface instead.
+    pub fn verify_operand_cardinality(&self) -> Result<(), Report> {
+        let declared = self.name().operand_group_sizes();
+        let invalid_count = |group, expected, actual| {
+            self.context()
+                .session()
+                .diagnostics
+                .diagnostic(crate::diagnostics::Severity::Error)
+                .with_message("invalid operand count")
+                .with_primary_label(
+                    self.span(),
+                    alloc::format!(
+                        "operand group {group} of '{}' expects {expected} operands, but has \
+                         {actual}",
+                        self.name()
+                    ),
+                )
+                .into_report()
+        };
+        for (group, expected) in declared.iter().copied().enumerate() {
+            if group >= self.operands.num_groups() {
+                return Err(self
+                    .context()
+                    .session()
+                    .diagnostics
+                    .diagnostic(crate::diagnostics::Severity::Error)
+                    .with_message("missing operand group")
+                    .with_primary_label(
+                        self.span(),
+                        alloc::format!("'{}' requires operand group {group}", self.name()),
+                    )
+                    .into_report());
+            }
+            let actual = self.operands.group(group).len();
+            if let Some(expected) = expected
+                && actual != expected
+            {
+                return Err(invalid_count(group, expected, actual));
+            }
+        }
+
+        // Unused reserved groups (including implicit group 0) may be empty. Any other populated
+        // group must belong to a successor. A set keeps this linear for wide switches.
+        let mut extra = self
+            .operands
+            .groups()
+            .enumerate()
+            .skip(declared.len())
+            .filter_map(|(group, operands)| (!operands.is_empty()).then_some(group))
+            .collect::<crate::FxHashSet<_>>();
+        for successor in self.successors.iter() {
+            extra.remove(&(successor.operand_group as usize));
+        }
+        if let Some(group) = extra.into_iter().min() {
+            return Err(invalid_count(group, 0, self.operands.group(group).len()));
+        }
+        Ok(())
+    }
+
     /// Run any verifiers for this operation
     pub fn verify(&self) -> Result<(), Report> {
         let dyn_op: &dyn Op = self.as_ref();
@@ -1047,7 +1110,7 @@ impl Operation {
             operands
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| context.make_operand(value, owner, index as u8)),
+                .map(|(index, value)| context.make_operand(value, owner, index as u16)),
         );
     }
 

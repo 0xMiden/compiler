@@ -701,10 +701,7 @@ pub(crate) fn apply_cargo_policy(
 
 /// Attributes a nested Cargo failure to the codec manifest.
 fn note_codec_cargo_error(error: Report, manifest_path: &Path) -> Report {
-    Report::msg(format!(
-        "the nested note codec build for '{}' failed: {error}",
-        manifest_path.display()
-    ))
+    error.wrap_err(format!("the nested note codec build for '{}' failed", manifest_path.display()))
 }
 
 /// Verifies the component sandbox and the versioned codec interface export.
@@ -1188,13 +1185,15 @@ mod tests {
 
     #[test]
     fn note_codec_cargo_errors_are_always_attributed() {
-        let error =
-            note_codec_cargo_error(Report::msg("rustc failed"), Path::new("/codec/Cargo.toml"))
-                .to_string();
+        let error = note_codec_cargo_error(
+            Report::msg("failed to read output").wrap_err("cargo failed"),
+            Path::new("/codec/Cargo.toml"),
+        );
 
         assert_eq!(
-            error,
-            "the nested note codec build for '/codec/Cargo.toml' failed: rustc failed"
+            format!("{error:#}"),
+            "the nested note codec build for '/codec/Cargo.toml' failed: cargo failed: failed to \
+             read output"
         );
     }
 

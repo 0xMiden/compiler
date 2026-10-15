@@ -3,6 +3,17 @@ use alloc::{boxed::Box, format, rc::Rc};
 use super::*;
 use crate::{AttributeRef, any::AsAny, interner, traits::TraitInfo};
 
+/// How an operation's declared successors map to generic assembly's single unkeyed list.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum GenericSuccessorLayout {
+    /// Keys or multiple successor groups cannot be represented by generic assembly.
+    Unsupported,
+    /// A fixed number of successors, including zero for operations without successors.
+    Fixed(usize),
+    /// A single group with any number of unkeyed successors.
+    Variadic,
+}
+
 pub trait OpRegistration: Op {
     type Dialect: DialectRegistration;
 
@@ -24,6 +35,18 @@ pub trait OpRegistration: Op {
     fn traits() -> Box<[TraitInfo]>;
     /// The set of statically known attributes for this op
     fn attrs() -> Box<[AttrInfo]>;
+    /// Cardinality of each declared ordinary operand group, excluding successor arguments.
+    ///
+    /// `Some(n)` requires exactly `n` operands; `None` denotes a variadic group. The operation
+    /// macro derives these entries from `#[operand]` and `#[operands]` declarations.
+    fn operand_group_sizes() -> &'static [Option<usize>];
+    /// The successor layout and cardinality accepted by generic assembly.
+    ///
+    /// The `operation` macro derives this from the successor declarations. Hand-written
+    /// registrations conservatively reject generic parsing unless they opt in.
+    fn generic_successor_layout() -> GenericSuccessorLayout {
+        GenericSuccessorLayout::Unsupported
+    }
     /// Allocate a new, default-initialized instance of this op in `context`
     fn alloc_uninit(context: Rc<Context>) -> OperationRef;
 }
@@ -45,6 +68,14 @@ pub trait Op: AsAny + OpVerifier {
     fn name(&self) -> OperationName;
     fn as_operation(&self) -> &Operation;
     fn as_operation_mut(&mut self) -> &mut Operation;
+
+    /// Check operand types against this operation's declared constraints.
+    ///
+    /// The operation derive supplies this check for declared operand groups. It runs after
+    /// cardinality validation, before type inference or other verifiers inspect operands.
+    fn verify_operand_types(&self) -> Result<(), crate::Report> {
+        Ok(())
+    }
 
     fn print(&self, flags: &OpPrintingFlags) -> crate::formatter::Document {
         use print::OpPrinter;

@@ -1,7 +1,7 @@
 // DIRECT-call twin of `case_indirect_spill_args.rs`: the same seven u64
 // locals, two of them rotated in place by runtime counts, passed to a
 // pinned direct 7-u64 call (`hir.exec` keeps its arguments in operand
-// group 0, so the spill analysis reloads them) — compiles and passes.
+// group 0, which the spill analysis always modelled) — compiles and passes.
 type Wide = fn(u64, u64, u64, u64, u64, u64, u64) -> u64;
 
 #[inline(never)]

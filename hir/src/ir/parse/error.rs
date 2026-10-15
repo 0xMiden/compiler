@@ -181,7 +181,7 @@ pub enum ParserError {
     ResultCountMismatch {
         span: SourceSpan,
         count: usize,
-        expected: u8,
+        expected: usize,
     },
     #[error("invalid successor list")]
     #[diagnostic()]
@@ -208,6 +208,28 @@ pub enum ParserError {
     NonTerminatorWithSuccessors {
         #[label("non-terminator operations cannot have successors")]
         span: SourceSpan,
+    },
+    #[error("generic assembly cannot represent the successor layout of '{name}'")]
+    #[diagnostic(help("use the operation's custom assembly syntax instead"))]
+    UnsupportedGenericSuccessorLayout {
+        #[label("generic successors cannot encode keys or multiple successor groups")]
+        span: SourceSpan,
+        name: String,
+    },
+    #[error("invalid successor count")]
+    #[diagnostic()]
+    InvalidSuccessorCount {
+        #[label("expected {expected} successors, but found {actual}")]
+        span: SourceSpan,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("too many operand groups")]
+    #[diagnostic()]
+    TooManyOperandGroups {
+        #[label("this successor needs an operand group past the limit of {limit}")]
+        span: SourceSpan,
+        limit: usize,
     },
     #[error("invalid operation type")]
     #[diagnostic()]

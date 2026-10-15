@@ -1,0 +1,15 @@
+// RUN: not hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(sccp))' 2>&1 | filecheck %s
+
+// Reject the malformed branch before SCCP tries to read its missing condition.
+// CHECK: invalid operand count
+// CHECK: operand group 0 of 'cf.cond_br' expects 1 operands, but has 0
+
+builtin.module public @test {
+    builtin.function public extern("C") @branch(%a: u32) -> u32 {
+        "cf.cond_br"()[^yes, ^no] : () -> ();
+    ^yes:
+        builtin.ret %a : (u32);
+    ^no:
+        builtin.ret %a : (u32);
+    };
+};

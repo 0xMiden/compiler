@@ -981,6 +981,37 @@ builtin.function public extern(\"C\") @pick(%c: i1, %a: u32, %b: u32) -> u32 {
         Ok(())
     }
 
+    /// An op with more than 255 results prints and re-parses, one SSA name per result.
+    #[test]
+    fn parse_wide_result_list() -> Result<(), Report> {
+        const NUM_RESULTS: usize = 256;
+
+        let context = Rc::new(Context::default());
+        let names = (0..NUM_RESULTS).map(|i| format!("%r{i}")).collect::<Vec<_>>().join(", ");
+        let values = ["%a"; NUM_RESULTS].join(", ");
+        let types = ["u32"; NUM_RESULTS].join(", ");
+        let source = format!(
+            "\
+builtin.function public extern(\"C\") @wide(%c: i1, %a: u32) -> u32 {{
+    {names} = scf.if %c then {{
+        scf.yield {values} : ({types});
+    }} else {{
+        scf.yield {values} : ({types});
+    }} : (i1) -> ({types});
+    builtin.ret %r{last} : (u32);
+}};",
+            last = NUM_RESULTS - 1
+        );
+        let (function, _printed) =
+            parse_function_fixpoint(&context, "parse_wide_result_list.hir", &source)?;
+
+        let function = function.borrow();
+        let if_op = find_op::<If>(&function);
+        assert_eq!(if_op.borrow().num_results(), NUM_RESULTS);
+
+        Ok(())
+    }
+
     /// `scf.index_switch` regions parse with the default region first, matching the accessors
     /// (`default_region` is region 0, case regions follow in case order).
     #[test]

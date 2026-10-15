@@ -854,8 +854,6 @@ fn physical_lint_type_parts(ty: &Type) -> Vec<Type> {
 
 fn validate_lint_signature(path: &ast::Path, signature: &Signature) -> Result<()> {
     let checks = [
-        (signature.params().len(), u8::MAX as usize, "has", "parameter", "HIR operand"),
-        (signature.results().len(), u8::MAX as usize, "returns", "value", "HIR operand"),
         (
             signature.params().len(),
             LINT_SIGNATURE_VALUE_LIMIT,
@@ -1032,13 +1030,13 @@ impl<'a> ProcedurePreparer<'a> {
                 self.stack.len()
             )));
         }
-        if results.len() > u8::MAX as usize {
+        if results.len() > u16::MAX as usize {
             return Err(Report::msg(format!(
                 "procedure '{}::{}' returns {} value(s), exceeding the HIR operand limit of {}",
                 self.registry.linker[self.item.module].path(),
                 self.procedure.name(),
                 results.len(),
-                u8::MAX
+                u16::MAX
             )));
         }
         builder.ret(results, self.procedure.span())?;

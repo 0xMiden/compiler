@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
-    BlockArgument, Builder, EntityWithId, Forward, FunctionType, FxHashSet, InsertionGuard, Op,
-    PendingSuccessorInfo, RawWalk, Value, WalkResult,
+    BlockArgument, Builder, EntityWithId, Forward, FunctionType, FxHashSet, GenericSuccessorLayout,
+    InsertionGuard, Op, PendingSuccessorInfo, RawWalk, Value, WalkResult,
     adt::{SmallDenseMap, SmallSet},
     dialects::builtin::{
         UnrealizedConversionCast, WorldRef,
@@ -115,11 +115,23 @@ impl OpOrArgument {
     }
 }
 
+/// The operand group of the `index`th successor of a generic-form operation, whose successor
+/// operands follow the single operand group of the op itself.
+///
+/// Fails when the group index does not fit the 16-bit index an operation stores.
+fn successor_operand_group(index: usize, span: SourceSpan) -> ParseResult<u16> {
+    u16::try_from(index + 1).map_err(|_| ParserError::TooManyOperandGroups {
+        span,
+        limit: u16::MAX as usize,
+    })
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct ResultRecord {
     pub loc: SourceSpan,
     pub id: interner::Symbol,
-    pub count: u8,
+    /// The number of consecutive results bound to the name, at most [ValueId::MAX_NAMED_RESULTS]
+    pub count: usize,
 }
 
 /// This struct represents an isolated SSA name scope.
@@ -638,7 +650,7 @@ where
         let start = self.parser.token_stream().current_position();
 
         let mut result_ids = SmallVec::<[ResultRecord; 1]>::new_const();
-        let mut num_expected_results = 0;
+        let mut num_expected_results = 0usize;
         if self
             .parser
             .token_stream_mut()
@@ -667,13 +679,14 @@ where
                             _ => None,
                         })?
                         .into_parts();
-                    let count = count_str.parse::<u8>().map_err(|err| {
+                    let count = count_str.parse::<usize>().map_err(|err| {
                         ParserError::InvalidIntegerLiteral {
                             span: count_span,
                             reason: err.to_string(),
                         }
                     })?;
-                    if count == 0 {
+                    // A shared name encodes the result index in the value id, which bounds it.
+                    if count == 0 || count > ValueId::MAX_NAMED_RESULTS {
                         return Err(ParserError::InvalidResultCount { span: count_span });
                     }
                     end = count_span.end();
@@ -724,7 +737,7 @@ where
             let op = op.borrow();
             match op.num_results() {
                 0 => return Err(ParserError::NamedOpWithNoResults { span: name_span }),
-                n if n != num_expected_results as usize => {
+                n if n != num_expected_results => {
                     return Err(ParserError::ResultCountMismatch {
                         span: name_span,
                         count: n,
@@ -738,9 +751,9 @@ where
             if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
                 let mut asm_result_groups = SmallVec::<[_; 4]>::new_const();
                 asm_result_groups.reserve(result_ids.len());
-                let mut result_index = 0;
+                let mut result_index = 0usize;
                 for record in result_ids.iter() {
-                    asm_result_groups.push((result_index as usize, record.loc));
+                    asm_result_groups.push((result_index, record.loc));
                     result_index += record.count;
                 }
                 asm_state.finalize_operation_definition(
@@ -765,7 +778,8 @@ where
                     let name = if result_record.count == 1 {
                         name
                     } else {
-                        name.with_result_index(result_index)
+                        // Bounded by the check on `count` when the record was parsed
+                        name.with_result_index(result_index as u8)
                     };
                     let use_info = UnresolvedOperand {
                         loc: result_record.loc,
@@ -822,6 +836,12 @@ where
 
             Ok(true)
         })?;
+
+        // The ids are resolved after the list is parsed, since the list parser holds the parser
+        for id in succ_ids {
+            let (span, id) = id.into_parts();
+            destinations.push(self.get_block_named(id, span).into_inner());
+        }
 
         if destinations.is_empty() {
             let source_id = self.source_id();
@@ -938,6 +958,14 @@ where
         parsed_attributes: Option<ParsedAttrs>,
         parsed_fn_type: Option<FunctionType>,
     ) -> ParseResult {
+        let successor_layout = result.name.generic_successor_layout();
+        if successor_layout == GenericSuccessorLayout::Unsupported {
+            return Err(ParserError::UnsupportedGenericSuccessorLayout {
+                span: result.span,
+                name: result.name.to_string(),
+            });
+        }
+
         // Parse the operand list, if not explicitly provided.
         let mut operand_info = SmallVec::<[UnresolvedOperand; 8]>::default();
         if let Some(provided_use_info) = parsed_operand_use_info {
@@ -947,20 +975,17 @@ where
             self.parse_optional_ssa_use_list(&mut operand_info)?;
             self.parser.parse_rparen()?;
         }
-        if !operand_info.is_empty() {
-            result.operands.push(Default::default());
-        }
 
         // Parse the successor list, if not explicitly provided.
         if let Some(provided_succs) = parsed_successors {
-            result.successors.extend(provided_succs.iter().copied().enumerate().map(
-                |(i, block)| PendingSuccessorInfo {
+            for (i, block) in provided_succs.iter().copied().enumerate() {
+                result.successors.push(PendingSuccessorInfo {
                     block,
                     key: None,
-                    operand_group: (i + 1) as u8,
+                    operand_group: successor_operand_group(i, result.span)?,
                     successor_group: 0,
-                },
-            ));
+                });
+            }
         } else if self.parser.token_stream_mut().is_next(|tok| matches!(tok, Token::Lbracket)) {
             // Check if the operation is not a known terminator.
             if !result.name.implements::<dyn Terminator>() {
@@ -968,15 +993,29 @@ where
             }
             let mut successors = SmallVec::<[_; 2]>::default();
             self.parse_successors(&mut successors)?;
-            result.successors.extend(successors.into_iter().enumerate().map(|(i, block)| {
-                PendingSuccessorInfo {
+            for (i, block) in successors.into_iter().enumerate() {
+                result.successors.push(PendingSuccessorInfo {
                     block,
                     key: None,
-                    operand_group: (i + 1) as u8,
+                    operand_group: successor_operand_group(i, result.span)?,
                     successor_group: 0,
-                }
-            }));
+                });
+            }
         }
+
+        if let GenericSuccessorLayout::Fixed(expected) = successor_layout
+            && result.successors.len() != expected
+        {
+            return Err(ParserError::InvalidSuccessorCount {
+                span: result.span,
+                expected,
+                actual: result.successors.len(),
+            });
+        }
+
+        // Generic operations keep their own operands in group 0, followed by one group per
+        // successor. These groups must exist even when they have no operands.
+        result.operands.resize_with(result.successors.len() + 1, Default::default);
 
         // Parse the region list, if not explicitly provided.
         if let Some(provided_regions) = parsed_regions {
@@ -1825,7 +1864,7 @@ where
     ///    getResultName(1) == {"y", 0 }
     ///    getResultName(2) == {"y", 1 }
     ///    getResultName(3) == {"z", 0 }
-    fn get_result_name(&self, mut result_num: u8) -> Option<(interner::Symbol, u8)> {
+    fn get_result_name(&self, mut result_num: usize) -> Option<(interner::Symbol, usize)> {
         // Scan for the resultID that contains this result number.
         for entry in self.result_ids {
             if result_num < entry.count {
@@ -1841,7 +1880,7 @@ where
     /// Return the number of declared SSA results.  This returns 4 for the foo.op example in the
     /// comment for [Self:get_result_name].
     fn get_num_results(&self) -> usize {
-        self.result_ids.iter().map(|entry| entry.count as usize).sum()
+        self.result_ids.iter().map(|entry| entry.count).sum()
     }
 
     /// Parse a single operand.

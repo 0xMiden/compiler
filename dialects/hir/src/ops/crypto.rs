@@ -182,7 +182,7 @@ macro_rules! infer_felt_outputs {
                     let span = self.span();
                     let owner = self.as_operation_ref();
                     for i in 0..$output_count {
-                        let value = context.make_result(span, Type::Felt, owner, i as u8);
+                        let value = context.make_result(span, Type::Felt, owner, i as u16);
                         self.op.results.push(value);
                     }
                 } else {

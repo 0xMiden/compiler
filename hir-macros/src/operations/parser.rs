@@ -182,7 +182,11 @@ impl quote::ToTokens for DeriveOpParser {
                                 };
                                 next_operand_group += 1;
                                 let block_ref = parser.parse_successor_and_use_list(&mut state.operands[operand_group])?;
-                                state.add_keyed_successor(key, block_ref.into_inner(), operand_group as u8, #succ_group_index_lit);
+                                let operand_group = u16::try_from(operand_group).map_err(|_| ParserError::TooManyOperandGroups {
+                                    span: ::midenc_hir::Spanned::span(&block_ref),
+                                    limit: u16::MAX as usize,
+                                })?;
+                                state.add_keyed_successor(key, block_ref.into_inner(), operand_group, #succ_group_index_lit);
 
                                 Ok(true)
                             })?;
@@ -203,7 +207,11 @@ impl quote::ToTokens for DeriveOpParser {
                                 };
                                 next_operand_group += 1;
                                 let block_ref = parser.parse_successor_and_use_list(&mut state.operands[operand_group])?;
-                                state.add_successor(block_ref.into_inner(), operand_group as u8, #succ_group_index_lit);
+                                let operand_group = u16::try_from(operand_group).map_err(|_| ParserError::TooManyOperandGroups {
+                                    span: ::midenc_hir::Spanned::span(&block_ref),
+                                    limit: u16::MAX as usize,
+                                })?;
+                                state.add_successor(block_ref.into_inner(), operand_group, #succ_group_index_lit);
 
                                 Ok(true)
                             })?;
@@ -229,7 +237,11 @@ impl quote::ToTokens for DeriveOpParser {
                                     state.operands.push(Default::default());
                                 }
                                 let block_ref = parser.parse_successor_and_use_list(&mut state.operands[operand_group])?;
-                                state.add_successor(block_ref.into_inner(), operand_group as u8, #succ_group_index_lit);
+                                let operand_group = u16::try_from(operand_group).map_err(|_| ParserError::TooManyOperandGroups {
+                                    span: ::midenc_hir::Spanned::span(&block_ref),
+                                    limit: u16::MAX as usize,
+                                })?;
+                                state.add_successor(block_ref.into_inner(), operand_group, #succ_group_index_lit);
                             }
                         });
                     }

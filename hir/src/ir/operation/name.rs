@@ -7,8 +7,8 @@ use core::{
 
 use super::{OpRegistration, OperationRef};
 use crate::{
-    Attribute, AttributeRef, AttributeRegistration, Context, EntityMut, EntityRef, OperationState,
-    UnsafeIntrusiveEntityRef, interner, parse,
+    Attribute, AttributeRef, AttributeRegistration, Context, EntityMut, EntityRef,
+    GenericSuccessorLayout, OperationState, UnsafeIntrusiveEntityRef, interner, parse,
     patterns::RewritePatternSet,
     traits::{Canonicalizable, TraitInfo},
 };
@@ -40,6 +40,10 @@ struct OperationInfo {
     alloc_default: AllocDefaultFn,
     /// The custom assembly parser for this operation
     parse_assembly: Option<ParseAssemblyFn>,
+    /// The successor layout and cardinality accepted by generic assembly
+    generic_successor_layout: GenericSuccessorLayout,
+    /// Cardinalities of the declared ordinary operand groups, excluding successor arguments
+    operand_group_sizes: &'static [Option<usize>],
 }
 
 type AttrValueGetRaw = unsafe fn(*const (), &AttrInfo) -> AttributeRef;
@@ -253,6 +257,8 @@ impl OperationName {
             get_canonicalization_patterns,
             alloc_default,
             parse_assembly,
+            generic_successor_layout: T::generic_successor_layout(),
+            operand_group_sizes: T::operand_group_sizes(),
         }))
     }
 
@@ -282,6 +288,18 @@ impl OperationName {
     #[inline(always)]
     pub fn parse_assembly_fn(&self) -> Option<ParseAssemblyFn> {
         self.0.parse_assembly
+    }
+
+    /// Returns the successor layout and cardinality accepted by generic assembly.
+    #[inline]
+    pub fn generic_successor_layout(&self) -> GenericSuccessorLayout {
+        self.0.generic_successor_layout
+    }
+
+    /// Returns the declared ordinary operand group sizes (`None` for variadic groups).
+    #[inline]
+    pub fn operand_group_sizes(&self) -> &'static [Option<usize>] {
+        self.0.operand_group_sizes
     }
 
     /// Populates `rewrites` with the set of canonicalization patterns registered for this operation

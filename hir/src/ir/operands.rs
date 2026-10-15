@@ -19,11 +19,12 @@ pub struct OpOperandImpl {
     /// The owner of this operand, i.e. the operation it is an operand of
     pub owner: OperationRef,
     /// The index of this operand in the operand list of an operation
-    pub index: u8,
+    pub index: u16,
 }
 impl OpOperandImpl {
+    /// Create an operand of `owner` at position `index` of its operand list, using `value`
     #[inline]
-    pub fn new(value: ValueRef, owner: OperationRef, index: u8) -> Self {
+    pub fn new(value: ValueRef, owner: OperationRef, index: u16) -> Self {
         Self {
             value: Some(value),
             owner,
@@ -54,15 +55,17 @@ impl OpOperandImpl {
         self.value().ty().clone()
     }
 
-    pub fn operand_group(&self) -> u8 {
+    /// Get the index of the operand group of the owning operation that this operand belongs to
+    ///
+    /// Panics if the operand is not within any operand group of its owner.
+    pub fn operand_group(&self) -> usize {
         let owner = self.owner.borrow();
         let operands = owner.operands();
         let operand_index = self.index as usize;
-        let group_index = operands
+        operands
             .groups()
             .position(|group| group.range().contains(&operand_index))
-            .expect("broken operand reference!");
-        group_index as u8
+            .expect("broken operand reference!")
     }
 
     /// Set the operand value to `value`, removing the operand from the use list of the previous
