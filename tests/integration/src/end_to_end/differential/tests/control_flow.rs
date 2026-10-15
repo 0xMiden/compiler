@@ -282,13 +282,13 @@ fn carried_sets() {
 
 /// Campaign 11 ladder 4 (nesting depth) boundary guard: eight nested loops,
 /// three of them zero-trip-capable, with escapes (continue / labeled breaks
-/// / return) from four different depths. Eight is the deepest nest that
-/// compiles at the default opt-level: cfg-to-scf threads every escaping
+/// / return) from four different depths. cfg-to-scf threads every escaping
 /// value and exit discriminator outward as REGION-OP RESULT columns, so the
 /// widest lifted `scf.if` here already carries fifteen u32 results; one
-/// more level overflows the 16-felt budget (`deep_nest_overflow` below).
-/// The same source fails under `--optimize=size-min` (`nest8_oz` in
-/// `opt_levels.rs`), where LLVM keeps more of the nest as loops.
+/// more level exceeds the 16-felt window (`deep_nest_overflow` below), which
+/// `narrow-region-ops` now moves to procedure locals. The same source under
+/// `--optimize=size-min` is `nest8_oz` in `opt_levels.rs`, where LLVM keeps
+/// more of the nest as loops.
 #[test]
 fn nest8() {
     run_case("nest8", include_str!("../cases/case_nest8.rs"));
@@ -624,10 +624,12 @@ fn wide_exits_edges() {
     );
 }
 
-/// Deeply nested control flow must report an unsupported region-exit budget.
-/// The compilation harness panics with the returned diagnostic; a compiler panic does not match.
+/// One nesting level deeper than [`nest8`]: the widest lifted `scf.if` carries more than the
+/// 16-felt window, and a live-through value is resident on every exit of it. The case pinned the
+/// "its region results" diagnostic until #1459; `narrow-region-ops` moves the excess results to
+/// procedure locals and the spill analysis evicts the live-through value at the region exit, so
+/// the case compiles and agrees with native.
 #[test]
-#[should_panic(expected = "its region results")]
 fn deep_nest_overflow() {
     run_case_with_flags(
         "deep_nest_overflow",

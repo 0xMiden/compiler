@@ -460,6 +460,25 @@ impl core::fmt::Display for Placement {
 /// stack, such as the narrowing of structured control flow ops, size their work against this bound.
 pub const K: usize = 16;
 
+/// The number of operand stack elements the results of a region op occupy at once when control
+/// leaves it, together with what the terminator forwarding them schedules in the same step: a
+/// loop-like op forwards its results through a condition whose flag sits on the stack beside them.
+///
+/// This analysis and the transforms that narrow region ops both size their work against this
+/// demand, so the two cannot drift apart.
+pub fn region_results_demand(op: &Operation) -> usize {
+    let results = op
+        .results()
+        .iter()
+        .map(|result| result.borrow().ty().size_in_felts())
+        .sum::<usize>();
+    if op.implements::<dyn LoopLikeOpInterface>() {
+        results + 1
+    } else {
+        results
+    }
+}
+
 /// Report an operation whose operands cannot all be made reachable at once.
 ///
 /// Spilling frees operand stack space by evicting values the current operation does not use, so
@@ -1032,11 +1051,7 @@ impl SpillAnalysis {
 
         let op = branch.as_operation();
         // A spill after the region op cannot make an oversized incoming yield addressable.
-        let result_usage = branch
-            .results()
-            .iter()
-            .map(|result| result.borrow().ty().size_in_felts())
-            .sum::<usize>();
+        let result_usage = region_results_demand(op);
         if result_usage > K {
             return Err(operand_stack_overflow(op, result_usage, "its region results"));
         }
@@ -1625,7 +1640,36 @@ impl SpillAnalysis {
             }
         }
 
-        let taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
+        let entry = ProgramPoint::after(operation);
+        let entry_next_uses = liveness.next_uses_at(&entry).unwrap();
+
+        let mut taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
+        if taken > K {
+            // The results are the op's own and stay. The live-through values resident on every
+            // exit are evicted instead, furthest next use first: the caller spills an evicted value
+            // before the op, where it is still resident, and its next use reloads it.
+            let results = branch
+                .results()
+                .iter()
+                .map(|result| ValueOrAlias::new(*result as ValueRef))
+                .collect::<SmallSet<_, 4>>();
+            let mut residents =
+                take.iter().filter(|o| !results.contains(*o)).copied().collect::<Vec<_>>();
+            residents.sort_by(|a, b| {
+                entry_next_uses
+                    .distance(b)
+                    .cmp(&entry_next_uses.distance(a))
+                    .then(b.stack_size().cmp(&a.stack_size()))
+            });
+            for resident in residents {
+                if taken <= K {
+                    break;
+                }
+                take.remove(&resident);
+                taken -= resident.stack_size();
+                self.evictions.push(resident.value());
+            }
+        }
         if taken > K {
             return Err(operand_stack_overflow(
                 branch.as_operation(),
@@ -1633,9 +1677,6 @@ impl SpillAnalysis {
                 "its region results and live-through values",
             ));
         }
-
-        let entry = ProgramPoint::after(operation);
-        let entry_next_uses = liveness.next_uses_at(&entry).unwrap();
 
         // Prefer to select candidates with the smallest next-use distance, otherwise all else being
         // equal, choose to keep smaller values on the operand stack, and spill larger values, thus

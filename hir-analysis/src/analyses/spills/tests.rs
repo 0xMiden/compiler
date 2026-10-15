@@ -943,7 +943,8 @@ fn loop_like_entry_keeps_block_parameters_resident() -> AnalysisResult<()> {
     let span = SourceSpan::UNKNOWN;
 
     // Eight u64 loop-carried values fill the window by themselves, so there is no spare capacity
-    // to keep live-through values resident on top of the ones used soon.
+    // to keep live-through values resident on top of the ones used soon. The condition forwards
+    // the last one narrowed, so the results and the condition flag still fit.
     test.with_function(
         "loop_like_entry_keeps_block_parameters_resident",
         &alloc::vec![Type::U64; 8],
@@ -963,7 +964,9 @@ fn loop_like_entry_keeps_block_parameters_resident() -> AnalysisResult<()> {
 
         // The outer loop carries the eight arguments; its body uses two of them to seed the inner
         // loop and the other six only after it, past the inner loop's exit distance.
-        let outer = b.r#while(inits.iter().copied(), &alloc::vec![Type::U64; 8], span)?;
+        let mut result_tys = alloc::vec![Type::U64; 7];
+        result_tys.push(Type::U32);
+        let outer = b.r#while(inits.iter().copied(), &result_tys, span)?;
         let (before_block, after_block) = {
             let outer = outer.borrow();
             (
@@ -1006,14 +1009,19 @@ fn loop_like_entry_keeps_block_parameters_resident() -> AnalysisResult<()> {
         }
         let limit = b.u64(1000, span);
         let keep_going = b.lt(total, limit, span)?;
-        b.condition(keep_going, params.iter().copied(), span)?;
+        let narrowed = b.trunc(params[7], Type::U32, span)?;
+        let mut forwarded = params[..7].to_vec();
+        forwarded.push(narrowed);
+        b.condition(keep_going, forwarded, span)?;
         b.switch_to_block(after_block);
-        let carried = after_block
+        let mut carried = after_block
             .borrow()
             .arguments()
             .iter()
             .map(|arg| *arg as ValueRef)
             .collect::<alloc::vec::Vec<_>>();
+        let widened = b.zext(carried[7], Type::U64, span)?;
+        carried[7] = widened;
         b.r#yield(carried, span)?;
 
         b.switch_to_block(entry);
@@ -1045,7 +1053,8 @@ fn loop_like_entry_keeps_block_parameters_resident() -> AnalysisResult<()> {
 /// fill then keeps live-through values resident that the body cannot hold.
 #[test]
 fn loop_like_pressure_includes_the_before_region_and_nested_branches() -> AnalysisResult<()> {
-    let mut test = Test::named("loop_like_pressure_includes_the_before_region").in_module("test");
+    let mut test = Test::named("loop_like_pressure_includes_the_before_region_and_nested_branches")
+        .in_module("test");
 
     let span = SourceSpan::UNKNOWN;
 
@@ -1143,6 +1152,142 @@ fn loop_like_pressure_includes_the_before_region_and_nested_branches() -> Analys
     assert!(
         !w_entry.iter().any(|resident| resident.value() == live_through),
         "expected {live_through} to be evicted across the loop, got W^entry = {w_entry:?}"
+    );
+
+    Ok(())
+}
+
+/// At the exit of a region op, the values resident on every exit path compete with the results for
+/// the window. Results cannot be moved, so a live-through value that does not fit is evicted and
+/// spilled before the op instead of failing the analysis.
+#[test]
+fn region_exit_evicts_live_through_values_that_do_not_fit() -> AnalysisResult<()> {
+    let mut test =
+        Test::named("region_exit_evicts_live_through_values_that_do_not_fit").in_module("test");
+
+    let span = SourceSpan::UNKNOWN;
+
+    test.with_function(
+        "region_exit_evicts_live_through_values_that_do_not_fit",
+        &[Type::I1, Type::U32, Type::U32],
+        &[Type::U32],
+    );
+    let func = test.function();
+
+    let live_through = {
+        let mut b = test.function_builder();
+        let entry = b.current_block();
+        let (cond, value, live_through) = {
+            let entry = entry.borrow();
+            let args = entry.arguments();
+            (args[0] as ValueRef, args[1] as ValueRef, args[2] as ValueRef)
+        };
+
+        // Sixteen u32 results fill the window by themselves; `live_through` is resident across
+        // the op and used after it.
+        let result_tys = alloc::vec![Type::U32; 16];
+        let scf_if = b.r#if(cond, &result_tys, span)?;
+        let if_results = scf_if
+            .borrow()
+            .results()
+            .all()
+            .iter()
+            .map(|r| r.borrow().as_value_ref())
+            .collect::<alloc::vec::Vec<_>>();
+        let (then_region, else_region) = {
+            let if_op = scf_if.borrow();
+            (if_op.then_body().as_region_ref(), if_op.else_body().as_region_ref())
+        };
+        let then_block = b.create_block_in_region(then_region);
+        b.switch_to_block(then_block);
+        b.r#yield(alloc::vec![value; 16], span)?;
+        let else_block = b.create_block_in_region(else_region);
+        b.switch_to_block(else_block);
+        let seven = b.u32(7, span);
+        b.r#yield(alloc::vec![seven; 16], span)?;
+
+        b.switch_to_block(entry);
+        let mut total = live_through;
+        for result in if_results {
+            total = b.add_wrapping(total, result, span)?;
+        }
+        b.ret(Some(total), span)?;
+        live_through
+    };
+
+    let am = AnalysisManager::new(func.as_operation_ref(), None);
+    let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
+
+    assert!(
+        spills.is_spilled(&live_through),
+        "expected the live-through value to be spilled around the op"
+    );
+
+    Ok(())
+}
+
+/// The results of a loop-like op are forwarded by a condition whose flag is on the stack beside
+/// them, so sixteen felts of results already exceed the window.
+#[test]
+fn loop_like_results_demand_counts_the_condition_flag() -> AnalysisResult<()> {
+    let mut test =
+        Test::named("loop_like_results_demand_counts_the_condition_flag").in_module("test");
+
+    let span = SourceSpan::UNKNOWN;
+
+    test.with_function(
+        "loop_like_results_demand_counts_the_condition_flag",
+        &alloc::vec![Type::U32; 16],
+        &[Type::U32],
+    );
+    let func = test.function();
+
+    {
+        let mut b = test.function_builder();
+        let entry = b.current_block();
+        let inits = entry
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<alloc::vec::Vec<_>>();
+        let while_op = b.r#while(inits.iter().copied(), &alloc::vec![Type::U32; 16], span)?;
+        let (before_block, after_block) = {
+            let while_op = while_op.borrow();
+            (
+                while_op.before().entry_block_ref().unwrap(),
+                while_op.after().entry_block_ref().unwrap(),
+            )
+        };
+        b.switch_to_block(before_block);
+        let params = before_block
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<alloc::vec::Vec<_>>();
+        let keep_going = b.lt(params[0], params[15], span)?;
+        b.condition(keep_going, params.iter().copied(), span)?;
+        b.switch_to_block(after_block);
+        let carried = after_block
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<alloc::vec::Vec<_>>();
+        b.r#yield(carried, span)?;
+        b.switch_to_block(entry);
+        let result = while_op.borrow().results()[0] as ValueRef;
+        b.ret(Some(result), span)?;
+    }
+
+    let am = AnalysisManager::new(func.as_operation_ref(), None);
+    let error = am.get_analysis_for::<SpillAnalysis, Function>().expect_err("oversized results");
+    assert!(
+        error
+            .to_string()
+            .contains("needs 17 operand stack elements at once for its region results"),
+        "{error:?}"
     );
 
     Ok(())
