@@ -1,0 +1,18 @@
+coverage:
+  paths:
+    - rust-coverage.xml
+  acceptable: 75%
+testExecutionTime:
+  if: false
+diff:
+  datastores:
+    - artifact://${GITHUB_REPOSITORY}
+comment:
+  if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == env.GITHUB_REPOSITORY
+  updatePrevious: true
+summary:
+  if: true
+report:
+  if: github.event_name == 'push' && github.ref == 'refs/heads/next' && env.COVERAGE_COMPLETE == 'success'
+  datastores:
+    - artifact://${GITHUB_REPOSITORY}
