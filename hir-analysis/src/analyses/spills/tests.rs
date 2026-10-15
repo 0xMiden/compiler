@@ -931,20 +931,23 @@ fn spills_cfg_with_dead_blocks() -> AnalysisResult<()> {
 
 /// The block parameters of a loop-like region's entry block are on the operand stack when the
 /// region is entered, so W^entry must hold every one of them, even when the body's first use of a
-/// parameter is deep inside a nested loop. Leaving one out would make it a value the analysis
-/// never spills but the emitter still holds: its later reloads then have no spill to pair with,
-/// the uses keep the original value past the point the analysis evicted it, and the operand stack
-/// overflows in the emitter.
+/// parameter lies past the exit of a nested loop, i.e. beyond the next-use distance the analysis
+/// treats as "used in the loop". Leaving one out would make it a value the analysis never spills
+/// but the emitter still holds: its later reloads then have no spill to pair with, the uses keep
+/// the original value past the point the analysis evicted it, and the operand stack overflows in
+/// the emitter.
 #[test]
 fn loop_like_entry_keeps_block_parameters_resident() -> AnalysisResult<()> {
     let mut test = Test::named("loop_like_entry_keeps_block_parameters_resident").in_module("test");
 
     let span = SourceSpan::UNKNOWN;
 
+    // Eight u64 loop-carried values fill the window by themselves, so there is no spare capacity
+    // to keep live-through values resident on top of the ones used soon.
     test.with_function(
         "loop_like_entry_keeps_block_parameters_resident",
-        &[Type::U32, Type::U32, Type::U32, Type::U32],
-        &[Type::U32],
+        &alloc::vec![Type::U64; 8],
+        &[Type::U64],
     );
     let func = test.function();
 
@@ -958,9 +961,9 @@ fn loop_like_entry_keeps_block_parameters_resident() -> AnalysisResult<()> {
             .map(|arg| *arg as ValueRef)
             .collect::<alloc::vec::Vec<_>>();
 
-        // The outer loop carries the four arguments; its body only uses them inside the inner
-        // loop, so their next use at the outer entry lies past the inner loop's exit distance.
-        let outer = b.r#while(inits.iter().copied(), &alloc::vec![Type::U32; 4], span)?;
+        // The outer loop carries the eight arguments; its body uses two of them to seed the inner
+        // loop and the other six only after it, past the inner loop's exit distance.
+        let outer = b.r#while(inits.iter().copied(), &alloc::vec![Type::U64; 8], span)?;
         let (before_block, after_block) = {
             let outer = outer.borrow();
             (
@@ -976,8 +979,8 @@ fn loop_like_entry_keeps_block_parameters_resident() -> AnalysisResult<()> {
             .collect::<alloc::vec::Vec<_>>();
 
         b.switch_to_block(before_block);
-        let zero = b.u32(0, span);
-        let inner = b.r#while([zero], &[Type::U32], span)?;
+        let seed = b.add_wrapping(params[0], params[1], span)?;
+        let inner = b.r#while([seed], &[Type::U64], span)?;
         let (inner_before, inner_after) = {
             let inner = inner.borrow();
             (
@@ -987,20 +990,21 @@ fn loop_like_entry_keeps_block_parameters_resident() -> AnalysisResult<()> {
         };
         b.switch_to_block(inner_before);
         let counter = inner_before.borrow().arguments()[0] as ValueRef;
-        let trips = b.u32(8, span);
+        let trips = b.u64(8, span);
         let keep_going = b.lt(counter, trips, span)?;
         b.condition(keep_going, [counter], span)?;
         b.switch_to_block(inner_after);
         let counter = inner_after.borrow().arguments()[0] as ValueRef;
-        let sum = b.add_wrapping(params[0], params[1], span)?;
-        let sum = b.add_wrapping(sum, params[2], span)?;
-        let sum = b.add_wrapping(sum, params[3], span)?;
-        let next = b.add_wrapping(counter, sum, span)?;
+        let one = b.u64(1, span);
+        let next = b.add_wrapping(counter, one, span)?;
         b.r#yield([next], span)?;
 
         b.switch_to_block(before_block);
-        let total = inner.borrow().results()[0] as ValueRef;
-        let limit = b.u32(1000, span);
+        let mut total = inner.borrow().results()[0] as ValueRef;
+        for param in params[2..].iter().copied() {
+            total = b.add_wrapping(total, param, span)?;
+        }
+        let limit = b.u64(1000, span);
         let keep_going = b.lt(total, limit, span)?;
         b.condition(keep_going, params.iter().copied(), span)?;
         b.switch_to_block(after_block);
