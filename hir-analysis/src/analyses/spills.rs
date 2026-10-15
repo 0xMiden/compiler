@@ -3,8 +3,8 @@ use alloc::{collections::VecDeque, format, rc::Rc, vec::Vec};
 use midenc_hir::{
     AttributeRef, Block, BlockRef, FxHashMap, FxHashSet, LoopLikeOpInterface, Op, Operation,
     OperationRef, ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint,
-    RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorOperands,
-    TraceTarget, Value, ValueOrAlias, ValueRange, ValueRef,
+    RegionBranchTerminatorOpInterface, RegionRef, Report, SmallVec, SourceSpan, Spanned,
+    SuccessorOperands, TraceTarget, Value, ValueOrAlias, ValueRange, ValueRef,
     adt::{SmallOrdMap, SmallSet},
     cfg::Graph,
     diagnostics::Severity,
@@ -2034,19 +2034,36 @@ fn max_loop_pressure_loop_like(
     let mut max_pressure = 0;
     let mut visited = SmallSet::<_, 4>::default();
     for region in loop_like.get_loop_regions() {
-        if !visited.insert(region) {
-            continue;
-        }
-        Region::traverse_region_graph(&region.borrow(), |region, _| {
-            if !visited.insert(region.as_region_ref()) {
-                return true;
-            }
-            let region_entry = region.entry();
-            max_pressure =
-                core::cmp::max(max_pressure, max_block_pressure(&region_entry, liveness));
-            false
-        });
+        max_pressure =
+            core::cmp::max(max_pressure, max_region_graph_pressure(region, &mut visited, liveness));
     }
+    max_pressure
+}
+
+/// Compute the maximum operand stack pressure over `start` and every region reachable from it
+/// within the same op, skipping the regions already in `visited`.
+///
+/// [Region::traverse_region_graph] visits only the successors of the region it starts from, so the
+/// starting region is measured here: for a lifted loop it is the before region, which holds the
+/// whole body.
+fn max_region_graph_pressure(
+    start: RegionRef,
+    visited: &mut SmallSet<RegionRef, 4>,
+    liveness: &LivenessAnalysis,
+) -> usize {
+    if !visited.insert(start) {
+        return 0;
+    }
+    let start = start.borrow();
+    let mut max_pressure = max_block_pressure(&start.entry(), liveness);
+    Region::traverse_region_graph(&start, |region, _| {
+        if !visited.insert(region.as_region_ref()) {
+            return true;
+        }
+        let region_entry = region.entry();
+        max_pressure = core::cmp::max(max_pressure, max_block_pressure(&region_entry, liveness));
+        false
+    });
     max_pressure
 }
 
@@ -2111,20 +2128,10 @@ fn max_block_pressure(block: &Block, liveness: &LivenessAnalysis) -> usize {
             let mut visited = SmallSet::<_, 4>::default();
             for region in branch_op.get_successor_regions(RegionBranchPoint::Parent) {
                 if let Some(region) = region.into_successor() {
-                    if !visited.insert(region) {
-                        continue;
-                    }
-                    Region::traverse_region_graph(&region.borrow(), |region, _| {
-                        if !visited.insert(region.as_region_ref()) {
-                            return true;
-                        }
-                        let region_entry = region.entry();
-                        max_pressure = core::cmp::max(
-                            max_pressure,
-                            max_block_pressure(&region_entry, liveness),
-                        );
-                        false
-                    });
+                    max_pressure = core::cmp::max(
+                        max_pressure,
+                        max_region_graph_pressure(region, &mut visited, liveness),
+                    );
                 }
             }
         }

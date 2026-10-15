@@ -1037,3 +1037,113 @@ fn loop_like_entry_keeps_block_parameters_resident() -> AnalysisResult<()> {
 
     Ok(())
 }
+
+/// The pressure of a loop-like op must include the region the loop starts in and the regions of
+/// the structured ops nested in it. The region graph traversal visits only the successors of the
+/// region it starts from, so without measuring that region itself a lifted loop, whose before
+/// region holds the whole body, reports the pressure of its trivial after block, and the entry
+/// fill then keeps live-through values resident that the body cannot hold.
+#[test]
+fn loop_like_pressure_includes_the_before_region_and_nested_branches() -> AnalysisResult<()> {
+    let mut test = Test::named("loop_like_pressure_includes_the_before_region").in_module("test");
+
+    let span = SourceSpan::UNKNOWN;
+
+    test.with_function(
+        "loop_like_pressure_includes_the_before_region",
+        &[Type::U32, Type::U32, Type::U32],
+        &[Type::U32],
+    );
+    let func = test.function();
+    let callee = test.define_function("consume", &alloc::vec![Type::U64; 8], &[Type::U32]);
+
+    let (before_block, live_through) = {
+        let mut b = test.function_builder();
+        let entry = b.current_block();
+        let args = entry
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<alloc::vec::Vec<_>>();
+        // `args[2]` is live through the loop: used only after it.
+        let live_through = args[2];
+
+        let outer = b.r#while(args[..2].iter().copied(), &[Type::U32, Type::U32], span)?;
+        let (before_block, after_block) = {
+            let outer = outer.borrow();
+            (
+                outer.before().entry_block_ref().unwrap(),
+                outer.after().entry_block_ref().unwrap(),
+            )
+        };
+
+        // The body: inside an `scf.if`, eight u64 values are computed and consumed by a call,
+        // which fills the window on that path.
+        b.switch_to_block(before_block);
+        let params = before_block
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<alloc::vec::Vec<_>>();
+        let zero = b.u32(0, span);
+        let take = b.lt(zero, params[1], span)?;
+        let branch = b.r#if(take, &[Type::U32], span)?;
+        let (then_region, else_region) = {
+            let branch = branch.borrow();
+            (branch.then_body().as_region_ref(), branch.else_body().as_region_ref())
+        };
+        let then_block = b.create_block_in_region(then_region);
+        b.switch_to_block(then_block);
+        let base = b.zext(params[0], Type::U64, span)?;
+        let mut wide = alloc::vec::Vec::new();
+        for i in 0..8 {
+            let offset = b.u64(i, span);
+            wide.push(b.add_wrapping(base, offset, span)?);
+        }
+        let callee_sig = callee.borrow().get_signature().clone();
+        let consumed = b.exec(callee, callee_sig, wide, span)?;
+        let step = consumed.borrow().results()[0] as ValueRef;
+        b.r#yield([step], span)?;
+        let else_block = b.create_block_in_region(else_region);
+        b.switch_to_block(else_block);
+        let one = b.u32(1, span);
+        b.r#yield([one], span)?;
+
+        b.switch_to_block(before_block);
+        let step = branch.borrow().results()[0] as ValueRef;
+        let next = b.add_wrapping(params[0], step, span)?;
+        let limit = b.u32(1000, span);
+        let keep_going = b.lt(next, limit, span)?;
+        b.condition(keep_going, [next, params[1]], span)?;
+        b.switch_to_block(after_block);
+        let carried = after_block
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<alloc::vec::Vec<_>>();
+        b.r#yield(carried, span)?;
+
+        b.switch_to_block(entry);
+        let result = outer.borrow().results()[0] as ValueRef;
+        let result = b.add_wrapping(result, live_through, span)?;
+        b.ret(Some(result), span)?;
+
+        (before_block, live_through)
+    };
+
+    let am = AnalysisManager::new(func.as_operation_ref(), None);
+    let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
+
+    // The body fills the window, so there is no spare capacity to keep the live-through value
+    // resident across the loop.
+    let w_entry = spills.w_entry(&ProgramPoint::at_start_of(before_block));
+    assert!(
+        !w_entry.iter().any(|resident| resident.value() == live_through),
+        "expected {live_through} to be evicted across the loop, got W^entry = {w_entry:?}"
+    );
+
+    Ok(())
+}
