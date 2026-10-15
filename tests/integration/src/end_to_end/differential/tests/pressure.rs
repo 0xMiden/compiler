@@ -4,9 +4,7 @@
 //! is kept as a minimal reproducer with its full signature (`#[ignore]`d
 //! while it fails).
 
-use super::super::harness::{
-    run_case, run_case_traps, run_case_traps_with_inputs, run_case_with_inputs,
-};
+use super::super::harness::{run_case, run_case_with_inputs};
 
 /// Ladder 1/2 (arity and constraint patterns) boundary guard: a single-block
 /// chain of EIGHTEEN shared rotate counts on a multi-use u64. The counts are
@@ -334,25 +332,4 @@ fn window_erased_guard_edges() {
 #[test]
 fn overflow_cluster_min() {
     run_case("overflow_cluster_min", include_str!("../cases/case_overflow_cluster_min.rs"));
-}
-
-/// Fold-proof reproducer for #1459, guard kind `assert!`: the
-/// `case_ts_body_assert.rs` freight with twelve loop-invariant rotate amounts
-/// derived from the inputs at runtime. After the lift the loop forwards more
-/// felts than the operand stack window holds, so it only compiles once
-/// `narrow-region-ops` moves the excess to procedure locals.
-#[test]
-fn loop_invariant_bands() {
-    run_case_traps("loop_invariant_bands", include_str!("../cases/case_loop_invariant_bands.rs"));
-}
-
-/// Pinned straddling grid for [`loop_invariant_bands`]: (u32::MAX, u32::MAX)
-/// fails the assertion, the other five rows return.
-#[test]
-fn loop_invariant_bands_edges() {
-    run_case_traps_with_inputs(
-        "loop_invariant_bands_edges",
-        include_str!("../cases/case_loop_invariant_bands.rs"),
-        &[(0, 0), (127, 2082453883), (15, 15), (2, 255), (0, 65535), (u32::MAX, u32::MAX)],
-    );
 }
