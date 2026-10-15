@@ -455,7 +455,10 @@ impl core::fmt::Display for Placement {
 }
 
 /// The maximum number of operand stack slots which can be assigned without spills.
-const K: usize = 16;
+///
+/// Transforms that must leave an operation's own operands or results within reach of the operand
+/// stack, such as the narrowing of structured control flow ops, size their work against this bound.
+pub const K: usize = 16;
 
 /// Report an operation whose operands cannot all be made reachable at once.
 ///
@@ -1786,12 +1789,16 @@ impl SpillAnalysis {
             }
         }));
 
-        // Initial candidates are values live at block entry which are used in the loop body
-        let mut cand = alive
-            .iter()
-            .filter(|o| next_uses.distance(*o) < LOOP_EXIT_DISTANCE)
-            .copied()
-            .collect::<SmallSet<_, 4>>();
+        // The block parameters are on the operand stack when the region is entered, so they are
+        // resident whether or not the body uses them soon. Leaving one out of W^entry would make
+        // it a value the analysis never spills but the emitter still holds. A parameter the
+        // window cannot afford is evicted by the ordinary spilling inside the body instead, which
+        // records the spill the transform needs to rename its later uses.
+        //
+        // The remaining candidates are the values live at block entry which are used in the loop
+        // body.
+        let mut cand = params.iter().map(ValueOrAlias::new).collect::<SmallSet<_, 4>>();
+        cand.extend(alive.iter().filter(|o| next_uses.distance(*o) < LOOP_EXIT_DISTANCE).copied());
 
         // Values which are "live through" the loop, are those which are live at entry, but not
         // used within the body of the loop. If we have excess available operand stack capacity,

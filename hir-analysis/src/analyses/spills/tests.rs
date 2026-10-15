@@ -928,3 +928,108 @@ fn spills_cfg_with_dead_blocks() -> AnalysisResult<()> {
 
     Ok(())
 }
+
+/// The block parameters of a loop-like region's entry block are on the operand stack when the
+/// region is entered, so W^entry must hold every one of them, even when the body's first use of a
+/// parameter is deep inside a nested loop. Leaving one out would make it a value the analysis
+/// never spills but the emitter still holds: its later reloads then have no spill to pair with,
+/// the uses keep the original value past the point the analysis evicted it, and the operand stack
+/// overflows in the emitter.
+#[test]
+fn loop_like_entry_keeps_block_parameters_resident() -> AnalysisResult<()> {
+    let mut test = Test::named("loop_like_entry_keeps_block_parameters_resident").in_module("test");
+
+    let span = SourceSpan::UNKNOWN;
+
+    test.with_function(
+        "loop_like_entry_keeps_block_parameters_resident",
+        &[Type::U32, Type::U32, Type::U32, Type::U32],
+        &[Type::U32],
+    );
+    let func = test.function();
+
+    let (before_block, params) = {
+        let mut b = test.function_builder();
+        let entry = b.current_block();
+        let inits = entry
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<alloc::vec::Vec<_>>();
+
+        // The outer loop carries the four arguments; its body only uses them inside the inner
+        // loop, so their next use at the outer entry lies past the inner loop's exit distance.
+        let outer = b.r#while(inits.iter().copied(), &alloc::vec![Type::U32; 4], span)?;
+        let (before_block, after_block) = {
+            let outer = outer.borrow();
+            (
+                outer.before().entry_block_ref().unwrap(),
+                outer.after().entry_block_ref().unwrap(),
+            )
+        };
+        let params = before_block
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<alloc::vec::Vec<_>>();
+
+        b.switch_to_block(before_block);
+        let zero = b.u32(0, span);
+        let inner = b.r#while([zero], &[Type::U32], span)?;
+        let (inner_before, inner_after) = {
+            let inner = inner.borrow();
+            (
+                inner.before().entry_block_ref().unwrap(),
+                inner.after().entry_block_ref().unwrap(),
+            )
+        };
+        b.switch_to_block(inner_before);
+        let counter = inner_before.borrow().arguments()[0] as ValueRef;
+        let trips = b.u32(8, span);
+        let keep_going = b.lt(counter, trips, span)?;
+        b.condition(keep_going, [counter], span)?;
+        b.switch_to_block(inner_after);
+        let counter = inner_after.borrow().arguments()[0] as ValueRef;
+        let sum = b.add_wrapping(params[0], params[1], span)?;
+        let sum = b.add_wrapping(sum, params[2], span)?;
+        let sum = b.add_wrapping(sum, params[3], span)?;
+        let next = b.add_wrapping(counter, sum, span)?;
+        b.r#yield([next], span)?;
+
+        b.switch_to_block(before_block);
+        let total = inner.borrow().results()[0] as ValueRef;
+        let limit = b.u32(1000, span);
+        let keep_going = b.lt(total, limit, span)?;
+        b.condition(keep_going, params.iter().copied(), span)?;
+        b.switch_to_block(after_block);
+        let carried = after_block
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<alloc::vec::Vec<_>>();
+        b.r#yield(carried, span)?;
+
+        b.switch_to_block(entry);
+        let result = outer.borrow().results()[0] as ValueRef;
+        b.ret(Some(result), span)?;
+
+        (before_block, params)
+    };
+
+    let am = AnalysisManager::new(func.as_operation_ref(), None);
+    let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
+
+    let w_entry = spills.w_entry(&ProgramPoint::at_start_of(before_block));
+    for param in params {
+        assert!(
+            w_entry.iter().any(|resident| resident.value() == param),
+            "expected block parameter {param} to be resident at the loop-like entry, got \
+             {w_entry:?}"
+        );
+    }
+
+    Ok(())
+}
