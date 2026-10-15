@@ -16,6 +16,7 @@ use proptest::{
 use crate::testing::*;
 
 mod copy;
+mod element_subword;
 mod load_bool;
 mod load_dw;
 mod load_qw;

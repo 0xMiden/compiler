@@ -1,12 +1,12 @@
-use super::*;
+use super::{super::OperandMovementConstraintSolver, *};
 
 /// This tactic is for specifically optimising binary operators, especially those which are
 /// commutative.  The best case scenario for commutative ops is no work needs to be done.
-/// Otherwise binary ops may be solved with a single swap, move or dupe, and at worst two swaps,
-/// moves or dupes.
+/// The specialized schedule uses at most two swaps, moves or dupes.
 ///
-/// The only criterion for success is an arity of exactly two.  Then the solution will always
-/// succeed, adjusted only by whether commutativity is a factor.
+/// Requires an arity of exactly two. If copying operands would make the specialized schedule
+/// exceed MASM's addressable stack window, uses [LinearStackWindow] instead, which may require
+/// additional actions.
 #[derive(Default)]
 pub struct TwoArgs;
 
@@ -45,7 +45,22 @@ impl Tactic for TwoArgs {
             (true, false) => self.copy_move(builder, a, a_index, b, b_index),
             (false, true) => self.move_copy(builder, a, a_index, b, b_index),
             (false, false) => self.move_move(builder, a, a_index, b, b_index),
+        }?;
+
+        // A copy can push the other operand beyond the window even when both started inside it.
+        if OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
+            &builder.actions,
+            builder.context().stack(),
+        ) {
+            log::trace!(
+                target: builder.trace_target(),
+                "binary schedule exceeds the stack window; retrying with LinearStackWindow"
+            );
+            builder.discard();
+            LinearStackWindow.apply(builder)?;
         }
+
+        Ok(())
     }
 }
 
@@ -217,7 +232,7 @@ mod tests {
     use std::rc::Rc;
 
     use itertools::Itertools;
-    use midenc_hir::Context;
+    use midenc_hir::{Context, Type, ValueRef};
 
     use super::*;
     use crate::{
@@ -232,6 +247,62 @@ mod tests {
         [Constraint::Copy, Constraint::Move],
         [Constraint::Copy, Constraint::Copy],
     ];
+
+    /// Copying multi-felt operands must preserve addressability at the 15- and 16-felt boundary.
+    #[test]
+    fn falls_back_to_window_aware_schedule() {
+        for bottom_type in [Type::U32, Type::U64] {
+            let hir_context = Rc::new(Context::default());
+            let block = hir_context.create_block_with_params(
+                core::iter::once(bottom_type).chain(core::iter::repeat_n(Type::U64, 7)),
+            );
+            let block = block.borrow();
+            let mut stack = OperandStack::new(hir_context.clone());
+            for value in block.arguments().iter().copied() {
+                stack.push(value as ValueRef);
+            }
+            let expected = [block.arguments()[0] as ValueRef, block.arguments()[1] as ValueRef];
+            for constraints in ALL_CONSTRAINTS {
+                for strict in [true, false] {
+                    let context = SolverContext::new(
+                        &expected,
+                        &constraints,
+                        &stack,
+                        SolverOptions {
+                            strict,
+                            ..Default::default()
+                        },
+                    )
+                    .expect("valid binary problem");
+                    let mut builder = SolutionBuilder::new(&context);
+                    TwoArgs.apply(&mut builder).expect("addressable binary schedule");
+                    assert!(builder.is_valid());
+                    assert!(!OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
+                        &builder.actions, context.stack(),
+                    ));
+                    for (index, value) in block.arguments().iter().copied().enumerate() {
+                        let value = value as ValueRef;
+                        let copies = constraints
+                            .iter()
+                            .enumerate()
+                            .filter(|(i, constraint)| {
+                                matches!(constraint, Constraint::Copy) && expected[*i] == value
+                            })
+                            .count();
+                        assert_eq!(
+                            builder
+                                .stack()
+                                .iter()
+                                .filter(|operand| operand.value() == value)
+                                .count(),
+                            1 + copies,
+                            "incorrect multiplicity for argument {index}",
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn solves_with_strict_operand_order() {
