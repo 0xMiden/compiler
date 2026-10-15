@@ -623,10 +623,29 @@ args = [
 
 [tasks.install-cargo-llvm-cov]
 private = true
-install_crate = { crate_name = "cargo-llvm-cov", binary = "cargo", test_arg = [
+install_crate = { crate_name = "cargo-llvm-cov", min_version = "0.9.1", binary = "cargo", test_arg = [
     "llvm-cov",
     "--version",
 ] }
+
+[tasks.coverage]
+category = "Test"
+description = "Merge workspace Rust and lit-tool coverage into rust-coverage.xml"
+dependencies = ["install-cargo-llvm-cov", "litcheck", "coverage-tools", "coverage-nextest"]
+command = "python3"
+args = ["${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools/coverage.py", "${@}"]
+
+[tasks.coverage-tools]
+private = true
+category = "Tools"
+command = "rustup"
+args = ["component", "add", "llvm-tools-preview"]
+
+[tasks.coverage-nextest]
+private = true
+category = "Tools"
+install_crate = { crate_name = "cargo-nextest", binary = "cargo-nextest", test_arg = "--version" }
+install_crate_args = ["--locked"]
 
 [tasks.install-rustfilt]
 private = true

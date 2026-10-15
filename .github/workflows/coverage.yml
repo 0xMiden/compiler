@@ -1,0 +1,117 @@
+name: Coverage
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [next]
+    paths-ignore: ["**.md", "**.txt", "docs/**"]
+  pull_request:
+    paths-ignore: ["**.md", "**.txt", "docs/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  MIDENUP_HOME: ${{ github.workspace }}/.midenup
+  NEXTEST_PROFILE: ci
+
+jobs:
+  coverage:
+    runs-on: warp-ubuntu-latest-x64-8x
+    timeout-minutes: 120
+    outputs:
+      report_available: ${{ steps.report.outputs.available }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/cleanup-runner
+      - name: Install Rust and LLVM tools
+        run: |
+          rustup update --no-self-update
+          rustup component add llvm-tools-preview
+      - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
+        with:
+          shared-key: compiler-coverage
+          workspaces: ". -> target/compiler-coverage/target"
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
+      - uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: cargo-make@0.37.24,cargo-llvm-cov@0.9.1,cargo-nextest,litcheck@0.4.6
+      - name: Install the Miden sysroot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/0xMiden/midenup/releases/latest/download/installer.sh | bash -s
+          midenup update
+          echo "MIDEN_SYSROOT=$(midenup show sysroot)" >> "$GITHUB_ENV"
+      - name: Test coverage orchestration
+        run: python3 -m unittest discover -s tools -p test_coverage.py
+      - name: Measure Rust tests and lit tools
+        run: cargo make coverage
+      - name: Check for a report
+        id: report
+        if: ${{ always() && !cancelled() }}
+        run: |
+          if test -s rust-coverage.xml; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ always() }}
+        with:
+          name: rust-coverage
+          path: |
+            rust-coverage.xml
+            target/compiler-coverage/target/nextest/ci/junit.xml
+          if-no-files-found: warn
+
+  coverage-report:
+    needs: [coverage]
+    if: ${{ always() && !cancelled() && needs.coverage.outputs.report_available == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: write
+    env:
+      COVERAGE_COMPLETE: ${{ needs.coverage.result }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rust-coverage
+      - name: Check for trusted configuration
+        id: config
+        env:
+          TRUSTED_CONFIG_REVISION: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: |
+          if git cat-file -e "$TRUSTED_CONFIG_REVISION:.octocov.yml" 2>/dev/null; then
+            git show "$TRUSTED_CONFIG_REVISION:.octocov.yml" > "$RUNNER_TEMP/octocov.yml"
+            rm -f .octocov.yml
+            cp "$RUNNER_TEMP/octocov.yml" .octocov.yml
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Coverage is available as an artifact. Octocov reporting starts once the coverage configuration lands on the base branch."
+            echo "Coverage collected; see the rust-coverage artifact. The base branch does not yet have octocov configuration." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: k1LoW/octocov-action@a167dc0dee441b7ffc45e1b862ab55ec0d87f278 # v1.5.2
+        id: octocov
+        if: ${{ steps.config.outputs.available == 'true' }}
+        continue-on-error: true
+        with:
+          version: v0.83.1
+          config: .octocov.yml
+      - name: Warn about incomplete coverage
+        if: ${{ needs.coverage.result != 'success' }}
+        run: echo "::warning::Tests failed; this is partial coverage and will not replace the next baseline."
+      - name: Warn about octocov failure
+        if: ${{ steps.octocov.outcome == 'failure' }}
+        run: echo "::warning::Octocov reported coverage below 75% or failed to publish the report. See its step log."
