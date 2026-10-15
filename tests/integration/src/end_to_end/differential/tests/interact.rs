@@ -43,30 +43,14 @@ use super::super::harness::{run_case, run_case_with_inputs};
 /// Two sequential 8-trip loops whose only in-body branch is an empty `continue`
 /// arm — the sole producer of the `WhileUnusedResult` →
 /// `IndexSwitchRemoveUnusedResults` cascade — carry eight shared rotate count
-/// bands and an eight-u64 cluster across both loops. Fired counts, identical at
-/// the default level and at `--optimize=size-min`: `while-unused-result` 2,
-/// `index-switch-remove-unused-results` 2, `while-remove-unused-args` 2,
-/// `split-critical-edges` 2, `convert-trivial-if-to-select` 4 — exactly the
-/// per-loop counts `canon::col_cascade` gets with no freight at all, measured
-/// over bands 2..12 without a single count changing.
-///
-/// Spill evidence: 57 spills, 84 reloads, six split control-flow edges, 52
-/// reloads lowered to spill-slot loads and 32 of them erased again as unused —
-/// the stale-dominator-tree erasure the `pressure::zero_trip_overflow` panic is
-/// attributed to. The values still agree with native everywhere.
+/// bands and an eight-u64 cluster across both loops. The values agree with
+/// native everywhere.
 ///
 /// The interaction itself is visible in the IR: `-Z print-ir-after-pass=
-/// local2reg,transform-spills` shows seventeen user locals before the pre-lift
-/// spill pass and thirty-three after it, so every `local_variable` from 17 up
-/// is a spill slot — and the dump taken after the POST-LIFT canonicalizer has
-/// eighteen such slot accesses inside the two `scf.index_switch` regions that
-/// `IndexSwitchRemoveUnusedResults` rebuilt.
-///
-/// Boundary (campaign 20): with the u64 cluster removed, this shape compiles at
-/// 2, 4, 6, 8, 9, 12, 13 and 14 shared bands and panics at 10, 11, 15 and 16 —
-/// the band count is NOT a monotone boundary — and the failing rungs are the
-/// same for one, two and four loops. With four bands the cluster may hold seven
-/// values but not eight.
+/// local2reg,transform-spills` shows the spill slots the pre-lift spill pass
+/// adds after the user locals, and the dump taken after the POST-LIFT
+/// canonicalizer has such slot accesses inside the two `scf.index_switch`
+/// regions that `IndexSwitchRemoveUnusedResults` rebuilt.
 #[test]
 #[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
             rejects it, see #1459"]
@@ -100,23 +84,13 @@ fn cascade_spill_edges() {
 /// `SplitCriticalEdges` alternating to a fixpoint on a two-level frame with
 /// TWELVE shared bands crossing both loops.
 ///
-/// Fired counts: ten `simplify-passthrough-cond-br` with thirteen
-/// `split-critical-edges` at the default level and ten with twelve at
-/// `--optimize=size-min` — the same ten collapses as the freight-free
-/// `canon::passthru_frame`, so the freight changes what the collapsed paths
-/// carry but not how often the pattern fires.
+/// The freight changes what the collapsed paths carry but not how often the
+/// pattern fires, compared with the freight-free `canon::passthru_frame`.
 ///
-/// Spill evidence: 24 spills, 48 reloads, three split edges, 20 erased split
-/// reloads and five "unused phi" warnings from the spill transform's own SSA
-/// reconstruction — the F1 marker and the F6 marker both present in a program
-/// that computes the right answer on every pinned path.
-///
-/// Boundary (campaign 20): the band axis has no boundary at the default level
-/// through sixteen bands, but `--optimize=size-min` panics from fourteen up;
-/// making the outer loop zero-trip-capable does not move either. The u64
-/// cluster is what breaks this shape — four values at four bands already panic,
-/// which makes the passthrough frame by far the least freight-tolerant of the
-/// composed shapes.
+/// Spill evidence: spills, reloads, split edges, erased split reloads and
+/// "unused phi" warnings from the spill transform's own SSA reconstruction —
+/// the F1 marker and the F6 marker both present in a program that computes the
+/// right answer on every pinned path.
 #[test]
 fn passthru_spill() {
     run_case("passthru_spill", include_str!("../cases/case_passthru_spill.rs"));
@@ -136,17 +110,8 @@ fn passthru_spill_edges() {
 
 /// Switch arm merging over a dispatch with ten bands live across it.
 /// `SimplifySwitchFallbackOverlap` rebuilds the in-loop `cf.switch` without all
-/// five overlapping cases at once (one rewrite at both opt levels, exactly as
-/// the freight-free `canon::arms_merge`), while twenty spills and twenty
-/// reloads cross the same loop (before the #1420 fix four split-edge reloads
-/// were erased).
-///
-/// Boundary (campaign 20, before the #1420 fix): twelve bands still compiled
-/// at the default level but panicked at `--optimize=size-min`, and sixteen
-/// bands panicked at both levels — at `hir/src/ir/dominance/frontier.rs:123`,
-/// the unwrap the formerly ignored `pressure::zero_trip_frontier` documents,
-/// without any zero-trip-capable loop in the program. A six-u64 cluster on top
-/// of four bands panicked as well.
+/// five overlapping cases at once, exactly as the freight-free
+/// `canon::arms_merge`, while spills and reloads cross the same loop.
 #[test]
 fn dispatch_spill() {
     run_case("dispatch_spill", include_str!("../cases/case_dispatch_spill.rs"));
@@ -187,15 +152,8 @@ fn dispatch_spill_edges() {
 /// whose else-arm reloads none. The pressure difference is what makes the spill
 /// analysis reconcile the two edges — a value in the join's `W^entry` that one
 /// predecessor does not carry gets a reload split onto that edge — so the
-/// diamond `ConvertTrivialIfToSelect` collapses (one rewrite at both levels) has
-/// band traffic on one side only. Ten spills, ten reloads, one split edge, two
-/// erased split reloads.
-///
-/// Boundary (campaign 20): eight bands still compile at the default level but
-/// panic at `--optimize=size-min`; making the arms SYMMETRIC (both reloading
-/// every band) panics at eight bands at BOTH levels, so the asymmetry this case
-/// is built around is what lets eight bands compile at the default level at
-/// all. A six-u64 cluster on four bands panics at both levels.
+/// diamond `ConvertTrivialIfToSelect` collapses has
+/// band traffic on one side only.
 #[test]
 fn select_spill() {
     run_case("select_spill", include_str!("../cases/case_select_spill.rs"));
@@ -222,8 +180,7 @@ fn select_spill_edges() {
 }
 
 /// Twelve bands defined in the entry block whose only later use is in the
-/// deepest else-arm of a three-level diamond, with twenty spills, twenty
-/// reloads and four "unused phi" warnings and no split edge at all.
+/// deepest else-arm of a three-level diamond.
 ///
 /// Mechanism correction (campaign 21): this case does NOT pin reloads being
 /// sunk into a region, and nothing in the pipeline can do that. `SinkOperandDefs`
@@ -234,27 +191,22 @@ fn select_spill_edges() {
 /// `MemoryEffect::Read`, so the trace
 /// (`-Z print-ir-after-pass=sink-operand-defs` +
 /// `MIDENC_TRACE='sink-operand-defs=trace'`) logs `defining 'hir.load_local'
-/// cannot be moved: * op has memory effects` SEVENTY-FOUR times on this case
-/// and moves none of them. What the case actually pins is the band traffic
+/// cannot be moved: * op has memory effects` on this case and moves none of
+/// them. What the case actually pins is the band traffic
 /// through a deep arm: the `IfRemoveUnusedResults` production below, and that
 /// twelve bands whose only consumer is the deepest arm of a three-level nest
 /// still compute the right answer on every path.
 ///
 /// Closure correction (campaign 20): this case fires
-/// `if-remove-unused-results` THREE times at both opt levels, and THE FREIGHT
+/// `if-remove-unused-results` at both opt levels, and THE FREIGHT
 /// IS WHAT PRODUCES IT. That pattern was recorded as having no producer at all,
 /// on the argument that cfg-to-scf builds a payload column only for a value
 /// with a use outside the region. Bisected here against a control with the same
-/// three-level diamond and ZERO bands, which fires it zero times: four, eight
-/// and twelve bands each fire it three times, so it is the band traffic
+/// three-level diamond and ZERO bands, which never fires it: four, eight
+/// and twelve bands each fire it, so it is the band traffic
 /// crossing the nest — not the nest — that leaves an `scf.if` result with no
 /// real use. This is the only pattern in the corpus whose fire count freight
 /// changes from zero to non-zero.
-///
-/// Boundary (campaign 20): twelve bands are fine in this arm shape, but moving
-/// the consuming region from an arm to the SECOND of two sequential loops
-/// panics with only eight — at the default level (`frontier.rs:123`) while
-/// still compiling at `--optimize=size-min`.
 #[test]
 fn sink_spill() {
     run_case("sink_spill", include_str!("../cases/case_sink_spill.rs"));
@@ -274,19 +226,11 @@ fn sink_spill_edges() {
 }
 
 /// Four sequential early-`break` scan loops — the `WhileRemoveUnusedArgs`
-/// producer — with eight bands crossing all four. Fired counts:
-/// `while-remove-unused-args` 4, `split-critical-edges` 8,
-/// `convert-trivial-if-to-select` 4, at the default level AND at
-/// `--optimize=size-min`. The freight-free chain of the same length fires this
-/// pattern K times at `-Oz` and ZERO times at the default level, because LLVM
-/// unrolls the scans away there; the band traffic in the body is what keeps the
-/// loops rolled at O2, so the composition also widens where the pattern fires
-/// at all. Eighteen spills, eighteen reloads, one split edge, four erased.
-///
-/// Boundary (campaign 20): twelve bands still pass. On the cluster axis, the
-/// PREDICATE of the break matters — with an accumulator-derived break condition
-/// the same four loops carry a ten-u64 cluster, while with this case's
-/// input-bit-driven break a six-u64 cluster already panics.
+/// producer — with eight bands crossing all four. The freight-free chain of the
+/// same length fires this pattern at `-Oz` but NOT at the default level,
+/// because LLVM unrolls the scans away there; the band traffic in the body is
+/// what keeps the loops rolled at O2, so the composition also widens where the
+/// pattern fires at all.
 #[test]
 fn scan_spill() {
     run_case("scan_spill", include_str!("../cases/case_scan_spill.rs"));

@@ -22,8 +22,7 @@
 //! First, **the guard KIND is invisible to the spill analysis.** The five W1
 //! cases below differ only in what traps — an index, a `get().unwrap()`, a
 //! zero divisor, a `checked_add().unwrap()` and an `assert!` — and all five
-//! produce exactly 45 spills, 56 reloads, 3 split control-flow edges, 20
-//! erased split-edge reloads and 36 reloads lowered to spill-slot loads. Under `-Cpanic=immediate-abort` every one of
+//! produce exactly the same spill freight. Under `-Cpanic=immediate-abort` every one of
 //! them is the same wasm `unreachable`.
 //!
 //! Second, **LLVM merges every trapping edge of a function into ONE wasm
@@ -44,7 +43,7 @@
 //! Fourth, **a trap edge does not move the spill numbers of the interaction
 //! shapes.** `dispatch_arm`, `select_arm`, `scan_break` and `second_loop`
 //! reproduce their `interact.rs` originals' spill/reload/split/erase counts
-//! exactly. It DOES move the canonicalization pattern counts — see the case
+//! exactly. It DOES move which canonicalization patterns fire — see the case
 //! comments — and at one guard position it moves a compile-time boundary,
 //! which is what `guard_above` and `guard_above_masked` pin.
 
@@ -57,12 +56,11 @@ use super::super::harness::{
 /// accumulator, at the end of the body, with an eight-u64 cluster and eight
 /// count bands live across it.
 ///
-/// Freight: 45 spills, 56 reloads, 3 split edges, 20 erased split reloads, 36
-/// reloads lowered to spill-slot loads, no unused phi. Lift: 1 `ub.unreachable`
+/// Lift: 1 `ub.unreachable`
 /// before and 1 after; 11 blocks / 11 `cf` ops before, 6 blocks / 18 `scf` + 2
 /// `cf` ops after, the second `cf` being the exit `cf.switch` that dispatches
 /// the loop's trap column to the unreachable block. The no-trap control of the
-/// same shape (`A31[g & 15]`) has 46 spills, 3 blocks and 15 `scf` ops after
+/// same shape (`A31[g & 15]`) has 3 blocks and 15 `scf` ops after
 /// the lift and no `cf.switch`. Verdict: agrees on every row.
 #[test]
 #[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
@@ -95,7 +93,7 @@ fn body_index_edges() {
 
 /// The same freight and the same guard position as [`body_index`] with the
 /// panic coming from `Option::unwrap` on a slice `get` instead of from an
-/// index expression. Identical freight numbers (45/56/3/20/36) and an
+/// index expression. Identical freight and an
 /// identical native value/trap map to `body_index`'s, which is the sharpest
 /// statement of "the guard kind is invisible below the frontend".
 #[test]
@@ -128,8 +126,8 @@ fn body_get_edges() {
 
 /// Guard kind DIVISION BY A BAND: the trapping edge is the zero-divisor test
 /// in front of a `u32 /` whose divisor is a five-bit mask of the loop-carried
-/// accumulator. Freight 45/56/3/20/36, lift 1 -> 1 `ub.unreachable` — the same
-/// numbers as [`body_index`] even though the guard also drags a division into
+/// accumulator. Lift 1 -> 1 `ub.unreachable` — the same
+/// as [`body_index`] even though the guard also drags a division into
 /// the loop body.
 #[test]
 #[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
@@ -154,7 +152,7 @@ fn body_div_edges() {
 /// Guard kind `checked_add().unwrap()`: with overflow checks off in the
 /// release guest this is the only form of addition that can panic, and
 /// `0xffff_ffe1 + d` overflows on exactly one of the thirty-two values of the
-/// accumulator's five-bit slice. Freight 45/56/3/20/36.
+/// accumulator's five-bit slice.
 #[test]
 #[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
             rejects it, see #1459"]
@@ -178,7 +176,6 @@ fn body_checked_edges() {
 /// Guard kind `assert!`: the trapping edge written by hand rather than taken
 /// from `core`, on the same five-bit slice, with the slice folded back into
 /// the accumulator afterwards so the guard's operand is live past the guard.
-/// Freight 45/56/3/20/36.
 #[test]
 #[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
             rejects it, see #1459"]
@@ -210,15 +207,7 @@ fn body_assert_edges() {
 /// file with the index masked into range — the same load, the same mask, the
 /// same live cluster, no trapping edge — and it COMPILES and passes. So the
 /// boundary is moved by the edge, not by the guard's work or its position.
-///
-/// Classification by trace: the pre-lift spill run reports `edges to split =
-/// 3` and 20 `erase unused reload` lines (the F6 markers), and 49 `additional
-/// spills required` (an F17 marker). Neither marker discriminates here — the
-/// COMPILING control carries all of them too, with 48 `additional spills
-/// required` and the identical 3/20 split-and-erase counts. The only trace
-/// difference between the two is the spill/reload balance: 48 spills / 54
-/// reloads with the trapping edge against 46 / 56 without it, i.e. the trap
-/// edge converts two reloads into two spills. Compile-time — no inputs
+/// Compile-time — no inputs
 /// involved. It was `#[ignore]`d until the #1420 fix (the spill transform now
 /// recomputes dominance after splitting edges and prunes its unused phis) and
 /// now compiles.
@@ -230,8 +219,7 @@ fn guard_above() {
 }
 
 /// The no-trap control for [`guard_above`]: byte-identical except `A31[g & 15]`
-/// for `A31[g]`. 46 spills, 56 reloads, 3 split edges, 20 erased split
-/// reloads; compiles at every level and never traps on either target.
+/// for `A31[g]`. Compiles at every level and never traps on either target.
 #[test]
 #[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
             rejects it, see #1459"]
@@ -265,8 +253,7 @@ fn guard_above_masked_edges() {
 /// the trapping edge is a successor of the loop's exit block rather than of a
 /// block inside the region.
 ///
-/// Freight: 47 spills (two more than the in-body cases), 56 reloads, 3 split
-/// edges, 20 erased split reloads. Lift: 1 `ub.unreachable` before and after,
+/// Lift: 1 `ub.unreachable` before and after,
 /// 14 blocks -> 5, 21 `scf` ops, 2 `cf` ops. Verdict: agrees on every row.
 #[test]
 #[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
@@ -292,10 +279,8 @@ fn exit_guard_edges() {
 /// campaign-20 shape whose freight-only version reaches the `frontier.rs:123`
 /// unwrap through a three-predecessor join.
 ///
-/// Freight: 57 spills, 84 reloads, six split edges, 32 erased split reloads —
-/// EXACTLY `interact::cascade_spill`'s numbers, which this case is
-/// `cascade_spill` plus one guard at the end of the second loop's body. The
-/// trapping edge therefore costs the spill analysis nothing at all here. Lift:
+/// The case is `interact::cascade_spill` plus one guard at the end of the
+/// second loop's body. Lift:
 /// 1 `ub.unreachable` before and after, 20 blocks -> 9, 33 `scf` + 3 `cf`.
 #[test]
 #[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
@@ -331,16 +316,11 @@ fn second_loop_edges() {
 /// `interact::cascade_spill` with an `assert!` before the first loop's
 /// `continue`.
 ///
-/// This is the one interaction shape whose PATTERN COUNTS the trapping edge
-/// moves, and it moves them a lot (`pattern-rewrite-driver` trace, default
-/// level, trap twin vs original): `while-unused-result` 1 vs 2,
-/// `index-switch-remove-unused-results` 1 vs 2 — the guarded loop stops
-/// producing the cascade entirely, the unguarded one still fires it once —
-/// while `simplify-passthrough-cond-br` goes 10 vs 0, `split-critical-edges`
-/// 11 vs 2, `while-remove-unused-args` 3 vs 2, `simplify-cond-br-like-switch`
-/// 1 vs 0 and `convert-trivial-if-to-select` 3 vs 4. Freight before the #1420
-/// fix: 57 spills, 86 reloads, seven split edges, 34 erased split reloads (the
-/// original's 57 / 84 / 6 / 32). It compiles and agrees with native everywhere at the default
+/// This is the one interaction shape whose cascade the trapping edge moves
+/// (`pattern-rewrite-driver` trace, default level, trap twin vs original):
+/// the guarded loop stops producing the `while-unused-result` ->
+/// `index-switch-remove-unused-results` cascade entirely, the unguarded one
+/// still fires it. It compiles and agrees with native everywhere at the default
 /// level, at `--optimize=size-min`, at `--optimize=basic` and without guest
 /// DWARF.
 ///
@@ -349,9 +329,8 @@ fn second_loop_edges() {
 /// case panicked, until the #1420 fix, with "called `Option::unwrap()` on a
 /// `None` value" at hir/src/ir/dominance/frontier.rs:123, the F6 site, while
 /// `interact::cascade_spill` — the same file WITHOUT the `assert!` in the
-/// `continue` arm — compiled at `--optimize=max` with 57 spills / 84 reloads /
-/// 6 split edges / 32 erased split reloads. The trap twin dies inside the
-/// FIRST spill transform (one `edges to split = 6` line, then the unwrap; no
+/// `continue` arm — compiled at `--optimize=max`. The trap twin dies inside the
+/// FIRST spill transform (one `edges to split` line, then the unwrap; no
 /// `erase unused reload` and no `convert reload to load` line is ever
 /// reached). Pinned in-repo by [`cascade_cont_max`], which compiles now.
 #[test]
@@ -395,8 +374,7 @@ fn cascade_cont_edges() {
 /// `#[inline(never)]` callee, so `entrypoint` itself has ZERO `ub.unreachable`
 /// before and after the lift and the callee has the one — the only case in
 /// this module where the freight region and the trapping edge are in different
-/// functions. The call boundary forces a spill of everything live: 46 spills,
-/// 56 reloads, 3 split edges, 20 erased split reloads. Same native value/trap
+/// functions. The call boundary forces a spill of everything live. Same native value/trap
 /// map as [`body_index`].
 #[test]
 #[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
@@ -429,7 +407,7 @@ fn helper_arg_edges() {
 /// The mirror image of [`helper_arg`]: a total `#[inline(never)]` helper whose
 /// RETURN VALUE is the index that decides whether the caller traps. The
 /// `ub.unreachable` is back in `entrypoint` (1 before and after the lift) and
-/// the callee has none. Freight 45/56/3/20/36.
+/// the callee has none.
 #[test]
 #[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
             rejects it, see #1459"]
@@ -453,11 +431,8 @@ fn helper_ret_edges() {
 /// Trap edge in a `match` ARM of the dispatch shape — `interact::dispatch_spill`
 /// with an `assert!` at the head of arm 15.
 ///
-/// Freight: 20 spills, 20 reloads, one split edge, four erased split reloads —
-/// exactly the original's numbers. The pattern the shape is about still fires:
-/// `simplify-switch-fallback-overlap` 1, as without the trap. What the trapping
-/// arm adds is `convert-trivial-if-to-select` 2 vs 1,
-/// `simplify-cond-br-like-switch` 1 vs 0 and `while-remove-unused-args` 1 vs 0.
+/// The pattern the shape is about still fires:
+/// `simplify-switch-fallback-overlap`, as without the trap.
 #[test]
 fn dispatch_arm() {
     run_case_traps("ts_dispatch_arm", include_str!("../cases/case_ts_dispatch_arm.rs"));
@@ -479,10 +454,7 @@ fn dispatch_arm_edges() {
 /// with an `assert!` at the head of the heavy then-arm.
 ///
 /// `ConvertTrivialIfToSelect` STILL FIRES with an `unreachable` arm in the
-/// diamond, and fires MORE: 2 rewrites against the original's 1, plus a
-/// `simplify-cond-br-like-switch` and a `while-remove-unused-args` that the
-/// original does not fire at all. Freight: 10 spills, 10 reloads, one split
-/// edge, two erased split reloads — the original's numbers exactly.
+/// diamond.
 #[test]
 fn select_arm() {
     run_case_traps("ts_select_arm", include_str!("../cases/case_ts_select_arm.rs"));
@@ -504,11 +476,8 @@ fn select_arm_edges() {
 /// `interact::scan_spill` with the second loop's break test reading a 14-byte
 /// `static` at an accumulator-derived index.
 ///
-/// Freight: 18 spills, 18 reloads, one split edge, four erased split reloads —
-/// the original's numbers exactly. The pattern the shape is about loses one
-/// firing: `while-remove-unused-args` 3 against 4, i.e. the guarded loop stops
-/// producing it while the other three still do; `split-critical-edges` 6 vs 8
-/// and `convert-trivial-if-to-select` 3 vs 4 follow.
+/// The pattern the shape is about, `while-remove-unused-args`, stops firing on
+/// the guarded loop while the other three loops still produce it.
 #[test]
 fn scan_break() {
     run_case_traps("ts_scan_break", include_str!("../cases/case_ts_scan_break.rs"));
@@ -535,7 +504,7 @@ fn scan_break_edges() {
 /// source-level trap kinds into a single block and `combine_exit` has nothing
 /// to combine. Verified at `--optimize=basic`, the default level and
 /// `--optimize=size-min`: 1 `ub.unreachable` before the lift and 1 after, at
-/// all three. Freight 45/56/3/20/36, the same as the single-guard cases.
+/// all three.
 #[test]
 #[ignore = "the case fails to compile: `scf.while` forwards 18 felts and the post-lift spill pass \
             rejects it, see #1459"]
