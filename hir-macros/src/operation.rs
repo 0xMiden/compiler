@@ -1005,10 +1005,15 @@ impl quote::ToTokens for OpDefinition {
         let traits = &self.traits;
         let implements = &self.implements;
         let attrs = WithAttrInfos(self);
-        let supports_generic_successors = matches!(
-            self.successors.as_slice(),
-            [] | [SuccessorGroup::Unnamed(_)] | [SuccessorGroup::Named(_)]
-        );
+        let generic_successor_layout = match self.successors.as_slice() {
+            [] => quote! { ::midenc_hir::GenericSuccessorLayout::Fixed(0) },
+            [SuccessorGroup::Unnamed(successors)] => {
+                let count = successors.len();
+                quote! { ::midenc_hir::GenericSuccessorLayout::Fixed(#count) }
+            }
+            [SuccessorGroup::Named(_)] => quote! { ::midenc_hir::GenericSuccessorLayout::Variadic },
+            _ => quote! { ::midenc_hir::GenericSuccessorLayout::Unsupported },
+        };
         tokens.extend(quote_spanned! { op_span =>
             impl #impl_generics ::midenc_hir::Op for #op_ident #ty_generics #where_clause {
                 #[inline]
@@ -1040,8 +1045,8 @@ impl quote::ToTokens for OpDefinition {
                     ])
                 }
 
-                fn supports_generic_successors() -> bool {
-                    #supports_generic_successors
+                fn generic_successor_layout() -> ::midenc_hir::GenericSuccessorLayout {
+                    #generic_successor_layout
                 }
 
                 fn traits() -> ::alloc::boxed::Box<[::midenc_hir::traits::TraitInfo]> {

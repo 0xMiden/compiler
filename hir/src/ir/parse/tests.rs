@@ -36,6 +36,55 @@ pub struct GroupedSuccessors {
     fallback: crate::Successor,
 }
 
+#[crate::derive::operation(dialect = TestDialect, traits(Terminator))]
+pub struct VariadicSuccessors {
+    #[successors()]
+    destinations: crate::Successor,
+}
+
+#[crate::derive::operation(dialect = TestDialect, traits(Terminator))]
+pub struct FixedSuccessors {
+    #[successor]
+    first: crate::Successor,
+    #[successor]
+    second: crate::Successor,
+}
+
+#[test]
+fn generic_parser_rejects_incorrect_provided_successor_counts() -> TestResult {
+    use super::{
+        DefaultParser, OperationState, ParserState, Scanner, TokenStream,
+        operation::OperationParser,
+    };
+
+    for count in [0, 1, 3] {
+        let context = Rc::new(Context::default());
+        context.get_or_register_dialect::<TestDialect>();
+        let world = context.clone().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
+        let tokens = TokenStream::new(super::SourceId::UNKNOWN, Scanner::new(": () -> ()"));
+        let parser =
+            DefaultParser::new(ParserState::new(ParserConfig::new(context.clone()), tokens));
+        let mut parser = OperationParser::new(parser, world);
+        let mut state = OperationState::new(
+            SourceSpan::UNKNOWN,
+            context.get_registered_name::<FixedSuccessors>(),
+        );
+        let successors = alloc::vec![context.create_block(); count];
+        let error = parser
+            .parse_generic_operation_after_name(
+                &mut state,
+                Some(&[]),
+                Some(&successors),
+                None,
+                None,
+                None,
+            )
+            .expect_err("provided successors must satisfy the declared count");
+        assert!(error.to_string().contains("invalid successor count"), "{error}");
+    }
+    Ok(())
+}
+
 #[test]
 fn generic_parser_rejects_provided_successors_with_multiple_groups() -> TestResult {
     use super::{
@@ -80,27 +129,36 @@ fn generic_parser_reserves_operand_groups_for_provided_successors() -> TestResul
     };
 
     let context = Rc::new(Context::default());
+    context.get_or_register_dialect::<TestDialect>();
     let world = context.clone().builder().create::<World, ()>(SourceSpan::UNKNOWN)()?;
-    let tokens = TokenStream::new(super::SourceId::UNKNOWN, Scanner::new(": () -> ()"));
-    let parser = DefaultParser::new(ParserState::new(ParserConfig::new(context.clone()), tokens));
-    let mut parser = OperationParser::new(parser, world);
-    let mut state = OperationState::new(SourceSpan::UNKNOWN, context.get_registered_name::<Ret>());
-    let successors = [context.create_block(), context.create_block()];
-    parser.parse_generic_operation_after_name(
-        &mut state,
-        Some(&[]),
-        Some(&successors),
-        None,
-        None,
-        None,
-    )?;
+    for (name, count) in [
+        (context.get_registered_name::<VariadicSuccessors>(), 0),
+        (context.get_registered_name::<VariadicSuccessors>(), 3),
+        (context.get_registered_name::<FixedSuccessors>(), 2),
+        (context.get_registered_name::<Ret>(), 0),
+    ] {
+        let tokens = TokenStream::new(super::SourceId::UNKNOWN, Scanner::new(": () -> ()"));
+        let parser =
+            DefaultParser::new(ParserState::new(ParserConfig::new(context.clone()), tokens));
+        let mut parser = OperationParser::new(parser, world);
+        let mut state = OperationState::new(SourceSpan::UNKNOWN, name);
+        let successors = alloc::vec![context.create_block(); count];
+        parser.parse_generic_operation_after_name(
+            &mut state,
+            Some(&[]),
+            Some(&successors),
+            None,
+            None,
+            None,
+        )?;
 
-    assert_eq!(state.operands.len(), 3);
-    assert!(state.operands.iter().all(|group| group.is_empty()));
-    assert_eq!(state.successors.len(), 2);
-    for (i, successor) in state.successors.iter().enumerate() {
-        assert_eq!(successor.block, successors[i]);
-        assert_eq!(successor.operand_group as usize, i + 1);
+        assert_eq!(state.operands.len(), count + 1);
+        assert!(state.operands.iter().all(|group| group.is_empty()));
+        assert_eq!(state.successors.len(), count);
+        for (i, successor) in state.successors.iter().enumerate() {
+            assert_eq!(successor.block, successors[i]);
+            assert_eq!(successor.operand_group as usize, i + 1);
+        }
     }
     Ok(())
 }
@@ -1156,13 +1214,15 @@ builtin.world {
 #[test]
 fn parse_generic_operation_with_too_many_successors_is_rejected() {
     let test = ParserTest::default();
+    test.context().get_or_register_dialect::<TestDialect>();
+    let name = test.context().get_registered_name::<VariadicSuccessors>();
     // The op's own operands take group 0, so the successors fill the remaining 65,535 groups
     // and the last one needs group 65,536
     let successors = alloc::vec!["^dest"; u16::MAX as usize + 1].join(", ");
     let source = format!(
         "\
 builtin.function public extern(\"C\") @entrypoint(%a: i32) -> i32 {{
-    \"builtin.ret\"(%a)[{successors}] : (i32) -> ();
+    \"{name}\"()[{successors}] : () -> ();
 ^dest:
     builtin.ret %a : (i32);
 }};"

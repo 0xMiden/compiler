@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
-    BlockArgument, Builder, EntityWithId, Forward, FunctionType, FxHashSet, InsertionGuard, Op,
-    PendingSuccessorInfo, RawWalk, Value, WalkResult,
+    BlockArgument, Builder, EntityWithId, Forward, FunctionType, FxHashSet, GenericSuccessorLayout,
+    InsertionGuard, Op, PendingSuccessorInfo, RawWalk, Value, WalkResult,
     adt::{SmallDenseMap, SmallSet},
     dialects::builtin::{
         UnrealizedConversionCast, WorldRef,
@@ -958,7 +958,8 @@ where
         parsed_attributes: Option<ParsedAttrs>,
         parsed_fn_type: Option<FunctionType>,
     ) -> ParseResult {
-        if !result.name.supports_generic_successors() {
+        let successor_layout = result.name.generic_successor_layout();
+        if successor_layout == GenericSuccessorLayout::Unsupported {
             return Err(ParserError::UnsupportedGenericSuccessorLayout {
                 span: result.span,
                 name: result.name.to_string(),
@@ -1000,6 +1001,16 @@ where
                     successor_group: 0,
                 });
             }
+        }
+
+        if let GenericSuccessorLayout::Fixed(expected) = successor_layout
+            && result.successors.len() != expected
+        {
+            return Err(ParserError::InvalidSuccessorCount {
+                span: result.span,
+                expected,
+                actual: result.successors.len(),
+            });
         }
 
         // Generic operations keep their own operands in group 0, followed by one group per

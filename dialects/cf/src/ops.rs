@@ -567,6 +567,43 @@ builtin.function public extern("C") @branch(%c: i1, %a: u32, %b: u32) -> u32 {
     }
 
     #[test]
+    fn parse_generic_branches_reject_incorrect_successor_counts() {
+        use midenc_hir::{
+            diagnostics::Uri,
+            dialects::builtin::Function,
+            parse::{ParserConfig, parse},
+        };
+
+        for (name, operands, types, successors) in [
+            ("cf.cond_br", "%c", "i1", "[^dest]"),
+            ("cf.cond_br", "%c", "i1", "[^dest, ^dest, ^dest]"),
+            ("cf.cond_br", "%c", "i1", ""),
+            ("cf.br", "", "", ""),
+            ("cf.br", "", "", "[^dest, ^dest]"),
+            ("builtin.ret", "", "", "[^dest]"),
+        ] {
+            let context = Rc::new(Context::default());
+            context.get_or_register_dialect::<ControlFlowDialect>();
+            let source = format!(
+                r#"builtin.function public extern("C") @branch(%c: i1) {{
+    "{name}"({operands}){successors} : ({types}) -> ();
+^dest:
+    builtin.ret;
+}};"#
+            );
+            let error = parse::<Function>(
+                ParserConfig::new(context.clone()),
+                Uri::new("parse_generic_successor_count.hir"),
+                &source,
+            )
+            .err()
+            .expect("incorrect successor counts must be rejected during parsing");
+            let message = format!("{error}");
+            assert!(message.contains("invalid successor count"), "{message}");
+        }
+    }
+
+    #[test]
     fn parse_generic_switch_rejects_unsupported_successor_layout() {
         use midenc_hir::{
             diagnostics::Uri,

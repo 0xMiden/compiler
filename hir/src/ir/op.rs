@@ -3,6 +3,17 @@ use alloc::{boxed::Box, format, rc::Rc};
 use super::*;
 use crate::{AttributeRef, any::AsAny, interner, traits::TraitInfo};
 
+/// How an operation's declared successors map to generic assembly's single unkeyed list.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum GenericSuccessorLayout {
+    /// Keys or multiple successor groups cannot be represented by generic assembly.
+    Unsupported,
+    /// A fixed number of successors, including zero for operations without successors.
+    Fixed(usize),
+    /// A single group with any number of unkeyed successors.
+    Variadic,
+}
+
 pub trait OpRegistration: Op {
     type Dialect: DialectRegistration;
 
@@ -24,13 +35,12 @@ pub trait OpRegistration: Op {
     fn traits() -> Box<[TraitInfo]>;
     /// The set of statically known attributes for this op
     fn attrs() -> Box<[AttrInfo]>;
-    /// Whether the successor layout can be represented by generic assembly's single unkeyed
-    /// successor list. Operations with multiple successor groups or keyed successors cannot.
+    /// The successor layout and cardinality accepted by generic assembly.
     ///
     /// The `operation` macro derives this from the successor declarations. Hand-written
     /// registrations conservatively reject generic parsing unless they opt in.
-    fn supports_generic_successors() -> bool {
-        false
+    fn generic_successor_layout() -> GenericSuccessorLayout {
+        GenericSuccessorLayout::Unsupported
     }
     /// Allocate a new, default-initialized instance of this op in `context`
     fn alloc_uninit(context: Rc<Context>) -> OperationRef;

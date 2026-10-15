@@ -216,6 +216,14 @@ pub enum ParserError {
         span: SourceSpan,
         name: String,
     },
+    #[error("invalid successor count")]
+    #[diagnostic()]
+    InvalidSuccessorCount {
+        #[label("expected {expected} successors, but found {actual}")]
+        span: SourceSpan,
+        expected: usize,
+        actual: usize,
+    },
     #[error("too many operand groups")]
     #[diagnostic()]
     TooManyOperandGroups {
