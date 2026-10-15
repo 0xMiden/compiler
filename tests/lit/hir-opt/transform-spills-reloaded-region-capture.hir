@@ -1,0 +1,53 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(transform-spills))' | filecheck %s --implicit-check-not=hir.store_local
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(transform-spills,transform-spills))' | filecheck %s --implicit-check-not=hir.store_local
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(transform-spills,cfg-to-scf,canonicalizer,sink-operand-defs,transform-spills))' | filecheck %s --implicit-check-not=hir.store_local
+
+// Both predecessors spill the captured condition before calls requiring sixteen felts, and
+// the join's four u128 parameters leave no room for it. The condition must be reloaded for
+// the if. Evicting it inside the if must reuse its initialized slot: hoisting another store
+// before that reload would revive its original live range across the predecessor calls.
+// Neither predecessor store individually dominates the join, so pruning cannot erase it.
+//
+// These are the only three stores needed, including after a second spill pass or CFG lifting.
+// The implicit negative check rejects any additional store (including to a new spill slot).
+// CHECK: @reloaded_capture(%{{\d+}}: i1, %[[COND:\d+]]: i1)
+// CHECK: hir.store_local %[[COND]] <{ local = #builtin.local_variable<[[COND_SLOT:\d+]], i1> }>
+// CHECK: hir.exec
+// CHECK: hir.store_local %[[COND]] <{ local = #builtin.local_variable<[[COND_SLOT]], i1> }>
+// CHECK: hir.exec
+// CHECK: hir.store_local %{{\d+}} <{ local = #builtin.local_variable<[[ARG_SLOT:\d+]], u128> }>
+// CHECK-NEXT: %[[RELOADED:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[COND_SLOT]], i1> }>;
+// CHECK-NEXT: scf.if %[[RELOADED]] then {
+// CHECK: hir.load_local <{ local = #builtin.local_variable<[[ARG_SLOT]], u128> }>;
+// CHECK: hir.exec
+// CHECK: } else {
+// CHECK: hir.load_local <{ local = #builtin.local_variable<[[ARG_SLOT]], u128> }>;
+// CHECK: hir.exec
+// CHECK: } : (i1) -> ();
+// CHECK-NEXT: %[[RESULT:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[COND_SLOT]], i1> }>;
+// CHECK-NEXT: builtin.ret %[[RESULT]] : (i1);
+builtin.module public @test {
+    builtin.function public extern("C") @reloaded_capture(%0: i1, %1: i1) -> i1 {
+        cf.cond_br %0 ^left, ^right : (i1);
+    ^left:
+        %2 = arith.constant 1 : u128;
+        %3 = hir.exec ::@test::@consume(%2, %2, %2, %2) : extern("C") (u128, u128, u128, u128) -> u128;
+        cf.br ^join(%3, %3, %3, %3 : u128, u128, u128, u128);
+    ^right:
+        %4 = arith.constant 2 : u128;
+        %5 = hir.exec ::@test::@consume(%4, %4, %4, %4) : extern("C") (u128, u128, u128, u128) -> u128;
+        cf.br ^join(%5, %5, %5, %5 : u128, u128, u128, u128);
+    ^join(%6: u128, %7: u128, %8: u128, %9: u128):
+        scf.if %1 then {
+            %10 = hir.exec ::@test::@consume(%6, %7, %8, %9) : extern("C") (u128, u128, u128, u128) -> u128;
+            scf.yield : ();
+        } else {
+            %11 = hir.exec ::@test::@consume(%6, %7, %8, %9) : extern("C") (u128, u128, u128, u128) -> u128;
+            scf.yield : ();
+        } : (i1) -> ();
+        builtin.ret %1 : (i1);
+    };
+    builtin.function public extern("C") @consume(%0: u128, %1: u128, %2: u128, %3: u128) -> u128 {
+        builtin.ret %0 : (u128);
+    };
+};

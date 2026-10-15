@@ -1,6 +1,6 @@
 //! Branches, loops, switches, trap edges, and cfg-to-scf shapes.
 
-use super::super::harness::{run_case, run_case_with_inputs};
+use super::super::harness::{run_case, run_case_with_flags, run_case_with_inputs};
 
 #[test]
 fn branchy() {
@@ -624,41 +624,16 @@ fn wide_exits_edges() {
     );
 }
 
-/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-02, campaign 11): building
-/// this case panics with `implicit operand stack overflow along incoming
-/// control flow edges of after(scf.if in ^block82)` at
-/// hir-analysis/src/analyses/spills.rs:1533 (`assert!(taken <= K)` in
-/// `compute_w_exit_region_branch_op`, post-lift TransformSpills). Shape: NINE
-/// nested `while i < (input >> k) % 3` loops (all zero-trip-capable) with
-/// labeled breaks from the innermost body to three outer levels and an early
-/// return. Root cause (spills trace + HIR of the passing eight-level twin):
-/// cfg-to-scf's exit dispatch threads every escaping value and every level's
-/// exit discriminator outward as RESULT columns of the enclosing
-/// `scf.while`/`scf.if` ops (~two columns per level; the widest `scf.if` of
-/// `nest8` has fifteen u32 results). At depth nine the results exceed K =
-/// 16 felts: the analysis trims them with `spill_trailing_until_fits`, but
-/// then inserts every value live along ALL incoming edges (`count ==
-/// predecessor_count`, here two u32s) into `take` without re-checking the
-/// budget, and the assert fires. Not F1 (no unrolling, no "unused phi"),
-/// not F2 (no scheduler involved), not F6 (no dominator staleness; the
-/// pressure is real region-result width, not stale reloads). Bounded by:
-/// `nest8` (eight levels, same generator family, passes with pinned
-/// per-level exits) and `wide_exits` (ten escape sites at depth five pass
-/// — exit count is not the driver); at `--optimize=size-min` the same
-/// assert fires from depth SEVEN (six passes; `nest8_oz` in opt_levels.rs
-/// pins it on the kept eight-level source). Compile-time, no inputs
-/// involved. Un-ignore when this case compiles (the region-exit budget
-/// must spill more results, or cfg-to-scf must not widen results per
-/// level). Re-verified failing 2026-09-17 on
-/// nightly-2026-09-01 guests (the block label moved from `^block76` to
-/// `^block82`; the site and the mechanism are unchanged).
+/// Deeply nested control flow must report an unsupported region-exit budget.
+/// The compilation harness panics with the returned diagnostic; a compiler panic does not match.
 #[test]
-#[ignore = "#1422: compiler panic: 'implicit operand stack overflow along incoming control flow \
-            edges of after(scf.if in ^block82)' at hir-analysis/src/analyses/spills.rs:1533 — \
-            cfg-to-scf exit-dispatch result columns of a nine-deep loop nest exceed the 16-felt \
-            budget (compile-time, no inputs involved)"]
+#[should_panic(expected = "its region results")]
 fn deep_nest_overflow() {
-    run_case("deep_nest_overflow", include_str!("../cases/case_deep_nest_overflow.rs"));
+    run_case_with_flags(
+        "deep_nest_overflow",
+        include_str!("../cases/case_deep_nest_overflow.rs"),
+        &["--optimize=balanced"],
+    );
 }
 
 /// Campaign 11 ladder 5 (many-block functions) boundary guard: a 200-arm

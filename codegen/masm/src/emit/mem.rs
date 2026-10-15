@@ -7,6 +7,23 @@ use midenc_hir::{
 use super::{OpEmitter, masm};
 use crate::{OperandStack, lower::NativePtr};
 
+/// Whether a scalar of type `ty` is represented by a single stack element.
+/// Sub-word integers still require masking when accessing a shared memory element.
+fn is_single_element_scalar(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Felt
+            | Type::I32
+            | Type::U32
+            | Type::Ptr(_)
+            | Type::I16
+            | Type::U16
+            | Type::I8
+            | Type::U8
+            | Type::I1
+    )
+}
+
 /// How a copy between two memory ranges treats ranges that overlap.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum CopyOverlap {
@@ -200,14 +217,14 @@ impl OpEmitter<'_> {
                      type of the pointee ({})",
                     ptr_ty.pointee()
                 );
-                // Element-address-space pointers (e.g. procedure locals) are element-aligned
-                // with no byte offset by construction, so element-sized scalars load directly
-                // from the address; the dynamic-offset intrinsics exist for the byte-addressable
-                // address space.
-                if !ptr_ty.is_byte_pointer()
-                    && matches!(ty, Type::Felt | Type::I32 | Type::U32 | Type::Ptr(_))
-                {
+                // Element pointers have no byte offset, but a sub-word pointee can still share
+                // its element with other data. Extract only its bits without dynamic-offset
+                // intrinsics, including when loading procedure locals under stack pressure.
+                if !ptr_ty.is_byte_pointer() && is_single_element_scalar(&ty) {
                     self.emit(masm::Instruction::MemLoad, span);
+                    if ty.size_in_bits() < 32 {
+                        self.const_mask_u32((1u32 << ty.size_in_bits()) - 1, span);
+                    }
                     self.push(ty);
                     return;
                 }
@@ -709,13 +726,22 @@ impl OpEmitter<'_> {
                      from the type of the pointee ({})",
                     ptr_ty.pointee()
                 );
-                // Element-address-space pointers (e.g. procedure locals) are element-aligned
-                // with no byte offset by construction, so element-sized scalars store directly
-                // to the address; the dynamic-offset intrinsics exist for the byte-addressable
-                // address space.
-                if !ptr_ty.is_byte_pointer()
-                    && matches!(value_ty, Type::Felt | Type::I32 | Type::U32 | Type::Ptr(_))
-                {
+                // As with loads, alignment removes the byte offset, not the need to preserve
+                // other bits in a shared element. Merge sub-word stores at the known zero offset.
+                if !ptr_ty.is_byte_pointer() && is_single_element_scalar(&value_ty) {
+                    if value_ty.size_in_bits() < 32 {
+                        // [addr, value] -> [prev, addr, value]
+                        self.emit_all([masm::Instruction::Dup0, masm::Instruction::MemLoad], span);
+                        self.const_mask_u32(!((1u32 << value_ty.size_in_bits()) - 1), span);
+                        self.emit_all(
+                            [
+                                masm::Instruction::MovUp2, // [value, masked_prev, addr]
+                                masm::Instruction::U32Or,  // [new_value, addr]
+                                masm::Instruction::Swap1,  // [addr, new_value]
+                            ],
+                            span,
+                        );
+                    }
                     self.emit(masm::Instruction::MemStore, span);
                     return;
                 }

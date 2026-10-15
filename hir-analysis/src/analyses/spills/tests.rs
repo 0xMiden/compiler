@@ -625,6 +625,7 @@ fn spills_entry_block_args_over_k() -> AnalysisResult<()> {
     Ok(())
 }
 
+/// Region result columns must fit the addressable window before any following spill can run.
 #[test]
 fn spills_region_branch_results_over_k() -> AnalysisResult<()> {
     let mut test = Test::named("spills_region_branch_results_over_k").in_module("test");
@@ -634,11 +635,10 @@ fn spills_region_branch_results_over_k() -> AnalysisResult<()> {
     // Construct a function which returns an `scf.if` result set which alone exceeds K=16 stack slots.
     //
     // Each `u64` occupies 2 felts on the Miden stack, so 9×`u64` => 18 felts, which forces at least
-    // one spill at `ProgramPoint::after(if_op)`.
+    // a diagnostic: spilling after the op cannot make its incoming yields addressable.
     test.with_function("spills_region_branch_results_over_k", &[], &[Type::U64]);
     let func = test.function();
 
-    let if_op: OperationRef;
     let if_results: alloc::vec::Vec<ValueRef>;
     {
         let mut b = test.function_builder();
@@ -647,7 +647,7 @@ fn spills_region_branch_results_over_k() -> AnalysisResult<()> {
         let cond = b.i1(true, span);
         let result_tys = alloc::vec![Type::U64; 9];
         let scf_if = b.r#if(cond, &result_tys, span)?;
-        if_op = scf_if.as_operation_ref();
+        let if_op = scf_if.as_operation_ref();
         if_results = if_op
             .borrow()
             .results()
@@ -681,15 +681,13 @@ fn spills_region_branch_results_over_k() -> AnalysisResult<()> {
     }
 
     let am = AnalysisManager::new(func.as_operation_ref(), None);
-    let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
-
-    assert!(spills.has_spills(), "expected spills when region branch results exceed K");
-
-    let after_if = ProgramPoint::after(if_op);
-    let spilled_result =
-        *if_results.last().expect("expected at least one `scf.if` result in over-K test");
-    assert!(spills.is_spilled(&spilled_result));
-    assert!(spills.is_spilled_at(spilled_result, after_if));
+    let error = am.get_analysis_for::<SpillAnalysis, Function>().expect_err("oversized results");
+    assert!(
+        error
+            .to_string()
+            .contains("needs 18 operand stack elements at once for its region results"),
+        "{error:?}"
+    );
 
     Ok(())
 }

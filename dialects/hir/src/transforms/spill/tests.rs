@@ -613,11 +613,13 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
 /// All spills of one value must share one procedure local, even when SSA reconstruction has
 /// rewritten a spill's operand.
 ///
-/// We synthesize a `spill; reload; spill; reload` chain over a single value: the rewrite phase
-/// redirects the second spill's operand to the first reload's result (spill operands are not
-/// exempt from use rewriting), so pairing the local slot by the op operand would allocate a
-/// second local that no reload ever reads. Materialization must key locals by the value tracked
-/// in the spills analysis, storing the (possibly rewritten) operand into the shared slot.
+/// We synthesize a spill of one value in each arm of a diamond, a reload after the join, and a
+/// second `spill; reload` pair below it. Neither arm spill dominates the spill after the join, so
+/// it survives the dominated-spill erasure, and the rewrite phase redirects its operand to the
+/// first reload's result (spill operands are not exempt from use rewriting). Pairing the local
+/// slot by the op operand would then allocate a second local that no reload ever reads, so
+/// materialization must key locals by the value tracked in the spills analysis, storing the
+/// (possibly rewritten) operand into the shared slot.
 #[test]
 fn materializes_spills_shared_local_for_rewritten_spill() -> TestResult<()> {
     let mut test =
@@ -633,9 +635,24 @@ fn materializes_spills_shared_local_for_rewritten_spill() -> TestResult<()> {
         let v0 = entry.borrow().arguments()[0] as ValueRef;
         let k1 = b.u32(1, span);
         let v = b.add_unchecked(v0, k1, span)?;
+        let cond = b.eq(v, k1, span)?;
+        let left = b.create_block();
+        let right = b.create_block();
+        let join = b.create_block();
+        Cf::cond_br(&mut b, cond, left, [], right, [], span)?;
+
         // Anchor operations to place the spill/reload pseudo-ops in front of
-        let a1 = b.add_unchecked(v0, v0, span)?;
-        let a2 = b.add_unchecked(a1, k1, span)?;
+        b.switch_to_block(left);
+        let l1 = b.add_unchecked(v0, v0, span)?;
+        b.br(join, [l1], span)?;
+
+        b.switch_to_block(right);
+        let r1 = b.add_unchecked(v0, k1, span)?;
+        b.br(join, [r1], span)?;
+
+        let joined = b.append_block_param(join, Type::U32, span);
+        b.switch_to_block(join);
+        let a2 = b.add_unchecked(joined, k1, span)?;
         let a3 = b.add_unchecked(a2, k1, span)?;
         let a4 = b.add_unchecked(a3, k1, span)?;
         // The post-reload use of the spilled value
@@ -647,7 +664,7 @@ fn materializes_spills_shared_local_for_rewritten_spill() -> TestResult<()> {
                 value.borrow().get_defining_op().expect("expected anchor to have a defining op"),
             )
         };
-        (v, [anchor(a1), anchor(a3)], [anchor(a2), anchor(a4)])
+        (v, [anchor(l1), anchor(r1), anchor(a3)], [anchor(a2), anchor(a4)])
     };
 
     let mut analysis = midenc_hir_analysis::analyses::SpillAnalysis::default();
@@ -685,12 +702,13 @@ fn materializes_spills_shared_local_for_rewritten_spill() -> TestResult<()> {
         1,
         "all spills of one value must share one procedure local\n{after}"
     );
-    // The second store must write the first reload's result into the same local, proving the
-    // rewritten operand landed in the shared slot
+    // The store after the join must write the first reload's result into the same local as the
+    // arm stores, proving the rewritten operand landed in the shared slot
     filecheck!(
         &after,
         r#"
 ; CHECK: hir.store_local %{{\d+}} <{ local = #builtin.local_variable<[[L:\d+]], u32> }>
+; CHECK: hir.store_local %{{\d+}} <{ local = #builtin.local_variable<[[L]], u32> }>
 ; CHECK: %[[R0:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[L]], u32> }>
 ; CHECK: hir.store_local %[[R0]] <{ local = #builtin.local_variable<[[L]], u32> }>
 ; CHECK: hir.load_local <{ local = #builtin.local_variable<[[L]], u32> }>

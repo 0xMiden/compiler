@@ -170,7 +170,11 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
     // cycles: 6 for the assertions, less a padding `noop` its shorter block needs), and the
     // wallet's `init`, which runs on each of the script's two calls into it, three (10 cycles
     // each; see Step 2).
-    expect!["6660"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    //
+    // 12 cycles more (6660 before) with the spill fixes for structured branches (#1422): the
+    // script's last `scf.if` evicts its own condition, which is used again after the if, so the
+    // condition is stored before the if and reloaded at that use.
+    expect!["6692"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();

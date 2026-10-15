@@ -233,6 +233,8 @@ pub struct SpillAnalysis {
     spill_ids: FxHashMap<(Placement, ValueRef), Spill>,
     // Index reloads by (placement, spilled value) for fast global deduplication.
     reload_ids: FxHashMap<(Placement, ValueRef), Reload>,
+    // Resident-value evictions, including those that reuse an existing spill slot.
+    evictions: SmallVec<[ValueRef; 4]>,
     // The set of operands in registers on entry to a given program point
     w_entries: FxHashMap<ProgramPoint, SmallSet<ValueOrAlias, 4>>,
     // The set of operands that have been spilled upon entry to a given program point
@@ -1026,6 +1028,16 @@ impl SpillAnalysis {
         // produce results, which is the only case that matters.
 
         let op = branch.as_operation();
+        // A spill after the region op cannot make an oversized incoming yield addressable.
+        let result_usage = branch
+            .results()
+            .iter()
+            .map(|result| result.borrow().ty().size_in_felts())
+            .sum::<usize>();
+        if result_usage > K {
+            return Err(operand_stack_overflow(op, result_usage, "its region results"));
+        }
+        let first_eviction = self.evictions.len();
         let before_op = ProgramPoint::before(op);
         let place = Placement::At(before_op);
         let span = op.span();
@@ -1112,6 +1124,7 @@ impl SpillAnalysis {
 
             // Remove spilled values from W
             w.remove(spill);
+            self.evictions.push(spill.value());
         }
 
         // Emit reloads for those operands of I not yet in W
@@ -1214,18 +1227,56 @@ impl SpillAnalysis {
         );
 
         // First, compute W^exit(branch)
-        self.compute_w_exit_region_branch_op(branch, liveness);
+        self.compute_w_exit_region_branch_op(branch, liveness)?;
 
         // Then, derive S^exit(branch)
         let ProgramPointInfo {
-            w_entry: w_exit,
-            s_entry: s_exit,
+            w_entry: mut w_exit,
+            s_entry: mut s_exit,
             ..
         } = self.op_exit_info(
             branch,
             liveness,
             &self.w_exits[&ProgramPoint::after(branch.as_operation())],
         );
+
+        // A reload inside a region cannot replace uses outside that region. End the enclosing
+        // live range as well, and initialize its slot even on paths that bypass the inner spill.
+        let loop_like = op.as_trait::<dyn LoopLikeOpInterface>();
+        let escaped_spills = self.evictions[first_eviction..]
+            .iter()
+            .copied()
+            .map(ValueOrAlias::new)
+            .filter(|value| {
+                liveness.is_live_before(value, op)
+                    && (loop_like.is_some() || liveness.is_live_after(value, op))
+            })
+            .collect::<SmallSet<_, 4>>();
+        for value in escaped_spills {
+            // Entry residency includes reloads issued in phase 1. Reuse an initialized slot:
+            // another store here would precede those reloads and revive the original live range.
+            if self.w_entries[&before_op].contains(&value)
+                && !self.s_entries[&before_op].contains(&value)
+            {
+                self.spill(Placement::At(before_op), value.value(), span);
+            }
+            // The value is no longer resident after `op`. Its next use reloads it like any other
+            // spilled operand, which costs nothing on paths that never use it again.
+            w_exit.remove(&value);
+            s_exit.remove(&value);
+            if let Some(loop_like) = loop_like {
+                // Captures are also live across backedges. Give each region its own definition
+                // so a use on the next iteration cannot keep the pre-loop value on the stack.
+                for region in loop_like.get_loop_regions() {
+                    let entry =
+                        ProgramPoint::at_start_of(region.borrow().entry_block_ref().unwrap());
+                    if self.w_entries[&entry].contains(&value) {
+                        self.reload(Placement::At(entry), value.value(), span);
+                    }
+                }
+            }
+        }
+        self.w_exits.insert(ProgramPoint::after(op), w_exit.clone());
 
         *w = w_exit;
         *s = s_exit;
@@ -1338,6 +1389,7 @@ impl SpillAnalysis {
             let value =
                 ordered.pop().expect("expected at least one value when spilling over-K usage");
             take.remove(&value);
+            self.evictions.push(value.value());
             usage = usage.checked_sub(value.stack_size()).expect("spill usage underflow");
             self.spill(place, value.value(), value.value().borrow().span());
         }
@@ -1498,27 +1550,22 @@ impl SpillAnalysis {
         self.w_entries.insert(ProgramPoint::at_start_of(block), take);
     }
 
+    /// Compute the resident values at a structured control-flow join.
+    ///
+    /// Returns a diagnostic when its results and incoming live-through values exceed the window.
     fn compute_w_exit_region_branch_op(
         &mut self,
         branch: &dyn RegionBranchOpInterface,
         liveness: &LivenessAnalysis,
-    ) {
+    ) -> Result<(), Report> {
         let mut freq = SmallOrdMap::<ValueOrAlias, usize, 4>::default();
         let mut take = SmallSet::<ValueOrAlias, 4>::default();
         let mut cand = SmallSet::<ValueOrAlias, 4>::default();
 
         // Op results are always in W^exit by definition
-        let after_branch = ProgramPoint::after(branch.as_operation());
-        let mut results = SmallVec::<[ValueOrAlias; 4]>::default();
         for result in branch.results().iter().copied() {
             let result = ValueOrAlias::new(result as ValueRef);
             take.insert(result);
-            results.push(result);
-        }
-        let w_exit_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
-        if w_exit_usage > K {
-            let place = Placement::At(after_branch);
-            let _ = self.spill_trailing_until_fits(&mut take, &mut results, w_exit_usage, place);
         }
 
         // If this block is the entry block of a RegionBranchOpInterface op, then we compute the
@@ -1533,6 +1580,9 @@ impl SpillAnalysis {
             "unexpected unresolved region predecessors"
         );
         let operation = branch.as_operation_ref();
+        // A value reloaded inside a region is a definition local to that region: it cannot be on
+        // the operand stack after the op unless it was already there on entry.
+        let entry_resident = &self.w_entries[&ProgramPoint::before(operation)];
         for predecessor in predecessors.known_predecessors().iter().copied() {
             if predecessor == operation {
                 predecessor_count += 1;
@@ -1558,7 +1608,7 @@ impl SpillAnalysis {
             log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "examining exit predecessor {end_of_pred}");
             for o in self.w_exits[&end_of_pred].iter().copied() {
                 // Do not add candidates which are not live-after the predecessor
-                if liveness.is_live_at_end(o, predecessor_block) {
+                if entry_resident.contains(&o) && liveness.is_live_at_end(o, predecessor_block) {
                     *freq.entry(o).or_insert(0) += 1;
                     cand.insert(o);
                 }
@@ -1573,11 +1623,13 @@ impl SpillAnalysis {
         }
 
         let taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
-        assert!(
-            taken <= K,
-            "implicit operand stack overflow along incoming control flow edges of {}",
-            ProgramPoint::after(operation)
-        );
+        if taken > K {
+            return Err(operand_stack_overflow(
+                branch.as_operation(),
+                taken,
+                "its region results and live-through values",
+            ));
+        }
 
         let entry = ProgramPoint::after(operation);
         let entry_next_uses = liveness.next_uses_at(&entry).unwrap();
@@ -1608,6 +1660,7 @@ impl SpillAnalysis {
         }
 
         self.w_exits.insert(entry, take);
+        Ok(())
     }
 
     fn compute_w_entry_loop(
@@ -2152,11 +2205,16 @@ impl SpillAnalysis {
         // This can occur when B is a loop header, and the computed W^entry(B) does not include values
         // in W^exit(P) that are live-through the loop, typically because of loop pressure within the
         // loop requiring us to place spills of those values outside the loop.
-        let must_spill = w_exitp.difference(&info.w_entry).into_difference(s_exitp);
+        let evicted = w_exitp.difference(&info.w_entry);
         let next_uses = liveness
             .next_uses_at(&info.point)
             .expect("missing liveness info for program point");
-        to_spill.extend(must_spill.into_iter().filter(|o| next_uses.is_live(o)));
+        for value in evicted.into_iter().filter(|o| next_uses.is_live(o)) {
+            self.evictions.push(value.value());
+            if !s_exitp.contains(&value) {
+                to_spill.insert(value);
+            }
+        }
 
         // We expect any block parameters present to be in `to_reload` at this point, as they will never
         // be in W^exit(P) (the parameters are not in scope at the end of P). The arguments provided in
@@ -2501,6 +2559,7 @@ impl SpillAnalysis {
 
             // Remove spilled values from W
             w.remove(spill);
+            self.evictions.push(spill.value());
         }
 
         // Emit reloads for those operands of I not yet in W
