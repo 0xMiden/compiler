@@ -121,8 +121,8 @@ pub fn run_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>
     let stdout = child.stdout.take().expect("no stdout");
     // The child is always waited for, even when its output cannot be read, so that an early
     // return never leaves a running cargo process behind, un-waited and holding the build
-    // directory lock. A failed status is reported ahead of a truncated output stream, since
-    // the failure is what truncated it.
+    // directory lock. Preserve output errors alongside a failed status: closing the output
+    // stream early can itself cause the child to fail.
     let artifacts = collect_wasm_artifacts(stdout);
     let status = child.wait().map_err(|err| {
         Report::msg(format!(
@@ -140,10 +140,11 @@ pub fn run_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>
     }
 
     if !status.success() {
-        return Err(Report::msg(format!(
-            "`{cargo}` failed with {status}",
-            cargo = cargo.display()
-        )));
+        let message = format!("`{cargo}` failed with {status}", cargo = cargo.display());
+        return Err(match artifacts {
+            Ok(_) => Report::msg(message),
+            Err(error) => error.wrap_err(message),
+        });
     }
 
     artifacts
@@ -267,5 +268,33 @@ mod tests {
         let error = run_cargo(cmd, Path::new("sh")).unwrap_err().to_string();
 
         assert!(error.contains("failed with"), "unexpected error: {error}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn run_cargo_preserves_output_errors_when_the_child_fails() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", r"printf '\377\n'; exit 3"])
+            .stdout(std::process::Stdio::piped());
+
+        let error = run_cargo(cmd, Path::new("sh")).unwrap_err();
+        let diagnostic = format!("{error:#}");
+
+        assert!(diagnostic.contains("failed to read output"), "unexpected error: {diagnostic}");
+        assert!(diagnostic.contains("UTF-8"), "unexpected error: {diagnostic}");
+        assert!(diagnostic.contains("exit status: 3"), "unexpected error: {diagnostic}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn run_cargo_preserves_output_errors_when_the_child_succeeds() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", r"printf '\377\n'"]).stdout(std::process::Stdio::piped());
+
+        let error = run_cargo(cmd, Path::new("sh")).unwrap_err();
+        let diagnostic = format!("{error:#}");
+
+        assert!(diagnostic.contains("failed to read output"), "unexpected error: {diagnostic}");
+        assert!(diagnostic.contains("UTF-8"), "unexpected error: {diagnostic}");
     }
 }
