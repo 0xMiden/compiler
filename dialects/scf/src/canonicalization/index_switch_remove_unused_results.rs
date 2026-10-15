@@ -70,6 +70,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::canonicalization::if_remove_unused_results::tests::InsertionPointListener;
 
     fn normalize_hir(input: &str) -> String {
         let mut normalized = input.lines().map(str::trim_end).collect::<Vec<_>>().join("\n");
@@ -118,7 +119,7 @@ mod tests {
         let changed = patterns::apply_patterns_and_fold_greedily(
             test.function().as_operation_ref(),
             rewrites,
-            GreedyRewriteConfig::default(),
+            GreedyRewriteConfig::new_with_listener(InsertionPointListener),
         )
         .expect("expected canonicalizer to converge");
         assert!(changed, "expected index_switch to be rewritten");

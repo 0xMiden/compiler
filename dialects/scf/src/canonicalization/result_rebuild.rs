@@ -18,7 +18,11 @@ use crate::*;
 /// that replaces it, or `None` if the result is dropped without replacement, which requires that
 /// it has no real uses (the `di.debug_value` operations using it are erased with the op). Every
 /// result of the new op must replace at least one result of the original one; when it replaces
-/// several, every region must yield them the same value.
+/// several, every region must yield them the same value. The kept results keep their relative
+/// order: the map is a filter, not a permutation.
+///
+/// A region that does not end in an `scf.yield` (an `ub.unreachable` arm) has nothing to narrow
+/// and is moved as it is.
 ///
 /// Returns `Ok(false)`, with nothing modified, if `operation` is not an `scf.if`.
 pub fn rebuild_if(
@@ -44,7 +48,7 @@ pub fn rebuild_if(
     };
 
     // Creating the new op is the only fallible step; nothing has been modified before it. It takes
-    // the place of the original, wherever the rewriter was positioned by the caller.
+    // the place of the original, regardless of where the caller left the rewriter positioned.
     rewriter.set_insertion_point_before(operation);
     let new_if = rewriter.r#if(condition, &result_types, span)?;
     let new_regions = {
@@ -96,7 +100,7 @@ pub fn rebuild_index_switch(
     };
 
     // Creating the new op is the only fallible step; nothing has been modified before it. It takes
-    // the place of the original, wherever the rewriter was positioned by the caller.
+    // the place of the original, regardless of where the caller left the rewriter positioned.
     rewriter.set_insertion_point_before(operation);
     let new_switch = rewriter.index_switch(selector, cases, &result_types, span)?;
     let new_regions = {
@@ -119,6 +123,25 @@ pub fn rebuild_index_switch(
     );
 
     Ok(true)
+}
+
+/// The result map (see [rebuild_if]) that keeps the results for which `keep` holds, renumbered in
+/// order, and drops the others.
+pub fn keep_map(
+    num_results: usize,
+    mut keep: impl FnMut(usize) -> bool,
+) -> SmallVec<[Option<usize>; 4]> {
+    let mut next = 0;
+    (0..num_results)
+        .map(|index| {
+            if keep(index) {
+                next += 1;
+                Some(next - 1)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// The types of the results of the new op: each one takes the type of the first result of the
@@ -170,15 +193,22 @@ fn finish_rebuild(
         rewriter.merge_blocks(old_entry, new_entry, &[]);
 
         let yield_ref = new_entry.borrow().terminator().unwrap();
-        let mut yield_op = yield_ref.try_downcast_op::<Yield>().expect("expected scf.yield");
-        let yielded = {
-            let yield_op = yield_op.borrow();
-            sources
-                .iter()
-                .map(|index| yield_op.yielded()[*index].borrow().as_value_ref())
-                .collect::<SmallVec<[ValueRef; 4]>>()
+        let Ok(mut yield_op) = yield_ref.try_downcast_op::<Yield>() else {
+            // An `ub.unreachable` arm forwards nothing.
+            continue;
         };
-        if yielded.len() != yield_op.borrow().yielded().len() {
+        let (yielded, current) = {
+            let yield_op = yield_op.borrow();
+            let current = yield_op
+                .yielded()
+                .into_iter()
+                .map(|operand| operand.borrow().as_value_ref())
+                .collect::<SmallVec<[ValueRef; 4]>>();
+            let yielded =
+                sources.iter().map(|index| current[*index]).collect::<SmallVec<[ValueRef; 4]>>();
+            (yielded, current)
+        };
+        if yielded != current {
             let _guard = rewriter.modify_op_in_place(yield_ref);
             let mut yield_op = yield_op.borrow_mut();
             let context = yield_op.as_operation().context_rc();

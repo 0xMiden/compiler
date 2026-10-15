@@ -27,6 +27,6 @@ pub use self::{
     while_unused_result::WhileUnusedResult,
 };
 pub use self::{
-    result_rebuild::{rebuild_if, rebuild_index_switch},
+    result_rebuild::{keep_map, rebuild_if, rebuild_index_switch},
     while_rebuild::{IterArg, rebuild_while},
 };

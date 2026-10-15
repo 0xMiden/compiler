@@ -95,7 +95,7 @@ pub fn rebuild_while(
     }
 
     // Creating the new op is the only fallible step; nothing has been modified before it. It takes
-    // the place of the original, wherever the rewriter was positioned by the caller.
+    // the place of the original, regardless of where the caller left the rewriter positioned.
     rewriter.set_insertion_point_before(operation);
     let new_while =
         rewriter.r#while(new_inits.iter().copied(), &new_result_types, while_op.span())?;
