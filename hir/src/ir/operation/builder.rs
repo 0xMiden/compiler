@@ -280,38 +280,13 @@ where
 
     /// Consume this builder, verify the op, and return a handle to it, or an error if validation
     /// failed.
+    ///
+    /// On failure, unlink operand and successor uses from the op and its nested operations.
     pub fn build(mut self) -> Result<OperationRef, Report> {
-        {
-            let mut op = self.op.borrow_mut();
-
-            self.builder.inherit_debug_info(&mut op);
-
-            // Type inference may access declared operands by index and assume their types.
-            op.verify_operand_cardinality()?;
-            op.as_ref().verify_operand_types()?;
-
-            // Infer result types and apply any associated validation
-            if let Some(interface) = op.as_trait_mut::<dyn crate::traits::InferTypeOpInterface>() {
-                interface.infer_return_types(self.builder.context())?;
-            }
-
-            // Verify things that would require negative trait impls
-            if !op.implements::<dyn Terminator>() && op.has_successors() {
-                return Err(self
-                    .builder
-                    .context()
-                    .session()
-                    .diagnostics
-                    .diagnostic(Severity::Error)
-                    .with_message(::alloc::format!("invalid operation {}", op.name()))
-                    .with_primary_label(
-                        op.span(),
-                        "this operation has successors, but does not implement the 'Terminator' \
-                         trait",
-                    )
-                    .with_help("operations with successors must implement the 'Terminator' trait")
-                    .into_report());
-            }
+        if let Err(error) = self.infer_and_validate() {
+            // The op has not been inserted, but constructing it already linked its uses.
+            self.op.borrow_mut().drop_all_references();
+            return Err(error);
         }
 
         // Insert op at current insertion point, if set
@@ -320,6 +295,40 @@ where
         }
 
         Ok(self.op)
+    }
+
+    fn infer_and_validate(&mut self) -> Result<(), Report> {
+        let mut op = self.op.borrow_mut();
+
+        self.builder.inherit_debug_info(&mut op);
+
+        // Type inference may access declared operands by index and assume their types.
+        op.verify_operand_cardinality()?;
+        op.as_ref().verify_operand_types()?;
+
+        // Infer result types and apply any associated validation
+        if let Some(interface) = op.as_trait_mut::<dyn crate::traits::InferTypeOpInterface>() {
+            interface.infer_return_types(self.builder.context())?;
+        }
+
+        // Verify things that would require negative trait impls
+        if !op.implements::<dyn Terminator>() && op.has_successors() {
+            return Err(self
+                .builder
+                .context()
+                .session()
+                .diagnostics
+                .diagnostic(Severity::Error)
+                .with_message(::alloc::format!("invalid operation {}", op.name()))
+                .with_primary_label(
+                    op.span(),
+                    "this operation has successors, but does not implement the 'Terminator' trait",
+                )
+                .with_help("operations with successors must implement the 'Terminator' trait")
+                .into_report());
+        }
+
+        Ok(())
     }
 }
 
@@ -393,5 +402,122 @@ where
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.builder
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::string::ToString;
+
+    use super::*;
+    use crate::{
+        BuilderExt,
+        dialects::test::{Shl, TestDialect},
+        testing::Test,
+        traits::Bool,
+    };
+
+    #[crate::derive::operation(dialect = TestDialect, traits(Terminator))]
+    pub struct CheckedBranch {
+        #[operand]
+        condition: Bool,
+        #[successor]
+        target: crate::Successor,
+    }
+
+    #[test]
+    fn failed_typed_build_preserves_existing_uses() {
+        let test = Test::new("failed_typed_build", &[Type::I1, Type::U32], &[]);
+        let context = test.context_rc();
+        let entry = test.entry_block();
+        let boolean = entry.borrow().get_argument(0) as ValueRef;
+        let integer = entry.borrow().get_argument(1) as ValueRef;
+        let target = context.create_block_with_params([Type::U32]);
+        let mut builder = context.builder();
+        builder.set_insertion_point_to_end(entry);
+
+        let valid = builder.create::<CheckedBranch, (ValueRef, BlockRef, [ValueRef; 1])>(
+            crate::SourceSpan::UNKNOWN,
+        )(boolean, target, [integer])
+        .unwrap();
+        let error = builder.create::<CheckedBranch, (ValueRef, BlockRef, [ValueRef; 1])>(
+            crate::SourceSpan::UNKNOWN,
+        )(integer, target, [boolean])
+        .map(|op| op.as_operation_ref())
+        .unwrap_err();
+        assert!(error.to_string().contains("invalid operand"), "{error}");
+
+        // Rejecting a second branch must remove only its own uses, preserving the first branch.
+        assert_eq!(boolean.borrow().iter_uses().count(), 1);
+        assert_eq!(integer.borrow().iter_uses().count(), 1);
+        assert_eq!(target.borrow().predecessors().count(), 1);
+        assert_eq!(target.borrow().predecessors().next().unwrap().owner, valid.as_operation_ref());
+        assert_eq!(valid.as_operation_ref().parent(), Some(entry));
+        assert_eq!(entry.borrow().body().iter().count(), 1);
+    }
+
+    #[test]
+    fn failed_generic_build_cleans_operand_and_successor_uses() {
+        let test = Test::new("failed_generic_build", &[Type::I1, Type::U32], &[]);
+        let context = test.context_rc();
+        context.get_or_register_dialect::<TestDialect>();
+        let entry = test.entry_block();
+        let boolean = entry.borrow().get_argument(0) as ValueRef;
+        let integer = entry.borrow().get_argument(1) as ValueRef;
+        let target = context.create_block_with_params([Type::I1]);
+        let name = context.get_registered_name::<CheckedBranch>();
+        let mut builder = context.clone().builder();
+
+        for (operands, message) in
+            [(vec![], "invalid operand count"), (vec![integer], "invalid operand")]
+        {
+            let mut op = name.alloc_default(context.clone());
+            let mut op_builder = GenericOperationBuilder::new(&mut builder, op);
+            op_builder.with_operands(operands);
+            op_builder.with_successor(target, [boolean]);
+
+            // Generic assembly can attach regions before the outer operation is validated.
+            let mut region = context.create_region();
+            let nested_block = context.create_block_with_params([Type::I1]);
+            region.borrow_mut().push_back(nested_block);
+            let mut nested_builder = context.clone().builder();
+            nested_builder.set_insertion_point_to_end(nested_block);
+            CheckedBranch::create(
+                &mut nested_builder,
+                crate::SourceSpan::UNKNOWN,
+                boolean,
+                nested_block,
+                [boolean],
+            )
+            .unwrap();
+            op.borrow_mut().regions_mut().push_back(region);
+
+            let error = op_builder.build().unwrap_err();
+            assert!(error.to_string().contains(message), "{error}");
+            assert!(!boolean.borrow().is_used(), "failed build retained successor operands");
+            assert!(!integer.borrow().is_used(), "failed build retained ordinary operands");
+            assert!(!target.borrow().has_predecessors(), "failed build retained a predecessor");
+            assert!(!nested_block.borrow().has_predecessors(), "failed build retained a self-edge");
+        }
+    }
+
+    #[test]
+    fn failed_build_after_inference_cleans_uses() {
+        let test = Test::new("failed_build_after_inference", &[Type::U32], &[]);
+        let context = test.context_rc();
+        context.get_or_register_dialect::<TestDialect>();
+        let value = test.entry_block().borrow().get_argument(0) as ValueRef;
+        let target = context.create_block_with_params([Type::U32]);
+        let name = context.get_registered_name::<Shl>();
+        let op = name.alloc_default(context.clone());
+        let mut builder = context.builder();
+        let mut op_builder = GenericOperationBuilder::new(&mut builder, op);
+        op_builder.with_operands([value, value]);
+        op_builder.with_results([Type::Unknown]);
+        op_builder.with_successor(target, [value]);
+        let error = op_builder.build().unwrap_err();
+        assert!(error.to_string().contains("invalid operation test.shl"), "{error}");
+        assert!(!value.borrow().is_used());
+        assert!(!target.borrow().has_predecessors());
     }
 }

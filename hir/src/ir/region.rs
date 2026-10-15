@@ -499,10 +499,16 @@ impl Region {
     /// Drop all operand uses from operations within this region, which is an essential step
     /// in breaking cyclic dependencies between references when they are to be deleted.
     pub fn drop_all_references(&mut self) {
-        let mut cursor = self.body_mut().front_mut();
-        while let Some(mut op) = cursor.as_pointer() {
-            op.borrow_mut().drop_all_references();
-            cursor.move_next();
+        let mut blocks = self.body.front();
+        while let Some(block) = blocks.as_pointer() {
+            // Unlinking a self-edge mutably borrows this block's use list, so release the
+            // block borrow before dropping references from its operations.
+            let mut next_op = block.borrow().body().front().as_pointer();
+            while let Some(mut op) = next_op {
+                next_op = op.next();
+                op.borrow_mut().drop_all_references();
+            }
+            blocks.move_next();
         }
     }
 }
