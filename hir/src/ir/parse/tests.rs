@@ -50,6 +50,74 @@ pub struct FixedSuccessors {
     second: crate::Successor,
 }
 
+#[crate::derive::operation(dialect = TestDialect)]
+pub struct GroupedOperands {
+    #[operand]
+    first: crate::traits::AnyType,
+    #[operands]
+    middle: crate::traits::AnyType,
+    #[operand]
+    last: crate::traits::AnyType,
+}
+
+#[test]
+fn declared_operand_cardinality_is_checked_before_building_and_verifying() -> TestResult {
+    use crate::{GenericOperationBuilder, Op, OpVerifier};
+
+    let test = Test::new("operand_groups", &[Type::I1], &[]);
+    let context = test.context_rc();
+    context.get_or_register_dialect::<TestDialect>();
+    let value = test.function().borrow().entry_block().borrow().arguments()[0] as ValueRef;
+    let name = context.get_registered_name::<GroupedOperands>();
+
+    // Fixed groups must have exactly one operand; the intervening variadic group may be empty.
+    for (sizes, valid) in [
+        (&[1, 0, 1][..], true),
+        (&[1, 3, 1][..], true),
+        (&[0, 0, 1][..], false),
+        (&[2, 0, 1][..], false),
+        (&[1, 0][..], false),
+        (&[1, 0, 1, 1][..], false),
+    ] {
+        let mut builder = context.clone().builder();
+        let op = name.alloc_default(context.clone());
+        let mut op_builder = GenericOperationBuilder::new(&mut builder, op);
+        for (group, count) in sizes.iter().copied().enumerate() {
+            op_builder.with_operands_in_group(group, core::iter::repeat_n(value, count));
+        }
+        assert_eq!(op_builder.build().is_ok(), valid, "operand groups: {sizes:?}");
+    }
+
+    // Verification must catch corruption after construction, even for ops without trait verifiers.
+    let mut builder = context.clone().builder();
+    let op = name.alloc_default(context.clone());
+    let mut op_builder = GenericOperationBuilder::new(&mut builder, op);
+    op_builder.with_operands_in_group(0, [value]);
+    op_builder.with_operands_in_group(1, []);
+    op_builder.with_operands_in_group(2, [value]);
+    let mut op = op_builder.build()?;
+    op.borrow_mut().operands_mut().group_mut(0).clear();
+    assert!(op.borrow().downcast_ref::<GroupedOperands>().unwrap().verify(&context).is_err());
+    Ok(())
+}
+
+#[test]
+fn generic_operand_cardinality_is_checked_before_type_inference() {
+    let test = ParserTest::default();
+    test.context().get_or_register_dialect::<TestDialect>();
+    // Shl infers its result type from lhs. Missing operands must be rejected before that
+    // accessor runs, even when recursive verification is disabled.
+    let source = r#"builtin.function public extern("C") @missing() -> u32 {
+    %result = "test.shl"() : () -> u32;
+    builtin.ret %result : (u32);
+};"#;
+    let error = test
+        .parse_any_unverified("missing_inference_operand.hir", source)
+        .err()
+        .expect("missing operands must not reach type inference");
+    assert!(error.to_string().contains("invalid operand count"), "{error}");
+}
+
 #[test]
 fn generic_parser_rejects_incorrect_provided_successor_counts() -> TestResult {
     use super::{

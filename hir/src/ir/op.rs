@@ -35,6 +35,11 @@ pub trait OpRegistration: Op {
     fn traits() -> Box<[TraitInfo]>;
     /// The set of statically known attributes for this op
     fn attrs() -> Box<[AttrInfo]>;
+    /// Cardinality of each declared ordinary operand group, excluding successor arguments.
+    ///
+    /// `Some(n)` requires exactly `n` operands; `None` denotes a variadic group. The operation
+    /// macro derives these entries from `#[operand]` and `#[operands]` declarations.
+    fn operand_group_sizes() -> &'static [Option<usize>];
     /// The successor layout and cardinality accepted by generic assembly.
     ///
     /// The `operation` macro derives this from the successor declarations. Hand-written

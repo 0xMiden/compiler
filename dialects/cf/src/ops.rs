@@ -604,6 +604,38 @@ builtin.function public extern("C") @branch(%c: i1, %a: u32, %b: u32) -> u32 {
     }
 
     #[test]
+    fn parse_generic_cond_br_rejects_incorrect_operand_counts() {
+        use midenc_hir::{
+            diagnostics::Uri,
+            dialects::builtin::Function,
+            parse::{ParserConfig, parse},
+        };
+
+        for (operands, types) in [("", ""), ("%c, %c", "i1, i1")] {
+            let context = Rc::new(Context::default());
+            context.get_or_register_dialect::<ControlFlowDialect>();
+            let source = format!(
+                r#"builtin.function public extern("C") @branch(%c: i1) {{
+    "cf.cond_br"({operands})[^yes, ^no] : ({types}) -> ();
+^yes:
+    builtin.ret;
+^no:
+    builtin.ret;
+}};"#
+            );
+            let error = parse::<Function>(
+                ParserConfig::new(context.clone()),
+                Uri::new("parse_generic_operand_count.hir"),
+                &source,
+            )
+            .err()
+            .expect("incorrect operand counts must be rejected");
+            let message = format!("{error}");
+            assert!(message.contains("invalid operand count"), "{message}");
+        }
+    }
+
+    #[test]
     fn parse_generic_switch_rejects_unsupported_successor_layout() {
         use midenc_hir::{
             diagnostics::Uri,

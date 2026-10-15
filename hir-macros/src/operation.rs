@@ -1005,6 +1005,13 @@ impl quote::ToTokens for OpDefinition {
         let traits = &self.traits;
         let implements = &self.implements;
         let attrs = WithAttrInfos(self);
+        let operand_group_sizes = self.operands.iter().map(|group| match group {
+            OpOperandGroup::Unnamed(operands) => {
+                let count = operands.len();
+                quote! { ::core::option::Option::Some(#count) }
+            }
+            OpOperandGroup::Named(..) => quote! { ::core::option::Option::None },
+        });
         let generic_successor_layout = match self.successors.as_slice() {
             [] => quote! { ::midenc_hir::GenericSuccessorLayout::Fixed(0) },
             [SuccessorGroup::Unnamed(successors)] => {
@@ -1047,6 +1054,10 @@ impl quote::ToTokens for OpDefinition {
 
                 fn generic_successor_layout() -> ::midenc_hir::GenericSuccessorLayout {
                     #generic_successor_layout
+                }
+
+                fn operand_group_sizes() -> &'static [::core::option::Option<usize>] {
+                    &[#(#operand_group_sizes),*]
                 }
 
                 fn traits() -> ::alloc::boxed::Box<[::midenc_hir::traits::TraitInfo]> {
@@ -2183,14 +2194,13 @@ impl quote::ToTokens for OpVerifierImpl {
         let span = op.span();
         if self.traits.is_empty() && self.implements.is_empty() {
             tokens.extend(quote_spanned! { span =>
-                /// No-op verifier implementation generated via `#[operation]` derive
+                /// Structural verifier implementation generated via `#[operation]` derive
                 ///
-                /// This implementation was chosen as no op traits were indicated as being derived _or_
-                /// manually implemented by this type.
+                /// No additional trait verifiers are required by this operation.
                 impl ::midenc_hir::OpVerifier for #op {
                     #[inline(always)]
                     fn verify(&self, _context: &::midenc_hir::Context) -> Result<(), ::midenc_hir::diagnostics::Report> {
-                        Ok(())
+                        self.op.verify_operand_cardinality()
                     }
                 }
             });
@@ -2236,6 +2246,7 @@ impl quote::ToTokens for OpVerifierImpl {
             )*
             impl ::midenc_hir::OpVerifier for #op {
                 fn verify(&self, context: &::midenc_hir::Context) -> Result<(), ::midenc_hir::diagnostics::Report> {
+                    self.op.verify_operand_cardinality()?;
                     /// This type represents the concrete set of derived traits for some op `T`, paired with a
                     /// type-erased [::midenc_hir::Operation] reference for an instance of that op.
                     ///
