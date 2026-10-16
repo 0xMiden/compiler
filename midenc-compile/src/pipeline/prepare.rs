@@ -490,6 +490,13 @@ const HIR_MODULE_OP: &str = "builtin.module";
 /// a component being unreadable — which is what keeps the modules **inside** a component, the
 /// commonest shape of all, from being mistaken for a top-level one.
 ///
+/// A declaration-only component (an import stub) defines nothing, so codegen lowers a world
+/// whose components are all stubs through its modules, as if it held no component
+/// (`World::has_defining_component`). The scan follows: a component whose body holds no nested
+/// region (no function body, module, interface or global initializer) is a stub, and stubs count
+/// as declared components only when the file declares no module either, which is the shape of a
+/// lone stub component codegen roots at its name.
+///
 /// # The names are re-rendered, not echoed
 ///
 /// A component's name is a Miden namespace path: its segments (see
@@ -543,6 +550,18 @@ fn hir_declared_namespace(source: &str) -> Option<String> {
     use midenc_hir::{SymbolNameComponent, SymbolPath, interner::Symbol};
 
     let components = hir_declarations(source, HIR_COMPONENT_OP)?;
+    let mut defining = Vec::new();
+    for (name, body) in &components {
+        if hir_region_holds_a_region(body)? {
+            defining.push(name);
+        }
+    }
+    let modules = hir_declarations(source, HIR_MODULE_OP)?;
+    let components = match (defining.is_empty(), modules.is_empty()) {
+        (false, _) => defining,
+        (true, true) => components.iter().map(|(name, _)| name).collect(),
+        (true, false) => Vec::new(),
+    };
     if !components.is_empty() {
         let [segments] = &components[..] else {
             return None;
@@ -556,7 +575,7 @@ fn hir_declared_namespace(source: &str) -> Option<String> {
     }
 
     // A module name is a single symbol name
-    let [module] = &hir_declarations(source, HIR_MODULE_OP)?[..] else {
+    let [(module, _)] = &modules[..] else {
         return None;
     };
     match &module[..] {
@@ -566,12 +585,12 @@ fn hir_declared_namespace(source: &str) -> Option<String> {
 }
 
 /// The names declared by every `op_name` declaration in `source`, in order, each as its segments
-/// (see [`hir_declared_name`]).
+/// (see [`hir_declared_name`]) together with the rest of `source` after the name.
 ///
 /// `None` — rather than a shorter list — when any occurrence of `op_name` cannot be read as a
 /// declaration, because a scan that skipped what it could not understand would report a *count*
 /// the file does not have, and the count is what decides whether anything is declared at all.
-fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<Vec<String>>> {
+fn hir_declarations<'a>(source: &'a str, op_name: &str) -> Option<Vec<(Vec<String>, &'a str)>> {
     let mut declared = Vec::new();
     for line in source.lines() {
         // `//` runs to the end of the line, so everything after it is trivia — as it is to the
@@ -592,13 +611,46 @@ fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<Vec<String>>> {
             if before.chars().next_back().is_some_and(is_hir_identifier_char) {
                 continue;
             }
-            declared.push(hir_declared_name(rest, op_name == HIR_COMPONENT_OP)?);
+            let (name, after_name) = hir_declared_name(rest, op_name == HIR_COMPONENT_OP)?;
+            // `after_name` is a slice of the current line, and so of `source`
+            let offset = after_name.as_ptr() as usize - source.as_ptr() as usize;
+            declared.push((name, &source[offset..]));
         }
     }
     Some(declared)
 }
 
-/// The segments of the symbol name declared by `rest`, the text following an operation name.
+/// Whether the region opening at the start of `rest` (a `{ … }` block of HIR text) holds a
+/// nested region, i.e. whether one of its items has a body.
+///
+/// `None` when `rest` opens no region or the region never closes. Quoted strings and `//`
+/// comments are skipped as the lexer skips them, so a brace inside either is not structure.
+fn hir_region_holds_a_region(rest: &str) -> Option<bool> {
+    let mut chars = rest.trim_start().strip_prefix('{')?.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => loop {
+                match chars.next()? {
+                    '\\' => {
+                        chars.next()?;
+                    }
+                    '"' => break,
+                    _ => {}
+                }
+            },
+            '/' if chars.as_str().starts_with('/') => {
+                chars.find(|&c| c == '\n');
+            }
+            '{' => return Some(true),
+            '}' => return Some(false),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The segments of the symbol name declared by `rest`, the text following an operation name,
+/// and the text of `rest` following the name.
 ///
 /// One function for both operations because they are written alike: `builtin.component` and
 /// `builtin.module` each parse a visibility keyword and then a symbol name, in that order. A
@@ -606,7 +658,7 @@ fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<Vec<String>>> {
 /// preceded by `::`, which is returned as one unescaped segment per symbol name and without that
 /// leading marker; a module's name may not start with `::`. The segments are not joined: an
 /// unescaped segment may itself contain `::` (`@"a::b"`).
-fn hir_declared_name(rest: &str, is_component: bool) -> Option<Vec<String>> {
+fn hir_declared_name(rest: &str, is_component: bool) -> Option<(Vec<String>, &str)> {
     // A keyword only when a separator follows it, exactly as in Miden Assembly.
     let rest = rest.strip_prefix(char::is_whitespace)?.trim_start();
     // The visibility is not optional in either grammar, so it is not optional here.
@@ -638,7 +690,7 @@ fn hir_declared_name(rest: &str, is_component: bool) -> Option<Vec<String>> {
         segments.push(segment);
         rest = tail;
     }
-    Some(segments)
+    Some((segments, rest))
 }
 
 /// The `@`-prefixed symbol name at the start of `rest`, unescaped, and the text following it.
@@ -2655,6 +2707,28 @@ namespace = "miden::prepare_fixture::prepare_fixture"
                 "builtin.world {\n  builtin.component private @\"a:b@1.0.0\" {\n  };\n  \
                  builtin.component private @\"c:d@1.0.0\" {\n  };\n};\n",
                 None,
+            ),
+            // Declaration-only components (import stubs) beside a module: codegen lowers the world
+            // through its modules, so the module names the namespace, however many stubs there
+            // are and whatever braces their quoted names or comments hold.
+            (
+                "builtin.world {\n  builtin.component private @dep::@stub {\n    builtin.function \
+                 internal extern(\"C\") @f(%a: u32) -> u32;\n  };\n  builtin.module public @app \
+                 {\n  };\n};\n",
+                Some("app"),
+            ),
+            (
+                "builtin.world {\n  builtin.component private @\"d{p\" { // {\n  };\n  \
+                 builtin.component private @dep::@empty {\n  };\n  builtin.module public @app {\n  \
+                 };\n};\n",
+                Some("app"),
+            ),
+            // A stub beside a defining component: the defining one names the namespace.
+            (
+                "builtin.world {\n  builtin.component private @dep::@stub {\n  };\n  \
+                 builtin.component public @app::@main {\n    builtin.module public @m {\n    };\n  \
+                 };\n};\n",
+                Some("app::main"),
             ),
             // Two modules: codegen roots those at the constant `::init`, which is not something
             // the file says.
