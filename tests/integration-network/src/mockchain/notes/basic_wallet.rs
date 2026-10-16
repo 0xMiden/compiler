@@ -494,7 +494,9 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
     // operand where it stands (20 cycles fewer) and a peephole deleted adjacent stack operations
     // that undo each other, such as `swap.1 swap.1` (57 fewer). 24 fewer (5925 before) with no
     // `u32assert` on a constant-address 32-bit store, as in
-    // `basic_wallet_p2ide_allows_recipient_claim`.
+    // `basic_wallet_p2ide_allows_recipient_claim`. 327 fewer (5901 before), 13 fewer (5574
+    // before) and 34 fewer (5561 before) with the later codegen changes listed in
+    // `basic_wallet_p2id_transfers_asset_with_custom_tx_script`.
     expect!["5527"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify Alice has her original amount back

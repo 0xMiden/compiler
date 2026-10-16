@@ -40,7 +40,9 @@ const RESERVED_WORD: u32 = miden_core::WORD_SIZE as u32;
 /// elements.
 ///
 /// An element-aligned guest access whose `base + offset` overflows the 32-bit address space can
-/// still land up to `BASE_FIRST_OVERFLOW_GUARD` elements past this address.
+/// still land up to `BASE_FIRST_OVERFLOW_GUARD` elements past this address. The
+/// `intrinsics::mem` MASM module holds a copy in its `GUEST_ADDRESS_LIMIT` constant; the unit
+/// tests check the two agree.
 pub const GUEST_ADDRESS_LIMIT: u32 = ((u32::MAX as u64 + 1) / RESERVED_WORD as u64) as u32;
 /// The VM's initial frame pointer, from which procedure locals are allocated upwards.
 ///
@@ -803,8 +805,9 @@ mod tests {
     use super::*;
 
     /// The reserved band's bounds mirror constants this crate cannot reference in constant
-    /// expressions: the VM's initial frame pointer, and the heap-info address the MASM
-    /// intrinsics hard-code. Either moving without the band following must fail here, not
+    /// expressions: the VM's initial frame pointer (`FMP_INIT_VALUE`), and the heap-info address
+    /// and guest address limit the MASM intrinsics hard-code (`HEAP_INFO_ADDR`,
+    /// `GUEST_ADDRESS_LIMIT`). Any of them moving without the band following must fail here, not
     /// corrupt memory.
     #[test]
     fn reserved_band_mirrors_the_vm_and_intrinsics_constants() {

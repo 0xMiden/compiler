@@ -393,10 +393,10 @@ fn swapp_note_full_fill_transfers_assets() {
     // run for each of `receive_asset`, `create_note` and `move_asset_to_note`, three (10 cycles
     // each: 9, and 1 for an op batch its stores no longer fill); 12412, 12384 and 12331 with the
     // later codegen changes listed at `swapp_note_package_size` (597, 28 and 53 cycles fewer).
-    // The 294 cycles over 12904 at
-    // 13198: the note's `TryFrom<Felt>` checks of the `Tag` and `NoteType` from its storage and
-    // the lift masks (both new with the integer newtypes), the wallet's check that the
-    // `NoteType` is private or public, and the frontend's masks (see `swapp_note_package_size`).
+    // The 294 cycles over 12904 at 13198: the note's `TryFrom<Felt>` checks of the `Tag` and
+    // `NoteType` from its storage and the lift masks (both new with the integer newtypes), the
+    // wallet's check that the `NoteType` is private or public, and the frontend's masks (see
+    // `swapp_note_package_size`).
     expect!["12331"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
@@ -493,8 +493,8 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
     // deletes operations that undo each other (193 fewer); 18104 with no `u32assert` on a
     // constant-address 32-bit store (54 fewer: as at the full fill, and the wallet's `init` once
     // more, for the remainder note's `create_note`); 17189, 17159 and 17073 with the later codegen
-    // changes listed at `swapp_note_package_size` (915, 30 and 86 cycles fewer). The 421 cycles over 17991 at 18412 are those
-    // listed at the full fill, with two notes created.
+    // changes listed at `swapp_note_package_size` (915, 30 and 86 cycles fewer). The 421 cycles
+    // over 17991 at 18412 are those listed at the full fill, with two notes created.
     expect!["17073"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();

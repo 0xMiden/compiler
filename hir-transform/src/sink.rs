@@ -533,9 +533,10 @@ impl OpOperandSink {
     /// stack. The lowering expects the first operand on top of the stack, except for binary
     /// operations, whose right-hand operand is on top (see `schedule_operands` in the MASM
     /// backend), so operands are visited in reverse order in general, and in operand order for
-    /// binary operations. Lowerings with their own operand order (the `Ext2*` field ops and
-    /// `arith.join`) are not mirrored here; their operands are visited in reverse order like any
-    /// other non-binary operation.
+    /// binary operations. Lowerings with their own operand order (`arith.ext_2_add`,
+    /// `arith.ext_2_sub`, `arith.ext_2_mul`, `arith.ext_2_div`, `arith.join` and `hir.dyncall`)
+    /// are not mirrored here; their operands are visited in reverse order like any other
+    /// non-binary operation.
     fn operand_index(&self, op: &Operation) -> usize {
         if op.implements::<dyn BinaryOp>() {
             self.visited_operands

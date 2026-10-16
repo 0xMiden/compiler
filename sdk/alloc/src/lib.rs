@@ -19,11 +19,13 @@ const MIN_ALIGN: usize = 16;
 
 /// Exclusive byte-address limit for allocations. The compiler reserves the address band that
 /// begins 2^24 elements past VM element address 2^30, the end of the 32-bit byte-addressable
-/// range (the elements in between guard against overflowing aligned accesses): its word-aligned
-/// cells hold the heap metadata word and the scratch word a `dyncall` spills its callee's
-/// procedure root to (see the reserved band in `codegen/masm/src/linker.rs`), and procedure locals
-/// are framed upwards from 2^31, the VM's `FMP_INIT_VALUE`. Using u32::MAX avoids representing
-/// the unaddressable 2^32 endpoint on wasm32.
+/// range (the elements in between guard against an overflowing element-aligned access whose
+/// memarg offset is below 2^26 bytes, `MAX_BASE_FIRST_OFFSET` in the compiler's wasm dialect;
+/// larger offsets keep the checked add and trap): its word-aligned cells hold the heap metadata
+/// word and the scratch word a `dyncall` spills its callee's procedure root to (see the reserved
+/// band in `codegen/masm/src/linker.rs`), and procedure locals are framed upwards from 2^31, the
+/// VM's `FMP_INIT_VALUE`. Using u32::MAX avoids representing the unaddressable 2^32 endpoint on
+/// wasm32.
 const HEAP_END: usize = u32::MAX as usize;
 
 /// A very simple allocator for Miden SDK-based programs.

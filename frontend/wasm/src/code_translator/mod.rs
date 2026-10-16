@@ -1020,6 +1020,10 @@ fn translate_br_if_args(
 /// Wasm allows unbounded shift counts, wrapping them modulo `value_width`. Since Masm only
 /// accepts counts in `[0, value_width)`, adjust the shift count here.
 ///
+/// `count` must be the Wasm operand itself, not a cast of it: a constant count is recognized by
+/// its defining operation and masked at translation time, so the shift reaches the backend with
+/// an immediate count.
+///
 /// [shift]: https://webassembly.github.io/spec/core/exec/numerics.html#xref-exec-numerics-op-ishl-mathrm-ishl-n-i-1-i-2
 /// [rotate]: https://webassembly.github.io/spec/core/exec/numerics.html#xref-exec-numerics-op-irotl-mathrm-irotl-n-i-1-i-2
 fn mask_movement_count<B: ?Sized + Builder>(
@@ -1028,9 +1032,6 @@ fn mask_movement_count<B: ?Sized + Builder>(
     value_width: u32,
     span: SourceSpan,
 ) -> Result<ValueRef, Report> {
-    // A constant count is masked at compile time, so that the shift reaches the backend with an
-    // immediate count and can lower to the immediate form. Callers pass the count as the Wasm
-    // operand itself (not bitcast), so its defining constant is visible here.
     let constant_count = count.borrow().get_defining_op().and_then(|defining_op| {
         matchers::constant_of::<Immediate>()
             .matches(&*defining_op.borrow())

@@ -75,6 +75,11 @@ pub fn counter_note_basic_auth_increments_storage() {
     // the `init` that every call into a component runs. The note runs its own `init` once and the
     // counter contract's on each of its three calls into it; each stores three such globals and
     // is 10 cycles shorter (9 for the assertions, 1 for an op batch its stores no longer fill).
+    // 375 fewer (8866 before) since codegen drops the redundant `u32assert` after a u32
+    // division, sinks operands in the order the lowering expects, folds boolean round trips and
+    // degenerate selects, converts an aligned access's base address first and shifts by a
+    // constant with the immediate forms. 36 fewer (8491 before) since the felt comparison
+    // intrinsics widen their result with `zext` and `bitcast`, so the boolean folds apply.
     expect!["8455"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed (incremented by 1).

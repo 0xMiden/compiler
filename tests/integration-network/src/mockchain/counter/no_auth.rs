@@ -111,7 +111,12 @@ pub fn counter_note_no_auth_increments_storage_without_signature() {
     // stores three such globals and is 10 cycles shorter (9 for the assertions, 1 for an op batch
     // its stores no longer fill): the auth procedure runs the auth component's once (10 cycles
     // fewer), and the note runs its own once and the counter contract's on each of its three
-    // calls into it (40 fewer).
+    // calls into it (40 fewer). 70 and 375 fewer (2041 and 8866 before) since codegen drops the
+    // redundant `u32assert` after a u32 division, sinks operands in the order the lowering
+    // expects, folds boolean round trips and degenerate selects, converts an aligned access's
+    // base address first and shifts by a constant with the immediate forms. 2 and 36 fewer (1971
+    // and 8491 before) since the felt comparison intrinsics widen their result with `zext` and
+    // `bitcast`, so the boolean folds apply.
     expect!["1969"].assert_eq(auth_procedure_cycles(&tx_measurements));
     expect!["8455"].assert_eq(single_note_cycles(&tx_measurements));
 

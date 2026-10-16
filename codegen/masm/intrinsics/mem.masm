@@ -11,8 +11,10 @@ const GUEST_ADDRESS_LIMIT=0x40000000 # 2^30
 # at 2^31 (see `miden_core::FMP_INIT_VALUE`). Additionally, we place this above the maximum
 # addressable Wasm linear memory range (in element-addressable space) so that Wasm code cannot
 # reach it via byte pointers, plus a guard of 2^24 elements: an element-aligned access whose
+# memarg offset is below 2^26 bytes (`MAX_BASE_FIRST_OFFSET` in the wasm dialect) and whose
 # `base + offset` overflows the 32-bit address space lands in that guard (see
-# `BASE_FIRST_OVERFLOW_GUARD` in the wasm dialect) instead of on these cells.
+# `BASE_FIRST_OVERFLOW_GUARD`) instead of on these cells. Larger offsets keep the checked add and
+# trap on overflow.
 #
 # NOTE: `linker::HEAP_INFO_ADDR` in `codegen/masm/src/linker.rs` mirrors this address, and a unit
 # test there parses this line by its exact `const HEAP_INFO_ADDR=0x…` spelling to check the two
