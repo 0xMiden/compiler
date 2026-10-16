@@ -268,7 +268,9 @@ impl TypeSet {
     /// [`has_sdk_layout`]) is that core item, and a name that is not a Miden identifier path names
     /// a type from elsewhere, which is unsupported. `None` for a Miden identifier path, and for a
     /// core-types id whose type is not its record (an enum, other fields, or fields of other
-    /// types), which becomes a local declaration as a Miden-named type of another shape does.
+    /// types). Such a type then maps as a Miden-named type does: to the core item of its kebab
+    /// name when it has that item's field names and flattening (see [`Self::core_item`]), else
+    /// to a local declaration.
     fn map_by_name(&mut self, ty: &Type, name: &str) -> Result<Option<Mapped>, String> {
         if let Some(item) = sdk_core_item(name) {
             let Some(record) = core_record(item) else {

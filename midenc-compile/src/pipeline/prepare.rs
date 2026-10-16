@@ -372,7 +372,7 @@ fn synthesized_target_name(
 fn declared_namespace(input: &InputFile, session: &Session) -> Option<String> {
     match input.file_type() {
         FileType::Masm => masm_namespace_declaration(&root_source_text(input)?),
-        FileType::Hir => hir_declared_namespace(&root_source_text(input)?, session),
+        FileType::Hir => hir_declared_namespace(&root_source_text(input)?),
         FileType::Wasm | FileType::Wat => {
             let wasm = super::frontends::WasmFrontend::read_binary(input).ok()?;
             wasm_declared_namespace(&wasm, session)
@@ -450,9 +450,7 @@ fn masm_namespace_declaration(source: &str) -> Option<String> {
 /// The source is parsed, unverified, into a context of its own, and the answer is read off the
 /// parsed operations. Preparation runs before the target the HIR is compiled against exists, so
 /// the compilation parses the file again into its own context; the extra parse is the price of
-/// reading the file exactly as the parser does, with no second grammar to keep in step. On the
-/// largest `.hir` file under `tests/lit` (31 KB) it costs about 13 ms in a debug build, 0.6 ms of
-/// which is setting up the context.
+/// reading the file exactly as the parser does, with no second grammar to keep in step.
 ///
 /// Text the parser rejects declares nothing: the real parse reports it a moment later, with the
 /// parser's own diagnostic.
@@ -500,7 +498,7 @@ fn masm_namespace_declaration(source: &str) -> Option<String> {
 /// `Symbol::path`), rendered by the same `SymbolPath::to_library_path` codegen calls, which
 /// quotes a segment that is not a bare identifier. So `@miden::@a::@b` becomes `miden::a::b`, and
 /// `@"a:b"` becomes `"a:b"`.
-fn hir_declared_namespace(source: &str, session: &Session) -> Option<String> {
+fn hir_declared_namespace(source: &str) -> Option<String> {
     use alloc::rc::Rc;
 
     use midenc_hir::{
@@ -508,14 +506,12 @@ fn hir_declared_namespace(source: &str, session: &Session) -> Option<String> {
         dialects::builtin::{Component, Module, World},
         parse::{ParserConfig, parse_any},
     };
-    use midenc_session::diagnostics::DefaultSourceManager;
 
-    // A source manager of its own, so that the throwaway parse registers nothing in the
-    // session's.
-    let mut session = session.clone();
-    session.source_manager = Arc::new(DefaultSourceManager::default());
-    // Held until the end of the function: the parsed operations live in the context's arena.
-    let context = Rc::new(Context::new(Rc::new(session)));
+    // A context and source manager of its own, so that the throwaway parse registers nothing in
+    // the session's. Held until the end of the function: the parsed operations live in the
+    // context's arena. On the largest `.hir` file under `tests/lit` (31 KB) the parse costs about
+    // 13 ms in a debug build.
+    let context = Rc::new(Context::default());
     let config = ParserConfig {
         context: context.clone(),
         verify: false,
@@ -557,14 +553,11 @@ fn hir_declared_namespace(source: &str, session: &Session) -> Option<String> {
 }
 
 /// `path` rendered as a Miden library path, relative (`a::b::c`) whether `path` is absolute or not.
+///
+/// Only a library target's name is read from it: [`synthesized_target_name`] returns before
+/// reading a declaration for an executable or a kernel, the targets of a reserved namespace.
 fn relative_library_path(path: &midenc_hir::SymbolPath) -> String {
-    use midenc_hir::{SymbolNameComponent, SymbolPath};
-
-    path.components()
-        .filter(|component| !matches!(component, SymbolNameComponent::Root))
-        .collect::<SymbolPath>()
-        .to_library_path()
-        .to_string()
+    path.to_library_path().to_relative().to_string()
 }
 
 /// The core library dependency every standalone build links against.
@@ -2472,7 +2465,6 @@ namespace = "miden::prepare_fixture::prepare_fixture"
         // Every row is a claim about what the parser makes of the text and where codegen roots
         // it: text the parser rejects declares nothing, and a name renders one path component
         // per segment, exactly as codegen roots the component.
-        let session = standalone_session(input(Path::new("lib.hir")), |_| {});
         for (source, declared) in
             [
                 (
@@ -2702,11 +2694,7 @@ namespace = "miden::prepare_fixture::prepare_fixture"
                 ("builtin.module public @lib {\n};;\n", None),
             ]
         {
-            assert_eq!(
-                hir_declared_namespace(source, &session).as_deref(),
-                declared,
-                "reading {source:?}"
-            );
+            assert_eq!(hir_declared_namespace(source).as_deref(), declared, "reading {source:?}");
         }
     }
 
