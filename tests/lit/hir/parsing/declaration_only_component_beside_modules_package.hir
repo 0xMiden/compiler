@@ -1,0 +1,28 @@
+// RUN: midenc %s --emit=mast=- -o %t/out.masp 2>&1 | filecheck %s
+//
+// A world holding one declaration-only component (an import stub) beside its modules builds a
+// package rooted at its modules, not at the stub's namespace. The private world-level alias is
+// reached from `app` as if the world held no component, since its function lands in the same
+// Miden Assembly module.
+
+builtin.world {
+    builtin.component private @dep::@stub {
+        builtin.function internal extern("C") @f(%a: u32) -> u32;
+    };
+    builtin.function_alias private @alias -> ::@app::@body;
+    builtin.module public @app {
+        builtin.function public extern("C") @body() {
+            builtin.ret;
+        };
+        builtin.function public extern("C") @entry() -> (felt, felt, felt, felt) {
+            hir.exec ::@alias() : extern("C") () -> ();
+            %r0, %r1, %r2, %r3 = hir.procedure_root ::@alias;
+            builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+        };
+    };
+};
+
+// CHECK-NOT: ::dep
+// CHECK: # ::app::body
+// CHECK: # ::app::entry
+// CHECK-NOT: ::dep
