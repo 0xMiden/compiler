@@ -1476,3 +1476,29 @@ builtin.function public extern(\"C\") @entrypoint(%a: i32) -> i32 {{
     let message = format!("{error}");
     assert!(message.contains("too many operand groups"), "{message}");
 }
+
+/// An anchored source is one operation: a second top-level operation after it is reported, not
+/// silently dropped.
+#[test]
+fn an_operation_after_the_top_level_one_is_reported() {
+    let test = ParserTest::default();
+    let source = "builtin.world {\n};\nbuiltin.module public @other {\n};";
+    let error = test
+        .parse_any("trailing_module.hir", source)
+        .err()
+        .expect("a second top-level operation must not parse");
+    let message = format!("{error:?}");
+    assert!(message.contains("unexpected token"), "{message}");
+    assert!(message.contains("end of input after the top-level operation"), "{message}");
+}
+
+/// Text after the top-level operation that is not an operation at all is reported too.
+#[test]
+fn garbage_after_the_top_level_operation_is_reported() {
+    let test = ParserTest::default();
+    let source = "builtin.module public @app {\n};\nthis is garbage %% ;;; {{";
+    assert!(
+        test.parse_any("trailing_garbage.hir", source).is_err(),
+        "trailing text must not parse"
+    );
+}
