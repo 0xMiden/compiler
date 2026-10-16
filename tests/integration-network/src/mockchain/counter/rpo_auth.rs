@@ -81,7 +81,7 @@ pub fn counter_rpo_auth_rejects_unauthenticated_note_creation() {
     // no `u32assert` on a constant-address 32-bit store: one fewer per 32-bit global initializer.
     // The auth procedure runs the auth component's `init` once, which stores three such globals
     // (9 cycles for the assertions, 1 for an op batch its stores no longer fill).
-    expect!["74800"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
+    expect!["74784"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
     assert_eq!(executed_tx.output_notes().num_notes(), 1);
     assert_eq!(executed_tx.output_notes().get_note(0).id(), own_note.id());
 
