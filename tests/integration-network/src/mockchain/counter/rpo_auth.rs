@@ -80,7 +80,12 @@ pub fn counter_rpo_auth_rejects_unauthenticated_note_creation() {
     // undo each other, such as `swap.1 swap.1` (85 cycles). 10 cycles fewer (74985 before) with
     // no `u32assert` on a constant-address 32-bit store: one fewer per 32-bit global initializer.
     // The auth procedure runs the auth component's `init` once, which stores three such globals
-    // (9 cycles for the assertions, 1 for an op batch its stores no longer fill).
+    // (9 cycles for the assertions, 1 for an op batch its stores no longer fill). 175 cycles fewer
+    // (74975 before) since codegen drops the redundant `u32assert` after a u32 division, sinks
+    // operands in the order the lowering expects, folds boolean round trips and degenerate
+    // selects, converts an aligned access's base address first and shifts by a constant with the
+    // immediate forms. 16 cycles fewer (74800 before) since a constant `shr_u` count lowers to
+    // `u32shr.N` and a complemented comparison stays out of loop bodies.
     expect!["74784"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
     assert_eq!(executed_tx.output_notes().num_notes(), 1);
     assert_eq!(executed_tx.output_notes().get_note(0).id(), own_note.id());

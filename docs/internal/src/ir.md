@@ -145,7 +145,7 @@ As always, all _uses_ of a value must be dominated by its definition. The IR is 
 An _operand_ is a [_value_](#values) used as an argument to an operation.
 
 Beyond the semantics of any given operation, operand ordering is only significant insofar as it is used as the order in which those items are expected to appear on the operand stack once lowered to Miden Assembly. The earlier an operand appears in the list of operands for an operation, the
-closer to the top of the operand stack it will appear. Binary operations are the exception: their right-hand operand is on top of the stack, as the Miden Assembly binary instructions expect it.
+closer to the top of the operand stack it will appear. Binary operations are the exception: their right-hand operand is on top of the stack, as the Miden Assembly binary instructions expect it. A few other lowerings use their own operand order too: `arith.join`, the `Ext2*` field operations, and `dyncall`, which places its callee's root on the stack and spills it before placing the arguments.
 
 Similarly, the ordering of operand results also correlates with the operand stack order after lowering. Specifically, the earlier a result appears in the result list, the closer to the top of the operand stack it will appear after the operation executes.
 

@@ -644,10 +644,10 @@ impl HirLowering for arith::Constant {
 /// The constant is then skipped by the lowering of `arith.constant`, see
 /// [is_immediate_only_constant]; both sides of that contract live here.
 fn immediate_shift_count(op: &Operation) -> Option<u32> {
-    // `u32shl.N` on the bit pattern of an `i32` is the same wrapping shift as on a `u32`. `u32shr.N`
-    // is a logical shift, exact for the zero-extended unsigned types; a signed `shr` is an
-    // arithmetic shift, lowered to an intrinsic that takes the count on the stack anyway. 64-bit
-    // values are two felts and have no immediate shift form.
+    // `u32shl.N` on the bit pattern of an `i32` is the same wrapping shift as on a `u32`.
+    // `u32shr.N` is a logical shift, exact for the zero-extended unsigned types; a signed `shr` is
+    // an arithmetic shift, lowered to an intrinsic that takes the count on the stack anyway.
+    // 64-bit values are two felts and have no immediate shift form.
     let shift = if let Some(shl) = op.downcast_ref::<arith::Shl>() {
         if !matches!(shl.lhs().ty(), Type::U32 | Type::I32) {
             return None;

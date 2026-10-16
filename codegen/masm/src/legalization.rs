@@ -772,11 +772,11 @@ fn masm_lowerable_op(op: &Operation) -> DynamicLegalityResult {
 /// Only that exact shape is split: a 64-bit integer value, `u32` halves or constants that fit a
 /// half, `zext` rather than `sext`, a shift by the constant 32, or a join of two `i32` or `u32`
 /// limbs. Sign-only `hir.bitcast`s on the way to the `zext`, and a shift count that is a `band`
-/// of two constants, are looked through. And the pair must
-/// feed the store directly: one that reaches its store through a block argument, an `scf.if`
-/// result or an `i64` local is stored with one 64-bit store, which copies its two elements
-/// without interpreting them. The high half goes 4 bytes on, or one element on in element
-/// space, where `intrinsics::mem::store_dw` puts the high half of a 64-bit store.
+/// of two constants, are looked through. And the pair must feed the store directly: one that
+/// reaches its store through a block argument, an `scf.if` result or an `i64` local is stored
+/// with one 64-bit store, which copies its two elements without interpreting them. The high half
+/// goes 4 bytes on, or one element on in element space, where `intrinsics::mem::store_dw` puts
+/// the high half of a 64-bit store.
 struct SplitWideStore {
     info: PatternInfo,
 }
@@ -1103,10 +1103,10 @@ impl ConversionPattern for JoinAssembledHalves {
 /// as one `i64` and take it apart so, and the 64-bit `shr` traps on the limbs of a felt pair.
 /// Split, each half is loaded as the element it is, and the 64-bit load and `shr` are gone. The
 /// `shr` must be logical (of a `u64`), and the same sign-only casts and constant `band` shift
-/// count are looked through. Every use must take its half directly: a load whose value also goes anywhere
-/// else, such as to a successor block, out of an `scf.if` or into an `i64` local, stays one 64-bit
-/// load, and [`SplitTakenHalves`] takes its halves from a split of it. Uses by debug info do not
-/// count, and go with the 64-bit value. A load this pattern splits is declined by
+/// count are looked through. Every use must take its half directly: a load whose value also goes
+/// anywhere else, such as to a successor block, out of an `scf.if` or into an `i64` local, stays
+/// one 64-bit load, and [`SplitTakenHalves`] takes its halves from a split of it. Uses by debug
+/// info do not count, and go with the 64-bit value. A load this pattern splits is declined by
 /// [`SplitTakenHalves`], whichever of the load and its `trunc`s the conversion reaches first: two
 /// 32-bit loads beat one 64-bit load and a split.
 struct SplitWideLoad {

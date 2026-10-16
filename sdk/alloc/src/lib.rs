@@ -18,7 +18,8 @@ const PAGE_SIZE: usize = 2usize.pow(16);
 const MIN_ALIGN: usize = 16;
 
 /// Exclusive byte-address limit for allocations. The compiler reserves the address band that
-/// begins at VM element address 2^30, beyond the 32-bit byte-addressable range: its word-aligned
+/// begins 2^24 elements past VM element address 2^30, the end of the 32-bit byte-addressable
+/// range (the elements in between guard against overflowing aligned accesses): its word-aligned
 /// cells hold the heap metadata word and the scratch word a `dyncall` spills its callee's
 /// procedure root to (see the reserved band in `codegen/masm/src/linker.rs`), and procedure locals
 /// are framed upwards from 2^31, the VM's `FMP_INIT_VALUE`. Using u32::MAX avoids representing

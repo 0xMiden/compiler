@@ -305,7 +305,14 @@ fn swapp_note_package_size() {
     // adjacent stack operations that undo each other, such as `swap.1 swap.1` (176 bytes fewer);
     // 43532 with no `u32assert` on a constant-address 32-bit store, one fewer per 32-bit global
     // initializer: the note's `init` stores four such globals, 11 bytes per assertion and 2
-    // padding `noop`s its shorter block no longer needs (46 bytes fewer).
+    // padding `noop`s its shorter block no longer needs (46 bytes fewer). 41205 since codegen
+    // drops the redundant `u32assert` after a u32 division, sinks operands in the order the
+    // lowering expects, folds boolean round trips and degenerate selects, converts an aligned
+    // access's base address first and shifts by a constant with the immediate forms (2327 bytes
+    // fewer); 41169 since the felt comparison intrinsics widen their result with `zext` and
+    // `bitcast`, so the boolean folds apply (36 bytes fewer); 40816 since a constant `shr_u` count
+    // lowers to `u32shr.N` and a complemented comparison stays out of loop bodies (353 bytes
+    // fewer).
     //
     // The 1260 bytes over 42589 at 43849:
     // - new with the integer newtypes: the note builds the `Tag` and the `NoteType` it passes
@@ -384,7 +391,9 @@ fn swapp_note_full_fill_transfers_assets() {
     // the `init` that every call into a component runs (44 fewer): the note's `init` stores four
     // such globals (14 cycles: 12 for the assertions, 2 for padding `noop`s), and the wallet's,
     // run for each of `receive_asset`, `create_note` and `move_asset_to_note`, three (10 cycles
-    // each: 9, and 1 for an op batch its stores no longer fill). The 294 cycles over 12904 at
+    // each: 9, and 1 for an op batch its stores no longer fill); 12412, 12384 and 12331 with the
+    // later codegen changes listed at `swapp_note_package_size` (597, 28 and 53 cycles fewer).
+    // The 294 cycles over 12904 at
     // 13198: the note's `TryFrom<Felt>` checks of the `Tag` and `NoteType` from its storage and
     // the lift masks (both new with the integer newtypes), the wallet's check that the
     // `NoteType` is private or public, and the frontend's masks (see `swapp_note_package_size`).
@@ -483,7 +492,8 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
     // since casts that change only a type are renames (61 cycles fewer) and the stack peephole
     // deletes operations that undo each other (193 fewer); 18104 with no `u32assert` on a
     // constant-address 32-bit store (54 fewer: as at the full fill, and the wallet's `init` once
-    // more, for the remainder note's `create_note`). The 421 cycles over 17991 at 18412 are those
+    // more, for the remainder note's `create_note`); 17189, 17159 and 17073 with the later codegen
+    // changes listed at `swapp_note_package_size` (915, 30 and 86 cycles fewer). The 421 cycles over 17991 at 18412 are those
     // listed at the full fill, with two notes created.
     expect!["17073"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
@@ -573,7 +583,9 @@ fn swapp_note_creator_reclaims_offered_asset() {
     // peephole deleted operations that undo each other (75 fewer; see
     // `swapp_note_package_size`). 5472 before the `u32assert` on a constant-address 32-bit store
     // went, one fewer per 32-bit global initializer: the note's `init` (14 cycles) and the
-    // wallet's, run once for `receive_asset` (10 cycles; see the full fill).
+    // wallet's, run once for `receive_asset` (10 cycles; see the full fill). 5448, 5036 and 5029
+    // before the later codegen changes listed at `swapp_note_package_size` (412, 7 and 35 cycles
+    // fewer).
     expect!["4994"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let alice_account = chain.committed_account(alice.id()).unwrap();

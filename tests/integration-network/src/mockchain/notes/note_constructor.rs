@@ -209,6 +209,9 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
     // an op batch its stores no longer fill), the `p2id` constructor's four (14 cycles: 12, and 2
     // for padding `noop`s), and the wallet's three, once for each of `create_note` and
     // `move_asset_to_note` (10 cycles each).
+    //
+    // 505 cycles fewer (9126 before), 5 fewer (8621 before) and 40 fewer (8616 before) with the
+    // later codegen changes listed in `basic_wallet_p2id_transfers_asset_with_custom_tx_script`.
     expect!["8576"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
@@ -225,7 +228,8 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
     // that undo each other, such as `swap.1 swap.1` (50 fewer). 4954 before the `u32assert` on a
     // constant-address 32-bit store went, one fewer per 32-bit global initializer: the P2ID
     // note's `init` stores four such globals (14 cycles) and the wallet's three (10 cycles, run
-    // once for `receive_asset`).
+    // once for `receive_asset`). 4930, 4681 and 4674 before the later codegen changes, as in
+    // `basic_wallet_p2id_transfers_asset_with_custom_tx_script`.
     expect!["4640"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
