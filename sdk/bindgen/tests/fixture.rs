@@ -11,14 +11,15 @@ use miden_assembly_syntax::{
     ModuleParser,
     ast::{
         Path,
-        types::{EnumType, StructType, Type, Variant},
+        types::{CallConv, EnumType, FunctionType, StructType, Type, Variant},
     },
     debuginfo::{DefaultSourceManager, SourceLanguage, SourceManager, Uri},
 };
 use miden_sdk_bindgen::{Error, External, Options, Skipped, generate};
 use midenc_expect_test::expect_file;
 use midenc_package_interface::{
-    ConstantItem, PackageInterface, SkipReason, TypeItem,
+    ConstantItem, PackageInterface, ProcedureClass, SkipReason, TypeItem,
+    abi::lower_signature,
     testing::{FIXTURE_SOURCE, assemble_fixture},
 };
 
@@ -410,12 +411,22 @@ fn skipped_procedures_are_reported() {
     );
 }
 
-/// A package name carrying a line break and a bidirectional override stays on the header comment
-/// line of the bindings and of the stubs, without the override.
+/// A package name, a procedure path and a struct name carrying a line break and a bidirectional
+/// override stay on their comment lines in the bindings and the stubs, without the override.
 #[test]
 fn a_package_name_stays_in_the_header_comments() {
     let mut iface = fixture();
     iface.name = miden_mast_package::PackageId::from("fix\u{202e}ture\npub fn injected() {}");
+    // A procedure and the struct it takes, both named with the same characters.
+    let evil = "evil\u{202e}\npub fn injected() {}";
+    let mut item = iface.procedure(Path::new("::fixture::id")).unwrap().clone();
+    item.path = Path::new(&format!("::fixture::\"{evil}\"")).into();
+    let param = StructType::named(evil.into(), [Type::Felt, Type::Felt]);
+    let signature = FunctionType::new(CallConv::Fast, [param.into()], []);
+    item.class = ProcedureClass::Bindable(lower_signature(&signature).unwrap());
+    item.signature = Some(signature);
+    iface.procedures.push(item);
+    iface.procedures.sort_by(|a, b| a.path.cmp(&b.path));
     let generated = generate(&iface, &[], &options("::fixture")).unwrap();
     for text in [&generated.bindings, &generated.stubs] {
         assert!(!text.contains('\u{202e}'), "{text}");
