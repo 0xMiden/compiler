@@ -368,7 +368,9 @@ fn parse_anchored_source(
     let op = operation_parser
         .parse_operation()
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
-    expect_end_of_input(operation_parser.token_stream_mut())
+    operation_parser
+        .token_stream_mut()
+        .expect_if("end of input after the top-level operation", |token| token == Token::Eof)
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
     // See the note above: a parsed world is the root, not something to be rooted.
     //
@@ -418,18 +420,6 @@ fn parse_anchored_source(
 
             Ok(op)
         }
-    }
-}
-
-/// Require that `tokens` holds nothing more: an anchored source is exactly one operation.
-fn expect_end_of_input(tokens: &mut TokenStream<'_>) -> Result<(), ParserError> {
-    match tokens.peek()? {
-        None | Some((_, Token::Eof, _)) => Ok(()),
-        Some((start, token, end)) => Err(ParserError::UnexpectedToken {
-            span: SourceSpan::new(tokens.source_id(), start..end),
-            token: token.to_string(),
-            expected: Some("end of input after the top-level operation".to_string()),
-        }),
     }
 }
 
