@@ -24,12 +24,11 @@ use miden_standards::account::{
     upgrade::UpgradeManager,
     wallets::BasicWallet,
 };
-use midenc_integration_test_support::testing::bindings::check_generated;
+use midenc_integration_test_support::{
+    SDK_MIDEN_WIT as MIDEN_WIT, testing::bindings::check_generated,
+};
 use midenc_package_interface::PackageInterface;
 use midenc_package_wit::{AUTH_PROCEDURE_REASON, Error, Generated, Skipped, generate};
-
-/// The SDK's core-types package, which a generated document `use`s when it needs a core item.
-const MIDEN_WIT: &str = include_str!("../../base-macros/wit/miden.wit");
 
 /// Every account component of `miden-standards`.
 fn components() -> Vec<&'static miden_mast_package::Package> {

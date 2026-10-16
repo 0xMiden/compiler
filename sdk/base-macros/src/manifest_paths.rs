@@ -218,3 +218,56 @@ fn extract_package_name(contents: &str) -> Option<String> {
 pub(crate) fn extract_world_name(contents: &str) -> Option<String> {
     midenc_frontend_wasm_metadata::first_top_level_wit_world(contents)
 }
+
+#[cfg(test)]
+mod tests {
+    use midenc_frontend_wasm_metadata::core_types::{CORE_RECORDS, CoreField, core_record};
+    use wit_bindgen_core::wit_parser::{Resolve, Type, TypeDefKind};
+
+    use super::SDK_WIT_SOURCE;
+
+    /// The shared table of core records is exactly the `core-types` interface of the SDK's
+    /// `miden.wit`: the same records, in order, with the same fields, in order, of the same types.
+    #[test]
+    fn core_records_are_the_sdk_core_types() {
+        let mut resolve = Resolve::new();
+        let package = resolve.push_str("miden.wit", SDK_WIT_SOURCE).expect("the core types parse");
+        let interface = resolve.packages[package].interfaces["core-types"];
+        let field_type = |ty: &Type| match ty {
+            Type::F32 => CoreField::Felt,
+            Type::U8 => CoreField::U8,
+            Type::U16 => CoreField::U16,
+            Type::U32 => CoreField::U32,
+            Type::Id(id) => {
+                let name = resolve.types[*id].name.as_deref().expect("a named core type");
+                let record = core_record(name).expect("a field names a core record");
+                CoreField::Record(record.name)
+            }
+            ty => panic!("unexpected core field type {ty:?}"),
+        };
+        let wit: Vec<(String, Vec<(String, CoreField)>)> = resolve.interfaces[interface]
+            .types
+            .iter()
+            .map(|(name, id)| {
+                let TypeDefKind::Record(record) = &resolve.types[*id].kind else {
+                    panic!("`{name}` must be a record in miden.wit");
+                };
+                let fields = record
+                    .fields
+                    .iter()
+                    .map(|field| (field.name.clone(), field_type(&field.ty)))
+                    .collect();
+                (name.clone(), fields)
+            })
+            .collect();
+        let table: Vec<(String, Vec<(String, CoreField)>)> = CORE_RECORDS
+            .iter()
+            .map(|record| {
+                let fields =
+                    record.fields.iter().map(|(name, ty)| ((*name).to_owned(), *ty)).collect();
+                (record.name.to_owned(), fields)
+            })
+            .collect();
+        assert_eq!(table, wit);
+    }
+}

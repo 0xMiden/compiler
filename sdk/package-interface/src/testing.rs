@@ -90,13 +90,8 @@ pub fn assemble_account_component_fixture(
 
 /// Write `package` as a `.masp` file at `path`, creating its parent directories.
 pub fn write_package(path: &std::path::Path, package: &Package) {
-    use miden_assembly::serde::Serializable;
-
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .unwrap_or_else(|err| panic!("`{}` must be created: {err}", parent.display()));
-    }
-    std::fs::write(path, package.to_bytes())
+    package
+        .write_to_file(path)
         .unwrap_or_else(|err| panic!("`{}` must be written: {err}", path.display()));
 }
 

@@ -23,9 +23,7 @@ use miden_core::{
 use miden_mast_package::Package;
 use miden_protocol::{
     Word,
-    account::{
-        Account, AccountBuilder, AccountComponent, AccountId, AccountType, auth::AuthScheme,
-    },
+    account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType},
     asset::{Asset, FungibleAsset},
     crypto::rand::RandomCoin,
     note::{
@@ -38,13 +36,13 @@ use miden_standards::{
     note::{P2idNote, P2idNoteStorage},
     testing::note::NoteBuilder,
 };
-use miden_testing::{AccountState, Auth, MockChain, MockChainBuilder};
+use miden_testing::{AccountState, MockChain, MockChainBuilder};
 use midenc_expect_test::expect;
 use midenc_integration_test_support::testing::stripped_mast_size_str;
 
 use super::support::{
-    assert_account_has_fungible_asset, block_on, compile_rust_package, execute_tx, load_or_build,
-    nextest_cache_dir, note_script_root, single_note_cycles, to_core_felts,
+    assert_account_has_fungible_asset, basic_auth, block_on, compile_rust_package, execute_tx,
+    load_or_build, nextest_cache_dir, note_script_root, single_note_cycles, to_core_felts,
 };
 
 /// Tag used for the SWAPP notes themselves.
@@ -146,13 +144,6 @@ impl SwapTerms {
         storage.push(Felt::from(self.p2id_tag));
         storage.extend(p2id_root);
         storage
-    }
-}
-
-/// Returns the auth method used for all accounts in the SWAPP tests.
-fn basic_auth() -> Auth {
-    Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
     }
 }
 

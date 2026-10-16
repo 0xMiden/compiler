@@ -10,6 +10,7 @@
 
 extern crate alloc;
 
+pub mod core_types;
 pub mod namespace;
 pub mod procedure_path;
 
