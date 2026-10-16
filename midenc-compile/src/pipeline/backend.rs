@@ -264,9 +264,9 @@ pub fn apply_rewrites(op: OperationRef, context: Rc<Context>) -> CompilerResult<
 /// Only a component's functions get the rewrites and spill placement above. But codegen lowers
 /// more than the component, and checks all of it: the modules and functions a world holds
 /// beside its component are lowered with it (a component's supporting modules), and a world
-/// with no defining component is lowered as it stands. They are legalized too — beside a component, its
-/// sibling modules and functions; without one, the world as a whole — and nothing follows that
-/// for them, so the ordering rule above holds for them as well.
+/// with no defining component is lowered as it stands. They are legalized too — beside a
+/// component, its sibling modules and functions; without one, the world as a whole — and nothing
+/// follows that for them, so the ordering rule above holds for them as well.
 ///
 /// # Errors
 ///

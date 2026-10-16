@@ -570,9 +570,21 @@ impl OpEmitter<'_> {
     /// procedure with `signature` passes through the 16-element call window.
     ///
     /// Panics if either does not fit in the window: `LegalizeForMasm` reports such a call, and the
-    /// Wasm frontend rejects wider component signatures, so a wider signature here is a compiler
-    /// bug.
+    /// frontends reject wider signatures by their call-site rules, so a wider signature here is a
+    /// compiler bug.
+    ///
+    /// Panics, too, on a zero-sized parameter or result. The window is padded by this felt count,
+    /// which counts such a value as no element, while the emulated operand stack holds every
+    /// operand as at least one, so the padding would be off by one. No frontend produces one.
     fn call_window_felts(signature: &Signature) -> (usize, usize) {
+        assert!(
+            signature
+                .params()
+                .iter()
+                .chain(signature.results())
+                .all(|param| param.ty.size_in_felts() > 0),
+            "a cross-context call passes a zero-sized value, which has no operand stack element"
+        );
         let num_arg_felts = signature.param_felts();
         let num_result_felts = signature.result_felts();
         assert!(

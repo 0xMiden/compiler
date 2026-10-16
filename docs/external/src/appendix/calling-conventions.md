@@ -250,7 +250,7 @@ then one of the following must happen:
   associated with the caller's stack frame.
   - Spill to the advice provider: in this scenario, 12 elements of the stack are used for arguments, and the remaining 4 are used to hold a hash
   which refers to the remaining arguments on the advice provider stack. The callee must arrange to fetch the spilled arguments from the advice
-  provider using that hash.
+  provider using that hash. This is not implemented: the compiler rejects a `call` or `syscall` whose arguments take more than 16 elements.
 
 #### Function signatures
 
@@ -297,8 +297,9 @@ and thus we want those closer to the top of the operand stack to reduce the amou
 Arguments/return values are laid out on the operand stack just like they would be as if you had just loaded it from memory, so all arguments are aligned,
 but may span multiple operands on the operand stack as necessary based on the size of the type (i.e. a struct type that contains a `u32` and a `i1`
 field would require two operands to represent). If the maximum number of operands allowed for the call is reached, any remaining arguments must be
-spilled to the caller's stack frame, or to the advice provider. The former is used in the case of `exec`, while the latter is used for `call`
-and `syscall`, as caller memory is not accessible to the callee with those instructions.
+spilled to the caller's stack frame in the case of `exec`. Caller memory is not accessible to the callee of a `call` or `syscall`, so their
+remaining arguments would have to be spilled to the advice provider instead; that is not implemented, and the compiler rejects a `call` or
+`syscall` whose arguments, or whose results, take more than the 16 elements of the call window.
 
 While ostensibly 16 elements is the maximum number of operands on the operand stack that can represent function arguments, indirect calls
 spend part of that window on selecting the callee, and the compiler rejects indirect callee signatures exceeding what is left instead of
