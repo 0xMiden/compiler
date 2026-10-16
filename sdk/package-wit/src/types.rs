@@ -132,30 +132,62 @@ fn sdk_core_item(name: &str) -> Option<&str> {
     name.strip_prefix(CORE_TYPES_INTERFACE_ID)?.strip_prefix('/')
 }
 
-/// The names of the types the SDK's `core-types` interface (`miden.wit` in the SDK macros)
-/// declares, which a manifest type named by its core-types id must be one of.
-const SDK_CORE_ITEM_NAMES: &[&str] = &[
-    "felt",
-    "word",
-    "digest",
-    "account-id",
-    "recipient",
-    "tag",
-    "asset-id",
-    "asset",
-    "asset-amount",
-    "nonce",
-    "block-number",
-    "account-hash",
-    "block-hash",
-    "storage-value",
-    "storage-root",
-    "account-code-root",
-    "vault-commitment",
-    "note-idx",
-    "note-type",
-    "note-execution-hint",
+/// The types the SDK's `core-types` interface (`miden.wit` in the SDK macros) declares, which a
+/// manifest type named by its core-types id must be one of: each record's name and its field
+/// names in declaration order.
+const SDK_CORE_ITEMS: &[(&str, &[&str])] = &[
+    ("felt", &["inner"]),
+    ("word", &["a", "b", "c", "d"]),
+    ("digest", &["inner"]),
+    ("account-id", &["suffix", "prefix"]),
+    ("recipient", &["inner"]),
+    ("tag", &["inner"]),
+    ("asset-id", &["inner"]),
+    ("asset", &["id", "value"]),
+    ("asset-amount", &["inner"]),
+    ("nonce", &["inner"]),
+    ("block-number", &["inner"]),
+    ("account-hash", &["inner"]),
+    ("block-hash", &["inner"]),
+    ("storage-value", &["inner"]),
+    ("storage-root", &["inner"]),
+    ("account-code-root", &["inner"]),
+    ("vault-commitment", &["inner"]),
+    ("note-idx", &["inner"]),
+    ("note-type", &["inner"]),
+    ("note-execution-hint", &["inner"]),
 ];
+
+/// Whether the manifest type `ty`, named by the core-types id of `fields`' record, has that
+/// record's layout: a struct with exactly those fields in that order, each field named by a
+/// core-types id having its own record's layout too. A package built by an SDK whose record had
+/// another field order (`account-id` was `{ prefix, suffix }`) fails it.
+fn has_sdk_layout(ty: &Type, fields: &[&str]) -> bool {
+    let Type::Struct(StructRef::Plain(st)) = ty else {
+        return false;
+    };
+    st.fields().len() == fields.len()
+        && st.fields().iter().zip(fields).all(|(field, name)| {
+            field.name.as_deref() == Some(*name)
+                && match &field.ty {
+                    Type::Struct(inner) => match inner.name().as_deref().and_then(sdk_core_item) {
+                        Some(item) => SDK_CORE_ITEMS
+                            .iter()
+                            .find(|(name, _)| *name == item)
+                            .is_some_and(|(_, fields)| has_sdk_layout(&field.ty, fields)),
+                        None => true,
+                    },
+                    _ => true,
+                }
+        })
+}
+
+/// The name a type named `name` is declared under: the core item of a core-types id, e.g.
+/// `account-id` for `miden:base/core-types@1.0.0/account-id`, and else the last segment of a
+/// Miden path (see [`naming::short_name`]).
+fn short_name(name: &str) -> &str {
+    sdk_core_item(name).unwrap_or_else(|| naming::short_name(name))
+}
 
 impl TypeSet {
     /// The names of the types the interface uses or declares.
@@ -221,20 +253,22 @@ impl TypeSet {
         }))
     }
 
-    /// The mapping of the struct or enum `ty` named `name` when the name alone decides it: a type
-    /// of the SDK's core types (see [`sdk_core_item`]) is that core item, and a name that is not a
-    /// Miden identifier path names a type from elsewhere, which is unsupported. `None` for a Miden
-    /// identifier path.
+    /// The mapping of the struct or enum `ty` named `name` when the name decides it: a type of the
+    /// SDK's core types (see [`sdk_core_item`]) with that item's layout is that core item, and a
+    /// name that is not a Miden identifier path names a type from elsewhere, which is
+    /// unsupported. `None` for a Miden identifier path, and for a core-types id whose layout is
+    /// another, which becomes a local declaration as a Miden-named type of another layout does.
     fn map_by_name(&mut self, ty: &Type, name: &str) -> Result<Option<Mapped>, String> {
         if let Some(item) = sdk_core_item(name) {
-            if !SDK_CORE_ITEM_NAMES.contains(&item) {
+            let Some((_, fields)) = SDK_CORE_ITEMS.iter().find(|(core, _)| *core == item) else {
                 return Err(format!(
                     "unsupported type `{name}`: `{item}` is not a type of the SDK's \
                      `{CORE_TYPES_INTERFACE_ID}`"
                 ));
+            };
+            if !has_sdk_layout(ty, fields) {
+                return Ok(None);
             }
-            // The layout is the SDK's own by construction, so the manifest type is counted as it
-            // is rather than checked against the item's shape.
             let flat = flatten_type(ty).map_err(|ty| format!("unsupported type `{ty}`"))?;
             let felts = flat.iter().map(|flat| flat.scalar.stack_elements()).sum();
             self.use_core(item)?;
@@ -261,7 +295,7 @@ impl TypeSet {
         if let Some(mapped) = self.map_by_name(ty, &name)? {
             return Ok(mapped);
         }
-        let wit_name = naming::kebab(naming::short_name(&name));
+        let wit_name = naming::kebab(short_name(&name));
         if let Some(mapped) = self.core_item(&wit_name, ty)? {
             return Ok(mapped);
         }
@@ -301,7 +335,7 @@ impl TypeSet {
         if let Some(mapped) = self.map_by_name(ty, name)? {
             return Ok(mapped);
         }
-        let wit_name = naming::kebab(naming::short_name(name));
+        let wit_name = naming::kebab(short_name(name));
         if let Some(mapped) = self.core_item(&wit_name, ty)? {
             return Ok(mapped);
         }
@@ -406,7 +440,7 @@ const PRELUDE_TYPES: &[&str] = &["Option", "Result", "String", "Vec"];
 /// has no WIT spelling, or its Rust spelling (see [`naming::rust_type_ident`]) is `Self` or
 /// one of the [`PRELUDE_TYPES`].
 fn local_ident(name: &str) -> Result<String, String> {
-    let short = naming::short_name(name);
+    let short = short_name(name);
     let ident = naming::ident(short).map_err(|err| format!("unsupported type `{name}`: {err}"))?;
     let rust = naming::rust_type_ident(short, &ident)
         .map_err(|err| format!("unsupported type `{name}`: {err}"))?;
@@ -738,8 +772,8 @@ mod tests {
         }
     }
 
-    /// The core item names are exactly the types of the core-types interface in the SDK's
-    /// `miden.wit`.
+    /// The core items and their field names, in order, are exactly the records of the
+    /// core-types interface in the SDK's `miden.wit`.
     #[test]
     fn core_item_names_are_the_sdk_core_types() {
         let mut resolve = wit_parser::Resolve::new();
@@ -747,10 +781,53 @@ mod tests {
             .push_str("miden.wit", include_str!("../../base-macros/wit/miden.wit"))
             .expect("the core types parse");
         let interface = resolve.packages[package].interfaces["core-types"];
-        let wit: BTreeSet<&str> =
-            resolve.interfaces[interface].types.keys().map(String::as_str).collect();
-        let table: BTreeSet<&str> = SDK_CORE_ITEM_NAMES.iter().copied().collect();
+        let wit: BTreeSet<(&str, Vec<&str>)> = resolve.interfaces[interface]
+            .types
+            .iter()
+            .map(|(name, id)| {
+                let wit_parser::TypeDefKind::Record(record) = &resolve.types[*id].kind else {
+                    panic!("`{name}` must be a record in miden.wit");
+                };
+                (name.as_str(), record.fields.iter().map(|field| field.name.as_str()).collect())
+            })
+            .collect();
+        let table: BTreeSet<(&str, Vec<&str>)> =
+            SDK_CORE_ITEMS.iter().map(|(name, fields)| (*name, fields.to_vec())).collect();
         assert_eq!(table, wit);
+    }
+
+    /// A type named by the core-types id of `account-id` but laid out `{ prefix, suffix }`, as an
+    /// SDK with the prefix first built it, is a local record rather than the core item.
+    #[test]
+    fn an_sdk_core_type_id_of_another_layout_is_a_local_record() {
+        let mut set = TypeSet::default();
+        let id = record(&sdk_name("account-id"), &[("prefix", sdk_felt()), ("suffix", sdk_felt())]);
+        assert_eq!(
+            set.map(&id).unwrap(),
+            Mapped {
+                wit: "account-id".to_owned(),
+                values: 2,
+                felts: 2
+            }
+        );
+        assert_eq!(
+            set.locals,
+            [(
+                "account-id".to_owned(),
+                Decl::Record(vec![
+                    ("prefix".to_owned(), "felt".to_owned()),
+                    ("suffix".to_owned(), "felt".to_owned()),
+                ])
+            )]
+        );
+        assert_eq!(set.core.iter().collect::<Vec<_>>(), ["felt"]);
+
+        // The core order is the core item.
+        let mut set = TypeSet::default();
+        let id = record(&sdk_name("account-id"), &[("suffix", sdk_felt()), ("prefix", sdk_felt())]);
+        assert_eq!(set.map(&id).unwrap().wit, "account-id");
+        assert_eq!(set.core.iter().collect::<Vec<_>>(), ["account-id"]);
+        assert!(set.locals.is_empty());
     }
 
     /// A type named by a core-types id whose item the core types do not declare is unsupported.
