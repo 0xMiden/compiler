@@ -116,18 +116,33 @@ fn fields_flatten_like(ty: &Type, record: &CoreRecord) -> bool {
 
 /// Whether `ty` flattens to exactly the scalars `leaves`.
 fn flattens_to(ty: &Type, leaves: &[CoreLeaf]) -> bool {
-    flatten_type(ty).is_ok_and(|flat| {
-        flat.len() == leaves.len()
-            && flat.iter().zip(leaves).all(|(flat, leaf)| {
-                matches!(
-                    (&flat.scalar, leaf),
-                    (WasmScalar::Felt, CoreLeaf::Felt)
-                        | (WasmScalar::U8, CoreLeaf::U8)
-                        | (WasmScalar::U16, CoreLeaf::U16)
-                        | (WasmScalar::U32, CoreLeaf::U32)
-                )
-            })
-    })
+    flat_len(ty) == Some(leaves.len())
+        && flatten_type(ty).is_ok_and(|flat| {
+            flat.len() == leaves.len()
+                && flat.iter().zip(leaves).all(|(flat, leaf)| {
+                    matches!(
+                        (&flat.scalar, leaf),
+                        (WasmScalar::Felt, CoreLeaf::Felt)
+                            | (WasmScalar::U8, CoreLeaf::U8)
+                            | (WasmScalar::U16, CoreLeaf::U16)
+                            | (WasmScalar::U32, CoreLeaf::U32)
+                    )
+                })
+        })
+}
+
+/// How many scalars `ty` flattens to, counted without flattening it, for a type [`flatten_type`]
+/// accepts; `None` if the count overflows.
+fn flat_len(ty: &Type) -> Option<usize> {
+    match ty {
+        Type::Struct(st) => st
+            .get()
+            .fields()
+            .iter()
+            .try_fold(0usize, |n, field| n.checked_add(flat_len(&field.ty)?)),
+        Type::Array(array) => array.len.checked_mul(flat_len(&array.ty)?),
+        _ => Some(1),
+    }
 }
 
 /// The manifest name of a named struct or enum, the hint a parameter is named after; for a type of
@@ -533,6 +548,15 @@ mod tests {
         );
         // ...and the core `account-id` can no longer be used next to it.
         assert!(set.map(&id).unwrap_err().contains("conflicting definitions"));
+    }
+
+    /// A field far larger than its core field is told apart without being flattened.
+    #[test]
+    fn a_huge_field_is_not_flattened_whole() {
+        let core = sdk_record("account-id");
+        let huge = Type::from(ArrayType::new(Type::Felt, 100_000_000));
+        let id = record("AccountId", &[("suffix", huge), ("prefix", Type::Felt)]);
+        assert!(!fields_flatten_like(&id, core));
     }
 
     /// Enums map to the core enum, a local enum, or nothing when discriminants have gaps.
