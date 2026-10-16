@@ -30,10 +30,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
-      - name: Install Rust and LLVM tools
-        run: |
-          rustup update --no-self-update
-          rustup component add llvm-tools-preview
+      - name: Install Rust
+        run: rustup update --no-self-update
       - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           shared-key: compiler-coverage
@@ -50,9 +48,7 @@ jobs:
           curl -fsSL https://github.com/0xMiden/midenup/releases/latest/download/installer.sh | bash -s
           midenup update
           echo "MIDEN_SYSROOT=$(midenup show sysroot)" >> "$GITHUB_ENV"
-      - name: Test coverage orchestration
-        run: python3 -m unittest discover -s tools -p test_coverage.py
-      - name: Measure Rust tests and lit tools
+      - name: Collect combined Rust and lit coverage
         run: cargo make coverage
       - name: Check for a report
         id: report
