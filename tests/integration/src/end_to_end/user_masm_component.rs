@@ -40,7 +40,14 @@ fn user_masm_component_builds_as_an_account_component() {
     assert_eq!(&*package.name, "counter");
 
     let mut signatures = String::new();
-    for leaf in ["increment", "get_count", "add_to_count", "get_count_word", "auth_incr_nonce"] {
+    for leaf in [
+        "increment",
+        "get_count",
+        "add_to_count",
+        "get_count_word",
+        "wide",
+        "auth_incr_nonce",
+    ] {
         let export = find_export(&package, COUNTER_NAMESPACE, leaf);
         let signature = export
             .signature
@@ -58,13 +65,14 @@ fn user_masm_component_builds_as_an_account_component() {
         get_count: @account_procedure extern "component-model" fn() -> felt
         add_to_count: @account_procedure extern "component-model" fn(struct Delta {add : felt, mul : felt})
         get_count_word: @account_procedure extern "component-model" fn() -> [felt; 4]
+        wide: @account_procedure extern "component-model" fn([felt; 4], [felt; 4], [felt; 4], [felt; 4]) -> felt
         auth_incr_nonce: @auth_script extern "component-model" fn([felt; 4])
     "#]].assert_eq(&signatures);
 }
 
 /// The WIT interface synthesized from the package manifest matches its snapshot: package
-/// `acme:counter`, interface `counter`, the four account procedures with their export paths, the
-/// `delta` record and the `word` result, and the auth procedure left out.
+/// `acme:counter`, interface `counter`, the five account procedures with their export paths, the
+/// `delta` record, the `word` result and the four-word `wide`, and the auth procedure left out.
 #[test]
 fn user_masm_component_interface_is_synthesized_from_the_manifest() {
     let package = counter_package();
@@ -114,9 +122,9 @@ fn user_masm_component_is_called_from_a_rust_note() {
 }
 
 /// A Rust transaction script with `#[account(counter::Counter)]` compiles to calls of the
-/// `get_count` and `get_count_word` getters.
+/// `get_count` and `get_count_word` getters and of `wide`, which takes 16 parameter felts.
 #[test]
 fn user_masm_component_is_called_from_a_rust_tx_script() {
     let masm = consumer_masm("acme-counter-tx-script");
-    assert_calls(&masm, &["get_count", "get_count_word"]);
+    assert_calls(&masm, &["get_count", "get_count_word", "wide"]);
 }

@@ -95,6 +95,24 @@ pub proc get_count_word() -> word
     # => [count, count + 1, count + 2, count + 3, pad(12)]
 end
 
+#! Returns `a[0] + b[1] + c[2] + d[3]`, taking the 16 parameter felts a call can pass.
+#!
+#! Inputs:  [a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c2, c3, d0, d1, d2, d3]
+#! Outputs: [a0 + b1 + c2 + d3, pad(15)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc wide(a: word, b: word, c: word, d: word) -> felt
+    movup.15 movup.11 add
+    # => [c2 + d3, a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c3, d0, d1, d2]
+
+    movup.6 add add
+    # => [a0 + b1 + c2 + d3, a1, a2, a3, b0, b2, b3, c0, c1, c3, d0, d1, d2]
+
+    movdn.12 dropw dropw dropw
+    # => [a0 + b1 + c2 + d3, pad(15)]
+end
+
 #! Authenticates a transaction against the account by incrementing its nonce.
 #!
 #! Inputs:  [AUTH_ARGS, pad(12)]

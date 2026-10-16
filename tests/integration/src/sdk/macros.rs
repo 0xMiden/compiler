@@ -1229,19 +1229,20 @@ impl ReceiveNote {{
     cargo_check_miden_target(&cargo_proj)
 }
 
-/// A synthesized interface offers a several-result procedure as a `tuple` result and a
-/// WIT-keyword procedure name `%`-escaped; a Rust note binds both, on the active account and over
-/// FPI, and compiles to calls of the procedures.
+/// A synthesized interface offers a several-result procedure as a `tuple` result and a procedure
+/// named by a WIT and Rust keyword (`type`) `%`-escaped; a Rust note binds both, the keyword as
+/// wit-bindgen escapes it (`type_`), the tuple on the active account and over FPI, and compiles to
+/// calls of the procedures. `split` returns `(x, x + 1)`, which the note asserts in that order.
 #[test]
 fn masm_account_component_tuple_result_and_keyword_name_compile() {
     const NAMESPACE: &str = "miden::test_wallet::wallet";
     const SOURCE: &str = "@account_procedure
 pub proc split(x: felt) -> (felt, felt)
-    dup
+    dup add.1 swap movup.2 drop
 end
 
 @account_procedure
-pub proc interface()
+pub proc type()
     push.0 drop
 end
 ";
@@ -1261,10 +1262,11 @@ impl SplitNote {
     #[note_script]
     pub fn script(self, arg: Word, account: &mut TestAccount) {
         let (low, high) = account.split(arg[0]);
+        assert_eq(high, low + felt!(1));
         let remote = TestAccount::new(AccountId::new(arg[1], arg[2]));
         let (remote_low, remote_high) = remote.split(arg[3]);
-        assert_eq(low + high, remote_low + remote_high);
-        account.interface();
+        assert_eq(remote_high, remote_low + felt!(1));
+        account.type_();
     }
 }
 "#;
@@ -1286,7 +1288,7 @@ impl SplitNote {
         &midenc_package_interface::PackageInterface::from_package(&dependency),
     )
     .unwrap_or_else(|err| panic!("the wallet must have an interface: {err}"));
-    for function in ["split: func(arg0: felt) -> tuple<felt, felt>;", "%interface: func();"] {
+    for function in ["split: func(arg0: felt) -> tuple<felt, felt>;", "%type: func();"] {
         assert!(generated.wit.contains(function), "expected `{function}` in:\n{}", generated.wit);
     }
 
@@ -1296,7 +1298,7 @@ impl SplitNote {
         [],
     );
     let masm = test.masm_src();
-    for procedure in ["split", "interface"] {
+    for procedure in ["split", "type"] {
         let call = format!("call.::{NAMESPACE}::{procedure}");
         assert!(masm.lines().any(|line| line.trim() == call), "expected `{call}` in:\n{masm}");
     }
@@ -1358,6 +1360,76 @@ impl ReceiveNote {
         output.status.success(),
         "expected the override's `deposit` to be bound: {stderr}"
     );
+
+    // The synthesized `receive_asset` is not bound next to the override's functions.
+    std::fs::write(
+        cargo_proj.root().join("src/lib.rs"),
+        LIB_RS.replace("account.deposit(arg)", "account.receive_asset(arg)"),
+    )
+    .expect("the note source must be rewritten");
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "expected the synthesized `receive_asset` to be unbound"
+    );
+    assert!(
+        stderr.contains("no method named `receive_asset`"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+/// A procedure with ten parameter felts and a multi-value result is offered, since a native call
+/// can pass it; over FPI the six prefix felts, the parameters and the result pointer take 17
+/// stack elements, and the FPI lowering reports that.
+#[test]
+fn masm_account_component_ten_felts_and_tuple_result_compile_natively_but_not_over_fpi() {
+    const NAMESPACE: &str = "miden::test_wallet::wallet";
+    const SOURCE: &str = "@account_procedure
+pub proc check(a: word, b: felt, c: felt, d: word) -> (word, felt)
+    movup.5 drop movup.8 drop movup.7 drop movup.6 drop movup.5 drop
+end
+";
+    const NATIVE_LIB_RS: &str = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::*;
+
+#[account(test_wallet::Wallet)]
+pub struct TestAccount;
+
+#[note]
+struct CheckNote;
+
+#[note]
+impl CheckNote {
+    #[note_script]
+    pub fn script(self, arg: Word, account: &mut TestAccount) {
+        let (word, felt) = account.check(arg, arg[0], arg[1], arg);
+        assert_eq(word[0], felt);
+    }
+}
+"#;
+    let compiler_test = |name: &str, lib_rs: &str| {
+        let cargo_proj = masm_account_component_consumer(name, NAMESPACE, SOURCE, None, lib_rs);
+        CompilerTest::rust_source_cargo_miden(
+            cargo_proj.root(),
+            WasmTranslationConfig::default(),
+            [],
+        )
+    };
+
+    let masm = compiler_test("masm_account_component_ten_felts_native", NATIVE_LIB_RS).masm_src();
+    let call = format!("call.::{NAMESPACE}::check");
+    assert!(masm.lines().any(|line| line.trim() == call), "expected `{call}` in:\n{masm}");
+
+    let fpi_lib_rs = NATIVE_LIB_RS.replace(
+        "account.check(arg, arg[0], arg[1], arg)",
+        "TestAccount::new(AccountId::new(arg[1], arg[2])).check(arg, arg[0], arg[1], arg)",
+    );
+    let err =
+        compiler_test("masm_account_component_ten_felts_fpi", &fpi_lib_rs).compile_package_err();
+    assert!(err.contains("lowers to 17 operand stack felts"), "unexpected error: {err}");
 }
 
 /// A Miden Assembly account-component dependency without WIT is usable from `#[account]`.
