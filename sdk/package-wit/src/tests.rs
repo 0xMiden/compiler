@@ -956,6 +956,29 @@ end
     parse(&generated.wit, "my-component");
 }
 
+/// Results occupying exactly the 16 stack elements a call can return are offered.
+#[test]
+fn results_of_sixteen_stack_elements_are_offered() {
+    let iface = component(
+        r#"
+@account_procedure
+pub proc four_words() -> (word, word, word, word)
+    nop
+end
+"#,
+    );
+    let generated = generate(&iface).unwrap();
+    assert!(generated.skipped.is_empty(), "{:?}", generated.skipped);
+    assert!(
+        generated
+            .wit
+            .contains("    four-words: func() -> tuple<word, word, word, word>;\n"),
+        "{}",
+        generated.wit
+    );
+    parse(&generated.wit, "my-component");
+}
+
 /// A procedure whose type is named by a core-types id the SDK's core types do not declare is left
 /// out with a reason naming the item, and the other procedures are still offered.
 #[test]

@@ -95,22 +95,81 @@ pub proc get_count_word() -> word
     # => [count, count + 1, count + 2, count + 3, pad(12)]
 end
 
-#! Returns `a[0] + b[1] + c[2] + d[3]`, taking the 16 parameter felts a call can pass.
+#! Returns the 16 parameter felts a call can pass, weighted by their position:
+#! `16 * a0 + 15 * a1 + ... + 2 * d2 + 1 * d3`.
 #!
 #! Inputs:  [a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c2, c3, d0, d1, d2, d3]
-#! Outputs: [a0 + b1 + c2 + d3, pad(15)]
+#! Outputs: [sum, pad(15)]
 #!
 #! Invocation: call
 @account_procedure
 pub proc wide(a: word, b: word, c: word, d: word) -> felt
-    movup.15 movup.11 add
-    # => [c2 + d3, a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c3, d0, d1, d2]
+    dup
+    # => [a0, a0, a1, ..., d3]
 
-    movup.6 add add
-    # => [a0 + b1 + c2 + d3, a1, a2, a3, b0, b2, b3, c0, c1, c3, d0, d1, d2]
+    # Each step adds the next felt to the running total `run` and `run` to `sum`, so the felt
+    # at position i is added 16 - i times.
+    repeat.15
+        movup.2 add dup movup.2 add swap
+    end
+    # => [run, sum, pad(14)]
 
-    movdn.12 dropw dropw dropw
-    # => [a0 + b1 + c2 + d3, pad(15)]
+    drop
+    # => [sum, pad(15)]
+end
+
+#! Returns `x` and `x + 1`, `x` on top.
+#!
+#! Inputs:  [x, pad(15)]
+#! Outputs: [x, x + 1, pad(14)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc split(x: felt) -> (felt, felt)
+    dup add.1 swap movup.2 drop
+    # => [x, x + 1, pad(14)]
+end
+
+#! Returns the words [1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12] and [13, 14, 15, 16], the 16
+#! result felts a call can return.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [1, 2, 3, ..., 16]
+#!
+#! Invocation: call
+@account_procedure
+pub proc four_words() -> (word, word, word, word)
+    add.16
+    # => [16, pad(15)]
+
+    # Each step moves the bottom pad to the top and sets it to one less than the felt below it.
+    repeat.15
+        movup.15 dup.1 add sub.1
+    end
+    # => [1, 2, 3, ..., 16]
+end
+
+#! Returns `[d, e, f, sum]`, where `sum` is the 12 felts of `a`, `b` and `c` weighted by their
+#! position, `12 * a0 + 11 * a1 + ... + 1 * c3`: 15 parameter felts and a word result, the most a
+#! caller passing a result pointer can pass.
+#!
+#! Inputs:  [a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c2, c3, d, e, f, pad(1)]
+#! Outputs: [d, e, f, sum, pad(12)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc fifteen_to_word(a: word, b: word, c: word, d: felt, e: felt, f: felt) -> word
+    dup
+    # => [a0, a0, a1, ..., c3, d, e, f, pad(1)]
+
+    # As in `wide`: the felt at position i is added 12 - i times.
+    repeat.11
+        movup.2 add dup movup.2 add swap
+    end
+    # => [run, sum, d, e, f, pad(11)]
+
+    drop movdn.3
+    # => [d, e, f, sum, pad(12)]
 end
 
 #! Authenticates a transaction against the account by incrementing its nonce.
