@@ -21,6 +21,7 @@ std = ["midenc-hir/std"]
 [dependencies]
 log.workspace = true
 midenc-dialect-arith.workspace = true
+midenc-dialect-ub.workspace = true
 midenc-hir.workspace = true
 
 [dev-dependencies]

@@ -287,7 +287,7 @@ fn carried_sets() {
 /// value and exit discriminator outward as REGION-OP RESULT columns, so the
 /// widest lifted `scf.if` here already carries fifteen u32 results; one
 /// more level overflows the 16-felt budget (`deep_nest_overflow` below).
-/// The same source fails under `--optimize=size-min` (`nest8_oz` in
+/// The same source also compiles under `--optimize=size-min` (`nest8_oz` in
 /// `opt_levels.rs`), where LLVM keeps more of the nest as loops.
 #[test]
 fn nest8() {

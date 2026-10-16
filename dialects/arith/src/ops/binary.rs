@@ -612,6 +612,18 @@ pub struct Eq {
 
 infer_return_ty_for_binary_op!(Eq as Type::I1);
 
+impl Canonicalizable for Eq {
+    fn get_canonicalization_patterns(
+        rewrites: &mut patterns::RewritePatternSet,
+        context: Rc<Context>,
+    ) {
+        let name = context
+            .get_or_register_dialect::<ArithDialect>()
+            .expect_registered_name::<Self>();
+        rewrites.push(crate::canonicalization::SimplifyBoolCompare::for_op(context, name));
+    }
+}
+
 /// Inequality comparison
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
@@ -629,6 +641,18 @@ pub struct Neq {
 }
 
 infer_return_ty_for_binary_op!(Neq as Type::I1);
+
+impl Canonicalizable for Neq {
+    fn get_canonicalization_patterns(
+        rewrites: &mut patterns::RewritePatternSet,
+        context: Rc<Context>,
+    ) {
+        let name = context
+            .get_or_register_dialect::<ArithDialect>()
+            .expect_registered_name::<Self>();
+        rewrites.push(crate::canonicalization::SimplifyBoolCompare::for_op(context, name));
+    }
+}
 
 /// Greater-than comparison
 #[derive(EffectOpInterface, OpPrinter, OpParser)]

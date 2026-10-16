@@ -15,7 +15,10 @@ fn basic_wallet_and_p2id() {
     // adjacent stack operations that undo each other, such as `swap.1 swap.1` (7 bytes); 8844
     // with no `u32assert` on a constant-address 32-bit store, one fewer per 32-bit global
     // initializer: the wallet's `init` stores three such globals, 11 bytes per assertion and 5
-    // for an op batch its stores no longer fill (38 bytes fewer).
+    // for an op batch its stores no longer fill (38 bytes fewer); 8802 since codegen drops the
+    // redundant `u32assert` after a u32 division, sinks operands in the order the lowering
+    // expects, folds boolean round trips and degenerate selects, converts an aligned access's
+    // base address first and shifts by a constant with the immediate forms (42 bytes fewer).
     //
     // The 390 bytes over the hand bindings at 8895: `output_note::create` converts the
     // `NoteType` to the protocol's `u8` enum (a `u32lt` and a branch to a trap for anything but
@@ -23,7 +26,7 @@ fn basic_wallet_and_p2id() {
     // to their declared types (`push.255 u32and`, `push.65535 u32and`); and — new with the
     // integer newtypes — the component masks the `u8` note type and the `u16` note index as it
     // lifts them from its arguments, where it lifted felts before.
-    expect!["8844"].assert_eq(stripped_mast_size_str(&account_package).as_str());
+    expect!["8802"].assert_eq(stripped_mast_size_str(&account_package).as_str());
 
     let tx_script_package = compile_project(Path::new("../../examples/basic-wallet-tx-script"));
     assert!(tx_script_package.is_library(), "expected library");
@@ -69,7 +72,13 @@ fn basic_wallet_and_p2id() {
     // 48 bytes more (15238 before) with the spill fixes for structured branches (#1422): the
     // script's last `scf.if` evicts its own condition, which is used again after the if, so the
     // condition is stored before the if and reloaded at that use.
-    expect!["15314"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
+    //
+    // 800 bytes fewer (15314 before) with the codegen changes listed for the account package. 9
+    // bytes fewer (14514 before) since the felt comparison intrinsics widen their result with
+    // `zext` and `bitcast`, so the boolean folds apply. 43 bytes fewer (14505 before) since a
+    // constant `shr_u` count lowers to `u32shr.N` and a complemented comparison stays out of loop
+    // bodies.
+    expect!["14462"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
 
     let note_package = compile_project(Path::new("../../examples/p2id-note"));
     assert!(note_package.is_library(), "expected library");
@@ -94,7 +103,10 @@ fn basic_wallet_and_p2id() {
     // 46 bytes fewer (20436 before) with no `u32assert` on a constant-address 32-bit store: one
     // fewer per 32-bit global initializer. The note's `init` stores four such globals, 11 bytes
     // per assertion and 2 padding `noop`s its shorter block no longer needs.
-    expect!["20390"].assert_eq(stripped_mast_size_str(&note_package).as_str());
+    //
+    // 994, 6 and 221 bytes fewer (20390, 19396 and 19390 before) with the later codegen changes
+    // listed for the tx script.
+    expect!["19169"].assert_eq(stripped_mast_size_str(&note_package).as_str());
     // The note package exports both the note script and the `build_recipient` constructor; the
     // constructor must not interfere with the `@note_script`-attributed export selection.
     assert!(
@@ -114,6 +126,7 @@ fn basic_wallet_and_p2id() {
     // operand where it stands (11 bytes fewer) and a peephole deleted adjacent stack operations
     // that undo each other, such as `swap.1 swap.1` (51 bytes fewer). 16374 before the
     // `u32assert` on a constant-address 32-bit store went, one fewer per 32-bit global
-    // initializer: 46 bytes fewer, as for the P2ID note above.
-    expect!["16328"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
+    // initializer: 46 bytes fewer, as for the P2ID note above. 16328, 15705 and 15689 before the
+    // later codegen changes listed for the tx script (623, 16 and 176 bytes fewer).
+    expect!["15513"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
 }

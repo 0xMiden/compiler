@@ -145,9 +145,9 @@ As always, all _uses_ of a value must be dominated by its definition. The IR is 
 An _operand_ is a [_value_](#values) used as an argument to an operation.
 
 Beyond the semantics of any given operation, operand ordering is only significant insofar as it is used as the order in which those items are expected to appear on the operand stack once lowered to Miden Assembly. The earlier an operand appears in the list of operands for an operation, the
-closer to the top of the operand stack it will appear.
+closer to the top of the operand stack it will appear. Binary operations are the exception: their right-hand operand is on top of the stack, as the Miden Assembly binary instructions expect it. A few other lowerings use their own operand order too: `arith.join`, the binary extension field operations `arith.ext_2_add`, `arith.ext_2_sub`, `arith.ext_2_mul` and `arith.ext_2_div` (but not `arith.ext_2_neg` or `arith.ext_2_inv`), and `hir.dyncall`, which places its callee's root on the stack first and spills it before placing the arguments.
 
-Similarly, the ordering of operand results also correlates with the operand stack order after lowering. Specifically, the earlier a result appears in the result list, the closer to the top of the operand stack it will appear after the operation executes.
+Similarly, the ordering of operand results also correlates with the operand stack order after lowering. Specifically, the earlier a result appears in the result list, the closer to the top of the operand stack it will appear after the operation executes. `arith.split` is the exception: it lists its limbs from most to least significant, but leaves the least significant limb, its last result, on top of the operand stack.
 
 #### Immediates
 

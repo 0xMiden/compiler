@@ -4327,6 +4327,7 @@ version = "0.11.0"
 dependencies = [
  "log",
  "midenc-dialect-arith",
+ "midenc-dialect-ub",
  "midenc-expect-test",
  "midenc-hir",
 ]

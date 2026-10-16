@@ -1,6 +1,7 @@
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
 #![feature(ptr_metadata)]
+#![feature(specialization)]
 #![allow(incomplete_features)]
 #![no_std]
 #![deny(warnings)]
@@ -14,6 +15,7 @@ pub mod analyses;
 pub mod assertions;
 mod attributes;
 mod builders;
+mod canonicalization;
 mod ops;
 pub mod transforms;
 

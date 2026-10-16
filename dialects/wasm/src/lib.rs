@@ -21,7 +21,7 @@ use midenc_hir::{
 
 pub use self::{
     builders::WasmOpBuilder,
-    mem::{WasmMemArg, prepare_addr},
+    mem::{BASE_FIRST_OVERFLOW_GUARD, MAX_BASE_FIRST_OFFSET, WasmMemArg, prepare_addr},
     ops::*,
 };
 

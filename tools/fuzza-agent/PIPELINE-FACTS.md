@@ -102,9 +102,12 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   `sext`/`zext`, and each widening multiply gets its own extension pair
   (`wide::sext_const_shared`, `wide::zext_const_shared`, `signed::mulwide_dyn`).
   Dead end: a multi-use 4-felt operand from widening multiplies.
-- Every shift and rotate count is wrapped in `arith.band(trunc(count),
-  width - 1)` (`mask_movement_count`, `frontend/wasm/src/code_translator/mod.rs`):
-  the count band of the spill section.
+- A constant shift or rotate count is reduced `% width` at translation into a
+  plain u32 constant; a dynamic count is wrapped in `arith.band(trunc(count),
+  width - 1)` (`mask_movement_count`, `frontend/wasm/src/code_translator/mod.rs`).
+  The backend lowers a u32/i32 `shl` and a u32/u16/u8 `shr` by a single-use
+  constant count below 32 in the same block to the immediate
+  `u32shl.N`/`u32shr.N`; signed `shr` and 64-bit shifts push the count.
 - Never built by the wasm frontend: `min`/`max`, `neg`/`not`/`incr`, checked
   and overflowing ops, `clo`/`cto`, `ilog2`/`pow2`/`exp`/`is_odd`/`inv`,
   `ext2*`, `sdiv`/`smod`/`sdivmod`, `ashr` (`i32.shr_s` is `arith.shr` on a
@@ -214,12 +217,17 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   `tests/lit/hir-opt/canonicalizer-remove-loop-invariant-args-from-before-block.hir`).
   `SplitCriticalEdges` shares the greedy fixpoint, so a critical-edge guard
   can become satisfiable mid-run.
-- Dead end: `CanonicalizeI64RotateBy32ToSwap` (the count band hides the 32,
-  `mask_movement_count`); `SimplifyBrToReturn` (claimed first by
+- `CanonicalizeI64RotateBy32ToSwap` was a dead end while every count was a
+  band that hid the 32; constant counts are now folded in the frontend, so it
+  is unmeasured since.
+- Dead end: `SimplifyBrToReturn` (claimed first by
   `SimplifyBrToBlockWithSinglePred`, `control_flow::cf_shapes`);
   `WhileConditionTruth` (LLVM folds in-body reads of the condition,
-  `control_flow::do_while`); `FoldConstantIndexSwitch` and `cf.Select::fold`
-  (selectors are never constant post-lift, `control_flow::switch_forms`).
+  `control_flow::do_while`); `FoldConstantIndexSwitch` and the
+  constant-condition arm of `cf.Select::fold` (selectors are never constant
+  post-lift, `control_flow::switch_forms`). `cf.Select::fold` also folds a
+  select whose arms are the same SSA value or one arm is poison, and
+  `simplify-select-of-bools` turns `select(c, true, false)` into `c`.
 - Dead end: pattern variants beyond the producers above:
   `WhileRemoveDuplicatedResults` fires only on the three-level triangle
   (`control_flow::triangle`), the column cascade needs an EMPTY `continue`
@@ -258,12 +266,15 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   for its operands, but only 16 are addressable": `calls::sig17`),
   `call_indirect` arguments (15), and helper state passed by value (pass
   `&[u64; N]` instead: `programs::prog_rle_wa`).
-- The only plain-Rust carrier of SSA values across blocks is the count band:
+- The only plain-Rust carrier of SSA values across blocks was the count band:
   the folder dedups constants function-wide and CSE merges identical `band`s
   into the dominating one, so each distinct constant shift/rotate count reused
-  in several blocks is ONE u32 felt live between them. LLVM makes such shifts
-  itself (`x * 7` → `x << 3`, address math). User values cross only as
-  locals, reloaded per block (`spills::spill_split`, `compose::calls_all`).
+  in several blocks was ONE u32 felt live between them. LLVM makes such shifts
+  itself (`x * 7` → `x << 3`, address math). Constant counts are now folded
+  to plain constants in the frontend, which operand sinking materializes at
+  each use, so they no longer form bands; the band measurements below
+  predate that and are historical. User values cross only as locals,
+  reloaded per block (`spills::spill_split`, `compose::calls_all`).
 - The analysis counts LIVE felts: up to about nine bands alone request no
   spill. A u64 cluster makes it spill: 8 bands + an 8-value cluster across two
   loops gives 57 spills, 84 reloads, 6 split edges (`interact::cascade_spill`).
@@ -361,8 +372,9 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 
 ## Control-flow lifting (cfg-to-scf)
 
-- Every payload column is a 1-felt u32 discriminator or a `ub.poison`
-  placeholder; user state crosses regions in locals (`control_flow::nest8`,
+- Every payload column is a 1-felt u32 discriminator, an `i1` loop latch
+  flag (`should_repeat`, built from `get_cfg_bool_value` constants with no
+  `trunc`), or a `ub.poison` placeholder; user state crosses regions in locals (`control_flow::nest8`,
   `control_flow::exit_values`). Dead end: multi-felt cfg-to-scf columns.
 - Region-op result columns grow about two per nesting level; exit
   multiplicity does not matter (`control_flow::wide_exits`). The 16-felt

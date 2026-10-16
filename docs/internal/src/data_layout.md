@@ -101,8 +101,13 @@ count; `memory.grow` adds pages and returns the old count, or `u32::MAX` on fail
 Failed growth preserves the metadata. This compiler-managed heap model is not a full
 implementation of Wasm's declared linear-memory limits and initial page count.
 
-Heap metadata begins at VM element address `0x40000000`, above the range reachable
-by a 32-bit byte pointer. The maximum heap top is byte address `0xfffffffc`.
+Heap metadata begins at VM element address `0x41000000`, 2^24 elements above the
+guest limit `0x40000000` (the end of the range reachable by a 32-bit byte pointer).
+The elements in between are an overflow guard: an element-aligned access whose
+memarg offset is below 2^26 bytes (`MAX_BASE_FIRST_OFFSET` in the wasm dialect) and
+whose `base + offset` overflows the 32-bit address space lands there instead of
+trapping, so it cannot reach the heap metadata. An access with a larger offset keeps
+the checked add and traps on overflow. The maximum heap top is byte address `0xfffffffc`.
 Procedure locals use a separate VM address range beginning at `2^31` elements.
 Keep these units explicit when changing bounds: an element address and a byte
 address with the same numeric value do not identify the same location.

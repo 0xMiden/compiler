@@ -89,37 +89,37 @@ pub(crate) fn convert_felt_intrinsics<B: ?Sized + Builder>(
         "eq" => {
             assert_eq!(args.len(), 2, "{function} takes exactly two arguments");
             let inst = builder.eq(args[0], args[1], span)?;
-            let cast = builder.cast(inst, Type::I32, span)?;
+            let cast = builder.widen_bool(inst, span)?;
             Ok(smallvec![cast])
         }
         "gt" => {
             assert_eq!(args.len(), 2, "{function} takes exactly two arguments");
             let inst = builder.gt(args[0], args[1], span)?;
-            let cast = builder.cast(inst, Type::I32, span)?;
+            let cast = builder.widen_bool(inst, span)?;
             Ok(smallvec![cast])
         }
         "ge" => {
             assert_eq!(args.len(), 2, "{function} takes exactly two arguments");
             let inst = builder.gte(args[0], args[1], span)?;
-            let cast = builder.cast(inst, Type::I32, span)?;
+            let cast = builder.widen_bool(inst, span)?;
             Ok(smallvec![cast])
         }
         "lt" => {
             assert_eq!(args.len(), 2, "{function} takes exactly two arguments");
             let inst = builder.lt(args[0], args[1], span)?;
-            let cast = builder.cast(inst, Type::I32, span)?;
+            let cast = builder.widen_bool(inst, span)?;
             Ok(smallvec![cast])
         }
         "le" => {
             assert_eq!(args.len(), 2, "{function} takes exactly two arguments");
             let inst = builder.lte(args[0], args[1], span)?;
-            let cast = builder.cast(inst, Type::I32, span)?;
+            let cast = builder.widen_bool(inst, span)?;
             Ok(smallvec![cast])
         }
         "is_odd" => {
             assert_eq!(args.len(), 1, "{function} takes exactly one argument");
             let inst = builder.is_odd(args[0], span)?;
-            let cast = builder.cast(inst, Type::I32, span)?;
+            let cast = builder.widen_bool(inst, span)?;
             Ok(smallvec![cast])
         }
         // Assert operations

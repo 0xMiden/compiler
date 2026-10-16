@@ -1,3 +1,4 @@
+use midenc_dialect_wasm::BASE_FIRST_OVERFLOW_GUARD;
 use midenc_hir::{
     FxHashMap, Op, Symbol, SymbolPath, WalkResult,
     dialects::builtin::{
@@ -22,8 +23,11 @@ const DEFAULT_RESERVATION: u32 = 17;
 // Guest pointers are 32-bit byte addresses, so guest-reachable element addresses end below
 // `GUEST_ADDRESS_LIMIT`; procedure locals are framed upwards from the VM's initial frame pointer,
 // `LOCALS_FRAME_START`. The elements in between belong to no program and are reachable only from
-// compiler-emitted MASM, which is why the compiler puts its fixed cells there. Each cell is one
-// word wide, and the cells are packed from the bottom of the band: the constants below define one
+// compiler-emitted MASM, which is why the compiler puts its fixed cells there, above an overflow
+// guard: an element-aligned guest access whose `base + offset` leaves the 32-bit address space
+// does not trap but lands within `BASE_FIRST_OVERFLOW_GUARD` elements past the guest limit (see
+// `prepare_addr` in the wasm dialect), so the cells start past that guard. Each cell is one word
+// wide, and the cells are packed from the bottom of the band: the constants below define one
 // cell each, in address order, ending with the `RESERVED_BAND_END` marker. To add a cell, define
 // it as the current `RESERVED_BAND_END` and move the marker one word up — laid out that way, two
 // cells cannot overlap, and the marker keeps the band inside its bounds. A cell's lifetime is its
@@ -34,6 +38,11 @@ const DEFAULT_RESERVATION: u32 = 17;
 const RESERVED_WORD: u32 = miden_core::WORD_SIZE as u32;
 /// First element address past guest-reachable memory: the 2^32-byte guest address space, in
 /// elements.
+///
+/// An element-aligned guest access whose `base + offset` overflows the 32-bit address space can
+/// still land up to `BASE_FIRST_OVERFLOW_GUARD` elements past this address. The
+/// `intrinsics::mem` MASM module holds a copy in its `GUEST_ADDRESS_LIMIT` constant; the unit
+/// tests check the two agree.
 pub const GUEST_ADDRESS_LIMIT: u32 = ((u32::MAX as u64 + 1) / RESERVED_WORD as u64) as u32;
 /// The VM's initial frame pointer, from which procedure locals are allocated upwards.
 ///
@@ -41,10 +50,16 @@ pub const GUEST_ADDRESS_LIMIT: u32 = ((u32::MAX as u64 + 1) / RESERVED_WORD as u
 /// tests check the two agree.
 pub const LOCALS_FRAME_START: u32 = 1 << 31;
 
+/// First element address past the overflow guard; the compiler's first reserved cell.
+///
+/// The guard is sized by the wasm dialect's bound on base-first address conversion
+/// (`MAX_BASE_FIRST_OFFSET`); a frontend that converts addresses base first on its own must stay
+/// within that bound.
+const RESERVED_BAND_START: u32 = GUEST_ADDRESS_LIMIT + BASE_FIRST_OVERFLOW_GUARD;
 /// Element address of the dynamic-heap metadata word (`heap_top`, `heap_size`, `heap_base`,
 /// magic), owned by the `intrinsics::mem` MASM module and mirrored here from its `HEAP_INFO_ADDR`
 /// constant; the unit tests check the two agree.
-pub const HEAP_INFO_ADDR: u32 = GUEST_ADDRESS_LIMIT;
+pub const HEAP_INFO_ADDR: u32 = RESERVED_BAND_START;
 /// Scratch word a `dyncall` lowering spills the callee's MAST root to, which the VM reads from
 /// memory.
 pub const DYNCALL_ROOT_ADDR: u32 = HEAP_INFO_ADDR + RESERVED_WORD;
@@ -54,7 +69,7 @@ const RESERVED_BAND_END: u32 = DYNCALL_ROOT_ADDR + RESERVED_WORD;
 // The band bounds are checked when the crate compiles: a cell that a guest pointer or a locals
 // frame could reach would be silent memory corruption, never a diagnostic.
 const _: () = assert!(
-    GUEST_ADDRESS_LIMIT.is_multiple_of(RESERVED_WORD),
+    RESERVED_BAND_START.is_multiple_of(RESERVED_WORD),
     "the reserved band does not start on a word boundary"
 );
 const _: () = assert!(
@@ -790,21 +805,27 @@ mod tests {
     use super::*;
 
     /// The reserved band's bounds mirror constants this crate cannot reference in constant
-    /// expressions: the VM's initial frame pointer, and the heap-info address the MASM
-    /// intrinsics hard-code. Either moving without the band following must fail here, not
+    /// expressions: the VM's initial frame pointer (`FMP_INIT_VALUE`), and the heap-info address
+    /// and guest address limit the MASM intrinsics hard-code (`HEAP_INFO_ADDR`,
+    /// `GUEST_ADDRESS_LIMIT`). Any of them moving without the band following must fail here, not
     /// corrupt memory.
     #[test]
     fn reserved_band_mirrors_the_vm_and_intrinsics_constants() {
         assert_eq!(miden_core::FMP_INIT_VALUE.as_canonical_u64(), u64::from(LOCALS_FRAME_START));
 
-        let heap_info_addr = include_str!("../intrinsics/mem.masm")
-            .lines()
-            .find_map(|line| line.strip_prefix("const HEAP_INFO_ADDR="))
-            .and_then(|value| value.split_whitespace().next())
-            .and_then(|value| value.strip_prefix("0x"))
-            .and_then(|hex| u32::from_str_radix(hex, 16).ok())
-            .expect("intrinsics/mem.masm should define `const HEAP_INFO_ADDR=0x…`");
-        assert_eq!(heap_info_addr, HEAP_INFO_ADDR);
+        // Parses the hex value of `const <name>=0x…` from `intrinsics/mem.masm`.
+        let mem_masm_const = |name: &str| {
+            let prefix = format!("const {name}=");
+            include_str!("../intrinsics/mem.masm")
+                .lines()
+                .find_map(|line| line.strip_prefix(prefix.as_str()))
+                .and_then(|value| value.split_whitespace().next())
+                .and_then(|value| value.strip_prefix("0x"))
+                .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+                .unwrap_or_else(|| panic!("intrinsics/mem.masm should define `{prefix}0x…`"))
+        };
+        assert_eq!(mem_masm_const("HEAP_INFO_ADDR"), HEAP_INFO_ADDR);
+        assert_eq!(mem_masm_const("GUEST_ADDRESS_LIMIT"), GUEST_ADDRESS_LIMIT);
     }
 
     struct StartFixture {
