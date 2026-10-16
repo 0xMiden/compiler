@@ -206,16 +206,9 @@ pub fn flatten_types(
         .collect())
 }
 
-/// Returns the number of operand stack field elements the flattened values `flat` occupy.
-///
-/// A 64-bit value takes two field elements; a felt, a pointer or a narrower integer takes one.
-pub(crate) fn flat_felts(flat: &[AbiParam]) -> usize {
-    flat.iter().map(|param| param.ty.size_in_felts()).sum()
-}
-
 /// Returns true when flattened parameters exceed the direct cross-context call budget.
 pub(crate) fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
-    flat_params.len() > MAX_FLAT_PARAMS || flat_felts(flat_params) > MAX_DIRECT_STACK_FELTS
+    flat_params.len() > MAX_FLAT_PARAMS || AbiParam::felts_of(flat_params) > MAX_DIRECT_STACK_FELTS
 }
 
 /// Rejects a cross-context component export whose flattened parameters do not fit the
@@ -228,7 +221,7 @@ pub(crate) fn reject_params_past_call_window(
     function: &str,
     flat_params: &[AbiParam],
 ) -> WasmResult<()> {
-    let param_felts = flat_felts(flat_params);
+    let param_felts = AbiParam::felts_of(flat_params);
     if param_felts <= MAX_DIRECT_STACK_FELTS {
         return Ok(());
     }
@@ -248,7 +241,7 @@ pub(crate) fn reject_results_past_call_window(
     function: &str,
     flat_results: &[AbiParam],
 ) -> WasmResult<()> {
-    let result_felts = flat_felts(flat_results);
+    let result_felts = AbiParam::felts_of(flat_results);
     if result_felts <= MAX_DIRECT_STACK_FELTS {
         return Ok(());
     }

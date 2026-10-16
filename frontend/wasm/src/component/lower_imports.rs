@@ -24,7 +24,7 @@ use super::{
     canonical_abi_info, canonical_flat_types, contains_unsupported_canonical_abi_type,
     flat::{
         CanonicalAbiIndirection, CanonicalAbiMode, check_core_wasm_signature_equivalence,
-        classify_function_type, expected_core_signature, flat_felts, flat_params_need_tuple,
+        classify_function_type, expected_core_signature, flat_params_need_tuple,
         flatten_function_type, flatten_types, reject_results_past_call_window,
     },
 };
@@ -422,7 +422,7 @@ fn plan_fpi_call(
         // protocol's own input limit. Check this before comparing against the lowered core
         // signature: over-budget direct shapes are tupled by canonical ABI flattening, which
         // would otherwise surface as a confusing shape mismatch.
-        let stack_felts = flat_felts(&flattened_params) + usize::from(has_output_ptr);
+        let stack_felts = AbiParam::felts_of(&flattened_params) + usize::from(has_output_ptr);
         if stack_felts > MAX_DIRECT_STACK_FELTS {
             return Err(midenc_session::diagnostics::Report::msg(format!(
                 "FPI import `{core_func_path}` lowers to {stack_felts} operand stack felts after \
@@ -699,31 +699,32 @@ fn push_fpi_result_value(
     Ok(())
 }
 
-/// Returns how many protocol felts are needed to represent canonical ABI flat values across FPI.
+/// Returns how many protocol felts are needed to represent canonical ABI flat values across FPI
+/// (see [AbiParam::felts_of]), or an error when one of them is not a felt or an integer of at
+/// most 64 bits.
 fn fpi_flat_value_count(flat_values: &[AbiParam]) -> WasmResult<usize> {
-    flat_values
-        .iter()
-        .try_fold(0usize, |count, param| Ok(count + fpi_flat_type_felt_count(&param.ty)?))
-}
-
-/// Returns how many protocol felts are needed for one canonical ABI flat type across FPI.
-fn fpi_flat_type_felt_count(ty: &Type) -> WasmResult<usize> {
-    Ok(match ty {
-        Type::I1
-        | Type::I8
-        | Type::U8
-        | Type::I16
-        | Type::U16
-        | Type::I32
-        | Type::U32
-        | Type::Felt => 1,
-        Type::I64 | Type::U64 => 2,
-        other => {
-            return Err(midenc_session::diagnostics::Report::msg(format!(
-                "unsupported flattened FPI value type `{other}`"
-            )));
-        }
-    })
+    let is_fpi_value = |ty: &Type| {
+        matches!(
+            ty,
+            Type::I1
+                | Type::I8
+                | Type::U8
+                | Type::I16
+                | Type::U16
+                | Type::I32
+                | Type::U32
+                | Type::I64
+                | Type::U64
+                | Type::Felt
+        )
+    };
+    if let Some(param) = flat_values.iter().find(|param| !is_fpi_value(&param.ty)) {
+        return Err(midenc_session::diagnostics::Report::msg(format!(
+            "unsupported flattened FPI value type `{}`",
+            param.ty
+        )));
+    }
+    Ok(AbiParam::felts_of(flat_values))
 }
 
 fn take_value(values: &[ValueRef], next: &mut usize, label: &str) -> WasmResult<ValueRef> {
@@ -934,7 +935,7 @@ fn reject_oversized_dyncall_call_site(
     transformation: CanonicalAbiIndirection,
 ) -> WasmResult<()> {
     let arg_felts =
-        flat_felts(&flatten_types(context, &arguments_ty.params).wrap_err_with(|| {
+        AbiParam::felts_of(&flatten_types(context, &arguments_ty.params).wrap_err_with(|| {
             format!("failed to flatten the arguments of '{import_func_path}'")
         })?);
     // Import flattening appends the result pointer to the parameters exactly when classification

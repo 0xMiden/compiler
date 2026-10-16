@@ -53,13 +53,16 @@ pub const MAX_FLAT_PARAMS: usize = 16;
 /// are transferred through memory.
 pub const MAX_FLAT_RESULTS: usize = 1;
 
-/// Maximum operand stack felts a direct cross-context wrapper call may require.
+/// The number of field elements in the Miden VM's directly addressable operand stack window,
+/// [`MIN_STACK_DEPTH`].
 ///
-/// Calls pass all their operands on the MASM operand stack, whose directly addressable window is
-/// [`MIN_STACK_DEPTH`] elements, so a generated wrapper cannot be invoked with more felts of
-/// flattened parameters than that (including the canonical ABI output pointer, when present).
-/// This is a Miden VM constraint, distinct from the spec's count-based [`MAX_FLAT_PARAMS`]: a
-/// signature can stay within 16 flat values while 64-bit values expand it past the window.
+/// A cross-context call passes its arguments in this window and gets its results back in it, so
+/// it bounds both the flattened parameters (including the canonical ABI output pointer, when
+/// present) and the flattened results of a component function, counted in felts after expanding
+/// 64-bit values. It also bounds the operands of an indirect call. This is a Miden VM constraint,
+/// distinct from the spec's count-based [`MAX_FLAT_PARAMS`]: a signature can stay within 16 flat
+/// values while 64-bit values expand it past the window. Codegen bounds the same window as
+/// `MASM_STACK_WINDOW_FELTS`.
 pub const MAX_DIRECT_STACK_FELTS: usize = MIN_STACK_DEPTH;
 
 indices! {

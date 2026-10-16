@@ -10,12 +10,13 @@ pub use midenc_hir::{StackOperand as Operand, ValueOrAlias};
 pub use self::solver::{OperandMovementConstraintSolver, SolverError, SolverOptions};
 use self::{context::SolverContext, stack::Stack};
 
-/// The number of field elements addressable by MASM stack manipulation instructions.
+/// The number of field elements addressable by MASM stack manipulation instructions, the VM's
+/// `MIN_STACK_DEPTH`.
 ///
-/// MASM legalization bounds a call's operands by this same window — an indirect call schedules its
-/// arguments together with the operands selecting the callee, the table index for
-/// `hir.exec_indirect` and the root word for `hir.dyncall` — so it imports this constant rather
-/// than restating the number.
+/// It is also the window a `call`, `syscall` or `dyncall` hands to the callee and the callee hands
+/// back, so the emitter and MASM legalization bound cross-context arguments and results, and an
+/// indirect call's arguments together with the operands selecting the callee, by this constant.
+/// The Wasm frontend bounds the same window as `MAX_DIRECT_STACK_FELTS`.
 pub(crate) const MASM_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
 
 /// This represents a specific action that should be taken by

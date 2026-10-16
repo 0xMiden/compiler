@@ -368,16 +368,11 @@ mod tests {
 
     /// The diagnostic for the components `component` and `existing`, whose names nest.
     fn nesting_error(component: &str, existing: &str) -> alloc::string::String {
-        let (shorter, longer) = if existing.len() < component.len() {
-            (existing, component)
-        } else {
-            (component, existing)
-        };
-        alloc::format!(
-            "component `{component}` and component `{existing}` nest (`{shorter}` is a \
-             segment-prefix of `{longer}`); a component namespace may only have another nested in \
-             it while it holds declarations only"
-        )
+        use alloc::string::ToString;
+
+        use crate::{dialects::builtin::ops::nested_components_error, interner::Symbol};
+
+        nested_components_error(Symbol::intern(component), Symbol::intern(existing)).to_string()
     }
 
     /// A component nested in a shorter component that holds a module is rejected, whichever of

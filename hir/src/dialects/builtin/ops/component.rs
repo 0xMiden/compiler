@@ -313,24 +313,14 @@ impl Component {
     /// global variable without a body, so it has no module tree and defines no code. This is the
     /// shape of a stub standing in for an external component, e.g. an import's.
     ///
+    /// A module, even one holding declarations only, makes the component defining: the nesting
+    /// rule of [World](super::World) relies on a declaration-only component having no module tree
+    /// a path under a longer component could resolve into.
+    ///
     /// An empty component is vacuously declaration-only. Anything unrecognized counts as a
     /// definition.
     pub fn is_declaration_only(&self) -> bool {
-        use crate::dialects::builtin::{Function, GlobalVariable};
-
-        let body = self.body();
-        if body.is_empty() {
-            return true;
-        }
-        body.entry().body().iter().all(|item| {
-            if let Some(function) = item.downcast_ref::<Function>() {
-                function.is_declaration()
-            } else if let Some(gv) = item.downcast_ref::<GlobalVariable>() {
-                gv.is_declaration()
-            } else {
-                false
-            }
-        })
+        super::holds_declarations_only(&self.body())
     }
 
     #[inline(always)]

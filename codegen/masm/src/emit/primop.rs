@@ -18,10 +18,6 @@ use crate::{Event, opt::operands::MASM_STACK_WINDOW_FELTS};
 pub(crate) const UNSET_STORED_PROCEDURE_SLOT_MESSAGE: &str =
     "stored procedure slot is unset: no procedure root to dyncall";
 
-/// The number of operand stack elements a `call`, `syscall` or `dyncall` hands to the callee,
-/// and that the callee hands back: an alias of [MASM_STACK_WINDOW_FELTS] naming its role here.
-const CALL_WINDOW_FELTS: usize = MASM_STACK_WINDOW_FELTS;
-
 impl OpEmitter<'_> {
     /// Push the caller procedure hash as a word.
     pub fn caller(&mut self, span: SourceSpan) {
@@ -580,14 +576,14 @@ impl OpEmitter<'_> {
         let num_arg_felts = signature.param_felts();
         let num_result_felts = signature.result_felts();
         assert!(
-            num_arg_felts <= CALL_WINDOW_FELTS,
+            num_arg_felts <= MASM_STACK_WINDOW_FELTS,
             "cross-context call arguments take {num_arg_felts} field elements, but the call \
-             window holds at most {CALL_WINDOW_FELTS}"
+             window holds at most {MASM_STACK_WINDOW_FELTS}"
         );
         assert!(
-            num_result_felts <= CALL_WINDOW_FELTS,
+            num_result_felts <= MASM_STACK_WINDOW_FELTS,
             "cross-context call results take {num_result_felts} field elements, but the call \
-             window holds at most {CALL_WINDOW_FELTS}"
+             window holds at most {MASM_STACK_WINDOW_FELTS}"
         );
         (num_arg_felts, num_result_felts)
     }
@@ -601,7 +597,7 @@ impl OpEmitter<'_> {
     fn pad_call_window(&mut self, num_arg_felts: usize, span: SourceSpan) {
         use masm::Instruction as I;
 
-        let num_pad_felts = CALL_WINDOW_FELTS - num_arg_felts;
+        let num_pad_felts = MASM_STACK_WINDOW_FELTS - num_arg_felts;
         match num_arg_felts {
             16 => {}
             // Word-sized argument lists move as whole words: [z.., args] -> [args, z..]
@@ -646,7 +642,7 @@ impl OpEmitter<'_> {
     fn discard_call_window_padding(&mut self, num_result_felts: usize, span: SourceSpan) {
         use masm::Instruction as I;
 
-        let num_pad_felts = CALL_WINDOW_FELTS - num_result_felts;
+        let num_pad_felts = MASM_STACK_WINDOW_FELTS - num_result_felts;
         match num_result_felts {
             16 => {}
             // Word-sized result lists move as whole words: [results, p..] -> [p.., results]
