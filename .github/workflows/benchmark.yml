@@ -41,10 +41,11 @@ jobs:
           cache-targets: false
 
       - name: Install cargo-make
-        run: |
-          if ! cargo make --version 2>/dev/null; then
-            cargo install cargo-make --force
-          fi
+        # Prebuilt binary, pinned like `ci.yml`: a source install resolves cargo-make's
+        # dependencies afresh and breaks whenever one of them is yanked on crates.io.
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: cargo-make@0.37.24
 
       - name: Install midenup
         env:
