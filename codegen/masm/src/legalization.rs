@@ -771,8 +771,8 @@ fn masm_lowerable_op(op: &Operation) -> DynamicLegalityResult {
 ///
 /// Only that exact shape is split: a 64-bit integer value, `u32` halves or constants that fit a
 /// half, `zext` rather than `sext`, a shift by the constant 32, or a join of two `i32` or `u32`
-/// limbs. The sign-only `hir.bitcast`s with which the Wasm frontend spells `i64.extend_i32_u`,
-/// and the `band` with which it masks every shift count, are looked through. And the pair must
+/// limbs. Sign-only `hir.bitcast`s on the way to the `zext`, and a shift count that is a `band`
+/// of two constants, are looked through. And the pair must
 /// feed the store directly: one that reaches its store through a block argument, an `scf.if`
 /// result or an `i64` local is stored with one 64-bit store, which copies its two elements
 /// without interpreting them. The high half goes 4 bytes on, or one element on in element
@@ -1102,8 +1102,8 @@ impl ConversionPattern for JoinAssembledHalves {
 /// The mirror of [`SplitWideStore`]: LLVM's IR-level passes can read two adjacent 32-bit values
 /// as one `i64` and take it apart so, and the 64-bit `shr` traps on the limbs of a felt pair.
 /// Split, each half is loaded as the element it is, and the 64-bit load and `shr` are gone. The
-/// `shr` must be logical (of a `u64`), and the same sign-only casts and masked shift count are
-/// looked through. Every use must take its half directly: a load whose value also goes anywhere
+/// `shr` must be logical (of a `u64`), and the same sign-only casts and constant `band` shift
+/// count are looked through. Every use must take its half directly: a load whose value also goes anywhere
 /// else, such as to a successor block, out of an `scf.if` or into an `i64` local, stays one 64-bit
 /// load, and [`SplitTakenHalves`] takes its halves from a split of it. Uses by debug info do not
 /// count, and go with the 64-bit value. A load this pattern splits is declined by
@@ -1551,8 +1551,8 @@ fn shifted_right_by_32(value: ValueRef) -> Option<ValueRef> {
     (logical && constant_u32(shr.shift().as_value_ref()) == Some(32)).then_some(shifted)
 }
 
-/// The value of `value` when it is a `u32` constant, or the `band` of two, which is how the Wasm
-/// frontend masks every shift count and nothing folds.
+/// The value of `value` when it is a `u32` constant, or a `band` of two such constants that was
+/// not folded.
 fn constant_u32(value: ValueRef) -> Option<u32> {
     if let Some(constant) = defined_by::<arith::Constant>(value) {
         return constant.borrow().value().as_u32();
@@ -2072,8 +2072,8 @@ mod tests {
         builder.bitcast(half, Type::I64, span).unwrap()
     }
 
-    /// The shift count 32 of an `i64` shift, masked to the shift width as the Wasm frontend
-    /// masks every shift count.
+    /// The shift count 32 of an `i64` shift, as an unfolded `band` of constants that masks it to
+    /// the shift width.
     fn wasm_shift_count_32(builder: &mut FunctionBuilder<'_, OpBuilder>) -> ValueRef {
         let span = SourceSpan::UNKNOWN;
         let count = builder.u32(32, span);

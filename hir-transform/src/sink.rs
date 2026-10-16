@@ -353,7 +353,7 @@ impl Pass for SinkOperandDefs {
             }
 
             // If we've already worked this operation, skip it
-            if !visited.insert(operation) && sink_state.next_operand_index == 0 {
+            if !visited.insert(operation) && sink_state.visited_operands == 0 {
                 log::trace!(target: Self::NAME, "already visited {}", operation.borrow());
                 continue;
             } else {
@@ -362,15 +362,16 @@ impl Pass for SinkOperandDefs {
 
             let mut builder = OpBuilder::new(op.context_rc());
             builder.set_insertion_point(sink_state.ip);
-            // Each definition is placed directly before `op`, so the operand visited last ends up
-            // deepest on the operand stack. Operands are visited in the order that leaves them
-            // where the lowering expects them: see `OpOperandSink::operand_index`.
-            'next_operand: while sink_state.next_operand_index < op.num_operands() {
+            // Each definition is placed directly before `op`, after the ones placed earlier, so
+            // the operand visited last is materialized last and ends up on top of the operand
+            // stack. Operands are visited in the order that leaves them where the lowering
+            // expects them: see `OpOperandSink::operand_index`.
+            'next_operand: while sink_state.visited_operands < op.num_operands() {
                 let next_operand_index = sink_state.operand_index(&op);
                 log::debug!(target: Self::NAME, "  sinking next operand def for {op} at index {next_operand_index}");
 
                 let mut operand = op.operands()[next_operand_index];
-                sink_state.next_operand_index += 1;
+                sink_state.visited_operands += 1;
                 let operand_value = operand.borrow().as_value_ref();
                 log::trace!(target: Self::NAME, "  visiting operand {operand_value}");
 
@@ -506,12 +507,13 @@ fn move_transparent_users_to(op: &Operation, exclude: &[OperationRef]) {
     }
 }
 
+/// The state of sinking the operand definitions of one operation.
 struct OpOperandSink {
     operation: OperationRef,
     ip: ProgramPoint,
     replacements: SmallDenseMap<ValueRef, ValueRef, 4>,
     /// The number of operands visited so far; see [`Self::operand_index`].
-    next_operand_index: usize,
+    visited_operands: usize,
 }
 
 impl OpOperandSink {
@@ -520,22 +522,25 @@ impl OpOperandSink {
             operation,
             ip: ProgramPoint::before(operation),
             replacements: SmallDenseMap::new(),
-            next_operand_index: 0,
+            visited_operands: 0,
         }
     }
 
     /// Returns the index of the operand to visit next.
     ///
-    /// Definitions are moved directly before the operation, so the operand visited last is
-    /// materialized first and ends up deepest on the operand stack. The lowering expects the first
-    /// operand on top of the stack, except for binary operations, whose right-hand operand is on
-    /// top (see `schedule_operands` in the MASM backend), so operands are visited in reverse order
-    /// in general, and in operand order for binary operations.
+    /// Each definition is moved directly before the operation, after the definitions moved
+    /// earlier, so the operand visited last is materialized last and ends up on top of the operand
+    /// stack. The lowering expects the first operand on top of the stack, except for binary
+    /// operations, whose right-hand operand is on top (see `schedule_operands` in the MASM
+    /// backend), so operands are visited in reverse order in general, and in operand order for
+    /// binary operations. Lowerings with their own operand order (the `Ext2*` field ops and
+    /// `arith.join`) are not mirrored here; their operands are visited in reverse order like any
+    /// other non-binary operation.
     fn operand_index(&self, op: &Operation) -> usize {
         if op.implements::<dyn BinaryOp>() {
-            self.next_operand_index
+            self.visited_operands
         } else {
-            op.num_operands() - 1 - self.next_operand_index
+            op.num_operands() - 1 - self.visited_operands
         }
     }
 }

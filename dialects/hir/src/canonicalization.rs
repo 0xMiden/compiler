@@ -13,13 +13,15 @@ use crate::{HirDialect, ops::Assertz};
 /// same block.
 ///
 /// The operand is an SSA value, so once an assertion on it has passed, a later assertion on the
-/// same value can never fail. The pattern only looks within the block (an O(1) check) rather than
-/// at dominating blocks, which covers the common case of several accesses through one pointer.
+/// same value can never fail. The pattern only looks for an earlier assertion within the same
+/// block rather than in dominating blocks, which covers the common case of several accesses
+/// through one pointer.
 pub struct RemoveRepeatedAssertz {
     info: PatternInfo,
 }
 
 impl RemoveRepeatedAssertz {
+    /// Creates the pattern, registering the `hir` dialect in `context` if needed.
     pub fn new(context: Rc<Context>) -> Self {
         let assertz_op = context
             .get_or_register_dialect::<HirDialect>()

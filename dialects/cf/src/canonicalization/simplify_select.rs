@@ -21,6 +21,7 @@ pub struct SimplifySelectOfBools {
 }
 
 impl SimplifySelectOfBools {
+    /// Creates the pattern, matching `cf.select`.
     pub fn new(context: Rc<Context>) -> Self {
         let select_op = context
             .get_or_register_dialect::<ControlFlowDialect>()
@@ -77,7 +78,8 @@ impl RewritePattern for SimplifySelectOfBools {
                 rewriter.set_insertion_point_before(operation);
                 rewriter.not(cond, span)?
             }
-            // Equal constant arms are folded by `Select::fold`.
+            // Arms with equal constants are left alone: `Select::fold` folds them only when both
+            // arms are the same value.
             _ => return Ok(false),
         };
         rewriter.replace_op_with_values(operation, &[Some(replacement)]);

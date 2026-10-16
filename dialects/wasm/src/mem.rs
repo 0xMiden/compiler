@@ -103,8 +103,8 @@ pub fn prepare_addr<'a, B: ?Sized + Builder>(
         let memarg = memarg.unwrap();
         let (element_addr, address_space) =
             enforce_alignment(addr_u32, ptr_ty, memarg.align, builder, span)?;
-        // The element address is below 2^30 and the offset is small, so the sum does not wrap in
-        // the field, and the VM rejects any address outside the 32-bit range.
+        // The element address and the element offset are both below 2^30, so the sum stays below
+        // 2^31 and does not wrap in the field.
         let element_addr = if element_offset == 0 {
             element_addr
         } else {
@@ -139,6 +139,12 @@ pub fn prepare_addr<'a, B: ?Sized + Builder>(
     )
 }
 
+/// Returns true if an access of `ptr_ty` promising alignment `align` (a base-2 logarithm) is
+/// performed in the element address space.
+fn is_element_access(ptr_ty: &Type, align: u8) -> bool {
+    align >= ELEMENT_ALIGNMENT_LOG2 && matches!(ptr_ty, Type::Felt | Type::I32 | Type::U32)
+}
+
 /// Emits a runtime check that `addr` satisfies the alignment promised by `align` (given as a
 /// base-2 logarithm), and selects the address space of the resulting pointer.
 ///
@@ -147,12 +153,6 @@ pub fn prepare_addr<'a, B: ?Sized + Builder>(
 /// nearly free. The alignment assertion in that branch is load-bearing, not a debugging aid: the
 /// quotient is used as the address, so without the assertion a misaligned access would silently
 /// target the containing element instead of trapping.
-/// Returns true if an access of `ptr_ty` promising alignment `align` (a base-2 logarithm) is
-/// performed in the element address space.
-fn is_element_access(ptr_ty: &Type, align: u8) -> bool {
-    align >= ELEMENT_ALIGNMENT_LOG2 && matches!(ptr_ty, Type::Felt | Type::I32 | Type::U32)
-}
-
 fn enforce_alignment<'a, B: ?Sized + Builder>(
     addr: ValueRef,
     ptr_ty: &Type,

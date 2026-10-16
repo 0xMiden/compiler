@@ -1345,6 +1345,7 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
+    /// Pops an integer value off the stack, `a`, and pushes `a << imm`.
     pub fn shl_imm(&mut self, imm: u32, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1386,6 +1387,8 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
+    /// Pops an integer value off the stack, `a`, and pushes `a >> imm`, an arithmetic shift for
+    /// signed types and a logical one otherwise.
     pub fn shr_imm(&mut self, imm: u32, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
