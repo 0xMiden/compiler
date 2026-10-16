@@ -243,12 +243,13 @@ impl MasmComponent {
         // are rather than rewritten to no effect.
         let namespace = target.namespace.inner();
         if self.has_no_authored_identity()
-            && let Some(stub) = self.stub_namespaces.iter().find(|stub| same_path(stub, namespace))
+            && let Some(stub) =
+                self.stub_namespaces.iter().find(|stub| namespace.strip_prefix(stub).is_some())
         {
             return Err(Report::msg(format!(
-                "refusing to root a world that defines no component at '{stub}', the namespace of \
-                 one of its declaration-only components: its procedures would be published under \
-                 that dependency's name"
+                "refusing to root a world that defines no component at '{namespace}', at or under \
+                 '{stub}', the namespace of one of its declaration-only components: its \
+                 procedures would be published under that dependency's name"
             )));
         }
         if self.root.as_ref() != namespace.as_ref()
@@ -1072,8 +1073,8 @@ mod tests {
             );
         }
 
-        /// A component-less world is never re-rooted at the namespace of one of its import stubs:
-        /// that would publish its procedures under the dependency's name, so it is an error.
+        /// A component-less world is never re-rooted at or under the namespace of one of its import
+        /// stubs: that would publish its procedures under the dependency's name, so it is an error.
         #[test]
         fn a_component_less_world_is_not_rooted_at_one_of_its_stubs() {
             let context = context();
@@ -1086,6 +1087,15 @@ mod tests {
                 .err()
                 .expect("a target at a stub's namespace must be refused");
             assert!(format!("{err}").contains("declaration-only"), "{err}");
+            assert!(
+                component
+                    .source_inputs(&library_target("::dep::stub::app"), context.session())
+                    .is_err(),
+                "a target nested under a stub's namespace must be refused"
+            );
+            component
+                .source_inputs(&library_target("::dep"), context.session())
+                .expect("a target above a stub's namespace is re-rooted as usual");
 
             let sources = component
                 .source_inputs(&library_target("::app"), context.session())
