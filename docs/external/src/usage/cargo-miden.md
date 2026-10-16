@@ -287,6 +287,177 @@ interface basic-wallet {
 A WIT file set through `package.metadata.miden.dependencies.<name>.wit` in `miden-project.toml`
 still takes precedence over the derived interface.
 
+## Writing an account component in Miden Assembly
+
+An account component can be written in Miden Assembly and used from Rust like any other
+dependency. The project is a `miden-project.toml` next to the `.masm` sources, built with
+`miden build` (`midenc`). The library kind makes it an account component, the namespace is the
+module its procedures live in, and the protocol libraries are dynamic dependencies resolved from
+the toolchain:
+
+```toml
+[package]
+name = "counter"
+version = "0.1.0"
+
+[lib]
+kind = "account-component"
+namespace = "acme::counter::counter"
+path = "lib/mod.masm"
+
+[dependencies]
+miden-core = { linkage = "dynamic", version = "0.35" }
+miden-protocol = { linkage = "dynamic", version = "0.17.0" }
+```
+
+Each procedure of the component's interface is a `pub proc` with a typed signature and a role
+attribute: `@account_procedure` for the procedures notes, scripts and other components call, and
+`@auth_script` for the account's authentication procedure, which only the transaction kernel
+calls. Record types are declared with `pub type ... = struct`. The procedures are invoked with
+`call`, so they follow the padding discipline of the standard components: a procedure taking `n`
+stack elements starts with `[args, pad(16-n)]` and one returning `m` elements ends with
+`[results, pad(16-m)]`. An abridged version of the counter in
+`tests/fixtures/components/acme-counter-masm`, which keeps its count in one value slot:
+
+```masm
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+#! An affine update of the count: scale it by `mul`, then add `add`.
+pub type Delta = struct { add: felt, mul: felt }
+
+const COUNT_SLOT = word("acme::counter::count")
+
+#! Returns the count.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [count, pad(15)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_count() -> felt
+    exec.load_count
+    swap drop
+end
+
+#! Scales the count by `delta.mul`, then adds `delta.add`.
+#!
+#! Inputs:  [add, mul, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc add_to_count(delta: Delta)
+    exec.load_count
+    movup.2 mul
+    add
+    exec.save_count
+end
+
+#! Authenticates a transaction against the account by incrementing its nonce.
+#!
+#! Inputs:  [AUTH_ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+@auth_script
+pub proc auth_incr_nonce(auth_args: word)
+    dropw
+    exec.native_account::incr_nonce drop
+end
+
+# `increment`, `get_count_word` and the `load_count`/`save_count` helpers, which read the slot
+# with `active_account::get_item` and write it with `native_account::set_item`, are omitted.
+```
+
+The interface derived from the compiled package, following the rules of the previous section,
+offers the account procedures and leaves the auth procedure out:
+
+```wit
+package acme:counter@0.1.0;
+
+/// Left out: `acme::counter::counter::auth_incr_nonce`: an auth procedure is invoked by the transaction kernel in the epilogue, not by notes or scripts
+interface counter {
+    use miden:base/core-types@1.0.0.{felt, word};
+
+    record delta {
+        add: felt,
+        mul: felt,
+    }
+
+    @external-id("acme::counter::counter::add_to_count")
+    add-to-count: func(delta: delta);
+
+    @external-id("acme::counter::counter::get_count")
+    get-count: func() -> felt;
+
+    @external-id("acme::counter::counter::get_count_word")
+    get-count-word: func() -> word;
+
+    @external-id("acme::counter::counter::increment")
+    increment: func();
+}
+
+world counter-world {
+    export counter;
+}
+```
+
+A Rust note, transaction script or account component depends on the project by path, with no
+WIT of its own, and references the interface by the dependency name and the namespace leaf:
+
+```toml
+# miden-project.toml of the Rust project
+[dependencies]
+counter = { path = "../counter" }
+```
+
+```rust
+use crate::bindings::acme::counter::counter::Delta;
+
+#[account(counter::Counter)]
+struct CounterAccount;
+
+// in a note script taking `account: &mut CounterAccount`
+account.increment();
+account.add_to_count(Delta { add: felt!(5), mul: felt!(2) });
+```
+
+An account component of the same account calls it as a sibling:
+
+```rust
+#[component(counter::Counter)]
+trait CallerAccount: NativeAccount + Counter {
+    #[account_procedure]
+    fn bump_twice(&mut self) -> Felt;
+}
+```
+
+A Miden Assembly package carries no storage metadata, so `AccountComponent::from_package` cannot
+instantiate it. The host builds the metadata in Rust and passes it with the initial storage slots
+to `AccountComponent::new(code, slots, metadata)`, as the `miden-standards` crate does for its own
+components:
+
+```rust
+let count_slot = StorageSlotName::new("acme::counter::count")?;
+let count = WordSchema::new_value([
+    FeltSchema::new_typed(SchemaType::native_felt(), "count"),
+    FeltSchema::new_void(),
+    FeltSchema::new_void(),
+    FeltSchema::new_void(),
+]);
+let schema =
+    StorageSchema::new(vec![(count_slot.clone(), StorageSlotSchema::value("the count", count))])?;
+let metadata = AccountComponentMetadata::new("acme::counter").with_storage_schema(schema);
+let initial = Word::from([Felt::new_unchecked(10), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+let slots = vec![StorageSlot::with_value(count_slot, initial)];
+let component = AccountComponent::new(AccountComponentCode::from(package), slots, metadata)?;
+```
+
+`tests/integration-network/src/mockchain/notes/user_masm_component.rs` is the worked example: it
+builds the counter, instantiates it this way, and drives it from a Rust note, a transaction
+script, a sibling component and through foreign procedure invocation.
+
 ## Running a compiled Miden VM program
 
 Use `miden-debug` to execute the compiled package. See [Debugging programs](../guides/debugger.md)
