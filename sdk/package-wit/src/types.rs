@@ -132,6 +132,31 @@ fn sdk_core_item(name: &str) -> Option<&str> {
     name.strip_prefix(CORE_TYPES_INTERFACE_ID)?.strip_prefix('/')
 }
 
+/// The names of the types the SDK's `core-types` interface (`miden.wit` in the SDK macros)
+/// declares, which a manifest type named by its core-types id must be one of.
+const SDK_CORE_ITEM_NAMES: &[&str] = &[
+    "felt",
+    "word",
+    "digest",
+    "account-id",
+    "recipient",
+    "tag",
+    "asset-id",
+    "asset",
+    "asset-amount",
+    "nonce",
+    "block-number",
+    "account-hash",
+    "block-hash",
+    "storage-value",
+    "storage-root",
+    "account-code-root",
+    "vault-commitment",
+    "note-idx",
+    "note-type",
+    "note-execution-hint",
+];
+
 impl TypeSet {
     /// The names of the types the interface uses or declares.
     pub fn names(&self) -> impl Iterator<Item = &str> {
@@ -202,8 +227,11 @@ impl TypeSet {
     /// identifier path.
     fn map_by_name(&mut self, ty: &Type, name: &str) -> Result<Option<Mapped>, String> {
         if let Some(item) = sdk_core_item(name) {
-            if !naming::is_valid(item) {
-                return Err(format!("unsupported type `{name}`: `{item}` is no WIT name"));
+            if !SDK_CORE_ITEM_NAMES.contains(&item) {
+                return Err(format!(
+                    "unsupported type `{name}`: `{item}` is not a type of the SDK's \
+                     `{CORE_TYPES_INTERFACE_ID}`"
+                ));
             }
             // The layout is the SDK's own by construction, so the manifest type is counted as it
             // is rather than checked against the item's shape.
@@ -708,6 +736,34 @@ mod tests {
             // `f32` is the backing type of `felt`.
             _ => 1,
         }
+    }
+
+    /// The core item names are exactly the types of the core-types interface in the SDK's
+    /// `miden.wit`.
+    #[test]
+    fn core_item_names_are_the_sdk_core_types() {
+        let mut resolve = wit_parser::Resolve::new();
+        let package = resolve
+            .push_str("miden.wit", include_str!("../../base-macros/wit/miden.wit"))
+            .expect("the core types parse");
+        let interface = resolve.packages[package].interfaces["core-types"];
+        let wit: BTreeSet<&str> =
+            resolve.interfaces[interface].types.keys().map(String::as_str).collect();
+        let table: BTreeSet<&str> = SDK_CORE_ITEM_NAMES.iter().copied().collect();
+        assert_eq!(table, wit);
+    }
+
+    /// A type named by a core-types id whose item the core types do not declare is unsupported.
+    #[test]
+    fn unknown_sdk_core_type_ids_are_unsupported() {
+        let mut set = TypeSet::default();
+        let thing = record(&sdk_name("thing"), &[("x", Type::Felt)]);
+        assert_eq!(
+            set.map(&thing).unwrap_err(),
+            "unsupported type `miden:base/core-types@1.0.0/thing`: `thing` is not a type of the \
+             SDK's `miden:base/core-types@1.0.0`"
+        );
+        assert!(set.core.is_empty() && set.locals.is_empty());
     }
 
     /// Every core item has the field names, field order and flattened size of its record in the

@@ -47,12 +47,13 @@ use self::{emit::Function, types::TypeSet};
 /// may occupy.
 const MAX_STACK_ELEMENTS: usize = midenc_package_interface::abi::MAX_STACK_ELEMENTS;
 
-/// Why an `@auth_script` procedure is left out, whether or not it is also an `@account_procedure`.
+/// The [`Skipped::reason`] of an `@auth_script` procedure, which is left out whether or not it is
+/// also an `@account_procedure`.
 ///
 /// The kernel's epilogue rejects a transaction in which anything called the auth procedure before
 /// the kernel itself (`epilogue.masm` in `miden-protocol`).
-const AUTH_PROCEDURE_REASON: &str = "an auth procedure is invoked by the transaction kernel in \
-                                     the epilogue, not by notes or scripts";
+pub const AUTH_PROCEDURE_REASON: &str = "an auth procedure is invoked by the transaction kernel \
+                                         in the epilogue, not by notes or scripts";
 
 /// A generated WIT document and the names in it.
 #[derive(Debug, Clone, PartialEq, Eq)]

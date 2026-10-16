@@ -1,7 +1,10 @@
 //! Generation over fixture packages assembled from MASM.
 
 use miden_mast_package::TargetType;
-use midenc_package_interface::{PackageInterface, testing::assemble_fixture};
+use midenc_package_interface::{
+    PackageInterface,
+    testing::{assemble_account_component_fixture, assemble_fixture},
+};
 
 use super::*;
 
@@ -104,9 +107,11 @@ const MODULE: &str = "miden::test::my_component";
 
 /// The interface of an account-component package assembled from `source` in [`MODULE`].
 fn component(source: &str) -> PackageInterface {
-    let mut package = (*assemble_fixture("miden-test-my-component", MODULE, source)).clone();
-    package.kind = TargetType::AccountComponent;
-    PackageInterface::from_package(&package)
+    PackageInterface::from_package(&assemble_account_component_fixture(
+        "miden-test-my-component",
+        MODULE,
+        source,
+    ))
 }
 
 /// Parse `wit` next to the SDK's core types, check that every function carries an
@@ -482,9 +487,7 @@ end
 #[test]
 fn an_auth_procedure_in_a_submodule_does_not_decide_the_interface() {
     let wallet = |name: &str, module: &str, source: &str| {
-        let mut package = (*assemble_fixture(name, module, source)).clone();
-        package.kind = TargetType::AccountComponent;
-        PackageInterface::from_package(&package)
+        PackageInterface::from_package(&assemble_account_component_fixture(name, module, source))
     };
     let mut iface = wallet(
         "miden-test-wallet",
@@ -514,13 +517,11 @@ fn an_auth_procedure_in_a_submodule_does_not_decide_the_interface() {
 /// A package whose stripped package id would be the SDK's own `miden:base` keeps its name whole.
 #[test]
 fn the_sdk_package_id_falls_back_to_the_full_package_name() {
-    let mut package = (*assemble_fixture(
+    let package = assemble_account_component_fixture(
         "miden-base",
         MODULE,
         "@account_procedure\npub proc ping()\n    nop\nend\n",
-    ))
-    .clone();
-    package.kind = TargetType::AccountComponent;
+    );
     let generated = generate(&PackageInterface::from_package(&package)).unwrap();
     assert_eq!(generated.package_id, "miden:miden-base@0.0.0");
 }
@@ -625,13 +626,11 @@ end
 
 /// The generation error for a package named `package_name` whose procedures live in `module`.
 fn namespace_error(package_name: &str, module: &str) -> String {
-    let mut package = (*assemble_fixture(
+    let package = assemble_account_component_fixture(
         package_name,
         module,
         "@account_procedure\npub proc ping()\n    nop\nend\n",
-    ))
-    .clone();
-    package.kind = TargetType::AccountComponent;
+    );
     match generate(&PackageInterface::from_package(&package)) {
         Err(Error::Namespace(reason)) => reason,
         other => panic!("expected a namespace error, got {other:?}"),
@@ -955,4 +954,47 @@ end
         generated.wit
     );
     parse(&generated.wit, "my-component");
+}
+
+/// A procedure whose type is named by a core-types id the SDK's core types do not declare is left
+/// out with a reason naming the item, and the other procedures are still offered.
+#[test]
+fn an_unknown_sdk_core_type_id_leaves_out_only_its_procedure() {
+    let mut iface = component(
+        r#"
+@account_procedure
+pub proc ping()
+    nop
+end
+
+@account_procedure
+pub proc take(x: felt)
+    drop
+end
+"#,
+    );
+    let take = iface
+        .procedures
+        .iter_mut()
+        .find(|procedure| procedure.name() == "take")
+        .unwrap();
+    take.signature.as_mut().unwrap().params[0] = Type::from(midenc_hir_type::StructType::named(
+        std::sync::Arc::from("miden:base/core-types@1.0.0/thing"),
+        [(std::sync::Arc::from("x"), Type::Felt)],
+    ));
+    let generated = generate(&iface).unwrap();
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(
+        skipped,
+        [(
+            "miden::test::my_component::take",
+            "unsupported type `miden:base/core-types@1.0.0/thing`: `thing` is not a type of the \
+             SDK's `miden:base/core-types@1.0.0`"
+        )]
+    );
+    assert_eq!(
+        parse(&generated.wit, "my-component"),
+        [("ping".to_owned(), "miden::test::my_component::ping".to_owned())]
+    );
 }
