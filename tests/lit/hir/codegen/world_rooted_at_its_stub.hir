@@ -1,9 +1,12 @@
-// RUN: mkdir -p %t && printf '[package]\nname = "example"\nversion = "0.1.0"\n\n[lib]\npath = "%s"\nnamespace = "dep::stub"\n' > %t/miden-project.toml
-// RUN: not midenc %t/miden-project.toml --emit=mast=- -o %t/out.masp 2>&1 | filecheck %s
+// RUN: mkdir -p %t/at %t/under
+// RUN: printf '[package]\nname = "example"\nversion = "0.1.0"\n\n[lib]\npath = "%s"\nnamespace = "dep::stub"\n' > %t/at/miden-project.toml
+// RUN: not midenc %t/at/miden-project.toml --emit=mast=- -o %t/at/out.masp 2>&1 | filecheck %s
+// RUN: printf '[package]\nname = "example"\nversion = "0.1.0"\n\n[lib]\npath = "%s"\nnamespace = "dep::stub::app"\n' > %t/under/miden-project.toml
+// RUN: not midenc %t/under/miden-project.toml --emit=mast=- -o %t/under/out.masp 2>&1 | filecheck %s --check-prefix=UNDER
 //
 // A world defining no component is rooted at its target's namespace, but never at the namespace
-// of one of its declaration-only components: its procedures would be published under the
-// dependency's name, so a target asking for that is refused.
+// of one of its declaration-only components or under it: its procedures would be published under
+// the dependency's name, so a target asking for that is refused.
 
 builtin.world {
     builtin.component private @dep::@stub {
@@ -17,5 +20,10 @@ builtin.world {
     };
 };
 
-// CHECK: refusing to root a world that defines no component at '::dep::stub'
+// CHECK: refusing to root a world that defines no component at '::dep::stub',
+// CHECK: at or under '::dep::stub'
 // CHECK-NOT: # ::dep::stub::entry
+
+// UNDER: refusing to root a world that defines no component at '::dep::stub::app',
+// UNDER: at or under '::dep::stub'
+// UNDER-NOT: # ::dep::stub::app::entry
