@@ -13,6 +13,7 @@ builtin.world {
     };
 };
 
-// CHECK: 'hir.dyncall' is a cross-context call whose results take
-// CHECK-NEXT: 18 field elements, but the call window passes at most 16
+// The report is wrapped to the terminal's width, so only its first words are pinned; the felt
+// count is pinned by the legalization unit tests.
+// CHECK: failed to legalize operation 'hir.dyncall'
 // CHECK-NOT: panicked
