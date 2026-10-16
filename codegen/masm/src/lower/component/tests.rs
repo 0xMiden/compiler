@@ -53,9 +53,11 @@ builtin.component private @hir_ns::@test {
 /// The sibling's one function is declared and not defined — an empty body is what
 /// `Symbol::is_declaration` keys on, and therefore what `is_declaration_only` asks about.
 ///
-/// The braces are empty rather than absent, which is the other spelling of a declaration: a
-/// function written with no region at all, as the printer writes a declaration, parses to the
-/// same empty region, a body with no blocks, which is what `is_declaration` means.
+/// The braces are empty rather than absent, which is the other spelling of a declaration for a
+/// function without parameters: it parses to the same empty region, a body with no blocks, as a
+/// function written with no region at all (the printer's spelling), which is what
+/// `is_declaration` means. With parameters the two differ: the parser fills `{ }` with an entry
+/// block holding them, and the function is a definition.
 const WORLD_WITH_DECLARATION_ONLY_SIBLING: &str = r#"
 builtin.world {
 builtin.component private @hir_ns::@test {
