@@ -15,7 +15,7 @@ use alloc::rc::Rc;
 use midenc_hir::{
     interner::Symbol,
     matchers::Matcher,
-    patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
+    patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern, RewriterExt},
     traits::TransparentCast,
     *,
 };
@@ -343,12 +343,16 @@ impl RewritePattern for SimplifyNotCompare {
 
         // The complementary comparison takes the place of the original one, not of the `not`:
         // the `not` may sit in a nested region (a loop body), and rebuilding the comparison there
-        // would evaluate it per iteration and keep its operands live across the region.
-        rewriter.set_insertion_point_after(compare);
-        let replacement = if is_eq {
-            rewriter.neq(lhs, rhs, span)?
-        } else {
-            rewriter.eq(lhs, rhs, span)?
+        // would evaluate it per iteration and keep its operands live across the region. It also
+        // belongs to the comparison's inline frame, not to the frame of the `not` being rewritten.
+        let replacement = {
+            let mut scope = rewriter.with_inline_call_chain(compare);
+            scope.set_insertion_point_after(compare);
+            if is_eq {
+                scope.neq(lhs, rhs, span)?
+            } else {
+                scope.eq(lhs, rhs, span)?
+            }
         };
         rewriter.replace_op_with_values(operation, &[Some(replacement)]);
         Ok(true)
