@@ -238,3 +238,169 @@ fn unaligned_i32_memory_retains_byte_pointer_path() {
     .unwrap();
     assert_eq!(result, value);
 }
+
+/// The number of `assertz` instructions in the procedure `entrypoint` of `masm`.
+fn assertz_count(masm: &str) -> usize {
+    let start = masm.find("proc entrypoint").unwrap_or_else(|| panic!("no entrypoint: {masm}"));
+    let entrypoint = &masm[start..];
+    let end = entrypoint.find("\n    end").unwrap_or(entrypoint.len());
+    entrypoint[..end].matches("assertz").count()
+}
+
+/// Memory holding `values` as little-endian `u32`s.
+fn seeded(values: &[u32]) -> Vec<u8> {
+    values.iter().flat_map(|value| value.to_le_bytes()).collect()
+}
+
+/// Verifies that Wasm element-aligned i32 accesses through one base, at offsets 0 and 4, reach the
+/// two cells and share one alignment check: the base is converted once and the offset added in
+/// elements.
+///
+/// The base is read from its local four times in a row, so the reads are merged into one value
+/// before the accesses: a read after an access is not merged with one before it, the access's
+/// alignment check being a side effect.
+#[test]
+fn wasm_aligned_i32_accesses_through_one_base_share_one_alignment_check() {
+    let (test, package, masm) = compile_wat(
+        r#"(func $entrypoint (export "entrypoint") (param i32 i32 i32) (result i32)
+    (local i32)
+    local.get 0
+    local.get 0
+    local.get 0
+    local.get 0
+    local.get 1
+    i32.store offset=0 align=4
+    local.get 2
+    i32.store offset=4 align=4
+    i32.load offset=4 align=4
+    local.set 3
+    i32.load offset=0 align=4
+    local.get 3
+    i32.add)"#,
+    );
+    assert_eq!(assertz_count(&masm), 1, "{masm}");
+    assert!(!masm.contains("exec.::intrinsics::mem::load_sw"), "{masm}");
+
+    let (first, second) = (0x1234_5678u32, 0x0102_0304u32);
+    let args = |base: u32| [Felt::from(base), Felt::from(first), Felt::from(second)];
+    let result = eval_package::<u32, _, _>(
+        package.clone(),
+        None,
+        &args(MEMORY_ADDR),
+        &test.session,
+        |trace| {
+            let stored: [u32; 2] = [
+                trace
+                    .read_from_rust_memory(MEMORY_ADDR)
+                    .expect("the first cell was not written"),
+                trace
+                    .read_from_rust_memory(MEMORY_ADDR + 4)
+                    .expect("the second cell was not written"),
+            ];
+            assert_eq!(stored, [first, second]);
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(result, first + second, "{masm}");
+
+    // The shared check still rejects a misaligned base.
+    let misaligned = catch_unwind(AssertUnwindSafe(|| {
+        let _ = eval_package::<u32, _, _>(
+            package.clone(),
+            None,
+            &args(MEMORY_ADDR + 2),
+            &test.session,
+            |_| Ok(()),
+        );
+    }));
+    assert!(misaligned.is_err(), "an alignment promise must still be checked at runtime");
+}
+
+/// Verifies that Wasm element-aligned i32 loads through one base (the parameter of an `if`) in
+/// the two arms are each checked: alignment checks are only shared within a block.
+#[test]
+fn wasm_aligned_i32_loads_in_two_arms_are_checked_in_each_arm() {
+    let (test, package, masm) = compile_wat(
+        r#"(func $entrypoint (export "entrypoint") (param i32 i32) (result i32)
+    local.get 0
+    local.get 1
+    if (param i32) (result i32)
+      i32.load offset=0 align=4
+    else
+      i32.load offset=4 align=4
+    end)"#,
+    );
+    assert_eq!(assertz_count(&masm), 2, "{masm}");
+
+    let (first, second) = (0xaaaa_5555u32, 0x5a5a_a5a5u32);
+    let bytes = seeded(&[first, second]);
+    for (cond, expected) in [(1u32, first), (0, second)] {
+        let result = eval_package::<u32, _, _>(
+            package.clone(),
+            [Initializer::MemoryBytes {
+                addr: MEMORY_ADDR,
+                bytes: &bytes,
+            }],
+            &[Felt::from(MEMORY_ADDR), Felt::from(cond)],
+            &test.session,
+            |_| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(result, expected, "cond {cond}\n{masm}");
+    }
+}
+
+/// Verifies that a Wasm `i32.load offset=2 align=2` from a base that is 2 modulo 4 reads the
+/// element at the element-aligned effective address.
+#[test]
+fn wasm_two_aligned_load_with_offset_2_reads_the_effective_address() {
+    let (test, package, masm) = compile_wat(
+        r#"(func $entrypoint (export "entrypoint") (param i32) (result i32)
+    local.get 0
+    i32.load offset=2 align=2)"#,
+    );
+
+    const DECOY: u32 = 0xdead_beef;
+    const EXPECTED: u32 = 0x1357_9bdf;
+    let bytes = seeded(&[DECOY, EXPECTED, DECOY]);
+    let result = eval_package::<u32, _, _>(
+        package,
+        [Initializer::MemoryBytes {
+            addr: MEMORY_ADDR,
+            bytes: &bytes,
+        }],
+        &[Felt::from(MEMORY_ADDR + 2)],
+        &test.session,
+        |_| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(result, EXPECTED, "{masm}");
+}
+
+/// Verifies that a Wasm `i32.load offset=4 align=1`, whose offset is element-aligned but whose
+/// promised alignment is below the element alignment, reads the four bytes at the unaligned
+/// effective address from an odd base.
+#[test]
+fn wasm_one_aligned_load_with_offset_4_reads_from_an_odd_base() {
+    let (test, package, masm) = compile_wat(
+        r#"(func $entrypoint (export "entrypoint") (param i32) (result i32)
+    local.get 0
+    i32.load offset=4 align=1)"#,
+    );
+
+    let bytes: Vec<u8> = (1..=16).collect();
+    let expected = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
+    let result = eval_package::<u32, _, _>(
+        package,
+        [Initializer::MemoryBytes {
+            addr: MEMORY_ADDR,
+            bytes: &bytes,
+        }],
+        &[Felt::from(MEMORY_ADDR + 1)],
+        &test.session,
+        |_| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(result, expected, "{masm}");
+}
