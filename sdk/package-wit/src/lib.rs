@@ -88,11 +88,11 @@ pub enum Error {
     /// The package has no interface procedures (`@account_procedure` or `@auth_script`).
     #[error("package exports no `@account_procedure` or `@auth_script` procedures")]
     NoInterfaceProcedures,
-    /// The interface module (the module of the first account procedure) is not inside a module
-    /// path that can name the WIT package and interface, or the package name or that module's
-    /// path yields no WIT package id or interface name (an invalid name, a WIT or Rust keyword, or
-    /// the reserved `core_types` leaf), or the package id is the Miden SDK's own WIT package even
-    /// with the package name kept whole.
+    /// The interface module (the module of the first offered account procedure, one not also
+    /// tagged `@auth_script`) is not inside a module path that can name the WIT package and
+    /// interface, or the package name or that module's path yields no WIT package id or interface
+    /// name (an invalid name, a WIT or Rust keyword, or the reserved `core_types` leaf), or the
+    /// package id is the Miden SDK's own WIT package even with the package name kept whole.
     #[error("{0}")]
     Namespace(String),
     /// Every interface procedure is left out; the procedures and why, in path order.
@@ -291,8 +291,8 @@ fn is_offerable(procedure: &ProcedureItem) -> bool {
         && !procedure.attributes.has(Role::AuthScript.attribute())
 }
 
-/// The head and leaf segments of the module of `first`, the first account procedure (in path
-/// order), whose module is the interface module.
+/// The head and leaf segments of the module of `first`, the first offered account procedure (in
+/// path order; one not also tagged `@auth_script`), whose module is the interface module.
 ///
 /// An interface procedure in another module is left out by [`function`].
 fn namespace(first: &ProcedureItem) -> Result<(String, String), Error> {
@@ -318,8 +318,8 @@ fn function(
     signature: &FunctionType,
     types: &TypeSet,
 ) -> Result<(Function, TypeSet), String> {
-    // The interface is named after one module, that of the `first` account procedure, so it
-    // offers only that module's procedures.
+    // The interface is named after one module, that of the `first` offered account procedure, so
+    // it offers only that module's procedures.
     let module = first.namespace().to_relative();
     if procedure.namespace().to_relative() != module {
         return Err(format!(

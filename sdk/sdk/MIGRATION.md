@@ -63,9 +63,8 @@ component uses (`asset`, `word`, `felt`, `note-type`, ...) are the SDK's `core-t
 in a MASM component's interface. That interface has no other alias names, leaves out procedures
 for the reasons listed in the interface doc comment (64-bit integer parameters or results,
 auth procedures, ...), and takes its WIT package id from the head of its namespace and its package
-name, so it can differ from
-the component's own WIT; rebuild the package with the current `cargo miden build` to restore its
-embedded interface.
+name, so it can differ from the component's own WIT; rebuild the package with the current
+`cargo miden build` to restore its embedded interface.
 
 Declaring a MASM account-component dependency in `miden-project.toml` now generates its bindings
 in every SDK macro of the crate (`#[component]`, `#[note]`, `#[tx_script]`), whether or not a
@@ -90,6 +89,11 @@ This is a breaking layout change:
   a note cannot be consumed by the new build of the same note;
 - note packages built before this change are not readable by the new note schema tooling either
   (`NoteStorageSchema::from_wit_text` rejects their `account-id` record): rebuild them;
+- in the interface derived from a Rust-built component package without embedded WIT that was
+  built before this change, the old `account-id` is a type local to that interface rather than
+  `miden::AccountId`: rebuild the package;
+- a host that mirrors an `AccountId` with its own `ToFeltRepr`/`FromFeltRepr` type, e.g. inside
+  the transaction script arguments it passes, must declare that type's fields suffix first too;
 - a host that encodes such note storage by hand must swap the two felts:
 
 ```rust

@@ -207,7 +207,7 @@ SDK macros derive its interface from the package manifest:
   rest would be a keyword, no WIT name, or the SDK's own `base` (`miden-list` →
   `miden:miden-list`, `miden-base` → `miden:miden-base`);
 - the interface is the last segment of the component's namespace (the module of its first
-  account procedure, in path order) in kebab case, so
+  offered account procedure, in path order: one not also tagged `@auth_script`) in kebab case, so
   `miden-standards-wallets-basic-wallet` provides `basic-wallet`, used as
   `#[account(miden_standards_wallets_basic_wallet::BasicWallet)]`. The interface ident in
   `#[account(pkg::Iface)]` is kebab-cased with heck, so a namespace leaf with digits like
@@ -223,7 +223,9 @@ SDK macros derive its interface from the package manifest:
   `AccountId` matches the core `account-id`, so such procedures take and return
   `miden::AccountId`). A Rust-built component's manifest names the SDK types it uses by
   their `core-types` id (`miden:base/core-types@1.0.0/asset`), and those map to the `core-types`
-  items; a type named by another WIT id is not supported;
+  items when their fields are the item's, in its order; one with other fields (an `account-id`
+  built by an SDK that put the prefix first) becomes a local type of that name instead. A type
+  named by another WIT id is not supported;
 - auth procedures (also when tagged `@account_procedure`), procedures without a typed
   signature, outside the interface module, with parameters or results beyond 16 stack elements,
   with 16 parameter elements and a result that flattens to more than one value (it comes back
@@ -248,7 +250,8 @@ SDK macros derive its interface from the package manifest:
   `miden-standards-faucets-policies-mint-owner-controlled-owner-only` is such a procedure.
 
 A package gets no interface at all when it has no `@account_procedure` or `@auth_script`
-procedure, when its first account procedure is not inside a module, when its package name or
+procedure, when its first offered account procedure (one not also tagged `@auth_script`) is not
+inside a module, when its package name or
 namespace yields a keyword, an invalid WIT name or the reserved `core_types` interface leaf, when
 its WIT package id is the SDK's own `miden:base` (even with the package name kept whole) or the
 depending crate's own package id, when every one of its procedures is left out, or when its
@@ -378,8 +381,9 @@ pub proc auth_incr_nonce(auth_args: word)
     exec.native_account::incr_nonce drop
 end
 
-# `increment`, `get_count_word` and the `load_count`/`save_count` helpers, which read the slot
-# with `active_account::get_item` and write it with `native_account::set_item`, are omitted.
+# `increment`, `get_count_word`, `wide`, `split`, `four_words`, `fifteen_to_word` and the
+# `load_count`/`save_count` helpers, which read the slot with `active_account::get_item` and
+# write it with `native_account::set_item`, are omitted.
 ```
 
 The interface derived from the compiled package, following the rules of the previous section,
@@ -400,6 +404,12 @@ interface counter {
     @external-id("acme::counter::counter::add_to_count")
     add-to-count: func(delta: delta);
 
+    @external-id("acme::counter::counter::fifteen_to_word")
+    fifteen-to-word: func(arg0: word, arg1: word, arg2: word, arg3: felt, arg4: felt, arg5: felt) -> word;
+
+    @external-id("acme::counter::counter::four_words")
+    four-words: func() -> tuple<word, word, word, word>;
+
     @external-id("acme::counter::counter::get_count")
     get-count: func() -> felt;
 
@@ -408,6 +418,12 @@ interface counter {
 
     @external-id("acme::counter::counter::increment")
     increment: func();
+
+    @external-id("acme::counter::counter::split")
+    split: func(arg0: felt) -> tuple<felt, felt>;
+
+    @external-id("acme::counter::counter::wide")
+    wide: func(arg0: word, arg1: word, arg2: word, arg3: word) -> felt;
 }
 
 world counter-world {
