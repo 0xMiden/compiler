@@ -9,7 +9,7 @@
 //! interface:
 //! - a Rust note's calls (one with a record argument) update the count;
 //! - a Rust transaction script reads a felt and a word result in the order the component returns
-//!   them;
+//!   them, and passes four words, the 16 parameter felts a call can pass, in order;
 //! - a Rust account component calls the MASM component as its sibling in the same account;
 //! - a Rust note on another account reads the count through foreign procedure invocation.
 
@@ -198,7 +198,8 @@ fn user_masm_counter_is_updated_by_a_rust_note() {
 
 /// A Rust transaction script reads `get_count` and the word `get_count_word` of the MASM counter
 /// and checks them against the values the host passes in its arguments, so every element of the
-/// word must come back where the component puts it.
+/// word must come back where the component puts it. It then calls `wide` with four words, the 16
+/// parameter felts a call can pass, and checks that it returns `a[0] + b[1] + c[2] + d[3]`.
 #[test]
 fn user_masm_counter_getters_are_read_by_a_rust_tx_script() {
     let tx_script_package =
@@ -217,7 +218,8 @@ fn user_masm_counter_getters_are_read_by_a_rust_tx_script() {
         .tx_script(transaction_script_from_package(&tx_script_package));
     let mock_tx = apply_script_args(mock_tx_builder, &args).build().unwrap();
     let measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["3413"].assert_eq(tx_script_processing_cycles(&measurements));
+    // 3413 before the script called `wide`.
+    expect!["3715"].assert_eq(tx_script_processing_cycles(&measurements));
     assert_count(&chain, account.id(), INITIAL_COUNT);
 }
 
@@ -291,7 +293,9 @@ fn user_masm_counter_is_read_through_fpi_by_a_rust_note() {
     let mut chain = build_chain(builder);
 
     let cycles = consume_note(&mut chain, &wallet, &note, &[counter.id()]);
-    expect!["3264"].assert_eq(&cycles);
+    // 3264 before the counter gained `wide`, which the note does not call: the foreign
+    // account's code and the note's generated bindings both changed with it.
+    expect!["3254"].assert_eq(&cycles);
     assert_count(&chain, counter.id(), INITIAL_COUNT);
 }
 
