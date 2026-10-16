@@ -340,10 +340,7 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
                 world.name()
             )));
         };
-        let body = world.body();
-        body.entry_block_ref().is_some_and(|entry| {
-            entry.borrow().body().iter().any(|op| op.is::<builtin::Component>())
-        })
+        world.has_defining_component()
     };
     if has_component {
         // The component's siblings: modules and functions of the world itself

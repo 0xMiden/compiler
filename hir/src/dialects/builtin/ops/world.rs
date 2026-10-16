@@ -102,6 +102,21 @@ impl SymbolTable for World {
 }
 
 impl World {
+    /// Returns true when the world holds a component that is not declaration-only (see
+    /// [Component::is_declaration_only]), i.e. a component codegen lowers.
+    ///
+    /// A world holding declaration-only components alone, such as import stubs beside top-level
+    /// modules, is lowered through its modules, as a world without components is.
+    pub fn has_defining_component(&self) -> bool {
+        let body = self.body();
+        body.entry_block_ref().is_some_and(|entry| {
+            entry.borrow().body().iter().any(|op| {
+                op.downcast_ref::<Component>()
+                    .is_some_and(|component| !component.is_declaration_only())
+            })
+        })
+    }
+
     /// Returns an error when the world declares a tree of modules or interfaces with a symbol at
     /// the path the component name `component` spells (a module, or a function or global named by
     /// the raw last segment), which the component would shadow, or another component whose name
