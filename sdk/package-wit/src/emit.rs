@@ -3,6 +3,7 @@
 use std::fmt::Write;
 
 use midenc_frontend_wasm_metadata::namespace::CORE_TYPES_INTERFACE_ID;
+use midenc_package_interface::comment::one_line;
 
 use crate::{
     Skipped,
@@ -124,10 +125,4 @@ fn write_document(out: &mut String, doc: &Document<'_>) -> std::fmt::Result {
     writeln!(out, "world {} {{", doc.world)?;
     writeln!(out, "    export {interface};")?;
     writeln!(out, "}}")
-}
-
-/// `text` with every control character, line breaks included, replaced by a space, so that it
-/// stays inside the one-line comment it is written to.
-fn one_line(text: &str) -> String {
-    text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
 }

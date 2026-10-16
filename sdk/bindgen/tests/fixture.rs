@@ -410,6 +410,21 @@ fn skipped_procedures_are_reported() {
     );
 }
 
+/// A package name carrying a line break and a bidirectional override stays on the header comment
+/// line of the bindings and of the stubs, without the override.
+#[test]
+fn a_package_name_stays_in_the_header_comments() {
+    let mut iface = fixture();
+    iface.name = miden_mast_package::PackageId::from("fix\u{202e}ture\npub fn injected() {}");
+    let generated = generate(&iface, &[], &options("::fixture")).unwrap();
+    for text in [&generated.bindings, &generated.stubs] {
+        assert!(!text.contains('\u{202e}'), "{text}");
+        assert!(text.lines().next().unwrap().contains("fix ture pub fn injected() {}"), "{text}");
+        syn::parse_file(text).expect("generated text must parse as Rust");
+        assert!(!text.contains("\npub fn injected"), "{text}");
+    }
+}
+
 /// A package whose root lies below the generated root's own parent: the modules above the root
 /// (`::miden` above `::miden::protocol`) are left out of the tree.
 #[test]
