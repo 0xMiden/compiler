@@ -514,6 +514,79 @@ fn an_auth_procedure_in_a_submodule_does_not_decide_the_interface() {
     );
 }
 
+/// Auth procedures also tagged `@account_procedure` neither decide the interface module, when one
+/// in a submodule sorts first, nor add a type name that shadows an account procedure, when one in
+/// the interface module uses a type named like it.
+#[test]
+fn a_dual_tagged_auth_procedure_decides_neither_the_module_nor_the_type_names() {
+    let wallet = |module: &str, source: &str| {
+        PackageInterface::from_package(&assemble_account_component_fixture(
+            "miden-test-wallet",
+            module,
+            source,
+        ))
+    };
+    let mut iface = wallet(
+        "miden::test::wallet",
+        r#"
+pub enum Mode : u8 {
+    A = 0,
+    B = 1,
+}
+
+pub type Pair = struct { x: felt, y: felt }
+
+@account_procedure
+pub proc mode() -> Pair
+    nop
+end
+
+@auth_script
+pub proc set_mode(m: Mode)
+    drop
+end
+"#,
+    );
+    let auth = wallet(
+        "miden::test::wallet::auth",
+        "@auth_script\npub proc auth_tx(salt: word)\n    dropw\nend\n",
+    );
+    // One package with both modules, its procedures in path order as a manifest lists them.
+    iface.procedures.extend(auth.procedures);
+    iface.procedures.sort_by(|a, b| a.path.cmp(&b.path));
+    // The assembler rejects two role attributes on one procedure, but a manifest may carry them.
+    let account_procedure = iface
+        .procedures
+        .iter()
+        .find(|procedure| procedure.name() == "mode")
+        .unwrap()
+        .attributes
+        .get("account_procedure")
+        .unwrap()
+        .clone();
+    for procedure in &mut iface.procedures {
+        if procedure.attributes.has(Role::AuthScript.attribute()) {
+            procedure.attributes.insert(account_procedure.clone());
+        }
+    }
+    assert_eq!(iface.procedures[0].name(), "auth_tx");
+    let generated = generate(&iface).unwrap();
+    assert_eq!(generated.interface, "wallet");
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(
+        skipped,
+        [
+            ("miden::test::wallet::auth::auth_tx", AUTH_PROCEDURE_REASON),
+            ("miden::test::wallet::set_mode", AUTH_PROCEDURE_REASON),
+        ]
+    );
+    assert_eq!(
+        parse(&generated.wit, "wallet"),
+        [("mode".to_owned(), "miden::test::wallet::mode".to_owned())]
+    );
+}
+
 /// A package whose stripped package id would be the SDK's own `miden:base` keeps its name whole.
 #[test]
 fn the_sdk_package_id_falls_back_to_the_full_package_name() {
