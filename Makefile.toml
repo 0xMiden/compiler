@@ -365,6 +365,20 @@ args = [
     "test_sweep_target.py",
 ]
 
+[tasks.test-coverage-script]
+category = "Test"
+description = "Run unit tests for the coverage collection script"
+command = "python3"
+args = [
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools",
+    "-p",
+    "test_coverage.py",
+]
+
 [tasks.update]
 category = "Dependencies"
 description = "Update dependencies to latest semver-compatible version"
@@ -441,12 +455,12 @@ args = ["audit"]
 [tasks.test-all]
 category = "Test"
 description = "Runs the complete set of compiler tests"
-run_task = { name = ["test-sweep", "test-rust", "test-lit"], fork = true, cleanup_task = "sweep-flow" }
+run_task = { name = ["test-sweep", "test-coverage-script", "test-rust", "test-lit"], fork = true, cleanup_task = "sweep-flow" }
 
 [tasks.test]
 category = "Test"
 description = "Runs all Rust-based tests including network integration tests"
-dependencies = ["test-sweep", "test-rust"]
+dependencies = ["test-sweep", "test-coverage-script", "test-rust"]
 
 [tasks.test-release]
 category = "Test"
@@ -525,7 +539,7 @@ args = [
     "@@split(CARGO_MAKE_CARGO_BUILD_TEST_FLAGS, )",
     "${@}",
 ]
-dependencies = ["cargo-miden"]
+dependencies = ["cargo-miden", "install-nextest"]
 
 [tasks.test-release-rust]
 category = "Test"
@@ -541,7 +555,7 @@ args = [
     "@@split(CARGO_MAKE_CARGO_BUILD_TEST_FLAGS, )",
     "${@}",
 ]
-dependencies = ["cargo-miden"]
+dependencies = ["cargo-miden", "install-nextest"]
 
 [tasks.test-lit]
 category = "Test"
@@ -630,20 +644,22 @@ install_crate = { crate_name = "cargo-llvm-cov", min_version = "0.9.1", binary =
 
 [tasks.coverage]
 category = "Test"
-description = "Merge workspace Rust and lit-tool coverage into rust-coverage.xml"
-dependencies = ["install-cargo-llvm-cov", "litcheck", "coverage-tools", "coverage-nextest"]
+description = "Run Rust and lit tests and collect combined coverage in rust-coverage.xml"
+dependencies = ["install-cargo-llvm-cov", "litcheck", "install-llvm-tools", "install-nextest"]
 command = "python3"
 args = ["${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools/coverage.py", "${@}"]
 
-[tasks.coverage-tools]
+[tasks.install-llvm-tools]
 private = true
 category = "Tools"
+description = "Install LLVM tools for the active Rust toolchain"
 command = "rustup"
 args = ["component", "add", "llvm-tools-preview"]
 
-[tasks.coverage-nextest]
+[tasks.install-nextest]
 private = true
 category = "Tools"
+description = "Install cargo-nextest if it is unavailable"
 install_crate = { crate_name = "cargo-nextest", binary = "cargo-nextest", test_arg = "--version" }
 install_crate_args = ["--locked"]
 

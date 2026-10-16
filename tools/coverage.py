@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge coverage from Rust tests and the compiler tools executed by lit."""
+"""Run Rust tests and lit tools, then merge their LLVM coverage profiles."""
 
 import argparse
 import json
