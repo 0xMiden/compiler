@@ -9,9 +9,12 @@
 //! interface:
 //! - a Rust note's calls (one with a record argument) update the count;
 //! - a Rust transaction script reads a felt and a word result in the order the component returns
-//!   them, and passes four words, the 16 parameter felts a call can pass, in order;
+//!   them, passes four words, the 16 parameter felts a call can pass, in order, reads a tuple
+//!   result and the 16 result felts a call can return in order, and passes 15 parameter felts
+//!   next to the pointer of a word result;
 //! - a Rust account component calls the MASM component as its sibling in the same account;
-//! - a Rust note on another account reads the count through foreign procedure invocation.
+//! - a Rust note on another account reads the count and a tuple result through foreign procedure
+//!   invocation.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -198,8 +201,10 @@ fn user_masm_counter_is_updated_by_a_rust_note() {
 
 /// A Rust transaction script reads `get_count` and the word `get_count_word` of the MASM counter
 /// and checks them against the values the host passes in its arguments, so every element of the
-/// word must come back where the component puts it. It then calls `wide` with four words, the 16
-/// parameter felts a call can pass, and checks that it returns `a[0] + b[1] + c[2] + d[3]`.
+/// word must come back where the component puts it. It then checks, against values that change
+/// when felts are reordered, `wide` (four words, the 16 parameter felts a call can pass), `split`
+/// (a tuple result), `four_words` (the 16 result felts a call can return) and `fifteen_to_word`
+/// (15 parameter felts next to the pointer of a word result).
 #[test]
 fn user_masm_counter_getters_are_read_by_a_rust_tx_script() {
     let tx_script_package =
@@ -218,8 +223,8 @@ fn user_masm_counter_getters_are_read_by_a_rust_tx_script() {
         .tx_script(transaction_script_from_package(&tx_script_package));
     let mock_tx = apply_script_args(mock_tx_builder, &args).build().unwrap();
     let measurements = execute_tx_measurements(&mut chain, mock_tx);
-    // 3413 before the script called `wide`.
-    expect!["3715"].assert_eq(tx_script_processing_cycles(&measurements));
+    // Pinned at the cycles of the script's calls into the counter.
+    expect!["5939"].assert_eq(tx_script_processing_cycles(&measurements));
     assert_count(&chain, account.id(), INITIAL_COUNT);
 }
 
@@ -250,7 +255,8 @@ fn user_masm_counter_is_a_sibling_of_a_rust_component() {
 }
 
 /// A Rust note consumed by a wallet reads `get_count` of the MASM counter account through
-/// foreign procedure invocation and checks it against the count carried in its storage.
+/// foreign procedure invocation and checks it against the count carried in its storage, then
+/// checks that the foreign `split` of that count returns `(count, count + 1)` in that order.
 #[test]
 fn user_masm_counter_is_read_through_fpi_by_a_rust_note() {
     let note_name = "user-masm-fpi-note";
@@ -293,9 +299,8 @@ fn user_masm_counter_is_read_through_fpi_by_a_rust_note() {
     let mut chain = build_chain(builder);
 
     let cycles = consume_note(&mut chain, &wallet, &note, &[counter.id()]);
-    // 3264 before the counter gained `wide`, which the note does not call: the foreign
-    // account's code and the note's generated bindings both changed with it.
-    expect!["3254"].assert_eq(&cycles);
+    // Pinned at the cycles of the note's two foreign calls into the counter.
+    expect!["4290"].assert_eq(&cycles);
     assert_count(&chain, counter.id(), INITIAL_COUNT);
 }
 
@@ -375,11 +380,15 @@ struct CounterReader {
 
 #[note]
 impl CounterReader {
-    /// Reads the foreign count and checks it.
+    /// Reads the foreign count and checks it, then checks the order of the foreign `split`'s
+    /// tuple result.
     #[note_script]
     pub fn run(self, _arg: Word) {
         let counter = CounterAccount::new(self.counter_account_id);
         assert_eq(counter.get_count(), self.expected_count);
+        let (low, high) = counter.split(self.expected_count);
+        assert_eq(low, self.expected_count);
+        assert_eq(high, low + felt!(1));
     }
 }
 "#;

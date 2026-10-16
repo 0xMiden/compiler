@@ -46,6 +46,9 @@ fn user_masm_component_builds_as_an_account_component() {
         "add_to_count",
         "get_count_word",
         "wide",
+        "split",
+        "four_words",
+        "fifteen_to_word",
         "auth_incr_nonce",
     ] {
         let export = find_export(&package, COUNTER_NAMESPACE, leaf);
@@ -66,13 +69,17 @@ fn user_masm_component_builds_as_an_account_component() {
         add_to_count: @account_procedure extern "component-model" fn(struct Delta {add : felt, mul : felt})
         get_count_word: @account_procedure extern "component-model" fn() -> [felt; 4]
         wide: @account_procedure extern "component-model" fn([felt; 4], [felt; 4], [felt; 4], [felt; 4]) -> felt
+        split: @account_procedure extern "component-model" fn(felt) -> felt, felt
+        four_words: @account_procedure extern "component-model" fn() -> [felt; 4], [felt; 4], [felt; 4], [felt; 4]
+        fifteen_to_word: @account_procedure extern "component-model" fn([felt; 4], [felt; 4], [felt; 4], felt, felt, felt) -> [felt; 4]
         auth_incr_nonce: @auth_script extern "component-model" fn([felt; 4])
     "#]].assert_eq(&signatures);
 }
 
 /// The WIT interface synthesized from the package manifest matches its snapshot: package
-/// `acme:counter`, interface `counter`, the five account procedures with their export paths, the
-/// `delta` record, the `word` result and the four-word `wide`, and the auth procedure left out.
+/// `acme:counter`, interface `counter`, the eight account procedures with their export paths, the
+/// `delta` record, the `word` result, the four-word `wide`, the `tuple` results of `split` and
+/// `four_words`, and the 15 parameter felts of `fifteen_to_word`, and the auth procedure left out.
 #[test]
 fn user_masm_component_interface_is_synthesized_from_the_manifest() {
     let package = counter_package();
@@ -122,9 +129,13 @@ fn user_masm_component_is_called_from_a_rust_note() {
 }
 
 /// A Rust transaction script with `#[account(counter::Counter)]` compiles to calls of the
-/// `get_count` and `get_count_word` getters and of `wide`, which takes 16 parameter felts.
+/// `get_count` and `get_count_word` getters, of `wide`, which takes 16 parameter felts, of
+/// `split` and `four_words`, which return tuples, and of `fifteen_to_word`.
 #[test]
 fn user_masm_component_is_called_from_a_rust_tx_script() {
     let masm = consumer_masm("acme-counter-tx-script");
-    assert_calls(&masm, &["get_count", "get_count_word", "wide"]);
+    assert_calls(
+        &masm,
+        &["get_count", "get_count_word", "wide", "split", "four_words", "fifteen_to_word"],
+    );
 }
