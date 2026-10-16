@@ -644,6 +644,10 @@ impl HirLowering for arith::Constant {
 /// The constant is then skipped by the lowering of `arith.constant`, see
 /// [is_immediate_only_constant]; both sides of that contract live here.
 fn immediate_shift_count(op: &Operation) -> Option<u32> {
+    // `u32shl.N` on the bit pattern of an `i32` is the same wrapping shift as on a `u32`. `u32shr.N`
+    // is a logical shift, exact for the zero-extended unsigned types; a signed `shr` is an
+    // arithmetic shift, lowered to an intrinsic that takes the count on the stack anyway. 64-bit
+    // values are two felts and have no immediate shift form.
     let shift = if let Some(shl) = op.downcast_ref::<arith::Shl>() {
         if !matches!(shl.lhs().ty(), Type::U32 | Type::I32) {
             return None;
@@ -659,6 +663,9 @@ fn immediate_shift_count(op: &Operation) -> Option<u32> {
     let shift = shift.borrow();
     let defining_op = shift.get_defining_op()?;
     let defining_op = defining_op.borrow();
+    // The constant's lowering skips its push, so the shift must be the op consuming it from the
+    // same block's operand stack. Across a block boundary the value would be expected on the stack
+    // at that boundary, where it was never pushed.
     if defining_op.parent() != op.parent() {
         return None;
     }
@@ -679,6 +686,11 @@ fn is_immediate_only_constant(constant: &arith::Constant) -> bool {
         return false;
     };
     if uses.next().is_some() {
+        return false;
+    }
+    // Only the count (operand 1) is consumed as an immediate; a constant shifted value is pushed
+    // like any other operand.
+    if user.index != 1 {
         return false;
     }
     let user = user.owner.borrow();
