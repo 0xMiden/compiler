@@ -219,8 +219,8 @@ fn run_calling(
     match invocation {
         Invocation::Call => assert!(masm.contains(&target), "expected `{target}` in:\n{masm}"),
         Invocation::Dyncall => assert!(
-            masm.contains("dyncall") && !masm.contains(&target),
-            "expected a `dyncall` and no `{target}` in:\n{masm}"
+            masm.split_whitespace().any(|token| token == "dyncall") && !masm.contains(&target),
+            "expected a `dyncall` instruction and no `{target}` in:\n{masm}"
         ),
     }
 

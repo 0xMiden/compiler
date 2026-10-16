@@ -2478,6 +2478,37 @@ mod tests {
         }
     }
 
+    /// An import declaring the leaf `z` in stub `x::y` beside an import from stub `x::y::z` (two
+    /// dependencies whose namespaces nest) is reported in either order: the path `x::y::z` cannot
+    /// name both the declaration and the component.
+    #[test]
+    fn an_import_captured_by_a_nested_stub_component_is_reported() {
+        let signature = Signature {
+            params: vec![AbiParam::new(Type::Felt)],
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::ComponentModel,
+        };
+        let captured = ("z", "x::y::z");
+        let nested = ("g", "x::y::z::g");
+
+        for (first, second) in [(captured, nested), (nested, captured)] {
+            let (_context, mut world_builder, _module_builder) = world_with_core_module();
+            let import = import_at(test_import_path(first.0), first.1);
+            declare_import_function(&mut world_builder, &import, &signature)
+                .unwrap_or_else(|err| panic!("`{}` should be declared: {err}", first.1));
+            let import = import_at(test_import_path(second.0), second.1);
+            let Err(err) = declare_import_function(&mut world_builder, &import, &signature) else {
+                panic!("`x::y::z` cannot name both the declaration and the component");
+            };
+            assert!(
+                err.to_string().contains(
+                    "component `x::y` declares `z`, which component `x::y::z` would capture"
+                ),
+                "unexpected diagnostic: {err}"
+            );
+        }
+    }
+
     /// A dyncall import whose results need the canonical out-pointer keeps that transformation:
     /// the root is still consumed as the dyncall operand and the flat results are stored out.
     #[test]

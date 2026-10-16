@@ -28,8 +28,8 @@ pub type WorldRef = UnsafeIntrusiveEntityRef<World>;
 /// * [super::Module]s
 ///
 /// The codegen backend currently does not support lowering from [World] directly when the world
-/// contains [super::Component]s - each component must be lowered independently, as we currently
-/// expect components to map 1:1 with packages.
+/// contains a defining [super::Component] (see [World::has_defining_component]) - each component
+/// must be lowered independently, as we currently expect components to map 1:1 with packages.
 ///
 /// NOTE: Worlds always have `Public` visibility.
 #[derive(OpPrinter, OpParser)]
@@ -122,8 +122,8 @@ impl World {
     /// the raw last segment), which the component would shadow, or another component whose name
     /// nests with `component` (one is a segment-prefix of the other) while the shorter of the two
     /// is not declaration-only, or declares a symbol named by the last segment of a longer name
-    /// one segment longer than its own: resolution prefers the longest registered name, so any of these would make
-    /// paths ambiguous.
+    /// one segment longer than its own: resolution prefers the longest registered name, so any of
+    /// these would make paths ambiguous.
     ///
     /// The name is the Miden Assembly spelling of the component's namespace path (see
     /// [SymbolPath::to_symbol_name]).
