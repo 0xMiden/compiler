@@ -119,4 +119,64 @@ builtin.module private @bool_compare {
         %8 = arith.neq %0, %3;
         builtin.ret %7, %8 : (i1, i1);
     };
+
+    // The complementary comparison replacing `not` is placed at the original comparison, not at
+    // the `not`: here the `not` is inside the `scf.if`, and the comparison is used outside it.
+    // CHECK: @not_in_nested_region(%[[A:\d+]]: i32, %[[B:\d+]]: i32, %[[F:\d+]]: i1)
+    // CHECK-NEXT: %[[C:\d+]] = arith.neq %[[A]], %[[B]];
+    // CHECK-NEXT: %[[R:\d+]] = scf.if %[[F]] then {
+    // CHECK-NEXT: scf.yield %[[C]] : (i1);
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT: scf.yield %[[F]] : (i1);
+    // CHECK-NEXT: } : (i1) -> (i1);
+    // CHECK-NEXT: builtin.ret %[[R]] : (i1);
+    builtin.function public extern("C") @not_in_nested_region(%0: i32, %1: i32, %2: i1) -> i1 {
+        %3 = arith.eq %0, %1;
+        %4 = scf.if %2 then {
+            %5 = arith.not %3;
+            scf.yield %5 : (i1);
+        } else {
+            scf.yield %2 : (i1);
+        } : (i1) -> (i1);
+        builtin.ret %4 : (i1);
+    };
+
+    // The patterns look through at most four widening operations: `eq(x, 0)` of a boolean widened
+    // by a `zext` and three `bitcast`s still negates it.
+    // CHECK: @widened_four_times(%[[A:\d+]]: i32, %[[B:\d+]]: i32)
+    // CHECK-NEXT: %[[C:\d+]] = arith.neq %[[A]], %[[B]];
+    // CHECK-NEXT: builtin.ret %[[C]] : (i1);
+    builtin.function public extern("C") @widened_four_times(%0: i32, %1: i32) -> i1 {
+        %2 = arith.constant 0 : i32;
+        %3 = arith.eq %0, %1;
+        %4 = arith.zext %3 <{ ty = #builtin.type<u32> }>;
+        %5 = hir.bitcast %4 <{ ty = #builtin.type<i32> }>;
+        %6 = hir.bitcast %5 <{ ty = #builtin.type<u32> }>;
+        %7 = hir.bitcast %6 <{ ty = #builtin.type<i32> }>;
+        %8 = arith.eq %7, %2;
+        builtin.ret %8 : (i1);
+    };
+
+    // A boolean widened by five operations is past the depth limit of four and left alone.
+    // CHECK: @widened_five_times(%[[A:\d+]]: i32, %[[B:\d+]]: i32)
+    // CHECK-NEXT: %[[ZERO:\d+]] = arith.constant 0 : u32;
+    // CHECK-NEXT: %[[C:\d+]] = arith.eq %[[A]], %[[B]];
+    // CHECK-NEXT: %[[Z:\d+]] = arith.zext %[[C]]
+    // CHECK-NEXT: %[[W1:\d+]] = hir.bitcast %[[Z]]
+    // CHECK-NEXT: %[[W2:\d+]] = hir.bitcast %[[W1]]
+    // CHECK-NEXT: %[[W3:\d+]] = hir.bitcast %[[W2]]
+    // CHECK-NEXT: %[[W4:\d+]] = hir.bitcast %[[W3]]
+    // CHECK-NEXT: %[[X:\d+]] = arith.eq %[[W4]], %[[ZERO]];
+    // CHECK-NEXT: builtin.ret %[[X]] : (i1);
+    builtin.function public extern("C") @widened_five_times(%0: i32, %1: i32) -> i1 {
+        %2 = arith.constant 0 : u32;
+        %3 = arith.eq %0, %1;
+        %4 = arith.zext %3 <{ ty = #builtin.type<u32> }>;
+        %5 = hir.bitcast %4 <{ ty = #builtin.type<i32> }>;
+        %6 = hir.bitcast %5 <{ ty = #builtin.type<u32> }>;
+        %7 = hir.bitcast %6 <{ ty = #builtin.type<i32> }>;
+        %8 = hir.bitcast %7 <{ ty = #builtin.type<u32> }>;
+        %9 = arith.eq %8, %2;
+        builtin.ret %9 : (i1);
+    };
 };

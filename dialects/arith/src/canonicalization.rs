@@ -1,7 +1,14 @@
 //! Canonicalization patterns for the `arith` dialect.
 //!
-//! Currently includes a rewrite for 32-bit rotates of `i64`/`u64` to preserve the full 64-bit
-//! payload when values represent felt values
+//! The patterns are:
+//!
+//! * `canonicalize-i64-rotate-by-32-to-swap`: 32-bit rotates of `i64`/`u64` become a swap of the
+//!   32-bit limbs, preserving the full 64-bit payload when the values represent felts.
+//! * `simplify-bool-compare`: `eq`/`neq` of a widened boolean against 0 or 1 becomes the boolean
+//!   or its negation.
+//! * `simplify-not-compare`: `not` of a single-use `eq`/`neq` becomes the complementary
+//!   comparison.
+//! * `simplify-trunc-to-bool`: `trunc` to `i1` of a widened boolean becomes the boolean.
 
 use alloc::rc::Rc;
 
@@ -147,16 +154,18 @@ impl RewritePattern for CanonicalizeI64RotateBy32ToSwap {
     }
 }
 
-/// How many widening/transparent-cast operations [widened_bool] looks through.
+/// How many widening/transparent-cast operations [widened_bool] looks through at most.
 const MAX_WIDENING_DEPTH: usize = 4;
 
 /// Returns the `i1` value that `value` is a widening of.
 ///
-/// Looks through `arith.zext` and transparent casts between integer types, which preserve the
-/// integer value 0/1 of a widened boolean. Returns `value` itself when it is already an `i1`.
+/// Looks through up to [MAX_WIDENING_DEPTH] `arith.zext` and transparent casts between integer
+/// types, which preserve the integer value 0/1 of a widened boolean. Returns `value` itself when it
+/// is already an `i1`. Sign extension is deliberately not looked through (`true` widens to -1).
 fn widened_bool(value: ValueRef) -> Option<ValueRef> {
     let mut current = value;
-    for _ in 0..MAX_WIDENING_DEPTH {
+    // One more check than steps, so the value reached by the last step is still inspected.
+    for _ in 0..=MAX_WIDENING_DEPTH {
         if current.borrow().ty() == &Type::I1 {
             return Some(current);
         }
@@ -197,9 +206,9 @@ fn has_single_use(value: ValueRef) -> bool {
 /// Simplifies `arith.eq`/`arith.neq` of a widened boolean against a constant 0 or 1 to the
 /// boolean itself or its negation.
 ///
-/// The Wasm frontend represents every boolean as an `i32` (`zext` + `bitcast` of the `i1`
-/// comparison result) and tests it against 0 again before every branch or select, so these
-/// comparisons are common, and each one costs several VM ops while the boolean is already at hand:
+/// Frontends commonly widen booleans to an integer and test them against 0 again before a branch
+/// or select, so these comparisons are common, and each one costs several VM ops while the boolean
+/// is already at hand:
 ///
 /// * `neq(x, 0)` and `eq(x, 1)` become `b`
 /// * `eq(x, 0)` and `neq(x, 1)` become `not b`
@@ -278,6 +287,7 @@ pub(crate) struct SimplifyNotCompare {
 }
 
 impl SimplifyNotCompare {
+    /// Creates the pattern, matching `arith.not`.
     pub fn new(context: Rc<Context>) -> Self {
         let not_op = context
             .get_or_register_dialect::<ArithDialect>()
@@ -329,7 +339,10 @@ impl RewritePattern for SimplifyNotCompare {
             }
         };
 
-        rewriter.set_insertion_point_before(operation);
+        // The complementary comparison takes the place of the original one, not of the `not`:
+        // the `not` may sit in a nested region (a loop body), and rebuilding the comparison there
+        // would evaluate it per iteration and keep its operands live across the region.
+        rewriter.set_insertion_point_after(compare);
         let replacement = if is_eq {
             rewriter.neq(lhs, rhs, span)?
         } else {
@@ -346,6 +359,7 @@ pub(crate) struct SimplifyTruncToBool {
 }
 
 impl SimplifyTruncToBool {
+    /// Creates the pattern, matching `arith.trunc`.
     pub fn new(context: Rc<Context>) -> Self {
         let trunc_op = context
             .get_or_register_dialect::<ArithDialect>()
