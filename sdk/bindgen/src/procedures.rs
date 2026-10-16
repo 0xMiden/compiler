@@ -38,6 +38,7 @@ use miden_assembly_syntax::ast::{
 };
 use midenc_package_interface::{
     FieldStep, LoweredSignature, PackageInterface, ProcedureItem, ReturnStrategy, WasmScalar,
+    comment::one_line,
 };
 
 use crate::{
@@ -147,7 +148,7 @@ pub(crate) fn emit(
     w.line(&format!(
         "/// Calls `{}` (package `{}` {}).",
         item.path,
-        AsRef::<str>::as_ref(&package.name),
+        one_line(package.name.as_ref()),
         package.version
     ));
     if is_unsafe {
