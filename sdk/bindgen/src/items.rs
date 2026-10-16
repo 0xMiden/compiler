@@ -390,7 +390,7 @@ fn emit_type(
     at: &Path,
 ) -> Result<(), Error> {
     let name = names::type_ident(item.path.last().unwrap_or_default());
-    let doc = format!("`{}`", item.path);
+    let doc = format!("`{}`", one_line(&item.path.to_string()));
     let origin = item.path.to_string();
     match &item.ty {
         Type::Struct(st) => emit_struct(w, universe, &doc, &name, &st.get(), at, &origin),
@@ -584,7 +584,7 @@ fn emit_constant(
     source: Option<String>,
 ) {
     let name = names::const_ident(item.path.last().unwrap_or_default());
-    w.line(&format!("/// `{}`", item.path));
+    w.line(&format!("/// `{}`", one_line(&item.path.to_string())));
     let (ty, value) = match constant {
         Constant::Int(ty, value) => (ty.to_string(), value.to_string()),
         Constant::Felt(value) => {
