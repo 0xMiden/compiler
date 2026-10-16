@@ -25,18 +25,23 @@ fn cargo_check_miden_target(project: &crate::cargo_proj::Project) -> std::proces
         .expect("failed to spawn `cargo check` for the component macro regression test")
 }
 
+/// The over-wide-argument negative case: the account's `test_custom_types` export takes a
+/// `StructA` (12 felts) and an `Asset` (8 felts), 20 argument felts in all, more than the 16 a
+/// cross-context call passes on the operand stack, so the account is rejected at export lifting.
 #[test]
 fn component_macros_account_and_note() {
     let config = WasmTranslationConfig::default();
     let mut account = CompilerTest::rust_source_cargo_miden(
         "../fixtures/components/component-macros-account",
-        config.clone(),
+        config,
         [],
     );
     let result = panic::catch_unwind(AssertUnwindSafe(move || account.compile_package()));
     let panic_message = match result {
         Ok(_) => {
-            panic!("Expected component export lifting with indirect pointer parameters to fail")
+            panic!(
+                "expected component export lifting to reject argument felts past the call window"
+            )
         }
         Err(panic_info) => {
             if let Some(message) = panic_info.downcast_ref::<String>() {
@@ -50,29 +55,9 @@ fn component_macros_account_and_note() {
     };
 
     assert!(
-        panic_message.contains("not yet implemented"),
+        panic_message.contains("takes 20 argument felts") && panic_message.contains("at most 16"),
         "unexpected panic message: {panic_message}"
     );
-
-    //    let builder = CompilerTestBuilder::rust_source_cargo_miden(
-    //        "../fixtures/components/component-macros-note",
-    //        config,
-    //        [],
-    //    assert!(
-    //        panic_message.contains("not yet implemented")
-    //            && panic_message.contains("indirect pointer parameters"),
-    //        "unexpected panic message: {panic_message}"
-    //    );
-    //    let mut note = builder.build();
-    //    let note_package = note.compile_package();
-    //    let program = note_package.unwrap_program();
-    //
-    //    let mut exec = executor_with_std(vec![], None);
-    //    exec.dependency_resolver_mut()
-    //        .add(account_package.digest(), account_package.into());
-    //    exec.with_dependencies(note_package.manifest.dependencies())
-    //        .expect("failed to add package dependencies");
-    //    exec.execute(&program, note.session.source_manager.clone());
 }
 
 #[test]
