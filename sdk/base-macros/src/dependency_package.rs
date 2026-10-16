@@ -1463,15 +1463,14 @@ mod tests {
     /// Assembles `source` as the module `miden::test::wallet` of an account-component package
     /// named `miden-test-wallet`, without a WIT section, and writes it to `package_path`.
     fn write_component_fixture(package_path: &Path, source: &str) {
-        use miden_protocol::utils::serde::Serializable;
+        use midenc_package_interface::testing::{
+            assemble_account_component_fixture, write_package,
+        };
 
-        let package = midenc_package_interface::testing::assemble_account_component_fixture(
-            "miden-test-wallet",
-            "miden::test::wallet",
-            source,
+        write_package(
+            package_path,
+            &assemble_account_component_fixture("miden-test-wallet", "miden::test::wallet", source),
         );
-        std::fs::create_dir_all(package_path.parent().unwrap()).unwrap();
-        std::fs::write(package_path, package.to_bytes()).unwrap();
     }
 
     /// Builds a consumer package named `consumer` with one path dependency on `package_path`.

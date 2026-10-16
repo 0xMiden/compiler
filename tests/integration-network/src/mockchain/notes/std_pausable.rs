@@ -4,13 +4,12 @@
 //! (`miden::standards::components::access::pausable::manager`) are both dependencies of the
 //! script, so their import stubs nest in the consumer's world.
 
-use miden_protocol::account::auth::AuthScheme;
 use miden_standards::account::access::{Authority, Pausable, PausableManager};
-use miden_testing::{Auth, MockChain};
+use miden_testing::MockChain;
 use midenc_expect_test::expect;
 
 use super::super::support::{
-    compile_rust_package, execute_tx_measurements, transaction_script_from_package,
+    basic_auth, compile_rust_package, execute_tx_measurements, transaction_script_from_package,
     tx_script_processing_cycles,
 };
 
@@ -27,9 +26,7 @@ pub fn std_pausable_and_manager_pause_the_account() {
     // authenticated the transaction.
     let account_id = builder
         .add_existing_account_from_components(
-            Auth::BasicAuth {
-                auth_scheme: AuthScheme::Falcon512Poseidon2,
-            },
+            basic_auth(),
             [
                 Authority::AuthControlled.into(),
                 Pausable::unpaused().into(),

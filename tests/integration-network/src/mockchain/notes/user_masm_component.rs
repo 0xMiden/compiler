@@ -28,7 +28,6 @@ use miden_protocol::{
     account::{
         Account, AccountBuilder, AccountComponent, AccountId, AccountType, StorageSlot,
         StorageSlotName,
-        auth::AuthScheme,
         component::{
             AccountComponentCode, AccountComponentMetadata, FeltSchema, SchemaType, StorageSchema,
             StorageSlotSchema, WordSchema,
@@ -38,14 +37,14 @@ use miden_protocol::{
     note::Note,
 };
 use miden_standards::{account::wallets::BasicWallet, testing::note::NoteBuilder};
-use miden_testing::{AccountState, Auth, MockChain, MockChainBuilder};
+use miden_testing::{AccountState, MockChain, MockChainBuilder};
 use midenc_expect_test::expect;
 use midenc_integration_test_support::{compile_masm_project, project, workspace_root};
 
 use super::super::{
     sibling::build_masm_sibling_test_packages,
     support::{
-        apply_script_args, compile_rust_package, execute_tx_measurements,
+        apply_script_args, basic_auth, compile_rust_package, execute_tx_measurements,
         note_cargo_toml_for_dependency, note_miden_project_toml_for_dependency, note_script_root,
         single_note_cycles, sysroot_with_standard_components, to_core_felts, to_field_felt,
         to_field_word, transaction_script_from_package, tx_script_processing_cycles,
@@ -284,9 +283,7 @@ fn user_masm_counter_is_read_through_fpi_by_a_rust_note() {
     let counter = add_counter_account(&mut builder, []);
     let wallet = builder
         .add_account_from_builder(
-            Auth::BasicAuth {
-                auth_scheme: AuthScheme::Falcon512Poseidon2,
-            },
+            basic_auth(),
             AccountBuilder::new([8_u8; 32])
                 .account_type(AccountType::Public)
                 .with_component(BasicWallet),
