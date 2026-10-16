@@ -305,6 +305,9 @@ pub fn parse_file_anchored(
 
 /// Parse the single top-level operation in `source_file`, and return it.
 ///
+/// Anything after that operation, another operation or text that is not one, is reported rather
+/// than dropped: a source is read whole or not at all.
+///
 /// # The world the parser needs, and the one it must not leave behind
 ///
 /// Symbol resolution is rooted at a [World], so parsing needs one to anchor the operation it is
@@ -365,6 +368,8 @@ fn parse_anchored_source(
     let op = operation_parser
         .parse_operation()
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
+    expect_end_of_input(operation_parser.token_stream_mut())
+        .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
     // See the note above: a parsed world is the root, not something to be rooted.
     //
     // The mutable borrow held across `remove` is safe *because* the operation is a `World`, and
@@ -413,6 +418,18 @@ fn parse_anchored_source(
 
             Ok(op)
         }
+    }
+}
+
+/// Require that `tokens` holds nothing more: an anchored source is exactly one operation.
+fn expect_end_of_input(tokens: &mut TokenStream<'_>) -> Result<(), ParserError> {
+    match tokens.peek()? {
+        None | Some((_, Token::Eof, _)) => Ok(()),
+        Some((start, token, end)) => Err(ParserError::UnexpectedToken {
+            span: SourceSpan::new(tokens.source_id(), start..end),
+            token: token.to_string(),
+            expected: Some("end of input after the top-level operation".to_string()),
+        }),
     }
 }
 
