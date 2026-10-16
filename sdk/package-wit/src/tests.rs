@@ -638,6 +638,38 @@ end
     parse(&generated.wit, "my-component");
 }
 
+/// A left-out export path with a line break stays on its one `/// Left out:` comment line.
+#[test]
+fn a_line_break_in_a_left_out_path_stays_in_its_comment() {
+    let mut iface = component(
+        r#"
+@account_procedure
+pub proc ping()
+    nop
+end
+
+@account_procedure
+pub proc pong()
+    nop
+end
+"#,
+    );
+    let injected = format!("{MODULE}::\"pong\n    bad: func();\r\"");
+    iface.procedures[1].path = miden_mast_package::PathBuf::relative(&injected).into();
+    let generated = generate(&iface).unwrap();
+    assert_eq!(generated.skipped.len(), 1, "{:?}", generated.skipped);
+    assert!(generated.skipped[0].path.contains('\n'), "{:?}", generated.skipped);
+    let comments: Vec<&str> =
+        generated.wit.lines().filter(|line| line.starts_with("/// Left out:")).collect();
+    assert_eq!(comments.len(), 1, "{}", generated.wit);
+    assert!(comments[0].contains("bad: func();"), "{}", generated.wit);
+    assert!(!generated.wit.contains('\r'), "{}", generated.wit);
+    assert_eq!(
+        parse(&generated.wit, "my-component"),
+        [("ping".to_owned(), "miden::test::my_component::ping".to_owned())]
+    );
+}
+
 /// Procedures with no WIT name or a reserved `fpi-`/`dyncall-` name are left out with a reason.
 #[test]
 fn names_without_a_wit_form_are_skipped() {
