@@ -573,11 +573,12 @@ impl OpEmitter<'_> {
     /// Returns the number of argument and result field elements a cross-context invocation of a
     /// procedure with `signature` passes through the 16-element call window.
     ///
-    /// Panics if either does not fit in the window: the frontend passes wider argument lists
-    /// indirectly and rejects wider result lists, so a wider signature here is a compiler bug.
+    /// Panics if either does not fit in the window: `LegalizeForMasm` reports such a call, and the
+    /// Wasm frontend rejects wider component signatures, so a wider signature here is a compiler
+    /// bug.
     fn call_window_felts(signature: &Signature) -> (usize, usize) {
-        let num_arg_felts: usize = signature.params.iter().map(|p| p.ty.size_in_felts()).sum();
-        let num_result_felts: usize = signature.results.iter().map(|r| r.ty.size_in_felts()).sum();
+        let num_arg_felts = signature.param_felts();
+        let num_result_felts = signature.result_felts();
         assert!(
             num_arg_felts <= CALL_WINDOW_FELTS,
             "cross-context call arguments take {num_arg_felts} field elements, but the call \
