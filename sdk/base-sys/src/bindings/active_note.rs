@@ -36,8 +36,9 @@ pub struct ActiveNoteStorageInfo {
 ///
 /// let storage = active_note::get_storage();
 ///
-/// // Example layout: first two values store a target `AccountId`.
-/// let target = AccountId::from(storage[0], storage[1]);
+/// // Example layout: the first two values store a target `AccountId`, suffix first.
+/// // `AccountId::new` takes the prefix first.
+/// let target = AccountId::new(storage[1], storage[0]);
 /// ```
 pub fn get_storage() -> Vec<Felt> {
     const MAX_INPUTS: usize = 1024;

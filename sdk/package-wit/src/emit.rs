@@ -18,7 +18,7 @@ pub struct Function {
     pub external_id: String,
     /// `(name, type)` per parameter.
     pub params: Vec<(String, String)>,
-    /// The single result type, if any.
+    /// The result type, if any: a `tuple<...>` when the procedure has several results.
     pub result: Option<String>,
 }
 

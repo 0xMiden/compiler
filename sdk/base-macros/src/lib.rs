@@ -279,8 +279,9 @@ pub fn component(
 /// that layout.
 ///
 /// A MASM procedure documents its own stack contract; spell the signature to match it, e.g. an
-/// account id expected as `[account_suffix, account_prefix]` is two `Felt` parameters in that
-/// order rather than one `AccountId` (which flattens to prefix, then suffix).
+/// account id expected as `[account_suffix, account_prefix]` is one `AccountId` parameter (which
+/// flattens to suffix, then prefix), while one expected as `[account_prefix, account_suffix]` is
+/// two `Felt` parameters in that order.
 ///
 /// The generated imports are named `dyncall-<kebab-field>`, with the field name kebab-cased
 /// (`last_sum` gives `dyncall-last-sum`), and carry the `@external-id`

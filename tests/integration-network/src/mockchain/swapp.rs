@@ -305,7 +305,10 @@ fn swapp_note_package_size() {
     // adjacent stack operations that undo each other, such as `swap.1 swap.1` (176 bytes fewer);
     // 43532 with no `u32assert` on a constant-address 32-bit store, one fewer per 32-bit global
     // initializer: the note's `init` stores four such globals, 11 bytes per assertion and 2
-    // padding `noop`s its shorter block no longer needs (46 bytes fewer).
+    // padding `noop`s its shorter block no longer needs (46 bytes fewer); 43955 since codegen
+    // pads the call window under the arguments of a cross-context call (423 bytes more, over the
+    // note's five call sites into the wallet: two `receive_asset`, two `create_note` and one
+    // `move_asset_to_note`).
     //
     // The 1260 bytes over 42589 at 43849:
     // - new with the integer newtypes: the note builds the `Tag` and the `NoteType` it passes
@@ -384,7 +387,9 @@ fn swapp_note_full_fill_transfers_assets() {
     // the `init` that every call into a component runs (44 fewer): the note's `init` stores four
     // such globals (14 cycles: 12 for the assertions, 2 for padding `noop`s), and the wallet's,
     // run for each of `receive_asset`, `create_note` and `move_asset_to_note`, three (10 cycles
-    // each: 9, and 1 for an op batch its stores no longer fill). The 294 cycles over 12904 at
+    // each: 9, and 1 for an op batch its stores no longer fill); 13070 since codegen pads the
+    // call window under the arguments of a cross-context call (61 cycles more, on the calls of
+    // `receive_asset`, `create_note` and `move_asset_to_note`). The 294 cycles over 12904 at
     // 13198: the note's `TryFrom<Felt>` checks of the `Tag` and `NoteType` from its storage and
     // the lift masks (both new with the integer newtypes), the wallet's check that the
     // `NoteType` is private or public, and the frontend's masks (see `swapp_note_package_size`).
@@ -483,8 +488,9 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
     // since casts that change only a type are renames (61 cycles fewer) and the stack peephole
     // deletes operations that undo each other (193 fewer); 18104 with no `u32assert` on a
     // constant-address 32-bit store (54 fewer: as at the full fill, and the wallet's `init` once
-    // more, for the remainder note's `create_note`). The 421 cycles over 17991 at 18412 are those
-    // listed at the full fill, with two notes created.
+    // more, for the remainder note's `create_note`); 18205 with the padded call window (101
+    // cycles more: the 61 of the full fill, and 40 for the remainder note's `create_note`). The
+    // 421 cycles over 17991 at 18412 are those listed at the full fill, with two notes created.
     expect!["18205"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
@@ -573,7 +579,9 @@ fn swapp_note_creator_reclaims_offered_asset() {
     // peephole deleted operations that undo each other (75 fewer; see
     // `swapp_note_package_size`). 5472 before the `u32assert` on a constant-address 32-bit store
     // went, one fewer per 32-bit global initializer: the note's `init` (14 cycles) and the
-    // wallet's, run once for `receive_asset` (10 cycles; see the full fill).
+    // wallet's, run once for `receive_asset` (10 cycles; see the full fill). 13 cycles more (5448
+    // before) since codegen pads the call window under the arguments of a cross-context call, on
+    // the note's one call into the wallet, `receive_asset`.
     expect!["5461"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let alice_account = chain.committed_account(alice.id()).unwrap();

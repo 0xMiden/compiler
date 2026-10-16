@@ -99,8 +99,9 @@ fn consumer_masm(fixture: &str) -> String {
 /// Asserts `masm` calls each of `procedures` of the counter component.
 fn assert_calls(masm: &str, procedures: &[&str]) {
     for procedure in procedures {
+        // A whole-line match: `get_count` must not pass on a call of `get_count_word`.
         let call = format!("call.::{COUNTER_NAMESPACE}::{procedure}");
-        assert!(masm.contains(&call), "expected `{call}` in:\n{masm}");
+        assert!(masm.lines().any(|line| line.trim() == call), "expected `{call}` in:\n{masm}");
     }
 }
 
