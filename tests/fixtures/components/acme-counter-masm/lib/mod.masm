@@ -95,7 +95,7 @@ pub proc get_count_word() -> word
     # => [count, count + 1, count + 2, count + 3, pad(12)]
 end
 
-#! Returns the 16 parameter felts a call can pass, weighted by their position:
+#! Returns the sum of the 16 parameter felts a call can pass, each weighted by its position:
 #! `16 * a0 + 15 * a1 + ... + 2 * d2 + 1 * d3`.
 #!
 #! Inputs:  [a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c2, c3, d0, d1, d2, d3]
@@ -149,9 +149,9 @@ pub proc four_words() -> (word, word, word, word)
     # => [1, 2, 3, ..., 16]
 end
 
-#! Returns `[d, e, f, sum]`, where `sum` is the 12 felts of `a`, `b` and `c` weighted by their
-#! position, `12 * a0 + 11 * a1 + ... + 1 * c3`: 15 parameter felts and a word result, the most a
-#! caller passing a result pointer can pass.
+#! Returns `[d, e, f, sum]`, where `sum` is the sum of the 12 felts of `a`, `b` and `c`, each
+#! weighted by its position, `12 * a0 + 11 * a1 + ... + 1 * c3`: 15 parameter felts and a word
+#! result, the most a caller passing a result pointer can pass.
 #!
 #! Inputs:  [a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c2, c3, d, e, f, pad(1)]
 #! Outputs: [d, e, f, sum, pad(12)]

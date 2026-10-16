@@ -79,7 +79,7 @@ fn user_masm_component_builds_as_an_account_component() {
 /// The WIT interface synthesized from the package manifest matches its snapshot: package
 /// `acme:counter`, interface `counter`, the eight account procedures with their export paths, the
 /// `delta` record, the `word` result, the four-word `wide`, the `tuple` results of `split` and
-/// `four_words`, and the 15 parameter felts of `fifteen_to_word`, and the auth procedure left out.
+/// `four_words`, the 15 parameter felts of `fifteen_to_word`, and the auth procedure left out.
 #[test]
 fn user_masm_component_interface_is_synthesized_from_the_manifest() {
     let package = counter_package();

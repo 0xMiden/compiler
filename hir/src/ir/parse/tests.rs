@@ -1485,8 +1485,7 @@ fn an_operation_after_the_top_level_one_is_reported() {
     let source = "builtin.world {\n};\nbuiltin.module public @other {\n};";
     let error = test
         .parse_any("trailing_module.hir", source)
-        .err()
-        .expect("a second top-level operation must not parse");
+        .expect_err("a second top-level operation must not parse");
     let message = format!("{error:?}");
     assert!(message.contains("unexpected token"), "{message}");
     assert!(message.contains("end of input after the top-level operation"), "{message}");

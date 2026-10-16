@@ -243,15 +243,13 @@ SDK macros derive its interface from the package manifest:
 
 A package gets no interface at all when it has no `@account_procedure` or `@auth_script`
 procedure, when its first offered account procedure (one not also tagged `@auth_script`) is not
-inside a module, when its package name or
-namespace yields a keyword, an invalid WIT name or the reserved `core_types` interface leaf, when
-its WIT package id is the SDK's own `miden:base` (even with the package name kept whole) or the
-depending crate's own package id, when every one of its procedures is left out, or when its
-synthesized WIT fails to parse. Such a
-dependency is skipped, and the reasons are reported where a macro references it. Today three
-standard components are in that situation: `miden-standards-auth-no-auth`,
-`miden-standards-auth-singlesig` and `miden-standards-auth-tx-fee-collector`, whose only procedure
-is their auth procedure.
+inside a module, when its package name or namespace yields a keyword, an invalid WIT name or the
+reserved `core_types` interface leaf, when its WIT package id is the SDK's own `miden:base` (even
+with the package name kept whole) or the depending crate's own package id, when every one of its
+procedures is left out, or when its synthesized WIT fails to parse. Such a dependency is skipped,
+and the reasons are reported where a macro references it. Today three standard components are in
+that situation: `miden-standards-auth-no-auth`, `miden-standards-auth-singlesig` and
+`miden-standards-auth-tx-fee-collector`, whose only procedure is their auth procedure.
 
 Like a dependency with embedded WIT, a MASM account-component dependency declared in
 `miden-project.toml` has bindings generated for it in every SDK macro of the crate, whether or not
