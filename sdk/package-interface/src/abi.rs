@@ -98,7 +98,7 @@ impl WasmScalar {
     ///
     /// A 64-bit integer is carried in two elements; everything else, pointers and narrow
     /// integers included, is one.
-    fn stack_elements(&self) -> usize {
+    pub fn stack_elements(&self) -> usize {
         match self {
             Self::I64 | Self::U64 => 2,
             Self::I1
