@@ -111,27 +111,26 @@ APIs which are lesser used.
 
 ### Rust/Miden FFI (foreign function interface) and interop
 
-- Status: **Internal Use Only**
+- Status: **Partially implemented**
 - Tracking Issue: [#304](https://github.com/0xMiden/compiler/issues/304)
 - Release Milestone: TBD
 
-While the compiler has functionality to link against native Miden Assembly libraries, binding
-against procedures exported from those libraries from Rust can require glue code to be emitted
-by the compiler in some cases, and the set of procedures for which this is done is currently
-restricted to a hardcoded whitelist of known Miden procedures.
+Miden Assembly procedures carry typed signatures (`pub proc f(x: T) -> R`, with record types
+declared by `pub type ... = struct`) and protocol role attributes such as `@account_procedure`,
+and both are recorded in the package manifest. The compiler derives a WIT interface from the
+manifest of an account-component package, so a Rust note, transaction script or account component
+calls the procedures of a Miden Assembly account component through `#[account(...)]` or
+`#[component(...)]` with no hand-written WIT or glue; see
+[Writing an account component in Miden Assembly](../usage/cargo-miden.md#writing-an-account-component-in-miden-assembly).
 
-This affects any procedure which returns a type larger than `u32` (excluding `Felt`, which for
-this purpose has the same size). For example, returning a Miden `Word` from a procedure, a common
-return type, is not compatible with Rust's ABI - it will attempt to generate code which allocates
-stack space in the caller, which it expects the callee to write to, inserting a new parameter at
-the start of the parameter list, and expecting nothing to be returned by value. The compiler handles
-situations like these using a set of ABI "transformation strategies", which lift/lower differences
-between the Rust and Miden ABIs at call boundaries.
-
-To expose the FFI machinery for use with any Miden procedure, we need type signatures for those
-procedures at a minimum, and in some cases we may require details of the calling convention/ABI.
-This metadata does not currently exist, but is on the roadmap for inclusion into Miden Assembly
-and Miden packaging. Once present, we can open up the FFI for general use.
+Some procedures are still not reachable that way. A plain library procedure, one without a role
+attribute, is not imported through WIT: bind it natively with an `extern "C"` function carrying
+its path in `#[link_name]`. The compiler derives the lowering of such a call (for example a
+`Word` result, which Rust returns through caller-allocated memory) from the typed signature the
+linked package's manifest records for the procedure, and rejects a binding whose signature
+disagrees with it; a procedure without a typed signature cannot be bound. Procedures of an
+account component with a 64-bit integer (`u64`/`s64`) parameter or result, or with parameters or
+results beyond 16 stack elements, are left out of the derived interface.
 
 ## Core Miden functionality
 
