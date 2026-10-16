@@ -142,7 +142,7 @@ fn overhead() {
     // relative to a direct call]
     expect![[r#"
         [
-            9344,
+            9308,
             478,
             86,
         ]
