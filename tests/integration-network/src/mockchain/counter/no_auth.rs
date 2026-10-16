@@ -111,9 +111,11 @@ pub fn counter_note_no_auth_increments_storage_without_signature() {
     // stores three such globals and is 10 cycles shorter (9 for the assertions, 1 for an op batch
     // its stores no longer fill): the auth procedure runs the auth component's once (10 cycles
     // fewer), and the note runs its own once and the counter contract's on each of its three
-    // calls into it (40 fewer).
+    // calls into it (40 fewer). The note's cycles are 105 more (8866 before) since codegen pads
+    // the call window under the arguments of a cross-context call, over its three calls into the
+    // counter contract.
     expect!["2041"].assert_eq(auth_procedure_cycles(&tx_measurements));
-    expect!["8866"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["8971"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed
     assert_counter_storage(

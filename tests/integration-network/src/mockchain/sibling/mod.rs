@@ -10,9 +10,12 @@ mod common;
 mod multi_sibling;
 mod sibling_and_fpi;
 mod single_sibling;
+mod std_sibling;
 
 use miden_client::Word;
 use miden_core::Felt;
+
+pub(crate) use self::common::build_masm_sibling_test_packages;
 
 /// Returns the non-zero storage key used by the sibling counter fixtures.
 ///

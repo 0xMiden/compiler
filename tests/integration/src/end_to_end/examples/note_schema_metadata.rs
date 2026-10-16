@@ -40,16 +40,16 @@ const EXPECTED_CORE_TYPES: &str = concat!(
         ///
         /// # Layout
         ///
-        /// An `AccountId` consists of two field elements, where the first is called the prefix and the
-        /// second is called the suffix. It is laid out as follows:
+        /// An `AccountId` consists of two field elements, the suffix and the prefix, declared in the
+        /// protocol's order (the kernel returns an account id as `[suffix, prefix]`). They are laid
+        /// out as follows:
         ///
-        /// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
         /// suffix: [zero bit | hash (55 bits) | 8 zero bits]
+        /// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
         record account-id {
-"#,
-    "        \tprefix: felt,\n",
-    "    \tsuffix: felt\n",
-    r#"        }
+            suffix: felt,
+            prefix: felt
+        }
 
         /// Recipient of the note, i.e., hash(hash(hash(serial_num, [0; 4]), note_script_hash), input_hash)
         record recipient {

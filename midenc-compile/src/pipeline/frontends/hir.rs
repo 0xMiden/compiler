@@ -574,10 +574,10 @@ pub(crate) mod tests {
 
     /// A bare `builtin.module`, the shape `hir-opt` fixtures are written in.
     ///
-    /// Shared with the namespace pre-scan's tests in
+    /// Shared with the namespace read's tests in
     /// [`prepare`](crate::pipeline::prepare), which must agree with this frontend about what a
     /// `.hir` root declares — see `hir_declared_namespace`. One set of fixtures, so that
-    /// the scan cannot be tested against text this frontend has never compiled.
+    /// the read cannot be tested against text this frontend has never compiled.
     pub(crate) const MODULE: &str = r#"
 builtin.module public @lib {
     builtin.function public extern("C") @main() {
@@ -600,7 +600,7 @@ builtin.module public @lib {
     /// The component's name `hir_ns::test` is a two-segment path, printed one `@`-name per
     /// segment, which is also how the printer emits it.
     ///
-    /// Shared with the namespace pre-scan's tests, as [`MODULE`] is.
+    /// Shared with the namespace read's tests, as [`MODULE`] is.
     pub(crate) const WORLD: &str = r#"
 builtin.world {
     builtin.component private @hir_ns::@test {
@@ -615,7 +615,7 @@ builtin.world {
 
     /// A component on its own, without the enclosing world.
     ///
-    /// Shared with the namespace pre-scan's tests, as [`MODULE`] is.
+    /// Shared with the namespace read's tests, as [`MODULE`] is.
     pub(crate) const COMPONENT: &str = r#"
 builtin.component private @hir_ns::@test {
     builtin.module private @test {

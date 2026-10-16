@@ -21,14 +21,14 @@ use miden_note_schema::NoteStorageSchema;
 use miden_protocol::{
     account::{
         Account, AccountBuilder, AccountComponent, AccountId, AccountStorage, AccountType,
-        StorageSlot, StorageSlotName,
+        StorageSlot, StorageSlotName, auth::AuthScheme,
     },
     asset::{Asset, AssetAmount},
     note::{NoteScript, PartialNote},
     transaction::{ExecutedTransaction, TransactionMeasurements, TransactionScript},
 };
 use miden_standards::{testing::note::NoteBuilder, tx_script::SendNotesTransactionScript};
-use miden_testing::{MockChain, MockTransaction, MockTransactionBuilder};
+use miden_testing::{Auth, MockChain, MockTransaction, MockTransactionBuilder};
 use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::{
@@ -36,10 +36,13 @@ use midenc_integration_test_support::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-/// Host-side mirror of the transaction-script arguments declared in
-/// `examples/basic-wallet-tx-script`, spelled in the felt-repr primitives its field types encode
-/// to (`Tag`/`NoteType` = one felt, `Recipient` = one word, `Asset` = id and value words); what
-/// must match the script's struct is the felt-repr wire sequence, not the Rust fields.
+use super::sysroot_with_standard_components;
+
+/// Host-side mirror of the transaction-script arguments declared, with the same layout, in
+/// `examples/basic-wallet-tx-script` and `examples/std-wallet-tx-script`, spelled in the felt-repr
+/// primitives their field types encode to (`Tag`/`NoteType` = one felt, `Recipient` = one word,
+/// `Asset` = id and value words); what must match the scripts' structs is the felt-repr wire
+/// sequence, not the Rust fields.
 #[derive(FromFeltRepr, ToFeltRepr)]
 struct TxScriptArgs {
     tag: miden_field::Felt,
@@ -49,9 +52,16 @@ struct TxScriptArgs {
     asset_value: miden_field::Word,
 }
 
-/// Converts a value's felt representation into `miden_core::Felt` elements.
+/// Encodes an account id the way a Rust note stores its `AccountId` field: suffix, then prefix.
 pub(crate) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
-    vec![value.prefix().as_felt(), value.suffix()]
+    vec![value.suffix(), value.prefix().as_felt()]
+}
+
+/// The Falcon basic authentication of the accounts the mock-chain tests run on.
+pub(crate) fn basic_auth() -> Auth {
+    Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    }
 }
 
 // FIELD <-> PROTOCOL FELT CONVERSIONS
@@ -116,6 +126,9 @@ pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
 // ================================================================================================
 
 /// Compiles a Rust project and returns its Miden package.
+///
+/// The project resolves its dependencies from the toolchain extended with the `miden-standards`
+/// account components, so it can depend on a standard component by name.
 pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool) -> Arc<Package> {
     with_rust_package_test(project_path.as_ref(), release, CompilerTest::compile_package)
 }
@@ -134,7 +147,12 @@ fn with_rust_package_test<T>(
 ) -> T {
     let _build_lock = example_build_lock(&workspace_root());
     let config = WasmTranslationConfig::default();
-    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(project_path, config, []);
+    let sysroot = sysroot_with_standard_components().display().to_string();
+    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
+        project_path,
+        config,
+        ["--sysroot".to_string(), sysroot],
+    );
 
     if release {
         builder.with_release(true);

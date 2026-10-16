@@ -6,7 +6,7 @@ use std::{
 };
 
 use heck::ToUpperCamelCase;
-use midenc_frontend_wasm_metadata::namespace::WIT_KEYWORDS;
+use midenc_frontend_wasm_metadata::namespace::is_wit_keyword;
 use proc_macro2::{Span, TokenStream};
 use quote::quote_spanned;
 use syn::{Attribute, ItemStruct, Type, ext::IdentExt, spanned::Spanned};
@@ -942,7 +942,7 @@ pub(crate) fn exported_type_wit_name(
     item_kind: &str,
 ) -> Result<String, syn::Error> {
     let wit_name = rust_ident_to_wit_name(ident)?;
-    if WIT_KEYWORDS.contains(&wit_name.replace('-', "_").as_str()) {
+    if is_wit_keyword(&wit_name) {
         return Err(syn::Error::new(
             ident.span(),
             format!(

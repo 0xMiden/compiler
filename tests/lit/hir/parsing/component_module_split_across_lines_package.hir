@@ -1,0 +1,20 @@
+// RUN: midenc %s --emit=mast=- -o %t/out.masp 2>&1 | filecheck %s
+//
+// A declaration may be split across lines anywhere the parser allows whitespace, and the
+// package is still rooted at the component that holds it.
+
+builtin.world {
+    builtin.component public
+    @acme::
+    @app {
+        builtin.module
+        public @api {
+            builtin.function public extern("C") @body() -> u32 {
+                %v = arith.constant 1 : u32;
+                builtin.ret %v : (u32);
+            };
+        };
+    };
+};
+
+// CHECK: # ::acme::app::api::body

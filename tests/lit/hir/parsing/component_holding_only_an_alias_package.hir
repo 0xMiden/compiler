@@ -1,0 +1,18 @@
+// RUN: midenc %s --emit=mast=- -o %t/out.masp 2>&1 | filecheck %s
+//
+// A function alias introduces a callable name, so a component holding only an alias defines
+// something: the package is rooted at the component, not at the module beside it.
+
+builtin.world {
+    builtin.component public @acme::@app {
+        builtin.function_alias public @entry -> ::@support::@body;
+    };
+    builtin.module public @support {
+        builtin.function public extern("C") @body() -> u32 {
+            %v = arith.constant 1 : u32;
+            builtin.ret %v : (u32);
+        };
+    };
+};
+
+// CHECK: # ::acme::app::entry

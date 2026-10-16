@@ -23,9 +23,7 @@ use miden_core::{
 use miden_mast_package::Package;
 use miden_protocol::{
     Word,
-    account::{
-        Account, AccountBuilder, AccountComponent, AccountId, AccountType, auth::AuthScheme,
-    },
+    account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType},
     asset::{Asset, FungibleAsset},
     crypto::rand::RandomCoin,
     note::{
@@ -38,13 +36,13 @@ use miden_standards::{
     note::{P2idNote, P2idNoteStorage},
     testing::note::NoteBuilder,
 };
-use miden_testing::{AccountState, Auth, MockChain, MockChainBuilder};
+use miden_testing::{AccountState, MockChain, MockChainBuilder};
 use midenc_expect_test::expect;
 use midenc_integration_test_support::testing::stripped_mast_size_str;
 
 use super::support::{
-    assert_account_has_fungible_asset, block_on, compile_rust_package, execute_tx, load_or_build,
-    nextest_cache_dir, note_script_root, single_note_cycles, to_core_felts,
+    assert_account_has_fungible_asset, basic_auth, block_on, compile_rust_package, execute_tx,
+    load_or_build, nextest_cache_dir, note_script_root, single_note_cycles, to_core_felts,
 };
 
 /// Tag used for the SWAPP notes themselves.
@@ -133,7 +131,7 @@ impl SwapTerms {
     }
 
     /// Encodes the swap terms into the SWAPP note storage layout expected by the note script:
-    /// `[requested_asset_id (4), requested_total, creator_prefix, creator_suffix, note_type,
+    /// `[requested_asset_id (4), requested_total, creator_suffix, creator_prefix, note_type,
     /// p2id_tag, p2id_script_root (4)]`.
     fn to_storage_felts(&self) -> Vec<Felt> {
         let requested_id: [Felt; 4] = self.requested_asset.to_id_word().into();
@@ -146,13 +144,6 @@ impl SwapTerms {
         storage.push(Felt::from(self.p2id_tag));
         storage.extend(p2id_root);
         storage
-    }
-}
-
-/// Returns the auth method used for all accounts in the SWAPP tests.
-fn basic_auth() -> Auth {
-    Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
     }
 }
 
@@ -305,7 +296,10 @@ fn swapp_note_package_size() {
     // adjacent stack operations that undo each other, such as `swap.1 swap.1` (176 bytes fewer);
     // 43532 with no `u32assert` on a constant-address 32-bit store, one fewer per 32-bit global
     // initializer: the note's `init` stores four such globals, 11 bytes per assertion and 2
-    // padding `noop`s its shorter block no longer needs (46 bytes fewer).
+    // padding `noop`s its shorter block no longer needs (46 bytes fewer); 43955 since codegen
+    // pads the call window under the arguments of a cross-context call (423 bytes more, over the
+    // note's five call sites into the wallet: two `receive_asset`, two `create_note` and one
+    // `move_asset_to_note`).
     //
     // The 1260 bytes over 42589 at 43849:
     // - new with the integer newtypes: the note builds the `Tag` and the `NoteType` it passes
@@ -315,7 +309,7 @@ fn swapp_note_package_size() {
     //   returns as it lifts it;
     // - since the generated bindings: the frontend masks the `u16`s the note passes the kernel
     //   to their declared type.
-    expect!["43532"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
+    expect!["43955"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
 }
 
 /// Tests a full fill of a SWAPP note.
@@ -384,11 +378,13 @@ fn swapp_note_full_fill_transfers_assets() {
     // the `init` that every call into a component runs (44 fewer): the note's `init` stores four
     // such globals (14 cycles: 12 for the assertions, 2 for padding `noop`s), and the wallet's,
     // run for each of `receive_asset`, `create_note` and `move_asset_to_note`, three (10 cycles
-    // each: 9, and 1 for an op batch its stores no longer fill). The 294 cycles over 12904 at
+    // each: 9, and 1 for an op batch its stores no longer fill); 13070 since codegen pads the
+    // call window under the arguments of a cross-context call (61 cycles more, on the calls of
+    // `receive_asset`, `create_note` and `move_asset_to_note`). The 294 cycles over 12904 at
     // 13198: the note's `TryFrom<Felt>` checks of the `Tag` and `NoteType` from its storage and
     // the lift masks (both new with the integer newtypes), the wallet's check that the
     // `NoteType` is private or public, and the frontend's masks (see `swapp_note_package_size`).
-    expect!["13009"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["13070"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 50);
@@ -483,9 +479,10 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
     // since casts that change only a type are renames (61 cycles fewer) and the stack peephole
     // deletes operations that undo each other (193 fewer); 18104 with no `u32assert` on a
     // constant-address 32-bit store (54 fewer: as at the full fill, and the wallet's `init` once
-    // more, for the remainder note's `create_note`). The 421 cycles over 17991 at 18412 are those
-    // listed at the full fill, with two notes created.
-    expect!["18104"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    // more, for the remainder note's `create_note`); 18205 with the padded call window (101
+    // cycles more: the 61 of the full fill, and 40 for the remainder note's `create_note`). The
+    // 421 cycles over 17991 at 18412 are those listed at the full fill, with two notes created.
+    expect!["18205"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 3);
@@ -573,8 +570,10 @@ fn swapp_note_creator_reclaims_offered_asset() {
     // peephole deleted operations that undo each other (75 fewer; see
     // `swapp_note_package_size`). 5472 before the `u32assert` on a constant-address 32-bit store
     // went, one fewer per 32-bit global initializer: the note's `init` (14 cycles) and the
-    // wallet's, run once for `receive_asset` (10 cycles; see the full fill).
-    expect!["5448"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    // wallet's, run once for `receive_asset` (10 cycles; see the full fill). 13 cycles more (5448
+    // before) since codegen pads the call window under the arguments of a cross-context call, on
+    // the note's one call into the wallet, `receive_asset`.
+    expect!["5461"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let alice_account = chain.committed_account(alice.id()).unwrap();
     assert_account_has_fungible_asset(alice_account, usdc_faucet.id(), 50);

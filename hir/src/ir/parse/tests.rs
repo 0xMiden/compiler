@@ -697,12 +697,16 @@ fn parsing_a_module_still_wraps_it_in_a_world() -> TestResult {
     Ok(())
 }
 
-/// Well-formed as text, ill-formed as IR: `builtin.function` carries the `SingleRegion` trait, so
-/// a function with no region at all parses (it is how a declaration is written) and then fails
-/// verification with "requires exactly one region, but got 0".
+/// Well-formed as text, ill-formed as IR: a world holding a component nested in a shorter
+/// component that holds a module parses, and then fails the world's verification.
 const UNVERIFIABLE_SOURCE: &str = "\
-builtin.module public @lib {
-    builtin.function public extern(\"C\") @main();
+builtin.world {
+    builtin.component private @acme::@app {
+        builtin.module public @main {
+        };
+    };
+    builtin.component private @acme::@app::@main {
+    };
 };";
 
 #[test]
@@ -729,8 +733,8 @@ fn parsing_verifies_what_it_parsed() {
         .expect("the source is well-formed as text — only verification rejects it");
 
     assert!(
-        err.contains("invalid operation builtin.function"),
-        "expected the verifier's rejection of the region-less function, got: {err}"
+        err.contains("component `acme::app` and component `acme::app::main` nest"),
+        "expected the verifier's rejection of the nested components, got: {err}"
     );
 }
 
@@ -909,24 +913,158 @@ builtin.world {
     );
 }
 
+/// A function written without a body parses as a declaration, so a world may hold two
+/// declaration-only components whose names nest.
 #[test]
-fn nested_component_names_are_reported() {
+fn nested_declaration_only_components_parse() {
+    use crate::dialects::builtin::Component;
+
     let test = ParserTest::default();
     let source = "\
 builtin.world {
-    builtin.component private @acme::@app {
+    builtin.component private @x::@y {
+        builtin.function internal extern(\"C\") @f(%a: u32) -> u32;
     };
+    builtin.component private @x::@y::@z {
+        builtin.function internal extern(\"C\") @g(%a: u32) -> u32;
+    };
+};";
+    let world = test
+        .parse_any("nested_stubs.hir", source)
+        .expect("nested declaration-only components parse")
+        .try_downcast_op::<World>()
+        .expect("the root is a world");
+    let world = world.borrow();
+    for name in ["x::y", "x::y::z"] {
+        let symbol = world.get(name.into()).unwrap_or_else(|| panic!("`{name}` is declared"));
+        let symbol = symbol.borrow();
+        let component =
+            symbol.as_symbol_operation().downcast_ref::<Component>().expect("a component");
+        assert!(component.is_declaration_only(), "`{name}` holds declarations only");
+    }
+}
+
+/// A component nested in a shorter component that holds a module is reported for parsed input,
+/// whichever of the two is listed first.
+#[test]
+fn nested_component_names_are_reported() {
+    let shorter = "
+    builtin.component private @acme::@app {
+        builtin.module public @main {
+        };
+    };";
+    let longer = "
     builtin.component private @acme::@app::@main {
+    };";
+    for (first, second) in [(shorter, longer), (longer, shorter)] {
+        let test = ParserTest::default();
+        let source = alloc::format!("builtin.world {{{first}{second}\n}};");
+        let err = test
+            .parse_any("nesting.hir", &source)
+            .expect_err("a component nested in one with a module must not parse")
+            .to_string();
+        assert!(
+            err.contains(
+                "(`acme::app` is a segment-prefix of `acme::app::main`); a component namespace \
+                 may only have another nested in it while it holds declarations only"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
+}
+
+/// A declaration-only component declaring a function named by the segment of a nested
+/// component's name that follows its own is reported for parsed input, whichever of the two is
+/// listed first.
+#[test]
+fn a_declaration_captured_by_a_nested_component_is_reported() {
+    let shorter = "
+    builtin.component private @x::@y {
+        builtin.function internal extern(\"C\") @z(%a: u32) -> u32;
+    };";
+    let longer = "
+    builtin.component private @x::@y::@z {
+    };";
+    for (first, second) in [(shorter, longer), (longer, shorter)] {
+        let test = ParserTest::default();
+        let source = alloc::format!("builtin.world {{{first}{second}\n}};");
+        let err = test
+            .parse_any("captured.hir", &source)
+            .expect_err("a declaration captured by a nested component must not parse")
+            .to_string();
+        assert!(
+            err.contains(
+                "component `x::y` declares `z`, which component `x::y::z` would capture: a path \
+                 `x::y::z` cannot name both"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
+}
+
+/// A declaration-only component declaring a function named by a segment of a nested component's
+/// name more than one segment longer than its own parses, and a path resolves to the function of
+/// the component it names.
+#[test]
+fn a_declaration_named_by_a_segment_of_a_deeper_component_parses() {
+    use crate::{FunctionIdent, SymbolPath};
+
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.component private @x::@y {
+        builtin.function internal extern(\"C\") @z(%a: u32) -> u32;
+    };
+    builtin.component private @x::@y::@z::@w {
+        builtin.function internal extern(\"C\") @g(%a: u32) -> u32;
+    };
+};";
+    let world = test
+        .parse_any("deeper.hir", source)
+        .expect("a deeper nesting captures nothing")
+        .try_downcast_op::<World>()
+        .expect("the root is a world");
+    let world = world.borrow();
+    for (id, component) in [("x::y::z", "x::y"), ("x::y::z::w::g", "x::y::z::w")] {
+        let function = id.parse::<FunctionIdent>().expect("valid function id");
+        let symbol = world
+            .resolve(&SymbolPath::from_masm_function_id(function))
+            .unwrap_or_else(|| panic!("`{id}` should resolve"));
+        let parent = symbol.borrow().as_symbol_operation().parent_op();
+        let expected = world.get(component.into()).expect("the component is declared");
+        assert_eq!(
+            parent,
+            Some(expected.borrow().as_symbol_operation().as_operation_ref()),
+            "`{id}` resolves in `{component}`"
+        );
+    }
+}
+
+/// A component nested in a shorter component holding a function body is reported for parsed
+/// input: the builders cannot check a body given to a function after it is declared, so the
+/// verifier of the world does.
+#[test]
+fn a_component_nested_in_a_component_with_a_function_body_is_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.component private @x::@y {
+        builtin.function public extern(\"C\") @f(%a: u32) -> u32 {
+            builtin.ret %a : (u32);
+        };
+    };
+    builtin.component private @x::@y::@z {
+        builtin.function internal extern(\"C\") @g(%a: u32) -> u32;
     };
 };";
     let err = test
-        .parse_any("nesting.hir", source)
-        .expect_err("components with nesting names must not parse")
+        .parse_any("body_in_shorter.hir", source)
+        .expect_err("a component nested in one with a function body must not parse")
         .to_string();
     assert!(
         err.contains(
-            "component `acme::app` and component `acme::app::main` nest (`acme::app` is a \
-             segment-prefix of `acme::app::main`); component namespaces must not nest"
+            "component `x::y` and component `x::y::z` nest (`x::y` is a segment-prefix of \
+             `x::y::z`)"
         ),
         "unexpected diagnostic: {err}"
     );
@@ -1337,4 +1475,29 @@ builtin.function public extern(\"C\") @entrypoint(%a: i32) -> i32 {{
         .expect("expected the operation to be rejected");
     let message = format!("{error}");
     assert!(message.contains("too many operand groups"), "{message}");
+}
+
+/// An anchored source is one operation: a second top-level operation after it is reported, not
+/// silently dropped.
+#[test]
+fn an_operation_after_the_top_level_one_is_reported() {
+    let test = ParserTest::default();
+    let source = "builtin.world {\n};\nbuiltin.module public @other {\n};";
+    let error = test
+        .parse_any("trailing_module.hir", source)
+        .expect_err("a second top-level operation must not parse");
+    let message = format!("{error:?}");
+    assert!(message.contains("unexpected token"), "{message}");
+    assert!(message.contains("end of input after the top-level operation"), "{message}");
+}
+
+/// Text after the top-level operation that is not an operation at all is reported too.
+#[test]
+fn garbage_after_the_top_level_operation_is_reported() {
+    let test = ParserTest::default();
+    let source = "builtin.module public @app {\n};\nthis is garbage %% ;;; {{";
+    assert!(
+        test.parse_any("trailing_garbage.hir", source).is_err(),
+        "trailing text must not parse"
+    );
 }

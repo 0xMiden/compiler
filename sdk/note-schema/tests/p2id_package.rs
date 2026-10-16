@@ -22,7 +22,7 @@ fn p2id_schema_builds_and_decodes_account_id_storage() {
 
     let built = schema.builder().set("target-account-id", &bech32).unwrap().build().unwrap();
     let expected =
-        NoteStorage::new(vec![account_id.prefix().as_felt(), account_id.suffix()]).unwrap();
+        NoteStorage::new(vec![account_id.suffix(), account_id.prefix().as_felt()]).unwrap();
     assert_eq!(built, expected);
 
     let decoded = schema.decode(&built).unwrap();

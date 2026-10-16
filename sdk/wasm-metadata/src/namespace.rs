@@ -7,6 +7,8 @@
 use alloc::string::{String, ToString};
 use core::fmt;
 
+use heck::ToUpperCamelCase;
+
 /// The WIT keywords, spelled as snake_case segments; a keyword cannot name a WIT package,
 /// interface or type.
 ///
@@ -58,6 +60,12 @@ pub const WIT_KEYWORDS: &[&str] = &[
     "world",
 ];
 
+/// Whether `ident`, spelled in kebab-case (`error-context`) or snake_case (`error_context`), is
+/// one of the [`WIT_KEYWORDS`].
+pub fn is_wit_keyword(ident: &str) -> bool {
+    WIT_KEYWORDS.contains(&ident.replace('-', "_").as_str())
+}
+
 /// The lowercase strict and reserved keywords of Rust 2024, which cannot name the modules the
 /// generated bindings derive from namespace segments.
 pub const RUST_KEYWORDS: &[&str] = &[
@@ -68,9 +76,33 @@ pub const RUST_KEYWORDS: &[&str] = &[
     "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
 ];
 
+/// The Rust name wit-bindgen gives the WIT type `wit_name` (with or without the `%` keyword
+/// escape): its upper camel case, except `guest`, which becomes `Guest_` because wit-bindgen
+/// reserves `Guest` for the traits of exported interfaces.
+pub fn rust_type_name(wit_name: &str) -> String {
+    match wit_name.trim_start_matches('%') {
+        "guest" => "Guest_".to_string(),
+        name => name.to_upper_camel_case(),
+    }
+}
+
 /// The name of the SDK's WIT interface, in the `miden:base` package, that defines the core types
 /// (`felt`, `word`, ...).
 pub const CORE_TYPES_INTERFACE: &str = "core-types";
+
+/// Expands to the [`CORE_TYPES_PACKAGE`] literal, so [`CORE_TYPES_INTERFACE_ID`] can be built from
+/// it with `concat!`.
+macro_rules! core_types_package {
+    () => {
+        "miden:base"
+    };
+}
+
+/// The id, without version, of the SDK's own WIT package, which holds [`CORE_TYPES_INTERFACE`].
+pub const CORE_TYPES_PACKAGE: &str = core_types_package!();
+
+/// The fully versioned id of [`CORE_TYPES_INTERFACE`], as WIT documents `use` it.
+pub const CORE_TYPES_INTERFACE_ID: &str = concat!(core_types_package!(), "/core-types@1.0.0");
 
 /// The namespace segment whose WIT spelling is [`CORE_TYPES_INTERFACE`].
 pub const CORE_TYPES_SEGMENT: &str = "core_types";
@@ -232,6 +264,15 @@ pub fn validate_namespace(namespace: &str) -> Result<(), NamespaceError> {
 mod tests {
     use super::*;
 
+    /// Type names are upper camel case, and `guest` alone is renamed to `Guest_`.
+    #[test]
+    fn rust_type_names() {
+        assert_eq!(rust_type_name("token-config"), "TokenConfig");
+        assert_eq!(rust_type_name("%record"), "Record");
+        assert_eq!(rust_type_name("guest"), "Guest_");
+        assert_eq!(rust_type_name("guest-list"), "GuestList");
+    }
+
     #[test]
     fn validates_whole_namespaces() {
         assert_eq!(validate_namespace("miden::counter_contract::counter_contract"), Ok(()));
@@ -323,8 +364,21 @@ mod tests {
         }
     }
 
+    /// A WIT keyword is recognized in both its kebab-case and snake_case spellings.
+    #[test]
+    fn wit_keywords_match_in_either_spelling() {
+        assert!(is_wit_keyword("error-context"));
+        assert!(is_wit_keyword("error_context"));
+        assert!(is_wit_keyword("type"));
+        assert!(!is_wit_keyword("error-contexts"));
+    }
+
     #[test]
     fn core_types_segment_is_spelled_like_the_interface() {
         assert_eq!(CORE_TYPES_SEGMENT.replace('_', "-"), CORE_TYPES_INTERFACE);
+        assert_eq!(
+            CORE_TYPES_INTERFACE_ID,
+            alloc::format!("{CORE_TYPES_PACKAGE}/{CORE_TYPES_INTERFACE}@1.0.0")
+        );
     }
 }

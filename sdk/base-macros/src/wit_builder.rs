@@ -40,7 +40,7 @@ impl WitBuilder {
     ) -> (String, T) {
         let interface_name = namespace.wit_interface();
         let mut wit = Self::new(generated_by, &namespace.wit_package(), package_version);
-        wit.use_path(&CORE_TYPES_INTERFACE_ID);
+        wit.use_path(CORE_TYPES_INTERFACE_ID);
         wit.blank_line();
         let result = wit.interface(&interface_name, build);
         wit.blank_line();

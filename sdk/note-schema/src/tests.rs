@@ -46,8 +46,8 @@ package miden:base@1.0.0 {
         }
 
         record account-id {
-            prefix: felt,
             suffix: felt,
+            prefix: felt,
         }
     }
 }
@@ -127,7 +127,7 @@ fn reader_rejects_noncanonical_native_core_type_shapes() {
         ("word", "record felt { inner: f32 } record word { a: felt, b: felt, c: felt }"),
         (
             "account-id",
-            "record felt { inner: f32 } record account-id { suffix: felt, prefix: felt }",
+            "record felt { inner: f32 } record account-id { prefix: felt, suffix: felt }",
         ),
         ("asset-amount", "record felt { inner: f32 } record asset-amount { inner: u64 }"),
     ] {
@@ -187,8 +187,8 @@ fn builder_normalizes_paths_and_uses_declaration_order() {
         Felt::ONE,
         Felt::ONE,
         Felt::from_u32(9),
-        account_id.prefix().as_felt(),
         account_id.suffix(),
+        account_id.prefix().as_felt(),
     ])
     .unwrap();
     assert_eq!(storage, expected);
@@ -229,10 +229,10 @@ fn decoder_uses_structural_fallback_without_a_codec() {
     let DecodedValueKind::Record(fields) = account.kind() else {
         panic!("account-id must use its structural record fallback");
     };
-    assert_eq!(fields[0].name(), Some("prefix"));
-    assert_eq!(fields[0].to_string(), account_id.prefix().as_u64().to_string());
-    assert_eq!(fields[1].name(), Some("suffix"));
-    assert_eq!(fields[1].to_string(), account_id.suffix().as_canonical_u64().to_string());
+    assert_eq!(fields[0].name(), Some("suffix"));
+    assert_eq!(fields[0].to_string(), account_id.suffix().as_canonical_u64().to_string());
+    assert_eq!(fields[1].name(), Some("prefix"));
+    assert_eq!(fields[1].to_string(), account_id.prefix().as_u64().to_string());
 }
 
 #[test]
@@ -287,8 +287,8 @@ fn builder_validates_codec_records_assembled_from_child_paths() {
         .build()
         .unwrap();
     let felts = storage.to_elements();
-    assert_eq!(felts[felts.len() - 2], account_id.prefix().as_felt());
-    assert_eq!(felts[felts.len() - 1], account_id.suffix());
+    assert_eq!(felts[felts.len() - 2], account_id.suffix());
+    assert_eq!(felts[felts.len() - 1], account_id.prefix().as_felt());
 }
 
 #[test]
@@ -353,7 +353,7 @@ fn builder_rejects_nested_record_constructor_paths() {
 fn decoder_rejects_invalid_option_and_variant_tags() {
     let schema = NoteStorageSchema::from_wit_text(LAYOUT_SCHEMA).unwrap();
     let (account_id, _) = account_id();
-    let suffix = [account_id.prefix().as_felt(), account_id.suffix()];
+    let suffix = [account_id.suffix(), account_id.prefix().as_felt()];
 
     let invalid_option = NoteStorage::new(
         [

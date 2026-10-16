@@ -49,9 +49,11 @@ impl WorldBuilder {
     /// Returns an error when Miden Assembly cannot spell a segment of the name, when the world
     /// declares a tree of modules or interfaces reaching the path the name spells (a module, or a
     /// function or global named by the raw last segment), which the component would shadow, when
-    /// the name of another component nests with this one (one is a segment-prefix of the other),
-    /// since resolution prefers the longest registered name, or when a world-level symbol has the
-    /// name or the path of the component (see [World::reject_component_shadowing]).
+    /// the name of another component nests with this one (one is a segment-prefix of the other)
+    /// and the shorter of the two is not declaration-only or declares a symbol named by the last
+    /// segment of a longer name one segment longer than its own, since resolution prefers the
+    /// longest registered name, or when a world-level symbol has the name or the path of the
+    /// component (see [World::reject_component_shadowing]).
     pub fn define_component(&mut self, name: Ident) -> Result<ComponentRef, Report> {
         let name = Ident::new(Component::canonical_name(name.name)?, name.span);
         {
@@ -333,50 +335,291 @@ mod tests {
             .expect("a component beside the module tree is accepted");
     }
 
-    /// Two world-level components whose names nest are rejected in either definition order;
-    /// components sharing only a proper prefix of segments are accepted.
-    #[test]
-    fn nested_component_names_are_rejected() {
+    /// A fresh world and its builder.
+    fn new_world() -> (Rc<Context>, WorldBuilder) {
+        let context = Rc::new(Context::default());
+        let mut builder = OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        (context, WorldBuilder::new(world))
+    }
+
+    /// Defines the declaration-only component `name` holding the function declaration `leaf`.
+    fn define_stub(
+        context: &Rc<Context>,
+        world_builder: &mut WorldBuilder,
+        name: &str,
+        leaf: &str,
+    ) -> Result<ComponentRef, Report> {
+        use crate::{
+            Visibility,
+            dialects::builtin::{ComponentBuilder, attributes::Signature},
+        };
+
+        let component = world_builder.define_component(Ident::from(name))?;
+        ComponentBuilder::new(component).define_function(
+            Ident::from(leaf),
+            Visibility::Internal,
+            Signature::new(context, [], []),
+        )?;
+        assert!(component.borrow().is_declaration_only());
+        Ok(component)
+    }
+
+    /// The diagnostic for the components `component` and `existing`, whose names nest.
+    fn nesting_error(component: &str, existing: &str) -> alloc::string::String {
         use alloc::string::ToString;
 
-        let new_world = || {
-            let context = Rc::new(Context::default());
-            let mut builder = OpBuilder::new(context);
-            let world = builder.create::<World, ()>(SourceSpan::default())()
-                .expect("failed to create world");
-            WorldBuilder::new(world)
-        };
-        for (first, second) in [("acme::app::app", "acme::app::app::main"), ("a::b::c", "a::b")] {
-            let mut world_builder = new_world();
-            world_builder
-                .define_component(Ident::from(first))
+        use crate::{dialects::builtin::ops::nested_components_error, interner::Symbol};
+
+        nested_components_error(Symbol::intern(component), Symbol::intern(existing)).to_string()
+    }
+
+    /// A component nested in a shorter component that holds a module is rejected, whichever of
+    /// the two is defined first; components sharing only a proper prefix of segments are accepted.
+    #[test]
+    fn a_component_nested_in_a_component_with_a_module_is_rejected() {
+        use alloc::string::ToString;
+
+        use crate::dialects::builtin::ComponentBuilder;
+
+        for (shorter, longer) in [("acme::app::app", "acme::app::app::main"), ("a::b", "a::b::c")] {
+            // The shorter, with a module, first
+            let (_context, mut world_builder) = new_world();
+            let component = world_builder
+                .define_component(Ident::from(shorter))
                 .expect("failed to define component");
-            let Err(err) = world_builder.define_component(Ident::from(second)) else {
-                panic!("the components `{first}` and `{second}` nest");
+            ComponentBuilder::new(component)
+                .define_module(Ident::from("m"))
+                .expect("failed to define module");
+            let Err(err) = world_builder.define_component(Ident::from(longer)) else {
+                panic!("`{longer}` nests in `{shorter}`, which holds a module");
             };
-            let (shorter, longer) = if first.len() < second.len() {
-                (first, second)
-            } else {
-                (second, first)
-            };
+            assert_eq!(err.to_string(), nesting_error(longer, shorter));
+
+            // The longer first: the shorter is accepted while empty, but cannot gain a module
+            // or an interface
+            let (_context, mut world_builder) = new_world();
+            world_builder
+                .define_component(Ident::from(longer))
+                .expect("failed to define component");
+            let component = world_builder
+                .define_component(Ident::from(shorter))
+                .expect("an empty component is declaration-only");
+            let mut component_builder = ComponentBuilder::new(component);
+            let module = component_builder.define_module(Ident::from("m")).map(|_| ());
+            assert_eq!(module.map_err(|err| err.to_string()), Err(nesting_error(shorter, longer)));
+            let interface = component_builder.define_interface(Ident::from("i")).map(|_| ());
             assert_eq!(
-                err.to_string(),
-                alloc::format!(
-                    "component `{second}` and component `{first}` nest (`{shorter}` is a \
-                     segment-prefix of `{longer}`); component namespaces must not nest"
-                )
+                interface.map_err(|err| err.to_string()),
+                Err(nesting_error(shorter, longer))
             );
         }
 
-        let mut world_builder = new_world();
-        world_builder
+        let (_context, mut world_builder) = new_world();
+        let component = world_builder
             .define_component(Ident::from("acme::app::app"))
             .expect("failed to define component");
+        ComponentBuilder::new(component)
+            .define_module(Ident::from("m"))
+            .expect("failed to define module");
         for name in ["acme::app::apps", "acme::app::other", "acme::ap"] {
             world_builder
                 .define_component(Ident::from(name))
                 .unwrap_or_else(|err| panic!("`{name}` does not nest: {err}"));
         }
+    }
+
+    /// Two declaration-only components whose names nest are accepted in either definition order,
+    /// and a path under either resolves to the function of the component it names.
+    #[test]
+    fn nested_declaration_only_components_are_accepted() {
+        use crate::{FunctionIdent, SymbolPath};
+
+        for (first, first_leaf, second, second_leaf) in
+            [("x::y", "f", "x::y::z", "g"), ("x::y::z", "g", "x::y", "f")]
+        {
+            let (context, mut world_builder) = new_world();
+            let first_ref = define_stub(&context, &mut world_builder, first, first_leaf)
+                .expect("failed to define the first stub");
+            let second_ref = define_stub(&context, &mut world_builder, second, second_leaf)
+                .unwrap_or_else(|err| panic!("`{first}` and `{second}` are stubs: {err}"));
+
+            let resolve = |id: &str| {
+                let id = id.parse::<FunctionIdent>().expect("valid function id");
+                let symbol = world_builder
+                    .world
+                    .borrow()
+                    .resolve(&SymbolPath::from_masm_function_id(id))
+                    .unwrap_or_else(|| panic!("`{id}` should resolve"));
+                let parent = symbol.borrow().as_symbol_operation().parent_op();
+                parent.expect("a function has a parent")
+            };
+            let (y, z) = if first == "x::y" {
+                (first_ref, second_ref)
+            } else {
+                (second_ref, first_ref)
+            };
+            assert_eq!(resolve("x::y::f"), y.as_operation_ref());
+            assert_eq!(resolve("x::y::z::g"), z.as_operation_ref());
+        }
+    }
+
+    /// A declaration-only component declaring a function named by the last segment of a nesting
+    /// component's name one segment longer than its own is rejected, whichever of the two is
+    /// defined first, since the longer name would capture the path of the function.
+    #[test]
+    fn a_declaration_captured_by_a_nested_component_is_rejected() {
+        use alloc::string::ToString;
+
+        use crate::{
+            Visibility,
+            dialects::builtin::{ComponentBuilder, attributes::Signature},
+        };
+
+        let expected = "component `x::y` declares `z`, which component `x::y::z` would capture: a \
+                        path `x::y::z` cannot name both";
+        // The stub first
+        let (context, mut world_builder) = new_world();
+        define_stub(&context, &mut world_builder, "x::y", "z").expect("failed to define the stub");
+        let Err(err) = world_builder.define_component(Ident::from("x::y::z")) else {
+            panic!("`x::y::z` captures `x::y::z`");
+        };
+        assert_eq!(err.to_string(), expected);
+
+        // The longer first: the stub cannot declare the captured leaf
+        let (context, mut world_builder) = new_world();
+        world_builder
+            .define_component(Ident::from("x::y::z"))
+            .expect("failed to define component");
+        let Err(err) = define_stub(&context, &mut world_builder, "x::y", "z") else {
+            panic!("`x::y::z` captures `x::y::z`");
+        };
+        assert_eq!(err.to_string(), expected);
+        let stub = world_builder.find_component("x::y".into()).expect("`x::y` is defined");
+        ComponentBuilder::new(stub)
+            .define_function(
+                Ident::from("f"),
+                Visibility::Internal,
+                Signature::new(&context, [], []),
+            )
+            .expect("`x::y::f` is not captured");
+    }
+
+    /// A declaration-only component declaring a function named by a segment of a nesting
+    /// component's name more than one segment longer than its own is accepted, whichever of the
+    /// two is defined first: no component is named by the path of the function, so it resolves to
+    /// the function, and a path under the longer name to that component. This holds for the leaf
+    /// named by the last segment of the longer name, too (`w` for `x::y` and `x::y::z::w`).
+    #[test]
+    fn a_declaration_named_by_a_segment_of_a_deeper_component_is_accepted() {
+        use crate::{FunctionIdent, SymbolPath};
+
+        for (stub_first, leaf) in [(true, "z"), (false, "z"), (true, "w"), (false, "w")] {
+            let (context, mut world_builder) = new_world();
+            let (stub, deeper) = if stub_first {
+                let stub = define_stub(&context, &mut world_builder, "x::y", leaf)
+                    .expect("failed to define the stub");
+                let deeper = define_stub(&context, &mut world_builder, "x::y::z::w", "g")
+                    .expect("`x::y::z::w` captures nothing");
+                (stub, deeper)
+            } else {
+                let deeper = define_stub(&context, &mut world_builder, "x::y::z::w", "g")
+                    .expect("failed to define the stub");
+                let stub = define_stub(&context, &mut world_builder, "x::y", leaf)
+                    .expect("`x::y::z::w` captures nothing");
+                (stub, deeper)
+            };
+
+            let parent_of = |id: &str| {
+                let id = id.parse::<FunctionIdent>().expect("valid function id");
+                let symbol = world_builder
+                    .world
+                    .borrow()
+                    .resolve(&SymbolPath::from_masm_function_id(id))
+                    .unwrap_or_else(|| panic!("`{id}` should resolve"));
+                let parent = symbol.borrow().as_symbol_operation().parent_op();
+                parent.expect("a function has a parent")
+            };
+            assert_eq!(parent_of(&alloc::format!("x::y::{leaf}")), stub.as_operation_ref());
+            assert_eq!(parent_of("x::y::z::w::g"), deeper.as_operation_ref());
+        }
+    }
+
+    /// A function declared in a component a longer one nests in, and given a body afterwards, is
+    /// accepted by the builders but rejected by the verifier of the world.
+    #[test]
+    fn a_body_given_to_a_function_of_a_nesting_component_is_rejected_by_the_world_verifier() {
+        use alloc::string::ToString;
+
+        use crate::{
+            Verify, Visibility,
+            dialects::builtin::{ComponentBuilder, FunctionBuilder, attributes::Signature},
+        };
+
+        let (context, mut world_builder) = new_world();
+        world_builder
+            .define_component(Ident::from("x::y::z"))
+            .expect("failed to define component");
+        let stub = world_builder
+            .define_component(Ident::from("x::y"))
+            .expect("an empty component is declaration-only");
+        let function = ComponentBuilder::new(stub)
+            .define_function(Ident::from("f"), Visibility::Public, Signature::new(&context, [], []))
+            .expect("`x::y::f` is not captured");
+        let world = world_builder.world;
+        let verify = || {
+            Verify::<dyn SymbolTable>::verify(&*world.borrow(), &context)
+                .map_err(|err| err.to_string())
+        };
+        assert_eq!(verify(), Ok(()));
+
+        let mut builder = OpBuilder::new(context.clone());
+        FunctionBuilder::new(function, &mut builder);
+        assert!(!stub.borrow().is_declaration_only());
+        assert_eq!(verify(), Err(nesting_error("x::y::z", "x::y")));
+    }
+
+    /// A component with a module tree nested in a shorter declaration-only component is accepted:
+    /// its own paths resolve through its longer name, and the shorter one holds leaf functions at
+    /// its own level only, which the longer name never captures.
+    #[test]
+    fn a_component_with_a_module_nested_in_a_declaration_only_component_is_accepted() {
+        use crate::{
+            FunctionIdent, SymbolPath, Visibility,
+            dialects::builtin::{ComponentBuilder, attributes::Signature},
+        };
+
+        let (context, mut world_builder) = new_world();
+        let stub = define_stub(&context, &mut world_builder, "acme::math", "add")
+            .expect("failed to define stub");
+        let app = world_builder
+            .define_component(Ident::from("acme::math::app"))
+            .expect("a component nested in a declaration-only one is accepted");
+        let m = ComponentBuilder::new(app)
+            .define_module(Ident::from("m"))
+            .expect("the longer component may hold a module");
+        let f = ModuleBuilder::new(m)
+            .define_function(Ident::from("f"), Visibility::Public, Signature::new(&context, [], []))
+            .expect("failed to define f");
+
+        let resolve = |id: &str| {
+            let id = id.parse::<FunctionIdent>().expect("valid function id");
+            world_builder
+                .world
+                .borrow()
+                .resolve(&SymbolPath::from_masm_function_id(id))
+                .unwrap_or_else(|| panic!("`{id}` should resolve"))
+        };
+        let add = resolve("acme::math::add");
+        assert_eq!(add.borrow().as_symbol_operation().parent_op(), Some(stub.as_operation_ref()));
+        assert_eq!(
+            resolve("acme::math::app::m::f")
+                .borrow()
+                .as_symbol_operation()
+                .as_operation_ref(),
+            f.as_operation_ref()
+        );
     }
 
     #[test]
