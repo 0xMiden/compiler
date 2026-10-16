@@ -11,8 +11,10 @@ use midenc_hir::{
     diagnostics::{Diagnostic, miette},
     dialects::builtin::attributes::{AbiParam, Signature},
 };
+use midenc_session::diagnostics::Report;
 
 use super::types::{MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS, MAX_FLAT_RESULTS};
+use crate::error::WasmResult;
 
 /// Identifies which kind of component wrapper is being flattened for the canonical ABI.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -204,11 +206,38 @@ pub fn flatten_types(
         .collect())
 }
 
+/// Returns the number of operand stack field elements the flattened values `flat` occupy.
+///
+/// A 64-bit value takes two field elements; a felt, a pointer or a narrower integer takes one.
+pub(crate) fn flat_felts(flat: &[AbiParam]) -> usize {
+    flat.iter().map(|param| param.ty.size_in_felts()).sum()
+}
+
 /// Returns true when flattened parameters exceed the direct cross-context call budget.
 pub(crate) fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
-    flat_params.len() > MAX_FLAT_PARAMS
-        || flat_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
-            > MAX_DIRECT_STACK_FELTS
+    flat_params.len() > MAX_FLAT_PARAMS || flat_felts(flat_params) > MAX_DIRECT_STACK_FELTS
+}
+
+/// Rejects a cross-context component function whose flattened results do not fit the
+/// [`MAX_DIRECT_STACK_FELTS`]-element operand stack window a cross-context call returns through.
+///
+/// `function` describes the export or import in the diagnostic, e.g. "component export `foo`".
+/// Unlike the parameters, which canonical flattening passes through memory when they exceed the
+/// window, the results of a cross-context call have no indirect form, so a wider result is a
+/// user error.
+pub(crate) fn reject_results_past_call_window(
+    function: &str,
+    flat_results: &[AbiParam],
+) -> WasmResult<()> {
+    let result_felts = flat_felts(flat_results);
+    if result_felts <= MAX_DIRECT_STACK_FELTS {
+        return Ok(());
+    }
+    Err(Report::msg(format!(
+        "{function} returns {result_felts} result felts after expanding 64-bit values, but a \
+         cross-context call returns at most {MAX_DIRECT_STACK_FELTS} on the operand stack; split \
+         the result across several functions or return less data"
+    )))
 }
 
 /// Classifies the canonical ABI pointer indirection required by a component function type.

@@ -29,7 +29,7 @@ use super::{
     contains_unsupported_canonical_abi_type,
     flat::{
         CanonicalAbiMode, check_core_wasm_signature_equivalence, classify_function_type,
-        flatten_function_type, flatten_types,
+        flatten_function_type, flatten_types, reject_results_past_call_window,
     },
 };
 use crate::{
@@ -216,6 +216,10 @@ fn generate_lifting_with_transformation(
         );
         diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
     })?;
+    reject_results_past_call_window(
+        &format!("component export `{}`", export_func_ident.as_str()),
+        &flattened_results,
+    )?;
 
     assert!(
         cross_ctx_export_sig_flat.params().len() <= 16,
@@ -286,13 +290,6 @@ fn generate_lifting_with_transformation(
     let result_abi_type = &export_metadata.ty.results[0];
 
     load(&mut fb, result_ptr, result_abi_type, &mut return_values, span)?;
-
-    assert!(
-        return_values.len() <= 16,
-        "Too many return values to pass on the stack for lifted {export_func_ident} component \
-         export function. The advice provider is not supported. Try return less data as a \
-         temporary workaround."
-    );
 
     // Return the loaded values
     let exit_block = fb.create_block();
@@ -557,7 +554,7 @@ mod tests {
     use super::*;
     use crate::component::test_support::{
         component_function, component_with_core_module, count_validation_ops,
-        two_field_record_type, unit_only_variant_type,
+        two_field_record_type, u64_record_type, unit_only_variant_type,
     };
 
     fn scalar_u64_type() -> Type {
@@ -819,5 +816,52 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Lifts a parameterless export returning a record of `num_fields` `u64` fields through the
+    /// canonical result pointer.
+    fn lift_u64_record_export(num_fields: usize) -> WasmResult<()> {
+        let (_context, mut component_builder, mut module_builder) = component_with_core_module();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![u64_record_type(num_fields)]);
+        ir.abi = CallConv::ComponentModel;
+        let core_func = module_builder
+            .define_function(
+                Ident::with_empty_span("record_core".into()),
+                Visibility::Public,
+                Signature {
+                    params: vec![],
+                    results: vec![AbiParam::new(Type::I32)],
+                    cc: CallConv::ComponentModel,
+                },
+            )
+            .expect("failed to define core export");
+
+        generate_export_lifting_function(
+            &mut component_builder,
+            core_func,
+            "get_record",
+            ComponentFunctionType { ir },
+            &[],
+            None,
+            &DiagnosticsHandler::default(),
+        )
+    }
+
+    #[test]
+    fn export_lifting_accepts_results_filling_the_call_window() {
+        // Eight `u64` fields are 8 values but 16 felts, exactly the call window
+        lift_u64_record_export(8).expect("a 16-felt result should be accepted");
+    }
+
+    #[test]
+    fn export_lifting_rejects_results_past_the_call_window() {
+        // Nine `u64` fields are only 9 values, but 18 felts
+        let err = lift_u64_record_export(9).expect_err("an 18-felt result should be rejected");
+        let message = err.to_string();
+        assert!(
+            message.contains("component export `get_record` returns 18 result felts")
+                && message.contains("at most 16"),
+            "unexpected diagnostic: {message}"
+        );
     }
 }

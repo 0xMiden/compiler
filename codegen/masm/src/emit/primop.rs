@@ -6,7 +6,7 @@ use midenc_hir::{
 };
 
 use super::{OpEmitter, int64, masm};
-use crate::Event;
+use crate::{Event, opt::operands::MASM_STACK_WINDOW_FELTS};
 
 /// The message of the assertion guarding a `dyncall` against an unset stored-procedure slot.
 ///
@@ -19,8 +19,8 @@ pub(crate) const UNSET_STORED_PROCEDURE_SLOT_MESSAGE: &str =
     "stored procedure slot is unset: no procedure root to dyncall";
 
 /// The number of operand stack elements a `call`, `syscall` or `dyncall` hands to the callee,
-/// and that the callee hands back.
-const CALL_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
+/// and that the callee hands back: an alias of [MASM_STACK_WINDOW_FELTS] naming its role here.
+const CALL_WINDOW_FELTS: usize = MASM_STACK_WINDOW_FELTS;
 
 impl OpEmitter<'_> {
     /// Push the caller procedure hash as a word.
@@ -445,10 +445,12 @@ impl OpEmitter<'_> {
     /// the VM reads the root before the context switch, and the callee then runs in a fresh
     /// context where the caller's memory is invisible. From the caller's: nothing may write
     /// memory between the spill and the `dyncall` that reads it, and nothing does — the only
-    /// code emitted in between is the operand scheduler's, placing the arguments, and its output
-    /// is exclusively operand-stack manipulation (`Copy`/`Swap`/`MoveUp`/`MoveDown`; no memory
-    /// instruction is emitted anywhere under `crate::opt::operands`). So no second `dyncall`
-    /// lowering, and no other user of the cell, can interleave a write.
+    /// code emitted in between is the operand scheduler's, placing the arguments, and the call
+    /// window padding (see [`Self::pad_call_window`]), and both are exclusively operand-stack
+    /// manipulation (the scheduler emits `Copy`/`Swap`/`MoveUp`/`MoveDown`, no memory instruction
+    /// is emitted anywhere under `crate::opt::operands`; the padding only pushes zeros and moves
+    /// stack elements). So no second `dyncall` lowering, and no other user of the cell, can
+    /// interleave a write.
     pub fn dyncall_spill_root(&mut self, root_scratch_addr: u32, span: SourceSpan) {
         // Consume the root word; all further effects on it are transient
         for i in 0..midenc_dialect_hir::Dyncall::ROOT_FELTS {
@@ -571,8 +573,8 @@ impl OpEmitter<'_> {
     /// Returns the number of argument and result field elements a cross-context invocation of a
     /// procedure with `signature` passes through the 16-element call window.
     ///
-    /// Panics if either does not fit in the window: the frontend passes wider argument or result
-    /// lists indirectly, so a wider signature here is a compiler bug.
+    /// Panics if either does not fit in the window: the frontend passes wider argument lists
+    /// indirectly and rejects wider result lists, so a wider signature here is a compiler bug.
     fn call_window_felts(signature: &Signature) -> (usize, usize) {
         let num_arg_felts: usize = signature.params.iter().map(|p| p.ty.size_in_felts()).sum();
         let num_result_felts: usize = signature.results.iter().map(|r| r.ty.size_in_felts()).sum();
