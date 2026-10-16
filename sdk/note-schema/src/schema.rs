@@ -996,3 +996,28 @@ fn kind_name(kind: &SchemaTypeKind) -> &'static str {
 pub(crate) fn normalize_name(name: &str) -> String {
     name.trim().replace('_', "-")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every standard leaf's field order is the one its record declares in the SDK's
+    /// `miden.wit`.
+    #[test]
+    fn standard_leaf_fields_follow_the_sdk_core_types() {
+        let mut resolve = Resolve::new();
+        let package = resolve
+            .push_str("miden.wit", include_str!("../../base-macros/wit/miden.wit"))
+            .expect("the core types parse");
+        let interface = resolve.packages[package].interfaces["core-types"];
+        for leaf in StandardLeaf::ALL {
+            let name = standard_leaf_name(leaf);
+            let id = resolve.interfaces[interface].types[name];
+            let TypeDefKind::Record(record) = &resolve.types[id].kind else {
+                panic!("`{name}` must be a record in miden.wit");
+            };
+            let fields: Vec<&str> = record.fields.iter().map(|field| field.name.as_str()).collect();
+            assert_eq!(fields, standard_leaf_fields(leaf), "fields of `{name}`");
+        }
+    }
+}

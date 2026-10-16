@@ -4,15 +4,16 @@ use miden_client::{
     asset::{Asset, FungibleAsset},
     transaction::RawOutputNote,
 };
-use miden_protocol::{account::auth::AuthScheme, crypto::rand::RandomCoin};
+use miden_protocol::crypto::rand::RandomCoin;
 use miden_standards::{account::wallets::BasicWallet, testing::note::NoteBuilder};
-use miden_testing::{Auth, MockChain};
+use miden_testing::MockChain;
 use midenc_expect_test::expect;
 
 use super::super::support::{
-    assert_account_has_fungible_asset, build_asset_transfer_tx, build_send_notes_script,
-    compile_rust_package, execute_tx, execute_tx_measurements, note_script_root, prologue_cycles,
-    single_note_cycles, to_core_felts, tx_script_processing_cycles,
+    assert_account_has_fungible_asset, basic_auth, build_asset_transfer_tx,
+    build_send_notes_script, compile_rust_package, execute_tx, execute_tx_measurements,
+    note_script_root, prologue_cycles, single_note_cycles, to_core_felts,
+    tx_script_processing_cycles,
 };
 
 /// Transfers an asset between two accounts made only of the standard components, with a Rust
@@ -45,16 +46,14 @@ pub fn std_basic_wallet_p2id_transfers_asset_with_rust_note_and_tx_script() {
         );
     }
 
-    let auth = || Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    };
     let mut builder = MockChain::builder();
     let max_supply = 1_000_000_000u64;
-    let faucet_account =
-        builder.add_existing_basic_faucet(auth(), "TEST", max_supply, None).unwrap();
+    let faucet_account = builder
+        .add_existing_basic_faucet(basic_auth(), "TEST", max_supply, None)
+        .unwrap();
     let faucet_id = faucet_account.id();
-    let alice_id = builder.add_existing_wallet(auth()).unwrap().id();
-    let bob_id = builder.add_existing_wallet(auth()).unwrap().id();
+    let alice_id = builder.add_existing_wallet(basic_auth()).unwrap().id();
+    let bob_id = builder.add_existing_wallet(basic_auth()).unwrap().id();
 
     let mut chain = builder.build().unwrap();
     chain.prove_next_block().unwrap();

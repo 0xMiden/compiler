@@ -287,6 +287,8 @@ mod tests {
         assert_eq!(from_hex, from_felts);
     }
 
+    /// The account-id codec parses a bech32 or hex account id to `[suffix, prefix]`, the order of
+    /// the `account-id` record's fields, and displays those felts back as the bech32 form.
     #[test]
     fn account_id_codec_uses_suffix_prefix_field_order() {
         let codec = AccountIdCodec;

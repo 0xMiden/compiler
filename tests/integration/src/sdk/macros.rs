@@ -1119,7 +1119,7 @@ fn masm_account_component_consumer(
     wit_override: Option<&str>,
     lib_rs: &str,
 ) -> crate::cargo_proj::Project {
-    use miden_core::serde::Serializable;
+    use midenc_package_interface::testing::{assemble_account_component_fixture, write_package};
 
     const DEPENDENCY: &str = MASM_WALLET_DEPENDENCY;
     const WIT_OVERRIDE_PATH: &str = "wallet-wit/test-wallet.wit";
@@ -1138,15 +1138,10 @@ fn masm_account_component_consumer(
         builder = builder.file(WIT_OVERRIDE_PATH, wit);
     }
     let cargo_proj = builder.build();
-    let wallet = midenc_package_interface::testing::assemble_account_component_fixture(
-        DEPENDENCY,
-        dependency_namespace,
-        source,
+    write_package(
+        &cargo_proj.root().join(format!("package-cache/{DEPENDENCY}.masp")),
+        &assemble_account_component_fixture(DEPENDENCY, dependency_namespace, source),
     );
-    let package_dir = cargo_proj.root().join("package-cache");
-    std::fs::create_dir_all(&package_dir).expect("the package cache must be created");
-    std::fs::write(package_dir.join(format!("{DEPENDENCY}.masp")), wallet.to_bytes())
-        .expect("the wallet package must be written");
     cargo_proj
 }
 

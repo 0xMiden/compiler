@@ -18,6 +18,10 @@ use smallvec::SmallVec;
 /// to it, and a `Wasm` signature's results are always scalars. Cross-context calls pass through
 /// the same 16-element window, so `package-wit` offers only procedures within it, whatever their
 /// convention.
+///
+/// A pinned copy of the VM's `miden_core::program::MIN_STACK_DEPTH`, since this crate does not
+/// depend on `miden-core`. The frontend's direct-call budget and codegen's call window derive
+/// from that constant itself, so this one must change with it.
 pub const MAX_STACK_ELEMENTS: usize = 16;
 
 /// One Wasm-side scalar of a lowered signature.

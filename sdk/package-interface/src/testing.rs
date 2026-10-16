@@ -2,6 +2,8 @@
 //! that consume it, so each is exercised against a genuine package manifest rather than a
 //! hand-built one.
 
+extern crate std;
+
 use alloc::{string::ToString, sync::Arc};
 
 use miden_assembly_syntax::{
@@ -84,6 +86,18 @@ pub fn assemble_account_component_fixture(
     let mut package = (*assemble_fixture(name, root_path, source)).clone();
     package.kind = miden_mast_package::TargetType::AccountComponent;
     Arc::new(package)
+}
+
+/// Write `package` as a `.masp` file at `path`, creating its parent directories.
+pub fn write_package(path: &std::path::Path, package: &Package) {
+    use miden_assembly::serde::Serializable;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .unwrap_or_else(|err| panic!("`{}` must be created: {err}", parent.display()));
+    }
+    std::fs::write(path, package.to_bytes())
+        .unwrap_or_else(|err| panic!("`{}` must be written: {err}", path.display()));
 }
 
 #[cfg(test)]
