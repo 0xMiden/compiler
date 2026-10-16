@@ -713,7 +713,8 @@ struct PackageOwner {
     /// How the diagnostic refers to the source.
     description: String,
     /// The dependency whose WIT was synthesized from its package manifest, when the source is
-    /// such a WIT: its package id derives from the package name, not from a `[lib].namespace`.
+    /// such a WIT: its package id derives from the package's namespace head and name, not from a
+    /// `[lib].namespace`.
     synthesized_for: Option<String>,
 }
 
@@ -761,9 +762,9 @@ fn record_package_owners(resolve: &Resolve, owners: &mut PackageOwners, owner: &
 /// package another source registered, whatever the two versions.
 ///
 /// The WIT package id of a crate is derived from the first two segments of its
-/// `[lib].namespace`, and the id of a synthesized WIT from its package name, so two sources can
-/// define packages of one `namespace:name`, which wit-bindgen tells apart only by mangling their
-/// module paths with the versions.
+/// `[lib].namespace`, and the id of a synthesized WIT from the head of the package's namespace and
+/// its package name, so two sources can define packages of one `namespace:name`, which
+/// wit-bindgen tells apart only by mangling their module paths with the versions.
 fn ensure_new_packages(
     owners: &PackageOwners,
     group: &UnresolvedPackageGroup,
@@ -790,8 +791,8 @@ fn ensure_new_packages(
                     .collect::<Vec<_>>()
                     .join(" or ");
                 format!(
-                    "the WIT package id of an interface synthesized from a package manifest \
-                     derives from the package name and must be unique among all linked crates \
+                    "the WIT package id of an interface synthesized from a package manifest takes \
+                     its name from the package name and must be unique among all linked crates \
                      regardless of version; supply the interface under another package id with \
                      {overrides} in miden-project.toml"
                 )
@@ -1301,7 +1302,7 @@ mod tests {
         .expect_err("the synthesized package must be rejected")
         .to_string();
         assert!(
-            err.contains("derives from the package name")
+            err.contains("takes its name from the package name")
                 && err.contains("package.metadata.miden.dependencies.masm-wallet.wit")
                 && !err.contains("[lib].namespace"),
             "unexpected diagnostic: {err}"

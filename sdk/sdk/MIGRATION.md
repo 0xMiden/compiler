@@ -62,7 +62,8 @@ advice: it now gets an interface derived from its manifest, too, in which the SD
 component uses (`asset`, `word`, `felt`, `note-type`, ...) are the SDK's `core-types` items, as
 in a MASM component's interface. That interface has no other alias names, leaves out procedures
 for the reasons listed in the interface doc comment (64-bit integer parameters or results,
-auth procedures, ...), and takes its WIT package id from the package name, so it can differ from
+auth procedures, ...), and takes its WIT package id from the head of its namespace and its package
+name, so it can differ from
 the component's own WIT; rebuild the package with the current `cargo miden build` to restore its
 embedded interface.
 
@@ -87,6 +88,8 @@ This is a breaking layout change:
   be recompiled together;
 - a Rust note stores its `AccountId` fields suffix first, so a note created by a previous build of
   a note cannot be consumed by the new build of the same note;
+- note packages built before this change are not readable by the new note schema tooling either
+  (`NoteStorageSchema::from_wit_text` rejects their `account-id` record): rebuild them;
 - a host that encodes such note storage by hand must swap the two felts:
 
 ```rust
@@ -309,7 +312,9 @@ interface foo {
 The parent of an imported function's path names a dependency component, so the parents of a
 component's imports must not nest in the component's own namespace: a component in the namespace
 `acme::app` importing `acme::app::util::add` is rejected. The parents of the imports may nest in
-one another, e.g. `acme::math::add` and `acme::math::u64::add`. The FPI imports `#[account(...)]`
+one another, e.g. `acme::math::add` and `acme::math::u64::add`, except that the dependency whose
+namespace is one segment shorter may not declare a procedure named like that segment
+(`acme::math` may not declare `u64` beside `acme::math::u64`). The FPI imports `#[account(...)]`
 generates (`<namespace>::fpi::<dependency path>::<function>`) and the stored-procedure imports
 `#[component_storage]` generates for `StoredProcedure` slots (`<namespace>::dyncall::<field>`) nest
 in the component's namespace by design and are exempt, since they declare no dependency component.

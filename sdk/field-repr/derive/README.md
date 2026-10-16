@@ -17,13 +17,13 @@ use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 
 #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 struct AccountId {
-    prefix: Felt,
     suffix: Felt,
+    prefix: Felt,
 }
 
 let value = AccountId {
-    prefix: Felt::new(1).unwrap(),
-    suffix: Felt::new(2).unwrap(),
+    suffix: Felt::new(1).unwrap(),
+    prefix: Felt::new(2).unwrap(),
 };
 let felts = value.to_felt_repr();
 let roundtrip = AccountId::try_from(felts.as_slice()).unwrap();

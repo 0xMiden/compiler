@@ -21,8 +21,8 @@ doctest = false
 heck.workspace = true
 # `TargetType`, the package kind the generator checks.
 miden-mast-package.workspace = true
-# The WIT and Rust keyword lists and the namespace segment rule the generated names are checked
-# against, `FPI_IMPORT_PREFIX`, and `validate_procedure_path`.
+# The naming and core-types rules shared with the SDK macros and the frontend, which the
+# generated names, types and paths are checked against.
 midenc-frontend-wasm-metadata.workspace = true
 midenc-hir-type.workspace = true
 midenc-package-interface.workspace = true

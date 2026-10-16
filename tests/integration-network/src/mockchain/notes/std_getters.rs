@@ -31,7 +31,8 @@ struct FaucetConfigArgs {
     symbol: miden_field::Felt,
 }
 
-/// Host-side mirror of `TxScriptArgs` in `tests/fixtures/components/std-faucet-config-fpi-tx-script`.
+/// Host-side mirror of `TxScriptArgs` in
+/// `tests/fixtures/components/std-faucet-config-fpi-tx-script`.
 #[derive(FromFeltRepr, ToFeltRepr)]
 struct FaucetConfigFpiArgs {
     faucet_suffix: miden_field::Felt,

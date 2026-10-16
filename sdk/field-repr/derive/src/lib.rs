@@ -17,11 +17,11 @@
 //!
 //! #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 //! struct AccountId {
-//!     prefix: Felt,
 //!     suffix: Felt,
+//!     prefix: Felt,
 //! }
 //!
-//! let value = AccountId { prefix: Felt::new(1).unwrap(), suffix: Felt::new(2).unwrap() };
+//! let value = AccountId { suffix: Felt::new(1).unwrap(), prefix: Felt::new(2).unwrap() };
 //! let felts = value.to_felt_repr();
 //! let roundtrip = AccountId::try_from(felts.as_slice()).unwrap();
 //! assert_eq!(roundtrip, value);
@@ -259,8 +259,8 @@ fn ensure_no_explicit_discriminants(
 ///
 /// #[derive(FromFeltRepr)]
 /// pub struct AccountId {
-///     pub prefix: Felt,
 ///     pub suffix: Felt,
+///     pub prefix: Felt,
 /// }
 /// ```
 #[proc_macro_derive(DeriveFromFeltRepr, attributes(felt_repr))]
@@ -422,8 +422,8 @@ fn derive_from_felt_repr_impl(
 ///
 /// #[derive(ToFeltRepr)]
 /// pub struct AccountId {
-///     pub prefix: Felt,
 ///     pub suffix: Felt,
+///     pub prefix: Felt,
 /// }
 /// ```
 #[proc_macro_derive(DeriveToFeltRepr, attributes(felt_repr))]
