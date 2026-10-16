@@ -1,10 +1,13 @@
-use std::sync::Arc;
+use std::{rc::Rc, sync::Arc};
 
 use miden_core::Felt;
 use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
 use miden_processor::advice::AdviceInputs;
 use midenc_compile::MidenComponent;
-use midenc_hir::{Type, dialects::builtin::attributes::Signature};
+use midenc_hir::{
+    Context, Type,
+    dialects::builtin::{WorldBuilder, attributes::Signature},
+};
 use midenc_session::Session;
 use proptest::{prop_assert_eq, test_runner::TestCaseError};
 
@@ -178,20 +181,32 @@ where
     Ok(trace.parse_result::<T>().expect("expected output was not returned"))
 }
 
-/// Builds the HIR component and entrypoint shared by [compile_test_module] and
-/// [compile_test_module_with_masm].
-fn build_test_component(
+/// Builds the HIR world, component and entrypoint shared by the `compile_test_module*` helpers.
+///
+/// `extra_flags` are passed to the session after the test-harness flags, and `declare` populates
+/// the world before the entrypoint is built; its result is handed to `build_fn`.
+fn build_test_component<D>(
+    extra_flags: &[&str],
+    declare: impl FnOnce(&mut WorldBuilder, &Rc<Context>) -> D,
     params: impl IntoIterator<Item = Type>,
     results: impl IntoIterator<Item = Type>,
-    build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),
-) -> (MidenComponent, std::rc::Rc<midenc_hir::Context>) {
-    let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
+    build_fn: impl Fn(
+        &mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>,
+        &D,
+    ),
+) -> (MidenComponent, Rc<Context>) {
+    let flags: Vec<&str> = ["--test-harness", "--entrypoint", "test::main"]
+        .into_iter()
+        .chain(extra_flags.iter().copied())
+        .collect();
+    let context = setup::dummy_context(&flags);
     let signature = Signature::new(&context, params, results);
     let component = setup::build_empty_component_for_test(context.clone());
+    let declared = declare(&mut WorldBuilder::new(component.world), &context);
     setup::build_entrypoint(
         component.component.expect("expected HIR component"),
         &signature,
-        build_fn,
+        |builder| build_fn(builder, &declared),
     );
     (component, context)
 }
@@ -201,8 +216,9 @@ pub fn compile_test_module(
     params: impl IntoIterator<Item = Type>,
     results: impl IntoIterator<Item = Type>,
     build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),
-) -> (Arc<miden_mast_package::Package>, std::rc::Rc<midenc_hir::Context>) {
-    let (component, context) = build_test_component(params, results, build_fn);
+) -> (Arc<miden_mast_package::Package>, Rc<Context>) {
+    let (component, context) =
+        build_test_component(&[], |_, _| (), params, results, |builder, _| build_fn(builder));
     let package = compile_miden_component_to_package(component).unwrap();
     (package, context)
 }
@@ -212,19 +228,40 @@ pub fn compile_test_module_with_masm(
     params: impl IntoIterator<Item = Type>,
     results: impl IntoIterator<Item = Type>,
     build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),
-) -> (String, Arc<miden_mast_package::Package>, std::rc::Rc<midenc_hir::Context>) {
+) -> (String, Arc<miden_mast_package::Package>, Rc<Context>) {
+    compile_test_module_with(&[], |_, _| (), params, results, |builder, _| build_fn(builder))
+}
+
+/// Compiles a test module whose world holds more than the entrypoint, capturing its MASM source
+/// before assembly.
+///
+/// `extra_flags` are passed to the session after the test-harness flags, e.g. `-l <path>` to link
+/// a library the entrypoint calls into. `declare` populates the world before the entrypoint is
+/// built, e.g. with a declaration-only component standing in for that library, and its result is
+/// handed to `build_fn` alongside the entrypoint's builder.
+pub fn compile_test_module_with<D>(
+    extra_flags: &[&str],
+    declare: impl FnOnce(&mut WorldBuilder, &Rc<Context>) -> D,
+    params: impl IntoIterator<Item = Type>,
+    results: impl IntoIterator<Item = Type>,
+    build_fn: impl Fn(
+        &mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>,
+        &D,
+    ),
+) -> (String, Arc<miden_mast_package::Package>, Rc<Context>) {
     use std::cell::RefCell;
 
     use midenc_compile::{
         compile_link_output_to_masm_with_pre_assembly_stage, pipeline::backend::LoweredTarget,
     };
 
-    let (component, context) = build_test_component(params, results, build_fn);
+    let (component, context) =
+        build_test_component(extra_flags, declare, params, results, build_fn);
 
     // A shared cell rather than a borrowed local: the pre-assembly hook is `'static`, because it
     // travels to the frontend inside a boxed source provider.
-    let masm = std::rc::Rc::new(RefCell::new(None));
-    let sink = std::rc::Rc::clone(&masm);
+    let masm = Rc::new(RefCell::new(None));
+    let sink = Rc::clone(&masm);
     let package = compile_link_output_to_masm_with_pre_assembly_stage(
         component,
         move |lowered: &LoweredTarget| {
@@ -232,7 +269,7 @@ pub fn compile_test_module_with_masm(
             Ok(())
         },
     )
-    .expect("test component should compile")
+    .unwrap_or_else(|err| panic!("test component should compile:\n{}", format_report(err)))
     .unwrap_mast();
 
     let masm = masm.borrow_mut().take().expect("codegen should produce MASM");
