@@ -12,7 +12,7 @@ use crate::*;
 /// What a rewrite does with one iteration argument of an `scf.while`, i.e. with the init operand,
 /// the before block argument and the yield operand at the same position.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(super) enum IterArg {
+pub enum IterArg {
     /// The iteration argument is kept.
     Keep,
     /// The iteration argument is removed. The uses of its before block argument are replaced with
@@ -34,7 +34,7 @@ pub(super) enum IterArg {
 /// be forwarded the same value by the `scf.condition`.
 ///
 /// Returns `Ok(false)`, with nothing modified, if `operation` is not an `scf.while`.
-pub(super) fn rebuild_while(
+pub fn rebuild_while(
     rewriter: &mut dyn Rewriter,
     operation: OperationRef,
     iter_args: &[IterArg],
@@ -94,7 +94,9 @@ pub(super) fn rebuild_while(
         new_result_types.push(while_op.results()[index].borrow().ty().clone());
     }
 
-    // Creating the new op is the only fallible step; nothing has been modified before it.
+    // Creating the new op is the only fallible step; nothing has been modified before it. It takes
+    // the place of the original, regardless of where the caller left the rewriter positioned.
+    rewriter.set_insertion_point_before(operation);
     let new_while =
         rewriter.r#while(new_inits.iter().copied(), &new_result_types, while_op.span())?;
 

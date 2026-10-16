@@ -5,7 +5,10 @@ use midenc_hir::{
     *,
 };
 
-use super::while_rebuild::{IterArg, rebuild_while};
+use super::{
+    result_rebuild::keep_map,
+    while_rebuild::{IterArg, rebuild_while},
+};
 use crate::*;
 
 /// Remove results of a [While] that are also unused in its 'after' block.
@@ -78,25 +81,17 @@ impl RewritePattern for WhileUnusedResult {
 
         // A result is removed when neither it nor the after block argument at its position has
         // real uses.
-        let mut num_kept = 0;
         let results = {
             let after_region = while_op.after();
             let after_block = after_region.entry();
-            while_op
-                .results()
-                .iter()
-                .zip(after_block.arguments().iter())
-                .map(|(result, after_arg)| {
-                    if result.borrow().has_real_uses() || after_arg.borrow().has_real_uses() {
-                        num_kept += 1;
-                        Some(num_kept - 1)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<SmallVec<[Option<usize>; 4]>>()
+            let after_args = after_block.arguments();
+            let results = while_op.results();
+            keep_map(results.len(), |index| {
+                results[index].borrow().has_real_uses()
+                    || after_args[index].borrow().has_real_uses()
+            })
         };
-        if num_kept == results.len() {
+        if results.iter().all(Option::is_some) {
             return Ok(false);
         }
         let iter_args = SmallVec::<[_; 4]>::from_elem(IterArg::Keep, while_op.inits().len());

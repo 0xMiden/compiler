@@ -311,6 +311,40 @@ jobs:
           path: target/nextest/ci/junit.xml
           if-no-files-found: ignore
 
+  # The differential harness builds every guest with full DWARF (`debug = 2`) by default. This lane
+  # compiles the same cases with `debug = 0`, where CSE merges inline-site copies that debug info
+  # keeps apart (see #1459).
+  midenc_differential_tests_no_debug:
+    name: midenc differential tests (no guest debug info)
+    runs-on: warp-ubuntu-latest-x64-8x
+    # We only want to run the integration tests if the unit tests pass, and that has the added
+    # benefit that we can re-use the cache from the unit test job for all integration tests
+    needs: [unit_tests]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/cleanup-runner
+      - *install-rust
+      - *install-midenup-cli
+      - *restore-midenup-toolchain
+      - *midenup-update
+      - *restore-shared-tests-cache
+      - *install-cargo-make
+      - name: Test
+        env:
+          FUZZA_GUEST_DEBUG: "0"
+        run: |
+          cargo make test -E 'package(midenc-integration-tests) and test(~end_to_end::differential::)'
+
+      - name: Upload test timings and failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ github.job }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
   protocol_linked_tests:
     name: protocol-linked integration tests
     runs-on: warp-ubuntu-latest-x64-8x

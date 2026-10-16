@@ -22,6 +22,13 @@ use midenc_hir::{
 
 pub use self::{builders::StructuredControlFlowOpBuilder, ops::*};
 
+/// Rebuilding a structured control flow op with a subset of its iteration arguments or results.
+pub mod rebuild {
+    pub use crate::canonicalization::{
+        IterArg, keep_map, rebuild_if, rebuild_index_switch, rebuild_while,
+    };
+}
+
 #[derive(Debug, Dialect, DialectRegistration)]
 pub struct ScfDialect {
     #[dialect(info)]

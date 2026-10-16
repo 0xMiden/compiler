@@ -6,6 +6,7 @@ mod if_remove_unused_results;
 mod index_switch_remove_unused_results;
 mod remove_loop_invariant_args_from_before_block;
 //mod remove_loop_invariant_value_yielded;
+mod result_rebuild;
 mod while_condition_truth;
 mod while_rebuild;
 mod while_remove_duplicated_results;
@@ -24,4 +25,8 @@ pub use self::{
     while_remove_duplicated_results::WhileRemoveDuplicatedResults,
     while_remove_unused_args::WhileRemoveUnusedArgs,
     while_unused_result::WhileUnusedResult,
+};
+pub use self::{
+    result_rebuild::{keep_map, rebuild_if, rebuild_index_switch},
+    while_rebuild::{IterArg, rebuild_while},
 };

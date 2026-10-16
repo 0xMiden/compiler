@@ -3,8 +3,8 @@ use alloc::{collections::VecDeque, format, rc::Rc, vec::Vec};
 use midenc_hir::{
     AttributeRef, Block, BlockRef, FxHashMap, FxHashSet, LoopLikeOpInterface, Op, Operation,
     OperationRef, ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint,
-    RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorOperands,
-    TraceTarget, Value, ValueOrAlias, ValueRange, ValueRef,
+    RegionBranchTerminatorOpInterface, RegionRef, Report, SmallVec, SourceSpan, Spanned,
+    SuccessorOperands, TraceTarget, Value, ValueOrAlias, ValueRange, ValueRef,
     adt::{SmallOrdMap, SmallSet},
     cfg::Graph,
     diagnostics::Severity,
@@ -455,7 +455,29 @@ impl core::fmt::Display for Placement {
 }
 
 /// The maximum number of operand stack slots which can be assigned without spills.
-const K: usize = 16;
+///
+/// Transforms that must leave an operation's own operands or results within reach of the operand
+/// stack, such as the narrowing of structured control flow ops, size their work against this bound.
+pub const K: usize = 16;
+
+/// The number of operand stack elements the results of a region op occupy at once when control
+/// leaves it, together with what the terminator forwarding them schedules in the same step: a
+/// loop-like op forwards its results through a condition whose flag sits on the stack beside them.
+///
+/// This analysis and the transforms that narrow region ops both size their work against this
+/// demand, so the two cannot drift apart.
+pub fn region_results_demand(op: &Operation) -> usize {
+    let results = op
+        .results()
+        .iter()
+        .map(|result| result.borrow().ty().size_in_felts())
+        .sum::<usize>();
+    if op.implements::<dyn LoopLikeOpInterface>() {
+        results + 1
+    } else {
+        results
+    }
+}
 
 /// Report an operation whose operands cannot all be made reachable at once.
 ///
@@ -1029,11 +1051,7 @@ impl SpillAnalysis {
 
         let op = branch.as_operation();
         // A spill after the region op cannot make an oversized incoming yield addressable.
-        let result_usage = branch
-            .results()
-            .iter()
-            .map(|result| result.borrow().ty().size_in_felts())
-            .sum::<usize>();
+        let result_usage = region_results_demand(op);
         if result_usage > K {
             return Err(operand_stack_overflow(op, result_usage, "its region results"));
         }
@@ -1622,7 +1640,36 @@ impl SpillAnalysis {
             }
         }
 
-        let taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
+        let entry = ProgramPoint::after(operation);
+        let entry_next_uses = liveness.next_uses_at(&entry).unwrap();
+
+        let mut taken = take.iter().map(|o| o.stack_size()).sum::<usize>();
+        if taken > K {
+            // The results are the op's own and stay. The live-through values resident on every
+            // exit are evicted instead, furthest next use first: the caller spills an evicted value
+            // before the op, where it is still resident, and its next use reloads it.
+            let results = branch
+                .results()
+                .iter()
+                .map(|result| ValueOrAlias::new(*result as ValueRef))
+                .collect::<SmallSet<_, 4>>();
+            let mut residents =
+                take.iter().filter(|o| !results.contains(*o)).copied().collect::<Vec<_>>();
+            residents.sort_by(|a, b| {
+                entry_next_uses
+                    .distance(b)
+                    .cmp(&entry_next_uses.distance(a))
+                    .then(b.stack_size().cmp(&a.stack_size()))
+            });
+            for resident in residents {
+                if taken <= K {
+                    break;
+                }
+                take.remove(&resident);
+                taken -= resident.stack_size();
+                self.evictions.push(resident.value());
+            }
+        }
         if taken > K {
             return Err(operand_stack_overflow(
                 branch.as_operation(),
@@ -1630,9 +1677,6 @@ impl SpillAnalysis {
                 "its region results and live-through values",
             ));
         }
-
-        let entry = ProgramPoint::after(operation);
-        let entry_next_uses = liveness.next_uses_at(&entry).unwrap();
 
         // Prefer to select candidates with the smallest next-use distance, otherwise all else being
         // equal, choose to keep smaller values on the operand stack, and spill larger values, thus
@@ -1786,12 +1830,16 @@ impl SpillAnalysis {
             }
         }));
 
-        // Initial candidates are values live at block entry which are used in the loop body
-        let mut cand = alive
-            .iter()
-            .filter(|o| next_uses.distance(*o) < LOOP_EXIT_DISTANCE)
-            .copied()
-            .collect::<SmallSet<_, 4>>();
+        // The block parameters are on the operand stack when the region is entered, so they are
+        // resident whether or not the body uses them soon. Leaving one out of W^entry would make
+        // it a value the analysis never spills but the emitter still holds. A parameter the
+        // window cannot afford is evicted by the ordinary spilling inside the body instead, which
+        // records the spill the transform needs to rename its later uses.
+        //
+        // The remaining candidates are the values live at block entry which are used in the loop
+        // body.
+        let mut cand = params.iter().map(ValueOrAlias::new).collect::<SmallSet<_, 4>>();
+        cand.extend(alive.iter().filter(|o| next_uses.distance(*o) < LOOP_EXIT_DISTANCE).copied());
 
         // Values which are "live through" the loop, are those which are live at entry, but not
         // used within the body of the loop. If we have excess available operand stack capacity,
@@ -2027,19 +2075,36 @@ fn max_loop_pressure_loop_like(
     let mut max_pressure = 0;
     let mut visited = SmallSet::<_, 4>::default();
     for region in loop_like.get_loop_regions() {
-        if !visited.insert(region) {
-            continue;
-        }
-        Region::traverse_region_graph(&region.borrow(), |region, _| {
-            if !visited.insert(region.as_region_ref()) {
-                return true;
-            }
-            let region_entry = region.entry();
-            max_pressure =
-                core::cmp::max(max_pressure, max_block_pressure(&region_entry, liveness));
-            false
-        });
+        max_pressure =
+            core::cmp::max(max_pressure, max_region_graph_pressure(region, &mut visited, liveness));
     }
+    max_pressure
+}
+
+/// Compute the maximum operand stack pressure over `start` and every region reachable from it
+/// within the same op, skipping the regions already in `visited`.
+///
+/// [Region::traverse_region_graph] visits only the successors of the region it starts from, so the
+/// starting region is measured here: for a lifted loop it is the before region, which holds the
+/// whole body.
+fn max_region_graph_pressure(
+    start: RegionRef,
+    visited: &mut SmallSet<RegionRef, 4>,
+    liveness: &LivenessAnalysis,
+) -> usize {
+    if !visited.insert(start) {
+        return 0;
+    }
+    let start = start.borrow();
+    let mut max_pressure = max_block_pressure(&start.entry(), liveness);
+    Region::traverse_region_graph(&start, |region, _| {
+        if !visited.insert(region.as_region_ref()) {
+            return true;
+        }
+        let region_entry = region.entry();
+        max_pressure = core::cmp::max(max_pressure, max_block_pressure(&region_entry, liveness));
+        false
+    });
     max_pressure
 }
 
@@ -2104,20 +2169,10 @@ fn max_block_pressure(block: &Block, liveness: &LivenessAnalysis) -> usize {
             let mut visited = SmallSet::<_, 4>::default();
             for region in branch_op.get_successor_regions(RegionBranchPoint::Parent) {
                 if let Some(region) = region.into_successor() {
-                    if !visited.insert(region) {
-                        continue;
-                    }
-                    Region::traverse_region_graph(&region.borrow(), |region, _| {
-                        if !visited.insert(region.as_region_ref()) {
-                            return true;
-                        }
-                        let region_entry = region.entry();
-                        max_pressure = core::cmp::max(
-                            max_pressure,
-                            max_block_pressure(&region_entry, liveness),
-                        );
-                        false
-                    });
+                    max_pressure = core::cmp::max(
+                        max_pressure,
+                        max_region_graph_pressure(region, &mut visited, liveness),
+                    );
                 }
             }
         }

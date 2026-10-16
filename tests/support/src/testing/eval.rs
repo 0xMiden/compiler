@@ -178,9 +178,12 @@ where
     Ok(trace.parse_result::<T>().expect("expected output was not returned"))
 }
 
-/// Builds the HIR component and entrypoint shared by [compile_test_module] and
-/// [compile_test_module_with_masm].
-fn build_test_component(
+/// Builds a HIR component whose `test::main` entrypoint has the given signature and a body
+/// populated by `build_fn`, as [compile_test_module] and [compile_test_module_with_masm] compile.
+///
+/// Returns the component together with the context it was built in, for tests that rewrite it
+/// before compiling it.
+pub fn build_test_component(
     params: impl IntoIterator<Item = Type>,
     results: impl IntoIterator<Item = Type>,
     build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),

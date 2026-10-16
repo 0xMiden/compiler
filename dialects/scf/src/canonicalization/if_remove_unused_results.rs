@@ -5,6 +5,7 @@ use midenc_hir::{
     *,
 };
 
+use super::result_rebuild::{keep_map, rebuild_if};
 use crate::*;
 
 /// Removed unused results of an [If] instruction
@@ -25,35 +26,6 @@ impl IfRemoveUnusedResults {
             ),
         }
     }
-
-    fn transfer_body(
-        &self,
-        src: BlockRef,
-        dest: BlockRef,
-        used_results: &[OpResultRef],
-        rewriter: &mut dyn Rewriter,
-    ) {
-        // Move all operations to the destination block
-        rewriter.merge_blocks(src, dest, &[]);
-
-        // Replace the yield op with one that returns only the used values.
-        let op = { dest.borrow().terminator().unwrap() };
-        let mut yield_op = op.try_downcast_op::<Yield>().unwrap();
-
-        let mut used_operands = SmallVec::<[ValueRef; 4]>::with_capacity(used_results.len());
-        {
-            let yield_ = yield_op.borrow();
-            for used_result in used_results {
-                let operand = yield_.operands()[used_result.borrow().index()];
-                used_operands.push(operand.borrow().as_value_ref());
-            }
-        }
-
-        let _guard = rewriter.modify_op_in_place(op);
-        let mut yield_ = yield_op.borrow_mut();
-        let context = yield_.as_operation().context_rc();
-        yield_.yielded_mut().set_operands(used_operands, op, &context);
-    }
 }
 
 impl Pattern for IfRemoveUnusedResults {
@@ -68,78 +40,31 @@ impl RewritePattern for IfRemoveUnusedResults {
         operation: OperationRef,
         rewriter: &mut dyn Rewriter,
     ) -> Result<bool, Report> {
-        // Everything the rewrite needs from the original op is read up front, so that no borrow
-        // of `operation` is alive while the rewriter runs: a rewriter listener may inspect the
-        // ops around each insertion made below, and `operation` is next to all of them.
-        let (used_results, num_results, condition, new_types, then_entry, else_entry, span) = {
+        let results = {
             let op = operation.borrow();
-            let Some(if_op) = op.downcast_ref::<If>() else {
+            if !op.is::<If>() {
+                return Ok(false);
+            }
+            let Some(results) = used_results(&op) else {
                 return Ok(false);
             };
-
-            // Compute the list of used results.
-            let used_results = op
-                .results()
-                .iter()
-                .copied()
-                .filter(|result| result.borrow().has_real_uses())
-                .collect::<SmallVec<[_; 4]>>();
-
-            // Replace the operation if only a subset of its results have uses.
-            let num_results = op.num_results();
-            if used_results.len() == num_results {
-                return Ok(false);
-            }
-
-            // Compute the result types of the replacement operation.
-            let new_types = used_results
-                .iter()
-                .map(|result| result.borrow().ty().clone())
-                .collect::<SmallVec<[_; 4]>>();
-
-            (
-                used_results,
-                num_results,
-                if_op.condition().as_value_ref(),
-                new_types,
-                if_op.then_body().entry_block_ref().unwrap(),
-                if_op.else_body().entry_block_ref().unwrap(),
-                if_op.span(),
-            )
+            results
         };
 
-        // Create a replacement operation with empty then and else regions.
-        let new_if = rewriter.r#if(condition, &new_types, span)?;
-        let (new_then_region, new_else_region) = {
-            let new_if_op = new_if.borrow();
-            (new_if_op.then_body().as_region_ref(), new_if_op.else_body().as_region_ref())
-        };
-        let new_then_block = rewriter.create_block(new_then_region, None, &[]);
-        let new_else_block = rewriter.create_block(new_else_region, None, &[]);
-
-        // Move the bodies and replace the terminators (note there is a then and an else region
-        // since the operation returns results).
-        self.transfer_body(then_entry, new_then_block, &used_results, rewriter);
-        self.transfer_body(else_entry, new_else_block, &used_results, rewriter);
-
-        // Replace the operation by the new one.
-        let mut replaced_results = SmallVec::<[_; 4]>::with_capacity(num_results);
-        replaced_results.resize(num_results, None);
-        {
-            let new_if_op = new_if.borrow();
-            for (index, result) in used_results.into_iter().enumerate() {
-                replaced_results[result.borrow().index()] =
-                    Some(new_if_op.results()[index] as ValueRef);
-            }
-        }
-        rewriter.replace_op_with_values(operation, &replaced_results);
-
-        Ok(true)
+        rebuild_if(rewriter, operation, &results)
     }
 }
 
+/// The result map (see [rebuild_if]) that keeps the results of `op` with real uses and drops the
+/// others, or `None` if every result is used.
+pub(super) fn used_results(op: &Operation) -> Option<SmallVec<[Option<usize>; 4]>> {
+    let results = op.results();
+    let map = keep_map(results.len(), |index| results[index].borrow().has_real_uses());
+    map.iter().any(Option::is_none).then_some(map)
+}
+
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use alloc::{boxed::Box, format, rc::Rc, string::String, vec::Vec};
 
     use midenc_expect_test::expect_file;
@@ -165,7 +90,7 @@ mod tests {
     /// still running, the way a listener inspecting the neighbourhood of an insertion does. The
     /// pattern inserts before the op it rewrites, so that op is the neighbour: the rewrite fails
     /// here if the pattern still holds it (the shape of the `AliasingViolationError` in #1421).
-    struct InsertionPointListener;
+    pub(crate) struct InsertionPointListener;
 
     impl Listener for InsertionPointListener {
         fn kind(&self) -> ListenerType {

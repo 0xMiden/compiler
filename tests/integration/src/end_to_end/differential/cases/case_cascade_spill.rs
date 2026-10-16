@@ -6,7 +6,7 @@
 // the second loop, plus an eight-u64 cluster defined before the loops, consumed
 // in one wide expression inside each loop body and again afterwards. The cluster
 // is what pushes block pressure past the window: the pre-lift spill transform
-// requests 57 spills / 84 reloads and splits two edges, and every reload is
+// requests spills and reloads and splits edges, and every reload is
 // lowered to a spill-slot `hir.load_local` that the post-lift canonicalizer then
 // sees inside the `scf.while` / `scf.index_switch` it rewrites.
 #[unsafe(no_mangle)]

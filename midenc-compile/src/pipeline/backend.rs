@@ -20,7 +20,7 @@ use alloc::{boxed::Box, rc::Rc, sync::Arc};
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs};
 use midenc_codegen_masm::{CheckMasmLegality, LegalizeForMasm, MasmComponent, ToMasmComponent};
-use midenc_dialect_hir::transforms::{Local2Reg, TransformSpills};
+use midenc_dialect_hir::transforms::{Local2Reg, NarrowRegionOps, TransformSpills};
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_frontend_wasm_metadata::PackageSections;
 use midenc_hir::{
@@ -311,14 +311,15 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             // Re-run canonicalization to clean up generated structured control flow
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
         }
-        // The last rewrite, before operand sinking and spill placement
+        // The last rewrite, before operand sinking, region narrowing and spill placement
         component_pm.add_pass(Box::new(LegalizeForMasm));
-        // Operand sinking and spill placement for module-level functions, then component-level
-        // ones: the last passes before lowering
+        // Operand sinking, region narrowing and spill placement for module-level functions, then
+        // component-level ones: the last passes before lowering
         {
             let mut module_pm = component_pm.nest::<builtin::Module>();
             let mut func_pm = module_pm.nest::<builtin::Function>();
             func_pm.add_pass(Box::new(SinkOperandDefs));
+            func_pm.add_pass(Box::new(NarrowRegionOps));
             func_pm.add_pass(Box::new(TransformSpills));
             //func_pm.add_pass(Box::new(ControlFlowSink));
             //func_pm.add_pass(Box::new(DeadCodeElimination));
@@ -326,6 +327,7 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
         {
             let mut func_pm = component_pm.nest::<builtin::Function>();
             func_pm.add_pass(Box::new(SinkOperandDefs));
+            func_pm.add_pass(Box::new(NarrowRegionOps));
             func_pm.add_pass(Box::new(TransformSpills));
             //func_pm.add_pass(Box::new(ControlFlowSink));
             //func_pm.add_pass(Box::new(DeadCodeElimination));
@@ -783,7 +785,7 @@ mod tests {
         let pipeline = textual_pipeline(component.world.as_operation_ref(), context);
         let functions = "canonicalizer,cse,sccp,sink-operand-defs,local2reg,transform-spills,\
                          cfg-to-scf,canonicalizer";
-        let last = "sink-operand-defs,transform-spills";
+        let last = "sink-operand-defs,narrow-region-ops,transform-spills";
         assert_eq!(
             pipeline,
             alloc::format!(

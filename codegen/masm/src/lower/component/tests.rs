@@ -2762,8 +2762,9 @@ fn a_dyncall_at_the_argument_budget_lowers_and_assembles() {
         .expect("the lowered dyncall assembles");
 }
 
-/// Run `TransformSpills` over every function of `world`, as `pipeline::backend::apply_rewrites`
-/// does before codegen.
+/// Run `TransformSpills` over every function of `world`, the last pass
+/// `pipeline::backend::apply_rewrites` runs before codegen. The operand sinking and region
+/// narrowing it runs first are skipped: neither changes how many operands a call site takes.
 ///
 /// The spill analysis behind it requires every operand of a non-branch operation to be reachable
 /// within the operand stack window at once, so it is where a too-wide call site is noticed on this
