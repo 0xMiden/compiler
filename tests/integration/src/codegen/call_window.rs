@@ -12,10 +12,17 @@
 //! every padding element with a sentinel, while the caller keeps a value live across the call
 //! that an unpadded window would expose to them.
 //!
-//! The widths (arguments to results: 2 to 2, 1 to 4, 9 to 0, 0 to 16, 0 to 9, 12 to 12) reach
-//! the felt-wise padding and discard for few and for many elements, the whole-word padding of 0
-//! and 12 arguments, and the whole-word discard under 0, 4, 12 and 16 results. The entrypoint
-//! weights each result by its position, so results out of order are visible as well.
+//! The widths (arguments to results: 2 to 2, 1 to 4, 9 to 0, 0 to 16, 0 to 9, 12 to 12, 4 to 8,
+//! 8 to 8) reach every arm of the padding and of the discard but the empty ones:
+//!
+//! - the felt-wise padding of few (1, 2) and of many (9) arguments, and the whole-word padding of
+//!   0, 4, 8 and 12 arguments;
+//! - the felt-wise discard under few (2) and many (9) results, and the whole-word discard under
+//!   0, 4, 8 and 12 results;
+//! - 16 results, which fill the window and leave nothing to discard.
+//!
+//! Every callee traps unless the window under its arguments is zero. The entrypoint weights each
+//! result by its position, so results out of order are visible as well.
 //!
 //! A `dyncall` shares the window handling and is executed here as well, reaching the same callees
 //! through their MAST roots. A `syscall` shares it too, but needs a kernel, and is covered by the
@@ -42,15 +49,20 @@ const CALLEE_LIBRARY: &str = "window_callee";
 /// The Miden path of the callee module, and the name of the component declaring it in HIR.
 const CALLEE_MODULE: &str = "window_callee::callee";
 
-/// The callee module: each procedure computes its results, then overwrites every element of the
-/// window under them with `SENTINEL`. The procedures named for their widths also trap unless the
-/// window under their arguments is zero, as the caller's padding leaves it.
+/// The callee module: each procedure traps unless the window under its arguments is zero, as the
+/// caller's padding leaves it, computes its results, then overwrites every element of the window
+/// under them with `SENTINEL`.
 const CALLEE_SOURCE: &str = r#"
 const SENTINEL = 57005
 
-#! Inputs:  [a, b, pad(14)]
+#! Inputs:  [a, b, 0(14)]
 #! Outputs: [a + b, a * b, SENTINEL(14)]
+#!
+#! Traps unless every element of the window under the arguments is zero.
 pub proc sum_product
+    repeat.14
+        movup.2 assertz
+    end
     dup.1 dup.1 mul movdn.2 add
     movdn.15 movdn.15
     repeat.14
@@ -59,11 +71,13 @@ pub proc sum_product
     movup.15 movup.15
 end
 
-#! Inputs:  [a, pad(15)]
+#! Inputs:  [a, 0(15)]
 #! Outputs: [a, a + 1, a + 2, a + 3, SENTINEL(12)]
+#!
+#! Traps unless every element of the window under the argument is zero.
 pub proc spread
     repeat.15
-        swap drop
+        swap assertz
     end
     dup add.3 dup.1 add.2 dup.2 add.1 movup.3
     movdnw.3 dropw dropw dropw
@@ -160,6 +174,50 @@ pub proc twelve_to_twelve
         push.SENTINEL swap drop movdn.3
     end
     movdnw.3
+end
+
+#! Inputs:  [a0, a1, a2, a3, 0(12)]
+#! Outputs: [a0 + 1, a1 + 2, a2 + 3, a3 + 4, 5, 6, 7, 8, SENTINEL(8)]
+#!
+#! Traps unless every element of the window under the arguments is zero.
+pub proc four_to_eight
+    repeat.12
+        movup.4 assertz
+    end
+    add.1 movdn.3
+    add.2 movdn.3
+    add.3 movdn.3
+    add.4 movdn.3
+    movdnw.3
+    push.5 swap drop movdn.15
+    push.6 swap drop movdn.15
+    push.7 swap drop movdn.15
+    push.8 swap drop movdn.15
+    repeat.8
+        push.SENTINEL swap drop movdn.15
+    end
+end
+
+#! Inputs:  [a0, ..., a7, 0(8)]
+#! Outputs: [a0 + 1, a1 + 2, ..., a7 + 8, SENTINEL(8)]
+#!
+#! Traps unless every element of the window under the arguments is zero.
+pub proc eight_to_eight
+    repeat.8
+        movup.8 assertz
+    end
+    add.1 movdn.7
+    add.2 movdn.7
+    add.3 movdn.7
+    add.4 movdn.7
+    add.5 movdn.7
+    add.6 movdn.7
+    add.7 movdn.7
+    add.8 movdn.7
+    swapdw
+    repeat.8
+        push.SENTINEL swap drop movdn.15
+    end
 end
 "#;
 
@@ -360,7 +418,12 @@ fn check(
     }
 }
 
-/// Runs the `sum_product` cases, `[x, a, b]`, through `invocation` and checks each result.
+/// Runs the `sum_product` cases, `[x, a, b]`, through `invocation` and checks each result: two
+/// arguments, padded by pushing the zeros and raising the arguments over them, and two results,
+/// sunk under the padding before it is dropped.
+///
+/// A caller value left in the window traps the callee, and a sentinel or the padding left among
+/// the results changes the returned sum.
 fn check_sum_product(invocation: Invocation) {
     check(
         invocation,
@@ -372,7 +435,12 @@ fn check_sum_product(invocation: Invocation) {
     );
 }
 
-/// Runs the `spread` cases, `[x, a]`, through `invocation` and checks each result.
+/// Runs the `spread` cases, `[x, a]`, through `invocation` and checks each result: one argument,
+/// padded as `sum_product`'s two are, and a word of results, under which three whole words of
+/// padding are dropped.
+///
+/// A caller value left in the window traps the callee, and a sentinel left among the results
+/// changes the returned sum.
 fn check_spread(invocation: Invocation) {
     check(
         invocation,
@@ -387,9 +455,8 @@ fn check_spread(invocation: Invocation) {
 /// Runs `nine_to_none` through `invocation`: nine arguments, padded by sinking each of the seven
 /// zeros under them, and no results, discarded as four whole words of padding.
 ///
-/// The arguments are non-zero, so a zero left among them or an argument left in the padding
-/// traps the callee, and a caller value left in the window or a padding element left on top
-/// changes the `x` the entrypoint returns.
+/// A caller value left in the window traps the callee, as does an argument left in the padding,
+/// and a padding element left on top changes the `x` the entrypoint returns.
 fn check_nine_to_none(invocation: Invocation) {
     check(
         invocation,
@@ -439,6 +506,44 @@ fn check_twelve_to_twelve(invocation: Invocation) {
             &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
             &[u32::MAX as u64, 120, 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10],
         ],
+        |args| args.iter().enumerate().map(|(i, &a)| a + felt(i as u64 + 1)).collect(),
+    );
+}
+
+/// Runs `four_to_eight` through `invocation`: four arguments, padded with three words under which
+/// the arguments' word is moved, and eight results, under whose padding the results' two words
+/// are swapped before it is dropped.
+///
+/// A caller value left in the window traps the callee, and results out of order, or a sentinel
+/// left among the results, change the returned sum.
+fn check_four_to_eight(invocation: Invocation) {
+    check(
+        invocation,
+        "four_to_eight",
+        4,
+        8,
+        &[&[1, 2, 3, 4, 5], &[u32::MAX as u64, 40, 30, 20, 10]],
+        |args| {
+            let mut results: Vec<Felt> =
+                args.iter().enumerate().map(|(i, &a)| a + felt(i as u64 + 1)).collect();
+            results.extend((5..=8).map(felt));
+            results
+        },
+    );
+}
+
+/// Runs `eight_to_eight` through `invocation`: eight arguments, padded with two words swapped
+/// under them, and eight results, discarded as [`check_four_to_eight`]'s are.
+///
+/// A caller value left in the window traps the callee, and arguments or results out of order, or
+/// a sentinel left among the results, change the returned sum.
+fn check_eight_to_eight(invocation: Invocation) {
+    check(
+        invocation,
+        "eight_to_eight",
+        8,
+        8,
+        &[&[1, 2, 3, 4, 5, 6, 7, 8, 9], &[u32::MAX as u64, 80, 70, 60, 50, 40, 30, 20, 10]],
         |args| args.iter().enumerate().map(|(i, &a)| a + felt(i as u64 + 1)).collect(),
     );
 }
@@ -523,4 +628,30 @@ fn call_window_twelve_felts_in_twelve_out() {
 #[test]
 fn dyncall_window_twelve_felts_in_twelve_out() {
     check_twelve_to_twelve(Invocation::Dyncall);
+}
+
+/// A `call` with four arguments and eight results: the whole-word padding of four arguments and
+/// the whole-word discard under eight results.
+#[test]
+fn call_window_four_felts_in_eight_out() {
+    check_four_to_eight(Invocation::Call);
+}
+
+/// A `dyncall` with four arguments and eight results; see [`call_window_four_felts_in_eight_out`].
+#[test]
+fn dyncall_window_four_felts_in_eight_out() {
+    check_four_to_eight(Invocation::Dyncall);
+}
+
+/// A `call` with eight arguments and eight results: the whole-word padding of eight arguments.
+#[test]
+fn call_window_eight_felts_in_eight_out() {
+    check_eight_to_eight(Invocation::Call);
+}
+
+/// A `dyncall` with eight arguments and eight results; see
+/// [`call_window_eight_felts_in_eight_out`].
+#[test]
+fn dyncall_window_eight_felts_in_eight_out() {
+    check_eight_to_eight(Invocation::Dyncall);
 }
