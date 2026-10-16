@@ -1,0 +1,1050 @@
+# Unified stack allocator design
+
+Status: proposal for review. This document specifies the resulting architecture and two intermediate integration states; it does not prescribe an implementation work plan.
+
+The MASM backend will own one physical allocation plan for each emitted procedure. That plan determines the ordered operand stack, compiler-managed local storage, operand scheduling, control-flow transfers, and call preparation. An independent checker validates the plan and its instruction expansion before assembly. HIR remains semantic SSA: a physical reload does not create a new HIR definition, and a wide region interface does not need to be narrowed.
+
+The hard machine constraint is that an instruction may access only the top sixteen field elements through indexed stack operations. Total stack depth may exceed sixteen. Correctness therefore depends on the sequence of accesses, including temporary instructions inside a lowering, rather than a bound on the number of live values or operation operands.
+
+## Scope and decisions
+
+The design covers all HIR bodies the backend currently emits, including component functions, supporting modules, standalone functions, generated adapters, and global initializers. It preserves the existing supported value representations and ABIs. It supports wide SCF interfaces, legal temporary overflow, and the full sixteen-input FPI payload. Arbitrarily large aggregate SSA values, new calling conventions, and unlimited procedure frames are outside this change.
+
+The final architecture has these decisions:
+
+- Physical allocation occurs after HIR optimization, CFG-to-SCF conversion, and representation legalization. No HIR rewrite follows construction of the allocation input.
+- Allocation operates on raw felt lanes, with value layouts retaining their semantic grouping and limb order.
+- Every control-flow entry has one location contract fixed before its body is planned. Single-predecessor entries inherit state, ordinary joins choose from actual incoming states, and loop headers are fixed before their cyclic bodies. Every incoming edge establishes the contract through checked simultaneous bindings and any necessary physical transfers.
+- Instruction selection supplies executable lowering units with explicit stack and stored-input requirements. Lowering units expose all raw effects, including temporary effects, and distinguish internal stages from actual allocation boundaries.
+- Heuristic schedules improve cost. A deterministic storage-based transition establishes that a supported request can be realized without illegal stack accesses.
+- A release-build verifier checks allocation and raw expansion. Assembly does not accept an unverified plan.
+- The two HIR spill passes, spill-driven SSA reconstruction, and region narrowing are removed. There is no permanent legacy allocator, compatibility adapter, or feature flag.
+
+## Existing backend and the boundary being changed
+
+The source baseline is compiler commit `62d5241d6aa2a25eae7b766eda196bc364d8295a`, with PR 1461 reviewed at `bcbb13cc047e3597571a3b42c4e15f87121d3ff8`. Relative source links below are repository links, not proposed new files.
+
+| Existing component | Current responsibility | Resulting responsibility |
+| --- | --- | --- |
+| [`SpillAnalysis`](../../../hir-analysis/src/analyses/spills.rs) | Bounds resident sets, selects spills and reloads, reconciles control-flow residency | Removed from physical allocation; backend graph liveness and the physical planner replace it |
+| [`transform_spills`](../../../hir-transform/src/spill.rs) and [HIR materialization](../../../dialects/hir/src/transforms/spill.rs) | Insert spill/reload operations, reconstruct SSA, convert them to locals | Removed; physical actions reference semantic values without rewriting HIR |
+| PR 1461 `NarrowRegionOps` | Rebuild wide SCF operations with local-backed columns | Removed or omitted if not landed; edge location assignment handles wide interfaces |
+| [`BlockEmitter`](../../../codegen/masm/src/emitter.rs) | Schedules operands, drops values, handles casts, recursively manages stack state and debug locations | Split into physical planning, verified instruction expansion, and serialization |
+| [Operand movement solver](../../../codegen/masm/src/opt/operands) | Searches copy/permutation schedules; cannot introduce temporary storage | Optional bounded optimization within the planner; failure selects the deterministic transition |
+| [`HirLowering`](../../../codegen/masm/src/lower/lowering.rs) and [instruction emitters](../../../codegen/masm/src/emit) | Select and emit code, with some temporary effects hidden from the modeled stack | Select lowering units with explicit requirements, effects, and source provenance |
+| [Branch utilities](../../../codegen/masm/src/lower/utils.rs) | Adopt one branch's stack and realign another; assert loop agreement | Emit the structured skeleton and explicit edge transfers to fixed contracts |
+| [`MasmFunctionBuilder`](../../../codegen/masm/src/lower/component.rs) | Fix frame size from HIR locals before emission | Finalize the frame after backend spill slot and scratch allocation |
+| [Legalization](../../../codegen/masm/src/legalization.rs) | Representation/ABI checks, including combined operand-window limits | Retain representation and actual ABI checks; replace scheduler-imposed limits with lowering unit legality |
+
+CFG-to-SCF has no algorithmic dependency on spill insertion. Removing the pre-lift spill pass changes its input shapes, but not its semantic contract. Conversion can leave residual conditional branches to distinct return-like exit blocks; the backend must continue to handle these edges. See [`cfg_to_scf`](../../../hir-transform/src/cfg_to_scf.rs).
+
+## Machine state and invariants
+
+### Values and raw lanes
+
+`ValueId` identifies a HIR SSA value or a selected temporary passed between lowering units. `Layout(value)` is its ordered raw representation, with lane zero nearest stack top. `Atom(value, lane)` identifies the bits of one lane in the current dynamic instance of that value. A stack entry is an occurrence of an atom, not merely membership in a resident set. Multiple occurrences may have the same atom. Raw temporaries internal to a lowering unit are tracked by verifier tokens; they do not require new values in the selected program.
+
+Layouts use the existing `to_raw_parts()` convention in [`Operand`](../../../codegen/masm/src/stack.rs). The initial supported domain remains the existing nonempty representations of at most four lanes per ordinary operand. Wider tuples of such values are supported. The allocator does not claim to complete the currently incomplete aggregate load/store lowering. Representation-neutral casts and split/join operations have explicit lane-alias maps; they cannot silently reverse limbs or change width.
+
+A spill slot is a compiler-assigned location in the current procedure activation’s local frame that preserves a value lane independently of the operand stack. Spill slots store raw field elements. They never apply integer masks, sign extension, byte-pointer conversion, or aggregate memory-layout transformations. Source-level local accesses retain their existing typed semantics and remain separate from compiler spill slots.
+
+### Owned stack and protected tail
+
+Stack notation is top first:
+
+```text
+[owned occurrences | protected caller tail | bottom zero padding]
+```
+
+The planner knows every owned occurrence, including occurrences below depth fifteen. Metadata inspection can inspect any known depth. An emitted instruction accessing an existing element must satisfy that instruction's actual index restrictions; metadata inspection is not an emitted access.
+
+The protected tail is an uninterpreted sequence belonging to the caller. For `exec`/`dynexec` entry it starts immediately below the declared arguments, including unknown lanes still inside the addressable window as well as overflow. Modeling only the arguments and treating the remaining addressable lanes as disposable is invalid. Ordinary allocation actions must not read, rearrange, overwrite, or drain the tail. A lowering unit additionally preserves the suffix beneath its declared inputs, even when that suffix contains owned values that another lowering unit will use later.
+
+The VM keeps physical depth at least sixteen. A pop at the floor introduces a bottom zero. Consequently, logical owned depth and physical VM depth are different quantities. Same-context transitions preserve the protected sequence but may append bottom padding. Contracts permit this padding difference; they do not permit differences in owned occurrences or protected values.
+
+Let `n` be owned depth, `t` protected-tail length, and `b` bottom-padding count. Physical height is `n + t + b`. For a primitive consuming `d` owned lanes, apply the floor rule in actual primitive execution order:
+
+```text
+n' = n - d
+b' = max(b, 16 - t - n', 0)
+```
+
+A push increases `n` and leaves `b` unchanged. Consequently, between explicit normalization operations, `b_out <= max(b_entry, max(0, 16 - t))`. Repeating a loop with a fixed owned contract and protected tail cannot create unbounded padding. Temporary pops inside instruction expansions participate in this calculation.
+
+The checker's finite padding domain is a set of `(tail_length_class, padding_count)` possibilities: tail classes `0..15` and `>=16`, and padding counts `0..16`. The actual tail identity and symbolic length are retained separately. Unclassified input suffix elements remain protected; only established floor-generated zeros are padding. At selected-program joins, union padding possibilities while requiring the exact owned-stack and required spill-slot contract after simultaneous parameter binding. Internal branches use the token-merging rules specified below, under the same padding model. Calls summarize this bounded relation rather than assuming a fixed physical stack delta. Stack-depth-observing helpers require explicit contracts; ordinary lowering units cannot inspect the abstract padding or protected tail.
+
+At a context-return boundary, padding abstraction alone is insufficient. The emitted procedure must return with physical depth exactly sixteen, with results in the prescribed positions. The existing context-return cleanup is retained as an explicitly checked ABI operation. It must never be applied to an ordinary `exec` return whose overflow can contain caller-owned values.
+
+### Required invariants
+
+1. **Legal access.** Every primitive's reads, writes, permutations, and word accesses are legal at the point where it executes. The bound counts felt lanes, including temporary lanes.
+2. **Correct consumption.** Each lowering unit receives the declared stack-input order and multiplicity, and each stored-input binding contains its required current atom. Its result lanes have the declared layout. A later phase's operands are not considered dead after an earlier phase consumes a related value.
+3. **Recoverability.** Every live atom is available in an owned occurrence, a currently valid spill slot, or an explicitly allowed literal/alias reconstruction. No transition destroys its last recoverable representation.
+4. **Valid storage.** A load reads a spill slot containing the current required atom. A write invalidates the old content. Spill slot validity is a path fact, not a historical “this value was spilled” flag.
+5. **Simultaneous edges.** Edge assignments observe all source values before overwriting any destination needed by another assignment.
+6. **Entry agreement.** Every executable incoming edge establishes the destination's exact owned stack, required storage contents, and address provenance after simultaneous binding. Physical bottom padding is governed separately by the floor rule.
+7. **Loop rebinding.** Header parameters denote the next iteration after a backedge. Stale occurrences and spill slots from the previous iteration cannot satisfy the new contract merely because their static `ValueId` is the same.
+8. **Tail and ABI preservation.** Allocation preserves the protected tail; call lowering units enforce their actual context, clobber, padding, and return-depth rules.
+9. **Closed physical plan.** All spill slot addresses, scratch addresses, result bindings, and raw instruction effects are determined before serialization. No emitter makes additional allocation decisions.
+10. **Resource legality.** Frames and addresses satisfy target limits. Optimization failure is recoverable; an invalid lowering unit, unavailable semantic value, or frame exhaustion is diagnosed explicitly.
+
+A dead occurrence can remain buried until a legal cleanup point. It remains represented as dead storage in the physical state. It is never forgotten while still present on the runtime stack.
+
+## Allocation input and control flow
+
+### Selected program
+
+Instruction selection creates a codegen-owned `SelectedProgram`, independent of HIR mutation. It contains a structured control-flow skeleton, straight-line segments of selected lowering units, and an execution-graph projection of that skeleton. This is a small backend representation, not another general-purpose optimization dialect.
+
+A **lowering unit** is one selected instance of a target lowering, with explicit semantic uses and definitions, physical input/output requirements, and storage requirements. It expands without invoking allocation internally, but can contain branches, loops, calls, and traps. A **registered lowering definition** specifies its selection, expansion, and checking rules; a `SelectedLowering` is an instance of that definition; its **expansion** is the emitted MASM body. One HIR operation may select several units when it needs allocation between phases. Internal stages of one unit do not create those boundaries.
+
+The skeleton determines where the final MASM `if`, `while`, and switch-dispatch code occurs. The graph determines reachability, liveness, and edge transfers. They reference the same segments and edges. Selection can introduce temporary values and segments for phased calls and dispatch; these are included before liveness is computed.
+
+Ordinary operation order and effects remain fixed. The allocator does not move loads, calls, traps, or other HIR operations across each other. Rematerialization is limited initially to exact literals and representation aliases. Existing HIR optimization retains responsibility for semantic motion.
+
+### Generated procedure definitions
+
+`ProcedureOrigin` is either a final HIR procedure or a registered generated-procedure definition with explicit parameters. Generated definitions cover executable main, initialization sequencing and fragments, entry/ABI adapters, and the optional test harness. They specify required stages, source bindings, control flow, effects, and entry/return conventions. `SourceStepId` identifies an HIR operation or a stage of such a definition; generated bodies do not invent HIR provenance.
+
+A generated definition produces a `SelectedProgram` through the same allocation, frame-layout, expansion, and verification boundary as an HIR body. The coverage checker compares its selected stages and bindings with the registered definition and its parameters. A builder cannot declare its own output correct by attaching a coverage annotation. Initialization order, entrypoint target, invocation convention, test-harness control flow, and return normalization are explicit obligations.
+
+Artifact construction may package and link verified bodies but cannot append executable instructions afterward. In particular, the current raw-MASM construction of main and the test harness in [artifact generation](../../../codegen/masm/src/artifact.rs) moves behind this boundary. The executable root's entry/exit contract is explicit; any helper procedure it invokes must use an opcode compatible with that helper's convention.
+
+### Graph construction
+
+A segment ends at a selected branch, region entry/exit, call phase boundary requiring allocation, or terminal operation. Each edge records simultaneous bindings `destination parameter <- source value` and its control alternative. Captures remain references to dominating values; they do not require a second allocation mechanism.
+
+| HIR construct | Execution graph |
+| --- | --- |
+| `scf.if` | Dispatch to arms; each yielding arm transfers to a continuation whose parameters are the operation results |
+| Missing `else` | Identity edge to the continuation; valid only with no results |
+| `scf.index_switch` | Selected dispatch tree with case/default edges, followed by yield-to-continuation bindings |
+| `scf.while` entry | Init operands bind the before-region parameters |
+| `scf.condition`, true | Forwarded values bind the after-region parameters |
+| `scf.condition`, false | Forwarded values bind the while-result continuation parameters |
+| After-region `scf.yield` | Yielded values bind the before-region parameters on the backedge |
+| Residual `cf` terminal dispatch | Explicit edges to the supported terminal exit blocks |
+| Return or unconditional trap | Terminal edge; no normal successor contract |
+
+The before and after parameter groups of a while are independent. Their arity and types need not match one another. Each individual binding must match its destination layout.
+
+The graph builder validates source/destination ownership, arities, lane layouts, region terminators, and structured control-flow correspondence. It handles supported region operations explicitly. Merely implementing `RegionBranchOpInterface` does not make an unknown operation lowerable; generic interface verification is not currently sufficient to establish these facts.
+
+The existing while emission shape can remain: an outer `while.true`, before-region code, a conditional selecting after-region code or exit, and the synthetic continuation flag. Synthetic flags are physical control temporaries, not another sixteen-element budget charged against all forwarded values. Edge repairs execute on the selected edge after its predicate has been consumed, except repairs common to all successors that are explicitly proved safe to share.
+
+## Analyses
+
+### Reachability and liveness
+
+The selected graph is immutable during analysis and allocation. Reachability follows all structurally executable alternatives; an edge is excluded only when selection has established its impossibility, such as an unconditional trap. Analysis correctness does not depend on speculative branch probabilities or stale HIR executability facts.
+
+Backend liveness uses dense bitsets of semantic value identities. A live value initially means all its representation lanes are needed; lane-specific aliases are normalized through the layout table. Selected temporaries passed between lowering units and operands used in later phases are ordinary values in this analysis.
+
+Let `P(S)` be the parameters of successor segment `S`, and `bind_e(p)` the source supplied to parameter `p` on edge `e: B -> S`:
+
+```text
+edge_live(e) = (live_in(S) - P(S))
+             union { bind_e(p) | p in live_in(S) intersect P(S) }
+
+live_out(B) = union edge_live(e), for all outgoing edges e
+
+live_before(I) = semantic_uses(I) union (live_after(I) - definitions(I))
+```
+
+Solve backward to the least fixed point using a predecessor worklist. Reverse scans then record liveness at lowering unit boundaries. Branch predicates are semantic uses. Edge operands contribute through live destination parameters, not through a blanket use of every forwarded operand. Debug-only descriptions do not create semantic uses. An alias-producing cast still has a semantic dependency on the bits it aliases.
+
+The existing HIR `LivenessAnalysis` remains available to HIR optimizations. It is not authoritative for physical allocation: it combines HIR region traversal, executability, and next-use penalties that do not describe selected call phases or synthetic control flow.
+
+### Next use and cost
+
+Correctness depends only on liveness. Scheduling priority uses a separate deterministic next-use computation over the selected graph: each lowering unit step has a positive cost, a use has distance zero, predecessor transfer adds that cost, and alternative paths take the minimum finite distance. Parameter bindings map distances back to their edge sources. Unused values have infinite distance. Loop membership is computed from graph SCCs; a tie favors retaining a value used in the current loop over a value used only after leaving it.
+
+Distances are saturated integers. They can be computed by a reverse relaxation worklist initialized from uses. Ties use stable value and lane IDs. The heuristic is deliberately simple and inspectable; it is not a claim of globally optimal spilling.
+
+### Entry contracts
+
+Each segment has one entry contract, fixed before planning its body. The contract specifies its exact owned stack, required valid spill-slot and spanning-scratch contents, address provenance, checked lane aliases, and tail policy. Every incoming edge must establish it. Choosing a contract need not precede planning its predecessor bodies: those bodies depend on liveness and next use, not on a successor's final layout.
+
+Procedure entry starts from its ABI-defined state. The rules below govern reachable internal entries; an unreachable segment requires no physical plan.
+
+The planner records each completed predecessor's outgoing state before edge repair. At a conditional, this is the state after predicate consumption on the corresponding alternative. A join waits for all reachable forward incoming states; it does not select whichever state happens to be visited first. Loop headers use the separate rule below. Removing the selected structured loop backedges must leave an acyclic planning graph; selection validates this property. Nested loops follow the same rule recursively. This permits each segment body to be planned once, without global provisional allocation or repeated contract revision.
+
+#### Inherited entries
+
+A nonheader segment with one reachable predecessor inherits the incoming owned stack and valid spill-slot facts for live values, translated through its checked parameter bindings. Dead or buried stack occurrences remain physically represented; there is no compulsory normalization or sixteen-lane truncation. Ordinary preparation can remove them when useful. Facts for dead slot contents may be forgotten without a runtime operation.
+
+Bindings do not imply extra physical copies merely because the destination uses different SSA names. When one source atom supplies multiple destination atoms, the contract can record their equality and let them share a representation. These aliases arise only from checked bindings or existing representation-alias rules; they are not an unrestricted value-equivalence analysis. If a later lowering unit or a chosen contract needs two distinct stack positions, it must materialize two occurrences. A single occurrence cannot fill two positions in an ordered stack layout.
+
+#### Delayed selection at ordinary joins
+
+After all predecessor body plans are complete:
+
+1. Translate their actual outgoing states into the destination's parameter namespace without emitting repairs. Record the source-side evidence for every binding, including duplicate bindings. Captures retain their identities. Only alias equalities proved on every incoming edge are eligible for the join contract.
+2. If all incoming owned stacks already agree, adopt that stack with the common valid spill facts only when every live atom is recoverable from this proposed common contract, including its eligible aliases and permitted reconstructions. Per-path recoverability in different slots is insufficient; if a live atom has no common representation, continue to candidate construction and repair. Physical bottom-padding possibilities are unioned separately. An already agreed wider stack need not be narrowed to sixteen.
+3. Otherwise build the three candidate layouts below, attach their required spill facts, and deduplicate identical contracts.
+4. Trial incremental repair from each immutable incoming state to each candidate. Also trial preparation of the successor's first lowering unit from that candidate. An empty segment contributes zero preparation cost. Trials do not commit actions, storage requests, or successor body plans.
+5. Choose the minimum-cost successfully constructed candidate, commit its edge repairs, freeze its contract, and plan the successor body once. Candidate failure does not damage the incoming snapshots. An unavailable live value is an invariant error. Final frame capacity is checked after physical slot assignment over the completed plan; local scoring does not claim to predict the final coloring or perform global frame-capacity search.
+
+The candidate set is fixed and small:
+
+| Candidate | Construction |
+| --- | --- |
+| Next-use layout | Rank live complete values by next use, then stable ID; place values while their combined width fits sixteen lanes |
+| Common-residency layout | Prefer complete values addressable on every incoming edge. Order them by their maximum incoming raw depth, then next use and stable ID, which preserves unanimously agreed relative ordering. Fill remaining capacity from the next-use ranking |
+| Incoming layout | Filter each incoming stack to one occurrence per live complete value and take layouts fitting sixteen lanes. Group identical layouts and choose the group with greatest incoming weight; break ties by stable edge ID |
+
+These candidates use sixteen as a selection heuristic, not a total-depth invariant. ABI layouts, inherited states, agreed join states, and lowering unit preparations may be wider. Captures and parameters participate in the same candidate construction. A candidate assigns a required spill slot to each live lane without a resident or permitted reconstructed representation; therefore a wide interface remains representable. The all-spill-slot contract is the conservative limiting case of this policy.
+
+The score is `sum(weight(edge) * repair_cost(edge, candidate)) + sum(weight(edge)) * first_preparation_cost(candidate)`. Costs use the scheduling estimate of expanded instructions, including stored-input establishment, stack loads, and stores. Weights default to one; existing execution-frequency metadata may supply weights without introducing a new profiling analysis. Equal scores use the candidate order in the table, then stable IDs. This accounts for an immediate shuffle or reload in the successor without looking ahead through its body or recursively optimizing downstream contracts.
+
+#### Preserved spill-slot facts
+
+A resident value may also have a required valid spill copy. At an ordinary join, retain such a fact when the same abstract slot contains the corresponding current atom on every incoming edge after binding. This is an intersection of proven slot contents, not a union of previous stores. Different slots on different edges do not establish a common fact. Additional facts may be forgotten; no path-specific fact becomes a successor assumption.
+
+Prefer a common existing slot for a required nonresident atom. Otherwise use its deterministic canonical spill-slot ID, creating that ID lazily. Captures reuse their canonical IDs across segments; loop parameters have stable header slot IDs. Stable IDs identify storage, not permanent contents. If several common slots contain an atom, prefer its canonical slot, then the smallest stable slot ID, to avoid retaining unnecessary duplicate storage obligations.
+
+Canonical slot keys derive from stable semantic value/lane IDs, and temporary keys from stable lowering unit or edge IDs and local indices. Tie-breaking does not use predecessor visitation order, global allocation counters, or speculative-trial order.
+
+For example, when both arms load `x` from the same slot, the join can retain both its stack occurrence and its valid spill copy. A later eviction can drop the stack occurrence without storing it again. Slot facts included in the contract remain liveness obligations during physical slot reuse.
+
+#### Loop-header selection
+
+Loop headers are fixed after their forward-entry states are known and before planning their cyclic bodies. Forward incoming edges are repaired to that contract; backedges are repaired after their bodies are planned. A later backedge never causes header revision or body replanning.
+
+Forward-entry equality alone does not establish a loop invariant. This initial policy does not add aliases between distinct loop parameters at the header, even if they receive the same initial value: their backedge sources may differ. Selection-established representation aliases and invariant-capture identities remain available. Ordinary joins inside the loop can still preserve equalities proved by all their actual incoming states.
+
+Choose resident complete values using static loop demand: values used in the cyclic body take priority over values used only after leaving it. Within that class, use next-use distance restricted to the loop; within the exit-only class, use ordinary next use. Prefer an existing forward-entry order when priorities tie, then stable IDs. Fit the selected values into the ordinary sixteen-lane header target. This prioritizes repeated loop work over making the first entry free, without forecasting an unplanned backedge. Nested-loop uses participate in the containing loop's demand; no trip-count inference is required.
+
+Nonresident loop-invariant captures receive spill slots established on forward entry. Their contents are required at the header and preserved through the body and backedges. Resident captures also retain spill facts already established on every forward entry. The compiler does not create speculative spill copies for every resident invariant. A spill first introduced inside a loop may still repeat; eliminating all such stores is outside this initial policy.
+
+An invariant spill fact is established inductively: the entry edge supplies it, the body preserves it, and each backedge proves it still holds. It is not intersected with an initially unknown backedge and discarded. Calls preserve these slots under the existing caller-local ABI assumption. Physical coloring must respect their loop-spanning lifetimes.
+
+Changing loop parameters obey the same fixed slot assignments but require the new incoming source token on every backedge. An old iteration's contents are insufficient. Identity transfers can omit a store when the slot already contains the actual required source atom; a stable parameter ID alone cannot establish that equality.
+
+## Physical plan representation
+
+The following types specify responsibilities; field/container choices can follow existing Rust conventions.
+
+```rust
+struct SelectedProgram {
+    origin: ProcedureOrigin,       // final HIR or registered generated definition
+    values: ValueTable,             // HIR origin, type, raw layout, alias maps
+    segments: Vec<SelectedSegment>, // selected lowering units, in semantic order
+    edges: Vec<TransferEdge>,       // simultaneous parameter bindings
+    structure: ControlTree,         // MASM-compatible structured skeleton
+    abi: ProcedureAbi,
+}
+
+struct EntryContract {
+    stack_top_first: Vec<Atom>,
+    required_spill_slots: Vec<(SpillSlotId, Atom)>,
+    required_scratch: Vec<ScratchCellFact>, // initialization and selected content relations
+    address_facts: Vec<AddressFact>,       // object, range, and offset provenance
+    aliases: LaneAliasTable,        // equalities established by every incoming edge
+    tail: TailPolicy,
+}
+
+struct AllocatorState {
+    stack_top_first: Vec<Occurrence>,
+    spill_slots: Map<SpillSlotId, Atom>, // currently valid contents only
+    aliases: LaneAliasTable,
+    tail: TailState,
+}
+
+enum PlanAction {
+    Dup { depth: u8 },
+    Swap { depth: u8 },
+    MoveUp { depth: u8 },
+    MoveDown { depth: u8 },
+    Drop,
+    PushLiteral(Felt),
+    StoreLane(SpillSlotId),         // consumes raw top lane
+    LoadLane(SpillSlotId),          // pushes raw spill slot contents
+    RunLowering { step: SelectedStepId }, // exact selected instance and phase
+    DebugLocation(DebugLocationId),
+}
+
+struct SelectedLowering {
+    kind: LoweringKind,                 // registered expansion and checking rules
+    source: SourceStepId,             // HIR operation or generated-definition stage
+    semantic_inputs: Vec<ValueId>,
+    stack_inputs: Vec<Atom>,          // top first, with required multiplicity
+    stored_inputs: Vec<StoredInput>,
+    outputs: Vec<Atom>,
+    effects: LoweringEffects,
+    scratch: Vec<ScratchRequirement>,
+    scratch_effects: Vec<ScratchEffect>, // checked content dependencies, reads, and writes
+}
+
+struct StoredInput {
+    id: StoredInputId,                // local to this selected lowering unit
+    atom: Atom,
+}
+
+struct LoweringBindings {
+    stored_inputs: Map<StoredInputId, SpillSlotId>,
+    scratch: Map<ScratchId, ScratchAllocation>,
+}
+
+struct ProcedurePlan {
+    selected: SelectedProgram,
+    contracts: Vec<EntryContract>,
+    segment_actions: Vec<Vec<PlanAction>>,
+    edge_actions: Vec<Vec<PlanAction>>,
+    spill_slots: SpillSlotTable,
+    lowering_bindings: Map<SelectedStepId, LoweringBindings>,
+    source_map: SourceMap,
+}
+
+struct VerifiedProcedure {
+    frame: FinalFrameLayout,
+    body: VerifiedMasmBody,
+    debug_locations: DebugLocationTable,
+    invoked: InvocationSet,
+}
+```
+
+Depths in primitive actions count raw lanes. Value grouping is metadata used to propose schedules, not a restriction on fallback operations. `RunLowering` references the selected operation; it cannot provide a caller-authored list of “expected values” that the checker blindly trusts.
+
+Edge binding is not an executable arbitrary `Rename` instruction. The checker first proves the target locations contain the edge's source values, then applies the simultaneous destination names at the boundary. Alias maps are likewise justified by selection rules.
+
+Contract aliases describe equality of current lane tokens. They allow multiple semantic names to use one recoverable representation, but do not change physical stack multiplicity. Rebinding or redefining a value invalidates facts about its old dynamic instance, including aliases; only checked new bindings can establish replacement equalities.
+
+`SpillSlotId` is an abstract spill slot for one raw lane. A scratch descriptor records size, alignment, contiguity, address space, declared uses and lifetime, and whether it is unit-local or spans lowering units. Scratch cannot alias a live spill slot. All scratch objects are declared before frame assignment; lowering unit expansion cannot discover additional storage. Source-declared HIR locals use their existing identifiers and occupy a disjoint frame range. Spill slot allocation does not mutate `Function::locals()`.
+
+Spill slots use the existing procedure-local memory and calling convention. On invocation, the VM advances the frame pointer to allocate sufficient space for the callee’s declared locals. The existing ABI assumes that a procedure does not write into its caller’s local memory unless explicitly arranged, such as by passing a pointer to a caller local. Compiler spill-slot addresses do not escape into the source program or callees, so their contents survive same-context calls under that assumption. This is an accepted premise of the design, not an open validation question or a new memory-protection mechanism; malicious writes are outside scope. The allocator and verifier still enforce correct frame offsets, slot reuse, and separation from source locals and reserved scratch.
+
+## Allocation and scheduling
+
+### Lowering unit requests
+
+Each selected lowering unit declares semantic uses and definitions independently of their required physical locations. Its interface specifies an ordered stack-input prefix, stored-input requirements, output layout, allowed aliases, memory/call/trap effects, control behavior, and declared scratch. The registered lowering unit kind determines the expansion and checking rules; a plan cannot supply arbitrary expected values or trusted effects to exempt itself from verification.
+
+A stored input requires a particular current atom in a valid spill slot at lowering unit entry. It is not a source-local identifier, a new SSA definition, or permission for the emitter to allocate storage. The allocator binds each requirement to a slot, reusing existing valid contents where possible. Equal atoms can share one slot through checked aliases; distinct stored-input IDs do not mandate distinct slots. A semantic operand may occur both in the required stack prefix and in stored inputs, and may have repeated physical uses.
+
+The allocator establishes stored inputs before arranging the stack prefix. If a required stored atom exists only below the addressable window, the existing storage fallback can expose and store it while preserving other pending inputs. All bound slot contents remain required during subsequent stack preparation. A literal satisfies a stored-input requirement only after being written to a bound slot; choosing an immediate instead would require a lowering unit variant that explicitly permits it. Establishing requirements consists of physical allocation actions, not semantic execution of the operation.
+
+Expansion receives resolved input and scratch bindings plus an instruction sink. It cannot query or mutate the allocator's location map, invent a spill slot, or introduce an undeclared storage read. Stored-input slots are read-only within the lowering unit; mutable temporary storage uses declared scratch. The lowering unit preserves the stack suffix beneath its declared stack inputs, even when that suffix includes owned live values. Temporary pushes may exceed sixteen total elements; every actual indexed access must remain legal.
+
+#### Internal stages and allocation boundaries
+
+An internal lowering unit stage is part of one uninterrupted expansion. It can have branches, loops, temporary lanes, bound-slot reads, and intrinsic calls. There is no allocator invocation, entry-contract normalization, or intermediate SSA result publication between its stages. “Uninterrupted” concerns allocation; it does not promise atomic memory effects or prohibit traps.
+
+An allocation boundary is explicitly selected between separate lowering unit steps. A multi-phase operation uses such steps only when allocation between them is useful. Their temporary values and cross-phase scratch lifetimes are present in the selected program before liveness runs; later phases' operands remain live through earlier phases. Each boundary must have a complete physical contract. No phase can assume that a partially prepared stack remains in place unless that boundary actually specifies it.
+
+The byte `memmove` and FPI examples below each use one lowering unit with internal stages. In particular, FPI uses sixteen stack inputs and six stored inputs at full width, then builds its twenty-two-lane call layout internally. It needs neither a fictitious intermediate payload value nor a general facility for locking a prepared prefix across separately allocated phases. Indirect-call or dispatch selection may still introduce genuine allocation boundaries where useful.
+
+Pure arithmetic and existing small scalar memory lowering units can usually retain their instruction sequences. `InstOpEmitter`'s result binding on destructor is replaced with explicit completion of a lowering unit: verify the result shape, then bind its output identities. A partial or failing lowering unit cannot silently publish results.
+
+### Safe storage writes
+
+Every planner-generated compiler-storage write must preserve the old contents if a pending input, live-after value, retained contract fact, bound stored input, or unfinished edge transfer still requires them. This rule applies to stored-input preparation, selective-eviction backing stores, full normalization, and edge repair. A canonical slot ID is a destination preference, never evidence that the cell is empty or contains its namesake value.
+
+`safe_spill_slot(a, needed)` reuses a suitable valid copy or chooses a destination whose old contents are redundant or unneeded. If the preferred slot holds the only needed copy of another atom, choose a fresh abstract slot. For a mandatory destination fixed by a contract, first preserve endangered old contents in another valid location or a fresh snapshot slot, then perform the write. Fresh snapshot selection does not recursively overwrite another required source. Update slot facts after the actual write; merely allocating or renaming a slot initializes nothing.
+
+For example, with stack `[a]`, canonical slot `slot(a)` containing the only copy of needed `b`, and both atoms required, normalization must store `a` elsewhere or preserve `b` before overwriting. It cannot blindly store `a` into `slot(a)`. Final coloring must also obey interference; the physical verifier detects overwrites through aliased final offsets independently of these abstract write checks.
+
+### Straight-line allocation
+
+At each lowering unit step:
+
+1. Determine all semantic inputs, required stored atoms, repeated stack occurrences, live-after values, and future-phase requirements from the selected program and liveness. Stored operands contribute semantic uses even though they do not occupy the input prefix.
+2. Establish the stored-input bindings on a trial state, then propose stack preparation using the scheduling tiers below. A source occurrence may be consumed if another representation preserves every required future use. Preserve every bound stored-input fact throughout preparation.
+3. Simulate the proposal on a private state copy. Accept only a complete transition satisfying the stack prefix, stored-input bindings, and recoverability invariants. An unsuccessful proposal does not mutate the committed plan.
+4. Commit the first successful tier's complete proposal. If the earlier tiers do not apply or succeed, use full normalization while preserving the stored-input bindings. Trial actions, lowering unit bindings, spill-slot contents, and storage requests are committed together; failed trials leave none of them behind.
+5. Expand/execute the lowering unit's declared physical effect. Bind results explicitly. Discard invalid spill slot facts and mark dead occurrences. Remove accessible dead occurrences when profitable; inaccessible dead lanes stay accounted for until normalization.
+
+The old `Move`/`Copy` distinction becomes a scheduling choice derived from recoverability. A live-after input need not be duplicated if consuming it leaves a valid spill slot. Multiple uses in one input tuple require distinct physical occurrences, even when they denote one atom.
+
+Allocation chooses operand sources, preservation, loads, and evictions. The existing bounded shuffle solver remains an optimization for resident copies and permutations, with widths and duplicate handling checked against raw lanes. It does not choose spill slots or perform eviction. Its `NoSolution` selects another construction, not a diagnostic or an immediate full drain. It cannot rename different atoms as equivalent to manufacture a solution.
+
+The current solver models grouped operands. Use it only when the candidate can be represented faithfully in that model, including aliases and copies. A split raw layout can bypass it: tiers one and two may decline, while tier three has a deterministic raw-lane permutation. The allocator's raw representation must not inherit a whole-value grouping restriction merely to satisfy the optional solver.
+
+### Scheduling tiers
+
+Try these tiers in order:
+
+1. **Stack-only scheduling.** Reuse existing occurrences through legal copies and permutations. A checked successful schedule is accepted even when total owned depth exceeds sixteen.
+2. **Loads and shuffles without eviction.** Materialize spill-slot or literal operands and schedule the resulting stack, optionally gathering resident sources before the loads. Existing unrelated occurrences remain on the stack.
+3. **Bounded preparation with selective eviction.** Reserve an active prefix, evict only enough occurrences to fit the prepared operands and retained active values, then materialize and permute them. Deeper occurrences remain untouched.
+4. **Full normalization.** Drain and reconstruct the known owned prefix using the deterministic transition below.
+
+Being in a spill slot is an ordinary operand source, not a reason to select tier four. Loading a slot leaves its contents valid. A value may remain represented both on the stack and in its spill slot; dropping its stack occurrence does not invalidate the slot. These facts survive within a segment until a write or semantic rebinding invalidates them. Contract boundaries retain their existing explicit-fact rules.
+
+### Loads and shuffles without eviction
+
+Tier two tries two fixed candidates on independent state copies. In the first, materialize one source for each distinct input atom absent from the addressable prefix, then invoke the bounded shuffle solver. In the second, first gather one occurrence of each required resident atom to the top using only moves, then materialize the absent sources and invoke the solver. Gather sources and materialize absent atoms in reverse order of their first appearance in the input tuple, with stable occurrence selection. Gathering introduces no copies and no height increase. Each absent source must have a valid spill slot or permitted reconstruction. The solver supplies remaining multiplicity and live-after copies, subject to actual access checks.
+
+Each candidate uses a fixed solver budget. Choose the successful candidate with the smaller estimated expanded instruction count, including its loads and gathering moves, breaking ties in favor of the first. This is a scheduling cost estimate, not a correctness condition. Neither candidate evicts occurrences. A failed access, unsatisfied preservation obligation, or exhausted solver causes that trial to be discarded. There is no unbounded retry or search over load orders.
+
+For example, with top-first notation and last-use inputs `a` and `b`:
+
+```text
+input stack: [x0, x1, ..., x14, a | deeper values]
+required:    [a, b]                 b is in a valid spill slot
+
+moveup.15
+load_slot b
+swap.1
+
+prepared:    [a, b, x0, x1, ..., x14 | deeper values]
+```
+
+Loading first would bury `a` at depth sixteen. Gathering it first makes every access legal without spilling any `x` value. Total depth grows, which is permitted. If `a` is live afterward, a valid spill copy or an additional stack occurrence must preserve it; for this example, duplicating `a` at the top before loading `b` is also legal.
+
+### Bounded preparation with selective eviction
+
+Tier three operates on raw lanes. Let `A` be the first `min(owned_depth, 16)` owned occurrences and `S` the remaining owned suffix. The protected caller tail is separate and unchanged. The boundary between `A` and `S` is fixed for this proposal: removing an occurrence from `A` does not recruit a newly exposed occurrence from `S`. A value layout may cross the boundary; its lanes retain their identities and prescribed operand order.
+
+This tier applies to a stack-input tuple `I` of at most sixteen lanes when every input atom has a source in `A`, a valid spill slot, or a permitted reconstruction. An atom available only in `S` makes this tier inapplicable. A wider stack-input tuple also makes this tier inapplicable, without making the selected lowering unit illegal; other checked schedules and full normalization can establish legal wider prefixes. Stored-input requirements do not count toward `len(I)`, and expansion can construct a wider internal layout, as FPI does.
+
+The algorithm is:
+
+1. **Assign input occurrences.** For each input atom, assign existing occurrences in `A` to its requested positions, in stable depth order, up to the requested multiplicity. Pin those occurrences against eviction. Unassigned input positions will be loaded, reconstructed, or duplicated from a pinned source. Multiplicity counts raw physical occurrences, not distinct SSA values.
+2. **Construct the retention set.** Initially retain every unassigned occurrence of `A` after the input tuple. For every live-after atom whose assigned input occurrences would be its last representation, add one planned survivor copy unless another retained occurrence, `S`, a valid spill slot, or a permitted reconstruction already preserves it. A planned copy is a reservation; it has not yet been pushed.
+3. **Select evictions until the target fits.** Let `R` be the retained occurrences and planned survivor copies. While `len(I) + len(R) > 16`, select one member of `R` for removal and perform step four before selecting another. Prefer dead or redundant occurrences, then occurrences recoverable from a valid spill slot or literal, then occurrences requiring a new spill store. Within each class, prefer the farthest next use, then stable atom/occurrence IDs. Recompute recoverability after each choice so two individually redundant copies cannot both be discarded without preserving their value.
+4. **Preserve and remove each selected victim.** For an actual active occurrence, issue `moveup` followed by a drop if another representation suffices, or a raw store if this is the last representation needed afterward. For a planned survivor copy, cancel the reservation; if necessary, establish a spill copy from its pinned input source first. The latter can use `dup.d; store_lane(slot)`, which leaves the source occurrence on the stack. This handles a sixteen-lane input tuple whose inputs are also live afterward: preservation moves to spill slots rather than requiring a seventeenth retained lane.
+5. **Materialize missing occurrences.** After all removals and backing stores, fill unassigned input positions and surviving copy reservations in stable target order. Prefer duplicating an available active source, otherwise load its valid spill slot or reconstruct its literal. Each materialization increases active occupancy by one. All sources remain in the active prefix or memory throughout this phase.
+6. **Permute to the target.** The exact target is `I` followed by `R`, preserving the original relative order of retained actual occurrences and placing planned survivor copies afterward in stable atom order. Ask the bounded solver to improve the permutation. If it declines, visit the target from bottom to top and `moveup` its corresponding, not-yet-placed occurrence. Assign distinct occurrence IDs to duplicate lanes. Already placed occurrences form the prepared prefix and are not selected again. Every move addresses a lane within the active prefix.
+
+Victim redundancy and live-after recoverability are evaluated after the lowering unit consumes its assigned input occurrences. A pinned input is a materialization source, but is not by itself a surviving representation. For example, if one `a` is pinned as an input and another `a` is retained, evicting the retained copy must store it when `a` is live afterward and no other representation survives.
+
+Evicting a live value can establish a spill copy that also preserves its input occurrences; re-evaluate planned survivor reservations accordingly. Canceling a now-unnecessary reservation requires no runtime drop. Once `len(I) + len(R) <= 16`, no further eviction is required by this construction. Optional dead-value cleanup remains a separate cost choice.
+
+### Preparation invariants and progress
+
+All tiers establish the exact input prefix and preserve every live-after atom. Tier three additionally maintains:
+
+- **Fixed suffix.** `S` and the protected caller tail retain their identities and order. Slot loads, backing stores, and permutations never index into either sequence.
+- **Source availability.** Every unmaterialized input has a pinned active source, a valid spill slot, or a permitted reconstruction. Eviction cannot remove a pinned source.
+- **Preservation before destruction.** Canceling a survivor reservation or removing an occurrence cannot destroy the last representation needed after the lowering unit. A valid spill copy is sufficient even if the only stack occurrence is consumed.
+- **Reserved capacity.** Before materialization, actual active occurrences plus all outstanding materializations equal the chosen target size, at most sixteen. Each completed materialization preserves that bound. Eviction and backing stores also begin and end with at most sixteen active occurrences.
+- **Legal temporary accesses.** Raw address-generation and store/load temporaries may exceed sixteen total lanes. Their actual indexed accesses are checked in execution order; the capacity invariant is not imposed on intermediate primitive states or total stack depth.
+- **Atomic proposal.** An incomplete proposal publishes neither actions nor location facts. Final independent verification checks the committed actions after physical slot assignment and expansion.
+
+The input tuple itself fits sixteen, so removing retention reservations must eventually make the target fit, provided required backing storage fits the procedure frame. Each removal decreases the target size. The finite materialization list then fills that target, and the final permutation places one occurrence per step. Thus bounded preparation does not depend on shuffle-search success. An unavailable input source selects full normalization; a missing semantic value or actual frame exhaustion remains an invariant/resource diagnostic, not an infinite retry.
+
+### Full normalization
+
+The conservative transition can replace the entire known owned prefix. Its desired output is either a lowering unit input prefix or an exact destination contract. It never drains the protected tail.
+
+```text
+needed = source atoms required by the destination stack and slot obligations
+         union all pending lowering unit stack inputs and stored-input atoms
+         union atoms live after the transition
+
+while the owned prefix is nonempty:
+    a = its top atom
+    if a is needed and has neither a valid spill slot nor a permitted literal reconstruction:
+        store_top_lane(safe_spill_slot(a, needed))
+    else:
+        drop_top_lane()
+
+establish required slot contents from preserved sources or permitted literals
+    using simultaneous-copy rules for edge assignments
+
+for a in reverse(desired_stack_top_first):
+    push its literal, or load its valid spill slot
+
+check required spill slots and exact desired prefix
+```
+
+Resolve edge requirements to source atoms before this transition. When normalization is used while establishing a lowering unit's stored inputs, its preservation set includes the entire pending stack-input tuple, even when those inputs have no use after the lowering unit. Literal reconstruction permits dropping an occurrence during the drain; it does not satisfy a stored-input requirement. Establishing that requirement still emits a literal push followed by a store. Preserve already established stored-input bindings throughout the transition.
+
+When preparing an ordinary lowering unit, the conservative desired prefix contains only its stack inputs; live-through values remain in spill slots. When establishing an entry contract, it contains exactly the contract's resident atoms. This makes fallback progress independent of how many operands were buried and avoids repeatedly shuffling a growing prepared prefix.
+
+Raw lane stores expand to `locaddr.k; mem_store`; raw lane loads expand to `locaddr.k; mem_load`. MASM `mem_store` consumes the original top lane after consuming its address. `locaddr` uses only top temporaries, so it can legally run while other values spill into the VM overflow table. These paths introduce no helper calls and no typed-value normalization.
+
+The loop strictly decreases the number of owned occurrences. Reconstruction is a finite sequence of loads/pushes. Thus the transition terminates and uses no inaccessible indexed operation, provided all required atoms were recoverable initially, the destination lowering unit is valid, and the procedure frame fits. Missing input data is a compiler invariant error, not a reason to manufacture a value or retry indefinitely.
+
+### Edge transfers and loop parameters
+
+Transfers execute only on their selected control-flow edge. A conditional first establishes its predicate and common source state; its taken arm performs the corresponding repair after predicate consumption. A yield repairs the edge to the containing operation's continuation. A loop's initial edge and backedge use the same header contract.
+
+Edge repair is incremental. An already satisfied contract emits no runtime actions. An already valid required spill slot emits no store. Changing semantic parameter names or retaining additional proved spill facts is not itself a reason to move values.
+
+For each edge, construct its source-valued target by substituting all destination parameters with their incoming source atoms simultaneously. Keep that snapshot until every transfer is complete; do not relabel mutable state one parameter at a time. Alias claims are checked against this same snapshot. The target lists exact physical stack positions as well as required slot contents, so duplicate sources may still require multiple physical occurrences.
+
+The repair planner proceeds as follows on a trial state:
+
+1. Compare the source-valued target with actual stack occurrences and valid slot contents. Remove already satisfied slot assignments. If the exact owned stack, required slots, and alias obligations are all satisfied, finish with only checked semantic binding.
+2. For remaining slot assignments, protect source tokens against destination overwrites. Existing occurrences or unaffected valid slots can supply protection. When an old slot is about to be overwritten, preserve any readers that still need its contents, including readers used to build the destination stack. Protection is established by legal copies or temporary spill slots before the destructive write.
+3. Execute acyclic slot assignments whose destination is no longer needed as an old source. For a cycle, save one old destination lane in a temporary slot, redirect its readers, and continue. One raw-lane scratch cell breaks a scalar assignment cycle; additional source protection may be needed for stack outputs. A required slot can be filled from an accessible stack occurrence, another slot, or permitted reconstruction. Repeated destination slots with incompatible required contents are invalid; repeated source atoms are allowed.
+4. Establish the exact target stack with legal resident moves, slot loads, literal reconstruction, and selective removal of unwanted occurrences. Preserve still-needed sources before removing them. Use the same raw actions, bounded permutation, and access checks as operand preparation, but with the edge's exact target and pending-transfer obligations rather than an operation's consumed inputs. Full normalization remains the fallback when the bounded repair cannot expose or remove the necessary occurrences legally.
+5. Check every target position, required slot, spanning-scratch fact, address fact, and alias against the original simultaneous binding. Then introduce the destination names together and retain exactly the contract's declared facts and aliases. Do not replan the predecessor body or revise a frozen destination contract.
+
+The low-level transfer machinery is shared with operand preparation; its completion condition differs. Operand preparation may leave retained active occurrences and a deeper owned suffix below its inputs. Edge repair may retain those occurrences only if they are explicitly part of the destination contract. Otherwise they must be removed legally. A preserved caller tail is never part of that cleanup, and floor-generated bottom padding is governed separately.
+
+Trial repair may preserve all endangered sources in temporary slots instead of using minimal cycle handling. This changes cost, not semantics. An unsuccessful incremental trial is discarded before full normalization starts from the original incoming state. Required slots, temporary snapshots, and stack sources all participate in spill-slot liveness and final physical verification.
+
+At a backedge, this process kills the old header parameter versions before publishing the new versions. For example, `(a, b) <- (b, a)` cannot be implemented by storing `b` over `a` and subsequently loading that overwritten cell for `b`.
+
+The same freshness rule applies to every semantic definition executed inside a loop: locations and aliases recorded for an earlier dynamic instance of its static result ID cannot establish the new result. At a checked edge binding, substitute the source tokens simultaneously into the destination contract and discard all other facts. Static `ValueId` equality alone never proves current spill slot contents. Inherited entries explicitly carry forward their proved facts in the new contract; they do not bypass this check.
+
+### Procedure frame layout
+
+Spill slots are created lazily when a contract or action needs them. They are not allocated for every SSA definition up front. Complete the physical action graph, including edge repairs and temporary snapshots, using abstract lane spill slots before assigning physical offsets. Storage reuse is a separate deterministic pass; it does not reschedule actions or revise frozen contracts.
+
+#### Stored-content lifetimes
+
+Semantic liveness, stored-content liveness, and physical storage are distinct. A value can remain live on the stack after its last required reload, allowing that stored copy's cell to be reused. An abstract `SpillSlotId` identifies a storage request, not permanent contents or a dedicated physical cell. Repeated stores to the same abstract slot begin new content lifetimes.
+
+Compute storage liveness backward over the completed action graph:
+
+```text
+                           reads        overwrites
+LoadLane(s)                {s}          {}
+StoreLane(s)               {}           {s}
+RequireSlot(s, atom)       {s}          {}
+RunLowering(bindings)      bound slots  {}
+
+live_out(action) = union live_in(successor)
+live_in(action)  = reads(action)
+                   union (live_out(action) - overwrites(action))
+```
+
+`RequireSlot` denotes a pseudo-read at a contract boundary, not an emitted instruction. Every retained contract spill fact contributes such a read, including a cached copy of a resident value retained to avoid a later store. “Optional” means contract selection may omit that fact before successor planning. Once retained, it is a storage obligation; physical coloring cannot silently discard it while downstream actions rely on it.
+
+A store kills the old contents' lifetime, while token verification separately establishes what the new contents are. Contract entry, semantic parameter rebinding, and result publication are not memory definitions. Explicit actions must establish required contents. Use a bitset predecessor worklist to a least fixed point; no path predicates, numerical lifetime intervals, or per-iteration slot IDs are required.
+
+At a branch, union successor requirements. Slots stored and used only in different arms can share storage when their contents are not needed outside those arms. If both contents are established before the branch and needed by different successors, they coexist before the branch and interfere. Coloring does not move either store into an arm to improve reuse.
+
+At a loop, future reads propagate through backedges. An invariant spill copy stays live around the cycle. A changing header slot's old contents are killed only by an actual overwrite, and the repaired edge must then satisfy the header's pseudo-read with the next iteration's token. Edge-copy snapshot temporaries use the same equations, including reads needed to construct stack outputs. The fixed point computes storage demand; it does not certify correct iteration identity.
+
+#### Whole-unit reservations and scalar coloring
+
+`RunLowering` reads every slot in its stored-input bindings and does not define spill-slot contents: bound stored inputs are read-only, and mutable temporaries use declared scratch. Reserve the bound contents throughout the entire unit, including internal branches, loops, and calls. Copies needed after the unit also remain live across it. A semantic input's consumption at entry does not end its storage reservation, and the last internal prefix load in FPI does not release its bound slot before the call completes. The declarations are available before physical coloring; allocation does not need internal instruction liveness.
+
+Add interference between distinct simultaneously live spill slots, between each store destination and every other slot live after that store, and between distinct simultaneously required contract slots. Whole-unit reservations participate as simultaneous obligations throughout `RunLowering`. In particular:
+
+```text
+store A
+store B       // B is never read
+load A
+```
+
+`A` and `B` must interfere: a dead store can still destroy live contents. Distinct slots are not coalesced merely because their values happen to agree at one point. Requirements already bound to the same abstract slot naturally share it without an additional coalescing analysis.
+
+Deterministic greedy coloring, ordered by descending interference degree then stable slot ID, assigns the first available color. Each color occupies one felt cell. Noninterfering slots may share a color across segments, arms, loop regions, and successive lowering units. No optimal coloring or slot splitting is required.
+
+#### Scratch workspace
+
+Sized scratch stays separate from scalar coloring. Each object retains its complete contiguous range and declared alignment; a four-lane digest accessed through one address requires four contiguous, word-aligned cells. Validate that descriptor alignments are positive powers of two in element units. Scratch descriptors distinguish two storage classes:
+
+- **Unit-local scratch:** all accesses and address uses belong to one `RunLowering` expansion. Lay out that unit's objects in stable ID order with checked alignment, giving them nonoverlapping ranges and reserving every object for the whole unit. There is no internal-stage reuse analysis.
+- **Scratch spanning units:** contents or addresses are needed across allocation boundaries, including initialization or address preparation outside the consuming expansion. Declare the selected lifetime and uses explicitly, and give each such object a dedicated aligned range, initially without reuse between these objects.
+
+All unit-local layouts overlay one reusable workspace. Its alignment is the maximum required unit-local alignment; its size is the maximum per-unit layout size. With no unit-local objects, its size is zero and alignment is one. Each object address is the workspace base plus its unit's relative offset. Sequential units and units on different control-flow arms reuse the workspace without variable-sized interference coloring. Nested emission helpers within one unit contribute to that same unit's layout; they are not separate workspace owners.
+
+A synchronous callee can borrow unit-local scratch when its registered call contract guarantees that it does not retain the pointer. The caller reserves the workspace through the call. If a pointer or contents must remain available after the unit, the object belongs to the spanning class. Nonretention establishes lifetime, not preservation of contents: borrowed ranges also need the memory-effect rules below. This uses the accepted caller-local ABI premise and explicit borrowing contracts, without adding adversarial-memory analysis.
+
+Reusing a range does not establish initialization for its new object. Each unit invocation, including repeated execution inside a loop, must initialize local scratch before a required read. The verifier checks object ownership and definite initialization as well as actual cell contents; it cannot use a previous workspace owner's contents as an undeclared input. No runtime clearing is required. Spanning objects retain only facts established by their declared accesses and checked control-flow contracts.
+
+#### Scratch dependencies across boundaries
+
+Each spanning object has explicit selected content dependencies, reads, and writes. `ScratchCellFact` identifies an object and cell offset and requires either definite initialization or a particular selected content token. Exact identity is required when semantics depend on the contents, such as the procedure root read by `dyncall`; mere initialization is insufficient. `AddressFact` associates a selected pointer token with its object, accessible range, and offset. All facts are checked after final frame assignment, rather than supplied as unchecked annotations.
+
+The selected program declares definitions and uses of these frame-content identities before allocation. A unit that stages a root establishes a checked relation between its input lanes and the object's cells; dispatch consumes that explicit storage dependency. These dependencies propagate backward over the selected graph to determine required boundary facts. They are separate from ordinary SSA operand liveness: a later scratch read does not force an unnecessary stack or scalar-spill copy, and scratch does not become an implicit source for arbitrary operand scheduling. An ordinary stack operand still needs the explicit materialization required by its selected lowering.
+
+Entry contracts carry the required scratch contents and address provenance alongside their spill-slot facts. Forward entries, branch joins, loop backedges, and unit boundaries establish them using simultaneous source-side bindings before introducing destination names. At a join, retain only facts established on every incoming normal edge. At a loop, establish invariant and carried content relations on initialization and every backedge, without accepting a prior iteration merely because an object or value ID is unchanged. The verifier initializes each segment from these checked requirements; unlisted facts are unavailable.
+
+Scratch objects have fixed identities and locations across their selected lifetime. Ordinary edge repair does not relocate them or invent content definitions. Required facts must follow from the registered lowering's actual writes, selected storage transfers, or preserved contents; otherwise verification fails. If branches produce different logical contents needed afterward, selection exposes the corresponding content parameter and simultaneous incoming bindings. Publication of a content definition is restricted to the registered unit's declared scratch outputs and checked physical writes; it cannot bless unrelated cells or bypass source correspondence.
+
+Borrowed-range summaries declare read requirements and possible writes at object/range granularity. Read-only ranges preserve their tokens. A possible write invalidates prior identities; a cell is definitely initialized afterward only if it was initialized and all allowed effects preserve initialization, or an explicit definite-write summary establishes initialization. Definite outputs receive fresh tokens or the exact relation specified by the registered summary. Possible writes alone do not initialize previously uninitialized cells. Unknown or undeclared borrowed effects are rejected. Passing a pointer grants only the declared access, and the checker applies these effects before evaluating subsequent reads or boundary obligations.
+
+#### Final layout and checking
+
+The frame has this order, inserting alignment padding where needed:
+
+```text
+existing source locals
+scalar spill cells, one per color
+scratch objects spanning lowering units
+reusable unit-local scratch workspace
+final frame-alignment padding
+```
+
+Source locals keep their existing order and element offsets. Compiler scratch ranges are disjoint from source locals and scalar spill cells. The final layout drives `locaddr`, debug offsets, and the procedure declaration together. Use checked arithmetic for size, alignment, and range calculations; validate the complete frame before narrowing offsets to instruction operands. The assembler 0.35 bound is 65,532 elements, accounting for four-element alignment. Its constant is currently private; use a named backend bound derived from the target word size, with an assembly boundary test, unless the dependency exposes it. Do not substitute `u16::MAX`. A resource diagnostic reports source locals, scalar colors, spanning scratch, workspace, and padding contributions.
+
+After physical assignment, the verifier tracks contents by actual frame offset. A write replaces the cell's token regardless of its abstract slot name; an old abstract fact cannot survive a write through another colored slot. It checks required contents at loads and boundaries, frame bounds and alignment, object ownership, storage separation, and loop/edge token identities. The checker need not reproduce the coloring heuristic: independently derived obligations and actual instruction replay determine whether reuse was safe. Diagnostics likewise use the final offsets and current verified contents rather than stale abstract slot facts.
+
+No promise of optimal coloring or support beyond the frame limit is made. Scalar reuse and the unit-local workspace are part of the final implementation; this design does not require one permanent physical cell for every intermediate value or every unit-local scratch object.
+
+## Calls and procedure boundaries
+
+Call effects are selected from explicit ABI descriptors carrying both the target calling convention and its argument/result layout. Invocation-family compatibility is mandatory: `exec`/`dynexec` must target a same-context convention, and `call`/`dyncall` must target a context-call convention. Cross-family invocation is undefined behavior in either direction; it is not legalized by an empty protected tail, a matching arity, or an ownership-transfer annotation. Known mismatches are diagnosed. Indirect-call type metadata and checks include the required convention; unresolved external targets use the declared convention as an ABI obligation.
+
+| Call form | Required behavior |
+| --- | --- |
+| `exec` / `dynexec` | Same-context ABI consumes declared arguments and produces declared results while preserving the entire suffix immediately below the arguments, including its addressable and overflow lanes, under the floor-padding rule |
+| `exec_indirect` | Bounds/type/convention checks and index-to-address conversion precede `dynexec`; the address is consumed before callee argument use |
+| `call` / `dyncall` | Caller-save ABI: all sixteen exposed lanes are clobbered except declared results on return; only the caller's overflow below that window is preserved/restored by the VM |
+| `syscall` | Enforce its explicit root-memory-context and sixteen-lane stack-context contract; do not infer same-context `exec` behavior or an ordinary fresh-memory-context contract |
+| FPI executor | Same-context `exec` with twenty-two inputs and sixteen outputs; six prefix lanes precede the fixed sixteen-lane payload |
+
+#### Caller-save context calls
+
+For `a` argument lanes and `r` result lanes, each at most sixteen, prepare and check this layout in top-first notation:
+
+```text
+before call: [arg0, ..., arg(a-1), zero repeated (16-a) | S]
+after call:  [result0, ..., result(r-1), arbitrary (16-r) | S]
+after cleanup: [result0, ..., result(r-1) | S]
+```
+
+`S` contains all retained caller-owned occurrences followed by the protected caller tail and any bottom padding. It starts below the entire exposed window at invocation. Inputs needed after the call must have another representation in `S` or valid spill slots. The caller cannot rely on a callee preserving any nonresult window lane, even if it received a zero or a duplicate argument there. Result identities are introduced only for the signature's result positions; other returned lanes have arbitrary contents with no caller-value identity.
+
+The nonargument input positions must contain explicit zeros. This is an information-isolation obligation as well as stack preparation: no unrelated caller value, including a dead value, may be exposed as incidental padding. No callee inspection or trusted implementation permits omitting this preparation. The verifier checks actual zeros and that every retained caller occurrence lies below the window or in valid storage.
+
+A `dyncall` address is additional transient state consumed before the VM exposes the sixteen-lane window. Check the window after that consumption, and check the staged root's exact contents and provenance. On normal return, remove the `16-r` unspecified lanes without destroying results or `S`; use repeated `drop` for `r = 0`, repeated `swap.1; drop` for `r = 1`, and repeated `movup.r; drop` for `2 <= r <= 15`; for `r = 16` no such cleanup is needed. Apply the ordinary floor-padding rules during cleanup. Do not assume those unspecified returned lanes are still zero.
+
+#### Procedure entry and return
+
+A same-context procedure begins with its argument prefix above an opaque protected suffix of unknown length and contents. Its verifier proves suffix preservation for every legal suffix, even when some of it is addressable. It may append only floor-induced bottom padding; it may not truncate overflow or treat unknown incoming lanes as owned scratch.
+
+A context-call procedure sees exactly sixteen lanes, owns that exposed window, and has no access to the caller's hidden overflow. Only its argument positions are semantic inputs; the other positions are arbitrary disposable contents at procedure entry, even though compiler-generated callers zero them. It returns exactly sixteen lanes with declared results in the prescribed positions; callers assume nothing about the other returned contents.
+
+#### Program root and executable entrypoints
+
+A MASM program's `begin` block starts in a fresh root context. The VM supplies program inputs padded with zeros to exactly sixteen operand-stack elements. This root-entry guarantee is distinct from the calling convention of an ordinary procedure or an external context-call export. A valid HIR program entrypoint must have a convention compatible with `exec`; an incompatible target is rejected, not invoked with `call` or silently adapted.
+
+The registered generated-main definition has this shape:
+
+```text
+begin entry: P = the VM-provided sixteen input/padding lanes
+    root-context initialization
+    optional test-harness setup
+    exec selected program entrypoint
+    exec truncate_stack
+begin return: exactly sixteen lanes
+```
+
+The generated prelude is transparent to the operand stack: the selected entrypoint receives exactly `P`, in the original order and at the original depth. During initialization and harness setup, treat `P` as a protected input window; temporary values and helper arguments live above it. Check that each prelude stage preserves this window and that the prelude restores the exact entry stack before invoking the user procedure. The prelude's intended memory effects are not erased: initialization, harness writes, and entrypoint execution all occur in the same root context, with initialization performed exactly once as specified by the generated definition.
+
+The user's entrypoint follows the ordinary same-context contract, preserving the suffix below its declared arguments. Its return may leave floor-induced padding below the meaningful state. Root main then invokes `truncate_stack` to preserve the top sixteen lanes and remove overflow before returning from `begin`. Do not require the entrypoint to predict or undo VM floor padding, or replace this cleanup with a proof that the call must finish at depth sixteen. This root cleanup is justified by ownership of the root context; it is not a permission for an ordinary `exec` callee to truncate its caller's suffix.
+
+[Generated main](../../../codegen/masm/src/artifact.rs) retains its `exec` invocation and existing root-memory sequencing. The implementation must validate the selected program entrypoint's convention and preserve prelude transparency rather than infer program semantics from canonical export lowering. Context-call exports and their return cleanup remain separate. Any explicitly selected adapter has its own convention and uses compatible invocations internally; no adapter or annotation authorizes a cross-family invocation of its target.
+
+FPI selection uses one lowering unit whose six prefix values are required stored inputs and whose payload is the required stack prefix. Allocation establishes the stored inputs first, then prepares the payload. Expansion pads it to sixteen, loads the prefix in reverse order, and invokes the executor without an intervening allocation boundary. The resulting twenty-two-lane layout is legal because the executor consumes the prefix before needing the buried payload lanes. In the final HIR form, the six prefix values are ordinary semantic operands; frontend-created prefix locals and `Local2Reg` pinning cease to be allocation requirements. Protocol lookup, account switching, and executor semantics remain unchanged.
+
+For indirect calls, replace the current `selector width + argument width <= 16` legalization policy with the actual selected call contract. The current supported callee argument ABI remains bounded at sixteen. An address/index or staged root may temporarily coexist with that payload. This does not authorize arbitrary wider callee signatures or implicit widening conversions while the address occupies stack top.
+
+The existing fixed `dyncall` root scratch must be represented as a declared scratch object, disjoint from scalar spills and other simultaneously reserved objects. It uses the workspace only when all initialization and address uses are inside one lowering unit; otherwise it is scratch spanning units. Its current argument that scheduling emits no memory instructions no longer applies. Independently colored scalar spill slots cannot substitute for the root's required contiguous, aligned range.
+
+External procedures and shared intrinsics require convention-specific ABI/effect summaries for their stack and control effects. Same-context summaries promise suffix preservation and cannot observe or depend on incidental bottom padding. Context-call summaries assume the entire exposed window is clobbered except declared results; caller overflow preservation comes from the VM, not trust in the callee. Helpers that inspect stack depth or intentionally truncate overflow have dedicated summaries and restricted invocation sites. Preservation of caller-local memory follows the existing ABI assumption described above; it does not require a new per-callee proof.
+
+In particular, recognize `miden::core::sys::truncate_stack` by its resolved identity even when called through the [raw SDK import](../../../sdk/stdlib-sys/src/raw/core.rs). It preserves the top sixteen and destroys all overflow. An ordinary call site with a protected tail cannot satisfy that effect contract and receives an ABI diagnostic. The helper is permitted at a context-call return or program-root return boundary after all protected-tail obligations have ended. A zero-argument source signature does not justify a suffix-preserving summary.
+
+## Lowering units and verification
+
+### Lowering unit expansion
+
+A lowering unit is an executable target lowering with a declared stack/storage input and output boundary. Its implementation may use existing arithmetic, pointer, memory, and intrinsic emission code after removing allocation decisions from that code. It emits explicit raw MASM instructions or structured sub-bodies. Stored reads refer to declared input IDs resolved through checked bindings; scratch accesses refer to declared objects. It cannot directly change the planner's value-location map or allocate an undisclosed spill slot.
+
+The raw verifier has instruction-effect rules for the emitted MASM subset, including immediate expansion, word operations, conditional drops/swaps, calls, and internal control flow. Unmodeled instructions are rejected. Rules check actual accesses and preservation, not merely net stack delta. A word load that overwrites existing lanes must have explicit owned scratch/padding for those lanes.
+
+Result identities can be introduced at normal lowering unit completion after checking the independently registered contract and raw shape. The semantic correctness of arithmetic and memory algorithms, their termination and trap conditions, and trusted external procedures remains in the trusted lowering base, exercised by VM/differential tests. The checker proves physical allocation and stack effects; a stack-correct expansion is not by itself proof of the operation's complete semantics.
+
+### Example: byte `memmove`
+
+The existing [copy lowering](../../../codegen/masm/src/emit/mem.rs) handles range checks, an alignment-dependent intrinsic fast path, and a directional scalar loop. For a byte-pointer `memmove`, select one lowering unit:
+
+```text
+semantic inputs: src, dst, count
+stack entry:    [src, dst, count | S]
+stored inputs: none
+normal exit:   [S]
+effects:       source-memory reads, destination-memory writes, may trap
+```
+
+`S` is the entire suffix beneath the three inputs, including any owned live values and the protected caller tail. The allocator preserves another representation of each input needed afterward before invoking the lowering unit. The lowering unit uses stack temporaries and registered intrinsic calls, without adding allocation boundaries or publishing intermediate HIR results.
+
+Its internal stages retain the existing algorithm:
+
+1. Check that the byte length and both end addresses fit the supported address space. On a normal path this leaves `[src, dst, count | S]`; failure traps.
+2. Test whether `src`, `dst`, and `count` are divisible by four.
+3. In the aligned arm, convert to element units and invoke `::intrinsics::mem::memmove_elements` with `[count / 4, src / 4, dst / 4 | S]`. Its registered physical contract consumes those three inputs and preserves `S`.
+4. In the general arm, select descending traversal when `dst > src`, otherwise ascending traversal. Normalize both paths to the scalar-loop state below.
+5. After the scalar loop, drop its five state lanes. Both normal arms finish at `[S]`; the source operation has no SSA results.
+
+The scalar loop has explicit raw-state contracts:
+
+```text
+ascending initialization:  [0, src, dst, count, 1 | S]
+descending initialization: [count - 1, src, dst, u32::MAX, u32::MAX | S]
+
+body entry: [i, src, dst, end, step | S]
+body exit:  [continue, i_next, src, dst, end, step | S]
+```
+
+The body computes the two current byte addresses, loads and stores a byte, advances `i` by wrapping addition with `step`, and tests against `end`. `while.true` consumes the condition. An initial condition handles the zero-count path without executing the body. The internal loop checker verifies initialization, one iteration, the backedge contract, and exit cleanup; it does not unroll a runtime count.
+
+The verifier checks the lowering unit's source operand identities and order, every raw temporary access, unchanged loop-state lanes and suffix, branch agreement, intrinsic stack contracts, and complete cleanup. Branches start from the actual incoming state; loop bodies start from their inductively checked raw contracts. The current emitter's manually reconstructed typed stack and fresh typed stacks for branch emission are not accepted as evidence about the actual instruction effects.
+
+The memory algorithm remains trusted: the sufficiency of range checks, correctness of pointer/unit conversions, overlap direction, byte extraction and insertion, termination, and the intrinsic's copying semantics require execution/differential coverage. The physical verifier need not reject a comparison changed in a way that selects the wrong copy direction while leaving every stack access legal. Source-memory operations follow the program's existing memory semantics; compiler spill-slot addressing and scratch separation remain checked allocation obligations.
+
+### Example: full-width FPI
+
+The existing [FPI emitter](../../../codegen/masm/src/lower/fpi.rs) already pads the payload, loads six prefix locals in reverse order, and emits the executor call. The new lowering unit preserves that execution shape while replacing source-local references with backend-owned stored-input bindings:
+
+```text
+semantic inputs:
+    account_suffix, account_prefix, root0, root1, root2, root3,
+    payload0, ..., payload15
+
+stack entry:    [payload0, ..., payload15 | S]
+stored inputs: account_suffix, account_prefix, root0, root1, root2, root3
+normal exit:   [result0, ..., result15 | S]
+invocation:    exec ::miden::protocol::tx::execute_foreign_procedure
+call contract: 22 input lanes -> 16 output lanes, with preserved suffix
+```
+
+All twenty-two operands contribute semantic uses. The allocator first establishes valid slots for the six stored requirements, then prepares the sixteen payload occurrences while preserving those slots. A prefix atom may also occur in the payload; both physical requirements must hold even though they refer to one semantic value. Prefix values needed later can remain in their slots. Live-after payload values likewise require surviving occurrences or slots.
+
+Expansion performs this uninterrupted sequence:
+
+```text
+[payload0, ..., payload15 | S]
+
+load stored root3
+load stored root2
+load stored root1
+load stored root0
+load stored account_prefix
+load stored account_suffix
+
+[account_suffix, account_prefix, root0, root1, root2, root3,
+ payload0, ..., payload15 | S]
+
+exec execute_foreign_procedure
+
+[result0, ..., result15 | S]
+```
+
+Each bound-slot load expands to raw address generation and a load at the top. The lowering unit never needs to index the buried payload during prefix construction. The protocol executor stages the six prefix lanes into its own locals before accessing the deepest payload lane. This explains the legal twenty-two-lane handoff; the executor's implementation is still covered by its trusted call summary rather than independently proved by the compiler's allocation verifier.
+
+A full payload needs no padding. For fewer inputs, append zero lanes after the real payload and before loading the prefix, using the existing legal padding sequence. The [frontend prefix helper](../../../frontend/wasm/src/fpi.rs) currently changes wrapper order, account prefix then suffix, into executor order, account suffix then prefix. Removing its locals must retain that semantic ordering; the final HIR operands and registered selection rule make the executor mapping explicit.
+
+The verifier checks all stored-input contents and bindings at entry, payload order and multiplicity, actual padding zeros, reverse prefix load order, every raw temporary access, the exact call-input layout and resolved executor identity, and normal-return result publication. It checks preservation of live-through representations and `S` using the registered executor effect summary. It rejects stale slots, swapped prefix lanes, an illegal indexed payload access, or premature result binding. Prefix staging creates no intermediate payload result and performs no second allocation inside the lowering unit.
+
+Protocol behavior, authorization, account switching, foreign-procedure execution, and the executor's promised effects remain trusted. The allocator verifier also starts from final HIR; it does not prove that frontend wrapper conversion was semantically correct before reaching HIR. Integration tests must exercise that conversion as well as the call itself.
+
+### Verification boundaries
+
+Verification is mandatory in normal compilation and has two layers:
+
+1. **Selected-program and allocation checking.** Check source correspondence, input identities, liveness obligations, edge bindings, location validity, frame offsets, and source provenance against final HIR or registered generated definitions and the selected lowering definitions.
+2. **Expanded instruction checking.** Symbolically execute the actual expanded MASM body with raw lane and memory tokens, including temporary instructions, to establish the physical effects asserted by the plan.
+
+The checker is separate from allocator transitions and solver tactics. Shared definitions specify the target and supported lowerings; independently computed verifier state establishes whether the emitted program satisfies them. The sharing boundary is specified below.
+
+The selected-program checker requires exactly one semantic coverage record for each HIR operation/region, or for each required stage of the registered generated-procedure definition. A record names its ordered lowering units, stack and stored-input bindings, scratch content dependencies, temporaries, result publication, effects, and control alternatives. Aliases and debug operations may have no executable phase; phased calls may have several. The checker validates the record against the registered selection rule and source operands, or the generated definition and its parameters, rather than trusting provenance annotations. Each effectful unit required by the source coverage executes once per applicable selected path; phases execute in order and publish results only at the specified completion boundary. Internal stages such as a copy loop can perform many primitive memory effects while implementing that invocation; their complete algorithmic semantics remain in the trusted lowering base. The checker verifies the graph projection against the structured skeleton. This catches omitted captures, missing edges, swapped bindings, or unsupported terminators before physical checking.
+
+The verifier independently recomputes semantic liveness and required scratch content dependencies from this checked graph and registered phase uses/definitions, including stored operands. It verifies each stored-input binding against the selected source atom at entry, establishes required scratch contents and provenance, and checks every actual read through its final physical address. It does not accept the allocator's liveness tables, slot-validity claims, or recoverability claims as proof. Next-use scores and solver costs are irrelevant to verification.
+
+### Symbolic state and token identities
+
+For each segment, initialize symbolic state from its entry contract, execute its actions and lowering unit expansions, then execute each outgoing edge's actual repair. Entry contracts are proof hypotheses, not facts established by declaration. The actual function entry must satisfy the first contract from the ABI, and every incoming edge must establish its destination contract.
+
+At an edge, compare each destination location against the corresponding source-side atom from the simultaneous binding. Only then introduce destination parameter names. This induction proves loop correctness without unrolling; a stale previous-iteration parameter cannot pass the source-side equality check.
+
+The checker maintains:
+
+- Ordered raw tokens for every owned stack occurrence, plus an opaque protected tail and the floor-padding abstraction.
+- Actual contents of source-independent compiler frame cells, identified by final offsets.
+- Unit-local scratch ownership, required spanning-object contents, and symbolic memory-address provenance for compiler storage.
+- Current semantic definitions/aliases and required live values.
+- Call-context state and whether the current exit requires exact depth sixteen.
+
+Every read requires a valid current token. Every destructive action checks surviving live-value availability at the declared allocation boundary. A lowering unit is responsible for its own in-progress temporary lifetimes; the boundary checker does not demand that a consumed input survive after its specified last phase.
+
+Semantic names and verifier tokens are distinct. The verifier owns the mapping from each current `Atom` to its token; allocator annotations cannot establish that mapping. A conceptual token representation is:
+
+```text
+Input(scope, atom)                   checked incoming value
+Literal(felt)                       exact constant
+Computed(scope, instruction, lane)  opaque primitive or summarized call result
+Join(join, ordered_incoming_tokens) branch-dependent value
+LoopParam(loop_scope, parameter)    arbitrary current carried value
+```
+
+Scope identifies a symbolic verification context, not a runtime iteration counter. At a definition, a fresh binding replaces the old semantic instance; static instruction or `ValueId` equality never identifies different dynamic instances. Constants can share canonical tokens, and checked aliases can associate several semantic names with one token. Equality of types, widths, or initial values is not otherwise proof of identity.
+
+Duplication creates another occurrence of the same token; permutations move tokens without changing them. A store writes the actual source token to the addressed physical cell, invalidating its old contents. A load returns that cell's current token. Uninitialized or not definitely initialized storage is a separate unavailable state, never a wildcard token. Every compiler-storage read requires an initialized cell and the identity required by the binding.
+
+Arithmetic normally produces fresh opaque result tokens. Source-memory loads likewise produce fresh tokens unless a registered rule proves a stronger relation. The checker does not infer algebraic equalities or assume that two loads from the same source address are equal. Compiler-address operations have exact rules sufficient to resolve the final frame offset and accessed range; an unresolved compiler-storage address is rejected. These rules preserve the existing ABI premise for source memory and same-context calls rather than introducing whole-program alias analysis.
+
+The existing typed operand stack, where an intermediate can carry only a type, is not the verifier state. The checker accounts for every raw lane and actual frame cell even when typed emission helpers omit or reconstruct their own bookkeeping.
+
+### Internal branch merging
+
+Execute each arm from a copy of the same actual incoming symbolic state after applying the branch instruction's predicate consumption. Inspect the emitted instructions, not a claimed arm summary. Check both arms conservatively unless a supported exact rule proves a path impossible. Nonreturning paths contribute no normal continuation state.
+
+At the join, require compatible raw stack shape under the floor-padding model, exact protected suffix preservation, and all required storage facts. Merge normal incoming states in a fixed predecessor order:
+
+1. Preserve a token unchanged when every incoming path has that token at the location.
+2. For differing local values, construct a `Join` token keyed by the join and the complete ordered incoming-token vector. Intern the same vector across stack positions and initialized frame cells, preserving equalities established on every path.
+3. A cell unavailable on any incoming path is not definitely initialized afterward. Do not turn an unavailable marker into a readable join token.
+4. Check any required semantic identities against the resulting facts. A join token does not equal an arbitrary incoming token and cannot satisfy a preserved-value requirement merely by acquiring its name.
+
+For example:
+
+```text
+then: [a, a | S]      scratch[k] = a
+else: [b, b | S]      scratch[k] = b
+join: [j, j | S]      scratch[k] = j
+
+j = Join(this_join, [a, b])
+```
+
+The three locations remain equal because all have the same incoming-token vector. Neither `j == a` nor `j == b` follows. Taking the union of predecessor equalities would be unsound; allocating an unrelated token per merged location would lose proved equalities unnecessarily. An external spill-slot obligation for `a` would fail in this example. Stored-input slots remain read-only, regardless of what a subsequent merge could prove.
+
+These joins describe internal data flow, not new allocation contracts or SSA result publication. At selected-program edges, the separately specified simultaneous source bindings and destination contracts still govern semantic renaming.
+
+### Internal loop invariants
+
+Each internal loop has a raw-state contract describing invariant lanes and cells, carried local parameters, and its preserved suffix. The registered lowering definition supplies the contract schema; instantiated annotations propose bindings that the verifier must check. A contract cannot generalize a protected suffix or required external value into an unconstrained local parameter.
+
+Conceptually, an invariant position is `Exact(token)`, while a changing local position is `Carry(parameter)`. Repeated uses of one carried parameter assert equality between those positions. Separate parameters imply no equality, even if their initial values happen to match. Address provenance and storage initialization requirements are part of the contract where subsequent accesses need them.
+
+Verification is inductive:
+
+1. **Initialization.** Match the actual forward-entry state against the contract using simultaneous substitution for all carried parameters. Establish every required equality, initialized cell, invariant token, and suffix position.
+2. **Iteration.** Instantiate carried parameters with fresh symbolic tokens, distinct except for explicitly asserted equalities. Execute one actual body from this arbitrary state, checking nested control flow recursively. Invariants retain their incoming tokens.
+3. **Backedges.** Account for the loop instruction's consumed continuation predicate. Simultaneously match each resulting backedge state against the contract: invariant positions must still contain their exact tokens, and all occurrences of a carried parameter must agree on its next token. Every backedge must establish the contract, including any assumed aliases.
+4. **Exits.** Derive the normal continuation from the proven contract with arbitrary current carried values, including the zero-iteration path. Explicit exiting paths must establish their exit contract. Do not expose the particular result of the one symbolically executed iteration as the final runtime result.
+
+The contract accounts for every stack lane and every frame fact exposed at the normal loop continuation. Required external facts remain explicit invariants; scratch facts outside the invariant or carried obligations become unavailable. In particular, initialization observed only in the checked body does not establish initialization after a possible zero-iteration exit. Exit parameters are scoped to the summarized continuation, not identified with body-only computed tokens.
+
+For the scalar `memmove` loop:
+
+```text
+body entry: [I, SRC, DST, END, STEP | S]
+body exit:  [condition, NEXT, SRC, DST, END, STEP | S]
+```
+
+`I` is carried. `SRC`, `DST`, `END`, `STEP`, and `S` are invariant during the loop. `END` and `STEP` can be join tokens from direction selection and still be exact invariants afterward. The checker verifies the transport of `NEXT`, but not that its arithmetic advances in the intended direction, that the condition is correct, or that the loop terminates.
+
+If the contract requires both `stack[0] = I` and `scratch[k] = I`, advancing only the stack to `NEXT` leaves the cell containing the old token and fails the backedge check. Equal initial contents alone cannot justify assuming this equality on subsequent iterations. Nested loop scopes and simultaneous rebinding prevent a token for a previous dynamic definition from being accepted merely because its static instruction or SSA name recurs.
+
+These contracts bound verification without unrolling or accumulating expressions across iterations. They are proof boundaries within one uninterrupted lowering unit; they do not invoke allocation, perform repair, or publish intermediate semantic results. A failed invariant is a verification error, not permission to weaken an external preservation obligation.
+
+### Result publication and trust
+
+Only the registered lowering definition can authorize semantic result publication, at its declared normal completion boundary. First verify the unit's actual input bindings, raw output shape, storage permissions and contents, suffix preservation, and any explicitly registered output relations. Then map each new semantic result atom to the actual verifier token in its declared result position. Publication does not replace or globally rename that token, so proved stack/storage equalities remain intact. Alias-producing lowerings must establish their specified input/result equality rather than introduce an unrelated result token.
+
+Publication cannot relabel a preserved suffix lane, validate changed spill-slot contents, establish an internal invariant, or turn a branch join into an expected input identity. Trapping or nonreturning paths publish no normal results. Intermediate phases may define only their selected temporary results; later phases' inputs and final result publication remain governed by the checked selected program.
+
+The registered rule asserting that these output lanes implement the HIR operation is a trusted semantic boundary. Generic token checking does not prove arithmetic, memory algorithms, termination, or trap conditions. Even a physically well-formed arithmetic lowering with incorrectly ordered result limbs can pass unless a registered output relation checks that order; semantic VM/differential tests cover that gap. This differs from allocation copying or permuting already identified lanes, where exact token order is checked. Trusted external call summaries likewise authorize only their declared effects and results.
+
+### Shared definitions and independent implementation
+
+The implementation shares target specifications and general infrastructure, but independently computes the evidence used to accept the physical plan:
+
+| Shared definitions or infrastructure | Independent verifier responsibilities |
+| --- | --- |
+| Immutable IDs, lane layouts, structured MASM syntax | Own token environment, raw stack, frame contents, and symbolic scopes |
+| Declarative instruction effects and ABI definitions | Apply those rules to actual emitted instructions, including every temporary access |
+| Registered lowering definitions, physical requirements, and trusted semantic summaries | Check source correspondence, instantiated input bindings, storage accesses, and allowed publication |
+| Generic collections, bitsets, and worklist utilities | Recompute liveness from checked uses, definitions, and edges; do not reuse allocator liveness results |
+| Final frame-layout data and source-location formats | Validate offsets and ranges, replay physical cell reads/writes, and detect invalid reuse |
+| Diagnostic rendering | Branch merging, loop induction, edge substitution, and recoverability checks |
+
+The verifier must not call the allocator's mutating stack simulation, slot-validity machinery, transfer planner, solver tactics, or contract-satisfaction predicate. It must not accept scheduler-produced equality, liveness, or recoverability conclusions as proof. Shared immutable selected-program data is checked against its declared HIR or registered generated origin before it supplies verification premises. Actual instruction and frame-cell execution remains necessary even when the abstract plan claims the correct effect.
+
+Shared instruction-effect tables, lane-layout rules, ABI summaries, and registered semantic publication rules are an explicit trusted foundation. A wrong target rule can compromise both allocation and checking; independence from scheduling does not remove that risk. Keep these definitions small and declarative, and validate target stack, word-operation, frame-address, and call effects against VM execution. Copying the same table into two implementations is not itself independent evidence. Mutation tests separately establish that the checker rejects bad plans and expansions.
+
+### Procedure exits
+
+For context-call returns, the checker accepts only a normalization sequence or trusted helper contract establishing physical depth sixteen and the required result prefix. Program-root return uses the registered `truncate_stack` cleanup preserving the top sixteen lanes after the user entrypoint returns. For ordinary `exec` returns, it checks prefix/suffix preservation and permits only floor-induced bottom zeros. It does not confuse an abstractly empty owned stack with a physically empty VM stack.
+
+### Finalization and optimizations
+
+The complete order is:
+
+```text
+final HIR or registered generated-procedure definition
+  -> selected lowering units and structured graph
+  -> liveness, next use, and structured backedge classification
+  -> one-pass body planning with inherited entries, delayed joins, and fixed loop headers
+  -> completed contracts, incremental edge repairs, and abstract spill slots
+  -> spill slot reuse and final frame layout
+  -> lowering/action expansion to annotated MASM
+  -> physical peephole optimization
+  -> independent verification
+  -> VerifiedProcedure
+  -> MASM serialization and assembly
+```
+
+Peepholes run before final verification and preserve source/lowering boundaries or provide a checked mapping for moved annotations. They cannot erase the evidence needed to establish lowering unit inputs/outputs. No unchecked stack-changing rewrite follows `VerifiedProcedure`. Serialization performs no scheduling, result rebinding, or hidden local allocation.
+
+### Diagnostics
+
+`-Z`/trace output should render one stable physical-plan format: source operation, incoming stack, valid spill slots, lowering unit requirements, chosen actions, outgoing state, and edge contract. Verification failures identify the first invalid action or primitive, the expected and actual lane identities, the current raw depth/index, and the originating HIR span/inline chain.
+
+Distinguish `InvalidSelectedLowering`, `UnavailableValue`, `InvalidEdgeTransfer`, `IllegalStackAccess`, `InvalidSpillSlotRead`, `AbiMismatch`, and `FrameCapacityExceeded`. Solver search exhaustion is trace information, not a user-facing compilation failure. The same compact plan is suitable for minimized regression fixtures; a second allocation-specific debug subsystem is unnecessary.
+
+## Effects on the middle tier and codegen
+
+The final ordinary function pipeline retains semantic optimization and control-flow conversion:
+
+```text
+Canonicalizer -> CSE -> SCCP -> SinkOperandDefs -> Local2Reg
+-> LiftControlFlowToSCF -> Canonicalizer
+-> LegalizeForMasm -> optional SinkOperandDefs
+-> unified backend selection, allocation, verification, emission
+```
+
+Operand sinking remains a cost optimization; it is no longer a prerequisite for stack safety. Both placements of `TransformSpills` disappear. `NarrowRegionOps` disappears. Physical legality does not require an HIR region's results or forwarded values to fit sixteen lanes. Source locals are still promoted where legal by `Local2Reg`; backend spill slots do not exist until after it has run.
+
+Delete the MASM-specific spill analysis/materialization/reconstruction path and spill/reload pseudo-operations once their callers have moved. Preserve HIR liveness, SCF rebuilding helpers used by legitimate canonicalization, and independent dead-result elimination. Existing tests that pinned spill-created HIR are replaced with physical-plan expectations and execution tests for the same semantics.
+
+Within codegen, move all location decisions out of `BlockEmitter`: block-entry cleanup, last-use copying/dropping, transparent casts, region result placement, branch reconciliation, loop backedge checks, and return cleanup. Keeping any of these as a second allocator would retain conflicting authorities.
+
+Global initializers become one selected generated procedure with a finalized frame. Their existing sequencing and effects remain; spill slots can be reused between initializer fragments whose lifetimes do not overlap. The current default empty frame and zero-local initializer declaration must be replaced. Supporting functions, adapters, and entrypoint wrappers pass through the same physical planning boundary, even when they did not pass through the ordinary HIR rewrite pipeline.
+
+Debug locations query the current allocation map. A live value can be described through accessible stack lanes or valid frame cells; multi-lane values retain lane order. If the existing debug-expression format cannot describe a split location, mark it unavailable rather than report a wrong location. Debug references do not force allocation or extend semantic liveness. Source local offsets, backend spill slot offsets, and executable addressing share the same finalized frame. Inline call-chain and source-span metadata follow the selected lowering unit and generated actions.
+
+## Two integration states
+
+### First PR complete
+
+The backend has selected lowering unit contracts, raw lane layouts, the physical-plan data structures, explicit frame references, the raw instruction checker, and diagnostic rendering. Existing lowering templates express their temporary effects and explicit result completion through this substrate. The production HIR spill pipeline still establishes its existing allocation preconditions; there is one production allocation policy.
+
+This state provides a checked emission boundary and fixtures for the new allocator without introducing a public alternate backend or a permanent compatibility layer. Contracts cover every existing emitted operation and generated procedure, including FPI, executable main, the test harness, and context returns. Production output obeys strict invocation-family compatibility, caller-save context-call preparation and cleanup, and same-context suffix preservation; existing violations must be corrected rather than exempted from verification. The checker runs on production output for its stated physical obligations; it does not claim that legacy HIR spill reconstruction has been independently proved equivalent to pre-spill HIR.
+
+### Second PR complete
+
+The unified allocator owns every emitted procedure, with graph liveness, inherited entry states, delayed join selection, fixed loop headers, incremental edge repair, the four scheduling tiers including selective eviction, spill slot reuse, and full source/edge verification. Both HIR spill passes and region narrowing are gone. Frontend FPI prefix storage is replaced with semantic operands and backend staging. Scheduler-derived indirect-call width restrictions are replaced by actual lowering/ABI checks.
+
+Legacy allocation ownership and obsolete infrastructure are deleted in this state. There is no runtime selector, long-lived dual pipeline, or rollout framework. The first state's lowering/checker substrate becomes the only emission path.
+
+## Required observable behavior
+
+Acceptance is defined by these behaviors rather than a particular spill count:
+
+- Existing supported programs retain their values, side effects, trap behavior, and ABI behavior under VM/differential execution.
+- Wide `if`, switch, and while interfaces compile without removing their HIR columns. Both live iteration/result groups may be independently wide, with distinct per-column values.
+- A sixteen-value condition handoff can temporarily contain its predicate plus sixteen forwarded lanes when the actual access sequence is legal.
+- A full sixteen-input FPI call constructs its twenty-two-lane executor layout and executes correctly.
+- Repeated operands, mixed-width values, buried live operands, and dead buried occurrences produce valid schedules even when the bounded shuffle optimizer declines a request.
+- Loop parameter permutations, duplicate bindings, zero-trip loops, nested captures, unreachable arms, and residual terminal branches preserve their edge semantics.
+- Call-context tests include live caller values beneath a complete sixteen-lane argument window, clobbered nonresult lanes, same-context overflow preservation, and exact-depth context returns.
+- Minimum-depth tests enter at physical depth sixteen, force drain/rebuild on only one branch, repeat the transition in a loop, and verify meaningful stack values, bounded bottom padding, and return cleanup.
+- Raw spill-slot tests preserve exact felt bit patterns and limb order independently of typed HIR memory operations.
+- Generated initializer/adaptor procedures can spill and have correct executable and debug frame offsets.
+- Mutated-plan tests deliberately introduce illegal depths, incorrect copies, swapped lanes, uninitialized spill slots, physical slot collisions, dead stores clobbering live colored spill slots, stale loop spill slots, missing edge repairs, phase-order/result-publication errors, and ABI clobber mistakes; verification rejects each before assembly.
+
+Scheduling acceptance also requires these focused cases, using distinct lane values and checking both plan actions and VM results:
+
+| Case | Required behavior |
+| --- | --- |
+| One spill-slot operand beside a resident operand at depth fifteen | Gather the resident source before the reload can bury it; prepare the two operands without eviction or full normalization, allowing total depth above sixteen |
+| The same resident operand is live afterward | Preserve it through a valid spill copy or an additional stack occurrence; its last-use status must change the preservation obligation |
+| Spill-slot operand already loaded earlier in the segment | Reuse the resident occurrence when legal; retaining or consuming it does not by itself invalidate the existing spill copy |
+| Repeated operands and mixed-width layouts | Count every requested raw occurrence, duplicate or reload as needed, and preserve limb order, including when a value straddles the active-prefix boundary |
+| Bounded preparation requiring one eviction | Remove only the capacity deficit: choose a dead/redundant victim before a backed live victim, and a backed victim before a new spill store; stop once the target fits |
+| Sixteen input lanes also needed afterward | Establish spill copies where survivor copies cannot fit, then consume the input occurrences; do not reject the preparation or drain the deeper suffix |
+| Duplicate retention candidates | Recompute availability after each eviction and after input consumption; deleting two copies must not erase the last surviving representation. In particular, evicting a retained `a` beside a pinned input `a` requires a spill store if `a` is live afterward and has no other surviving representation |
+| Owned stack deeper than sixteen | Preserve the deeper suffix's exact lane identities and order through bounded preparation; an input available there and in a valid slot is loaded from the slot |
+| Required input available only below the active prefix | Decline bounded preparation and use full normalization without losing the value or emitting an illegal indexed read |
+| Shuffle solver deliberately declines a feasible bounded request | Complete the preparation with the deterministic permutation, without escalating to full normalization |
+| Temporary address-generation depth exceeds sixteen | Accept legal raw accesses and restore the expected active state after the load/store; reject a mutated sequence that accesses a buried lane |
+| A speculative load-and-shuffle candidate fails | Leave committed actions, slot requests, and location facts unchanged before trying the next candidate or tier |
+
+Lowering interface acceptance requires:
+
+| Case | Required behavior |
+| --- | --- |
+| Stored input already has a valid spill copy | Reuse its binding without an unnecessary store; a stack-only source is stored before payload preparation |
+| Establishing stored inputs requires full normalization, including a stored literal | Preserve all pending stack and stored inputs regardless of live-after status; explicitly push and store the literal into its bound slot |
+| A stored input is also a stack input, or repeats in several stored-input positions | Preserve both physical requirements and required multiplicity; equal stored atoms may share a valid slot |
+| Stack preparation would overwrite a required stored input | Reject or change that proposal; keep the contents live through preparation, expansion, and physical slot coloring |
+| Byte `memmove` aligned and unaligned paths, both overlap directions, and zero count | Verify all branch/loop stack contracts and suffix preservation, and validate copied bytes and trap behavior through VM/differential execution |
+| Mutated `memmove` cleanup or internal stack access | Reject unmatched state lanes, suffix corruption, and inaccessible reads during physical verification; algorithm-only mutations such as an incorrect direction predicate are covered by semantic execution tests |
+| FPI payload widths zero through sixteen | Emit correct trailing zero padding, stored prefix order, and the registered executor call; the full-width case constructs twenty-two lanes without padding or intervening allocation |
+| FPI with live-after inputs and a preserved deeper suffix | Retain valid representations through the call and publish all sixteen result lanes only after normal return |
+| Mutated lowering unit bindings and publication | Reject stale or wrong stored atoms, swapped prefix positions, undeclared storage reads, illegal buried-payload accesses, and premature result identities |
+| Frontend FPI wrapper conversion | Execute a case with distinct account prefix/suffix and root/payload lanes so an upstream ABI permutation error cannot pass unnoticed |
+
+Call ABI and generated-procedure acceptance requires:
+
+| Case | Required behavior |
+| --- | --- |
+| `call`/`dyncall` with zero through sixteen argument lanes and unrelated caller values initially addressable | Expose only the declared arguments and explicit zeros in the sixteen-lane window; preserve retained caller values below it or in spill slots |
+| Context callee overwrites every nonresult exposed lane, including input padding | Preserve caller live values solely through valid storage or VM-restored overflow; never rely on returned padding or argument copies |
+| Context call returns zero through sixteen result lanes | Publish only signature results, legally discard all other returned window lanes, and preserve the restored suffix |
+| Same-context callee has fewer than sixteen arguments and an unknown nonzero suffix | Preserve every suffix lane, including those initially addressable; draining owned values must stop at the suffix |
+| Direct or indirect invocation uses the wrong family for the target convention | Reject known mismatches and enforce convention in indirect type checks; matching arity or an empty suffix is not an exception |
+| Generated main selects a program entrypoint | Require an `exec`-compatible convention and invoke it with `exec`; reject a context-call target instead of adapting the invocation |
+| Root initialization and optional harness precede the user entrypoint | Preserve the VM-provided sixteen-lane input window exactly, including zero padding and order; keep initialization, harness writes, and entry execution in the same root memory context |
+| Program entrypoint returns with floor-induced overflow | Preserve its top sixteen lanes with root `truncate_stack` and return from `begin` at exact depth sixteen; do not require same-context callees to remove caller suffix or padding |
+| Generated main, test harness, initializer, or adapter omits or swaps a required stage | Reject against the registered generated definition and parameters; provenance annotations alone are insufficient |
+| Artifact packaging attempts to append executable code after verification | Require that code to enter a selected generated body and be verified before assembly |
+
+Storage lifetime and frame-layout acceptance requires:
+
+| Case | Required behavior |
+| --- | --- |
+| A value remains live on the stack after its final required spill-slot read | Permit another noninterfering slot to reuse the cell; do not extend storage lifetime solely because the SSA value remains live |
+| A join retains a cached spill copy of a resident value | Treat the retained fact as a pseudo-read and preserve it through every later use; a redundant store may be omitted only while the copy is actually valid |
+| Slots are stored and read exclusively in different branch arms | Permit one physical cell when no other requirement makes them coexist; retain distinct cells when both contents must coexist before the branch |
+| A spill copy is invariant across a loop and ABI-conforming calls | Keep it live around the backedge and through calls without repeated stores or conflicting reuse |
+| A changing header parameter reuses its stable abstract slot | Require the next iteration's token after explicit edge repair; parameter renaming alone must not initialize or update memory |
+| A dead store is colored onto another slot whose contents remain live | Reject the collision during physical replay; interference construction must prevent it despite the store having no later reader |
+| Canonical slot for `a` holds the only copy of needed `b` while `a` is on the stack | Preserve `b` or choose another slot before storing `a`; apply the same rule to normalization, backing stores, input preparation, and edge repair |
+| A cyclic edge assignment needs snapshots and stack outputs from old slots | Keep each snapshot until its final required read, including stack construction, and prevent destructive physical overlap |
+| A stored input is loaded early inside a lowering unit, including an FPI prefix | Reserve its slot for the whole unit and through its internal calls; do not reuse it based on internal last-load timing |
+| Consecutive units each need a four-cell aligned local scratch object | Use one aligned workspace rather than separate per-unit ranges; simultaneous objects within one unit still receive disjoint ranges |
+| A later unit or loop iteration reads local scratch without initializing it | Reject reliance on the previous workspace owner's contents; logical ownership changes do not require runtime clearing |
+| Scratch contents or an address survive a phase boundary, or initialization occurs outside the consuming expansion | Use an explicitly declared spanning object with a dedicated range; preserve its facts across workspace reuse by other units |
+| Staged indirect-call root crosses a selected phase boundary | Carry exact root-cell identities and address provenance in the contract; reject a different initialized digest or stale previous-iteration contents |
+| Spanning scratch is required across a join or loop backedge | Establish required facts on every incoming edge with simultaneous content bindings; no annotation or object ID alone establishes initialization or identity |
+| A callee may write borrowed scratch without retaining the pointer | Invalidate affected old identities; preserve definite initialization only when justified, and require explicit output relations for stronger facts |
+| A synchronous callee borrows a unit-local object | Keep the object's range reserved through the call, require the registered nonretention contract, and include nested emission scratch in the enclosing unit's layout |
+| Source locals, scalar colors, spanning scratch, and workspace have different sizes and alignments | Preserve source-local offsets and valid contiguous object ranges; use one final aligned frame for executable addresses, debug information, and the procedure declaration |
+| Final frame approaches the target limit or alignment arithmetic overflows | Check before narrowing offsets; accept a legal boundary layout and diagnose an oversized frame with its storage contributions |
+
+Verifier identity and induction acceptance requires:
+
+| Case | Required behavior |
+| --- | --- |
+| Identical incoming-token vectors at several stack positions and an initialized scratch cell | Produce the same join token for all those locations; retain only equalities justified on every incoming normal path |
+| A branch-dependent token is offered for a required preserved SSA value | Reject unless exact identity is established on every incoming path; matching types or widths are insufficient |
+| Scratch is initialized on only one normal arm | Reject a subsequent read that requires definite initialization; a trapping arm imposes no normal continuation obligation |
+| A carried stack value advances but a scratch cell required to equal it remains stale | Reject the backedge using simultaneous parameter substitution |
+| Two carried values have equal initial tokens and different updates | Do not infer an invariant alias; reject a declared equality that any backedge fails to establish |
+| A loop has a zero-iteration path or nests another loop | Preserve exact invariant tokens and scoped carried parameters; do not expose body-only results or scratch initialization as unconditional exit facts |
+| Publication is used to rename a changed suffix lane or bless overwritten stored input | Reject the physical preservation failure before binding results |
+| An identity/alias lowering changes its output token | Reject even when its output shape is correct; the registered equality is an explicit obligation |
+| An arithmetic-only mutation retains valid physical effects but changes the result or its limb order | Exercise semantic VM/differential tests; do not claim generic token checking proves the lowering algorithm |
+| Allocator liveness, slot-validity, or equality metadata is corrupted while emitted code is invalid | Reject using independently derived obligations and actual instruction/frame replay |
+| Target instruction-effect rules are exercised in isolation | Compare modeled permutations, word accesses, frame addresses, and call effects with VM behavior to validate the shared trusted definitions |
+
+Entry-contract and transfer acceptance requires:
+
+| Case | Required behavior |
+| --- | --- |
+| A single-predecessor segment boundary, including one introduced for a call phase | Inherit the actual owned stack and valid live spill facts; emit no normalization merely for crossing the boundary, including when the stack exceeds sixteen lanes |
+| Incoming join states already agree | Adopt their stack and common spill facts with no repair actions only when that common contract represents every live atom; union permissible bottom-padding states separately |
+| Incoming layouts disagree | Evaluate the fixed candidates using all actual incoming states and immediate successor preparation cost; reversing predecessor traversal order produces the same chosen contract and edge plans |
+| Both arms reload a resident value from the same spill slot | Preserve the common valid slot fact at the join; a later eviction can drop that occurrence without another store |
+| A slot is valid on only one arm, or different slots are used on each arm | Do not assume a common spill fact; establish required contents explicitly on the edges that need repair |
+| One source binds two live destination parameters | Permit a checked alias to share a representation, but materialize distinct occurrences whenever the chosen stack layout or next operation requires both positions |
+| A nonresident loop-invariant capture | Establish its slot on forward entry, preserve it through nested control flow and ABI-conforming calls, and emit no repeated backedge store when its contents remain valid |
+| A resident invariant with an existing entry spill copy | Keep the proved slot fact at the header; do not create speculative entry stores for resident invariants without such copies |
+| Changing and identity loop-carried values | Update slots with new backedge source values where required; omit identity stores only when current token equality proves them redundant |
+| Two loop parameters have equal initial values but different backedge sources | Do not inherit their initial equality into the header contract; preserve both current values on subsequent iterations |
+| Nested loops, zero-trip paths, and multiple exits | Fix each header before its body, plan each body once, and establish every exit and backedge contract without waiting for an unplanned backedge to choose the header |
+| An exact join target excludes an extra owned occurrence | Remove it legally even if ordinary operand preparation could have left it buried; preserve the caller tail and every retained target occurrence |
+| Simultaneous slot permutation with stack outputs reading old slots | Protect all old sources before overwrites, including stack-output sources; incremental repair and full normalization produce the same semantic result |
+
+The existing differential corpus and PR 1461's semantic reproducers remain valuable. Compare guest debug-info configurations because optimization changes the HIR shape. Test-only controls can force bounded preparation or full normalization and exhaust the shuffle budget, so these constructions are exercised independently of earlier-tier success; these are policies within the one allocator, not alternate backends. The full-width FPI acceptance case also ensures that tier three's capacity bound never becomes a global height or operand-count restriction.
+
+Performance assessment reports cycles, code size, frame cells, and allocation/verification compile time on the existing benchmark corpus. Plan diagnostics identify the selected scheduling tier, victim choices, entry-contract origin and candidate costs, preserved spill facts, and loads/stores attributable to operand preparation versus edge repair. A correct fallback using spill slots for all live values is an escape path, not permission for the production policy to regress all functions to memory traffic. There is no promised numerical performance improvement before measurement.
+
+## Limits and alternatives
+
+The design's constructive guarantee is conditional on supported representations, valid lowering/call contracts, and sufficient procedure-frame capacity. VM address-space limits and dynamic resource exhaustion remain real limits. A malformed lowering unit or uncontracted external MASM body is not repaired by moving more values to memory.
+
+Expanding the current HIR narrowing/spill passes would continue distributing physical location decisions across SSA rewrites. Extending only the shuffle solver would leave storage, phased calls, frame allocation, and join agreement outside its authority. A globally optimal stack scheduler would add search complexity without improving the correctness argument. The selected design instead establishes one checked physical plan, with bounded heuristics improving a constructive legal transition.
