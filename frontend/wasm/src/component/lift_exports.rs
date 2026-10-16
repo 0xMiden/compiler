@@ -29,7 +29,8 @@ use super::{
     contains_unsupported_canonical_abi_type,
     flat::{
         CanonicalAbiMode, check_core_wasm_signature_equivalence, classify_function_type,
-        flatten_function_type, flatten_types, reject_results_past_call_window,
+        flatten_function_type, flatten_types, reject_params_past_call_window,
+        reject_results_past_call_window,
     },
 };
 use crate::{
@@ -73,13 +74,16 @@ pub fn generate_export_lifting_function(
             },
         )?;
 
-    if cross_ctx_export_sig_flat.params().iter().any(|param| param.ty.is_pointer()) {
+    let flattened_params = flatten_types(&context, &export_func_ty.ir.params).map_err(|e| {
         let message = format!(
-            "component export lifting for '{core_export_func_path}' is not yet implemented for \
-             passing the parameters using the advice provider in the cross-context `call`;"
+            "Failed to flatten parameter types for exported function {core_export_func_path}: {e}"
         );
-        return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
-    }
+        diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
+    })?;
+    reject_params_past_call_window(
+        &format!("component export `{export_func_name}`"),
+        &flattened_params,
+    )?;
 
     let transformation = classify_function_type(&context, &export_func_ty.ir).map_err(|e| {
         let message = format!(
@@ -220,13 +224,6 @@ fn generate_lifting_with_transformation(
         &format!("component export `{}`", export_func_ident.as_str()),
         &flattened_results,
     )?;
-
-    assert!(
-        cross_ctx_export_sig_flat.params().len() <= 16,
-        "Too many parameters in the flattened signature of {export_func_ident} component export \
-         function. For cross-context calls only up to 16 felt flattened params supported (advice \
-         provider is not yet supported). Try passing less data as a temporary workaround.",
-    );
 
     // Create the signature with the flattened result types
     let new_func_sig = Signature {
@@ -546,7 +543,7 @@ mod tests {
     use alloc::sync::Arc;
 
     use midenc_hir::{
-        CallConv, FunctionType, Ident, Symbol, Type, Visibility, WalkResult,
+        CallConv, FunctionType, Ident, StructType, Symbol, Type, Visibility, WalkResult,
         dialects::builtin::attributes::{AbiParam, Signature},
     };
     use midenc_session::DiagnosticsHandler;
@@ -818,19 +815,24 @@ mod tests {
         }
     }
 
-    /// Lifts a parameterless export returning a record of `num_fields` `u64` fields through the
-    /// canonical result pointer.
-    fn lift_u64_record_export(num_fields: usize) -> WasmResult<()> {
-        let (_context, mut component_builder, mut module_builder) = component_with_core_module();
-        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![u64_record_type(num_fields)]);
+    /// Lifts the export `f(params) -> results` around a core function of the matching
+    /// flattened signature.
+    fn lift_export(params: Vec<Type>, results: Vec<Type>) -> WasmResult<()> {
+        let (context, mut component_builder, mut module_builder) = component_with_core_module();
+        let core_params = flatten_types(&context, &params).expect("flattenable parameters");
+        let mut core_results = flatten_types(&context, &results).expect("flattenable results");
+        if core_results.len() > 1 {
+            core_results = vec![AbiParam::new(Type::I32)];
+        }
+        let mut ir = FunctionType::new(CallConv::Fast, params, results);
         ir.abi = CallConv::ComponentModel;
         let core_func = module_builder
             .define_function(
-                Ident::with_empty_span("record_core".into()),
+                Ident::with_empty_span("f_core".into()),
                 Visibility::Public,
                 Signature {
-                    params: vec![],
-                    results: vec![AbiParam::new(Type::I32)],
+                    params: core_params,
+                    results: core_results,
                     cc: CallConv::ComponentModel,
                 },
             )
@@ -839,7 +841,7 @@ mod tests {
         generate_export_lifting_function(
             &mut component_builder,
             core_func,
-            "get_record",
+            "f",
             ComponentFunctionType { ir },
             &[],
             None,
@@ -847,21 +849,73 @@ mod tests {
         )
     }
 
+    /// A word: four field elements.
+    fn word_type() -> Type {
+        Type::from(StructType::new(vec![Type::Felt; 4]))
+    }
+
+    /// `felts` field elements after one `u64`.
+    fn u64_then_felts(felts: usize) -> Vec<Type> {
+        let mut types = vec![Type::U64];
+        types.extend(core::iter::repeat_n(Type::Felt, felts));
+        types
+    }
+
+    #[track_caller]
+    fn assert_rejected(result: WasmResult<()>, expected: &str) {
+        let message = result.expect_err("expected the export to be rejected").to_string();
+        assert!(
+            message.contains(expected) && message.contains("at most 16"),
+            "unexpected diagnostic: {message}"
+        );
+    }
+
     #[test]
     fn export_lifting_accepts_results_filling_the_call_window() {
         // Eight `u64` fields are 8 values but 16 felts, exactly the call window
-        lift_u64_record_export(8).expect("a 16-felt result should be accepted");
+        lift_export(vec![], vec![u64_record_type(8)]).expect("a 16-felt result should be accepted");
+        lift_export(vec![], vec![Type::from(StructType::new(vec![word_type(); 4]))])
+            .expect("four words should be accepted");
     }
 
     #[test]
     fn export_lifting_rejects_results_past_the_call_window() {
         // Nine `u64` fields are only 9 values, but 18 felts
-        let err = lift_u64_record_export(9).expect_err("an 18-felt result should be rejected");
-        let message = err.to_string();
-        assert!(
-            message.contains("component export `get_record` returns 18 result felts")
-                && message.contains("at most 16"),
-            "unexpected diagnostic: {message}"
+        assert_rejected(
+            lift_export(vec![], vec![u64_record_type(9)]),
+            "component export `f` returns 18 result felts",
+        );
+        assert_rejected(
+            lift_export(vec![], vec![Type::from(StructType::new(u64_then_felts(15)))]),
+            "component export `f` returns 17 result felts",
+        );
+        let words_and_u64 = vec![word_type(), word_type(), word_type(), word_type(), Type::U64];
+        assert_rejected(
+            lift_export(vec![], vec![Type::from(StructType::new(words_and_u64))]),
+            "component export `f` returns 18 result felts",
+        );
+    }
+
+    #[test]
+    fn export_lifting_accepts_arguments_filling_the_call_window() {
+        lift_export(vec![Type::U64; 8], vec![]).expect("16 argument felts should be accepted");
+        lift_export(vec![word_type(); 4], vec![]).expect("four word arguments should be accepted");
+    }
+
+    #[test]
+    fn export_lifting_rejects_arguments_past_the_call_window() {
+        // Nine `u64` arguments are only 9 values, but 18 felts
+        assert_rejected(
+            lift_export(vec![Type::U64; 9], vec![]),
+            "component export `f` takes 18 argument felts",
+        );
+        assert_rejected(
+            lift_export(u64_then_felts(15), vec![]),
+            "component export `f` takes 17 argument felts",
+        );
+        assert_rejected(
+            lift_export(u64_then_felts(15), vec![u64_record_type(2)]),
+            "component export `f` takes 17 argument felts",
         );
     }
 }

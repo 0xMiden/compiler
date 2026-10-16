@@ -218,13 +218,32 @@ pub(crate) fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
     flat_params.len() > MAX_FLAT_PARAMS || flat_felts(flat_params) > MAX_DIRECT_STACK_FELTS
 }
 
+/// Rejects a cross-context component export whose flattened parameters do not fit the
+/// [`MAX_DIRECT_STACK_FELTS`]-element operand stack window a cross-context call passes them in.
+///
+/// `function` describes the export in the diagnostic, e.g. "component export `foo`". Passing the
+/// arguments indirectly (through the advice provider) is not supported, so a wider argument list
+/// is a user error.
+pub(crate) fn reject_params_past_call_window(
+    function: &str,
+    flat_params: &[AbiParam],
+) -> WasmResult<()> {
+    let param_felts = flat_felts(flat_params);
+    if param_felts <= MAX_DIRECT_STACK_FELTS {
+        return Ok(());
+    }
+    Err(Report::msg(format!(
+        "{function} takes {param_felts} argument felts after expanding 64-bit values, but a \
+         cross-context call passes at most {MAX_DIRECT_STACK_FELTS} on the operand stack; split \
+         the arguments across several functions or pass less data"
+    )))
+}
+
 /// Rejects a cross-context component function whose flattened results do not fit the
 /// [`MAX_DIRECT_STACK_FELTS`]-element operand stack window a cross-context call returns through.
 ///
 /// `function` describes the export or import in the diagnostic, e.g. "component export `foo`".
-/// Unlike the parameters, which canonical flattening passes through memory when they exceed the
-/// window, the results of a cross-context call have no indirect form, so a wider result is a
-/// user error.
+/// The results of a cross-context call have no indirect form, so a wider result is a user error.
 pub(crate) fn reject_results_past_call_window(
     function: &str,
     flat_results: &[AbiParam],
