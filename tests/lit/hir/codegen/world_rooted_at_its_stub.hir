@@ -1,0 +1,21 @@
+// RUN: mkdir -p %t && printf '[package]\nname = "example"\nversion = "0.1.0"\n\n[lib]\npath = "%s"\nnamespace = "dep::stub"\n' > %t/miden-project.toml
+// RUN: not midenc %t/miden-project.toml --emit=mast=- -o %t/out.masp 2>&1 | filecheck %s
+//
+// A world defining no component is rooted at its target's namespace, but never at the namespace
+// of one of its declaration-only components: its procedures would be published under the
+// dependency's name, so a target asking for that is refused.
+
+builtin.world {
+    builtin.component private @dep::@stub {
+        builtin.function internal extern("C") @f(%a: u32) -> u32;
+    };
+    builtin.module public @app {
+        builtin.function public extern("C") @entry() -> u32 {
+            %v = arith.constant 1 : u32;
+            builtin.ret %v : (u32);
+        };
+    };
+};
+
+// CHECK: refusing to root a world that defines no component at '::dep::stub'
+// CHECK-NOT: # ::dep::stub::entry

@@ -454,6 +454,16 @@ fn world_body_to_masm_component(
 
     let heap_base = link_info.heap_base();
     let stack_pointer = link_info.globals_layout().stack_pointer_offset();
+    let mut stub_namespaces = Vec::new();
+    for op in world.body().entry().body().iter() {
+        if let Some(stub) = op.downcast_ref::<builtin::Component>() {
+            let path = stub.namespace_path().to_library_path();
+            let path = path
+                .to_absolute()
+                .map_err(|err| Report::msg(format!("unable to canonicalize '{}': {err}", path)))?;
+            stub_namespaces.push(Arc::from(path.into_owned().into_boxed_path()));
+        }
+    }
     let mut masm_component = MasmComponent {
         id: None,
         // A world declaring no defining component is not the compiler's wrapper around one: it
@@ -467,6 +477,7 @@ fn world_body_to_masm_component(
         heap_base,
         stack_pointer,
         modules,
+        stub_namespaces,
     };
     let builder = MasmComponentBuilder {
         analysis_manager,
@@ -617,6 +628,7 @@ fn component_to_masm_component(
         heap_base,
         stack_pointer,
         modules,
+        stub_namespaces: Vec::new(),
     };
     let builder = MasmComponentBuilder {
         analysis_manager,

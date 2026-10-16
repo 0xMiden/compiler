@@ -95,11 +95,26 @@ fn indirect_call_signature_legality(
 /// `hir.syscall`, `hir.dyncall`) with `signature`.
 ///
 /// The callee context starts with the arguments in its operand stack window and hands its results
-/// back in that window, so neither may take more field elements than the window holds.
+/// back in that window, so neither may take more field elements than the window holds, and no
+/// value may take none: the window is padded by its felt count.
 fn call_window_legality(
     op: &Operation,
     signature: &midenc_hir::dialects::builtin::attributes::Signature,
 ) -> DynamicLegalityResult {
+    let values = signature
+        .params
+        .iter()
+        .map(|param| ("parameter", &param.ty))
+        .chain(signature.results.iter().map(|result| ("result", &result.ty)));
+    for (what, ty) in values {
+        if ty.size_in_felts() == 0 {
+            return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                "operation '{}' is a cross-context call with a zero-sized {what} of type {ty}, \
+                 which the call window has no field element for",
+                op.name()
+            )));
+        }
+    }
     for (what, felts) in
         [("arguments", signature.param_felts()), ("results", signature.result_felts())]
     {
@@ -1880,6 +1895,44 @@ mod tests {
                 let message = format!("{}", result.unwrap_err());
                 assert!(message.contains("hir.dyncall"), "{message}");
                 assert!(message.contains("results take 18 field elements"), "{message}");
+            }
+        }
+    }
+
+    /// A zero-sized value has no element in the call window, which is padded by felt count, so a
+    /// cross-context call passing or returning one is reported rather than reaching the emitter.
+    #[test]
+    fn cross_context_calls_with_a_zero_sized_value_fail_legalization() {
+        let mut test = Test::named("zero_sized_dyncall_result").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            [],
+            vec![Type::Unknown],
+        );
+        test_with_dyncall(&mut test, signature);
+        let message = format!("{}", test.apply_pass::<LegalizeForMasm>(false).unwrap_err());
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("zero-sized result"), "{message}");
+
+        for syscall in [false, true] {
+            for (params, results, expected) in [
+                (vec![Type::Unknown], vec![], "zero-sized parameter"),
+                (vec![], vec![Type::Unknown], "zero-sized result"),
+            ] {
+                let mut test = Test::named("zero_sized_cross_context_call").in_module("m");
+                let signature = Signature::with_convention(
+                    &test.context_rc(),
+                    CallConv::ComponentModel,
+                    params,
+                    results,
+                );
+                test_with_cross_context_call(&mut test, signature, syscall);
+
+                let message = format!("{}", test.apply_pass::<LegalizeForMasm>(false).unwrap_err());
+                let op = if syscall { "hir.syscall" } else { "hir.call" };
+                assert!(message.contains(op), "{message}");
+                assert!(message.contains(expected), "{message}");
             }
         }
     }

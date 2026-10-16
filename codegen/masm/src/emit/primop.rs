@@ -573,9 +573,10 @@ impl OpEmitter<'_> {
     /// frontends reject wider signatures by their call-site rules, so a wider signature here is a
     /// compiler bug.
     ///
-    /// Panics, too, on a zero-sized parameter or result. The window is padded by this felt count,
-    /// which counts such a value as no element, while the emulated operand stack holds every
-    /// operand as at least one, so the padding would be off by one. No frontend produces one.
+    /// Panics, too, on a zero-sized parameter or result, which `LegalizeForMasm` reports as well.
+    /// The window is padded by this felt count, which counts such a value as no element, while
+    /// the emulated operand stack holds every operand as at least one, so the padding would be
+    /// off by one.
     fn call_window_felts(signature: &Signature) -> (usize, usize) {
         assert!(
             signature

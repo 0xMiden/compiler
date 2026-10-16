@@ -2683,6 +2683,7 @@ mod tests {
                 heap_base: 0,
                 stack_pointer: None,
                 modules: Vec::new(),
+                stub_namespaces: Vec::new(),
             }),
             sections: Default::default(),
             source_provenance: ProjectSourceProvenanceInputs {
