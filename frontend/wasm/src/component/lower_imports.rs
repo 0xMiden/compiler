@@ -25,7 +25,8 @@ use super::{
     flat::{
         CanonicalAbiIndirection, CanonicalAbiMode, check_core_wasm_signature_equivalence,
         classify_function_type, expected_core_signature, flat_params_need_tuple,
-        flatten_function_type, flatten_types, reject_results_past_call_window,
+        flatten_function_type, flatten_types, reject_params_past_call_window,
+        reject_results_past_call_window,
     },
 };
 use crate::{
@@ -140,15 +141,35 @@ pub fn generate_import_lowering_function(
                 transformation,
             )?;
         }
+        let flat_results = flatten_types(&context, &budgeted_ty.results).wrap_err_with(|| {
+            format!("failed to flatten result types for import function '{import_func_path}'")
+        })?;
+        // Counted before the tuple rejection below, and on the arguments as written rather than
+        // on `import_lowered_sig`, where canonical flattening has already collapsed an argument
+        // list past the window into a tuple pointer the user never wrote.
+        if call_kind == ImportCallKind::Call {
+            let mut window_params =
+                flatten_types(&context, &budgeted_ty.params).wrap_err_with(|| {
+                    format!(
+                        "failed to flatten parameter types for import function \
+                         '{import_func_path}'"
+                    )
+                })?;
+            if flat_results.len() > MAX_FLAT_RESULTS {
+                // The result out-pointer import flattening appends after the arguments
+                window_params.extend(import_lowered_sig.params().last().cloned());
+            }
+            reject_params_past_call_window(
+                &format!("component import `{import_func_path}`"),
+                &window_params,
+            )?;
+        }
         // Import flattening appends a result out-pointer after tuple classification, so the
         // final flattened parameter list can exceed the budget even when classification
         // reported no parameter tuple.
         if transformation.has_param_tuple() || flat_params_need_tuple(import_lowered_sig.params()) {
             return reject_tuple_parameter_import_lowering(import_func_path);
         }
-        let flat_results = flatten_types(&context, &budgeted_ty.results).wrap_err_with(|| {
-            format!("failed to flatten result types for import function '{import_func_path}'")
-        })?;
         reject_results_past_call_window(
             &format!("component import `{import_func_path}`"),
             &flat_results,
@@ -1963,6 +1984,8 @@ mod tests {
         Type::U64
     }
 
+    /// An import whose arguments flatten past the call window is reported by its felt count, not
+    /// as the tuple canonical flattening collapses them into.
     #[test]
     fn rejects_import_lowering_with_tupled_params_and_no_result() {
         let (context, mut world_builder, mut module_builder) = world_with_core_module();
@@ -1989,16 +2012,21 @@ mod tests {
         );
 
         match result {
-            Ok(_) => panic!("expected tuple-parameter import lowering to be rejected"),
+            Ok(_) => panic!("expected an import past the call window to be rejected"),
             Err(err) => {
                 assert!(
-                    err.to_string().contains("tuple-parameter import lowering"),
+                    err.to_string().contains(
+                        "component import `::\"miden:test@1.0.0\"::too_many_params` takes 17 \
+                         argument felts"
+                    ),
                     "unexpected diagnostic: {err}"
                 );
             }
         }
     }
 
+    /// The result out-pointer import flattening appends counts against the call window: 16
+    /// arguments plus the pointer are 17 felts.
     #[test]
     fn rejects_import_lowering_when_result_out_pointer_exceeds_param_budget() {
         let (_context, mut world_builder, mut module_builder) = world_with_core_module();
@@ -2028,7 +2056,10 @@ mod tests {
             Ok(_) => panic!("expected import out-pointer overflow to be rejected"),
             Err(err) => {
                 assert!(
-                    err.to_string().contains("tuple-parameter import lowering"),
+                    err.to_string().contains(
+                        "component import `::\"miden:test@1.0.0\"::too_many_params_with_result` \
+                         takes 17 argument felts"
+                    ),
                     "unexpected diagnostic: {err}"
                 );
             }

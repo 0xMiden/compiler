@@ -211,10 +211,11 @@ pub(crate) fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
     flat_params.len() > MAX_FLAT_PARAMS || AbiParam::felts_of(flat_params) > MAX_DIRECT_STACK_FELTS
 }
 
-/// Rejects a cross-context component export whose flattened parameters do not fit the
+/// Rejects a cross-context component export or import whose flattened parameters do not fit the
 /// [`MAX_DIRECT_STACK_FELTS`]-element operand stack window a cross-context call passes them in.
 ///
-/// `function` describes the export in the diagnostic, e.g. "component export `foo`". Passing the
+/// `function` describes the export or import in the diagnostic, e.g. "component export `foo`",
+/// and `flat_params` are its parameters flattened without the tuple collapse. Passing the
 /// arguments indirectly (through the advice provider) is not supported, so a wider argument list
 /// is a user error.
 pub(crate) fn reject_params_past_call_window(
