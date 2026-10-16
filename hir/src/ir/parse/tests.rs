@@ -944,57 +944,62 @@ builtin.world {
     }
 }
 
-/// A component nested in a shorter component that holds a module is reported for parsed input.
+/// A component nested in a shorter component that holds a module is reported for parsed input,
+/// whichever of the two is listed first.
 #[test]
 fn nested_component_names_are_reported() {
-    let test = ParserTest::default();
-    let source = "\
-builtin.world {
+    let shorter = "
     builtin.component private @acme::@app {
         builtin.module public @main {
         };
-    };
+    };";
+    let longer = "
     builtin.component private @acme::@app::@main {
-    };
-};";
-    let err = test
-        .parse_any("nesting.hir", source)
-        .expect_err("a component nested in one with a module must not parse")
-        .to_string();
-    assert!(
-        err.contains(
-            "component `acme::app` and component `acme::app::main` nest (`acme::app` is a \
-             segment-prefix of `acme::app::main`); a component namespace may only have another \
-             nested in it while it holds declarations only"
-        ),
-        "unexpected diagnostic: {err}"
-    );
+    };";
+    for (first, second) in [(shorter, longer), (longer, shorter)] {
+        let test = ParserTest::default();
+        let source = alloc::format!("builtin.world {{{first}{second}\n}};");
+        let err = test
+            .parse_any("nesting.hir", &source)
+            .expect_err("a component nested in one with a module must not parse")
+            .to_string();
+        assert!(
+            err.contains(
+                "(`acme::app` is a segment-prefix of `acme::app::main`); a component namespace \
+                 may only have another nested in it while it holds declarations only"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
 }
 
 /// A declaration-only component declaring a function named by the segment of a nested
-/// component's name that follows its own is reported for parsed input.
+/// component's name that follows its own is reported for parsed input, whichever of the two is
+/// listed first.
 #[test]
 fn a_declaration_captured_by_a_nested_component_is_reported() {
-    let test = ParserTest::default();
-    let source = "\
-builtin.world {
+    let shorter = "
     builtin.component private @x::@y {
         builtin.function internal extern(\"C\") @z(%a: u32) -> u32;
-    };
+    };";
+    let longer = "
     builtin.component private @x::@y::@z {
-    };
-};";
-    let err = test
-        .parse_any("captured.hir", source)
-        .expect_err("a declaration captured by a nested component must not parse")
-        .to_string();
-    assert!(
-        err.contains(
-            "component `x::y` declares `z`, which component `x::y::z` would capture: a path \
-             `x::y::z` cannot name both"
-        ),
-        "unexpected diagnostic: {err}"
-    );
+    };";
+    for (first, second) in [(shorter, longer), (longer, shorter)] {
+        let test = ParserTest::default();
+        let source = alloc::format!("builtin.world {{{first}{second}\n}};");
+        let err = test
+            .parse_any("captured.hir", &source)
+            .expect_err("a declaration captured by a nested component must not parse")
+            .to_string();
+        assert!(
+            err.contains(
+                "component `x::y` declares `z`, which component `x::y::z` would capture: a path \
+                 `x::y::z` cannot name both"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+    }
 }
 
 /// A declaration-only component declaring a function named by a segment of a nested component's

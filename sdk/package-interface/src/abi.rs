@@ -13,9 +13,11 @@ use smallvec::SmallVec;
 ///
 /// The `Fast` convention requires that a procedure "must not require more than 16 elements of
 /// the operand stack for arguments or results". `C` and `Wasm` are documented to spill excess
-/// *arguments* to the caller's frame instead of failing, so this budget is enforced only for
-/// `Fast`: `C` is lowered here too (see [`lower_signature`]) but is never subject to it, and a
-/// `Wasm` signature's results are always scalars.
+/// *arguments* to the caller's frame instead of failing, so signature lowering enforces this
+/// budget only for `Fast`: `C` is lowered here too (see [`lower_signature`]) but is never subject
+/// to it, and a `Wasm` signature's results are always scalars. Cross-context calls pass through
+/// the same 16-element window, so `package-wit` offers only procedures within it, whatever their
+/// convention.
 pub const MAX_STACK_ELEMENTS: usize = 16;
 
 /// One Wasm-side scalar of a lowered signature.

@@ -51,9 +51,9 @@ impl WorldBuilder {
     /// function or global named by the raw last segment), which the component would shadow, when
     /// the name of another component nests with this one (one is a segment-prefix of the other)
     /// and the shorter of the two is not declaration-only or declares a symbol named by the last
-    /// segment of a longer name one segment longer than its own, since resolution prefers the longest
-    /// registered name, or when a world-level symbol has the name or the path of the component
-    /// (see [World::reject_component_shadowing]).
+    /// segment of a longer name one segment longer than its own, since resolution prefers the
+    /// longest registered name, or when a world-level symbol has the name or the path of the
+    /// component (see [World::reject_component_shadowing]).
     pub fn define_component(&mut self, name: Ident) -> Result<ComponentRef, Report> {
         let name = Ident::new(Component::canonical_name(name.name)?, name.span);
         {
@@ -509,15 +509,16 @@ mod tests {
     /// A declaration-only component declaring a function named by a segment of a nesting
     /// component's name more than one segment longer than its own is accepted, whichever of the
     /// two is defined first: no component is named by the path of the function, so it resolves to
-    /// the function, and a path under the longer name to that component.
+    /// the function, and a path under the longer name to that component. This holds for the leaf
+    /// named by the last segment of the longer name, too (`w` for `x::y` and `x::y::z::w`).
     #[test]
     fn a_declaration_named_by_a_segment_of_a_deeper_component_is_accepted() {
         use crate::{FunctionIdent, SymbolPath};
 
-        for stub_first in [true, false] {
+        for (stub_first, leaf) in [(true, "z"), (false, "z"), (true, "w"), (false, "w")] {
             let (context, mut world_builder) = new_world();
             let (stub, deeper) = if stub_first {
-                let stub = define_stub(&context, &mut world_builder, "x::y", "z")
+                let stub = define_stub(&context, &mut world_builder, "x::y", leaf)
                     .expect("failed to define the stub");
                 let deeper = define_stub(&context, &mut world_builder, "x::y::z::w", "g")
                     .expect("`x::y::z::w` captures nothing");
@@ -525,7 +526,7 @@ mod tests {
             } else {
                 let deeper = define_stub(&context, &mut world_builder, "x::y::z::w", "g")
                     .expect("failed to define the stub");
-                let stub = define_stub(&context, &mut world_builder, "x::y", "z")
+                let stub = define_stub(&context, &mut world_builder, "x::y", leaf)
                     .expect("`x::y::z::w` captures nothing");
                 (stub, deeper)
             };
@@ -540,7 +541,7 @@ mod tests {
                 let parent = symbol.borrow().as_symbol_operation().parent_op();
                 parent.expect("a function has a parent")
             };
-            assert_eq!(parent_of("x::y::z"), stub.as_operation_ref());
+            assert_eq!(parent_of(&alloc::format!("x::y::{leaf}")), stub.as_operation_ref());
             assert_eq!(parent_of("x::y::z::w::g"), deeper.as_operation_ref());
         }
     }

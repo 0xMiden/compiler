@@ -53,11 +53,9 @@ builtin.component private @hir_ns::@test {
 /// The sibling's one function is declared and not defined — an empty body is what
 /// `Symbol::is_declaration` keys on, and therefore what `is_declaration_only` asks about.
 ///
-/// The braces are empty rather than absent on purpose. `builtin.function` carries the
-/// `SingleRegion` trait, so a function written with no region at all fails verification
-/// ("requires exactly one region, but got 0") even though that is precisely how the printer
-/// writes a declaration. An empty region is a body with no blocks, which is what
-/// `is_declaration` means.
+/// The braces are empty rather than absent, which is the other spelling of a declaration: a
+/// function written with no region at all, as the printer writes a declaration, parses to the
+/// same empty region, a body with no blocks, which is what `is_declaration` means.
 const WORLD_WITH_DECLARATION_ONLY_SIBLING: &str = r#"
 builtin.world {
 builtin.component private @hir_ns::@test {
@@ -172,8 +170,7 @@ fn world_with_a_sibling_declaring_one_of_its_functions() -> String {
 /// The component-path counterpart of
 /// [`world_with_a_sibling_declaring_one_of_its_functions`], derived from the very fixture that
 /// `a_component_lowers_rooted_at_its_own_id` lowers successfully, so the inserted function is
-/// again the only difference. See [`WORLD_WITH_DECLARATION_ONLY_SIBLING`] on why the braces are
-/// empty rather than absent.
+/// again the only difference. See [`WORLD_WITH_DECLARATION_ONLY_SIBLING`] on the empty braces.
 fn component_with_a_declared_function_in_its_module() -> String {
     COMPONENT.replace(
         "builtin.module private @test {",

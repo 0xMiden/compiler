@@ -739,8 +739,8 @@ fn world_body_to_masm_component(
     let stack_pointer = link_info.globals_layout().stack_pointer_offset();
     let mut masm_component = MasmComponent {
         id: None,
-        // A world declaring no component is not the compiler's wrapper around one: it has no
-        // component boundary at all.
+        // A world declaring no defining component is not the compiler's wrapper around one: it
+        // has no component boundary at all.
         synthetic_wrapper: false,
         root,
         init,
@@ -766,8 +766,8 @@ fn world_body_to_masm_component(
         init_body: Default::default(),
     };
 
-    // A world declaring no component has no siblings *beside* one: every top-level module in it
-    // is part of the one logical component this treats its body as.
+    // A world declaring no defining component has no siblings *beside* one: every top-level
+    // module in it is part of the one logical component this treats its body as.
     builder
         .build(world.as_operation(), &[])
         .map_err(|report| super::report_planning_failure(report, &context.session().diagnostics))?;
