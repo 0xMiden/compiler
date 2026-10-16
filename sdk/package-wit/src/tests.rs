@@ -1173,3 +1173,48 @@ end
         [("ping".to_owned(), "miden::test::my_component::ping".to_owned())]
     );
 }
+
+/// A parameter whose type is named by the core-types id of `asset` but whose `id` is a one-felt
+/// record is offered over a local `asset` record, not the core `asset` of another ABI, and the
+/// document parses next to the SDK's core types.
+#[test]
+fn an_sdk_core_type_id_of_another_layout_is_declared_locally() {
+    use std::sync::Arc;
+
+    use midenc_hir_type::{ArrayType, StructType};
+
+    let mut iface = component(
+        r#"
+@account_procedure
+pub proc take(x: felt)
+    drop
+end
+"#,
+    );
+    let take = iface
+        .procedures
+        .iter_mut()
+        .find(|procedure| procedure.name() == "take")
+        .unwrap();
+    let id = Type::from(StructType::named(Arc::from("Foo"), [(Arc::from("x"), Type::Felt)]));
+    let word = Type::from(ArrayType::new(Type::Felt, 4));
+    take.signature.as_mut().unwrap().params[0] = Type::from(StructType::named(
+        Arc::from("miden:base/core-types@1.0.0/asset"),
+        [(Arc::from("id"), id), (Arc::from("value"), word)],
+    ));
+    let generated = generate(&iface).unwrap();
+    assert!(generated.skipped.is_empty(), "{:?}", generated.skipped);
+    assert!(generated.wit.contains("    use miden:base/core-types@1.0.0.{felt, word};\n"));
+    assert!(
+        generated
+            .wit
+            .contains("    record asset {\n        id: foo,\n        value: word,\n    }\n"),
+        "{}",
+        generated.wit
+    );
+    assert!(generated.wit.contains("    take: func(asset: asset);\n"), "{}", generated.wit);
+    assert_eq!(
+        parse(&generated.wit, "my-component"),
+        [("take".to_owned(), "miden::test::my_component::take".to_owned())]
+    );
+}

@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use midenc_frontend_wasm_metadata::{
-    core_types::{CoreLeaf, CoreRecord, core_record},
+    core_types::{CoreField, CoreLeaf, CoreRecord, core_record},
     namespace::CORE_TYPES_INTERFACE_ID,
 };
 use midenc_hir_type::{EnumRef, EnumType, StructRef, StructType, Type};
@@ -148,24 +148,30 @@ fn sdk_core_item(name: &str) -> Option<&str> {
     name.strip_prefix(CORE_TYPES_INTERFACE_ID)?.strip_prefix('/')
 }
 
-/// Whether the manifest type `ty`, named by the core-types id of `record`, has that record's
-/// layout: a struct with exactly its fields in that order, each field named by a core-types id
-/// having its own record's layout too. A package built by an SDK whose record had another field
-/// order (`account-id` was `{ prefix, suffix }`) fails it.
+/// Whether the manifest type `ty`, named by the core-types id of `record`, is that record: a plain
+/// struct with exactly the record's fields, by name and in order, where a field whose type is
+/// named by a core-types id is the record's field of that core record and passes this check
+/// against it, and any other field flattens to exactly the scalars of the record's field (see
+/// [`CoreField::leaves`]). A package built by an SDK whose record had another field order
+/// (`account-id` was `{ prefix, suffix }`) or another field type (`asset-amount { inner: u64 }`)
+/// fails it.
 fn has_sdk_layout(ty: &Type, record: &CoreRecord) -> bool {
     let Type::Struct(StructRef::Plain(st)) = ty else {
         return false;
     };
     st.fields().len() == record.fields.len()
-        && st.fields().iter().zip(record.field_names()).all(|(field, name)| {
-            field.name.as_deref() == Some(name)
-                && match &field.ty {
-                    Type::Struct(inner) => match inner.name().as_deref().and_then(sdk_core_item) {
-                        Some(item) => core_record(item)
-                            .is_some_and(|record| has_sdk_layout(&field.ty, record)),
-                        None => true,
-                    },
-                    _ => true,
+        && st.fields().iter().zip(record.fields).all(|(field, (name, core))| {
+            let nested = match &field.ty {
+                Type::Struct(inner) => inner.name(),
+                _ => None,
+            };
+            field.name.as_deref() == Some(*name)
+                && match nested.as_deref().and_then(sdk_core_item) {
+                    Some(item) => {
+                        matches!(core, CoreField::Record(expected) if *expected == item)
+                            && has_sdk_layout(&field.ty, sdk_record(item))
+                    }
+                    None => flattens_to(&field.ty, &core.leaves()),
                 }
         })
 }
@@ -243,10 +249,11 @@ impl TypeSet {
     }
 
     /// The mapping of the struct or enum `ty` named `name` when the name decides it: a type of the
-    /// SDK's core types (see [`sdk_core_item`]) with that item's layout is that core item, and a
-    /// name that is not a Miden identifier path names a type from elsewhere, which is
-    /// unsupported. `None` for a Miden identifier path, and for a core-types id whose layout is
-    /// another, which becomes a local declaration as a Miden-named type of another layout does.
+    /// SDK's core types (see [`sdk_core_item`]) that is that item's record (see
+    /// [`has_sdk_layout`]) is that core item, and a name that is not a Miden identifier path names
+    /// a type from elsewhere, which is unsupported. `None` for a Miden identifier path, and for a
+    /// core-types id whose type is not its record (an enum, other fields, or fields of other
+    /// types), which becomes a local declaration as a Miden-named type of another shape does.
     fn map_by_name(&mut self, ty: &Type, name: &str) -> Result<Option<Mapped>, String> {
         if let Some(item) = sdk_core_item(name) {
             let Some(record) = core_record(item) else {
@@ -776,6 +783,63 @@ mod tests {
         assert_eq!(set.map(&id).unwrap().wit, "account-id");
         assert_eq!(set.core.iter().collect::<Vec<_>>(), ["account-id"]);
         assert!(set.locals.is_empty());
+    }
+
+    /// Map `ty` and return the core items used and the local declarations' names.
+    fn map_names(ty: &Type) -> (Mapped, Vec<String>, Vec<String>) {
+        let mut set = TypeSet::default();
+        let mapped = set.map(ty).unwrap();
+        let locals = set.locals.iter().map(|(name, _)| name.clone()).collect();
+        (mapped, set.core.into_iter().collect(), locals)
+    }
+
+    /// A type named by a core-types id whose fields have the record's names but other types is a
+    /// local declaration, not the core item: the core item would lower to another ABI.
+    #[test]
+    fn an_sdk_core_type_id_with_other_field_types_is_a_local_record() {
+        let amount = record(&sdk_name("asset-amount"), &[("inner", Type::U64)]);
+        let (mapped, core, locals) = map_names(&amount);
+        assert_eq!((mapped.wit.as_str(), mapped.values, mapped.felts), ("asset-amount", 1, 2));
+        assert!(core.is_empty(), "{core:?}");
+        assert_eq!(locals, ["asset-amount"]);
+
+        // A one-felt `id` where the core `asset` has an `asset-id` word.
+        let foo = record("Foo", &[("x", Type::Felt)]);
+        let asset = record(&sdk_name("asset"), &[("id", foo), ("value", sdk_word())]);
+        let (mapped, core, locals) = map_names(&asset);
+        assert_eq!((mapped.wit.as_str(), mapped.felts), ("asset", 5));
+        assert_eq!(core, ["felt", "word"]);
+        assert_eq!(locals, ["foo", "asset"]);
+
+        // A `word` where the core `asset` has an `asset-id` is not the SDK's record, but it
+        // flattens like the core item field by field, so the rule for a manifest type named
+        // `Asset` takes it as the core item.
+        let asset = record(&sdk_name("asset"), &[("id", sdk_word()), ("value", sdk_word())]);
+        let core_asset = sdk_record("asset");
+        assert!(!has_sdk_layout(&asset, core_asset));
+        let (mapped, core, locals) = map_names(&asset);
+        assert_eq!((mapped.wit.as_str(), mapped.felts), ("asset", 8));
+        assert_eq!(core, ["asset"]);
+        assert!(locals.is_empty(), "{locals:?}");
+    }
+
+    /// A type named by a core-types id with another field count, or an enum named by one, is a
+    /// local declaration.
+    #[test]
+    fn an_sdk_core_type_id_of_another_shape_is_a_local_declaration() {
+        let felt = sdk_felt();
+        let word =
+            record(&sdk_name("word"), &[("a", felt.clone()), ("b", felt.clone()), ("c", felt)]);
+        let (mapped, core, locals) = map_names(&word);
+        assert_eq!((mapped.wit.as_str(), mapped.felts), ("word", 3));
+        assert_eq!(core, ["felt"]);
+        assert_eq!(locals, ["word"]);
+
+        let tag = c_enum(&sdk_name("tag"), &[("A", 0), ("B", 1)]);
+        let (mapped, core, locals) = map_names(&tag);
+        assert_eq!(mapped, Mapped::scalar("tag", 1));
+        assert!(core.is_empty(), "{core:?}");
+        assert_eq!(locals, ["tag"]);
     }
 
     /// A type named by a core-types id whose item the core types do not declare is unsupported.
