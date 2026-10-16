@@ -845,14 +845,14 @@ mod tests {
         TargetContext,
         TargetRole,
         // The shipped HIR frontend, which is instantiated and run: the `.hir` half of the
-        // pre-scan is only meaningful if preparation and that frontend agree, and nothing
+        // namespace read is only meaningful if preparation and that frontend agree, and nothing
         // short of running both can show that they do.
         frontends::{
             HIR_FRONTEND,
             // The shipped WebAssembly frontend, run for the same reason on the `.wasm` and
             // `.wat` half.
             WASM_FRONTEND,
-            // And its own fixtures, so that the scan cannot be tested against HIR text the
+            // And its own fixtures, so that the read cannot be tested against HIR text the
             // frontend has never been asked to compile.
             hir::tests::{COMPONENT, MODULE, WORLD},
         },
@@ -2223,14 +2223,14 @@ namespace = "miden::prepare_fixture::prepare_fixture"
     }
 
     // -------------------------------------------------------------------------------------
-    // The `.hir` half of the pre-scan.
+    // The `.hir` half of the namespace read.
     // -------------------------------------------------------------------------------------
 
     /// The namespace a target rooted at [`WORLD`] or [`COMPONENT`] must be given.
     ///
     /// One path component per segment of the component name `hir_ns::test`, rendered by
     /// `SymbolPath::to_library_path`, which is where codegen roots the Miden Assembly.
-    /// Preparation absolutizes what it scanned, so the target's namespace carries the `::`
+    /// Preparation absolutizes what it read, so the target's namespace carries the `::`
     /// prefix that codegen's own `to_absolute` adds.
     const COMPONENT_NAMESPACE: &str = "::hir_ns::test";
 
@@ -2319,7 +2319,7 @@ namespace = "miden::prepare_fixture::prepare_fixture"
     /// A file declaring no component is rooted at the module it does declare.
     ///
     /// The discriminating half is the **renamed** row: the shared [`MODULE`] fixture is named
-    /// after the file that holds it, so a scan that read nothing would still produce `::lib` for
+    /// after the file that holds it, so a read that found nothing would still produce `::lib` for
     /// it and this test would pass for the wrong reason. Renaming the module separates the two
     /// answers — the artifact name is still `lib`, and only reading the declaration gives
     /// `::renamed`, which is where codegen roots it.
@@ -2354,7 +2354,7 @@ namespace = "miden::prepare_fixture::prepare_fixture"
 
     /// A file declaring several top-level modules declares no namespace, and codegen agrees.
     ///
-    /// The scan says nothing because there is no single declaration to read, so the artifact name
+    /// The read says nothing because there is no single declaration to read, so the artifact name
     /// stands. That used to *disagree* with codegen, whose `_` arm in
     /// `world_body_to_masm_component`'s `match toplevel_namespaces.len()` roots at the constant
     /// `::init` — a name no file declares and no synthesized namespace can equal. Mirroring that
@@ -2406,7 +2406,7 @@ namespace = "miden::prepare_fixture::prepare_fixture"
         // Not "the first component's namespace": a world with two components has no single
         // namespace to be rooted at, and choosing one would be an invention. Codegen rejects such
         // a world outright — see `too_many_components` in `codegen/masm` — which is the answer the
-        // user gets either way, so the scan says nothing rather than disagreeing with it.
+        // user gets either way, so the read says nothing rather than disagreeing with it.
         assert_eq!(
             hir_namespace("prepare_standalone_hir_two", &two_component_world(), |_| {}),
             "::lib",
@@ -2416,13 +2416,13 @@ namespace = "miden::prepare_fixture::prepare_fixture"
 
     #[test]
     fn a_hir_root_declaring_more_than_one_component_is_rejected_by_codegen() {
-        // The other half of the decision above: whatever the scan says, such a build fails, and
+        // The other half of the decision above: whatever the read says, such a build fails, and
         // it fails naming the package-metadata limitation rather than a namespace mismatch the
         // user cannot act on.
         //
         // Be precise about what this test can and cannot carry. It would pass just as well if
-        // the scan had picked the *first* component's namespace, because codegen refuses before
-        // any namespace is compared — so it does not discriminate the scan's answer at all. That
+        // the read had picked the *first* component's namespace, because codegen refuses before
+        // any namespace is compared — so it does not discriminate the read's answer at all. That
         // is its sibling's job: `…_declares_no_namespace` pins the answer, and this pins that
         // the answer costs nothing, because the diagnostic the user sees is the same either way.
         // The pair is what settles the decision; neither test settles it alone.
@@ -2442,7 +2442,7 @@ namespace = "miden::prepare_fixture::prepare_fixture"
         assert!(
             rendered.contains("world containing 2 components"),
             "the failure must be codegen's own report of the package-metadata limitation, not a \
-             namespace the scan guessed at: {rendered}"
+             namespace the read guessed at: {rendered}"
         );
     }
 
@@ -2712,7 +2712,7 @@ namespace = "miden::prepare_fixture::prepare_fixture"
         // or not it is nested in a world, and a module's own name
         // (`world_body_to_masm_component`). The module row is renamed away from the file stem
         // deliberately — with a module called
-        // `lib` in `lib.hir`, both a working scan and a scan that read nothing produce `::lib`,
+        // `lib` in `lib.hir`, both a working read and a read that found nothing produce `::lib`,
         // and the test would pass either way.
         for (dir, contents) in [
             ("prepare_standalone_hir_oracle_world", WORLD.to_string()),

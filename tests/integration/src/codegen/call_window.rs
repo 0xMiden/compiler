@@ -13,13 +13,14 @@
 //! that an unpadded window would expose to them.
 //!
 //! The widths (arguments to results: 2 to 2, 1 to 4, 9 to 0, 0 to 16, 0 to 9, 12 to 12, 4 to 8,
-//! 8 to 8) reach every arm of the padding and of the discard but the empty ones:
+//! 8 to 8) reach every arm of the padding and of the discard but the empty padding, which only
+//! 16 arguments take:
 //!
 //! - the felt-wise padding of few (1, 2) and of many (9) arguments, and the whole-word padding of
 //!   0, 4, 8 and 12 arguments;
 //! - the felt-wise discard under few (2) and many (9) results, and the whole-word discard under
 //!   0, 4, 8 and 12 results;
-//! - 16 results, which fill the window and leave nothing to discard.
+//! - the empty discard under 16 results, which fill the window and leave nothing to discard.
 //!
 //! Every callee traps unless the window under its arguments is zero. The entrypoint weights each
 //! result by its position, so results out of order are visible as well.

@@ -2147,6 +2147,27 @@ mod tests {
         );
     }
 
+    /// Nine `u64` values overflow the window on their own, so the diagnostic does not blame the
+    /// result pointer that comes after them.
+    #[test]
+    fn direct_import_whose_arguments_alone_overflow_is_not_blamed_on_its_pointer() {
+        let err = lower_direct_import(
+            "direct_nine_u64_result",
+            wide_direct_import(9, 0, Some(two_field_record_type())),
+        )
+        .expect_err("an 18-felt argument list should be rejected");
+        let err = err.to_string();
+        assert!(
+            err.contains(
+                "component import `::\"miden:test@1.0.0\"::direct_nine_u64_result` takes 18 \
+                 argument felts after expanding 64-bit values, but a cross-context call passes at \
+                 most 16"
+            ),
+            "unexpected diagnostic: {err}"
+        );
+        assert!(!err.contains("result pointer"), "unexpected diagnostic: {err}");
+    }
+
     #[test]
     fn transformed_import_lowering_validates_flat_variant_params() {
         let (context, mut world_builder, mut module_builder) = world_with_core_module();

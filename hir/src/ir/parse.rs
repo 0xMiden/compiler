@@ -256,6 +256,8 @@ pub fn parse_file<T: OpParser + OpRegistration>(
 }
 
 /// Parse any operation from `source` with the provided `uri` and `config`
+///
+/// The source must hold exactly one top-level operation: anything after it is an error.
 pub fn parse_any(
     config: ParserConfig,
     uri: Uri,
@@ -268,6 +270,8 @@ pub fn parse_any(
 }
 
 /// Parse IR assembly anchored at an operation `name`, from `source` with the provided `uri` and `config`
+///
+/// The source must hold exactly one top-level operation: anything after it is an error.
 pub fn parse_anchored(
     name: OperationName,
     config: ParserConfig,
@@ -281,6 +285,8 @@ pub fn parse_anchored(
 }
 
 /// Parse any operation from `path` with the provided `config`
+///
+/// The source must hold exactly one top-level operation: anything after it is an error.
 #[cfg(feature = "std")]
 pub fn parse_file_any(
     config: ParserConfig,
@@ -292,6 +298,8 @@ pub fn parse_file_any(
 }
 
 /// Parse IR assembly anchored at an operation `name`, from `path` with the provided `config`
+///
+/// The source must hold exactly one top-level operation: anything after it is an error.
 #[cfg(feature = "std")]
 pub fn parse_file_anchored(
     anchor: OperationName,

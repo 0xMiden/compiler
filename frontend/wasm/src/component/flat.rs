@@ -230,7 +230,7 @@ pub(crate) fn reject_params_past_call_window(
     if param_felts + pointer_felts <= MAX_DIRECT_STACK_FELTS {
         return Ok(());
     }
-    let message = if result_pointer.is_some() {
+    let message = if param_felts <= MAX_DIRECT_STACK_FELTS {
         format!(
             "{function} takes {param_felts} argument felts after expanding 64-bit values plus the \
              result pointer, but the call into its lowering function passes at most \

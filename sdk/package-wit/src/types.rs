@@ -53,7 +53,7 @@ pub struct TypeSet {
     pub locals: Vec<(String, Decl)>,
 }
 
-/// A core-types item a manifest type maps to when its shape matches the item exactly.
+/// A core-types item a manifest type maps to when it matches the item by name and flattening.
 struct CoreItem {
     /// The item's WIT name, which is also the kebab form of the manifest type name it replaces.
     name: &'static str,
@@ -248,7 +248,8 @@ impl TypeSet {
         }
     }
 
-    /// The core item `ty` stands for, recorded as used, when it matches one exactly.
+    /// The core item `ty` stands for, recorded as used, when it matches one by name and
+    /// flattening (see [`CORE_ITEMS`]).
     fn core_item(&mut self, wit_name: &str, ty: &Type) -> Result<Option<Mapped>, String> {
         let Some(item) = CORE_ITEMS.iter().find(|item| item.name == wit_name && (item.matches)(ty))
         else {

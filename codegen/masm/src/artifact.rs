@@ -1045,7 +1045,7 @@ mod tests {
         /// A component-less world already sitting at its target's namespace comes back untouched.
         ///
         /// This is the *single*-module shape, and it is why subsuming it into the same rule costs
-        /// nothing: lowering roots it at `::{module}` and preparation's `.hir` scan reads that
+        /// nothing: lowering roots it at `::{module}` and preparation's `.hir` read finds that
         /// same module's name, so the two agree and the equality guard makes the rewrite a no-op.
         /// Treating one module and several by one rule is what keeps codegen from having two
         /// answers preparation would have to mirror separately.

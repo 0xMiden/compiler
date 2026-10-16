@@ -24,7 +24,8 @@ smallvec.workspace = true
 thiserror.workspace = true
 
 [features]
-# `testing::assemble_fixture` for dependents' tests; it needs the real assembler.
+# `testing::assemble_fixture` for dependents' tests; it needs the real assembler, and
+# `testing::write_package` needs `Package::write_to_file`, which `miden-mast-package/std` gives.
 testing = ["dep:miden-assembly", "miden-mast-package/std"]
 
 [dev-dependencies]

@@ -99,25 +99,36 @@ mod tests {
     /// on top before the executor is invoked.
     #[test]
     fn exec_fpi_pads_inputs_and_loads_prefix_locals() -> Result<(), Report> {
-        use crate::emit::primop::tests::{block_insts, pad_call_window_insts};
+        use crate::{
+            emit::primop::tests::{block_insts, pad_call_window_insts},
+            masm::Instruction::{Exec, Locaddr, MemLoad},
+        };
 
         // Every arm of the padding: whole words (0, 4, 8, 12), few inputs (1), few pads (10, 15)
         for num_inputs in [0usize, 1, 4, 8, 10, 12, 15] {
             let block = emit_exec_fpi(num_inputs)?;
             let output = block.to_pretty_string();
 
-            // The prefix local loads are direct `locaddr`/`mem_load` pairs and push nothing else,
-            // so the padding is the only run of these instructions, and comes before them.
+            // The padding is the only run of these instructions, and the six prefix loads, direct
+            // `locaddr`/`mem_load` pairs, follow it before the executor call.
             let insts = block_insts(block.iter().as_slice());
             let pad = pad_call_window_insts(num_inputs);
-            let padded_at = insts.windows(pad.len()).position(|window| window == pad);
-            let first_load = insts
-                .iter()
-                .position(|inst| matches!(inst, crate::masm::Instruction::Locaddr(_)));
+            let runs: Vec<usize> = insts
+                .windows(pad.len())
+                .enumerate()
+                .filter_map(|(at, window)| (window == pad).then_some(at))
+                .collect();
+            let [padded_at] = runs[..] else {
+                panic!("expected the call-window padding for {num_inputs} inputs once:\n{output}");
+            };
+            let after = &insts[padded_at + pad.len()..];
+            let loads = 2 * hir::ExecFpi::PREFIX_FELTS;
             assert!(
-                padded_at.is_some_and(|at| first_load.is_some_and(|load| at + pad.len() <= load)),
-                "expected the call-window padding for {num_inputs} inputs before the prefix \
-                 loads:\n{output}"
+                after.len() > loads
+                    && after[..loads].chunks(2).all(|pair| matches!(pair, [Locaddr(_), MemLoad]))
+                    && after[loads..].iter().any(|inst| matches!(inst, Exec(_))),
+                "expected only the prefix loads between the padding for {num_inputs} inputs and \
+                 the executor call:\n{output}"
             );
             assert_eq!(
                 output.matches("mem_load").count(),
@@ -138,6 +149,22 @@ mod tests {
             );
         }
 
+        Ok(())
+    }
+
+    /// The padding of four inputs, pinned: three zero words, moved below the inputs.
+    #[test]
+    fn exec_fpi_pads_four_inputs_with_three_words() -> Result<(), Report> {
+        use crate::{
+            emit::primop::tests::block_insts,
+            masm::Instruction::{MovUpW3, PadW},
+        };
+
+        let block = emit_exec_fpi(4)?;
+        let insts = block_insts(block.iter().as_slice());
+        let [PadW, PadW, PadW, MovUpW3, ..] = insts[..] else {
+            panic!("expected `padw padw padw movupw.3` first:\n{}", block.to_pretty_string());
+        };
         Ok(())
     }
 
