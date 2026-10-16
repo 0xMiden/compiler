@@ -11,9 +11,12 @@ use midenc_hir::{
 
 use crate::*;
 
-/// Coercions produce a new attribute: operand attributes may be shared by other uses, and the
+/// Folds a unary op of an integer-like constant `operand` to the attribute `coerce` maps its value
+/// to.
+///
+/// The fold produces a new attribute: operand attributes may be shared by other uses, and the
 /// result's inferred attribute type must reflect the coerced value.
-fn fold_integer_coercion(
+pub(super) fn fold_integer_coercion(
     op: &Operation,
     operand: &Option<AttributeRef>,
     results: &mut SmallVec<[OpFoldResult; 1]>,

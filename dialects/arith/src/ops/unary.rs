@@ -1,15 +1,14 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    attributes::{BoolLikeAttr, IntegerLikeAttr},
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
-    dialects::builtin::attributes::ImmediateAttr,
     effects::MemoryEffectOpInterface,
     matchers::Matcher,
     traits::*,
     *,
 };
 
+use super::coercions::fold_integer_coercion;
 use crate::*;
 
 macro_rules! infer_return_ty_for_unary_op {
@@ -153,25 +152,9 @@ impl Foldable for Not {
         operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        let Some(operand) = &operands[0] else {
-            return FoldResult::Failed;
-        };
-        let operand = operand.borrow();
-        let attr = operand.as_attr();
-        let Some(value) =
-            attr.as_trait::<dyn BoolLikeAttr>().map(|attr| attr.as_bool()).or_else(|| {
-                attr.as_trait::<dyn IntegerLikeAttr>()
-                    .and_then(|attr| attr.as_immediate().as_bool())
-            })
-        else {
-            return FoldResult::Failed;
-        };
-        let result = self
-            .as_operation()
-            .context_rc()
-            .create_attribute::<ImmediateAttr, _>(Immediate::I1(!value));
-        results.push(OpFoldResult::Attribute(result));
-        FoldResult::Ok(())
+        fold_integer_coercion(self.as_operation(), &operands[0], results, |value| {
+            value.as_bool().map(|value| Immediate::I1(!value))
+        })
     }
 }
 
