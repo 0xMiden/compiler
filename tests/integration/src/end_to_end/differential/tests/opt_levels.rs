@@ -98,10 +98,10 @@ fn switch_loop_oz() {
     );
 }
 
-/// Deeply nested control flow must report an unsupported region-exit budget.
-/// The compilation harness panics with the returned diagnostic; a compiler panic does not match.
+/// The eight-level loop nest of `control_flow::nest8` at `--optimize=size-min`, where LLVM keeps
+/// every level as a loop. The exit dispatch of the nest fits the 16-felt region-result budget;
+/// `control_flow::deep_nest_overflow` still covers the budget diagnostic.
 #[test]
-#[should_panic(expected = "its region results")]
 fn nest8_oz() {
     run_case_with_flags("nest8_oz", include_str!("../cases/case_nest8.rs"), SIZE_MIN);
 }
