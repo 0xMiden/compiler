@@ -296,10 +296,9 @@ end
     assert!(matches!(generate(&iface), Err(Error::NoInterfaceProcedures)));
 }
 
-/// An auth procedure, even one also tagged `@note_script`, is left out unless it is also an
-/// account procedure.
+/// An auth procedure, even one also tagged `@note_script`, is left out.
 #[test]
-fn an_auth_script_is_in_the_interface_only_as_an_account_procedure() {
+fn an_auth_script_is_not_in_the_interface() {
     let mut iface = component(
         r#"
 @auth_script
@@ -337,17 +336,93 @@ end
         parse(&generated.wit, "my-component"),
         [("ping".to_owned(), "miden::test::my_component::ping".to_owned())]
     );
+}
 
+/// An auth procedure also tagged `@account_procedure` is still the auth procedure, so it is left
+/// out, and it does not decide the interface module.
+#[test]
+fn an_auth_procedure_also_tagged_as_account_procedure_is_left_out() {
+    let mut iface = component(
+        r#"
+@auth_script
+pub proc auth_tx()
+    nop
+end
+
+@account_procedure
+pub proc ping()
+    nop
+end
+"#,
+    );
+    // The assembler rejects two role attributes on one procedure, but a manifest may carry them.
     let account_procedure =
         iface.procedures[1].attributes.get("account_procedure").unwrap().clone();
     iface.procedures[0].attributes.insert(account_procedure);
+    assert_eq!(iface.procedures[0].name(), "auth_tx");
     let generated = generate(&iface).unwrap();
-    assert!(generated.skipped.is_empty(), "{:?}", generated.skipped);
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(skipped, [("miden::test::my_component::auth_tx", AUTH_PROCEDURE_REASON)]);
+    assert_eq!(
+        parse(&generated.wit, "my-component"),
+        [("ping".to_owned(), "miden::test::my_component::ping".to_owned())]
+    );
+}
+
+/// A result flattening to several values comes back through a pointer passed after the
+/// parameters, which counts against the direct-call budget; a single-value result does not.
+#[test]
+fn a_multi_value_result_counts_its_pointer_in_the_parameter_budget() {
+    let iface = component(
+        r#"
+@account_procedure
+pub proc fifteen_to_word(a: word, b: word, c: word, d: felt, e: felt, f: felt) -> word
+    nop
+end
+
+@account_procedure
+pub proc sixteen_to_word(a: word, b: word, c: word, d: word) -> word
+    nop
+end
+
+@account_procedure
+pub proc sixteen_to_felt(a: word, b: word, c: word, d: word) -> felt
+    nop
+end
+
+@account_procedure
+pub proc sixteen_to_nothing(a: word, b: word, c: word, d: word)
+    nop
+end
+"#,
+    );
+    let generated = generate(&iface).unwrap();
+    let skipped: Vec<(&str, &str)> =
+        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    assert_eq!(
+        skipped,
+        [(
+            "miden::test::my_component::sixteen_to_word",
+            "parameters and the result pointer occupy 17 stack elements, more than the 16 a \
+             direct call can pass"
+        )]
+    );
     assert_eq!(
         parse(&generated.wit, "my-component"),
         [
-            ("auth-tx".to_owned(), "miden::test::my_component::auth_tx".to_owned()),
-            ("ping".to_owned(), "miden::test::my_component::ping".to_owned()),
+            (
+                "fifteen-to-word".to_owned(),
+                "miden::test::my_component::fifteen_to_word".to_owned()
+            ),
+            (
+                "sixteen-to-felt".to_owned(),
+                "miden::test::my_component::sixteen_to_felt".to_owned()
+            ),
+            (
+                "sixteen-to-nothing".to_owned(),
+                "miden::test::my_component::sixteen_to_nothing".to_owned()
+            ),
         ]
     );
 }

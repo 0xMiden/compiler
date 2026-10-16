@@ -20,8 +20,8 @@
 //! (`AccountComponentCode::exports` in `miden-protocol`), so the kernel rejects a call to any
 //! other export, `@note_script` and `@transaction_script` entrypoints included. Only the
 //! `@account_procedure` ones become functions: an `@auth_script` procedure is invoked by the
-//! transaction kernel in the epilogue, which rejects a transaction that called it before, so one
-//! without `@account_procedure` is left out.
+//! transaction kernel in the epilogue, which rejects a transaction that called it before, so it is
+//! left out, even when it is also marked `@account_procedure`.
 
 #![deny(warnings)]
 #![deny(missing_docs)]
@@ -47,7 +47,7 @@ use self::{emit::Function, types::TypeSet};
 /// may occupy.
 const MAX_STACK_ELEMENTS: usize = midenc_package_interface::abi::MAX_STACK_ELEMENTS;
 
-/// Why an `@auth_script` procedure that is not also an `@account_procedure` is left out.
+/// Why an `@auth_script` procedure is left out, whether or not it is also an `@account_procedure`.
 ///
 /// The kernel's epilogue rejects a transaction in which anything called the auth procedure before
 /// the kernel itself (`epilogue.masm` in `miden-protocol`).
@@ -111,7 +111,7 @@ pub fn generate(package: &PackageInterface) -> Result<Generated, Error> {
     }
     // Checked on the attributes rather than the first-match `Role`: a procedure carrying both
     // `@note_script` and `@account_procedure` is still part of the interface. `interface_pass`
-    // leaves out the `@auth_script` ones that are not also account procedures.
+    // leaves out the `@auth_script` ones, also marked `@account_procedure` or not.
     let procedures: Vec<&ProcedureItem> = package
         .procedures
         .iter()
@@ -124,10 +124,9 @@ pub fn generate(package: &PackageInterface) -> Result<Generated, Error> {
     if procedures.is_empty() {
         return Err(Error::NoInterfaceProcedures);
     }
-    // Only account procedures become functions, so only they decide the interface module and the
-    // type names below: an auth procedure elsewhere, even one sorting first, changes neither.
-    let Some(first) = procedures.iter().copied().find(|procedure| is_account_procedure(procedure))
-    else {
+    // Only offerable procedures become functions, so only they decide the interface module and
+    // the type names below: an auth procedure elsewhere, even one sorting first, changes neither.
+    let Some(first) = procedures.iter().copied().find(|procedure| is_offerable(procedure)) else {
         return Err(Error::EverythingSkipped(
             procedures
                 .iter()
@@ -163,7 +162,7 @@ pub fn generate(package: &PackageInterface) -> Result<Generated, Error> {
     // is shadowed by a type. The checked set shrinks strictly with every accepted pass, so the
     // passes end, in practice after one or two.
     let mut type_names: BTreeSet<String> = BTreeSet::new();
-    for procedure in procedures.iter().filter(|procedure| is_account_procedure(procedure)) {
+    for procedure in procedures.iter().filter(|procedure| is_offerable(procedure)) {
         if let Some(signature) = &procedure.signature
             && let Ok((_, types)) = function(
                 procedure,
@@ -230,9 +229,8 @@ struct Pass {
     skipped: Vec<Skipped>,
 }
 
-/// Offer `procedures` in order, leaving out each auth procedure that is not also an account
-/// procedure, each one that has no function form in the interface module of the `first` account
-/// procedure, whose function name another kept function already has, or whose function name is
+/// Offer `procedures` in order, leaving out each auth procedure, each one that has no function
+/// form in the interface module of the `first` offerable procedure, whose function name another kept function already has, or whose function name is
 /// one of `type_names`.
 fn interface_pass(
     procedures: &[&ProcedureItem],
@@ -247,7 +245,7 @@ fn interface_pass(
     for procedure in procedures {
         let path = procedure_path(procedure);
         let result = match &procedure.signature {
-            _ if !is_account_procedure(procedure) => Err(AUTH_PROCEDURE_REASON.to_owned()),
+            _ if !is_offerable(procedure) => Err(AUTH_PROCEDURE_REASON.to_owned()),
             None => Err("no typed signature".to_owned()),
             Some(signature) => function(procedure, &path, first, signature, &types).and_then(
                 |(function, extended)| {
@@ -284,9 +282,12 @@ fn procedure_path(procedure: &ProcedureItem) -> String {
     procedure.path.to_relative().to_string()
 }
 
-/// Whether `procedure` is marked `@account_procedure`, so that it can become a function.
-fn is_account_procedure(procedure: &ProcedureItem) -> bool {
+/// Whether `procedure` can become a function: it is marked `@account_procedure` and not
+/// `@auth_script`, since a procedure marked both is still the auth procedure (see
+/// [`AUTH_PROCEDURE_REASON`]).
+fn is_offerable(procedure: &ProcedureItem) -> bool {
     procedure.attributes.has(Role::AccountProcedure.attribute())
+        && !procedure.attributes.has(Role::AuthScript.attribute())
 }
 
 /// The head and leaf segments of the module of `first`, the first account procedure (in path
@@ -378,6 +379,16 @@ fn function(
         return Err(format!(
             "parameters flatten to {param_felts} stack elements, more than the \
              {MAX_STACK_ELEMENTS} a direct call can pass"
+        ));
+    }
+    // Results flattening to more than one value come back through a pointer the caller passes
+    // after the parameters, and the consumer's lowering counts that pointer in the same budget.
+    let result_values: usize = results.iter().map(|mapped| mapped.values).sum();
+    if result_values > 1 && param_felts + 1 > MAX_STACK_ELEMENTS {
+        return Err(format!(
+            "parameters and the result pointer occupy {} stack elements, more than the \
+             {MAX_STACK_ELEMENTS} a direct call can pass",
+            param_felts + 1
         ));
     }
     // Results are offered when they contain no 64-bit integer and occupy at most the stack
