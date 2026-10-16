@@ -57,7 +57,7 @@ pub(crate) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
     vec![value.suffix(), value.prefix().as_felt()]
 }
 
-/// The Falcon basic authentication of the accounts the standard-component tests run on.
+/// The Falcon basic authentication of the accounts the mock-chain tests run on.
 pub(crate) fn basic_auth() -> Auth {
     Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,

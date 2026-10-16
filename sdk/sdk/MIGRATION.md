@@ -94,7 +94,8 @@ This is a breaking layout change:
   `miden::AccountId`: rebuild the package;
 - a host that mirrors an `AccountId` with its own `ToFeltRepr`/`FromFeltRepr` type, e.g. inside
   the transaction script arguments it passes, must declare that type's fields suffix first too;
-- a host that encodes such note storage by hand must swap the two felts:
+- a host that encodes the storage of a Rust note with an `AccountId` field by hand must swap the
+  two felts:
 
 ```rust
 // Before
