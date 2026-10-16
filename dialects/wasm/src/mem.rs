@@ -10,6 +10,20 @@ const ELEMENT_ALIGNMENT_LOG2: u8 = 2;
 /// The size of a Miden memory element in the byte-addressable address space.
 const ELEMENT_SIZE_BYTES: u32 = 4;
 
+/// Exclusive bound on the `memarg` offset (in bytes) of an element-aligned access that converts
+/// its base address before applying the offset, see [prepare_addr].
+///
+/// Such an access does not trap when `base + offset` leaves the 32-bit address space; its element
+/// address lands less than [BASE_FIRST_OVERFLOW_GUARD] elements past the guest address space
+/// instead. The bound covers the offsets module producers fold into accesses of static data
+/// (which sits behind a shadow stack of a few MiB); larger offsets take the checked path.
+pub const MAX_BASE_FIRST_OFFSET: u32 = 1 << 26;
+
+/// The number of elements past the guest address space that an access with an offset below
+/// [MAX_BASE_FIRST_OFFSET] can reach when `base + offset` overflows. The linker keeps the
+/// compiler's reserved cells above this guard, so such an access lands in memory no one owns.
+pub const BASE_FIRST_OVERFLOW_GUARD: u32 = MAX_BASE_FIRST_OFFSET / ELEMENT_SIZE_BYTES;
+
 /// Represents a memory immediate in a WebAssembly memory instruction.
 ///
 /// Mirrors `MemArg` from the `wasmparser` crate.
@@ -56,14 +70,15 @@ where
 /// Callers must therefore not treat the returned pointer value as a byte address (e.g. for
 /// pointer arithmetic).
 ///
-/// An element-aligned access with an element-aligned `memarg` offset converts the base address
-/// first and applies the offset in elements, so that every access through the same base shares
-/// one conversion and alignment check. This relies on the Wasm semantics of the `memarg` offset,
-/// which is added without wrapping (an access past the end of the address space traps), so the
-/// offset can be applied after the conversion. Such an access does not trap when `base + offset`
-/// leaves the 32-bit address space: the compiler performs no bounds checks on linear memory, and
-/// the resulting element address stays within the addresses reserved for the compiler, out of
-/// reach of guest pointers.
+/// An element-aligned access with an element-aligned `memarg` offset below
+/// [MAX_BASE_FIRST_OFFSET] converts the base address first and applies the offset in elements, so
+/// that every access through the same base shares one conversion and alignment check. This relies
+/// on the Wasm semantics of the `memarg` offset, which is added without wrapping (an access past
+/// the end of the address space traps), so the offset can be applied after the conversion. Such an
+/// access does not trap when `base + offset` leaves the 32-bit address space: the compiler
+/// performs no bounds checks on linear memory, and the resulting element address lands in the
+/// [BASE_FIRST_OVERFLOW_GUARD] elements above the guest address space, below the compiler's
+/// reserved cells.
 ///
 /// A constant the program itself added to the address (an `i32.add` of a constant) is NOT folded
 /// into the offset: `i32.add` wraps, and producers do rely on that (e.g. a table walked with a
@@ -96,15 +111,17 @@ pub fn prepare_addr<'a, B: ?Sized + Builder>(
     let addr_u32 = builder.bitcast(addr_int, Type::U32, span)?;
     let element_offset = memarg.and_then(|memarg| {
         let offset = memarg.offset as u32;
-        (is_element_access(ptr_ty, memarg.align) && offset.is_multiple_of(ELEMENT_SIZE_BYTES))
+        (is_element_access(ptr_ty, memarg.align)
+            && offset.is_multiple_of(ELEMENT_SIZE_BYTES)
+            && offset < MAX_BASE_FIRST_OFFSET)
             .then_some(offset / ELEMENT_SIZE_BYTES)
     });
     if let Some(element_offset) = element_offset {
         let memarg = memarg.unwrap();
         let (element_addr, address_space) =
             enforce_alignment(addr_u32, ptr_ty, memarg.align, builder, span)?;
-        // The element address and the element offset are both below 2^30, so the sum stays below
-        // 2^31 and does not wrap in the field.
+        // The element address is below 2^30 and the element offset below the overflow guard, so
+        // the sum does not wrap in the field and stays below the compiler's reserved cells.
         let element_addr = if element_offset == 0 {
             element_addr
         } else {

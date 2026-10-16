@@ -1,3 +1,4 @@
+use midenc_dialect_wasm::BASE_FIRST_OVERFLOW_GUARD;
 use midenc_hir::{
     FxHashMap, Op, Symbol, SymbolPath, WalkResult,
     dialects::builtin::{
@@ -22,8 +23,11 @@ const DEFAULT_RESERVATION: u32 = 17;
 // Guest pointers are 32-bit byte addresses, so guest-reachable element addresses end below
 // `GUEST_ADDRESS_LIMIT`; procedure locals are framed upwards from the VM's initial frame pointer,
 // `LOCALS_FRAME_START`. The elements in between belong to no program and are reachable only from
-// compiler-emitted MASM, which is why the compiler puts its fixed cells there. Each cell is one
-// word wide, and the cells are packed from the bottom of the band: the constants below define one
+// compiler-emitted MASM, which is why the compiler puts its fixed cells there, above an overflow
+// guard: an element-aligned guest access whose `base + offset` leaves the 32-bit address space
+// does not trap but lands within `BASE_FIRST_OVERFLOW_GUARD` elements past the guest limit (see
+// `prepare_addr` in the wasm dialect), so the cells start past that guard. Each cell is one word
+// wide, and the cells are packed from the bottom of the band: the constants below define one
 // cell each, in address order, ending with the `RESERVED_BAND_END` marker. To add a cell, define
 // it as the current `RESERVED_BAND_END` and move the marker one word up — laid out that way, two
 // cells cannot overlap, and the marker keeps the band inside its bounds. A cell's lifetime is its
@@ -41,10 +45,12 @@ pub const GUEST_ADDRESS_LIMIT: u32 = ((u32::MAX as u64 + 1) / RESERVED_WORD as u
 /// tests check the two agree.
 pub const LOCALS_FRAME_START: u32 = 1 << 31;
 
+/// First element address past the overflow guard; the compiler's first reserved cell.
+const RESERVED_BAND_START: u32 = GUEST_ADDRESS_LIMIT + BASE_FIRST_OVERFLOW_GUARD;
 /// Element address of the dynamic-heap metadata word (`heap_top`, `heap_size`, `heap_base`,
 /// magic), owned by the `intrinsics::mem` MASM module and mirrored here from its `HEAP_INFO_ADDR`
 /// constant; the unit tests check the two agree.
-pub const HEAP_INFO_ADDR: u32 = GUEST_ADDRESS_LIMIT;
+pub const HEAP_INFO_ADDR: u32 = RESERVED_BAND_START;
 /// Scratch word a `dyncall` lowering spills the callee's MAST root to, which the VM reads from
 /// memory.
 pub const DYNCALL_ROOT_ADDR: u32 = HEAP_INFO_ADDR + RESERVED_WORD;
@@ -54,7 +60,7 @@ const RESERVED_BAND_END: u32 = DYNCALL_ROOT_ADDR + RESERVED_WORD;
 // The band bounds are checked when the crate compiles: a cell that a guest pointer or a locals
 // frame could reach would be silent memory corruption, never a diagnostic.
 const _: () = assert!(
-    GUEST_ADDRESS_LIMIT.is_multiple_of(RESERVED_WORD),
+    RESERVED_BAND_START.is_multiple_of(RESERVED_WORD),
     "the reserved band does not start on a word boundary"
 );
 const _: () = assert!(

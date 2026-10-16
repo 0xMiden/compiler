@@ -3,6 +3,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use miden_debug::DebugQuery;
+use midenc_dialect_wasm::{BASE_FIRST_OVERFLOW_GUARD, MAX_BASE_FIRST_OFFSET};
 
 use super::*;
 
@@ -403,4 +404,143 @@ fn wasm_one_aligned_load_with_offset_4_reads_from_an_odd_base() {
     )
     .unwrap();
     assert_eq!(result, expected, "{masm}");
+}
+
+/// The first element address past the 2^32-byte guest address space.
+const GUEST_ADDRESS_LIMIT: u32 = 1 << 30;
+
+/// The element address of the heap metadata word (`heap_top`, `heap_size`, `heap_base`, magic),
+/// placed just above the overflow guard.
+const HEAP_INFO_ADDR: u32 = GUEST_ADDRESS_LIMIT + BASE_FIRST_OVERFLOW_GUARD;
+
+/// Verifies that Wasm element-aligned stores whose `base + offset` leaves the 32-bit address space
+/// land in the overflow guard and do not reach the heap metadata, so `memory.size` still reports
+/// the heap size of a run through an in-range base.
+///
+/// The data segment makes the program initialize the heap, which `memory.size` checks.
+#[test]
+fn wasm_overflowing_aligned_store_misses_the_heap_metadata() {
+    let (test, package, masm) = compile_wat(
+        r#"(func $entrypoint (export "entrypoint") (param i32) (result i32)
+    local.get 0
+    i32.const 0xDEADBEEF
+    i32.store offset=20 align=4
+    local.get 0
+    i32.const 777
+    i32.store offset=12 align=4
+    memory.size)
+(data (i32.const 1024) "\01")"#,
+    );
+    // The offsets are applied in elements after the conversion, with an unchecked add.
+    assert!(!masm.contains("u32assert"), "{masm}");
+
+    let in_range = eval_package::<u32, _, _>(
+        package.clone(),
+        None,
+        &[Felt::from(MEMORY_ADDR)],
+        &test.session,
+        |_| Ok(()),
+    )
+    .unwrap();
+
+    let overflowing = eval_package::<u32, _, _>(
+        package.clone(),
+        None,
+        &[Felt::from(0xffff_fff8u32)],
+        &test.session,
+        |trace| {
+            // The base is element 2^30 - 2, so the offsets of 5 and 3 elements land just past the
+            // guest address space.
+            let cell = |addr: u32| trace.read_memory_element(addr).unwrap_or_default();
+            assert_eq!(cell(GUEST_ADDRESS_LIMIT + 3), Felt::from(0xdead_beefu32));
+            assert_eq!(cell(GUEST_ADDRESS_LIMIT + 1), Felt::from(777u32));
+            assert_eq!(cell(HEAP_INFO_ADDR + 3), Felt::from(0xdead_beefu32), "heap magic");
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(overflowing, in_range, "the heap size was overwritten\n{masm}");
+}
+
+/// Verifies that a Wasm element-aligned access with an offset at [MAX_BASE_FIRST_OFFSET] adds the
+/// offset to the base with an overflow check: it reaches the effective address from an in-range
+/// base, and traps when `base + offset` leaves the 32-bit address space.
+#[test]
+fn wasm_aligned_store_with_a_large_offset_takes_the_checked_path() {
+    assert_eq!(MAX_BASE_FIRST_OFFSET, 1 << 26);
+    let (test, package, masm) = compile_wat(
+        r#"(func $entrypoint (export "entrypoint") (param i32 i32) (result i32)
+    local.get 0
+    local.get 1
+    i32.store offset=67108864 align=4
+    local.get 0
+    i32.load offset=67108864 align=4)"#,
+    );
+    // The byte offset is added to the base with an overflow check, before the conversion.
+    assert!(masm.contains("push.67108864\n    add\n    u32assert\n"), "{masm}");
+
+    let value = 0x2468_ace0u32;
+    let result = eval_package::<u32, _, _>(
+        package.clone(),
+        None,
+        &[Felt::from(0u32), Felt::from(value)],
+        &test.session,
+        |trace| {
+            let stored: u32 = trace
+                .read_from_rust_memory(MAX_BASE_FIRST_OFFSET)
+                .expect("the target memory cell was not written");
+            assert_eq!(stored, value);
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(result, value, "{masm}");
+
+    let overflowing = catch_unwind(AssertUnwindSafe(|| {
+        let _ = eval_package::<u32, _, _>(
+            package.clone(),
+            None,
+            &[Felt::from(0xffff_fffcu32), Felt::from(value)],
+            &test.session,
+            |_| Ok(()),
+        );
+    }));
+    assert!(overflowing.is_err(), "an overflowing `base + offset` must trap\n{masm}");
+}
+
+/// Verifies that Wasm element-aligned accesses with the largest offset below
+/// [MAX_BASE_FIRST_OFFSET] convert the base first, sharing one alignment check, and reach the
+/// effective address.
+///
+/// The base is read from its local twice before the accesses, so the reads are merged into one
+/// value (see `wasm_aligned_i32_accesses_through_one_base_share_one_alignment_check`).
+#[test]
+fn wasm_aligned_store_with_offset_below_the_bound_takes_the_fast_path() {
+    let (test, package, masm) = compile_wat(
+        r#"(func $entrypoint (export "entrypoint") (param i32 i32) (result i32)
+    local.get 0
+    local.get 0
+    local.get 1
+    i32.store offset=67108860 align=4
+    i32.load offset=67108860 align=4)"#,
+    );
+    assert_eq!(assertz_count(&masm), 1, "{masm}");
+    assert!(!masm.contains("u32assert"), "{masm}");
+
+    let value = 0x1357_9bdfu32;
+    let result = eval_package::<u32, _, _>(
+        package,
+        None,
+        &[Felt::from(0u32), Felt::from(value)],
+        &test.session,
+        |trace| {
+            let stored: u32 = trace
+                .read_from_rust_memory(MAX_BASE_FIRST_OFFSET - 4)
+                .expect("the target memory cell was not written");
+            assert_eq!(stored, value);
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(result, value, "{masm}");
 }
