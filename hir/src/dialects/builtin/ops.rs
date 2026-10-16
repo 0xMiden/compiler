@@ -9,6 +9,8 @@ mod module;
 mod segment;
 mod world;
 
+#[cfg(test)]
+pub(crate) use self::world::nested_components_error;
 pub(crate) use self::world::shadowing_error;
 // The op builders of components, modules and interfaces are not exported: they would create ops
 // with names that skip the spelling and the checks of the builtin builders
@@ -26,6 +28,30 @@ pub use self::{
     segment::*,
     world::{World, WorldRef},
 };
+
+/// Returns true if every item of the symbol table body `body` is a function or global variable
+/// without a body, the one rule behind [Component::is_declaration_only],
+/// [Module::is_declaration_only] and [Interface::is_declaration_only].
+///
+/// An empty body is vacuously declaration-only. Anything else, a nested symbol table, an alias
+/// (which introduces a callable name), a data segment or anything unrecognized, counts as a
+/// definition.
+fn holds_declarations_only(body: &crate::Region) -> bool {
+    use crate::Symbol;
+
+    if body.is_empty() {
+        return true;
+    }
+    body.entry().body().iter().all(|item| {
+        if let Some(function) = item.downcast_ref::<Function>() {
+            function.is_declaration()
+        } else if let Some(gv) = item.downcast_ref::<GlobalVariable>() {
+            gv.is_declaration()
+        } else {
+            false
+        }
+    })
+}
 
 /// Parses the raw segment naming a module or an interface, a symbol table of `kind`, and adds its
 /// Miden Assembly spelling (see [crate::SymbolPath::segments_of]) to `state` as the `name`

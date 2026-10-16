@@ -30,6 +30,7 @@ use wasmparser::{MemArg, Operator};
 
 use crate::{
     callable::CallableFunction,
+    component::MAX_DIRECT_STACK_FELTS,
     error::WasmResult,
     intrinsics::convert_intrinsics_call,
     module::{
@@ -49,9 +50,6 @@ use crate::{
 
 #[cfg(test)]
 mod tests;
-
-/// The number of field elements addressable on the Miden VM operand stack.
-const OPERAND_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
 
 /// Translates wasm operators into Miden IR instructions.
 #[allow(clippy::too_many_arguments)]
@@ -897,12 +895,12 @@ fn translate_call_indirect<B: ?Sized + Builder>(
 
     // The lowering schedules the table index on the operand stack on top of the arguments, so
     // together they must fit in the addressable operand stack window
-    let arg_felts: usize = signature.params.iter().map(|p| p.ty.size_in_felts()).sum();
-    if arg_felts + 1 > OPERAND_STACK_WINDOW_FELTS {
+    let arg_felts = signature.param_felts();
+    if arg_felts + 1 > MAX_DIRECT_STACK_FELTS {
         unsupported_diag!(
             diagnostics,
             "unsupported `call_indirect`: {arg_felts} argument field elements plus the table \
-             index exceed Miden's {OPERAND_STACK_WINDOW_FELTS}-element operand stack window"
+             index exceed Miden's {MAX_DIRECT_STACK_FELTS}-element operand stack window"
         );
     }
 

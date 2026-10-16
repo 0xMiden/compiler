@@ -265,11 +265,7 @@ impl World {
                 continue;
             };
             let existing = Symbol::name(existing_op);
-            let (shorter, longer) = if existing.as_str().len() < component.as_str().len() {
-                (existing, component)
-            } else {
-                (component, existing)
-            };
+            let (shorter, longer) = shorter_and_longer(component, existing);
             if !SymbolPath::nests_in(longer, shorter) {
                 continue;
             }
@@ -353,14 +349,20 @@ fn captured_leaf_error(shorter: SymbolName, leaf: SymbolName, longer: SymbolName
     ))
 }
 
-/// The error for the components `component` and `existing`, whose names nest, where the shorter
-/// of the two is not declaration-only.
-fn nested_components_error(component: SymbolName, existing: SymbolName) -> Report {
-    let (shorter, longer) = if existing.as_str().len() < component.as_str().len() {
+/// Returns the component names `component` and `existing` ordered as `(shorter, longer)`; of two
+/// names of the same length, `component` is taken as the shorter.
+fn shorter_and_longer(component: SymbolName, existing: SymbolName) -> (SymbolName, SymbolName) {
+    if existing.as_str().len() < component.as_str().len() {
         (existing, component)
     } else {
         (component, existing)
-    };
+    }
+}
+
+/// The error for the components `component` and `existing`, whose names nest, where the shorter
+/// of the two is not declaration-only.
+pub(crate) fn nested_components_error(component: SymbolName, existing: SymbolName) -> Report {
+    let (shorter, longer) = shorter_and_longer(component, existing);
     Report::msg(format!(
         "component `{component}` and component `{existing}` nest (`{shorter}` is a segment-prefix \
          of `{longer}`); a component namespace may only have another nested in it while it holds \

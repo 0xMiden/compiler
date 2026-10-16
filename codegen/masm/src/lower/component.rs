@@ -415,42 +415,17 @@ impl ToMasmComponent for builtin::World {
 /// Whether `op`, a top-level item of a world, contributes nothing to the generated Miden Assembly.
 ///
 /// This is how an *external dependency represented in the IR* is told apart from a *supporting
-/// module*: the former holds declarations only. There is no flag for it — `Symbol::is_declaration`
-/// is defined on functions and global variables but not on the modules and interfaces that hold
-/// them, so the question has to be asked of the contents.
+/// module*: the former holds declarations only, by the rule `Component::is_declaration_only`
+/// applies to components (`Module::is_declaration_only`, `Interface::is_declaration_only`).
 ///
 /// Deliberately conservative: anything unrecognized counts as carrying definitions. Guessing wrong
 /// in that direction produces a warning about something that did not need one, while guessing
 /// wrong in the other direction silently omits code.
 fn is_declaration_only(op: &midenc_hir::OperationRef) -> bool {
-    /// A body defines nothing if every item in it is itself only a declaration.
-    ///
-    /// An empty body is vacuously declaration-only, which is the answer we want: an empty module
-    /// would lower to an empty Miden Assembly module.
-    fn body_is_all_declarations(region: &midenc_hir::Region) -> bool {
-        region.entry().body().iter().all(|item| {
-            if let Some(function) = item.downcast_ref::<builtin::Function>() {
-                function.is_declaration()
-            } else if item.is::<builtin::FunctionAlias>() {
-                // An alias introduces a callable name even without owning a body.
-                // Retain its module so that name is not silently dropped.
-                false
-            } else if let Some(gv) = item.downcast_ref::<builtin::GlobalVariable>() {
-                gv.is_declaration()
-            } else {
-                // A `builtin::Segment` initializes memory, and so does anything unrecognized as
-                // far as this predicate is willing to assume.
-                false
-            }
-        })
-    }
-
     if let Ok(module) = op.try_downcast_op::<builtin::Module>() {
-        let module = module.borrow();
-        body_is_all_declarations(&module.body())
+        module.borrow().is_declaration_only()
     } else if let Ok(interface) = op.try_downcast_op::<builtin::Interface>() {
-        let interface = interface.borrow();
-        body_is_all_declarations(&interface.body())
+        interface.borrow().is_declaration_only()
     } else if let Ok(function) = op.try_downcast_op::<builtin::Function>() {
         let function = function.borrow();
         function.is_declaration()
