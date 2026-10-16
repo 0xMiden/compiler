@@ -10,6 +10,7 @@ mod common;
 mod multi_sibling;
 mod sibling_and_fpi;
 mod single_sibling;
+mod std_sibling;
 
 use miden_client::Word;
 use miden_core::Felt;
