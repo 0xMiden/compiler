@@ -613,7 +613,7 @@ fn load_wit_sources(
     // resolver with type definitions those sources may depend on.
     if let Some(prelude_dir) = &config.prelude_dir {
         push_path(&mut resolve, &mut packages, &mut files, PathBuf::from(prelude_dir))?;
-        record_package_owners(&resolve, &mut owners, "the Miden SDK WIT");
+        record_package_owners(&resolve, &mut owners, &PackageOwner::new("the Miden SDK WIT"));
     }
 
     // Load WIT definitions embedded in the compiled packages of Miden dependencies. The
@@ -625,8 +625,14 @@ fn load_wit_sources(
         files.push(map_path.clone());
     }
     for source in &config.dependency_sources {
-        let owner =
-            format!("dependency `{}` (package '{}')", source.name, source.package_path.display());
+        let owner = PackageOwner {
+            description: format!(
+                "dependency `{}` (package '{}')",
+                source.name,
+                source.package_path.display()
+            ),
+            synthesized_for: (source.origin == WitOrigin::Synthesized).then(|| source.name.clone()),
+        };
         let load_error = |err: String| {
             let (name, path) = (&source.name, source.package_path.display());
             let message = match &source.origin {
@@ -658,7 +664,8 @@ fn load_wit_sources(
 
     // Load the crate's own `wit/` directory last so it can reference the dependency packages.
     if let Some(local_wit_root) = &config.local_wit_root {
-        let owner = format!("this crate's WIT directory '{}'", local_wit_root.display());
+        let owner =
+            PackageOwner::new(format!("this crate's WIT directory '{}'", local_wit_root.display()));
         // Parsed here only to name the owner of a duplicate package before resolving it. The
         // directory is loaded through `push_path`, which also resolves its `deps/` directory and
         // reports the files it read, so it cannot reuse this group; it re-parses the directory
@@ -678,7 +685,11 @@ fn load_wit_sources(
         packages.clear();
         let group = UnresolvedPackageGroup::parse("inline", src)
             .map_err(|(sm, err)| Error::new(Span::call_site(), err.render(&sm)))?;
-        ensure_new_packages(&owners, &group, "this crate (from its `[lib].namespace`)")?;
+        ensure_new_packages(
+            &owners,
+            &group,
+            &PackageOwner::new("this crate (from its `[lib].namespace`)"),
+        )?;
         let pkg = resolve
             .push_group(group)
             .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
@@ -694,7 +705,27 @@ fn load_wit_sources(
 
 /// The source that registered each WIT package, keyed by the package's `namespace:name`
 /// without its version, for the duplicate-package diagnostic.
-type PackageOwners = HashMap<(String, String), (PackageName, String)>;
+type PackageOwners = HashMap<(String, String), (PackageName, PackageOwner)>;
+
+/// A source of WIT packages, as the duplicate-package diagnostic names it.
+#[derive(Debug, Clone)]
+struct PackageOwner {
+    /// How the diagnostic refers to the source.
+    description: String,
+    /// The dependency whose WIT was synthesized from its package manifest, when the source is
+    /// such a WIT: its package id derives from the package name, not from a `[lib].namespace`.
+    synthesized_for: Option<String>,
+}
+
+impl PackageOwner {
+    /// A source whose WIT was written or embedded rather than synthesized.
+    fn new(description: impl Into<String>) -> Self {
+        Self {
+            description: description.into(),
+            synthesized_for: None,
+        }
+    }
+}
 
 /// The owners map with the packages of the bundled SDK WIT registered as owned by the Miden SDK.
 fn sdk_package_owners() -> PackageOwners {
@@ -703,8 +734,9 @@ fn sdk_package_owners() -> PackageOwners {
         let mut owners = PackageOwners::new();
         let sdk = UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE)
             .expect("the bundled SDK WIT parses");
+        let owner = PackageOwner::new("the Miden SDK");
         for package in core::iter::once(&sdk.main).chain(&sdk.nested) {
-            record_package_owner(&mut owners, &package.name, "the Miden SDK");
+            record_package_owner(&mut owners, &package.name, &owner);
         }
         owners
     });
@@ -712,14 +744,14 @@ fn sdk_package_owners() -> PackageOwners {
 }
 
 /// Records `owner` as the source of the package `name`, unless it already has one.
-fn record_package_owner(owners: &mut PackageOwners, name: &PackageName, owner: &str) {
+fn record_package_owner(owners: &mut PackageOwners, name: &PackageName, owner: &PackageOwner) {
     owners
         .entry((name.namespace.clone(), name.name.clone()))
-        .or_insert_with(|| (name.clone(), owner.to_owned()));
+        .or_insert_with(|| (name.clone(), owner.clone()));
 }
 
 /// Records `owner` as the source of every package of `resolve` without a recorded source.
-fn record_package_owners(resolve: &Resolve, owners: &mut PackageOwners, owner: &str) {
+fn record_package_owners(resolve: &Resolve, owners: &mut PackageOwners, owner: &PackageOwner) {
     for name in resolve.package_names.keys() {
         record_package_owner(owners, name, owner);
     }
@@ -729,24 +761,47 @@ fn record_package_owners(resolve: &Resolve, owners: &mut PackageOwners, owner: &
 /// package another source registered, whatever the two versions.
 ///
 /// The WIT package id of a crate is derived from the first two segments of its
-/// `[lib].namespace`, so two crates sharing them define packages of one `namespace:name`, which
-/// wit-bindgen tells apart only by mangling their module paths with the versions.
+/// `[lib].namespace`, and the id of a synthesized WIT from its package name, so two sources can
+/// define packages of one `namespace:name`, which wit-bindgen tells apart only by mangling their
+/// module paths with the versions.
 fn ensure_new_packages(
     owners: &PackageOwners,
     group: &UnresolvedPackageGroup,
-    owner: &str,
+    owner: &PackageOwner,
 ) -> Result<(), Error> {
     let names = core::iter::once(&group.main).chain(&group.nested).map(|package| &package.name);
     for name in names {
         let key = (name.namespace.clone(), name.name.clone());
         if let Some((previous_name, previous)) = owners.get(&key) {
+            let synthesized = [previous, owner]
+                .into_iter()
+                .filter_map(|owner| owner.synthesized_for.as_deref())
+                .collect::<Vec<_>>();
+            let cause = if synthesized.is_empty() {
+                "the first two segments of `[lib].namespace` (`ns::pkg`) form the WIT package id \
+                 and must be unique among all linked crates regardless of version"
+                    .to_owned()
+            } else {
+                let overrides = synthesized
+                    .iter()
+                    .map(|dependency| {
+                        format!("`package.metadata.miden.dependencies.{dependency}.wit`")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" or ");
+                format!(
+                    "the WIT package id of an interface synthesized from a package manifest \
+                     derives from the package name and must be unique among all linked crates \
+                     regardless of version; supply the interface under another package id with \
+                     {overrides} in miden-project.toml"
+                )
+            };
             return Err(Error::new(
                 Span::call_site(),
                 format!(
-                    "WIT package `{name}` of {owner} clashes with `{previous_name}` defined by \
-                     {previous}; the first two segments of `[lib].namespace` (`ns::pkg`) form the \
-                     WIT package id and must be unique among all linked crates regardless of \
-                     version"
+                    "WIT package `{name}` of {} clashes with `{previous_name}` defined by {}; \
+                     {cause}",
+                    owner.description, previous.description
                 ),
             ));
         }
@@ -1203,14 +1258,15 @@ mod tests {
         let mut resolve = Resolve::default();
         let mut owners = sdk_package_owners();
         let wallet = || package_group("miden:my-account@0.1.0", "wallet");
-        ensure_new_packages(&owners, &wallet(), "dependency `wallet`").unwrap();
+        let wallet_owner = PackageOwner::new("dependency `wallet`");
+        ensure_new_packages(&owners, &wallet(), &wallet_owner).unwrap();
         resolve.push_group(wallet()).unwrap();
-        record_package_owners(&resolve, &mut owners, "dependency `wallet`");
+        record_package_owners(&resolve, &mut owners, &wallet_owner);
 
         let err = ensure_new_packages(
             &owners,
             &package_group("miden:my-account@0.1.0", "auth"),
-            "dependency `auth`",
+            &PackageOwner::new("dependency `auth`"),
         )
         .expect_err("the second definition of the package must be rejected")
         .to_string();
@@ -1218,7 +1274,36 @@ mod tests {
             err.contains("`miden:my-account@0.1.0`")
                 && err.contains("dependency `auth`")
                 && err.contains("dependency `wallet`")
+                && err.contains("the first two segments of `[lib].namespace`")
                 && err.contains("must be unique among all linked crates regardless of version"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// A clash with a synthesized WIT names the package name as the source of its id and the
+    /// dependency's `wit` override as the way out, not `[lib].namespace`.
+    #[test]
+    fn a_synthesized_wit_package_clash_names_the_package_name_and_the_override() {
+        let mut resolve = Resolve::default();
+        let mut owners = sdk_package_owners();
+        let wallet = || package_group("miden:wallet@0.1.0", "wallet");
+        resolve.push_group(wallet()).unwrap();
+        record_package_owners(&resolve, &mut owners, &PackageOwner::new("dependency `wallet`"));
+
+        let err = ensure_new_packages(
+            &owners,
+            &package_group("miden:wallet@0.2.0", "wallet"),
+            &PackageOwner {
+                description: "dependency `masm-wallet`".to_owned(),
+                synthesized_for: Some("masm-wallet".to_owned()),
+            },
+        )
+        .expect_err("the synthesized package must be rejected")
+        .to_string();
+        assert!(
+            err.contains("derives from the package name")
+                && err.contains("package.metadata.miden.dependencies.masm-wallet.wit")
+                && !err.contains("[lib].namespace"),
             "unexpected diagnostic: {err}"
         );
     }
@@ -1231,12 +1316,12 @@ mod tests {
         let mut owners = sdk_package_owners();
         let core = || package_group("miden:wallet@0.1.0", "core");
         resolve.push_group(core()).unwrap();
-        record_package_owners(&resolve, &mut owners, "dependency `wallet`");
+        record_package_owners(&resolve, &mut owners, &PackageOwner::new("dependency `wallet`"));
 
         let err = ensure_new_packages(
             &owners,
             &package_group("miden:wallet@0.2.0", "main"),
-            "this crate",
+            &PackageOwner::new("this crate"),
         )
         .expect_err("the package at another version must be rejected")
         .to_string();
@@ -1254,7 +1339,7 @@ mod tests {
         let err = ensure_new_packages(
             &sdk_package_owners(),
             &package_group("miden:base@0.1.0", "x"),
-            "this crate",
+            &PackageOwner::new("this crate"),
         )
         .expect_err("the SDK package must not be redefined")
         .to_string();
