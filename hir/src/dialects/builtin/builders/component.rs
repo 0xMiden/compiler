@@ -34,7 +34,7 @@ impl ComponentBuilder {
     /// Returns an error when another world-level component nests in this one, see
     /// [ComponentBuilder::define_module].
     pub fn define_interface(&mut self, name: Ident) -> Result<InterfaceRef, Report> {
-        self.reject_definition_in_nesting_component()?;
+        self.reject_definition_in_nesting_component(None)?;
         self.builder.create_interface(name)
     }
 
@@ -44,8 +44,12 @@ impl ComponentBuilder {
     /// Returns an error when another world-level component's name extends this component's: a
     /// component may only have another nested in it while it holds declarations only (see
     /// [World::reject_component_shadowing]).
+    ///
+    /// Only modules, interfaces and function names are checked as they are built; a function body
+    /// or a global initializer given to this component later is rejected by the verifier of the
+    /// world (see [World::reject_component_shadowing]).
     pub fn define_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
-        self.reject_definition_in_nesting_component()?;
+        self.reject_definition_in_nesting_component(None)?;
         self.builder.create_module(name)
     }
 
@@ -64,8 +68,16 @@ impl ComponentBuilder {
     }
 
     /// Returns an error when this component sits in a world holding another component whose name
-    /// extends this component's.
-    fn reject_definition_in_nesting_component(&self) -> Result<(), Report> {
+    /// extends this component's, or, given the name `leaf` of a declaration to add, whose name
+    /// is this component's followed by the one segment `leaf` (see
+    /// [World::reject_component_shadowing]).
+    ///
+    /// The verifier of the world is the backstop for whatever is added to this component without
+    /// passing through this check, such as a function body.
+    fn reject_definition_in_nesting_component(
+        &self,
+        leaf: Option<SymbolName>,
+    ) -> Result<(), Report> {
         let component = self.component.borrow();
         let Some(parent) = component.as_operation().parent_op() else {
             return Ok(());
@@ -73,17 +85,24 @@ impl ComponentBuilder {
         let Ok(world) = parent.try_downcast_op::<World>() else {
             return Ok(());
         };
-        world.borrow().reject_definition_in_nesting_component(Symbol::name(&*component))
+        world
+            .borrow()
+            .reject_definition_in_nesting_component(Symbol::name(&*component), leaf)
     }
 
     /// Declare a new [crate::dialects::builtin::Function] in this component with the given name and
     /// signature.
+    ///
+    /// Returns an error when another world-level component is named by this component's name
+    /// followed by the one segment `name`, since that component would capture the path of the
+    /// function (see [World::reject_component_shadowing]).
     pub fn define_function(
         &mut self,
         name: Ident,
         visibility: Visibility,
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
+        self.reject_definition_in_nesting_component(Some(name.name))?;
         self.builder.create_function(name, visibility, signature)
     }
 }

@@ -106,8 +106,9 @@ impl World {
     /// the path the component name `component` spells (a module, or a function or global named by
     /// the raw last segment), which the component would shadow, or another component whose name
     /// nests with `component` (one is a segment-prefix of the other) while the shorter of the two
-    /// is not declaration-only: resolution prefers the longest registered name, so either would
-    /// make paths ambiguous.
+    /// is not declaration-only, or declares a symbol named by the last segment of a longer name
+    /// one segment longer than its own: resolution prefers the longest registered name, so any of these would make
+    /// paths ambiguous.
     ///
     /// The name is the Miden Assembly spelling of the component's namespace path (see
     /// [SymbolPath::to_symbol_name]).
@@ -118,7 +119,7 @@ impl World {
             return Ok(());
         };
         // Walk the symbol tables (modules, interfaces) named by the leading segments; a component
-        // is not walked into, since components do not nest
+        // named by them nests with `component`, which `reject_nested_components` checks
         let mut table = self.op.as_operation_ref();
         for segment in tables {
             let Some(next) = SymbolPath::spell_segment(*segment)
@@ -229,7 +230,10 @@ impl World {
 
     /// Returns an error when a world-level component other than `component` has a name that is a
     /// segment-prefix of `component`, or extends it, unless the shorter of the two is
-    /// declaration-only (see [Component::is_declaration_only]).
+    /// declaration-only (see [Component::is_declaration_only]) and, when the longer name is one
+    /// segment longer, declares no symbol named by that last segment (`z` for `x::y` and
+    /// `x::y::z`), whose path the longer component would capture. A deeper nesting captures
+    /// nothing: `x::y::z` beside `x::y::z::w` still resolves to the leaf `z` of `x::y`.
     ///
     /// Raw segments are compared, not their text: `"a::b"` (one segment) and `a::b` (two) are
     /// different paths, in Miden Assembly as here.
@@ -255,22 +259,27 @@ impl World {
                 continue;
             }
             // Resolution picks the longest registered name, so a path under `longer` can only be
-            // misrouted when `shorter` has a module tree of its own reaching that path. A
-            // declaration-only component holds leaf functions at its own level only, which the
-            // longer name never captures.
-            let shorter_is_declaration_only = if shorter == existing {
-                existing_op.is_declaration_only()
+            // misrouted when `shorter` has a module tree of its own reaching that path, or a leaf
+            // the longer name captures, since a path's trailing leaf joins the longest match
+            let shorter_op = if shorter == existing {
+                op.as_operation_ref()
             } else {
-                self.get(component).is_none_or(|symbol| {
-                    symbol
-                        .borrow()
-                        .as_symbol_operation()
-                        .downcast_ref::<Component>()
-                        .is_none_or(Component::is_declaration_only)
-                })
+                let Some(symbol) = self.get(component) else {
+                    continue;
+                };
+                symbol.borrow().as_symbol_operation().as_operation_ref()
             };
-            if !shorter_is_declaration_only {
+            let shorter_op = shorter_op.borrow();
+            let Some(shorter_op) = shorter_op.downcast_ref::<Component>() else {
+                continue;
+            };
+            if !shorter_op.is_declaration_only() {
                 return Err(nested_components_error(component, existing));
+            }
+            if let Some(leaf) = captured_segment(shorter, longer)
+                && shorter_op.symbol_manager().symbols().get_leaf(leaf).is_some()
+            {
+                return Err(captured_leaf_error(shorter, leaf, longer));
             }
         }
         Ok(())
@@ -278,9 +287,14 @@ impl World {
 
     /// Returns an error when a world-level component's name extends `component`, i.e. when
     /// `component` must stay declaration-only because a longer component nests in it.
+    ///
+    /// With `leaf`, the name of a declaration about to be added to `component`, only a component
+    /// whose name is `component` followed by the one segment `leaf` (and would capture it) is an
+    /// error.
     pub(crate) fn reject_definition_in_nesting_component(
         &self,
         component: SymbolName,
+        leaf: Option<SymbolName>,
     ) -> Result<(), Report> {
         let body = self.body();
         if body.is_empty() {
@@ -290,12 +304,38 @@ impl World {
             let Some(existing) = op.downcast_ref::<Component>().map(Symbol::name) else {
                 continue;
             };
-            if SymbolPath::nests_in(existing, component) {
-                return Err(nested_components_error(component, existing));
+            if !SymbolPath::nests_in(existing, component) {
+                continue;
+            }
+            match leaf {
+                None => return Err(nested_components_error(component, existing)),
+                Some(leaf) if captured_segment(component, existing) == Some(leaf) => {
+                    return Err(captured_leaf_error(component, leaf, existing));
+                }
+                Some(_) => (),
             }
         }
         Ok(())
     }
+}
+
+/// Returns the last raw segment of `longer` when `longer` is exactly one segment longer than
+/// `shorter`, which nests in it: the leaf of `shorter` whose path `longer` names.
+fn captured_segment(shorter: SymbolName, longer: SymbolName) -> Option<SymbolName> {
+    let longer = SymbolPath::segments_of(longer);
+    (longer.len() == SymbolPath::segments_of(shorter).len() + 1).then(|| longer[longer.len() - 1])
+}
+
+/// The error for the declaration-only component `shorter` holding the symbol `leaf`, which the
+/// component `longer`, whose name extends `shorter` by `leaf`, would capture.
+fn captured_leaf_error(shorter: SymbolName, leaf: SymbolName, longer: SymbolName) -> Report {
+    let mut segments = SymbolPath::segments_of(shorter);
+    segments.push(leaf);
+    let path = SymbolPath::spell(&segments);
+    Report::msg(format!(
+        "component `{shorter}` declares `{leaf}`, which component `{longer}` would capture: a \
+         path `{path}` cannot name both"
+    ))
 }
 
 /// The error for the components `component` and `existing`, whose names nest, where the shorter

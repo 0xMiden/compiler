@@ -971,6 +971,100 @@ builtin.world {
     );
 }
 
+/// A declaration-only component declaring a function named by the segment of a nested
+/// component's name that follows its own is reported for parsed input.
+#[test]
+fn a_declaration_captured_by_a_nested_component_is_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.component private @x::@y {
+        builtin.function internal extern(\"C\") @z(%a: u32) -> u32;
+    };
+    builtin.component private @x::@y::@z {
+    };
+};";
+    let err = test
+        .parse_any("captured.hir", source)
+        .expect_err("a declaration captured by a nested component must not parse")
+        .to_string();
+    assert!(
+        err.contains(
+            "component `x::y` declares `z`, which component `x::y::z` would capture: a path \
+             `x::y::z` cannot name both"
+        ),
+        "unexpected diagnostic: {err}"
+    );
+}
+
+/// A declaration-only component declaring a function named by a segment of a nested component's
+/// name more than one segment longer than its own parses, and a path resolves to the function of
+/// the component it names.
+#[test]
+fn a_declaration_named_by_a_segment_of_a_deeper_component_parses() {
+    use crate::{FunctionIdent, SymbolPath};
+
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.component private @x::@y {
+        builtin.function internal extern(\"C\") @z(%a: u32) -> u32;
+    };
+    builtin.component private @x::@y::@z::@w {
+        builtin.function internal extern(\"C\") @g(%a: u32) -> u32;
+    };
+};";
+    let world = test
+        .parse_any("deeper.hir", source)
+        .expect("a deeper nesting captures nothing")
+        .try_downcast_op::<World>()
+        .expect("the root is a world");
+    let world = world.borrow();
+    for (id, component) in [("x::y::z", "x::y"), ("x::y::z::w::g", "x::y::z::w")] {
+        let function = id.parse::<FunctionIdent>().expect("valid function id");
+        let symbol = world
+            .resolve(&SymbolPath::from_masm_function_id(function))
+            .unwrap_or_else(|| panic!("`{id}` should resolve"));
+        let parent = symbol.borrow().as_symbol_operation().parent_op();
+        let expected = world.get(component.into()).expect("the component is declared");
+        assert_eq!(
+            parent,
+            Some(expected.borrow().as_symbol_operation().as_operation_ref()),
+            "`{id}` resolves in `{component}`"
+        );
+    }
+}
+
+/// A component nested in a shorter component holding a function body is reported for parsed
+/// input: the builders cannot check a body given to a function after it is declared, so the
+/// verifier of the world does.
+#[test]
+fn a_component_nested_in_a_component_with_a_function_body_is_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.world {
+    builtin.component private @x::@y {
+        builtin.function public extern(\"C\") @f(%a: u32) -> u32 {
+            builtin.ret %a : (u32);
+        };
+    };
+    builtin.component private @x::@y::@z {
+        builtin.function internal extern(\"C\") @g(%a: u32) -> u32;
+    };
+};";
+    let err = test
+        .parse_any("body_in_shorter.hir", source)
+        .expect_err("a component nested in one with a function body must not parse")
+        .to_string();
+    assert!(
+        err.contains(
+            "component `x::y` and component `x::y::z` nest (`x::y` is a segment-prefix of \
+             `x::y::z`)"
+        ),
+        "unexpected diagnostic: {err}"
+    );
+}
+
 /// A component prints its name as a symbol path, one raw segment per segment of the name (see
 /// `SymbolPath::to_symbol_name`), quoting a segment that is not a bare HIR identifier, and that
 /// text parses back to the same name: the Miden Assembly spelling of the segments.
