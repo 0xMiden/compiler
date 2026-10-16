@@ -1,4 +1,8 @@
 # The first element address past the Wasm linear memory range (2^32 bytes, in elements)
+#
+# NOTE: `linker::GUEST_ADDRESS_LIMIT` in `codegen/masm/src/linker.rs` mirrors this address, and a
+# unit test there parses this line by its exact `const GUEST_ADDRESS_LIMIT=0x…` spelling to check
+# the two agree. Change them together, and keep the spelling.
 const GUEST_ADDRESS_LIMIT=0x40000000 # 2^30
 
 # The location where we store information about the dynamic heap

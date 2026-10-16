@@ -38,6 +38,9 @@ const DEFAULT_RESERVATION: u32 = 17;
 const RESERVED_WORD: u32 = miden_core::WORD_SIZE as u32;
 /// First element address past guest-reachable memory: the 2^32-byte guest address space, in
 /// elements.
+///
+/// An element-aligned guest access whose `base + offset` overflows the 32-bit address space can
+/// still land up to `BASE_FIRST_OVERFLOW_GUARD` elements past this address.
 pub const GUEST_ADDRESS_LIMIT: u32 = ((u32::MAX as u64 + 1) / RESERVED_WORD as u64) as u32;
 /// The VM's initial frame pointer, from which procedure locals are allocated upwards.
 ///
@@ -46,6 +49,10 @@ pub const GUEST_ADDRESS_LIMIT: u32 = ((u32::MAX as u64 + 1) / RESERVED_WORD as u
 pub const LOCALS_FRAME_START: u32 = 1 << 31;
 
 /// First element address past the overflow guard; the compiler's first reserved cell.
+///
+/// The guard is sized by the wasm dialect's bound on base-first address conversion
+/// (`MAX_BASE_FIRST_OFFSET`); a frontend that converts addresses base first on its own must stay
+/// within that bound.
 const RESERVED_BAND_START: u32 = GUEST_ADDRESS_LIMIT + BASE_FIRST_OVERFLOW_GUARD;
 /// Element address of the dynamic-heap metadata word (`heap_top`, `heap_size`, `heap_base`,
 /// magic), owned by the `intrinsics::mem` MASM module and mirrored here from its `HEAP_INFO_ADDR`
@@ -803,14 +810,19 @@ mod tests {
     fn reserved_band_mirrors_the_vm_and_intrinsics_constants() {
         assert_eq!(miden_core::FMP_INIT_VALUE.as_canonical_u64(), u64::from(LOCALS_FRAME_START));
 
-        let heap_info_addr = include_str!("../intrinsics/mem.masm")
-            .lines()
-            .find_map(|line| line.strip_prefix("const HEAP_INFO_ADDR="))
-            .and_then(|value| value.split_whitespace().next())
-            .and_then(|value| value.strip_prefix("0x"))
-            .and_then(|hex| u32::from_str_radix(hex, 16).ok())
-            .expect("intrinsics/mem.masm should define `const HEAP_INFO_ADDR=0x…`");
-        assert_eq!(heap_info_addr, HEAP_INFO_ADDR);
+        // Parses the hex value of `const <name>=0x…` from `intrinsics/mem.masm`.
+        let mem_masm_const = |name: &str| {
+            let prefix = format!("const {name}=");
+            include_str!("../intrinsics/mem.masm")
+                .lines()
+                .find_map(|line| line.strip_prefix(prefix.as_str()))
+                .and_then(|value| value.split_whitespace().next())
+                .and_then(|value| value.strip_prefix("0x"))
+                .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+                .unwrap_or_else(|| panic!("intrinsics/mem.masm should define `{prefix}0x…`"))
+        };
+        assert_eq!(mem_masm_const("HEAP_INFO_ADDR"), HEAP_INFO_ADDR);
+        assert_eq!(mem_masm_const("GUEST_ADDRESS_LIMIT"), GUEST_ADDRESS_LIMIT);
     }
 
     struct StartFixture {

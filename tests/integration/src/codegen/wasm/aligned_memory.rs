@@ -240,11 +240,13 @@ fn unaligned_i32_memory_retains_byte_pointer_path() {
     assert_eq!(result, value);
 }
 
-/// The number of `assertz` instructions in the procedure `entrypoint` of `masm`.
+/// The number of `assertz` instructions in the procedure `entrypoint` of `masm`, nested blocks
+/// included.
 fn assertz_count(masm: &str) -> usize {
     let start = masm.find("proc entrypoint").unwrap_or_else(|| panic!("no entrypoint: {masm}"));
     let entrypoint = &masm[start..];
-    let end = entrypoint.find("\n    end").unwrap_or(entrypoint.len());
+    // The procedure's own `end` is the first one at column 0; nested blocks' are indented.
+    let end = entrypoint.find("\nend").unwrap_or(entrypoint.len());
     entrypoint[..end].matches("assertz").count()
 }
 
@@ -423,7 +425,7 @@ fn wasm_overflowing_aligned_store_misses_the_heap_metadata() {
     let (test, package, masm) = compile_wat(
         r#"(func $entrypoint (export "entrypoint") (param i32) (result i32)
     local.get 0
-    i32.const 0xDEADBEEF
+    i32.const 0x600DCAFE
     i32.store offset=20 align=4
     local.get 0
     i32.const 777
@@ -450,9 +452,10 @@ fn wasm_overflowing_aligned_store_misses_the_heap_metadata() {
         &test.session,
         |trace| {
             // The base is element 2^30 - 2, so the offsets of 5 and 3 elements land just past the
-            // guest address space.
+            // guest address space. The payloads differ from the heap magic (0xDEADBEEF), so an
+            // intact magic cell is not mistaken for a store that landed on it.
             let cell = |addr: u32| trace.read_memory_element(addr).unwrap_or_default();
-            assert_eq!(cell(GUEST_ADDRESS_LIMIT + 3), Felt::from(0xdead_beefu32));
+            assert_eq!(cell(GUEST_ADDRESS_LIMIT + 3), Felt::from(0x600d_cafeu32));
             assert_eq!(cell(GUEST_ADDRESS_LIMIT + 1), Felt::from(777u32));
             assert_eq!(cell(HEAP_INFO_ADDR + 3), Felt::from(0xdead_beefu32), "heap magic");
             Ok(())
@@ -529,7 +532,7 @@ fn wasm_aligned_store_with_offset_below_the_bound_takes_the_fast_path() {
 
     let value = 0x1357_9bdfu32;
     let result = eval_package::<u32, _, _>(
-        package,
+        package.clone(),
         None,
         &[Felt::from(0u32), Felt::from(value)],
         &test.session,
@@ -538,6 +541,26 @@ fn wasm_aligned_store_with_offset_below_the_bound_takes_the_fast_path() {
                 .read_from_rust_memory(MAX_BASE_FIRST_OFFSET - 4)
                 .expect("the target memory cell was not written");
             assert_eq!(stored, value);
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(result, value, "{masm}");
+
+    // From the last aligned base, element 2^30 - 1, the access lands on the highest guard element
+    // it can reach, just below the heap metadata, without trapping.
+    let guard_end = GUEST_ADDRESS_LIMIT - 1 + (MAX_BASE_FIRST_OFFSET - 4) / 4;
+    assert_eq!(guard_end, HEAP_INFO_ADDR - 2);
+    let result = eval_package::<u32, _, _>(
+        package,
+        None,
+        &[Felt::from(0xffff_fffcu32), Felt::from(value)],
+        &test.session,
+        |trace| {
+            let stored = trace
+                .read_memory_element(guard_end)
+                .expect("the guard memory cell was not written");
+            assert_eq!(stored, Felt::from(value));
             Ok(())
         },
     )
