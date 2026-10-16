@@ -4710,6 +4710,7 @@ dependencies = [
  "midenc-hir-eval",
  "midenc-integration-test-support",
  "midenc-package-interface",
+ "midenc-package-wit",
  "midenc-session",
  "num-traits",
  "proptest",

@@ -328,6 +328,16 @@ mod tests {
         assert_eq!(id("miden", "miden").unwrap(), "miden:miden");
     }
 
+    /// A user package outside `miden` gets its id the same way: `counter` and `acme-counter`
+    /// under `acme::..` both become `acme:counter`, and a name equal to the head stays whole.
+    #[test]
+    fn package_id_of_user_packages() {
+        let id = |head, name| package_id(head, name).map(|(ns, name)| format!("{ns}:{name}"));
+        assert_eq!(id("acme", "counter").unwrap(), "acme:counter");
+        assert_eq!(id("acme", "acme-counter").unwrap(), "acme:counter");
+        assert_eq!(id("acme", "acme").unwrap(), "acme:acme");
+    }
+
     /// A stripped name that would make the id the SDK's own `miden:base` keeps the head.
     #[test]
     fn package_id_avoids_the_sdk_package_id() {

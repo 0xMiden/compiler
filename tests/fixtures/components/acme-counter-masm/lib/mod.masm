@@ -1,0 +1,141 @@
+# acme::counter::counter
+#
+# A counter account component. The count is a felt kept in one value storage slot of this
+# component, laid out as:
+#   Word: [count, 0, 0, 0]
+#          word[0]
+#
+# The component also provides the account's authentication procedure, which only increments the
+# nonce, so an account made of this component needs no other authentication component.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+#! An affine update of the count: scale it by `mul`, then add `add`.
+pub type Delta = struct { add: felt, mul: felt }
+
+# CONSTANTS
+# =================================================================================================
+
+# The slot in this component's storage layout where the count is stored.
+const COUNT_SLOT = word("acme::counter::count")
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Increments the count by one.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc increment()
+    exec.load_count
+    # => [count, pad(16)]
+
+    add.1
+    # => [count + 1, pad(16)]
+
+    exec.save_count
+    # => [pad(16)]
+end
+
+#! Returns the count.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [count, pad(15)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_count() -> felt
+    exec.load_count
+    # => [count, pad(16)]
+
+    swap drop
+    # => [count, pad(15)]
+end
+
+#! Scales the count by `delta.mul`, then adds `delta.add`.
+#!
+#! Inputs:  [add, mul, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc add_to_count(delta: Delta)
+    exec.load_count
+    # => [count, add, mul, pad(14)]
+
+    movup.2 mul
+    # => [count * mul, add, pad(14)]
+
+    add
+    # => [count * mul + add, pad(14)]
+
+    exec.save_count
+    # => [pad(16)]
+end
+
+#! Returns the word of the count and the next three values.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [count, count + 1, count + 2, count + 3, pad(12)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc get_count_word() -> word
+    exec.load_count
+    # => [count, pad(16)]
+
+    dup add.3 dup.1 add.2 dup.2 add.1 movup.3
+    # => [count, count + 1, count + 2, count + 3, pad(16)]
+
+    swapw dropw
+    # => [count, count + 1, count + 2, count + 3, pad(12)]
+end
+
+#! Authenticates a transaction against the account by incrementing its nonce.
+#!
+#! Inputs:  [AUTH_ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+@auth_script
+pub proc auth_incr_nonce(auth_args: word)
+    dropw
+    # => [pad(16)]
+
+    exec.native_account::incr_nonce drop
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Returns the count from storage.
+#!
+#! Inputs:  []
+#! Outputs: [count]
+proc load_count() -> felt
+    push.COUNT_SLOT[0..2] exec.active_account::get_item
+    # => [count, 0, 0, 0]
+
+    movdn.3 drop drop drop
+    # => [count]
+end
+
+#! Writes the count to storage.
+#!
+#! Inputs:  [count]
+#! Outputs: []
+proc save_count(count: felt)
+    push.0.0.0 movup.3
+    # => [count, 0, 0, 0]
+
+    push.COUNT_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, count, 0, 0, 0]
+
+    exec.native_account::set_item dropw
+    # => []
+end
