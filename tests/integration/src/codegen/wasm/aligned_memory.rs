@@ -513,10 +513,12 @@ fn wasm_aligned_store_with_a_large_offset_takes_the_checked_path() {
 
 /// Verifies that Wasm element-aligned accesses with the largest offset below
 /// [MAX_BASE_FIRST_OFFSET] convert the base first, sharing one alignment check, and reach the
-/// effective address.
+/// effective address. A second run from the last aligned base, whose `base + offset` overflows,
+/// lands on the highest guard element without trapping and leaves the heap metadata intact.
 ///
 /// The base is read from its local twice before the accesses, so the reads are merged into one
-/// value (see `wasm_aligned_i32_accesses_through_one_base_share_one_alignment_check`).
+/// value (see `wasm_aligned_i32_accesses_through_one_base_share_one_alignment_check`). The data
+/// segment makes the program initialize the heap, so the second run has a magic cell to check.
 #[test]
 fn wasm_aligned_store_with_offset_below_the_bound_takes_the_fast_path() {
     let (test, package, masm) = compile_wat(
@@ -525,7 +527,8 @@ fn wasm_aligned_store_with_offset_below_the_bound_takes_the_fast_path() {
     local.get 0
     local.get 1
     i32.store offset=67108860 align=4
-    i32.load offset=67108860 align=4)"#,
+    i32.load offset=67108860 align=4)
+(data (i32.const 1024) "\01")"#,
     );
     assert_eq!(assertz_count(&masm), 1, "{masm}");
     assert!(!masm.contains("u32assert"), "{masm}");
@@ -548,9 +551,10 @@ fn wasm_aligned_store_with_offset_below_the_bound_takes_the_fast_path() {
     assert_eq!(result, value, "{masm}");
 
     // From the last aligned base, element 2^30 - 1, the access lands on the highest guard element
-    // it can reach, just below the heap metadata, without trapping.
-    let guard_end = GUEST_ADDRESS_LIMIT - 1 + (MAX_BASE_FIRST_OFFSET - 4) / 4;
-    assert_eq!(guard_end, HEAP_INFO_ADDR - 2);
+    // it can reach, just below the heap metadata, without trapping: the highest base element
+    // 2^30 - 1 plus the largest element offset (2^26 - 4) / 4 = 2^24 - 1. A literal, so that the
+    // test pins the layout.
+    let guard_end = 0x40ff_fffeu32;
     let result = eval_package::<u32, _, _>(
         package,
         None,
@@ -561,6 +565,8 @@ fn wasm_aligned_store_with_offset_below_the_bound_takes_the_fast_path() {
                 .read_memory_element(guard_end)
                 .expect("the guard memory cell was not written");
             assert_eq!(stored, Felt::from(value));
+            let magic = trace.read_memory_element(HEAP_INFO_ADDR + 3).unwrap_or_default();
+            assert_eq!(magic, Felt::from(0xdead_beefu32), "heap magic");
             Ok(())
         },
     )
