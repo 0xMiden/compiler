@@ -7,6 +7,7 @@ name = "acme-counter-note"
 version = "0.1.0"
 dependencies = [
  "miden",
+ "miden-sdk-build-script-support",
 ]
 
 [[package]]
