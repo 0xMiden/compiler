@@ -277,7 +277,7 @@ pub(crate) fn share_masm_module(lhs: OperationRef, rhs: OperationRef) -> bool {
         let mut modules = ops.iter().filter(|op| op.is::<builtin::Module>());
         modules.next().is_some_and(|only| only.as_operation_ref() == module)
             && modules.next().is_none()
-            && !ops.iter().any(|op| op.is::<builtin::Component>())
+            && !world.has_defining_component()
     }
 
     (lhs.borrow().is::<builtin::World>() && is_the_only_module_of_world(rhs, lhs))
@@ -331,8 +331,7 @@ fn modules_form_the_artifact_interface(mut owner: OperationRef) -> bool {
             return component.is_synthetic_wrapper();
         }
         if let Some(world) = op.downcast_ref::<builtin::World>() {
-            let body = world.body();
-            return !body.entry().body().iter().any(|op| op.is::<builtin::Component>());
+            return !world.has_defining_component();
         }
         let Some(parent) = op.parent_op() else {
             return false;
