@@ -4,3 +4,4 @@ mod schema;
 mod std_basic_wallet;
 mod std_getters;
 mod std_pausable;
+mod user_masm_component;

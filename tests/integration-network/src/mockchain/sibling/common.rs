@@ -130,6 +130,24 @@ pub(super) fn build_std_sibling_test_packages(
     (caller_package, note_package, caller_storage_slot)
 }
 
+/// Builds the caller component and note projects for a test whose siblings are Miden Assembly
+/// projects the caller component depends on by path.
+///
+/// `masm_dependencies` lists the `(package name, project root)` of each MASM project. Returns the
+/// caller and note packages.
+pub(crate) fn build_masm_sibling_test_packages(
+    test_name: &str,
+    masm_dependencies: &[(&str, &Path)],
+    caller_source: &str,
+    note_source: &str,
+) -> (Arc<Package>, Arc<Package>) {
+    let names = SiblingProjectNames::new(test_name);
+    let (caller_project, caller_package) =
+        build_sibling_caller_project(&names, masm_dependencies, &[], caller_source);
+    let note_package = build_sibling_note_package(&names, caller_project.root(), note_source);
+    (caller_package, note_package)
+}
+
 /// Generates one sibling component project exporting the given WIT interface.
 fn build_sibling_component_project(
     account_name: &str,
