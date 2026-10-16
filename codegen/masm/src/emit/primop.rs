@@ -605,8 +605,9 @@ impl OpEmitter<'_> {
     /// the 16-element window a `call`/`syscall`/`dyncall` hands to the callee is exactly
     /// `[args, zeros]` and every caller value under the arguments sits below the window.
     ///
-    /// Only instructions are emitted: the padding exists between this and the matching
-    /// [`Self::discard_call_window_padding`] only, so the emulated operand stack never models it.
+    /// Only instructions are emitted, and the emulated operand stack is left as it is: a call
+    /// pairs this with [`Self::discard_call_window_padding`], so its padding never outlives the
+    /// call, while [`Self::pad_operands_to_call_window`] records the padding it keeps.
     fn pad_call_window(&mut self, num_arg_felts: usize, span: SourceSpan) {
         use masm::Instruction as I;
 
@@ -652,6 +653,9 @@ impl OpEmitter<'_> {
     ///
     /// For a window consumed as operands, such as the fixed-width input of the FPI executor,
     /// rather than handed to a callee and discarded afterwards.
+    ///
+    /// Panics if one of the `num_inputs` operands is wider than a felt, or the operand stack
+    /// holds fewer than `num_inputs` operands.
     pub(crate) fn pad_operands_to_call_window(&mut self, num_inputs: usize, span: SourceSpan) {
         self.pad_call_window(num_inputs, span);
         let inputs = (0..num_inputs)
@@ -852,7 +856,7 @@ impl OpEmitter<'_> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use alloc::{collections::BTreeSet, rc::Rc};
 
     use midenc_hir::{ArrayType, Context};
@@ -1070,7 +1074,7 @@ mod tests {
     }
 
     /// The instructions of `block`, which must contain nothing else.
-    fn block_insts(block: &[Op]) -> Vec<masm::Instruction> {
+    pub(crate) fn block_insts(block: &[Op]) -> Vec<masm::Instruction> {
         block
             .iter()
             .map(|op| match op {
@@ -1081,7 +1085,7 @@ mod tests {
     }
 
     /// The instructions [`OpEmitter::pad_call_window`] emits for `n` argument felts.
-    fn pad_call_window_insts(n: usize) -> Vec<masm::Instruction> {
+    pub(crate) fn pad_call_window_insts(n: usize) -> Vec<masm::Instruction> {
         let mut block = Vec::default();
         let mut stack = OperandStack::new(Rc::new(Context::default()));
         let mut invoked = BTreeSet::default();

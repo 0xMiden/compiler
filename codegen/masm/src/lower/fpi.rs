@@ -95,40 +95,30 @@ mod tests {
     use super::*;
     use crate::{linker::LinkInfo, stack::OperandStack};
 
-    /// The inputs are padded with the call-window padding (whole words where the input count
-    /// allows it), and the six prefix locals are loaded on top before the executor is invoked.
+    /// The inputs are padded with the call-window padding, and the six prefix locals are loaded
+    /// on top before the executor is invoked.
     #[test]
     fn exec_fpi_pads_inputs_and_loads_prefix_locals() -> Result<(), Report> {
-        // (inputs, `padw`, `push.0`, the instruction moving inputs and padding past each other)
-        for (num_inputs, padw, push_zero, shuffle) in [
-            (0usize, 4usize, 0usize, None),
-            (1, 3, 3, Some(("movup.15", 1))),
-            (4, 3, 0, Some(("movupw.3", 1))),
-            (8, 2, 0, Some(("swapdw", 1))),
-            (10, 0, 6, Some(("movdn.10", 6))),
-            (12, 1, 0, Some(("movdnw.3", 1))),
-            (15, 0, 1, Some(("movdn.15", 1))),
-        ] {
-            let output = emit_exec_fpi(num_inputs)?.to_pretty_string();
+        use crate::emit::primop::tests::{block_insts, pad_call_window_insts};
 
-            // The prefix local loads are direct `locaddr`/`mem_load` pairs and push nothing else.
-            assert_eq!(
-                output.matches("padw").count(),
-                padw,
-                "unexpected padding words for {num_inputs} inputs:\n{output}"
+        // Every arm of the padding: whole words (0, 4, 8, 12), few inputs (1), few pads (10, 15)
+        for num_inputs in [0usize, 1, 4, 8, 10, 12, 15] {
+            let block = emit_exec_fpi(num_inputs)?;
+            let output = block.to_pretty_string();
+
+            // The prefix local loads are direct `locaddr`/`mem_load` pairs and push nothing else,
+            // so the padding is the only run of these instructions, and comes before them.
+            let insts = block_insts(block.iter().as_slice());
+            let pad = pad_call_window_insts(num_inputs);
+            let padded_at = insts.windows(pad.len()).position(|window| window == pad);
+            let first_load = insts
+                .iter()
+                .position(|inst| matches!(inst, crate::masm::Instruction::Locaddr(_)));
+            assert!(
+                padded_at.is_some_and(|at| first_load.is_some_and(|load| at + pad.len() <= load)),
+                "expected the call-window padding for {num_inputs} inputs before the prefix \
+                 loads:\n{output}"
             );
-            assert_eq!(
-                output.matches("push.0").count(),
-                push_zero,
-                "unexpected padding felts for {num_inputs} inputs:\n{output}"
-            );
-            if let Some((shuffle, count)) = shuffle {
-                assert_eq!(
-                    output.matches(shuffle).count(),
-                    count,
-                    "unexpected input padding shuffle for {num_inputs} inputs:\n{output}"
-                );
-            }
             assert_eq!(
                 output.matches("mem_load").count(),
                 6,

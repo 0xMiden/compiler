@@ -13,7 +13,8 @@ builtin.world {
     };
 };
 
-// The report is wrapped to the terminal's width, so only its first words are pinned; the felt
-// count is pinned by the legalization unit tests.
+// The report is wrapped to the terminal's width, so its parts are pinned one by one.
 // CHECK: failed to legalize operation 'hir.dyncall'
+// CHECK: cross-context call whose results take
+// CHECK: 18 field elements
 // CHECK-NOT: panicked

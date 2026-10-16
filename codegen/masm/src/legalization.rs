@@ -2020,7 +2020,62 @@ mod tests {
                 .expect("the callee is defined");
 
             test.apply_pass::<LegalizeForMasm>(false).unwrap();
+
+            let message = format!("{}", lower_cross_context_call(&test).unwrap_err());
+            let op = if syscall { "hir.syscall" } else { "hir.call" };
+            assert!(
+                message.contains(&format!("invalid {op}: unable to resolve callee")),
+                "{message}"
+            );
         }
+    }
+
+    /// Emit the `hir.call` or `hir.syscall` in `test`'s function through its [`HirLowering`],
+    /// as lowering the function would.
+    fn lower_cross_context_call(test: &Test) -> Result<(), Report> {
+        use alloc::collections::BTreeSet;
+
+        use midenc_hir::{TraceTarget, pass::AnalysisManager};
+        use midenc_hir_analysis::analyses::LivenessAnalysis;
+
+        use crate::{
+            emitter::{BlockEmitter, FrameLayout},
+            linker::LinkInfo,
+            lower::HirLowering,
+            stack::OperandStack,
+        };
+
+        let function = test.function();
+        let call = {
+            let function = function.borrow();
+            let body = function.body();
+            let entry = body.entry();
+            entry
+                .body()
+                .iter()
+                .find(|op| op.is::<hir::Call>() || op.is::<hir::Syscall>())
+                .expect("the function holds a cross-context call")
+                .as_operation_ref()
+        };
+        let analysis_manager = AnalysisManager::new(function.as_operation_ref(), None);
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
+        let link_info = LinkInfo::new(None);
+        let mut invoked = BTreeSet::default();
+        let mut emitter = BlockEmitter {
+            module_owner: None,
+            frame: FrameLayout::new(&[], 0),
+            liveness: &liveness,
+            emit_inline_calls: false,
+            link_info: &link_info,
+            invoked: &mut invoked,
+            target: Default::default(),
+            stack: OperandStack::new(test.context_rc()),
+            trace_target: TraceTarget::category("codegen"),
+        };
+        let call = call.borrow();
+        let lowering =
+            call.as_trait::<dyn HirLowering>().expect("a cross-context call has a lowering");
+        lowering.emit(&mut emitter)
     }
 
     /// The emitter consumes one operand per parameter, so a signature declaring more parameters
