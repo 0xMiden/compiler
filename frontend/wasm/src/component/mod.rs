@@ -161,6 +161,11 @@ pub(super) mod test_support {
         Type::from(StructType::new(vec![Type::U32, Type::U32]))
     }
 
+    /// Builds a HIR type for a record of `num_fields` `u64` fields, two felts each when flattened.
+    pub fn u64_record_type(num_fields: usize) -> Type {
+        Type::from(StructType::new(vec![Type::U64; num_fields]))
+    }
+
     /// Creates an empty world fixture for component CanonABI tests.
     pub fn test_world() -> (Rc<Context>, WorldBuilder) {
         let context = Rc::new(Context::default());
