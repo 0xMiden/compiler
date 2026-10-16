@@ -33,6 +33,7 @@ use midenc_hir::{
 };
 
 use crate::{
+    error::WasmResult,
     module::debug_info::{FunctionDebugInfo, LocationScheduleEntry},
     ssa::{SSABuilder, SideEffects, Variable},
 };
@@ -656,6 +657,15 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         let is_sealed = func_ctx.ssa.is_sealed(self.inner.current_block());
         let has_no_predecessors = !func_ctx.ssa.has_any_predecessors(self.inner.current_block());
         !is_entry && is_sealed && has_no_predecessors
+    }
+
+    /// Widens the `i1` `value` to the `i32` 0 or 1 that Wasm uses for booleans.
+    ///
+    /// Always emits the `arith.zext` to `u32` + `hir.bitcast` to `i32` shape, which the boolean
+    /// canonicalizations look through when the result is tested again.
+    pub fn widen_bool(&mut self, value: ValueRef, span: SourceSpan) -> WasmResult<ValueRef> {
+        let extended = self.zext(value, Type::U32, span)?;
+        self.bitcast(extended, Type::I32, span)
     }
 
     /// Changes the destination of a jump instruction after creation.

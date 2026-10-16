@@ -95,6 +95,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let val = if expected_ty != value_ty {
                 if expected_ty == I32 && value_ty == U32 {
                     builder.bitcast(val, I32, span)?
+                } else if expected_ty == I32 && value_ty == I1 {
+                    builder.widen_bool(val, span)?
                 } else if expected_ty == I64 && value_ty == U64 {
                     builder.bitcast(val, I64, span)?
                 } else {
@@ -116,6 +118,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let val = if expected_ty != value_ty {
                 if expected_ty == I32 && value_ty == U32 {
                     builder.bitcast(val, I32, span)?
+                } else if expected_ty == I32 && value_ty == I1 {
+                    builder.widen_bool(val, span)?
                 } else if expected_ty == I64 && value_ty == U64 {
                     builder.bitcast(val, I64, span)?
                 } else {
@@ -627,130 +631,109 @@ pub fn translate_operator<B: ?Sized + Builder>(
         Operator::I32LtU => {
             let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.lt(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I64LtU => {
             let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.lt(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I32LtS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.lt(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I64LtS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.lt(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I32LeU => {
             let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.lte(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I64LeU => {
             let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.lte(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I32LeS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.lte(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I64LeS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.lte(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I32GtU => {
             let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.gt(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I64GtU => {
             let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.gt(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I32GtS | Operator::I64GtS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.gt(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I32GeU => {
             let (arg0, arg1) = state.pop2_bitcasted(U32, builder, span)?;
             let val = builder.gte(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I64GeU => {
             let (arg0, arg1) = state.pop2_bitcasted(U64, builder, span)?;
             let val = builder.gte(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I32GeS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.gte(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I64GeS => {
             let (arg0, arg1) = state.pop2();
             let val = builder.gte(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I32Eqz => {
             let arg = state.pop1();
             let imm = builder.imm(Immediate::I32(0), span);
             let val = builder.eq(arg, imm, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I64Eqz => {
             let arg = state.pop1();
             let imm = builder.imm(Immediate::I64(0), span);
             let val = builder.eq(arg, imm, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I32Eq => {
             let (arg0, arg1) = state.pop2();
             let val = builder.eq(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I64Eq => {
             let (arg0, arg1) = state.pop2();
             let val = builder.eq(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I32Ne => {
             let (arg0, arg1) = state.pop2();
             let val = builder.neq(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         Operator::I64Ne => {
             let (arg0, arg1) = state.pop2();
             let val = builder.neq(arg0, arg1, span)?;
-            let extended = builder.zext(val, U32, span)?;
-            state.push1(builder.bitcast(extended, I32, span)?);
+            state.push1(builder.widen_bool(val, span)?);
         }
         op => {
             unsupported_diag!(diagnostics, "Wasm op {:?} is not supported", op);
