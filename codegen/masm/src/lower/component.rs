@@ -738,6 +738,7 @@ fn world_body_to_masm_component(
     let heap_base = link_info.heap_base();
     let stack_pointer = link_info.globals_layout().stack_pointer_offset();
     let mut stub_namespaces = Vec::new();
+    // The world defines no component, so every component in it is a declaration-only stub.
     for op in world.body().entry().body().iter() {
         if let Some(stub) = op.downcast_ref::<builtin::Component>() {
             let path = stub.namespace_path().to_library_path();
