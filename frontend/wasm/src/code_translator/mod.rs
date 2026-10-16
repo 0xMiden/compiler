@@ -24,7 +24,6 @@ use midenc_hir::{
     ValueRef,
     dialects::builtin::BuiltinOpBuilder,
     matchers::{self, Matcher},
-    traits::TransparentCast,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, SourceSpan};
 use wasmparser::{MemArg, Operator};
@@ -95,8 +94,6 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let val = if expected_ty != value_ty {
                 if expected_ty == I32 && value_ty == U32 {
                     builder.bitcast(val, I32, span)?
-                } else if expected_ty == I32 && value_ty == I1 {
-                    builder.widen_bool(val, span)?
                 } else if expected_ty == I64 && value_ty == U64 {
                     builder.bitcast(val, I64, span)?
                 } else {
@@ -118,8 +115,6 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let val = if expected_ty != value_ty {
                 if expected_ty == I32 && value_ty == U32 {
                     builder.bitcast(val, I32, span)?
-                } else if expected_ty == I32 && value_ty == I1 {
-                    builder.widen_bool(val, span)?
                 } else if expected_ty == I64 && value_ty == U64 {
                     builder.bitcast(val, I64, span)?
                 } else {
@@ -496,7 +491,10 @@ pub fn translate_operator<B: ?Sized + Builder>(
             state.push1(builder.shl(arg1, arg2, span)?);
         }
         Operator::I32ShrU => {
-            let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span)?;
+            let (arg1, arg2) = state.pop2();
+            // Only the shifted value is bitcast: the count keeps its defining constant visible
+            // to `mask_movement_count`.
+            let arg1 = builder.bitcast(arg1, U32, span)?;
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
             let arg2 = mask_movement_count(builder, arg2, 32, span)?;
@@ -1031,18 +1029,9 @@ fn mask_movement_count<B: ?Sized + Builder>(
     span: SourceSpan,
 ) -> Result<ValueRef, Report> {
     // A constant count is masked at compile time, so that the shift reaches the backend with an
-    // immediate count and can lower to the immediate form. The unsigned operators bitcast the
-    // count before masking it, so look through a transparent cast to find the constant.
-    let count_source = {
-        let defining_op = count.borrow().get_defining_op();
-        match defining_op {
-            Some(cast) if cast.borrow().implements::<dyn TransparentCast>() => {
-                cast.borrow().operands()[0].borrow().as_value_ref()
-            }
-            _ => count,
-        }
-    };
-    let constant_count = count_source.borrow().get_defining_op().and_then(|defining_op| {
+    // immediate count and can lower to the immediate form. Callers pass the count as the Wasm
+    // operand itself (not bitcast), so its defining constant is visible here.
+    let constant_count = count.borrow().get_defining_op().and_then(|defining_op| {
         matchers::constant_of::<Immediate>()
             .matches(&*defining_op.borrow())
             .and_then(|imm| imm.as_u64())
