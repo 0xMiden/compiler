@@ -160,8 +160,8 @@ pub fn package_id(head: &str, package_name: &str) -> Result<(String, String), St
         .and_then(|rest| rest.strip_prefix('-'))
         .filter(|rest| !rest.is_empty() && format!("{namespace}:{rest}") != CORE_TYPES_PACKAGE)
         .unwrap_or(&full);
-    // A stripped name that is a keyword or no WIT name (`miden-list` → `list`, `miden-1x` → `1x`)
-    // falls back to the full name.
+    // A stripped name that is a keyword or no WIT name (`miden-list` → `list`, `miden-1x` →
+    // `1x`) falls back to the full name.
     let name = segment(package_name, name.to_owned(), SegmentPosition::Package)
         .or_else(|err| {
             if name == full {

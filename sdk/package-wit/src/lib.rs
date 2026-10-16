@@ -5,14 +5,14 @@
 //! from the package's manifest alone: one function per interface procedure, each carrying its
 //! export path in `@external-id`, with the manifest types expressed through the SDK's `core-types`
 //! where they match exactly or are named by their `core-types` id (as in a Rust-built component),
-//! and declared locally otherwise. A procedure the interface cannot offer
-//! (an auth procedure, no typed signature, outside the interface module, unsupported or clashing
-//! names and types, parameters or results beyond the stack budget, 64-bit integer parameters or
+//! and declared locally otherwise. A procedure the interface cannot offer (an auth procedure, no
+//! typed signature, outside the interface module, unsupported or clashing names and types,
+//! parameters, results or a result pointer beyond the stack budget, 64-bit integer parameters or
 //! results, reserved or invalid names) is left out and reported in [`Generated::skipped`] and in
-//! the interface's doc comment. A procedure with several results returns them as one tuple. A package fails as a whole only when
-//! it is not an account component ([`Error::NotAComponent`]), has no interface procedures
-//! ([`Error::NoInterfaceProcedures`]), has no usable WIT package id or interface name
-//! ([`Error::Namespace`]), or has every interface procedure left out
+//! the interface's doc comment. A procedure with several results returns them as one tuple. A
+//! package fails as a whole only when it is not an account component ([`Error::NotAComponent`]),
+//! has no interface procedures ([`Error::NoInterfaceProcedures`]), has no usable WIT package id
+//! or interface name ([`Error::Namespace`]), or has every interface procedure left out
 //! ([`Error::EverythingSkipped`]).
 //!
 //! The interface procedures are the exports marked `@account_procedure` or `@auth_script`: the
@@ -230,8 +230,8 @@ struct Pass {
 }
 
 /// Offer `procedures` in order, leaving out each auth procedure, each one that has no function
-/// form in the interface module of the `first` offerable procedure, whose function name another kept function already has, or whose function name is
-/// one of `type_names`.
+/// form in the interface module of the `first` offerable procedure, whose function name another
+/// kept function already has, or whose function name is one of `type_names`.
 fn interface_pass(
     procedures: &[&ProcedureItem],
     first: &ProcedureItem,
