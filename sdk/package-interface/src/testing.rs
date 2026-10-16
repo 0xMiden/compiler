@@ -74,6 +74,18 @@ pub fn assemble_fixture(name: &str, root_path: &str, source: &str) -> Arc<Packag
     Arc::from(package)
 }
 
+/// Assemble `source` as the root module `root_path` of an account-component package named
+/// `name`, as [`assemble_fixture`] does for a library package.
+pub fn assemble_account_component_fixture(
+    name: &str,
+    root_path: &str,
+    source: &str,
+) -> Arc<Package> {
+    let mut package = (*assemble_fixture(name, root_path, source)).clone();
+    package.kind = miden_mast_package::TargetType::AccountComponent;
+    Arc::new(package)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

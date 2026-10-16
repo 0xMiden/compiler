@@ -222,6 +222,16 @@ trait AuthComponent {
 
 /// Builds a generated note project whose `#[note]` type is declared in `src/lib.rs`.
 fn note_project(name: &str, lib_rs: &str) -> crate::cargo_proj::Project {
+    note_project_builder(name, lib_rs, "").build()
+}
+
+/// The builder of [`note_project`], with `dependencies` appended to the `[dependencies]` table of
+/// its `miden-project.toml`, which ends the file.
+fn note_project_builder(
+    name: &str,
+    lib_rs: &str,
+    dependencies: &str,
+) -> crate::cargo_proj::ProjectBuilder {
     let sdk_path = sdk_crate_path();
     let namespace = component_namespace(name);
     let component_package = format!("miden:{}", name.replace('_', "-"));
@@ -239,7 +249,7 @@ path = "src/lib.rs"
 [dependencies]
 miden-core = "*"
 miden-protocol = "*"
-"#
+{dependencies}"#
     );
     let cargo_toml = format!(
         r#"
@@ -265,7 +275,6 @@ package = "{component_package}"
         .file("miden-project.toml", &miden_project_toml)
         .file("Cargo.toml", &cargo_toml)
         .file("src/lib.rs", lib_rs)
-        .build()
 }
 
 #[test]
@@ -1114,9 +1123,6 @@ fn masm_account_component_consumer(
 
     const DEPENDENCY: &str = MASM_WALLET_DEPENDENCY;
     const WIT_OVERRIDE_PATH: &str = "wallet-wit/test-wallet.wit";
-    let sdk_path = sdk_crate_path();
-    let namespace = component_namespace(name);
-    let component_package = format!("miden:{}", name.replace('_', "-"));
     let wit_entry = wit_override
         .map(|_| {
             format!(
@@ -1125,58 +1131,18 @@ fn masm_account_component_consumer(
             )
         })
         .unwrap_or_default();
-    let miden_project_toml = format!(
-        r#"
-[package]
-name = "{name}"
-version = "0.0.1"
-
-[lib]
-kind = "note"
-namespace = "{namespace}"
-path = "src/lib.rs"
-
-[dependencies]
-miden-core = "*"
-miden-protocol = "*"
-{DEPENDENCY} = {{ path = "package-cache/{DEPENDENCY}.masp" }}
-{wit_entry}"#
-    );
-    let cargo_toml = format!(
-        r#"
-[package]
-name = "{name}"
-version = "0.0.1"
-edition = "2024"
-authors = []
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-miden = {{ path = "{sdk_path}" }}
-
-[package.metadata.component]
-package = "{component_package}"
-"#,
-        sdk_path = sdk_path.display(),
-    );
-
-    let mut builder = project(name)
-        .file("miden-project.toml", &miden_project_toml)
-        .file("Cargo.toml", &cargo_toml)
-        .file("src/lib.rs", lib_rs);
+    let dependencies =
+        format!("{DEPENDENCY} = {{ path = \"package-cache/{DEPENDENCY}.masp\" }}\n{wit_entry}");
+    let mut builder = note_project_builder(name, lib_rs, &dependencies);
     if let Some(wit) = wit_override {
         builder = builder.file(WIT_OVERRIDE_PATH, wit);
     }
     let cargo_proj = builder.build();
-    let mut wallet = (*midenc_package_interface::testing::assemble_fixture(
+    let wallet = midenc_package_interface::testing::assemble_account_component_fixture(
         DEPENDENCY,
         dependency_namespace,
         source,
-    ))
-    .clone();
-    wallet.kind = miden_mast_package::TargetType::AccountComponent;
+    );
     let package_dir = cargo_proj.root().join("package-cache");
     std::fs::create_dir_all(&package_dir).expect("the package cache must be created");
     std::fs::write(package_dir.join(format!("{DEPENDENCY}.masp")), wallet.to_bytes())

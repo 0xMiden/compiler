@@ -15,22 +15,21 @@ use miden_client::{
 use miden_core::Felt;
 use miden_mast_package::Package;
 use miden_protocol::{
-    account::{
-        Account, AccountBuilder, AccountComponent, AccountId, AccountType, auth::AuthScheme,
-    },
+    account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType},
     crypto::rand::RandomCoin,
 };
 use miden_standards::{
     account::{access::Ownable2Step, wallets::BasicWallet},
     testing::note::NoteBuilder,
 };
-use miden_testing::{AccountState, Auth, MockChain, MockChainBuilder};
+use miden_testing::{AccountState, MockChain, MockChainBuilder};
 use midenc_expect_test::expect;
 
 use super::{
     super::support::{
-        assert_account_has_fungible_asset, assert_counter_storage_at_key, build_send_notes_script,
-        execute_tx, execute_tx_measurements, note_script_root, single_note_cycles, to_core_felts,
+        assert_account_has_fungible_asset, assert_counter_storage_at_key, basic_auth,
+        build_send_notes_script, execute_tx, execute_tx_measurements, note_script_root,
+        single_note_cycles, to_core_felts,
     },
     common::build_std_sibling_test_packages,
     counter_storage_key,
@@ -44,13 +43,6 @@ const STD_OWNABLE2STEP: (&str, &str) = ("miden-standards-access-ownable2step", "
 
 /// Amount of the fungible asset the faucet mints into the trigger note.
 const MINT_AMOUNT: u64 = 100_000;
-
-/// The standard authentication of the accounts in these tests.
-fn auth() -> Auth {
-    Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    }
-}
 
 /// Deploys one account made of the standard basic wallet and a Rust caller component, then
 /// consumes a minted note whose script makes the caller move the note's asset into the vault
@@ -67,7 +59,7 @@ fn std_wallet_sibling() {
 
     let mut builder = MockChain::builder();
     let faucet_id = builder
-        .add_existing_basic_faucet(auth(), "TEST", 1_000_000_000, None)
+        .add_existing_basic_faucet(basic_auth(), "TEST", 1_000_000_000, None)
         .unwrap()
         .id();
     let account = add_caller_account(&mut builder, &caller_package, []);
@@ -97,10 +89,10 @@ fn std_multi_sibling() {
 
     let mut builder = MockChain::builder();
     let faucet_id = builder
-        .add_existing_basic_faucet(auth(), "TEST", 1_000_000_000, None)
+        .add_existing_basic_faucet(basic_auth(), "TEST", 1_000_000_000, None)
         .unwrap()
         .id();
-    let owner_id = builder.add_existing_wallet(auth()).unwrap().id();
+    let owner_id = builder.add_existing_wallet(basic_auth()).unwrap().id();
     let account =
         add_caller_account(&mut builder, &caller_package, [Ownable2Step::new(owner_id).into()]);
     let (mut chain, note) = mint_note(builder, faucet_id, &note_package, to_core_felts(&owner_id));
@@ -131,7 +123,7 @@ fn add_caller_account(
     }
     let account_builder = account_builder.with_component(caller_component);
     builder
-        .add_account_from_builder(auth(), account_builder, AccountState::Exists)
+        .add_account_from_builder(basic_auth(), account_builder, AccountState::Exists)
         .expect("failed to add the standard-sibling account to the mock chain builder")
 }
 

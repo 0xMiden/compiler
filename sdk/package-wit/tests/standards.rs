@@ -26,7 +26,7 @@ use miden_standards::account::{
 };
 use midenc_integration_test_support::testing::bindings::check_generated;
 use midenc_package_interface::PackageInterface;
-use midenc_package_wit::{Error, Generated, Skipped, generate};
+use midenc_package_wit::{AUTH_PROCEDURE_REASON, Error, Generated, Skipped, generate};
 
 /// The SDK's core-types package, which a generated document `use`s when it needs a core item.
 const MIDEN_WIT: &str = include_str!("../../base-macros/wit/miden.wit");
@@ -199,11 +199,6 @@ fn generated_and_skipped_totals() {
     // Every standard procedure has a typed signature the mapping covers and results within the
     // stack budget; the ones left out are the auth procedures.
     for skipped in skipped {
-        assert!(
-            skipped.reason.starts_with("an auth procedure is invoked "),
-            "{}: {}",
-            skipped.path,
-            skipped.reason
-        );
+        assert_eq!(skipped.reason, AUTH_PROCEDURE_REASON, "{}", skipped.path);
     }
 }

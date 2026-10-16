@@ -21,14 +21,14 @@ use miden_note_schema::NoteStorageSchema;
 use miden_protocol::{
     account::{
         Account, AccountBuilder, AccountComponent, AccountId, AccountStorage, AccountType,
-        StorageSlot, StorageSlotName,
+        StorageSlot, StorageSlotName, auth::AuthScheme,
     },
     asset::{Asset, AssetAmount},
     note::{NoteScript, PartialNote},
     transaction::{ExecutedTransaction, TransactionMeasurements, TransactionScript},
 };
 use miden_standards::{testing::note::NoteBuilder, tx_script::SendNotesTransactionScript};
-use miden_testing::{MockChain, MockTransaction, MockTransactionBuilder};
+use miden_testing::{Auth, MockChain, MockTransaction, MockTransactionBuilder};
 use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::{
@@ -55,6 +55,13 @@ struct TxScriptArgs {
 /// Encodes an account id the way a Rust note stores its `AccountId` field: suffix, then prefix.
 pub(crate) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
     vec![value.suffix(), value.prefix().as_felt()]
+}
+
+/// The Falcon basic authentication of the accounts the standard-component tests run on.
+pub(crate) fn basic_auth() -> Auth {
+    Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    }
 }
 
 // FIELD <-> PROTOCOL FELT CONVERSIONS

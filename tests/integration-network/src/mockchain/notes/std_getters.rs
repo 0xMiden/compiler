@@ -9,16 +9,13 @@
 
 use miden_core::Felt;
 use miden_field_repr::{FromFeltRepr, ToFeltRepr};
-use miden_protocol::{
-    account::{AccountId, auth::AuthScheme},
-    asset::TokenSymbol,
-};
+use miden_protocol::{account::AccountId, asset::TokenSymbol};
 use miden_standards::account::access::{Ownable2Step, RoleBasedAccessControl};
-use miden_testing::{Auth, MockChain};
+use miden_testing::MockChain;
 use midenc_expect_test::expect;
 
 use super::super::support::{
-    apply_script_args, compile_rust_package, execute_tx_measurements, to_field_felt,
+    apply_script_args, basic_auth, compile_rust_package, execute_tx_measurements, to_field_felt,
     transaction_script_from_package, tx_script_processing_cycles,
 };
 
@@ -59,13 +56,6 @@ struct RoleArgs {
     expected: miden_field::Felt,
 }
 
-/// The standard authentication of the accounts the scripts run on.
-fn auth() -> Auth {
-    Auth::BasicAuth {
-        auth_scheme: AuthScheme::Falcon512Poseidon2,
-    }
-}
-
 /// A Rust transaction script reads the four-field `token-config` record of a standard fungible
 /// faucet and finds every field where the faucet stores it.
 #[test]
@@ -79,7 +69,7 @@ pub fn std_faucet_get_token_config_returns_the_configured_fields() {
     let symbol = Felt::from(TokenSymbol::new("TEST").unwrap());
     let mut builder = MockChain::builder();
     let faucet_id = builder
-        .add_existing_basic_faucet(auth(), "TEST", max_supply, Some(supply))
+        .add_existing_basic_faucet(basic_auth(), "TEST", max_supply, Some(supply))
         .unwrap()
         .id();
     let mut chain = builder.build().unwrap();
@@ -113,10 +103,10 @@ pub fn std_faucet_get_token_config_through_fpi_returns_the_configured_fields() {
     let symbol = Felt::from(TokenSymbol::new("TEST").unwrap());
     let mut builder = MockChain::builder();
     let faucet_id = builder
-        .add_existing_basic_faucet(auth(), "TEST", max_supply, Some(supply))
+        .add_existing_basic_faucet(basic_auth(), "TEST", max_supply, Some(supply))
         .unwrap()
         .id();
-    let wallet_id = builder.add_existing_wallet(auth()).unwrap().id();
+    let wallet_id = builder.add_existing_wallet(basic_auth()).unwrap().id();
     let mut chain = builder.build().unwrap();
     chain.prove_next_block().unwrap();
 
@@ -147,9 +137,9 @@ pub fn std_ownable2step_get_owner_returns_the_configured_owner() {
 
     let mut builder = MockChain::builder();
     // Any other account serves as the owner.
-    let owner_id: AccountId = builder.add_existing_wallet(auth()).unwrap().id();
+    let owner_id: AccountId = builder.add_existing_wallet(basic_auth()).unwrap().id();
     let account_id = builder
-        .add_existing_account_from_components(auth(), [Ownable2Step::new(owner_id).into()])
+        .add_existing_account_from_components(basic_auth(), [Ownable2Step::new(owner_id).into()])
         .unwrap()
         .id();
     let mut chain = builder.build().unwrap();
@@ -175,11 +165,11 @@ pub fn std_rbac_has_role_takes_an_account_id_parameter() {
     let tx_script_package = compile_rust_package("../fixtures/components/std-rbac-tx-script", true);
 
     let mut builder = MockChain::builder();
-    let member = builder.add_existing_wallet(auth()).unwrap().id();
-    let non_member = builder.add_existing_wallet(auth()).unwrap().id();
+    let member = builder.add_existing_wallet(basic_auth()).unwrap().id();
+    let non_member = builder.add_existing_wallet(basic_auth()).unwrap().id();
     let rbac = RoleBasedAccessControl::with_admins([member]).unwrap();
     let account_id = builder
-        .add_existing_account_from_components(auth(), [rbac.into()])
+        .add_existing_account_from_components(basic_auth(), [rbac.into()])
         .unwrap()
         .id();
     let mut chain = builder.build().unwrap();

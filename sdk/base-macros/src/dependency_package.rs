@@ -1465,13 +1465,11 @@ mod tests {
     fn write_component_fixture(package_path: &Path, source: &str) {
         use miden_protocol::utils::serde::Serializable;
 
-        let mut package = (*midenc_package_interface::testing::assemble_fixture(
+        let package = midenc_package_interface::testing::assemble_account_component_fixture(
             "miden-test-wallet",
             "miden::test::wallet",
             source,
-        ))
-        .clone();
-        package.kind = miden_mast_package::TargetType::AccountComponent;
+        );
         std::fs::create_dir_all(package_path.parent().unwrap()).unwrap();
         std::fs::write(package_path, package.to_bytes()).unwrap();
     }
