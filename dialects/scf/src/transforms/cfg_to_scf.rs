@@ -349,9 +349,7 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         Ok(())
     }
 
-    /// The condition is the `i1` produced by [Self::get_cfg_bool_value], so it branches with
-    /// `cf.cond_br`; the default implementation would use it as a `cf.switch` selector, which
-    /// requires a 32-bit unsigned flag.
+    /// Branches on the `i1` produced by [Self::get_cfg_bool_value] with `cf.cond_br`.
     fn create_conditional_branch(
         &self,
         span: midenc_hir::SourceSpan,

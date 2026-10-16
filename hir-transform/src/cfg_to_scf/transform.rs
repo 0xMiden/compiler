@@ -1370,7 +1370,7 @@ impl core::hash::Hash for ReturnLikeOpKey {
 struct StructuredLoopProperties {
     /// Block containing both the single exit edge and the single back edge.
     latch: BlockRef,
-    /// Loop condition of type equal to a value returned by `getSwitchValue`.
+    /// Loop condition of type equal to a value returned by `get_cfg_bool_value`.
     condition: ValueRef,
     /// Exit block which is the only successor of the loop.
     exit_block: BlockRef,
