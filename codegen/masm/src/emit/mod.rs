@@ -101,10 +101,7 @@ use miden_assembly::ast::InvokeKind;
 use midenc_hir::{Context, Immediate, Operation, Overflow, SourceSpan, Type, ValueRef};
 
 use super::{Operand, OperandStack};
-use crate::{
-    Event,
-    masm::{self as masm, Op},
-};
+use crate::masm::{self as masm, Op};
 
 /// This structure is used to emit the Miden Assembly ops corresponding to an IR instruction.
 ///
@@ -292,9 +289,7 @@ impl<'a> OpEmitter<'a> {
         let module = masm::LibraryPath::new(module_name).unwrap();
         let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
         let target = masm::InvocationTarget::Path(Span::new(span, qualified.into_inner()));
-        self.emit(masm::Instruction::EmitImm(Event::FrameStart.into()), span);
         self.emit(masm::Instruction::Exec(target), span);
-        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.into()), span);
     }
 
     /// Emit `op` to the current block
@@ -2487,9 +2482,7 @@ mod tests {
                 dup.1
                 push.4294967295
                 push.1
-                push.1093736776208885424 emit drop
                 exec.::miden::core::math::u64::lt
-                push.6229491882474008289 emit drop
                 assert.err="u64 value does not fit in felt"
                 swap.1
                 mul.4294967296
@@ -2819,10 +2812,8 @@ mod tests {
             &[Type::U128],
             |emitter| emitter.clz(SourceSpan::UNKNOWN),
             expect![[r#"
-            push.1093736776208885424 emit drop
-            exec.::miden::core::math::u128::clz
-            push.6229491882474008289 emit drop
-        "#]],
+                exec.::miden::core::math::u128::clz
+            "#]],
         );
     }
 
@@ -2833,10 +2824,8 @@ mod tests {
             &[Type::U128],
             |emitter| emitter.clo(SourceSpan::UNKNOWN),
             expect![[r#"
-            push.1093736776208885424 emit drop
-            exec.::miden::core::math::u128::clo
-            push.6229491882474008289 emit drop
-        "#]],
+                exec.::miden::core::math::u128::clo
+            "#]],
         );
     }
 
@@ -2847,10 +2836,8 @@ mod tests {
             &[Type::U128],
             |emitter| emitter.ctz(SourceSpan::UNKNOWN),
             expect![[r#"
-            push.1093736776208885424 emit drop
-            exec.::miden::core::math::u128::ctz
-            push.6229491882474008289 emit drop
-        "#]],
+                exec.::miden::core::math::u128::ctz
+            "#]],
         );
     }
 
@@ -2861,10 +2848,8 @@ mod tests {
             &[Type::U128],
             |emitter| emitter.cto(SourceSpan::UNKNOWN),
             expect![[r#"
-            push.1093736776208885424 emit drop
-            exec.::miden::core::math::u128::cto
-            push.6229491882474008289 emit drop
-        "#]],
+                exec.::miden::core::math::u128::cto
+            "#]],
         );
     }
 
@@ -2875,15 +2860,13 @@ mod tests {
             &[Type::U128],
             |emitter| emitter.ilog2(SourceSpan::UNKNOWN),
             expect![[r#"
-            push.1093736776208885424 emit drop
-            exec.::miden::core::math::u128::clz
-            push.6229491882474008289 emit drop
-            push.128
-            swap.1
-            sub
-            u32overflowing_sub.1
-            assertz.err="ilog2 is undefined for zero"
-        "#]],
+                exec.::miden::core::math::u128::clz
+                push.128
+                swap.1
+                sub
+                u32overflowing_sub.1
+                assertz.err="ilog2 is undefined for zero"
+            "#]],
         );
     }
 
@@ -3206,9 +3189,7 @@ mod tests {
                 dup.1
                 push.2147483647
                 push.4294967295
-                push.1093736776208885424 emit drop
                 exec.::miden::core::math::u64::lte
-                push.6229491882474008289 emit drop
                 assert.err="value does not fit in i64"
             "#]],
         );
@@ -3375,9 +3356,7 @@ mod tests {
             &[Type::U128, Type::U128],
             |emitter| emitter.add(Overflow::Wrapping, SourceSpan::UNKNOWN),
             expect![[r#"
-                push.1093736776208885424 emit drop
                 exec.::miden::core::math::u128::wrapping_add
-                push.6229491882474008289 emit drop
             "#]],
         );
     }
@@ -3389,9 +3368,7 @@ mod tests {
             &[Type::U128, Type::U128],
             |emitter| emitter.sub(Overflow::Wrapping, SourceSpan::UNKNOWN),
             expect![[r#"
-                push.1093736776208885424 emit drop
                 exec.::miden::core::math::u128::wrapping_sub
-                push.6229491882474008289 emit drop
             "#]],
         );
     }
@@ -3479,9 +3456,7 @@ mod tests {
             expect![[r#"
                 push.2
                 push.32
-                push.1093736776208885424 emit drop
                 exec.::intrinsics::mem::load_u16
-                push.6229491882474008289 emit drop
             "#]],
         );
     }

@@ -32,7 +32,7 @@ use midenc_dialect_hir::{
 use midenc_dialect_scf as scf;
 use midenc_hir::{
     AddressSpace, ArrayType, CallConv, CallOpInterface, FunctionType, Immediate, Op, PointerType,
-    Spanned, SymbolName, SymbolPath, SymbolTable, Type,
+    Spanned, Symbol, SymbolName, SymbolPath, SymbolTable, Type,
     diagnostics::{IntoDiagnostic, Report, Severity},
     dialects::builtin::{
         self, Function, UnrealizedConversionCast,
@@ -95,6 +95,21 @@ end
     };
 
     assert!(err.to_string().contains("missing a signature"));
+}
+
+#[test]
+fn preserves_package_private_procedure_visibility() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        "pub(package) proc helper(value: u32) -> u32\n    add.1\nend\npub proc invoke(value: u32) \
+         -> u32\n    exec.helper\nend",
+        "package_private",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    let function = find_function(output.module, "helper");
+    assert_eq!(function.borrow().visibility(), midenc_hir::Visibility::Internal);
+    Ok(())
 }
 
 #[test]

@@ -650,6 +650,7 @@ impl ModuleRegistry {
                         match p.visibility() {
                             ast::Visibility::Public => Visibility::Public,
                             ast::Visibility::Private => Visibility::Private,
+                            ast::Visibility::Internal => Visibility::Internal,
                         },
                         signature.clone(),
                     )?;
