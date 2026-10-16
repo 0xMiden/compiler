@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use midenc_frontend_wasm_metadata::namespace::CORE_TYPES_INTERFACE_ID;
 use midenc_hir_type::{EnumRef, EnumType, StructRef, StructType, Type};
-use midenc_package_interface::abi::{WasmScalar, flatten_type, is_word};
+use midenc_package_interface::abi::{flatten_type, is_word};
 
 use crate::naming;
 
@@ -208,13 +208,7 @@ impl TypeSet {
             // The layout is the SDK's own by construction, so the manifest type is counted as it
             // is rather than checked against the item's shape.
             let flat = flatten_type(ty).map_err(|ty| format!("unsupported type `{ty}`"))?;
-            let felts = flat
-                .iter()
-                .map(|flat| match flat.scalar {
-                    WasmScalar::I64 | WasmScalar::U64 => 2,
-                    _ => 1,
-                })
-                .sum();
+            let felts = flat.iter().map(|flat| flat.scalar.stack_elements()).sum();
             self.use_core(item)?;
             return Ok(Some(Mapped {
                 wit: item.to_owned(),
@@ -697,5 +691,71 @@ mod tests {
             );
         }
         assert!(set.locals.is_empty());
+    }
+
+    /// The field elements a WIT type of the SDK's core types flattens to.
+    fn wit_felts(resolve: &wit_parser::Resolve, ty: &wit_parser::Type) -> usize {
+        use wit_parser::{Type as Wit, TypeDefKind};
+        match ty {
+            Wit::U64 | Wit::S64 => 2,
+            Wit::Id(id) => match &resolve.types[*id].kind {
+                TypeDefKind::Record(record) => {
+                    record.fields.iter().map(|field| wit_felts(resolve, &field.ty)).sum()
+                }
+                TypeDefKind::Type(ty) => wit_felts(resolve, ty),
+                kind => panic!("unexpected core type kind {kind:?}"),
+            },
+            // `f32` is the backing type of `felt`.
+            _ => 1,
+        }
+    }
+
+    /// Every core item has the field names, field order and flattened size of its record in the
+    /// SDK's `miden.wit`.
+    #[test]
+    fn core_items_agree_with_the_sdk_core_types() {
+        let mut resolve = wit_parser::Resolve::new();
+        let package = resolve
+            .push_str("miden.wit", include_str!("../../base-macros/wit/miden.wit"))
+            .expect("the core types parse");
+        let interface = resolve.packages[package].interfaces["core-types"];
+        for item in CORE_ITEMS {
+            let id = resolve.interfaces[interface].types[item.name];
+            let wit_parser::TypeDefKind::Record(wit_record) = &resolve.types[id].kind else {
+                panic!("`{}` must be a record in miden.wit", item.name);
+            };
+            let felts = wit_felts(&resolve, &wit_parser::Type::Id(id));
+            assert_eq!(felts, item.felts, "flattened size of `{}`", item.name);
+
+            if item.name == "note-type" {
+                // A record over a `u8` that the table matches with a C-like `u8` enum.
+                let fields = wit_record
+                    .fields
+                    .iter()
+                    .map(|field| (field.name.as_str(), field.ty))
+                    .collect::<Vec<_>>();
+                assert_eq!(fields, [("inner", wit_parser::Type::U8)]);
+                continue;
+            }
+            // The table matches each field by its flattened layout, not by its own WIT type.
+            let fields = wit_record
+                .fields
+                .iter()
+                .map(|field| {
+                    let ty = match wit_felts(&resolve, &field.ty) {
+                        1 => Type::Felt,
+                        4 => word(),
+                        felts => panic!("unexpected {felts}-felt field in `{}`", item.name),
+                    };
+                    (field.name.replace('-', "_"), ty)
+                })
+                .collect::<Vec<_>>();
+            let fields =
+                fields.iter().map(|(name, ty)| (name.as_str(), ty.clone())).collect::<Vec<_>>();
+            let ty = record(item.name, &fields);
+            assert!((item.matches)(&ty), "`{}` must match its miden.wit record {ty}", item.name);
+            let flat = flatten_type(&ty).expect("the record flattens");
+            assert_eq!(flat.iter().map(|flat| flat.scalar.stack_elements()).sum::<usize>(), felts);
+        }
     }
 }

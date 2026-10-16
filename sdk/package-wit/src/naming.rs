@@ -314,6 +314,45 @@ mod tests {
         assert_eq!(ident("__").unwrap_err(), "`__` has no WIT name (derived ``)");
     }
 
+    /// `is_valid` accepts exactly the lower-case identifiers wit-parser's `validate_id` accepts,
+    /// `%`-escaped when they are keywords.
+    #[test]
+    fn identifiers_agree_with_wit_parser() {
+        for id in [
+            "a",
+            "receive-asset",
+            "slot-1",
+            "slot-1a",
+            "x-1-2",
+            "u256",
+            "a1-2b",
+            "asset",
+            "type",
+            "list",
+            "interface",
+            "",
+            "1",
+            "1-slot",
+            "a--b",
+            "-a",
+            "a-",
+            "Asset",
+            "ASSET",
+            "a-B",
+            "my-ABC",
+            "a_b",
+            "a.b",
+            "a b",
+            "é",
+        ] {
+            let grammar = wit_parser::validate_id(id).is_ok()
+                && !id.contains(|c: char| c.is_ascii_uppercase());
+            assert_eq!(is_valid(&format!("%{id}")), grammar, "`%{id}`");
+            let unescaped = escape(id.to_owned()) == id;
+            assert_eq!(is_valid(id), grammar && unescaped, "`{id}`");
+        }
+    }
+
     /// The package id drops a leading namespace segment from the package name.
     #[test]
     fn package_id_strips_the_namespace_head() {
