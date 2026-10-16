@@ -737,7 +737,6 @@ supported-types = ["RegularAccountUpdatableCode"]
 /// Synthesizes the sibling dependency `.masp` package into the project's `package-cache`.
 fn write_sibling_package(cargo_proj: &crate::cargo_proj::Project, wit: Option<&str>) {
     use miden_assembly::{Assembler, DefaultSourceManager, ModuleParser, ast::ModuleKind};
-    use miden_core::serde::Serializable;
 
     let source_manager = std::sync::Arc::new(DefaultSourceManager::default());
     let module = ModuleParser::new(Some(ModuleKind::Library))
@@ -758,10 +757,10 @@ fn write_sibling_package(cargo_proj: &crate::cargo_proj::Project, wit: Option<&s
             .push(miden_mast_package::Section::new(wit_section_id, wit.as_bytes().to_vec()));
     }
 
-    let package_dir = cargo_proj.root().join("package-cache");
-    std::fs::create_dir_all(&package_dir).expect("sibling package directory must be created");
-    std::fs::write(package_dir.join("test_sibling.masp"), package.to_bytes())
-        .expect("sibling package fixture must be written");
+    midenc_package_interface::testing::write_package(
+        &cargo_proj.root().join("package-cache/test_sibling.masp"),
+        &package,
+    );
 }
 
 #[test]

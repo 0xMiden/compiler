@@ -3,9 +3,12 @@
 
 use std::collections::BTreeSet;
 
-use midenc_frontend_wasm_metadata::namespace::CORE_TYPES_INTERFACE_ID;
+use midenc_frontend_wasm_metadata::{
+    core_types::{CoreLeaf, CoreRecord, core_record},
+    namespace::CORE_TYPES_INTERFACE_ID,
+};
 use midenc_hir_type::{EnumRef, EnumType, StructRef, StructType, Type};
-use midenc_package_interface::abi::{flatten_type, is_word};
+use midenc_package_interface::abi::{WasmScalar, flatten_type, is_word};
 
 use crate::naming;
 
@@ -56,28 +59,25 @@ struct CoreItem {
     name: &'static str,
     /// The shape check.
     matches: fn(&Type) -> bool,
-    /// The operand stack elements (and core Wasm values) the item flattens to.
-    felts: usize,
 }
 
 /// The core-types items a named manifest type can stand for.
 ///
-/// A name alone is not enough: the manifest type must have the same flattened layout as the item,
-/// because a WIT record lowers field by field in declaration order. The fields need not have the
-/// item's own field types: the core `asset` is `{ id: asset-id, value: word }` with
-/// `asset-id { inner: word }`, so it matches a manifest `{ id: word, value: word }`, and the core
-/// `note-type` is a record `{ inner: u8 }`, which matches a `u8` C-like enum. A manifest type with
-/// the right name but another layout becomes a local declaration instead.
+/// A name alone is not enough: the manifest type must flatten like the item, because a WIT record
+/// lowers field by field in declaration order. For a record item that is checked field by field
+/// (see [`fields_flatten_like`]), so the fields need not have the item's own field types: the core
+/// `asset` is `{ id: asset-id, value: word }` with `asset-id { inner: word }`, so it matches a
+/// manifest `{ id: word, value: word }`. The core `note-type` is a record `{ inner: u8 }`, which
+/// matches a `u8` C-like enum of its two cases. A manifest type with the right name but another
+/// shape becomes a local declaration instead.
 const CORE_ITEMS: &[CoreItem] = &[
     CoreItem {
         name: "asset",
-        matches: |ty| struct_shape(ty, &[("id", is_word), ("value", is_word)]),
-        felts: 8,
+        matches: |ty| fields_flatten_like(ty, sdk_record("asset")),
     },
     CoreItem {
         name: "account-id",
-        matches: |ty| struct_shape(ty, &[("suffix", Type::is_felt), ("prefix", Type::is_felt)]),
-        felts: 2,
+        matches: |ty| fields_flatten_like(ty, sdk_record("account-id")),
     },
     CoreItem {
         name: "note-type",
@@ -94,24 +94,40 @@ const CORE_ITEMS: &[CoreItem] = &[
             }
             _ => false,
         },
-        felts: 1,
     },
 ];
 
-/// A field of an expected struct shape: its name and a check of its type.
-type FieldShape = (&'static str, fn(&Type) -> bool);
+/// The core record `name`, which the SDK's core types declare.
+fn sdk_record(name: &str) -> &'static CoreRecord {
+    core_record(name).unwrap_or_else(|| panic!("`{name}` is a core record"))
+}
 
-/// Whether `ty` is a plain struct with exactly these fields, in this order.
-fn struct_shape(ty: &Type, fields: &[FieldShape]) -> bool {
+/// Whether `ty` is a plain struct with exactly the fields of `record`, by name and in order, each
+/// flattening to the same scalars as the record's field.
+fn fields_flatten_like(ty: &Type, record: &CoreRecord) -> bool {
     let Type::Struct(StructRef::Plain(st)) = ty else {
         return false;
     };
-    st.fields().len() == fields.len()
-        && st
-            .fields()
-            .iter()
-            .zip(fields)
-            .all(|(field, (name, check))| field.name.as_deref() == Some(*name) && check(&field.ty))
+    st.fields().len() == record.fields.len()
+        && st.fields().iter().zip(record.fields).all(|(field, (name, core))| {
+            field.name.as_deref() == Some(*name) && flattens_to(&field.ty, &core.leaves())
+        })
+}
+
+/// Whether `ty` flattens to exactly the scalars `leaves`.
+fn flattens_to(ty: &Type, leaves: &[CoreLeaf]) -> bool {
+    flatten_type(ty).is_ok_and(|flat| {
+        flat.len() == leaves.len()
+            && flat.iter().zip(leaves).all(|(flat, leaf)| {
+                matches!(
+                    (&flat.scalar, leaf),
+                    (WasmScalar::Felt, CoreLeaf::Felt)
+                        | (WasmScalar::U8, CoreLeaf::U8)
+                        | (WasmScalar::U16, CoreLeaf::U16)
+                        | (WasmScalar::U32, CoreLeaf::U32)
+                )
+            })
+    })
 }
 
 /// The manifest name of a named struct or enum, the hint a parameter is named after; for a type of
@@ -132,49 +148,21 @@ fn sdk_core_item(name: &str) -> Option<&str> {
     name.strip_prefix(CORE_TYPES_INTERFACE_ID)?.strip_prefix('/')
 }
 
-/// The types the SDK's `core-types` interface (`miden.wit` in the SDK macros) declares, which a
-/// manifest type named by its core-types id must be one of: each record's name and its field
-/// names in declaration order.
-const SDK_CORE_ITEMS: &[(&str, &[&str])] = &[
-    ("felt", &["inner"]),
-    ("word", &["a", "b", "c", "d"]),
-    ("digest", &["inner"]),
-    ("account-id", &["suffix", "prefix"]),
-    ("recipient", &["inner"]),
-    ("tag", &["inner"]),
-    ("asset-id", &["inner"]),
-    ("asset", &["id", "value"]),
-    ("asset-amount", &["inner"]),
-    ("nonce", &["inner"]),
-    ("block-number", &["inner"]),
-    ("account-hash", &["inner"]),
-    ("block-hash", &["inner"]),
-    ("storage-value", &["inner"]),
-    ("storage-root", &["inner"]),
-    ("account-code-root", &["inner"]),
-    ("vault-commitment", &["inner"]),
-    ("note-idx", &["inner"]),
-    ("note-type", &["inner"]),
-    ("note-execution-hint", &["inner"]),
-];
-
-/// Whether the manifest type `ty`, named by the core-types id of `fields`' record, has that
-/// record's layout: a struct with exactly those fields in that order, each field named by a
-/// core-types id having its own record's layout too. A package built by an SDK whose record had
-/// another field order (`account-id` was `{ prefix, suffix }`) fails it.
-fn has_sdk_layout(ty: &Type, fields: &[&str]) -> bool {
+/// Whether the manifest type `ty`, named by the core-types id of `record`, has that record's
+/// layout: a struct with exactly its fields in that order, each field named by a core-types id
+/// having its own record's layout too. A package built by an SDK whose record had another field
+/// order (`account-id` was `{ prefix, suffix }`) fails it.
+fn has_sdk_layout(ty: &Type, record: &CoreRecord) -> bool {
     let Type::Struct(StructRef::Plain(st)) = ty else {
         return false;
     };
-    st.fields().len() == fields.len()
-        && st.fields().iter().zip(fields).all(|(field, name)| {
-            field.name.as_deref() == Some(*name)
+    st.fields().len() == record.fields.len()
+        && st.fields().iter().zip(record.field_names()).all(|(field, name)| {
+            field.name.as_deref() == Some(name)
                 && match &field.ty {
                     Type::Struct(inner) => match inner.name().as_deref().and_then(sdk_core_item) {
-                        Some(item) => SDK_CORE_ITEMS
-                            .iter()
-                            .find(|(name, _)| *name == item)
-                            .is_some_and(|(_, fields)| has_sdk_layout(&field.ty, fields)),
+                        Some(item) => core_record(item)
+                            .is_some_and(|record| has_sdk_layout(&field.ty, record)),
                         None => true,
                     },
                     _ => true,
@@ -246,10 +234,11 @@ impl TypeSet {
             return Ok(None);
         };
         self.use_core(item.name)?;
+        let felts = sdk_record(item.name).leaves().len();
         Ok(Some(Mapped {
             wit: item.name.to_owned(),
-            values: item.felts,
-            felts: item.felts,
+            values: felts,
+            felts,
         }))
     }
 
@@ -260,13 +249,13 @@ impl TypeSet {
     /// another, which becomes a local declaration as a Miden-named type of another layout does.
     fn map_by_name(&mut self, ty: &Type, name: &str) -> Result<Option<Mapped>, String> {
         if let Some(item) = sdk_core_item(name) {
-            let Some((_, fields)) = SDK_CORE_ITEMS.iter().find(|(core, _)| *core == item) else {
+            let Some(record) = core_record(item) else {
                 return Err(format!(
                     "unsupported type `{name}`: `{item}` is not a type of the SDK's \
                      `{CORE_TYPES_INTERFACE_ID}`"
                 ));
             };
-            if !has_sdk_layout(ty, fields) {
+            if !has_sdk_layout(ty, record) {
                 return Ok(None);
             }
             let flat = flatten_type(ty).map_err(|ty| format!("unsupported type `{ty}`"))?;
@@ -755,47 +744,6 @@ mod tests {
         assert!(set.locals.is_empty());
     }
 
-    /// The field elements a WIT type of the SDK's core types flattens to.
-    fn wit_felts(resolve: &wit_parser::Resolve, ty: &wit_parser::Type) -> usize {
-        use wit_parser::{Type as Wit, TypeDefKind};
-        match ty {
-            Wit::U64 | Wit::S64 => 2,
-            Wit::Id(id) => match &resolve.types[*id].kind {
-                TypeDefKind::Record(record) => {
-                    record.fields.iter().map(|field| wit_felts(resolve, &field.ty)).sum()
-                }
-                TypeDefKind::Type(ty) => wit_felts(resolve, ty),
-                kind => panic!("unexpected core type kind {kind:?}"),
-            },
-            // `f32` is the backing type of `felt`.
-            _ => 1,
-        }
-    }
-
-    /// The core items and their field names, in order, are exactly the records of the
-    /// core-types interface in the SDK's `miden.wit`.
-    #[test]
-    fn core_item_names_are_the_sdk_core_types() {
-        let mut resolve = wit_parser::Resolve::new();
-        let package = resolve
-            .push_str("miden.wit", include_str!("../../base-macros/wit/miden.wit"))
-            .expect("the core types parse");
-        let interface = resolve.packages[package].interfaces["core-types"];
-        let wit: BTreeSet<(&str, Vec<&str>)> = resolve.interfaces[interface]
-            .types
-            .iter()
-            .map(|(name, id)| {
-                let wit_parser::TypeDefKind::Record(record) = &resolve.types[*id].kind else {
-                    panic!("`{name}` must be a record in miden.wit");
-                };
-                (name.as_str(), record.fields.iter().map(|field| field.name.as_str()).collect())
-            })
-            .collect();
-        let table: BTreeSet<(&str, Vec<&str>)> =
-            SDK_CORE_ITEMS.iter().map(|(name, fields)| (*name, fields.to_vec())).collect();
-        assert_eq!(table, wit);
-    }
-
     /// A type named by the core-types id of `account-id` but laid out `{ prefix, suffix }`, as an
     /// SDK with the prefix first built it, is a local record rather than the core item.
     #[test]
@@ -843,52 +791,31 @@ mod tests {
         assert!(set.core.is_empty() && set.locals.is_empty());
     }
 
-    /// Every core item has the field names, field order and flattened size of its record in the
-    /// SDK's `miden.wit`.
+    /// Every core item is a core record, and a record item matches the manifest struct that has
+    /// the record's field names and a `felt` or a `word` where the record flattens to one or four
+    /// field elements.
     #[test]
-    fn core_items_agree_with_the_sdk_core_types() {
-        let mut resolve = wit_parser::Resolve::new();
-        let package = resolve
-            .push_str("miden.wit", include_str!("../../base-macros/wit/miden.wit"))
-            .expect("the core types parse");
-        let interface = resolve.packages[package].interfaces["core-types"];
+    fn core_items_follow_the_core_records() {
         for item in CORE_ITEMS {
-            let id = resolve.interfaces[interface].types[item.name];
-            let wit_parser::TypeDefKind::Record(wit_record) = &resolve.types[id].kind else {
-                panic!("`{}` must be a record in miden.wit", item.name);
-            };
-            let felts = wit_felts(&resolve, &wit_parser::Type::Id(id));
-            assert_eq!(felts, item.felts, "flattened size of `{}`", item.name);
-
+            let core = sdk_record(item.name);
             if item.name == "note-type" {
-                // A record over a `u8` that the table matches with a C-like `u8` enum.
-                let fields = wit_record
-                    .fields
-                    .iter()
-                    .map(|field| (field.name.as_str(), field.ty))
-                    .collect::<Vec<_>>();
-                assert_eq!(fields, [("inner", wit_parser::Type::U8)]);
+                assert_eq!(core.leaves(), [CoreLeaf::U8]);
                 continue;
             }
-            // The table matches each field by its flattened layout, not by its own WIT type.
-            let fields = wit_record
+            let fields = core
                 .fields
                 .iter()
-                .map(|field| {
-                    let ty = match wit_felts(&resolve, &field.ty) {
+                .map(|(name, field)| {
+                    let ty = match field.leaves().len() {
                         1 => Type::Felt,
                         4 => word(),
                         felts => panic!("unexpected {felts}-felt field in `{}`", item.name),
                     };
-                    (field.name.replace('-', "_"), ty)
+                    (*name, ty)
                 })
                 .collect::<Vec<_>>();
-            let fields =
-                fields.iter().map(|(name, ty)| (name.as_str(), ty.clone())).collect::<Vec<_>>();
             let ty = record(item.name, &fields);
-            assert!((item.matches)(&ty), "`{}` must match its miden.wit record {ty}", item.name);
-            let flat = flatten_type(&ty).expect("the record flattens");
-            assert_eq!(flat.iter().map(|flat| flat.scalar.stack_elements()).sum::<usize>(), felts);
+            assert!((item.matches)(&ty), "`{}` must match {ty}", item.name);
         }
     }
 }

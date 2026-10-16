@@ -7,8 +7,8 @@ use std::{
 
 use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{
-    PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID, package_note_storage_schema_section_id,
-    trim_trailing_nuls,
+    PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID, core_types::core_record,
+    package_note_storage_schema_section_id, trim_trailing_nuls,
 };
 use wit_parser::{Resolve, Type, TypeDefKind, TypeId, TypeOwner};
 
@@ -442,7 +442,7 @@ fn validate_resolved_core_types(resolve: &Resolve) -> Result<()> {
 
     for leaf in StandardLeaf::ALL {
         let name = standard_leaf_name(leaf);
-        let fields = standard_leaf_fields(leaf);
+        let fields = &standard_leaf_fields(leaf);
         let Some(type_id) = interface.types.get(name).copied() else {
             continue;
         };
@@ -529,7 +529,7 @@ fn validate_model_type_shapes(ty: &SchemaType, seen: &mut HashSet<String>) -> Re
         Some(StandardLeaf::Felt) if !matches!(ty.kind(), SchemaTypeKind::Felt) => {
             return Err(core_shape_error(
                 standard_leaf_name(StandardLeaf::Felt),
-                standard_leaf_fields(StandardLeaf::Felt),
+                &standard_leaf_fields(StandardLeaf::Felt),
             ));
         }
         Some(StandardLeaf::Felt) => {}
@@ -537,7 +537,7 @@ fn validate_model_type_shapes(ty: &SchemaType, seen: &mut HashSet<String>) -> Re
             validate_model_record(
                 ty,
                 standard_leaf_name(leaf),
-                standard_leaf_fields(leaf),
+                &standard_leaf_fields(leaf),
                 crate::FELT_FQN,
             )?;
         }
@@ -569,13 +569,12 @@ fn standard_leaf_name(leaf: StandardLeaf) -> &'static str {
         .1
 }
 
-/// Returns the canonical record field order for a standard leaf.
-fn standard_leaf_fields(leaf: StandardLeaf) -> &'static [&'static str] {
-    match leaf {
-        StandardLeaf::Felt | StandardLeaf::AssetAmount => &["inner"],
-        StandardLeaf::Word => &["a", "b", "c", "d"],
-        StandardLeaf::AccountId => &["suffix", "prefix"],
-    }
+/// Returns the canonical record field order for a standard leaf: its SDK core record's.
+fn standard_leaf_fields(leaf: StandardLeaf) -> Vec<&'static str> {
+    core_record(standard_leaf_name(leaf))
+        .expect("every standard leaf is an SDK core record")
+        .field_names()
+        .collect()
 }
 
 /// Verifies one mapped record in the owned schema model.
@@ -1001,23 +1000,11 @@ pub(crate) fn normalize_name(name: &str) -> String {
 mod tests {
     use super::*;
 
-    /// Every standard leaf's field order is the one its record declares in the SDK's
-    /// `miden.wit`.
+    /// Every standard leaf is an SDK core record, which gives its field order.
     #[test]
-    fn standard_leaf_fields_follow_the_sdk_core_types() {
-        let mut resolve = Resolve::new();
-        let package = resolve
-            .push_str("miden.wit", include_str!("../../base-macros/wit/miden.wit"))
-            .expect("the core types parse");
-        let interface = resolve.packages[package].interfaces["core-types"];
+    fn standard_leaves_are_sdk_core_records() {
         for leaf in StandardLeaf::ALL {
-            let name = standard_leaf_name(leaf);
-            let id = resolve.interfaces[interface].types[name];
-            let TypeDefKind::Record(record) = &resolve.types[id].kind else {
-                panic!("`{name}` must be a record in miden.wit");
-            };
-            let fields: Vec<&str> = record.fields.iter().map(|field| field.name.as_str()).collect();
-            assert_eq!(fields, standard_leaf_fields(leaf), "fields of `{name}`");
+            assert!(!standard_leaf_fields(leaf).is_empty(), "fields of `{}`", leaf.fqn());
         }
     }
 }
