@@ -83,7 +83,7 @@ use self::{context::SolverContext, stack::Stack};
 /// It is also the window a `call`, `syscall` or `dyncall` hands to the callee and the callee hands
 /// back, so the emitter and MASM legalization bound cross-context arguments and results, and an
 /// indirect call's arguments together with the operands selecting the callee, by this constant.
-/// The Wasm frontend bounds the same window as `MAX_DIRECT_STACK_FELTS`.
+/// The frontends bound the same window by their call-site rules.
 pub(crate) const MASM_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
 
 /// This represents a specific action that should be taken by
