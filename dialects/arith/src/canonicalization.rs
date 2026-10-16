@@ -164,8 +164,7 @@ const MAX_WIDENING_DEPTH: usize = 4;
 /// is already an `i1`. Sign extension is deliberately not looked through (`true` widens to -1).
 fn widened_bool(value: ValueRef) -> Option<ValueRef> {
     let mut current = value;
-    // One more check than steps, so the value reached by the last step is still inspected.
-    for _ in 0..=MAX_WIDENING_DEPTH {
+    for _ in 0..MAX_WIDENING_DEPTH {
         if current.borrow().ty() == &Type::I1 {
             return Some(current);
         }
@@ -182,7 +181,8 @@ fn widened_bool(value: ValueRef) -> Option<ValueRef> {
         }
         current = operand;
     }
-    None
+    // The value reached by the last step is a candidate too.
+    (current.borrow().ty() == &Type::I1).then_some(current)
 }
 
 /// Returns the boolean a constant 0 or 1 integer `value` stands for, or `None` for anything else.
@@ -315,12 +315,12 @@ impl RewritePattern for SimplifyNotCompare {
         operation: OperationRef,
         rewriter: &mut dyn Rewriter,
     ) -> Result<bool, Report> {
-        let (span, operand) = {
+        let operand = {
             let op = operation.borrow();
             let Some(not) = op.downcast_ref::<Not>() else {
                 return Ok(false);
             };
-            (op.span(), not.operand().as_value_ref())
+            not.operand().as_value_ref()
         };
         if !has_single_use(operand) {
             return Ok(false);
@@ -328,12 +328,14 @@ impl RewritePattern for SimplifyNotCompare {
         let Some(compare) = operand.borrow().get_defining_op() else {
             return Ok(false);
         };
-        let (is_eq, lhs, rhs) = {
+        // The replacement executes where the comparison was, so it carries that span.
+        let (span, is_eq, lhs, rhs) = {
             let compare = compare.borrow();
+            let span = compare.span();
             if let Some(eq) = compare.downcast_ref::<Eq>() {
-                (true, eq.lhs().as_value_ref(), eq.rhs().as_value_ref())
+                (span, true, eq.lhs().as_value_ref(), eq.rhs().as_value_ref())
             } else if let Some(neq) = compare.downcast_ref::<Neq>() {
-                (false, neq.lhs().as_value_ref(), neq.rhs().as_value_ref())
+                (span, false, neq.lhs().as_value_ref(), neq.rhs().as_value_ref())
             } else {
                 return Ok(false);
             }
