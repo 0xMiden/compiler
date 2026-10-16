@@ -1945,6 +1945,31 @@ mod tests {
         }
     }
 
+    /// The call window of a `hir.call` or `hir.syscall` is its resolved callee's: a callee that
+    /// does not resolve is left to the lowering, which reports it, even when the call's own
+    /// signature would not fit the window.
+    #[test]
+    fn cross_context_calls_to_an_unresolved_callee_are_left_to_the_lowering() {
+        use midenc_hir::{SymbolName, SymbolTable};
+
+        for syscall in [false, true] {
+            let mut test = Test::named("unresolved_cross_context_call").in_module("m");
+            let signature = Signature::with_convention(
+                &test.context_rc(),
+                CallConv::ComponentModel,
+                vec![Type::U32; 17],
+                [],
+            );
+            test_with_cross_context_call(&mut test, signature, syscall);
+            test.module()
+                .borrow_mut()
+                .remove(SymbolName::intern("callee"))
+                .expect("the callee is defined");
+
+            test.apply_pass::<LegalizeForMasm>(false).unwrap();
+        }
+    }
+
     /// The emitter consumes one operand per parameter, so a signature declaring more parameters
     /// than the call passes would pop an empty operand stack. The op verifier rejects this too,
     /// but legalization runs with the verifier off in the pipeline's conversion driver.
