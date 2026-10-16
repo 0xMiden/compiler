@@ -1,0 +1,25 @@
+// RUN: midenc %s --emit=mast=- -o %t/out.masp 2>&1 | filecheck %s
+//
+// A declaration is a function without a body however it is spelled: with no region, with an
+// empty region and no parameters, or with an attribute dictionary. A component holding only such
+// declarations is an import stub, so the package is rooted at the module beside it, not at the
+// stub's namespace.
+
+builtin.world {
+    builtin.component private @dep::@stub {
+        builtin.function internal extern("C") @f() {
+        };
+        builtin.function internal extern("C") @g(%a: u32) -> u32 attributes { a = #builtin.u64<1> };
+        builtin.function internal extern("C") @h(%a: u32) -> u32;
+    };
+    builtin.module public @app {
+        builtin.function public extern("C") @entry() -> u32 {
+            %v = arith.constant 1 : u32;
+            builtin.ret %v : (u32);
+        };
+    };
+};
+
+// CHECK-NOT: ::dep
+// CHECK: # ::app::entry
+// CHECK-NOT: ::dep
