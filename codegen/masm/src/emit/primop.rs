@@ -633,6 +633,29 @@ impl OpEmitter<'_> {
         }
     }
 
+    /// Pad the `num_inputs` single-felt operands on top of the operand stack with zeros to the
+    /// full 16-element window `[inputs, zeros]`, as [`Self::pad_call_window`] does, and record the
+    /// zeros under the inputs on the emulated operand stack.
+    ///
+    /// For a window consumed as operands, such as the fixed-width input of the FPI executor,
+    /// rather than handed to a callee and discarded afterwards.
+    pub(crate) fn pad_operands_to_call_window(&mut self, num_inputs: usize, span: SourceSpan) {
+        self.pad_call_window(num_inputs, span);
+        let inputs = (0..num_inputs)
+            .map(|_| {
+                let input = self.stack.pop().expect("operand stack is empty");
+                assert_eq!(input.size(), 1, "a padded window input must be a single felt");
+                input
+            })
+            .collect::<smallvec::SmallVec<[_; MASM_STACK_WINDOW_FELTS]>>();
+        for _ in num_inputs..MASM_STACK_WINDOW_FELTS {
+            self.stack.push_immediate(Felt::ZERO);
+        }
+        for input in inputs.into_iter().rev() {
+            self.stack.push(input);
+        }
+    }
+
     /// Discard the padding a `call`/`syscall`/`dyncall` callee leaves under its
     /// `num_result_felts` result elements, turning the returned window `[results, pad]` into
     /// `[results]` on top of the caller values that were below the window.

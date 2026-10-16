@@ -300,7 +300,7 @@ fn user_masm_counter_is_read_through_fpi_by_a_rust_note() {
 
     let cycles = consume_note(&mut chain, &wallet, &note, &[counter.id()]);
     // Pinned at the cycles of the note's two foreign calls into the counter.
-    expect!["4290"].assert_eq(&cycles);
+    expect!["4276"].assert_eq(&cycles);
     assert_count(&chain, counter.id(), INITIAL_COUNT);
 }
 

@@ -16,25 +16,28 @@
 
 use midenc_dialect_hir as hir;
 use midenc_hir::{
-    CallConv, Felt, Immediate, Op, Type,
+    CallConv, Op, Type,
     dialects::builtin::attributes::{LocalVariable, Signature},
 };
 use midenc_session::diagnostics::{Report, Spanned};
 
 use super::lowering::{HirLowering, invocation_target_from_symbol_path};
-use crate::emitter::BlockEmitter;
+use crate::{emitter::BlockEmitter, opt::operands::MASM_STACK_WINDOW_FELTS};
+
+// The executor's input slots are padded as a call window is.
+const _: () = assert!(hir::ExecFpi::MAX_INPUT_FELTS == MASM_STACK_WINDOW_FELTS);
 
 impl HirLowering for hir::ExecFpi {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let span = self.span();
         let num_inputs = self.inputs().len();
-        let padding = hir::ExecFpi::MAX_INPUT_FELTS.checked_sub(num_inputs).ok_or_else(|| {
-            Report::msg(format!(
+        if num_inputs > hir::ExecFpi::MAX_INPUT_FELTS {
+            return Err(Report::msg(format!(
                 "`hir.exec_fpi` received {num_inputs} procedure input operands, but accepts at \
                  most {}",
                 hir::ExecFpi::MAX_INPUT_FELTS
-            ))
-        })?;
+            )));
+        }
         let prefix_locals = {
             let prefix_locals = self.get_prefix_locals();
             if prefix_locals.len() != hir::ExecFpi::PREFIX_FELTS {
@@ -53,16 +56,9 @@ impl HirLowering for hir::ExecFpi {
 
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
 
-        // Pad the scheduled procedure inputs with zeroes up to the fixed executor input width.
-        // Each zero is a trailing input slot, so it is moved below the real inputs.
-        for _ in 0..padding {
-            inst_emitter.literal(Immediate::Felt(Felt::ZERO), span);
-            match num_inputs {
-                0 => {}
-                1 => inst_emitter.swap(1, span),
-                n => inst_emitter.movdn(n as u8, span),
-            }
-        }
+        // Pad the scheduled procedure inputs with zeroes, the trailing input slots, up to the
+        // fixed executor input width, which is the width of a call window.
+        inst_emitter.pad_operands_to_call_window(num_inputs, span);
 
         // Load the executor prefix from the locals on top of the padded inputs. The locals hold
         // the prefix in executor operand order, so they are pushed in reverse to leave the first
@@ -99,23 +95,37 @@ mod tests {
     use super::*;
     use crate::{linker::LinkInfo, stack::OperandStack};
 
+    /// The inputs are padded with the call-window padding (whole words where the input count
+    /// allows it), and the six prefix locals are loaded on top before the executor is invoked.
     #[test]
     fn exec_fpi_pads_inputs_and_loads_prefix_locals() -> Result<(), Report> {
-        for (num_inputs, expected_padding) in [(0usize, 16usize), (1, 15), (10, 6), (15, 1)] {
+        // (inputs, `padw`, `push.0`, the instruction moving inputs and padding past each other)
+        for (num_inputs, padw, push_zero, shuffle) in [
+            (0usize, 4usize, 0usize, None),
+            (1, 3, 3, Some(("movup.15", 1))),
+            (4, 3, 0, Some(("movupw.3", 1))),
+            (8, 2, 0, Some(("swapdw", 1))),
+            (10, 0, 6, Some(("movdn.10", 6))),
+            (12, 1, 0, Some(("movdnw.3", 1))),
+            (15, 0, 1, Some(("movdn.15", 1))),
+        ] {
             let output = emit_exec_fpi(num_inputs)?.to_pretty_string();
 
-            // One `push.0` per padded input slot (the prefix local loads are direct
-            // `locaddr`/`mem_load` pairs and push nothing else).
+            // The prefix local loads are direct `locaddr`/`mem_load` pairs and push nothing else.
+            assert_eq!(
+                output.matches("padw").count(),
+                padw,
+                "unexpected padding words for {num_inputs} inputs:\n{output}"
+            );
             assert_eq!(
                 output.matches("push.0").count(),
-                expected_padding,
-                "unexpected padding for {num_inputs} inputs:\n{output}"
+                push_zero,
+                "unexpected padding felts for {num_inputs} inputs:\n{output}"
             );
-            if num_inputs >= 2 {
-                let shuffle = format!("movdn.{num_inputs}");
+            if let Some((shuffle, count)) = shuffle {
                 assert_eq!(
-                    output.matches(&shuffle).count(),
-                    expected_padding,
+                    output.matches(shuffle).count(),
+                    count,
                     "unexpected input padding shuffle for {num_inputs} inputs:\n{output}"
                 );
             }
@@ -136,15 +146,12 @@ mod tests {
                 output.contains("exec.::miden::protocol::tx::execute_foreign_procedure"),
                 "exec_fpi must invoke the protocol executor:\n{output}"
             );
-            assert!(
-                !output.contains("movup."),
-                "exec_fpi lowering must not shuffle operands past the padding:\n{output}"
-            );
         }
 
         Ok(())
     }
 
+    /// Sixteen inputs fill the executor's input slots, so nothing is padded or moved.
     #[test]
     fn exec_fpi_full_width_inputs_need_no_padding() -> Result<(), Report> {
         let output = emit_exec_fpi(16)?.to_pretty_string();
