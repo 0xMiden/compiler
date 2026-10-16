@@ -14,8 +14,8 @@ use miden_stdlib_sys::{
 
 use crate::{
     memory::{
-        self, BatchMemory, INPUT_FLAGS_STRIDE, MAX_NOTES_PER_BATCH, MAX_TRANSACTIONS_PER_BATCH,
-        NOTE_ENTRY_FELT_LEN, OUTPUT_FLAGS_STRIDE, TX_HEADER_FELT_LEN, TX_TUPLE_FELT_LEN,
+        self, BatchMemory, InputFlags, MAX_NOTES_PER_BATCH, MAX_TRANSACTIONS_PER_BATCH,
+        NOTE_ENTRY_FELT_LEN, OutputFlags, TX_HEADER_FELT_LEN, TX_TUPLE_FELT_LEN, TX_TUPLE_WORD_LEN,
     },
     note_tracker,
 };
@@ -77,13 +77,13 @@ fn load_note_list(key: Word) -> Vec<Felt> {
 /// no duplicate keys.
 #[inline(always)]
 fn assert_list_strictly_sorted(list: &[Felt]) {
-    let mut entries = list.chunks_exact(NOTE_ENTRY_FELT_LEN);
+    let mut entries = memory::note_entries(list).iter();
     let Some(mut previous) = entries.next() else {
         return;
     };
     for current in entries {
         assert!(
-            note_tracker::word_lt(memory::word_at(previous, 0), memory::word_at(current, 0)),
+            note_tracker::word_lt(memory::entry_key(previous), memory::entry_key(current)),
             "a batch note list is not strictly sorted by its key"
         );
         previous = current;
@@ -185,12 +185,12 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
     // buffer is kept as-is as the tuple region.
     let tx_tuples = adv_load_preimage(Felt::from((len_felts / 4) as u32), batch_id);
 
-    // Layer 2: for each transaction, pipe + verify its header into the flat header buffer.
+    // Layer 2: for each transaction, pipe + verify its header, keeping each header as piped.
     // ---------------------------------------------------------------------------------------------
 
-    let mut tx_headers: Vec<Felt> = Vec::with_capacity(num_transactions * TX_HEADER_FELT_LEN);
+    let mut tx_headers: Vec<Vec<Felt>> = Vec::with_capacity(num_transactions);
     for tx_index in 0..num_transactions {
-        let tx_id = memory::load_word(&tx_tuples, tx_index * TX_TUPLE_FELT_LEN);
+        let tx_id = memory::to_word(memory::nth_word(&tx_tuples, tx_index * TX_TUPLE_WORD_LEN));
         let len_felts = adv_push_mapvaln(tx_id).as_canonical_u64() as usize;
         // Headers occupy fixed 16-felt slots in the MASM kernel.
         assert!(
@@ -199,8 +199,7 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
         );
 
         // Pipe the header into memory, asserting its sequential hash equals TX_ID.
-        let header_data = adv_load_preimage(Felt::from((TX_HEADER_FELT_LEN / 4) as u32), tx_id);
-        tx_headers.extend_from_slice(&header_data);
+        tx_headers.push(adv_load_preimage(Felt::from((TX_HEADER_FELT_LEN / 4) as u32), tx_id));
     }
 
     // Note lists: load the sorted note lists and assert each is strictly sorted by its key.
@@ -208,14 +207,12 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
 
     let input_notes = prepare_input_note_list();
     let output_notes = prepare_output_note_list();
-    // One shared buffer for both parallel flag arrays: the input-note flags
-    // (`[erasure = 0, consumed = 0]` per entry) followed by the output-note flags
-    // (`[will_be_erased = 0, is_created = 0, linked_input_index = 0]` per entry).
-    let output_flags_base = (input_notes.len() / NOTE_ENTRY_FELT_LEN) * INPUT_FLAGS_STRIDE;
-    let note_flags = alloc::vec![
-        felt!(0);
-        output_flags_base + (output_notes.len() / NOTE_ENTRY_FELT_LEN) * OUTPUT_FLAGS_STRIDE
-    ];
+    // The parallel flag arrays, all flags cleared: `[erasure, consumed]` per input entry and
+    // `[will_be_erased, is_created, linked_input_index]` per output entry.
+    let input_flags: Vec<InputFlags> =
+        alloc::vec![[felt!(0); 2]; input_notes.len() / NOTE_ENTRY_FELT_LEN];
+    let output_flags: Vec<OutputFlags> =
+        alloc::vec![[felt!(0); 3]; output_notes.len() / NOTE_ENTRY_FELT_LEN];
 
     // Expirations: accumulate the running minimum of the transactions' expiration block numbers.
     // ---------------------------------------------------------------------------------------------
@@ -227,8 +224,8 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
         tx_headers,
         input_notes,
         output_notes,
-        note_flags,
-        output_flags_base,
+        input_flags,
+        output_flags,
         batch_expiration_block_num,
     }
 }
