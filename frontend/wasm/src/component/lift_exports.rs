@@ -83,6 +83,7 @@ pub fn generate_export_lifting_function(
     reject_params_past_call_window(
         &format!("component export `{export_func_name}`"),
         &flattened_params,
+        None,
     )?;
 
     let transformation = classify_function_type(&context, &export_func_ty.ir).map_err(|e| {

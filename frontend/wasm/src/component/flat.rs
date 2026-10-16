@@ -215,22 +215,36 @@ pub(crate) fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
 /// [`MAX_DIRECT_STACK_FELTS`]-element operand stack window a cross-context call passes them in.
 ///
 /// `function` describes the export or import in the diagnostic, e.g. "component export `foo`",
-/// and `flat_params` are its parameters flattened without the tuple collapse. Passing the
-/// arguments indirectly (through the advice provider) is not supported, so a wider argument list
-/// is a user error.
+/// and `flat_params` are its parameters flattened without the tuple collapse. `result_pointer` is
+/// the result out-pointer an import's lowering function takes after them, if it has one: the
+/// pointer never crosses contexts, but it shares the window of the call into the lowering
+/// function. Passing the arguments indirectly (through the advice provider) is not supported, so
+/// a wider argument list is a user error.
 pub(crate) fn reject_params_past_call_window(
     function: &str,
     flat_params: &[AbiParam],
+    result_pointer: Option<&AbiParam>,
 ) -> WasmResult<()> {
     let param_felts = AbiParam::felts_of(flat_params);
-    if param_felts <= MAX_DIRECT_STACK_FELTS {
+    let pointer_felts = result_pointer.map_or(0, |pointer| pointer.ty.size_in_felts());
+    if param_felts + pointer_felts <= MAX_DIRECT_STACK_FELTS {
         return Ok(());
     }
-    Err(Report::msg(format!(
-        "{function} takes {param_felts} argument felts after expanding 64-bit values, but a \
-         cross-context call passes at most {MAX_DIRECT_STACK_FELTS} on the operand stack; split \
-         the arguments across several functions or pass less data"
-    )))
+    let message = if result_pointer.is_some() {
+        format!(
+            "{function} takes {param_felts} argument felts after expanding 64-bit values plus the \
+             result pointer, but the call into its lowering function passes at most \
+             {MAX_DIRECT_STACK_FELTS} on the operand stack; split the arguments across several \
+             functions or pass less data"
+        )
+    } else {
+        format!(
+            "{function} takes {param_felts} argument felts after expanding 64-bit values, but a \
+             cross-context call passes at most {MAX_DIRECT_STACK_FELTS} on the operand stack; \
+             split the arguments across several functions or pass less data"
+        )
+    };
+    Err(Report::msg(message))
 }
 
 /// Rejects a cross-context component function whose flattened results do not fit the

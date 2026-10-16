@@ -148,25 +148,25 @@ pub fn generate_import_lowering_function(
         // on `import_lowered_sig`, where canonical flattening has already collapsed an argument
         // list past the window into a tuple pointer the user never wrote.
         if call_kind == ImportCallKind::Call {
-            let mut window_params =
-                flatten_types(&context, &budgeted_ty.params).wrap_err_with(|| {
-                    format!(
-                        "failed to flatten parameter types for import function \
-                         '{import_func_path}'"
-                    )
-                })?;
-            if flat_results.len() > MAX_FLAT_RESULTS {
-                // The result out-pointer import flattening appends after the arguments
-                window_params.extend(import_lowered_sig.params().last().cloned());
-            }
+            let flat_params = flatten_types(&context, &budgeted_ty.params).wrap_err_with(|| {
+                format!(
+                    "failed to flatten parameter types for import function '{import_func_path}'"
+                )
+            })?;
+            // The result out-pointer import flattening appends after the arguments
+            let result_pointer = if flat_results.len() > MAX_FLAT_RESULTS {
+                import_lowered_sig.params().last()
+            } else {
+                None
+            };
             reject_params_past_call_window(
                 &format!("component import `{import_func_path}`"),
-                &window_params,
+                &flat_params,
+                result_pointer,
             )?;
         }
-        // Import flattening appends a result out-pointer after tuple classification, so the
-        // final flattened parameter list can exceed the budget even when classification
-        // reported no parameter tuple.
+        // A backstop: the window checks above already reject every argument list that canonical
+        // flattening collapses into a tuple, result out-pointer included.
         if transformation.has_param_tuple() || flat_params_need_tuple(import_lowered_sig.params()) {
             return reject_tuple_parameter_import_lowering(import_func_path);
         }
@@ -244,7 +244,7 @@ pub fn generate_import_lowering_function(
             span,
         ),
         CanonicalAbiIndirection::In | CanonicalAbiIndirection::InOut => {
-            unreachable!("tuple-parameter import lowering was rejected earlier")
+            unreachable!("an argument list collapsed into a tuple is rejected above")
         }
     }
 }
@@ -2025,8 +2025,8 @@ mod tests {
         }
     }
 
-    /// The result out-pointer import flattening appends counts against the call window: 16
-    /// arguments plus the pointer are 17 felts.
+    /// The result out-pointer import flattening appends never crosses contexts, but it shares the
+    /// window of the call into the lowering function: 16 argument felts leave it no room.
     #[test]
     fn rejects_import_lowering_when_result_out_pointer_exceeds_param_budget() {
         let (_context, mut world_builder, mut module_builder) = world_with_core_module();
@@ -2058,12 +2058,93 @@ mod tests {
                 assert!(
                     err.to_string().contains(
                         "component import `::\"miden:test@1.0.0\"::too_many_params_with_result` \
-                         takes 17 argument felts"
+                         takes 16 argument felts after expanding 64-bit values plus the result \
+                         pointer"
                     ),
                     "unexpected diagnostic: {err}"
                 );
             }
         }
+    }
+
+    /// A direct component import taking `num_u64` `u64` values and `extra_felts` felts, returning
+    /// `result` if given, and the core signature its lowering function is called with.
+    fn wide_direct_import(
+        num_u64: usize,
+        extra_felts: usize,
+        result: Option<Type>,
+    ) -> (ComponentFunctionType, Signature) {
+        let returned_by_pointer = result.is_some();
+        let mut ir = FunctionType::new(
+            CallConv::Fast,
+            (0..num_u64)
+                .map(|_| Type::U64)
+                .chain((0..extra_felts).map(|_| Type::Felt))
+                .collect::<Vec<_>>(),
+            result.into_iter().collect::<Vec<_>>(),
+        );
+        ir.abi = CallConv::ComponentModel;
+        let core_func_sig = Signature {
+            // Core Wasm spells the `u64` arguments as `i64`
+            params: (0..num_u64)
+                .map(|_| AbiParam::new(Type::I64))
+                .chain((0..extra_felts).map(|_| AbiParam::new(Type::Felt)))
+                .chain(returned_by_pointer.then(|| AbiParam::new(Type::I32)))
+                .collect(),
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+        (ComponentFunctionType { ir }, core_func_sig)
+    }
+
+    /// Lower the direct import `function` with `import_func_ty` and `core_func_sig`.
+    fn lower_direct_import(
+        function: &str,
+        (import_func_ty, core_func_sig): (ComponentFunctionType, Signature),
+    ) -> WasmResult<()> {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+        generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path(function),
+            &import_func_ty,
+            core_function_path(function),
+            SymbolName::intern("stub"),
+            core_func_sig,
+        )
+        .map(|_| ())
+    }
+
+    /// Eight `u64` values are 16 argument felts, which exactly fill the call window.
+    #[test]
+    fn direct_import_accepts_sixteen_argument_felts() {
+        lower_direct_import("direct_wide", wide_direct_import(8, 0, None))
+            .expect("a 16-felt argument list should be accepted");
+    }
+
+    /// Seven `u64` values and one felt are 15 argument felts, which with the result pointer
+    /// exactly fill the window of the call into the lowering function.
+    #[test]
+    fn direct_import_returning_through_a_pointer_accepts_fifteen_argument_felts() {
+        lower_direct_import(
+            "direct_wide_result",
+            wide_direct_import(7, 1, Some(two_field_record_type())),
+        )
+        .expect("a 15-felt argument list with a returned pointer should be accepted");
+    }
+
+    /// Nine `u64` values are nine flat values but 18 argument felts: the window counts felts.
+    #[test]
+    fn direct_import_is_bounded_by_argument_felts_not_values() {
+        let err = lower_direct_import("direct_nine_u64", wide_direct_import(9, 0, None))
+            .expect_err("an 18-felt argument list should be rejected");
+        assert!(
+            err.to_string().contains(
+                "component import `::\"miden:test@1.0.0\"::direct_nine_u64` takes 18 argument \
+                 felts after expanding 64-bit values, but a cross-context call passes at most 16"
+            ),
+            "unexpected diagnostic: {err}"
+        );
     }
 
     #[test]
