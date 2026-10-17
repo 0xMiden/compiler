@@ -371,6 +371,23 @@ fn lower_component(context: &Rc<Context>, text: &str) -> Result<MasmComponent, R
     component.borrow().to_masm_component(analysis_manager)
 }
 
+#[test]
+fn internal_hir_functions_remain_package_private_in_masm() {
+    let context = Rc::new(Context::default());
+    let lowered = legalize_and_lower_world(
+        &context,
+        COMPONENT_LESS_WORLD_WITH_EFFECTIVELY_PUBLIC_NESTED_MODULES,
+    )
+    .unwrap();
+    let function = lowered
+        .modules
+        .iter()
+        .flat_map(|module| module.procedures())
+        .find(|procedure| procedure.name().as_str() == "callee")
+        .unwrap();
+    assert_eq!(function.visibility(), masm::Visibility::Internal);
+}
+
 /// Lower a component through the MASM legalization boundary used by the compiler pipeline.
 fn legalize_and_lower_component(
     context: &Rc<Context>,
@@ -2418,7 +2435,7 @@ fn synthetic_wrapper_procedure_roots_use_effective_module_visibility() {
 
     let exports = assembled_library_exports(&context, &lowered, "hir_ns::test");
     assert!(exports.iter().any(|export| export.ends_with("root")), "exports: {exports:?}");
-    assert!(exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
+    assert!(!exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
 }
 
 const COMPONENT_LESS_WORLD_WITH_COALESCED_PRIVATE_PROCEDURE_ROOT: &str = r#"
@@ -2474,7 +2491,7 @@ fn component_less_world_procedure_roots_use_effective_module_visibility() {
     .expect("component-less world modules form the public artifact interface");
     let exports = assembled_library_exports(&context, &lowered, "only");
     assert!(exports.iter().any(|export| export.ends_with("root")), "exports: {exports:?}");
-    assert!(exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
+    assert!(!exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
 }
 
 const COMPONENT_WITH_DEEP_CALLER_AND_PRIVATE_SIBLING_CALLEE_MODULE: &str = r#"

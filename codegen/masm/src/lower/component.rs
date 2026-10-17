@@ -1669,8 +1669,7 @@ impl MasmFunctionBuilder {
         )));
         let visibility = match function.visibility() {
             Visibility::Public => masm::Visibility::Public,
-            // TODO(pauls): Support internal visibility in MASM
-            Visibility::Internal => masm::Visibility::Public,
+            Visibility::Internal => masm::Visibility::Internal,
             Visibility::Private => masm::Visibility::Private,
         };
         let locals_required = function.locals().iter().map(|ty| ty.size_in_felts()).sum::<usize>();

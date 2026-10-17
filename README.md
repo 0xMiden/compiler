@@ -61,6 +61,22 @@ To run the compiler test suite:
 This runs the Rust tests, including integration and template tests. To include the `lit`/FileCheck
 suite, run `cargo make test-all`.
 
+## VM 0.36 integration
+
+The compiler VM dependencies are pinned to upstream main, including debug-info v4 and the
+inline-frame resolver fixes. The direct compiler tools can build against this revision.
+The published debugger 0.18 and protocol 0.17 still depend on VM 0.35: full SDK, network-test,
+and benchmark validation must wait for matching dependency migrations rather than mixing
+their Rust types with VM 0.36.
+
+For local codegen tests, use the companion debugger worktree with a temporary Cargo override:
+
+```bash
+cargo --config 'patch.crates-io.miden-debug.path="../miden-debug-vm036-frames"' test -p midenc-codegen-masm --lib
+```
+
+Set `MIDEN_SYSROOT` to a VM-0.36-compatible sysroot when running tests that link core packages.
+
 ## Debugging
 
 The debugger is called [`miden-debug`](https://github.com/0xMiden/miden-debug), see more information on how to debug compiled programs there.
