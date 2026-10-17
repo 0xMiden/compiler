@@ -579,10 +579,12 @@ Call effects are selected from explicit ABI descriptors carrying both the target
 | `exec` / `dynexec` | Same-context ABI consumes declared arguments and produces declared results while preserving the entire suffix immediately below the arguments, including its addressable and overflow lanes, under the floor-padding rule |
 | `exec_indirect` | Bounds/type/convention checks and index-to-address conversion precede `dynexec`; the address is consumed before callee argument use |
 | `call` / `dyncall` | Caller-save ABI: all sixteen exposed lanes are clobbered except declared results on return; only the caller's overflow below that window is preserved/restored by the VM |
-| `syscall` | Enforce its explicit root-memory-context and sixteen-lane stack-context contract; do not infer same-context `exec` behavior or an ordinary fresh-memory-context contract |
+| `syscall` | Use the same caller-save sixteen-lane stack policy as `call`/`dyncall`, including zero-padding, nonresult clobbering, preserved caller overflow and result cleanup; retain its distinct kernel-target and root-memory semantics |
 | FPI executor | Same-context `exec` with twenty-two inputs and sixteen outputs; six prefix lanes precede the fixed sixteen-lane payload |
 
 #### Caller-save context calls
+
+The stack policy in this section applies to `call`, `dyncall`, and `syscall`. A syscall has a separate ABI descriptor: its target must be a kernel procedure and it executes in the root memory context. Sharing the caller-save stack policy does not give it ordinary call fresh-memory semantics or same-context `exec` suffix preservation.
 
 For `a` argument lanes and `r` result lanes, each at most sixteen, prepare and check this layout in top-first notation:
 
@@ -971,7 +973,7 @@ Call ABI and generated-procedure acceptance requires:
 
 | Case | Required behavior |
 | --- | --- |
-| `call`/`dyncall` with zero through sixteen argument lanes and unrelated caller values initially addressable | Expose only the declared arguments and explicit zeros in the sixteen-lane window; preserve retained caller values below it or in spill slots |
+| `call`/`dyncall`/`syscall` with zero through sixteen argument lanes and unrelated caller values initially addressable | Expose only the declared arguments and explicit zeros in the sixteen-lane window; preserve retained caller values below it or in spill slots |
 | Context callee overwrites every nonresult exposed lane, including input padding | Preserve caller live values solely through valid storage or VM-restored overflow; never rely on returned padding or argument copies |
 | Context call returns zero through sixteen result lanes | Publish only signature results, legally discard all other returned window lanes, and preserve the restored suffix |
 | Same-context callee has fewer than sixteen arguments and an unknown nonzero suffix | Preserve every suffix lane, including those initially addressable; draining owned values must stop at the suffix |
