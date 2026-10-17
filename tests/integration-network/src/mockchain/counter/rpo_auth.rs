@@ -70,8 +70,8 @@ pub fn counter_rpo_auth_rejects_unauthenticated_note_creation() {
         .unwrap();
     let executed_tx =
         block_on(mock_tx.execute()).expect("authorized client should be able to create a note");
-    // 75116 before the SDK's bindings were generated, 75113 after `miden-stdlib-sys` was (Tasks 6
-    // and 6b of the generator plan; this suite was not re-run then). 3 cycles fewer since
+    // 75116 before generated SDK bindings, 75113 after generating `miden-stdlib-sys` bindings
+    // (the suite was not re-run at that intermediate revision). 3 cycles fewer since
     // `miden-base-sys` calls the protocol through its generated bindings:
     // `tx::get_expiration_block_delta` returns the manifest's `u16`, which needs no conversion
     // from a felt, and `tx::get_reference_block_number` its `u32`. 125 cycles fewer (75110

@@ -1,0 +1,109 @@
+//! Allocator action streams and the proposed physical implementation of a selected procedure.
+use alloc::{collections::BTreeMap, vec::Vec};
+use core::fmt;
+
+use miden_core::Felt;
+
+use super::*;
+use crate::lower::units::LoweringBindings;
+
+/// Allocator decisions replayed against expanded instructions. Stack depths are zero-based;
+/// slot references stay symbolic until final frame assignment. `RunLowering` executes a selected
+/// unit using its declared input and storage bindings.
+///
+/// `StoreLane` pops the top lane into a slot, replacing its previous contents. `LoadLane`
+/// pushes a copy of an initialized slot without consuming it. `DebugLocation` marks a
+/// nonsemantic source-location anchor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PlanAction {
+    Dup { depth: u8 },
+    Swap { depth: u8 },
+    MoveUp { depth: u8 },
+    MoveDown { depth: u8 },
+    Drop,
+    PushLiteral(Felt),
+    StoreLane(SpillSlotId),
+    LoadLane(SpillSlotId),
+    RunLowering { step: SelectedStepId },
+    DebugLocation(DebugLocationId),
+}
+
+impl fmt::Display for PlanAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Dup { depth } => write!(f, "dup {depth}"),
+            Self::Swap { depth } => write!(f, "swap {depth}"),
+            Self::MoveUp { depth } => write!(f, "movup {depth}"),
+            Self::MoveDown { depth } => write!(f, "movdn {depth}"),
+            Self::Drop => f.write_str("drop"),
+            Self::PushLiteral(value) => write!(f, "push {value}"),
+            Self::StoreLane(slot) => write!(f, "store {slot}"),
+            Self::LoadLane(slot) => write!(f, "load {slot}"),
+            Self::RunLowering { step } => write!(f, "run s{}", step.0),
+            Self::DebugLocation(id) => write!(f, "debug d{}", id.0),
+        }
+    }
+}
+#[derive(Debug, Clone)]
+pub(crate) struct ProcedurePlan {
+    pub selected: SelectedProgram,
+    /// Entry hypotheses that every actual incoming edge must establish.
+    pub contracts: BTreeMap<SegmentId, EntryContract>,
+    /// Ordered actions for each straight-line selected segment.
+    pub segment_actions: BTreeMap<SegmentId, Vec<PlanAction>>,
+    /// Physical transfers executed before simultaneous semantic parameter renaming.
+    pub edge_actions: BTreeMap<EdgeId, Vec<PlanAction>>,
+    /// Complete symbolic slot domain to be assigned by the final frame layout.
+    pub spill_slots: Vec<SpillSlotId>,
+    /// Storage choices supplied to expansion for each selected unit.
+    pub lowering_bindings: BTreeMap<SelectedStepId, LoweringBindings>,
+}
+
+impl fmt::Display for ProcedurePlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "procedure {:?}", self.selected.abi)?;
+        for segment in &self.selected.segments {
+            writeln!(f, "segment b{}", segment.id.0)?;
+            if let Some(contract) = self.contracts.get(&segment.id) {
+                write!(f, "  entry [")?;
+                for (i, atom) in contract.stack_top_first.iter().enumerate() {
+                    if i != 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{atom}")?;
+                }
+                writeln!(f, "] {:?}", contract.tail)?;
+                for (slot, atom) in &contract.required_spill_slots {
+                    writeln!(f, "  require {slot}={atom}")?;
+                }
+            }
+            for unit in &segment.units {
+                writeln!(f, "  unit s{} kind={} source={}", unit.id.0, unit.kind.0, unit.source.0)?;
+                if let Some(source) = self.selected.source_map.get(&unit.source) {
+                    writeln!(
+                        f,
+                        "    origin {:?} inline={:?}",
+                        source.location.span, source.location.inline_chain
+                    )?;
+                }
+                writeln!(
+                    f,
+                    "    stack={:?} stored={:?} outputs={:?}",
+                    unit.stack_inputs, unit.stored_inputs, unit.outputs
+                )?;
+            }
+            if let Some(actions) = self.segment_actions.get(&segment.id) {
+                for action in actions {
+                    writeln!(f, "  {action}")?;
+                }
+            }
+        }
+        for (edge, actions) in &self.edge_actions {
+            writeln!(f, "edge e{}", edge.0)?;
+            for action in actions {
+                writeln!(f, "  {action}")?;
+            }
+        }
+        Ok(())
+    }
+}

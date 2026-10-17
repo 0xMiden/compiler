@@ -14,6 +14,10 @@ mod legalization;
 mod linker;
 mod lower;
 mod opt;
+// The component emitter does not yet consume physical plans; direct pipeline tests do.
+// Remove this allowance when that production entry point is switched over.
+#[allow(dead_code)]
+mod plan;
 mod stack;
 
 pub mod masm {

@@ -142,8 +142,8 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         &mut note_rng,
     );
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    // 6439 before the SDK's bindings were generated, 6441 after `miden-stdlib-sys` was (Tasks 6
-    // and 6b of the generator plan; this suite was not re-run then). 189 cycles more when
+    // 6439 before generated SDK bindings, 6441 after generating `miden-stdlib-sys` bindings
+    // (the suite was not re-run at that intermediate revision). 189 cycles more when
     // `miden-base-sys` began calling the protocol through its generated bindings, which take the
     // manifest's integer types, and 2 more (6630 before) since `mem::pipe_preimage_to_memory`,
     // which the tx script reaches through `adv_load_preimage`, resolves from the core manifest
