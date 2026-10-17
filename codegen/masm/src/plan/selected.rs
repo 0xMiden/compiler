@@ -1,3 +1,4 @@
+//! Semantic lowering graph and control structure supplied to allocation after source checking.
 use alloc::{collections::BTreeMap, vec::Vec};
 
 use miden_core::Felt;
@@ -5,7 +6,8 @@ use midenc_hir::{OperationRef, ValueRef};
 
 use super::*;
 
-#[derive(Debug, Clone)]
+/// Source identity used to reconstruct the entire selected procedure independently of allocation.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProcedureOrigin {
     Hir(OperationRef),
     Generated {
@@ -13,7 +15,8 @@ pub(crate) enum ProcedureOrigin {
         parameters: Vec<Felt>,
     },
 }
-#[derive(Debug, Clone)]
+/// Origin of one semantic stage, retaining either its HIR operation or generated definition stage.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SourceOrigin {
     Hir(OperationRef),
     Generated {
@@ -21,25 +24,32 @@ pub(crate) enum SourceOrigin {
         stage: u32,
     },
 }
-#[derive(Debug, Clone)]
+/// Semantic provenance and diagnostic location for a selected source step.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SourceRecord {
     pub origin: SourceOrigin,
     pub location: SourceLocation,
 }
-#[derive(Debug, Clone)]
+/// Definition site of a semantic value, including generated intermediates and segment parameters.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ValueOrigin {
     Hir(ValueRef),
     Temporary { step: SourceStepId, index: u32 },
     Parameter { segment: SegmentId, index: u32 },
 }
-#[derive(Debug, Clone)]
+/// Semantic value and its raw lane layout. Optional reconstruction is a source claim that
+/// replay must prove at publication to validate the allocator's use of that recipe.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SelectedValue {
     pub id: ValueId,
     pub origin: ValueOrigin,
     pub layout: ValueLayout,
+    /// Recoverable identity, distinct from the value's current physical availability.
     pub reconstruction: Option<Reconstruction>,
 }
-#[derive(Debug, Clone)]
+/// Pure, lane-ordered recipe for recovering a value without preserving a physical copy.
+/// Alias dependencies must be acyclic and precede the value definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Reconstruction {
     /// Literal lanes in the value layout's stack order.
     Literal(Vec<Felt>),
@@ -59,25 +69,59 @@ pub(crate) struct StoredInput {
     pub id: StoredInputId,
     pub value: StoredValue,
 }
+/// Source-memory permissions for an entire unit; individual instructions retain exact effects.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct SourceMemoryEffects {
+    pub read: bool,
+    pub write: bool,
+}
+impl SourceMemoryEffects {
+    pub const READ: Self = Self {
+        read: true,
+        write: false,
+    };
+    pub const READ_WRITE: Self = Self {
+        read: true,
+        write: true,
+    };
+    pub const WRITE: Self = Self {
+        read: false,
+        write: true,
+    };
+
+    /// Check the requested access direction; this does not authorize compiler-frame accesses.
+    pub fn permits(self, write: bool) -> bool {
+        if write { self.write } else { self.read }
+    }
+}
+
+/// Source-authorized effects of one unit. Replay checks actual instructions against these
+/// permissions; a default unit has no source-memory effects, cannot trap, and returns normally.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LoweringEffects {
-    pub memory: MemoryEffect,
+    pub memory: SourceMemoryEffects,
     pub may_trap: bool,
     /// Whether the unit has a normal continuation on which its outputs must be published.
     pub normal_return: bool,
+    /// Optional invocation summary, checked against every registered call site's ABI effect.
+    /// Target, arguments, and results remain source obligations in `UnitEvidence::calls`;
+    /// this summary grants no authority for them. A replayed invocation requires `Some`.
     pub call: Option<CallEffect>,
 }
 impl Default for LoweringEffects {
     fn default() -> Self {
         Self {
-            memory: MemoryEffect::None,
+            memory: SourceMemoryEffects::default(),
             may_trap: false,
             normal_return: true,
             call: None,
         }
     }
 }
-#[derive(Debug, Clone)]
+/// One allocation boundary whose internal instruction sequence is owned by a lowering definition.
+/// Allocation arranges the declared stack prefix and stored inputs, then preserves all other
+/// live values across the unit. Source checking seals the semantic contract before allocation.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SelectedLowering {
     pub id: SelectedStepId,
     pub kind: LoweringKind,
@@ -91,12 +135,16 @@ pub(crate) struct SelectedLowering {
     pub outputs: Vec<Atom>,
     pub effects: LoweringEffects,
     pub scratch: Vec<ScratchRequirement>,
+    /// Required reads, writes, and borrows of compiler-owned scratch.
     pub scratch_effects: Vec<ScratchEffect>,
 }
-#[derive(Debug, Clone)]
+/// Straight-line sequence of units sharing one entry contract. Parameters are established
+/// simultaneously by incoming edges, including separately named scratch contents.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SelectedSegment {
     pub id: SegmentId,
     pub parameters: Vec<ValueId>,
+    pub content_parameters: Vec<ContentId>,
     pub units: Vec<SelectedLowering>,
 }
 /// Semantic role of a transfer in the structured control graph.
@@ -118,7 +166,16 @@ pub(crate) struct ParameterBinding {
     pub destination: ValueId,
     pub source: ValueId,
 }
-#[derive(Debug, Clone)]
+/// Simultaneous renaming of scratch-content identity at a segment boundary; no bytes move.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ContentBinding {
+    pub destination: ContentId,
+    pub source: ContentId,
+}
+/// Selected control transfer and its simultaneous value/content parameter bindings.
+/// Physical edge actions arrange predecessor contents for the destination contract;
+/// simultaneous semantic renaming then gives those contents their destination names.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TransferEdge {
     pub id: EdgeId,
     pub source: SegmentId,
@@ -126,15 +183,20 @@ pub(crate) struct TransferEdge {
     pub destination: Option<SegmentId>,
     pub kind: EdgeKind,
     pub bindings: Vec<ParameterBinding>,
+    pub content_bindings: Vec<ContentBinding>,
 }
-#[derive(Debug, Clone)]
+/// Executable structured ordering of the selected graph. Segment and edge identifiers must
+/// agree with graph coverage; this tree also constrains the expanded control skeleton.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ControlTree {
     /// Execute one straight-line segment.
     Segment(SegmentId),
     /// Execute children in order, subject to their terminal transfers.
     Sequence(Vec<ControlTree>),
+    /// Consume the selected predicate and execute the matching edge and arm.
     If {
         id: ControlId,
+        predicate: Atom,
         on_true: EdgeId,
         then_body: alloc::boxed::Box<ControlTree>,
         on_false: EdgeId,
@@ -142,13 +204,21 @@ pub(crate) enum ControlTree {
     },
     Loop {
         id: ControlId,
+        condition: ControlId,
+        on_true: EdgeId,
+        on_false: EdgeId,
         header: SegmentId,
+        predicate: Atom,
         body: alloc::boxed::Box<ControlTree>,
         backedges: Vec<EdgeId>,
     },
+    /// Execute one transfer, including any physical edge actions.
     Edge(EdgeId),
 }
-#[derive(Debug, Clone)]
+/// Semantic program proposed by selection, before any allocation decisions.
+/// The first segment is the procedure entry. Source checking compares this entire description
+/// to independently reconstructed evidence and returns an immutable checked wrapper.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SelectedProgram {
     pub origin: ProcedureOrigin,
     pub values: BTreeMap<ValueId, SelectedValue>,
@@ -169,7 +239,10 @@ pub(crate) enum TailPolicy {
     /// Entry owns the root VM window, with no ordinary caller suffix.
     RootWindow,
 }
-#[derive(Debug, Clone)]
+/// Allocator-proposed entry hypothesis, proved on every actual incoming transfer.
+/// Stack entries may repeat an atom, but each entry still requires a physical occurrence.
+/// Scratch and address facts crossing a segment boundary must refer to spanning objects.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EntryContract {
     pub stack_top_first: Vec<Atom>,
     /// Symbolic homes whose current contents must equal the named atoms.

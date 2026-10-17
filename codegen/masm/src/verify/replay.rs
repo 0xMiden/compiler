@@ -1,0 +1,1269 @@
+//! Replay physical actions and lowering instructions with independent value and memory state.
+//! Boundary markers constrain the action cursor; they never establish executable effects alone.
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    vec::Vec,
+};
+
+use super::{
+    liveness::{Live, Liveness},
+    stack::State,
+    tokens::{Identity, Token, Tokens},
+    *,
+};
+use crate::{
+    lower::expand::{AnnotatedMasmBody, AnnotatedOp, Boundary},
+    masm::Instruction,
+    plan::actions::{PlanAction, ProcedurePlan},
+};
+
+/// State needed to check one unit's normal publication against its entry and registered calls.
+#[derive(Clone)]
+pub(super) struct ActiveUnit {
+    pub id: SelectedStepId,
+    /// Snapshot used to prove preservation of the unit's untouched suffix and inputs.
+    pub incoming: State,
+    /// Protected initialized cells whose identity must survive the unit.
+    pub readonly: BTreeMap<u32, Token>,
+    /// Next call ordinal within the current internal path.
+    pub call: usize,
+    pub path: Vec<CallPath>,
+}
+/// Position in the expected segment/edge action stream and any currently executing unit.
+#[derive(Clone, Default)]
+pub(super) struct Cursor {
+    pub segment: Option<SegmentId>,
+    pub edge: Option<EdgeId>,
+    pub action: usize,
+    /// Index of the next selected unit to begin in the current segment.
+    pub phase: usize,
+    pub active: Option<ActiveUnit>,
+}
+
+/// One verification run borrowing immutable claims and owning independent proof state.
+/// Its liveness and scratch demand are recomputed from sealed source semantics.
+pub(super) struct Verifier<'a> {
+    pub plan: &'a ProcedurePlan,
+    pub frame: &'a FinalFrameLayout,
+    pub tokens: Tokens,
+    pub live: Liveness,
+    pub storage: super::storage::StorageDemand,
+}
+impl<'a> Verifier<'a> {
+    /// Replay one internal control arm with a path-local call ordinal, then require complete
+    /// registered call coverage on normal completion before restoring the enclosing path.
+    pub(super) fn execute_path(
+        &mut self,
+        body: &AnnotatedMasmBody,
+        state: State,
+        cursor: &mut Cursor,
+        path: CallPath,
+    ) -> Result<Option<State>, VerificationError> {
+        let previous = cursor.active.as_ref().map(|active| active.call);
+        if let Some(active) = &mut cursor.active {
+            active.path.push(path);
+            active.call = 0;
+        }
+        let result = self.execute(body, state, cursor)?;
+        if let Some(previous) = previous {
+            let active = cursor
+                .active
+                .as_mut()
+                .ok_or_else(|| error("internal control crossed unit completion"))?;
+            let required = self
+                .plan
+                .selected
+                .evidence(active.id)?
+                .calls
+                .iter()
+                .filter(|site| site.path == active.path)
+                .count();
+            if result.is_some() && active.call != required {
+                return Err(fail(
+                    DiagnosticCategory::AbiMismatch,
+                    "normal control arm omitted registered call site",
+                ));
+            }
+            active.path.pop();
+            active.call = previous;
+        }
+        Ok(result)
+    }
+
+    fn check_call_sites(&self, body: &AnnotatedMasmBody) -> Result<(), VerificationError> {
+        type Counts = BTreeMap<(SelectedStepId, Vec<CallPath>), usize>;
+        fn scan(
+            verifier: &Verifier<'_>,
+            body: &AnnotatedMasmBody,
+            mut active: Option<SelectedStepId>,
+            path: &mut Vec<CallPath>,
+            counts: &mut Counts,
+        ) -> Result<(), VerificationError> {
+            for op in body.ops() {
+                match op {
+                    AnnotatedOp::Boundary(Boundary::UnitStart(id)) => {
+                        active = Some(*id);
+                        path.clear();
+                    }
+                    AnnotatedOp::Boundary(Boundary::UnitEnd(_)) => {
+                        active = None;
+                        path.clear();
+                    }
+                    AnnotatedOp::Instruction { instruction, unit }
+                        if matches!(
+                            instruction,
+                            Instruction::Exec(_)
+                                | Instruction::Call(_)
+                                | Instruction::SysCall(_)
+                                | Instruction::DynExec
+                                | Instruction::DynCall
+                        ) =>
+                    {
+                        let id = active
+                            .filter(|id| id == unit)
+                            .ok_or_else(|| error("call outside its registered unit"))?;
+                        let index = counts.entry((id, path.clone())).or_default();
+                        let site = verifier
+                            .plan
+                            .selected
+                            .evidence(id)?
+                            .calls
+                            .iter()
+                            .filter(|site| site.path == *path)
+                            .nth(*index)
+                            .ok_or_else(|| {
+                                fail(
+                                    DiagnosticCategory::AbiMismatch,
+                                    "unregistered call occurrence/control path",
+                                )
+                            })?;
+                        if site.instruction != *instruction {
+                            return Err(fail(
+                                DiagnosticCategory::AbiMismatch,
+                                "actual call site differs from registered target/family",
+                            ));
+                        }
+                        *index += 1;
+                    }
+                    AnnotatedOp::If {
+                        id,
+                        then_body,
+                        else_body,
+                    } => {
+                        for (part, body) in
+                            [(CallPath::Then(*id), then_body), (CallPath::Else(*id), else_body)]
+                        {
+                            let mut child = path.clone();
+                            if active.is_some() {
+                                child.push(part);
+                            }
+                            scan(verifier, body, active, &mut child, counts)?;
+                        }
+                    }
+                    AnnotatedOp::While { id, body } | AnnotatedOp::Repeat { id, body, .. } => {
+                        let mut child = path.clone();
+                        if active.is_some() {
+                            child.push(CallPath::Loop(*id));
+                        }
+                        scan(verifier, body, active, &mut child, counts)?;
+                    }
+                    _ => {}
+                }
+            }
+            Ok(())
+        }
+        let mut counts = Counts::new();
+        scan(self, body, None, &mut Vec::new(), &mut counts)?;
+        for segment in &self.plan.selected.segments {
+            for unit in &segment.units {
+                let mut expected = BTreeMap::<Vec<CallPath>, usize>::new();
+                for site in &self.plan.selected.evidence(unit.id)?.calls {
+                    *expected.entry(site.path.clone()).or_default() += 1;
+                }
+                for (path, count) in expected {
+                    if counts.get(&(unit.id, path)).copied().unwrap_or(0) != count {
+                        return Err(fail(
+                            DiagnosticCategory::AbiMismatch,
+                            "actual body omits required registered call site",
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate plan/frame domains, source layout, entry-contract references, and lowering
+    /// bindings before replay can use them as hypotheses. This does not yet prove the body.
+    pub fn new(
+        plan: &'a ProcedurePlan,
+        frame: &'a FinalFrameLayout,
+    ) -> Result<Self, VerificationError> {
+        if plan.selected.abi.convention() == CallingConvention::Root
+            && (plan.selected.abi.arguments() != 16 || plan.selected.abi.results() != 16)
+        {
+            return Err(fail(
+                DiagnosticCategory::AbiMismatch,
+                "root entry and exit must model all sixteen VM lanes",
+            ));
+        }
+        if frame.source() != plan.selected.source_locals() {
+            return Err(fail(
+                DiagnosticCategory::FrameCapacityExceeded,
+                "final source-local layout disagrees with checked source",
+            ));
+        }
+        let declared: BTreeSet<_> = plan.spill_slots.iter().copied().collect();
+        if declared.len() != plan.spill_slots.len()
+            || declared != frame.spills().keys().copied().collect()
+        {
+            return Err(error("spill domain disagrees with final frame"));
+        }
+        if plan.contracts.len() != plan.selected.segments.len() {
+            return Err(error("entry contract domain disagrees with selected segments"));
+        }
+        for contract in plan.contracts.values() {
+            for object in contract
+                .required_scratch
+                .iter()
+                .map(|fact| fact.object)
+                .chain(contract.address_facts.iter().map(|fact| fact.object))
+            {
+                if frame
+                    .scratch()
+                    .get(&object)
+                    .is_none_or(|allocation| allocation.lifetime != ScratchLifetime::Spanning)
+                {
+                    return Err(fail(
+                        DiagnosticCategory::InvalidEdgeTransfer,
+                        "unit-local scratch fact crosses a selected boundary",
+                    ));
+                }
+            }
+
+            for atom in contract
+                .stack_top_first
+                .iter()
+                .chain(contract.required_spill_slots.iter().map(|(_, atom)| atom))
+                .chain(contract.aliases.pairs().iter().flat_map(|(a, b)| [a, b]))
+                .chain(contract.required_scratch.iter().filter_map(|fact| match &fact.content {
+                    ContentRequirement::Atom(atom) => Some(atom),
+                    _ => None,
+                }))
+            {
+                selection::validate_atom(&plan.selected, *atom)?;
+            }
+            for address in &contract.address_facts {
+                selection::validate_atom(&plan.selected, Atom::new(address.pointer, 0))?;
+            }
+        }
+        for segment in &plan.selected.segments {
+            if !plan.contracts.contains_key(&segment.id)
+                || !plan.segment_actions.contains_key(&segment.id)
+            {
+                return Err(error("missing segment contract or actions"));
+            }
+            for unit in &segment.units {
+                plan.lowering_bindings
+                    .get(&unit.id)
+                    .ok_or_else(|| error("missing lowering bindings"))?
+                    .validate(unit, frame)?;
+            }
+        }
+        Ok(Self {
+            plan,
+            frame,
+            tokens: Tokens::new(frame.source().extent),
+            live: Liveness::derive(&plan.selected),
+            storage: super::storage::StorageDemand::derive(&plan.selected),
+        })
+    }
+
+    /// Check control/call coverage and discharge physical graph obligations.
+    pub fn verify(mut self, body: &AnnotatedMasmBody) -> Result<(), VerificationError> {
+        control::check_projection(&self.plan.selected.structure, body)?;
+        self.check_call_sites(body)?;
+        self.verify_graph(body)
+    }
+
+    /// Resolve a selected step or reject an expanded reference to an unknown unit.
+    pub fn unit(&self, id: SelectedStepId) -> Result<&SelectedLowering, VerificationError> {
+        self.plan
+            .selected
+            .segments
+            .iter()
+            .flat_map(|segment| &segment.units)
+            .find(|unit| unit.id == id)
+            .ok_or_else(|| error("unknown lowering step"))
+    }
+
+    fn actions(&self, cursor: &Cursor) -> &[PlanAction] {
+        if let Some(edge) = cursor.edge {
+            self.plan.edge_actions.get(&edge).map_or(&[], Vec::as_slice)
+        } else {
+            cursor
+                .segment
+                .and_then(|segment| self.plan.segment_actions.get(&segment))
+                .map_or(&[], Vec::as_slice)
+        }
+    }
+
+    fn skip_debug(&self, cursor: &mut Cursor) {
+        while matches!(self.actions(cursor).get(cursor.action), Some(PlanAction::DebugLocation(_)))
+        {
+            cursor.action += 1;
+        }
+    }
+
+    /// Require complete consumption of the current owner's planned action stream.
+    pub(super) fn finish_actions(&self, cursor: &mut Cursor) -> Result<(), VerificationError> {
+        self.skip_debug(cursor);
+        if cursor.action != self.actions(cursor).len() {
+            return Err(error("emitted body omits planned action or phase"));
+        }
+        Ok(())
+    }
+
+    /// Replay an annotated body from the supplied raw state. `None` denotes a path with
+    /// no normal continuation; markers and instructions must match the pending action phases.
+    pub fn execute(
+        &mut self,
+        body: &AnnotatedMasmBody,
+        mut state: State,
+        cursor: &mut Cursor,
+    ) -> Result<Option<State>, VerificationError> {
+        for op in body.ops() {
+            match op {
+                AnnotatedOp::Boundary(boundary) => self.boundary(*boundary, &mut state, cursor)?,
+                AnnotatedOp::Instruction { instruction, unit } => {
+                    if let Some(active) = &cursor.active {
+                        if *unit != active.id {
+                            return Err(error("instruction belongs to wrong lowering unit"));
+                        }
+                        if !self.instruction(instruction, &mut state, cursor)? {
+                            return Ok(None);
+                        }
+                    } else {
+                        self.action(instruction, &mut state, cursor)?;
+                    }
+                }
+                AnnotatedOp::If {
+                    id,
+                    then_body,
+                    else_body,
+                } => {
+                    let predicate = state.pop()?;
+                    if cursor.active.is_none() {
+                        return Err(error(
+                            "selected control must be checked through graph contracts",
+                        ));
+                    }
+                    let known = self.tokens.constant(predicate);
+                    if known.is_some_and(|value| value > 1) {
+                        return Err(fail(
+                            DiagnosticCategory::IllegalStackAccess,
+                            "nonboolean branch predicate",
+                        ));
+                    }
+                    let mut then_cursor = cursor.clone();
+                    let mut else_cursor = cursor.clone();
+                    let then_state = if known != Some(0) {
+                        self.execute_path(
+                            then_body,
+                            state.clone(),
+                            &mut then_cursor,
+                            CallPath::Then(*id),
+                        )?
+                    } else {
+                        None
+                    };
+                    let else_state = if known != Some(1) {
+                        self.execute_path(
+                            else_body,
+                            state.clone(),
+                            &mut else_cursor,
+                            CallPath::Else(*id),
+                        )?
+                    } else {
+                        None
+                    };
+                    match (then_state, else_state) {
+                        (Some(a), Some(b)) => {
+                            self.match_cursors(&then_cursor, &else_cursor)?;
+                            state = a.merge(&b, *id, &mut self.tokens)?;
+                            *cursor = then_cursor;
+                        }
+                        (Some(a), None) => {
+                            state = a;
+                            *cursor = then_cursor;
+                        }
+                        (None, Some(b)) => {
+                            state = b;
+                            *cursor = else_cursor;
+                        }
+                        (None, None) => return Ok(None),
+                    }
+                }
+                AnnotatedOp::While { id, body } => {
+                    let predicate = state.pop()?;
+                    if self.tokens.constant(predicate) == Some(0) {
+                        continue;
+                    }
+                    state = self.loop_body(*id, body, state, cursor, true)?;
+                }
+                AnnotatedOp::Repeat { id, count, body } => {
+                    if *count != 0 {
+                        state = self.loop_body(*id, body, state, cursor, false)?;
+                    }
+                }
+            }
+        }
+        Ok(Some(state))
+    }
+
+    fn match_cursors(&self, a: &Cursor, b: &Cursor) -> Result<(), VerificationError> {
+        if a.segment != b.segment
+            || a.edge != b.edge
+            || a.action != b.action
+            || a.phase != b.phase
+            || a.active.as_ref().map(|unit| (unit.id, unit.call))
+                != b.active.as_ref().map(|unit| (unit.id, unit.call))
+        {
+            return Err(error("normal arms disagree on selected phase boundary"));
+        }
+        Ok(())
+    }
+
+    fn boundary(
+        &mut self,
+        boundary: Boundary,
+        state: &mut State,
+        cursor: &mut Cursor,
+    ) -> Result<(), VerificationError> {
+        match boundary {
+            Boundary::Segment(id) => {
+                if cursor.active.is_some() {
+                    return Err(error("segment inside uninterrupted lowering unit"));
+                }
+                self.finish_actions(cursor)?;
+                if cursor.segment.is_some() || cursor.edge.is_some() {
+                    return Err(error("segment replay crossed its contract boundary"));
+                }
+                self.check_contract(id, state)?;
+                cursor.segment = Some(id);
+                cursor.edge = None;
+                cursor.action = 0;
+                cursor.phase = 0;
+                self.available(state, &self.live.entry[&id])?;
+                self.storage_available(state, &self.storage.entry[&id])?;
+            }
+            Boundary::Edge(id) => {
+                if cursor.active.is_some() {
+                    return Err(error("edge inside lowering unit"));
+                }
+                self.finish_actions(cursor)?;
+                let edge = self
+                    .plan
+                    .selected
+                    .edges
+                    .iter()
+                    .find(|edge| edge.id == id)
+                    .ok_or_else(|| error("unknown edge"))?;
+                if cursor.segment != Some(edge.source) {
+                    return Err(error("edge source disagrees with executed segment"));
+                }
+                let segment = self
+                    .plan
+                    .selected
+                    .segments
+                    .iter()
+                    .find(|segment| Some(segment.id) == cursor.segment)
+                    .unwrap();
+                if cursor.phase != segment.units.len() {
+                    return Err(error("selected segment phases omitted"));
+                }
+                cursor.edge = Some(id);
+                cursor.action = 0;
+            }
+            Boundary::UnitStart(id) => self.start_unit(id, state, cursor)?,
+            Boundary::UnitEnd(id) => self.end_unit(id, state, cursor)?,
+            Boundary::Control(_) => return Err(error("unbound control marker")),
+        }
+        Ok(())
+    }
+
+    fn start_unit(
+        &mut self,
+        id: SelectedStepId,
+        state: &mut State,
+        cursor: &mut Cursor,
+    ) -> Result<(), VerificationError> {
+        if cursor.active.is_some() || cursor.edge.is_some() {
+            return Err(error("nested or edge-local lowering publication"));
+        }
+        self.skip_debug(cursor);
+        if self.actions(cursor).get(cursor.action) != Some(&PlanAction::RunLowering { step: id }) {
+            return Err(error("unit boundary disagrees with planned phase order"));
+        }
+        let segment = self
+            .plan
+            .selected
+            .segments
+            .iter()
+            .find(|segment| Some(segment.id) == cursor.segment)
+            .ok_or_else(|| error("lowering before segment"))?;
+        if segment.units.get(cursor.phase).map(|unit| unit.id) != Some(id) {
+            return Err(error("duplicate or reordered executable phase"));
+        }
+        let unit = self.unit(id)?.clone();
+        let expected = unit
+            .stack_inputs
+            .iter()
+            .map(|atom| state.token(*atom))
+            .collect::<Result<Vec<_>, _>>()?;
+        if state.prefix(expected.len())? != expected {
+            return Err(fail(
+                DiagnosticCategory::UnavailableValue,
+                "actual lowering inputs differ from selected atoms",
+            ));
+        }
+        let bindings = &self.plan.lowering_bindings[&id];
+        let mut readonly = BTreeMap::new();
+        for input in &unit.stored_inputs {
+            let offset =
+                self.frame.resolve(FrameRef::Spill(bindings.stored_inputs[&input.id]))?.into();
+            let expected = memory::stored_token(state, input.value, &mut self.tokens)?;
+            if memory::read(state, offset, self.frame)? != expected {
+                return Err(fail(
+                    DiagnosticCategory::InvalidSpillSlotRead,
+                    "stored input contains wrong or stale token",
+                ));
+            }
+            readonly.insert(offset, expected);
+        }
+        for requirement in &unit.scratch {
+            if matches!(requirement.lifetime, ScratchLifetime::Unit(_)) {
+                let allocation = self.frame.scratch()[&requirement.id];
+                for offset in allocation.offset..allocation.offset + allocation.size {
+                    state.cells.remove(&offset);
+                }
+            }
+        }
+        for effect in &unit.scratch_effects {
+            if let ScratchEffect::Read(fact) = effect {
+                memory::check_fact(state, *fact, self.frame, &state.contents)?;
+            }
+            if matches!(effect, ScratchEffect::Borrow { retained: true, .. }) {
+                return Err(error("scratch address retention is forbidden"));
+            }
+        }
+        self.available(state, &self.live.before[&id])?;
+        self.storage_available(state, &self.storage.before[&id])?;
+        cursor.action += 1;
+        state.written.clear();
+        state.results.clear();
+        cursor.active = Some(ActiveUnit {
+            id,
+            incoming: state.clone(),
+            readonly,
+            call: 0,
+            path: Vec::new(),
+        });
+        Ok(())
+    }
+
+    fn end_unit(
+        &mut self,
+        id: SelectedStepId,
+        state: &mut State,
+        cursor: &mut Cursor,
+    ) -> Result<(), VerificationError> {
+        let active = cursor
+            .active
+            .take()
+            .filter(|active| active.id == id)
+            .ok_or_else(|| error("unmatched normal completion"))?;
+        let unit = self.unit(id)?.clone();
+        let evidence = self.plan.selected.evidence(id)?;
+        if !unit.effects.normal_return {
+            return Err(error("nonreturning lowering reaches publication"));
+        }
+        if active.call != evidence.calls.iter().filter(|site| site.path.is_empty()).count() {
+            return Err(error("required registered invocation omitted"));
+        }
+        let suffix = &active.incoming.stack[unit.stack_inputs.len()..];
+        if state.stack.get(unit.outputs.len()..) != Some(suffix) {
+            return Err(fail(
+                DiagnosticCategory::UnavailableValue,
+                "lowering changed preserved suffix or failed output cleanup",
+            ));
+        }
+        for (offset, token) in &active.readonly {
+            if state.cells.get(offset) != Some(token) {
+                return Err(fail(
+                    DiagnosticCategory::InvalidSpillSlotRead,
+                    "stored input overwritten before publication",
+                ));
+            }
+        }
+        for (index, atom) in unit.outputs.iter().enumerate() {
+            if state.results.iter().any(|((output, _), required)| {
+                output == atom && !required.satisfied(state.stack[index], &self.tokens)
+            }) {
+                return Err(fail(
+                    DiagnosticCategory::AbiMismatch,
+                    "cleanup destroyed signature result or published nonresult lane",
+                ));
+            }
+        }
+        for (index, atom) in unit.outputs.iter().enumerate() {
+            let token = state.stack[index];
+            if !super::reconstruction::matches(
+                &self.plan.selected,
+                *atom,
+                token,
+                &active.incoming,
+                &self.tokens,
+            )? {
+                return Err(fail(
+                    DiagnosticCategory::UnavailableValue,
+                    "output violates checked reconstruction identity",
+                ));
+            }
+            if let Some(source) = evidence.aliases.source(*atom)
+                && active.incoming.token(source)? != token
+            {
+                return Err(fail(
+                    DiagnosticCategory::UnavailableValue,
+                    "alias output does not equal registered input",
+                ));
+            }
+        }
+        for (a, b) in &evidence.equal_outputs {
+            if state.stack.get(usize::from(*a)) != state.stack.get(usize::from(*b))
+                || usize::from(*a) >= unit.outputs.len()
+                || usize::from(*b) >= unit.outputs.len()
+            {
+                return Err(fail(
+                    DiagnosticCategory::UnavailableValue,
+                    "registered output equality was not established",
+                ));
+            }
+        }
+        for (reference, index) in &evidence.scratch_outputs {
+            let offset = self.frame.resolve(*reference)?.into();
+            if memory::read(state, offset, self.frame)?
+                != *state
+                    .stack
+                    .get(usize::from(*index))
+                    .filter(|_| usize::from(*index) < unit.outputs.len())
+                    .ok_or_else(|| error("output relation out of range"))?
+            {
+                return Err(fail(
+                    DiagnosticCategory::InvalidSpillSlotRead,
+                    "scratch/output equality was not established",
+                ));
+            }
+        }
+        // Publication binds names to existing tokens and does not rename stack or memory.
+        for (atom, token) in unit.outputs.iter().zip(&state.stack) {
+            state.names.insert(*atom, *token);
+        }
+        for effect in &unit.scratch_effects {
+            if let ScratchEffect::Write(fact) = effect {
+                let offset = u32::from(self.frame.resolve(FrameRef::Scratch {
+                    object: fact.object,
+                    offset: fact.offset,
+                })?);
+                if !state.written.contains(&offset) {
+                    return Err(fail(
+                        DiagnosticCategory::InvalidSpillSlotRead,
+                        "scratch publication lacks a definite physical write",
+                    ));
+                }
+                if let ContentRequirement::Content(content) = fact.content {
+                    let offset = self
+                        .frame
+                        .resolve(FrameRef::Scratch {
+                            object: fact.object,
+                            offset: fact.offset,
+                        })?
+                        .into();
+                    let token = memory::read(state, offset, self.frame)?;
+                    state.contents.insert(content, token);
+                }
+                memory::check_fact(state, *fact, self.frame, &state.contents)?;
+            }
+        }
+        self.available(state, &self.live.after[&id])?;
+        self.storage_available(state, &self.storage.after[&id])?;
+        cursor.phase += 1;
+        Ok(())
+    }
+
+    fn action(
+        &mut self,
+        instruction: &Instruction,
+        state: &mut State,
+        cursor: &mut Cursor,
+    ) -> Result<(), VerificationError> {
+        self.skip_debug(cursor);
+        let action = self
+            .actions(cursor)
+            .get(cursor.action)
+            .cloned()
+            .ok_or_else(|| error("unplanned executable instruction"))?;
+        let expected = match action {
+            PlanAction::Dup { depth } => Primitive::Dup(depth).instruction()?,
+            PlanAction::Swap { depth } => Primitive::Swap(depth).instruction()?,
+            PlanAction::MoveUp { depth } => Primitive::MoveUp(depth).instruction()?,
+            PlanAction::MoveDown { depth } => Primitive::MoveDown(depth).instruction()?,
+            PlanAction::Drop => Instruction::Drop,
+            PlanAction::PushLiteral(value) => Primitive::Push(value).instruction()?,
+            PlanAction::StoreLane(slot) => {
+                let token = *state.prefix(1)?.first().unwrap();
+                state.slots.insert(slot, token);
+                Instruction::LocStore(self.frame.resolve(FrameRef::Spill(slot))?.into())
+            }
+            PlanAction::LoadLane(slot) => {
+                let offset = self.frame.resolve(FrameRef::Spill(slot))?.into();
+                let actual = memory::read(state, offset, self.frame)?;
+                let expected = state.slots.get(&slot).copied().ok_or_else(|| {
+                    fail(
+                        DiagnosticCategory::InvalidSpillSlotRead,
+                        "abstract slot never stored on this path",
+                    )
+                })?;
+                if actual != expected {
+                    return Err(fail(
+                        DiagnosticCategory::InvalidSpillSlotRead,
+                        "physical cell clobbered through another abstract slot",
+                    ));
+                }
+                Instruction::LocLoad(self.frame.resolve(FrameRef::Spill(slot))?.into())
+            }
+            _ => return Err(error("expected lowering/debug boundary instead of instruction")),
+        };
+        if *instruction != expected {
+            return Err(error("actual instruction differs from physical action"));
+        }
+        self.primitive(instruction, state, cursor)?;
+        cursor.action += 1;
+        let live = self.pending_live(cursor)?;
+        self.available(state, &live)?;
+        let demand = if let Some(id) = cursor.edge {
+            let edge = self.plan.selected.edges.iter().find(|edge| edge.id == id).unwrap();
+            edge.destination
+                .map(|destination| {
+                    self.storage.entry[&destination]
+                        .iter()
+                        .map(|fact| super::storage::source_fact(*fact, edge))
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            let segment = self
+                .plan
+                .selected
+                .segments
+                .iter()
+                .find(|segment| Some(segment.id) == cursor.segment)
+                .unwrap();
+            segment.units.get(cursor.phase).map_or_else(
+                || self.storage.exit[&segment.id].clone(),
+                |unit| self.storage.before[&unit.id].clone(),
+            )
+        };
+        self.storage_available(state, &demand)
+    }
+
+    fn pending_live(&self, cursor: &Cursor) -> Result<Live, VerificationError> {
+        if let Some(id) = cursor.edge {
+            let edge = self
+                .plan
+                .selected
+                .edges
+                .iter()
+                .find(|edge| edge.id == id)
+                .ok_or_else(|| error("unknown edge"))?;
+            let mut live = Live::new();
+            if let Some(destination) = edge.destination {
+                for atom in &self.live.entry[&destination] {
+                    let source = edge
+                        .bindings
+                        .iter()
+                        .find(|binding| binding.destination == atom.value)
+                        .map_or(atom.value, |binding| binding.source);
+                    live.insert(Atom::new(source, atom.lane));
+                }
+            } else if edge.kind == EdgeKind::Return {
+                for binding in &edge.bindings {
+                    for lane in 0..self.plan.selected.values[&binding.source].layout.lanes() {
+                        live.insert(Atom::new(binding.source, lane));
+                    }
+                }
+            }
+            return Ok(live);
+        }
+        let segment = self
+            .plan
+            .selected
+            .segments
+            .iter()
+            .find(|segment| Some(segment.id) == cursor.segment)
+            .ok_or_else(|| error("action outside segment"))?;
+        Ok(segment.units.get(cursor.phase).map_or_else(
+            || self.live.exit[&segment.id].clone(),
+            |unit| self.live.before[&unit.id].clone(),
+        ))
+    }
+
+    fn storage_available(
+        &self,
+        state: &State,
+        demand: &super::storage::Demand,
+    ) -> Result<(), VerificationError> {
+        for fact in demand {
+            memory::check_fact(state, *fact, self.frame, &state.contents)?;
+        }
+        Ok(())
+    }
+
+    /// Require a physical representation or proven reconstruction for every live semantic lane.
+    pub fn available(&self, state: &State, live: &Live) -> Result<(), VerificationError> {
+        for atom in live {
+            let token = state.token(*atom)?;
+            if !state.available(token, self.frame.spills().values().copied())
+                && !super::reconstruction::recoverable(
+                    &self.plan.selected,
+                    *atom,
+                    state,
+                    &self.tokens,
+                )
+            {
+                return Err(fail(
+                    DiagnosticCategory::UnavailableValue,
+                    "destructive action lost last representation of live atom",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Discharge the destination entry hypothesis against actual incoming raw contents,
+    /// including reconstruction, spill homes, scratch facts, aliases, and exact addresses.
+    pub(super) fn check_contract(
+        &self,
+        id: SegmentId,
+        state: &State,
+    ) -> Result<(), VerificationError> {
+        let contract =
+            self.plan.contracts.get(&id).ok_or_else(|| error("missing entry contract"))?;
+        let segment = self.plan.selected.segments.iter().find(|segment| segment.id == id).unwrap();
+        for value in &segment.parameters {
+            for lane in 0..self.plan.selected.values[value].layout.lanes() {
+                let atom = Atom::new(*value, lane);
+                if !super::reconstruction::matches(
+                    &self.plan.selected,
+                    atom,
+                    state.token(atom)?,
+                    state,
+                    &self.tokens,
+                )? {
+                    return Err(fail(
+                        DiagnosticCategory::InvalidEdgeTransfer,
+                        "incoming parameter violates checked reconstruction identity",
+                    ));
+                }
+            }
+        }
+        let expected = contract
+            .stack_top_first
+            .iter()
+            .map(|atom| state.token(*atom))
+            .collect::<Result<Vec<_>, _>>()?;
+        let entry_context =
+            self.plan.selected.segments.first().is_some_and(|segment| segment.id == id)
+                && matches!(
+                    self.plan.selected.abi.convention(),
+                    CallingConvention::Context | CallingConvention::Kernel
+                );
+        let matches = if entry_context {
+            contract.tail == TailPolicy::ContextWindow
+                && state.stack.len() == 16
+                && state.stack.starts_with(&expected)
+        } else {
+            state.stack == expected
+        };
+        if !matches {
+            return Err(fail(
+                DiagnosticCategory::InvalidEdgeTransfer,
+                "incoming stack fails destination contract",
+            ));
+        }
+        for (slot, atom) in &contract.required_spill_slots {
+            let offset = self.frame.resolve(FrameRef::Spill(*slot))?.into();
+            if memory::read(state, offset, self.frame)? != state.token(*atom)? {
+                return Err(fail(
+                    DiagnosticCategory::InvalidEdgeTransfer,
+                    "incoming spill fails destination identity",
+                ));
+            }
+        }
+        for fact in &contract.required_scratch {
+            memory::check_fact(state, *fact, self.frame, &state.contents)?;
+        }
+        for (a, b) in contract.aliases.pairs() {
+            if state.token(*a)? != state.token(*b)? {
+                return Err(fail(
+                    DiagnosticCategory::InvalidEdgeTransfer,
+                    "unproved contract equality",
+                ));
+            }
+        }
+        for fact in &contract.address_facts {
+            let token = state.token(Atom::new(fact.pointer, 0))?;
+            let offset = u32::from(self.frame.resolve(FrameRef::Scratch {
+                object: fact.object,
+                offset: fact.offset,
+            })?);
+            let allocation = &self.frame.scratch()[&fact.object];
+            if self.tokens.frame_address(token) != Some(offset)
+                || fact.offset.checked_add(fact.accessible).is_none_or(|end| end > allocation.size)
+            {
+                return Err(fail(
+                    DiagnosticCategory::InvalidEdgeTransfer,
+                    "unproved frame address provenance",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Read all source identities before applying simultaneous parameter/content renaming.
+    /// Required destination scratch facts are proved in predecessor names before substitution.
+    pub(super) fn transfer(&self, id: EdgeId, state: &mut State) -> Result<(), VerificationError> {
+        let edge = self
+            .plan
+            .selected
+            .edges
+            .iter()
+            .find(|edge| edge.id == id)
+            .ok_or_else(|| error("unknown transfer"))?;
+        let mut substitutions = Vec::new();
+        for binding in &edge.bindings {
+            for lane in 0..self.plan.selected.values[&binding.source].layout.lanes() {
+                substitutions.push((
+                    Atom::new(binding.destination, lane),
+                    state.token(Atom::new(binding.source, lane))?,
+                ));
+            }
+        }
+        let contents = edge
+            .content_bindings
+            .iter()
+            .map(|binding| {
+                state
+                    .contents
+                    .get(&binding.source)
+                    .copied()
+                    .map(|token| (binding.destination, token))
+                    .ok_or_else(|| {
+                        fail(
+                            DiagnosticCategory::InvalidEdgeTransfer,
+                            "content binding source has no verified current definition",
+                        )
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some(destination) = edge.destination {
+            let demand = self.plan.contracts[&destination]
+                .required_scratch
+                .iter()
+                .map(|fact| super::storage::source_fact(*fact, edge))
+                .collect();
+            self.storage_available(state, &demand)?;
+        }
+        for (atom, token) in substitutions {
+            state.names.insert(atom, token);
+        }
+        for (content, token) in contents {
+            state.contents.insert(content, token);
+        }
+        Ok(())
+    }
+
+    /// Prove the exact declared result prefix and permitted physical return height, rejecting
+    /// compiler-frame address escape even if the returned semantic names otherwise match.
+    pub(super) fn check_return(
+        &self,
+        state: &State,
+        edge: &TransferEdge,
+    ) -> Result<(), VerificationError> {
+        let mut expected = Vec::new();
+        for binding in &edge.bindings {
+            for lane in 0..self.plan.selected.values[&binding.source].layout.lanes() {
+                expected.push(state.token(Atom::new(binding.source, lane))?);
+            }
+        }
+        if state.stack.iter().any(|token| self.tokens.origins(*token).compiler()) {
+            return Err(fail(
+                DiagnosticCategory::AbiMismatch,
+                "compiler frame address escapes through procedure return",
+            ));
+        }
+        if expected.len() != self.plan.selected.abi.results() as usize || state.stack != expected {
+            return Err(fail(
+                DiagnosticCategory::AbiMismatch,
+                "return does not contain exactly declared result prefix",
+            ));
+        }
+        if matches!(
+            self.plan.selected.abi.convention(),
+            CallingConvention::Context | CallingConvention::Kernel | CallingConvention::Root
+        ) {
+            let padding = state.padding.0[0];
+            if (0..=16).any(|count| padding & (1 << count) != 0 && state.stack.len() + count != 16)
+            {
+                return Err(fail(
+                    DiagnosticCategory::AbiMismatch,
+                    "context return is not exactly sixteen physical lanes",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Apply a registered target or call rule, checking source effect authority and pointer
+    /// provenance before mutating raw state. The boolean reports whether normal execution remains.
+    pub fn instruction(
+        &mut self,
+        instruction: &Instruction,
+        state: &mut State,
+        cursor: &mut Cursor,
+    ) -> Result<bool, VerificationError> {
+        if matches!(
+            instruction,
+            Instruction::Exec(_)
+                | Instruction::Call(_)
+                | Instruction::SysCall(_)
+                | Instruction::DynExec
+                | Instruction::DynCall
+        ) {
+            self.call(instruction, state, cursor)?;
+            return Ok(true);
+        }
+        if matches!(instruction, Instruction::Assert | Instruction::Assertz) {
+            let active = cursor.active.as_ref().ok_or_else(|| error("assert outside lowering"))?;
+            if !self.unit(active.id)?.effects.may_trap {
+                return Err(error("undeclared trapping instruction"));
+            }
+            let token = state.pop()?;
+            let desired = u64::from(matches!(instruction, Instruction::Assert));
+            return Ok(self.tokens.constant(token).is_none_or(|value| value == desired));
+        }
+        self.primitive(instruction, state, cursor)?;
+        Ok(true)
+    }
+
+    fn primitive(
+        &mut self,
+        instruction: &Instruction,
+        state: &mut State,
+        cursor: &Cursor,
+    ) -> Result<(), VerificationError> {
+        let effect = TargetEffects::instruction(instruction)?;
+        let inputs = state.prefix(effect.consumed.into())?.to_vec();
+        let memory = match effect.memory {
+            MemoryEffect::Read(region) | MemoryEffect::Write(region) => Some(self.memory_region(
+                region,
+                &inputs,
+                state,
+                cursor,
+                matches!(effect.memory, MemoryEffect::Write(_)),
+            )?),
+            MemoryEffect::None => None,
+        };
+        let mut loaded = Vec::new();
+        if let MemoryEffect::Read(region) = effect.memory {
+            let width = match region {
+                MemoryRegion::Frame { width, .. }
+                | MemoryRegion::Indirect { width, .. }
+                | MemoryRegion::SourceUnknown { width } => width,
+            };
+            for lane in 0..width {
+                loaded.push(if let Some(Some(offset)) = memory {
+                    memory::read(state, offset + u32::from(lane), self.frame)?
+                } else {
+                    self.tokens.fresh()
+                });
+            }
+        }
+        if matches!(effect.memory, MemoryEffect::Write(_))
+            && memory == Some(None)
+            && effect
+                .memory_inputs
+                .iter()
+                .any(|input| self.tokens.origins(inputs[usize::from(*input)]).compiler())
+        {
+            return Err(fail(
+                DiagnosticCategory::InvalidSpillSlotRead,
+                "compiler address escapes into source memory",
+            ));
+        }
+        if matches!(effect.memory, MemoryEffect::Write(_))
+            && let Some(Some(offset)) = memory
+        {
+            for (lane, input) in effect.memory_inputs.iter().enumerate() {
+                state.cells.insert(offset + lane as u32, inputs[usize::from(*input)]);
+                state.written.insert(offset + lane as u32);
+            }
+        }
+        let address = if effect.outputs.iter().any(|lane| matches!(lane, LaneEffect::Computed(_)))
+            && inputs.iter().any(|token| self.tokens.origins(*token).has_frame())
+        {
+            let value = match instruction {
+                Instruction::Add => {
+                    let (address, delta) = if self.tokens.frame_address(inputs[0]).is_some() {
+                        (inputs[0], inputs[1])
+                    } else {
+                        (inputs[1], inputs[0])
+                    };
+                    self.tokens.frame_address(address).and_then(|offset| {
+                        self.tokens
+                            .constant(delta)
+                            .and_then(|delta| u32::try_from(delta).ok())
+                            .and_then(|delta| offset.checked_add(delta))
+                    })
+                }
+                Instruction::Sub => self.tokens.frame_address(inputs[1]).and_then(|offset| {
+                    self.tokens
+                        .constant(inputs[0])
+                        .and_then(|delta| u32::try_from(delta).ok())
+                        .and_then(|delta| offset.checked_sub(delta))
+                }),
+                Instruction::Eq | Instruction::Neq => None,
+                _ => {
+                    return Err(fail(
+                        DiagnosticCategory::IllegalStackAccess,
+                        "compiler address arithmetic loses provenance",
+                    ));
+                }
+            };
+            if !matches!(instruction, Instruction::Eq | Instruction::Neq) && value.is_none() {
+                return Err(fail(
+                    DiagnosticCategory::IllegalStackAccess,
+                    "compiler address arithmetic is not exact",
+                ));
+            }
+            value.map(|offset| self.tokens.intern(Identity::FrameAddress(offset)))
+        } else {
+            None
+        };
+        for lane in &effect.outputs {
+            if let LaneEffect::FrameAddress(offset) = lane {
+                memory::check_range(*offset, 1, self.frame)?;
+            }
+        }
+        let outputs = effect
+            .outputs
+            .iter()
+            .map(|lane| match *lane {
+                LaneEffect::Input(index) => inputs[usize::from(index)],
+                LaneEffect::Literal(value) => self.tokens.literal(value),
+                LaneEffect::Memory { lane } => loaded[usize::from(lane)],
+                LaneEffect::FrameAddress(offset) => {
+                    self.tokens.intern(Identity::FrameAddress(offset))
+                }
+                LaneEffect::Computed(_) => address.unwrap_or_else(|| self.tokens.fresh()),
+            })
+            .collect();
+        state.replace(effect.consumed.into(), outputs, &effect.floor)
+    }
+
+    fn memory_region(
+        &self,
+        region: MemoryRegion,
+        inputs: &[Token],
+        _state: &State,
+        cursor: &Cursor,
+        write: bool,
+    ) -> Result<Option<u32>, VerificationError> {
+        let (offset, width) = match region {
+            MemoryRegion::Frame { offset, width } => (Some(offset), width),
+            MemoryRegion::Indirect { address, width } => {
+                let token = inputs[usize::from(address)];
+                let offset = self.tokens.frame_address(token);
+                if offset.is_none() && self.tokens.origins(token).compiler() {
+                    return Err(fail(
+                        DiagnosticCategory::InvalidSpillSlotRead,
+                        "compiler memory address is not precisely resolved",
+                    ));
+                }
+                (offset, width)
+            }
+            MemoryRegion::SourceUnknown { width } => (None, width),
+        };
+        if let Some(offset) = offset {
+            memory::check_range(offset, width, self.frame)?;
+            if offset < self.frame.source().extent {
+                if offset + u32::from(width) > self.frame.source().extent {
+                    return Err(fail(
+                        DiagnosticCategory::InvalidSpillSlotRead,
+                        "source access crosses into compiler storage",
+                    ));
+                }
+                let active = cursor
+                    .active
+                    .as_ref()
+                    .ok_or_else(|| error("source local outside registered lowering"))?;
+                if !self.unit(active.id)?.effects.memory.permits(write) {
+                    return Err(error("undeclared source-local memory effect"));
+                }
+                return Ok(None);
+            }
+
+            if let Some(active) = &cursor.active {
+                if (offset..offset + u32::from(width))
+                    .any(|offset| active.readonly.contains_key(&offset) && write)
+                {
+                    return Err(fail(
+                        DiagnosticCategory::InvalidSpillSlotRead,
+                        "write to read-only stored input",
+                    ));
+                }
+                let unit = self.unit(active.id)?;
+                let allowed = (offset..offset + u32::from(width)).all(|cell| {
+                    active.readonly.contains_key(&cell) && !write
+                        || unit.scratch.iter().any(|requirement| {
+                            let allocation = &self.frame.scratch()[&requirement.id];
+                            (allocation.offset..allocation.offset + allocation.size).contains(&cell)
+                        })
+                });
+                if !allowed {
+                    return Err(fail(
+                        DiagnosticCategory::InvalidSpillSlotRead,
+                        "undeclared compiler-storage access inside lowering",
+                    ));
+                }
+            } else if !(offset..offset + u32::from(width))
+                .all(|cell| self.frame.spills().values().any(|offset| *offset == cell))
+            {
+                return Err(fail(
+                    DiagnosticCategory::InvalidSpillSlotRead,
+                    "allocation action accesses undeclared spill",
+                ));
+            }
+        } else {
+            let active = cursor
+                .active
+                .as_ref()
+                .ok_or_else(|| error("source memory outside registered lowering"))?;
+            let unit = self.unit(active.id)?;
+            if !unit.effects.memory.permits(write) {
+                return Err(error("unregistered source memory effect"));
+            }
+        }
+        Ok(offset)
+    }
+}

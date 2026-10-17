@@ -43,9 +43,12 @@ impl fmt::Display for PlanAction {
         }
     }
 }
+/// Proposed physical implementation of a source-checked selected procedure.
+/// Allocation can choose actions and contracts but cannot modify the sealed semantic program;
+/// independent verification must discharge those choices before serialization.
 #[derive(Debug, Clone)]
 pub(crate) struct ProcedurePlan {
-    pub selected: SelectedProgram,
+    pub selected: crate::verify::CheckedSelectedProgram,
     /// Entry hypotheses that every actual incoming edge must establish.
     pub contracts: BTreeMap<SegmentId, EntryContract>,
     /// Ordered actions for each straight-line selected segment.

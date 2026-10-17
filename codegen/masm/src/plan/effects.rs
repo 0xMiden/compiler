@@ -6,6 +6,8 @@ use miden_core::Felt;
 use super::{DiagnosticCategory, PlanError};
 use crate::masm::{Immediate, Instruction, PushValue};
 
+/// Fixed-width memory footprint in native element-address order. Indirect accesses must
+/// resolve actual input provenance before being classified as source or compiler storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MemoryRegion {
     /// Statically known local frame interval, in field elements.
@@ -238,6 +240,9 @@ impl TargetEffects {
             return Ok(StackEffect::new(depth + 4, outputs, vec![]));
         }
         let effect = match instruction {
+            Add | Sub | Mul | Eq | Neq => {
+                StackEffect::new(2, vec![LaneEffect::Computed(0)], vec![FloorStep::Pop(1)])
+            }
             Nop => StackEffect::new(0, vec![], vec![]),
             Drop => StackEffect::new(1, vec![], vec![FloorStep::Pop(1)]),
             DropW => StackEffect::new(4, vec![], vec![FloorStep::Pop(4)]),

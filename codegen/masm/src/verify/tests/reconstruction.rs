@@ -1,0 +1,467 @@
+use super::*;
+
+struct Reconstructible {
+    alias: bool,
+    crossing: bool,
+}
+impl GeneratedDefinition for Reconstructible {
+    fn id(&self) -> GeneratedDefinitionId {
+        GeneratedDefinitionId(41)
+    }
+
+    fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+        let mut evidence = Fixture::new(u32::from(self.alias), 1).instantiate(&[])?;
+        evidence.program.origin = ProcedureOrigin::Generated {
+            definition: self.id(),
+            parameters: vec![],
+        };
+        evidence.program.values.get_mut(&ValueId(100)).unwrap().reconstruction =
+            Some(if self.alias {
+                Reconstruction::Alias(vec![Fixture::input(0)])
+            } else {
+                Reconstruction::Literal(vec![Felt::new_unchecked(7)])
+            });
+        if self.crossing {
+            evidence.program.segments.push(SelectedSegment {
+                content_parameters: vec![],
+                id: SegmentId(1),
+                parameters: vec![],
+                units: vec![],
+            });
+            let mut terminal = evidence.program.edges[0].clone();
+            terminal.id = EdgeId(1);
+            terminal.source = SegmentId(1);
+            evidence.program.edges[0].destination = Some(SegmentId(1));
+            evidence.program.edges[0].kind = EdgeKind::Forward;
+            evidence.program.edges[0].bindings.clear();
+            evidence.program.edges.push(terminal);
+            evidence.program.structure = ControlTree::Sequence(vec![
+                ControlTree::Segment(SegmentId(0)),
+                ControlTree::Edge(EdgeId(0)),
+                ControlTree::Segment(SegmentId(1)),
+                ControlTree::Edge(EdgeId(1)),
+            ]);
+        }
+        Ok(evidence)
+    }
+}
+fn fixture(alias: bool, crossing: bool, wrong: bool) -> (ProcedurePlan, AnnotatedMasmBody) {
+    let definition = Reconstructible { alias, crossing };
+    let mut plan = Fixture::new(u32::from(alias), 1).plan();
+    plan.selected = check_selection(
+        definition.instantiate(&[]).unwrap().program,
+        &SourceContext::Generated(&definition),
+    )
+    .unwrap();
+    let mut code = vec![
+        AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+        AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+    ];
+    if !alias {
+        code.push(push(if wrong { 8 } else { 7 }));
+    } else if wrong {
+        code.extend([inst(Instruction::Drop), push(8)]);
+    }
+    code.push(AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))));
+    if !alias {
+        code.push(inst(Instruction::Drop));
+        plan.segment_actions.get_mut(&SegmentId(0)).unwrap().push(PlanAction::Drop);
+    }
+    if crossing {
+        code.extend([
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(1))),
+        ]);
+        let mut contract = plan.contracts[&SegmentId(0)].clone();
+        contract.stack_top_first = if alias {
+            vec![Fixture::input(0)]
+        } else {
+            vec![]
+        };
+        plan.contracts.insert(SegmentId(1), contract);
+        plan.segment_actions.insert(SegmentId(1), vec![]);
+    }
+    if !alias {
+        code.push(push(7));
+        plan.segment_actions
+            .get_mut(&SegmentId(u32::from(crossing)))
+            .unwrap()
+            .push(PlanAction::PushLiteral(Felt::new_unchecked(7)));
+    }
+    code.push(AnnotatedOp::Boundary(Boundary::Edge(EdgeId(u32::from(crossing)))));
+    (plan, ops(code))
+}
+#[test]
+fn checked_literal_can_be_drained_and_rebuilt_without_storage() {
+    let (plan, body) = fixture(false, false, false);
+    verify(&plan, &frame(), body).unwrap();
+}
+#[test]
+fn checked_literal_survives_an_empty_fresh_contract() {
+    let (plan, body) = fixture(false, true, false);
+    verify(&plan, &frame(), body).unwrap();
+}
+#[test]
+fn reconstruction_declarations_cannot_bless_wrong_physical_outputs() {
+    for alias in [false, true] {
+        let (plan, body) = fixture(alias, false, true);
+        assert!(verify(&plan, &frame(), body).is_err());
+    }
+}
+#[test]
+fn declaration_only_alias_survives_a_fresh_contract() {
+    let (plan, body) = fixture(true, true, false);
+    verify(&plan, &frame(), body).unwrap();
+}
+
+#[test]
+fn cyclic_or_forward_reconstruction_aliases_are_rejected_at_selection() {
+    struct InvalidAlias;
+    impl GeneratedDefinition for InvalidAlias {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(42)
+        }
+
+        fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = Reconstructible {
+                alias: false,
+                crossing: false,
+            }
+            .instantiate(&[])?;
+            evidence.program.origin = ProcedureOrigin::Generated {
+                definition: self.id(),
+                parameters: vec![],
+            };
+            evidence.program.values.get_mut(&ValueId(100)).unwrap().reconstruction =
+                Some(Reconstruction::Alias(vec![Fixture::output(0)]));
+            Ok(evidence)
+        }
+    }
+    assert!(
+        check_selection(
+            InvalidAlias.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&InvalidAlias)
+        )
+        .is_err()
+    );
+}
+
+struct StoredReconstruction;
+impl GeneratedDefinition for StoredReconstruction {
+    fn id(&self) -> GeneratedDefinitionId {
+        GeneratedDefinitionId(47)
+    }
+
+    fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+        let mut evidence = Reconstructible {
+            alias: false,
+            crossing: false,
+        }
+        .instantiate(&[])?;
+        evidence.program.origin = ProcedureOrigin::Generated {
+            definition: self.id(),
+            parameters: vec![],
+        };
+        let mut consumer = evidence.program.segments[0].units[0].clone();
+        consumer.id = SelectedStepId(1);
+        consumer.source = SourceStepId(1);
+        consumer.outputs.clear();
+        consumer.semantic_inputs = vec![ValueId(100)];
+        consumer.stored_inputs = vec![StoredInput {
+            id: StoredInputId(0),
+            value: StoredValue::Atom(Fixture::output(0)),
+        }];
+        evidence.program.segments[0].units.push(consumer);
+        evidence.units.insert(SelectedStepId(1), UnitEvidence::default());
+        evidence.program.source_map.insert(
+            SourceStepId(1),
+            SourceRecord {
+                origin: SourceOrigin::Generated {
+                    definition: self.id(),
+                    stage: 1,
+                },
+                location: SourceLocation::default(),
+            },
+        );
+        evidence.program.edges[0].bindings.clear();
+        evidence.program.abi = ProcedureAbi::new(CallingConvention::SameContext, 0, 0).unwrap();
+        Ok(evidence)
+    }
+}
+#[test]
+fn reconstructible_stored_literal_still_needs_the_actual_physical_store() {
+    for stored in [None, Some(7), Some(8)] {
+        let mut plan = Fixture::new(0, 0).plan();
+        plan.selected = check_selection(
+            StoredReconstruction.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&StoredReconstruction),
+        )
+        .unwrap();
+        let slot = SpillSlotId::canonical(Fixture::output(0));
+        plan.spill_slots = vec![slot];
+        let frame = FinalFrameLayout::new(
+            SourceLocalLayout::default(),
+            BTreeMap::from([(slot, 0)]),
+            BTreeMap::new(),
+            4,
+        )
+        .unwrap();
+        plan.lowering_bindings.insert(
+            SelectedStepId(1),
+            LoweringBindings {
+                stored_inputs: BTreeMap::from([(StoredInputId(0), slot)]),
+                scratch: BTreeMap::new(),
+            },
+        );
+        let mut actions = vec![
+            PlanAction::RunLowering {
+                step: SelectedStepId(0),
+            },
+            PlanAction::Drop,
+        ];
+        let mut code = vec![
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+            push(7),
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+            inst(Instruction::Drop),
+        ];
+        if let Some(value) = stored {
+            actions.extend([
+                PlanAction::PushLiteral(Felt::new_unchecked(value)),
+                PlanAction::StoreLane(slot),
+            ]);
+            code.extend([push(value), inst(Instruction::LocStore(0.into()))]);
+        }
+        actions.push(PlanAction::RunLowering {
+            step: SelectedStepId(1),
+        });
+        code.extend([
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(1))),
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(1))),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+        ]);
+        plan.segment_actions.insert(SegmentId(0), actions);
+        let result = verify(&plan, &frame, ops(code));
+        assert_eq!(result.is_ok(), stored == Some(7), "{stored:?}: {result:?}");
+    }
+}
+
+#[test]
+fn a_previous_loop_instance_alias_cannot_supply_a_header_capture() {
+    struct PreviousAlias;
+    impl GeneratedDefinition for PreviousAlias {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(48)
+        }
+
+        fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = super::loops::LoopDefinition.instantiate(&[])?;
+            evidence.program.origin = ProcedureOrigin::Generated {
+                definition: self.id(),
+                parameters: vec![],
+            };
+            evidence.program.values.get_mut(&ValueId(31)).unwrap().reconstruction =
+                Some(Reconstruction::Alias(vec![Atom::new(ValueId(20), 0)]));
+            evidence.program.edges[3].bindings[0].source = ValueId(31);
+            Ok(evidence)
+        }
+    }
+    assert!(
+        check_selection(
+            PreviousAlias.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&PreviousAlias)
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn reconstructed_parameter_identity_is_checked_on_actual_incoming_edge() {
+    struct LiteralParameter;
+    impl GeneratedDefinition for LiteralParameter {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(49)
+        }
+
+        fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = Reconstructible {
+                alias: false,
+                crossing: true,
+            }
+            .instantiate(&[])?;
+            evidence.program.origin = ProcedureOrigin::Generated {
+                definition: self.id(),
+                parameters: vec![],
+            };
+            let value = evidence.program.values.get_mut(&ValueId(100)).unwrap();
+            let mut parameter = value.clone();
+            value.reconstruction = None;
+            parameter.id = ValueId(201);
+            parameter.origin = ValueOrigin::Parameter {
+                segment: SegmentId(1),
+                index: 0,
+            };
+            evidence.program.values.insert(parameter.id, parameter);
+            evidence.program.segments[1].parameters = vec![ValueId(201)];
+            evidence.program.edges[0].bindings = vec![ParameterBinding {
+                destination: ValueId(201),
+                source: ValueId(100),
+            }];
+            evidence.program.edges[1].bindings = vec![ParameterBinding {
+                destination: ValueId(201),
+                source: ValueId(201),
+            }];
+            Ok(evidence)
+        }
+    }
+    let mut plan = Fixture::new(0, 1).plan();
+    plan.selected = check_selection(
+        LiteralParameter.instantiate(&[]).unwrap().program,
+        &SourceContext::Generated(&LiteralParameter),
+    )
+    .unwrap();
+    let mut contract = plan.contracts[&SegmentId(0)].clone();
+    contract.stack_top_first = vec![Atom::new(ValueId(201), 0)];
+    plan.contracts.insert(SegmentId(1), contract);
+    plan.segment_actions.insert(SegmentId(1), vec![]);
+    for value in [7, 8] {
+        let body = ops(vec![
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+            push(value),
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(1))),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(1))),
+        ]);
+        let result = verify(&plan, &frame(), body);
+        assert_eq!(result.is_ok(), value == 7, "value={value}: {result:?}");
+    }
+}
+
+#[test]
+fn representation_alias_lanes_are_checked_and_preserved_across_hypotheses() {
+    struct LaneAlias;
+    impl GeneratedDefinition for LaneAlias {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(51)
+        }
+
+        fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = Reconstructible {
+                alias: true,
+                crossing: true,
+            }
+            .instantiate(&[])?;
+            evidence.program.origin = ProcedureOrigin::Generated {
+                definition: self.id(),
+                parameters: vec![],
+            };
+            for id in [ValueId(0), ValueId(100)] {
+                evidence.program.values.get_mut(&id).unwrap().layout =
+                    ValueLayout::new(Type::U64).unwrap();
+            }
+            evidence.program.values.get_mut(&ValueId(100)).unwrap().reconstruction =
+                Some(Reconstruction::Alias(vec![Atom::new(ValueId(0), 1), Fixture::input(0)]));
+            evidence.program.segments[0].units[0]
+                .stack_inputs
+                .push(Atom::new(ValueId(0), 1));
+            evidence.program.segments[0].units[0].outputs.push(Atom::new(ValueId(100), 1));
+            evidence.program.abi = ProcedureAbi::new(CallingConvention::SameContext, 2, 2).unwrap();
+            Ok(evidence)
+        }
+    }
+    let mut plan = Fixture::new(1, 1).plan();
+    plan.selected = check_selection(
+        LaneAlias.instantiate(&[]).unwrap().program,
+        &SourceContext::Generated(&LaneAlias),
+    )
+    .unwrap();
+    plan.contracts
+        .get_mut(&SegmentId(0))
+        .unwrap()
+        .stack_top_first
+        .push(Atom::new(ValueId(0), 1));
+    let mut contract = plan.contracts[&SegmentId(0)].clone();
+    contract.stack_top_first.reverse();
+    plan.contracts.insert(SegmentId(1), contract);
+    plan.segment_actions.insert(SegmentId(1), vec![]);
+    for swap in [false, true] {
+        let mut code = vec![
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+        ];
+        if swap {
+            code.push(inst(Instruction::Swap1));
+        }
+        code.extend([
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(1))),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(1))),
+        ]);
+        let result = verify(&plan, &frame(), ops(code));
+        assert_eq!(result.is_ok(), swap, "swap={swap}: {result:?}");
+    }
+}
+
+#[test]
+fn a_wrong_literal_is_rejected_at_publication_before_reconstruction() {
+    let definition = Reconstructible {
+        alias: false,
+        crossing: false,
+    };
+    let mut plan = Fixture::new(0, 1).plan();
+    plan.selected = check_selection(
+        definition.instantiate(&[]).unwrap().program,
+        &SourceContext::Generated(&definition),
+    )
+    .unwrap();
+    let error = verify(
+        &plan,
+        &frame(),
+        body(vec![Primitive::Push(Felt::new_unchecked(8)).instruction().unwrap()]),
+    )
+    .unwrap_err();
+    assert_eq!(error.message, "output violates checked reconstruction identity");
+}
+
+#[test]
+fn a_reconstruction_declaration_cannot_invent_an_unpublished_lane() {
+    struct MissingLane;
+    impl GeneratedDefinition for MissingLane {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(52)
+        }
+
+        fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = Reconstructible {
+                alias: true,
+                crossing: true,
+            }
+            .instantiate(&[])?;
+            evidence.program.origin = ProcedureOrigin::Generated {
+                definition: self.id(),
+                parameters: vec![],
+            };
+            for id in [ValueId(0), ValueId(100)] {
+                evidence.program.values.get_mut(&id).unwrap().layout =
+                    ValueLayout::new(Type::U64).unwrap();
+            }
+            evidence.program.values.get_mut(&ValueId(100)).unwrap().reconstruction =
+                Some(Reconstruction::Alias(vec![Fixture::input(0), Atom::new(ValueId(0), 1)]));
+            evidence.program.segments[0].units[0]
+                .stack_inputs
+                .push(Atom::new(ValueId(0), 1));
+            Ok(evidence)
+        }
+    }
+    assert!(
+        check_selection(
+            MissingLane.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&MissingLane)
+        )
+        .is_err()
+    );
+}

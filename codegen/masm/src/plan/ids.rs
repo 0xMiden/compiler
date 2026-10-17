@@ -35,6 +35,7 @@ pub(crate) struct Atom {
     pub lane: u8,
 }
 impl Atom {
+    /// Name a lane; selection checking separately verifies that it exists in the value layout.
     pub const fn new(value: ValueId, lane: u8) -> Self {
         Self { value, lane }
     }

@@ -65,7 +65,8 @@ pub(crate) enum FrameRef {
     Spill(SpillSlotId),
     Scratch { object: ScratchId, offset: u32 },
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Strength of a scratch-cell obligation, from definite initialization to exact identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum ContentRequirement {
     /// Some value was definitely written, without requiring a particular identity.
     Initialized,
@@ -74,12 +75,15 @@ pub(crate) enum ContentRequirement {
     /// Cell equals a separately defined scratch-content token.
     Content(ContentId),
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One object-relative scratch cell and the contents required or established there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ScratchCellFact {
     pub object: ScratchId,
     pub offset: u32,
     pub content: ContentRequirement,
 }
+/// Claimed exact association between a semantic pointer and a scratch range.
+/// Replay proves its address and accessible extent independently of any cell initialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AddressFact {
     pub pointer: ValueId,
@@ -101,6 +105,8 @@ pub(crate) enum ScratchEffect {
         offset: u32,
         size: u32,
     },
+    /// Expose a bounded range to a call with these read/write permissions.
+    /// A definite write establishes initialization; retaining a compiler pointer is rejected.
     Borrow {
         object: ScratchId,
         offset: u32,
@@ -184,6 +190,7 @@ impl FinalFrameLayout {
         })
     }
 
+    /// Original source-owned prefix, used to check agreement with sealed source evidence.
     pub fn source(&self) -> &SourceLocalLayout {
         &self.source
     }
