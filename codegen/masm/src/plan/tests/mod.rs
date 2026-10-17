@@ -2,7 +2,7 @@ mod abi;
 mod effects;
 mod layouts;
 
-use alloc::{collections::BTreeMap, vec, vec::Vec};
+use alloc::{collections::BTreeMap, vec::Vec};
 
 use super::{actions::*, *};
 
@@ -26,22 +26,7 @@ impl SelectedLowering {
 impl ProcedurePlan {
     fn fixture(actions: Vec<PlanAction>) -> Self {
         Self {
-            selected: SelectedProgram {
-                origin: ProcedureOrigin::Generated {
-                    definition: GeneratedDefinitionId(0),
-                    parameters: Vec::new(),
-                },
-                values: BTreeMap::new(),
-                segments: vec![SelectedSegment {
-                    id: SegmentId(0),
-                    parameters: Vec::new(),
-                    units: Vec::new(),
-                }],
-                edges: Vec::new(),
-                structure: ControlTree::Segment(SegmentId(0)),
-                abi: ProcedureAbi::new(CallingConvention::SameContext, 0, 0).unwrap(),
-                source_map: BTreeMap::new(),
-            },
+            selected: crate::verify::tests::empty_program(),
             contracts: BTreeMap::new(),
             segment_actions: BTreeMap::from([(SegmentId(0), actions)]),
             edge_actions: BTreeMap::new(),

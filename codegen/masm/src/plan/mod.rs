@@ -1,6 +1,9 @@
 //! Immutable contracts shared by selection, allocation, expansion, and verification.
 //!
-//! These types contain no allocator state. The production emitter remains unchanged until cutover.
+//! Selection describes semantic values and lowering requirements here; allocation adds physical
+//! actions and entry contracts, and frame assignment resolves symbolic storage. Verification
+//! checks these claims against source evidence and the expanded instructions before assembly.
+//! The contracts describe a proposed implementation, rather than granting it authority.
 mod abi;
 pub(crate) mod actions;
 mod diagnostics;

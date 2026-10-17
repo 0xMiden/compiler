@@ -286,6 +286,25 @@ fn unknown_rules_and_unresolved_immediates_fail_closed() {
 }
 
 #[test]
+fn opaque_binary_effects_match_vm() -> Result<(), Report> {
+    for (instruction, expected) in [
+        (Instruction::Add, 12),
+        (Instruction::Sub, 2),
+        (Instruction::Mul, 35),
+        (Instruction::Eq, 0),
+        (Instruction::Neq, 1),
+    ] {
+        let effect = TargetEffects::instruction(&instruction)?;
+        assert_eq!(effect.consumed, 2);
+        assert_eq!(effect.outputs, [LaneEffect::Computed(0)]);
+        assert_eq!(effect.floor, [FloorStep::Pop(1)]);
+        let input = [Felt::new_unchecked(5), Felt::new_unchecked(7), Felt::new_unchecked(91)];
+        run(&format!("{instruction} push.{expected} assert_eq push.91 assert_eq"), &input)?;
+    }
+    Ok(())
+}
+
+#[test]
 fn indirect_memory_effects_expose_the_address_for_provenance_checking() -> Result<(), Report> {
     let load = TargetEffects::instruction(&Instruction::MemLoad)?;
     let store = TargetEffects::instruction(&Instruction::MemStore)?;

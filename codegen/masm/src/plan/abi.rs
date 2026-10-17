@@ -48,6 +48,8 @@ pub(crate) struct ProcedureAbi {
 }
 
 impl ProcedureAbi {
+    /// Reject context and kernel signatures that exceed the VM window. Same-context and
+    /// root shape obligations are checked at their respective verification boundaries.
     pub fn new(
         convention: CallingConvention,
         arguments: u32,

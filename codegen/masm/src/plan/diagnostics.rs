@@ -24,7 +24,8 @@ pub(crate) enum DiagnosticCategory {
     FrameCapacityExceeded,
 }
 
-#[derive(Debug, Clone)]
+/// Source span and inline ancestry retained through lowering for plan diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SourceLocation {
     pub span: SourceSpan,
     pub inline_chain: Vec<SourceSpan>,
