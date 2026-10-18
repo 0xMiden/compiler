@@ -276,6 +276,7 @@ struct SelectedLowering {
     effects: LoweringEffects,
     scratch: Vec<ScratchRequirement>,
     scratch_effects: Vec<ScratchEffect>, // checked content dependencies, reads, and writes
+    address_results: Vec<AddressFact>, // scalar outputs equal declared scratch addresses
 }
 
 struct StoredInput {
@@ -317,6 +318,10 @@ Edge binding is not an executable arbitrary `Rename` instruction. The checker fi
 Source-checked `Reconstruction::Literal` and `Reconstruction::Alias` declarations constrain actual lane identities at publication and incoming parameter binding. Fresh hypotheses preserve literal identities and acyclic alias relations only for definitions dominating that entry; a previous loop instance cannot establish a current alias. Recoverability may use those identities to reconstruct a literal or share an equal representation. A reconstruction declaration does not exempt emitted instructions from identity checks or replace an actual required physical store.
 
 Contract aliases describe equality of current lane tokens. They allow multiple semantic names to use one recoverable representation, but do not change physical stack multiplicity. Rebinding or redefining a value invalidates facts about its old dynamic instance, including aliases; only checked new bindings can establish replacement equalities.
+
+`SelectedLowering.address_results` declares scratch-address provenance published at normal unit completion. Each fact names a scalar output of that unit, a declared scratch object, an exact element offset, and an accessible range. Selection checks the declaration against the registered source definition and validates output ownership, uniqueness, and the range with checked arithmetic. An address that survives the unit boundary requires a spanning scratch object; publishing an address into unit-local workspace is invalid. Scratch-content/output equality is a different relation and cannot substitute for an address-result declaration.
+
+Allocator completion invalidates facts for old dynamic definitions before publishing these declared address facts. Entry inheritance, joins, and simultaneous edge binding carry only established current facts. The allocator does not inspect expansion instructions to discover addresses or import the verifier's token transfers. An address-result declaration does not initialize the object, permit a memory access, or relax pointer-escape restrictions.
 
 `SpillSlotId` is an abstract spill slot for one raw lane. A scratch descriptor records size, alignment, contiguity, address space, declared uses and lifetime, and whether it is unit-local or spans lowering units. Scratch cannot alias a live spill slot. All scratch objects are declared before frame assignment; lowering unit expansion cannot discover additional storage. Source-declared HIR locals use their existing identifiers and occupy a disjoint frame range. Spill slot allocation does not mutate `Function::locals()`.
 
@@ -844,6 +849,8 @@ These contracts bound verification without unrolling or accumulating expressions
 ### Result publication and trust
 
 Only the registered lowering definition can authorize semantic result publication, at its declared normal completion boundary. First verify the unit's actual input bindings, raw output shape, storage permissions and contents, suffix preservation, and any explicitly registered output relations. Then map each new semantic result atom to the actual verifier token in its declared result position. Publication does not replace or globally rename that token, so proved stack/storage equalities remain intact. Alias-producing lowerings must establish their specified input/result equality rather than introduce an unrelated result token.
+
+For each declared address result, the verifier independently proves that the actual output token is the declared object's final frame address plus its element offset, with the declared accessible range within that object's assigned allocation. It checks this relation before publication, using tokens derived from actual instructions. Wrong literals, objects, offsets or ranges, missing address generation, and stale dynamic results cannot be certified by the declaration. The allocator and verifier share the immutable address-result definition and source contract, but not transfer implementations or conclusions about the emitted address.
 
 Publication cannot relabel a preserved suffix lane, validate changed spill-slot contents, establish an internal invariant, or turn a branch join into an expected input identity. Trapping or nonreturning paths publish no normal results. Intermediate phases may define only their selected temporary results; later phases' inputs and final result publication remain governed by the checked selected program.
 

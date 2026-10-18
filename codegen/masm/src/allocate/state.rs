@@ -67,6 +67,131 @@ pub(crate) struct AllocationState {
     pub next_temporary: BTreeMap<SlotOwner, u32>,
 }
 impl AllocationState {
+    /// Apply a unit's declared normal completion after its input prefix has been prepared.
+    ///
+    /// Consumes the top-first input lanes, publishes the output lanes, invalidates facts
+    /// about redefined values, and updates scratch/provenance facts. Unit-local scratch
+    /// does not survive completion. A nonreturning unit has no completion state.
+    ///
+    /// This mutates in place; a failure invalidates this state. Speculative callers must
+    /// use their private state, as they do for preparation and identifier allocation.
+    pub(super) fn complete(&mut self, unit: &SelectedLowering) -> Result<(), AllocationError> {
+        if !unit.effects.normal_return {
+            return Err(invariant(
+                DiagnosticCategory::InvalidSelectedLowering,
+                "nonreturning unit cannot publish results",
+            ));
+        }
+        let definitions: BTreeSet<_> = unit.outputs.iter().map(|atom| atom.value).collect();
+        let contents: BTreeSet<_> = unit
+            .scratch_effects
+            .iter()
+            .filter_map(|effect| match effect {
+                ScratchEffect::Write(ScratchCellFact {
+                    content: ContentRequirement::Content(id),
+                    ..
+                }) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        self.slots.retain(|_, value| !matches!(value,StoredValue::Atom(atom) if definitions.contains(&atom.value)));
+        self.aliases = LaneAliases::new(
+            self.aliases
+                .pairs()
+                .iter()
+                .copied()
+                .filter(|(a, b)| !definitions.contains(&a.value) && !definitions.contains(&b.value))
+                .collect(),
+        );
+        self.addresses.retain(|fact| !definitions.contains(&fact.pointer));
+        self.scratch.retain_mut(|fact| {
+            let old = match fact.content {
+                ContentRequirement::Atom(atom) => definitions.contains(&atom.value),
+                ContentRequirement::Content(id) => contents.contains(&id),
+                ContentRequirement::Initialized => false,
+            };
+            if old {
+                fact.content = ContentRequirement::Initialized;
+            }
+            for effect in &unit.scratch_effects {
+                match effect {
+                    ScratchEffect::Write(written)
+                        if fact.object == written.object && fact.offset == written.offset =>
+                    {
+                        return false;
+                    }
+                    ScratchEffect::PossibleWrite {
+                        object,
+                        offset,
+                        size,
+                    }
+                    | ScratchEffect::Borrow {
+                        object,
+                        offset,
+                        size,
+                        write: true,
+                        ..
+                    } if fact.object == *object
+                        && fact.offset >= *offset
+                        && fact.offset - offset < *size =>
+                    {
+                        fact.content = ContentRequirement::Initialized
+                    }
+                    _ => {}
+                }
+            }
+            true
+        });
+        for effect in &unit.scratch_effects {
+            match effect {
+                ScratchEffect::Write(fact) => self.scratch.push(*fact),
+                ScratchEffect::Borrow {
+                    object,
+                    offset,
+                    size,
+                    write: true,
+                    definite_write: true,
+                    ..
+                } => {
+                    for cell in *offset..offset.checked_add(*size).ok_or_else(|| {
+                        invariant(
+                            DiagnosticCategory::InvalidSelectedLowering,
+                            "scratch range overflow",
+                        )
+                    })? {
+                        self.scratch.push(ScratchCellFact {
+                            object: *object,
+                            offset: cell,
+                            content: ContentRequirement::Initialized,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.scratch.retain(|fact| {
+            unit.scratch
+                .iter()
+                .find(|object| object.id == fact.object)
+                .is_none_or(|object| object.lifetime == ScratchLifetime::Spanning)
+        });
+        self.scratch.sort();
+        self.scratch.dedup();
+        if self.stack.len() < unit.stack_inputs.len() {
+            return Err(invariant(
+                DiagnosticCategory::UnavailableValue,
+                "unit consumed unavailable owned lanes",
+            ));
+        }
+        self.stack.drain(..unit.stack_inputs.len());
+        self.available_values.retain(|value| !definitions.contains(value));
+        for atom in unit.outputs.iter().rev() {
+            self.push(*atom)?;
+        }
+        self.addresses.extend(unit.address_results.iter().copied());
+        Ok(())
+    }
+
     /// Start a segment from its frozen contract, independently of predecessor state.
     ///
     /// Adds only the reconstruction definitions valid at this entry. Fails for an unknown

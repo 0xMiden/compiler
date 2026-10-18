@@ -134,6 +134,8 @@ pub(crate) struct SelectedLowering {
     pub stored_inputs: Vec<StoredInput>,
     /// Normal completion publishes every lane of each defined value exactly once.
     pub outputs: Vec<Atom>,
+    /// Normal output pointers equal declared spanning-scratch addresses; contents are separate.
+    pub address_results: Vec<AddressFact>,
     pub effects: LoweringEffects,
     pub scratch: Vec<ScratchRequirement>,
     /// Required reads, writes, and borrows of compiler-owned scratch.

@@ -296,6 +296,25 @@ fn validate_graph(
                         return Err(error("scratch effect exceeds declared object"));
                     }
                 }
+                let mut pointers = BTreeSet::new();
+                for fact in &unit.address_results {
+                    let output = Atom::new(fact.pointer, 0);
+                    let requirement = unit.scratch.iter().find(|object| object.id == fact.object);
+                    if !pointers.insert(fact.pointer)
+                        || !unit.outputs.contains(&output)
+                        || program.values[&fact.pointer].layout.lanes() != 1
+                        || requirement.is_none_or(|object| {
+                            object.lifetime != ScratchLifetime::Spanning
+                                || fact.offset >= object.size
+                                || fact
+                                    .offset
+                                    .checked_add(fact.accessible)
+                                    .is_none_or(|end| end > object.size)
+                        })
+                    {
+                        return Err(error("invalid scratch-address output declaration"));
+                    }
+                }
                 for (output, input) in units[&unit.id].aliases.pairs() {
                     if !unit.outputs.contains(output)
                         || !unit.stack_inputs.contains(input)

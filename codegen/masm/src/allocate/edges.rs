@@ -6,14 +6,49 @@
 //! published together; cached copies from an earlier loop iteration cannot leak through.
 use alloc::collections::{BTreeMap, BTreeSet};
 
-use super::{state::*, storage::Trial};
+use super::{
+    normalize::UnitRequirements,
+    schedule::{move_up, permute},
+    state::*,
+    storage::Trial,
+};
 use crate::plan::*;
 
+/// Prepare a transfer to `target`, retaining useful occurrences when legal.
+///
+/// The input state is immutable. A failed incremental trial falls back to a complete
+/// owned-stack drain and rebuild. Both paths require source-established aliases, scratch
+/// contents, provenance, and unchanged tail protection; repairs cannot invent those facts.
+/// The returned preparation contains edge actions only, with no lowering execution.
 pub(crate) fn repair_edge(
     state: &AllocationState,
     edge: &TransferEdge,
     target: &EntryContract,
     context: &AllocationContext<'_>,
+) -> Result<Preparation, AllocationError> {
+    transfer(state, edge, target, context, true)
+}
+
+/// Construct a transfer by draining and rebuilding, bypassing incremental optimization.
+/// Shares validation and publication rules with `repair_edge` for equivalence testing.
+pub(super) fn normalize_edge(
+    state: &AllocationState,
+    edge: &TransferEdge,
+    target: &EntryContract,
+    context: &AllocationContext<'_>,
+) -> Result<Preparation, AllocationError> {
+    transfer(state, edge, target, context, false)
+}
+
+/// Validate in the source namespace, move physical representations, then rename once.
+/// Each speculative path starts from the same state and reserves mandatory slot IDs
+/// before creating snapshots, preserving simultaneous-assignment semantics.
+fn transfer(
+    state: &AllocationState,
+    edge: &TransferEdge,
+    target: &EntryContract,
+    context: &AllocationContext<'_>,
+    incremental: bool,
 ) -> Result<Preparation, AllocationError> {
     let mut values = BTreeMap::new();
     for binding in &edge.bindings {
@@ -122,7 +157,20 @@ pub(crate) fn repair_edge(
     for fact in &target.address_facts {
         let mut required = *fact;
         required.pointer = values.get(&fact.pointer).copied().unwrap_or(fact.pointer);
-        if !state.addresses.contains(&required) {
+        let mut established = false;
+        for actual in &state.addresses {
+            if actual.object == required.object
+                && actual.offset == required.offset
+                && actual.accessible == required.accessible
+            {
+                established |= context.same(
+                    state,
+                    StoredValue::Atom(Atom::new(actual.pointer, 0)),
+                    StoredValue::Atom(Atom::new(required.pointer, 0)),
+                )?;
+            }
+        }
+        if !established {
             return Err(invariant(
                 DiagnosticCategory::InvalidEdgeTransfer,
                 "edge cannot invent address provenance",
@@ -150,12 +198,16 @@ pub(crate) fn repair_edge(
     let mut trial = Trial::new(state, context, SlotOwner::Edge(edge.id));
     // Reserve mandatory identities before generating snapshots in the same edge namespace.
     trial.state.slot_requests.extend(assignments.keys().copied());
-    trial.drain(&needed)?;
-    for (slot, atom) in assignments {
-        trial.write(slot, StoredValue::Atom(atom), &needed)?;
-    }
-    for atom in desired.iter().rev() {
-        trial.load(*atom)?;
+    if !incremental || incremental_transfer(&mut trial, &desired, &assignments, &needed).is_err() {
+        trial = Trial::new(state, context, SlotOwner::Edge(edge.id));
+        trial.state.slot_requests.extend(assignments.keys().copied());
+        trial.drain(&needed)?;
+        for (slot, atom) in assignments {
+            trial.write(slot, StoredValue::Atom(atom), &needed)?;
+        }
+        for atom in desired.iter().rev() {
+            trial.load(*atom)?;
+        }
     }
     // All physical transfers still use the original names. Publish the target names together,
     // retaining exactly its declared facts rather than stale previous-iteration copies.
@@ -185,4 +237,84 @@ pub(crate) fn repair_edge(
             .extend(context.reconstructions_at_entry(destination)?);
     }
     Ok(Preparation::finish(trial))
+}
+
+/// Write mandatory slots, retain distinct useful occurrences, and fill only missing lanes.
+/// Exact occurrence permutation enforces multiplicity even when several atoms are equal.
+/// A failure leaves this private trial unusable; the caller retries from the original state.
+fn incremental_transfer(
+    trial: &mut Trial<'_>,
+    desired: &[Atom],
+    assignments: &BTreeMap<SpillSlotId, Atom>,
+    needed: &BTreeSet<Atom>,
+) -> Result<(), AllocationError> {
+    for (slot, atom) in assignments {
+        trial.write(*slot, StoredValue::Atom(*atom), needed)?;
+    }
+    let mut retained = BTreeSet::new();
+    let mut missing = alloc::vec::Vec::new();
+    for atom in desired {
+        let mut found = None;
+        for occurrence in &trial.state.stack {
+            if !retained.contains(&occurrence.id)
+                && trial.context.same(
+                    &trial.state,
+                    StoredValue::Atom(*atom),
+                    StoredValue::Atom(occurrence.atom),
+                )?
+            {
+                found = Some(occurrence.id);
+                break;
+            }
+        }
+        if let Some(id) = found {
+            retained.insert(id);
+        } else {
+            missing.push(*atom);
+        }
+    }
+    while let Some(depth) = trial
+        .state
+        .stack
+        .iter()
+        .position(|occurrence| !retained.contains(&occurrence.id))
+    {
+        move_up(trial, depth)?;
+        trial.state.stack.pop_front();
+        trial.actions.push(actions::PlanAction::Drop);
+    }
+    for atom in missing {
+        trial.load(atom)?;
+    }
+    let mut placed = BTreeSet::new();
+    let mut target = alloc::vec::Vec::new();
+    for atom in desired {
+        let mut found = None;
+        for (depth, occurrence) in trial.state.stack.iter().enumerate() {
+            if !placed.contains(&occurrence.id)
+                && trial.context.same(
+                    &trial.state,
+                    StoredValue::Atom(*atom),
+                    StoredValue::Atom(occurrence.atom),
+                )?
+            {
+                found = Some(depth);
+                break;
+            }
+        }
+        let depth = found.ok_or_else(|| {
+            invariant(DiagnosticCategory::UnavailableValue, "incremental edge lost a target source")
+        })?;
+        let id = trial.state.stack[depth].id;
+        target.push(id);
+        placed.insert(id);
+    }
+    permute(
+        trial,
+        &target,
+        &UnitRequirements {
+            needed: needed.clone(),
+            survivors: BTreeSet::new(),
+        },
+    )
 }
