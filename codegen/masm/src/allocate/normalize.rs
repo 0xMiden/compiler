@@ -20,6 +20,42 @@ pub(crate) fn prepare_unit(
     context: &AllocationContext<'_>,
 ) -> Result<Preparation, AllocationError> {
     let mut trial = Trial::new(state, context, SlotOwner::Unit(unit.id));
+    let needs = requirements(unit, live_after, context)?;
+    trial.drain(&needs.needed)?;
+    // Live-through values stay in memory. A reconstructible literal needs no backing store.
+    for atom in &needs.needed {
+        if trial.slot_for(StoredValue::Atom(*atom))?.is_none()
+            && !matches!(context.source(&trial.state, *atom)?, StoredValue::Literal(_))
+        {
+            return Err(invariant(
+                DiagnosticCategory::UnavailableValue,
+                "normalization lost a required semantic value",
+            ));
+        }
+    }
+    bind_inputs(&mut trial, unit, &needs.needed)?;
+    for atom in unit.stack_inputs.iter().rev() {
+        trial.load(*atom)?;
+    }
+    Ok(Preparation::finish(trial))
+}
+
+/// Raw-lane demand separating entry availability from preservation through consumption.
+pub(super) struct UnitRequirements {
+    /// Inputs, alias-reconstruction dependencies, and live-through lanes required at entry.
+    pub needed: BTreeSet<Atom>,
+    /// Old values demanded after normal completion, excluding this unit's definitions.
+    pub survivors: BTreeSet<Atom>,
+}
+
+/// Expand semantic uses and live-after demand through immutable selected layouts.
+/// Alias outputs demand their source identities even when no physical input names them.
+/// Missing layouts are reported as unavailable semantic values.
+pub(super) fn requirements(
+    unit: &SelectedLowering,
+    live_after: &BTreeSet<ValueId>,
+    context: &AllocationContext<'_>,
+) -> Result<UnitRequirements, AllocationError> {
     let mut needed: BTreeSet<_> = unit.stack_inputs.iter().copied().collect();
     let mut semantic_uses: BTreeSet<_> = unit.semantic_inputs.iter().copied().collect();
     for output in &unit.outputs {
@@ -47,6 +83,7 @@ pub(crate) fn prepare_unit(
         }
     }
     let definitions: BTreeSet<_> = unit.outputs.iter().map(|atom| atom.value).collect();
+    let mut survivors = BTreeSet::new();
     for value in live_after.difference(&definitions) {
         let layout = &context
             .values
@@ -55,23 +92,23 @@ pub(crate) fn prepare_unit(
                 invariant(DiagnosticCategory::UnavailableValue, "live value has no layout")
             })?
             .layout;
-        needed.extend((0..layout.lanes()).map(|lane| Atom::new(*value, lane)));
+        survivors.extend((0..layout.lanes()).map(|lane| Atom::new(*value, lane)));
     }
-    trial.drain(&needed)?;
-    // Live-through values stay in memory. A reconstructible literal needs no backing store.
-    for atom in &needed {
-        if trial.slot_for(StoredValue::Atom(*atom))?.is_none()
-            && !matches!(context.source(&trial.state, *atom)?, StoredValue::Literal(_))
-        {
-            return Err(invariant(
-                DiagnosticCategory::UnavailableValue,
-                "normalization lost a required semantic value",
-            ));
-        }
-    }
+    needed.extend(&survivors);
+    Ok(UnitRequirements { needed, survivors })
+}
+
+/// Bind every stored input to protected contents before opaque lowering execution.
+/// Replaces this trial's binding table with the unit's complete bindings; duplicate input
+/// IDs or unavailable sources invalidate the trial, which callers must discard on failure.
+pub(super) fn bind_inputs(
+    trial: &mut Trial<'_>,
+    unit: &SelectedLowering,
+    needed: &BTreeSet<Atom>,
+) -> Result<(), AllocationError> {
     let mut bindings = LoweringBindings::default();
     for input in &unit.stored_inputs {
-        let slot = trial.bind_stored(input.value, &needed)?;
+        let slot = trial.bind_stored(input.value, needed)?;
         if bindings.stored_inputs.insert(input.id, slot).is_some() {
             return Err(invariant(
                 DiagnosticCategory::InvalidSelectedLowering,
@@ -79,9 +116,6 @@ pub(crate) fn prepare_unit(
             ));
         }
     }
-    for atom in unit.stack_inputs.iter().rev() {
-        trial.load(*atom)?;
-    }
     trial.bindings = BTreeMap::from([(unit.id, bindings)]);
-    Ok(Preparation::finish(trial))
+    Ok(())
 }
