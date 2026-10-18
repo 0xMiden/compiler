@@ -100,6 +100,51 @@ pub(crate) fn prepare_unit(
     normalize::prepare_unit(state, unit, live_after, context)
 }
 
+/// Put a selected predicate on top while preserving demand on the outgoing edges.
+///
+/// The edge identity owns temporary storage. This is a prefix request with no executable
+/// lowering or stored-input bindings; the caller consumes the predicate after committing.
+pub(super) fn prepare_control(
+    state: &AllocationState,
+    predicate: Atom,
+    edge: EdgeId,
+    live_after: &BTreeSet<ValueId>,
+    context: &AllocationContext<'_>,
+) -> Result<Preparation, AllocationError> {
+    let request = SelectedLowering {
+        id: SelectedStepId(u32::MAX),
+        kind: LoweringKind(0),
+        source: SourceStepId(0),
+        semantic_inputs: alloc::vec![predicate.value],
+        stack_inputs: alloc::vec![predicate],
+        stored_inputs: Vec::new(),
+        outputs: Vec::new(),
+        address_results: Vec::new(),
+        effects: LoweringEffects::default(),
+        scratch: Vec::new(),
+        scratch_effects: Vec::new(),
+    };
+    let needs = normalize::requirements(&request, live_after, context)?;
+    let base = Trial::new(state, context, SlotOwner::Edge(edge));
+    for tier in [SchedulingTier::Stack, SchedulingTier::Loads, SchedulingTier::Selective] {
+        let candidate = match tier {
+            SchedulingTier::Stack => stack_candidate(base.clone(), &request, &needs),
+            SchedulingTier::Loads => load_candidates(&base, &request, &needs),
+            SchedulingTier::Selective => selective(base.clone(), &request, &needs),
+            SchedulingTier::Normalization => unreachable!(),
+        };
+        if let Ok(Some(trial)) = candidate {
+            let mut result = Preparation::finish(trial);
+            result.tier = tier;
+            return Ok(result);
+        }
+    }
+    let mut trial = base;
+    trial.drain(&needs.needed)?;
+    trial.load(predicate)?;
+    Ok(Preparation::finish(trial))
+}
+
 /// Compare lane identities under this trial's available reconstructions and aliases.
 fn same(trial: &Trial<'_>, a: Atom, b: Atom) -> Result<bool, AllocationError> {
     trial.context.same(&trial.state, StoredValue::Atom(a), StoredValue::Atom(b))
@@ -157,8 +202,12 @@ fn valid(
     Ok(true)
 }
 
-/// Apply one raw action only after checking its actual indexed access.
-fn shuffle(trial: &mut Trial<'_>, action: PlanAction) -> Result<(), AllocationError> {
+/// Apply an indexed raw shuffle to owned occurrences and append its action.
+///
+/// Depth is zero-based from the top and must name an owned lane within the top sixteen.
+/// Moves preserve occurrence identities; duplication creates a fresh identity. Nonshuffle
+/// actions are a caller error. A rejected indexed access leaves the trial unchanged.
+pub(super) fn shuffle(trial: &mut Trial<'_>, action: PlanAction) -> Result<(), AllocationError> {
     let depth = match action {
         PlanAction::Dup { depth }
         | PlanAction::Swap { depth }
@@ -192,7 +241,8 @@ fn shuffle(trial: &mut Trial<'_>, action: PlanAction) -> Result<(), AllocationEr
     Ok(())
 }
 
-fn move_up(trial: &mut Trial<'_>, depth: usize) -> Result<(), AllocationError> {
+/// Lift one owned raw lane by zero-based depth, rejecting inaccessible or overflowing depths.
+pub(super) fn move_up(trial: &mut Trial<'_>, depth: usize) -> Result<(), AllocationError> {
     let depth = u8::try_from(depth)
         .map_err(|_| invariant(DiagnosticCategory::IllegalStackAccess, "shuffle depth overflow"))?;
     shuffle(trial, PlanAction::MoveUp { depth })
@@ -425,6 +475,40 @@ fn solver(
     Ok(true)
 }
 
+/// Arrange distinct existing occurrence IDs in the requested top-first order.
+///
+/// Targets must already exist in the trial. Grouped search is optional and privately
+/// replayed; otherwise reverse-order raw lifts construct the prefix. Every lift must
+/// remain within the accessible sixteen lanes, or the caller must discard this trial.
+pub(super) fn permute(
+    trial: &mut Trial<'_>,
+    target: &[OccurrenceId],
+    needs: &UnitRequirements,
+) -> Result<(), AllocationError> {
+    if trial
+        .state
+        .stack
+        .iter()
+        .take(target.len())
+        .map(|o| o.id)
+        .eq(target.iter().copied())
+    {
+        return Ok(());
+    }
+    let atoms: Vec<_> = target
+        .iter()
+        .map(|id| trial.state.stack.iter().find(|o| o.id == *id).expect("target occurrence").atom)
+        .collect();
+    if !solver(trial, &atoms, needs, Some(target))? {
+        for id in target.iter().rev() {
+            let depth =
+                trial.state.stack.iter().position(|o| o.id == *id).expect("target occurrence");
+            move_up(trial, depth)?;
+        }
+    }
+    Ok(())
+}
+
 /// Accept an already valid state or try grouped movement without loading or evicting lanes.
 fn stack_candidate<'a>(
     mut trial: Trial<'a>,
@@ -495,8 +579,13 @@ pub(super) fn load_candidate<'a>(
 /// Estimate before frame assignment: address generation takes two primitives, reads
 /// one, and writes two (including the discarded result). Raw shuffles are already expanded.
 pub(super) fn cost(trial: &Trial<'_>) -> usize {
-    trial
-        .actions
+    action_cost(&trial.actions)
+}
+
+/// Estimate emitted primitive count for raw preparation actions before frame assignment.
+/// Slot loads cost three, stores four, and other actions one; this is a ranking heuristic.
+pub(super) fn action_cost(actions: &[PlanAction]) -> usize {
+    actions
         .iter()
         .map(|action| match action {
             PlanAction::LoadLane(_) => 3,
@@ -641,12 +730,12 @@ fn selective<'a>(
     while unit.stack_inputs.len() + retained.len() > 16 {
         let mut ranked = Vec::new();
         for (index, candidate) in retained.iter().enumerate() {
-            let distance = trial
-                .context
-                .next_use
-                .after
-                .get(&unit.id)
-                .map_or(NextUseDistance::Infinite, |uses| uses.get(candidate.atom.value));
+            let uses = match trial.owner {
+                SlotOwner::Edge(edge) => trial.context.next_use.edge.get(&edge),
+                _ => trial.context.next_use.after.get(&unit.id),
+            };
+            let distance =
+                uses.map_or(NextUseDistance::Infinite, |uses| uses.get(candidate.atom.value));
             ranked.push((
                 victim_class(&trial, index, &retained, &pins, needs)?,
                 Reverse(distance),
@@ -702,17 +791,7 @@ fn selective<'a>(
         .map(Option::unwrap)
         .chain(retained.iter().map(|r| r.occurrence.unwrap()))
         .collect();
-    let atoms: Vec<_> = target
-        .iter()
-        .map(|id| trial.state.stack.iter().find(|o| o.id == *id).expect("target occurrence").atom)
-        .collect();
-    if !solver(&mut trial, &atoms, needs, Some(&target))? {
-        for id in target.iter().rev() {
-            let depth =
-                trial.state.stack.iter().position(|o| o.id == *id).expect("target occurrence");
-            move_up(&mut trial, depth)?;
-        }
-    }
+    permute(&mut trial, &target, needs)?;
     if !trial
         .state
         .stack

@@ -40,6 +40,7 @@ impl GeneratedDefinition for LoopDefinition {
             );
         }
         let unit = |step, input, outputs: Vec<u32>| SelectedLowering {
+            address_results: vec![],
             id: SelectedStepId(step),
             kind: LoweringKind(0),
             source: SourceStepId(step),
@@ -575,6 +576,7 @@ impl GeneratedDefinition for HeaderDefinition {
             );
         }
         evidence.program.segments[1].units.push(SelectedLowering {
+            address_results: vec![],
             id: SelectedStepId(2),
             kind: LoweringKind(0),
             source: SourceStepId(2),

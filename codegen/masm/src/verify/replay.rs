@@ -747,6 +747,26 @@ impl<'a> Verifier<'a> {
                 ));
             }
         }
+        for fact in &unit.address_results {
+            let index = unit
+                .outputs
+                .iter()
+                .position(|atom| *atom == Atom::new(fact.pointer, 0))
+                .ok_or_else(|| error("address result is not a unit output"))?;
+            let offset = u32::from(self.frame.resolve(FrameRef::Scratch {
+                object: fact.object,
+                offset: fact.offset,
+            })?);
+            let allocation = &self.frame.scratch()[&fact.object];
+            if self.tokens.frame_address(state.stack[index]) != Some(offset)
+                || fact.offset.checked_add(fact.accessible).is_none_or(|end| end > allocation.size)
+            {
+                return Err(fail(
+                    DiagnosticCategory::InvalidEdgeTransfer,
+                    "output does not establish declared scratch address",
+                ));
+            }
+        }
         // Publication binds names to existing tokens and does not rename stack or memory.
         for (atom, token) in unit.outputs.iter().zip(&state.stack) {
             state.names.insert(*atom, *token);

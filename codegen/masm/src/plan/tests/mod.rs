@@ -10,6 +10,7 @@ use super::{actions::*, *};
 impl SelectedLowering {
     fn fixture(kind: LoweringKind, source: SourceStepId) -> Self {
         Self {
+            address_results: Vec::new(),
             id: SelectedStepId(source.0),
             kind,
             source,

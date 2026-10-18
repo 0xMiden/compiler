@@ -68,6 +68,7 @@ pub(super) fn state(stack: Vec<Atom>, slots: Vec<(SpillSlotId, Atom)>) -> Alloca
 
 pub(super) fn unit(stack: Vec<Atom>, stored: Vec<StoredInput>) -> SelectedLowering {
     SelectedLowering {
+        address_results: vec![],
         id: SelectedStepId(0),
         kind: LoweringKind(0),
         source: SourceStepId(0),
@@ -115,6 +116,114 @@ fn cyclic_slots_and_stack_outputs_read_simultaneous_old_sources() {
         BTreeMap::from([(a, StoredValue::Atom(atom(2))), (b, StoredValue::Atom(atom(3)))])
     );
     assert!(proposal.actions.len() < 16);
+}
+
+#[test]
+fn satisfied_edge_preserves_occurrences_and_cached_slots_without_actions() {
+    let values = values(20);
+    let initial =
+        state((0..20).map(atom).collect(), vec![(SpillSlotId::canonical(atom(0)), atom(0))]);
+    let target =
+        contract((0..20).map(atom).collect(), vec![(SpillSlotId::canonical(atom(0)), atom(0))]);
+    let edge = TransferEdge {
+        id: EdgeId(0),
+        source: SegmentId(0),
+        destination: Some(SegmentId(1)),
+        kind: EdgeKind::Forward,
+        bindings: vec![],
+        content_bindings: vec![],
+    };
+    let result = repair_edge(&initial, &edge, &target, &context(&values)).unwrap();
+    assert!(result.actions.is_empty());
+    assert_eq!(result.state.stack, initial.stack);
+}
+
+#[test]
+fn incremental_and_normalization_transfers_observe_the_same_old_sources_and_tail() {
+    fn replay(
+        stack: &mut Vec<Atom>,
+        slots: &mut BTreeMap<SpillSlotId, Atom>,
+        actions: &[PlanAction],
+    ) {
+        for action in actions {
+            match *action {
+                PlanAction::Dup { depth } => {
+                    assert!(depth < 16);
+                    stack.insert(0, stack[usize::from(depth)]);
+                }
+                PlanAction::Swap { depth } => {
+                    assert!(depth < 16);
+                    stack.swap(0, usize::from(depth));
+                }
+                PlanAction::MoveUp { depth } => {
+                    assert!(depth < 16);
+                    let atom = stack.remove(usize::from(depth));
+                    stack.insert(0, atom);
+                }
+                PlanAction::MoveDown { depth } => {
+                    assert!(depth < 16);
+                    let atom = stack.remove(0);
+                    stack.insert(usize::from(depth), atom);
+                }
+                PlanAction::Drop => {
+                    stack.remove(0);
+                }
+                PlanAction::StoreLane(slot) => {
+                    slots.insert(slot, stack.remove(0));
+                }
+                PlanAction::LoadLane(slot) => stack.insert(0, slots[&slot]),
+                _ => panic!("raw parameter fixture"),
+            }
+        }
+    }
+    let values = values(50);
+    let context = context(&values);
+    let a_slot = SpillSlotId::canonical(atom(0));
+    let b_slot = SpillSlotId::canonical(atom(1));
+    let edge = TransferEdge {
+        id: EdgeId(7),
+        source: SegmentId(0),
+        destination: Some(SegmentId(1)),
+        kind: EdgeKind::Forward,
+        bindings: vec![
+            ParameterBinding {
+                destination: ValueId(40),
+                source: ValueId(1),
+            },
+            ParameterBinding {
+                destination: ValueId(41),
+                source: ValueId(0),
+            },
+        ],
+        content_bindings: vec![],
+    };
+    for depth in 0..23 {
+        let initial =
+            state((2..depth + 2).map(atom).collect(), vec![(a_slot, atom(0)), (b_slot, atom(1))]);
+        let target = contract(
+            vec![atom(40), atom(41), atom(40)],
+            vec![(a_slot, atom(40)), (b_slot, atom(41))],
+        );
+        let incremental = repair_edge(&initial, &edge, &target, &context).unwrap();
+        let fallback =
+            crate::allocate::edges::normalize_edge(&initial, &edge, &target, &context).unwrap();
+        let tail: Vec<_> = (1000..1016).map(atom).collect();
+        for preparation in [&incremental, &fallback] {
+            let mut actual: Vec<_> = initial.stack_atoms().chain(tail.iter().copied()).collect();
+            let mut slots = BTreeMap::from([(a_slot, atom(0)), (b_slot, atom(1))]);
+            replay(&mut actual, &mut slots, &preparation.actions);
+            assert_eq!(
+                actual,
+                vec![atom(1), atom(0), atom(1)]
+                    .into_iter()
+                    .chain(tail.iter().copied())
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(slots[&a_slot], atom(1));
+            assert_eq!(slots[&b_slot], atom(0));
+            assert_eq!(preparation.state.stack_atoms().collect::<Vec<_>>(), target.stack_top_first);
+        }
+    }
 }
 
 struct SwapDefinition;

@@ -201,6 +201,66 @@ fn source_parameters_are_validated_by_registered_definition() {
 }
 
 #[test]
+fn address_result_declarations_require_owned_scalar_outputs_and_spanning_ranges() {
+    struct Addresses(u8);
+    impl GeneratedDefinition for Addresses {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(109)
+        }
+
+        fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = Identity.instantiate(&[])?;
+            evidence.program.origin = ProcedureOrigin::Generated {
+                definition: self.id(),
+                parameters: vec![],
+            };
+            let unit = &mut evidence.program.segments[0].units[0];
+            unit.scratch = vec![ScratchRequirement {
+                id: ScratchId(0),
+                size: 4,
+                alignment: 4,
+                contiguous: true,
+                address_space: AddressSpace::ProcedureLocal,
+                lifetime: ScratchLifetime::Spanning,
+                uses: vec![unit.id],
+            }];
+            let mut fact = AddressFact {
+                pointer: ValueId(1),
+                object: ScratchId(0),
+                offset: 1,
+                accessible: 3,
+            };
+            match self.0 {
+                0 => {}
+                1 => fact.pointer = ValueId(0),
+                2 => fact.object = ScratchId(9),
+                3 => fact.offset = u32::MAX,
+                4 => fact.accessible = 4,
+                5 => unit.scratch[0].lifetime = ScratchLifetime::Unit(unit.id),
+                6 => fact.pointer = ValueId(99),
+                7 => unit.address_results.push(fact),
+                8 => {
+                    unit.outputs.push(Atom::new(ValueId(1), 1));
+                    evidence.program.values.get_mut(&ValueId(1)).unwrap().layout =
+                        ValueLayout::new(Type::U64).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            unit.address_results.push(fact);
+            Ok(evidence)
+        }
+    }
+    for variant in 0..9 {
+        let definition = Addresses(variant);
+        let result = check_selection(
+            definition.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&definition),
+        );
+        assert_eq!(result.is_ok(), variant == 0, "variant {variant}");
+    }
+}
+
+#[test]
 fn scratch_ownership_and_effect_domains_are_checked_before_replay() {
     let mut wrong_owner = Fixture::new(0, 0).scratch(1);
     wrong_owner.scratch[0].lifetime = ScratchLifetime::Unit(SelectedStepId(1));
