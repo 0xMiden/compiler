@@ -14,6 +14,8 @@ use crate::{
     plan::{actions::PlanAction, *},
 };
 
+/// A private preparation workspace; cloning includes identity counters and storage requests.
+#[derive(Clone)]
 pub(super) struct Trial<'a> {
     /// Facts after the actions accumulated so far.
     pub state: AllocationState,
@@ -21,9 +23,12 @@ pub(super) struct Trial<'a> {
     pub actions: Vec<PlanAction>,
     /// Stored-input bindings to publish with the accepted proposal.
     pub bindings: BTreeMap<SelectedStepId, LoweringBindings>,
+    /// Checked semantic identities and scheduling policy for this procedure.
     pub context: &'a AllocationContext<'a>,
     /// Namespace used for snapshots and other fresh temporary cells.
     pub owner: SlotOwner,
+    /// Sources usable before the lowering, but unavailable after its input consumption.
+    pub consumed_inputs: BTreeSet<OccurrenceId>,
     /// Cells promised to an opaque lowering; a different value cannot overwrite them.
     protected: BTreeSet<SpillSlotId>,
 }
@@ -41,6 +46,7 @@ impl<'a> Trial<'a> {
             bindings: BTreeMap::new(),
             context,
             owner,
+            consumed_inputs: BTreeSet::new(),
             protected: BTreeSet::new(),
         }
     }
@@ -66,6 +72,7 @@ impl<'a> Trial<'a> {
         Ok(false)
     }
 
+    /// Check for another copy that survives input consumption, or a literal recipe.
     fn elsewhere(&self, value: StoredValue, except: SpillSlotId) -> Result<bool, AllocationError> {
         if matches!(value, StoredValue::Literal(_)) {
             return Ok(true);
@@ -76,7 +83,9 @@ impl<'a> Trial<'a> {
             return Ok(true);
         }
         for occurrence in &self.state.stack {
-            if self.context.same(&self.state, value, StoredValue::Atom(occurrence.atom))? {
+            if !self.consumed_inputs.contains(&occurrence.id)
+                && self.context.same(&self.state, value, StoredValue::Atom(occurrence.atom))?
+            {
                 return Ok(true);
             }
         }

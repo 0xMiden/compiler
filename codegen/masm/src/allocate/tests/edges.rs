@@ -32,9 +32,18 @@ pub(super) fn values(count: u32) -> BTreeMap<ValueId, SelectedValue> {
 }
 
 pub(super) fn context(values: &BTreeMap<ValueId, SelectedValue>) -> AllocationContext<'_> {
+    use crate::allocate::analysis::NextUses;
+    static NO_NEXT_USES: NextUses = NextUses {
+        entry: BTreeMap::new(),
+        before: BTreeMap::new(),
+        after: BTreeMap::new(),
+        edge: BTreeMap::new(),
+    };
     // Direct physical-state fixtures do not claim any graph-derived reconstruction eligibility.
     AllocationContext {
         values,
+        next_use: &NO_NEXT_USES,
+        options: Default::default(),
         entry_reconstructions: BTreeMap::from([
             (SegmentId(0), Default::default()),
             (SegmentId(1), Default::default()),
@@ -578,7 +587,8 @@ fn reconstructed_edge_survives_empty_contract(alias: bool) {
         &SourceContext::Generated(&definition),
     )
     .unwrap();
-    let context = AllocationContext::new(&selected);
+    let analysis = crate::allocate::analysis::analyze(&selected);
+    let context = AllocationContext::new(&selected, &analysis);
     let transfer = repair_edge(
         &state(vec![atom(0)], vec![]),
         &selected.edges[0],
@@ -870,7 +880,8 @@ fn backedge_retains_current_invariants_but_discards_body_and_header_unit_reconst
     );
     initial.aliases = LaneAliases::new(vec![(atom(2), atom(0))]);
     initial.available_values.insert(ValueId(1));
-    let context = AllocationContext::new(&selected);
+    let analysis = crate::allocate::analysis::analyze(&selected);
+    let context = AllocationContext::new(&selected, &analysis);
     let transfer = repair_edge(&initial, &selected.edges[3], &target, &context).unwrap();
     assert_eq!(
         transfer.state.available_values,

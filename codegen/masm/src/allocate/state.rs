@@ -9,7 +9,11 @@ use alloc::{
     vec::Vec,
 };
 
-use super::storage::Trial;
+use super::{
+    analysis::{AllocationAnalysis, NextUses},
+    schedule::{AllocationOptions, SchedulingTier},
+    storage::Trial,
+};
 use crate::{
     lower::units::LoweringBindings,
     plan::{actions::PlanAction, *},
@@ -161,9 +165,17 @@ impl AllocationState {
     }
 }
 
+/// Immutable selected identities and demand shared by all trials for one procedure.
+///
+/// The context controls which reconstructions may be used; physical availability remains
+/// in each trial's state. Options bound optimization effort without changing feasibility.
 pub(crate) struct AllocationContext<'a> {
     /// Layout and checked literal/alias reconstruction for each selected value.
     pub values: &'a BTreeMap<ValueId, SelectedValue>,
+    /// Procedure-wide distances measured in selected unit steps.
+    pub next_use: &'a NextUses,
+    /// Scheduling policy copied into each allocation run.
+    pub options: AllocationOptions,
     /// Reconstructible definitions that dominate an entry before its first unit executes.
     pub(super) entry_reconstructions: BTreeMap<SegmentId, BTreeSet<ValueId>>,
 }
@@ -171,7 +183,7 @@ pub(crate) struct AllocationContext<'a> {
 impl<'a> AllocationContext<'a> {
     /// Reestablish source-checked reconstructions only where their definitions dominate entry.
     /// A parameter is defined at entry; a unit in that same segment has not executed yet.
-    pub fn new(program: &'a CheckedSelectedProgram) -> Self {
+    pub fn new(program: &'a CheckedSelectedProgram, analysis: &'a AllocationAnalysis) -> Self {
         use petgraph::{algo::dominators::simple_fast, graph::DiGraph};
 
         let mut graph = DiGraph::<SegmentId, ()>::new();
@@ -222,6 +234,8 @@ impl<'a> AllocationContext<'a> {
             .collect();
         Self {
             values: &program.values,
+            next_use: &analysis.next_use,
+            options: AllocationOptions::default(),
             entry_reconstructions,
         }
     }
@@ -367,6 +381,8 @@ impl<'a> AllocationContext<'a> {
 /// the returned state; they do not include execution of the lowering being prepared.
 #[derive(Debug)]
 pub(crate) struct Preparation {
+    /// Successful scheduling strategy, for inspection rather than execution.
+    pub tier: SchedulingTier,
     /// Preparation actions in execution order.
     pub actions: Vec<PlanAction>,
     /// Facts after these actions; unit preparations stop before lowering input consumption.
@@ -378,9 +394,11 @@ pub(crate) struct Preparation {
 }
 
 impl Preparation {
+    /// Seal a private trial; optimized callers may replace the default normalization tier.
     pub(super) fn finish(trial: Trial<'_>) -> Self {
         let slot_requests = trial.state.slot_requests.clone();
         Self {
+            tier: SchedulingTier::Normalization,
             actions: trial.actions,
             state: trial.state,
             bindings: trial.bindings,

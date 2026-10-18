@@ -2,6 +2,7 @@
 pub(crate) mod analysis;
 pub(crate) mod edges;
 pub(crate) mod normalize;
+pub(crate) mod schedule;
 pub(crate) mod state;
 pub(crate) mod storage;
 
