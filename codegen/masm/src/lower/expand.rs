@@ -3,6 +3,37 @@ use alloc::vec::Vec;
 
 use crate::{masm, plan::*};
 
+/// Expand an allocation action after symbolic frame references have been assigned.
+/// Scalar local instructions expand in the assembler to `locaddr; mem_store/mem_load`.
+/// Lowering execution has its own boundary and is deliberately not accepted here.
+pub(crate) fn expand_allocation_action(
+    action: &actions::PlanAction,
+    frame: &FinalFrameLayout,
+) -> Result<Option<masm::Instruction>, PlanError> {
+    use actions::PlanAction;
+    Ok(Some(match *action {
+        PlanAction::Dup { depth } => Primitive::Dup(depth).instruction()?,
+        PlanAction::Swap { depth } => Primitive::Swap(depth).instruction()?,
+        PlanAction::MoveUp { depth } => Primitive::MoveUp(depth).instruction()?,
+        PlanAction::MoveDown { depth } => Primitive::MoveDown(depth).instruction()?,
+        PlanAction::Drop => masm::Instruction::Drop,
+        PlanAction::PushLiteral(value) => Primitive::Push(value).instruction()?,
+        PlanAction::StoreLane(slot) => {
+            masm::Instruction::LocStore(frame.resolve(FrameRef::Spill(slot))?.into())
+        }
+        PlanAction::LoadLane(slot) => {
+            masm::Instruction::LocLoad(frame.resolve(FrameRef::Spill(slot))?.into())
+        }
+        PlanAction::DebugLocation(_) => return Ok(None),
+        PlanAction::RunLowering { .. } => {
+            return Err(PlanError::new(
+                DiagnosticCategory::InvalidSelectedLowering,
+                "lowering requires registered expansion and unit boundaries",
+            ));
+        }
+    }))
+}
+
 #[derive(Default)]
 pub(crate) struct ExpansionEnv<'a> {
     /// Linked information available to definitions which require it.
