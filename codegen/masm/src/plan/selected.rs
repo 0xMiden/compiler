@@ -135,6 +135,7 @@ pub(crate) struct SelectedLowering {
     pub stack_inputs: Vec<Atom>,
     /// Inputs whose physical cells are chosen through lowering bindings.
     pub stored_inputs: Vec<StoredInput>,
+    /// Normal completion publishes every lane of each defined value exactly once.
     pub outputs: Vec<Atom>,
     pub effects: LoweringEffects,
     pub scratch: Vec<ScratchRequirement>,
