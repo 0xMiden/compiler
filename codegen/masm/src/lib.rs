@@ -4,6 +4,10 @@
 
 extern crate alloc;
 
+// The physical-plan pipeline is exercised directly before replacing the component emitter.
+// Remove this allowance when the production entry point uses this module.
+#[allow(dead_code)]
+mod allocate;
 mod artifact;
 mod data_segments;
 mod emit;
@@ -18,6 +22,10 @@ mod opt;
 // Remove this allowance when that production entry point is switched over.
 #[allow(dead_code)]
 mod plan;
+// The physical-plan pipeline is exercised directly before replacing the component emitter.
+// Remove this allowance when the production entry point uses this module.
+#[allow(dead_code)]
+mod select;
 mod stack;
 // The physical-plan pipeline is exercised directly before replacing the component emitter.
 // Remove this allowance when the production entry point uses this module.

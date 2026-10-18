@@ -140,6 +140,8 @@ The selected graph is immutable during analysis and allocation. Reachability fol
 
 Backend liveness uses dense bitsets of semantic value identities. A live value initially means all its representation lanes are needed; lane-specific aliases are normalized through the layout table. Selected temporaries passed between lowering units and operands used in later phases are ordinary values in this analysis.
 
+Every value is published as a complete representation at an allocation boundary. A selected unit defining a value publishes all its layout lanes exactly once at that unit's normal completion; separate units cannot publish different lanes of the same value. Segment parameters likewise introduce complete values through checked simultaneous bindings. Cross-unit partial computations use explicit scalar or typed temporary values and an explicit alias/join completion unit when a complete result is needed. This keeps dense semantic-value demand meaningful at every boundary; it does not restrict raw partial stages inside one lowering unit.
+
 Let `P(S)` be the parameters of successor segment `S`, and `bind_e(p)` the source supplied to parameter `p` on edge `e: B -> S`:
 
 ```text
@@ -337,6 +339,8 @@ Expansion receives resolved input and scratch bindings plus an instruction sink.
 An internal lowering unit stage is part of one uninterrupted expansion. It can have branches, loops, temporary lanes, bound-slot reads, and intrinsic calls. There is no allocator invocation, entry-contract normalization, or intermediate SSA result publication between its stages. “Uninterrupted” concerns allocation; it does not promise atomic memory effects or prohibit traps.
 
 An allocation boundary is explicitly selected between separate lowering unit steps. A multi-phase operation uses such steps only when allocation between them is useful. Their temporary values and cross-phase scratch lifetimes are present in the selected program before liveness runs; later phases' operands remain live through earlier phases. Each boundary must have a complete physical contract. No phase can assume that a partially prepared stack remains in place unless that boundary actually specifies it.
+
+Each phase publishes complete temporary or result values. For example, phases that compute the two limbs of a `u64` independently publish two scalar temporaries; a later alias/join unit declares their semantic dependencies and publishes both lanes of the `u64` together. The selected-program checker rejects missing, repeated or out-of-range output lanes and a value split across unit publications. Internal raw stages have no intermediate semantic publication and remain unrestricted by this boundary rule.
 
 The byte `memmove` and FPI examples below each use one lowering unit with internal stages. In particular, FPI uses sixteen stack inputs and six stored inputs at full width, then builds its twenty-two-lane call layout internally. It needs neither a fictitious intermediate payload value nor a general facility for locking a prepared prefix across separately allocated phases. Indirect-call or dispatch selection may still introduce genuine allocation boundaries where useful.
 

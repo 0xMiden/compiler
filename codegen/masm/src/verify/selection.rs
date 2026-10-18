@@ -192,6 +192,7 @@ fn validate_graph(
     let mut segments = BTreeSet::new();
     let mut steps = BTreeSet::new();
     let mut edges = BTreeSet::new();
+    let mut definitions = BTreeSet::new();
     for (id, value) in &program.values {
         if *id != value.id {
             return Err(error("value ID disagrees with definition"));
@@ -201,9 +202,21 @@ fn validate_graph(
         if !segments.insert(segment.id) {
             return Err(error("duplicate segment"));
         }
-        for parameter in &segment.parameters {
-            if !program.values.contains_key(parameter) {
-                return Err(error("undefined parameter"));
+        for (index, parameter) in segment.parameters.iter().enumerate() {
+            let value =
+                program.values.get(parameter).ok_or_else(|| error("undefined parameter"))?;
+            match value.origin {
+                ValueOrigin::Parameter {
+                    segment: owner,
+                    index: position,
+                } if owner == segment.id && position as usize == index => {}
+                ValueOrigin::Hir(_) => {}
+                _ => return Err(error("parameter origin disagrees with segment ownership")),
+            }
+            for lane in 0..value.layout.lanes() {
+                if !definitions.insert(Atom::new(*parameter, lane)) {
+                    return Err(error("duplicate selected atom definition"));
+                }
             }
         }
         for unit in &segment.units {
@@ -226,6 +239,22 @@ fn validate_graph(
                     }),
                 ) {
                     validate_atom(program, *atom)?;
+                }
+                let mut output_lanes = BTreeMap::<ValueId, u8>::new();
+                for atom in &unit.outputs {
+                    if !definitions.insert(*atom) {
+                        return Err(error("duplicate selected atom definition"));
+                    }
+                    *output_lanes.entry(atom.value).or_default() += 1;
+                }
+                // Distinct, in-range atoms must cover each defined value at this completion.
+                // A cross-unit partial computation uses explicit complete phase temporaries.
+                for (value, lanes) in output_lanes {
+                    if lanes != program.values[&value].layout.lanes() {
+                        return Err(error(
+                            "unit publication does not define the complete value layout",
+                        ));
+                    }
                 }
                 for requirement in &unit.scratch {
                     requirement.validate()?;
@@ -324,13 +353,13 @@ fn validate_graph(
                 return Err(error("omitted edge parameter/capture"));
             }
         }
-        if edge.destination.is_none() && !matches!(edge.kind, EdgeKind::Return | EdgeKind::Trap) {
-            return Err(error("unsupported terminal edge"));
+        if edge.destination.is_none() != matches!(edge.kind, EdgeKind::Return | EdgeKind::Trap) {
+            return Err(error("terminal edge kind disagrees with its destination"));
         }
     }
     let mut used_segments = BTreeSet::new();
     let mut used_edges = BTreeSet::new();
-    walk_tree(&program.structure, &mut used_segments, &mut used_edges)?;
+    walk_tree(&program.structure, &mut used_segments, &mut used_edges, &mut BTreeSet::new())?;
     if used_segments != segments || used_edges != edges {
         return Err(error("structured skeleton and graph disagree"));
     }
@@ -344,6 +373,7 @@ fn walk_tree(
     tree: &ControlTree,
     segments: &mut BTreeSet<SegmentId>,
     edges: &mut BTreeSet<EdgeId>,
+    controls: &mut BTreeSet<ControlId>,
 ) -> Result<(), VerificationError> {
     match tree {
         ControlTree::Segment(id) => {
@@ -358,23 +388,29 @@ fn walk_tree(
         }
         ControlTree::Sequence(children) => {
             for child in children {
-                walk_tree(child, segments, edges)?;
+                walk_tree(child, segments, edges, controls)?;
             }
         }
         ControlTree::If {
+            id,
             on_true,
             then_body,
             on_false,
             else_body,
             ..
         } => {
+            if !controls.insert(*id) {
+                return Err(error("duplicate selected control identity"));
+            }
             if !edges.insert(*on_true) || !edges.insert(*on_false) {
                 return Err(error("duplicate branch edge"));
             }
-            walk_tree(then_body, segments, edges)?;
-            walk_tree(else_body, segments, edges)?;
+            walk_tree(then_body, segments, edges, controls)?;
+            walk_tree(else_body, segments, edges, controls)?;
         }
         ControlTree::Loop {
+            id,
+            condition,
             header,
             body,
             backedges,
@@ -382,13 +418,16 @@ fn walk_tree(
             on_false,
             ..
         } => {
+            if !controls.insert(*id) || !controls.insert(*condition) {
+                return Err(error("duplicate selected control identity"));
+            }
             if !edges.insert(*on_true) || !edges.insert(*on_false) {
                 return Err(error("duplicate loop condition edge"));
             }
             if !segments.insert(*header) {
                 return Err(error("duplicate loop header"));
             }
-            walk_tree(body, segments, edges)?;
+            walk_tree(body, segments, edges, controls)?;
             for edge in backedges {
                 if !edges.contains(edge) {
                     return Err(error("missing backedge in loop body"));
