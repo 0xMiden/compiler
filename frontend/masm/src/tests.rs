@@ -3085,6 +3085,146 @@ fn project_disassembly_uses_workspace_dependency_graph_signatures() -> Result<()
 }
 
 #[test]
+fn lint_requires_dependency_bodies_for_advice_and_memory_effects() -> Result<()> {
+    for writes_memory in [false, true] {
+        for assembled in [false, true] {
+            let root = temp_project_dir("midenc_frontend_masm_dependency_taint_effects");
+            let app = root.join("app");
+            let dep = root.join("dep");
+            fs::create_dir_all(&app).unwrap();
+            fs::create_dir_all(&dep).unwrap();
+            fs::write(
+                dep.join("miden-project.toml"),
+                "[package]\nname = \"dep\"\nversion = \"0.0.1\"\n\n[lib]\npath = \"lib.masm\"\n",
+            )
+            .unwrap();
+            let (helper, caller) = if writes_memory {
+                (
+                    "pub proc helper()\n    adv_push mem_store.64\nend",
+                    "exec.::dep::helper mem_load.64 push.1 u32wrapping_add",
+                )
+            } else {
+                (
+                    "pub proc helper() -> felt\n    adv_push\nend",
+                    "exec.::dep::helper push.1 u32wrapping_add",
+                )
+            };
+            let library_path = dep.join("lib.masm");
+            fs::write(&library_path, helper).unwrap();
+            let dependency_path = if assembled {
+                let package = Assembler::default()
+                    .assemble_library_from_root(&library_path, Some(ast::Path::new("dep")))?;
+                package.write_masp_file(&root).into_diagnostic()?;
+                "../dep.masp"
+            } else {
+                "../dep"
+            };
+            let manifest = app.join("miden-project.toml");
+            fs::write(
+                &manifest,
+                format!(
+                    "[package]\nname = \"app\"\nversion = \"0.0.1\"\n\n[lib]\npath = \
+                     \"lib.masm\"\n\n[dependencies]\ndep = {{ path = \"{dependency_path}\" }}\n"
+                ),
+            )
+            .unwrap();
+            fs::write(
+                app.join("lib.masm"),
+                format!(
+                    "proc middle() -> u32\n    {caller}\nend\n\npub proc entry() -> u32\n    \
+                     exec.middle\nend\n\npub proc clean() -> felt\n    push.1\nend\n"
+                ),
+            )
+            .unwrap();
+            let context = Rc::new(Context::default());
+            let output = disassemble_project_target_from_path_for_lint(
+                &manifest,
+                None,
+                &DisassemblerConfig::default(),
+                context,
+            )?;
+            assert!(module_has_function(output.module, "clean"));
+            if assembled {
+                let skips = output
+                    .skipped_procedures
+                    .iter()
+                    .map(|skip| (skip.path.as_str(), skip.reason.as_str()))
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    skips,
+                    [
+                        ("::app::entry", "depends on skipped procedure '::app::middle'"),
+                        ("::app::middle", "depends on skipped procedure '::dep::helper'"),
+                        (
+                            "::dep::helper",
+                            "compiled procedure '::dep::helper' has no body and no complete \
+                             advice and memory effect summary"
+                        ),
+                    ]
+                );
+                assert!(!module_has_function(output.module, "middle"));
+                assert!(!module_has_function(output.module, "entry"));
+            } else {
+                assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
+                let analysis_manager = AnalysisManager::new(output.world.as_operation_ref(), None);
+                let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+                assert_eq!(sink_names(analysis.findings()), ["arith.add"]);
+                assert_eq!(
+                    analysis.findings()[0].function.map(|name| name.as_str()),
+                    Some("middle")
+                );
+            }
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn lint_does_not_treat_external_signature_stubs_as_bodies() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut root = parse_source_with_module_path(
+        "pub proc entry() -> u32\n    push.1 exec.external push.1 u32wrapping_add\nend\n\nproc \
+         external(value: felt) -> felt\n    nop\nend",
+        "test",
+        context.clone(),
+    )?;
+    // External signature stubs are AST inputs; empty bodies are not valid source syntax.
+    let external = root.procedures_mut().find(|p| p.name().as_str() == "external").unwrap();
+    *external.body_mut() = ast::Block::new(external.span(), Vec::new());
+    let mut metadata = ExternalMetadata::default();
+    metadata.signatures.insert(
+        ast::Path::new("::test::external").into(),
+        masm_signature([Type::Felt], [Type::Felt]),
+    );
+    let target = project::ProjectTargetInput::new(
+        ProjectSourceInputs {
+            root,
+            support: Vec::new(),
+        },
+        metadata,
+    );
+    let output = lift::lift_project_target(
+        target,
+        &lift::LiftConfig::lint(&DisassemblerConfig::default()),
+        context,
+    )?;
+    assert_eq!(output.skipped_procedures.len(), 2);
+    assert_eq!(output.skipped_procedures[0].path.as_str(), "::test::entry");
+    assert_eq!(
+        output.skipped_procedures[0].reason,
+        "depends on skipped procedure '::test::external'"
+    );
+    assert_eq!(output.skipped_procedures[1].path.as_str(), "::test::external");
+    assert_eq!(
+        output.skipped_procedures[1].reason,
+        "external procedure '::test::external' has no body and no complete advice and memory \
+         effect summary"
+    );
+    Ok(())
+}
+
+#[test]
 fn project_disassembly_uses_preassembled_dependency_graph_signatures() -> Result<()> {
     let (root, app_dir) =
         write_preassembled_dependency_project("midenc_frontend_masm_preassembled_graph_dep");
