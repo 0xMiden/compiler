@@ -141,10 +141,15 @@ fn transfer_results(
             ContextualAdviceTaintValue::raw(op.span())
         } else if operation_result_value_range_refinement(op, result_value).is_some()
             || op.is::<midenc_dialect_arith::Eq>()
+            || op.is::<midenc_dialect_arith::Neq>()
+            || op.is::<midenc_dialect_arith::Lt>()
+            || op.is::<midenc_dialect_arith::Lte>()
+            || op.is::<midenc_dialect_arith::Gt>()
+            || op.is::<midenc_dialect_arith::Gte>()
             || (op.is::<midenc_dialect_arith::Trunc>()
                 && !is_unconstrained_value_type(result_value.borrow().ty()))
         {
-            // Equality produces a Boolean and truncation bounds its result without checking
+            // Comparisons produce Booleans and truncation bounds its result without checking
             // the input. Neither operation constrains other uses of the original value.
             ContextualAdviceTaintValue::clean()
         } else {

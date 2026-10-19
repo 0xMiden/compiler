@@ -3590,6 +3590,24 @@ end
 }
 
 #[test]
+fn advice_taint_accepts_all_comparison_results_as_conditions() -> Result<()> {
+    for comparison in ["eq", "neq", "lt", "lte", "gt", "gte"] {
+        let source = format!(
+            "pub proc entry() -> felt\n    adv_push push.0 {comparison}\n    if.true push.1 else \
+             push.2 end\nend"
+        );
+        let findings = advice_taint_findings_for_source(&source)?;
+        assert!(findings.is_empty(), "{comparison}: {findings:?}");
+        let source = format!(
+            "pub proc entry() -> u32\n    adv_push dup push.0 {comparison}\n    drop push.1 \
+             u32wrapping_add\nend"
+        );
+        assert_advice_taint_sinks(&source, &["arith.add"], Some("entry"))?;
+    }
+    Ok(())
+}
+
+#[test]
 fn advice_taint_recognizes_cast_and_comparison_result_ranges() -> Result<()> {
     for (body, result_type, expected_sinks) in [
         ("adv_push u32cast push.1 u32wrapping_add", "u32", vec![]),
