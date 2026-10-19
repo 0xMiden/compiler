@@ -15,7 +15,7 @@ use crate::{
     verify::*,
 };
 
-fn body(plan: &ProcedurePlan, frame: &FinalFrameLayout) -> AnnotatedMasmBody {
+pub(super) fn body(plan: &ProcedurePlan, frame: &FinalFrameLayout) -> AnnotatedMasmBody {
     fn actions(
         out: &mut AnnotatedMasmBody,
         actions: &[PlanAction],
@@ -206,33 +206,9 @@ fn body(plan: &ProcedurePlan, frame: &FinalFrameLayout) -> AnnotatedMasmBody {
 }
 
 fn frame(plan: &ProcedurePlan) -> FinalFrameLayout {
-    let mut offset = plan.spill_slots.len() as u32;
-    let mut scratch = BTreeMap::new();
-    for object in plan.selected.segments.iter().flat_map(|s| &s.units).flat_map(|u| &u.scratch) {
-        if scratch.contains_key(&object.id) {
-            continue;
-        }
-        offset = offset.next_multiple_of(object.alignment);
-        scratch.insert(
-            object.id,
-            ScratchAllocation {
-                offset,
-                size: object.size,
-                alignment: object.alignment,
-                lifetime: object.lifetime,
-            },
-        );
-        offset += object.size;
-    }
-    FinalFrameLayout::new(
-        SourceLocalLayout::default(),
-        plan.spill_slots.iter().enumerate().map(|(i, id)| (*id, i as u32)).collect(),
-        scratch,
-        offset.next_multiple_of(4),
-    )
-    .unwrap()
+    crate::allocate::slots::assign_frame(plan, &SourceLocalLayout::default()).unwrap()
 }
-fn render(body: &AnnotatedMasmBody) -> alloc::string::String {
+pub(super) fn render(body: &AnnotatedMasmBody) -> alloc::string::String {
     body.ops()
         .iter()
         .map(|op| match op {
@@ -285,13 +261,7 @@ fn target(name: &str) -> crate::masm::InvocationTarget {
 
 fn bound(plan: &ProcedurePlan, frame: &FinalFrameLayout) -> ProcedurePlan {
     let mut ready = plan.clone();
-    for unit in ready.selected.segments.iter().flat_map(|s| &s.units) {
-        ready.lowering_bindings.get_mut(&unit.id).unwrap().scratch = unit
-            .scratch
-            .iter()
-            .map(|object| (object.id, frame.scratch()[&object.id]))
-            .collect();
-    }
+    crate::lower::expand::resolve_frame_bindings(&mut ready, frame).unwrap();
     ready
 }
 
@@ -576,7 +546,7 @@ fn join_candidates_include_actual_edge_and_immediate_successor_costs() {
 }
 
 #[derive(Clone)]
-struct Source(SelectedProgram);
+pub(super) struct Source(pub(super) SelectedProgram);
 impl GeneratedDefinition for Source {
     fn id(&self) -> GeneratedDefinitionId {
         GeneratedDefinitionId(460)
@@ -615,10 +585,10 @@ impl GeneratedDefinition for Source {
         })
     }
 }
-fn checked(source: &Source) -> CheckedSelectedProgram {
+pub(super) fn checked(source: &Source) -> CheckedSelectedProgram {
     check_selection(source.0.clone(), &SourceContext::Generated(source)).unwrap()
 }
-fn edge(
+pub(super) fn edge(
     id: u32,
     source: u32,
     destination: Option<u32>,
@@ -640,7 +610,11 @@ fn edge(
         content_bindings: vec![],
     }
 }
-fn segment(id: u32, parameters: &[u32], units: Vec<SelectedLowering>) -> SelectedSegment {
+pub(super) fn segment(
+    id: u32,
+    parameters: &[u32],
+    units: Vec<SelectedLowering>,
+) -> SelectedSegment {
     SelectedSegment {
         id: SegmentId(id),
         parameters: parameters.iter().copied().map(ValueId).collect(),
@@ -648,19 +622,19 @@ fn segment(id: u32, parameters: &[u32], units: Vec<SelectedLowering>) -> Selecte
         units,
     }
 }
-fn s(id: u32) -> ControlTree {
+pub(super) fn s(id: u32) -> ControlTree {
     ControlTree::Segment(SegmentId(id))
 }
-fn e(id: u32) -> ControlTree {
+pub(super) fn e(id: u32) -> ControlTree {
     ControlTree::Edge(EdgeId(id))
 }
-fn seq(children: Vec<ControlTree>) -> ControlTree {
+pub(super) fn seq(children: Vec<ControlTree>) -> ControlTree {
     ControlTree::Sequence(children)
 }
-fn a(id: u32) -> Atom {
+pub(super) fn a(id: u32) -> Atom {
     Atom::new(ValueId(id), 0)
 }
-fn source(
+pub(super) fn source(
     segments: Vec<SelectedSegment>,
     edges: Vec<TransferEdge>,
     structure: ControlTree,
@@ -728,7 +702,7 @@ fn source(
         source_map,
     })
 }
-fn request(id: u32, inputs: &[u32], outputs: &[u32]) -> SelectedLowering {
+pub(super) fn request(id: u32, inputs: &[u32], outputs: &[u32]) -> SelectedLowering {
     let mut unit = unit(inputs.iter().copied().map(a).collect(), vec![]);
     unit.id = SelectedStepId(id);
     unit.source = SourceStepId(id);
@@ -761,7 +735,7 @@ fn inherited_entries_keep_twenty_owned_lanes_without_normalizing() {
     verify(&plan, &frame, fixture_body(&plan, &frame)).unwrap();
 }
 
-fn diamond_source() -> Source {
+pub(super) fn diamond_source() -> Source {
     let branch = ControlTree::If {
         id: ControlId(0),
         predicate: a(0),
@@ -830,7 +804,7 @@ fn delayed_join_is_independent_of_predecessor_storage_order() {
     execute(&first, &[1, 101, 202, 303], &[101, 202, 303]);
 }
 
-fn loop_source() -> Source {
+pub(super) fn loop_source() -> Source {
     let mut compare = request(0, &[10, 2], &[20]);
     compare.kind = LoweringKind(4);
     let mut advance_a = request(1, &[10, 1], &[30]);

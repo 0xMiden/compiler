@@ -302,3 +302,46 @@ fn binding_domains_and_registered_definitions_fail_closed() {
         .insert(StoredInputId(99), SpillSlotId::canonical(Atom::new(ValueId(7), 0)));
     assert!(extra.validate(&unit, &frame).is_err());
 }
+
+#[test]
+fn resolving_scratch_preserves_stored_bindings_and_validates_the_final_assignment() {
+    let mut unit = SelectedLowering::fixture(LoweringKind(0), SourceStepId(1));
+    unit.scratch = vec![ScratchRequirement {
+        id: ScratchId(3),
+        size: 4,
+        alignment: 4,
+        contiguous: true,
+        address_space: AddressSpace::ProcedureLocal,
+        lifetime: ScratchLifetime::Unit(unit.id),
+        uses: vec![unit.id],
+    }];
+    let slot = SpillSlotId::canonical(Atom::new(ValueId(7), 0));
+    unit.stored_inputs = vec![StoredInput {
+        id: StoredInputId(9),
+        value: StoredValue::Literal(miden_core::Felt::ONE),
+    }];
+    let binding = LoweringBindings {
+        stored_inputs: BTreeMap::from([(StoredInputId(9), slot)]),
+        scratch: BTreeMap::new(),
+    };
+    let assigned = ScratchAllocation {
+        offset: 4,
+        size: 4,
+        alignment: 4,
+        lifetime: ScratchLifetime::Unit(unit.id),
+    };
+    let frame = FinalFrameLayout::new(
+        SourceLocalLayout::default(),
+        BTreeMap::from([(slot, 0)]),
+        BTreeMap::from([(ScratchId(3), assigned)]),
+        8,
+    )
+    .unwrap();
+    let resolved = binding.resolve_scratch(&unit, &frame).unwrap();
+    assert_eq!(resolved.stored_inputs, binding.stored_inputs);
+    assert!(binding.scratch.is_empty());
+    assert_eq!(resolved.scratch, BTreeMap::from([(ScratchId(3), assigned)]));
+    assert!(binding.validate(&unit, &frame).is_err());
+    unit.scratch[0].size = 5;
+    assert!(binding.resolve_scratch(&unit, &frame).is_err());
+}

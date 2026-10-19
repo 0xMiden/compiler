@@ -1,9 +1,20 @@
-//! Allocation owns its analyses independently of verification.
+//! Turn checked selected units into a physical stack and symbolic-storage plan.
+//!
+//! Demand analysis drives immutable entry contracts. Forward predecessors are planned
+//! before their successors; each contract is frozen before its body is prepared once.
+//! Loop headers exclude backedges from that ordering, then repair backedges against the
+//! fixed contract after body planning. Lowerings stay opaque and publish only their
+//! selected normal-completion effects; nonreturning units have no outgoing physical state.
+//!
+//! Preparations own speculative changes until committed. This phase requests symbolic
+//! spill cells without assigning addresses; `slots::assign_frame` lays out the completed
+//! plan later. Physical verification independently checks the resulting plan and expansion.
 pub(crate) mod analysis;
 pub(crate) mod contracts;
 pub(crate) mod edges;
 pub(crate) mod normalize;
 pub(crate) mod schedule;
+pub(crate) mod slots;
 pub(crate) mod state;
 pub(crate) mod storage;
 
@@ -47,6 +58,12 @@ pub(super) enum PlanningEvent {
     Backedge(EdgeId),
 }
 
+/// Consume checked selection and construct contracts, preparation actions, and spill requests.
+///
+/// Entry and return lanes follow the checked ABI's top-first order. The caller's tail is
+/// protected according to its calling convention. Allocation errors report an impossible
+/// physical contract, inconsistent ABI, or exhausted symbolic identity namespace.
+/// Expansion, frame assignment, and independent physical verification follow this phase.
 pub(crate) fn allocate(
     program: CheckedSelectedProgram,
     options: &AllocationOptions,

@@ -36,6 +36,54 @@ pub(super) fn check_range(
     }
     Ok(())
 }
+
+/// Resolve a nonempty object-relative scratch interval, rejecting undeclared objects,
+/// object overflow, or any range exceeding the assigned frame.
+pub(super) fn object_range(
+    object: ScratchId,
+    offset: u32,
+    size: u32,
+    frame: &FinalFrameLayout,
+) -> Result<core::ops::Range<u32>, VerificationError> {
+    let allocation = frame.scratch().get(&object).ok_or_else(|| {
+        fail(DiagnosticCategory::InvalidSpillSlotRead, "access to undeclared scratch object")
+    })?;
+    if size == 0 || offset.checked_add(size).is_none_or(|end| end > allocation.size) {
+        return Err(fail(
+            DiagnosticCategory::InvalidSpillSlotRead,
+            "access exceeds scratch object",
+        ));
+    }
+    let start = allocation.offset.checked_add(offset).ok_or_else(|| {
+        fail(DiagnosticCategory::FrameCapacityExceeded, "scratch address overflow")
+    })?;
+    let end =
+        start
+            .checked_add(size)
+            .filter(|end| *end <= frame.aligned_size())
+            .ok_or_else(|| {
+                fail(DiagnosticCategory::FrameCapacityExceeded, "scratch range exceeds frame")
+            })?;
+    Ok(start..end)
+}
+
+/// A possible felt write destroys identity, never existing definite initialization.
+/// A definite write also establishes initialization of previously empty cells.
+pub(super) fn invalidate(
+    state: &mut State,
+    range: core::ops::Range<u32>,
+    definite: bool,
+    tokens: &mut Tokens,
+) {
+    for cell in range {
+        if definite || state.cells.contains_key(&cell) {
+            state.cells.insert(cell, tokens.fresh());
+        }
+        if definite {
+            state.written.insert(cell);
+        }
+    }
+}
 /// Discharge a scratch obligation against actual physical contents, comparing exact tokens
 /// for atom/content requirements and only initialization for the weakest requirement.
 pub(super) fn check_fact(

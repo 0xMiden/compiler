@@ -4,6 +4,7 @@ mod control;
 mod dataflow;
 mod diagnostics;
 mod diamond;
+mod frame;
 
 pub(super) mod loops;
 mod memory;

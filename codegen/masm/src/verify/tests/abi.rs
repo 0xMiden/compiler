@@ -275,10 +275,20 @@ fn borrowed_scratch_writes_invalidate_old_identity_and_require_output_relation()
         inst(Instruction::LocLoad(0.into())),
         inst(Instruction::Drop),
     ];
+    // A possible write forgets identity, but cannot uninitialize an initialized felt.
+    fixture.run(code.clone()).unwrap();
+    fixture.proof.scratch_outputs.push((
+        FrameRef::Scratch {
+            object: ScratchId(0),
+            offset: 0,
+        },
+        0,
+    ));
     assert_eq!(
         fixture.run(code.clone()).unwrap_err().category,
         DiagnosticCategory::InvalidSpillSlotRead
     );
+    fixture.proof.scratch_outputs.clear();
     fixture.scratch_effects[0] = ScratchEffect::Borrow {
         object: ScratchId(0),
         offset: 0,
