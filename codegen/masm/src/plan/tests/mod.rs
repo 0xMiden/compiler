@@ -2,6 +2,8 @@ mod abi;
 mod diagnostics;
 mod effects;
 mod layouts;
+pub(crate) mod lowering_units;
+pub(crate) mod pipeline;
 
 use alloc::{collections::BTreeMap, vec::Vec};
 

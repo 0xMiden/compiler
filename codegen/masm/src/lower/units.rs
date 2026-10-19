@@ -9,7 +9,7 @@ use alloc::collections::BTreeMap;
 use midenc_hir::Report;
 
 use super::expand::{AnnotatedMasmBody, ExpansionEnv};
-use crate::plan::*;
+use crate::{masm, plan::*};
 
 /// Physical locations assigned to one unit's non-stack inputs and declared scratch objects.
 /// The keys must match the selected declaration exactly; stored contents are checked separately.
@@ -160,5 +160,115 @@ impl<'a> LoweringRegistry<'a> {
                 "unregistered lowering definition",
             )
         })
+    }
+}
+
+pub(crate) mod calls;
+pub(crate) mod fpi;
+pub(crate) mod memory;
+
+fn invalid(message: &str) -> PlanError {
+    PlanError::new(DiagnosticCategory::InvalidSelectedLowering, message)
+}
+
+fn selected(
+    kind: LoweringKind,
+    id: SelectedStepId,
+    source: SourceStepId,
+    stack: &[Atom],
+    stored: &[StoredInput],
+    outputs: &[Atom],
+) -> SelectedLowering {
+    let semantic_inputs = stack
+        .iter()
+        .copied()
+        .chain(stored.iter().filter_map(|s| match s.value {
+            StoredValue::Atom(a) => Some(a),
+            _ => None,
+        }))
+        .map(|a| a.value)
+        .collect::<alloc::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    SelectedLowering {
+        id,
+        kind,
+        source,
+        semantic_inputs,
+        stack_inputs: stack.to_vec(),
+        stored_inputs: stored.to_vec(),
+        outputs: outputs.to_vec(),
+        address_results: alloc::vec![],
+        effects: Default::default(),
+        scratch: alloc::vec![],
+        scratch_effects: alloc::vec![],
+    }
+}
+
+/// The small scalar primitives also serve structured generated definitions. Their executable
+/// operations are the actual target primitives, with explicit identity publication for aliases.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Scalar {
+    Add,
+    Neq,
+    Identity,
+    Zero,
+}
+impl Scalar {
+    /// Declare scalar lane arity and source-derived identity evidence.
+    /// `Identity` publishes its unchanged input lane; all variants require exactly one result.
+    pub fn select(
+        self,
+        id: SelectedStepId,
+        source: SourceStepId,
+        inputs: &[Atom],
+        outputs: &[Atom],
+    ) -> Result<(SelectedLowering, crate::verify::UnitEvidence), PlanError> {
+        let arity = match self {
+            Self::Add | Self::Neq => 2,
+            Self::Identity => 1,
+            Self::Zero => 0,
+        };
+        if inputs.len() != arity || outputs.len() != 1 {
+            return Err(invalid("scalar definition arity mismatch"));
+        }
+        let mut evidence = crate::verify::UnitEvidence::default();
+        if matches!(self, Self::Identity) {
+            evidence.aliases = LaneAliases::new(alloc::vec![(outputs[0], inputs[0])]);
+        }
+        Ok((selected(self.kind(), id, source, inputs, &[], outputs), evidence))
+    }
+}
+impl LoweringDefinition for Scalar {
+    fn kind(&self) -> LoweringKind {
+        LoweringKind(
+            1200 + match self {
+                Self::Add => 0,
+                Self::Neq => 1,
+                Self::Identity => 2,
+                Self::Zero => 3,
+            },
+        )
+    }
+
+    fn expand(
+        &self,
+        unit: &SelectedLowering,
+        bindings: &LoweringBindings,
+        frame: &FinalFrameLayout,
+        _: &ExpansionEnv<'_>,
+    ) -> Result<AnnotatedMasmBody, Report> {
+        bindings.validate(unit, frame)?;
+        let mut body = AnnotatedMasmBody::new();
+        let instruction = match self {
+            Self::Add => Some(masm::Instruction::Add),
+            Self::Neq => Some(masm::Instruction::Neq),
+            Self::Identity => None,
+            Self::Zero => Some(Primitive::Push(miden_core::Felt::ZERO).instruction()?),
+        };
+        if let Some(instruction) = instruction {
+            body.push_instruction(instruction, unit.id);
+        }
+        Ok(body)
     }
 }

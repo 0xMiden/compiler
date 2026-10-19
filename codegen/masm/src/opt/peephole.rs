@@ -220,6 +220,76 @@ fn dup_depth(inst: &Instruction) -> Option<u8> {
     })
 }
 
+/// Simplify emitted instructions without crossing allocation or proof boundaries.
+///
+/// Run after expansion and before physical verification. Only adjacent instructions owned by the
+/// same lowering unit may be combined; allocation actions, control structure and debug locations
+/// remain explicit. Empty executable blocks receive a Nop anchor here so serialization does not
+/// have to add instructions after verification. The caller must verify the modified body.
+pub(crate) fn simplify_annotated(body: &mut crate::lower::expand::AnnotatedMasmBody) {
+    use crate::{
+        lower::expand::{Anchor, AnnotatedMasmBody, AnnotatedOp, Boundary},
+        plan::SelectedStepId,
+    };
+    fn walk(body: &mut AnnotatedMasmBody, mut active: Option<SelectedStepId>) {
+        let ops = core::mem::take(body.ops_mut());
+        let mut input = ops.into_iter().peekable();
+        while let Some(mut op) = input.next() {
+            match &mut op {
+                AnnotatedOp::Boundary(Boundary::UnitStart(id)) => active = Some(*id),
+                AnnotatedOp::Boundary(Boundary::UnitEnd(_)) => active = None,
+                AnnotatedOp::If {
+                    then_body,
+                    else_body,
+                    ..
+                } => {
+                    walk(then_body, active);
+                    walk(else_body, active);
+                }
+                AnnotatedOp::While { body, .. } | AnnotatedOp::Repeat { body, .. } => {
+                    walk(body, active)
+                }
+                AnnotatedOp::Instruction { instruction, unit } if active == Some(*unit) => {
+                    let id = *unit;
+                    let mut run = vec![masm::Op::Inst(Span::unknown(instruction.clone()))];
+                    while matches!(
+                        input.peek(),
+                        Some(AnnotatedOp::Instruction { unit, .. }) if *unit == id
+                    ) {
+                        if let AnnotatedOp::Instruction { instruction, .. } = input.next().unwrap()
+                        {
+                            run.push(masm::Op::Inst(Span::unknown(instruction)));
+                        }
+                    }
+                    simplify(&mut run);
+                    for op in run {
+                        let masm::Op::Inst(inst) = op else {
+                            unreachable!()
+                        };
+                        body.push_instruction(inst.into_parts().1, id);
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+            body.push(op);
+        }
+        if !body.ops().iter().any(|op| {
+            matches!(
+                op,
+                AnnotatedOp::Instruction { .. }
+                    | AnnotatedOp::If { .. }
+                    | AnnotatedOp::While { .. }
+                    | AnnotatedOp::Repeat { .. }
+                    | AnnotatedOp::Anchor(Anchor::Nop)
+            )
+        }) {
+            body.push(AnnotatedOp::Anchor(Anchor::Nop));
+        }
+    }
+    walk(body, None);
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::{boxed::Box, string::String, sync::Arc};

@@ -44,8 +44,10 @@ pub(crate) struct DefinitionEvidence {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UnitEvidence {
     pub aliases: LaneAliases,
-    pub equal_outputs: Vec<(u8, u8)>,
-    pub scratch_outputs: Vec<(FrameRef, u8)>,
+    /// Positions in the complete semantic output tuple, independent of machine access depth.
+    pub equal_outputs: Vec<(u32, u32)>,
+    /// Scratch cells that must equal positions of the unit's complete semantic output tuple.
+    pub scratch_outputs: Vec<(FrameRef, u32)>,
     /// Schemas for loops wholly internal to this unit, keyed by annotated control identity.
     pub loops: BTreeMap<ControlId, LoopSchema>,
     /// Ordered source-authorized call sites, with order interpreted within each path.
@@ -66,8 +68,10 @@ pub(crate) struct CallSite {
     pub path: Vec<CallPath>,
     /// Registered return-normalization helper; legal only at context/root boundaries.
     pub truncate: bool,
-    pub outputs: Vec<(FrameRef, u8)>,
-    pub publications: Vec<(Atom, u8)>,
+    /// Positions in the full ABI result tuple.
+    pub outputs: Vec<(FrameRef, u32)>,
+    /// Semantic atoms that must receive the corresponding full ABI result positions.
+    pub publications: Vec<(Atom, u32)>,
     /// Dynamic selector proof: the declared frame reference and its four expected root lanes.
     /// Replay checks both that the selector points here and that the cells contain these values.
     pub selector: Option<(FrameRef, Vec<StoredValue>)>,

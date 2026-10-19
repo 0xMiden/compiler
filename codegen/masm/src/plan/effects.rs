@@ -255,6 +255,39 @@ impl TargetEffects {
             Add | Sub | Mul | Eq | Neq => {
                 StackEffect::new(2, vec![LaneEffect::Computed(0)], vec![FloorStep::Pop(1)])
             }
+            U32WrappingAdd | U32WrappingMul | U32Gt | And | U32Shr | U32Shl | U32And | U32Or => {
+                StackEffect::new(2, vec![LaneEffect::Computed(0)], vec![FloorStep::Pop(1)])
+            }
+            EqImm(Immediate::Value(_)) | U32Not => {
+                StackEffect::new(1, vec![LaneEffect::Computed(0)], vec![])
+            }
+            U32WrappingSubImm(Immediate::Value(_)) => StackEffect::new(
+                1,
+                vec![LaneEffect::Computed(0)],
+                vec![FloorStep::Push(1), FloorStep::Pop(1)],
+            ),
+            U32OverflowingAdd => {
+                StackEffect::new(2, vec![LaneEffect::Computed(0), LaneEffect::Computed(1)], vec![])
+            }
+            U32DivModImm(Immediate::Value(_)) => StackEffect::new(
+                1,
+                vec![LaneEffect::Computed(0), LaneEffect::Computed(1)],
+                vec![FloorStep::Push(1)],
+            ),
+            EmitImm(event)
+                if *event == crate::Event::FrameStart.into()
+                    || *event == crate::Event::FrameEnd.into() =>
+            {
+                StackEffect::new(0, vec![], vec![])
+            }
+            MemStoreWLe => {
+                StackEffect::new(5, (1..5).map(Input).collect(), vec![FloorStep::Pop(1)])
+                    .memory(MemoryEffect::Write(MemoryRegion::Indirect {
+                        address: 0,
+                        width: 4,
+                    }))
+                    .writes(vec![1, 2, 3, 4])
+            }
             Nop => StackEffect::new(0, vec![], vec![]),
             Drop => StackEffect::new(1, vec![], vec![FloorStep::Pop(1)]),
             DropW => StackEffect::new(4, vec![], vec![FloorStep::Pop(4)]),
