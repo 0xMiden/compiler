@@ -252,17 +252,13 @@ impl Verifier<'_> {
             if !unit.outputs.contains(atom) || !publications.insert(*atom) {
                 return Err(error("call publication names undeclared result"));
             }
-            let token = *results
-                .get(usize::from(*index))
-                .ok_or_else(|| error("call publication index outside signature"))?;
+            let token = results[super::result_index(*index, results.len())?];
             state
                 .results
                 .insert((*atom, site_id), super::results::Requirement::equal(token));
         }
         for (reference, result) in &site.outputs {
-            let token = *results
-                .get(usize::from(*result))
-                .ok_or_else(|| error("borrowed output references unknown call result"))?;
+            let token = results[super::result_index(*result, results.len())?];
             let offset = u32::from(self.frame.resolve(*reference)?);
             let declared = unit.scratch_effects.iter().any(|effect| match (reference, effect) {
                 (

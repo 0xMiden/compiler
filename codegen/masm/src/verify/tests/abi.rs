@@ -49,7 +49,7 @@ fn context_fixture(family: Invocation, args: u32, results: u32) -> (Fixture, Vec
             .collect(),
         truncate: false,
         outputs: vec![],
-        publications: (0..results).map(|index| (Fixture::output(index), index as u8)).collect(),
+        publications: (0..results).map(|index| (Fixture::output(index), index)).collect(),
         selector,
     });
     for _ in args..16 {

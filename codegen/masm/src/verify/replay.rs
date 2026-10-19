@@ -12,7 +12,7 @@ use super::{
     *,
 };
 use crate::{
-    lower::expand::{AnnotatedMasmBody, AnnotatedOp, Boundary},
+    lower::expand::{Anchor, AnnotatedMasmBody, AnnotatedOp, Boundary},
     masm::Instruction,
     plan::actions::{PlanAction, ProcedurePlan},
 };
@@ -326,16 +326,8 @@ impl<'a> Verifier<'a> {
         }
     }
 
-    fn skip_debug(&self, cursor: &mut Cursor) {
-        while matches!(self.actions(cursor).get(cursor.action), Some(PlanAction::DebugLocation(_)))
-        {
-            cursor.action += 1;
-        }
-    }
-
     /// Require complete consumption of the current owner's planned action stream.
     pub(super) fn finish_actions(&self, cursor: &mut Cursor) -> Result<(), VerificationError> {
-        self.skip_debug(cursor);
         if cursor.action != self.actions(cursor).len() {
             return Err(error("emitted body omits planned action or phase"));
         }
@@ -358,6 +350,18 @@ impl<'a> Verifier<'a> {
             });
             state = match (|| -> Result<Option<State>, VerificationError> {
                 match op {
+                    AnnotatedOp::Anchor(Anchor::Nop) => {}
+                    AnnotatedOp::Anchor(Anchor::Debug { id, .. }) => {
+                        if cursor.active.is_some()
+                            || self.actions(cursor).get(cursor.action)
+                                != Some(&PlanAction::DebugLocation(*id))
+                        {
+                            return Err(error(
+                                "debug anchor differs from exact pending debug action",
+                            ));
+                        }
+                        cursor.action += 1;
+                    }
                     AnnotatedOp::Boundary(boundary) => {
                         self.boundary(*boundary, &mut state, cursor)?
                     }
@@ -551,7 +555,6 @@ impl<'a> Verifier<'a> {
         if cursor.active.is_some() || cursor.edge.is_some() {
             return Err(error("nested or edge-local lowering publication"));
         }
-        self.skip_debug(cursor);
         if self.actions(cursor).get(cursor.action) != Some(&PlanAction::RunLowering { step: id }) {
             return Err(error("unit boundary disagrees with planned phase order"));
         }
@@ -713,10 +716,9 @@ impl<'a> Verifier<'a> {
             }
         }
         for (a, b) in &evidence.equal_outputs {
-            if state.stack.get(usize::from(*a)) != state.stack.get(usize::from(*b))
-                || usize::from(*a) >= unit.outputs.len()
-                || usize::from(*b) >= unit.outputs.len()
-            {
+            let a = super::result_index(*a, unit.outputs.len())?;
+            let b = super::result_index(*b, unit.outputs.len())?;
+            if state.stack[a] != state.stack[b] {
                 return Err(fail(
                     DiagnosticCategory::UnavailableValue,
                     "registered output equality was not established",
@@ -725,13 +727,8 @@ impl<'a> Verifier<'a> {
         }
         for (reference, index) in &evidence.scratch_outputs {
             let offset = self.frame.resolve(*reference)?.into();
-            if memory::read(state, offset, self.frame)?
-                != *state
-                    .stack
-                    .get(usize::from(*index))
-                    .filter(|_| usize::from(*index) < unit.outputs.len())
-                    .ok_or_else(|| error("output relation out of range"))?
-            {
+            let index = super::result_index(*index, unit.outputs.len())?;
+            if memory::read(state, offset, self.frame)? != state.stack[index] {
                 return Err(fail(
                     DiagnosticCategory::InvalidSpillSlotRead,
                     "scratch/output equality was not established",
@@ -800,7 +797,6 @@ impl<'a> Verifier<'a> {
         state: &mut State,
         cursor: &mut Cursor,
     ) -> Result<(), VerificationError> {
-        self.skip_debug(cursor);
         let action = self
             .actions(cursor)
             .get(cursor.action)
@@ -1161,13 +1157,22 @@ impl<'a> Verifier<'a> {
             self.call(instruction, state, cursor)?;
             return Ok(true);
         }
-        if matches!(instruction, Instruction::Assert | Instruction::Assertz) {
+        if matches!(
+            instruction,
+            Instruction::Assert
+                | Instruction::Assertz
+                | Instruction::AssertWithError(_)
+                | Instruction::AssertzWithError(_)
+        ) {
             let active = cursor.active.as_ref().ok_or_else(|| error("assert outside lowering"))?;
             if !self.unit(active.id)?.effects.may_trap {
                 return Err(error("undeclared trapping instruction"));
             }
             let token = state.pop()?;
-            let desired = u64::from(matches!(instruction, Instruction::Assert));
+            let desired = u64::from(matches!(
+                instruction,
+                Instruction::Assert | Instruction::AssertWithError(_)
+            ));
             return Ok(self.tokens.constant(token).is_none_or(|value| value == desired));
         }
         self.primitive(instruction, state, cursor)?;
@@ -1313,6 +1318,12 @@ impl<'a> Verifier<'a> {
             MemoryRegion::SourceUnknown { width } => (None, width),
         };
         if let Some(offset) = offset {
+            if width == 4 && offset % 4 != 0 {
+                return Err(fail(
+                    DiagnosticCategory::IllegalStackAccess,
+                    "unaligned word memory access",
+                ));
+            }
             memory::check_range(offset, width, self.frame)?;
             if offset < self.frame.source().extent {
                 if offset + u32::from(width) > self.frame.source().extent {

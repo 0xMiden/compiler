@@ -153,6 +153,43 @@ impl OpEmitter<'_> {
         masm::Block::new(span, ops)
     }
 
+    /// Append an already constructed algorithm and register every invocation nested within it.
+    ///
+    /// This bridges shared raw instruction builders into typed emission. It deliberately does not
+    /// update the typed operand stack: the caller must account for the algorithm's complete input
+    /// and output shape. Registering nested invocations keeps dependency discovery correct even
+    /// when an algorithm contains branches or loops.
+    pub(crate) fn emit_raw_body(&mut self, ops: Vec<masm::Op>) {
+        fn register(emitter: &mut OpEmitter<'_>, op: &masm::Op) {
+            match op {
+                masm::Op::Inst(inst) => emitter.maybe_register_invoke(inst.inner()),
+                masm::Op::If {
+                    then_blk, else_blk, ..
+                } => {
+                    for op in then_blk.iter().chain(else_blk.iter()) {
+                        register(emitter, op);
+                    }
+                }
+                masm::Op::While { body, .. } | masm::Op::Repeat { body, .. } => {
+                    for op in body.iter() {
+                        register(emitter, op);
+                    }
+                }
+                masm::Op::DoWhile {
+                    body, condition, ..
+                } => {
+                    for op in body.iter().chain(condition.iter()) {
+                        register(emitter, op);
+                    }
+                }
+            }
+        }
+        for op in &ops {
+            register(self, op);
+        }
+        self.current_block.extend(ops);
+    }
+
     /// Grow the heap (from the perspective of Wasm programs) by N pages, returning the previous
     /// size of the heap (in pages) if successful, or -1 if the heap could not be grown.
     pub fn mem_grow(&mut self, span: SourceSpan) {
@@ -399,42 +436,7 @@ impl OpEmitter<'_> {
     ///
     /// Stack transition: `[addr, offset] -> [value]`.
     fn load_small_from_current_element(&mut self, ty: &Type, span: SourceSpan) {
-        // Stack: [element_addr, byte_offset]
-
-        // First, load the aligned word containing our value
-        // We need to temporarily move the offset out of the way
-        self.emit(masm::Instruction::Swap1, span); // [byte_offset, element_addr]
-        self.emit(masm::Instruction::Dup1, span); // [element_addr, byte_offset, element_addr]
-        self.emit(masm::Instruction::MemLoad, span); // [loaded_word, byte_offset, element_addr]
-
-        // Now we need to extract the correct byte(s) based on the offset
-        // Stack: [loaded_word, byte_offset, element_addr]
-        self.emit(masm::Instruction::Swap1, span); // [byte_offset, loaded_word, element_addr]
-
-        // Shift right by (offset * 8) bits to get our byte at the low end
-        self.emit_push(8u8, span); // [8, byte_offset, loaded_word, element_addr]
-        self.emit_all(
-            [
-                masm::Instruction::U32WrappingMul, // [offset*8, loaded_word, element_addr]
-                masm::Instruction::U32Shr,         // [shifted_word, element_addr]
-            ],
-            span,
-        );
-
-        // Clean up the element address
-        self.emit(masm::Instruction::Swap1, span); // [element_addr, shifted_word]
-        self.emit(masm::Instruction::Drop, span); // [shifted_word]
-
-        // Mask to get only the bits we need
-        let mask = match ty.size_in_bits() {
-            1 => 0x1,
-            8 => 0xff,
-            16 => 0xffff,
-            _ => unreachable!("load_small called with non-small type"),
-        };
-
-        self.emit_push(mask as u32, span);
-        self.emit(masm::Instruction::U32And, span);
+        self.emit_raw_body(crate::lower::raw::load_small(ty.size_in_bits(), span));
     }
 
     /// Load a 16-bit value from a dynamic native pointer tuple.
@@ -913,6 +915,11 @@ impl OpEmitter<'_> {
             }
             ty => panic!("invalid operand to {name}: expected pointer, got {ty}"),
         };
+
+        if value_size == 1 && matches!(overlap, CopyOverlap::Allowed) {
+            self.emit_raw_body(crate::lower::raw::byte_memmove(span));
+            return;
+        }
 
         // Every arm below relies on the ranges lying within the address space
         self.emit_copy_range_check(overlap, value_size, span);
@@ -1427,52 +1434,7 @@ impl OpEmitter<'_> {
     ///
     /// Stack transition: `[addr, offset, value] -> []`.
     fn store_small_within_element(&mut self, type_size: u32, span: SourceSpan) {
-        // Stack: [addr, offset, value]
-        // Load the current aligned value
-        self.emit_all(
-            [
-                masm::Instruction::Dup0,    // [addr, addr, offset, value]
-                masm::Instruction::MemLoad, // [prev, addr, offset, value]
-            ],
-            span,
-        );
-
-        // Calculate bit offset and create mask
-        let type_size_mask = (1u32 << type_size) - 1;
-        self.emit(masm::Instruction::Dup2, span); // [offset, prev, addr, offset, value]
-        self.emit_push(8u8, span); // [8, offset, prev, addr, offset, value]
-        self.emit(masm::Instruction::U32WrappingMul, span); // [bit_offset, prev, addr, offset, value]
-        self.emit_push(type_size_mask, span); // [type_mask, bit_offset, prev, addr, offset, value]
-        self.emit_all(
-            [
-                masm::Instruction::Swap1, // [bit_offset, type_mask, prev, addr, offset, value]
-                masm::Instruction::U32Shl, // [shifted_mask, prev, addr, offset, value]
-                masm::Instruction::U32Not, // [mask, prev, addr, offset, value]
-                masm::Instruction::Swap1, // [prev, mask, addr, offset, value]
-                masm::Instruction::U32And, // [masked_prev, addr, offset, value]
-            ],
-            span,
-        );
-
-        // Shift value to correct position and combine
-        self.emit_all(
-            [
-                masm::Instruction::MovUp3, // [value, masked_prev, addr, offset]
-                masm::Instruction::MovUp3, // [offset, value, masked_prev, addr]
-            ],
-            span,
-        );
-        self.emit_push(8u8, span); // [8, offset, value, masked_prev, addr]
-        self.emit_all(
-            [
-                masm::Instruction::U32WrappingMul, // [bit_offset, value, masked_prev, addr]
-                masm::Instruction::U32Shl,         // [shifted_value, masked_prev, addr]
-                masm::Instruction::U32Or,          // [new_value, addr]
-                masm::Instruction::Swap1,          // [addr, new_value]
-                masm::Instruction::MemStore,       // []
-            ],
-            span,
-        );
+        self.emit_raw_body(crate::lower::raw::store_small(type_size, span));
     }
 
     /// Store a 16-bit value to a dynamic native pointer tuple.

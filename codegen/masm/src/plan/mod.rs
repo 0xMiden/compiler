@@ -18,4 +18,4 @@ pub(crate) use self::{
 };
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

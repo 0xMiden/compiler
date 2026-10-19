@@ -1,0 +1,142 @@
+use alloc::vec;
+
+use midenc_hir::Report;
+
+use super::*;
+use crate::{
+    lower::{expand::annotate_raw, raw},
+    verify::{CallArgument, CallSite, UnitEvidence},
+};
+
+/// A registered `call`, `syscall`, or `dyncall` with a source-owned ABI.
+/// Dynamic calls store their four-lane root separately from the argument window.
+pub(crate) struct ContextCall {
+    /// Registered identity shared by the selected unit and its executable definition.
+    pub kind: LoweringKind,
+    /// Context-call argument/result contract, validated for the invocation form during selection.
+    pub abi: ProcedureAbi,
+    /// Exact source-authorized invocation, including its target for direct forms.
+    pub instruction: masm::Instruction,
+    /// Aligned unit-local object used to stage a dynamic root; unused by direct forms.
+    pub root: ScratchId,
+}
+impl ContextCall {
+    /// Declare the call's lanes, stored root, scratch, and exact call-site evidence.
+    /// Reject unsupported invocation instructions, ABI arity mismatches, or a root supplied for
+    /// anything other than `dyncall`. Dynamic root staging may trap if all four lanes are zero.
+    pub fn select(
+        &self,
+        id: SelectedStepId,
+        source: SourceStepId,
+        arguments: &[Atom],
+        root: Option<[Atom; 4]>,
+        outputs: &[Atom],
+    ) -> Result<(SelectedLowering, UnitEvidence), PlanError> {
+        let invocation = match self.instruction {
+            masm::Instruction::Call(_) => Invocation::Call,
+            masm::Instruction::SysCall(_) => Invocation::SysCall,
+            masm::Instruction::DynCall => Invocation::DynCall,
+            _ => return Err(invalid("context definition requires call, dyncall or syscall")),
+        };
+        let effect = self.abi.invocation(invocation)?;
+        if arguments.len() != effect.arguments as usize
+            || outputs.len() != effect.results as usize
+            || root.is_some() != matches!(invocation, Invocation::DynCall)
+        {
+            return Err(invalid("context definition inputs disagree with signature"));
+        }
+        let stored = root
+            .into_iter()
+            .flatten()
+            .enumerate()
+            .map(|(i, a)| StoredInput {
+                id: StoredInputId(i as u32),
+                value: StoredValue::Atom(a),
+            })
+            .collect::<alloc::vec::Vec<_>>();
+        let mut unit = selected(self.kind, id, source, arguments, &stored, outputs);
+        unit.effects.call = Some(effect);
+        unit.effects.may_trap = root.is_some();
+        let selector = root.map(|root| {
+            unit.scratch.push(ScratchRequirement {
+                id: self.root,
+                size: 4,
+                alignment: 4,
+                contiguous: true,
+                address_space: AddressSpace::ProcedureLocal,
+                lifetime: ScratchLifetime::Unit(id),
+                uses: vec![id],
+            });
+            for (offset, atom) in root.iter().enumerate() {
+                unit.scratch_effects.push(ScratchEffect::Write(ScratchCellFact {
+                    object: self.root,
+                    offset: offset as u32,
+                    content: ContentRequirement::Atom(*atom),
+                }));
+            }
+            (
+                FrameRef::Scratch {
+                    object: self.root,
+                    offset: 0,
+                },
+                root.into_iter().map(StoredValue::Atom).collect(),
+            )
+        });
+        let proof = UnitEvidence {
+            calls: vec![CallSite {
+                instruction: self.instruction.clone(),
+                abi: self.abi,
+                inputs: arguments
+                    .iter()
+                    .map(|a| CallArgument::Exact(StoredValue::Atom(*a)))
+                    .collect(),
+                path: vec![],
+                truncate: false,
+                outputs: vec![],
+                publications: outputs.iter().zip(0u32..).map(|(a, i)| (*a, i)).collect(),
+                selector,
+            }],
+            ..Default::default()
+        };
+        Ok((unit, proof))
+    }
+}
+impl LoweringDefinition for ContextCall {
+    fn kind(&self) -> LoweringKind {
+        self.kind
+    }
+
+    fn expand(
+        &self,
+        unit: &SelectedLowering,
+        bindings: &LoweringBindings,
+        frame: &FinalFrameLayout,
+        _: &ExpansionEnv<'_>,
+    ) -> Result<AnnotatedMasmBody, Report> {
+        bindings.validate(unit, frame)?;
+        let mut b = raw::Builder::new(Default::default());
+        b.extend(raw::pad_inputs(unit.stack_inputs.len(), b.span));
+        if matches!(self.instruction, masm::Instruction::DynCall) {
+            for i in (0..4).rev() {
+                let slot = *bindings
+                    .stored_inputs
+                    .get(&StoredInputId(i))
+                    .ok_or_else(|| invalid("missing root binding"))?;
+                b.emit(masm::Instruction::LocLoad(frame.resolve(FrameRef::Spill(slot))?.into()));
+            }
+            let offset = frame.resolve(FrameRef::Scratch {
+                object: self.root,
+                offset: 0,
+            })?;
+            b.extend(raw::stage_root(
+                [masm::Instruction::Locaddr(offset.into()), masm::Instruction::MemStoreWLe],
+                crate::emit::primop::UNSET_STORED_PROCEDURE_SLOT_MESSAGE,
+                b.span,
+            ));
+            b.emit(masm::Instruction::Locaddr(offset.into()));
+        }
+        b.emit(self.instruction.clone());
+        b.emit_all(context_result_cleanup(self.abi.results() as u8)?);
+        Ok(annotate_raw(&b.ops, unit.id))
+    }
+}
