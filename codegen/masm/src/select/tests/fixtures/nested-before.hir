@@ -1,0 +1,16 @@
+builtin.function public extern("C") @nested_before(%go: i1, %q: i1, %a: felt, %b: felt) -> felt {
+    %result = scf.while %go, %a before {
+    ^before(%flag: i1, %value: felt):
+        %chosen = scf.if %q then {
+            scf.yield %value : (felt);
+        } else {
+            scf.yield %b : (felt);
+        } : (i1) -> felt;
+        scf.condition %flag, %chosen : (i1, felt);
+    } after {
+    ^after(%next: felt):
+        %no = arith.constant 0 : i1;
+        scf.yield %no, %next : (i1, felt);
+    } : (i1, felt) -> felt;
+    builtin.ret %result : (felt);
+};

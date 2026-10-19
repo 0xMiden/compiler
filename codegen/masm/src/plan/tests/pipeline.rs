@@ -301,6 +301,8 @@ impl GeneratedDefinition for Structured {
             id: ControlId(2),
             condition: ControlId(3),
             header: SegmentId(3),
+
+            before: Box::new(ControlTree::Segment(SegmentId(3))),
             predicate: atom(21),
             on_true: EdgeId(3),
             on_false: EdgeId(4),
@@ -311,6 +313,8 @@ impl GeneratedDefinition for Structured {
             id: ControlId(0),
             condition: ControlId(1),
             header: SegmentId(1),
+
+            before: Box::new(ControlTree::Segment(SegmentId(1))),
             predicate: atom(20),
             on_true: EdgeId(1),
             on_false: EdgeId(6),

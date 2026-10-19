@@ -368,56 +368,12 @@ impl OpEmitter<'_> {
         let index = self.stack.pop().expect("operand stack is empty");
         assert_eq!(index.ty(), Type::U32, "expected u32 table index for exec_indirect");
 
-        // Bounds check: [index, ..] -> [index < num_slots, index, ..] -> [index, ..]
-        self.emit(masm::Instruction::Dup0, span);
-        self.emit_push(num_slots, span);
-        self.emit(masm::Instruction::U32Lt, span);
-        self.emit(
-            Self::assert_with_message_inst(
-                "indirect call: function table index out of bounds",
-                span,
-            ),
+        self.emit_raw_body(crate::lower::raw::checked_table_address(
+            num_slots,
+            base_elem_addr,
+            type_tag,
             span,
-        );
-
-        // Rewrite the index to the slot's element address: base_elem_addr + index * slot size.
-        // The felt arithmetic cannot overflow: index < num_slots, and the linker guarantees
-        // that the whole table fits in the 32-bit address space.
-        self.emit(
-            masm::Instruction::MulImm(
-                Felt::new_unchecked(crate::linker::FunctionTableLayout::SLOT_SIZE_ELEMENTS as u64)
-                    .into(),
-            ),
-            span,
-        );
-        self.emit(
-            masm::Instruction::AddImm(Felt::new_unchecked(base_elem_addr as u64).into()),
-            span,
-        );
-
-        // Signature check: the tag stored next to the slot's digest must equal the tag the call
-        // site expects. A null slot keeps the zero tag that memory is initialized with, so it
-        // can never match and traps here too.
-        // [slot_addr, ..] -> [tag_addr, slot_addr, ..] -> [tag, slot_addr, ..] -> [slot_addr, ..]
-        self.emit(masm::Instruction::Dup0, span);
-        self.emit(
-            masm::Instruction::AddImm(
-                Felt::new_unchecked(
-                    crate::linker::FunctionTableLayout::TYPE_TAG_OFFSET_ELEMENTS as u64,
-                )
-                .into(),
-            ),
-            span,
-        );
-        self.emit(masm::Instruction::MemLoad, span);
-        self.emit_push(type_tag, span);
-        self.emit(
-            Self::assert_eq_with_message_inst(
-                "indirect call: callee signature mismatch or null function reference",
-                span,
-            ),
-            span,
-        );
+        ));
 
         self.consume_exact_call_signature(signature, "exec_indirect");
 

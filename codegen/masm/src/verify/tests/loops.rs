@@ -117,6 +117,8 @@ impl GeneratedDefinition for LoopDefinition {
                         on_true: EdgeId(1),
                         on_false: EdgeId(3),
                         header: SegmentId(1),
+
+                        before: Box::new(ControlTree::Segment(SegmentId(1))),
                         predicate: Atom::new(ValueId(10), 0),
                         body: alloc::boxed::Box::new(ControlTree::Sequence(vec![
                             ControlTree::Segment(SegmentId(2)),
@@ -420,6 +422,8 @@ impl GeneratedDefinition for NestedDefinition {
                     on_true: EdgeId(6),
                     on_false: EdgeId(8),
                     header: SegmentId(100),
+
+                    before: Box::new(ControlTree::Segment(SegmentId(100))),
                     predicate: Atom::new(ValueId(110), 0),
                     body: alloc::boxed::Box::new(ControlTree::Sequence(vec![
                         ControlTree::Segment(SegmentId(101)),

@@ -10,4 +10,6 @@ pub(crate) mod raw;
 pub(crate) mod units;
 mod utils;
 
+pub(crate) use lowering::HirSelection;
+
 pub use self::{component::ToMasmComponent, lowering::HirLowering, native_ptr::NativePtr};

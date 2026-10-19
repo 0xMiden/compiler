@@ -1177,6 +1177,20 @@ impl<'a> Verifier<'a> {
             self.call(instruction, state, cursor)?;
             return Ok(true);
         }
+        if matches!(instruction, Instruction::AssertEq | Instruction::AssertEqWithError(_)) {
+            let active = cursor.active.as_ref().ok_or_else(|| error("assert outside lowering"))?;
+            if !self.unit(active.id)?.effects.may_trap {
+                return Err(error("undeclared trapping instruction"));
+            }
+            // Eq followed by Assert consumes both real lanes, including both floor updates.
+            // Unknown values may be equal; do not invent an identity from normal completion.
+            let right = state.pop()?;
+            let left = state.pop()?;
+            return Ok(match (self.tokens.constant(left), self.tokens.constant(right)) {
+                (Some(left), Some(right)) => left == right,
+                _ => true,
+            });
+        }
         if matches!(
             instruction,
             Instruction::Assert

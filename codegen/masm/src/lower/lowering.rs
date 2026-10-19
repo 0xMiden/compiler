@@ -2818,3 +2818,43 @@ impl HirLowering for wasm::I64RemS {
         Ok(())
     }
 }
+
+/// Register an operation in the finite final-HIR selection vocabulary.
+///
+/// The selector uses this interface to choose a source validator and executable definition.
+/// Implementing a legacy lowering or a generic region interface does not provide this authority.
+/// Rules expose semantics only: physical scheduling and legacy emission callbacks are absent.
+pub(crate) trait HirSelection: Op {
+    /// Identify the closed source rule, retaining any immediate required to reconstruct it.
+    fn selection_rule(&self) -> crate::select::SelectionRule;
+}
+
+macro_rules! final_selection {
+    ($($ty:ty => $rule:ident),* $(,)?) => {$(
+        impl HirSelection for $ty {
+            fn selection_rule(&self) -> crate::select::SelectionRule { crate::select::SelectionRule::$rule }
+        }
+    )*};
+}
+
+final_selection! {
+    builtin::Ret => Return, scf::If => If, scf::While => While,
+    scf::IndexSwitch => Switch, scf::Yield => Yield, scf::Condition => Condition,
+    ub::Unreachable => Trap, cf::CondBr => TerminalBranch,
+    hir::PtrToInt => Alias, hir::IntToPtr => Alias, hir::Bitcast => Alias,
+    arith::Split => Split, arith::Join => Join,
+    hir::Dyncall => Dyncall, hir::ExecIndirect => ExecIndirect,
+    debuginfo::DebugValue => Debug, debuginfo::DebugDeclare => Debug, debuginfo::DebugKill => Debug,
+}
+
+impl HirSelection for arith::Constant {
+    fn selection_rule(&self) -> crate::select::SelectionRule {
+        crate::select::SelectionRule::Constant(*self.get_value())
+    }
+}
+
+impl HirSelection for builtin::RetImm {
+    fn selection_rule(&self) -> crate::select::SelectionRule {
+        crate::select::SelectionRule::ReturnImmediate(*self.get_value())
+    }
+}

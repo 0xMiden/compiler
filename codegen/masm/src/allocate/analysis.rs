@@ -255,12 +255,15 @@ impl<'a> Graph<'a> {
                     visit(else_body, edges, predicates);
                 }
                 ControlTree::Loop {
-                    header,
+                    on_true,
                     predicate,
+                    before,
                     body,
                     ..
                 } => {
-                    predicates.insert(*header, predicate.value);
+                    let source = edges.iter().find(|edge| edge.id == *on_true).unwrap().source;
+                    predicates.insert(source, predicate.value);
+                    visit(before, edges, predicates);
                     visit(body, edges, predicates);
                 }
                 ControlTree::Sequence(children) => {
@@ -475,8 +478,8 @@ fn collect_loops(
                 segments(then_body, out);
                 segments(else_body, out);
             }
-            ControlTree::Loop { header, body, .. } => {
-                out.insert(*header);
+            ControlTree::Loop { before, body, .. } => {
+                segments(before, out);
                 segments(body, out);
             }
             ControlTree::Edge(_) => {}
@@ -484,9 +487,14 @@ fn collect_loops(
     }
     match tree {
         ControlTree::Loop {
-            id, header, body, ..
+            id,
+            header,
+            before,
+            body,
+            ..
         } => {
             let mut members = BTreeSet::from([*header]);
+            segments(before, &mut members);
             segments(body, &mut members);
             // A terminal arm is structurally inside the loop but is not repeated work.
             // The structured scope separates nested loops that share one outer graph SCC.
@@ -497,6 +505,7 @@ fn collect_loops(
                 members,
             };
             loops.insert(*id, demand);
+            collect_loops(before, graph, components, loops);
             collect_loops(body, graph, components, loops);
         }
         ControlTree::If {

@@ -66,7 +66,7 @@ pub(super) fn check_projection(
             ControlTree::Loop {
                 id,
                 condition,
-                header,
+                before,
                 on_true,
                 on_false,
                 body,
@@ -78,17 +78,14 @@ pub(super) fn check_projection(
                 selected(body, &mut taken, loops);
                 loops.pop();
                 out.push(Projection::Flag(*id, true));
-                out.push(Projection::While(
-                    *id,
-                    vec![
-                        Projection::Segment(*header),
-                        Projection::If(
-                            *condition,
-                            taken,
-                            vec![Projection::Edge(*on_false), Projection::Flag(*id, false)],
-                        ),
-                    ],
+                let mut repeated = Vec::new();
+                selected(before, &mut repeated, loops);
+                repeated.push(Projection::If(
+                    *condition,
+                    taken,
+                    vec![Projection::Edge(*on_false), Projection::Flag(*id, false)],
                 ));
+                out.push(Projection::While(*id, repeated));
             }
         }
     }

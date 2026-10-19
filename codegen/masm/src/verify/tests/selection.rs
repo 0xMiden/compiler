@@ -187,7 +187,21 @@ fn zero_instruction_alias_still_requires_checked_coverage() {
 #[test]
 fn unregistered_hir_source_fails_closed() {
     let candidate = Identity.instantiate(&[]).unwrap().program;
-    assert!(check_selection(candidate, &SourceContext::Hir).is_err());
+    let function = crate::select::tests::parse(
+        "builtin.function public extern(\"C\") @source() { builtin.ret; };",
+    );
+    let function = function.borrow();
+    let env = crate::select::SelectEnv::default();
+    assert!(
+        check_selection(
+            candidate,
+            &SourceContext::Hir {
+                function: &function,
+                env: &env
+            }
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -618,4 +632,78 @@ fn literal_true_swapped_label_cannot_hide_the_invalid_taken_repair() {
     let error = result.unwrap_err();
     assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering);
     assert_eq!(error.message, "structured alternative disagrees with edge kind");
+}
+
+#[test]
+fn equality_assertions_check_actual_inputs_floor_and_trap_permission() {
+    for with_message in [false, true] {
+        let assertion = if with_message {
+            Instruction::AssertEqWithError(alloc::sync::Arc::<str>::from("table tag").into())
+        } else {
+            Instruction::AssertEq
+        };
+        for (left, right) in [(7, 7), (7, 8)] {
+            let mut fixture = Fixture::new(0, 0);
+            fixture.effects.may_trap = true;
+            let code = vec![
+                Primitive::Push(Felt::new_unchecked(left)).instruction().unwrap(),
+                Primitive::Push(Felt::new_unchecked(right)).instruction().unwrap(),
+                assertion.clone(),
+            ];
+            verify(&fixture.plan(), &fixture.frame(), body(code.clone())).unwrap();
+            fixture.effects.may_trap = false;
+            assert!(verify(&fixture.plan(), &fixture.frame(), body(code)).is_err());
+        }
+        let mut fixture = Fixture::new(2, 0);
+        fixture.effects.may_trap = true;
+        verify(&fixture.plan(), &fixture.frame(), body(vec![assertion.clone()])).unwrap();
+        let mut fixture = Fixture::new(1, 0);
+        fixture.effects.may_trap = true;
+        assert!(
+            verify(&fixture.plan(), &fixture.frame(), body(vec![assertion])).is_err(),
+            "cannot consume protected tail"
+        );
+    }
+}
+
+#[test]
+fn registered_loop_header_must_be_the_before_subtree_entry_even_without_backedges() {
+    struct BadHeader;
+    impl GeneratedDefinition for BadHeader {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(201)
+        }
+
+        fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = super::loops::LoopDefinition.instantiate(&[])?;
+            evidence.program.origin = ProcedureOrigin::Generated {
+                definition: self.id(),
+                parameters: vec![],
+            };
+            let edge = &mut evidence.program.edges[2];
+            edge.kind = EdgeKind::Trap;
+            edge.destination = None;
+            edge.bindings.clear();
+            let ControlTree::Sequence(children) = &mut evidence.program.structure else {
+                unreachable!()
+            };
+            let ControlTree::Loop {
+                header, backedges, ..
+            } = &mut children[2]
+            else {
+                unreachable!()
+            };
+            *header = SegmentId(99);
+            backedges.clear();
+            Ok(evidence)
+        }
+    }
+    let source = BadHeader;
+    assert!(
+        check_selection(
+            source.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&source)
+        )
+        .is_err()
+    );
 }

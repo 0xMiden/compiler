@@ -6,6 +6,7 @@ use alloc::{
 use core::ops::Deref;
 
 use miden_core::Felt;
+use midenc_hir::Op;
 
 use super::{VerificationError, error};
 use crate::{masm::Instruction, plan::*};
@@ -24,9 +25,11 @@ pub(crate) trait GeneratedDefinition {
 /// the allocation plan being checked.
 pub(crate) enum SourceContext<'a> {
     Generated(&'a dyn GeneratedDefinition),
-    /// Reserved HIR source context; source checking rejects this variant until HIR rules
-    /// can reconstruct the selected program.
-    Hir,
+    /// Reconstruct HIR selection using the function and its resolved selection environment.
+    Hir {
+        function: &'a midenc_hir::dialects::builtin::Function,
+        env: &'a crate::select::SelectEnv<'a>,
+    },
 }
 
 /// Complete source-derived expectation used to check selection. Implementors must derive
@@ -54,6 +57,18 @@ pub(crate) struct UnitEvidence {
     pub calls: Vec<CallSite>,
 }
 
+/// Closed selector obligations reconstructed from registered source definitions.
+#[derive(Debug, Clone)]
+pub(crate) enum SelectorEvidence {
+    /// Selector is the address of a frame-resident root with these exact stored lanes.
+    FrameRoot {
+        reference: FrameRef,
+        root: Vec<StoredValue>,
+    },
+    /// Selector comes from a source-checked indirect table lookup.
+    CheckedTableSlot(crate::select::TableLookup),
+}
+
 /// One static invocation in a registered unit algorithm. Sites are ordered within their
 /// internal control path, so replay checks target, argument identity, and result publication
 /// against the exact site that executes.
@@ -72,9 +87,8 @@ pub(crate) struct CallSite {
     pub outputs: Vec<(FrameRef, u32)>,
     /// Semantic atoms that must receive the corresponding full ABI result positions.
     pub publications: Vec<(Atom, u32)>,
-    /// Dynamic selector proof: the declared frame reference and its four expected root lanes.
-    /// Replay checks both that the selector points here and that the cells contain these values.
-    pub selector: Option<(FrameRef, Vec<StoredValue>)>,
+    /// Required root provenance for a dynamic invocation.
+    pub selector: Option<SelectorEvidence>,
 }
 
 /// Source-derived constraint on one raw call argument.
@@ -149,17 +163,23 @@ pub(crate) fn check_selection(
     program: SelectedProgram,
     source: &SourceContext<'_>,
 ) -> Result<CheckedSelectedProgram, VerificationError> {
-    let (definition, parameters) = match (&program.origin, source) {
+    let expected = match (&program.origin, source) {
         (
             ProcedureOrigin::Generated {
                 definition,
                 parameters,
             },
             SourceContext::Generated(source),
-        ) if *definition == source.id() => (*source, parameters),
+        ) if *definition == source.id() => source.instantiate(parameters)?,
+        (ProcedureOrigin::Hir(origin), SourceContext::Hir { function, env })
+            if *origin == function.as_operation_ref() =>
+        {
+            crate::select::evidence(function, env)
+                .map_err(|e| error_with_source(&e.to_string()))?
+                .source
+        }
         _ => return Err(error("unregistered or incompatible source definition")),
     };
-    let expected = definition.instantiate(parameters)?;
     if program != expected.program {
         let mut failure =
             error("selected phases, uses, effects, coverage or control disagree with source");
@@ -475,6 +495,7 @@ fn walk_tree(
             id,
             condition,
             header,
+            before,
             body,
             backedges,
             on_true,
@@ -487,9 +508,17 @@ fn walk_tree(
             if !edges.insert(*on_true) || !edges.insert(*on_false) {
                 return Err(error("duplicate loop condition edge"));
             }
-            if !segments.insert(*header) {
-                return Err(error("duplicate loop header"));
+            fn entry(tree: &ControlTree) -> Option<SegmentId> {
+                match tree {
+                    ControlTree::Segment(id) => Some(*id),
+                    ControlTree::Sequence(children) => children.first().and_then(entry),
+                    _ => None,
+                }
             }
+            if entry(before) != Some(*header) {
+                return Err(error("loop header disagrees with before-subtree entry"));
+            }
+            walk_tree(before, segments, edges, controls)?;
             walk_tree(body, segments, edges, controls)?;
             for edge in backedges {
                 if !edges.contains(edge) {
@@ -669,13 +698,26 @@ fn validate_flow(program: &SelectedProgram) -> Result<(), VerificationError> {
                 header,
                 on_true,
                 on_false,
+                before,
                 body,
                 backedges,
                 ..
             } => {
                 alternatives(program, *on_true, *on_false)?;
-                let header = segment(program, *header, frontier)?;
-                let after = walk(program, body, edge(program, *on_true, &header)?)?;
+                let incoming = walk(
+                    program,
+                    before,
+                    Outcome {
+                        normal: Some(frontier),
+                        returns: false,
+                    },
+                )?;
+                if incoming.returns {
+                    return Err(error("a logical return cannot bypass while flag consumption"));
+                }
+                let condition =
+                    incoming.normal.ok_or_else(|| error("loop lacks its executable condition"))?;
+                let after = walk(program, body, edge(program, *on_true, &condition)?)?;
                 if after.returns {
                     return Err(error("a logical return cannot bypass while flag consumption"));
                 }
@@ -687,14 +729,14 @@ fn validate_flow(program: &SelectedProgram) -> Result<(), VerificationError> {
                                 || program.edges.iter().find(|edge| edge.id == *id).is_none_or(
                                     |edge| {
                                         edge.kind != EdgeKind::Backedge
-                                            || edge.destination != header.segment
+                                            || edge.destination != Some(*header)
                                     },
                                 )
                         }))
                 {
                     return Err(error("loop body does not establish its declared backedges"));
                 }
-                edge(program, *on_false, &header)
+                edge(program, *on_false, &condition)
             }
             ControlTree::Sequence(_) => unreachable!(),
         }
@@ -715,4 +757,8 @@ fn validate_flow(program: &SelectedProgram) -> Result<(), VerificationError> {
         return Err(error("selected procedure lacks an explicit terminal transfer"));
     }
     Ok(())
+}
+
+fn error_with_source(message: &str) -> VerificationError {
+    PlanError::new(DiagnosticCategory::InvalidSelectedLowering, message)
 }

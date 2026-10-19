@@ -211,12 +211,15 @@ pub(crate) enum ControlTree {
         on_false: EdgeId,
         else_body: alloc::boxed::Box<ControlTree>,
     },
+    /// Run `before` to compute the predicate at the header, then repeat through the
+    /// listed backedges while the true edge selects `body`.
     Loop {
         id: ControlId,
         condition: ControlId,
         on_true: EdgeId,
         on_false: EdgeId,
         header: SegmentId,
+        before: alloc::boxed::Box<ControlTree>,
         predicate: Atom,
         body: alloc::boxed::Box<ControlTree>,
         backedges: Vec<EdgeId>,

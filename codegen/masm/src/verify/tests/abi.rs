@@ -29,16 +29,16 @@ fn context_fixture(family: Invocation, args: u32, results: u32) -> (Fixture, Vec
         for (offset, value) in [11, 13, 17, 19].into_iter().enumerate() {
             code.extend([push(value), inst(Instruction::LocStore((offset as u16).into()))]);
         }
-        Some((
-            FrameRef::Scratch {
+        Some(SelectorEvidence::FrameRoot {
+            reference: FrameRef::Scratch {
                 object: ScratchId(0),
                 offset: 0,
             },
-            [11, 13, 17, 19]
+            root: [11, 13, 17, 19]
                 .into_iter()
                 .map(|value| StoredValue::Literal(Felt::new_unchecked(value)))
                 .collect(),
-        ))
+        })
     } else {
         None
     };

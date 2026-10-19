@@ -74,26 +74,41 @@ impl Verifier<'_> {
         }
         if effect.selector_lanes != 0 {
             let token = state.pop()?;
-            let (reference, required) = site.selector.as_ref().ok_or_else(|| {
+            let selector = site.selector.as_ref().ok_or_else(|| {
                 fail(
                     DiagnosticCategory::AbiMismatch,
                     "dynamic invocation has no registered root binding",
                 )
             })?;
-            let offset = u32::from(self.frame.resolve(*reference)?);
-            if self.tokens.frame_address(token) != Some(offset) || required.len() != 4 {
-                return Err(fail(
-                    DiagnosticCategory::AbiMismatch,
-                    "dynamic selector has wrong address provenance",
-                ));
-            }
-            for (lane, value) in required.iter().enumerate() {
-                let expected = memory::stored_token(state, *value, &mut self.tokens)?;
-                if memory::read(state, offset + lane as u32, self.frame)? != expected {
-                    return Err(fail(
-                        DiagnosticCategory::AbiMismatch,
-                        "dynamic root contents are stale or incorrect",
-                    ));
+            match selector {
+                super::SelectorEvidence::FrameRoot {
+                    reference,
+                    root: required,
+                } => {
+                    let offset = u32::from(self.frame.resolve(*reference)?);
+                    if self.tokens.frame_address(token) != Some(offset) || required.len() != 4 {
+                        return Err(fail(
+                            DiagnosticCategory::AbiMismatch,
+                            "dynamic selector has wrong address provenance",
+                        ));
+                    }
+                    for (lane, value) in required.iter().enumerate() {
+                        let expected = memory::stored_token(state, *value, &mut self.tokens)?;
+                        if memory::read(state, offset + lane as u32, self.frame)? != expected {
+                            return Err(fail(
+                                DiagnosticCategory::AbiMismatch,
+                                "dynamic root contents are stale or incorrect",
+                            ));
+                        }
+                    }
+                }
+                super::SelectorEvidence::CheckedTableSlot(lookup) => {
+                    if invocation != Invocation::DynExec || state.token(lookup.address)? != token {
+                        return Err(fail(
+                            DiagnosticCategory::AbiMismatch,
+                            "dynamic invocation consumed wrong checked table address",
+                        ));
+                    }
                 }
             }
         }

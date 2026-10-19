@@ -507,15 +507,15 @@ impl GeneratedDefinition for RootPhases {
             truncate: false,
             outputs: vec![],
             publications: vec![],
-            selector: Some((
-                FrameRef::Scratch {
+            selector: Some(SelectorEvidence::FrameRoot {
+                reference: FrameRef::Scratch {
                     object: ScratchId(0),
                     offset: 0,
                 },
-                [11, 13, 17, 19]
+                root: [11, 13, 17, 19]
                     .map(|value| StoredValue::Literal(Felt::new_unchecked(value)))
                     .to_vec(),
-            )),
+            }),
         });
         for (id, source) in &mut evidence.program.source_map {
             source.origin = SourceOrigin::Generated {

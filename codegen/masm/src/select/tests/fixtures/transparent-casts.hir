@@ -1,0 +1,6 @@
+builtin.function public extern("C") @casts(%a: u32) -> i32 {
+    %ptr = hir.int_to_ptr %a <{ ty = #builtin.type<ptr<u32, byte>> }>;
+    %bits = hir.ptr_to_int %ptr <{ ty = #builtin.type<u32> }>;
+    %result = hir.bitcast %bits <{ ty = #builtin.type<i32> }>;
+    builtin.ret %result : (i32);
+};
