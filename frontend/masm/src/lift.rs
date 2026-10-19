@@ -453,6 +453,17 @@ impl ModuleRegistry {
                                 let span = p.span();
                                 let signature = (|| {
                                     if config.lint {
+                                        if self
+                                            .external_signatures
+                                            .contains_key(self.item_path(gid).as_ref())
+                                            && p.body().is_empty()
+                                        {
+                                            return Err(Report::msg(format!(
+                                                "external procedure '{}' has no body and no \
+                                                 complete advice and memory effect summary",
+                                                self.item_path(gid)
+                                            )));
+                                        }
                                         for invoke in p.invoked() {
                                             let resolution = SymbolResolutionContext {
                                                 span: invoke.span(),
@@ -548,38 +559,34 @@ impl ModuleRegistry {
                             }
                         }
                         SymbolItem::Compiled(ItemInfo::Procedure(p)) => {
-                            let signature = match p.signature.as_deref() {
-                                Some(sig) => Ok(Signature::with_convention(
-                                    &self.context,
-                                    sig.abi.clone(),
-                                    sig.params.iter().cloned(),
-                                    sig.results.iter().cloned(),
-                                )),
-                                None => Err(Report::msg(format!(
+                            if config.lint {
+                                // A MASM signature does not describe advice-derived results or
+                                // writes to the caller's memory. Skip until a complete summary
+                                // is available instead of treating the declaration as analyzed.
+                                self.skip_item(
+                                    gid,
+                                    SourceSpan::UNKNOWN,
+                                    format!(
+                                        "compiled procedure '{}' has no body and no complete \
+                                         advice and memory effect summary",
+                                        self.item_path(gid)
+                                    ),
+                                );
+                                continue;
+                            }
+                            let sig = p.signature.as_deref().ok_or_else(|| {
+                                Report::msg(format!(
                                     "compiled procedure '{}' is missing a signature",
                                     self.item_path(gid)
-                                ))),
-                            }
-                            .and_then(|signature| {
-                                if config.lint {
-                                    physical_lint_signature(
-                                        &self.context,
-                                        &self.item_path(gid),
-                                        &signature,
-                                    )
-                                } else {
-                                    Ok(signature)
-                                }
-                            });
-                            match signature {
-                                Ok(signature) => {
-                                    self.signatures.insert(gid, signature);
-                                }
-                                Err(err) if config.lint => {
-                                    self.skip_item(gid, SourceSpan::UNKNOWN, err.to_string());
-                                }
-                                Err(err) => return Err(err),
-                            }
+                                ))
+                            })?;
+                            let signature = Signature::with_convention(
+                                &self.context,
+                                sig.abi.clone(),
+                                sig.params.iter().cloned(),
+                                sig.results.iter().cloned(),
+                            );
+                            self.signatures.insert(gid, signature);
                         }
                         SymbolItem::Constant(_) | SymbolItem::Type(_) | SymbolItem::Compiled(_) => {
                         }

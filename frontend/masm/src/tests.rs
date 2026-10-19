@@ -3085,6 +3085,146 @@ fn project_disassembly_uses_workspace_dependency_graph_signatures() -> Result<()
 }
 
 #[test]
+fn lint_requires_dependency_bodies_for_advice_and_memory_effects() -> Result<()> {
+    for writes_memory in [false, true] {
+        for assembled in [false, true] {
+            let root = temp_project_dir("midenc_frontend_masm_dependency_taint_effects");
+            let app = root.join("app");
+            let dep = root.join("dep");
+            fs::create_dir_all(&app).unwrap();
+            fs::create_dir_all(&dep).unwrap();
+            fs::write(
+                dep.join("miden-project.toml"),
+                "[package]\nname = \"dep\"\nversion = \"0.0.1\"\n\n[lib]\npath = \"lib.masm\"\n",
+            )
+            .unwrap();
+            let (helper, caller) = if writes_memory {
+                (
+                    "pub proc helper()\n    adv_push mem_store.64\nend",
+                    "exec.::dep::helper mem_load.64 push.1 u32wrapping_add",
+                )
+            } else {
+                (
+                    "pub proc helper() -> felt\n    adv_push\nend",
+                    "exec.::dep::helper push.1 u32wrapping_add",
+                )
+            };
+            let library_path = dep.join("lib.masm");
+            fs::write(&library_path, helper).unwrap();
+            let dependency_path = if assembled {
+                let package = Assembler::default()
+                    .assemble_library_from_root(&library_path, Some(ast::Path::new("dep")))?;
+                package.write_masp_file(&root).into_diagnostic()?;
+                "../dep.masp"
+            } else {
+                "../dep"
+            };
+            let manifest = app.join("miden-project.toml");
+            fs::write(
+                &manifest,
+                format!(
+                    "[package]\nname = \"app\"\nversion = \"0.0.1\"\n\n[lib]\npath = \
+                     \"lib.masm\"\n\n[dependencies]\ndep = {{ path = \"{dependency_path}\" }}\n"
+                ),
+            )
+            .unwrap();
+            fs::write(
+                app.join("lib.masm"),
+                format!(
+                    "proc middle() -> u32\n    {caller}\nend\n\npub proc entry() -> u32\n    \
+                     exec.middle\nend\n\npub proc clean() -> felt\n    push.1\nend\n"
+                ),
+            )
+            .unwrap();
+            let context = Rc::new(Context::default());
+            let output = disassemble_project_target_from_path_for_lint(
+                &manifest,
+                None,
+                &DisassemblerConfig::default(),
+                context,
+            )?;
+            assert!(module_has_function(output.module, "clean"));
+            if assembled {
+                let skips = output
+                    .skipped_procedures
+                    .iter()
+                    .map(|skip| (skip.path.as_str(), skip.reason.as_str()))
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    skips,
+                    [
+                        ("::app::entry", "depends on skipped procedure '::app::middle'"),
+                        ("::app::middle", "depends on skipped procedure '::dep::helper'"),
+                        (
+                            "::dep::helper",
+                            "compiled procedure '::dep::helper' has no body and no complete \
+                             advice and memory effect summary"
+                        ),
+                    ]
+                );
+                assert!(!module_has_function(output.module, "middle"));
+                assert!(!module_has_function(output.module, "entry"));
+            } else {
+                assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
+                let analysis_manager = AnalysisManager::new(output.world.as_operation_ref(), None);
+                let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+                assert_eq!(sink_names(analysis.findings()), ["arith.add"]);
+                assert_eq!(
+                    analysis.findings()[0].function.map(|name| name.as_str()),
+                    Some("middle")
+                );
+            }
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn lint_does_not_treat_external_signature_stubs_as_bodies() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut root = parse_source_with_module_path(
+        "pub proc entry() -> u32\n    push.1 exec.external push.1 u32wrapping_add\nend\n\nproc \
+         external(value: felt) -> felt\n    nop\nend",
+        "test",
+        context.clone(),
+    )?;
+    // External signature stubs are AST inputs; empty bodies are not valid source syntax.
+    let external = root.procedures_mut().find(|p| p.name().as_str() == "external").unwrap();
+    *external.body_mut() = ast::Block::new(external.span(), Vec::new());
+    let mut metadata = ExternalMetadata::default();
+    metadata.signatures.insert(
+        ast::Path::new("::test::external").into(),
+        masm_signature([Type::Felt], [Type::Felt]),
+    );
+    let target = project::ProjectTargetInput::new(
+        ProjectSourceInputs {
+            root,
+            support: Vec::new(),
+        },
+        metadata,
+    );
+    let output = lift::lift_project_target(
+        target,
+        &lift::LiftConfig::lint(&DisassemblerConfig::default()),
+        context,
+    )?;
+    assert_eq!(output.skipped_procedures.len(), 2);
+    assert_eq!(output.skipped_procedures[0].path.as_str(), "::test::entry");
+    assert_eq!(
+        output.skipped_procedures[0].reason,
+        "depends on skipped procedure '::test::external'"
+    );
+    assert_eq!(output.skipped_procedures[1].path.as_str(), "::test::external");
+    assert_eq!(
+        output.skipped_procedures[1].reason,
+        "external procedure '::test::external' has no body and no complete advice and memory \
+         effect summary"
+    );
+    Ok(())
+}
+
+#[test]
 fn project_disassembly_uses_preassembled_dependency_graph_signatures() -> Result<()> {
     let (root, app_dir) =
         write_preassembled_dependency_project("midenc_frontend_masm_preassembled_graph_dep");
@@ -3586,6 +3726,312 @@ end
     let function = find_function(output.module, "assert_word");
     assert_eq!(top_level_op_count::<hir::AssertU32>(function), 4);
 
+    Ok(())
+}
+
+#[test]
+fn advice_taint_accepts_all_comparison_results_as_conditions() -> Result<()> {
+    for comparison in ["eq", "neq", "lt", "lte", "gt", "gte"] {
+        let source = format!(
+            "pub proc entry() -> felt\n    adv_push push.0 {comparison}\n    if.true push.1 else \
+             push.2 end\nend"
+        );
+        let findings = advice_taint_findings_for_source(&source)?;
+        assert!(findings.is_empty(), "{comparison}: {findings:?}");
+        let source = format!(
+            "pub proc entry() -> u32\n    adv_push dup push.0 {comparison}\n    drop push.1 \
+             u32wrapping_add\nend"
+        );
+        assert_advice_taint_sinks(&source, &["arith.add"], Some("entry"))?;
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_recognizes_cast_and_comparison_result_ranges() -> Result<()> {
+    for (body, result_type, expected_sinks) in [
+        ("adv_push u32cast push.1 u32wrapping_add", "u32", vec![]),
+        ("adv_push eq.0 if.true push.1 else push.2 end", "felt", vec![]),
+        ("adv_push dup u32cast drop push.1 u32wrapping_add", "u32", vec!["arith.add"]),
+        ("adv_push dup eq.0 drop push.1 u32wrapping_add", "u32", vec!["arith.add"]),
+        ("adv_push push.1 u32wrapping_add", "u32", vec!["arith.add"]),
+        ("adv_push if.true push.1 else push.2 end", "felt", vec!["scf.if"]),
+    ] {
+        let source = format!("pub proc entry() -> {result_type}\n    {body}\nend");
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(&source, "test", &DisassemblerConfig::default(), context)?;
+        assert_eq!(sink_names(&advice_taint_findings(output.module)?), expected_sinks, "{source}");
+        if expected_sinks.is_empty() {
+            assert!(advice_taint_exit_findings(output.module)?.is_empty(), "{source}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_preserves_system_event_stack_slots_and_origins() -> Result<()> {
+    for advised_slot in 0..6 {
+        for used_slot in 0..6 {
+            let mut body = String::new();
+            for slot in (0..6).rev() {
+                body.push_str(if slot == advised_slot {
+                    "    adv_push\n"
+                } else {
+                    "    push.1\n"
+                });
+            }
+            body.push_str("    adv.register_deferred_data\n");
+            for _ in 0..used_slot {
+                body.push_str("    drop\n");
+            }
+            body.push_str("    push.1 u32wrapping_add\n");
+            for _ in used_slot..5 {
+                body.push_str("    swap drop\n");
+            }
+            let source = format!("pub proc entry() -> u32\n{body}end\n");
+            let context = Rc::new(Context::default());
+            let output =
+                disassemble_source(&source, "test", &DisassemblerConfig::default(), context)?;
+            let findings = advice_taint_findings(output.module)?;
+            if advised_slot == used_slot {
+                assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+                let advice = source.find("adv_push").unwrap();
+                assert_eq!(findings[0].advice_span.start().to_usize(), advice);
+                assert_eq!(findings[0].advice_span.end().to_usize(), advice + "adv_push".len());
+            } else {
+                assert!(findings.is_empty(), "{source}: {findings:?}");
+            }
+        }
+    }
+
+    let findings = advice_taint_findings_for_source(
+        "pub proc entry() -> u32\n    push.1.1.1.1.1.1 adv.register_deferred_data\n    push.1 \
+         u32wrapping_add movdn.5 dropw drop\nend",
+    )?;
+    assert!(findings.is_empty(), "{findings:?}");
+    Ok(())
+}
+
+#[test]
+fn advice_taint_keeps_consecutive_stream_memory_cells_distinct() -> Result<()> {
+    for (operation, setup, width) in [
+        ("mem_stream", "push.0 padw padw padw", 13),
+        ("crypto_stream", "push.64 push.0 padw padw padw", 14),
+    ] {
+        for advised_cell in [0, 8, 9] {
+            let cleanup = "swap drop ".repeat(width - 1);
+            let source = format!(
+                "pub proc entry() -> u32\n    adv_push mem_store.{advised_cell}\n    {setup} \
+                 {operation} {operation}\n    push.1 u32wrapping_add {cleanup}\nend"
+            );
+            let findings = advice_taint_findings_for_source(&source)?;
+            // CryptoStream adds the previous rate, while MemStream overwrites it.
+            let tainted = advised_cell == 8 || (operation == "crypto_stream" && advised_cell == 0);
+            if tainted {
+                assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+                assert_eq!(
+                    findings[0].advice_span.start().to_usize(),
+                    source.find("adv_push").unwrap()
+                );
+            } else {
+                assert!(findings.is_empty(), "{source}: {findings:?}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_tracks_consecutive_crypto_stream_destinations() -> Result<()> {
+    for loaded_cell in [64, 72, 73] {
+        let source = format!(
+            "pub proc entry() -> u32\n    adv_push mem_store.8\n    push.64 push.0 padw padw padw \
+             crypto_stream crypto_stream\n    dropw dropw dropw drop drop\n    \
+             mem_load.{loaded_cell} push.1 u32wrapping_add\nend"
+        );
+        let findings = advice_taint_findings_for_source(&source)?;
+        if loaded_cell == 72 {
+            assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+        } else {
+            assert!(findings.is_empty(), "{source}: {findings:?}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_does_not_load_horner_coefficients_from_memory() -> Result<()> {
+    for operation in ["horner_eval_base", "horner_eval_ext"] {
+        for load_coefficients in ["", "mem_stream"] {
+            let source = format!(
+                "pub proc entry() -> u32\n    adv_push mem_store.0\n    push.0.0 push.32 push.0 \
+                 padw padw padw {load_coefficients} {operation} {operation}\n    dropw dropw \
+                 dropw drop drop push.1 u32wrapping_add swap drop\nend"
+            );
+            let findings = advice_taint_findings_for_source(&source)?;
+            if load_coefficients.is_empty() {
+                assert!(findings.is_empty(), "{source}: {findings:?}");
+            } else {
+                assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_tracks_memory_through_stream_operations() -> Result<()> {
+    for (operation, setup, width) in [
+        ("mem_stream", "push.0 padw padw padw", 13),
+        ("crypto_stream", "push.64 push.0 padw padw padw", 14),
+    ] {
+        for advised_cell in 0..8 {
+            for used_slot in 0..8 {
+                let drops = "drop ".repeat(used_slot);
+                let cleanup = "swap drop ".repeat(width - used_slot - 1);
+                let source = format!(
+                    "pub proc entry() -> u32\n    adv_push mem_store.{advised_cell}\n    {setup} \
+                     {operation}\n    {drops}push.1 u32wrapping_add {cleanup}\nend"
+                );
+                let findings = advice_taint_findings_for_source(&source)?;
+                if advised_cell == used_slot {
+                    assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+                    assert_eq!(
+                        findings[0].advice_span.start().to_usize(),
+                        source.find("adv_push").unwrap()
+                    );
+                } else {
+                    assert!(findings.is_empty(), "{source}: {findings:?}");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_tracks_crypto_stream_memory_writes() -> Result<()> {
+    for advised_cell in 0..8 {
+        for loaded_cell in 0..8 {
+            let source = format!(
+                "pub proc entry() -> u32\n    adv_push mem_store.{advised_cell}\n    push.64 \
+                 push.0 padw padw padw crypto_stream\n    dropw dropw dropw drop drop\n    \
+                 mem_load.{} push.1 u32wrapping_add\nend",
+                64 + loaded_cell,
+            );
+            let findings = advice_taint_findings_for_source(&source)?;
+            if advised_cell == loaded_cell {
+                assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+            } else {
+                assert!(findings.is_empty(), "{source}: {findings:?}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_tracks_horner_evaluation_point_memory() -> Result<()> {
+    for operation in ["horner_eval_base", "horner_eval_ext"] {
+        for advised_cell in 0..2 {
+            for used_slot in 0..16 {
+                let drops = "drop ".repeat(used_slot);
+                let cleanup = "swap drop ".repeat(15 - used_slot);
+                let source = format!(
+                    "pub proc entry() -> u32\n    adv_push mem_store.{advised_cell}\n    padw \
+                     padw padw padw {operation}\n    {drops}push.1 u32wrapping_add {cleanup}\nend"
+                );
+                let findings = advice_taint_findings_for_source(&source)?;
+                if used_slot >= 14 {
+                    assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+                } else {
+                    assert!(findings.is_empty(), "{source}: {findings:?}");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_tracks_stream_and_horner_memory_at_unknown_addresses() -> Result<()> {
+    for body in [
+        "padw padw padw mem_stream push.1 u32wrapping_add movdn.12 dropw dropw dropw",
+        "push.64 swap padw padw padw crypto_stream dropw dropw dropw drop drop mem_load.64 push.1 \
+         u32wrapping_add",
+        "push.0 padw padw padw crypto_stream dropw dropw dropw drop drop mem_load.64 push.1 \
+         u32wrapping_add",
+        "push.0.0 movup.2 padw padw padw push.0 horner_eval_base dropw dropw dropw drop drop \
+         push.1 u32wrapping_add swap drop",
+        "push.0.0 movup.2 padw padw padw push.0 horner_eval_ext dropw dropw dropw drop drop \
+         push.1 u32wrapping_add swap drop",
+    ] {
+        for source_value in ["adv_push", "push.1"] {
+            let source = format!(
+                "pub proc entry(addr: felt) -> u32\n    {source_value} mem_store.0\n    \
+                 {body}\nend"
+            );
+            let findings = advice_taint_findings_for_source(&source)?;
+            if source_value == "adv_push" {
+                assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+            } else {
+                assert!(findings.is_empty(), "{source}: {findings:?}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_preserves_crypto_stream_rate_taint_in_memory() -> Result<()> {
+    let findings = advice_taint_findings_for_source(
+        "pub proc entry() -> u32\n    push.64 push.0 padw padw padw\n    adv_push swap drop \
+         crypto_stream\n    dropw dropw dropw drop drop\n    mem_load.64 push.1 \
+         u32wrapping_add\nend",
+    )?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    Ok(())
+}
+
+#[test]
+fn advice_taint_tracks_horner_stack_inputs_without_unused_slots() -> Result<()> {
+    for operation in ["horner_eval_base", "horner_eval_ext"] {
+        for advised_slot in [0, 8, 14] {
+            let mut body = String::new();
+            for slot in (0..16).rev() {
+                body.push_str(if slot == advised_slot {
+                    "adv_push "
+                } else {
+                    "push.0 "
+                });
+            }
+            let source = format!(
+                "pub proc entry() -> u32\n    {body}{operation}\n    dropw dropw dropw drop drop \
+                 push.1 u32wrapping_add swap drop\nend"
+            );
+            let findings = advice_taint_findings_for_source(&source)?;
+            if advised_slot == 8 {
+                assert!(findings.is_empty(), "{source}: {findings:?}");
+            } else {
+                assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn lint_tracks_streamed_advice_in_the_reported_example() -> Result<()> {
+    let source = "pub proc entry() -> u32\n    adv_pushw mem_storew_le.0 dropw\n    adv_pushw \
+                  mem_storew_le.4 dropw\n    push.0 padw padw padw mem_stream\n    push.1 \
+                  u32wrapping_add\n    movdn.12 dropw dropw dropw\nend";
+    let context = Rc::new(Context::default());
+    let output =
+        disassemble_source_for_lint(source, "test", &DisassemblerConfig::default(), context)?;
+    assert!(output.skipped_procedures.is_empty(), "{:?}", output.skipped_procedures);
+    let analysis_manager = AnalysisManager::new(output.world.as_operation_ref(), None);
+    let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+    assert_eq!(sink_names(analysis.findings()), ["arith.add"]);
     Ok(())
 }
 
