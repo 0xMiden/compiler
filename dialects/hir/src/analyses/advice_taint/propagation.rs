@@ -1,6 +1,6 @@
 use midenc_hir::{
     CallOpInterface, Forward, Operation, Report, Spanned, Value,
-    traits::operation_result_value_range_refinement,
+    traits::{is_unconstrained_value_type, operation_result_value_range_refinement},
 };
 use midenc_hir_analysis::{
     AnalysisStateGuard, AnalysisStateGuardMut, BuildableDataFlowAnalysis, CallControlFlowAction,
@@ -139,7 +139,13 @@ fn transfer_results(
         let result_value = op_results[index].borrow().as_value_ref();
         let result_taint = if operation_result_has_advice_read_effect(op, result_value) {
             ContextualAdviceTaintValue::raw(op.span())
-        } else if operation_result_value_range_refinement(op, result_value).is_some() {
+        } else if operation_result_value_range_refinement(op, result_value).is_some()
+            || op.is::<midenc_dialect_arith::Eq>()
+            || (op.is::<midenc_dialect_arith::Trunc>()
+                && !is_unconstrained_value_type(result_value.borrow().ty()))
+        {
+            // Equality produces a Boolean and truncation bounds its result without checking
+            // the input. Neither operation constrains other uses of the original value.
             ContextualAdviceTaintValue::clean()
         } else {
             transferred_operand_taint.clone()

@@ -3590,6 +3590,27 @@ end
 }
 
 #[test]
+fn advice_taint_recognizes_cast_and_comparison_result_ranges() -> Result<()> {
+    for (body, result_type, expected_sinks) in [
+        ("adv_push u32cast push.1 u32wrapping_add", "u32", vec![]),
+        ("adv_push eq.0 if.true push.1 else push.2 end", "felt", vec![]),
+        ("adv_push dup u32cast drop push.1 u32wrapping_add", "u32", vec!["arith.add"]),
+        ("adv_push dup eq.0 drop push.1 u32wrapping_add", "u32", vec!["arith.add"]),
+        ("adv_push push.1 u32wrapping_add", "u32", vec!["arith.add"]),
+        ("adv_push if.true push.1 else push.2 end", "felt", vec!["scf.if"]),
+    ] {
+        let source = format!("pub proc entry() -> {result_type}\n    {body}\nend");
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(&source, "test", &DisassemblerConfig::default(), context)?;
+        assert_eq!(sink_names(&advice_taint_findings(output.module)?), expected_sinks, "{source}");
+        if expected_sinks.is_empty() {
+            assert!(advice_taint_exit_findings(output.module)?.is_empty(), "{source}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn advice_taint_preserves_system_event_stack_slots_and_origins() -> Result<()> {
     for advised_slot in 0..6 {
         for used_slot in 0..6 {
