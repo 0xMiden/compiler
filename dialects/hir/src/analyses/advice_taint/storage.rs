@@ -1,9 +1,10 @@
-use alloc::collections::BTreeMap;
+use alloc::{collections::BTreeMap, vec::Vec};
 
 use midenc_dialect_arith as arith;
 use midenc_hir::{
-    CallOpInterface, Forward, Operation, ProgramPoint, Report, Spanned, Symbol, SymbolName,
-    ValueRef, dialects::builtin::attributes::LocalVariable,
+    CallOpInterface, Forward, Operation, ProgramPoint, Report, Spanned, Symbol, SymbolName, Type,
+    ValueRef,
+    dialects::builtin::{UnrealizedConversionCast, attributes::LocalVariable},
 };
 use midenc_hir_analysis::{
     AnalysisState, AnalysisStateGuardMut, BuildableDataFlowAnalysis, CallControlFlowAction,
@@ -17,7 +18,10 @@ use super::{
     },
     layout::{ADVICE_PIPE_MEMORY_ADDRESS_OPERAND, ADVICE_PIPE_MEMORY_WRITE_WIDTH},
 };
-use crate::{AdvicePipe, IntToPtr, Load, LoadLocal, Store, StoreLocal};
+use crate::{
+    AdvicePipe, CryptoStream, HornerBase, HornerExt, IntToPtr, Load, LoadLocal, MemStream, Store,
+    StoreLocal,
+};
 
 /// Dense propagation of storage taint through local slots and memory.
 ///
@@ -196,6 +200,15 @@ fn transfer_storage_operation(
         return Ok(());
     }
 
+    if operation.is::<MemStream>()
+        || operation.is::<CryptoStream>()
+        || operation.is::<HornerBase>()
+        || operation.is::<HornerExt>()
+    {
+        transfer_memory_stack_operation(operation, state, solver);
+        return Ok(());
+    }
+
     if let Some(pipe) = operation.downcast_ref::<AdvicePipe>() {
         let taint = ContextualAdviceTaintValue::raw(operation.span());
         let address =
@@ -214,6 +227,60 @@ fn transfer_storage_operation(
     }
 
     Ok(())
+}
+
+fn transfer_memory_stack_operation(
+    operation: &Operation,
+    state: &mut StorageState,
+    solver: &mut DataFlowSolver,
+) {
+    let dependent = ProgramPoint::after(operation.as_operation_ref());
+    let operands = operation
+        .operands()
+        .iter()
+        .map(|operand| operand.borrow().as_value_ref())
+        .collect::<Vec<_>>();
+    let mut taints = operands
+        .iter()
+        .map(|operand| required_value_taint(*operand, dependent, solver))
+        .collect::<Vec<_>>();
+
+    if operation.is::<MemStream>() || operation.is::<CryptoStream>() {
+        // Both streams read eight consecutive cells at stack[12]. CryptoStream adds the
+        // corresponding rate value and writes the ciphertext to the address in stack[13].
+        let source = memory_address(operands[12]);
+        for (index, taint) in taints.iter_mut().take(8).enumerate() {
+            let loaded = state.load_memory_offset(source, index as u32);
+            *taint = if operation.is::<CryptoStream>() {
+                LatticeLike::join(taint, &loaded)
+            } else {
+                loaded
+            };
+        }
+        if operation.is::<CryptoStream>() {
+            let destination = memory_address(operands[13]);
+            for (index, taint) in taints.iter().take(8).enumerate() {
+                state.store_memory_offset(destination, index as u32, taint.clone());
+            }
+        }
+    } else {
+        // Horner operations read alpha from memory and combine it with the eight coefficients
+        // and two accumulator limbs. Only stack[14..16] changes.
+        let alpha = memory_address(operands[13]);
+        let alpha = LatticeLike::join(
+            &state.load_memory_offset(alpha, 0),
+            &state.load_memory_offset(alpha, 1),
+        );
+        let accumulator = ContextualAdviceTaintValue::join_all(
+            taints[..8].iter().chain(&taints[14..16]).chain(core::iter::once(&alpha)),
+        );
+        taints[14] = accumulator.clone();
+        taints[15] = accumulator;
+    }
+
+    for (result, taint) in operation.results().all().iter().zip(&taints) {
+        join_value_taint(result.borrow().as_value_ref(), taint, solver);
+    }
 }
 
 impl StorageState {
@@ -239,6 +306,25 @@ impl StorageState {
 
     fn load_dynamic_memory(&self) -> ContextualAdviceTaintValue {
         self.memory.load_dynamic()
+    }
+
+    fn load_memory_offset(&self, base: Option<u32>, offset: u32) -> ContextualAdviceTaintValue {
+        match base.and_then(|base| base.checked_add(offset)) {
+            Some(address) => self.load_memory(address),
+            None => self.load_dynamic_memory(),
+        }
+    }
+
+    fn store_memory_offset(
+        &mut self,
+        base: Option<u32>,
+        offset: u32,
+        taint: ContextualAdviceTaintValue,
+    ) {
+        match base.and_then(|base| base.checked_add(offset)) {
+            Some(address) => self.store_memory(address, taint),
+            None => self.store_dynamic_memory(taint),
+        }
     }
 
     fn memory_only(&self) -> Self {
@@ -353,6 +439,17 @@ fn memory_address(value: ValueRef) -> Option<u32> {
 
     if let Some(inttoptr) = defining_op.downcast_ref::<IntToPtr>() {
         return memory_address(inttoptr.operand().as_value_ref());
+    }
+
+    if let Some(cast) = defining_op.downcast_ref::<UnrealizedConversionCast>() {
+        let input = cast.operand().as_value_ref();
+        // Small unsigned constants keep their numeric value in the address and felt stack
+        // representations. Push immediates can start as u8 or u16, not only u32.
+        if matches!(input.borrow().ty(), Type::I1 | Type::U8 | Type::U16 | Type::U32 | Type::Felt)
+            && matches!(value.borrow().ty(), Type::U32 | Type::Felt)
+        {
+            return memory_address(input);
+        }
     }
 
     if let Some(constant) = defining_op.downcast_ref::<arith::Constant>() {

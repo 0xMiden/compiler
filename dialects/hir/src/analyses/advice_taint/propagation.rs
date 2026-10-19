@@ -18,7 +18,7 @@ use super::{
         range_constrained_operand_indices,
     },
 };
-use crate::{AdvicePipe, SystemEvent};
+use crate::{AdvicePipe, CryptoStream, HornerBase, HornerExt, MemStream, SystemEvent};
 
 /// Sparse propagation of unconstrained advice taint through SSA values.
 #[derive(Default)]
@@ -60,6 +60,19 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
         if op.is::<SystemEvent>() {
             for (operand, result) in operands.iter().zip(results.iter_mut()) {
                 result.join(operand.value());
+            }
+            return Ok(());
+        }
+
+        // The storage analysis transfers these results from their individual stack and memory
+        // inputs. The generic operand union would taint overwritten or unrelated stack slots.
+        if op.is::<MemStream>()
+            || op.is::<CryptoStream>()
+            || op.is::<HornerBase>()
+            || op.is::<HornerExt>()
+        {
+            for result in results.iter_mut() {
+                result.join(&ContextualAdviceTaintValue::clean());
             }
             return Ok(());
         }
