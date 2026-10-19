@@ -445,11 +445,37 @@ fn memory_address(value: ValueRef) -> Option<u32> {
         let input = cast.operand().as_value_ref();
         // Small unsigned constants keep their numeric value in the address and felt stack
         // representations. Push immediates can start as u8 or u16, not only u32.
-        if matches!(input.borrow().ty(), Type::I1 | Type::U8 | Type::U16 | Type::U32 | Type::Felt)
-            && matches!(value.borrow().ty(), Type::U32 | Type::Felt)
-        {
-            return memory_address(input);
+        if matches!(value.borrow().ty(), Type::U32 | Type::Felt) {
+            let limit = match input.borrow().ty() {
+                Type::I1 => 1,
+                Type::U8 => u32::from(u8::MAX),
+                Type::U16 => u32::from(u16::MAX),
+                Type::U32 | Type::Felt => u32::MAX,
+                _ => return None,
+            };
+            let address = memory_address(input)?;
+            // A wrapped narrow sum must not be mistaken for its unwrapped address.
+            return (address <= limit).then_some(address);
         }
+    }
+
+    let index = value.borrow().downcast_ref::<midenc_hir::OpResult>()?.index();
+    if defining_op.is::<MemStream>() || defining_op.is::<CryptoStream>() {
+        let pointer = index == 12 || (defining_op.is::<CryptoStream>() && index == 13);
+        if pointer || (8..12).contains(&index) {
+            let input = defining_op.operands().all()[index].borrow().as_value_ref();
+            let address = memory_address(input)?;
+            return if pointer {
+                address.checked_add(8)
+            } else {
+                Some(address)
+            };
+        }
+        return None;
+    }
+    if (defining_op.is::<HornerBase>() || defining_op.is::<HornerExt>()) && index < 14 {
+        let input = defining_op.operands().all()[index].borrow().as_value_ref();
+        return memory_address(input);
     }
 
     if let Some(constant) = defining_op.downcast_ref::<arith::Constant>() {
@@ -478,6 +504,20 @@ mod tests {
         define_table, felt_ptr, module_advice_taint_findings, sink_names,
     };
     use crate::HirOpBuilder;
+
+    #[test]
+    fn stack_cast_does_not_use_an_overflowing_narrow_sum_as_an_address()
+    -> Result<(), midenc_hir::Report> {
+        let mut test = Test::new("wrapped_address", &[], &[]);
+        let span = SourceSpan::UNKNOWN;
+        let mut builder = test.function_builder();
+        let lhs = builder.u8(200, span);
+        let rhs = builder.u8(100, span);
+        let sum = builder.add_wrapping(lhs, rhs, span)?;
+        let address = builder.unrealized_conversion_cast(sum, Type::Felt, span)?;
+        assert_eq!(super::memory_address(address), None);
+        Ok(())
+    }
 
     /// The callee runs in the caller's memory context: raw advice it stores to memory is flagged
     /// when the caller loads and sinks it.

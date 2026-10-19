@@ -3673,6 +3673,73 @@ fn advice_taint_preserves_system_event_stack_slots_and_origins() -> Result<()> {
 }
 
 #[test]
+fn advice_taint_keeps_consecutive_stream_memory_cells_distinct() -> Result<()> {
+    for (operation, setup, width) in [
+        ("mem_stream", "push.0 padw padw padw", 13),
+        ("crypto_stream", "push.64 push.0 padw padw padw", 14),
+    ] {
+        for advised_cell in [0, 8, 9] {
+            let cleanup = "swap drop ".repeat(width - 1);
+            let source = format!(
+                "pub proc entry() -> u32\n    adv_push mem_store.{advised_cell}\n    {setup} \
+                 {operation} {operation}\n    push.1 u32wrapping_add {cleanup}\nend"
+            );
+            let findings = advice_taint_findings_for_source(&source)?;
+            // CryptoStream adds the previous rate, while MemStream overwrites it.
+            let tainted = advised_cell == 8 || (operation == "crypto_stream" && advised_cell == 0);
+            if tainted {
+                assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+                assert_eq!(
+                    findings[0].advice_span.start().to_usize(),
+                    source.find("adv_push").unwrap()
+                );
+            } else {
+                assert!(findings.is_empty(), "{source}: {findings:?}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_tracks_consecutive_crypto_stream_destinations() -> Result<()> {
+    for loaded_cell in [64, 72, 73] {
+        let source = format!(
+            "pub proc entry() -> u32\n    adv_push mem_store.8\n    push.64 push.0 padw padw padw \
+             crypto_stream crypto_stream\n    dropw dropw dropw drop drop\n    \
+             mem_load.{loaded_cell} push.1 u32wrapping_add\nend"
+        );
+        let findings = advice_taint_findings_for_source(&source)?;
+        if loaded_cell == 72 {
+            assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+        } else {
+            assert!(findings.is_empty(), "{source}: {findings:?}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_does_not_load_horner_coefficients_from_memory() -> Result<()> {
+    for operation in ["horner_eval_base", "horner_eval_ext"] {
+        for load_coefficients in ["", "mem_stream"] {
+            let source = format!(
+                "pub proc entry() -> u32\n    adv_push mem_store.0\n    push.0.0 push.32 push.0 \
+                 padw padw padw {load_coefficients} {operation} {operation}\n    dropw dropw \
+                 dropw drop drop push.1 u32wrapping_add swap drop\nend"
+            );
+            let findings = advice_taint_findings_for_source(&source)?;
+            if load_coefficients.is_empty() {
+                assert!(findings.is_empty(), "{source}: {findings:?}");
+            } else {
+                assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn advice_taint_tracks_memory_through_stream_operations() -> Result<()> {
     for (operation, setup, width) in [
         ("mem_stream", "push.0 padw padw padw", 13),
