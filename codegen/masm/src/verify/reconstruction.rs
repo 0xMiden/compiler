@@ -240,10 +240,11 @@ pub(super) fn validate(program: &SelectedProgram) -> Result<(), VerificationErro
             ControlTree::Loop {
                 predicate,
                 on_true,
+                before,
                 body,
                 ..
             } => {
-                controls.push(body.as_ref());
+                controls.extend([before.as_ref(), body.as_ref()]);
                 Some((*predicate, *on_true))
             }
             ControlTree::Sequence(children) => {

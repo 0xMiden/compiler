@@ -363,7 +363,7 @@ pub(crate) fn expand_procedure(
             ControlTree::Loop {
                 id,
                 condition,
-                header,
+                before,
                 body,
                 backedges,
                 on_true,
@@ -371,8 +371,7 @@ pub(crate) fn expand_procedure(
                 ..
             } => {
                 flag(&mut out, *id, true);
-                let mut loop_body =
-                    walk(&ControlTree::Segment(*header), plan, frame, registry, env, loops)?;
+                let mut loop_body = walk(before, plan, frame, registry, env, loops)?;
                 loops.push((*id, backedges.clone()));
                 let mut a = walk(&ControlTree::Edge(*on_true), plan, frame, registry, env, loops)?;
                 a.ops.extend(walk(body, plan, frame, registry, env, loops)?.ops);

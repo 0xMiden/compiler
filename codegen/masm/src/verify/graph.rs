@@ -399,13 +399,14 @@ impl Verifier<'_> {
                     predicate,
                     on_true,
                     on_false,
+                    before,
                     body,
                     ..
                 } => {
                     if *on_true == edge.id || *on_false == edge.id {
                         Some(*predicate)
                     } else {
-                        find(body, edge)
+                        find(before, edge).or_else(|| find(body, edge))
                     }
                 }
                 ControlTree::Sequence(children) => {
@@ -427,7 +428,12 @@ impl Verifier<'_> {
 
 fn is_header(tree: &ControlTree, id: SegmentId) -> bool {
     match tree {
-        ControlTree::Loop { header, body, .. } => *header == id || is_header(body, id),
+        ControlTree::Loop {
+            header,
+            before,
+            body,
+            ..
+        } => *header == id || is_header(before, id) || is_header(body, id),
         ControlTree::Sequence(children) => children.iter().any(|tree| is_header(tree, id)),
         ControlTree::If {
             then_body,
@@ -439,7 +445,12 @@ fn is_header(tree: &ControlTree, id: SegmentId) -> bool {
 }
 fn is_exit(tree: &ControlTree, id: EdgeId) -> bool {
     match tree {
-        ControlTree::Loop { on_false, body, .. } => *on_false == id || is_exit(body, id),
+        ControlTree::Loop {
+            on_false,
+            before,
+            body,
+            ..
+        } => *on_false == id || is_exit(before, id) || is_exit(body, id),
         ControlTree::Sequence(children) => children.iter().any(|tree| is_exit(tree, id)),
         ControlTree::If {
             then_body,

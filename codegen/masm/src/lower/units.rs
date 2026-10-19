@@ -269,3 +269,45 @@ impl LoweringDefinition for Scalar {
         Ok(body)
     }
 }
+
+/// An executable definition reconstructed from an actual registered HIR source rule.
+/// The candidate selected graph cannot supply this instruction construction.
+pub(crate) struct HirUnit {
+    /// Per-selection identity matching the unit in the selected program.
+    pub kind: LoweringKind,
+    /// Closed instruction algorithm with its source parameters already captured.
+    pub body: HirBody,
+}
+/// Source-owned construction families used by final-HIR selection.
+/// Dynamic storage offsets are supplied only through the final frame and validated bindings.
+pub(crate) enum HirBody {
+    /// A source rule's fully fixed straight-line instruction sequence.
+    Plain(alloc::vec::Vec<masm::Instruction>),
+    /// One phase of a checked indirect call, with explicit storage between phases.
+    Indirect(calls::Indirect),
+}
+impl LoweringDefinition for HirUnit {
+    fn kind(&self) -> LoweringKind {
+        self.kind
+    }
+
+    fn expand(
+        &self,
+        unit: &SelectedLowering,
+        bindings: &LoweringBindings,
+        frame: &FinalFrameLayout,
+        env: &ExpansionEnv<'_>,
+    ) -> Result<AnnotatedMasmBody, Report> {
+        bindings.validate(unit, frame)?;
+        match &self.body {
+            HirBody::Plain(instructions) => {
+                let mut body = AnnotatedMasmBody::new();
+                for instruction in instructions {
+                    body.push_instruction(instruction.clone(), unit.id);
+                }
+                Ok(body)
+            }
+            HirBody::Indirect(definition) => definition.expand(unit, bindings, frame, env),
+        }
+    }
+}

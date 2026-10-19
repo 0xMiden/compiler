@@ -115,13 +115,16 @@ fn allocate_inner(
                 header,
                 predicate,
                 on_true,
+                before,
                 body,
                 backedges: cyclic,
                 ..
             } => {
-                controls.insert(*header, (*predicate, *on_true));
+                let source = edges.iter().find(|edge| edge.id == *on_true).unwrap().source;
+                controls.insert(source, (*predicate, *on_true));
                 headers.insert(*header, *id);
                 backedges.extend(cyclic);
+                visit(before, edges, controls, headers, backedges);
                 visit(body, edges, controls, headers, backedges);
             }
             ControlTree::Sequence(children) => {

@@ -51,12 +51,15 @@ impl Liveness {
                     }
                 }
                 ControlTree::Loop {
-                    header,
+                    on_true,
                     predicate,
+                    before,
                     body,
                     ..
                 } => {
-                    out.entry(*header).or_default().insert(*predicate);
+                    let source = edges[on_true].source;
+                    out.entry(source).or_default().insert(*predicate);
+                    conditions(before, edges, out);
                     conditions(body, edges, out);
                 }
                 _ => {}

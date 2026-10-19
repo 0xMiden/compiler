@@ -1,4 +1,17 @@
+//! Lower typed HIR to Miden Assembly.
+//!
+//! The physical-plan pipeline makes stack allocation explicit: selection describes each operation's
+//! inputs and effects, allocation chooses stack and spill locations, and expansion emits instructions
+//! against those bindings. An independent verifier checks the resulting instructions before they can
+//! become an assembly procedure. The existing component emitter remains the production entry point
+//! while these stages are integrated.
+//!
+//! Start with `plan` for the shared vocabulary, then `select`, `allocate`, `lower::expand`, and `verify`
+//! for the successive stages. Instruction algorithms live in `emit`; they describe operation semantics
+//! rather than choosing where live SSA values reside.
+
 #![feature(debug_closure_helpers)]
+#![cfg_attr(test, feature(fn_traits, unboxed_closures))]
 #![feature(iter_array_chunks)]
 #![deny(warnings)]
 
@@ -52,7 +65,7 @@ use midenc_hir::{
     inventory,
 };
 
-pub(crate) use self::lower::HirLowering;
+pub(crate) use self::lower::{HirLowering, HirSelection};
 pub use self::{
     artifact::{MasmComponent, Rodata},
     events::{Event, FRAME_END_EVENT, FRAME_START_EVENT, PRINT_LN_EVENT},
@@ -90,6 +103,9 @@ inventory::submit!(::midenc_hir::DialectRegistrationHookInfo::new::<debuginfo::D
 ));
 
 fn lower_builtin_ops(info: &mut midenc_hir::DialectInfo) {
+    info.register_operation_trait::<builtin::Ret, dyn HirSelection>();
+    info.register_operation_trait::<builtin::RetImm, dyn HirSelection>();
+
     info.register_operation_trait::<builtin::Ret, dyn HirLowering>();
     info.register_operation_trait::<builtin::RetImm, dyn HirLowering>();
     info.register_operation_trait::<builtin::GlobalSymbol, dyn HirLowering>();
@@ -97,6 +113,10 @@ fn lower_builtin_ops(info: &mut midenc_hir::DialectInfo) {
 }
 
 fn lower_arith_ops(info: &mut midenc_hir::DialectInfo) {
+    info.register_operation_trait::<arith::Constant, dyn HirSelection>();
+    info.register_operation_trait::<arith::Split, dyn HirSelection>();
+    info.register_operation_trait::<arith::Join, dyn HirSelection>();
+
     info.register_operation_trait::<arith::Constant, dyn HirLowering>();
     info.register_operation_trait::<arith::Add, dyn HirLowering>();
     info.register_operation_trait::<arith::AddOverflowing, dyn HirLowering>();
@@ -157,11 +177,19 @@ fn lower_arith_ops(info: &mut midenc_hir::DialectInfo) {
 }
 
 fn lower_cf_ops(info: &mut midenc_hir::DialectInfo) {
+    info.register_operation_trait::<cf::CondBr, dyn HirSelection>();
+
     info.register_operation_trait::<cf::Select, dyn HirLowering>();
     info.register_operation_trait::<cf::CondBr, dyn HirLowering>();
 }
 
 fn lower_scf_ops(info: &mut midenc_hir::DialectInfo) {
+    info.register_operation_trait::<scf::If, dyn HirSelection>();
+    info.register_operation_trait::<scf::IndexSwitch, dyn HirSelection>();
+    info.register_operation_trait::<scf::While, dyn HirSelection>();
+    info.register_operation_trait::<scf::Condition, dyn HirSelection>();
+    info.register_operation_trait::<scf::Yield, dyn HirSelection>();
+
     info.register_operation_trait::<scf::If, dyn HirLowering>();
     info.register_operation_trait::<scf::While, dyn HirLowering>();
     info.register_operation_trait::<scf::IndexSwitch, dyn HirLowering>();
@@ -170,11 +198,19 @@ fn lower_scf_ops(info: &mut midenc_hir::DialectInfo) {
 }
 
 fn lower_ub_ops(info: &mut midenc_hir::DialectInfo) {
+    info.register_operation_trait::<ub::Unreachable, dyn HirSelection>();
+
     info.register_operation_trait::<ub::Unreachable, dyn HirLowering>();
     info.register_operation_trait::<ub::Poison, dyn HirLowering>();
 }
 
 fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
+    info.register_operation_trait::<hir::PtrToInt, dyn HirSelection>();
+    info.register_operation_trait::<hir::IntToPtr, dyn HirSelection>();
+    info.register_operation_trait::<hir::Bitcast, dyn HirSelection>();
+    info.register_operation_trait::<hir::Dyncall, dyn HirSelection>();
+    info.register_operation_trait::<hir::ExecIndirect, dyn HirSelection>();
+
     info.register_operation_trait::<hir::Assert, dyn HirLowering>();
     info.register_operation_trait::<hir::Assertz, dyn HirLowering>();
     info.register_operation_trait::<hir::AssertEq, dyn HirLowering>();
@@ -237,6 +273,10 @@ fn lower_wasm_ops(info: &mut midenc_hir::DialectInfo) {
 }
 
 fn lower_debuginfo_ops(info: &mut midenc_hir::DialectInfo) {
+    info.register_operation_trait::<debuginfo::DebugValue, dyn HirSelection>();
+    info.register_operation_trait::<debuginfo::DebugDeclare, dyn HirSelection>();
+    info.register_operation_trait::<debuginfo::DebugKill, dyn HirSelection>();
+
     info.register_operation_trait::<debuginfo::DebugDeclare, dyn HirLowering>();
     info.register_operation_trait::<debuginfo::DebugValue, dyn HirLowering>();
     info.register_operation_trait::<debuginfo::DebugKill, dyn HirLowering>();

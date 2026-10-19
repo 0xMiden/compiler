@@ -933,6 +933,8 @@ impl GeneratedDefinition for ReconstructionLoop {
                         on_true: EdgeId(1),
                         on_false: EdgeId(2),
                         header: SegmentId(1),
+
+                        before: Box::new(ControlTree::Segment(SegmentId(1))),
                         predicate: atom(4),
                         body: Box::new(ControlTree::Sequence(vec![
                             ControlTree::Segment(SegmentId(2)),

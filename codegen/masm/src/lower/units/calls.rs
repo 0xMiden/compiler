@@ -1,3 +1,7 @@
+//! Context-changing calls and the explicit phases of indirect dispatch.
+//!
+//! Selection fixes ABI and selector evidence; expansion only loads assigned inputs, stages
+//! declared roots, invokes the chosen instruction, and removes VM context padding.
 use alloc::vec;
 
 use midenc_hir::Report;
@@ -74,13 +78,13 @@ impl ContextCall {
                     content: ContentRequirement::Atom(*atom),
                 }));
             }
-            (
-                FrameRef::Scratch {
+            crate::verify::SelectorEvidence::FrameRoot {
+                reference: FrameRef::Scratch {
                     object: self.root,
                     offset: 0,
                 },
-                root.into_iter().map(StoredValue::Atom).collect(),
-            )
+                root: root.into_iter().map(StoredValue::Atom).collect(),
+            }
         });
         let proof = UnitEvidence {
             calls: vec![CallSite {
@@ -137,6 +141,75 @@ impl LoweringDefinition for ContextCall {
         }
         b.emit(self.instruction.clone());
         b.emit_all(context_result_cleanup(self.abi.results() as u8)?);
+        Ok(annotate_raw(&b.ops, unit.id))
+    }
+}
+
+/// Closed phase algorithms selected by final-HIR indirect-call rules.
+/// Keeping lookup, root staging, and dispatch separate makes intervening storage and checks
+/// visible to allocation and verification, instead of hiding them in an emitter callback.
+pub(crate) enum Indirect {
+    /// Check a table index and signature tag, producing the exact slot address for dispatch.
+    Lookup { slots: u32, base: u32, tag: u32 },
+    /// Reject an unset root and write its four lanes to an aligned spanning scratch object.
+    StageRoot { object: ScratchId },
+    /// Invoke a previously staged root with context padding and result cleanup.
+    DispatchRoot { object: ScratchId, results: u32 },
+    /// Load the previously checked table address from stored input zero and execute it.
+    DispatchTable,
+}
+impl Indirect {
+    /// Emit this phase using a source-selected contract and already validated bindings.
+    /// Missing stored addresses, invalid result counts, or unresolved scratch references fail.
+    pub fn expand(
+        &self,
+        unit: &SelectedLowering,
+        bindings: &LoweringBindings,
+        frame: &FinalFrameLayout,
+        _: &ExpansionEnv<'_>,
+    ) -> Result<AnnotatedMasmBody, Report> {
+        let mut b = raw::Builder::new(Default::default());
+        match self {
+            Self::Lookup { slots, base, tag } => {
+                b.extend(raw::checked_table_address(*slots, *base, *tag, b.span))
+            }
+            Self::StageRoot { object } => {
+                let offset = frame.resolve(FrameRef::Scratch {
+                    object: *object,
+                    offset: 0,
+                })?;
+                b.extend(raw::stage_root(
+                    [masm::Instruction::Locaddr(offset.into()), masm::Instruction::MemStoreWLe],
+                    crate::emit::primop::UNSET_STORED_PROCEDURE_SLOT_MESSAGE,
+                    b.span,
+                ));
+            }
+            Self::DispatchRoot { object, results } => {
+                b.extend(raw::pad_inputs(unit.stack_inputs.len(), b.span));
+                b.emit(masm::Instruction::Locaddr(
+                    frame
+                        .resolve(FrameRef::Scratch {
+                            object: *object,
+                            offset: 0,
+                        })?
+                        .into(),
+                ));
+                b.emit(masm::Instruction::DynCall);
+                b.emit_all(context_result_cleanup(
+                    u8::try_from(*results).map_err(|_| invalid("context results exceed window"))?,
+                )?);
+            }
+            Self::DispatchTable => {
+                let slot = bindings
+                    .stored_inputs
+                    .get(&StoredInputId(0))
+                    .ok_or_else(|| invalid("missing checked table address"))?;
+                b.emit(masm::Instruction::LocLoad(frame.resolve(FrameRef::Spill(*slot))?.into()));
+                b.emit(masm::Instruction::EmitImm(crate::Event::FrameStart.into()));
+                b.emit(masm::Instruction::DynExec);
+                b.emit(masm::Instruction::EmitImm(crate::Event::FrameEnd.into()));
+            }
+        }
         Ok(annotate_raw(&b.ops, unit.id))
     }
 }

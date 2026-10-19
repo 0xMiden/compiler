@@ -243,12 +243,29 @@ impl TargetEffects {
             Add | Sub | Mul | Eq | Neq => {
                 StackEffect::new(2, vec![LaneEffect::Computed(0)], vec![FloorStep::Pop(1)])
             }
-            U32WrappingAdd | U32WrappingMul | U32Gt | And | U32Shr | U32Shl | U32And | U32Or => {
-                StackEffect::new(2, vec![LaneEffect::Computed(0)], vec![FloorStep::Pop(1)])
-            }
+            U32WrappingAdd | U32WrappingMul | U32Gt | U32Lt | And | U32Shr | U32Shl | U32And
+            | U32Or => StackEffect::new(2, vec![LaneEffect::Computed(0)], vec![FloorStep::Pop(1)]),
             EqImm(Immediate::Value(_)) | U32Not => {
                 StackEffect::new(1, vec![LaneEffect::Computed(0)], vec![])
             }
+            AddImm(Immediate::Value(value)) => StackEffect::new(
+                1,
+                vec![LaneEffect::Computed(0)],
+                if value.as_canonical_u64() <= 2 {
+                    vec![]
+                } else {
+                    vec![FloorStep::Push(1), FloorStep::Pop(1)]
+                },
+            ),
+            MulImm(Immediate::Value(value)) => StackEffect::new(
+                1,
+                vec![LaneEffect::Computed(0)],
+                match value.as_canonical_u64() {
+                    0 => vec![FloorStep::Pop(1), FloorStep::Push(1)],
+                    1 => vec![],
+                    _ => vec![FloorStep::Push(1), FloorStep::Pop(1)],
+                },
+            ),
             U32WrappingSubImm(Immediate::Value(_)) => StackEffect::new(
                 1,
                 vec![LaneEffect::Computed(0)],

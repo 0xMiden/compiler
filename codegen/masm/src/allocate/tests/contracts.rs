@@ -815,6 +815,8 @@ pub(super) fn loop_source() -> Source {
         id: ControlId(0),
         condition: ControlId(1),
         header: SegmentId(1),
+
+        before: Box::new(ControlTree::Segment(SegmentId(1))),
         predicate: a(20),
         on_true: EdgeId(1),
         on_false: EdgeId(2),
@@ -991,6 +993,8 @@ fn lower_id_changing_parameter_cannot_hide_a_resident_invariant_cache() {
         id: ControlId(0),
         condition: ControlId(1),
         header: SegmentId(1),
+
+        before: Box::new(ControlTree::Segment(SegmentId(1))),
         predicate: a(20),
         on_true: EdgeId(1),
         on_false: EdgeId(2),
@@ -1223,6 +1227,8 @@ fn nested_source() -> Source {
         id: ControlId(2),
         condition: ControlId(3),
         header: SegmentId(3),
+
+        before: Box::new(ControlTree::Segment(SegmentId(3))),
         predicate: a(21),
         on_true: EdgeId(3),
         on_false: EdgeId(4),
@@ -1233,6 +1239,8 @@ fn nested_source() -> Source {
         id: ControlId(0),
         condition: ControlId(1),
         header: SegmentId(1),
+
+        before: Box::new(ControlTree::Segment(SegmentId(1))),
         predicate: a(20),
         on_true: EdgeId(1),
         on_false: EdgeId(6),
@@ -1543,6 +1551,8 @@ fn loop_scratch_content_rebinding_requires_the_new_parameter_token() {
         id: ControlId(0),
         condition: ControlId(1),
         header: SegmentId(1),
+
+        before: Box::new(ControlTree::Segment(SegmentId(1))),
         predicate: a(20),
         on_true: EdgeId(1),
         on_false: EdgeId(2),
@@ -1704,6 +1714,7 @@ fn loop_pointer_source(offset: u32, carried: u32, alias: bool) -> Source {
         id: ControlId(0),
         condition: ControlId(1),
         header: SegmentId(1),
+        before: Box::new(s(1)),
         predicate: a(20),
         on_true: EdgeId(1),
         on_false: EdgeId(2),

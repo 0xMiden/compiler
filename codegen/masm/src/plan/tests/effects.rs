@@ -352,6 +352,9 @@ fn real_lowering_effects_match_vm() -> Result<(), Report> {
         (Instruction::U32WrappingSubImm(1.into()), vec![0], vec![u32::MAX as u64]),
         (Instruction::U32WrappingMul, vec![8, 3], vec![24]),
         (Instruction::U32Gt, vec![2, 9], vec![1]),
+        (Instruction::U32Lt, vec![9, 2], vec![1]),
+        (Instruction::AddImm(Felt::new_unchecked(7).into()), vec![5], vec![12]),
+        (Instruction::MulImm(Felt::new_unchecked(8).into()), vec![5], vec![40]),
         (Instruction::EqImm(Felt::ZERO.into()), vec![0], vec![1]),
         (Instruction::And, vec![1, 0], vec![0]),
         (Instruction::U32Shr, vec![8, 0x1234], vec![0x12]),
@@ -461,5 +464,55 @@ fn root_word_store_and_frame_events_match_vm() -> Result<(), Report> {
         )))
         .is_err()
     );
+    Ok(())
+}
+
+#[test]
+fn checked_table_lookup_effects_match_vm() -> Result<(), Report> {
+    let values = (5..21).map(Felt::new_unchecked).collect::<Vec<_>>();
+    for (instruction, answer) in [
+        (Instruction::AddImm(Felt::ZERO.into()), 5),
+        (Instruction::AddImm(Felt::ONE.into()), 6),
+        (Instruction::AddImm(Felt::new_unchecked(2).into()), 7),
+        (Instruction::AddImm(Felt::new_unchecked(9).into()), 14),
+        (Instruction::MulImm(Felt::ZERO.into()), 0),
+        (Instruction::MulImm(Felt::ONE.into()), 5),
+        (Instruction::MulImm(Felt::new_unchecked(8).into()), 40),
+    ] {
+        let effect = TargetEffects::instruction(&instruction)?;
+        let mut floor = FloorState {
+            owned: 1,
+            protected: 15,
+            padding: 0,
+        };
+        for step in &effect.floor {
+            floor = match step {
+                FloorStep::Push(n) => floor.push(*n as usize),
+                FloorStep::Pop(n) => floor.pop(*n as usize),
+            }?;
+        }
+        assert_eq!(effect.consumed, 1);
+        assert_eq!(effect.outputs, [LaneEffect::Computed(0)]);
+        let output = run(
+            &alloc::format!(
+                "{instruction} sdepth push.{} assert_eq push.{answer} assert_eq",
+                floor.owned + floor.protected + floor.padding
+            ),
+            &values,
+        )?;
+        assert_eq!(&output[..15], &values[1..]);
+    }
+    Ok(())
+}
+
+#[test]
+fn equality_assertion_floor_and_failure_match_vm() -> Result<(), Report> {
+    let mut values = (7..23).map(Felt::new_unchecked).collect::<Vec<_>>();
+    values[1] = values[0];
+    let output = run("assert_eq sdepth push.16 assert_eq", &values)?;
+    assert_eq!(&output[..14], &values[2..]);
+    assert_eq!(&output[14..], &[Felt::ZERO; 2]);
+    values[1] = Felt::new_unchecked(99);
+    assert!(run("assert_eq", &values).is_err());
     Ok(())
 }

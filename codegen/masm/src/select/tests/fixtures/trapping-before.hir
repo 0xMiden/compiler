@@ -1,0 +1,15 @@
+builtin.function public extern("C") @trapping_before(%trap: i1, %go: i1, %a: felt) -> felt {
+    %result = scf.while %a before {
+    ^before(%value: felt):
+        %chosen = scf.if %trap then {
+            ub.unreachable;
+        } else {
+            scf.yield %value : (felt);
+        } : (i1) -> felt;
+        scf.condition %go, %chosen : (i1, felt);
+    } after {
+    ^after(%next: felt):
+        scf.yield %next : (felt);
+    } : (felt) -> felt;
+    builtin.ret %result : (felt);
+};
