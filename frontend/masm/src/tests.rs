@@ -3590,6 +3590,50 @@ end
 }
 
 #[test]
+fn advice_taint_preserves_system_event_stack_slots_and_origins() -> Result<()> {
+    for advised_slot in 0..6 {
+        for used_slot in 0..6 {
+            let mut body = String::new();
+            for slot in (0..6).rev() {
+                body.push_str(if slot == advised_slot {
+                    "    adv_push\n"
+                } else {
+                    "    push.1\n"
+                });
+            }
+            body.push_str("    adv.register_deferred_data\n");
+            for _ in 0..used_slot {
+                body.push_str("    drop\n");
+            }
+            body.push_str("    push.1 u32wrapping_add\n");
+            for _ in used_slot..5 {
+                body.push_str("    swap drop\n");
+            }
+            let source = format!("pub proc entry() -> u32\n{body}end\n");
+            let context = Rc::new(Context::default());
+            let output =
+                disassemble_source(&source, "test", &DisassemblerConfig::default(), context)?;
+            let findings = advice_taint_findings(output.module)?;
+            if advised_slot == used_slot {
+                assert_eq!(sink_names(&findings), ["arith.add"], "{source}");
+                let advice = source.find("adv_push").unwrap();
+                assert_eq!(findings[0].advice_span.start().to_usize(), advice);
+                assert_eq!(findings[0].advice_span.end().to_usize(), advice + "adv_push".len());
+            } else {
+                assert!(findings.is_empty(), "{source}: {findings:?}");
+            }
+        }
+    }
+
+    let findings = advice_taint_findings_for_source(
+        "pub proc entry() -> u32\n    push.1.1.1.1.1.1 adv.register_deferred_data\n    push.1 \
+         u32wrapping_add movdn.5 dropw drop\nend",
+    )?;
+    assert!(findings.is_empty(), "{findings:?}");
+    Ok(())
+}
+
+#[test]
 fn advice_taint_reports_raw_advice_used_by_u32_arithmetic() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(

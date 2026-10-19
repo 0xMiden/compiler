@@ -18,7 +18,7 @@ use super::{
         range_constrained_operand_indices,
     },
 };
-use crate::AdvicePipe;
+use crate::{AdvicePipe, SystemEvent};
 
 /// Sparse propagation of unconstrained advice taint through SSA values.
 #[derive(Default)]
@@ -54,6 +54,14 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
     ) -> Result<(), Report> {
         if op.is::<AdvicePipe>() {
             return join_advice_pipe_results(op, operands, results);
+        }
+
+        // System events affect the advice provider, but leave each operand stack slot intact.
+        if op.is::<SystemEvent>() {
+            for (operand, result) in operands.iter().zip(results.iter_mut()) {
+                result.join(operand.value());
+            }
+            return Ok(());
         }
 
         let operand_taint =
