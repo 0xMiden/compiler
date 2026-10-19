@@ -193,6 +193,32 @@ fn validate_graph(
     program: &SelectedProgram,
     units: &BTreeMap<SelectedStepId, UnitEvidence>,
 ) -> Result<(), VerificationError> {
+    let mut objects = BTreeMap::<ScratchId, (ScratchRequirement, BTreeSet<SelectedStepId>)>::new();
+    for unit in program.segments.iter().flat_map(|segment| &segment.units) {
+        let mut seen = BTreeSet::new();
+        for requirement in &unit.scratch {
+            requirement.validate()?;
+            let mut normalized = requirement.clone();
+            normalized.uses.sort();
+            if !seen.insert(requirement.id)
+                || normalized.uses.windows(2).any(|uses| uses[0] == uses[1])
+            {
+                return Err(error("duplicate scratch declaration or use"));
+            }
+            let entry = objects
+                .entry(requirement.id)
+                .or_insert_with(|| (normalized.clone(), BTreeSet::new()));
+            if entry.0 != normalized {
+                return Err(error("inconsistent fixed scratch descriptor"));
+            }
+            entry.1.insert(unit.id);
+        }
+    }
+    for (requirement, uses) in objects.values() {
+        if requirement.uses.iter().copied().collect::<BTreeSet<_>>() != *uses {
+            return Err(error("scratch declared uses disagree with consuming units"));
+        }
+    }
     let mut segments = BTreeSet::new();
     let mut steps = BTreeSet::new();
     let mut edges = BTreeSet::new();
@@ -273,6 +299,16 @@ fn validate_graph(
                     }
                 }
                 for effect in &unit.scratch_effects {
+                    if matches!(
+                        effect,
+                        ScratchEffect::Borrow {
+                            write: false,
+                            definite_write: true,
+                            ..
+                        }
+                    ) {
+                        return Err(error("definite borrowed write requires write permission"));
+                    }
                     let (object, offset, width) = match effect {
                         ScratchEffect::Read(fact) | ScratchEffect::Write(fact) => {
                             (fact.object, fact.offset, 1)

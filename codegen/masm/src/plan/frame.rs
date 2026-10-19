@@ -31,6 +31,8 @@ pub(crate) enum ScratchLifetime {
 pub(crate) enum AddressSpace {
     ProcedureLocal,
 }
+/// Fixed scratch descriptor declared by selection and repeated consistently by all uses.
+/// Size, alignment, and object-relative offsets are measured in field elements.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ScratchRequirement {
     pub id: ScratchId,
@@ -39,10 +41,13 @@ pub(crate) struct ScratchRequirement {
     pub contiguous: bool,
     pub address_space: AddressSpace,
     pub lifetime: ScratchLifetime,
+    /// Complete set of units declaring this object; source checking verifies exact coverage.
     pub uses: Vec<SelectedStepId>,
 }
 
 impl ScratchRequirement {
+    /// Check nonzero size and power-of-two alignment. Whole-program use consistency
+    /// and physical overlap are checked separately by selection and final frame validation.
     pub fn validate(&self) -> Result<(), PlanError> {
         if self.size == 0 || !self.alignment.is_power_of_two() {
             return Err(frame_error("scratch needs a nonzero size and power-of-two alignment"));
@@ -122,13 +127,35 @@ pub(crate) enum ScratchEffect {
     },
 }
 
-/// Fully assigned immutable data. Construction validates ranges before narrowing any operand.
+/// Element contributions to an assigned frame, including alignment padding.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct FrameResources {
+    pub source_locals: u64,
+    pub scalar_colors: u64,
+    pub spanning_scratch: u64,
+    pub workspace: u64,
+    pub padding: u64,
+}
+
+/// Shared frame range reserved for unit-local scratch, with element-based size and alignment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FrameWorkspace {
+    pub offset: u32,
+    pub size: u32,
+    pub alignment: u32,
+}
+
+/// Assigned source, spill, and scratch locations, validated before target operand narrowing.
+/// Spills may share cells; scratch may overlap only for distinct unit lifetimes.
+/// Resource accounting is attached separately and does not grant access to additional cells.
 #[derive(Debug, Clone)]
 pub(crate) struct FinalFrameLayout {
     source: SourceLocalLayout,
     spills: BTreeMap<SpillSlotId, u32>,
     scratch: BTreeMap<ScratchId, ScratchAllocation>,
     aligned_size: u32,
+    resources: FrameResources,
+    workspace: FrameWorkspace,
 }
 
 impl FinalFrameLayout {
@@ -192,7 +219,30 @@ impl FinalFrameLayout {
             spills,
             scratch,
             aligned_size,
+            resources: FrameResources::default(),
+            workspace: FrameWorkspace {
+                offset: aligned_size,
+                size: 0,
+                alignment: 1,
+            },
         })
+    }
+
+    /// Accounting supplied by frame assignment, including its alignment padding.
+    pub fn resources(&self) -> &FrameResources {
+        &self.resources
+    }
+
+    /// Assignment's shared unit-local workspace descriptor.
+    pub fn workspace(&self) -> &FrameWorkspace {
+        &self.workspace
+    }
+
+    /// Attach assignment accounting without changing or revalidating any cell locations.
+    pub fn with_resources(mut self, resources: FrameResources, workspace: FrameWorkspace) -> Self {
+        self.resources = resources;
+        self.workspace = workspace;
+        self
     }
 
     /// Original source-owned prefix, used to check agreement with sealed source evidence.

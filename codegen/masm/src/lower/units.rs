@@ -22,6 +22,37 @@ pub(crate) struct LoweringBindings {
 }
 
 impl LoweringBindings {
+    /// Resolve declared scratch from the already assigned frame, without allocating storage.
+    pub fn resolve_scratch(
+        &self,
+        unit: &SelectedLowering,
+        frame: &FinalFrameLayout,
+    ) -> Result<Self, PlanError> {
+        let scratch = unit
+            .scratch
+            .iter()
+            .map(|object| {
+                frame
+                    .scratch()
+                    .get(&object.id)
+                    .copied()
+                    .map(|allocation| (object.id, allocation))
+                    .ok_or_else(|| {
+                        PlanError::new(
+                            DiagnosticCategory::InvalidSelectedLowering,
+                            "unassigned lowering scratch",
+                        )
+                    })
+            })
+            .collect::<Result<_, _>>()?;
+        let resolved = Self {
+            stored_inputs: self.stored_inputs.clone(),
+            scratch,
+        };
+        resolved.validate(unit, frame)?;
+        Ok(resolved)
+    }
+
     /// Validate the exact binding domain. Token contents are independently checked by verification.
     pub fn validate(
         &self,

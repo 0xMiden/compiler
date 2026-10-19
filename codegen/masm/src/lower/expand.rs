@@ -3,6 +3,23 @@ use alloc::vec::Vec;
 
 use crate::{masm, plan::*};
 
+/// Materialize bindings from the completed frame atomically, before any lowering expands.
+/// Missing unit bindings or incompatible scratch assignments leave the plan unchanged.
+pub(crate) fn resolve_frame_bindings(
+    plan: &mut actions::ProcedurePlan,
+    frame: &FinalFrameLayout,
+) -> Result<(), PlanError> {
+    let mut resolved = alloc::collections::BTreeMap::new();
+    for unit in plan.selected.segments.iter().flat_map(|segment| &segment.units) {
+        let binding = plan.lowering_bindings.get(&unit.id).ok_or_else(|| {
+            PlanError::new(DiagnosticCategory::InvalidSelectedLowering, "missing lowering bindings")
+        })?;
+        resolved.insert(unit.id, binding.resolve_scratch(unit, frame)?);
+    }
+    plan.lowering_bindings = resolved;
+    Ok(())
+}
+
 /// Expand an allocation action after symbolic frame references have been assigned.
 /// Scalar local instructions expand in the assembler to `locaddr; mem_store/mem_load`.
 /// Lowering execution has its own boundary and is deliberately not accepted here.

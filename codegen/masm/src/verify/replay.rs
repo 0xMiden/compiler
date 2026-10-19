@@ -228,6 +228,17 @@ impl<'a> Verifier<'a> {
         {
             return Err(error("spill domain disagrees with final frame"));
         }
+        let scratch: BTreeSet<_> = plan
+            .selected
+            .segments
+            .iter()
+            .flat_map(|segment| &segment.units)
+            .flat_map(|unit| &unit.scratch)
+            .map(|object| object.id)
+            .collect();
+        if scratch != frame.scratch().keys().copied().collect() {
+            return Err(error("scratch domain disagrees with final frame"));
+        }
         if plan.contracts.len() != plan.selected.segments.len() {
             return Err(error("entry contract domain disagrees with selected segments"));
         }
@@ -610,8 +621,8 @@ impl<'a> Verifier<'a> {
         }
         for requirement in &unit.scratch {
             if matches!(requirement.lifetime, ScratchLifetime::Unit(_)) {
-                let allocation = self.frame.scratch()[&requirement.id];
-                for offset in allocation.offset..allocation.offset + allocation.size {
+                for offset in memory::object_range(requirement.id, 0, requirement.size, self.frame)?
+                {
                     state.cells.remove(&offset);
                 }
             }

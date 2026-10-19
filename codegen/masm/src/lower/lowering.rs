@@ -2166,6 +2166,44 @@ mod tests {
     }
 
     #[test]
+    fn final_frame_debug_offsets_use_final_size_and_never_wrap_signed_displacements() {
+        use crate::plan::{FinalFrameLayout, FrameRef, SourceLocalLayout};
+        for (size, offsets, expected) in [
+            (20, vec![0, 4], vec![DebugVarLocation::Local(-20), DebugVarLocation::Local(-16)]),
+            (
+                65_532,
+                vec![0, 65_531],
+                vec![DebugVarLocation::Unavailable, DebugVarLocation::Local(-1)],
+            ),
+        ] {
+            let finalized = FinalFrameLayout::new(
+                SourceLocalLayout {
+                    offsets,
+                    extent: if size == 20 { 6 } else { size },
+                },
+                Default::default(),
+                Default::default(),
+                size,
+            )
+            .unwrap();
+            let frame = super::FrameLayout::from(&finalized);
+            for (index, expected) in expected.into_iter().enumerate() {
+                let resolve = |index| super::resolve_local_slot_felt_offset(index, frame);
+                assert_eq!(
+                    resolve(index as u32),
+                    Some(usize::from(
+                        finalized.resolve(FrameRef::SourceLocal(index as u32)).unwrap()
+                    ))
+                );
+                assert_eq!(
+                    resolve_local_slot_location(index as u32, Some(frame.aligned_size), resolve),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
     fn frame_base_stack_values_return_the_address_without_dereferencing() {
         let expression = Expression::with_ops(vec![
             ExpressionOp::FrameBase {
