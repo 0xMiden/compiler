@@ -20,7 +20,6 @@ fn context_fixture(family: Invocation, args: u32, results: u32) -> (Fixture, Vec
     };
     let abi = ProcedureAbi::new(convention, args, results).unwrap();
     let mut fixture = Fixture::new(args, results);
-    fixture.effects.call = Some(abi.invocation(family).unwrap());
     let mut code = vec![];
     let selector = if family == Invocation::DynCall {
         fixture = fixture.scratch(4);
@@ -247,7 +246,6 @@ fn internal_call_accepts_computed_local_argument() {
 fn borrowed_scratch_writes_invalidate_old_identity_and_require_output_relation() {
     let abi = ProcedureAbi::new(CallingConvention::SameContext, 1, 1).unwrap();
     let mut fixture = Fixture::new(0, 1).scratch(1);
-    fixture.effects.call = Some(abi.invocation(Invocation::Exec).unwrap());
     fixture.scratch_effects.push(ScratchEffect::Borrow {
         object: ScratchId(0),
         offset: 0,
@@ -392,7 +390,6 @@ fn source_local_call_arguments_do_not_require_compiler_scratch_borrow() {
         extent: 1,
     };
     let abi = ProcedureAbi::new(CallingConvention::SameContext, 1, 0).unwrap();
-    fixture.effects.call = Some(abi.invocation(Invocation::Exec).unwrap());
     fixture.proof.calls.push(CallSite {
         path: vec![],
         instruction: Instruction::Exec(target()),
@@ -701,4 +698,252 @@ fn conditional_entry_result_rebinds_on_zero_trip_and_no_call_paths() {
             }
         }
     }
+}
+
+fn internal_site(name: &str, arguments: u32, results: u32) -> CallSite {
+    CallSite {
+        instruction: Instruction::Exec(crate::masm::InvocationTarget::Symbol(
+            crate::masm::Ident::new(name).unwrap(),
+        )),
+        abi: ProcedureAbi::new(CallingConvention::SameContext, arguments, results).unwrap(),
+        inputs: vec![CallArgument::Local; arguments as usize],
+        path: vec![],
+        truncate: false,
+        outputs: vec![],
+        publications: vec![],
+        selector: None,
+    }
+}
+
+fn heterogeneous_fixture() -> (Fixture, Vec<AnnotatedOp>) {
+    let mut fixture = Fixture::new(24, 20);
+    let mut first = internal_site("pair", 2, 1);
+    first.inputs = (0..2)
+        .map(|i| CallArgument::Exact(StoredValue::Atom(Fixture::input(i))))
+        .collect();
+    let mut second = internal_site("triple", 3, 0);
+    second.inputs = vec![
+        CallArgument::Local,
+        CallArgument::Exact(StoredValue::Atom(Fixture::input(2))),
+        CallArgument::Exact(StoredValue::Atom(Fixture::input(3))),
+    ];
+    let code = vec![inst(first.instruction.clone()), inst(second.instruction.clone())];
+    fixture.proof.calls = vec![first, second];
+    fixture.proof.aliases =
+        LaneAliases::new((0..20).map(|i| (Fixture::output(i), Fixture::input(i + 4))).collect());
+    (fixture, code)
+}
+
+#[test]
+fn heterogeneous_internal_calls_preserve_suffix() {
+    let (fixture, code) = heterogeneous_fixture();
+    fixture.run(code).unwrap();
+}
+
+fn preserving_fixture(inputs: u32, consumed: u32) -> Fixture {
+    let mut fixture = Fixture::new(inputs, inputs - consumed);
+    fixture.proof.aliases = LaneAliases::new(
+        (0..inputs - consumed)
+            .map(|i| (Fixture::output(i), Fixture::input(i + consumed)))
+            .collect(),
+    );
+    fixture
+}
+
+#[test]
+fn repeated_internal_sites_are_all_required() {
+    let mut fixture = preserving_fixture(20, 0);
+    let site = internal_site("repeat", 0, 0);
+    fixture.proof.calls = vec![site.clone(), site.clone()];
+    let call = inst(site.instruction);
+    fixture.run(vec![call.clone(), call.clone()]).unwrap();
+    for count in [0, 1, 3] {
+        assert_eq!(
+            fixture.run(vec![call.clone(); count]).unwrap_err().category,
+            DiagnosticCategory::AbiMismatch,
+            "occurrences {count}"
+        );
+    }
+}
+
+// Both sites consume locally introduced arguments and leave the original suffix untouched.
+fn local_heterogeneous_calls(path: CallPath) -> (Vec<CallSite>, Vec<AnnotatedOp>) {
+    let mut first = internal_site("pair", 2, 1);
+    first.path = vec![path];
+    first.inputs = [11, 13]
+        .into_iter()
+        .map(|n| CallArgument::Exact(StoredValue::Literal(Felt::new_unchecked(n))))
+        .collect();
+    let mut second = internal_site("triple", 3, 0);
+    second.path = vec![path];
+    second.inputs = vec![
+        CallArgument::Local,
+        CallArgument::Exact(StoredValue::Literal(Felt::new_unchecked(17))),
+        CallArgument::Exact(StoredValue::Literal(Felt::new_unchecked(19))),
+    ];
+    let mut code: Vec<_> = [19, 17, 13, 11].into_iter().map(push).collect();
+    code.extend([inst(first.instruction.clone()), inst(second.instruction.clone())]);
+    (vec![first, second], code)
+}
+
+#[test]
+fn heterogeneous_internal_paths_are_checked() {
+    for predicate in [None, Some(0), Some(1)] {
+        let mut fixture = preserving_fixture(
+            if predicate.is_none() { 21 } else { 20 },
+            u32::from(predicate.is_none()),
+        );
+        let (mut sites, then_code) = local_heterogeneous_calls(CallPath::Then(ControlId(0)));
+        let mut other = internal_site("single", 1, 0);
+        other.path = vec![CallPath::Else(ControlId(0))];
+        other.inputs = vec![CallArgument::Exact(StoredValue::Literal(Felt::new_unchecked(23)))];
+        let else_code = vec![push(23), inst(other.instruction.clone())];
+        sites.push(other);
+        fixture.proof.calls = sites;
+        let prefix: Vec<_> = predicate.into_iter().map(push).collect();
+        let branch = |then_code| {
+            let mut code = prefix.clone();
+            code.push(AnnotatedOp::If {
+                id: ControlId(0),
+                then_body: ops(then_code),
+                else_body: ops(else_code.clone()),
+            });
+            code
+        };
+        fixture.run(branch(then_code.clone())).unwrap();
+        let mut missing = then_code;
+        missing.pop();
+        assert_eq!(
+            fixture.run(branch(missing)).unwrap_err().category,
+            DiagnosticCategory::AbiMismatch
+        );
+
+        let mut fixture = preserving_fixture(
+            if predicate.is_none() { 21 } else { 20 },
+            u32::from(predicate.is_none()),
+        );
+        let (sites, mut iteration) = local_heterogeneous_calls(CallPath::Loop(ControlId(0)));
+        fixture.proof.calls = sites;
+        fixture.proof.loops.insert(ControlId(0), LoopSchema::default());
+        iteration.push(push(0));
+        let loop_code = |iteration| {
+            let mut code = prefix.clone();
+            code.push(AnnotatedOp::While {
+                id: ControlId(0),
+                body: ops(iteration),
+            });
+            code
+        };
+        fixture.run(loop_code(iteration.clone())).unwrap();
+        // Static site accounting also checks the body of a known zero-trip loop.
+        iteration.remove(4);
+        assert_eq!(
+            fixture.run(loop_code(iteration)).unwrap_err().category,
+            DiagnosticCategory::AbiMismatch
+        );
+    }
+}
+
+#[test]
+fn registered_site_target_family_order_and_count_are_exact() {
+    let mut fixture = preserving_fixture(20, 0);
+    let first = internal_site("first", 0, 0);
+    let second = internal_site("second", 0, 0);
+    let code = vec![inst(first.instruction.clone()), inst(second.instruction.clone())];
+    fixture.proof.calls = vec![first, second];
+    fixture.run(code.clone()).unwrap();
+    let Instruction::Exec(first_target) = &fixture.proof.calls[0].instruction else {
+        unreachable!()
+    };
+    let mutations = [
+        vec![inst(internal_site("wrong", 0, 0).instruction), code[1].clone()],
+        vec![inst(Instruction::Call(first_target.clone())), code[1].clone()],
+        vec![code[1].clone(), code[0].clone()],
+        vec![code[0].clone()],
+        vec![code[0].clone(), code[1].clone(), code[1].clone()],
+    ];
+    for (index, bad) in mutations.into_iter().enumerate() {
+        assert_eq!(
+            fixture.run(bad).unwrap_err().category,
+            DiagnosticCategory::AbiMismatch,
+            "mutation {index}"
+        );
+    }
+    fixture.proof.calls[0].path = vec![CallPath::Then(ControlId(0))];
+    assert_eq!(fixture.run(code).unwrap_err().category, DiagnosticCategory::AbiMismatch);
+}
+
+#[test]
+fn registered_site_abi_arguments_results_and_publications_are_enforced() {
+    let mut fixture = Fixture::new(2, 1);
+    let mut site = internal_site("produce", 2, 1);
+    site.inputs = (0..2)
+        .map(|i| CallArgument::Exact(StoredValue::Atom(Fixture::input(i))))
+        .collect();
+    site.publications = vec![(Fixture::output(0), 0)];
+    let code = vec![inst(site.instruction.clone())];
+    fixture.proof.calls = vec![site];
+    fixture.run(code.clone()).unwrap();
+    for mutation in 0..7 {
+        let mut bad = fixture.clone();
+        let mut raw = code.clone();
+        match mutation {
+            0 => {
+                bad.proof.calls[0].abi =
+                    ProcedureAbi::new(CallingConvention::Context, 2, 1).unwrap()
+            }
+            1 => {
+                bad.proof.calls[0].inputs.pop();
+            }
+            2 => raw.insert(0, inst(Instruction::Swap1)),
+            3 => {
+                bad.proof.calls[0].abi =
+                    ProcedureAbi::new(CallingConvention::SameContext, 2, 2).unwrap()
+            }
+            4 => bad.proof.calls[0].publications[0].1 = 1,
+            5 => raw.extend([inst(Instruction::Drop), push(7)]),
+            6 => raw.insert(0, AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0)))),
+            _ => unreachable!(),
+        }
+        assert!(bad.run(raw).is_err(), "mutation {mutation}");
+    }
+    let (mut dynamic, code) = context_fixture(Invocation::DynCall, 0, 0);
+    dynamic.run(code.clone()).unwrap();
+    dynamic.proof.calls[0].selector = None;
+    assert_eq!(dynamic.run(code).unwrap_err().category, DiagnosticCategory::AbiMismatch);
+}
+
+#[test]
+fn truncate_site_keeps_registered_boundary_restrictions() {
+    for convention in [CallingConvention::Root, CallingConvention::Context] {
+        let mut fixture = preserving_fixture(16, 0);
+        fixture.convention = convention;
+        let mut site = internal_site("cleanup", 0, 0);
+        site.truncate = true;
+        let instruction = site.instruction.clone();
+        fixture.proof.calls = vec![site];
+        let mut plan = fixture.plan();
+        plan.contracts.get_mut(&SegmentId(0)).unwrap().tail =
+            if convention == CallingConvention::Root {
+                TailPolicy::RootWindow
+            } else {
+                TailPolicy::ContextWindow
+            };
+        verify(&plan, &fixture.frame(), body(vec![instruction.clone()])).unwrap();
+        let Instruction::Exec(cleanup_target) = &instruction else {
+            unreachable!()
+        };
+        for raw in [
+            vec![],
+            vec![internal_site("wrong_cleanup", 0, 0).instruction],
+            vec![Instruction::Call(cleanup_target.clone())],
+            vec![instruction.clone(), instruction.clone()],
+        ] {
+            assert_eq!(
+                verify(&plan, &fixture.frame(), body(raw)).unwrap_err().category,
+                DiagnosticCategory::AbiMismatch
+            );
+        }
+    }
+    context_truncation_is_forbidden_on_exec_return();
 }

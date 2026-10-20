@@ -1,0 +1,86 @@
+# Signed 128-bit arithmetic, with low-first u32 limbs and a flag-first result.
+# Every procedure preserves the entire suffix below its declared inputs.
+const SIGN_SHIFT=31
+
+# [x0,x1,x2,x3,cond | S] -> [cond ? -x : x (mod 2^128) | S]
+proc cneg_u128
+    movup.4
+    if.true
+        u32not
+        swap u32not swap
+        movup.2 u32not movdn.2
+        movup.3 u32not movdn.3
+        push.0.0.0.1
+        exec.::miden::core::math::u128::wrapping_add
+    end
+end
+
+# Validate exactly the two input words without touching their suffix.
+proc assert_operands
+    u32assertw swapw u32assertw swapw
+end
+
+# [b0..b3,a0..a3 | S] -> [overflow,r0..r3 | S]
+pub proc overflowing_add
+    exec.assert_operands
+    # Save the two signs immediately below the eight core inputs.
+    dup.3 u32shr.SIGN_SHIFT movdn.8
+    dup.7 u32shr.SIGN_SHIFT movdn.8
+    exec.::miden::core::math::u128::wrapping_add
+    # [r0..r3,sign_a,sign_b | S]
+    dup.3 u32shr.SIGN_SHIFT
+    dup.5 movup.7 eq
+    # [same_sign,sign_r,r0..r3,sign_a | S]
+    movup.6 movup.2 neq
+    and
+end
+
+# [b0..b3,a0..a3 | S] -> [overflow,r0..r3 | S]
+pub proc overflowing_sub
+    exec.assert_operands
+    dup.3 u32shr.SIGN_SHIFT movdn.8
+    dup.7 u32shr.SIGN_SHIFT movdn.8
+    exec.::miden::core::math::u128::wrapping_sub
+    dup.3 u32shr.SIGN_SHIFT
+    dup.5 movup.7 neq
+    # [different_sign,sign_r,r0..r3,sign_a | S]
+    movup.6 movup.2 neq
+    and
+end
+
+# Signed multiplication uses unsigned magnitudes. The core's overflow flag covers products
+# >=2^128; the sign-dependent comparison handles the remaining signed overflow interval.
+# [b0..b3,a0..a3 | S] -> [overflow,r0..r3 | S]
+pub proc overflowing_mul
+    exec.assert_operands
+    # Form |b| and retain sign_b below both words.
+    dup.3 u32shr.SIGN_SHIFT
+    dup.0 movdn.9 movdn.4
+    exec.cneg_u128
+    swapw
+    # Form |a| and retain sign_a beside sign_b.
+    dup.3 u32shr.SIGN_SHIFT
+    dup.0 movdn.9 movdn.4
+    exec.cneg_u128
+    swapw
+    # [|b|,|a|,sign_a,sign_b | S] -> [|b|,|a|,negative | S]
+    movup.8 movup.9 xor movdn.8
+    exec.::miden::core::math::u128::overflowing_mul
+    # [unsigned_overflow,m0..m3,negative | S]
+    dup.5
+    if.true
+        # Negative products may have magnitude exactly 2^127.
+        push.2147483648.0.0.0
+    else
+        push.2147483647.4294967295.4294967295.4294967295
+    end
+    # [limit0..limit3,unsigned_overflow,m0..m3,negative | S]
+    # Copy the magnitude without consuming the original result or the saved state.
+    dup.8 dup.8 dup.8 dup.8
+    exec.::miden::core::math::u128::lt
+    # [limit < magnitude,unsigned_overflow,m0..m3,negative | S]
+    or
+    movdn.5
+    exec.cneg_u128
+    movup.4
+end

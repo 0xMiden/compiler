@@ -60,12 +60,6 @@ impl Verifier<'_> {
         };
         let effect = site.abi.invocation(invocation)?;
         let unit = self.unit(active.id)?.clone();
-        if unit.effects.call != Some(effect) {
-            return Err(fail(
-                DiagnosticCategory::AbiMismatch,
-                "selected call effect disagrees with registered ABI",
-            ));
-        }
         if site.inputs.len() != effect.arguments as usize {
             return Err(fail(
                 DiagnosticCategory::AbiMismatch,

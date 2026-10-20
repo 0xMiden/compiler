@@ -27,10 +27,6 @@ impl ByteMemmove {
             memory: SourceMemoryEffects::READ_WRITE,
             may_trap: true,
             normal_return: true,
-            call: Some(
-                ProcedureAbi::new(CallingConvention::SameContext, 3, 0)?
-                    .invocation(Invocation::Exec)?,
-            ),
         };
         let proof = UnitEvidence {
             loops: BTreeMap::from([(

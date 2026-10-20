@@ -59,7 +59,6 @@ impl ContextCall {
             })
             .collect::<alloc::vec::Vec<_>>();
         let mut unit = selected(self.kind, id, source, arguments, &stored, outputs);
-        unit.effects.call = Some(effect);
         unit.effects.may_trap = root.is_some();
         let selector = root.map(|root| {
             unit.scratch.push(ScratchRequirement {

@@ -6,6 +6,28 @@ use midenc_hir::Report;
 
 use crate::{masm::Instruction, plan::*};
 
+#[test]
+fn ordinary_arithmetic_target_rules_cover_actual_raw_shapes() {
+    use Instruction::*;
+    for (instruction, consumed, outputs) in [
+        (Lt, 2, 1),
+        (U32Split, 1, 2),
+        (U32AssertW, 4, 4),
+        (CDrop, 3, 1),
+        (CDropW, 9, 4),
+        (Eqw, 8, 9),
+        (Ext2Add, 4, 2),
+        (Ext2Div, 4, 2),
+        (Ext2Inv, 2, 2),
+        (U32WideningMul, 2, 2),
+        (U32Clz, 1, 1),
+    ] {
+        let effect = TargetEffects::instruction(&instruction).unwrap();
+        assert_eq!(effect.consumed, consumed, "{instruction:?}");
+        assert_eq!(effect.outputs.len(), outputs, "{instruction:?}");
+    }
+}
+
 /// Apply the declarative lane expressions, then compare them with processor execution.
 /// The test contains no instruction-specific stack simulator.
 #[test]
@@ -89,7 +111,7 @@ fn target_effects_match_vm() -> Result<(), Report> {
             "{illegal}"
         );
     }
-    assert!(TargetEffects::instruction(&Instruction::U32Div).is_err());
+    assert!(TargetEffects::instruction(&Instruction::AdvPush).is_err());
     Ok(())
 }
 
@@ -272,7 +294,31 @@ fn word_effects_preserve_actual_cell_order() -> Result<(), Report> {
 
 #[test]
 fn unknown_rules_and_unresolved_immediates_fail_closed() {
-    assert!(TargetEffects::instruction(&Instruction::U32Div).is_err());
+    for instruction in [
+        Instruction::AdvPush,
+        Instruction::Hash,
+        Instruction::HPerm,
+        Instruction::Emit,
+        Instruction::EmitImm(crate::masm::Immediate::from(Felt::new_unchecked(999)).into()),
+    ] {
+        assert!(TargetEffects::instruction(&instruction).is_err(), "{instruction}");
+    }
+    for instruction in [
+        Instruction::DivImm(Felt::ZERO.into()),
+        Instruction::U32DivImm(0.into()),
+        Instruction::U32DivModImm(0.into()),
+        Instruction::U32ModImm(0.into()),
+        Instruction::U32ShlImm(32.into()),
+        Instruction::U32ShrImm(32.into()),
+        Instruction::U32RotlImm(32.into()),
+        Instruction::U32RotrImm(32.into()),
+        Instruction::ExpBitLength(64),
+        Instruction::EqImm(crate::masm::Immediate::Constant(
+            crate::masm::Ident::new("field_constant").unwrap(),
+        )),
+    ] {
+        assert!(TargetEffects::instruction(&instruction).is_err(), "{instruction}");
+    }
     assert!(
         TargetEffects::instruction(&Instruction::LocLoad(crate::masm::Immediate::Constant(
             crate::masm::Ident::new("offset").unwrap()
@@ -492,7 +538,17 @@ fn checked_table_lookup_effects_match_vm() -> Result<(), Report> {
             }?;
         }
         assert_eq!(effect.consumed, 1);
-        assert_eq!(effect.outputs, [LaneEffect::Computed(0)]);
+        let expected_lane = match &instruction {
+            Instruction::AddImm(value) if value.expect_value() == Felt::ZERO => {
+                LaneEffect::Input(0)
+            }
+            Instruction::MulImm(value) if value.expect_value() == Felt::ONE => LaneEffect::Input(0),
+            Instruction::MulImm(value) if value.expect_value() == Felt::ZERO => {
+                LaneEffect::Literal(Felt::ZERO)
+            }
+            _ => LaneEffect::Computed(0),
+        };
+        assert_eq!(effect.outputs, [expected_lane]);
         let output = run(
             &alloc::format!(
                 "{instruction} sdepth push.{} assert_eq push.{answer} assert_eq",
@@ -514,5 +570,293 @@ fn equality_assertion_floor_and_failure_match_vm() -> Result<(), Report> {
     assert_eq!(&output[14..], &[Felt::ZERO; 2]);
     values[1] = Felt::new_unchecked(99);
     assert!(run("assert_eq", &values).is_err());
+    Ok(())
+}
+
+fn arithmetic_cases() -> Vec<(Instruction, Vec<u64>, Vec<u64>)> {
+    use Instruction::*;
+    let mut cases = Vec::new();
+    macro_rules! case {
+        ($op:expr, [$($input:expr),*], [$($output:expr),*]) => {
+            cases.push(($op, alloc::vec![$($input),*], alloc::vec![$($output),*]));
+        };
+    }
+    case!(Div, [2, 14], [7]);
+    case!(Neg, [0], [0]);
+    case!(Incr, [7], [8]);
+    case!(Inv, [1], [1]);
+    case!(Not, [0], [1]);
+    case!(And, [1, 0], [0]);
+    case!(Or, [1, 0], [1]);
+    case!(Xor, [1, 0], [1]);
+    for op in [Lt, Lte, Gt, Gte] {
+        let expected = u64::from(matches!(op, Lt | Lte));
+        case!(op, [0xffff_ffff_0000_0000, 0xffff_fffe_ffff_ffff], [expected]);
+    }
+    case!(IsOdd, [0xffff_ffff_0000_0000], [0]);
+    case!(Pow2, [7], [128]);
+    case!(Exp, [3, 5], [125]);
+    case!(ExpBitLength(3), [3, 5], [125]);
+    case!(ILog2, [0xffff_ffff_0000_0000], [63]);
+    case!(Eqw, [2, 3, 5, 7, 2, 3, 5, 7], [1, 2, 3, 5, 7, 2, 3, 5, 7]);
+    case!(Assert, [1], []);
+    case!(Assertz, [0], []);
+    case!(AssertEq, [13, 13], []);
+    case!(AssertEqw, [2, 3, 5, 7, 2, 3, 5, 7], []);
+    case!(U32Assert, [31], [31]);
+    case!(U32Assert2, [31, 32], [31, 32]);
+    case!(U32AssertW, [31, 32, 33, 34], [31, 32, 33, 34]);
+    case!(U32Split, [0x1234_5678_9abc_def0], [0x9abc_def0, 0x1234_5678]);
+    case!(U32Cast, [0x1234_5678_9abc_def0], [0x9abc_def0]);
+    for (op, expected) in [
+        (U32And, 1),
+        (U32Or, 7),
+        (U32Xor, 6),
+        (U32WrappingAdd, 8),
+        (U32WrappingSub, 2),
+        (U32WrappingMul, 15),
+        (U32Lt, 0),
+        (U32Lte, 0),
+        (U32Gt, 1),
+        (U32Gte, 1),
+        (U32Div, 1),
+        (U32Mod, 2),
+        (U32Min, 3),
+        (U32Max, 5),
+    ] {
+        case!(op, [3, 5], [expected]);
+    }
+    case!(U32Not, [3], [u32::MAX as u64 - 3]);
+    case!(U32OverflowingAdd, [1, u32::MAX as u64], [1, 0]);
+    case!(U32OverflowingSub, [1, 0], [1, u32::MAX as u64]);
+    case!(U32WideningMul, [2, u32::MAX as u64], [0xffff_fffe, 1]);
+    case!(U32DivMod, [3, 14], [2, 4]);
+    case!(U32WrappingAdd3, [1, 2, 3], [6]);
+    for (op, expected) in [(U32Shl, 20), (U32Shr, 1), (U32Rotl, 20), (U32Rotr, 0x4000_0001)] {
+        case!(op, [2, 5], [expected]);
+    }
+    for (op, expected) in [(U32Popcnt, 4), (U32Clz, 24), (U32Clo, 0), (U32Ctz, 4), (U32Cto, 0)] {
+        case!(op, [0xf0], [expected]);
+    }
+    case!(Ext2Add, [2, 3, 5, 7], [7, 10]);
+    case!(Ext2Sub, [2, 3, 5, 7], [3, 4]);
+    case!(Ext2Mul, [2, 3, 5, 7], [157, 29]);
+    case!(Ext2Div, [1, 0, 5, 7], [5, 7]);
+    case!(Ext2Inv, [1, 0], [1, 0]);
+    case!(Ext2Neg, [0, 0], [0, 0]);
+    for predicate in [0, 1] {
+        case!(CDrop, [predicate, 19, 23], [if predicate == 1 { 19 } else { 23 }]);
+        let expected = if predicate == 1 {
+            [2, 3, 5, 7]
+        } else {
+            [11, 13, 17, 19]
+        };
+        cases.push((CDropW, alloc::vec![predicate, 2, 3, 5, 7, 11, 13, 17, 19], expected.to_vec()));
+    }
+    for value in [0, 1, 2, 7, 8] {
+        let felt = Felt::new_unchecked(value);
+        case!(AddImm(felt.into()), [5], [5 + value]);
+        case!(SubImm(felt.into()), [19], [19 - value]);
+        case!(MulImm(felt.into()), [5], [5 * value]);
+        case!(ExpImm(felt.into()), [2], [1 << value]);
+        case!(EqImm(felt.into()), [5], [0]);
+        case!(NeqImm(felt.into()), [5], [1]);
+        case!(U32WrappingAddImm((value as u32).into()), [5], [5 + value]);
+        case!(U32WrappingSubImm((value as u32).into()), [19], [19 - value]);
+        case!(U32WrappingMulImm((value as u32).into()), [5], [5 * value]);
+        case!(U32OverflowingAddImm((value as u32).into()), [5], [0, 5 + value]);
+        case!(U32OverflowingSubImm((value as u32).into()), [19], [0, 19 - value]);
+        case!(U32WideningMulImm((value as u32).into()), [5], [5 * value, 0]);
+        if value != 0 {
+            case!(DivImm(felt.into()), [value * 5], [5]);
+            case!(U32DivImm((value as u32).into()), [19], [19 / value]);
+            case!(U32ModImm((value as u32).into()), [19], [19 % value]);
+            case!(U32DivModImm((value as u32).into()), [19], [19 % value, 19 / value]);
+        }
+    }
+    for shift in [0u8, 1, 31] {
+        case!(U32ShlImm(shift.into()), [5], [5u32.wrapping_shl(shift.into()) as u64]);
+        case!(U32ShrImm(shift.into()), [5], [5u32.wrapping_shr(shift.into()) as u64]);
+        case!(U32RotlImm(shift.into()), [5], [5u32.rotate_left(shift.into()) as u64]);
+        case!(U32RotrImm(shift.into()), [5], [5u32.rotate_right(shift.into()) as u64]);
+    }
+    let word = miden_assembly_syntax::parser::WordValue([2, 3, 5, 7].map(Felt::new_unchecked));
+    case!(Push(crate::masm::PushValue::from(word).into()), [], [2, 3, 5, 7]);
+    cases
+}
+
+#[test]
+fn arithmetic_target_rules_match_pinned_assembler_microsteps() -> Result<(), Report> {
+    use miden_core::operations::Operation as O;
+    for (instruction, ..) in arithmetic_cases() {
+        // A library procedure has no program-entry FMP initialization prologue.
+        // Inspect its exact exported root rather than subtracting an assumed prefix.
+        let manager = alloc::sync::Arc::new(miden_assembly::DefaultSourceManager::default());
+        let module =
+            miden_assembly::ast::Module::parser(Some(miden_assembly::ast::ModuleKind::Library))
+                .parse_str(
+                    Some(miden_assembly::Path::new("::arithmetic_microsteps")),
+                    format!("pub proc test {instruction} end"),
+                    manager.clone(),
+                )?;
+        let package = miden_assembly::Assembler::new(manager).assemble_library(
+            "arithmetic_microsteps",
+            module,
+            core::iter::empty::<&str>(),
+        )?;
+        let export = package.manifest.exports().next().unwrap().as_procedure().unwrap();
+        let block = package.mast_forest()[export.node.unwrap()].unwrap_basic_block();
+        let actual = block
+            .operations()
+            .filter_map(|op| match op {
+                O::Push(_)
+                | O::Pad
+                | O::AdvPop
+                | O::U32split
+                | O::Dup0
+                | O::Dup1
+                | O::Dup2
+                | O::Dup3
+                | O::Dup4
+                | O::Dup5
+                | O::Dup6
+                | O::Dup7
+                | O::Dup9
+                | O::Dup11
+                | O::Dup13
+                | O::Dup15 => Some(FloorStep::Push(1)),
+                O::Drop
+                | O::Assert(_)
+                | O::Add
+                | O::Mul
+                | O::And
+                | O::Or
+                | O::Eq
+                | O::U32and
+                | O::U32xor
+                | O::U32add3
+                | O::CSwap
+                | O::CSwapW => Some(FloorStep::Pop(1)),
+                O::Noop
+                | O::Neg
+                | O::Inv
+                | O::Incr
+                | O::Not
+                | O::Eqz
+                | O::Expacc
+                | O::Ext2Mul
+                | O::U32assert2(_)
+                | O::U32add
+                | O::U32sub
+                | O::U32mul
+                | O::U32div
+                | O::Swap
+                | O::SwapW
+                | O::SwapW2
+                | O::SwapW3
+                | O::SwapDW
+                | O::MovUp2
+                | O::MovUp3
+                | O::MovUp4
+                | O::MovUp5
+                | O::MovUp6
+                | O::MovUp7
+                | O::MovUp8
+                | O::MovDn2
+                | O::MovDn3
+                | O::MovDn4
+                | O::MovDn5
+                | O::MovDn6
+                | O::MovDn7
+                | O::MovDn8
+                | O::Emit => None,
+                other => panic!("unregistered arithmetic micro-operation {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(TargetEffects::instruction(&instruction)?.floor, actual, "{instruction}");
+    }
+    Ok(())
+}
+
+#[test]
+fn arithmetic_outputs_suffix_and_physical_floor_match_vm() -> Result<(), Report> {
+    for (instruction, inputs, outputs) in arithmetic_cases() {
+        let effect = TargetEffects::instruction(&instruction)?;
+        assert_eq!(effect.consumed as usize, inputs.len(), "{instruction}");
+        assert_eq!(effect.outputs.len(), outputs.len(), "{instruction}");
+        for (lane, expected) in effect.outputs.iter().zip(&outputs) {
+            let preserved = match *lane {
+                LaneEffect::Input(index) => Some(inputs[index as usize]),
+                LaneEffect::Literal(value) => Some(value.as_canonical_u64()),
+                LaneEffect::Conditional {
+                    condition,
+                    if_true,
+                    if_false,
+                } => Some(
+                    inputs[if inputs[condition as usize] == 1 {
+                        if_true
+                    } else {
+                        if_false
+                    } as usize],
+                ),
+                LaneEffect::Computed(_) => None,
+                other => panic!("unexpected arithmetic lane {other:?}"),
+            };
+            if let Some(value) = preserved {
+                assert_eq!(value, *expected, "{instruction}");
+            }
+        }
+        for suffix_len in [0, 24] {
+            let suffix = (0..suffix_len).map(|i| 1001 + i as u64).collect::<Vec<_>>();
+            let mut state = FloorState {
+                owned: inputs.len() + suffix.len(),
+                protected: 0,
+                // Inputs are pushed by the program above the VM's original sixteen zeroes.
+                padding: if suffix_len == 0 {
+                    16 - inputs.len()
+                } else {
+                    16
+                },
+            };
+            for step in &effect.floor {
+                state = match *step {
+                    FloorStep::Push(n) => state.push(n.into())?,
+                    FloorStep::Pop(n) => state.pop(n.into())?,
+                };
+            }
+            let push = inputs
+                .iter()
+                .chain(&suffix)
+                .rev()
+                .map(|value| format!("push.{value}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let assertions = outputs
+                .iter()
+                .chain(&suffix)
+                .map(|value| format!("push.{value} assert_eq"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let push = if suffix_len == 0 {
+                alloc::string::String::new()
+            } else {
+                push
+            };
+            let vm_inputs = if suffix_len == 0 {
+                inputs.iter().copied().map(Felt::new_unchecked).collect::<Vec<_>>()
+            } else {
+                vec![]
+            };
+            let source = format!(
+                "{push} {instruction} sdepth push.{} assert_eq {assertions}",
+                state.owned + state.padding
+            );
+            assert_eq!(
+                run(&source, &vm_inputs)?,
+                [Felt::ZERO; 16],
+                "{instruction}, suffix={suffix_len}"
+            );
+        }
+    }
     Ok(())
 }

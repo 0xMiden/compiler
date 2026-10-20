@@ -47,7 +47,16 @@ pub(crate) enum MemoryEffect {
 pub(crate) enum LaneEffect {
     Input(u8),
     Literal(Felt),
-    Memory { lane: u8 },
+    /// The predicate must be boolean; candidates are actual input lanes.
+    Conditional {
+        condition: u8,
+        if_true: u8,
+        if_false: u8,
+    },
+    /// Lane from the fixed read footprint, in increasing address order.
+    Memory {
+        lane: u8,
+    },
     FrameAddress(u32),
     Computed(u8),
 }
@@ -62,6 +71,8 @@ pub(crate) enum FloorStep {
 pub(crate) struct StackEffect {
     /// Replace this prefix with `outputs`; all remaining lanes are preserved.
     pub consumed: u8,
+    /// Whether replay must require source authorization for a possible trap.
+    pub may_trap: bool,
     pub outputs: Vec<LaneEffect>,
     /// Actual temporary height changes, in execution order (prefix replacement is not a pop).
     pub floor: Vec<FloorStep>,
@@ -73,11 +84,21 @@ impl StackEffect {
     fn new(consumed: u8, outputs: Vec<LaneEffect>, floor: Vec<FloorStep>) -> Self {
         Self {
             consumed,
+            may_trap: false,
             outputs,
             floor,
             memory: MemoryEffect::None,
             memory_inputs: Vec::new(),
         }
+    }
+
+    fn trapping(mut self) -> Self {
+        self.may_trap = true;
+        self
+    }
+
+    fn computed(consumed: u8, produced: u8, steps: &[i8]) -> Self {
+        Self::new(consumed, (0..produced).map(LaneEffect::Computed).collect(), floor(steps))
     }
 
     fn memory(mut self, memory: MemoryEffect) -> Self {
@@ -240,45 +261,204 @@ impl TargetEffects {
             return Ok(StackEffect::new(depth + 4, outputs, vec![]));
         }
         let effect = match instruction {
-            Add | Sub | Mul | Eq | Neq => {
-                StackEffect::new(2, vec![LaneEffect::Computed(0)], vec![FloorStep::Pop(1)])
-            }
-            U32WrappingAdd | U32WrappingMul | U32Gt | U32Lt | And | U32Shr | U32Shl | U32And
-            | U32Or => StackEffect::new(2, vec![LaneEffect::Computed(0)], vec![FloorStep::Pop(1)]),
-            EqImm(Immediate::Value(_)) | U32Not => {
-                StackEffect::new(1, vec![LaneEffect::Computed(0)], vec![])
-            }
-            AddImm(Immediate::Value(value)) => StackEffect::new(
+            Add | Sub | Mul | Eq | Neq => StackEffect::computed(2, 1, &[-1]),
+            Div => StackEffect::computed(2, 1, &[-1]).trapping(),
+            Neg | Incr => StackEffect::computed(1, 1, &[]),
+            Inv | Not => StackEffect::computed(1, 1, &[]).trapping(),
+            And | Or => StackEffect::computed(2, 1, &[-1]).trapping(),
+            Xor => StackEffect::computed(2, 1, &[1, 1, -1, -1, -1]).trapping(),
+            // Pinned field_ops::{lt,lte,gt,gte}: two splits, then three reductions.
+            Lt | Lte | Gt | Gte => StackEffect::computed(2, 1, &[1, 1, -1, -1, -1]),
+            IsOdd => StackEffect::computed(1, 1, &[1, -1, 1, -1]),
+            EqImm(value) | NeqImm(value) => StackEffect::computed(
                 1,
-                vec![LaneEffect::Computed(0)],
-                if value.as_canonical_u64() <= 2 {
-                    vec![]
+                1,
+                if literal(value)? == Felt::ZERO {
+                    &[]
                 } else {
-                    vec![FloorStep::Push(1), FloorStep::Pop(1)]
+                    &[1, -1]
                 },
             ),
-            MulImm(Immediate::Value(value)) => StackEffect::new(
-                1,
-                vec![LaneEffect::Computed(0)],
-                match value.as_canonical_u64() {
-                    0 => vec![FloorStep::Pop(1), FloorStep::Push(1)],
-                    1 => vec![],
-                    _ => vec![FloorStep::Push(1), FloorStep::Pop(1)],
-                },
-            ),
-            U32WrappingSubImm(Immediate::Value(_)) => StackEffect::new(
-                1,
-                vec![LaneEffect::Computed(0)],
-                vec![FloorStep::Push(1), FloorStep::Pop(1)],
-            ),
-            U32OverflowingAdd => {
-                StackEffect::new(2, vec![LaneEffect::Computed(0), LaneEffect::Computed(1)], vec![])
+            AddImm(value) => {
+                let value = literal(value)?.as_canonical_u64();
+                if value == 0 {
+                    StackEffect::new(1, vec![Input(0)], vec![])
+                } else {
+                    StackEffect::computed(1, 1, if value <= 2 { &[] } else { &[1, -1] })
+                }
             }
-            U32DivModImm(Immediate::Value(_)) => StackEffect::new(
+            SubImm(value) => {
+                if literal(value)? == Felt::ZERO {
+                    StackEffect::new(1, vec![Input(0)], vec![])
+                } else {
+                    StackEffect::computed(1, 1, &[1, -1])
+                }
+            }
+            MulImm(value) | DivImm(value) => {
+                let value = literal(value)?.as_canonical_u64();
+                if matches!(instruction, DivImm(_)) && value == 0 {
+                    return Err(stack_error("division immediate is zero"));
+                }
+                match value {
+                    0 => StackEffect::new(1, vec![Literal(Felt::ZERO)], floor(&[-1, 1])),
+                    1 => StackEffect::new(1, vec![Input(0)], vec![]),
+                    _ => StackEffect::computed(1, 1, &[1, -1]),
+                }
+            }
+            Pow2 => StackEffect::computed(1, 1, &[1, 1, 1, -1, -1, -1]).trapping(),
+            Exp | ExpBitLength(_) => {
+                if let ExpBitLength(bits) = instruction
+                    && *bits > 63
+                {
+                    return Err(stack_error("exponent bit length exceeds target limit"));
+                }
+                StackEffect::computed(2, 1, &[1, 1, -1, -1, -1]).trapping()
+            }
+            ExpImm(value) => {
+                let pow = literal(value)?.as_canonical_u64();
+                match pow {
+                    0 => StackEffect::new(1, vec![Literal(Felt::ONE)], floor(&[-1, 1])),
+                    1 => StackEffect::new(1, vec![Input(0)], vec![]),
+                    2..=7 => {
+                        let mut steps = vec![1; (pow - 1) as usize];
+                        steps.extend(core::iter::repeat_n(-1, (pow - 1) as usize));
+                        StackEffect::computed(1, 1, &steps)
+                    }
+                    _ => StackEffect::computed(1, 1, &[1, 1, 1, -1, -1, -1]),
+                }
+            }
+            // Closed native arithmetic instructions include their internal system-event
+            // push/drop and advice verification. Raw advice/events remain unregistered.
+            ILog2 => StackEffect::computed(
                 1,
-                vec![LaneEffect::Computed(0), LaneEffect::Computed(1)],
-                vec![FloorStep::Push(1)],
+                1,
+                &[
+                    1, -1, 1, 1, 1, 1, 1, -1, -1, -1, 1, 1, 1, 1, -1, -1, -1, -1, 1, -1, 1, 1, -1,
+                    -1, -1, 1, 1, -1, -1, -1,
+                ],
+            )
+            .trapping(),
+            Eqw => StackEffect::new(
+                8,
+                core::iter::once(LaneEffect::Computed(0)).chain((0..8).map(Input)).collect(),
+                floor(&[1, 1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1]),
             ),
+            Assert | Assertz | AssertWithError(_) | AssertzWithError(_) => {
+                StackEffect::computed(1, 0, &[-1]).trapping()
+            }
+            AssertEq | AssertEqWithError(_) => StackEffect::computed(2, 0, &[-1, -1]).trapping(),
+            AssertEqw | AssertEqwWithError(_) => StackEffect::computed(8, 0, &[-1; 8]).trapping(),
+            CDrop | CDropW => {
+                let width = if matches!(instruction, CDropW) { 4 } else { 1 };
+                StackEffect::new(
+                    1 + 2 * width,
+                    (0..width)
+                        .map(|lane| LaneEffect::Conditional {
+                            condition: 0,
+                            if_true: 1 + lane,
+                            if_false: 1 + width + lane,
+                        })
+                        .collect(),
+                    floor(&vec![-1; usize::from(1 + width)]),
+                )
+                .trapping()
+            }
+            U32Assert | U32AssertWithError(_) => {
+                StackEffect::new(1, vec![Input(0)], floor(&[1, -1])).trapping()
+            }
+            U32Assert2 | U32Assert2WithError(_) => {
+                StackEffect::new(2, (0..2).map(Input).collect(), vec![]).trapping()
+            }
+            U32AssertW | U32AssertWWithError(_) => {
+                StackEffect::new(4, (0..4).map(Input).collect(), vec![]).trapping()
+            }
+            U32Split => StackEffect::computed(1, 2, &[1]),
+            U32Cast => StackEffect::computed(1, 1, &[1, -1]),
+            U32And | U32Xor | U32WrappingAdd | U32WrappingSub | U32WrappingMul | U32Lt | U32Lte
+            | U32Gt | U32Gte | U32Div | U32Mod => StackEffect::computed(2, 1, &[-1]).trapping(),
+            U32Or => StackEffect::computed(2, 1, &[1, 1, -1, -1, -1]).trapping(),
+            U32Min | U32Max => StackEffect::computed(2, 1, &[1, 1, -1, -1, -1]).trapping(),
+            U32Not => StackEffect::computed(1, 1, &[1, -1]).trapping(),
+            U32OverflowingAdd | U32OverflowingSub | U32WideningMul | U32DivMod => {
+                StackEffect::computed(2, 2, &[]).trapping()
+            }
+            U32WrappingAdd3 => StackEffect::computed(3, 1, &[-1, -1]).trapping(),
+            U32WrappingAddImm(value) | U32WrappingSubImm(value) | U32WrappingMulImm(value) => {
+                literal(value)?;
+                StackEffect::computed(1, 1, &[1, -1]).trapping()
+            }
+            U32OverflowingAddImm(value)
+            | U32OverflowingSubImm(value)
+            | U32WideningMulImm(value) => {
+                literal(value)?;
+                StackEffect::computed(1, 2, &[1]).trapping()
+            }
+            U32DivImm(value) | U32ModImm(value) | U32DivModImm(value) => {
+                if literal(value)? == 0 {
+                    return Err(stack_error("division immediate is zero"));
+                }
+                let outputs = if matches!(instruction, U32DivModImm(_)) {
+                    2
+                } else {
+                    1
+                };
+                StackEffect::computed(1, outputs, if outputs == 2 { &[1] } else { &[1, -1] })
+                    .trapping()
+            }
+            U32Shl | U32Shr | U32Rotl => {
+                StackEffect::computed(2, 1, &[1, 1, 1, -1, -1, -1, -1]).trapping()
+            }
+            U32Rotr => {
+                StackEffect::computed(2, 1, &[1, -1, 1, 1, 1, -1, -1, -1, -1, 1, -1]).trapping()
+            }
+            U32ShlImm(value) | U32ShrImm(value) | U32RotlImm(value) | U32RotrImm(value) => {
+                let shift = literal(value)?;
+                if shift > 31 {
+                    return Err(stack_error("shift immediate exceeds target limit"));
+                }
+                if shift == 0 {
+                    StackEffect::new(1, vec![Input(0)], vec![])
+                } else {
+                    StackEffect::computed(1, 1, &[1, -1]).trapping()
+                }
+            }
+            U32Popcnt => StackEffect::computed(
+                1,
+                1,
+                &[
+                    1, 1, -1, 1, -1, -1, 1, 1, -1, 1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1, 1, -1, 1,
+                    -1,
+                ],
+            )
+            .trapping(),
+            U32Clz => StackEffect::computed(
+                1,
+                1,
+                &[
+                    1, -1, 1, 1, 1, -1, 1, 1, 1, -1, -1, -1, 1, -1, 1, -1, 1, 1, -1, 1, -1, 1, 1,
+                    -1, 1, -1, -1, -1, -1, -1,
+                ],
+            )
+            .trapping(),
+            U32Clo => StackEffect::computed(
+                1,
+                1,
+                &[
+                    1, -1, 1, 1, 1, -1, 1, 1, 1, -1, -1, -1, 1, -1, 1, 1, -1, 1, -1, -1, 1, -1, -1,
+                    -1,
+                ],
+            )
+            .trapping(),
+            U32Ctz | U32Cto => StackEffect::computed(
+                1,
+                1,
+                &[1, -1, 1, 1, 1, 1, 1, -1, -1, -1, 1, 1, -1, 1, -1, 1, -1, -1, -1, -1],
+            )
+            .trapping(),
+            Ext2Add | Ext2Sub | Ext2Mul => StackEffect::computed(4, 2, &[-1, -1]),
+            Ext2Neg => StackEffect::computed(2, 2, &[]),
+            Ext2Div => StackEffect::computed(4, 2, &[1, -1, 1, 1, -1, -1, -1, -1]).trapping(),
+            Ext2Inv => StackEffect::computed(2, 2, &[1, -1, 1, 1, -1, -1]).trapping(),
             EmitImm(event)
                 if *event == crate::Event::FrameStart.into()
                     || *event == crate::Event::FrameEnd.into() =>
@@ -306,9 +486,11 @@ impl TargetEffects {
                     )],
                     vec![FloorStep::Push(1)],
                 ),
-                PushValue::Word(_) => {
-                    return Err(stack_error("word literal rule is not registered"));
-                }
+                PushValue::Word(value) => StackEffect::new(
+                    0,
+                    value.0.iter().copied().map(Literal).collect(),
+                    floor(&[1; 4]),
+                ),
             },
             Locaddr(offset) => StackEffect::new(
                 0,
@@ -407,4 +589,17 @@ fn index(instruction: &Instruction, family: &[Instruction], start: u8) -> Option
         .iter()
         .position(|candidate| candidate == instruction)
         .map(|index| index as u8 + start)
+}
+
+/// Ordered height changes in the pinned assembler expansion. Zero-height operations
+/// are omitted; each entry is one actual VM stack push/pop, never a net delta.
+fn floor(steps: &[i8]) -> Vec<FloorStep> {
+    steps
+        .iter()
+        .map(|step| match step {
+            1 => FloorStep::Push(1),
+            -1 => FloorStep::Pop(1),
+            _ => unreachable!("target floor steps are single VM pushes/pops"),
+        })
+        .collect()
 }

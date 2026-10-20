@@ -1321,12 +1321,6 @@ fn phased_same_context_call_inherits_wide_state_and_live_cached_slots() {
     }];
     let mut call = request(1, &[], &[]);
     call.kind = LoweringKind(6);
-    call.effects.call = Some(
-        ProcedureAbi::new(CallingConvention::SameContext, 0, 0)
-            .unwrap()
-            .invocation(Invocation::Exec)
-            .unwrap(),
-    );
     let params: Vec<_> = (0..20).collect();
     let fixture = source(
         vec![

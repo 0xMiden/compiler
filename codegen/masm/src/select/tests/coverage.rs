@@ -15,6 +15,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
         context.get_or_register_dialect::<ub::UndefinedBehaviorDialect>(),
         context.get_or_register_dialect::<midenc_dialect_hir::HirDialect>(),
         context.get_or_register_dialect::<debuginfo::DebugInfoDialect>(),
+        context.get_or_register_dialect::<crate::wasm::WasmDialect>(),
     ];
     let registered = dialects
         .iter()
@@ -38,6 +39,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
     .collect::<Vec<_>>();
     fixtures.push((parse_module_function(include_str!("fixtures/indirect-table.hir")), true));
     fixtures.push((debug_fixture(), false));
+    fixtures.extend(super::arithmetic::fixtures());
     for (f, needs_link) in fixtures {
         let function = f.borrow();
         let info = needs_link.then(|| linked(&f));
@@ -106,15 +108,14 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
             );
         }
     }
-    assert_eq!(registered.len(), 20);
+    assert_eq!(registered.len(), 82);
     assert_eq!(covered, registered);
 }
 #[test]
 fn unsupported_final_operations_and_width_changing_aliases_fail_explicitly() {
     for text in [
-        "builtin.function public extern(\"C\") @unsupported(%a: felt,%b: felt) -> felt { \
-         %result=arith.add %a,%b <{ overflow=#builtin.overflow<unchecked> }>; builtin.ret %result \
-         : (felt); };",
+        "builtin.function public extern(\"C\") @unsupported(%a: i32,%b: i32) -> i32 { \
+         %result=arith.sdiv %a,%b; builtin.ret %result : (i32); };",
         "builtin.function public extern(\"C\") @unsupported(%a: u32) -> u32 { \
          %result=builtin.unrealized_conversion_cast %a <{ ty=#builtin.type<u32> }>; builtin.ret \
          %result : (u32); };",
