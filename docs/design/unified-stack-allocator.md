@@ -684,6 +684,14 @@ The raw verifier has instruction-effect rules for the emitted MASM subset, inclu
 
 Result identities can be introduced at normal lowering unit completion after checking the independently registered contract and raw shape. The semantic correctness of arithmetic and memory algorithms, their termination and trap conditions, and trusted external procedures remains in the trusted lowering base, exercised by VM/differential tests. The checker proves physical allocation and stack effects; a stack-correct expansion is not by itself proof of the operation's complete semantics.
 
+### Fixed-stack intrinsics
+
+Closed instruction contracts describe the actual raw accesses of fixed-stack intrinsics, including assembler-inserted padding and cleanup. `Hash` and `HMerge` consume four and eight lanes respectively and produce four lanes; `HPerm` replaces twelve lanes. Their internal temporary accesses and minimum-depth behavior are checked, while cryptographic output values and lane order require VM tests against the pinned cryptographic implementation. `UnpackWord` maps exactly `array<Felt, 4>` to four Felt results with identical lane tokens and no executable instruction.
+
+Source `Caller` has no operands and produces a four-lane word. Raw MASM `Caller` overwrites the existing top four lanes; it does not push a word. Its lowering therefore emits `PadW; Caller`, establishing owned output space before the overwrite and preserving the entire incoming suffix. The raw target rule remains a four-lane overwrite. The result is ZERO outside a syscall and the actual caller hash inside one, as defined by the pinned VM; no extra context-dependent trap is introduced.
+
+`AdvicePop` consumes one value from the actual advice provider and pushes one Felt, trapping on exhaustion without publishing a result. `Clk` pushes the actual VM clock value; its contract does not promise a compiler-independent instruction count. These closed operations retain source execution order. Their target rules grant no arbitrary host-event observation or source/compiler-memory access.
+
 ### Example: byte `memmove`
 
 The existing [copy lowering](../../../codegen/masm/src/emit/mem.rs) handles range checks, an alignment-dependent intrinsic fast path, and a directional scalar loop. For a byte-pointer `memmove`, select one lowering unit:
@@ -999,6 +1007,7 @@ Acceptance is defined by these behaviors rather than a particular spill count:
 - Call-context tests include live caller values beneath a complete sixteen-lane argument window, clobbered nonresult lanes, same-context overflow preservation, and exact-depth context returns.
 - Minimum-depth tests enter at physical depth sixteen, force drain/rebuild on only one branch, repeat the transition in a loop, and verify meaningful stack values, bounded bottom padding, and return cleanup.
 - Raw spill-slot tests preserve exact felt bit patterns and limb order independently of typed HIR memory operations.
+- Fixed-stack intrinsic tests check every result lane and the complete suffix, including overflow. Caller produces ZERO outside a syscall and the actual caller hash inside one without overwriting that suffix; deleting its owned padding fails physical verification. Crypto, advice order/exhaustion, exact UnpackWord aliases and actual clock values are checked through VM execution.
 - Generated initializer/adaptor procedures can spill and have correct executable and debug frame offsets.
 - Mutated-plan tests deliberately introduce illegal depths, incorrect copies, swapped lanes, uninitialized spill slots, physical slot collisions, dead stores clobbering live colored spill slots, stale loop spill slots, missing edge repairs, phase-order/result-publication errors, and ABI clobber mistakes; verification rejects each before assembly.
 

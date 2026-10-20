@@ -70,6 +70,7 @@ mod arithmetic;
 mod control;
 mod coverage;
 mod indirect;
+mod intrinsics;
 mod memory;
 
 use alloc::{vec, vec::Vec};
@@ -121,13 +122,16 @@ pub(crate) fn ready(
     crate::opt::peephole::simplify_annotated(&mut body);
     (plan, frame, body)
 }
-fn execute(f: &Parsed, env: &SelectEnv<'_>, inputs: &[usize], expected: &[usize]) {
+fn selected_procedure(f: &Parsed, env: &SelectEnv<'_>) -> alloc::string::String {
     let (plan, frame, body) = ready(f, env);
-    let procedure = verify::verify(&plan, &frame, body)
+    verify::verify(&plan, &frame, body)
         .unwrap()
         .into_masm(crate::masm::ProcedureName::new("selected").unwrap())
         .unwrap()
-        .to_pretty_string();
+        .to_pretty_string()
+}
+fn execute(f: &Parsed, env: &SelectEnv<'_>, inputs: &[usize], expected: &[usize]) {
+    let procedure = selected_procedure(f, env);
     let mut result = expected.to_vec();
     result.extend([901, 902]);
     let code = alloc::format!(
@@ -198,11 +202,64 @@ fn execute_code(code: &str) -> Result<(), midenc_hir::Report> {
     let program = miden_assembly::Assembler::default()
         .assemble_program("selected_hir", code)?
         .try_into_program()?;
-    let mut host = crate::plan::tests::lowering_units::host();
-    miden_processor::FastProcessor::new(miden_processor::StackInputs::default())
-        .execute_sync(&program, &mut host)
+    execute_program(&program, &mut crate::plan::tests::lowering_units::host(), &[])
+}
+
+fn execute_program(
+    program: &miden_core::program::Program,
+    host: &mut miden_processor::DefaultHost,
+    advice: &[u64],
+) -> Result<(), midenc_hir::Report> {
+    processor_with_advice(advice)
+        .execute_sync(program, host)
         .map_err(|e| midenc_hir::Report::msg(e.to_string()))?;
     Ok(())
+}
+fn processor_with_advice(advice: &[u64]) -> miden_processor::FastProcessor {
+    let advice = miden_processor::advice::AdviceInputs::default()
+        .with_stack(advice.iter().copied().map(miden_core::Felt::new_unchecked).collect());
+    miden_processor::FastProcessor::new(miden_processor::StackInputs::default())
+        .with_advice(advice)
+        .unwrap()
+}
+fn execute_failure_state(
+    program: &miden_core::program::Program,
+    advice: &[u64],
+) -> (miden_processor::FastProcessor, miden_processor::ExecutionError) {
+    let mut processor = processor_with_advice(advice);
+    let mut host = crate::plan::tests::lowering_units::host();
+    let mut context = processor.get_initial_resume_context(program).unwrap();
+    loop {
+        match processor.step_sync(&mut host, context) {
+            Ok(Some(next)) => context = next,
+            Ok(None) => panic!("expected VM failure"),
+            Err(error) => return (processor, error),
+        }
+    }
+}
+
+fn execute_kernel_probe(f: &Parsed, probe: &str, source: &str) -> Result<(), midenc_hir::Report> {
+    use alloc::sync::Arc;
+
+    use miden_assembly::{
+        Assembler, DefaultSourceManager, Path,
+        ast::{Module, ModuleKind},
+    };
+    let manager = Arc::new(DefaultSourceManager::default());
+    let procedure = selected_procedure(f, &SelectEnv::default());
+    let module = Module::parser(Some(ModuleKind::Kernel)).parse_str(
+        Some(Path::KERNEL),
+        format!("{procedure} pub proc probe {probe} end"),
+        manager.clone(),
+    )?;
+    let kernel: Arc<miden_assembly::package::Package> =
+        Assembler::new(manager.clone()).assemble_kernel("kernel", module, None)?.into();
+    let program = Assembler::with_kernel(manager, kernel.clone())?
+        .assemble_program("selected_kernel", source)?
+        .try_into_program()?;
+    let mut host = crate::plan::tests::lowering_units::host();
+    host.load_library(miden_processor::HostLibrary::from(kernel)).unwrap();
+    execute_program(&program, &mut host, &[])
 }
 
 fn parse_module_function(text: &str) -> Parsed {

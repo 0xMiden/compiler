@@ -261,6 +261,17 @@ impl TargetEffects {
             return Ok(StackEffect::new(depth + 4, outputs, vec![]));
         }
         let effect = match instruction {
+            // Pinned assembler macros push their complete temporary words before cleanup.
+            Hash => StackEffect::computed(
+                4,
+                4,
+                &[1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1],
+            ),
+            HMerge => StackEffect::computed(8, 4, &[1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1]),
+            HPerm => StackEffect::computed(12, 12, &[]),
+            Caller => StackEffect::computed(4, 4, &[]),
+            Clk => StackEffect::computed(0, 1, &[1]),
+            AdvPush => StackEffect::computed(0, 1, &[1]).trapping(),
             Add | Sub | Mul | Eq | Neq => StackEffect::computed(2, 1, &[-1]),
             Div => StackEffect::computed(2, 1, &[-1]).trapping(),
             Neg | Incr => StackEffect::computed(1, 1, &[]),
