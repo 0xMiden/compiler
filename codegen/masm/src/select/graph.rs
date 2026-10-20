@@ -620,6 +620,8 @@ impl<'a, 'e> Selector<'a, 'e> {
                             let definition =
                                 crate::lower::units::intrinsics::Intrinsic::from_source(kind, &op)?;
                             let effects = definition.effects.clone();
+                            let proof = definition
+                                .bind_evidence(&self.atoms(&inputs), &self.atoms(&outputs));
                             self.add_unit(
                                 current,
                                 source,
@@ -628,7 +630,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                                     stored: vec![],
                                     outputs: self.atoms(&outputs),
                                     body: HirBody::Intrinsic(alloc::boxed::Box::new(definition)),
-                                    proof: UnitEvidence::default(),
+                                    proof,
                                     effects,
                                     scratch: vec![],
                                     scratch_effects: vec![],

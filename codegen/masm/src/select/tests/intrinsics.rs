@@ -5,9 +5,14 @@ pub(super) fn fixture(name: &str, inputs: usize, outputs: usize) -> Parsed {
     let operands = (0..inputs).map(|i| format!("%a{i}")).collect::<Vec<_>>().join(",");
     let results = (0..outputs).map(|i| format!("%r{i}")).collect::<Vec<_>>().join(",");
     let types = vec!["felt"; outputs].join(",");
+    let properties = if name == "m_tree_verify" {
+        " <{ message = \"\" }>"
+    } else {
+        ""
+    };
     parse(&format!(
         "builtin.function public extern(\"C\") @fixed({args}) -> ({types}) {{ \
-         {results}=hir.{name} {operands}; builtin.ret {results} : ({types}); }};"
+         {results}=hir.{name} {operands}{properties}; builtin.ret {results} : ({types}); }};"
     ))
 }
 
@@ -117,6 +122,10 @@ pub(super) fn fixtures() -> Vec<(Parsed, bool)> {
         ("advice_pop", 0, 1),
         ("advice_load_word", 4, 4),
         ("clk", 0, 1),
+        ("m_tree_get", 6, 8),
+        ("m_tree_set", 10, 8),
+        ("m_tree_merge", 8, 4),
+        ("m_tree_verify", 10, 10),
     ]
     .into_iter()
     .map(|(n, i, o)| (fixture(n, i, o), false))
@@ -812,4 +821,753 @@ fn advice_word_semantic_mutations_violate_vm_results_and_consumption() {
         assert_eq!(results != word, wrong_results, "{replacement}");
         assert_eq!(next != Felt::new_unchecked(97), wrong_consumption, "{replacement}");
     }
+}
+
+#[test]
+fn merkle_source_selection_and_aliases() {
+    for (name, inputs, outputs, aliases) in [
+        ("m_tree_get", 6, 8, vec![(4, 2), (5, 3), (6, 4), (7, 5)]),
+        ("m_tree_set", 10, 8, vec![]),
+        ("m_tree_merge", 8, 4, vec![]),
+        ("m_tree_verify", 10, 10, (0..10).map(|i| (i, i)).collect()),
+    ] {
+        let f = fixture(name, inputs, outputs);
+        let selected = checked(&f, &SelectEnv::default());
+        let unit = &selected.segments[0].units[0];
+        assert!(unit.effects.may_trap, "{name}");
+        let _ = ready(&f, &SelectEnv::default());
+        for (output, input) in aliases {
+            assert_eq!(
+                crate::select::evidence(&f.borrow(), &SelectEnv::default())
+                    .unwrap()
+                    .source
+                    .units[&unit.id]
+                    .aliases
+                    .pairs()
+                    .iter()
+                    .find(|(o, _)| *o == unit.outputs[output])
+                    .map(|(_, i)| *i),
+                Some(unit.stack_inputs[input])
+            );
+        }
+    }
+}
+
+fn merkle_word(seed: u64) -> miden_core::Word {
+    [seed, seed + 7, seed + 19, seed + 41]
+        .map(miden_core::Felt::new_unchecked)
+        .into()
+}
+
+fn merkle_lanes(word: miden_core::Word) -> Vec<usize> {
+    word.as_elements().iter().map(|v| v.as_canonical_u64() as usize).collect()
+}
+
+/// Step the real processor so both successful and failed provider state remain observable.
+fn merkle_vm(
+    code: &str,
+    input: &[usize],
+    store: miden_core::crypto::merkle::MerkleStore,
+    budget: Option<usize>,
+) -> (miden_processor::FastProcessor, Result<(), miden_processor::ExecutionError>) {
+    use miden_core::{Felt, advice::AdviceStack};
+    use miden_processor::{ExecutionOptions, FastProcessor, StackInputs, advice::AdviceInputs};
+    let program = miden_assembly::Assembler::default()
+        .assemble_program("merkle_semantics", code)
+        .unwrap()
+        .try_into_program()
+        .unwrap();
+    let base = input[input.len().saturating_sub(16)..]
+        .iter()
+        .map(|&n| Felt::new_unchecked(n as u64))
+        .collect::<Vec<_>>();
+    let advice = AdviceInputs::default()
+        .with_merkle_store(store)
+        .with_stack(AdviceStack::from(vec![Felt::new_unchecked(97)]));
+    let options = budget.map_or_else(ExecutionOptions::default, |n| {
+        ExecutionOptions::default().with_max_advice_size_bytes(n)
+    });
+    let mut processor =
+        FastProcessor::new_with_options(StackInputs::new(&base).unwrap(), advice, options).unwrap();
+    let mut host = crate::plan::tests::lowering_units::host();
+    let mut context = processor.get_initial_resume_context(&program).unwrap();
+    let result = loop {
+        match processor.step_sync(&mut host, context) {
+            Ok(Some(next)) => context = next,
+            Ok(None) => break Ok(()),
+            Err(err) => break Err(err),
+        }
+    };
+    (processor, result)
+}
+
+fn merkle_probe(procedure: &str, input: &[usize], expected: &[usize]) -> String {
+    format!(
+        "{procedure} begin {} exec.selected adv_push push.97 assert_eq {} end",
+        crate::plan::tests::lowering_units::push_top(&input[..input.len().saturating_sub(16)]),
+        crate::plan::tests::lowering_units::assert_top(expected)
+    )
+}
+
+#[test]
+fn merkle_selected_get_set_merge_verify_vm_provider_and_suffix() {
+    use miden_core::{
+        Felt,
+        crypto::{
+            hash::Poseidon2,
+            merkle::{MerkleStore, MerkleTree, NodeIndex},
+        },
+    };
+    let leaves = (0..8).map(|i| merkle_word(0x1_0000_0000 + i * 101)).collect::<Vec<_>>();
+    let tree = MerkleTree::new(leaves.clone()).unwrap();
+    let other = MerkleTree::new([merkle_word(5001), merkle_word(6001)]).unwrap();
+    let mut store = MerkleStore::from(&tree);
+    store.extend(other.inner_nodes());
+    for suffix_len in [16, 20] {
+        let suffix = (0..suffix_len).map(|i| 0x2_0000_0000 + i).collect::<Vec<_>>();
+        for (depth, index) in [(1, 0), (1, 1), (3, 0), (3, 7)] {
+            let node = store.get_node(tree.root(), NodeIndex::new(depth, index).unwrap()).unwrap();
+            let mut input = vec![depth as usize, index as usize];
+            input.extend(merkle_lanes(tree.root()));
+            input.extend(&suffix);
+            let mut expected = merkle_lanes(node);
+            expected.extend(merkle_lanes(tree.root()));
+            expected.extend(&suffix);
+            for (name, n, m) in [("m_tree_get", 6, 8), ("m_tree_verify", 10, 10)] {
+                let procedure = selected_procedure(&fixture(name, n, m), &SelectEnv::default());
+                let actual_input = if n == 10 {
+                    let mut v = merkle_lanes(node);
+                    v.extend(&input);
+                    v
+                } else {
+                    input.clone()
+                };
+                let actual_expected = if n == 10 {
+                    actual_input.clone()
+                } else {
+                    expected.clone()
+                };
+                let (processor, result) = merkle_vm(
+                    &merkle_probe(&procedure, &actual_input, &actual_expected),
+                    &actual_input,
+                    store.clone(),
+                    None,
+                );
+                result.unwrap();
+                let (advice, _) = processor.into_parts();
+                assert!(advice.stack().is_empty());
+                assert_eq!(
+                    advice
+                        .get_tree_node(
+                            tree.root(),
+                            Felt::new_unchecked(depth as u64),
+                            Felt::new_unchecked(index)
+                        )
+                        .unwrap(),
+                    node
+                );
+            }
+        }
+        for value in [merkle_word(9001), leaves[7], tree.root()] {
+            let mut reference = tree.clone();
+            reference.update_leaf(7, value).unwrap();
+            let root = reference.root();
+            let mut input = vec![3, 7];
+            input.extend(merkle_lanes(tree.root()));
+            input.extend(merkle_lanes(value));
+            input.extend(&suffix);
+            let mut expected = merkle_lanes(leaves[7]);
+            expected.extend(merkle_lanes(root));
+            expected.extend(&suffix);
+            let procedure =
+                selected_procedure(&fixture("m_tree_set", 10, 8), &SelectEnv::default());
+            let mut query = vec![3, 7];
+            query.extend(merkle_lanes(root));
+            let mut query_result = merkle_lanes(value);
+            query_result.extend(merkle_lanes(root));
+            let mut verify = merkle_lanes(value);
+            verify.extend(&query);
+            let code = merkle_probe(&procedure, &input, &expected);
+            let code = format!(
+                "{} {} mtree_get {} {} mtree_verify repeat.10 drop end end",
+                code.strip_suffix("end").unwrap(),
+                crate::plan::tests::lowering_units::push_top(&query),
+                crate::plan::tests::lowering_units::assert_top(&query_result),
+                crate::plan::tests::lowering_units::push_top(&verify)
+            );
+            let (processor, result) = merkle_vm(&code, &input, store.clone(), None);
+            result.unwrap();
+            let (advice, _) = processor.into_parts();
+            assert_eq!(
+                advice
+                    .get_tree_node(tree.root(), Felt::new_unchecked(3), Felt::new_unchecked(7))
+                    .unwrap(),
+                leaves[7]
+            );
+            assert_eq!(
+                advice
+                    .get_tree_node(root, Felt::new_unchecked(3), Felt::new_unchecked(7))
+                    .unwrap(),
+                value
+            );
+            if value == tree.root() {
+                // Stored subtree nodes remain addressable beneath the updated leaf.
+                assert_eq!(
+                    advice
+                        .get_tree_node(root, Felt::new_unchecked(6), Felt::new_unchecked(56))
+                        .unwrap(),
+                    leaves[0]
+                );
+            }
+        }
+        for (left, right) in [
+            (tree.root(), other.root()),
+            (tree.root(), merkle_word(6001)),
+            (merkle_word(7001), merkle_word(8001)),
+            (merkle_word(8001), merkle_word(7001)),
+        ] {
+            let root = Poseidon2::merge(&[left, right]);
+            let mut input = merkle_lanes(left);
+            input.extend(merkle_lanes(right));
+            input.extend(&suffix);
+            let mut expected = merkle_lanes(root);
+            expected.extend(&suffix);
+            let procedure =
+                selected_procedure(&fixture("m_tree_merge", 8, 4), &SelectEnv::default());
+            let (processor, result) = merkle_vm(
+                &merkle_probe(&procedure, &input, &expected),
+                &input,
+                store.clone(),
+                None,
+            );
+            result.unwrap();
+            let (advice, _) = processor.into_parts();
+            for (index, child) in [(0, left), (1, right)] {
+                assert_eq!(
+                    advice.get_tree_node(root, Felt::ONE, Felt::new_unchecked(index)).unwrap(),
+                    child
+                );
+            }
+            assert_eq!(
+                advice.get_tree_node(tree.root(), Felt::new_unchecked(3), Felt::ZERO).unwrap(),
+                leaves[0]
+            );
+            assert_eq!(
+                advice.get_tree_node(other.root(), Felt::ONE, Felt::ZERO).unwrap(),
+                merkle_word(5001)
+            );
+        }
+    }
+}
+
+#[test]
+fn merkle_vm_depth_index_missing_nodes_and_verify_semantic_mutations() {
+    use miden_core::crypto::merkle::{MerkleStore, MerkleTree, SimpleSmt};
+    let tree = MerkleTree::new([merkle_word(100), merkle_word(200)]).unwrap();
+    let store = MerkleStore::from(&tree);
+    // Both raw and final selected bodies use the same provider errors at invalid boundaries.
+    for (name, n, m, native) in [
+        ("m_tree_get", 6, 8, "mtree_get"),
+        ("m_tree_set", 10, 8, "mtree_set"),
+        ("m_tree_verify", 10, 10, "mtree_verify"),
+    ] {
+        let procedure = selected_procedure(&fixture(name, n, m), &SelectEnv::default());
+        for (depth, index, root) in [
+            (0, 0, tree.root()),
+            (65, 0, tree.root()),
+            (0x1_0000_0000, 0, tree.root()),
+            (1, 2, tree.root()),
+            (1, 0, merkle_word(999)),
+            (2, 0, tree.root()),
+        ] {
+            let mut input = if n == 10 && m == 10 {
+                merkle_lanes(merkle_word(100))
+            } else {
+                vec![]
+            };
+            input.extend([depth, index]);
+            input.extend(merkle_lanes(root));
+            if n == 10 && m == 8 {
+                input.extend(merkle_lanes(merkle_word(999)));
+            }
+            input.extend(1000..1020);
+            let mut errors = vec![];
+            for body in [procedure.clone(), format!("proc selected {native} end")] {
+                let code = format!(
+                    "{body} begin {} exec.selected end",
+                    crate::plan::tests::lowering_units::push_top(&input[..input.len() - 16])
+                );
+                let (_, result) = merkle_vm(&code, &input, store.clone(), None);
+                errors.push(format!("{:?}", result.unwrap_err()));
+            }
+            assert_eq!(errors[0], errors[1], "{name}: {depth}/{index}");
+        }
+    }
+    // Full depth-64 empty sparse tree: root lookup and path verification are real provider work.
+    let deep = SimpleSmt::<64>::new().unwrap();
+    let store64 = MerkleStore::from(&deep);
+    for index in [0usize, 0xffff_ffff_0000_0000] {
+        let mut input = vec![64, index];
+        input.extend(merkle_lanes(deep.root()));
+        input.extend(1000..1020);
+        let mut expected = vec![0; 4];
+        expected.extend(merkle_lanes(deep.root()));
+        expected.extend(1000..1020);
+        let procedure = selected_procedure(&fixture("m_tree_get", 6, 8), &SelectEnv::default());
+        merkle_vm(&merkle_probe(&procedure, &input, &expected), &input, store64.clone(), None)
+            .1
+            .unwrap();
+    }
+    let f = fixture("m_tree_verify", 10, 10);
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    let mut input = merkle_lanes(merkle_word(999));
+    input.extend([1, 0]);
+    input.extend(merkle_lanes(tree.root()));
+    input.extend(1000..1020);
+    for (native, must_trap) in [("mtree_verify", true), ("nop", false)] {
+        let body = procedure.replace("mtree_verify", native);
+        let code = merkle_probe(&body, &input, &input);
+        let (_, result) = merkle_vm(&code, &input, store.clone(), None);
+        assert_eq!(result.is_err(), must_trap, "{native}");
+    }
+    // Changing the literal diagnostic remains physically valid; only the trap oracle tells them apart.
+    for message in ["bad path", "different path", ""] {
+        let args = (0..10).map(|i| format!("%a{i}: felt")).collect::<Vec<_>>().join(",");
+        let operands = (0..10).map(|i| format!("%a{i}")).collect::<Vec<_>>().join(",");
+        let results = (0..10).map(|i| format!("%r{i}")).collect::<Vec<_>>().join(",");
+        let types = ["felt"; 10].join(",");
+        let f = parse(&format!(
+            "builtin.function public extern(\"C\") @verify({args}) -> ({types}) {{ \
+             {results}=hir.m_tree_verify {operands} <{{ message = \"{message}\" }}>; builtin.ret \
+             {results} : ({types}); }};"
+        ));
+        let body = selected_procedure(&f, &SelectEnv::default());
+        if message.is_empty() {
+            assert!(!body.contains("mtree_verify.err"));
+        } else {
+            assert!(body.contains(&format!("mtree_verify.err=\"{message}\"")), "{body}");
+        }
+        let (_, result) =
+            merkle_vm(&merkle_probe(&body, &input, &input), &input, store.clone(), None);
+        let error = result.unwrap_err();
+        let miden_processor::ExecutionError::OperationError {
+            err: miden_processor::operation::OperationError::MerklePathVerificationFailed { inner },
+            ..
+        } = error
+        else {
+            panic!("{error:?}")
+        };
+        // Executable Programs omit package debug text; the processor carries its exact hashed literal.
+        let expected_code = if message.is_empty() {
+            miden_core::Felt::ZERO
+        } else {
+            miden_core::mast::error_code_from_msg(message)
+        };
+        assert_eq!(inner.err_code, expected_code);
+        assert_eq!(
+            inner.err_code == miden_core::mast::error_code_from_msg("bad path"),
+            message == "bad path"
+        );
+        if message == "bad path" {
+            for mutated in [
+                body.replace("bad path", "different path"),
+                body.replace("mtree_verify.err=\"bad path\"", "mtree_verify"),
+            ] {
+                let (_, result) =
+                    merkle_vm(&merkle_probe(&mutated, &input, &input), &input, store.clone(), None);
+                let miden_processor::ExecutionError::OperationError {
+                    err:
+                        miden_processor::operation::OperationError::MerklePathVerificationFailed {
+                            inner,
+                        },
+                    ..
+                } = result.unwrap_err()
+                else {
+                    panic!("expected invalid-proof trap")
+                };
+                assert_ne!(inner.err_code, miden_core::mast::error_code_from_msg("bad path"));
+            }
+        }
+    }
+}
+
+#[test]
+fn merkle_source_tuple_candidate_alias_and_physical_violations_reject() {
+    use midenc_hir::{Type, Value};
+    for (name, n, m) in [
+        ("m_tree_get", 6, 8),
+        ("m_tree_set", 10, 8),
+        ("m_tree_merge", 8, 4),
+        ("m_tree_verify", 10, 10),
+    ] {
+        for ty in [
+            Type::U32,
+            Type::from(midenc_hir::PointerType::new(Type::Felt)),
+            Type::from(midenc_hir::ArrayType::new(Type::Felt, 4)),
+        ] {
+            for index in 0..n + m {
+                let f = fixture(name, n, m);
+                let op = f
+                    .borrow()
+                    .entry_block()
+                    .borrow()
+                    .body()
+                    .front()
+                    .get()
+                    .unwrap()
+                    .as_operation_ref();
+                if index < n {
+                    let mut value = op.borrow().operands().all()[index].borrow().as_value_ref();
+                    value.borrow_mut().set_type(ty.clone());
+                } else {
+                    let mut value = op.borrow().results().all()[index - n];
+                    value.borrow_mut().set_type(ty.clone());
+                }
+                assert!(
+                    select_function(&f.borrow(), &SelectEnv::default()).is_err(),
+                    "{name}: {index}, {ty}"
+                );
+            }
+        }
+        let f = fixture(name, n, m);
+        let function = f.borrow();
+        let env = SelectEnv::default();
+        for mutation in 0..8 {
+            let mut selected = select_function(&function, &env).unwrap();
+            let unit = &mut selected.segments[0].units[0];
+            match mutation {
+                0 => {
+                    unit.outputs.pop();
+                }
+                1 => unit.outputs.push(unit.outputs[0]),
+                2 => unit.outputs.swap(0, 1),
+                3 => unit.outputs[0] = unit.stack_inputs[n - 1],
+                4 => unit.effects.may_trap = false,
+                5 => unit.effects.memory.read = true,
+                6 => unit.stack_inputs.swap(0, 1),
+                _ => unit.kind = crate::plan::LoweringKind(u32::MAX),
+            }
+            assert!(
+                check_selection(
+                    selected,
+                    &SourceContext::Hir {
+                        function: &function,
+                        env: &env
+                    }
+                )
+                .is_err(),
+                "{name}: mutation {mutation}"
+            );
+        }
+        for instruction in [
+            crate::masm::Instruction::Dup15,
+            crate::masm::Instruction::Swap15,
+            crate::masm::Instruction::Drop,
+        ] {
+            let (plan, frame, mut body) = ready(&f, &env);
+            let index = body
+                .ops()
+                .iter()
+                .position(|o| {
+                    matches!(
+                        o,
+                        AnnotatedOp::Instruction {
+                            instruction: crate::masm::Instruction::MTreeGet
+                                | crate::masm::Instruction::MTreeSet
+                                | crate::masm::Instruction::MTreeMerge
+                                | crate::masm::Instruction::MTreeVerify,
+                            ..
+                        }
+                    )
+                })
+                .unwrap();
+            let unit = match body.ops()[index] {
+                AnnotatedOp::Instruction { unit, .. } => unit,
+                _ => unreachable!(),
+            };
+            body.ops_mut().insert(index, AnnotatedOp::Instruction { instruction, unit });
+            assert!(verify::verify(&plan, &frame, body).is_err(), "{name}");
+        }
+    }
+}
+
+#[test]
+fn merkle_vm_capacity_floor_and_computed_result_mutations() {
+    use miden_core::crypto::{
+        hash::Poseidon2,
+        merkle::{MerkleStore, MerkleTree, NodeIndex},
+    };
+    let tree = MerkleTree::new([merkle_word(101), merkle_word(202)]).unwrap();
+    let store = MerkleStore::from(&tree);
+    // Provider counts unique internal nodes (including its built-in empty subtrees) and sentinel.
+    let base_budget = store.num_internal_nodes() * 96 + 8;
+    for (name, n, m, native) in [
+        ("m_tree_get", 6, 8, "mtree_get"),
+        ("m_tree_set", 10, 8, "mtree_set"),
+        ("m_tree_merge", 8, 4, "mtree_merge"),
+        ("m_tree_verify", 10, 10, "mtree_verify"),
+    ] {
+        let mut input = vec![];
+        let expected = match native {
+            "mtree_merge" => {
+                input.extend(merkle_lanes(tree.root()));
+                input.extend(merkle_lanes(merkle_word(999)));
+                merkle_lanes(Poseidon2::merge(&[tree.root(), merkle_word(999)]))
+            }
+            "mtree_verify" => {
+                input.extend(merkle_lanes(merkle_word(101)));
+                input.extend([1, 0]);
+                input.extend(merkle_lanes(tree.root()));
+                input.clone()
+            }
+            _ => {
+                input.extend([1, 0]);
+                input.extend(merkle_lanes(tree.root()));
+                if n == 10 {
+                    input.extend(merkle_lanes(merkle_word(999)));
+                }
+                let root = if n == 10 {
+                    store
+                        .clone()
+                        .set_node(tree.root(), NodeIndex::new(1, 0).unwrap(), merkle_word(999))
+                        .unwrap()
+                        .root
+                } else {
+                    tree.root()
+                };
+                let mut out = merkle_lanes(merkle_word(101));
+                out.extend(merkle_lanes(root));
+                out
+            }
+        };
+        for suffix_len in [16 - n, 20] {
+            let suffix = (0..suffix_len).map(|i| 7000 + i).collect::<Vec<_>>();
+            let mut actual_input = input.clone();
+            actual_input.extend(&suffix);
+            let mut actual_expected = expected.clone();
+            actual_expected.extend(&suffix);
+            let selected = selected_procedure(&fixture(name, n, m), &SelectEnv::default());
+            for body in [selected.clone(), format!("proc selected {native} end")] {
+                merkle_vm(
+                    &merkle_probe(&body, &actual_input, &actual_expected),
+                    &actual_input,
+                    store.clone(),
+                    None,
+                )
+                .1
+                .unwrap();
+                if m != 10 {
+                    let mutated = body.replace(native, &format!("{native} swap.1"));
+                    assert!(
+                        merkle_vm(
+                            &merkle_probe(&mutated, &actual_input, &actual_expected),
+                            &actual_input,
+                            store.clone(),
+                            None
+                        )
+                        .1
+                        .is_err(),
+                        "{native} ordered results"
+                    );
+                }
+            }
+        }
+        let body = selected_procedure(&fixture(name, n, m), &SelectEnv::default());
+        let mut actual_input = input.clone();
+        actual_input.extend(7000..7020);
+        let mut actual_expected = expected.clone();
+        actual_expected.extend(7000..7020);
+        for budget in [base_budget, base_budget + 31] {
+            let (_, result) = merkle_vm(
+                &merkle_probe(&body, &actual_input, &actual_expected),
+                &actual_input,
+                store.clone(),
+                Some(budget),
+            );
+            if native == "mtree_verify" {
+                result.unwrap();
+            } else {
+                let error = result.unwrap_err().to_string();
+                assert!(error.contains("advice") || error.contains("Advice"), "{error}");
+            }
+        }
+        if native == "mtree_get" {
+            merkle_vm(
+                &merkle_probe(&body, &actual_input, &actual_expected),
+                &actual_input,
+                store.clone(),
+                Some(base_budget + 32),
+            )
+            .1
+            .unwrap();
+        }
+        if native == "mtree_set" {
+            // Enough room for the temporary word, insufficient for the genuinely new path.
+            assert!(
+                merkle_vm(
+                    &merkle_probe(&body, &actual_input, &actual_expected),
+                    &actual_input,
+                    store.clone(),
+                    Some(base_budget + 32)
+                )
+                .1
+                .is_err()
+            );
+            let mut no_op_input = vec![1, 0];
+            no_op_input.extend(merkle_lanes(tree.root()));
+            no_op_input.extend(merkle_lanes(merkle_word(101)));
+            no_op_input.extend(7000..7020);
+            let mut no_op_expected = merkle_lanes(merkle_word(101));
+            no_op_expected.extend(merkle_lanes(tree.root()));
+            no_op_expected.extend(7000..7020);
+            merkle_vm(
+                &merkle_probe(&body, &no_op_input, &no_op_expected),
+                &no_op_input,
+                store.clone(),
+                Some(base_budget + 32),
+            )
+            .1
+            .unwrap();
+        }
+        if native == "mtree_merge" {
+            let mut merged = store.clone();
+            merged.merge_roots(tree.root(), merkle_word(999)).unwrap();
+            let budget = merged.num_internal_nodes() * 96 + 8;
+            merkle_vm(
+                &merkle_probe(&body, &actual_input, &actual_expected),
+                &actual_input,
+                merged,
+                Some(budget),
+            )
+            .1
+            .unwrap();
+            merkle_vm(
+                &merkle_probe(&body, &actual_input, &actual_expected),
+                &actual_input,
+                store.clone(),
+                Some(base_budget + 96),
+            )
+            .1
+            .unwrap();
+        }
+    }
+}
+
+#[test]
+fn merkle_retained_alias_mutations_and_physically_valid_verify_omission() {
+    for (name, n, m, retained) in [("m_tree_get", 6, 8, 4..8), ("m_tree_verify", 10, 10, 0..10)] {
+        let f = fixture(name, n, m);
+        let function = f.borrow();
+        let env = SelectEnv::default();
+        for output in retained {
+            for input in 0..n {
+                let expected = if m == 8 { output - 2 } else { output };
+                if input == expected {
+                    continue;
+                }
+                let mut bad = select_function(&function, &env).unwrap();
+                let unit = &mut bad.segments[0].units[0];
+                unit.outputs[output] = unit.stack_inputs[input];
+                assert!(
+                    check_selection(
+                        bad,
+                        &SourceContext::Hir {
+                            function: &function,
+                            env: &env
+                        }
+                    )
+                    .is_err()
+                );
+            }
+            let mut bad = select_function(&function, &env).unwrap();
+            let atom = bad.segments[0].units[0].outputs[output];
+            bad.values.get_mut(&atom.value).unwrap().reconstruction =
+                Some(Reconstruction::Alias(vec![bad.segments[0].units[0].stack_inputs[0]]));
+            assert!(
+                check_selection(
+                    bad,
+                    &SourceContext::Hir {
+                        function: &function,
+                        env: &env
+                    }
+                )
+                .is_err()
+            );
+        }
+        let (plan, frame, mut body) = ready(&f, &env);
+        let index = body
+            .ops()
+            .iter()
+            .position(|o| {
+                matches!(
+                    o,
+                    AnnotatedOp::Instruction {
+                        instruction: crate::masm::Instruction::MTreeGet
+                            | crate::masm::Instruction::MTreeVerify,
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        let unit = match body.ops()[index] {
+            AnnotatedOp::Instruction { unit, .. } => unit,
+            _ => unreachable!(),
+        };
+        if m == 10 {
+            body.ops_mut().remove(index);
+            // Correctly physically legal: the invalid-proof VM test must establish execution.
+            verify::verify(&plan, &frame, body).unwrap();
+        } else {
+            body.ops_mut().insert(
+                index + 1,
+                AnnotatedOp::Instruction {
+                    instruction: crate::masm::Instruction::Swap4,
+                    unit,
+                },
+            );
+            assert!(verify::verify(&plan, &frame, body).is_err());
+        }
+    }
+}
+
+#[test]
+fn merkle_native_substitution_requires_actual_provider_oracle() {
+    use miden_core::{
+        Felt,
+        crypto::{
+            hash::Poseidon2,
+            merkle::{MerkleStore, MerkleTree},
+        },
+    };
+    let tree = MerkleTree::new([merkle_word(101), merkle_word(202)]).unwrap();
+    let store = MerkleStore::from(&tree);
+    let right = merkle_word(999);
+    let root = Poseidon2::merge(&[tree.root(), right]);
+    let mut input = merkle_lanes(tree.root());
+    input.extend(merkle_lanes(right));
+    input.extend(7000..7020);
+    let mut expected = merkle_lanes(root);
+    expected.extend(7000..7020);
+    let f = fixture("m_tree_merge", 8, 4);
+    let selected = selected_procedure(&f, &SelectEnv::default());
+    for (body, provider_updated) in
+        [(selected.clone(), true), (selected.replace("mtree_merge", "hmerge"), false)]
+    {
+        // Both bodies calculate exactly the expected Poseidon root; only one stores the parent.
+        let (processor, result) =
+            merkle_vm(&merkle_probe(&body, &input, &expected), &input, store.clone(), None);
+        result.unwrap();
+        let (advice, _) = processor.into_parts();
+        assert_eq!(advice.get_tree_node(root, Felt::ONE, Felt::ZERO).is_ok(), provider_updated);
+    }
+    let (plan, frame, mut body) = ready(&f, &SelectEnv::default());
+    for op in body.ops_mut() {
+        if let AnnotatedOp::Instruction { instruction, .. } = op
+            && *instruction == crate::masm::Instruction::MTreeMerge
+        {
+            *instruction = crate::masm::Instruction::HMerge;
+        }
+    }
+    // HMerge has the same physical lane obligations; the provider oracle above detects substitution.
+    verify::verify(&plan, &frame, body).unwrap();
 }

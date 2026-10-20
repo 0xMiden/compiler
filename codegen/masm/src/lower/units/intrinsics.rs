@@ -12,6 +12,10 @@ pub(crate) enum Kind {
     Hash,
     HMerge,
     HPerm,
+    MTreeGet,
+    MTreeSet,
+    MTreeMerge,
+    MTreeVerify,
     AdvicePop,
     AdviceLoadWord,
     Caller,
@@ -19,8 +23,11 @@ pub(crate) enum Kind {
     Clk,
 }
 
+/// Captured intrinsic instructions and source-established lane/effect relationships.
+/// Retained lane positions are bound to selected atoms separately from executable expansion.
 pub(crate) struct Intrinsic {
     body: Vec<masm::Op>,
+    retained: Vec<(usize, usize)>,
     pub effects: LoweringEffects,
 }
 
@@ -36,6 +43,10 @@ impl Intrinsic {
             Hash => (vec![Type::Felt; 4], vec![Type::Felt; 4]),
             HMerge => (vec![Type::Felt; 8], vec![Type::Felt; 4]),
             HPerm => (vec![Type::Felt; 12], vec![Type::Felt; 12]),
+            MTreeGet => (vec![Type::Felt; 6], vec![Type::Felt; 8]),
+            MTreeSet => (vec![Type::Felt; 10], vec![Type::Felt; 8]),
+            MTreeMerge => (vec![Type::Felt; 8], vec![Type::Felt; 4]),
+            MTreeVerify => (vec![Type::Felt; 10], vec![Type::Felt; 10]),
             AdvicePop | Clk => (vec![], vec![Type::Felt]),
             AdviceLoadWord => {
                 if inputs.len() != 4 {
@@ -67,6 +78,15 @@ impl Intrinsic {
             Hash => emitter.hash(op.span()),
             HMerge => emitter.hmerge(op.span()),
             HPerm => emitter.hperm(op.span()),
+            MTreeGet => emitter.mtree_get(op.span()),
+            MTreeSet => emitter.mtree_set(op.span()),
+            MTreeMerge => emitter.mtree_merge(op.span()),
+            MTreeVerify => {
+                let source = op
+                    .downcast_ref::<midenc_dialect_hir::MTreeVerify>()
+                    .ok_or_else(|| invalid("Merkle verification requires its source operation"))?;
+                emitter.mtree_verify(Some(source.get_message().as_str()), op.span());
+            }
             AdvicePop => emitter.advice_pop(op.span()),
             AdviceLoadWord => emitter.advice_load_word(op.span())?,
             Caller => emitter.caller(op.span()),
@@ -80,11 +100,32 @@ impl Intrinsic {
         }
         Ok(Self {
             body,
+            retained: match kind {
+                MTreeGet => (4..8).map(|i| (i, i - 2)).collect(),
+                MTreeVerify => (0..10).map(|i| (i, i)).collect(),
+                _ => vec![],
+            },
             effects: LoweringEffects {
-                may_trap: matches!(kind, AdvicePop | AdviceLoadWord),
+                may_trap: matches!(
+                    kind,
+                    AdvicePop | AdviceLoadWord | MTreeGet | MTreeSet | MTreeMerge | MTreeVerify
+                ),
                 ..Default::default()
             },
         })
+    }
+
+    /// Bind only the unconditional identities reconstructed from the source kind.
+    pub fn bind_evidence(&self, inputs: &[Atom], outputs: &[Atom]) -> crate::verify::UnitEvidence {
+        crate::verify::UnitEvidence {
+            aliases: LaneAliases::new(
+                self.retained
+                    .iter()
+                    .map(|&(output, input)| (outputs[output], inputs[input]))
+                    .collect(),
+            ),
+            ..Default::default()
+        }
     }
 
     /// Annotate the fixed source construction without assigning storage or publishing identities.
