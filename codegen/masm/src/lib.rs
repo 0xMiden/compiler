@@ -284,6 +284,13 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::Call, dyn HirLowering>();
     info.register_operation_trait::<hir::Dyncall, dyn HirLowering>();
     info.register_operation_trait::<hir::Syscall, dyn HirLowering>();
+    info.register_operation_trait::<hir::Hash, dyn HirSelection>();
+    info.register_operation_trait::<hir::HMerge, dyn HirSelection>();
+    info.register_operation_trait::<hir::HPerm, dyn HirSelection>();
+    info.register_operation_trait::<hir::AdvicePop, dyn HirSelection>();
+    info.register_operation_trait::<hir::Caller, dyn HirSelection>();
+    info.register_operation_trait::<hir::UnpackWord, dyn HirSelection>();
+    info.register_operation_trait::<hir::Clk, dyn HirSelection>();
     info.register_operation_trait::<hir::Load, dyn HirSelection>();
     info.register_operation_trait::<hir::Store, dyn HirSelection>();
     info.register_operation_trait::<hir::LoadLocal, dyn HirSelection>();

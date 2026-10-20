@@ -614,6 +614,27 @@ impl<'a, 'e> Selector<'a, 'e> {
                     let outputs =
                         self.ids(op.results().all().iter().map(|v| v.borrow().as_value_ref()))?;
                     match rule {
+                        SelectionRule::Intrinsic(kind)
+                            if kind != crate::lower::units::intrinsics::Kind::UnpackWord =>
+                        {
+                            let definition =
+                                crate::lower::units::intrinsics::Intrinsic::from_source(kind, &op)?;
+                            let effects = definition.effects.clone();
+                            self.add_unit(
+                                current,
+                                source,
+                                UnitSelection {
+                                    inputs: self.atoms(&inputs),
+                                    stored: vec![],
+                                    outputs: self.atoms(&outputs),
+                                    body: HirBody::Intrinsic(alloc::boxed::Box::new(definition)),
+                                    proof: UnitEvidence::default(),
+                                    effects,
+                                    scratch: vec![],
+                                    scratch_effects: vec![],
+                                },
+                            )?;
+                        }
                         SelectionRule::Memory(kind) => {
                             let mut definition =
                                 crate::lower::units::memory::Memory::from_source(kind, &op)?;
@@ -673,7 +694,12 @@ impl<'a, 'e> Selector<'a, 'e> {
                         SelectionRule::Constant(value) if outputs.len() == 1 => {
                             self.constant(current, source, outputs[0], value)?
                         }
-                        SelectionRule::Alias | SelectionRule::Split | SelectionRule::Join => {
+                        SelectionRule::Alias
+                        | SelectionRule::Split
+                        | SelectionRule::Join
+                        | SelectionRule::Intrinsic(
+                            crate::lower::units::intrinsics::Kind::UnpackWord,
+                        ) => {
                             validate_alias(&op, rule)?;
                             let mut input_atoms = self.atoms(&inputs);
                             let mut output_atoms = self.atoms(&outputs);
@@ -1448,6 +1474,10 @@ fn validate_alias(op: &Operation, rule: SelectionRule) -> Result<(), Report> {
                 [whole.clone()],
                 "join result disagrees with declared target type",
             )
+        }
+        SelectionRule::Intrinsic(kind) => {
+            crate::lower::units::intrinsics::Intrinsic::from_source(kind, op)?;
+            Ok(())
         }
         SelectionRule::Alias => {
             let target = if let Some(cast) = op.downcast_ref::<PtrToInt>() {

@@ -2963,3 +2963,24 @@ memory_selection! {
     wasm::I64Load16S => I64Load16S,
     wasm::I64Load32S => I64Load32S,
 }
+
+// Final fixed-stack definitions retain source-owned construction and exact tuple validation.
+macro_rules! intrinsic_selection {
+    ($($ty:ty => $kind:ident),* $(,)?) => {$(
+        impl HirSelection for $ty {
+            fn selection_rule(&self) -> crate::select::SelectionRule {
+                crate::select::SelectionRule::Intrinsic(super::units::intrinsics::Kind::$kind)
+            }
+        }
+    )*};
+}
+
+intrinsic_selection! {
+    hir::Hash => Hash,
+    hir::HMerge => HMerge,
+    hir::HPerm => HPerm,
+    hir::AdvicePop => AdvicePop,
+    hir::Caller => Caller,
+    hir::UnpackWord => UnpackWord,
+    hir::Clk => Clk,
+}

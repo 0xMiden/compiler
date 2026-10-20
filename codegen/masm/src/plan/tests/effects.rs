@@ -111,7 +111,7 @@ fn target_effects_match_vm() -> Result<(), Report> {
             "{illegal}"
         );
     }
-    assert!(TargetEffects::instruction(&Instruction::AdvPush).is_err());
+    assert!(TargetEffects::instruction(&Instruction::AdvPush).unwrap().may_trap);
     Ok(())
 }
 
@@ -295,9 +295,9 @@ fn word_effects_preserve_actual_cell_order() -> Result<(), Report> {
 #[test]
 fn unknown_rules_and_unresolved_immediates_fail_closed() {
     for instruction in [
-        Instruction::AdvPush,
-        Instruction::Hash,
-        Instruction::HPerm,
+        Instruction::AdvLoadW,
+        Instruction::CryptoStream,
+        Instruction::MTreeGet,
         Instruction::Emit,
         Instruction::EmitImm(crate::masm::Immediate::from(Felt::new_unchecked(999)).into()),
     ] {
@@ -688,9 +688,16 @@ fn arithmetic_cases() -> Vec<(Instruction, Vec<u64>, Vec<u64>)> {
 }
 
 #[test]
-fn arithmetic_target_rules_match_pinned_assembler_microsteps() -> Result<(), Report> {
+fn arithmetic_and_fixed_target_rules_match_pinned_assembler_microsteps() -> Result<(), Report> {
     use miden_core::operations::Operation as O;
-    for (instruction, ..) in arithmetic_cases() {
+    for instruction in arithmetic_cases().into_iter().map(|(instruction, ..)| instruction).chain([
+        Instruction::Hash,
+        Instruction::HMerge,
+        Instruction::HPerm,
+        Instruction::AdvPush,
+        Instruction::Caller,
+        Instruction::Clk,
+    ]) {
         // A library procedure has no program-entry FMP initialization prologue.
         // Inspect its exact exported root rather than subtracting an assumed prefix.
         let manager = alloc::sync::Arc::new(miden_assembly::DefaultSourceManager::default());
@@ -712,6 +719,7 @@ fn arithmetic_target_rules_match_pinned_assembler_microsteps() -> Result<(), Rep
             .operations()
             .filter_map(|op| match op {
                 O::Push(_)
+                | O::Clk
                 | O::Pad
                 | O::AdvPop
                 | O::U32split
@@ -741,6 +749,8 @@ fn arithmetic_target_rules_match_pinned_assembler_microsteps() -> Result<(), Rep
                 | O::CSwap
                 | O::CSwapW => Some(FloorStep::Pop(1)),
                 O::Noop
+                | O::HPerm
+                | O::Caller
                 | O::Neg
                 | O::Inv
                 | O::Incr
@@ -880,4 +890,60 @@ fn memory_wrapping_madd_rejects_each_invalid_u32_limb() {
         inputs[lane] = Felt::new_unchecked(1u64 << 32);
         assert!(run("u32wrapping_madd", &inputs).is_err(), "invalid lane {lane}");
     }
+}
+
+#[test]
+fn fixed_primitive_target_rules_describe_actual_owned_windows() {
+    for (i, n, m) in [
+        (Instruction::Hash, 4, 4),
+        (Instruction::HMerge, 8, 4),
+        (Instruction::HPerm, 12, 12),
+        (Instruction::AdvPush, 0, 1),
+        (Instruction::Caller, 4, 4),
+        (Instruction::Clk, 0, 1),
+    ] {
+        let effect = TargetEffects::instruction(&i).unwrap();
+        assert_eq!(effect.consumed, n);
+        assert_eq!(effect.outputs.len(), m);
+    }
+}
+
+#[test]
+fn fixed_primitives_preserve_physical_floor_and_raw_caller_suffix() -> Result<(), Report> {
+    use miden_core::crypto::hash::Poseidon2;
+    for (instruction, n) in
+        [(Instruction::Hash, 4), (Instruction::HMerge, 8), (Instruction::HPerm, 12)]
+    {
+        let input = (0..n).map(|i| Felt::new_unchecked(101 + i as u64 * 37)).collect::<Vec<_>>();
+        let expected = if n == 12 {
+            let mut state: [Felt; 12] = input.clone().try_into().unwrap();
+            Poseidon2::apply_permutation(&mut state);
+            state.to_vec()
+        } else {
+            Poseidon2::hash_elements(&input).as_elements().to_vec()
+        };
+        let actual = run(&instruction.to_string(), &input)?;
+        assert_eq!(&actual[..expected.len()], expected);
+        assert!(actual[expected.len()..].iter().all(|f| *f == Felt::ZERO));
+        let effect = TargetEffects::instruction(&instruction)?;
+        let state = effect.floor.iter().try_fold(
+            FloorState {
+                owned: n,
+                protected: 0,
+                padding: 16 - n,
+            },
+            |s, step| match step {
+                FloorStep::Push(n) => s.push(*n as usize),
+                FloorStep::Pop(n) => s.pop(*n as usize),
+            },
+        )?;
+        assert_eq!(state.owned, expected.len());
+        assert_eq!(state.padding, 16 - expected.len());
+    }
+    let input = (1..=16).map(Felt::new_unchecked).collect::<Vec<_>>();
+    let actual = run("caller", &input)?;
+    assert_eq!(&actual[..4], &[Felt::ZERO; 4]);
+    assert_eq!(&actual[4..], &input[4..]);
+    assert_eq!(TargetEffects::instruction(&Instruction::Caller)?.floor, []);
+    Ok(())
 }

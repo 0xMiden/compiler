@@ -29,6 +29,7 @@ pub(crate) struct SelectEnv<'a> {
 pub(crate) enum SelectionRule {
     Arithmetic(crate::lower::units::arithmetic::Kind),
     Memory(crate::lower::units::memory::Kind),
+    Intrinsic(crate::lower::units::intrinsics::Kind),
     Constant(Immediate),
     /// Preserve raw lanes through a source-checked representation change.
     Alias,

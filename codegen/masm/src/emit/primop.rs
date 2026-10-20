@@ -21,6 +21,7 @@ pub(crate) const UNSET_STORED_PROCEDURE_SLOT_MESSAGE: &str =
 impl OpEmitter<'_> {
     /// Push the caller procedure hash as a word.
     pub fn caller(&mut self, span: SourceSpan) {
+        self.emit(masm::Instruction::PadW, span);
         self.emit(masm::Instruction::Caller, span);
         self.push(Type::from(ArrayType::new(Type::Felt, 4)));
     }
@@ -642,7 +643,8 @@ mod tests {
 
         assert_eq!(emitter.stack_len(), 1);
         assert_eq!(emitter.stack()[0], Type::from(ArrayType::new(Type::Felt, 4)));
-        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Caller)));
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::PadW)));
+        assert_eq!(&block[1], &Op::Inst(masm::Span::new(span, masm::Instruction::Caller)));
     }
 
     #[test]
@@ -658,8 +660,9 @@ mod tests {
         for index in 0..4 {
             assert_eq!(emitter.stack()[index], Type::Felt);
         }
-        assert_eq!(block.len(), 1);
-        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Caller)));
+        assert_eq!(block.len(), 2);
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::PadW)));
+        assert_eq!(&block[1], &Op::Inst(masm::Span::new(span, masm::Instruction::Caller)));
     }
 
     /// Pin the exact instruction sequence and stack effect of an indirect call: the bounds
