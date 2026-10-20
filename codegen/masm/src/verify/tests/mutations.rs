@@ -65,6 +65,14 @@ fn actual_instruction_mutations_and_unsupported_effects_fail_closed() {
         verify(&identity_plan(), &frame(), body(vec![Instruction::U32Div]))
             .unwrap_err()
             .category,
+        DiagnosticCategory::InvalidSelectedLowering
+    );
+    // Declare trap permission so the independent owned-input check is reached.
+    let mut division = Fixture::new(1, 1);
+    division.effects.may_trap = true;
+    division.proof.aliases = LaneAliases::new(vec![(Fixture::output(0), Fixture::input(0))]);
+    assert_eq!(
+        division.run(vec![inst(Instruction::U32Div)]).unwrap_err().category,
         DiagnosticCategory::IllegalStackAccess
     );
     let mut fixture = Fixture::new(17, 17);
@@ -578,7 +586,6 @@ fn wide_call_publications_and_borrowed_outputs_check_positions_above_255() {
     let high: u32 = 256;
     let abi = ProcedureAbi::new(CallingConvention::SameContext, 1, 258).unwrap();
     let instruction = Instruction::Exec(symbol("wide_callee"));
-    fixture.effects.call = Some(abi.invocation(Invocation::Exec).unwrap());
     fixture.scratch_effects.push(ScratchEffect::Borrow {
         object: ScratchId(0),
         offset: 0,

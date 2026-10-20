@@ -35,9 +35,8 @@ impl Fpi {
                 value: StoredValue::Atom(atom),
             })
             .collect::<alloc::vec::Vec<_>>();
-        let mut unit = selected(self.kind(), id, source, payload, &stored, outputs);
+        let unit = selected(self.kind(), id, source, payload, &stored, outputs);
         let abi = ProcedureAbi::new(CallingConvention::SameContext, 22, 16)?;
-        unit.effects.call = Some(abi.invocation(Invocation::Exec)?);
         let inputs = prefix
             .into_iter()
             .chain(payload.iter().copied())

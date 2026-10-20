@@ -108,6 +108,7 @@ fn lower_builtin_ops(info: &mut midenc_hir::DialectInfo) {
 
     info.register_operation_trait::<builtin::Ret, dyn HirLowering>();
     info.register_operation_trait::<builtin::RetImm, dyn HirLowering>();
+    info.register_operation_trait::<builtin::GlobalSymbol, dyn HirSelection>();
     info.register_operation_trait::<builtin::GlobalSymbol, dyn HirLowering>();
     info.register_operation_trait::<builtin::UnrealizedConversionCast, dyn HirLowering>();
 }
@@ -118,59 +119,109 @@ fn lower_arith_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<arith::Join, dyn HirSelection>();
 
     info.register_operation_trait::<arith::Constant, dyn HirLowering>();
+    info.register_operation_trait::<arith::Add, dyn HirSelection>();
     info.register_operation_trait::<arith::Add, dyn HirLowering>();
+    info.register_operation_trait::<arith::AddOverflowing, dyn HirSelection>();
     info.register_operation_trait::<arith::AddOverflowing, dyn HirLowering>();
+    info.register_operation_trait::<arith::Sub, dyn HirSelection>();
     info.register_operation_trait::<arith::Sub, dyn HirLowering>();
+    info.register_operation_trait::<arith::SubOverflowing, dyn HirSelection>();
     info.register_operation_trait::<arith::SubOverflowing, dyn HirLowering>();
+    info.register_operation_trait::<arith::Mul, dyn HirSelection>();
     info.register_operation_trait::<arith::Mul, dyn HirLowering>();
+    info.register_operation_trait::<arith::MulOverflowing, dyn HirSelection>();
     info.register_operation_trait::<arith::MulOverflowing, dyn HirLowering>();
+    info.register_operation_trait::<arith::Exp, dyn HirSelection>();
     info.register_operation_trait::<arith::Exp, dyn HirLowering>();
+    info.register_operation_trait::<arith::Div, dyn HirSelection>();
     info.register_operation_trait::<arith::Div, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Add, dyn HirSelection>();
     info.register_operation_trait::<arith::Ext2Add, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Sub, dyn HirSelection>();
     info.register_operation_trait::<arith::Ext2Sub, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Mul, dyn HirSelection>();
     info.register_operation_trait::<arith::Ext2Mul, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Div, dyn HirSelection>();
     info.register_operation_trait::<arith::Ext2Div, dyn HirLowering>();
     info.register_operation_trait::<arith::Sdiv, dyn HirLowering>();
+    info.register_operation_trait::<arith::Mod, dyn HirSelection>();
     info.register_operation_trait::<arith::Mod, dyn HirLowering>();
     info.register_operation_trait::<arith::Smod, dyn HirLowering>();
+    info.register_operation_trait::<arith::Divmod, dyn HirSelection>();
     info.register_operation_trait::<arith::Divmod, dyn HirLowering>();
     info.register_operation_trait::<arith::Sdivmod, dyn HirLowering>();
+    info.register_operation_trait::<arith::And, dyn HirSelection>();
     info.register_operation_trait::<arith::And, dyn HirLowering>();
+    info.register_operation_trait::<arith::Or, dyn HirSelection>();
     info.register_operation_trait::<arith::Or, dyn HirLowering>();
+    info.register_operation_trait::<arith::Xor, dyn HirSelection>();
     info.register_operation_trait::<arith::Xor, dyn HirLowering>();
+    info.register_operation_trait::<arith::Band, dyn HirSelection>();
     info.register_operation_trait::<arith::Band, dyn HirLowering>();
+    info.register_operation_trait::<arith::Bor, dyn HirSelection>();
     info.register_operation_trait::<arith::Bor, dyn HirLowering>();
+    info.register_operation_trait::<arith::Bxor, dyn HirSelection>();
     info.register_operation_trait::<arith::Bxor, dyn HirLowering>();
+    info.register_operation_trait::<arith::Shl, dyn HirSelection>();
     info.register_operation_trait::<arith::Shl, dyn HirLowering>();
+    info.register_operation_trait::<arith::Shr, dyn HirSelection>();
     info.register_operation_trait::<arith::Shr, dyn HirLowering>();
     info.register_operation_trait::<arith::Ashr, dyn HirLowering>();
+    info.register_operation_trait::<arith::Rotl, dyn HirSelection>();
     info.register_operation_trait::<arith::Rotl, dyn HirLowering>();
+    info.register_operation_trait::<arith::Rotr, dyn HirSelection>();
     info.register_operation_trait::<arith::Rotr, dyn HirLowering>();
+    info.register_operation_trait::<arith::Eq, dyn HirSelection>();
     info.register_operation_trait::<arith::Eq, dyn HirLowering>();
+    info.register_operation_trait::<arith::Neq, dyn HirSelection>();
     info.register_operation_trait::<arith::Neq, dyn HirLowering>();
+    info.register_operation_trait::<arith::Gt, dyn HirSelection>();
     info.register_operation_trait::<arith::Gt, dyn HirLowering>();
+    info.register_operation_trait::<arith::Gte, dyn HirSelection>();
     info.register_operation_trait::<arith::Gte, dyn HirLowering>();
+    info.register_operation_trait::<arith::Lt, dyn HirSelection>();
     info.register_operation_trait::<arith::Lt, dyn HirLowering>();
+    info.register_operation_trait::<arith::Lte, dyn HirSelection>();
     info.register_operation_trait::<arith::Lte, dyn HirLowering>();
+    info.register_operation_trait::<arith::Min, dyn HirSelection>();
     info.register_operation_trait::<arith::Min, dyn HirLowering>();
+    info.register_operation_trait::<arith::Max, dyn HirSelection>();
     info.register_operation_trait::<arith::Max, dyn HirLowering>();
+    info.register_operation_trait::<arith::Trunc, dyn HirSelection>();
     info.register_operation_trait::<arith::Trunc, dyn HirLowering>();
+    info.register_operation_trait::<arith::Zext, dyn HirSelection>();
     info.register_operation_trait::<arith::Zext, dyn HirLowering>();
+    info.register_operation_trait::<arith::Sext, dyn HirSelection>();
     info.register_operation_trait::<arith::Sext, dyn HirLowering>();
+    info.register_operation_trait::<arith::Incr, dyn HirSelection>();
     info.register_operation_trait::<arith::Incr, dyn HirLowering>();
+    info.register_operation_trait::<arith::Neg, dyn HirSelection>();
     info.register_operation_trait::<arith::Neg, dyn HirLowering>();
+    info.register_operation_trait::<arith::Inv, dyn HirSelection>();
     info.register_operation_trait::<arith::Inv, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Neg, dyn HirSelection>();
     info.register_operation_trait::<arith::Ext2Neg, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Inv, dyn HirSelection>();
     info.register_operation_trait::<arith::Ext2Inv, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ilog2, dyn HirSelection>();
     info.register_operation_trait::<arith::Ilog2, dyn HirLowering>();
+    info.register_operation_trait::<arith::Pow2, dyn HirSelection>();
     info.register_operation_trait::<arith::Pow2, dyn HirLowering>();
+    info.register_operation_trait::<arith::Not, dyn HirSelection>();
     info.register_operation_trait::<arith::Not, dyn HirLowering>();
+    info.register_operation_trait::<arith::Bnot, dyn HirSelection>();
     info.register_operation_trait::<arith::Bnot, dyn HirLowering>();
+    info.register_operation_trait::<arith::IsOdd, dyn HirSelection>();
     info.register_operation_trait::<arith::IsOdd, dyn HirLowering>();
+    info.register_operation_trait::<arith::Popcnt, dyn HirSelection>();
     info.register_operation_trait::<arith::Popcnt, dyn HirLowering>();
+    info.register_operation_trait::<arith::Clz, dyn HirSelection>();
     info.register_operation_trait::<arith::Clz, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ctz, dyn HirSelection>();
     info.register_operation_trait::<arith::Ctz, dyn HirLowering>();
+    info.register_operation_trait::<arith::Clo, dyn HirSelection>();
     info.register_operation_trait::<arith::Clo, dyn HirLowering>();
+    info.register_operation_trait::<arith::Cto, dyn HirSelection>();
     info.register_operation_trait::<arith::Cto, dyn HirLowering>();
     info.register_operation_trait::<arith::Join, dyn HirLowering>();
     info.register_operation_trait::<arith::Split, dyn HirLowering>();
@@ -179,6 +230,7 @@ fn lower_arith_ops(info: &mut midenc_hir::DialectInfo) {
 fn lower_cf_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<cf::CondBr, dyn HirSelection>();
 
+    info.register_operation_trait::<cf::Select, dyn HirSelection>();
     info.register_operation_trait::<cf::Select, dyn HirLowering>();
     info.register_operation_trait::<cf::CondBr, dyn HirLowering>();
 }
@@ -201,6 +253,7 @@ fn lower_ub_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<ub::Unreachable, dyn HirSelection>();
 
     info.register_operation_trait::<ub::Unreachable, dyn HirLowering>();
+    info.register_operation_trait::<ub::Poison, dyn HirSelection>();
     info.register_operation_trait::<ub::Poison, dyn HirLowering>();
 }
 
@@ -211,12 +264,18 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::Dyncall, dyn HirSelection>();
     info.register_operation_trait::<hir::ExecIndirect, dyn HirSelection>();
 
+    info.register_operation_trait::<hir::Assert, dyn HirSelection>();
     info.register_operation_trait::<hir::Assert, dyn HirLowering>();
+    info.register_operation_trait::<hir::Assertz, dyn HirSelection>();
     info.register_operation_trait::<hir::Assertz, dyn HirLowering>();
+    info.register_operation_trait::<hir::AssertEq, dyn HirSelection>();
     info.register_operation_trait::<hir::AssertEq, dyn HirLowering>();
+    info.register_operation_trait::<hir::AssertU32, dyn HirSelection>();
     info.register_operation_trait::<hir::AssertU32, dyn HirLowering>();
+    info.register_operation_trait::<hir::Cast, dyn HirSelection>();
     info.register_operation_trait::<hir::Cast, dyn HirLowering>();
     //info.register_operation_trait::<hir::ConstantBytes, dyn HirLowering>();
+    info.register_operation_trait::<hir::ConstantPointer, dyn HirSelection>();
     info.register_operation_trait::<hir::ConstantPointer, dyn HirLowering>();
     info.register_operation_trait::<hir::Exec, dyn HirLowering>();
     info.register_operation_trait::<hir::ExecIndirect, dyn HirLowering>();
@@ -262,13 +321,16 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
 }
 
 fn lower_wasm_ops(info: &mut midenc_hir::DialectInfo) {
+    info.register_operation_trait::<wasm::SignExtend, dyn HirSelection>();
     info.register_operation_trait::<wasm::SignExtend, dyn HirLowering>();
     info.register_operation_trait::<wasm::I32Load8S, dyn HirLowering>();
     info.register_operation_trait::<wasm::I32Load16S, dyn HirLowering>();
     info.register_operation_trait::<wasm::I64Load8S, dyn HirLowering>();
     info.register_operation_trait::<wasm::I64Load16S, dyn HirLowering>();
     info.register_operation_trait::<wasm::I64Load32S, dyn HirLowering>();
+    info.register_operation_trait::<wasm::I32RemS, dyn HirSelection>();
     info.register_operation_trait::<wasm::I32RemS, dyn HirLowering>();
+    info.register_operation_trait::<wasm::I64RemS, dyn HirSelection>();
     info.register_operation_trait::<wasm::I64RemS, dyn HirLowering>();
 }
 

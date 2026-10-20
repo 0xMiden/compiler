@@ -27,6 +27,7 @@ pub(crate) struct SelectEnv<'a> {
 /// region interface alone does not authorize an operation or its nested control flow.
 #[derive(Clone, Copy)]
 pub(crate) enum SelectionRule {
+    Arithmetic(crate::lower::units::arithmetic::Kind),
     Constant(Immediate),
     /// Preserve raw lanes through a source-checked representation change.
     Alias,

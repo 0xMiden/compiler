@@ -70,6 +70,7 @@ fn real_hir_api_returns_checked_registered_source_evidence() {
 }
 
 mod aliases;
+mod arithmetic;
 mod control;
 mod coverage;
 mod indirect;
@@ -138,6 +139,41 @@ fn execute(f: &Parsed, env: &SelectEnv<'_>, inputs: &[usize], expected: &[usize]
         crate::plan::tests::lowering_units::assert_top(&result)
     );
     execute_code(&code).unwrap();
+}
+fn execute_linked(f: &Parsed, inputs: &[usize], expected: &[usize]) {
+    let (plan, frame, body) = ready(f, &SelectEnv::default());
+    let procedure = verify::verify(&plan, &frame, body)
+        .unwrap()
+        .into_masm(crate::masm::ProcedureName::new("selected").unwrap())
+        .unwrap()
+        .to_pretty_string();
+    let core = midenc_session::LinkLibrary::core().load(&f.context.session().options).unwrap();
+    let intrinsics = crate::intrinsics::load(f.context.session()).unwrap();
+    let mut assembler = miden_assembly::Assembler::default();
+    assembler.link_package(core.clone(), miden_assembly::Linkage::Dynamic).unwrap();
+    assembler
+        .link_package(intrinsics.clone(), miden_assembly::Linkage::Dynamic)
+        .unwrap();
+    let suffix = (0..20).map(|i| 900 + i).collect::<Vec<_>>();
+    let mut result = expected.to_vec();
+    result.extend(&suffix);
+    let code = alloc::format!(
+        "{procedure} begin {} {} exec.selected {} exec.::miden::core::sys::truncate_stack end",
+        crate::plan::tests::lowering_units::push_top(&suffix),
+        crate::plan::tests::lowering_units::push_top(inputs),
+        crate::plan::tests::lowering_units::assert_top(&result)
+    );
+    let program = assembler
+        .assemble_program("selected_arithmetic", code)
+        .unwrap()
+        .try_into_program()
+        .unwrap();
+    let mut host = crate::plan::tests::lowering_units::host();
+    host.load_library(miden_processor::HostLibrary::from(core)).unwrap();
+    host.load_library(miden_processor::HostLibrary::from(intrinsics)).unwrap();
+    miden_processor::FastProcessor::new(miden_processor::StackInputs::default())
+        .execute_sync(&program, &mut host)
+        .unwrap();
 }
 fn execute_code(code: &str) -> Result<(), midenc_hir::Report> {
     let program = miden_assembly::Assembler::default()

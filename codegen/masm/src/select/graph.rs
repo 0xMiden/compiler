@@ -614,6 +614,39 @@ impl<'a, 'e> Selector<'a, 'e> {
                     let outputs =
                         self.ids(op.results().all().iter().map(|v| v.borrow().as_value_ref()))?;
                     match rule {
+                        SelectionRule::Arithmetic(kind) => {
+                            let mut definition =
+                                crate::lower::units::arithmetic::Arithmetic::from_source(
+                                    kind, &op, self.env,
+                                )?;
+                            let input_atoms = definition
+                                .input_order
+                                .iter()
+                                .flat_map(|i| self.atoms(&[inputs[*i]]))
+                                .collect::<Vec<_>>();
+                            let output_atoms = self.atoms(&outputs);
+                            if let Some(immediate) = definition.literal {
+                                self.program.values.get_mut(&outputs[0]).unwrap().reconstruction =
+                                    Some(Reconstruction::Literal(literal(immediate)?));
+                            }
+                            definition.bind(&input_atoms, &output_atoms);
+                            let proof = core::mem::take(&mut definition.proof);
+                            let effects = definition.effects.clone();
+                            self.add_unit(
+                                current,
+                                source,
+                                UnitSelection {
+                                    inputs: input_atoms,
+                                    stored: vec![],
+                                    outputs: output_atoms,
+                                    body: HirBody::Arithmetic(alloc::boxed::Box::new(definition)),
+                                    proof,
+                                    effects,
+                                    scratch: vec![],
+                                    scratch_effects: vec![],
+                                },
+                            )?;
+                        }
                         SelectionRule::Constant(value) if outputs.len() == 1 => {
                             self.constant(current, source, outputs[0], value)?
                         }
@@ -1173,7 +1206,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                     scratch_effects: facts.iter().copied().map(ScratchEffect::Write).collect(),
                 },
             )?;
-            let effect = abi.invocation(Invocation::DynCall)?;
+            abi.invocation(Invocation::DynCall)?;
             let proof = UnitEvidence {
                 calls: vec![CallSite {
                     instruction: I::DynCall,
@@ -1205,10 +1238,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                         results: abi.results(),
                     }),
                     proof,
-                    effects: LoweringEffects {
-                        call: Some(effect),
-                        ..Default::default()
-                    },
+                    effects: LoweringEffects::default(),
                     scratch: vec![scratch],
                     scratch_effects: facts.into_iter().map(ScratchEffect::Read).collect(),
                 },
@@ -1306,10 +1336,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                     outputs: output_atoms,
                     body: HirBody::Indirect(Indirect::DispatchTable),
                     proof,
-                    effects: LoweringEffects {
-                        call: Some(abi.invocation(Invocation::DynExec)?),
-                        ..Default::default()
-                    },
+                    effects: LoweringEffects::default(),
                     scratch: vec![],
                     scratch_effects: vec![],
                 },

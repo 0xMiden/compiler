@@ -707,3 +707,149 @@ fn registered_loop_header_must_be_the_before_subtree_entry_even_without_backedge
         .is_err()
     );
 }
+
+#[test]
+fn arithmetic_traps_require_declared_permission() {
+    use Instruction::*;
+    for (instruction, inputs) in [
+        (Div, vec![2, 14]),
+        (Inv, vec![1]),
+        (Not, vec![1]),
+        (And, vec![1, 0]),
+        (Or, vec![1, 0]),
+        (Xor, vec![1, 0]),
+        (Pow2, vec![4]),
+        (Exp, vec![3, 5]),
+        (ILog2, vec![31]),
+        (U32Assert, vec![31]),
+        (U32Assert2, vec![31, 32]),
+        (U32AssertW, vec![31, 32, 33, 34]),
+        (U32WrappingAdd, vec![2, 3]),
+        (U32OverflowingSub, vec![2, 3]),
+        (U32WideningMul, vec![2, 3]),
+        (U32Div, vec![2, 3]),
+        (U32Not, vec![2]),
+        (U32And, vec![2, 3]),
+        (U32Or, vec![2, 3]),
+        (U32Shl, vec![2, 3]),
+        (U32Rotr, vec![2, 3]),
+        (U32Popcnt, vec![2]),
+        (U32Clz, vec![2]),
+        (U32Clo, vec![2]),
+        (U32Ctz, vec![2]),
+        (U32Cto, vec![2]),
+        (Ext2Div, vec![1, 0, 2, 3]),
+        (Ext2Inv, vec![1, 0]),
+        (AssertEqw, vec![2, 3, 5, 7, 2, 3, 5, 7]),
+        (CDrop, vec![1, 2, 3]),
+        (CDropW, vec![0, 2, 3, 5, 7, 11, 13, 17, 19]),
+    ] {
+        let effect = TargetEffects::instruction(&instruction).unwrap();
+        assert!(effect.may_trap, "{instruction}");
+        let mut code = inputs.into_iter().rev().map(push).collect::<Vec<_>>();
+        code.push(inst(instruction.clone()));
+        code.extend((0..effect.outputs.len()).map(|_| inst(Drop)));
+        let mut fixture = Fixture::new(0, 0);
+        fixture.effects.may_trap = true;
+        fixture.run(code.clone()).unwrap();
+        fixture.effects.may_trap = false;
+        assert_eq!(
+            fixture.run(code).unwrap_err().message,
+            "undeclared trapping instruction",
+            "{instruction}"
+        );
+    }
+}
+
+#[test]
+fn conditional_drop_preserves_known_and_equal_unknown_candidate_identities() {
+    for predicate in [0, 1] {
+        let mut fixture = Fixture::new(2, 1);
+        fixture.effects.may_trap = true;
+        fixture.proof.aliases = LaneAliases::new(vec![(
+            Fixture::output(0),
+            Fixture::input(if predicate == 1 { 0 } else { 1 }),
+        )]);
+        fixture.run(vec![push(predicate), inst(Instruction::CDrop)]).unwrap();
+        fixture.proof.aliases = LaneAliases::new(vec![(
+            Fixture::output(0),
+            Fixture::input(if predicate == 1 { 1 } else { 0 }),
+        )]);
+        assert!(fixture.run(vec![push(predicate), inst(Instruction::CDrop)]).is_err());
+    }
+    // Preserve equality when either arm chooses the very same input token.
+    let mut fixture = Fixture::new(2, 1);
+    fixture.effects.may_trap = true;
+    fixture.proof.aliases = LaneAliases::new(vec![(Fixture::output(0), Fixture::input(1))]);
+    fixture
+        .run(vec![
+            inst(Instruction::Dup1),
+            inst(Instruction::MovDn2),
+            inst(Instruction::CDrop),
+        ])
+        .unwrap();
+}
+
+#[test]
+fn conditional_drop_unknown_candidates_retain_compiler_origins() {
+    let mut fixture = Fixture::new(1, 1).scratch(2);
+    fixture.effects.may_trap = true;
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    for candidates in [
+        vec![inst(Instruction::Locaddr(0.into())), push(77)],
+        vec![push(77), inst(Instruction::Locaddr(0.into()))],
+    ] {
+        let mut code = candidates;
+        code.extend([
+            inst(Instruction::MovUp2),
+            inst(Instruction::CDrop),
+            inst(Instruction::MemLoad),
+        ]);
+        assert_eq!(
+            fixture.run(code).unwrap_err().category,
+            DiagnosticCategory::InvalidSpillSlotRead
+        );
+    }
+}
+
+#[test]
+fn arithmetic_target_rules_never_consume_padding_as_owned_input() {
+    for instruction in [
+        Instruction::U32AssertW,
+        Instruction::Eqw,
+        Instruction::CDropW,
+        Instruction::Ext2Mul,
+    ] {
+        let effect = TargetEffects::instruction(&instruction).unwrap();
+        let mut fixture = Fixture::new(u32::from(effect.consumed) - 1, effect.outputs.len() as u32);
+        fixture.effects.may_trap = true;
+        assert_eq!(
+            fixture.run(vec![inst(instruction)]).unwrap_err().category,
+            DiagnosticCategory::IllegalStackAccess
+        );
+    }
+}
+
+#[test]
+fn nonboolean_conditional_predicate_has_no_normal_continuation() {
+    let mut fixture = Fixture::new(0, 0);
+    fixture.effects.may_trap = true;
+    // The invalid Drop cannot be reached after the known nonboolean predicate traps.
+    fixture
+        .run(vec![
+            push(7),
+            push(9),
+            push(2),
+            inst(Instruction::CDrop),
+            inst(Instruction::DropW),
+        ])
+        .unwrap();
+    fixture.effects.may_trap = false;
+    assert_eq!(
+        fixture
+            .run(vec![push(7), push(9), push(2), inst(Instruction::CDrop)])
+            .unwrap_err()
+            .message,
+        "undeclared trapping instruction"
+    );
+}

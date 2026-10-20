@@ -2858,3 +2858,79 @@ impl HirSelection for builtin::RetImm {
         crate::select::SelectionRule::ReturnImmediate(*self.get_value())
     }
 }
+
+// Final ordinary definitions have no legacy scheduling callback.
+macro_rules! arithmetic_selection {
+    ($($ty:ty => $kind:ident),* $(,)?) => {$(
+        impl HirSelection for $ty {
+            fn selection_rule(&self) -> crate::select::SelectionRule {
+                crate::select::SelectionRule::Arithmetic(super::units::arithmetic::Kind::$kind)
+            }
+        }
+    )*};
+}
+
+arithmetic_selection! {
+    arith::Add => Add,
+    arith::AddOverflowing => AddOverflowing,
+    arith::Sub => Sub,
+    arith::SubOverflowing => SubOverflowing,
+    arith::Mul => Mul,
+    arith::MulOverflowing => MulOverflowing,
+    arith::Exp => Exp,
+    arith::Div => Div,
+    arith::Mod => Mod,
+    arith::Divmod => Divmod,
+    arith::And => And,
+    arith::Or => Or,
+    arith::Xor => Xor,
+    arith::Band => Band,
+    arith::Bor => Bor,
+    arith::Bxor => Bxor,
+    arith::Shl => Shl,
+    arith::Shr => Shr,
+    arith::Rotl => Rotl,
+    arith::Rotr => Rotr,
+    arith::Eq => Eq,
+    arith::Neq => Neq,
+    arith::Gt => Gt,
+    arith::Gte => Gte,
+    arith::Lt => Lt,
+    arith::Lte => Lte,
+    arith::Min => Min,
+    arith::Max => Max,
+    arith::Trunc => Trunc,
+    arith::Zext => Zext,
+    arith::Sext => Sext,
+    arith::Incr => Incr,
+    arith::Neg => Neg,
+    arith::Inv => Inv,
+    arith::Ilog2 => Ilog2,
+    arith::Pow2 => Pow2,
+    arith::Not => Not,
+    arith::Bnot => Bnot,
+    arith::IsOdd => IsOdd,
+    arith::Popcnt => Popcnt,
+    arith::Clz => Clz,
+    arith::Ctz => Ctz,
+    arith::Clo => Clo,
+    arith::Cto => Cto,
+    arith::Ext2Add => Ext2Add,
+    arith::Ext2Sub => Ext2Sub,
+    arith::Ext2Mul => Ext2Mul,
+    arith::Ext2Div => Ext2Div,
+    arith::Ext2Neg => Ext2Neg,
+    arith::Ext2Inv => Ext2Inv,
+    hir::Cast => Cast,
+    hir::Assert => Assert,
+    hir::Assertz => Assertz,
+    hir::AssertEq => AssertEq,
+    hir::AssertU32 => AssertU32,
+    cf::Select => Select,
+    wasm::SignExtend => SignExtend,
+    wasm::I32RemS => I32RemS,
+    wasm::I64RemS => I64RemS,
+    hir::ConstantPointer => ConstantPointer,
+    builtin::GlobalSymbol => GlobalSymbol,
+    ub::Poison => Poison,
+}

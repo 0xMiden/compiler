@@ -105,7 +105,6 @@ impl GeneratedDefinition for ProducerConsumer {
         } = self.producer
         {
             let abi = ProcedureAbi::new(CallingConvention::SameContext, 1, 1).unwrap();
-            producer.effects.call = Some(abi.invocation(Invocation::Exec)?);
             evidence.units.get_mut(&producer.id).unwrap().calls.push(CallSite {
                 instruction: Instruction::Exec(Self::target()),
                 abi,

@@ -1177,11 +1177,31 @@ impl<'a> Verifier<'a> {
             self.call(instruction, state, cursor)?;
             return Ok(true);
         }
-        if matches!(instruction, Instruction::AssertEq | Instruction::AssertEqWithError(_)) {
-            let active = cursor.active.as_ref().ok_or_else(|| error("assert outside lowering"))?;
+        let effect = TargetEffects::instruction(instruction)?;
+        if effect.may_trap {
+            let active = cursor.active.as_ref().ok_or_else(|| error("trap outside lowering"))?;
             if !self.unit(active.id)?.effects.may_trap {
                 return Err(error("undeclared trapping instruction"));
             }
+        }
+        if matches!(instruction, Instruction::CDrop | Instruction::CDropW) {
+            let predicate = state.prefix(effect.consumed.into())?[0];
+            if self.tokens.constant(predicate).is_some_and(|value| value > 1) {
+                return Ok(false);
+            }
+        }
+        if matches!(instruction, Instruction::AssertEqw | Instruction::AssertEqwWithError(_)) {
+            let inputs = state.prefix(8)?.to_vec();
+            let equal = (0..4).all(|lane| {
+                match (self.tokens.constant(inputs[lane]), self.tokens.constant(inputs[lane + 4])) {
+                    (Some(left), Some(right)) => left == right,
+                    _ => true,
+                }
+            });
+            state.replace(8, vec![], &effect.floor)?;
+            return Ok(equal);
+        }
+        if matches!(instruction, Instruction::AssertEq | Instruction::AssertEqWithError(_)) {
             // Eq followed by Assert consumes both real lanes, including both floor updates.
             // Unknown values may be equal; do not invent an identity from normal completion.
             let right = state.pop()?;
@@ -1198,10 +1218,6 @@ impl<'a> Verifier<'a> {
                 | Instruction::AssertWithError(_)
                 | Instruction::AssertzWithError(_)
         ) {
-            let active = cursor.active.as_ref().ok_or_else(|| error("assert outside lowering"))?;
-            if !self.unit(active.id)?.effects.may_trap {
-                return Err(error("undeclared trapping instruction"));
-            }
             let token = state.pop()?;
             let desired = u64::from(matches!(
                 instruction,
@@ -1323,6 +1339,27 @@ impl<'a> Verifier<'a> {
                     self.tokens.intern(Identity::FrameAddress(offset))
                 }
                 LaneEffect::Computed(_) => address.unwrap_or_else(|| self.tokens.fresh()),
+                LaneEffect::Conditional {
+                    condition,
+                    if_true,
+                    if_false,
+                } => {
+                    let yes = inputs[usize::from(if_true)];
+                    let no = inputs[usize::from(if_false)];
+                    match self.tokens.constant(inputs[usize::from(condition)]) {
+                        Some(1) => yes,
+                        Some(0) => no,
+                        _ if yes == no => yes,
+                        _ => {
+                            // Value equality is unknown, but either candidate may carry a
+                            // compiler address. Keep its provenance even after abstraction.
+                            let token = self.tokens.fresh();
+                            self.tokens.add_origins(token, self.tokens.origins(yes));
+                            self.tokens.add_origins(token, self.tokens.origins(no));
+                            token
+                        }
+                    }
+                }
             })
             .collect();
         state.replace(effect.consumed.into(), outputs, &effect.floor)

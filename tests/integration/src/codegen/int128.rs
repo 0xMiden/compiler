@@ -3,7 +3,7 @@
 //! checked the wrong ones returns a different value, or traps. One test runs the 64-bit cast to
 //! `i32`, which shares its range check with the 128-bit casts.
 
-use miden_debug::ToMidenRepr;
+use miden_debug::{FromMidenRepr, ToMidenRepr};
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
@@ -332,4 +332,113 @@ fn assert_of_a_u128_checks_it_is_one() {
     let (package, context) = compile(Type::U128, Type::U128, assert);
     assert_eq!(run::<u128>(&package, &context, 1u128), 1);
     assert_traps(&package, &context, 1u128 << 96, "expected u128 value to equal 1");
+}
+
+/// Decode a flag-first source result tuple without relying on a host tuple ABI.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct OverflowResult<T>(pub bool, pub T);
+
+impl<T: FromMidenRepr> FromMidenRepr for OverflowResult<T> {
+    fn size_in_felts() -> usize {
+        1 + T::size_in_felts()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        Self(bool::from_bytes(bytes), T::from_bytes(&bytes[4..]))
+    }
+
+    fn from_felts(felts: &[Felt]) -> Self {
+        Self(bool::from_felts(felts), T::from_felts(&felts[1..]))
+    }
+}
+
+/// These execute production HIR lowering as well as the raw backend matrix. Returning flag and
+/// result keeps both source results live and exposes the complete five-lane wide tuple.
+#[test]
+fn overflowing_128_arithmetic_keeps_the_flag_and_all_result_limbs() {
+    for signed in [false, true] {
+        let ty = if signed { Type::I128 } else { Type::U128 };
+        for op in ["add", "sub", "mul"] {
+            let (package, context) =
+                compile_test_module([ty.clone(), ty.clone()], [Type::I1, ty.clone()], |builder| {
+                    let args = builder.current_block().borrow().arguments().to_vec();
+                    let (a, b) = (args[0] as ValueRef, args[1] as ValueRef);
+                    let span = SourceSpan::default();
+                    let (flag, result) = match op {
+                        "add" => builder.add_overflowing(a, b, span).unwrap(),
+                        "sub" => builder.sub_overflowing(a, b, span).unwrap(),
+                        "mul" => builder.mul_overflowing(a, b, span).unwrap(),
+                        _ => unreachable!(),
+                    };
+                    builder.ret([flag, result], span).unwrap();
+                });
+            for (a, b) in [
+                (0u128, 1u128),
+                (u128::MAX, 2),
+                (1 << 127, u128::MAX),
+                (LIMBS, 0x1111_1111_2222_2222_3333_3333_4444_4444),
+            ] {
+                let (result, flag) = if signed {
+                    let (a, b) = (a as i128, b as i128);
+                    let (r, f) = match op {
+                        "add" => a.overflowing_add(b),
+                        "sub" => a.overflowing_sub(b),
+                        "mul" => a.overflowing_mul(b),
+                        _ => unreachable!(),
+                    };
+                    (r as u128, f)
+                } else {
+                    match op {
+                        "add" => a.overflowing_add(b),
+                        "sub" => a.overflowing_sub(b),
+                        "mul" => a.overflowing_mul(b),
+                        _ => unreachable!(),
+                    }
+                };
+                let mut args = Vec::new();
+                a.push_to_operand_stack(&mut args);
+                b.push_to_operand_stack(&mut args);
+                assert_eq!(
+                    run_args::<OverflowResult<u128>>(&package, &context, &args),
+                    OverflowResult(flag, result),
+                    "signed {signed}: {a:#x} {op} {b:#x}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn checked_128_arithmetic_rejects_each_invalid_input_limb() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    for ty in [Type::U128, Type::I128] {
+        for op in ["add", "sub", "mul"] {
+            let (package, context) =
+                compile_test_module([ty.clone(), ty.clone()], [ty.clone()], |builder| {
+                    let args = builder.current_block().borrow().arguments().to_vec();
+                    let (a, b) = (args[0] as ValueRef, args[1] as ValueRef);
+                    let span = SourceSpan::default();
+                    let result = match op {
+                        "add" => builder.add(a, b, span).unwrap(),
+                        "sub" => builder.sub(a, b, span).unwrap(),
+                        "mul" => builder.mul(a, b, span).unwrap(),
+                        _ => unreachable!(),
+                    };
+                    builder.ret([result], span).unwrap();
+                });
+            assert_eq!(run_args::<u128>(&package, &context, &[Felt::ZERO; 8]), 0);
+            for limb in 0..8 {
+                let mut args = [Felt::ZERO; 8];
+                args[limb] = Felt::new_unchecked(1 << 32);
+                let result =
+                    catch_unwind(AssertUnwindSafe(|| run_args::<u128>(&package, &context, &args)));
+                let panic = result.expect_err("checked arithmetic must reject non-u32 limbs");
+                let message = crate::trap_helpers::panic_message(panic);
+                assert!(
+                    message.contains("operation expected u32 values"),
+                    "{ty} {op}: limb {limb} did not fail the input range assertion: {message}"
+                );
+            }
+        }
+    }
 }

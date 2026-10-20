@@ -163,6 +163,7 @@ impl<'a> LoweringRegistry<'a> {
     }
 }
 
+pub(crate) mod arithmetic;
 pub(crate) mod calls;
 pub(crate) mod fpi;
 pub(crate) mod memory;
@@ -285,6 +286,8 @@ pub(crate) struct HirUnit {
 /// Source-owned construction families used by final-HIR selection.
 /// Dynamic storage offsets are supplied only through the final frame and validated bindings.
 pub(crate) enum HirBody {
+    /// Typed arithmetic, conversions, assertions, and scalar representation operations.
+    Arithmetic(alloc::boxed::Box<arithmetic::Arithmetic>),
     /// A source rule's fully fixed straight-line instruction sequence.
     Plain(alloc::vec::Vec<masm::Instruction>),
     /// One phase of a checked indirect call, with explicit storage between phases.
@@ -305,6 +308,7 @@ impl LoweringDefinition for HirUnit {
     ) -> Result<AnnotatedMasmBody, Report> {
         bindings.validate(unit, frame)?;
         match &self.body {
+            HirBody::Arithmetic(definition) => Ok(definition.expand(unit)),
             HirBody::Plain(instructions) => {
                 let mut body = AnnotatedMasmBody::new();
                 for instruction in instructions {

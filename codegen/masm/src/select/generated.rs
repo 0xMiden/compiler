@@ -216,11 +216,6 @@ impl GeneratedDefinition for GeneratedRoot {
                     } else {
                         SourceMemoryEffects::default()
                     },
-                    call: if cleanup {
-                        None
-                    } else {
-                        Some(definition.abi.invocation(Invocation::Exec)?)
-                    },
                     ..Default::default()
                 },
                 scratch: vec![],
