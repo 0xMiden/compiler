@@ -7,7 +7,7 @@ use crate::{RuntimePaths, generate_host_types};
 const P2ID_SCHEMA: &str = r#"
 package example:p2id-schema@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{account-id};
@@ -19,10 +19,10 @@ interface note-storage {
     type storage = p2id-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt { inner: f32 }
-        record account-id { prefix: felt, suffix: felt }
+        record account-id { suffix: felt, prefix: felt }
     }
 }
 "#;
@@ -30,7 +30,7 @@ package miden:base@1.0.0 {
 const CUSTOM_SCHEMA: &str = r#"
 package example:dex-schema@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{account-id};
@@ -53,10 +53,10 @@ interface note-storage {
     type storage = dex-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt { inner: f32 }
-        record account-id { prefix: felt, suffix: felt }
+        record account-id { suffix: felt, prefix: felt }
     }
 }
 "#;
@@ -64,7 +64,7 @@ package miden:base@1.0.0 {
 const EMBEDDED_CORE_SCHEMA: &str = r#"
 package example:embedded-core-schema@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{digest};
@@ -72,7 +72,7 @@ interface note-storage {
     type storage = embedded-core-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt { inner: f32 }
         record word { a: felt, b: felt, c: felt, d: felt }
@@ -100,7 +100,10 @@ fn maps_protocol_leaf_and_root_type() {
     assert!(!has_nested_named_types);
     assert!(source.contains("pub target_account_id: ::miden_protocol::account::AccountId"));
     assert!(source.contains("pub const WIT_FQN"));
-    assert!(source.contains("self.prefix().as_felt()"));
+    // The account id is written in its WIT field order, suffix first.
+    let suffix = source.find("writer.write(self.suffix())").unwrap();
+    let prefix = source.find("writer.write(self.prefix().as_felt())").unwrap();
+    assert!(suffix < prefix);
 }
 
 #[test]

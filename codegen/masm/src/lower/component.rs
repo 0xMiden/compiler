@@ -27,7 +27,7 @@ use crate::{
     Event, OperandStack,
     artifact::MasmComponent,
     emitter::{BlockEmitter, FrameLayout, has_inline_call_chain},
-    linker::{FunctionTableLayout, LinkInfo, Linker},
+    linker::{FunctionTableLayout, LinkInfo, Linker, LinkerError},
     lower::lowering::{
         invocation_target_from_symbol, qualified_invocation_target, symbol_module_path,
         world_root_module,
@@ -48,11 +48,14 @@ pub trait ToMasmComponent {
 /// *components* as well. Handing a world's own operation to `MasmComponentBuilder`, which walks a
 /// component body, therefore panics the moment it meets the first `builtin.component`.
 ///
-/// So the shape of the world decides how it is lowered:
+/// So the shape of the world decides how it is lowered, counting only the components that define
+/// something (a declaration-only component is an external dependency, see below):
 ///
 /// - A world holding **no** component is treated as one logical component whose body is the
 ///   world's, which is what it has always meant here. This is the shape `frontend/masm`'s
 ///   disassembler produces — it defines modules directly on the world — so it is a live path.
+///   A world holding nothing but declaration-only components has no definition to lower, and is
+///   reported.
 /// - A world holding **one** component is lowered by lowering that component, because a
 ///   component is what a Miden package is rooted at and carries the identity it is rooted at.
 ///   Delegating rather than reimplementing is deliberate: the result is then the same
@@ -64,7 +67,8 @@ pub trait ToMasmComponent {
 /// # Top-level items beside the component are normal, and are not an error
 ///
 /// A world is not "a component, optionally". It may hold a component — the current codegen unit —
-/// **plus any number of sibling interfaces and modules**, which are either
+/// **plus any number of sibling interfaces, modules and declaration-only components**, which are
+/// either
 ///
 /// - *external dependencies represented in the IR*, which hold declarations only and contribute
 ///   nothing to the generated Miden Assembly, or
@@ -76,9 +80,10 @@ pub trait ToMasmComponent {
 /// the MASM one included, legitimately produce several top-level items. **Neither kind of sibling
 /// may fail a build.**
 ///
-/// The first kind is recognized by `is_declaration_only` and ignored, silently, because that is
-/// exactly what it is worth. The second is translated beside the component, by handing it to the
-/// same `MasmComponentBuilder` the component is lowered by — which is what makes it share the
+/// The first kind is recognized by `is_declaration_only` (`Component::is_declaration_only` for a
+/// component, e.g. an import's stub) and ignored, silently, because that is exactly what it is
+/// worth. The second is translated beside the component, by handing it to the same
+/// `MasmComponentBuilder` the component is lowered by — which is what makes it share the
 /// component's `LinkInfo` rather than lay a layout of its own over it.
 ///
 /// The one shape left out is a top-level module that **owns memory**, i.e. declares a global
@@ -95,14 +100,19 @@ impl ToMasmComponent for builtin::World {
     ) -> Result<MasmComponent, Report> {
         let mut components = Vec::new();
         let mut siblings = Vec::new();
+        let mut holds_stubs = false;
         for op in self.body().entry().body().iter() {
             match op.as_operation_ref().try_downcast_op::<builtin::Component>() {
+                // An external dependency, e.g. an import's stub, contributes nothing
+                Ok(component) if component.borrow().is_declaration_only() => holds_stubs = true,
                 Ok(component) => components.push(component),
                 Err(op) => siblings.push(op),
             }
         }
 
         match components.len() {
+            // Nothing but external dependencies: there is no definition to lower
+            0 if holds_stubs && siblings.is_empty() => Err(Report::msg(LinkerError::Undefined)),
             0 => world_body_to_masm_component(self, analysis_manager),
             1 => {
                 let (supporting, owns_memory) = classify_siblings(&siblings);
@@ -128,42 +138,17 @@ impl ToMasmComponent for builtin::World {
 /// Whether `op`, a top-level item of a world, contributes nothing to the generated Miden Assembly.
 ///
 /// This is how an *external dependency represented in the IR* is told apart from a *supporting
-/// module*: the former holds declarations only. There is no flag for it — `Symbol::is_declaration`
-/// is defined on functions and global variables but not on the modules and interfaces that hold
-/// them, so the question has to be asked of the contents.
+/// module*: the former holds declarations only, by the rule `Component::is_declaration_only`
+/// applies to components (`Module::is_declaration_only`, `Interface::is_declaration_only`).
 ///
 /// Deliberately conservative: anything unrecognized counts as carrying definitions. Guessing wrong
 /// in that direction produces a warning about something that did not need one, while guessing
 /// wrong in the other direction silently omits code.
 fn is_declaration_only(op: &midenc_hir::OperationRef) -> bool {
-    /// A body defines nothing if every item in it is itself only a declaration.
-    ///
-    /// An empty body is vacuously declaration-only, which is the answer we want: an empty module
-    /// would lower to an empty Miden Assembly module.
-    fn body_is_all_declarations(region: &midenc_hir::Region) -> bool {
-        region.entry().body().iter().all(|item| {
-            if let Some(function) = item.downcast_ref::<builtin::Function>() {
-                function.is_declaration()
-            } else if item.is::<builtin::FunctionAlias>() {
-                // An alias introduces a callable name even without owning a body.
-                // Retain its module so that name is not silently dropped.
-                false
-            } else if let Some(gv) = item.downcast_ref::<builtin::GlobalVariable>() {
-                gv.is_declaration()
-            } else {
-                // A `builtin::Segment` initializes memory, and so does anything unrecognized as
-                // far as this predicate is willing to assume.
-                false
-            }
-        })
-    }
-
     if let Ok(module) = op.try_downcast_op::<builtin::Module>() {
-        let module = module.borrow();
-        body_is_all_declarations(&module.body())
+        module.borrow().is_declaration_only()
     } else if let Ok(interface) = op.try_downcast_op::<builtin::Interface>() {
-        let interface = interface.borrow();
-        body_is_all_declarations(&interface.body())
+        interface.borrow().is_declaration_only()
     } else if let Ok(function) = op.try_downcast_op::<builtin::Function>() {
         let function = function.borrow();
         function.is_declaration()
@@ -398,8 +383,9 @@ fn function_without_a_body(function: &builtin::Function) -> Report {
 /// Derive a MASM component by treating `world`'s body as a component body.
 ///
 /// The meaning a world has always had here, and correct only when the world declares no
-/// component of its own: every definition-carrying module in it belongs to one logical
-/// component, which has no identity beyond the namespace those modules sit in.
+/// component of its own beside declaration-only ones (see `World::has_defining_component`): every
+/// definition-carrying module in it belongs to one logical component, which has no identity
+/// beyond the namespace those modules sit in.
 fn world_body_to_masm_component(
     world: &builtin::World,
     analysis_manager: AnalysisManager,
@@ -468,10 +454,21 @@ fn world_body_to_masm_component(
 
     let heap_base = link_info.heap_base();
     let stack_pointer = link_info.globals_layout().stack_pointer_offset();
+    let mut stub_namespaces = Vec::new();
+    // The world defines no component, so every component in it is a declaration-only stub.
+    for op in world.body().entry().body().iter() {
+        if let Some(stub) = op.downcast_ref::<builtin::Component>() {
+            let path = stub.namespace_path().to_library_path();
+            let path = path
+                .to_absolute()
+                .map_err(|err| Report::msg(format!("unable to canonicalize '{}': {err}", path)))?;
+            stub_namespaces.push(Arc::from(path.into_owned().into_boxed_path()));
+        }
+    }
     let mut masm_component = MasmComponent {
         id: None,
-        // A world declaring no component is not the compiler's wrapper around one: it has no
-        // component boundary at all.
+        // A world declaring no defining component is not the compiler's wrapper around one: it
+        // has no component boundary at all.
         synthetic_wrapper: false,
         root,
         init,
@@ -481,6 +478,7 @@ fn world_body_to_masm_component(
         heap_base,
         stack_pointer,
         modules,
+        stub_namespaces,
     };
     let builder = MasmComponentBuilder {
         analysis_manager,
@@ -492,8 +490,8 @@ fn world_body_to_masm_component(
         init_owner: world.as_operation_ref(),
     };
 
-    // A world declaring no component has no siblings *beside* one: every top-level module in it
-    // is part of the one logical component this treats its body as.
+    // A world declaring no defining component has no siblings *beside* one: every top-level
+    // module in it is part of the one logical component this treats its body as.
     builder.build(world.as_operation(), &[])?;
 
     Ok(masm_component)
@@ -631,6 +629,7 @@ fn component_to_masm_component(
         heap_base,
         stack_pointer,
         modules,
+        stub_namespaces: Vec::new(),
     };
     let builder = MasmComponentBuilder {
         analysis_manager,
@@ -853,6 +852,11 @@ impl MasmComponentBuilder<'_> {
                 self.define_function(function)?;
             } else if let Some(alias) = op.downcast_ref::<builtin::FunctionAlias>() {
                 self.define_function_alias(alias)?;
+            } else if op
+                .downcast_ref::<builtin::Component>()
+                .is_some_and(builtin::Component::is_declaration_only)
+            {
+                // An external dependency beside the modules of a world lowered as one component
             } else {
                 panic!(
                     "invalid component-level operation: '{}' is not supported in a component body",

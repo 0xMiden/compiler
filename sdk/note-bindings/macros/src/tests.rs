@@ -8,7 +8,7 @@ use crate::expand_from_wit_text;
 const P2ID_SCHEMA: &str = r#"
 package example:p2id-schema@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{account-id};
@@ -20,10 +20,10 @@ interface note-storage {
     type storage = p2id-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt { inner: f32 }
-        record account-id { prefix: felt, suffix: felt }
+        record account-id { suffix: felt, prefix: felt }
     }
 }
 "#;
@@ -31,7 +31,7 @@ package miden:base@1.0.0 {
 const CUSTOM_SCHEMA: &str = r#"
 package example:dex-schema@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{account-id};
@@ -56,10 +56,10 @@ interface note-storage {
     type storage = dex-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt { inner: f32 }
-        record account-id { prefix: felt, suffix: felt }
+        record account-id { suffix: felt, prefix: felt }
     }
 }
 "#;

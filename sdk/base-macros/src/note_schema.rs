@@ -3,7 +3,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use midenc_frontend_wasm_metadata::{
-    WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, namespace::CORE_TYPES_INTERFACE,
+    WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME,
+    namespace::{CORE_TYPES_INTERFACE, CORE_TYPES_PACKAGE, CORE_TYPES_PACKAGE_VERSION},
     pad_to_link_section_alignment,
 };
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
@@ -26,8 +27,6 @@ use crate::{
     wit_world::ManifestPackage,
 };
 
-/// SDK core-types package name used for the embedded dependency package.
-const CORE_TYPES_PACKAGE_NAME: &str = "miden:base";
 /// Component package of a crate without a `miden-project.toml`.
 const PLACEHOLDER_COMPONENT_PACKAGE: &str = "miden:empty";
 /// WIT type alias the schema declares for the note storage root.
@@ -192,7 +191,7 @@ fn render_note_storage_schema_with_registry_model(
 
     let mut wit = WitBuilder::new("#[note]", &schema_package, component_version);
     if !core_imports.is_empty() {
-        wit.use_path(&CORE_TYPES_INTERFACE_ID);
+        wit.use_path(CORE_TYPES_INTERFACE_ID);
         wit.blank_line();
     }
     wit.interface("note-storage", |interface| {
@@ -678,7 +677,9 @@ fn render_core_types_package(wit: &mut WitBuilder) -> Result<(), syn::Error> {
     let body = body.strip_prefix('\n').unwrap_or(body);
     let body = body.strip_suffix('\n').unwrap_or(body);
 
-    wit.package_block(CORE_TYPES_PACKAGE_NAME, &Version::new(1, 0, 0), |package| {
+    let version = Version::parse(CORE_TYPES_PACKAGE_VERSION)
+        .expect("the core-types package version is a semantic version");
+    wit.package_block(CORE_TYPES_PACKAGE, &version, |package| {
         package.line("interface core-types {");
         for line in body.split('\n') {
             package.line(line);
@@ -828,7 +829,7 @@ mod tests {
 
             package miden:p2id-schema@0.1.0;
 
-            use miden:base/core-types@1.0.0;
+            use miden:base/core-types@2.0.0;
 
             interface note-storage {
                 use core-types.{account-id};
@@ -840,7 +841,7 @@ mod tests {
                 type storage = p2id-note;
             }
 
-            package miden:base@1.0.0 {
+            package miden:base@2.0.0 {
                 interface core-types {
                     /// Represents an on-chain felt.
                     ///
@@ -870,14 +871,15 @@ mod tests {
                     ///
                     /// # Layout
                     ///
-                    /// An `AccountId` consists of two field elements, where the first is called the prefix and the
-                    /// second is called the suffix. It is laid out as follows:
+                    /// An `AccountId` consists of two field elements, the suffix and the prefix, declared in the
+                    /// protocol's order (the kernel returns an account id as `[suffix, prefix]`). They are laid
+                    /// out as follows:
                     ///
-                    /// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
                     /// suffix: [zero bit | hash (55 bits) | 8 zero bits]
+                    /// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
                     record account-id {
-                    	prefix: felt,
-                	suffix: felt
+                        suffix: felt,
+                        prefix: felt
                     }
 
                     /// Recipient of the note, i.e., hash(hash(hash(serial_num, [0; 4]), note_script_hash), input_hash)
@@ -1035,7 +1037,7 @@ mod tests {
 
             package miden:routed-note-schema@2.3.4;
 
-            use miden:base/core-types@1.0.0;
+            use miden:base/core-types@2.0.0;
 
             interface note-storage {
                 use core-types.{account-id};
@@ -1063,7 +1065,7 @@ mod tests {
                 type storage = routed-note;
             }
 
-            package miden:base@1.0.0 {
+            package miden:base@2.0.0 {
                 interface core-types {
                     /// Represents an on-chain felt.
                     ///
@@ -1093,14 +1095,15 @@ mod tests {
                     ///
                     /// # Layout
                     ///
-                    /// An `AccountId` consists of two field elements, where the first is called the prefix and the
-                    /// second is called the suffix. It is laid out as follows:
+                    /// An `AccountId` consists of two field elements, the suffix and the prefix, declared in the
+                    /// protocol's order (the kernel returns an account id as `[suffix, prefix]`). They are laid
+                    /// out as follows:
                     ///
-                    /// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
                     /// suffix: [zero bit | hash (55 bits) | 8 zero bits]
+                    /// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
                     record account-id {
-                    	prefix: felt,
-                	suffix: felt
+                        suffix: felt,
+                        prefix: felt
                     }
 
                     /// Recipient of the note, i.e., hash(hash(hash(serial_num, [0; 4]), note_script_hash), input_hash)

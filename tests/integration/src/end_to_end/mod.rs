@@ -11,4 +11,5 @@ mod masm_dependency_bindings;
 mod memory;
 mod regressions;
 pub(crate) mod support;
+mod user_masm_component;
 mod wasm_translation;

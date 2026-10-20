@@ -18,7 +18,9 @@ use miden_testing::{AccountState, Auth, MockChain};
 use midenc_expect_test::expect;
 
 use super::{
-    super::support::{execute_tx_measurements, note_script_root, single_note_cycles},
+    super::support::{
+        execute_tx_measurements, note_script_root, single_note_cycles, to_core_felts,
+    },
     common::{
         DispatchProjectNames, assert_word_value_slots, build_dispatcher_package, build_note_package,
     },
@@ -104,8 +106,8 @@ fn masm_standard() {
     }
     let [member_cycles, non_member_cycles]: [String; 2] =
         note_cycles.try_into().expect("one measurement per consumed note");
-    expect!["3671"].assert_eq(&member_cycles);
-    expect!["3576"].assert_eq(&non_member_cycles);
+    expect!["3762"].assert_eq(&member_cycles);
+    expect!["3667"].assert_eq(&non_member_cycles);
 }
 
 /// Returns the MAST root of the procedure `leaf` exported by a standards component.
@@ -131,9 +133,12 @@ fn standards_procedure_root(code: &AccountComponentCode, leaf: &str) -> Word {
 }
 
 /// Note storage layout of the role-check note: the role symbol, the queried account id in the
-/// note's `AccountId` field order (prefix, suffix), and the expected answer.
+/// note's `AccountId` field order (suffix, prefix), and the expected answer.
 fn role_check_storage(role: Felt, queried: AccountId, expected: Felt) -> Vec<Felt> {
-    vec![role, queried.prefix().as_felt(), queried.suffix(), expected]
+    let mut storage = vec![role];
+    storage.extend(to_core_felts(&queried));
+    storage.push(expected);
+    storage
 }
 
 /// Dispatcher component holding the root of the standards `has_role` procedure.

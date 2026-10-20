@@ -1,0 +1,13 @@
+// RUN: not midenc %s --emit=masm=- --stop-after=lower 2>&1 | filecheck %s
+//
+// A world holding nothing but declaration-only components (import stubs) has no definition to
+// lower, which is reported rather than lowered.
+
+builtin.world {
+    builtin.component private @dep::@stub {
+        builtin.function internal extern("C") @f(%a: u32) -> u32;
+    };
+};
+
+// CHECK: invalid root component: expected definition, got declaration
+// CHECK-NOT: panicked

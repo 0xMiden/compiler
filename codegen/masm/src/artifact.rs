@@ -49,6 +49,11 @@ pub struct MasmComponent {
     pub stack_pointer: Option<u32>,
     /// The set of modules in this component
     pub modules: Vec<Arc<masm::Module>>,
+    /// The namespaces of the declaration-only components (import stubs) beside the modules of a
+    /// world declaring no defining component, which such a world must never be rooted at.
+    ///
+    /// Empty for a component.
+    pub stub_namespaces: Vec<Arc<Path>>,
 }
 
 impl Emit for MasmComponent {
@@ -167,6 +172,12 @@ impl fmt::Display for MasmComponent {
     }
 }
 
+/// Whether `a` and `b` name the same path, segment by raw segment, so that two quotings of one
+/// namespace agree.
+fn same_path(a: &Path, b: &Path) -> bool {
+    a.strip_prefix(b).is_some_and(|rest| rest.is_empty())
+}
+
 impl MasmComponent {
     pub fn source_inputs(
         &self,
@@ -231,9 +242,18 @@ impl MasmComponent {
         // only read by `generate_main` on the executable branch above — so they are left as they
         // are rather than rewritten to no effect.
         let namespace = target.namespace.inner();
+        if self.has_no_authored_identity()
+            && let Some(stub) =
+                self.stub_namespaces.iter().find(|stub| namespace.strip_prefix(stub).is_some())
+        {
+            return Err(Report::msg(format!(
+                "refusing to root a world that defines no component at '{namespace}', at or under \
+                 '{stub}', the namespace of one of its declaration-only components: its \
+                 procedures would be published under that dependency's name"
+            )));
+        }
         if self.root.as_ref() != namespace.as_ref()
-            && (self.has_no_authored_identity()
-                || self.root.strip_prefix(namespace).is_some_and(|rest| rest.is_empty()))
+            && (self.has_no_authored_identity() || same_path(&self.root, namespace))
         {
             let mut rebase = Rebase {
                 from: &self.root,
@@ -733,6 +753,7 @@ mod tests {
                 heap_base: 0,
                 stack_pointer: None,
                 modules: vec![Arc::new(root), Arc::new(child)],
+                stub_namespaces: Vec::new(),
             }
         }
 
@@ -1024,7 +1045,7 @@ mod tests {
         /// A component-less world already sitting at its target's namespace comes back untouched.
         ///
         /// This is the *single*-module shape, and it is why subsuming it into the same rule costs
-        /// nothing: lowering roots it at `::{module}` and preparation's `.hir` scan reads that
+        /// nothing: lowering roots it at `::{module}` and preparation's `.hir` read finds that
         /// same module's name, so the two agree and the equality guard makes the rewrite a no-op.
         /// Treating one module and several by one rule is what keeps codegen from having two
         /// answers preparation would have to mirror separately.
@@ -1050,6 +1071,36 @@ mod tests {
                 targets_are_untouched(&allocations, &sources.support[0]),
                 "the rewrite must not have run at all, not merely have produced the same paths"
             );
+        }
+
+        /// A component-less world is never re-rooted at or under the namespace of one of its import
+        /// stubs: that would publish its procedures under the dependency's name, so it is an error.
+        #[test]
+        fn a_component_less_world_is_not_rooted_at_one_of_its_stubs() {
+            let context = context();
+            let mut component = component_less("::app");
+            component.stub_namespaces =
+                vec![Arc::from(masm::LibraryPath::new("::dep::stub").unwrap().into_boxed_path())];
+
+            let err = component
+                .source_inputs(&library_target("::dep::stub"), context.session())
+                .err()
+                .expect("a target at a stub's namespace must be refused");
+            assert!(format!("{err}").contains("declaration-only"), "{err}");
+            assert!(
+                component
+                    .source_inputs(&library_target("::dep::stub::app"), context.session())
+                    .is_err(),
+                "a target nested under a stub's namespace must be refused"
+            );
+            component
+                .source_inputs(&library_target("::dep"), context.session())
+                .expect("a target above a stub's namespace is re-rooted as usual");
+
+            let sources = component
+                .source_inputs(&library_target("::app"), context.session())
+                .expect("any other namespace is re-rooted as usual");
+            assert_eq!(sources.root.path(), component.root.as_ref());
         }
 
         /// An executable target is untouched: its root is the generated `$exec` module, and the

@@ -8,7 +8,7 @@ use wit_bindgen_core::wit_parser::{Resolve, Type as WitType, TypeDefKind};
 
 /// Shared SDK core-types package appended to every generated note schema.
 const EXPECTED_CORE_TYPES: &str = concat!(
-    r#"package miden:base@1.0.0 {
+    r#"package miden:base@2.0.0 {
     interface core-types {
         /// Represents an on-chain felt.
         ///
@@ -40,16 +40,16 @@ const EXPECTED_CORE_TYPES: &str = concat!(
         ///
         /// # Layout
         ///
-        /// An `AccountId` consists of two field elements, where the first is called the prefix and the
-        /// second is called the suffix. It is laid out as follows:
+        /// An `AccountId` consists of two field elements, the suffix and the prefix, declared in the
+        /// protocol's order (the kernel returns an account id as `[suffix, prefix]`). They are laid
+        /// out as follows:
         ///
-        /// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
         /// suffix: [zero bit | hash (55 bits) | 8 zero bits]
+        /// prefix: [hash (56 bits) | storage mode (2 bits) | type (2 bits) | version (4 bits)]
         record account-id {
-"#,
-    "        \tprefix: felt,\n",
-    "    \tsuffix: felt\n",
-    r#"        }
+            suffix: felt,
+            prefix: felt
+        }
 
         /// Recipient of the note, i.e., hash(hash(hash(serial_num, [0; 4]), note_script_hash), input_hash)
         record recipient {
@@ -156,7 +156,7 @@ fn note_storage_schema(package: &Package) -> &str {
 fn assert_note_storage_schema(package: &Package, expected_root: &str, expected: Expect) {
     let source = note_storage_schema(package);
     let core_types_start = source
-        .find("package miden:base@1.0.0 {")
+        .find("package miden:base@2.0.0 {")
         .expect("schema must contain the SDK core-types package");
     let (schema, core_types) = source.split_at(core_types_start);
     expected.assert_eq(schema);
@@ -189,7 +189,7 @@ fn note_packages_carry_resolvable_storage_schema_metadata() {
 
             package miden:p2id-schema@0.1.0;
 
-            use miden:base/core-types@1.0.0;
+            use miden:base/core-types@2.0.0;
 
             interface note-storage {
                 use core-types.{account-id};
@@ -214,7 +214,7 @@ fn note_packages_carry_resolvable_storage_schema_metadata() {
 
             package miden:swapp-note-schema@0.1.0;
 
-            use miden:base/core-types@1.0.0;
+            use miden:base/core-types@2.0.0;
 
             interface note-storage {
                 use core-types.{account-id, felt, word};

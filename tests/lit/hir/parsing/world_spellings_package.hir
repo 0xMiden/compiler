@@ -1,0 +1,19 @@
+// RUN: midenc %s --emit=mast=- -o %t/out.masp 2>&1 | filecheck %s
+//
+// A world written in its generic form, with an entry-block label before its items and a
+// component whose op name leaves the `builtin.` prefix to the parser's default dialect, is still
+// a world defining that component: the package is rooted at the component's name.
+
+"builtin.world"() ({
+^entry:
+    component public @acme::@app {
+        builtin.module public @api {
+            builtin.function public extern("C") @body() -> u32 {
+                %v = arith.constant 1 : u32;
+                builtin.ret %v : (u32);
+            };
+        };
+    };
+}) : () -> ();
+
+// CHECK: # ::acme::app::api::body

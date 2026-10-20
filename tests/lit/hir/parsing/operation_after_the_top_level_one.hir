@@ -1,0 +1,19 @@
+// RUN: not midenc %s --emit=mast=- -o %t/out.masp 2>&1 | filecheck %s
+//
+// A `.hir` file is one top-level operation. A module after the world is reported rather than
+// dropped, and it names no namespace for the package.
+
+builtin.world {
+    builtin.module public @app {
+        builtin.function public extern("C") @entry() -> u32 {
+            %v = arith.constant 1 : u32;
+            builtin.ret %v : (u32);
+        };
+    };
+};
+builtin.module public @other {
+};
+
+// CHECK: invalid syntax
+// CHECK: end of input after the top-level operation
+// CHECK-NOT: ::other

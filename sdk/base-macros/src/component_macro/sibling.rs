@@ -5,8 +5,9 @@
 //! expands to a generated Rust trait named after the interface whose default methods call the
 //! wit-bindgen imports of the sibling's WIT interface. Those imports lower to direct
 //! cross-context `call`s — the same mechanism note scripts use to call the account — and resolve
-//! at link time against the dependency package. During macro expansion the sibling's compiled
-//! `.masp` supplies only its embedded WIT; unlike FPI, no procedure roots are read from it.
+//! at link time against the dependency package. During macro expansion the sibling contributes
+//! only its WIT interface — embedded in its compiled `.masp`, supplied by a `wit` override, or
+//! synthesized from the package manifest; unlike FPI, no procedure roots are read from it.
 //!
 //! The generated traits attach to the component's storage struct through an empty blanket impl
 //! bound on [`NativeAccount`](https://docs.rs/miden), which `#[component_storage]` implements:

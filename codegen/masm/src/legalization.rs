@@ -79,7 +79,7 @@ fn indirect_call_signature_legality(
             param.ty
         )));
     }
-    let arg_felts: usize = signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
+    let arg_felts = signature.param_felts();
     if selector_felts + arg_felts > MASM_STACK_WINDOW_FELTS {
         return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
             "operation '{}' schedules {arg_felts} argument field elements plus the \
@@ -89,6 +89,61 @@ fn indirect_call_signature_legality(
         )));
     }
     DynamicLegalityResult::legal()
+}
+
+/// Legality of the argument and result widths of a cross-context invocation (`hir.call`,
+/// `hir.syscall`, `hir.dyncall`) with `signature`.
+///
+/// The callee context starts with the arguments in its operand stack window and hands its results
+/// back in that window, so neither may take more field elements than the window holds, and no
+/// value may take none: the window is padded by its felt count.
+fn call_window_legality(
+    op: &Operation,
+    signature: &midenc_hir::dialects::builtin::attributes::Signature,
+) -> DynamicLegalityResult {
+    let values = signature
+        .params
+        .iter()
+        .map(|param| ("parameter", &param.ty))
+        .chain(signature.results.iter().map(|result| ("result", &result.ty)));
+    for (what, ty) in values {
+        if ty.size_in_felts() == 0 {
+            return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                "operation '{}' is a cross-context call with a zero-sized {what} of type {ty}, \
+                 which the call window has no field element for",
+                op.name()
+            )));
+        }
+    }
+    for (what, felts) in
+        [("arguments", signature.param_felts()), ("results", signature.result_felts())]
+    {
+        if felts > MASM_STACK_WINDOW_FELTS {
+            return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                "operation '{}' is a cross-context call whose {what} take {felts} field elements, \
+                 but the call window passes at most {MASM_STACK_WINDOW_FELTS}",
+                op.name()
+            )));
+        }
+    }
+    DynamicLegalityResult::legal()
+}
+
+/// Legality of a `hir.call` or `hir.syscall`: the [call window](call_window_legality) of its
+/// resolved callee's signature, which is the one its lowering emits against.
+///
+/// A callee that does not resolve is left to the lowering, which reports it.
+fn direct_cross_context_call_legality(op: &Operation) -> DynamicLegalityResult {
+    let call = op
+        .as_trait::<dyn midenc_hir::CallOpInterface>()
+        .expect("this legality rule is registered for call operations");
+    if let Ok(callee) = call.resolve_symbol_callee() {
+        let window = call_window_legality(op, &callee.signature());
+        if !window.is_legal() {
+            return window;
+        }
+    }
+    masm_lowerable_op(op)
 }
 
 /// The types of an indirect call's arguments, which both `hir.exec_indirect` and `hir.dyncall`
@@ -280,7 +335,7 @@ pub(crate) fn share_masm_module(lhs: OperationRef, rhs: OperationRef) -> bool {
         let mut modules = ops.iter().filter(|op| op.is::<builtin::Module>());
         modules.next().is_some_and(|only| only.as_operation_ref() == module)
             && modules.next().is_none()
-            && !ops.iter().any(|op| op.is::<builtin::Component>())
+            && !world.has_defining_component()
     }
 
     (lhs.borrow().is::<builtin::World>() && is_the_only_module_of_world(rhs, lhs))
@@ -334,8 +389,7 @@ fn modules_form_the_artifact_interface(mut owner: OperationRef) -> bool {
             return component.is_synthetic_wrapper();
         }
         if let Some(world) = op.downcast_ref::<builtin::World>() {
-            let body = world.body();
-            return !body.entry().body().iter().any(|op| op.is::<builtin::Component>());
+            return !world.has_defining_component();
         }
         let Some(parent) = op.parent_op() else {
             return false;
@@ -651,14 +705,20 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
                     signature.cc
                 )));
             }
-            indirect_call_signature_legality(
+            let arguments = indirect_call_signature_legality(
                 op,
                 &signature,
                 &argument_types(op),
                 hir::Dyncall::ROOT_FELTS,
                 "procedure root",
-            )
+            );
+            if !arguments.is_legal() {
+                return arguments;
+            }
+            call_window_legality(op, &signature)
         })
+        .add_dynamically_legal_op::<hir::Call, _>(direct_cross_context_call_legality)
+        .add_dynamically_legal_op::<hir::Syscall, _>(direct_cross_context_call_legality)
         .add_dynamically_legal_op::<builtin::UnrealizedConversionCast, _>(|op| {
             DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
                 "operation '{}' is temporary dialect-conversion scaffolding and must be \
@@ -1811,6 +1871,211 @@ mod tests {
         test_with_dyncall(&mut test, signature);
 
         test.apply_pass::<LegalizeForMasm>(true).unwrap();
+    }
+
+    /// A cross-context callee hands its results back in the 16-element call window, so a
+    /// `hir.dyncall` returning nine `u64`s (18 field elements) is reported rather than reaching
+    /// the emitter, while eight (16) fill the window exactly.
+    #[test]
+    fn dyncall_results_are_bounded_by_the_call_window() {
+        for (num_results, accepted) in [(8, true), (9, false)] {
+            let mut test = Test::named("wide_dyncall_results").in_module("m");
+            let signature = Signature::with_convention(
+                &test.context_rc(),
+                CallConv::ComponentModel,
+                [],
+                vec![Type::U64; num_results],
+            );
+            test_with_dyncall(&mut test, signature);
+
+            let result = test.apply_pass::<LegalizeForMasm>(accepted);
+            if accepted {
+                result.unwrap();
+            } else {
+                let message = format!("{}", result.unwrap_err());
+                assert!(message.contains("hir.dyncall"), "{message}");
+                assert!(message.contains("results take 18 field elements"), "{message}");
+            }
+        }
+    }
+
+    /// A zero-sized value has no element in the call window, which is padded by felt count, so a
+    /// cross-context call passing or returning one is reported rather than reaching the emitter.
+    #[test]
+    fn cross_context_calls_with_a_zero_sized_value_fail_legalization() {
+        let mut test = Test::named("zero_sized_dyncall_result").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            [],
+            vec![Type::Unknown],
+        );
+        test_with_dyncall(&mut test, signature);
+        let message = format!("{}", test.apply_pass::<LegalizeForMasm>(false).unwrap_err());
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("zero-sized result"), "{message}");
+
+        for syscall in [false, true] {
+            for (params, results, expected) in [
+                (vec![Type::Unknown], vec![], "zero-sized parameter"),
+                (vec![], vec![Type::Unknown], "zero-sized result"),
+            ] {
+                let mut test = Test::named("zero_sized_cross_context_call").in_module("m");
+                let signature = Signature::with_convention(
+                    &test.context_rc(),
+                    CallConv::ComponentModel,
+                    params,
+                    results,
+                );
+                test_with_cross_context_call(&mut test, signature, syscall);
+
+                let message = format!("{}", test.apply_pass::<LegalizeForMasm>(false).unwrap_err());
+                let op = if syscall { "hir.syscall" } else { "hir.call" };
+                assert!(message.contains(op), "{message}");
+                assert!(message.contains(expected), "{message}");
+            }
+        }
+    }
+
+    /// Build a `dispatch` function invoking a body-less `callee` with `signature` across contexts,
+    /// through `hir.syscall` when `syscall` is set and `hir.call` otherwise, passing one u32
+    /// constant per parameter.
+    fn test_with_cross_context_call(test: &mut Test, signature: Signature, syscall: bool) {
+        test.with_function("dispatch", &[], &[]);
+        let callee = ModuleBuilder::new(test.module())
+            .define_function(Ident::from("callee"), Visibility::Public, signature.clone())
+            .unwrap();
+        let arity = signature.params.len();
+        let mut builder = test.function_builder();
+        let args = (0..arity)
+            .map(|_| builder.u32(0, SourceSpan::UNKNOWN))
+            .collect::<alloc::vec::Vec<_>>();
+        if syscall {
+            builder.syscall(callee, signature, args, SourceSpan::UNKNOWN).unwrap();
+        } else {
+            builder.call(callee, signature, args, SourceSpan::UNKNOWN).unwrap();
+        }
+        builder.ret(None, SourceSpan::UNKNOWN).unwrap();
+    }
+
+    /// `hir.call` and `hir.syscall` pass their arguments and take their results through the
+    /// 16-element call window: 16 field elements either way are accepted, 17 or 18 reported.
+    #[test]
+    fn cross_context_calls_are_bounded_by_the_call_window() {
+        let felts = |count: usize| {
+            let mut types = vec![Type::U64; count / 2];
+            if count % 2 == 1 {
+                types.push(Type::U32);
+            }
+            types
+        };
+        for syscall in [false, true] {
+            for (params, results, rejected) in [
+                (felts(16), felts(16), None),
+                (felts(17), vec![], Some("arguments take 17 field elements")),
+                (vec![], felts(18), Some("results take 18 field elements")),
+            ] {
+                let mut test = Test::named("wide_cross_context_call").in_module("m");
+                let signature = Signature::with_convention(
+                    &test.context_rc(),
+                    CallConv::ComponentModel,
+                    params,
+                    results,
+                );
+                test_with_cross_context_call(&mut test, signature, syscall);
+
+                let result = test.apply_pass::<LegalizeForMasm>(rejected.is_none());
+                match rejected {
+                    None => result.unwrap(),
+                    Some(expected) => {
+                        let message = format!("{}", result.unwrap_err());
+                        let op = if syscall { "hir.syscall" } else { "hir.call" };
+                        assert!(message.contains(op), "{message}");
+                        assert!(message.contains(expected), "{message}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The call window of a `hir.call` or `hir.syscall` is its resolved callee's: a callee that
+    /// does not resolve is left to the lowering, which reports it, even when the call's own
+    /// signature would not fit the window.
+    #[test]
+    fn cross_context_calls_to_an_unresolved_callee_are_left_to_the_lowering() {
+        use midenc_hir::{SymbolName, SymbolTable};
+
+        for syscall in [false, true] {
+            let mut test = Test::named("unresolved_cross_context_call").in_module("m");
+            let signature = Signature::with_convention(
+                &test.context_rc(),
+                CallConv::ComponentModel,
+                vec![Type::U32; 17],
+                [],
+            );
+            test_with_cross_context_call(&mut test, signature, syscall);
+            test.module()
+                .borrow_mut()
+                .remove(SymbolName::intern("callee"))
+                .expect("the callee is defined");
+
+            test.apply_pass::<LegalizeForMasm>(false).unwrap();
+
+            let message = format!("{}", lower_cross_context_call(&test).unwrap_err());
+            let op = if syscall { "hir.syscall" } else { "hir.call" };
+            assert!(
+                message.contains(&format!("invalid {op}: unable to resolve callee")),
+                "{message}"
+            );
+        }
+    }
+
+    /// Emit the `hir.call` or `hir.syscall` in `test`'s function through its [`HirLowering`],
+    /// as lowering the function would.
+    fn lower_cross_context_call(test: &Test) -> Result<(), Report> {
+        use alloc::collections::BTreeSet;
+
+        use midenc_hir::{TraceTarget, pass::AnalysisManager};
+        use midenc_hir_analysis::analyses::LivenessAnalysis;
+
+        use crate::{
+            emitter::{BlockEmitter, FrameLayout},
+            linker::LinkInfo,
+            lower::HirLowering,
+            stack::OperandStack,
+        };
+
+        let function = test.function();
+        let call = {
+            let function = function.borrow();
+            let body = function.body();
+            let entry = body.entry();
+            entry
+                .body()
+                .iter()
+                .find(|op| op.is::<hir::Call>() || op.is::<hir::Syscall>())
+                .expect("the function holds a cross-context call")
+                .as_operation_ref()
+        };
+        let analysis_manager = AnalysisManager::new(function.as_operation_ref(), None);
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
+        let link_info = LinkInfo::new(None);
+        let mut invoked = BTreeSet::default();
+        let mut emitter = BlockEmitter {
+            module_owner: None,
+            frame: FrameLayout::new(&[], 0),
+            liveness: &liveness,
+            emit_inline_calls: false,
+            link_info: &link_info,
+            invoked: &mut invoked,
+            target: Default::default(),
+            stack: OperandStack::new(test.context_rc()),
+            trace_target: TraceTarget::category("codegen"),
+        };
+        let call = call.borrow();
+        let lowering =
+            call.as_trait::<dyn HirLowering>().expect("a cross-context call has a lowering");
+        lowering.emit(&mut emitter)
     }
 
     /// The emitter consumes one operand per parameter, so a signature declaring more parameters

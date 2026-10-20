@@ -209,7 +209,10 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
     // an op batch its stores no longer fill), the `p2id` constructor's four (14 cycles: 12, and 2
     // for padding `noop`s), and the wallet's three, once for each of `create_note` and
     // `move_asset_to_note` (10 cycles each).
-    expect!["9126"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    //
+    // 116 cycles more (9126 before) since codegen pads the call window under the arguments of a
+    // cross-context call, on the script's cross-context calls.
+    expect!["9242"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
@@ -225,8 +228,10 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
     // that undo each other, such as `swap.1 swap.1` (50 fewer). 4954 before the `u32assert` on a
     // constant-address 32-bit store went, one fewer per 32-bit global initializer: the P2ID
     // note's `init` stores four such globals (14 cycles) and the wallet's three (10 cycles, run
-    // once for `receive_asset`).
-    expect!["4930"].assert_eq(single_note_cycles(&tx_measurements));
+    // once for `receive_asset`). 13 cycles more (4930 before) since codegen pads the call window
+    // under the arguments of a cross-context call, on the note's one call into the wallet,
+    // `receive_asset`.
+    expect!["4943"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();

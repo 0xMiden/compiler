@@ -1,0 +1,24 @@
+// RUN: midenc %s --emit=masm=- --stop-after=lower 2>&1 | filecheck %s
+//
+// A world holding top-level modules and declaration-only components (import stubs) only is
+// lowered through its modules, as a world without components is: the stubs, empty or not,
+// contribute nothing to the generated Miden Assembly.
+
+builtin.world {
+    builtin.component private @dep::@stub {
+        builtin.function internal extern("C") @f(%a: u32) -> u32;
+    };
+    builtin.component private @dep::@empty {
+    };
+    builtin.module public @app {
+        builtin.function public extern("C") @entry(%a: u32) -> u32 {
+            builtin.ret %a : (u32);
+        };
+    };
+};
+
+// CHECK-NOT: namespace dep
+// CHECK: namespace app
+// CHECK-LABEL: pub proc entry
+// CHECK: end
+// CHECK-NOT: namespace dep

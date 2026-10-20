@@ -1,0 +1,17 @@
+// RUN: not midenc %s --emit=mast=- -o %t/out.masp 2>&1 | filecheck %s
+//
+// A `.hir` root the parser rejects fails with the parser's own diagnostic, not with a namespace
+// mismatch derived from the file's name.
+
+// CHECK-NOT: requested target namespace
+// CHECK: invalid syntax
+// CHECK: unexpected token 'end of input'
+// CHECK-NOT: requested target namespace
+
+builtin.component public @acme::@app {
+    builtin.module public @api {
+        builtin.function public extern("C") @body() -> u32 {
+            %v = arith.constant 1 : u32;
+            builtin.ret %v : (u32);
+        };
+    };

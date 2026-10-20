@@ -1,0 +1,16 @@
+[package]
+name = "std-wallet-p2id"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+namespace = "miden::std_wallet_p2id::std_wallet_p2id"
+path = "src/lib.rs"
+
+[profile.release]
+debug = true
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+miden-standards-wallets-basic-wallet = "0.17.0"

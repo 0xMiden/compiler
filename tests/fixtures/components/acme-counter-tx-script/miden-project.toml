@@ -1,0 +1,14 @@
+[package]
+name = "acme-counter-tx-script"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+namespace = "acme::counter_tx_script::counter_tx_script"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+# The user-written MASM account component; no `wit =`: its interface comes from its package.
+counter = { path = "../acme-counter-masm" }

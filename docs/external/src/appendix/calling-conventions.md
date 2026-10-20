@@ -250,7 +250,7 @@ then one of the following must happen:
   associated with the caller's stack frame.
   - Spill to the advice provider: in this scenario, 12 elements of the stack are used for arguments, and the remaining 4 are used to hold a hash
   which refers to the remaining arguments on the advice provider stack. The callee must arrange to fetch the spilled arguments from the advice
-  provider using that hash.
+  provider using that hash. This is not implemented: the compiler rejects a `call` or `syscall` whose arguments take more than 16 elements.
 
 #### Function signatures
 
@@ -297,8 +297,9 @@ and thus we want those closer to the top of the operand stack to reduce the amou
 Arguments/return values are laid out on the operand stack just like they would be as if you had just loaded it from memory, so all arguments are aligned,
 but may span multiple operands on the operand stack as necessary based on the size of the type (i.e. a struct type that contains a `u32` and a `i1`
 field would require two operands to represent). If the maximum number of operands allowed for the call is reached, any remaining arguments must be
-spilled to the caller's stack frame, or to the advice provider. The former is used in the case of `exec`, while the latter is used for `call`
-and `syscall`, as caller memory is not accessible to the callee with those instructions.
+spilled to the caller's stack frame in the case of `exec`. Caller memory is not accessible to the callee of a `call` or `syscall`, so their
+remaining arguments would have to be spilled to the advice provider instead; that is not implemented, and the compiler rejects a `call` or
+`syscall` whose arguments, or whose results, take more than the 16 elements of the call window.
 
 While ostensibly 16 elements is the maximum number of operands on the operand stack that can represent function arguments, indirect calls
 spend part of that window on selecting the callee, and the compiler rejects indirect callee signatures exceeding what is left instead of
@@ -312,3 +313,15 @@ dispatch function with an ordinary call carrying the root's four elements alongs
 result is returned by reference. A stored procedure therefore takes at most 12 argument field elements, or 11 when its result is returned
 through a pointer. Its arguments are also bounded by the canonical ABI's 16 flat values, four of which the root occupies in the generated
 import, i.e. at most 12 flat argument values.
+
+#### Cross-context calls
+
+A `call`, `syscall` or `dyncall` hands the callee exactly the top 16 elements of the caller's operand stack, and replaces them with the 16
+elements the callee leaves when it returns. Everything below those 16 elements is out of the callee's reach. Callees, Miden Assembly
+procedures such as the transaction kernel and the standard account components in particular, follow the convention `[args, pad]` →
+`[results, pad]`: they treat everything under their arguments as padding, and are free to shift or drop it.
+
+The compiler therefore never leaves caller values in the window. Before the call, it pads the `n` argument elements with `16 - n` zeros, so
+the callee receives exactly `[args, zeros]` and every value the caller still needs sits below the window. After the call, it discards the
+`16 - m` padding elements the callee left under its `m` result elements, so the caller sees the results on top of the values it kept. When
+emitting MASM from your own backend that calls procedures produced by the compiler, or that the compiler calls, follow the same convention.

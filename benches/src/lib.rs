@@ -19,6 +19,10 @@ mod mockchain;
 
 pub const RESULTS_FILE: &str = "results.json";
 const SIZE_ONLY_EXAMPLES: &[&str] = &["storage-example"];
+/// Examples that depend on packages the installed toolchain does not ship yet: the
+/// `miden-standards` account-component packages. The benchmarks build with the toolchain alone,
+/// so these are skipped until it ships them.
+const UNSHIPPED_DEPENDENCY_EXAMPLES: &[&str] = &["std-wallet-p2id-note", "std-wallet-tx-script"];
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub struct BenchmarkReport {
@@ -459,6 +463,9 @@ fn discover_cases(workspace_root: &Path) -> Result<Vec<BenchmarkCase>> {
             .and_then(|name| name.to_str())
             .ok_or_else(|| anyhow!("example path is not valid UTF-8: {}", path.display()))?
             .to_string();
+        if UNSHIPPED_DEPENDENCY_EXAMPLES.contains(&name.as_str()) {
+            continue;
+        }
         cases.push(BenchmarkCase {
             name,
             execute: path.join("inputs.toml").is_file(),

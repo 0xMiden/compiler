@@ -309,6 +309,20 @@ impl Component {
             .is_some_and(|attr| **attr.borrow())
     }
 
+    /// Returns true if this component holds declarations only: every item in it is a function or
+    /// global variable without a body, so it has no module tree and defines no code. This is the
+    /// shape of a stub standing in for an external component, e.g. an import's.
+    ///
+    /// A module, even one holding declarations only, makes the component defining: the nesting
+    /// rule of [World](super::World) relies on a declaration-only component having no module tree
+    /// a path under a longer component could resolve into.
+    ///
+    /// An empty component is vacuously declaration-only. Anything unrecognized counts as a
+    /// definition.
+    pub fn is_declaration_only(&self) -> bool {
+        super::holds_declarations_only(&self.body())
+    }
+
     #[inline(always)]
     pub fn as_component_ref(&self) -> ComponentRef {
         unsafe { ComponentRef::from_raw(self) }
