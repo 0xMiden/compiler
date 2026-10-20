@@ -295,7 +295,6 @@ fn word_effects_preserve_actual_cell_order() -> Result<(), Report> {
 #[test]
 fn unknown_rules_and_unresolved_immediates_fail_closed() {
     for instruction in [
-        Instruction::AdvLoadW,
         Instruction::CryptoStream,
         Instruction::MTreeGet,
         Instruction::Emit,
@@ -946,4 +945,85 @@ fn fixed_primitives_preserve_physical_floor_and_raw_caller_suffix() -> Result<()
     assert_eq!(&actual[4..], &input[4..]);
     assert_eq!(TargetEffects::instruction(&Instruction::Caller)?.floor, []);
     Ok(())
+}
+
+#[test]
+fn advice_word_target_rule_is_trapping_replacement() {
+    let effect = TargetEffects::instruction(&Instruction::AdvLoadW).unwrap();
+    assert_eq!(effect.consumed, 4);
+    assert_eq!(effect.outputs.len(), 4);
+    assert!(effect.may_trap);
+    assert!(effect.floor.is_empty());
+    assert_eq!(effect.memory, MemoryEffect::None);
+    assert!(effect.memory_inputs.is_empty());
+    assert_eq!(effect.outputs, (0..4).map(LaneEffect::Computed).collect::<Vec<_>>());
+}
+
+#[test]
+fn advice_word_raw_vm_order_consumption_suffix_floor_and_exhaustion() {
+    use miden_core::advice::AdviceStack;
+    use miden_processor::advice::AdviceInputs;
+    for suffix_len in [12, 20] {
+        let suffix = (0..suffix_len).map(|i| 0x1_0000_0000usize + i).collect::<Vec<_>>();
+        let mut input = vec![101, 202, 303, 404];
+        input.extend(&suffix);
+        let mut expected = vec![3, 4, 5, 6];
+        expected.extend(&suffix);
+        let source = format!(
+            "begin {} adv_loadw sdepth push.{} assert_eq adv_push push.97 assert_eq {} end",
+            super::lowering_units::push_top(&input[..input.len() - 16]),
+            input.len(),
+            super::lowering_units::assert_top(&expected)
+        );
+        let program = miden_assembly::Assembler::default()
+            .assemble_program("raw_advice_word", source)
+            .unwrap()
+            .try_into_program()
+            .unwrap();
+        let mut advice = AdviceStack::new();
+        advice
+            .append_word([3, 4, 5, 6].map(Felt::new_unchecked).into())
+            .append_element(Felt::new_unchecked(97));
+        let base = input[input.len() - 16..]
+            .iter()
+            .map(|n| Felt::new_unchecked(*n as u64))
+            .collect::<Vec<_>>();
+        let processor = |advice: AdviceStack| {
+            FastProcessor::new(StackInputs::new(&base).unwrap())
+                .with_advice(AdviceInputs::default().with_stack(advice))
+                .unwrap()
+        };
+        processor(advice).execute_sync(&program, &mut DefaultHost::default()).unwrap();
+        for count in 0..4 {
+            let advice = AdviceStack::from(vec![Felt::ONE; count]);
+            let mut processor = processor(advice);
+            let mut context = processor.get_initial_resume_context(&program).unwrap();
+            loop {
+                match processor.step_sync(&mut DefaultHost::default(), context) {
+                    Ok(Some(next)) => context = next,
+                    Ok(None) => panic!("partial word must trap"),
+                    Err(error) => {
+                        assert!(
+                            matches!(
+                                error,
+                                miden_processor::ExecutionError::AdviceError {
+                                    err: miden_processor::advice::AdviceError::StackReadFailed,
+                                    ..
+                                }
+                            ),
+                            "{error:?}"
+                        );
+                        let actual = processor
+                            .stack()
+                            .iter()
+                            .rev()
+                            .map(|f| f.as_canonical_u64() as usize)
+                            .collect::<Vec<_>>();
+                        assert_eq!(actual, input, "exhaustion with {count} elements");
+                        break;
+                    }
+                }
+            }
+        }
+    }
 }

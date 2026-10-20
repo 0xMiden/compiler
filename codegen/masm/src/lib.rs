@@ -288,6 +288,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::HMerge, dyn HirSelection>();
     info.register_operation_trait::<hir::HPerm, dyn HirSelection>();
     info.register_operation_trait::<hir::AdvicePop, dyn HirSelection>();
+    info.register_operation_trait::<hir::AdviceLoadWord, dyn HirSelection>();
     info.register_operation_trait::<hir::Caller, dyn HirSelection>();
     info.register_operation_trait::<hir::UnpackWord, dyn HirSelection>();
     info.register_operation_trait::<hir::Clk, dyn HirSelection>();

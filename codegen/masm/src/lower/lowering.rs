@@ -1268,7 +1268,11 @@ impl_simple_hir_lowering!(hir::Caller => caller);
 impl_simple_hir_lowering!(hir::UnpackWord => unpack_word);
 impl_simple_hir_lowering!(hir::Clk => clk);
 impl_simple_hir_lowering!(hir::AdvicePop => advice_pop);
-impl_simple_hir_lowering!(hir::AdviceLoadWord => advice_load_word);
+impl HirLowering for hir::AdviceLoadWord {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).advice_load_word(self.span())
+    }
+}
 impl_simple_hir_lowering!(hir::EmitEvent => emit_event);
 
 impl HirLowering for hir::EmitEventImm {
@@ -2980,6 +2984,7 @@ intrinsic_selection! {
     hir::HMerge => HMerge,
     hir::HPerm => HPerm,
     hir::AdvicePop => AdvicePop,
+    hir::AdviceLoadWord => AdviceLoadWord,
     hir::Caller => Caller,
     hir::UnpackWord => UnpackWord,
     hir::Clk => Clk,

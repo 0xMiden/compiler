@@ -111,7 +111,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
             );
         }
     }
-    assert_eq!(registered.len(), 104);
+    assert_eq!(registered.len(), 105);
     assert_eq!(covered, registered);
 }
 

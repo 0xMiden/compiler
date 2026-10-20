@@ -13,6 +13,7 @@ pub(crate) enum Kind {
     HMerge,
     HPerm,
     AdvicePop,
+    AdviceLoadWord,
     Caller,
     UnpackWord,
     Clk,
@@ -36,6 +37,19 @@ impl Intrinsic {
             HMerge => (vec![Type::Felt; 8], vec![Type::Felt; 4]),
             HPerm => (vec![Type::Felt; 12], vec![Type::Felt; 12]),
             AdvicePop | Clk => (vec![], vec![Type::Felt]),
+            AdviceLoadWord => {
+                if inputs.len() != 4 {
+                    return Err(invalid("advice word requires four input operands").into());
+                }
+                for ty in &inputs {
+                    if ValueLayout::new(ty.clone())?.lanes() != 1 {
+                        return Err(
+                            invalid("advice word inputs require one nonempty raw lane").into()
+                        );
+                    }
+                }
+                (inputs.clone(), vec![Type::Felt; 4])
+            }
             Caller => (vec![], vec![word.clone()]),
             UnpackWord => (vec![word], vec![Type::Felt; 4]),
         };
@@ -54,6 +68,7 @@ impl Intrinsic {
             HMerge => emitter.hmerge(op.span()),
             HPerm => emitter.hperm(op.span()),
             AdvicePop => emitter.advice_pop(op.span()),
+            AdviceLoadWord => emitter.advice_load_word(op.span())?,
             Caller => emitter.caller(op.span()),
             UnpackWord => emitter.unpack_word(op.span()),
             Clk => emitter.clk(op.span()),
@@ -66,7 +81,7 @@ impl Intrinsic {
         Ok(Self {
             body,
             effects: LoweringEffects {
-                may_trap: kind == AdvicePop,
+                may_trap: matches!(kind, AdvicePop | AdviceLoadWord),
                 ..Default::default()
             },
         })
