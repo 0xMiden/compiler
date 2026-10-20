@@ -42,6 +42,9 @@ impl InferTypeOpInterface for AdvicePop {
 }
 
 /// Pop one word from the VM advice stack, overwriting the top four operand stack slots.
+///
+/// Each input must occupy exactly one nonempty raw slot. Input types may differ; the four
+/// results are Felt values in advice-word order, with element zero at the top.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
@@ -64,6 +67,26 @@ pub struct AdviceLoadWord {
     result2: IntFelt,
     #[result]
     result3: IntFelt,
+}
+
+impl Verify<dyn MemoryEffectOpInterface> for AdviceLoadWord {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        for (index, operand) in self.as_operation().operands().all().iter().enumerate() {
+            let ty = operand.borrow().ty().clone();
+            let raw = ty.clone().to_raw_parts().ok_or_else(|| {
+                Report::msg(format!(
+                    "invalid hir.advice_load_word operand {index} ({ty}): no raw representation"
+                ))
+            })?;
+            if ty.size_in_bytes() == 0 || raw.len() != 1 {
+                return Err(Report::msg(format!(
+                    "invalid hir.advice_load_word operand {index} ({ty}): expected one nonempty \
+                     raw slot"
+                )));
+            }
+        }
+        Ok(())
+    }
 }
 
 impl EffectOpInterface<AdviceEffect> for AdviceLoadWord {
@@ -170,5 +193,74 @@ impl InferTypeOpInterface for AdvicePipe {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{vec, vec::Vec};
+
+    use midenc_hir::{dialects::builtin::BuiltinOpBuilder, testing::Test};
+
+    use super::*;
+    use crate::HirOpBuilder;
+
+    fn verify_word(types: &[Type]) -> Result<(), Report> {
+        let mut test = Test::new("advice_word", types, &vec![Type::Felt; 4]);
+        let args = test
+            .function()
+            .borrow()
+            .entry_block()
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<Vec<_>>();
+        {
+            let mut b = test.function_builder();
+            let (a, b0, c, d) =
+                b.advice_load_word(args[0], args[1], args[2], args[3], SourceSpan::UNKNOWN)?;
+            assert!([a, b0, c, d].iter().all(|v| v.borrow().ty() == &Type::Felt));
+            b.ret([a, b0, c, d], SourceSpan::UNKNOWN)?;
+        }
+        test.function().borrow().as_operation().recursively_verify()
+    }
+
+    #[test]
+    fn advice_word_accepts_mixed_pointer_and_packed_source() {
+        verify_word(&vec![Type::Felt; 4]).unwrap();
+        verify_word(&[
+            Type::U8,
+            Type::from(PointerType::new(Type::U128)),
+            Type::from(PointerType::new_with_address_space(Type::Felt, AddressSpace::Element)),
+            Type::from(ArrayType::new(Type::U8, 4)),
+        ])
+        .unwrap();
+        verify_word(&[Type::I1, Type::I16, Type::I32, Type::U32]).unwrap();
+    }
+
+    #[test]
+    fn advice_word_rejects_wide_source() {
+        for ty in [
+            Type::U64,
+            Type::I64,
+            Type::U128,
+            Type::from(ArrayType::new(Type::Felt, 4)),
+            Type::Never,
+            Type::from(ArrayType::new(Type::U8, 0)),
+            Type::Unknown,
+        ] {
+            for index in 0..4 {
+                let mut types = vec![Type::Felt; 4];
+                types[index] = ty.clone();
+                let error = format!("{}", verify_word(&types).unwrap_err());
+                assert!(error.contains(&format!("operand {index}")), "{error}");
+                if ty == Type::Unknown {
+                    assert!(error.contains("no raw representation"), "{error}");
+                } else {
+                    assert!(error.contains("one nonempty raw slot"), "{error}");
+                }
+            }
+        }
     }
 }

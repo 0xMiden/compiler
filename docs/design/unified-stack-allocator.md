@@ -692,6 +692,12 @@ Source `Caller` has no operands and produces a four-lane word. Raw MASM `Caller`
 
 `AdvicePop` consumes one value from the actual advice provider and pushes one Felt, trapping on exhaustion without publishing a result. `Clk` pushes the actual VM clock value; its contract does not promise a compiler-independent instruction count. These closed operations retain source execution order. Their target rules grant no arbitrary host-event observation or source/compiler-memory access.
 
+`AdviceLoadWord` replaces exactly four raw operand-stack slots with one advice word. Each of its four source operands must have a nonempty one-lane representation; mixed types, pointers and packed values remain valid within that domain. Wide, zero-sized and unrepresented operands are diagnosed. Source verification obtains the raw representation before querying size, and final selection independently checks the source tuple and exactly four Felt results. The shared emitter validates the complete input window before changing its typed stack or emitted body, so a rejected direct invocation leaves that helper's state unchanged.
+
+Raw `AdvLoadW` is a trapping four-lane overwrite, with no physical pop/push floor steps or operand-memory effect. It consumes exactly one advice word and preserves the entire suffix. Fewer than four advice elements trap without successful result publication; the contract does not promise advice-provider rollback. Actual advice order and consumption require VM checks in addition to physical verification.
+
+Fixed intrinsics use the same physical-verification boundary as other trusted lowerings. There is no exact instruction-sequence contract or generic output-freshness requirement. Removing or replacing a native instruction can leave a physically valid expansion while changing results, advice consumption or traps. Such semantic mutations are tested by VM execution against independent expected values and provider behavior; physical mutation tests require rejection only when an actual checked binding, access, preservation or publication relation is violated.
+
 ### Example: byte `memmove`
 
 The existing [copy lowering](../../../codegen/masm/src/emit/mem.rs) handles range checks, an alignment-dependent intrinsic fast path, and a directional scalar loop. For a byte-pointer `memmove`, select one lowering unit:
@@ -908,6 +914,8 @@ Publication cannot relabel a preserved suffix lane, validate changed spill-slot 
 
 The registered rule asserting that these output lanes implement the HIR operation is a trusted semantic boundary. Generic token checking does not prove arithmetic, memory algorithms, termination, or trap conditions. Even a physically well-formed arithmetic lowering with incorrectly ordered result limbs can pass unless a registered output relation checks that order; semantic VM/differential tests cover that gap. This differs from allocation copying or permuting already identified lanes, where exact token order is checked. Trusted external call summaries likewise authorize only their declared effects and results.
 
+Checking that a required effectful unit occurs in the selected graph and reaches its proper boundary does not prove that its trusted implementation performs the source effect. In particular, an opaque result may retain an incoming token when no registered relation forbids it. A removed `AdvLoadW` or assertion-only native can therefore escape physical checking if all physical obligations still hold. Semantic execution tests must detect the resulting incorrect values, missing provider effects or missing traps. Exact call-site checks remain necessary for their allocation-facing ABI, clobber, input and result obligations; they do not imply exact instruction correspondence for all lowerings.
+
 ### Shared definitions and independent implementation
 
 The implementation shares target specifications and general infrastructure, but independently computes the evidence used to accept the physical plan:
@@ -1008,6 +1016,7 @@ Acceptance is defined by these behaviors rather than a particular spill count:
 - Minimum-depth tests enter at physical depth sixteen, force drain/rebuild on only one branch, repeat the transition in a loop, and verify meaningful stack values, bounded bottom padding, and return cleanup.
 - Raw spill-slot tests preserve exact felt bit patterns and limb order independently of typed HIR memory operations.
 - Fixed-stack intrinsic tests check every result lane and the complete suffix, including overflow. Caller produces ZERO outside a syscall and the actual caller hash inside one without overwriting that suffix; deleting its owned padding fails physical verification. Crypto, advice order/exhaustion, exact UnpackWord aliases and actual clock values are checked through VM execution.
+- AdviceLoadWord accepts four mixed nonempty one-lane operands, including pointers and packed values, and rejects wide/ZST/unrepresented operands before helper mutation. Tests cover every operand position, exact Felt results, one-word advice consumption/order, exhaustion with zero through three advice elements, physical floor and a protected suffix deeper than sixteen lanes.
 - Generated initializer/adaptor procedures can spill and have correct executable and debug frame offsets.
 - Mutated-plan tests deliberately introduce illegal depths, incorrect copies, swapped lanes, uninitialized spill slots, physical slot collisions, dead stores clobbering live colored spill slots, stale loop spill slots, missing edge repairs, phase-order/result-publication errors, and ABI clobber mistakes; verification rejects each before assembly.
 
