@@ -195,7 +195,7 @@ impl OpEmitter<'_> {
     pub fn mem_grow(&mut self, span: SourceSpan) {
         let _num_pages = self.stack.pop().expect("operand stack is empty");
         self.raw_exec("::intrinsics::mem::memory_grow", span);
-        self.push(Type::I32);
+        self.push(Type::U32);
     }
 
     /// Returns the size (in pages) of the heap (from the perspective of Wasm programs)
@@ -217,11 +217,17 @@ impl OpEmitter<'_> {
     /// `offset` is the frame's `locaddr` operand for `local`, see
     /// [FrameLayout::locaddr](crate::emitter::FrameLayout::locaddr).
     pub fn local_address(&mut self, local: &LocalVariable, offset: u16, span: SourceSpan) {
+        self.local_address_typed(local.ty(), offset, span);
+    }
+
+    /// Push an element-space pointer to a source local at its finalized element offset.
+    ///
+    /// Selection supplies the checked pointee type and frame binding, so this helper needs no HIR
+    /// local object and makes no storage-allocation decision. `offset` is relative to the procedure
+    /// frame and must already have passed layout and capacity checks.
+    pub(crate) fn local_address_typed(&mut self, ty: Type, offset: u16, span: SourceSpan) {
         self.emit(masm::Instruction::Locaddr(offset.into()), span);
-        self.push(Type::from(PointerType::new_with_address_space(
-            local.ty(),
-            AddressSpace::Element,
-        )));
+        self.push(Type::from(PointerType::new_with_address_space(ty, AddressSpace::Element)));
     }
 
     /// Load a value corresponding to the type of the given local, from the memory allocated for

@@ -236,12 +236,20 @@ pub trait SameOperandsAndResultType: SameTypeOperands {
         };
 
         let results = op.results();
-        assert!(
-            !results.is_empty(),
-            "Operation: {} was marked as having SameOperandsAndResultType, however it has no \
-             results.",
-            op.name()
-        );
+        if results.is_empty() {
+            return Err(context
+                .session()
+                .diagnostics
+                .diagnostic(Severity::Error)
+                .with_message(format!("invalid operation result {}", op.name()))
+                .with_primary_label(
+                    op.span,
+                    "this operation has operands, so it requires at least one result of the same \
+                     type",
+                )
+                .with_secondary_label(set_by, "inferred the expected type from this value")
+                .into_report());
+        }
 
         for result in results.iter() {
             let result = result.borrow();

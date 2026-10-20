@@ -2929,3 +2929,31 @@ arithmetic_selection! {
     builtin::GlobalSymbol => GlobalSymbol,
     ub::Poison => Poison,
 }
+
+// Final memory definitions retain their own immutable source authority.
+macro_rules! memory_selection {
+    ($($ty:ty => $kind:ident),* $(,)?) => {$(
+        impl HirSelection for $ty {
+            fn selection_rule(&self) -> crate::select::SelectionRule {
+                crate::select::SelectionRule::Memory(super::units::memory::Kind::$kind)
+            }
+        }
+    )*};
+}
+memory_selection! {
+    hir::Load => Load,
+    hir::Store => Store,
+    hir::LoadLocal => LoadLocal,
+    hir::StoreLocal => StoreLocal,
+    hir::LocalAddress => LocalAddress,
+    hir::MemGrow => MemGrow,
+    hir::MemSize => MemSize,
+    hir::MemSet => MemSet,
+    hir::MemCpy => MemCpy,
+    hir::MemMove => MemMove,
+    wasm::I32Load8S => I32Load8S,
+    wasm::I32Load16S => I32Load16S,
+    wasm::I64Load8S => I64Load8S,
+    wasm::I64Load16S => I64Load16S,
+    wasm::I64Load32S => I64Load32S,
+}

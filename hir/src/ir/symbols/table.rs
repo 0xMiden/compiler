@@ -242,7 +242,7 @@ pub struct SymbolMap {
     max_name_segments: usize,
 }
 /// An empty map, whose `max_name_segments` starts at 1: every name has at least one segment, so
-/// [SymbolMap::lookup_prefix] tries no multi-segment names until one is registered.
+/// `SymbolMap::lookup_prefix` tries no multi-segment names until one is registered.
 impl Default for SymbolMap {
     fn default() -> Self {
         Self {
@@ -387,7 +387,7 @@ impl SymbolMap {
     /// returned.
     ///
     /// Path components are matched against symbol names as described in
-    /// [SymbolMap::lookup_prefix].
+    /// `SymbolMap::lookup_prefix`.
     pub fn resolve(&self, symbol_table: &Operation, attr: &SymbolPath) -> Option<OperationRef> {
         let components = attr.components().collect::<SmallVec<[SymbolNameComponent; 4]>>();
 

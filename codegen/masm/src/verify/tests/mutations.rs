@@ -616,3 +616,129 @@ fn wide_call_publications_and_borrowed_outputs_check_positions_above_255() {
         assert_eq!(fixture.run(code.clone()).unwrap_err().category, category);
     }
 }
+
+#[test]
+fn memory_selected_fill_loop_cleanup_access_and_call_mutations_reject() {
+    let f = crate::select::tests::parse(
+        "builtin.function public extern(\"C\") @fill(%p: ptr<u64, byte>, %n: u32, %v: u64) { \
+         hir.mem_set %p, %n, %v : (ptr<u64, byte>, u32, u64); builtin.ret; };",
+    );
+    let (plan, frame, code) = crate::select::tests::ready(&f, &crate::select::SelectEnv::default());
+    verify(&plan, &frame, code.clone()).unwrap();
+    for mutation in 0..5 {
+        let mut bad = code.clone();
+        let mut changed = 0;
+        rewrite(&mut bad, &mut |op| {
+            if mutation < 4
+                && let AnnotatedOp::While { body, .. } = op
+            {
+                let index = body
+                    .ops()
+                    .iter()
+                    .position(|op| {
+                        matches!(
+                            op,
+                            AnnotatedOp::Instruction {
+                                instruction: Instruction::Exec(_),
+                                ..
+                            }
+                        )
+                    })
+                    .unwrap();
+                match mutation {
+                    0 => {
+                        let AnnotatedOp::Instruction { instruction, .. } =
+                            &mut body.ops_mut()[index]
+                        else {
+                            unreachable!()
+                        };
+                        *instruction = Instruction::Exec(symbol("::intrinsics::mem::store_sw"));
+                    }
+                    1 => {
+                        body.ops_mut().insert(0, inst(Instruction::Dup15));
+                    }
+                    2 => {
+                        body.ops_mut().insert(index, inst(Instruction::Swap2));
+                    }
+                    _ => {
+                        body.ops_mut().insert(
+                            index,
+                            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+                        );
+                    }
+                }
+                changed += 1;
+            }
+        });
+        if mutation == 4 {
+            let index = bad
+                .ops()
+                .iter()
+                .rposition(|op| {
+                    matches!(
+                        op,
+                        AnnotatedOp::Instruction {
+                            instruction: Instruction::Drop,
+                            ..
+                        }
+                    )
+                })
+                .unwrap();
+            bad.ops_mut().remove(index);
+            changed += 1;
+        }
+        assert_eq!(changed, 1);
+        assert!(verify(&plan, &frame, bad).is_err(), "mutation {mutation}");
+    }
+}
+
+#[test]
+fn memory_final_source_local_layout_mutation_rejects() {
+    let mut f = crate::select::tests::parse(
+        "builtin.function public extern(\"C\") @address() -> ptr<u32, element> { %p = \
+         hir.local_address <{ local = #builtin.local_variable<1, u32> }>; builtin.ret %p : \
+         (ptr<u32, element>); };",
+    );
+    f.function.borrow_mut().alloc_local(midenc_hir::Type::U128);
+    f.function.borrow_mut().alloc_local(midenc_hir::Type::U32);
+    let (plan, frame, code) = crate::select::tests::ready(&f, &crate::select::SelectEnv::default());
+    verify(&plan, &frame, code.clone()).unwrap();
+    let bad = FinalFrameLayout::new(
+        SourceLocalLayout {
+            offsets: vec![0, 3],
+            extent: 5,
+        },
+        frame.spills().clone(),
+        frame.scratch().clone(),
+        frame.aligned_size(),
+    )
+    .unwrap();
+    assert_eq!(
+        verify(&plan, &bad, code).unwrap_err().category,
+        DiagnosticCategory::FrameCapacityExceeded
+    );
+}
+
+#[test]
+fn memory_source_local_access_cannot_enter_compiler_frame_padding() {
+    let mut f = crate::select::tests::parse(
+        "builtin.function public extern(\"C\") @store(%v: u32) { hir.store_local %v <{ local = \
+         #builtin.local_variable<0, u32> }> : (u32); builtin.ret; };",
+    );
+    f.function.borrow_mut().alloc_local(midenc_hir::Type::U32);
+    let (plan, frame, mut code) =
+        crate::select::tests::ready(&f, &crate::select::SelectEnv::default());
+    let mut changed = 0;
+    rewrite(&mut code, &mut |op| {
+        if let AnnotatedOp::Instruction {
+            instruction: i @ Instruction::Locaddr(_),
+            ..
+        } = op
+        {
+            *i = Instruction::Locaddr(1u16.into());
+            changed += 1;
+        }
+    });
+    assert_eq!(changed, 1);
+    assert!(verify(&plan, &frame, code).is_err());
+}

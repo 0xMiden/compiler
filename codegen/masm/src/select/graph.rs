@@ -611,6 +611,29 @@ impl<'a, 'e> Selector<'a, 'e> {
                     let outputs =
                         self.ids(op.results().all().iter().map(|v| v.borrow().as_value_ref()))?;
                     match rule {
+                        SelectionRule::Memory(kind) => {
+                            let mut definition =
+                                crate::lower::units::memory::Memory::from_source(kind, &op)?;
+                            let input_atoms = self.atoms(&inputs);
+                            let output_atoms = self.atoms(&outputs);
+                            definition.bind(&input_atoms, &output_atoms);
+                            let proof = core::mem::take(&mut definition.proof);
+                            let effects = definition.effects.clone();
+                            self.add_unit(
+                                current,
+                                source,
+                                UnitSelection {
+                                    inputs: input_atoms,
+                                    stored: vec![],
+                                    outputs: output_atoms,
+                                    body: HirBody::Memory(alloc::boxed::Box::new(definition)),
+                                    proof,
+                                    effects,
+                                    scratch: vec![],
+                                    scratch_effects: vec![],
+                                },
+                            )?;
+                        }
                         SelectionRule::Arithmetic(kind) => {
                             let mut definition =
                                 crate::lower::units::arithmetic::Arithmetic::from_source(

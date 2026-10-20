@@ -70,6 +70,7 @@ mod arithmetic;
 mod control;
 mod coverage;
 mod indirect;
+mod memory;
 
 use alloc::{vec, vec::Vec};
 
@@ -94,7 +95,7 @@ fn checked(f: &Parsed, env: &SelectEnv<'_>) -> verify::CheckedSelectedProgram {
     )
     .unwrap()
 }
-fn ready(
+pub(crate) fn ready(
     f: &Parsed,
     env: &SelectEnv<'_>,
 ) -> (crate::plan::actions::ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
@@ -137,7 +138,27 @@ fn execute(f: &Parsed, env: &SelectEnv<'_>, inputs: &[usize], expected: &[usize]
     execute_code(&code).unwrap();
 }
 fn execute_linked(f: &Parsed, inputs: &[usize], expected: &[usize]) {
-    let (plan, frame, body) = ready(f, &SelectEnv::default());
+    execute_linked_memory(f, inputs, expected, "", "").unwrap();
+}
+fn execute_linked_memory(
+    f: &Parsed,
+    inputs: &[usize],
+    expected: &[usize],
+    initialize: &str,
+    observe: &str,
+) -> Result<(), midenc_hir::Report> {
+    execute_linked_memory_mutate(f, inputs, expected, initialize, observe, |_| {})
+}
+fn execute_linked_memory_mutate(
+    f: &Parsed,
+    inputs: &[usize],
+    expected: &[usize],
+    initialize: &str,
+    observe: &str,
+    mutate: impl FnOnce(&mut AnnotatedMasmBody),
+) -> Result<(), midenc_hir::Report> {
+    let (plan, frame, mut body) = ready(f, &SelectEnv::default());
+    mutate(&mut body);
     let procedure = verify::verify(&plan, &frame, body)
         .unwrap()
         .into_masm(crate::masm::ProcedureName::new("selected").unwrap())
@@ -154,7 +175,8 @@ fn execute_linked(f: &Parsed, inputs: &[usize], expected: &[usize]) {
     let mut result = expected.to_vec();
     result.extend(&suffix);
     let code = alloc::format!(
-        "{procedure} begin {} {} exec.selected {} exec.::miden::core::sys::truncate_stack end",
+        "{procedure} begin {initialize} {} {} exec.selected {} {observe} \
+         exec.::miden::core::sys::truncate_stack end",
         crate::plan::tests::lowering_units::push_top(&suffix),
         crate::plan::tests::lowering_units::push_top(inputs),
         crate::plan::tests::lowering_units::assert_top(&result)
@@ -169,7 +191,8 @@ fn execute_linked(f: &Parsed, inputs: &[usize], expected: &[usize]) {
     host.load_library(miden_processor::HostLibrary::from(intrinsics)).unwrap();
     miden_processor::FastProcessor::new(miden_processor::StackInputs::default())
         .execute_sync(&program, &mut host)
-        .unwrap();
+        .map_err(|e| midenc_hir::Report::msg(e.to_string()))?;
+    Ok(())
 }
 fn execute_code(code: &str) -> Result<(), midenc_hir::Report> {
     let program = miden_assembly::Assembler::default()

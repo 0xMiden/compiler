@@ -382,7 +382,7 @@ impl TargetEffects {
             U32OverflowingAdd | U32OverflowingSub | U32WideningMul | U32DivMod => {
                 StackEffect::computed(2, 2, &[]).trapping()
             }
-            U32WrappingAdd3 => StackEffect::computed(3, 1, &[-1, -1]).trapping(),
+            U32WrappingAdd3 | U32WrappingMadd => StackEffect::computed(3, 1, &[-1, -1]).trapping(),
             U32WrappingAddImm(value) | U32WrappingSubImm(value) | U32WrappingMulImm(value) => {
                 literal(value)?;
                 StackEffect::computed(1, 1, &[1, -1]).trapping()

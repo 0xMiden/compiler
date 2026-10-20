@@ -1,0 +1,1056 @@
+use super::*;
+
+#[test]
+fn mem_grow_and_size_have_u32_publication() {
+    let context = Rc::new(Context::default());
+    let mut stack = crate::OperandStack::new(context);
+    stack.push(midenc_hir::Type::U32);
+    let mut invoked = Default::default();
+    let mut body = vec![];
+    crate::emit::OpEmitter::new(&mut invoked, &mut body, &mut stack).mem_grow(Default::default());
+    assert_eq!(stack[0].ty(), midenc_hir::Type::U32);
+}
+
+/// Independent fixtures enumerate all fifteen public registrations.
+pub(super) fn fixtures() -> Vec<(Parsed, bool)> {
+    let mut out = vec![];
+    for op in ["load", "store", "mem_set", "mem_cpy", "mem_move", "mem_grow", "mem_size"] {
+        let (args, result, body) = match op {
+            "load" => (
+                "%p: ptr<u32, byte>",
+                " -> u32",
+                "%r = hir.load %p; builtin.ret %r : (u32);".to_string(),
+            ),
+            "store" => (
+                "%p: ptr<u32, byte>, %v: u32",
+                "",
+                "hir.store %p, %v : (ptr<u32, byte>, u32); builtin.ret;".to_string(),
+            ),
+            "mem_set" => (
+                "%p: ptr<u32, byte>, %n: u32, %v: u32",
+                "",
+                "hir.mem_set %p, %n, %v : (ptr<u32, byte>, u32, u32); builtin.ret;".to_string(),
+            ),
+            "mem_cpy" | "mem_move" => (
+                "%p: ptr<u16, byte>, %q: ptr<u16, byte>, %n: u32",
+                "",
+                alloc::format!(
+                    "hir.{op} %p, %q, %n : (ptr<u16, byte>, ptr<u16, byte>, u32); builtin.ret;"
+                ),
+            ),
+            "mem_grow" => (
+                "%n: u32",
+                " -> u32",
+                "%r = hir.mem_grow %n; builtin.ret %r : (u32);".to_string(),
+            ),
+            _ => ("", " -> u32", "%r = hir.mem_size; builtin.ret %r : (u32);".to_string()),
+        };
+        out.push((
+            parse(&alloc::format!(
+                "builtin.function public extern(\"C\") @test({args}){result} {{ {body} }};"
+            )),
+            false,
+        ));
+    }
+    for (op, src, dst) in [
+        ("i32_load_8s", "i8", "i32"),
+        ("i32_load_16s", "i16", "i32"),
+        ("i64_load_8s", "i8", "i64"),
+        ("i64_load_16s", "i16", "i64"),
+        ("i64_load_32s", "i32", "i64"),
+    ] {
+        out.push((
+            parse(&alloc::format!(
+                "builtin.function public extern(\"C\") @test(%p: ptr<{src}, byte>) -> {dst} {{ %r \
+                 = wasm.{op} %p; builtin.ret %r : ({dst}); }};"
+            )),
+            false,
+        ));
+    }
+    for (op, args, result, body) in [
+        (
+            "load_local",
+            "",
+            " -> u32",
+            "%r = hir.load_local <{ local = #builtin.local_variable<0, u32> }>; builtin.ret %r : \
+             (u32);",
+        ),
+        (
+            "store_local",
+            "%v: u32",
+            "",
+            "hir.store_local %v <{ local = #builtin.local_variable<0, u32> }> : (u32); \
+             builtin.ret;",
+        ),
+        (
+            "local_address",
+            "",
+            " -> ptr<u32, element>",
+            "%r = hir.local_address <{ local = #builtin.local_variable<0, u32> }>; builtin.ret %r \
+             : (ptr<u32, element>);",
+        ),
+    ] {
+        let mut f = parse(&alloc::format!(
+            "builtin.function public extern(\"C\") @{op}({args}){result} {{ {body} }};"
+        ));
+        f.function.borrow_mut().alloc_local(midenc_hir::Type::U32);
+        out.push((f, false));
+    }
+    out
+}
+
+#[test]
+fn all_registered_memory_operations_select_exact_source() {
+    for (f, _) in fixtures() {
+        let (plan, frame, body) = ready(&f, &SelectEnv::default());
+        verify::verify(&plan, &frame, body).unwrap();
+    }
+}
+
+fn memory_function(ty: &str, address_space: &str, body: &str, result: bool) -> Parsed {
+    let pointer = alloc::format!("ptr<{ty}{address_space}>");
+    let result_type = if result {
+        alloc::format!(" -> {ty}")
+    } else {
+        "".into()
+    };
+    parse(&alloc::format!(
+        "builtin.function public extern(\"C\") @memory(%p: {pointer}, %v: {ty}){result_type} {{ \
+         {body} }};"
+    ))
+}
+
+#[test]
+fn typed_memory_matrix_matches_vm() {
+    for (ty, value) in [
+        ("i1", vec![1]),
+        ("u8", vec![0xad]),
+        ("i8", vec![0xfe]),
+        ("u16", vec![0xbeef]),
+        ("i16", vec![0xffee]),
+        ("u32", vec![0xaabbccdd]),
+        ("i32", vec![0xffeeddcc]),
+        ("u64", vec![0x12345678, 0xabcdef01]),
+        ("i64", vec![0x10203040, 0xfedcba98]),
+        ("u128", vec![1, 2, 3, 0xffffffff]),
+        ("i128", vec![9, 8, 7, 0xfffffffe]),
+        ("felt", vec![0xffff_ffff_0000_0000]),
+        ("ptr<u32, byte>", vec![0x1234]),
+    ] {
+        for space in [", byte", ", element"] {
+            let body = alloc::format!(
+                "hir.store %p, %v : (ptr<{ty}{space}>, {ty}); %r = hir.load %p; builtin.ret %r : \
+                 ({ty});"
+            );
+            let f = memory_function(ty, space, &body, true);
+            for offset in 0..if space == ", byte" && ty != "felt" {
+                4
+            } else {
+                1
+            } {
+                let mut inputs = vec![if space == ", byte" { 256 + offset } else { 64 }];
+                inputs.extend(&value);
+                execute_linked_memory(
+                    &f,
+                    &inputs,
+                    &value,
+                    "push.0 mem_store.64 push.0 mem_store.65 push.0 mem_store.66 push.0 \
+                     mem_store.67 push.0 mem_store.68",
+                    "",
+                )
+                .unwrap();
+            }
+        }
+    }
+    let f = memory_function(
+        "u8",
+        ", byte",
+        "hir.store %p, %v : (ptr<u8, byte>, u8); %r = hir.load %p; builtin.ret %r : (u8);",
+        true,
+    );
+    execute_linked_memory(
+        &f,
+        &[257, 0xab],
+        &[0xab],
+        "push.287454020 mem_store.64",
+        "mem_load.64 push.287484740 assert_eq",
+    )
+    .unwrap();
+}
+
+#[test]
+fn signed_loads_match_vm() {
+    for (op, src, dst, bits) in [
+        ("i32_load_8s", "i8", "i32", 8),
+        ("i32_load_16s", "i16", "i32", 16),
+        ("i64_load_8s", "i8", "i64", 8),
+        ("i64_load_16s", "i16", "i64", 16),
+        ("i64_load_32s", "i32", "i64", 32),
+    ] {
+        let f = parse(&alloc::format!(
+            "builtin.function public extern(\"C\") @signed(%p: ptr<{src}, byte>) -> {dst} {{ %r = \
+             wasm.{op} %p; builtin.ret %r : ({dst}); }};"
+        ));
+        for raw in [0u64, 1, 1 << (bits - 1), (1u64 << bits) - 1] {
+            for offset in 0..4 {
+                let signed = ((raw << (64 - bits)) as i64) >> (64 - bits);
+                let expected = if dst == "i32" {
+                    vec![signed as u32 as usize]
+                } else {
+                    vec![signed as u32 as usize, (signed as u64 >> 32) as usize]
+                };
+                let wide = (raw as u128) << (offset * 8);
+                let initialize = alloc::format!(
+                    "push.{} mem_store.64 push.{} mem_store.65",
+                    wide as u32,
+                    (wide >> 32) as u32
+                );
+                execute_linked_memory(&f, &[256 + offset], &expected, &initialize, "").unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn exact_memory_types_arity_and_local_authority_are_checked() {
+    use midenc_hir::{Type, Value};
+    let f = parse(
+        "builtin.function public extern(\"C\") @load(%p: ptr<u32, byte>) { %r = hir.load %p; \
+         builtin.ret; };",
+    );
+    let mut result =
+        f.borrow().entry_block().borrow().body().iter().next().unwrap().results().all()[0];
+    result.borrow_mut().set_type(Type::I32);
+    assert_malformed_source_rejected(&f, &SelectEnv::default());
+    for (mut f, _) in fixtures() {
+        if f.borrow().name().as_str() == "load_local"
+            || f.borrow().name().as_str() == "local_address"
+            || f.borrow().name().as_str() == "store_local"
+        {
+            f.function.borrow_mut().get_locals_mut().remove(0);
+            assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+        }
+    }
+}
+
+#[test]
+fn selected_fill_reuses_approved_native_algorithm() {
+    for (ty, value) in [
+        ("u8", vec![0xa7]),
+        ("u16", vec![0xabcd]),
+        ("u32", vec![0xaabbccdd]),
+        ("u64", vec![0x12345678, 0xabcdef01]),
+        ("u128", vec![1, 2, 3, 4]),
+        ("felt", vec![0xffff_ffff_0000_0000]),
+    ] {
+        for space in [", byte", ", element"] {
+            let f = parse(&alloc::format!(
+                "builtin.function public extern(\"C\") @fill(%p: ptr<{ty}{space}>, %n: u32, %v: \
+                 {ty}) {{ hir.mem_set %p, %n, %v : (ptr<{ty}{space}>,u32,{ty}); builtin.ret; }};"
+            ));
+            let mut inputs = vec![if space == ", byte" { 256 } else { 64 }, 3];
+            inputs.extend(&value);
+            let bytes = match ty {
+                "u8" => 1,
+                "u16" => 2,
+                "u64" => 8,
+                "u128" => 16,
+                _ => 4,
+            };
+            let mut cells = [0u64; 13];
+            if ty == "felt" {
+                cells[..3].fill(value[0] as u64);
+            } else {
+                for n in 0..3 {
+                    for (lane, v) in value.iter().enumerate() {
+                        for b in 0..bytes.min(4) {
+                            let pos = n * bytes + lane * 4 + b;
+                            cells[pos / 4] |= (((*v as u64) >> (8 * b)) & 255) << (8 * (pos % 4));
+                        }
+                    }
+                }
+            }
+            let init = (0..13)
+                .map(|i| alloc::format!("push.0 mem_store.{}", 64 + i))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let observe = cells
+                .iter()
+                .enumerate()
+                .map(|(i, v)| alloc::format!("mem_load.{} push.{v} assert_eq", 64 + i))
+                .collect::<Vec<_>>()
+                .join(" ");
+            execute_linked_memory(&f, &inputs, &[], &init, &observe).unwrap();
+        }
+    }
+}
+
+#[test]
+fn selected_copy_paths_match_existing_semantics() {
+    for ty in ["u8", "u16", "u32", "u64", "u128", "array<u32; 8>"] {
+        for op in ["mem_cpy", "mem_move"] {
+            let source_ty = if ty == "array<u32; 8>" { "u32" } else { ty };
+            let mut f = parse(&alloc::format!(
+                "builtin.function public extern(\"C\") @copy(%p: ptr<{source_ty}, byte>, %q: \
+                 ptr<{source_ty}, byte>, %n: u32) {{ hir.{op} %p, %q, %n : (ptr<{source_ty}, \
+                 byte>, ptr<{source_ty}, byte>, u32); builtin.ret; }};"
+            ));
+            if ty == "array<u32; 8>" {
+                let ptr = midenc_hir::Type::from(midenc_hir::PointerType::new(
+                    midenc_hir::Type::from(midenc_hir::ArrayType::new(midenc_hir::Type::U32, 8)),
+                ));
+                retype_parameters(&mut f, &[ptr.clone(), ptr, midenc_hir::Type::U32]);
+            }
+            let size = match ty {
+                "u8" => 1,
+                "u16" => 2,
+                "u32" => 4,
+                "u64" => 8,
+                "u128" => 16,
+                _ => 32,
+            };
+            let init = (0..32)
+                .map(|i| alloc::format!("push.{} mem_store.{}", 0x10203040u64 + i, 64 + i))
+                .collect::<Vec<_>>()
+                .join(" ");
+            for count in [0, 1, 2] {
+                let bytes = count * size;
+                let host =
+                    (0..32).flat_map(|i| (0x10203040u32 + i).to_le_bytes()).collect::<Vec<_>>();
+                let mut expected = host.clone();
+                expected.copy_within(0..bytes, 64);
+                let observe = expected
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        alloc::format!(
+                            "mem_load.{} push.{} assert_eq",
+                            64 + i,
+                            u32::from_le_bytes(*c)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                execute_linked_memory(&f, &[256, 320, count], &[], &init, &observe).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn heap_memory_executes_u32_results_and_traps() {
+    let grow = parse(
+        "builtin.function public extern(\"C\") @grow(%n: u32) -> u32 { %r = hir.mem_grow %n; \
+         builtin.ret %r : (u32); };",
+    );
+    let size = parse(
+        "builtin.function public extern(\"C\") @size() -> u32 { %r = hir.mem_size; builtin.ret %r \
+         : (u32); };",
+    );
+    let init = "push.65536 exec.::intrinsics::mem::heap_init";
+    for (pages, expected, new_size) in
+        [(0, 0, 0), (2, 0, 2), (u32::MAX as usize, u32::MAX as usize, 0)]
+    {
+        let observe = alloc::format!(
+            "mem_load.1073741825 push.{new_size} assert_eq mem_load.1073741824 push.{} assert_eq",
+            65536 + new_size * 65536
+        );
+        execute_linked_memory(&grow, &[pages], &[expected], init, &observe).unwrap();
+    }
+    execute_linked_memory(&size, &[], &[0], init, "").unwrap();
+    assert!(execute_linked_memory(&size, &[], &[], "", "").is_err());
+    assert!(execute_linked_memory(&grow, &[0], &[], "", "").is_err());
+}
+
+#[test]
+fn local_memory_uses_final_frame_and_preserves_spills() {
+    use midenc_hir::Type;
+    let mut f = parse(
+        "builtin.function public extern(\"C\") @local(%v: u64) -> u64 { hir.store_local %v <{ \
+         local = #builtin.local_variable<1, u64> }> : (u64); %p = hir.local_address <{ local = \
+         #builtin.local_variable<1, u64> }>; %r = hir.load %p; builtin.ret %r : (u64); };",
+    );
+    f.function.borrow_mut().alloc_local(Type::U128);
+    f.function.borrow_mut().alloc_local(Type::U64);
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    assert_eq!(frame.resolve(FrameRef::SourceLocal(1)).unwrap(), 4);
+    verify::verify(&plan, &frame, body).unwrap();
+    execute_linked(&f, &[0x12345678, 0xabcdef01], &[0x12345678, 0xabcdef01]);
+}
+
+#[test]
+fn mutated_memory_calls_control_and_publication_reject() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @load(%p: ptr<u64, byte>) -> u64 { %r = hir.load \
+         %p; builtin.ret %r : (u64); };",
+    );
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    for mutation in 0..5 {
+        let mut bad = body.clone();
+        let call = bad
+            .ops_mut()
+            .iter()
+            .position(|op| {
+                matches!(
+                    op,
+                    AnnotatedOp::Instruction {
+                        instruction: crate::masm::Instruction::Exec(_),
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        match mutation {
+            0 => {
+                let AnnotatedOp::Instruction { instruction, .. } = &mut bad.ops_mut()[call] else {
+                    unreachable!()
+                };
+                *instruction = crate::masm::Instruction::Exec(crate::lower::raw::target(
+                    "::intrinsics::mem::load_sw",
+                ));
+            }
+            1 => {
+                bad.ops_mut().remove(call);
+            }
+            2 => {
+                let copy = bad.ops()[call].clone();
+                bad.ops_mut().insert(call, copy);
+            }
+            3 => {
+                let end = bad
+                    .ops_mut()
+                    .iter()
+                    .position(|op| matches!(op, AnnotatedOp::Boundary(Boundary::UnitEnd(_))))
+                    .unwrap();
+                bad.ops_mut().remove(end);
+            }
+            _ => {
+                bad.ops_mut().insert(
+                    call,
+                    AnnotatedOp::Instruction {
+                        instruction: crate::masm::Instruction::Swap2,
+                        unit: SelectedStepId(0),
+                    },
+                );
+            }
+        }
+        assert!(verify::verify(&plan, &frame, bad).is_err(), "mutation {mutation}");
+    }
+    for (f, _) in fixtures() {
+        let function = f.borrow();
+        let mut selected = select_function(&function, &SelectEnv::default()).unwrap();
+        let unit = selected.segments.iter_mut().flat_map(|s| &mut s.units).next().unwrap();
+        unit.effects.may_trap = false;
+        // LocalAddress has no trap; its effect mutation is handled separately by coverage.
+        if function.name().as_str() != "local_address" {
+            assert!(
+                check_selection(
+                    selected,
+                    &SourceContext::Hir {
+                        function: &function,
+                        env: &SelectEnv::default()
+                    }
+                )
+                .is_err()
+            );
+        }
+    }
+}
+
+/// Retype real source parameters and their immutable signature together; no evaluator stand-in.
+fn retype_parameters(f: &mut Parsed, types: &[midenc_hir::Type]) {
+    use midenc_hir::Value;
+    for (i, ty) in types.iter().enumerate() {
+        f.function.borrow_mut().get_signature_mut().param_mut(i).unwrap().ty = ty.clone();
+        let mut argument = f.borrow().entry_block().borrow().arguments()[i];
+        argument.borrow_mut().set_type(ty.clone());
+    }
+}
+
+#[test]
+fn packed_store_fill_and_local_forms_preserve_approved_domain() {
+    use midenc_hir::{
+        AddressSpace, ArrayType, Builder, BuilderExt, CallConv, EnumType, FunctionType, OpBuilder,
+        PointerType, SourceSpan, StructType, Type, TypeRepr, Variant,
+    };
+    let types = [
+        Type::from(ArrayType::new(Type::U32, 1)),
+        Type::from(StructType::new_with_repr(TypeRepr::Transparent, [Type::U32])),
+        Type::from(
+            EnumType::new("PackedTag".into(), Type::U32, [Variant::c_like("One".into(), Some(1))])
+                .unwrap(),
+        ),
+        Type::from(FunctionType::new(CallConv::Fast, [], [])),
+        Type::from(ArrayType::new(Type::U8, 3)),
+        Type::from(ArrayType::new(Type::I1, 3)),
+        Type::from(ArrayType::new(Type::Felt, 1)),
+    ];
+    for ty in types {
+        for element in [false, true] {
+            let ptr = Type::from(PointerType::new_with_address_space(
+                ty.clone(),
+                if element {
+                    AddressSpace::Element
+                } else {
+                    AddressSpace::Byte
+                },
+            ));
+            for fill in [false, true] {
+                let mut f = if fill {
+                    parse(
+                        "builtin.function public extern(\"C\") @packed(%p: ptr<u32, byte>, %n: \
+                         u32, %v: u32) { hir.mem_set %p, %n, %v : (ptr<u32, byte>, u32, u32); \
+                         builtin.ret; };",
+                    )
+                } else {
+                    parse(
+                        "builtin.function public extern(\"C\") @packed(%p: ptr<u32, byte>, %v: \
+                         u32) { hir.store %p, %v : (ptr<u32, byte>, u32); builtin.ret; };",
+                    )
+                };
+                let types = if fill {
+                    vec![ptr.clone(), Type::U32, ty.clone()]
+                } else {
+                    vec![ptr.clone(), ty.clone()]
+                };
+                retype_parameters(&mut f, &types);
+                let bits = ty.size_in_bits();
+                let value = 0x12345678usize
+                    & if bits < 32 {
+                        (1usize << bits) - 1
+                    } else {
+                        u32::MAX as usize
+                    };
+                let count = if fill { 3 } else { 1 };
+                for offset in 0..if element { 1 } else { 4 } {
+                    let base = if element { 64 } else { 256 + offset };
+                    let inputs = if fill {
+                        vec![base, count, value]
+                    } else {
+                        vec![base, value]
+                    };
+                    let mut bytes = [0u8; 16];
+                    for n in 0..count {
+                        let bit = offset * 8 + n * ty.size_in_bytes() * 8;
+                        for b in 0..bits {
+                            if value & (1usize << b) != 0 {
+                                bytes[(bit + b) / 8] |= 1 << ((bit + b) % 8);
+                            }
+                        }
+                    }
+                    let observe = bytes
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .enumerate()
+                        .map(|(i, c)| {
+                            alloc::format!(
+                                "mem_load.{} push.{} assert_eq",
+                                64 + i,
+                                u32::from_le_bytes(*c)
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    execute_linked_memory(
+                        &f,
+                        &inputs,
+                        &[],
+                        "push.0 mem_store.64 push.0 mem_store.65 push.0 mem_store.66 push.0 \
+                         mem_store.67",
+                        &observe,
+                    )
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "{ty}, fill={fill}, element={element}, offset={offset}, bits={bits}, \
+                             stride={}: {e:?}",
+                            ty.size_in_bytes()
+                        )
+                    });
+                }
+            }
+        }
+        let mut f =
+            parse("builtin.function public extern(\"C\") @local_packed(%v: u32) { builtin.ret; };");
+        retype_parameters(&mut f, core::slice::from_ref(&ty));
+        let local = f.function.borrow_mut().alloc_local(ty.clone());
+        let value = f.borrow().entry_block().borrow().arguments()[0];
+        let terminator = f.borrow().entry_block().borrow().terminator().unwrap();
+        let mut builder = OpBuilder::new(f.context.clone());
+        builder.set_insertion_point_before(terminator);
+        builder.create::<crate::hir::StoreLocal, _>(SourceSpan::UNKNOWN)(local, value).unwrap();
+        execute_linked(&f, &[1], &[]);
+        // The same aggregate remains explicitly outside scalar SSA-load support.
+        let mut load = parse(
+            "builtin.function public extern(\"C\") @packed_load(%p: ptr<u32, byte>) { %r = \
+             hir.load %p; builtin.ret; };",
+        );
+        retype_parameters(&mut load, &[Type::from(PointerType::new(ty.clone()))]);
+        use midenc_hir::Value;
+        let mut result = load
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .next()
+            .unwrap()
+            .results()
+            .all()[0];
+        result.borrow_mut().set_type(ty);
+        assert!(select_function(&load.borrow(), &SelectEnv::default()).is_err());
+    }
+}
+
+#[test]
+fn wrong_valid_source_local_instruction_is_caught_by_vm_semantics() {
+    use midenc_hir::Type;
+    let mut f = parse(
+        "builtin.function public extern(\"C\") @locals(%a: u32, %b: u32) -> u32 { hir.store_local \
+         %a <{ local = #builtin.local_variable<0, u32> }> : (u32); hir.store_local %b <{ local = \
+         #builtin.local_variable<1, u32> }> : (u32); %r = hir.load_local <{ local = \
+         #builtin.local_variable<1, u32> }>; builtin.ret %r : (u32); };",
+    );
+    f.function.borrow_mut().alloc_local(Type::U32);
+    f.function.borrow_mut().alloc_local(Type::U32);
+    execute_linked(&f, &[17, 29], &[29]);
+    let result = execute_linked_memory_mutate(&f, &[17, 29], &[29], "", "", |body| {
+        let instruction = body
+            .ops_mut()
+            .iter_mut()
+            .rev()
+            .find_map(|op| match op {
+                AnnotatedOp::Instruction {
+                    instruction: i @ crate::masm::Instruction::Locaddr(_),
+                    ..
+                } => Some(i),
+                _ => None,
+            })
+            .unwrap();
+        *instruction = crate::masm::Instruction::Locaddr(0u16.into());
+    });
+    // Replay preserves the real local address token. Choosing the right valid source local is
+    // algorithm semantics; the actual VM return-value assertion detects the wrong one.
+    assert!(result.is_err());
+}
+
+#[test]
+fn local_memory_preserves_live_spill_sentinels() {
+    use midenc_hir::Type;
+    let args = (0..20).map(|i| alloc::format!("%s{i}: u32")).collect::<Vec<_>>().join(", ");
+    let results = (0..20).map(|_| "u32").chain(["u64"]).collect::<Vec<_>>().join(", ");
+    let values = (0..20)
+        .map(|i| alloc::format!("%s{i}"))
+        .chain(["%r".into()])
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut f = parse(&alloc::format!(
+        "builtin.function public extern(\"C\") @pressure({args}, %v: u64) -> ({results}) {{ \
+         hir.store_local %v <{{ local = #builtin.local_variable<1, u64> }}> : (u64); %r = \
+         hir.load_local <{{ local = #builtin.local_variable<1, u64> }}>; builtin.ret {values} : \
+         ({results}); }};"
+    ));
+    f.function.borrow_mut().alloc_local(Type::U128);
+    f.function.borrow_mut().alloc_local(Type::U64);
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    assert!(!frame.spills().is_empty());
+    verify::verify(&plan, &frame, body).unwrap();
+    let inputs = (0..20).map(|i| 100 + i).chain([0x12345678, 0xabcdef01]).collect::<Vec<_>>();
+    execute_linked(&f, &inputs, &inputs);
+}
+
+#[test]
+fn memory_source_result_arity_and_exact_types_reject_without_inference() {
+    use midenc_hir::{SourceSpan, Type, Value};
+    for mutation in 0..3 {
+        for (f, _) in fixtures() {
+            let mut op = f
+                .borrow()
+                .entry_block()
+                .borrow()
+                .body()
+                .front()
+                .get()
+                .unwrap()
+                .as_operation_ref();
+            if mutation == 0 && !op.borrow().results().is_empty() {
+                let mut result = op.borrow().results().all()[0];
+                result.borrow_mut().set_type(Type::I128);
+            } else if mutation == 1 && !op.borrow().results().is_empty() {
+                let last = op.borrow().results().groups().count() - 1;
+                op.borrow_mut().results_mut().group_mut(last).pop().unwrap();
+            } else {
+                let n = op.borrow().results().len();
+                let extra = f.context.make_result(SourceSpan::UNKNOWN, Type::U32, op, n as u16);
+                op.borrow_mut().results_mut().push(extra);
+            }
+            assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+        }
+    }
+    for (body, args) in [
+        ("hir.store %p, %v : (ptr<u32, byte>, i32);", "%p: ptr<u32, byte>, %v: i32"),
+        (
+            "hir.mem_set %p, %n, %v : (ptr<u32, byte>, u32, i32);",
+            "%p: ptr<u32, byte>, %n: u32, %v: i32",
+        ),
+    ] {
+        let f = parse(&alloc::format!(
+            "builtin.function public extern(\"C\") @wrong({args}) {{ {body} builtin.ret; }};"
+        ));
+        assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+    }
+}
+
+#[test]
+fn selected_fill_range_and_terminal_native_cell_match_vm() {
+    for (ty, value, count, expected) in [
+        ("u8", 0xab, 4, 0xababababu32),
+        ("u16", 0xabcd, 2, 0xabcdabcd),
+        ("u32", 0x12345678, 1, 0x12345678),
+    ] {
+        let f = parse(&alloc::format!(
+            "builtin.function public extern(\"C\") @end(%p: ptr<{ty}, element>, %n: u32, %v: \
+             {ty}) {{ hir.mem_set %p, %n, %v : (ptr<{ty}, element>, u32, {ty}); builtin.ret; }};"
+        ));
+        let init = "push.0 mem_store.4294967295";
+        let observe = alloc::format!("mem_load.4294967295 push.{expected} assert_eq");
+        execute_linked_memory(&f, &[u32::MAX as usize, count, value], &[], init, &observe).unwrap();
+        assert!(
+            execute_linked_memory(&f, &[u32::MAX as usize, count + 1, value], &[], init, "")
+                .is_err()
+        );
+        execute_linked_memory(
+            &f,
+            &[u32::MAX as usize, 0, value],
+            &[],
+            init,
+            "mem_load.4294967295 assertz",
+        )
+        .unwrap();
+    }
+    let f = parse(
+        "builtin.function public extern(\"C\") @end(%p: ptr<u8, byte>, %n: u32, %v: u8) { \
+         hir.mem_set %p, %n, %v : (ptr<u8, byte>, u32, u8); builtin.ret; };",
+    );
+    execute_linked_memory(&f, &[0xfffffffc, 0, 1], &[], "", "").unwrap();
+    assert!(execute_linked_memory(&f, &[0xfffffffd, 0, 1], &[], "", "").is_err());
+    assert!(execute_linked_memory(&f, &[0xfffffffc, 1, 1], &[], "", "").is_err());
+}
+
+#[test]
+fn selected_copy_overlap_direction_range_and_alignment_match_vm() {
+    for ty in ["u8", "u16", "u32", "u64"] {
+        let size = match ty {
+            "u8" => 1,
+            "u16" => 2,
+            "u32" => 4,
+            _ => 8,
+        };
+        for op in ["mem_cpy", "mem_move"] {
+            let f = parse(&alloc::format!(
+                "builtin.function public extern(\"C\") @copy(%p: ptr<{ty}, byte>, %q: ptr<{ty}, \
+                 byte>, %n: u32) {{ hir.{op} %p, %q, %n : (ptr<{ty}, byte>, ptr<{ty}, byte>, \
+                 u32); builtin.ret; }};"
+            ));
+            let init = (0..12)
+                .map(|i| alloc::format!("push.{} mem_store.{}", 0x10203040u32 + i, 64 + i))
+                .collect::<Vec<_>>()
+                .join(" ");
+            for (src, dst) in [(256, 256 + size), (256 + size, 256)] {
+                if op == "mem_cpy" {
+                    assert!(execute_linked_memory(&f, &[src, dst, 3], &[], &init, "").is_err());
+                } else {
+                    let mut bytes =
+                        (0..12).flat_map(|i| (0x10203040u32 + i).to_le_bytes()).collect::<Vec<_>>();
+                    bytes.copy_within(src - 256..src - 256 + 3 * size, dst - 256);
+                    let observe = bytes
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .enumerate()
+                        .map(|(i, c)| {
+                            alloc::format!(
+                                "mem_load.{} push.{} assert_eq",
+                                64 + i,
+                                u32::from_le_bytes(*c)
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    execute_linked_memory(&f, &[src, dst, 3], &[], &init, &observe).unwrap();
+                }
+            }
+            execute_linked_memory(&f, &[u32::MAX as usize, u32::MAX as usize, 0], &[], "", "")
+                .unwrap();
+            assert!(execute_linked_memory(&f, &[u32::MAX as usize, 256, 1], &[], "", "").is_err());
+            assert!(
+                execute_linked_memory(&f, &[256, 320, u32::MAX as usize], &[], "", "").is_err()
+            );
+        }
+    }
+    for op in ["mem_cpy", "mem_move"] {
+        let f = parse(&alloc::format!(
+            "builtin.function public extern(\"C\") @word(%p: ptr<u128, byte>, %q: ptr<u128, \
+             byte>, %n: u32) {{ hir.{op} %p, %q, %n : (ptr<u128, byte>, ptr<u128, byte>, u32); \
+             builtin.ret; }};"
+        ));
+        assert!(execute_linked_memory(&f, &[257, 320, 0], &[], "", "").is_err());
+    }
+}
+
+#[test]
+fn parsed_and_bound_local_authority_is_checked_before_emission() {
+    use midenc_hir::{Builder, BuilderExt, OpBuilder, SourceSpan, Type};
+    for declaration in [None, Some(Type::I32)] {
+        let mut f = parse(
+            "builtin.function public extern(\"C\") @mistyped() -> u32 { %r = hir.load_local <{ \
+             local = #builtin.local_variable<0, u32> }>; builtin.ret %r : (u32); };",
+        );
+        if let Some(ty) = declaration {
+            f.function.borrow_mut().alloc_local(ty);
+        }
+        assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+    }
+    let mut owner = parse("builtin.function public extern(\"C\") @owner() { builtin.ret; };");
+    let foreign = owner.function.borrow_mut().alloc_local(Type::U32);
+    let mut f = parse("builtin.function public extern(\"C\") @foreign() { builtin.ret; };");
+    f.function.borrow_mut().alloc_local(Type::U32);
+    let terminator = f.borrow().entry_block().borrow().terminator().unwrap();
+    let mut builder = OpBuilder::new(f.context.clone());
+    builder.set_insertion_point_before(terminator);
+    builder.create::<crate::hir::LoadLocal, _>(SourceSpan::UNKNOWN)(foreign).unwrap();
+    assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+}
+
+#[test]
+fn packed_store_support_does_not_authorize_aggregate_loads_or_scalar_copies() {
+    use midenc_hir::{ArrayType, Builder, BuilderExt, OpBuilder, PointerType, SourceSpan, Type};
+    for size in [2, 3, 4] {
+        let ty = Type::from(ArrayType::new(Type::U8, size));
+        for op in ["mem_cpy", "mem_move"] {
+            let mut f = parse(&alloc::format!(
+                "builtin.function public extern(\"C\") @copy(%p: ptr<u32, byte>, %q: ptr<u32, \
+                 byte>, %n: u32) {{ hir.{op} %p, %q, %n : (ptr<u32, byte>, ptr<u32, byte>, u32); \
+                 builtin.ret; }};"
+            ));
+            let pointer = Type::from(PointerType::new(ty.clone()));
+            retype_parameters(&mut f, &[pointer.clone(), pointer, Type::U32]);
+            assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+        }
+        let mut f = parse("builtin.function public extern(\"C\") @local() { builtin.ret; };");
+        let local = f.function.borrow_mut().alloc_local(ty);
+        let terminator = f.borrow().entry_block().borrow().terminator().unwrap();
+        let mut builder = OpBuilder::new(f.context.clone());
+        builder.set_insertion_point_before(terminator);
+        builder.create::<crate::hir::LocalAddress, _>(SourceSpan::UNKNOWN)(local).unwrap();
+        execute_linked(&f, &[], &[]);
+        builder.create::<crate::hir::LoadLocal, _>(SourceSpan::UNKNOWN)(local).unwrap();
+        assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+    }
+}
+
+#[test]
+fn wholeword_felt_wrappers_retain_full_field_values() {
+    use midenc_hir::{ArrayType, PointerType, StructType, Type, TypeRepr};
+    for ty in [
+        Type::from(ArrayType::new(Type::Felt, 1)),
+        Type::from(StructType::new_with_repr(TypeRepr::Transparent, [Type::Felt])),
+    ] {
+        let mut f = parse(
+            "builtin.function public extern(\"C\") @wrapper(%p: ptr<u32, byte>, %n: u32, %v: u32) \
+             { hir.mem_set %p, %n, %v : (ptr<u32, byte>,u32,u32); builtin.ret; };",
+        );
+        retype_parameters(&mut f, &[Type::from(PointerType::new(ty.clone())), Type::U32, ty]);
+        let value = 0xffff_ffff_0000_0000usize;
+        execute_linked_memory(
+            &f,
+            &[256, 2, value],
+            &[],
+            "",
+            &alloc::format!(
+                "mem_load.64 push.{value} assert_eq mem_load.65 push.{value} assert_eq"
+            ),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn aligned_copy_fast_paths_preserve_full_field_cells() {
+    for (ty, count, cells) in [("u8", 4, 1), ("u32", 1, 1), ("u128", 1, 4)] {
+        for op in ["mem_cpy", "mem_move"] {
+            let f = parse(&alloc::format!(
+                "builtin.function public extern(\"C\") @full(%p: ptr<{ty}, byte>, %q: ptr<{ty}, \
+                 byte>, %n: u32) {{ hir.{op} %p, %q, %n : (ptr<{ty}, byte>,ptr<{ty}, byte>,u32); \
+                 builtin.ret; }};"
+            ));
+            let initialize = (0..cells)
+                .map(|i| {
+                    alloc::format!("push.{} mem_store.{}", 0xffff_ffff_0000_0000u64 - i, 64 + i)
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            let observe = (0..cells)
+                .map(|i| {
+                    alloc::format!(
+                        "mem_load.{} push.{} assert_eq",
+                        80 + i,
+                        0xffff_ffff_0000_0000u64 - i
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            execute_linked_memory(&f, &[256, 320, count], &[], &initialize, &observe).unwrap();
+        }
+    }
+}
+
+#[test]
+fn selected_u16_uses_only_its_actual_memory_footprint() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @u16(%p: ptr<u16, byte>) -> u16 { %r = hir.load \
+         %p; builtin.ret %r : (u16); };",
+    );
+    let neighbor = (1u64 << 40) + 7;
+    let init = alloc::format!("push.287454020 mem_store.64 push.{neighbor} mem_store.65");
+    for (offset, expected) in [(0, 0x3344), (1, 0x2233), (2, 0x1122)] {
+        execute_linked_memory(
+            &f,
+            &[256 + offset],
+            &[expected],
+            &init,
+            &alloc::format!("mem_load.65 push.{neighbor} assert_eq"),
+        )
+        .unwrap();
+    }
+    assert!(execute_linked_memory(&f, &[259], &[], &init, "").is_err());
+}
+
+#[test]
+fn aligned_full_cell_store_has_only_its_required_memory_capability() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @store(%p: ptr<u32, element>, %v: u32) { hir.store \
+         %p, %v : (ptr<u32, element>,u32); builtin.ret; };",
+    );
+    let selected = select_function(&f.borrow(), &SelectEnv::default()).unwrap();
+    let unit = selected.segments.iter().flat_map(|s| &s.units).next().unwrap();
+    assert_eq!(unit.effects.memory, SourceMemoryEffects::WRITE);
+}
+
+#[test]
+fn memory_missing_and_extra_operands_are_checked_before_emission() {
+    use midenc_hir::{Builder, BuilderExt, Immediate, OpBuilder, SourceSpan};
+    let mut panics = vec![];
+    for mutation in 0..4 {
+        for (f, _) in fixtures() {
+            let mut op = f
+                .borrow()
+                .entry_block()
+                .borrow()
+                .body()
+                .front()
+                .get()
+                .unwrap()
+                .as_operation_ref();
+            let count = op.borrow().operands().len();
+            if mutation < 3 {
+                if mutation >= count {
+                    continue;
+                }
+                op.borrow_mut().operands_mut().group_mut(0).erase(mutation);
+            } else {
+                let mut builder = OpBuilder::new(f.context.clone());
+                builder.set_insertion_point_before(op);
+                let constant = builder.create::<crate::arith::Constant, _>(SourceSpan::UNKNOWN)(
+                    Immediate::U32(7),
+                )
+                .unwrap();
+                let value = constant.borrow().result().as_value_ref();
+                op.borrow_mut().operands_mut().push(f.context.make_operand(value, op, 0));
+            }
+            let name = op.borrow().name().to_string();
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                select_function(&f.borrow(), &SelectEnv::default())
+            })) {
+                Ok(result) => assert!(result.is_err(), "{name}, operand mutation {mutation}"),
+                Err(_) => panics.push(alloc::format!("{name}, operand mutation {mutation}")),
+            }
+        }
+    }
+    assert!(
+        panics.is_empty(),
+        "malformed source panicked instead of returning a diagnostic: {panics:?}"
+    );
+}
+
+#[test]
+fn memory_counts_and_copy_pointer_types_are_exact() {
+    use midenc_hir::{PointerType, Type};
+    let pointer = Type::from(PointerType::new(Type::U32));
+    let mut fill = parse(
+        "builtin.function public extern(\"C\") @fill(%p: ptr<u32, byte>, %n: u32, %v: u32) { \
+         hir.mem_set %p, %n, %v : (ptr<u32, byte>,u32,u32); builtin.ret; };",
+    );
+    retype_parameters(&mut fill, &[pointer.clone(), Type::I32, Type::U32]);
+    assert!(select_function(&fill.borrow(), &SelectEnv::default()).is_err());
+    for op in ["mem_cpy", "mem_move"] {
+        for wrong_count in [true, false] {
+            let mut f = parse(&alloc::format!(
+                "builtin.function public extern(\"C\") @copy(%p: ptr<u32, byte>, %q: ptr<u32, \
+                 byte>, %n: u32) {{ hir.{op} %p, %q, %n : (ptr<u32, byte>,ptr<u32, byte>,u32); \
+                 builtin.ret; }};"
+            ));
+            let types = if wrong_count {
+                [pointer.clone(), pointer.clone(), Type::I32]
+            } else {
+                [pointer.clone(), Type::from(PointerType::new(Type::I32)), Type::U32]
+            };
+            retype_parameters(&mut f, &types);
+            assert!(
+                select_function(&f.borrow(), &SelectEnv::default()).is_err(),
+                "{op}, wrong_count={wrong_count}"
+            );
+        }
+    }
+}
+
+#[test]
+fn shared_memory_and_arithmetic_result_verifier_diagnoses_malformed_results() {
+    use midenc_hir::{Operation, Type, Value, Verify, traits::SameOperandsAndResultType};
+    for mutation in 0..4 {
+        let f = parse(
+            "builtin.function public extern(\"C\") @arithmetic(%a: u32, %b: u32) { %r = arith.add \
+             %a, %b <{ overflow = #builtin.overflow<wrapping> }>; builtin.ret; };",
+        );
+        let mut op = f
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .front()
+            .get()
+            .unwrap()
+            .as_operation_ref();
+        match mutation {
+            1 => {
+                op.borrow_mut().results_mut().group_mut(0).pop().unwrap();
+            }
+            2 => {
+                let mut result = op.borrow().results().all()[0];
+                result.borrow_mut().set_type(Type::I32);
+            }
+            3 => {
+                op.borrow_mut().operands_mut().clear();
+            }
+            _ => {}
+        }
+        let result =
+            <Operation as Verify<dyn SameOperandsAndResultType>>::verify(&op.borrow(), &f.context);
+        assert_eq!(result.is_ok(), matches!(mutation, 0 | 3), "mutation {mutation}");
+        if mutation == 1 {
+            assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+        }
+    }
+}

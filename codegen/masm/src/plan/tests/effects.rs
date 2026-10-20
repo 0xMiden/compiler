@@ -632,6 +632,8 @@ fn arithmetic_cases() -> Vec<(Instruction, Vec<u64>, Vec<u64>)> {
     case!(U32WideningMul, [2, u32::MAX as u64], [0xffff_fffe, 1]);
     case!(U32DivMod, [3, 14], [2, 4]);
     case!(U32WrappingAdd3, [1, 2, 3], [6]);
+    case!(U32WrappingMadd, [3, 7, 11], [32]);
+    case!(U32WrappingMadd, [0xffff_ffff, 0xffff_ffff, 0xffff_ffff], [0]);
     for (op, expected) in [(U32Shl, 20), (U32Shr, 1), (U32Rotl, 20), (U32Rotr, 0x4000_0001)] {
         case!(op, [2, 5], [expected]);
     }
@@ -735,6 +737,7 @@ fn arithmetic_target_rules_match_pinned_assembler_microsteps() -> Result<(), Rep
                 | O::U32and
                 | O::U32xor
                 | O::U32add3
+                | O::U32madd
                 | O::CSwap
                 | O::CSwapW => Some(FloorStep::Pop(1)),
                 O::Noop
@@ -859,4 +862,22 @@ fn arithmetic_outputs_suffix_and_physical_floor_match_vm() -> Result<(), Report>
         }
     }
     Ok(())
+}
+
+#[test]
+fn memory_wrapping_madd_has_exact_target_rule() {
+    let effect = TargetEffects::instruction(&Instruction::U32WrappingMadd).unwrap();
+    assert_eq!(effect.consumed, 3);
+    assert_eq!(effect.outputs.len(), 1);
+    assert!(effect.may_trap);
+    assert_eq!(effect.floor, [FloorStep::Pop(1), FloorStep::Pop(1)]);
+}
+
+#[test]
+fn memory_wrapping_madd_rejects_each_invalid_u32_limb() {
+    for lane in 0..3 {
+        let mut inputs = [Felt::ONE; 3];
+        inputs[lane] = Felt::new_unchecked(1u64 << 32);
+        assert!(run("u32wrapping_madd", &inputs).is_err(), "invalid lane {lane}");
+    }
 }
