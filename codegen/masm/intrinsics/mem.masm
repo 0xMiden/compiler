@@ -206,9 +206,16 @@ end
 #
 # Stack transition: [addr, offset] -> [value]
 pub proc load_u16(addr: ptr<felt, addrspace(felt)>, offset: u8) -> u16
-    exec.load_sw
-    push.65535
-    u32and
+    dup.1 push.4 u32lt assert
+    dup.1 eq.3
+    if.true
+        exec.load_sw
+    else
+        # Offsets 0..2 fit in one cell. Do not inspect an unrelated neighbor.
+        swap.1 push.8 u32wrapping_mul swap.1
+        mem_load swap.1 u32shr
+    end
+    push.65535 u32and
 end
 
 # This handles emitting code that handles aligning an unaligned 64-bit value which is split across
@@ -534,17 +541,30 @@ end
 #
 # Stack transition: [addr, offset, value] -> []
 pub proc store_u16(addr: ptr<felt, addrspace(felt)>, offset: u8, value: u16)
-    # Load the current 32-bit window at the destination, keep its upper half, then overwrite the
-    # target two bytes before delegating the write-back to `store_sw`.
-    dup.1 dup.1 exec.load_sw     # [window, addr, offset, value]
-    push.4294901760              # 0xffff0000
-    u32and                       # [masked_window, addr, offset, value]
-    movup.3                      # [value, masked_window, addr, offset]
-    push.65535
-    u32and                       # [value16, masked_window, addr, offset]
-    u32or                        # [combined, addr, offset]
-    swap.2 swap.1                # [addr, offset, combined]
-    exec.store_sw
+    dup.1 push.4 u32lt assert
+    dup.1 eq.3
+    if.true
+        # Load the current 32-bit window at the destination, keep its upper half, then overwrite the
+        # target two bytes before delegating the write-back to `store_sw`.
+        dup.1 dup.1 exec.load_sw     # [window, addr, offset, value]
+        push.4294901760              # 0xffff0000
+        u32and                       # [masked_window, addr, offset, value]
+        movup.3                      # [value, masked_window, addr, offset]
+        push.65535
+        u32and                       # [value16, masked_window, addr, offset]
+        u32or                        # [combined, addr, offset]
+        swap.2 swap.1                # [addr, offset, combined]
+        exec.store_sw
+    else
+        # Merge the halfword directly into its one touched cell.
+        swap.1 push.8 u32wrapping_mul  # [bits, addr, value]
+        dup.1 mem_load                # [old, bits, addr, value]
+        push.65535 dup.2 u32shl u32not
+        u32and                        # [preserved, bits, addr, value]
+        movup.3 push.65535 u32and      # [value16, preserved, bits, addr]
+        movup.2 u32shl u32or           # [new, addr]
+        swap.1 mem_store
+    end
 end
 
 # Store two 32-bit words to the given native pointer tuple.

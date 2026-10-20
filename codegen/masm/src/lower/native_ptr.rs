@@ -70,9 +70,10 @@ impl NativePtr {
     /// of 2, is equivalent to an address in byte-addressable memory of 6, which has an implied
     /// alignment of 2 bytes.
     ///
-    /// Address 0 is aligned to every power of two; it is given the largest one a `u32` holds.
+    /// The result is capped at the largest power of two a `u32` holds, including for address 0.
     pub const fn alignment(&self) -> u32 {
-        let trailing_zeros = self.as_ptr().trailing_zeros();
+        let byte_position = (self.addr as u64) * 4 + self.offset as u64;
+        let trailing_zeros = byte_position.trailing_zeros();
         if trailing_zeros < u32::BITS {
             1 << trailing_zeros
         } else {
@@ -83,5 +84,76 @@ impl NativePtr {
     /// Converts this native pointer back to a byte-addressable pointer value
     pub const fn as_ptr(&self) -> u32 {
         (self.addr * 4) + self.offset as u32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alignment_preserves_byte_domain_results() {
+        for (byte, expected) in [
+            (0, 1 << 31),
+            (1, 1),
+            (2, 2),
+            (3, 1),
+            (4, 4),
+            (8, 8),
+            (12, 4),
+            (16, 16),
+            (0x7fff_fffc, 4),
+            (0x8000_0000, 1 << 31),
+            (u32::MAX, 1),
+        ] {
+            assert_eq!(NativePtr::from_ptr(byte).alignment(), expected, "byte address {byte}");
+        }
+    }
+
+    #[test]
+    fn alignment_covers_native_domain_and_normalized_offsets() {
+        for (addr, aligned) in [
+            (0, 1 << 31),
+            (1, 4),
+            (2, 8),
+            (3, 4),
+            (1 << 29, 1 << 31),
+            (1 << 30, 1 << 31),
+            (1 << 31, 1 << 31),
+            (u32::MAX, 4),
+        ] {
+            for (offset, expected) in [(0, aligned), (1, 1), (2, 2), (3, 1)] {
+                assert_eq!(
+                    NativePtr::new(addr, offset).alignment(),
+                    expected,
+                    "element {addr}, offset {offset}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn alignment_remains_const() {
+        const ZERO: u32 = NativePtr {
+            addr: 0,
+            offset: 0,
+            addrspace: midenc_hir::AddressSpace::Element,
+        }
+        .alignment();
+        const HIGH: u32 = NativePtr {
+            addr: 1 << 30,
+            offset: 0,
+            addrspace: midenc_hir::AddressSpace::Element,
+        }
+        .alignment();
+        const TERMINAL_HALFWORD: u32 = NativePtr {
+            addr: u32::MAX,
+            offset: 2,
+            addrspace: midenc_hir::AddressSpace::Element,
+        }
+        .alignment();
+        assert_eq!(ZERO, 1 << 31);
+        assert_eq!(HIGH, 1 << 31);
+        assert_eq!(TERMINAL_HALFWORD, 2);
     }
 }
