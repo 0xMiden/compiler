@@ -91,6 +91,7 @@ blink-alloc = { version = "0.4", default-features = false, features = [
     "alloc",
     "nightly",
 ] }
+cargo_metadata = "^0.23"
 clap = { version = "4.6", default-features = false, features = [
     "derive",
     "std",
@@ -171,6 +172,7 @@ thiserror = { package = "miden-thiserror", version = "1.0" }
 toml = { version = "^1.1.2", features = ["preserve_order"] }
 toml_edit = { version = "^0.25", features = ["serde"] }
 tokio = { version = "^1.39.2", features = ["rt", "time", "macros", "rt-multi-thread"] }
+walkdir = "2.5"
 wat = "^1.259"
 wasmprinter = "^0.259"
 wasmparser = { version = "^0.259", default-features = false, features = [

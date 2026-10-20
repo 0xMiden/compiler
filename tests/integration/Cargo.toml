@@ -44,7 +44,7 @@ sha2.workspace = true
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 blake3 = "1.5"
-cargo_metadata = "0.19"
+cargo_metadata.workspace = true
 concat-idents = "1.1"
 libc = "0.2"
 libloading = "0.8"
