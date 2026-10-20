@@ -284,6 +284,16 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::Call, dyn HirLowering>();
     info.register_operation_trait::<hir::Dyncall, dyn HirLowering>();
     info.register_operation_trait::<hir::Syscall, dyn HirLowering>();
+    info.register_operation_trait::<hir::Load, dyn HirSelection>();
+    info.register_operation_trait::<hir::Store, dyn HirSelection>();
+    info.register_operation_trait::<hir::LoadLocal, dyn HirSelection>();
+    info.register_operation_trait::<hir::StoreLocal, dyn HirSelection>();
+    info.register_operation_trait::<hir::LocalAddress, dyn HirSelection>();
+    info.register_operation_trait::<hir::MemGrow, dyn HirSelection>();
+    info.register_operation_trait::<hir::MemSize, dyn HirSelection>();
+    info.register_operation_trait::<hir::MemSet, dyn HirSelection>();
+    info.register_operation_trait::<hir::MemCpy, dyn HirSelection>();
+    info.register_operation_trait::<hir::MemMove, dyn HirSelection>();
     info.register_operation_trait::<hir::Store, dyn HirLowering>();
     info.register_operation_trait::<hir::StoreLocal, dyn HirLowering>();
     info.register_operation_trait::<hir::Load, dyn HirLowering>();
@@ -321,6 +331,12 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
 }
 
 fn lower_wasm_ops(info: &mut midenc_hir::DialectInfo) {
+    info.register_operation_trait::<wasm::I32Load8S, dyn HirSelection>();
+    info.register_operation_trait::<wasm::I32Load16S, dyn HirSelection>();
+    info.register_operation_trait::<wasm::I64Load8S, dyn HirSelection>();
+    info.register_operation_trait::<wasm::I64Load16S, dyn HirSelection>();
+    info.register_operation_trait::<wasm::I64Load32S, dyn HirSelection>();
+
     info.register_operation_trait::<wasm::SignExtend, dyn HirSelection>();
     info.register_operation_trait::<wasm::SignExtend, dyn HirLowering>();
     info.register_operation_trait::<wasm::I32Load8S, dyn HirLowering>();

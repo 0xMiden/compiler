@@ -288,6 +288,8 @@ pub(crate) struct HirUnit {
 pub(crate) enum HirBody {
     /// Typed arithmetic, conversions, assertions, and scalar representation operations.
     Arithmetic(alloc::boxed::Box<arithmetic::Arithmetic>),
+    /// Typed memory operations, possibly requiring a resolved source-local address.
+    Memory(alloc::boxed::Box<memory::Memory>),
     /// A source rule's fully fixed straight-line instruction sequence.
     Plain(alloc::vec::Vec<masm::Instruction>),
     /// One phase of a checked indirect call, with explicit storage between phases.
@@ -309,6 +311,7 @@ impl LoweringDefinition for HirUnit {
         bindings.validate(unit, frame)?;
         match &self.body {
             HirBody::Arithmetic(definition) => Ok(definition.expand(unit)),
+            HirBody::Memory(definition) => definition.expand(unit, frame),
             HirBody::Plain(instructions) => {
                 let mut body = AnnotatedMasmBody::new();
                 for instruction in instructions {
