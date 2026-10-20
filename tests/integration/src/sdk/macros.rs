@@ -595,7 +595,7 @@ impl TestComponent for TestComponentStorage {
 /// tests don't have to compile a real dependency project with cargo-miden.
 const TEST_SIBLING_GENERATED_WIT: &str = r#"package miden:test-sibling@0.0.1;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface test-sibling {
     use core-types.{felt};
@@ -617,7 +617,7 @@ world test-sibling-world {
 /// resolve to the caller's `crate::bindings` rather than being regenerated in the sibling bindings.
 const TEST_SIBLING_OWNED_TYPE_WIT: &str = r#"package miden:test-sibling@0.0.1;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface test-sibling {
     use core-types.{felt};
@@ -1277,7 +1277,7 @@ fn masm_account_component_wit_override_wins_over_synthesis() {
     const WIT_OVERRIDE: &str = r#"package miden:test-wallet@0.0.1;
 
 interface wallet {
-    use miden:base/core-types@1.0.0.{word};
+    use miden:base/core-types@2.0.0.{word};
 
     @external-id("miden::test_wallet::wallet::receive_asset")
     deposit: func(asset: word);
@@ -1520,7 +1520,7 @@ impl TestComponent for TestComponentStorage {
 /// Sibling WIT defining a function with the reserved stored-procedure dispatch prefix.
 const TEST_SIBLING_RESERVED_DYNCALL_WIT: &str = r#"package miden:test-sibling@0.0.1;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface test-sibling {
     use core-types.{felt, word};

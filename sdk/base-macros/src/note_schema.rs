@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use midenc_frontend_wasm_metadata::{
     WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME,
-    namespace::{CORE_TYPES_INTERFACE, CORE_TYPES_PACKAGE},
+    namespace::{CORE_TYPES_INTERFACE, CORE_TYPES_PACKAGE, CORE_TYPES_PACKAGE_VERSION},
     pad_to_link_section_alignment,
 };
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
@@ -677,7 +677,9 @@ fn render_core_types_package(wit: &mut WitBuilder) -> Result<(), syn::Error> {
     let body = body.strip_prefix('\n').unwrap_or(body);
     let body = body.strip_suffix('\n').unwrap_or(body);
 
-    wit.package_block(CORE_TYPES_PACKAGE, &Version::new(1, 0, 0), |package| {
+    let version = Version::parse(CORE_TYPES_PACKAGE_VERSION)
+        .expect("the core-types package version is a semantic version");
+    wit.package_block(CORE_TYPES_PACKAGE, &version, |package| {
         package.line("interface core-types {");
         for line in body.split('\n') {
             package.line(line);
@@ -827,7 +829,7 @@ mod tests {
 
             package miden:p2id-schema@0.1.0;
 
-            use miden:base/core-types@1.0.0;
+            use miden:base/core-types@2.0.0;
 
             interface note-storage {
                 use core-types.{account-id};
@@ -839,7 +841,7 @@ mod tests {
                 type storage = p2id-note;
             }
 
-            package miden:base@1.0.0 {
+            package miden:base@2.0.0 {
                 interface core-types {
                     /// Represents an on-chain felt.
                     ///
@@ -1035,7 +1037,7 @@ mod tests {
 
             package miden:routed-note-schema@2.3.4;
 
-            use miden:base/core-types@1.0.0;
+            use miden:base/core-types@2.0.0;
 
             interface note-storage {
                 use core-types.{account-id};
@@ -1063,7 +1065,7 @@ mod tests {
                 type storage = routed-note;
             }
 
-            package miden:base@1.0.0 {
+            package miden:base@2.0.0 {
                 interface core-types {
                     /// Represents an on-chain felt.
                     ///

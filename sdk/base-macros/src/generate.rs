@@ -6,7 +6,7 @@ use std::{
 };
 
 use midenc_frontend_wasm_metadata::FPI_IMPORT_PREFIX;
-/// Fully-qualified WIT interface path for Miden SDK core types, `miden:base/core-types@1.0.0`.
+/// Fully-qualified WIT interface path for Miden SDK core types, `miden:base/core-types@2.0.0`.
 pub(crate) use midenc_frontend_wasm_metadata::namespace::CORE_TYPES_INTERFACE_ID;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
@@ -1345,7 +1345,7 @@ mod tests {
         .expect_err("the SDK package must not be redefined")
         .to_string();
         assert!(
-            err.contains("clashes with `miden:base@1.0.0` defined by the Miden SDK"),
+            err.contains("clashes with `miden:base@2.0.0` defined by the Miden SDK"),
             "unexpected diagnostic: {err}"
         );
     }
@@ -1639,7 +1639,7 @@ interface api {
             r#"
 package miden:notifier@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface api {
     use core-types.{felt, word};
@@ -1682,7 +1682,7 @@ world notifier-world {
             r#"
 package miden:stored-procedure-bindings@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface api {
     use core-types.{felt, word};
@@ -1916,7 +1916,7 @@ world primitive-variant-world {
             r#"
 package miden:core-type-variant@0.1.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface core-type-variant {
     use core-types.{word};
@@ -1953,7 +1953,7 @@ world core-type-variant-world {
             r#"
 package miden:typed-dependency@1.2.3;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface api {
     use core-types.{felt, word};
@@ -2134,7 +2134,7 @@ interface api {
             r#"
 package miden:anonymous-dependency@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface api {
     use core-types.{felt, word};

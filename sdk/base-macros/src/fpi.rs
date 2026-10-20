@@ -1770,7 +1770,7 @@ mod tests {
         const DEPENDENCY_WIT: &str = r#"
 package miden:guest-dep@0.1.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface api {
     use core-types.{felt};

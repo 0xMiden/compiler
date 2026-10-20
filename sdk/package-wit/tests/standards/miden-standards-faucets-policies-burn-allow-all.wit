@@ -4,7 +4,7 @@ package miden:standards-faucets-policies-burn-allow-all@0.17.0;
 
 /// Left out: none
 interface allow-all {
-    use miden:base/core-types@1.0.0.{asset};
+    use miden:base/core-types@2.0.0.{asset};
 
     @external-id("miden::standards::components::faucets::policies::burn::allow_all::check_policy")
     check-policy: func(asset: asset);

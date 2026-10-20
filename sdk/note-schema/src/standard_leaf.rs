@@ -1,13 +1,15 @@
 //! The standard leaf types of a note storage schema, and their canonical WIT names.
 
+use midenc_frontend_wasm_metadata::core_types_interface_id;
+
 /// The canonical WIT FQN for `felt`.
-pub const FELT_FQN: &str = "miden:base/core-types@1.0.0.felt";
+pub const FELT_FQN: &str = concat!(core_types_interface_id!(), ".felt");
 /// The canonical WIT FQN for `word`.
-pub const WORD_FQN: &str = "miden:base/core-types@1.0.0.word";
+pub const WORD_FQN: &str = concat!(core_types_interface_id!(), ".word");
 /// The canonical WIT FQN for `account-id`.
-pub const ACCOUNT_ID_FQN: &str = "miden:base/core-types@1.0.0.account-id";
+pub const ACCOUNT_ID_FQN: &str = concat!(core_types_interface_id!(), ".account-id");
 /// The canonical WIT FQN for `asset-amount`.
-pub const ASSET_AMOUNT_FQN: &str = "miden:base/core-types@1.0.0.asset-amount";
+pub const ASSET_AMOUNT_FQN: &str = concat!(core_types_interface_id!(), ".asset-amount");
 
 /// A protocol type whose schema leaf maps directly to an existing host type and standard codec.
 ///

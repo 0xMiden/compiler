@@ -4,7 +4,7 @@ package miden:standards-fees-policies-constant-fee-manager@0.17.0;
 
 /// Left out: none
 interface constant-fee-manager {
-    use miden:base/core-types@1.0.0.{asset, word};
+    use miden:base/core-types@2.0.0.{asset, word};
 
     @external-id("miden::standards::components::fees::policies::constant_fee_manager::set_note_fee")
     set-note-fee: func(arg0: word, asset: asset);

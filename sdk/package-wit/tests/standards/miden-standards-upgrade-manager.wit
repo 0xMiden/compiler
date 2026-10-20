@@ -4,7 +4,7 @@ package miden:standards-upgrade-manager@0.17.0;
 
 /// Left out: none
 interface manager {
-    use miden:base/core-types@1.0.0.{word};
+    use miden:base/core-types@2.0.0.{word};
 
     @external-id("miden::standards::components::upgrade::manager::upgrade")
     upgrade: func(arg0: word, arg1: word);

@@ -4,7 +4,7 @@ package miden:standards-faucets-policies-transfer-basic-allowlist@0.17.0;
 
 /// Left out: none
 interface basic-allowlist {
-    use miden:base/core-types@1.0.0.{asset, felt};
+    use miden:base/core-types@2.0.0.{asset, felt};
 
     @external-id("miden::standards::components::faucets::policies::transfer::basic_allowlist::check_policy")
     check-policy: func(asset: asset, arg1: felt);

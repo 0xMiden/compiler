@@ -1,4 +1,4 @@
-package miden:base@1.0.0;
+package miden:base@2.0.0;
 
 /// Types to be used in tx-kernel interface
 interface core-types {

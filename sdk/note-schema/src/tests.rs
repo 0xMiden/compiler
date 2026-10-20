@@ -12,7 +12,7 @@ use crate::{
 const LAYOUT_SCHEMA: &str = r#"
 package example:layout-schema@1.2.3;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{account-id, felt};
@@ -39,7 +39,7 @@ interface note-storage {
     type storage = layout-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt {
             inner: f32,
@@ -135,7 +135,7 @@ fn reader_rejects_noncanonical_native_core_type_shapes() {
             r#"
 package example:bad-core-shape@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {{
     use core-types.{{{type_name}}};
@@ -143,14 +143,14 @@ interface note-storage {{
     type storage = bad-note;
 }}
 
-package miden:base@1.0.0 {{
+package miden:base@2.0.0 {{
     interface core-types {{ {definitions} }}
 }}
 "#
         );
         let error = NoteStorageSchema::from_wit_text(&wit).err().unwrap().to_string();
         assert!(
-            error.contains(&format!("miden:base/core-types@1.0.0.{type_name}")),
+            error.contains(&format!("miden:base/core-types@2.0.0.{type_name}")),
             "unexpected error for {type_name}: {error}"
         );
         assert!(error.contains("pinned canonical shape"));

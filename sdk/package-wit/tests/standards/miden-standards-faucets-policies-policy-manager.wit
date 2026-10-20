@@ -4,7 +4,7 @@ package miden:standards-faucets-policies-policy-manager@0.17.0;
 
 /// Left out: none
 interface policy-manager {
-    use miden:base/core-types@1.0.0.{asset, felt, word};
+    use miden:base/core-types@2.0.0.{asset, felt, word};
 
     @external-id("miden::standards::components::faucets::policies::policy_manager::get_burn_policy")
     get-burn-policy: func() -> word;

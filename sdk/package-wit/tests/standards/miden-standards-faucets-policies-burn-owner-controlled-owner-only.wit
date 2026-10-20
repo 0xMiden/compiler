@@ -4,7 +4,7 @@ package miden:standards-faucets-policies-burn-owner-controlled-owner-only@0.17.0
 
 /// Left out: none
 interface owner-only {
-    use miden:base/core-types@1.0.0.{asset};
+    use miden:base/core-types@2.0.0.{asset};
 
     @external-id("miden::standards::components::faucets::policies::burn::owner_controlled::owner_only::check_policy")
     check-policy: func(asset: asset);

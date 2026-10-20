@@ -90,19 +90,49 @@ pub fn rust_type_name(wit_name: &str) -> String {
 /// (`felt`, `word`, ...).
 pub const CORE_TYPES_INTERFACE: &str = "core-types";
 
-/// Expands to the [`CORE_TYPES_PACKAGE`] literal, so [`CORE_TYPES_INTERFACE_ID`] can be built from
-/// it with `concat!`.
-macro_rules! core_types_package {
+/// Expands to the [`CORE_TYPES_PACKAGE`] literal, so the ids under it can be built with `concat!`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __core_types_package {
     () => {
         "miden:base"
     };
 }
 
+/// Expands to the [`CORE_TYPES_PACKAGE_VERSION`] literal, so the ids under it can be built with
+/// `concat!`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __core_types_package_version {
+    () => {
+        "2.0.0"
+    };
+}
+
+/// Expands to the [`CORE_TYPES_INTERFACE_ID`] literal, so a constant naming an item of the
+/// interface (e.g. `concat!(core_types_interface_id!(), ".felt")`) can be built with `concat!`.
+#[macro_export]
+macro_rules! core_types_interface_id {
+    () => {
+        concat!(
+            $crate::__core_types_package!(),
+            "/core-types@",
+            $crate::__core_types_package_version!()
+        )
+    };
+}
+
 /// The id, without version, of the SDK's own WIT package, which holds [`CORE_TYPES_INTERFACE`].
-pub const CORE_TYPES_PACKAGE: &str = core_types_package!();
+pub const CORE_TYPES_PACKAGE: &str = __core_types_package!();
+
+/// The version of [`CORE_TYPES_PACKAGE`], as `sdk/base-macros/wit/miden.wit` declares it.
+///
+/// A breaking change to the layout of a core type bumps the major version, so a package built
+/// against the old layout fails to resolve against the new one instead of lifting it wrongly.
+pub const CORE_TYPES_PACKAGE_VERSION: &str = __core_types_package_version!();
 
 /// The fully versioned id of [`CORE_TYPES_INTERFACE`], as WIT documents `use` it.
-pub const CORE_TYPES_INTERFACE_ID: &str = concat!(core_types_package!(), "/core-types@1.0.0");
+pub const CORE_TYPES_INTERFACE_ID: &str = core_types_interface_id!();
 
 /// The namespace segment whose WIT spelling is [`CORE_TYPES_INTERFACE`].
 pub const CORE_TYPES_SEGMENT: &str = "core_types";
@@ -378,7 +408,9 @@ mod tests {
         assert_eq!(CORE_TYPES_SEGMENT.replace('_', "-"), CORE_TYPES_INTERFACE);
         assert_eq!(
             CORE_TYPES_INTERFACE_ID,
-            alloc::format!("{CORE_TYPES_PACKAGE}/{CORE_TYPES_INTERFACE}@1.0.0")
+            alloc::format!(
+                "{CORE_TYPES_PACKAGE}/{CORE_TYPES_INTERFACE}@{CORE_TYPES_PACKAGE_VERSION}"
+            )
         );
     }
 }

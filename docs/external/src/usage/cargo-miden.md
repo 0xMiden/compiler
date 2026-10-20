@@ -222,7 +222,7 @@ SDK macros derive its interface from the package manifest:
   item; any other named type becomes a type local to the dependency's interface (the standards'
   `AccountId` matches the core `account-id`, so such procedures take and return
   `miden::AccountId`). A Rust-built component's manifest names the SDK types it uses by
-  their `core-types` id (`miden:base/core-types@1.0.0/asset`), and those map to the `core-types`
+  their `core-types` id (`miden:base/core-types@2.0.0/asset`), and those map to the `core-types`
   items when their fields are the item's, in its order; one with other fields (an `account-id`
   built by an SDK that put the prefix first) becomes a local type of that name instead. A type
   named by another WIT id is not supported;
@@ -284,7 +284,7 @@ package miden:standards-wallets-basic-wallet@0.17.0;
 
 /// Left out: none
 interface basic-wallet {
-    use miden:base/core-types@1.0.0.{asset, note-type, word};
+    use miden:base/core-types@2.0.0.{asset, note-type, word};
 
     @external-id("miden::standards::components::wallets::basic_wallet::create_note")
     create-note: func(arg0: u32, note-type: note-type, arg2: word) -> u16;
@@ -392,7 +392,7 @@ package acme:counter@0.1.0;
 
 /// Left out: `acme::counter::counter::auth_incr_nonce`: an auth procedure is invoked by the transaction kernel in the epilogue, not by notes or scripts
 interface counter {
-    use miden:base/core-types@1.0.0.{felt, word};
+    use miden:base/core-types@2.0.0.{felt, word};
 
     record delta {
         add: felt,

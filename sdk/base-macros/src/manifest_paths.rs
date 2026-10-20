@@ -221,10 +221,24 @@ pub(crate) fn extract_world_name(contents: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use midenc_frontend_wasm_metadata::core_types::{CORE_RECORDS, CoreField, core_record};
+    use midenc_frontend_wasm_metadata::{
+        core_types::{CORE_RECORDS, CoreField, core_record},
+        namespace::{CORE_TYPES_PACKAGE, CORE_TYPES_PACKAGE_VERSION},
+    };
     use wit_bindgen_core::wit_parser::{Resolve, Type, TypeDefKind};
 
     use super::SDK_WIT_SOURCE;
+
+    /// The SDK's `miden.wit` declares the package id and version the generators spell.
+    #[test]
+    fn sdk_wit_declares_the_core_types_package() {
+        let mut resolve = Resolve::new();
+        let package = resolve.push_str("miden.wit", SDK_WIT_SOURCE).expect("the core types parse");
+        assert_eq!(
+            resolve.packages[package].name.to_string(),
+            format!("{CORE_TYPES_PACKAGE}@{CORE_TYPES_PACKAGE_VERSION}")
+        );
+    }
 
     /// The shared table of core records is exactly the `core-types` interface of the SDK's
     /// `miden.wit`: the same records, in order, with the same fields, in order, of the same types.
