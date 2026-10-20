@@ -696,7 +696,7 @@ mod tests {
 
 package miden:stored-procedure-bindings@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface %authority-storage {
     use core-types.{account-id, felt, word};

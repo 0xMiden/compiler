@@ -9,7 +9,7 @@ use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{
     PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID,
     core_types::{CoreField, CoreRecord, core_record},
-    namespace::CORE_TYPES_INTERFACE_ID,
+    namespace::{CORE_TYPES_INTERFACE_ID, CORE_TYPES_PACKAGE, CORE_TYPES_PACKAGE_VERSION},
     package_note_storage_schema_section_id, trim_trailing_nuls,
 };
 use wit_parser::{Resolve, Type, TypeDefKind, TypeId, TypeOwner};
@@ -429,11 +429,12 @@ fn ensure_expanded_node_limit(ty: &SchemaType, expanded_nodes: usize) -> Result<
 
 /// Verifies the raw embedded core-types definitions before the model applies native mappings.
 fn validate_resolved_core_types(resolve: &Resolve) -> Result<()> {
-    let Some((_, package_id)) = resolve.package_names.iter().find(|(name, _)| {
-        name.namespace == "miden"
-            && name.name == "base"
-            && name.version.as_ref().is_some_and(|version| version.to_string() == "1.0.0")
-    }) else {
+    let core_types_package = format!("{CORE_TYPES_PACKAGE}@{CORE_TYPES_PACKAGE_VERSION}");
+    let Some((_, package_id)) = resolve
+        .package_names
+        .iter()
+        .find(|(name, _)| name.to_string() == core_types_package)
+    else {
         return Ok(());
     };
     let package = &resolve.packages[*package_id];

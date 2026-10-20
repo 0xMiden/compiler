@@ -4,7 +4,7 @@ package miden:standards-auth-network-account@0.17.0;
 
 /// Left out: `miden::standards::components::auth::network_account::auth_network_transaction`: an auth procedure is invoked by the transaction kernel in the epilogue, not by notes or scripts
 interface network-account {
-    use miden:base/core-types@1.0.0.{asset, word};
+    use miden:base/core-types@2.0.0.{asset, word};
 
     @external-id("miden::standards::components::auth::network_account::add_allowed_fee_policy")
     add-allowed-fee-policy: func(arg0: word);

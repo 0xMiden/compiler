@@ -267,7 +267,7 @@ mod tests {
             assert_eq!(StandardLeaf::from_fqn(leaf.fqn()), Some(leaf));
             assert!(CodecRegistry::default().contains(leaf.fqn()));
         }
-        assert_eq!(StandardLeaf::from_fqn("miden:base/core-types@1.0.0.digest"), None);
+        assert_eq!(StandardLeaf::from_fqn("miden:base/core-types@2.0.0.digest"), None);
     }
 
     #[test]

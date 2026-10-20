@@ -1403,7 +1403,7 @@ mod tests {
 
     fn wit_felt_type() -> Type {
         Type::from(StructType::named(
-            Arc::from("miden:base/core-types@1.0.0/felt"),
+            Arc::from("miden:base/core-types@2.0.0/felt"),
             [(Arc::from("inner"), Type::Felt)],
         ))
     }
@@ -1411,7 +1411,7 @@ mod tests {
     fn wit_word_type() -> Type {
         let felt_ty = wit_felt_type();
         Type::from(StructType::named(
-            Arc::from("miden:base/core-types@1.0.0/word"),
+            Arc::from("miden:base/core-types@2.0.0/word"),
             [
                 (Arc::from("a"), felt_ty.clone()),
                 (Arc::from("b"), felt_ty.clone()),

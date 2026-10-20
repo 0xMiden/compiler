@@ -7,7 +7,7 @@ from_wit_text!(
     r#"
 package example:account-codec@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{account-id};
@@ -24,7 +24,7 @@ interface note-storage {
     type storage = account-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt { inner: f32 }
         record account-id { suffix: felt, prefix: felt }

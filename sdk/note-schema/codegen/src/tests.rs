@@ -7,7 +7,7 @@ use crate::{RuntimePaths, generate_host_types};
 const P2ID_SCHEMA: &str = r#"
 package example:p2id-schema@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{account-id};
@@ -19,7 +19,7 @@ interface note-storage {
     type storage = p2id-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt { inner: f32 }
         record account-id { suffix: felt, prefix: felt }
@@ -30,7 +30,7 @@ package miden:base@1.0.0 {
 const CUSTOM_SCHEMA: &str = r#"
 package example:dex-schema@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{account-id};
@@ -53,7 +53,7 @@ interface note-storage {
     type storage = dex-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt { inner: f32 }
         record account-id { suffix: felt, prefix: felt }
@@ -64,7 +64,7 @@ package miden:base@1.0.0 {
 const EMBEDDED_CORE_SCHEMA: &str = r#"
 package example:embedded-core-schema@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{digest};
@@ -72,7 +72,7 @@ interface note-storage {
     type storage = embedded-core-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt { inner: f32 }
         record word { a: felt, b: felt, c: felt, d: felt }

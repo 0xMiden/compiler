@@ -177,7 +177,7 @@ package miden:test-my-component@0.0.0;
 /// Left out: `miden::test::my_component::too_wide`: parameters flatten to 17 stack elements, more than the 16 a direct call can pass
 /// Left out: `miden::test::my_component::untyped`: no typed signature
 interface my-component {{
-    use miden:base/core-types@1.0.0.{{asset, felt, note-type, word}};
+    use miden:base/core-types@2.0.0.{{asset, felt, note-type, word}};
 
     record account-id {{
         prefix: felt,
@@ -250,7 +250,7 @@ end
     let generated = generate(&iface).unwrap();
     assert!(generated.skipped.is_empty());
     assert!(generated.wit.contains("/// Left out: none\ninterface my-component {\n"));
-    assert!(generated.wit.contains("use miden:base/core-types@1.0.0.{account-id};"));
+    assert!(generated.wit.contains("use miden:base/core-types@2.0.0.{account-id};"));
     assert!(generated.wit.contains("set-owner: func(account-id: account-id);"));
     assert!(!generated.wit.contains("record"));
     parse(&generated.wit, "my-component");
@@ -693,7 +693,7 @@ end
         .find(|procedure| procedure.name() == "take")
         .unwrap();
     take.signature.as_mut().unwrap().params[0] = Type::from(midenc_hir_type::StructType::named(
-        std::sync::Arc::from("miden:base/core-types@1.0.0/th\u{202e}ing\nbad: func();"),
+        std::sync::Arc::from("miden:base/core-types@2.0.0/th\u{202e}ing\nbad: func();"),
         [(std::sync::Arc::from("x"), Type::Felt)],
     ));
     let generated = generate(&iface).unwrap();
@@ -1154,7 +1154,7 @@ end
         .find(|procedure| procedure.name() == "take")
         .unwrap();
     take.signature.as_mut().unwrap().params[0] = Type::from(midenc_hir_type::StructType::named(
-        std::sync::Arc::from("miden:base/core-types@1.0.0/thing"),
+        std::sync::Arc::from("miden:base/core-types@2.0.0/thing"),
         [(std::sync::Arc::from("x"), Type::Felt)],
     ));
     let generated = generate(&iface).unwrap();
@@ -1164,8 +1164,8 @@ end
         skipped,
         [(
             "miden::test::my_component::take",
-            "unsupported type `miden:base/core-types@1.0.0/thing`: `thing` is not a type of the \
-             SDK's `miden:base/core-types@1.0.0`"
+            "unsupported type `miden:base/core-types@2.0.0/thing`: `thing` is not a type of the \
+             SDK's `miden:base/core-types@2.0.0`"
         )]
     );
     assert_eq!(
@@ -1199,12 +1199,12 @@ end
     let id = Type::from(StructType::named(Arc::from("Foo"), [(Arc::from("x"), Type::Felt)]));
     let word = Type::from(ArrayType::new(Type::Felt, 4));
     take.signature.as_mut().unwrap().params[0] = Type::from(StructType::named(
-        Arc::from("miden:base/core-types@1.0.0/asset"),
+        Arc::from("miden:base/core-types@2.0.0/asset"),
         [(Arc::from("id"), id), (Arc::from("value"), word)],
     ));
     let generated = generate(&iface).unwrap();
     assert!(generated.skipped.is_empty(), "{:?}", generated.skipped);
-    assert!(generated.wit.contains("    use miden:base/core-types@1.0.0.{felt, word};\n"));
+    assert!(generated.wit.contains("    use miden:base/core-types@2.0.0.{felt, word};\n"));
     assert!(
         generated
             .wit

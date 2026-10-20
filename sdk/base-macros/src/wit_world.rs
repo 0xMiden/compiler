@@ -679,7 +679,7 @@ mod tests {
 
 package miden:basic-wallet@0.1.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface basic-wallet {
     use core-types.{asset, note-idx};
@@ -851,7 +851,7 @@ path = "src/lib.rs"
         let wit = r#"
 package miden:typed-account@0.0.1;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface typed-account {
     use core-types.{felt};

@@ -87,11 +87,6 @@ This is a breaking layout change:
   be recompiled together;
 - a Rust note stores its `AccountId` fields suffix first, so a note created by a previous build of
   a note cannot be consumed by the new build of the same note;
-- note packages built before this change are not readable by the new note schema tooling either
-  (`NoteStorageSchema::from_wit_text` rejects their `account-id` record): rebuild them;
-- in the interface derived from a Rust-built component package without embedded WIT that was
-  built before this change, the old `account-id` is a type local to that interface rather than
-  `miden::AccountId`: rebuild the package;
 - a host that mirrors an `AccountId` with its own `ToFeltRepr`/`FromFeltRepr` type, e.g. inside
   the transaction script arguments it passes, must declare that type's fields suffix first too;
 - a host that encodes the storage of a Rust note with an `AccountId` field by hand must swap the
@@ -107,6 +102,21 @@ let storage = vec![account_id.suffix(), account_id.prefix().as_felt()];
 
 The note storage schema embedded in the package, and the host bindings generated from it, follow
 the new order on their own.
+
+To make a mix of the two layouts an error instead of two silently swapped felts, the SDK's WIT
+package is now `miden:base@2.0.0` (the `core-types` interface is
+`miden:base/core-types@2.0.0`):
+
+- hand-written WIT that `use`s `miden:base/core-types@1.0.0` must use
+  `miden:base/core-types@2.0.0`;
+- a dependency package built with the previous SDK, whose embedded WIT `use`s
+  `miden:base/core-types@1.0.0`, now fails to resolve: rebuild it;
+- in the interface derived from a Rust-built component package without embedded WIT that was
+  built with the previous SDK, the types named `miden:base/core-types@1.0.0/<item>` are local to
+  that interface rather than the SDK's core types (its `account-id` is not `miden::AccountId`):
+  rebuild the package;
+- a note package built with the previous SDK whose storage schema uses a core type (`felt`,
+  `word`, `account-id`, ...) is not readable by the new note schema tooling: rebuild it.
 
 ### The `extern_*` procedures are gone; the generated `miden::raw` modules replace them
 

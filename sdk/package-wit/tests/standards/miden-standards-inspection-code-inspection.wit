@@ -4,7 +4,7 @@ package miden:standards-inspection-code-inspection@0.17.0;
 
 /// Left out: none
 interface code-inspection {
-    use miden:base/core-types@1.0.0.{word};
+    use miden:base/core-types@2.0.0.{word};
 
     @external-id("miden::standards::components::inspection::code_inspection::get_code_commitment")
     get-code-commitment: func() -> word;

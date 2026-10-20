@@ -157,7 +157,7 @@ pub fn type_name(ty: &Type) -> Option<String> {
 }
 
 /// The core-types item a manifest type named `<CORE_TYPES_INTERFACE_ID>/<item>` stands for, e.g.
-/// `asset` for `miden:base/core-types@1.0.0/asset`: a Rust-built component's manifest names the
+/// `asset` for `miden:base/core-types@2.0.0/asset`: a Rust-built component's manifest names the
 /// SDK types it uses by their component-model id.
 fn sdk_core_item(name: &str) -> Option<&str> {
     name.strip_prefix(CORE_TYPES_INTERFACE_ID)?.strip_prefix('/')
@@ -192,7 +192,7 @@ fn has_sdk_layout(ty: &Type, record: &CoreRecord) -> bool {
 }
 
 /// The name a type named `name` is declared under: the core item of a core-types id, e.g.
-/// `account-id` for `miden:base/core-types@1.0.0/account-id`, and else the last segment of a
+/// `account-id` for `miden:base/core-types@2.0.0/account-id`, and else the last segment of a
 /// Miden path (see [`naming::short_name`]).
 fn short_name(name: &str) -> &str {
     sdk_core_item(name).unwrap_or_else(|| naming::short_name(name))
@@ -754,7 +754,7 @@ mod tests {
         assert_eq!(
             set.map(&thing).unwrap_err(),
             "unsupported type `other:pkg/iface@1.0.0/thing`: the name is neither a Miden \
-             identifier path nor a type of the SDK's `miden:base/core-types@1.0.0`"
+             identifier path nor a type of the SDK's `miden:base/core-types@2.0.0`"
         );
         assert!(set.core.is_empty() && set.locals.is_empty());
     }
@@ -876,8 +876,8 @@ mod tests {
         let thing = record(&sdk_name("thing"), &[("x", Type::Felt)]);
         assert_eq!(
             set.map(&thing).unwrap_err(),
-            "unsupported type `miden:base/core-types@1.0.0/thing`: `thing` is not a type of the \
-             SDK's `miden:base/core-types@1.0.0`"
+            "unsupported type `miden:base/core-types@2.0.0/thing`: `thing` is not a type of the \
+             SDK's `miden:base/core-types@2.0.0`"
         );
         assert!(set.core.is_empty() && set.locals.is_empty());
     }
