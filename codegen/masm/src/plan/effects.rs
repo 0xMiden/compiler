@@ -281,6 +281,43 @@ impl TargetEffects {
             ),
             HMerge => StackEffect::computed(8, 4, &[1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1]),
             HPerm => StackEffect::computed(12, 12, &[]),
+            HornerBase | HornerExt => StackEffect::new(
+                16,
+                (0..14).map(Input).chain((0..2).map(LaneEffect::Computed)).collect(),
+                vec![],
+            )
+            .trapping()
+            .memory(MemoryEffect::Read(MemoryRegion::Indirect {
+                address: 13,
+                width: 4,
+            })),
+            LogDeferred => StackEffect::computed(12, 12, &[]).trapping(),
+            FriExt2Fold4 => StackEffect::new(
+                17,
+                (0..16)
+                    .map(|lane| match lane {
+                        11 => Input(8),
+                        15 => Input(16),
+                        _ => LaneEffect::Computed(lane),
+                    })
+                    .collect(),
+                vec![FloorStep::Pop(1)],
+            )
+            .trapping(),
+            MemStream => StackEffect::new(
+                13,
+                (0..8)
+                    .map(|lane| LaneEffect::Memory { lane })
+                    .chain((8..12).map(Input))
+                    .chain([LaneEffect::Computed(0)])
+                    .collect(),
+                vec![],
+            )
+            .trapping()
+            .memory(MemoryEffect::Read(MemoryRegion::Indirect {
+                address: 12,
+                width: 8,
+            })),
             MTreeGet => StackEffect::new(
                 6,
                 (0..4).map(LaneEffect::Computed).chain((2..6).map(Input)).collect(),

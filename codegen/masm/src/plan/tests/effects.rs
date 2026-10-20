@@ -695,6 +695,11 @@ fn arithmetic_and_fixed_target_rules_match_pinned_assembler_microsteps() -> Resu
         Instruction::Hash,
         Instruction::HMerge,
         Instruction::HPerm,
+        Instruction::HornerBase,
+        Instruction::HornerExt,
+        Instruction::LogDeferred,
+        Instruction::FriExt2Fold4,
+        Instruction::MemStream,
         Instruction::MTreeGet,
         Instruction::MTreeSet,
         Instruction::MTreeMerge,
@@ -756,9 +761,14 @@ fn arithmetic_and_fixed_target_rules_match_pinned_assembler_microsteps() -> Resu
                 | O::U32add3
                 | O::U32madd
                 | O::CSwap
-                | O::CSwapW => Some(FloorStep::Pop(1)),
+                | O::CSwapW
+                | O::FriE2F4 => Some(FloorStep::Pop(1)),
                 O::Noop
                 | O::HPerm
+                | O::HornerBase
+                | O::HornerExt
+                | O::LogDeferred
+                | O::MStream
                 | O::AdvPopW
                 | O::MpVerify(_)
                 | O::MrUpdate
@@ -1073,4 +1083,435 @@ fn merkle_target_contracts_preserve_exact_identities_and_traps() {
             }
         }
     }
+}
+
+#[test]
+fn horner_closed_read_and_retained_rules() {
+    for instruction in [Instruction::HornerBase, Instruction::HornerExt] {
+        let effect = TargetEffects::instruction(&instruction).unwrap();
+        assert_eq!(effect.consumed, 16);
+        assert_eq!(
+            effect.outputs,
+            (0..14)
+                .map(LaneEffect::Input)
+                .chain((0..2).map(LaneEffect::Computed))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            effect.memory,
+            MemoryEffect::Read(MemoryRegion::Indirect {
+                address: 13,
+                width: 4
+            })
+        );
+        assert!(effect.may_trap);
+        assert!(effect.floor.is_empty());
+    }
+}
+
+#[test]
+fn log_deferred_closed_state_rule() {
+    let effect = TargetEffects::instruction(&Instruction::LogDeferred).unwrap();
+    assert_eq!(effect.consumed, 12);
+    assert_eq!(effect.outputs, (0..12).map(LaneEffect::Computed).collect::<Vec<_>>());
+    assert_eq!(effect.memory, MemoryEffect::None);
+    assert!(effect.may_trap);
+    assert!(effect.floor.is_empty());
+}
+
+/// Independent extension-field oracle for raw VM cases.
+fn horner_expected(input: &[usize], alpha: [u64; 2], extension: bool) -> Vec<usize> {
+    use miden_core::field::{BasedVectorSpace, QuadFelt};
+    let alpha = QuadFelt::new(alpha.map(Felt::new_unchecked));
+    let mut accumulator =
+        QuadFelt::new([input[14], input[15]].map(|n| Felt::new_unchecked(n as u64)));
+    if extension {
+        for pair in input[..8].as_chunks::<2>().0 {
+            accumulator = accumulator * alpha
+                + QuadFelt::new([pair[0], pair[1]].map(|n| Felt::new_unchecked(n as u64)));
+        }
+    } else {
+        for coefficient in &input[..8] {
+            accumulator =
+                accumulator * alpha + QuadFelt::from(Felt::new_unchecked(*coefficient as u64));
+        }
+    }
+    let mut expected = input.to_vec();
+    let coefficients: &[Felt] = accumulator.as_basis_coefficients_slice();
+    for (lane, value) in expected[14..].iter_mut().zip(coefficients) {
+        *lane = value.as_canonical_u64() as usize;
+    }
+    expected
+}
+
+#[test]
+fn horner_raw_vm_oracle_floor_suffix_and_invalid_reads() {
+    use crate::plan::tests::lowering_units::{assert_top, push_top};
+    for (instruction, extension) in [("horner_eval_base", false), ("horner_eval_ext", true)] {
+        for alpha in [[0, 0], [3, 5]] {
+            for initial in [[0, 0], [17, 29]] {
+                let mut input =
+                    (0..16).map(|i| 0xffff_fffe_0000_0100usize + i * 37).collect::<Vec<_>>();
+                input[13] = 400;
+                input[14..].copy_from_slice(&initial);
+                let expected = horner_expected(&input, alpha, extension);
+                let floor_input =
+                    input.iter().map(|n| Felt::new_unchecked(*n as u64)).collect::<Vec<_>>();
+                let actual = run_program(
+                    &format!(
+                        "begin push.{} mem_store.400 push.{} mem_store.401 {instruction} end",
+                        alpha[0], alpha[1]
+                    ),
+                    &floor_input,
+                )
+                .unwrap();
+                assert_eq!(
+                    actual,
+                    expected.iter().map(|n| Felt::new_unchecked(*n as u64)).collect::<Vec<_>>()
+                );
+                for suffix_len in [0, 20] {
+                    let suffix = (0..suffix_len).map(|i| 900 + i).collect::<Vec<_>>();
+                    let all = expected.iter().chain(&suffix).copied().collect::<Vec<_>>();
+                    let code = format!(
+                        "begin push.{} mem_store.400 push.{} mem_store.401 {} {} {instruction} {} \
+                         end",
+                        alpha[0],
+                        alpha[1],
+                        push_top(&suffix),
+                        push_top(&input),
+                        assert_top(&all)
+                    );
+                    run_program(&code, &[]).unwrap();
+                }
+                for (address, padding) in [(401, 0), (1usize << 32, 0), (400, 1)] {
+                    let mut bad = input.clone();
+                    bad[13] = address;
+                    let code = format!(
+                        "begin push.{padding} mem_store.402 {} {instruction} end",
+                        push_top(&bad)
+                    );
+                    assert!(run_program(&code, &[]).is_err());
+                }
+            }
+        }
+    }
+}
+
+fn deferred_expected(root: miden_core::Word, statement: miden_core::Word) -> [Felt; 12] {
+    use miden_core::{crypto::hash::Poseidon2, deferred::Tag};
+    let mut state = [Felt::ZERO; 12];
+    state[..4].copy_from_slice(root.as_elements());
+    state[4..8].copy_from_slice(statement.as_elements());
+    state[8..].copy_from_slice(&Tag::AND.as_word());
+    Poseidon2::apply_permutation(&mut state);
+    state
+}
+
+#[test]
+fn log_deferred_raw_two_folds_all_lanes_state_and_unknown_statement() {
+    use miden_core::{
+        Word,
+        deferred::{Node, TRUE_DIGEST},
+    };
+
+    use crate::plan::tests::lowering_units::{assert_top, push_top};
+    let first = deferred_expected(TRUE_DIGEST, TRUE_DIGEST);
+    let root = Word::new(first[..4].try_into().unwrap());
+    let second = deferred_expected(root, root);
+    let first_node = Node::and(TRUE_DIGEST, TRUE_DIGEST);
+    let second_node = Node::and(root, root);
+    assert_eq!(root, first_node.digest());
+    assert_eq!(&second[..4], second_node.digest().as_elements());
+    for suffix_len in [4, 20] {
+        let suffix = (0..suffix_len).map(|i| 900 + i).collect::<Vec<_>>();
+        let input = [13, 17, 19, 23, 0, 0, 0, 0, 29, 31, 37, 41];
+        let first_check = first
+            .iter()
+            .map(|f| f.as_canonical_u64() as usize)
+            .chain(suffix.iter().copied())
+            .collect::<Vec<_>>();
+        let second_check = second
+            .iter()
+            .map(|f| f.as_canonical_u64() as usize)
+            .chain(suffix.iter().copied())
+            .collect::<Vec<_>>();
+        let mut next = input;
+        for (lane, value) in next[4..8].iter_mut().zip(root.as_elements()) {
+            *lane = value.as_canonical_u64() as usize;
+        }
+        let source = format!(
+            "begin {} {} log_deferred {} {} {} log_deferred {} end",
+            push_top(&suffix),
+            push_top(&input),
+            assert_top(&first_check),
+            push_top(&suffix),
+            push_top(&next),
+            assert_top(&second_check)
+        );
+        let program = miden_assembly::Assembler::default()
+            .assemble_program("deferred", source)
+            .unwrap()
+            .try_into_program()
+            .unwrap();
+        let mut processor = FastProcessor::new(StackInputs::default());
+        let mut host = DefaultHost::default();
+        let mut context = processor.get_initial_resume_context(&program).unwrap();
+        while let Some(next) = processor.step_sync(&mut host, context).unwrap() {
+            context = next;
+        }
+        assert_eq!(processor.deferred_state().root(), second_node.digest());
+        assert_eq!(processor.deferred_state().get_node(&root), Some(&first_node));
+        assert_eq!(processor.deferred_state().get_node(&second_node.digest()), Some(&second_node));
+    }
+    let source = "begin push.41.37.31.29.1.2.3.4.23.19.17.13 log_deferred end";
+    assert!(run_program(source, &[]).is_err());
+}
+
+#[test]
+fn memstream_closed_read_and_lane_rule() {
+    let effect = TargetEffects::instruction(&Instruction::MemStream).unwrap();
+    assert_eq!(effect.consumed, 13);
+    assert_eq!(
+        effect.outputs,
+        (0..8)
+            .map(|lane| LaneEffect::Memory { lane })
+            .chain((8..12).map(LaneEffect::Input))
+            .chain([LaneEffect::Computed(0)])
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        effect.memory,
+        MemoryEffect::Read(MemoryRegion::Indirect {
+            address: 12,
+            width: 8
+        })
+    );
+    assert!(effect.may_trap);
+    assert!(effect.floor.is_empty());
+}
+
+#[test]
+fn memstream_raw_vm_values_bounds_floor_and_no_publication() {
+    use crate::plan::tests::lowering_units::{assert_top, push_top};
+    for address in [400usize, 0xffff_fff8] {
+        for written in [0, 4, 8] {
+            let memory = (0..8)
+                .map(|i| {
+                    if address == 0xffff_fff8 && i == 6 {
+                        miden_core::FMP_INIT_VALUE.as_canonical_u64() as usize
+                    } else if i < written {
+                        0xffff_fffe_0000_0100usize + i * 37
+                    } else {
+                        0
+                    }
+                })
+                .collect::<Vec<_>>();
+            let initialize = memory
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| {
+                    address == 0xffff_fff8 && *i != 6
+                        || *i < written && !(address == 0xffff_fff8 && *i == 6)
+                })
+                .map(|(i, v)| format!("push.{v} mem_store.{}", address + i))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let mut input = (0..13).map(|i| 101 + i * 37).collect::<Vec<_>>();
+            input[12] = address;
+            let expected = memory
+                .iter()
+                .copied()
+                .chain(input[8..12].iter().copied())
+                .chain([address + 8])
+                .collect::<Vec<_>>();
+            let probe_input = input
+                .iter()
+                .copied()
+                .chain([900, 901, 902])
+                .map(|n| Felt::new_unchecked(n as u64))
+                .collect::<Vec<_>>();
+            let probe =
+                run_program(&format!("begin {initialize} mem_stream end"), &probe_input).unwrap();
+            let wanted = expected
+                .iter()
+                .copied()
+                .chain([900, 901, 902])
+                .map(|n| Felt::new_unchecked(n as u64))
+                .collect::<Vec<_>>();
+            assert_eq!(probe, wanted, "address={address} written={written}");
+            for suffix_len in [3, 20] {
+                let suffix = (0..suffix_len).map(|i| 900 + i).collect::<Vec<_>>();
+                let all = expected.iter().chain(&suffix).copied().collect::<Vec<_>>();
+                run_program(
+                    &format!(
+                        "begin {initialize} {} {} mem_stream {} end",
+                        push_top(&suffix),
+                        push_top(&input),
+                        assert_top(&all)
+                    ),
+                    &[],
+                )
+                .unwrap();
+            }
+        }
+    }
+    for address in [401usize, 1usize << 32, 0xffff_fffc] {
+        let mut input = (0..16).map(|i| 101 + i * 37).collect::<Vec<_>>();
+        input[12] = address;
+        let source = format!("begin {} mem_stream end", push_top(&input));
+        let program = miden_assembly::Assembler::default()
+            .assemble_program("bad_stream", source)
+            .unwrap()
+            .try_into_program()
+            .unwrap();
+        let mut processor = FastProcessor::new(StackInputs::default());
+        let mut host = DefaultHost::default();
+        let mut context = processor.get_initial_resume_context(&program).unwrap();
+        let error = loop {
+            match processor.step_sync(&mut host, context) {
+                Ok(Some(next)) => context = next,
+                Ok(None) => panic!("expected trap"),
+                Err(error) => break error,
+            }
+        };
+        assert!(matches!(error, miden_processor::ExecutionError::MemoryError { .. }));
+        assert_eq!(
+            processor
+                .stack_top()
+                .iter()
+                .rev()
+                .map(|f| f.as_canonical_u64() as usize)
+                .collect::<Vec<_>>(),
+            input
+        );
+    }
+}
+
+#[test]
+fn fri_closed_tuple_floor_and_retained_rule() {
+    let effect = TargetEffects::instruction(&Instruction::FriExt2Fold4).unwrap();
+    assert_eq!(effect.consumed, 17);
+    assert_eq!(effect.outputs.len(), 16);
+    assert_eq!(effect.outputs[11], LaneEffect::Input(8));
+    assert_eq!(effect.outputs[15], LaneEffect::Input(16));
+    assert_eq!(effect.floor, vec![FloorStep::Pop(1)]);
+    assert!(effect.may_trap);
+    assert_eq!(effect.memory, MemoryEffect::None);
+}
+
+/// Build samples from a polynomial, independently of the processor's folding helpers.
+fn fri_case(coset: usize, constant: bool) -> (Vec<usize>, Vec<usize>) {
+    use miden_core::{
+        Felt,
+        field::{BasedVectorSpace, Field, QuadFelt, TwoAdicField},
+    };
+    let q = |a, b| QuadFelt::new([Felt::new_unchecked(a), Felt::new_unchecked(b)]);
+    let coefficients = if constant {
+        [q(19, 23), q(0, 0), q(0, 0), q(0, 0)]
+    } else {
+        [q(0xffff_fffe_0000_0100, 23), q(29, 31), q(37, 41), q(43, 47)]
+    };
+    let evaluate =
+        |point: QuadFelt| coefficients.iter().rev().fold(q(0, 0), |acc, c| acc * point + *c);
+    let alpha = q(53, 59);
+    let poe = Felt::new_unchecked(7);
+    let tau = Felt::two_adic_generator(2);
+    let x = poe * tau.exp_u64(coset as u64).inverse();
+    let samples = [
+        evaluate(QuadFelt::from(x)),
+        evaluate(QuadFelt::from(-x)),
+        evaluate(QuadFelt::from(x * tau)),
+        evaluate(QuadFelt::from(-x * tau)),
+    ];
+    let flatten = |value: QuadFelt| {
+        let limbs: &[Felt] = value.as_basis_coefficients_slice();
+        limbs.iter().map(|f| f.as_canonical_u64() as usize).collect::<Vec<_>>()
+    };
+    let mut input = samples.into_iter().flat_map(flatten).collect::<Vec<_>>();
+    input.extend([701, coset, poe.as_canonical_u64() as usize]);
+    input.extend(flatten(evaluate(QuadFelt::from(poe))));
+    input.extend(flatten(alpha));
+    let cptr = Felt::new_unchecked(0xffff_ffff_0000_0000);
+    input.extend([cptr.as_canonical_u64() as usize, 809]);
+    let x2 = x * x;
+    let tmp0 =
+        coefficients[0] + coefficients[2] * x2 + alpha * (coefficients[1] + coefficients[3] * x2);
+    let tmp1 =
+        coefficients[0] - coefficients[2] * x2 + alpha * (coefficients[1] - coefficients[3] * x2);
+    let pointer = (cptr + Felt::new_unchecked(8)).as_canonical_u64() as usize;
+    let mut expected = flatten(tmp0);
+    expected.extend(flatten(tmp1));
+    expected.extend((1..4).map(|i| usize::from(i == coset)));
+    expected.extend([
+        (poe * poe).as_canonical_u64() as usize,
+        pointer,
+        pointer,
+        poe.exp_u64(4).as_canonical_u64() as usize,
+        701,
+    ]);
+    expected.extend(flatten(evaluate(alpha)));
+    expected.extend([pointer, 809]);
+    (input, expected)
+}
+
+#[test]
+fn fri_raw_polynomial_oracle_all_lanes_floor_suffix_and_traps() {
+    use crate::plan::tests::lowering_units::{assert_top, push_top};
+    for coset in 0..4 {
+        for constant in [false, true] {
+            let (input, expected) = fri_case(coset, constant);
+            let initial =
+                input[1..].iter().map(|n| Felt::new_unchecked(*n as u64)).collect::<Vec<_>>();
+            let actual =
+                run_program(&format!("begin push.{} fri_ext2fold4 end", input[0]), &initial)
+                    .unwrap();
+            assert_eq!(
+                actual,
+                expected.iter().map(|n| Felt::new_unchecked(*n as u64)).collect::<Vec<_>>()
+            );
+            let suffix = (0..20).map(|i| 900 + i).collect::<Vec<_>>();
+            let all = input.iter().chain(&suffix).copied().collect::<Vec<_>>();
+            let expected = expected.iter().chain(&suffix).copied().collect::<Vec<_>>();
+            let base = all[all.len() - 16..]
+                .iter()
+                .map(|n| Felt::new_unchecked(*n as u64))
+                .collect::<Vec<_>>();
+            run_program(
+                &format!(
+                    "begin {} fri_ext2fold4 {} end",
+                    push_top(&all[..all.len() - 16]),
+                    assert_top(&expected)
+                ),
+                &base,
+            )
+            .unwrap();
+        }
+    }
+    let (input, _) = fri_case(1, false);
+    for (index, value) in [
+        (9, 4),
+        (9, 0xffff_fffe_0000_0100),
+        (10, 0),
+        (11, input[11] + 1),
+        (12, input[12] + 1),
+    ] {
+        let mut bad = input.clone();
+        bad[index] = value;
+        let initial = bad[1..].iter().map(|n| Felt::new_unchecked(*n as u64)).collect::<Vec<_>>();
+        assert!(
+            run_program(&format!("begin push.{} fri_ext2fold4 end", bad[0]), &initial).is_err()
+        );
+    }
+}
+
+#[test]
+fn log_deferred_raw_actual_minimum_floor() {
+    use miden_core::deferred::TRUE_DIGEST;
+    let input =
+        [13, 17, 19, 23, 0, 0, 0, 0, 29, 31, 37, 41, 901, 902, 903, 904].map(Felt::new_unchecked);
+    let expected = deferred_expected(TRUE_DIGEST, TRUE_DIGEST)
+        .into_iter()
+        .chain(input[12..].iter().copied())
+        .collect::<Vec<_>>();
+    assert_eq!(run_program("begin log_deferred end", &input).unwrap(), expected);
 }
