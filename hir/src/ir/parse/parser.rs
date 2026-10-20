@@ -394,8 +394,14 @@ pub trait Parser<'input> {
                     Type::U32 | Type::Ptr(_) => {
                         attr_from_str_radix::<U32Attr>(context, span, s, radix, ty)
                     }
-                    Type::U256 => todo!("parsing of u256 values"),
-                    Type::F64 => todo!("parsing of floats"),
+                    Type::U256 => Err(ParserError::InvalidAttributeValue {
+                        span,
+                        reason: "u256 attribute values are not supported".to_string(),
+                    }),
+                    Type::F64 => Err(ParserError::InvalidAttributeValue {
+                        span,
+                        reason: "floating-point attribute values are not supported".to_string(),
+                    }),
                     Type::Felt => Felt::try_from_str_radix(s, radix)
                         .map(|value| {
                             Span::new(
@@ -422,9 +428,12 @@ pub trait Parser<'input> {
                 span,
                 self.context_rc().create_attribute::<TypeAttr, _>(Type::Unknown),
             )),
-            Token::BangIdent(ty) => {
+            Token::BangIdent(_) => {
                 // Parse '!'-symbol
-                todo!("parsing of custom type names")
+                Err(ParserError::InvalidAttributeValue {
+                    span,
+                    reason: "custom type names are not supported as attribute values".to_string(),
+                })
             }
             Token::AtIdent(_) => {
                 // Parse symbol reference attribute
@@ -432,11 +441,17 @@ pub trait Parser<'input> {
             }
             Token::Lbracket => {
                 // Parse value list
-                todo!("parsing of array attributes")
+                Err(ParserError::InvalidAttributeValue {
+                    span,
+                    reason: "array attribute values are not supported".to_string(),
+                })
             }
             Token::Lbrace => {
                 // Parse value map
-                todo!("parsing of dict attributes")
+                Err(ParserError::InvalidAttributeValue {
+                    span,
+                    reason: "dictionary attribute values are not supported".to_string(),
+                })
             }
             Token::Loc => {
                 self.token_stream_mut().expect(Token::Lparen)?;

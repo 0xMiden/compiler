@@ -1120,7 +1120,9 @@ where
             })?
             .into_parts();
 
-        assert!(alias.contains('.'), "unexpected dialect attribute token, expecteed alias");
+        // The caller only routes a hash identifier without a dot here, since a dot marks a
+        // dialect attribute rather than an alias, so an alias must not contain one.
+        assert!(!alias.contains('.'), "unexpected dialect attribute token, expected alias");
 
         let alias = interner::Symbol::intern(alias);
         if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
