@@ -1262,8 +1262,13 @@ impl<'a> Verifier<'a> {
                 state.written.insert(offset + lane as u32);
             }
         }
+        let origins =
+            inputs.iter().fold(super::tokens::Origins::default(), |mut origins, token| {
+                origins.union(self.tokens.origins(*token));
+                origins
+            });
         let address = if effect.outputs.iter().any(|lane| matches!(lane, LaneEffect::Computed(_)))
-            && inputs.iter().any(|token| self.tokens.origins(*token).has_frame())
+            && origins.has_frame()
         {
             let value = match instruction {
                 Instruction::Add => {
@@ -1286,6 +1291,7 @@ impl<'a> Verifier<'a> {
                         .and_then(|delta| offset.checked_sub(delta))
                 }),
                 Instruction::Eq | Instruction::Neq => None,
+                _ if !origins.compiler() => None,
                 _ => {
                     return Err(fail(
                         DiagnosticCategory::IllegalStackAccess,
@@ -1293,7 +1299,10 @@ impl<'a> Verifier<'a> {
                     ));
                 }
             };
-            if !matches!(instruction, Instruction::Eq | Instruction::Neq) && value.is_none() {
+            if origins.compiler()
+                && !matches!(instruction, Instruction::Eq | Instruction::Neq)
+                && value.is_none()
+            {
                 return Err(fail(
                     DiagnosticCategory::IllegalStackAccess,
                     "compiler address arithmetic is not exact",
@@ -1318,7 +1327,15 @@ impl<'a> Verifier<'a> {
                 LaneEffect::FrameAddress(offset) => {
                     self.tokens.intern(Identity::FrameAddress(offset))
                 }
-                LaneEffect::Computed(_) => address.unwrap_or_else(|| self.tokens.fresh()),
+                LaneEffect::Computed(_) => address.unwrap_or_else(|| {
+                    let token = self.tokens.fresh();
+                    // Opaque source arithmetic retains may-origin, without inventing equality
+                    // or an exact frame offset. Compiler/mixed arithmetic is rejected above.
+                    if !matches!(instruction, Instruction::Eq | Instruction::Neq) {
+                        self.tokens.add_origins(token, origins);
+                    }
+                    token
+                }),
                 LaneEffect::Conditional {
                     condition,
                     if_true,

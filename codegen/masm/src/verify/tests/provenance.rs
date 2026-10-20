@@ -248,3 +248,146 @@ fn selected_contract_cannot_erase_origin_by_omitting_address_facts() {
         }
     }
 }
+
+/// Opaque source pointer arithmetic keeps its may-origin without requiring a local bounds proof.
+#[test]
+fn source_only_arithmetic_preserves_declared_memory_capability() {
+    for arithmetic in [
+        vec![push(4), inst(Instruction::Mul)],
+        vec![inst(Instruction::MulImm(Felt::from(4u32).into()))],
+        vec![inst(Instruction::U32Split), inst(Instruction::Drop)],
+    ] {
+        let mut fixture = Fixture::new(0, 0);
+        fixture.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent: 1,
+        };
+        fixture.effects.memory = SourceMemoryEffects::READ;
+        let mut body = vec![inst(Instruction::Locaddr(0.into()))];
+        body.extend(arithmetic);
+        body.extend([inst(Instruction::MemLoad), inst(Instruction::Drop)]);
+        fixture.run(body.clone()).unwrap();
+        fixture.effects.memory = SourceMemoryEffects::default();
+        assert!(fixture.run(body).is_err());
+    }
+}
+
+#[test]
+fn source_only_dynamic_add_and_sub_remain_opaque() {
+    for instruction in [Instruction::Add, Instruction::Sub] {
+        let mut fixture = Fixture::new(1, 0);
+        fixture.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent: 1,
+        };
+        fixture.effects.memory = SourceMemoryEffects::READ;
+        fixture
+            .run(vec![
+                inst(Instruction::Locaddr(0.into())),
+                inst(instruction),
+                inst(Instruction::MemLoad),
+                inst(Instruction::Drop),
+            ])
+            .unwrap();
+    }
+}
+
+#[test]
+fn opaque_arithmetic_cannot_erase_compiler_or_mixed_origins() {
+    for source_extent in [0, 1] {
+        let mut fixture = Fixture::new(1, 0).scratch(2);
+        fixture.locals = SourceLocalLayout {
+            offsets: if source_extent == 0 { vec![] } else { vec![0] },
+            extent: source_extent,
+        };
+        fixture.effects.memory = SourceMemoryEffects::READ;
+        let body = vec![
+            pointer_branch(inst(Instruction::Locaddr(1.into()))),
+            push(4),
+            inst(Instruction::Mul),
+            inst(Instruction::MemLoad),
+            inst(Instruction::Drop),
+        ];
+        assert_eq!(fixture.run(body).unwrap_err().category, DiagnosticCategory::IllegalStackAccess);
+    }
+}
+
+#[test]
+fn source_only_join_and_loop_progress_remain_source_memory() {
+    let mut fixture = Fixture::new(1, 0);
+    fixture.locals = SourceLocalLayout {
+        offsets: vec![0, 1],
+        extent: 2,
+    };
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    fixture
+        .run(vec![
+            pointer_branch(inst(Instruction::Locaddr(1.into()))),
+            push(4),
+            inst(Instruction::Mul),
+            inst(Instruction::MemLoad),
+            inst(Instruction::Drop),
+        ])
+        .unwrap();
+    let mut fixture = Fixture::new(0, 0);
+    fixture.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 1,
+    };
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    fixture.proof.loops.insert(
+        ControlId(0),
+        LoopSchema {
+            stack: vec![LoopPosition::Carry(0)],
+            cells: vec![],
+        },
+    );
+    fixture
+        .run(vec![
+            inst(Instruction::Locaddr(0.into())),
+            AnnotatedOp::Repeat {
+                id: ControlId(0),
+                count: 2,
+                body: ops(vec![push(4), inst(Instruction::Mul)]),
+            },
+            inst(Instruction::MemLoad),
+            inst(Instruction::Drop),
+        ])
+        .unwrap();
+}
+
+#[test]
+fn opaque_arithmetic_rechecks_late_compiler_loop_taint() {
+    let mut fixture = Fixture::new(0, 0).scratch(2);
+    fixture.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 1,
+    };
+    fixture.proof.loops.insert(
+        ControlId(0),
+        LoopSchema {
+            stack: vec![LoopPosition::Carry(0)],
+            cells: vec![],
+        },
+    );
+    assert_eq!(
+        fixture
+            .run(vec![
+                inst(Instruction::Locaddr(0.into())),
+                AnnotatedOp::Repeat {
+                    id: ControlId(0),
+                    count: 2,
+                    body: ops(vec![
+                        push(4),
+                        inst(Instruction::Mul),
+                        inst(Instruction::Drop),
+                        inst(Instruction::Locaddr(1.into()))
+                    ]),
+                },
+                inst(Instruction::Drop)
+            ])
+            .unwrap_err()
+            .category,
+        DiagnosticCategory::IllegalStackAccess
+    );
+}

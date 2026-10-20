@@ -324,3 +324,65 @@ fn element_pointer_sign_extending_load_uses_native_units() -> Result<(), Report>
     );
     Ok(())
 }
+
+/// Pin the approved complete-range guard, including zero counts and the native endpoint.
+#[test]
+fn memset_range_policy_is_explicit() -> Result<(), Report> {
+    for (space, base, value, count, succeeds) in [
+        (AddressSpace::Byte, 0xffff_fff8, Immediate::U32(7), 1, true),
+        (AddressSpace::Byte, 0xffff_fffc, Immediate::U32(7), 0, true),
+        (AddressSpace::Byte, 0xffff_fffd, Immediate::U32(7), 0, false),
+        (AddressSpace::Byte, 0xffff_fff8, Immediate::U32(7), 2, false),
+        (AddressSpace::Element, u32::MAX, Immediate::U16(0xabcd), 2, true),
+        (AddressSpace::Element, u32::MAX, Immediate::U16(0xabcd), 3, false),
+        (AddressSpace::Element, u32::MAX, Immediate::U128(7), 0, true),
+        (AddressSpace::Element, 16, Immediate::U128(7), u32::MAX, false),
+    ] {
+        let mut test = EvalTest::named("memset_bounds");
+        test.with_function(&[], &[]);
+        let cell = if space == AddressSpace::Byte {
+            base / 4
+        } else {
+            base
+        };
+        let probe = MemoryAddress::new(cell, AddressSpace::Element);
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            // eval_callable resets evaluator memory; initialize the probe in the executed HIR.
+            let probe_addr = builder.u32(cell, span);
+            let probe_ptr = builder.inttoptr(
+                probe_addr,
+                Type::from(PointerType::new_with_address_space(Type::U32, AddressSpace::Element)),
+                span,
+            )?;
+            let initial = builder.u32(0x1234_5678, span);
+            builder.store(probe_ptr, initial, span)?;
+            let addr = builder.u32(base, span);
+            let ptr = builder.inttoptr(
+                addr,
+                Type::from(PointerType::new_with_address_space(value.ty(), space)),
+                span,
+            )?;
+            let value = builder.imm(value, span);
+            let count = builder.u32(count, span);
+            builder.memset(ptr, count, value, span)?;
+            builder.ret(None, span)?;
+        }
+        let callable = test.function().borrow();
+        let result = test.evaluator.eval_callable(&*callable, []);
+        assert_eq!(result.is_ok(), succeeds, "{space:?} base={base} count={count}");
+        if !succeeds || count == 0 {
+            assert_eq!(
+                test.evaluator.read_memory(probe, &Type::U32)?,
+                Value::Immediate(Immediate::U32(0x1234_5678))
+            );
+        } else if space == AddressSpace::Element {
+            assert_eq!(
+                test.evaluator.read_memory(probe, &Type::U32)?,
+                Value::Immediate(Immediate::U32(0xabcd_abcd))
+            );
+        }
+    }
+    Ok(())
+}

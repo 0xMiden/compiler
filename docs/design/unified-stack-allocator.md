@@ -722,6 +722,24 @@ The verifier checks the lowering unit's source operand identities and order, eve
 
 The memory algorithm remains trusted: the sufficiency of range checks, correctness of pointer/unit conversions, overlap direction, byte extraction and insertion, termination, and the intrinsic's copying semantics require execution/differential coverage. The physical verifier need not reject a comparison changed in a way that selects the wrong copy direction while leaving every stack access legal. Source-memory operations follow the program's existing memory semantics; compiler spill-slot addressing and scratch separation remain checked allocation obligations.
 
+### Typed memory fill and subword accesses
+
+`MemSet` retains the backend's existing supported value domain: nonzero values of at most four bytes represented by one raw lane, including small aggregate, enum, and function values, plus the supported wider integer scalars. It repeats values at successive `size_in_bytes` positions in both byte and native element address spaces. Address calculations preserve the full native domain, using an element/offset pair or an exact wide byte position converted to that pair for each store; a native address must not be narrowed through a `u32` byte pointer. For supported value size `size`, count `count`, and raw pointer `ptr`, the complete range is:
+
+```text
+length = count * size
+start  = Byte: ptr       Element: 4 * ptr
+limit  = Byte: 0xffff_fffc
+         Element: 2^34
+require start <= limit && length <= limit - start
+```
+
+Evaluate these bounds without narrowing or arithmetic overflow, before any write and even when count is zero. The limit is an exclusive endpoint; the native one-past endpoint need not be materialized as an address. Range failures leave memory unchanged. Other store failures, such as a later invalid partial-cell byte view, may follow earlier completed writes; the unit does not promise transactional memory effects.
+
+Typed accesses touch only the cells containing the requested bytes. In particular, U16 loads and stores at offsets `0..=2` access one element; only offset `3` crosses into the next. An untouched full-width Felt neighbor is neither inspected nor changed, and a within-cell access at the final native element does not require `addr + 1`. Preserve existing offset validation, touched-cell byte-view requirements, unaffected bits, and caller stack suffixes. These helper semantics require actual VM tests; generic token verification does not prove a trusted helper's memory footprint.
+
+Packed subword stores write the declared bit footprint and preserve bits outside it. The shared store owner uses the one-cell path when `8 * byte_offset + size_in_bits <= 32`; otherwise it merges through the existing two-cell window helpers. This includes 24-bit values and packed boolean-array widths such as 9, 17, and 25 bits. Immediate-address crossings use that same owner. Compile-time alignment checks must cover the full native address domain without narrowing through a `u32` byte pointer. Existing type-specific dispatch and input validation remain unchanged: the sub-32-bit mask helper retains its already-truncated-input precondition, while whole-cell stores are not given a new blanket 32-bit validation rule. Wrappers around Felt retain their existing storage behavior. This does not add large-aggregate support or an aggregate evaluator representation.
+
 ### Example: full-width FPI
 
 The existing [FPI emitter](../../../codegen/masm/src/lower/fpi.rs) already pads the payload, loads six prefix locals in reverse order, and emits the executor call. The new lowering unit preserves that execution shape while replacing source-local references with backend-owned stored-input bindings:
@@ -812,6 +830,8 @@ Scope identifies a symbolic verification context, not a runtime iteration counte
 Duplication creates another occurrence of the same token; permutations move tokens without changing them. A store writes the actual source token to the addressed physical cell, invalidating its old contents. A load returns that cell's current token. Uninitialized or not definitely initialized storage is a separate unavailable state, never a wildcard token. Every compiler-storage read requires an initialized cell and the identity required by the binding.
 
 Arithmetic normally produces fresh opaque result tokens. Source-memory loads likewise produce fresh tokens unless a registered rule proves a stronger relation. The checker does not infer algebraic equalities or assume that two loads from the same source address are equal. Compiler-address operations have exact rules sufficient to resolve the final frame offset and accessed range; an unresolved compiler-storage address is rejected. These rules preserve the existing ABI premise for source memory and same-context calls rather than introducing whole-program alias analysis.
+
+Exact source-local address offsets are retained where the arithmetic rules resolve them, including existing checks on known accesses and crossings. Otherwise, source-local-only arithmetic produces fresh opaque tokens carrying the conservative source-local origin. It does not require a new dynamic source-local bounds proof. Any compiler-storage origin, including a mixture with source-local origins, retains the strict compiler-address rules and cannot be erased or relabeled as source memory.
 
 The existing typed operand stack, where an intermediate can carry only a type, is not the verifier state. The checker accounts for every raw lane and actual frame cell even when typed emission helpers omit or reconstruct their own bookkeeping.
 
@@ -1009,6 +1029,11 @@ Lowering interface acceptance requires:
 | Stack preparation would overwrite a required stored input | Reject or change that proposal; keep the contents live through preparation, expansion, and physical slot coloring |
 | Byte `memmove` aligned and unaligned paths, both overlap directions, and zero count | Verify all branch/loop stack contracts and suffix preservation, and validate copied bytes and trap behavior through VM/differential execution |
 | Mutated `memmove` cleanup or internal stack access | Reject unmatched state lanes, suffix corruption, and inaccessible reads during physical verification; algorithm-only mutations such as an incorrect direction predicate are covered by semantic execution tests |
+| Typed `MemSet` in byte/native address spaces | Match evaluator contiguous-byte results for supported scalar widths, retain existing small one-lane value support, preserve unaffected bits and the complete suffix, and support native addresses above the byte-pointer domain |
+| `MemSet` at address-space limits, including zero count | Validate the complete range before writing; accept valid exclusive endpoints, reject invalid zero-count byte bases, and prove range failures leave memory unchanged through execution |
+| U16 load/store beside a full-width untouched cell or at the final native cell | Offsets `0..=2` access only the containing cell; offset `3` uses both cells, retaining offset and touched-cell validation |
+| Small packed-value fills and ordinary dynamic/immediate stores, including 24- and 9/17/25-bit widths | Preserve existing accepted source types and byte strides; use one or two cells according to the actual bit footprint, preserve outside bits and untouched neighbors, and reject true terminal-cell crossings |
+| Source-local opaque arithmetic versus compiler or mixed origins | Preserve source-local may-origin without inventing equality; retain exact-offset checks where known and reject unresolved compiler-derived addresses, including after joins and loop backedges |
 | FPI payload widths zero through sixteen | Emit correct trailing zero padding, stored prefix order, and the registered executor call; the full-width case constructs twenty-two lanes without padding or intervening allocation |
 | FPI with live-after inputs and a preserved deeper suffix | Retain valid representations through the call and publish all sixteen result lanes only after normal return |
 | Mutated lowering unit bindings and publication | Reject stale or wrong stored atoms, swapped prefix positions, undeclared storage reads, illegal buried-payload accesses, and premature result identities |
