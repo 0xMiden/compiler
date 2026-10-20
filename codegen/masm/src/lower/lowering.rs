@@ -2975,6 +2975,10 @@ macro_rules! intrinsic_selection {
 intrinsic_selection! {
     hir::Hash => Hash,
     hir::HMerge => HMerge,
+    hir::MTreeGet => MTreeGet,
+    hir::MTreeSet => MTreeSet,
+    hir::MTreeMerge => MTreeMerge,
+    hir::MTreeVerify => MTreeVerify,
     hir::HPerm => HPerm,
     hir::AdvicePop => AdvicePop,
     hir::AdviceLoadWord => AdviceLoadWord,

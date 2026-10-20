@@ -296,7 +296,6 @@ fn word_effects_preserve_actual_cell_order() -> Result<(), Report> {
 fn unknown_rules_and_unresolved_immediates_fail_closed() {
     for instruction in [
         Instruction::CryptoStream,
-        Instruction::MTreeGet,
         Instruction::Emit,
         Instruction::EmitImm(crate::masm::Immediate::from(Felt::new_unchecked(999)).into()),
     ] {
@@ -312,6 +311,9 @@ fn unknown_rules_and_unresolved_immediates_fail_closed() {
         Instruction::U32RotlImm(32.into()),
         Instruction::U32RotrImm(32.into()),
         Instruction::ExpBitLength(64),
+        Instruction::MTreeVerifyWithError(crate::masm::Immediate::Constant(
+            crate::masm::Ident::new("diagnostic").unwrap(),
+        )),
         Instruction::EqImm(crate::masm::Immediate::Constant(
             crate::masm::Ident::new("field_constant").unwrap(),
         )),
@@ -693,6 +695,14 @@ fn arithmetic_and_fixed_target_rules_match_pinned_assembler_microsteps() -> Resu
         Instruction::Hash,
         Instruction::HMerge,
         Instruction::HPerm,
+        Instruction::MTreeGet,
+        Instruction::MTreeSet,
+        Instruction::MTreeMerge,
+        Instruction::MTreeVerify,
+        Instruction::MTreeVerifyWithError(crate::masm::Immediate::Value(crate::masm::Span::new(
+            midenc_hir::SourceSpan::UNKNOWN,
+            alloc::sync::Arc::<str>::from("bad path"),
+        ))),
         Instruction::AdvPush,
         Instruction::Caller,
         Instruction::Clk,
@@ -749,6 +759,9 @@ fn arithmetic_and_fixed_target_rules_match_pinned_assembler_microsteps() -> Resu
                 | O::CSwapW => Some(FloorStep::Pop(1)),
                 O::Noop
                 | O::HPerm
+                | O::AdvPopW
+                | O::MpVerify(_)
+                | O::MrUpdate
                 | O::Caller
                 | O::Neg
                 | O::Inv
@@ -1023,6 +1036,40 @@ fn advice_word_raw_vm_order_consumption_suffix_floor_and_exhaustion() {
                         break;
                     }
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn merkle_target_contracts_preserve_exact_identities_and_traps() {
+    for (instruction, consumed, produced, peak) in [
+        (Instruction::MTreeGet, 6, 8, 4),
+        (Instruction::MTreeSet, 10, 8, 8),
+        (Instruction::MTreeMerge, 8, 4, 4),
+        (Instruction::MTreeVerify, 10, 10, 0),
+    ] {
+        let effect = TargetEffects::instruction(&instruction).unwrap();
+        assert_eq!(effect.consumed, consumed);
+        assert_eq!(effect.outputs.len(), produced);
+        assert!(effect.may_trap);
+        let (mut height, mut maximum) = (0i32, 0);
+        for step in &effect.floor {
+            height += match step {
+                FloorStep::Push(n) => i32::from(*n),
+                FloorStep::Pop(n) => -i32::from(*n),
+            };
+            maximum = maximum.max(height);
+        }
+        assert_eq!(maximum, peak);
+        assert_eq!(height, produced as i32 - i32::from(consumed));
+        for (i, lane) in effect.outputs.iter().enumerate() {
+            match instruction {
+                Instruction::MTreeGet if i >= 4 => {
+                    assert_eq!(*lane, LaneEffect::Input((i - 2) as u8))
+                }
+                Instruction::MTreeVerify => assert_eq!(*lane, LaneEffect::Input(i as u8)),
+                _ => assert_eq!(*lane, LaneEffect::Computed(i as u8)),
             }
         }
     }

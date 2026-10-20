@@ -269,6 +269,25 @@ impl TargetEffects {
             ),
             HMerge => StackEffect::computed(8, 4, &[1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1]),
             HPerm => StackEffect::computed(12, 12, &[]),
+            MTreeGet => StackEffect::new(
+                6,
+                (0..4).map(LaneEffect::Computed).chain((2..6).map(Input)).collect(),
+                floor(&[1, -1, 1, 1, 1, 1, -1, -1]),
+            )
+            .trapping(),
+            MTreeSet => StackEffect::computed(
+                10,
+                8,
+                &[1, -1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+            )
+            .trapping(),
+            MTreeMerge => {
+                StackEffect::computed(8, 4, &[1, -1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1])
+                    .trapping()
+            }
+            MTreeVerify | MTreeVerifyWithError(Immediate::Value(_)) => {
+                StackEffect::new(10, (0..10).map(Input).collect(), vec![]).trapping()
+            }
             Caller => StackEffect::computed(4, 4, &[]),
             Clk => StackEffect::computed(0, 1, &[1]),
             AdvPush => StackEffect::computed(0, 1, &[1]).trapping(),
