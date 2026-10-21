@@ -1666,3 +1666,101 @@ fn eval_circuit_raw_actual_minimum_floor_retains_all_lanes() {
         .collect::<Vec<_>>();
     assert_eq!(run_program(&format!("begin {init} eval_circuit end"), &input).unwrap(), input);
 }
+
+#[test]
+fn system_event_closed_rules_retain_complete_windows_and_actual_floor() {
+    use miden_core::events::SystemEvent;
+    for event in SystemEvent::all() {
+        if matches!(
+            event,
+            SystemEvent::MemToMap | SystemEvent::DeferredRegisterData | SystemEvent::TraceEvent
+        ) {
+            continue;
+        }
+        let instruction = Instruction::EmitImm(
+            crate::masm::Immediate::Value(crate::masm::Span::unknown(event.event_id().as_felt()))
+                .into(),
+        );
+        let effect = TargetEffects::instruction(&instruction).unwrap();
+        assert!(effect.consumed > 0, "{event:?}");
+        assert_eq!(effect.outputs, (0..effect.consumed).map(LaneEffect::Input).collect::<Vec<_>>());
+        assert_eq!(effect.floor, vec![FloorStep::Push(1), FloorStep::Pop(1)]);
+        assert!(effect.may_trap);
+        assert_eq!(effect.memory, MemoryEffects::default());
+    }
+}
+
+#[test]
+fn system_event_metadata_rejects_observation_outside_consumed_inputs() {
+    let mut effect = TargetEffects::instruction(&Instruction::Nop).unwrap();
+    assert!(effect.observed_inputs.is_empty());
+    effect.observed_inputs.push(0);
+    assert!(effect.validate().is_err());
+}
+
+#[test]
+fn system_event_observation_metadata_is_complete_bounded_and_closed() {
+    use miden_core::events::SystemEvent::*;
+    let cases = [
+        (MapValueToStack, 4),
+        (MapValueCountToStack, 4),
+        (MapValueToStackN0, 4),
+        (MapValueToStackN4, 4),
+        (MapValueToStackN8, 4),
+        (HasMapKey, 4),
+        (MerkleNodeToStack, 6),
+        (HdwordToMap, 8),
+        (MerkleNodeMerge, 8),
+        (HdwordToMapWithDomain, 9),
+        (HqwordToMap, 16),
+        (HpermToMap, 12),
+        (DeferredRegister, 12),
+        (DeferredEvaluate, 4),
+        (DeferredEvaluateTag, 4),
+        (DeferredEvaluatePayload, 4),
+        (Ext2Inv, 2),
+        (U32Clz, 1),
+        (U32Ctz, 1),
+        (U32Clo, 1),
+        (U32Cto, 1),
+        (ILog2, 1),
+    ];
+    assert_eq!(cases.len(), 22);
+    for (event, n) in cases {
+        let instruction = Instruction::EmitImm(
+            crate::masm::Immediate::Value(crate::masm::Span::unknown(event.event_id().as_felt()))
+                .into(),
+        );
+        let effect = TargetEffects::instruction(&instruction).unwrap();
+        assert_eq!(effect.consumed, n, "{event:?}");
+        assert_eq!(effect.observed_inputs, (0..n).collect::<Vec<_>>(), "{event:?}");
+        effect.validate().unwrap();
+        for invalid in [n, u8::MAX] {
+            let mut bad = effect.clone();
+            bad.observed_inputs.push(invalid);
+            assert!(bad.validate().is_err(), "{event:?} index{invalid}");
+        }
+    }
+    for event in [MemToMap, DeferredRegisterData, TraceEvent] {
+        let instruction = Instruction::EmitImm(
+            crate::masm::Immediate::Value(crate::masm::Span::unknown(event.event_id().as_felt()))
+                .into(),
+        );
+        assert!(TargetEffects::instruction(&instruction).is_err());
+    }
+    for event in [crate::Event::FrameStart, crate::Event::FrameEnd] {
+        let effect = TargetEffects::instruction(&Instruction::EmitImm(event.into())).unwrap();
+        assert!(effect.observed_inputs.is_empty());
+        assert_eq!(effect.consumed, 0);
+    }
+    for instruction in [Instruction::Nop, Instruction::Add, Instruction::Locaddr(0.into())] {
+        assert!(TargetEffects::instruction(&instruction).unwrap().observed_inputs.is_empty());
+    }
+    assert!(TargetEffects::instruction(&Instruction::Emit).is_err());
+    assert!(
+        TargetEffects::instruction(&Instruction::EmitImm(
+            crate::masm::Immediate::Value(crate::masm::Span::unknown(Felt::from(7u32))).into()
+        ))
+        .is_err()
+    );
+}

@@ -291,6 +291,7 @@ pub(crate) enum HirBody {
     Arithmetic(alloc::boxed::Box<arithmetic::Arithmetic>),
     /// Typed memory operations, possibly requiring a resolved source-local address.
     Memory(alloc::boxed::Box<memory::Memory>),
+    /// Fixed-stack target primitives and their checked event or intrinsic parameters.
     Intrinsic(alloc::boxed::Box<intrinsics::Intrinsic>),
     /// A source rule's fully fixed straight-line instruction sequence.
     Plain(alloc::vec::Vec<masm::Instruction>),

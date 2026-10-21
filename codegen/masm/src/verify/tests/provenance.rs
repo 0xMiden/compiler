@@ -392,3 +392,253 @@ fn opaque_arithmetic_rechecks_late_compiler_loop_taint() {
         DiagnosticCategory::IllegalStackAccess
     );
 }
+
+#[test]
+fn system_event_observation_rejects_compiler_pointer_before_cleanup() {
+    use miden_core::events::SystemEvent;
+    let mut fixture = Fixture::new(0, 0).scratch(1);
+    fixture.effects.may_trap = true;
+    let event = Instruction::EmitImm(
+        crate::masm::Immediate::Value(crate::masm::Span::unknown(
+            SystemEvent::U32Clz.event_id().as_felt(),
+        ))
+        .into(),
+    );
+    let error = fixture
+        .run(vec![inst(Instruction::Locaddr(0.into())), inst(event), inst(Instruction::Drop)])
+        .unwrap_err();
+    assert!(error.message.contains("observed"), "{error:?}");
+}
+
+fn system_event_instruction(event: miden_core::events::SystemEvent) -> Instruction {
+    Instruction::EmitImm(
+        crate::masm::Immediate::Value(crate::masm::Span::unknown(event.event_id().as_felt()))
+            .into(),
+    )
+}
+
+#[test]
+fn system_event_every_observed_lane_rejects_exact_mixed_and_unresolved_compiler_origins() {
+    for (event, n) in miden_core::events::SystemEvent::all().into_iter().filter_map(|event| {
+        crate::events::FixedSystemEvent::from_id(event.event_id().as_felt())
+            .map(|d| (event, usize::from(d.payload_lanes)))
+    }) {
+        for position in 0..n {
+            for origin in 0..4 {
+                let mut fixture = Fixture::new(u32::from(origin != 0), 0).scratch(2);
+                fixture.locals = SourceLocalLayout {
+                    offsets: vec![0],
+                    extent: 1,
+                };
+                fixture.effects.may_trap = true;
+                // These permissions cannot authorize compiler observation.
+                fixture.effects.memory = SourceMemoryEffects::READ_WRITE;
+                let mut code = match origin {
+                    0 => vec![inst(Instruction::Locaddr(1.into()))],
+                    1 => vec![pointer_branch(inst(Instruction::Locaddr(1.into())))],
+                    2 => vec![AnnotatedOp::If {
+                        id: ControlId(0),
+                        then_body: ops(vec![inst(Instruction::Locaddr(1.into()))]),
+                        else_body: ops(vec![push(77)]),
+                    }],
+                    _ => vec![AnnotatedOp::If {
+                        id: ControlId(0),
+                        then_body: ops(vec![inst(Instruction::Locaddr(1.into()))]),
+                        else_body: ops(vec![inst(Instruction::Locaddr(2.into()))]),
+                    }],
+                };
+                code.extend((1..n).map(|i| push(101 + i as u64)));
+                if n > 1 {
+                    code.push(inst(Primitive::MoveUp((n - 1) as u8).instruction().unwrap()));
+                }
+                if position > 0 {
+                    code.push(inst(Primitive::MoveDown(position as u8).instruction().unwrap()));
+                }
+                code.push(inst(system_event_instruction(event)));
+                code.extend((0..n).map(|_| inst(Instruction::Drop)));
+                let error = fixture.run(code).unwrap_err();
+                assert!(
+                    error.message.contains("observed"),
+                    "{event:?} lane{position} origin{origin}: {error:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn system_event_source_only_observation_and_unobserved_compiler_suffix_are_accepted() {
+    for (event, n) in miden_core::events::SystemEvent::all().into_iter().filter_map(|event| {
+        crate::events::FixedSystemEvent::from_id(event.event_id().as_felt())
+            .map(|d| (event, usize::from(d.payload_lanes)))
+    }) {
+        for position in 0..n {
+            let mut fixture = Fixture::new(0, 0).scratch(1);
+            fixture.locals = SourceLocalLayout {
+                offsets: vec![0],
+                extent: 1,
+            };
+            fixture.effects.may_trap = true;
+            let mut code = vec![inst(Instruction::Locaddr(1.into()))];
+            code.extend((0..n).rev().map(|i| {
+                if i == position {
+                    inst(Instruction::Locaddr(0.into()))
+                } else {
+                    push(101 + i as u64)
+                }
+            }));
+            code.push(inst(system_event_instruction(event)));
+            code.extend((0..n + 1).map(|_| inst(Instruction::Drop)));
+            fixture.run(code).unwrap();
+        }
+    }
+}
+
+#[test]
+fn system_event_internal_loop_rechecks_late_compiler_taint_before_cleanup() {
+    let mut fixture = Fixture::new(0, 0).scratch(1);
+    fixture.effects.may_trap = true;
+    fixture.proof.loops.insert(
+        ControlId(0),
+        LoopSchema {
+            stack: vec![LoopPosition::Carry(0)],
+            cells: vec![],
+        },
+    );
+    let error = fixture
+        .run(vec![
+            push(77),
+            AnnotatedOp::Repeat {
+                id: ControlId(0),
+                count: 2,
+                body: ops(vec![
+                    inst(system_event_instruction(miden_core::events::SystemEvent::U32Clz)),
+                    inst(Instruction::Drop),
+                    inst(Instruction::Locaddr(0.into())),
+                ]),
+            },
+            inst(Instruction::Drop),
+        ])
+        .unwrap_err();
+    assert!(error.message.contains("observed"), "{error:?}");
+}
+
+struct SystemEventGraphLoop;
+impl GeneratedDefinition for SystemEventGraphLoop {
+    fn id(&self) -> GeneratedDefinitionId {
+        GeneratedDefinitionId(19)
+    }
+
+    fn instantiate(&self, parameters: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+        let mut evidence = super::loops::LoopDefinition.instantiate(parameters)?;
+        evidence.program.origin = ProcedureOrigin::Generated {
+            definition: self.id(),
+            parameters: vec![],
+        };
+        for record in evidence.program.source_map.values_mut() {
+            if let SourceOrigin::Generated { definition, .. } = &mut record.origin {
+                *definition = self.id();
+            }
+        }
+        let unit = &mut evidence.program.segments[2].units[0];
+        unit.effects.may_trap = true;
+        unit.scratch.push(ScratchRequirement {
+            id: ScratchId(0),
+            size: 1,
+            alignment: 1,
+            contiguous: true,
+            address_space: AddressSpace::ProcedureLocal,
+            lifetime: ScratchLifetime::Spanning,
+            uses: vec![unit.id],
+        });
+        // Exit explicitly cleans up the carried pointer before returning an ordinary value.
+        evidence.units.get_mut(&SelectedStepId(1)).unwrap().aliases = LaneAliases::default();
+        Ok(evidence)
+    }
+}
+
+#[test]
+fn system_event_graph_backedge_rechecks_late_compiler_taint_before_cleanup() {
+    let (mut plan, _, body) = super::loops::loop_fixture(true);
+    plan.selected = check_selection(
+        SystemEventGraphLoop.instantiate(&[]).unwrap().program,
+        &SourceContext::Generated(&SystemEventGraphLoop),
+    )
+    .unwrap();
+    let slot = plan.spill_slots[0];
+    let scratch = ScratchAllocation {
+        offset: 1,
+        size: 1,
+        alignment: 1,
+        lifetime: ScratchLifetime::Spanning,
+    };
+    plan.lowering_bindings
+        .get_mut(&SelectedStepId(0))
+        .unwrap()
+        .scratch
+        .insert(ScratchId(0), scratch);
+    let frame = FinalFrameLayout::new(
+        SourceLocalLayout::default(),
+        BTreeMap::from([(slot, 0)]),
+        BTreeMap::from([(ScratchId(0), scratch)]),
+        4,
+    )
+    .unwrap();
+    fn replace(body: &AnnotatedMasmBody) -> AnnotatedMasmBody {
+        let mut result = vec![];
+        let mut unit = None;
+        for op in body.ops() {
+            match op {
+                AnnotatedOp::Boundary(Boundary::UnitStart(id)) => {
+                    unit = Some(*id);
+                    result.push(op.clone());
+                    if *id == SelectedStepId(0) {
+                        result.extend([
+                            inst(Instruction::Dup0),
+                            inst(system_event_instruction(miden_core::events::SystemEvent::U32Clz)),
+                            inst(Instruction::Drop),
+                            inst(Instruction::Drop),
+                            inst(Instruction::Locaddr(1.into())),
+                            push(0),
+                        ]);
+                    } else {
+                        result.extend([
+                            AnnotatedOp::Instruction {
+                                instruction: Instruction::Drop,
+                                unit: *id,
+                            },
+                            AnnotatedOp::Instruction {
+                                instruction: Primitive::Push(Felt::from(77u32))
+                                    .instruction()
+                                    .unwrap(),
+                                unit: *id,
+                            },
+                        ]);
+                    }
+                }
+                AnnotatedOp::Boundary(Boundary::UnitEnd(_)) => {
+                    unit = None;
+                    result.push(op.clone());
+                }
+                AnnotatedOp::Instruction { .. } if unit.is_some() => {}
+                AnnotatedOp::If {
+                    id,
+                    then_body,
+                    else_body,
+                } => result.push(AnnotatedOp::If {
+                    id: *id,
+                    then_body: replace(then_body),
+                    else_body: replace(else_body),
+                }),
+                AnnotatedOp::While { id, body } => result.push(AnnotatedOp::While {
+                    id: *id,
+                    body: replace(body),
+                }),
+                other => result.push(other.clone()),
+            }
+        }
+        ops(result)
+    }
+    let error = verify(&plan, &frame, replace(&body)).unwrap_err();
+    assert!(error.message.contains("observed"), "{error:?}");
+}

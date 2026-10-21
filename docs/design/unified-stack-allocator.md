@@ -724,6 +724,34 @@ The VM reads the quadratic-extension inputs as words and then decodes/evaluates 
 
 `LogDeferred` requires twelve Felt inputs and results. It reads the statement word at lanes four through seven and the VM's previous deferred root, computes the twelve-lane permutation state for their AND node, and advances the deferred state. It does not observe additional operand-stack lanes, operand memory, advice or arbitrary host handlers. Its closed rule produces twelve computed lanes, may trap, and has no stack-height change. Preserve the VM's registered/true-statement prerequisites and state limits without promising rollback. VM tests compare all output lanes and the stored deferred root across successive invocations; physical verification continues to check the declared window and suffix, not prove the deferred-state algorithm.
 
+### Fixed-window system events
+
+A finite target-owned system-event descriptor binds the resolved VM event ID to its complete observed payload window. `SystemEvent` selection requires that exact ID, exactly N Felt operands and N Felt results, and an input/result identity relation for every lane. The payload operands are semantic SSA uses; incidental allocator stack contents cannot supply them. Non-Felt immediates, unknown IDs and mismatched tuples receive diagnostics. The closed fixed-window set is:
+
+| VM variants | Payload lanes N | Non-stack behavior |
+| --- | --- | --- |
+| MapValueToStack, MapValueCountToStack, MapValueToStackN0/N4/N8, HasMapKey | 4 each | Query the advice map and push the specified values/count/padding/presence to advice |
+| MerkleNodeToStack | 6 | Query the Merkle store and push the node |
+| HdwordToMap, MerkleNodeMerge | 8 each | Insert the hashed payload into the advice map, or extend the Merkle store |
+| HdwordToMapWithDomain | 9 | Insert the payload using its explicit hash domain |
+| HqwordToMap | 16 | Hash and insert all four payload words |
+| HpermToMap, DeferredRegister | 12 each | Insert the original permutation rate under the computed key, or register the stack-resident deferred node |
+| DeferredEvaluate, DeferredEvaluateTag, DeferredEvaluatePayload | 4 each | Evaluate the deferred node and push the specified canonical components |
+| Ext2Inv | 2 | Push extension-inverse advice |
+| U32Clz, U32Ctz, U32Clo, U32Cto, ILog2 | 1 each | Push the corresponding numeric advice |
+
+The pinned VM's `DeferredRegister` rejects framework `AND` nodes with `InvalidTag`: its Join path uses a constructor reserved for precompile tags. This lowering preserves that existing runtime behavior. An exact-ID regression records the rejection; successful canonicalization and empty-payload tests use a supported precompile predicate and built-in TRUE. The dependency defect remains a separate follow-up rather than a compiler-side repair or an exception to physical verification.
+
+These 22 variants preserve the entire operand stack and do not read or write operand memory. Actual provider/deferred effects, error conditions and ordering remain the pinned VM semantics, without a rollback promise. Their definitions use the existing immediate-event emitter. Its actual expansion is `Push(ID); Emit; Drop`: at observation, payload lane i is at depth i+1. `HqwordToMap` therefore reads payload at depth sixteen while the ID is present; this VM-supported overflow observation does not impose a sixteen-total-lane source limit. Physical rules model the temporary height and preserve all payload and suffix identities.
+
+Target effects carry `observed_inputs`, a list of pre-expansion raw input indices, empty by default. Each fixed-window system-event rule names the whole `0..N` payload. Validate every reference against the consumed prefix before indexing. Compiler frame-start/frame-end events retain their empty payload contract. Plans cannot author or weaken these lists.
+
+Before an observed primitive transitions, independent replay checks the actual input tokens against the declared observation list. Any compiler-storage may-origin is rejected, including mixed or unresolved provenance and pointers that are dropped before normal completion. This rule applies to queries as well as retaining handlers; there is no event-specific compiler-pointer borrow exception. Source-local-only origins retain the existing ABI assumption. Unobserved suffix tokens remain protected and do not become payload. Existing selected-graph and internal-loop origin fixed points rerun the observation check after newly discovered provenance; no separate origin solver is introduced.
+
+The finite target rule's completeness and the handler's adherence to its observation window remain trusted, tested against actual VM/provider behavior. Physical replay proves the no-compiler-observation property for those declared inputs; it does not confine the host's ProcessorState API or interpret advice/deferred algorithms. A physically valid omitted event, wrong same-width ID or wrong payload computation needs semantic execution tests under the existing physical-verification boundary.
+
+This contract supplies no implicit payload dependencies for generic `EmitEvent`/`EmitEventImm`, even if their ID names a system event. Their source contract, host-specific `TraceEvent`, packed-byte `PrintLn`, and the variable-memory `MemToMap`/`DeferredRegisterData` contracts remain separate required design decisions. The fixed-window conversion does not silently choose their accepted source domain.
+
 ### Example: byte `memmove`
 
 The existing [copy lowering](../../../codegen/masm/src/emit/mem.rs) handles range checks, an alignment-dependent intrinsic fast path, and a directional scalar loop. For a byte-pointer `memmove`, select one lowering unit:
@@ -874,6 +902,8 @@ Arithmetic normally produces fresh opaque result tokens. Source-memory loads lik
 Exact source-local address offsets are retained where the arithmetic rules resolve them, including existing checks on known accesses and crossings. Otherwise, source-local-only arithmetic produces fresh opaque tokens carrying the conservative source-local origin. It does not require a new dynamic source-local bounds proof. Any compiler-storage origin, including a mixture with source-local origins, retains the strict compiler-address rules and cannot be erased or relabeled as source memory.
 
 The existing typed operand stack, where an intermediate can carry only a type, is not the verifier state. The checker accounts for every raw lane and actual frame cell even when typed emission helpers omit or reconstruct their own bookkeeping.
+
+Closed target observation lists are independent of memory footprints. Replay checks observed input tokens for compiler may-origins before executing the primitive transition, even for operations with no operand-memory access. Source READ permission cannot waive that check.
 
 ### Primitive memory replay
 
@@ -1092,6 +1122,8 @@ Acceptance is defined by these behaviors rather than a particular spill count:
 - Primitive memory-contract tests reject invalid Input/Output references, widths and read dependencies. Output-backed word stores preserve exact scratch identities and untouched cells; later loads recover those tokens. Read-before-write snapshots, read-only ranges, both source permissions and Input/Output compiler-address escapes remain checked.
 - EvalCircuit tests preserve all three retained operands, actual minimum depth and a complete overflow suffix through the selected pipeline. Independent zero/nonzero and invalid/dependent-wire circuit cases distinguish semantic assertion behavior, including native omission. Count guards precede address failures; tests cover the 32768-wire boundary, large canonical counts, footprints above 255 cells, alignment and first/later terminal accesses, and the traced 32-witness limit versus untraced execution.
 - Counted-read tests accept runtime source/source-local counts under the ABI while retaining provenance, reject known source/compiler crossings and unresolved or mixed compiler ranges, and check full declared compiler initialization including the final cell. Metadata rejects memory-valued Circuit outputs. Fixed read-token identity, pre-write snapshots and typed-write regressions continue to pass; footprint-only source reads do not materialize unused cell tokens.
+- All 22 fixed-window system events select from exact real-HIR contracts and retain every payload/suffix lane. VM tests observe actual advice-map, Merkle-store and deferred-state behavior, including padding/count variants, domain/rate order, TRUE deferred payloads, numeric edge cases and concrete errors. Hqword tests observe the seventeenth physical lane beneath its transient ID, with actual floor depth, default/normalized scheduling, spills and live-through values.
+- Observation metadata tests reject out-of-range references and check complete registered windows. Physical tests inject compiler provenance into every observed position, then clean it up before return, requiring rejection at observation. Exact/mixed origins, branch abstraction, late graph/internal-loop origins, source-local acceptance and unobserved compiler suffix preservation are checked. Omitted events and physically valid wrong-ID/payload mutations are detected through VM behavior, without exact-body checking.
 - Generated initializer/adaptor procedures can spill and have correct executable and debug frame offsets.
 - Mutated-plan tests deliberately introduce illegal depths, incorrect copies, swapped lanes, uninitialized spill slots, physical slot collisions, dead stores clobbering live colored spill slots, stale loop spill slots, missing edge repairs, phase-order/result-publication errors, and ABI clobber mistakes; verification rejects each before assembly.
 
