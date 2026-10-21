@@ -564,16 +564,18 @@ impl GeneratedDefinition for SystemEventGraphLoop {
 
 #[test]
 fn system_event_graph_backedge_rechecks_late_compiler_taint_before_cleanup() {
-    system_event_graph_backedge_case(false);
+    system_event_graph_backedge_case(false, None);
 }
 
 #[test]
 fn memory_system_event_graph_backedge_rechecks_late_compiler_bounds_before_cleanup() {
-    system_event_graph_backedge_case(true);
+    system_event_graph_backedge_case(true, None);
 }
 
-fn system_event_graph_backedge_case(memory: bool) {
-    let definition = SystemEventGraphLoop { memory };
+fn system_event_graph_backedge_case(memory: bool, println_lane: Option<usize>) {
+    let definition = SystemEventGraphLoop {
+        memory: memory || println_lane.is_some(),
+    };
     let (mut plan, _, body) = super::loops::loop_fixture(true);
     plan.selected = check_selection(
         definition.instantiate(&[]).unwrap().program,
@@ -599,7 +601,11 @@ fn system_event_graph_backedge_case(memory: bool) {
         4,
     )
     .unwrap();
-    fn replace(body: &AnnotatedMasmBody, memory: bool) -> AnnotatedMasmBody {
+    fn replace(
+        body: &AnnotatedMasmBody,
+        memory: bool,
+        println_lane: Option<usize>,
+    ) -> AnnotatedMasmBody {
         let mut result = vec![];
         let mut unit = None;
         for op in body.ops() {
@@ -621,6 +627,19 @@ fn system_event_graph_backedge_case(memory: bool) {
                             ]);
                             result.extend((0..6).map(|_| inst(Instruction::Drop)));
                             result.extend([inst(Instruction::Locaddr(1.into())), push(0)]);
+                        } else if let Some(lane) = println_lane {
+                            result.extend([inst(Instruction::Dup0), push(0)]);
+                            if lane == 0 {
+                                result.push(inst(Instruction::Swap1));
+                            }
+                            result.extend([
+                                inst(println_instruction()),
+                                inst(Instruction::Drop),
+                                inst(Instruction::Drop),
+                                inst(Instruction::Drop),
+                                inst(Instruction::Locaddr(1.into())),
+                                push(0),
+                            ]);
                         } else {
                             result.extend([
                                 inst(Instruction::Dup0),
@@ -659,19 +678,19 @@ fn system_event_graph_backedge_case(memory: bool) {
                     else_body,
                 } => result.push(AnnotatedOp::If {
                     id: *id,
-                    then_body: replace(then_body, memory),
-                    else_body: replace(else_body, memory),
+                    then_body: replace(then_body, memory, println_lane),
+                    else_body: replace(else_body, memory, println_lane),
                 }),
                 AnnotatedOp::While { id, body } => result.push(AnnotatedOp::While {
                     id: *id,
-                    body: replace(body, memory),
+                    body: replace(body, memory, println_lane),
                 }),
                 other => result.push(other.clone()),
             }
         }
         ops(result)
     }
-    let error = verify(&plan, &frame, replace(&body, memory)).unwrap_err();
+    let error = verify(&plan, &frame, replace(&body, memory, println_lane)).unwrap_err();
     assert!(error.message.contains("observed"), "{error:?}");
 }
 
@@ -980,5 +999,267 @@ fn memory_system_event_strict_keys_precede_every_source_range_shortcut() {
             code.extend((0..6).map(|_| inst(Instruction::Drop)));
             assert!(f.run(code).unwrap_err().message.contains("observed input"));
         }
+    }
+}
+
+fn println_instruction() -> Instruction {
+    Instruction::EmitImm(crate::Event::PrintLn.into())
+}
+#[test]
+fn println_permissions_cover_possible_reads_and_every_canonical_no_read_shortcut() {
+    for (pointer, length, reads) in [
+        (Some(400), Some(1), true),
+        (Some(403), Some(524288), true),
+        (Some(4294967295), Some(2), true),
+        (None, None, true),
+        (None, Some(0), false),
+        (Some(4294967296), None, false),
+        (None, Some(524289), false),
+        (Some(400), Some(0), false),
+    ] {
+        for permission in [false, true] {
+            let mut f = Fixture::new(u32::from(pointer.is_none()) + u32::from(length.is_none()), 0);
+            f.effects.may_trap = true;
+            if permission {
+                f.effects.memory = SourceMemoryEffects::READ;
+            }
+            let mut code = vec![];
+            if let Some(length) = length {
+                code.push(push(length));
+            }
+            if let Some(pointer) = pointer {
+                code.push(push(pointer));
+            } else if length.is_some() {
+                code.push(inst(Instruction::Swap1));
+            }
+            code.extend([
+                inst(println_instruction()),
+                inst(Instruction::Drop),
+                inst(Instruction::Drop),
+            ]);
+            assert_eq!(
+                f.run(code).is_ok(),
+                !reads || permission,
+                "{pointer:?}/{length:?} READ={permission}"
+            );
+        }
+    }
+}
+#[test]
+fn println_both_observations_precede_zero_invalid_pointer_and_cap_shortcuts() {
+    for position in 0..2 {
+        for other in [0, 524289, 4294967296] {
+            for origin in 0..4 {
+                let mut f = Fixture::new(u32::from(origin != 0), 0).scratch(2);
+                f.locals = SourceLocalLayout {
+                    offsets: vec![0],
+                    extent: 1,
+                };
+                f.effects.may_trap = true;
+                f.effects.memory = SourceMemoryEffects::READ;
+                let mut code = match origin {
+                    0 => vec![inst(Instruction::Locaddr(1.into()))],
+                    1 => vec![pointer_branch(inst(Instruction::Locaddr(1.into())))],
+                    2 => vec![AnnotatedOp::If {
+                        id: ControlId(0),
+                        then_body: ops(vec![inst(Instruction::Locaddr(1.into()))]),
+                        else_body: ops(vec![push(77)]),
+                    }],
+                    _ => vec![AnnotatedOp::If {
+                        id: ControlId(0),
+                        then_body: ops(vec![inst(Instruction::Locaddr(1.into()))]),
+                        else_body: ops(vec![inst(Instruction::Locaddr(2.into()))]),
+                    }],
+                };
+                code.push(push(other));
+                if position == 0 {
+                    code.push(inst(Instruction::Swap1));
+                }
+                code.extend([
+                    inst(println_instruction()),
+                    inst(Instruction::Drop),
+                    inst(Instruction::Drop),
+                ]);
+                let error = f.run(code).unwrap_err();
+                assert!(
+                    error.message.contains("observed"),
+                    "lane{position} other{other} origin{origin}: {error:?}"
+                );
+            }
+        }
+    }
+}
+#[test]
+fn println_source_coordinates_are_opaque_and_original_origins_survive() {
+    use super::super::tokens::Identity;
+    for offset in [0, 3] {
+        let mut f = Fixture::new(0, 0).scratch(1);
+        f.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent: 4,
+        };
+        f.effects.may_trap = true;
+        f.effects.memory = SourceMemoryEffects::READ;
+        let plan = f.plan();
+        let frame = f.frame();
+        let mut verifier = super::super::replay::Verifier::new(&plan, &frame).unwrap();
+        let pointer = verifier.tokens.intern(Identity::FrameAddress(offset));
+        let origins = verifier.tokens.origins(pointer);
+        let mut body = vec![
+            push(524288),
+            inst(Instruction::Locaddr((offset as u16).into())),
+            inst(println_instruction()),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+        ];
+        let mut wrapped = vec![
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+        ];
+        wrapped.append(&mut body);
+        wrapped.extend([
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+        ]);
+        let result = verifier
+            .execute(
+                &ops(wrapped),
+                super::super::stack::State::new(vec![], BTreeMap::new()),
+                &mut super::super::replay::Cursor::default(),
+            )
+            .unwrap()
+            .unwrap();
+        assert!(result.cells.is_empty());
+        assert_eq!(verifier.tokens.origins(pointer), origins);
+        assert_eq!(verifier.tokens.frame_address(pointer), Some(offset));
+    }
+    // Source-only native address bits are legal strict observations in the length lane too.
+    let mut source_length = Fixture::new(0, 0);
+    source_length.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 4,
+    };
+    source_length.effects.may_trap = true;
+    source_length.effects.memory = SourceMemoryEffects::READ;
+    source_length
+        .run(vec![
+            inst(Instruction::Locaddr(3.into())),
+            push(400),
+            inst(println_instruction()),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+        ])
+        .unwrap();
+    // Unobserved compiler suffix is retained and cleaned without becoming a payload.
+    let mut f = Fixture::new(0, 0).scratch(1);
+    f.effects.may_trap = true;
+    f.run(vec![
+        inst(Instruction::Locaddr(0.into())),
+        push(0),
+        push(400),
+        inst(println_instruction()),
+        inst(Instruction::Drop),
+        inst(Instruction::Drop),
+        inst(Instruction::Drop),
+    ])
+    .unwrap();
+}
+#[test]
+fn println_internal_loop_rechecks_late_compiler_taint_in_both_payload_lanes() {
+    for position in 0..2 {
+        let mut f = Fixture::new(0, 0).scratch(1);
+        f.effects.may_trap = true;
+        f.effects.memory = SourceMemoryEffects::READ;
+        f.proof.loops.insert(
+            ControlId(0),
+            LoopSchema {
+                stack: vec![LoopPosition::Carry(0)],
+                cells: vec![],
+            },
+        );
+        let mut body = vec![push(0)];
+        if position == 0 {
+            body.push(inst(Instruction::Swap1));
+        }
+        body.extend([
+            inst(println_instruction()),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+            inst(Instruction::Locaddr(0.into())),
+        ]);
+        let error = f
+            .run(vec![
+                push(0),
+                AnnotatedOp::Repeat {
+                    id: ControlId(0),
+                    count: 2,
+                    body: ops(body),
+                },
+                inst(Instruction::Drop),
+            ])
+            .unwrap_err();
+        assert!(error.message.contains("observed"), "{error:?}");
+    }
+}
+
+#[test]
+fn println_graph_backedge_rechecks_late_compiler_taint_in_both_payload_lanes() {
+    for lane in 0..2 {
+        system_event_graph_backedge_case(false, Some(lane));
+    }
+}
+
+#[test]
+fn println_exact_mixed_token_origins_cannot_escape_no_read_in_either_lane() {
+    use super::super::tokens::Identity;
+    for lane in 0..2 {
+        let mut f = Fixture::new(0, 0).scratch(1);
+        f.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent: 4,
+        };
+        f.effects.may_trap = true;
+        f.effects.memory = SourceMemoryEffects::READ;
+        let plan = f.plan();
+        let frame = f.frame();
+        let mut verifier = super::super::replay::Verifier::new(&plan, &frame).unwrap();
+        // Isolated token fixture: source joins normally abstract exact identity. Keep
+        // an exact source address while explicitly adding a compiler may-origin.
+        let source = verifier.tokens.intern(Identity::FrameAddress(0));
+        let compiler = verifier.tokens.intern(Identity::FrameAddress(4));
+        verifier.tokens.add_origins(source, verifier.tokens.origins(compiler));
+        let origins = verifier.tokens.origins(source);
+        assert!(origins.compiler());
+        let mut code = vec![
+            inst(Instruction::Locaddr(0.into())),
+            push(if lane == 0 { 0 } else { 4294967296 }),
+        ];
+        if lane == 0 {
+            code.push(inst(Instruction::Swap1));
+        }
+        code.extend([
+            inst(println_instruction()),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+        ]);
+        let mut wrapped = vec![
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+        ];
+        wrapped.extend(code);
+        wrapped.extend([
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+        ]);
+        let error = verifier
+            .execute(
+                &ops(wrapped),
+                super::super::stack::State::new(vec![], BTreeMap::new()),
+                &mut super::super::replay::Cursor::default(),
+            )
+            .unwrap_err();
+        assert!(error.message.contains("observed"), "{error:?}");
+        assert_eq!(verifier.tokens.origins(source), origins);
+        assert_eq!(verifier.tokens.frame_address(source), Some(0));
     }
 }

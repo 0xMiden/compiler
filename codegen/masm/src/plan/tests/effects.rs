@@ -1853,3 +1853,60 @@ fn memory_system_event_roles_partition_exact_payload_and_reject_metadata_mutants
     permuted.validate().unwrap();
     assert_ne!(permuted, range);
 }
+
+#[test]
+fn println_closed_metadata_retains_payload_and_rejects_malformed_roles() {
+    let base =
+        TargetEffects::instruction(&Instruction::EmitImm(crate::Event::PrintLn.into())).unwrap();
+    assert_eq!(base.consumed, 2);
+    assert_eq!(base.outputs, vec![LaneEffect::Input(0), LaneEffect::Input(1)]);
+    assert_eq!(base.observed_inputs, vec![Observation::Value(0), Observation::Value(1)]);
+    assert_eq!(base.floor, vec![FloorStep::Push(1), FloorStep::Pop(1)]);
+    assert_eq!(
+        base.memory.read,
+        Some(MemoryRead::PrintLn {
+            address: 0,
+            length: 1
+        })
+    );
+    assert!(base.memory.write.is_none());
+    assert!(base.may_trap);
+    base.validate().unwrap();
+    for mutation in 0..9 {
+        let mut bad = base.clone();
+        match mutation {
+            0 => {
+                bad.memory.read = Some(MemoryRead::PrintLn {
+                    address: 2,
+                    length: 1,
+                })
+            }
+            1 => {
+                bad.memory.read = Some(MemoryRead::PrintLn {
+                    address: 0,
+                    length: 2,
+                })
+            }
+            2 => {
+                bad.memory.read = Some(MemoryRead::PrintLn {
+                    address: 0,
+                    length: 0,
+                })
+            }
+            3 => {
+                bad.observed_inputs.pop();
+            }
+            4 => bad.observed_inputs.reverse(),
+            5 => bad.observed_inputs[1] = Observation::SourceRangeBounds,
+            6 => bad.observed_inputs.push(Observation::Value(0)),
+            7 => bad.outputs[0] = LaneEffect::Memory { lane: 0 },
+            _ => {
+                bad.memory.write = Some(MemoryWrite {
+                    region: MemoryRegion::SourceUnknown { width: 1 },
+                    values: vec![WriteValue::Input(0)],
+                })
+            }
+        }
+        assert!(bad.validate().is_err(), "metadata mutant{mutation}");
+    }
+}

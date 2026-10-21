@@ -301,3 +301,134 @@ fn assert_malformed_source_rejected(f: &Parsed, env: &SelectEnv<'_>) {
     );
     assert_eq!(before, function.as_operation().to_pretty_string());
 }
+
+#[derive(Debug, PartialEq, Eq)]
+struct PrintLnRecord(log::Level, alloc::string::String);
+std::thread_local! {
+    static PRINTLN_CAPTURE: core::cell::RefCell<Option<Vec<PrintLnRecord>>> = const { core::cell::RefCell::new(None) };
+}
+struct PrintLnLogger;
+impl log::Log for PrintLnLogger {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        matches!(
+            (metadata.target(), metadata.level()),
+            ("stdout", log::Level::Info) | ("executor", log::Level::Warn)
+        )
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            PRINTLN_CAPTURE.with(|capture| {
+                if let Some(records) = capture.borrow_mut().as_mut() {
+                    records
+                        .push(PrintLnRecord(record.level(), alloc::format!("{}", record.args())));
+                }
+            });
+        }
+    }
+
+    fn flush(&self) {}
+}
+fn capture_println<T>(run: impl FnOnce() -> T) -> (T, Vec<PrintLnRecord>) {
+    struct Clear;
+    impl Drop for Clear {
+        fn drop(&mut self) {
+            PRINTLN_CAPTURE.with(|capture| {
+                capture.borrow_mut().take();
+            });
+        }
+    }
+    PRINTLN_CAPTURE.with(|capture| assert!(capture.borrow_mut().replace(vec![]).is_none()));
+    let clear = Clear;
+    let result = run();
+    let records = PRINTLN_CAPTURE.with(|capture| capture.borrow_mut().take().unwrap());
+    drop(clear);
+    (result, records)
+}
+fn debug_println_code(code: &str) -> Vec<PrintLnRecord> {
+    debug_println_packages(code, &[], 1, 0)
+}
+fn debug_println_packages(
+    code: &str,
+    packages: &[alloc::sync::Arc<miden_assembly::package::Package>],
+    println_events: usize,
+    frame_events: usize,
+) -> Vec<PrintLnRecord> {
+    debug_println_inputs(code, packages, println_events, frame_events, &[])
+}
+fn debug_println_inputs(
+    code: &str,
+    packages: &[alloc::sync::Arc<miden_assembly::package::Package>],
+    println_events: usize,
+    frame_events: usize,
+    inputs: &[usize],
+) -> Vec<PrintLnRecord> {
+    use alloc::sync::Arc;
+    let source = Arc::new(miden_assembly::DefaultSourceManager::default());
+    let mut assembler = miden_assembly::Assembler::new(source.clone());
+    let mut executor = miden_debug::Executor::new(
+        inputs.iter().map(|v| miden_core::Felt::new_unchecked(*v as u64)).collect(),
+    );
+    for package in packages {
+        assembler
+            .link_package(package.clone(), miden_assembly::Linkage::Dynamic)
+            .unwrap();
+        executor.with_package(package.clone()).unwrap();
+    }
+    let program = assembler.assemble_program("println", code).map(Arc::from).unwrap();
+    executor.with_advice_inputs(
+        miden_processor::advice::AdviceInputs::default()
+            .with_stack(vec![miden_core::Felt::from(79u32), miden_core::Felt::from(83u32)].into()),
+    );
+    executor.with_event_advice_mutations_recording();
+    let mut debug = executor.into_debug(program, source);
+    assert_eq!(debug.processor.stack_depth() as usize, inputs.len().max(16));
+    let mut printed = 0;
+    let mut frames = 0;
+    let (_, records) = capture_println(|| {
+        while !debug.stopped {
+            // Push(ID) has already run. Snapshot only this narrow event boundary;
+            // procedure setup, spills and the following cleanup have independent effects.
+            let boundary = if debug.processor.stack_get(0).as_canonical_u64()
+                == crate::Event::PrintLn.as_event_id().as_u64()
+            {
+                let state = debug.processor.state();
+                Some((
+                    state.get_stack_state(),
+                    state.advice_provider().clone(),
+                    debug.processor.memory().get_memory_state(state.ctx()),
+                ))
+            } else {
+                None
+            };
+            debug.step().unwrap();
+            let batches = debug.host.take_recorded_event_mutations();
+            if batches.is_empty() {
+                continue;
+            }
+            assert_eq!(batches.len(), 1);
+            assert!(batches[0].is_empty());
+            if let Some((stack, advice, memory)) = boundary {
+                printed += 1;
+                let state = debug.processor.state();
+                assert_eq!(state.get_stack_state(), stack, "handler changed operand stack");
+                assert_eq!(*state.advice_provider(), advice, "handler changed advice");
+                assert_eq!(
+                    debug.processor.memory().get_memory_state(state.ctx()),
+                    memory,
+                    "handler wrote operand memory"
+                );
+            } else {
+                frames += 1;
+            }
+        }
+    });
+    assert_eq!(printed, println_events, "PrintLn event occurrences");
+    assert_eq!(frames, frame_events, "frame event occurrences");
+    assert_eq!(
+        records.len(),
+        println_events,
+        "one actual output/warning per PrintLn invocation"
+    );
+    records
+}
