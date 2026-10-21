@@ -47,6 +47,8 @@ pub(crate) struct DefinitionEvidence {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UnitEvidence {
     pub aliases: LaneAliases,
+    /// Reconstructed from the registered source, sealed before allocation.
+    pub generated_event: Option<GeneratedEvent>,
     /// Positions in the complete semantic output tuple, independent of machine access depth.
     pub equal_outputs: Vec<(u32, u32)>,
     /// Scratch cells that must equal positions of the unit's complete semantic output tuple.
@@ -55,6 +57,14 @@ pub(crate) struct UnitEvidence {
     pub loops: BTreeMap<ControlId, LoopSchema>,
     /// Ordered source-authorized call sites, with order interpreted within each path.
     pub calls: Vec<CallSite>,
+}
+
+/// Source authority for generic event emission. This permits only the registered event form;
+/// it does not grant typed payload observations or operand-memory access.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GeneratedEvent {
+    Dynamic(Atom),
+    Immediate,
 }
 
 /// Closed selector obligations reconstructed from registered source definitions.
@@ -289,6 +299,28 @@ fn validate_graph(
                     }),
                 ) {
                     validate_atom(program, *atom)?;
+                }
+                if let Some(event) = units[&unit.id].generated_event {
+                    let valid = match event {
+                        GeneratedEvent::Dynamic(id) => {
+                            unit.stack_inputs == [id]
+                                && unit.outputs.len() == 1
+                                && units[&unit.id].aliases
+                                    == LaneAliases::new(vec![(unit.outputs[0], id)])
+                        }
+                        GeneratedEvent::Immediate => {
+                            unit.stack_inputs.is_empty() && unit.outputs.is_empty()
+                        }
+                    };
+                    if !valid
+                        || !unit.effects.may_trap
+                        || !unit.effects.normal_return
+                        || unit.effects.memory != SourceMemoryEffects::default()
+                        || !unit.scratch.is_empty()
+                        || !unit.stored_inputs.is_empty()
+                    {
+                        return Err(error("invalid generated event source contract"));
+                    }
                 }
                 let mut output_lanes = BTreeMap::<ValueId, u8>::new();
                 for atom in &unit.outputs {

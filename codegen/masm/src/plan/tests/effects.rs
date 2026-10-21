@@ -1910,3 +1910,42 @@ fn println_closed_metadata_retains_payload_and_rejects_malformed_roles() {
         assert!(bad.validate().is_err(), "metadata mutant{mutation}");
     }
 }
+
+#[test]
+fn generic_event_closed_transitions_preserve_state_and_floor() {
+    for immediate in [false, true] {
+        let effect = TargetEffects::generated_event(immediate);
+        effect.validate().unwrap();
+        assert_eq!(effect.consumed, u8::from(!immediate));
+        assert_eq!(
+            effect.outputs,
+            if immediate {
+                vec![]
+            } else {
+                vec![LaneEffect::Input(0)]
+            }
+        );
+        assert_eq!(
+            effect.floor,
+            if immediate {
+                vec![FloorStep::Push(1), FloorStep::Pop(1)]
+            } else {
+                vec![]
+            }
+        );
+        assert!(effect.may_trap);
+        assert!(effect.observed_inputs.is_empty());
+        assert_eq!(effect.memory, MemoryEffects::default());
+    }
+    assert!(TargetEffects::instruction(&Instruction::Emit).is_err());
+    assert!(
+        TargetEffects::instruction(&Instruction::EmitImm(crate::masm::EventImmediate::Immediate(
+            Felt::from(700001u32).into()
+        )))
+        .is_err()
+    );
+    let typed =
+        TargetEffects::instruction(&Instruction::EmitImm(crate::Event::PrintLn.into())).unwrap();
+    assert_eq!(typed.consumed, 2);
+    assert_eq!(typed.observed_inputs, vec![Observation::Value(0), Observation::Value(1)]);
+}

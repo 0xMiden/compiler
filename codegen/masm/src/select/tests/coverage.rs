@@ -43,6 +43,9 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
     fixtures.extend(super::memory::fixtures());
     fixtures.extend(super::intrinsics::fixtures());
     fixtures.push((super::intrinsics::println_fixture(false), false));
+    for immediate in [false, true] {
+        fixtures.push((super::intrinsics::generic_event_fixture(immediate), false));
+    }
     fixtures.extend(
         super::intrinsics::system_event_cases()
             .into_iter()
@@ -116,7 +119,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
             );
         }
     }
-    assert_eq!(registered.len(), 119);
+    assert_eq!(registered.len(), 121);
     assert_eq!(covered, registered);
 }
 #[test]
@@ -389,5 +392,42 @@ fn function_entry_and_all_terminal_return_tuples_match_the_full_signature() {
             arg.borrow_mut().set_type(Type::U32);
         }
         assert_malformed_source_rejected(&f, &SelectEnv::default());
+    }
+}
+
+#[test]
+fn generic_event_any_felt_id_keeps_the_same_source_category() {
+    use midenc_hir::Immediate;
+    for id in [
+        0,
+        700001,
+        crate::Event::PrintLn.as_event_id().as_u64(),
+        miden_core::events::SystemEvent::TraceEvent.event_id().as_u64(),
+        0xffff_ffff_0000_0000,
+    ] {
+        let f = super::intrinsics::generic_event_fixture(true);
+        let mut op = f
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .front()
+            .get()
+            .unwrap()
+            .as_operation_ref();
+        *op.borrow_mut()
+            .downcast_mut::<midenc_dialect_hir::EmitEventImm>()
+            .unwrap()
+            .get_event_id_mut() = Immediate::Felt(miden_core::Felt::new_unchecked(id));
+        let selected = checked(&f, &SelectEnv::default());
+        let unit = &selected.segments[0].units[0];
+        let evidence = crate::select::evidence(&f.borrow(), &SelectEnv::default()).unwrap();
+        assert!(matches!(
+            evidence.source.units[&unit.id].generated_event,
+            Some(verify::GeneratedEvent::Immediate)
+        ));
+        assert_eq!(unit.effects.memory, SourceMemoryEffects::default());
+        let (plan, frame, body) = ready(&f, &SelectEnv::default());
+        verify::verify(&plan, &frame, body).unwrap();
     }
 }

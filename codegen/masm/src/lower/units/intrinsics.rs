@@ -25,6 +25,8 @@ pub(crate) enum Kind {
     CryptoStream,
     EvalCircuit,
     SystemEvent,
+    EmitEvent,
+    EmitEventImm,
     PrintLn,
     MTreeGet,
     MTreeSet,
@@ -42,6 +44,7 @@ pub(crate) enum Kind {
 pub(crate) struct Intrinsic {
     body: Vec<masm::Op>,
     retained: Vec<(usize, usize)>,
+    kind: Kind,
     /// Source-memory and trap behavior allowed by the checked intrinsic or event descriptor.
     pub effects: LoweringEffects,
 }
@@ -68,6 +71,17 @@ impl Intrinsic {
         } else {
             None
         };
+        let immediate_event = if kind == EmitEventImm {
+            let source = op
+                .downcast_ref::<midenc_dialect_hir::EmitEventImm>()
+                .ok_or_else(|| invalid("immediate event requires its source operation"))?;
+            let midenc_hir::Immediate::Felt(id) = *source.get_event_id() else {
+                return Err(invalid("generic event ID requires a Felt immediate").into());
+            };
+            Some(id)
+        } else {
+            None
+        };
         let word = Type::from(ArrayType::new(Type::Felt, 4));
         let (expected_inputs, expected_outputs) = match kind {
             Hash => (vec![Type::Felt; 4], vec![Type::Felt; 4]),
@@ -76,6 +90,8 @@ impl Intrinsic {
             HornerBase | HornerExt => (vec![Type::Felt; 16], vec![Type::Felt; 16]),
             AdvicePipe | MemStream => (vec![Type::Felt; 13], vec![Type::Felt; 13]),
             EvalCircuit => (vec![Type::Felt; 3], vec![Type::Felt; 3]),
+            EmitEvent => (vec![Type::Felt], vec![Type::Felt]),
+            EmitEventImm => (vec![], vec![]),
             SystemEvent => {
                 let (_, n, _) = event.unwrap();
                 (vec![Type::Felt; n], vec![Type::Felt; n])
@@ -127,6 +143,8 @@ impl Intrinsic {
             CryptoStream => emitter.crypto_stream(op.span()),
             EvalCircuit => emitter.eval_circuit(op.span()),
             PrintLn => emitter.println(op.span()),
+            EmitEvent => emitter.emit_event(op.span()),
+            EmitEventImm => emitter.emit_event_imm(immediate_event.unwrap(), op.span()),
             SystemEvent => {
                 let (id, n, _) = event.unwrap();
                 emitter.system_event(id, n, op.span());
@@ -153,10 +171,11 @@ impl Intrinsic {
         }
         Ok(Self {
             body,
+            kind,
             retained: match kind {
                 MTreeGet => (4..8).map(|i| (i, i - 2)).collect(),
                 EvalCircuit => (0..3).map(|i| (i, i)).collect(),
-                SystemEvent => (0..inputs.len()).map(|i| (i, i)).collect(),
+                EmitEvent | SystemEvent => (0..inputs.len()).map(|i| (i, i)).collect(),
                 MTreeVerify => (0..10).map(|i| (i, i)).collect(),
                 HornerBase | HornerExt => (0..14).map(|i| (i, i)).collect(),
                 AdvicePipe | CryptoStream | MemStream => (8..12).map(|i| (i, i)).collect(),
@@ -182,6 +201,8 @@ impl Intrinsic {
                         | EvalCircuit
                         | SystemEvent
                         | PrintLn
+                        | EmitEvent
+                        | EmitEventImm
                 ),
                 memory: if matches!(kind, CryptoStream) {
                     SourceMemoryEffects::READ_WRITE
@@ -200,8 +221,15 @@ impl Intrinsic {
     }
 
     /// Bind only the unconditional identities reconstructed from the source kind.
+    /// Inputs and outputs must follow the lane tuple checked by `from_source`. Event evidence
+    /// records source event semantics separately from the emitted event instruction.
     pub fn bind_evidence(&self, inputs: &[Atom], outputs: &[Atom]) -> crate::verify::UnitEvidence {
         crate::verify::UnitEvidence {
+            generated_event: match self.kind {
+                Kind::EmitEvent => Some(crate::verify::GeneratedEvent::Dynamic(inputs[0])),
+                Kind::EmitEventImm => Some(crate::verify::GeneratedEvent::Immediate),
+                _ => None,
+            },
             aliases: LaneAliases::new(
                 self.retained
                     .iter()

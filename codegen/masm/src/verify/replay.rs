@@ -1144,6 +1144,33 @@ impl<'a> Verifier<'a> {
         Ok(())
     }
 
+    fn target_effect(
+        &self,
+        instruction: &Instruction,
+        state: &State,
+        cursor: &Cursor,
+    ) -> Result<StackEffect, VerificationError> {
+        if let Some(active) = &cursor.active {
+            match (self.plan.selected.evidence(active.id)?.generated_event, instruction) {
+                (Some(GeneratedEvent::Dynamic(id)), Instruction::Emit) => {
+                    let effect = TargetEffects::generated_event(false);
+                    effect.validate()?;
+                    if state.prefix(usize::from(effect.consumed))?[0] != state.token(id)? {
+                        return Err(error("generic event ID differs from selected input binding"));
+                    }
+                    return Ok(effect);
+                }
+                (Some(GeneratedEvent::Immediate), Instruction::EmitImm(_)) => {
+                    let effect = TargetEffects::generated_event(true);
+                    effect.validate()?;
+                    return Ok(effect);
+                }
+                _ => {}
+            }
+        }
+        TargetEffects::instruction(instruction)
+    }
+
     /// Apply a registered target or call rule, checking source effect authority and pointer
     /// provenance before mutating raw state. The boolean reports whether normal execution remains.
     pub fn instruction(
@@ -1163,7 +1190,7 @@ impl<'a> Verifier<'a> {
             self.call(instruction, state, cursor)?;
             return Ok(true);
         }
-        let effect = TargetEffects::instruction(instruction)?;
+        let effect = self.target_effect(instruction, state, cursor)?;
         if effect.may_trap {
             let active = cursor.active.as_ref().ok_or_else(|| error("trap outside lowering"))?;
             if !self.unit(active.id)?.effects.may_trap {
@@ -1221,7 +1248,7 @@ impl<'a> Verifier<'a> {
         state: &mut State,
         cursor: &Cursor,
     ) -> Result<(), VerificationError> {
-        let effect = TargetEffects::instruction(instruction)?;
+        let effect = self.target_effect(instruction, state, cursor)?;
         effect.validate()?;
         let inputs = state.prefix(effect.consumed.into())?.to_vec();
         // Strict observations precede both paired proofs and every pre-read shortcut.

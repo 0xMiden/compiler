@@ -70,7 +70,7 @@ mod arithmetic;
 mod control;
 mod coverage;
 mod indirect;
-mod intrinsics;
+pub(crate) mod intrinsics;
 mod memory;
 
 use alloc::{vec, vec::Vec};
@@ -431,4 +431,69 @@ fn debug_println_inputs(
         "one actual output/warning per PrintLn invocation"
     );
     records
+}
+
+/// Actual read-only host observations, including physical overflow and compiler cells.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GenericEventSnapshot {
+    id: u64,
+    stack: Vec<u64>,
+    memory: Vec<(u32, u64)>,
+    context: u32,
+    clock: u32,
+}
+fn generic_event_host(
+    names: &[miden_processor::event::EventName],
+) -> (
+    miden_processor::DefaultHost,
+    alloc::sync::Arc<std::sync::Mutex<Vec<GenericEventSnapshot>>>,
+) {
+    use alloc::sync::Arc;
+    let records = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut host = miden_processor::DefaultHost::default();
+    for name in names {
+        let records = records.clone();
+        host.register_handler(
+            name.clone(),
+            Arc::new(move |state: &miden_processor::ProcessorState<'_>| {
+                let stack = state
+                    .get_stack_state()
+                    .iter()
+                    .map(|v| v.as_canonical_u64())
+                    .collect::<Vec<_>>();
+                let memory = state
+                    .get_mem_state(state.ctx())
+                    .iter()
+                    .map(|(a, v)| (u32::from(*a), v.as_canonical_u64()))
+                    .collect::<Vec<_>>();
+                // Export an actual compiler cell address through advice as well as overflow/source
+                // values. Later unknown-address accesses still rely on the source-memory ABI.
+                let base = miden_core::FMP_INIT_VALUE.as_canonical_u64() as u32;
+                let end = miden_core::FMP_ADDR.as_canonical_u64() as u32 - 2;
+                let compiler_address = memory
+                    .iter()
+                    .find(|(address, _)| (base..end).contains(address))
+                    .map_or(miden_core::Felt::ZERO, |(address, _)| {
+                        miden_core::Felt::from(*address)
+                    });
+                let response = [
+                    state.get_stack_item(17),
+                    state.get_mem_value(state.ctx(), 100).unwrap_or_default(),
+                    compiler_address,
+                ];
+                records.lock().unwrap().push(GenericEventSnapshot {
+                    id: state.get_stack_item(0).as_canonical_u64(),
+                    stack,
+                    memory,
+                    context: u32::from(state.ctx()),
+                    clock: state.clock().as_u32(),
+                });
+                Ok(vec![miden_processor::advice::AdviceMutation::extend_advice_stack_with(
+                    response,
+                )])
+            }),
+        )
+        .unwrap();
+    }
+    (host, records)
 }

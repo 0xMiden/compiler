@@ -331,7 +331,7 @@ Allocator completion invalidates facts for old dynamic definitions before publis
 
 `SpillSlotId` is an abstract spill slot for one raw lane. A scratch descriptor records size, alignment, contiguity, address space, declared uses and lifetime, and whether it is unit-local or spans lowering units. Scratch cannot alias a live spill slot. All scratch objects are declared before frame assignment; lowering unit expansion cannot discover additional storage. Source-declared HIR locals use their existing identifiers and occupy a disjoint frame range. Spill slot allocation does not mutate `Function::locals()`.
 
-Spill slots use the existing procedure-local memory and calling convention. On invocation, the VM advances the frame pointer to allocate sufficient space for the callee’s declared locals. The existing ABI assumes that a procedure does not write into its caller’s local memory unless explicitly arranged, such as by passing a pointer to a caller local. Compiler spill-slot addresses do not escape into the source program or callees, so their contents survive same-context calls under that assumption. This is an accepted premise of the design, not an open validation question or a new memory-protection mechanism; malicious writes are outside scope. The allocator and verifier still enforce correct frame offsets, slot reuse, and separation from source locals and reserved scratch.
+Spill slots use the existing procedure-local memory and calling convention. On invocation, the VM advances the frame pointer to allocate sufficient space for the callee’s declared locals. The existing ABI assumes that a procedure does not write into its caller’s local memory unless explicitly arranged, such as by passing a pointer to a caller local. Ordinary lowering does not expose compiler spill-slot addresses to source operations or callees. Generic event handlers may observe all generated physical state, including those addresses, and may return them through advice. Subsequent source and callee accesses, including advice-derived addresses, remain subject to the existing source-memory ABI; the verifier does not prove numerical disjointness for unknown addresses. Spill contents survive same-context calls under that ABI assumption. This is an accepted premise of the design, not an open validation question or a new memory-protection mechanism; malicious writes are outside scope. The allocator and verifier still enforce correct frame offsets, slot reuse, and separation from source locals and reserved scratch.
 
 ## Allocation and scheduling
 
@@ -783,6 +783,20 @@ The finite target rule's completeness and the handler's adherence to its observa
 
 This contract supplies no implicit payload dependencies for generic `EmitEvent`/`EmitEventImm`, even if their ID names a system event. Their source contract and host-specific `TraceEvent` remain separate required design decisions.
 
+#### Generic events observe generated physical state
+
+`EmitEvent(id) -> id` and `EmitEventImm(ID) -> ()` keep their existing HIR interfaces. They expose the actual generated processor state to VM event dispatch: addressable stack, overflow, source and compiler memory, contexts, clock and other state available through the read-only processor API. No source-MASM snapshot, implicit payload uses, stable stack positions or identical observations across allocation choices are promised. Existing conservative HIR effect barriers retain event occurrence and effect order without freezing pure computations.
+
+The backend does not interpret the ID to reconstruct a known operation or duplicate a handler's algorithm. Both generic forms use the same contract for any Felt ID. The VM owns dispatch, provider/deferred effects, host effects and errors. Dedicated `SystemEvent` and `PrintLn` operations retain their explicit operands and existing closed contracts. Frontend selection of the appropriate HIR operation is a separate responsibility; changing raw-event disassembly is outside this PR series.
+
+Independent source reconstruction seals a private generic-event category into the checked unit evidence. Only the two registered generic source definitions can establish it. A candidate plan, numerical event ID, emitted instruction or ordinary source READ permission cannot grant this capability. Dynamic source evidence includes the exact selected ID atom; replay requires that token at `Emit` and preserves its result alias. Immediate source selection requires a Felt attribute and no operands/results, diagnosing malformed input before emission.
+
+Replay resolves the matching generic source category before ordinary target lookup. Dynamic `Emit` preserves its one ID lane; immediate emission has no semantic input/output lanes and models the assembler's transient `Push(ID); Emit; Drop`. Both preserve the remaining operand stack and operand memory and may trap. Full-state observation is a distinct capability, not an unbounded memory footprint or a scan that demands initialized compiler cells. It leaves token identities, provenance, storage initialization and ownership unchanged. It grants no permission to subsequent loads, stores, returns, calls, or instructions from another source unit. Without matching source evidence, the existing strict target rules apply.
+
+Handlers can export compiler data or addresses through advice. Later opaque advice values retain the existing source-memory ABI; there is no universal pointer-nonescape or confidentiality guarantee at generic events. Known compiler provenance still receives all existing checks. Actual operand-memory mutation remains outside the handler API and this contract.
+
+Physical verification checks source authority, ID identity, aliases, floor transitions, suffix preservation and isolation of this capability. It does not prove handler algorithms, immediate numerical intent, or event occurrence inside an otherwise physically legal expansion. Actual VM/host tests check omission, duplication, wrong IDs, dispatch/errors, provider effects, ordering and generated-state observations. The pinned VM's preservation of operand stack and operand memory is a trusted, execution-tested target premise.
+
 #### PrintLn contract and source-memory boundary
 
 PrintLn uses the existing source-memory ABI for its decoded byte addresses. Both its pointer and length are strict Value observations: reject any compiler-storage may-origin, including mixed or unresolved provenance, before zero-length or invalid-input no-read shortcuts. Preserve original token identities and every origin; this operation has no SourceRangeBounds permission.
@@ -942,7 +956,7 @@ LoopParam(loop_scope, parameter)    arbitrary current carried value
 
 Scope identifies a symbolic verification context, not a runtime iteration counter. At a definition, a fresh binding replaces the old semantic instance; static instruction or `ValueId` equality never identifies different dynamic instances. Constants can share canonical tokens, and checked aliases can associate several semantic names with one token. Equality of types, widths, or initial values is not otherwise proof of identity.
 
-Duplication creates another occurrence of the same token; permutations move tokens without changing them. A store writes the actual source token to the addressed physical cell, invalidating its old contents. A load returns that cell's current token. Uninitialized or not definitely initialized storage is a separate unavailable state, never a wildcard token. Every compiler-storage read requires an initialized cell and the identity required by the binding.
+Duplication creates another occurrence of the same token; permutations move tokens without changing them. A store writes the actual source token to the addressed physical cell, invalidating its old contents. A load returns that cell's current token. Uninitialized or not definitely initialized storage is a separate unavailable state, never a wildcard token. Every compiler-storage load used by verified code requires an initialized cell and the identity required by the binding. A generic handler may observe absent or stale physical cells; that observation neither initializes storage nor establishes a usable value binding.
 
 Arithmetic normally produces fresh opaque result tokens. Source-memory loads likewise produce fresh tokens unless a registered rule proves a stronger relation. The checker does not infer algebraic equalities or assume that two loads from the same source address are equal. Compiler-address operations have exact rules sufficient to resolve the final frame offset and accessed range; an unresolved compiler-storage address is rejected. These rules preserve the existing ABI premise for source memory and same-context calls rather than introducing whole-program alias analysis.
 
@@ -1231,6 +1245,19 @@ Call ABI and generated-procedure acceptance requires:
 | Program entrypoint returns with floor-induced overflow | Preserve its top sixteen lanes with root `truncate_stack` and return from `begin` at exact depth sixteen; do not require same-context callees to remove caller suffix or padding |
 | Generated main, test harness, initializer, or adapter omits or swaps a required stage | Reject against the registered generated definition and parameters; provenance annotations alone are insufficient |
 | Artifact packaging attempts to append executable code after verification | Require that code to enter a selected generated body and be verified before assembly |
+
+Generic-event acceptance requires:
+
+| Case | Required behavior |
+| --- | --- |
+| Dynamic and immediate generic events with default/forced allocation, overflow and spill storage | Actual hosts observe the generated state for that execution; preserve operand stack/memory and continuation values |
+| Dynamic event ID or returned alias is replaced | Reject the wrong physical token identity against source-owned evidence |
+| Candidate forges generic authority, changes source ownership, or inserts an uncontracted event in a typed unit | Reject through independent source reconstruction and strict ordinary target rules |
+| Handler reads absent/stale cells or exports a compiler address through advice | Permit observation without inventing initialization or erasing known provenance; retain the source-memory ABI for subsequent accesses |
+| Known compiler-origin write or return follows a generic observation | Keep existing rejection; generic observation grants no later storage authority |
+| Generic event omitted, duplicated, or given a wrong immediate while otherwise physically valid | Detect semantic differences through actual event logs/provider/error oracles, without claiming a physical exact-body guarantee |
+| Events surround branches, loops, advice and memory operations | Preserve source effect order and actual VM/host error behavior |
+| Generic and typed events use the same numerical ID | Keep their source contracts distinct; let the VM dispatch without a second handler implementation in generic lowering |
 
 Storage lifetime and frame-layout acceptance requires:
 

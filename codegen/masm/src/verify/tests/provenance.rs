@@ -1263,3 +1263,124 @@ fn println_exact_mixed_token_origins_cannot_escape_no_read_in_either_lane() {
         assert_eq!(verifier.tokens.frame_address(source), Some(0));
     }
 }
+
+#[test]
+fn generic_event_full_state_observation_preserves_tokens_origins_cells_and_padding() {
+    use super::super::{
+        replay::{ActiveUnit, Cursor, Verifier},
+        stack::State,
+        tokens::Identity,
+    };
+    for dynamic in [false, true] {
+        let mut fixture = Fixture::new(u32::from(dynamic), u32::from(dynamic));
+        fixture.effects.may_trap = true;
+        fixture.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent: 4,
+        };
+        fixture.proof.generated_event = Some(if dynamic {
+            GeneratedEvent::Dynamic(Fixture::input(0))
+        } else {
+            GeneratedEvent::Immediate
+        });
+        if dynamic {
+            fixture.proof.aliases = LaneAliases::new(vec![(Fixture::output(0), Fixture::input(0))]);
+        }
+        let mut plan = fixture.plan();
+        plan.spill_slots = vec![SpillSlotId::temporary(SelectedStepId(0), 0)];
+        let frame = FinalFrameLayout::new(
+            fixture.locals.clone(),
+            BTreeMap::from([(SpillSlotId::temporary(SelectedStepId(0), 0), 4)]),
+            BTreeMap::new(),
+            8,
+        )
+        .unwrap();
+        let mut verifier = Verifier::new(&plan, &frame).unwrap();
+        let compiler = verifier.tokens.intern(Identity::FrameAddress(4));
+        let source = verifier.tokens.intern(Identity::FrameAddress(0));
+        let mixed = verifier.tokens.intern(Identity::Join(0, ControlId(0), vec![compiler, source]));
+        let origins = [verifier.tokens.origins(compiler), verifier.tokens.origins(mixed)];
+        let mut state =
+            State::new(vec![compiler, mixed], BTreeMap::from([(Fixture::input(0), compiler)]));
+        state.cells.insert(4, mixed);
+        state.slots.insert(SpillSlotId::temporary(SelectedStepId(0), 0), mixed);
+        let before = state.clone();
+        let mut cursor = Cursor {
+            active: Some(ActiveUnit {
+                id: SelectedStepId(0),
+                incoming: state.clone(),
+                readonly: BTreeMap::new(),
+                call: 0,
+                path: vec![],
+            }),
+            ..Default::default()
+        };
+        let event = if dynamic {
+            Instruction::Emit
+        } else {
+            Instruction::EmitImm(crate::Event::PrintLn.into())
+        };
+        verifier.instruction(&event, &mut state, &mut cursor).unwrap();
+        assert_eq!(state.stack, before.stack);
+        assert_eq!(state.cells, before.cells);
+        assert_eq!(state.names, before.names);
+        assert_eq!(state.slots, before.slots);
+        assert_eq!(state.written, before.written);
+        assert_eq!(state.padding, before.padding);
+        assert_eq!([verifier.tokens.origins(compiler), verifier.tokens.origins(mixed)], origins);
+        assert_eq!(verifier.tokens.frame_address(compiler), Some(4));
+        let mut edge = plan.selected.edges[0].clone();
+        edge.bindings.clear();
+        assert_eq!(
+            verifier.check_return(&state, &edge).unwrap_err().category,
+            DiagnosticCategory::AbiMismatch
+        );
+        // Full-state observation does not grant a source store permission, including after
+        // cleanup of another observed pointer. Original compiler provenance remains intact.
+        state.stack = vec![source, compiler];
+        assert!(verifier.instruction(&Instruction::MemStore, &mut state, &mut cursor).is_err());
+        state.stack.clear();
+        assert!(verifier.tokens.origins(compiler).compiler());
+        assert!(verifier.tokens.origins(mixed).compiler());
+        // Following opaque advice has no numerical disjointness proof; unknown addresses
+        // continue to rely on the source-memory/caller-local ABI, without declassification.
+        let advice = verifier.tokens.fresh();
+        assert!(!verifier.tokens.origins(advice).has_frame());
+    }
+}
+
+#[test]
+fn generic_event_authority_does_not_transfer_to_typed_or_ordinary_units() {
+    let mut fixture = Fixture::new(0, 0).scratch(1);
+    fixture.effects.may_trap = true;
+    fixture.effects.memory = SourceMemoryEffects::READ_WRITE;
+    for event in [
+        Instruction::Emit,
+        Instruction::EmitImm(crate::Event::PrintLn.into()),
+        Instruction::EmitImm(crate::masm::EventImmediate::Immediate(
+            miden_core::events::SystemEvent::HasMapKey.event_id().as_felt().into(),
+        )),
+    ] {
+        let error = fixture
+            .run(vec![
+                push(0),
+                push(0),
+                push(0),
+                inst(Instruction::Locaddr(0.into())),
+                inst(event),
+                inst(Instruction::Drop),
+                inst(Instruction::Drop),
+                inst(Instruction::Drop),
+                inst(Instruction::Drop),
+            ])
+            .unwrap_err();
+        assert!(
+            matches!(
+                error.category,
+                DiagnosticCategory::IllegalStackAccess
+                    | DiagnosticCategory::InvalidSelectedLowering
+            ),
+            "{error:?}"
+        );
+    }
+}

@@ -10,7 +10,11 @@ use midenc_hir::{
 
 use crate::HirDialect;
 
-/// Emit an event whose ID is already present on the operand stack.
+/// Emit an event whose ID is already present on the operand stack, retaining that ID.
+///
+/// VM dispatch observes the full generated physical processor state, including overflow and
+/// compiler storage. There are no implicit payload SSA uses or stable stack-position promises.
+/// The ID is passed unchanged; provider/host effects and failures follow VM dispatch semantics.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
@@ -40,6 +44,10 @@ impl InferTypeOpInterface for EmitEvent {
 }
 
 /// Emit an event identified by an immediate field element.
+///
+/// Like [`EmitEvent`], this observes generated physical state and does not reconstruct a source
+/// stack snapshot. Conservative memory/advice effects preserve event occurrence and ordering;
+/// the read-only processor API grants no operand stack or operand memory mutation authority.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
