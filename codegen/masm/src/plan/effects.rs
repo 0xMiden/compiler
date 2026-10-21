@@ -40,6 +40,11 @@ pub(crate) enum MemoryRead {
         read_count: u8,
         eval_count: u8,
     },
+    /// Host print read using native address and byte-length inputs.
+    PrintLn {
+        address: u8,
+        length: u8,
+    },
     /// Paired half-open source bounds observed together, including an empty interval.
     SourceRange {
         start: u8,
@@ -196,6 +201,17 @@ impl StackEffect {
             }) => {
                 if ![address, read_count, eval_count].into_iter().all(input) {
                     return Err(stack_error("invalid circuit read input dependency"));
+                }
+                None
+            }
+            Some(MemoryRead::PrintLn { address, length }) => {
+                if ![address, length].into_iter().all(input)
+                    || address == length
+                    || self.observed_inputs
+                        != [Observation::Value(address), Observation::Value(length)]
+                    || self.memory.write.is_some()
+                {
+                    return Err(stack_error("invalid PrintLn observation/read roles"));
                 }
                 None
             }
@@ -729,6 +745,20 @@ impl TargetEffects {
                     || *event == crate::Event::FrameEnd.into() =>
             {
                 StackEffect::new(0, vec![], vec![])
+            }
+            EmitImm(event) if *event == crate::Event::PrintLn.into() => {
+                let mut effect = StackEffect::new(
+                    2,
+                    vec![Input(0), Input(1)],
+                    vec![FloorStep::Push(1), FloorStep::Pop(1)],
+                )
+                .trapping();
+                effect.observed_inputs = vec![Observation::Value(0), Observation::Value(1)];
+                effect.memory.read = Some(MemoryRead::PrintLn {
+                    address: 0,
+                    length: 1,
+                });
+                effect
             }
             EmitImm(crate::masm::EventImmediate::Immediate(id)) => {
                 let descriptor = crate::events::SystemEventDescriptor::from_id(literal(id)?)

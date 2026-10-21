@@ -4091,7 +4091,7 @@ fn system_event_selected_map_insertions_observe_all_lanes_domain_rate_and_overfl
 }
 
 #[test]
-fn system_event_ids_require_recognized_felt_and_deferred_families_remain_unconverted() {
+fn system_event_ids_require_recognized_felt_and_generic_events_remain_unconverted() {
     use miden_core::{Felt, events::SystemEvent::*};
     use midenc_hir::Immediate;
     for id in [
@@ -4120,11 +4120,9 @@ fn system_event_ids_require_recognized_felt_and_deferred_families_remain_unconve
     // The other source families remain explicit inventory, including a known system ID.
     use midenc_dialect_hir::HirOpBuilder;
     use midenc_hir::{SourceSpan, Type, dialects::builtin::BuiltinOpBuilder};
-    for family in 0..3 {
+    for family in 0..2 {
         let args = if family == 0 {
             vec![Type::Felt]
-        } else if family == 2 {
-            vec![Type::from(midenc_hir::PointerType::new(Type::U8)), Type::U32]
         } else {
             vec![]
         };
@@ -4144,11 +4142,8 @@ fn system_event_ids_require_recognized_felt_and_deferred_families_remain_unconve
                 0 => {
                     b.emit_event(args[0], SourceSpan::UNKNOWN).unwrap();
                 }
-                1 => {
-                    b.emit_event_imm(HasMapKey.event_id().as_felt(), SourceSpan::UNKNOWN).unwrap();
-                }
                 _ => {
-                    b.println(args[0], args[1], SourceSpan::UNKNOWN).unwrap();
+                    b.emit_event_imm(HasMapKey.event_id().as_felt(), SourceSpan::UNKNOWN).unwrap();
                 }
             }
             b.ret([], SourceSpan::UNKNOWN).unwrap();
@@ -5814,4 +5809,479 @@ fn memory_system_event_selected_minimum_physical_floor_preserves_provider_and_me
             assert_eq!(provider.stack(), [Felt::from(97u32)]);
         }
     }
+}
+
+#[test]
+fn println_actual_host_matrix() {
+    const SENTINEL: &str = "MIDENC_TASK10_PRINTLN_CHILD";
+    const COMPLETE: &str = "TASK10_PRINTLN_CHILD_CASES=42";
+    if std::env::var_os(SENTINEL).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "select::tests::intrinsics::println_actual_host_matrix",
+                "--nocapture",
+            ])
+            .env(SENTINEL, "1")
+            .output()
+            .unwrap();
+        let stdout = alloc::string::String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "child failed: {stdout}\n{}",
+            alloc::string::String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(stdout.lines().any(|line| line == COMPLETE), "child did not complete: {stdout}");
+        return;
+    }
+    static LOGGER: PrintLnLogger = PrintLnLogger;
+    log::set_logger(&LOGGER).expect("isolated child owns the logger before fixture setup");
+    log::set_max_level(log::LevelFilter::Info);
+    let cases = println_host_cases() + println_selected_host_cases() + println_ordered_host_cases();
+    assert_eq!(cases, 42);
+    std::println!("{COMPLETE}");
+}
+
+pub(super) fn println_fixture(live: bool) -> Parsed {
+    use midenc_dialect_hir::HirOpBuilder;
+    use midenc_hir::{SourceSpan, Type, dialects::builtin::BuiltinOpBuilder};
+    let types = vec![midenc_hir::PointerType::new(Type::U8).into(), Type::U32];
+    let outputs = if live { types.clone() } else { vec![] };
+    let mut test = midenc_hir::testing::Test::new("print", &types, &outputs);
+    let args = test
+        .function()
+        .borrow()
+        .entry_block()
+        .borrow()
+        .arguments()
+        .iter()
+        .map(|a| *a as midenc_hir::ValueRef)
+        .collect::<Vec<_>>();
+    {
+        let mut b = test.function_builder();
+        b.println(args[0], args[1], SourceSpan::UNKNOWN).unwrap();
+        b.ret(if live { args } else { vec![] }, SourceSpan::UNKNOWN).unwrap();
+    }
+    Parsed {
+        context: test.context_rc(),
+        function: test.function(),
+    }
+}
+
+#[test]
+fn println_selects_source_owned_consuming_read_unit() {
+    let f = println_fixture(false);
+    let selected = checked(&f, &SelectEnv::default());
+    let unit = &selected.segments[0].units[0];
+    assert_eq!(unit.stack_inputs.len(), 2);
+    assert!(unit.outputs.is_empty());
+    assert!(unit.stored_inputs.is_empty());
+    assert!(unit.scratch.is_empty());
+    assert_eq!(unit.effects.memory, SourceMemoryEffects::READ);
+    assert!(unit.effects.may_trap);
+    ready(&f, &SelectEnv::default());
+}
+
+fn println_host_cases() -> usize {
+    let id = crate::Event::PrintLn.as_event_id().as_u64();
+    let mut count = 0;
+    let mut raw = |initialize: &str, pointer: u64, length: u64, want: &str, warning: bool| {
+        let records = debug_println_code(&format!(
+            "begin {initialize} push.{length} push.{pointer} push.{id} emit drop drop drop \
+             push.73 push.73 assert_eq end"
+        ));
+        assert_eq!(records.len(), 1, "ptr{pointer} len{length}: {records:?}");
+        assert_eq!(
+            records[0].0,
+            if warning {
+                log::Level::Warn
+            } else {
+                log::Level::Info
+            }
+        );
+        if warning {
+            assert!(records[0].1.contains(want), "{:?}", records[0]);
+        } else {
+            assert_eq!(records[0].1, want);
+        }
+        count += 1;
+    };
+    // Distinct little-endian cells; the nonzero high bits must not reach the decoder.
+    let initialize = "push.22620095041 mem_store.100 push.1212630597 mem_store.101";
+    for (residue, length, want) in [
+        (0, 1, "A"),
+        (1, 1, "B"),
+        (2, 1, "C"),
+        (3, 1, "D"),
+        (0, 4, "ABCD"),
+        (1, 4, "BCDE"),
+        (2, 4, "CDEF"),
+        (3, 4, "DEFG"),
+    ] {
+        raw(initialize, 400 + residue, length, want, false);
+    }
+    // Euro sign begins at byte 3 and crosses the cell boundary.
+    raw("push.3796387654 mem_store.100 push.2206850 mem_store.101", 403, 3, "€", false);
+    raw("", 400, 0, "", false);
+    raw("", 4294967296, 0, "address should fit in u32", true);
+    raw("", 4294967296, 524289, "address should fit in u32", true);
+    raw("", 400, 524289, "string length 524289 exceeds maximum 524288", true);
+    raw("", 400, 1, "memory is not initialized", true);
+    raw("push.1094795585 mem_store.100", 415, 2, "memory is not initialized", true);
+    raw("push.65 mem_store.100", 404, 1, "\0", false);
+    raw("push.255 mem_store.100", 400, 1, "invalid UTF-8", true);
+    raw(
+        "push.1090519040 mem_store.1073741823 push.66 mem_store.1073741824",
+        4294967295,
+        2,
+        "AB",
+        false,
+    );
+    // All successful max-residue cells are initialized, including the final extra cell.
+    raw(
+        "push.100.131073 push.1 while.true swap.1 dup.0 push.1094795585 swap.1 mem_store add.1 \
+         swap.1 sub.1 dup.0 neq.0 end drop drop",
+        403,
+        524288,
+        &"A".repeat(524288),
+        false,
+    );
+
+    // Enter the raw immediate event at exactly sixteen lanes: ptr/len plus fourteen
+    // distinct protected values. Cleanup leaves the VM's two bottom padding zeros.
+    let suffix = (0..14).map(|n| 901 + n).collect::<Vec<_>>();
+    let mut inputs = vec![400, 2];
+    inputs.extend(&suffix);
+    let code = format!(
+        "begin push.16961 mem_store.100 push.{id} emit drop drop drop {} assertz assertz end",
+        crate::plan::tests::lowering_units::assert_top(&suffix)
+    );
+    assert_eq!(
+        debug_println_inputs(&code, &[], 1, 0, &inputs),
+        [PrintLnRecord(log::Level::Info, "AB".into())]
+    );
+    count += 1;
+    // DefaultHost has no builtin handler for this ordinary event.
+    let program = miden_assembly::Assembler::default()
+        .assemble_program(
+            "absent_println",
+            format!("begin push.0.400 push.{id} emit drop drop drop end"),
+        )
+        .unwrap()
+        .try_into_program()
+        .unwrap();
+    let error = miden_processor::FastProcessor::new(miden_processor::StackInputs::default())
+        .execute_sync(&program, &mut miden_processor::DefaultHost::default())
+        .unwrap_err();
+    match error {
+        miden_processor::ExecutionError::EventError {
+            event_id, error, ..
+        } => {
+            assert_eq!(event_id, crate::Event::PrintLn.as_event_id());
+            assert_eq!(error.to_string(), "no event handler registered");
+        }
+        error => panic!("expected unhandled PrintLn dispatch: {error}"),
+    }
+    count += 1;
+    // A panicking synchronous execution cannot leave a capture active for the next case.
+    assert!(
+        std::panic::catch_unwind(|| capture_println(|| panic!("capture cleanup probe"))).is_err()
+    );
+    assert!(capture_println(|| ()).1.is_empty());
+    count += 1;
+    count
+}
+
+#[test]
+fn println_exact_tuples_effects_coverage_and_physical_violations() {
+    use midenc_hir::{SourceSpan, Type};
+    for mutation in 0..7 {
+        let f = println_fixture(false);
+        let mut op = f
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .front()
+            .get()
+            .unwrap()
+            .as_operation_ref();
+        match mutation {
+            0 => op.borrow().operands().all()[0]
+                .borrow()
+                .as_value_ref()
+                .borrow_mut()
+                .set_type(Type::Felt),
+            1 => op.borrow().operands().all()[0]
+                .borrow()
+                .as_value_ref()
+                .borrow_mut()
+                .set_type(midenc_hir::PointerType::new(Type::U32).into()),
+            2 => op.borrow().operands().all()[0].borrow().as_value_ref().borrow_mut().set_type(
+                midenc_hir::PointerType::new_with_address_space(
+                    Type::U8,
+                    midenc_hir::AddressSpace::Element,
+                )
+                .into(),
+            ),
+            3 => op.borrow().operands().all()[1]
+                .borrow()
+                .as_value_ref()
+                .borrow_mut()
+                .set_type(Type::Felt),
+            4 => {
+                op.borrow_mut().operands_mut().group_mut(0).erase(0);
+            }
+            5 => {
+                let value = op.borrow().operands().all()[0].borrow().as_value_ref();
+                let operand = f.context.make_operand(value, op, 0);
+                op.borrow_mut().operands_mut().push(operand);
+            }
+            _ => {
+                let result = f.context.make_result(SourceSpan::UNKNOWN, Type::Felt, op, 0);
+                op.borrow_mut().results_mut().push(result);
+            }
+        }
+        assert!(
+            select_function(&f.borrow(), &SelectEnv::default()).is_err(),
+            "tuple mutant{mutation}"
+        );
+    }
+    let f = println_fixture(false);
+    let function = f.borrow();
+    let env = SelectEnv::default();
+    let selected = select_function(&function, &env).unwrap();
+    for mutation in 0..6 {
+        let mut bad = selected.clone();
+        match mutation {
+            0 => bad.segments[0].units.clear(),
+            1 => {
+                let unit = bad.segments[0].units[0].clone();
+                bad.segments[0].units.push(unit);
+            }
+            2 => bad.segments[0].units[0].stack_inputs.reverse(),
+            3 => bad.segments[0].units[0].effects.memory = SourceMemoryEffects::default(),
+            4 => bad.segments[0].units[0].effects.may_trap = false,
+            _ => bad.source_map.clear(),
+        }
+        assert!(
+            check_selection(
+                bad,
+                &SourceContext::Hir {
+                    function: &function,
+                    env: &env
+                }
+            )
+            .is_err(),
+            "source mutant{mutation}"
+        );
+    }
+    for mutation in 0..3 {
+        let (plan, frame, mut body) = ready(&f, &env);
+        let index = body.ops().iter().position(|op| matches!(op, AnnotatedOp::Instruction { instruction: crate::masm::Instruction::EmitImm(event), .. } if *event == crate::Event::PrintLn.into())).unwrap();
+        let unit = match body.ops()[index] {
+            AnnotatedOp::Instruction { unit, .. } => unit,
+            _ => unreachable!(),
+        };
+        match mutation {
+            0 => body.ops_mut().insert(
+                index,
+                AnnotatedOp::Instruction {
+                    instruction: crate::masm::Instruction::Swap2,
+                    unit,
+                },
+            ),
+            1 => {
+                body.ops_mut().remove(index + 1);
+            }
+            _ => body.ops_mut().insert(
+                index,
+                AnnotatedOp::Instruction {
+                    instruction: crate::masm::Instruction::Locaddr(0.into()),
+                    unit,
+                },
+            ),
+        }
+        assert!(verify::verify(&plan, &frame, body).is_err(), "physical mutant{mutation}");
+    }
+}
+
+fn println_selected_host_cases() -> usize {
+    let mut count = 0;
+    for live in [false, true] {
+        let f = println_fixture(live);
+        let core = midenc_session::LinkLibrary::core().load(&f.context.session().options).unwrap();
+        let intrinsics = crate::intrinsics::load(f.context.session()).unwrap();
+        for force in [false, true] {
+            let (_, frame, _) = fri_ready(&f, force);
+            if force {
+                assert!(!frame.spills().is_empty());
+            }
+            let procedure = system_event_procedure(&f, force, |_| {});
+            for (initialize, expected, warning) in [
+                ("push.16961 mem_store.100", "AB", false),
+                ("push.255 mem_store.100", "invalid UTF-8", true),
+            ] {
+                let suffix = (0..20).map(|n| 901 + n).collect::<Vec<_>>();
+                let mut output = if live { vec![400, 2] } else { vec![] };
+                output.extend(&suffix);
+                // Forced normalization may create physical floor padding below this suffix;
+                // the complete twenty meaningful suffix lanes are still asserted in order.
+                let code = format!(
+                    "{} begin {initialize} {} push.2.400 exec.selected {} push.73 push.73 \
+                     assert_eq exec.::miden::core::sys::truncate_stack end",
+                    procedure.text,
+                    crate::plan::tests::lowering_units::push_top(&suffix),
+                    crate::plan::tests::lowering_units::assert_top(&output)
+                );
+                let records =
+                    debug_println_packages(&code, &[core.clone(), intrinsics.clone()], 1, 0);
+                assert_eq!(records.len(), 1);
+                assert_eq!(
+                    records[0].0,
+                    if warning {
+                        log::Level::Warn
+                    } else {
+                        log::Level::Info
+                    }
+                );
+                assert!(records[0].1.contains(expected), "{:?}", records[0]);
+                count += 1;
+            }
+            if !live {
+                let suffix = (0..14).map(|n| 901 + n).collect::<Vec<_>>();
+                let mut inputs = vec![400, 2];
+                inputs.extend(&suffix);
+                let code = format!(
+                    "{} begin push.16961 mem_store.100 exec.selected {} assertz assertz \
+                     exec.::miden::core::sys::truncate_stack end",
+                    procedure.text,
+                    crate::plan::tests::lowering_units::assert_top(&suffix)
+                );
+                assert_eq!(
+                    debug_println_inputs(&code, &[core.clone(), intrinsics.clone()], 1, 0, &inputs),
+                    [PrintLnRecord(log::Level::Info, "AB".into())]
+                );
+                count += 1;
+                // These substitutions remain physically legal; only actual logs catch them.
+                for mutation in 0..4 {
+                    let procedure = system_event_procedure(&f, force, |body| {
+                        let index = body.ops().iter().position(|op| matches!(op, AnnotatedOp::Instruction { instruction: crate::masm::Instruction::EmitImm(event), .. } if *event == crate::Event::PrintLn.into())).unwrap();
+                        let unit = match body.ops()[index] {
+                            AnnotatedOp::Instruction { unit, .. } => unit,
+                            _ => unreachable!(),
+                        };
+                        match mutation {
+                            0 => {
+                                body.ops_mut().remove(index);
+                            }
+                            1 => {
+                                body.ops_mut()[index] = AnnotatedOp::Instruction {
+                                    instruction: crate::masm::Instruction::EmitImm(
+                                        crate::Event::FrameStart.into(),
+                                    ),
+                                    unit,
+                                }
+                            }
+                            2 => body.ops_mut().insert(
+                                index,
+                                AnnotatedOp::Instruction {
+                                    instruction: crate::masm::Instruction::AddImm(
+                                        miden_core::Felt::ONE.into(),
+                                    ),
+                                    unit,
+                                },
+                            ),
+                            _ => {
+                                body.ops_mut().insert(
+                                    index,
+                                    AnnotatedOp::Instruction {
+                                        instruction: crate::masm::Instruction::Swap1,
+                                        unit,
+                                    },
+                                );
+                                body.ops_mut().insert(
+                                    index + 1,
+                                    AnnotatedOp::Instruction {
+                                        instruction: crate::masm::Instruction::AddImm(
+                                            miden_core::Felt::ONE.into(),
+                                        ),
+                                        unit,
+                                    },
+                                );
+                                body.ops_mut().insert(
+                                    index + 2,
+                                    AnnotatedOp::Instruction {
+                                        instruction: crate::masm::Instruction::Swap1,
+                                        unit,
+                                    },
+                                );
+                            }
+                        }
+                    });
+                    let code = format!(
+                        "{} begin push.1145258561 mem_store.100 push.2.400 exec.selected \
+                         exec.::miden::core::sys::truncate_stack end",
+                        procedure.text
+                    );
+                    let records = debug_println_packages(
+                        &code,
+                        &[core.clone(), intrinsics.clone()],
+                        usize::from(mutation >= 2),
+                        usize::from(mutation == 1),
+                    );
+                    assert_ne!(
+                        records,
+                        [PrintLnRecord(log::Level::Info, "AB".into())],
+                        "semantic mutant{mutation}"
+                    );
+                    count += 1;
+                }
+            }
+        }
+    }
+    count
+}
+
+#[test]
+fn println_real_native_address_casts_retain_opaque_source_memory_abi() {
+    let mut f = parse(
+        "builtin.function public extern(\"C\") @print_local() { %n = arith.constant 524288 : u32; \
+         %native = hir.local_address <{ local = #builtin.local_variable<3,felt> }>; %bits = \
+         hir.ptr_to_int %native <{ ty = #builtin.type<u32> }>; %bytes = hir.int_to_ptr %bits <{ \
+         ty = #builtin.type<ptr<u8,byte>> }>; hir.print_ln %bytes,%n : (ptr<u8,byte>,u32); \
+         builtin.ret; };",
+    );
+    for _ in 0..4 {
+        f.function.borrow_mut().alloc_local(midenc_hir::Type::Felt);
+    }
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    assert_eq!(frame.source().extent, 4);
+    verify::verify(&plan, &frame, body).unwrap();
+}
+
+fn println_ordered_host_cases() -> usize {
+    let f = parse(
+        "builtin.function public extern(\"C\") @two_prints(%p: ptr<u8,byte>,%n: u32,%q: \
+         ptr<u8,byte>,%m: u32) { hir.print_ln %p,%n : (ptr<u8,byte>,u32); hir.print_ln %q,%m : \
+         (ptr<u8,byte>,u32); builtin.ret; };",
+    );
+    let core = midenc_session::LinkLibrary::core().load(&f.context.session().options).unwrap();
+    let intrinsics = crate::intrinsics::load(f.context.session()).unwrap();
+    for force in [false, true] {
+        let procedure = system_event_procedure(&f, force, |_| {});
+        let code = format!(
+            "{} begin push.16961 mem_store.100 push.17475 mem_store.101 push.2.404.2.400 \
+             exec.selected exec.::miden::core::sys::truncate_stack end",
+            procedure.text
+        );
+        assert_eq!(
+            debug_println_packages(&code, &[core.clone(), intrinsics.clone()], 2, 0),
+            [
+                PrintLnRecord(log::Level::Info, "AB".into()),
+                PrintLnRecord(log::Level::Info, "CD".into())
+            ]
+        );
+    }
+    2
 }

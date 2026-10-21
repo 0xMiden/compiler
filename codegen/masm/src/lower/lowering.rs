@@ -2996,6 +2996,7 @@ intrinsic_selection! {
     hir::CryptoStream => CryptoStream,
     hir::EvalCircuit => EvalCircuit,
     hir::SystemEvent => SystemEvent,
+    hir::PrintLn => PrintLn,
     hir::AdvicePop => AdvicePop,
     hir::AdviceLoadWord => AdviceLoadWord,
     hir::Caller => Caller,

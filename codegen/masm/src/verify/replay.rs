@@ -1273,6 +1273,14 @@ impl<'a> Verifier<'a> {
                     read_count,
                     eval_count,
                 } => self.circuit_read(&inputs, address, read_count, eval_count, cursor)?,
+                MemoryRead::PrintLn { address, length } => {
+                    self.println_read(
+                        inputs[usize::from(address)],
+                        inputs[usize::from(length)],
+                        cursor,
+                    )?;
+                    None
+                }
                 MemoryRead::SourceRange { start, end } => {
                     self.source_range_read(
                         inputs[usize::from(start)],
@@ -1547,6 +1555,32 @@ impl<'a> Verifier<'a> {
         // The preceding count guard bounds the largest possible width to 1048568.
         let width = n.map(|n| (8 * n) as u32);
         self.source_only_read(self.tokens.frame_address(pointer), width, cursor)
+    }
+
+    /// Packed bytes have no frame-relative identity in the source-memory ABI.
+    fn println_read(
+        &self,
+        pointer: Token,
+        length: Token,
+        cursor: &Cursor,
+    ) -> Result<(), VerificationError> {
+        let pointer = self.tokens.constant(pointer);
+        let length = self.tokens.constant(length);
+        if pointer.is_some_and(|p| p > u64::from(u32::MAX))
+            || length.is_some_and(|n| n == 0 || n > 524288)
+        {
+            return Ok(());
+        }
+        // Absolute pointer/4 is not a frame offset. Native FrameAddress facts likewise
+        // cannot be divided by four: floor((base+offset)/4) is not base+offset/4.
+        // The guards bound this arithmetic to at most 131073 cells; unknown residues
+        // leave the exact width unresolved, except when every possible residue gives the same width.
+        let width = match (pointer, length) {
+            (Some(p), Some(n)) => Some(((p % 4 + n).div_ceil(4)) as u32),
+            (_, Some(n)) if n % 4 == 1 => Some((n.div_ceil(4)) as u32),
+            _ => None,
+        };
+        self.source_only_read(None, width, cursor)
     }
 
     /// Footprint-only source reads never initialize, load tokens, or enter compiler storage.

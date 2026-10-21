@@ -350,6 +350,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::MemCpy, dyn HirLowering>();
     info.register_operation_trait::<hir::MemMove, dyn HirLowering>();
     info.register_operation_trait::<hir::PrintLn, dyn HirLowering>();
+    info.register_operation_trait::<hir::PrintLn, dyn HirSelection>();
 }
 
 fn lower_wasm_ops(info: &mut midenc_hir::DialectInfo) {

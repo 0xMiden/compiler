@@ -25,6 +25,7 @@ pub(crate) enum Kind {
     CryptoStream,
     EvalCircuit,
     SystemEvent,
+    PrintLn,
     MTreeGet,
     MTreeSet,
     MTreeMerge,
@@ -80,6 +81,7 @@ impl Intrinsic {
                 let (_, n, _) = event.unwrap();
                 (vec![Type::Felt; n], vec![Type::Felt; n])
             }
+            PrintLn => (vec![midenc_hir::PointerType::new(Type::U8).into(), Type::U32], vec![]),
             CryptoStream => (vec![Type::Felt; 14], vec![Type::Felt; 14]),
             FriExt2Fold4 => (vec![Type::Felt; 17], vec![Type::Felt; 16]),
             MTreeGet => (vec![Type::Felt; 6], vec![Type::Felt; 8]),
@@ -125,6 +127,7 @@ impl Intrinsic {
             AdvicePipe => emitter.advice_pipe(op.span()),
             CryptoStream => emitter.crypto_stream(op.span()),
             EvalCircuit => emitter.eval_circuit(op.span()),
+            PrintLn => emitter.println(op.span()),
             SystemEvent => {
                 let (id, n, _) = event.unwrap();
                 emitter.system_event(id, n, op.span());
@@ -179,12 +182,13 @@ impl Intrinsic {
                         | CryptoStream
                         | EvalCircuit
                         | SystemEvent
+                        | PrintLn
                 ),
                 memory: if matches!(kind, CryptoStream) {
                     SourceMemoryEffects::READ_WRITE
                 } else if matches!(kind, AdvicePipe) {
                     SourceMemoryEffects::WRITE
-                } else if matches!(kind, HornerBase | HornerExt | MemStream | EvalCircuit)
+                } else if matches!(kind, HornerBase | HornerExt | MemStream | EvalCircuit | PrintLn)
                     || event.is_some_and(|(_, _, reads)| reads)
                 {
                     SourceMemoryEffects::READ
