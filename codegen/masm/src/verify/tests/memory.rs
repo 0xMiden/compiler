@@ -776,3 +776,203 @@ fn eval_circuit_generated_initialized_compiler_circuit_executes_without_escaping
         .execute_sync(&program, &mut crate::plan::tests::lowering_units::host())
         .unwrap();
 }
+
+fn memory_system_event(event: miden_core::events::SystemEvent) -> AnnotatedOp {
+    inst(Instruction::EmitImm(
+        crate::masm::Immediate::Value(crate::masm::Span::unknown(event.event_id().as_felt()))
+            .into(),
+    ))
+}
+
+fn memory_system_event_literals(payload: [Option<u64>; 6]) -> (Fixture, Vec<AnnotatedOp>) {
+    let mut f = Fixture::new(payload.iter().filter(|v| v.is_none()).count() as u32, 0);
+    f.effects.may_trap = true;
+    let mut code = vec![];
+    // Unknown fields are fresh ABI values; move each to its actual payload position.
+    for (placed, value) in payload.into_iter().rev().enumerate() {
+        if let Some(value) = value {
+            code.push(push(value));
+        } else if placed != 0 {
+            code.push(inst(Primitive::MoveUp(placed as u8).instruction().unwrap()));
+        }
+    }
+    (f, code)
+}
+
+#[test]
+fn memory_system_event_source_ranges_require_read_only_when_possible() {
+    use miden_core::events::SystemEvent::MemToMap;
+    for (s, e, reads) in [
+        (0, 0, false),
+        (u32::MAX as u64 + 1, 9, false),
+        (0, u32::MAX as u64 + 1, false),
+        (9, 2, false),
+        (0, 1, true),
+        (0, 260, true),
+        (0, 65533, true),
+        (0, u32::MAX as u64, true),
+    ] {
+        for permission in [
+            SourceMemoryEffects::default(),
+            SourceMemoryEffects::WRITE,
+            SourceMemoryEffects::READ,
+        ] {
+            let (mut f, mut code) = memory_system_event_literals([
+                Some(11),
+                Some(23),
+                Some(37),
+                Some(53),
+                Some(s),
+                Some(e),
+            ]);
+            f.effects.memory = permission;
+            code.push(memory_system_event(MemToMap));
+            code.extend((0..6).map(|_| inst(Instruction::Drop)));
+            assert_eq!(
+                f.run(code).is_ok(),
+                !reads || permission == SourceMemoryEffects::READ,
+                "{s}..{e} {permission:?}"
+            );
+        }
+    }
+    let mut f = Fixture::new(2, 0);
+    f.effects.may_trap = true;
+    f.effects.memory = SourceMemoryEffects::READ;
+    let mut code = vec![push(53), push(37), push(23), push(11), memory_system_event(MemToMap)];
+    code.extend((0..6).map(|_| inst(Instruction::Drop)));
+    f.run(code).unwrap();
+}
+
+#[test]
+fn memory_system_event_deferred_closed_no_read_predicates_and_possible_widths() {
+    use miden_core::events::SystemEvent::DeferredRegisterData;
+    // Hand-derived outcomes; None denotes a genuinely unknown ordinary ABI input.
+    let cases = [
+        ([None, None, None, None, None, Some(0)], false),
+        ([None, None, None, None, None, Some(0x1_0000_0000)], false),
+        ([None, None, None, None, None, Some(131072)], false),
+        ([Some(0), None, None, None, None, None], false),
+        ([Some(0), Some(7), Some(0), Some(0), None, Some(1)], false),
+        ([Some(1), Some(7), None, None, None, None], false),
+        ([Some(2), Some(0), Some(7), None, None, None], false),
+        ([Some(1), None, None, None, None, Some(2)], false),
+        ([None, None, None, None, Some(0x1_0000_0000), None], false),
+        ([None, None, None, None, Some(5), None], false),
+        ([Some(2), Some(0), Some(0), Some(0), Some(0xfffffff8), Some(1)], false),
+        ([Some(2), Some(0), Some(0), Some(0), Some(0xfffffff4), Some(1)], true),
+        ([Some(1), None, None, None, Some(400), Some(1)], true),
+        ([Some(2), Some(0), Some(0), Some(0), Some(400), Some(131071)], true),
+        ([Some(999), Some(0), Some(0), Some(0), Some(400), Some(1)], true),
+        ([None, None, None, None, None, None], true),
+    ];
+    for (payload, reads) in cases {
+        for permission in [
+            SourceMemoryEffects::default(),
+            SourceMemoryEffects::WRITE,
+            SourceMemoryEffects::READ,
+        ] {
+            let (mut f, mut code) = memory_system_event_literals(payload);
+            f.effects.memory = permission;
+            code.push(memory_system_event(DeferredRegisterData));
+            code.extend((0..6).map(|_| inst(Instruction::Drop)));
+            assert_eq!(
+                f.run(code).is_ok(),
+                !reads || permission == SourceMemoryEffects::READ,
+                "{payload:?} {permission:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn memory_system_event_deferred_checks_source_span_without_relative_alignment_guesses() {
+    use miden_core::events::SystemEvent::DeferredRegisterData;
+    for (offset, extent, n, pass) in [
+        (1, 9, Some(1), true),
+        (1, 8, Some(1), false),
+        (0, 300, Some(33), true),
+        (0, 300, Some(38), false),
+        (0, 8, None, true),
+    ] {
+        let mut f = Fixture::new(u32::from(n.is_none()), 0).scratch(8);
+        f.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent,
+        };
+        f.effects.may_trap = true;
+        f.effects.memory = SourceMemoryEffects::READ;
+        let mut code = n.map(|n| vec![push(n)]).unwrap_or_default();
+        code.extend([
+            inst(Instruction::Locaddr(offset.into())),
+            push(0),
+            push(0),
+            push(0),
+            push(2),
+            memory_system_event(DeferredRegisterData),
+        ]);
+        code.extend((0..6).map(|_| inst(Instruction::Drop)));
+        assert_eq!(f.run(code).is_ok(), pass, "offset{offset} extent{extent} n{n:?}");
+    }
+}
+
+#[test]
+fn memory_system_event_wide_exact_source_range_has_no_loaded_cell_tokens() {
+    for (extent, start, end) in [(300, 0, 300), (65528, 0, 65528)] {
+        let mut f = Fixture::new(0, 0).scratch(1);
+        f.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent,
+        };
+        f.effects.may_trap = true;
+        f.effects.memory = SourceMemoryEffects::READ;
+        let mut code = vec![
+            inst(Instruction::Locaddr((end as u16).into())),
+            inst(Instruction::Locaddr((start as u16).into())),
+            push(53),
+            push(37),
+            push(23),
+            push(11),
+            memory_system_event(miden_core::events::SystemEvent::MemToMap),
+        ];
+        code.extend((0..6).map(|_| inst(Instruction::Drop)));
+        f.run(code).unwrap();
+    }
+}
+
+#[test]
+fn memory_system_event_equal_ordinary_abi_bounds_need_no_fictitious_read() {
+    let mut f = Fixture::new(1, 0);
+    f.effects.may_trap = true;
+    let mut code = vec![
+        inst(Instruction::Dup0),
+        push(53),
+        push(37),
+        push(23),
+        push(11),
+        memory_system_event(miden_core::events::SystemEvent::MemToMap),
+    ];
+    code.extend((0..6).map(|_| inst(Instruction::Drop)));
+    f.run(code).unwrap();
+}
+
+#[test]
+fn memory_system_event_maximum_deferred_width_cannot_narrow_to_a_local_extent() {
+    let mut f = Fixture::new(0, 0).scratch(4);
+    f.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 65528,
+    };
+    f.effects.may_trap = true;
+    f.effects.memory = SourceMemoryEffects::READ;
+    let mut code = vec![
+        push(131071),
+        inst(Instruction::Locaddr(0.into())),
+        push(0),
+        push(0),
+        push(0),
+        push(2),
+        memory_system_event(miden_core::events::SystemEvent::DeferredRegisterData),
+    ];
+    code.extend((0..6).map(|_| inst(Instruction::Drop)));
+    assert_eq!(f.run(code).unwrap_err().category, DiagnosticCategory::FrameCapacityExceeded);
+}

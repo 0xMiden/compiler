@@ -3716,6 +3716,8 @@ pub(super) fn system_event_cases() -> Vec<(miden_core::events::SystemEvent, usiz
         (U32Clo, 1),
         (U32Cto, 1),
         (ILog2, 1),
+        (MemToMap, 6),
+        (DeferredRegisterData, 6),
     ]
 }
 
@@ -3746,6 +3748,22 @@ pub(super) fn system_event_fixture(event: miden_core::events::SystemEvent, n: us
 }
 
 #[test]
+fn memory_system_event_source_selection_preserves_all_six_aliases_and_reads() {
+    use miden_core::events::SystemEvent::{DeferredRegisterData, MemToMap};
+    assert_eq!(system_event_cases().len(), 24);
+    for event in [MemToMap, DeferredRegisterData] {
+        let f = system_event_fixture(event, 6);
+        let selected = checked(&f, &SelectEnv::default());
+        let unit = &selected.segments[0].units[0];
+        assert_eq!(unit.effects.memory, SourceMemoryEffects::READ);
+        assert_eq!(unit.outputs.len(), 6);
+        let evidence = crate::select::evidence(&f.borrow(), &SelectEnv::default()).unwrap();
+        assert_eq!(evidence.source.units[&unit.id].aliases.pairs().len(), 6);
+        ready(&f, &SelectEnv::default());
+    }
+}
+
+#[test]
 fn system_event_exact_source_selection_and_aliases() {
     for (event, n) in system_event_cases() {
         let f = system_event_fixture(event, n);
@@ -3753,7 +3771,18 @@ fn system_event_exact_source_selection_and_aliases() {
         let unit = &selected.segments[0].units[0];
         assert_eq!(unit.stack_inputs.len(), n, "{event:?}");
         assert_eq!(unit.outputs.len(), n, "{event:?}");
-        assert_eq!(unit.effects.memory, SourceMemoryEffects::default());
+        assert_eq!(
+            unit.effects.memory,
+            if matches!(
+                event,
+                miden_core::events::SystemEvent::MemToMap
+                    | miden_core::events::SystemEvent::DeferredRegisterData
+            ) {
+                SourceMemoryEffects::READ
+            } else {
+                SourceMemoryEffects::default()
+            }
+        );
         assert!(unit.effects.may_trap);
         assert!(unit.scratch.is_empty());
         let evidence = crate::select::evidence(&f.borrow(), &SelectEnv::default()).unwrap();
@@ -4569,7 +4598,12 @@ fn system_event_physical_mutations_reject_access_alias_publication_and_permissio
         let function = f.borrow();
         let env = SelectEnv::default();
         let mut selected = select_function(&function, &env).unwrap();
-        selected.segments[0].units[0].effects.memory = SourceMemoryEffects::READ;
+        selected.segments[0].units[0].effects.memory =
+            if selected.segments[0].units[0].effects.memory == SourceMemoryEffects::READ {
+                SourceMemoryEffects::default()
+            } else {
+                SourceMemoryEffects::READ
+            };
         assert!(
             check_selection(
                 selected,
@@ -5102,4 +5136,681 @@ fn system_event_effect_order_preserves_advice_even_with_dead_result_aliases() {
         processor.into_parts().0.stack(),
         [Felt::ONE, Felt::from(5u32), Felt::from(97u32)]
     );
+}
+
+#[test]
+fn memory_system_event_source_local_cast_add_boundary_drops_endpoint_with_spills() {
+    use miden_core::{Felt, Word, events::SystemEvent::MemToMap};
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_dialect_hir::HirOpBuilder;
+    use midenc_hir::{SourceSpan, Type, dialects::builtin::BuiltinOpBuilder};
+    for empty in [false, true] {
+        let mut test = midenc_hir::testing::Test::new(
+            "memory_boundary",
+            &vec![Type::Felt; 28],
+            &vec![Type::Felt; 32],
+        );
+        let args = test
+            .function()
+            .borrow()
+            .entry_block()
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|a| *a as midenc_hir::ValueRef)
+            .collect::<Vec<_>>();
+        let locals = (0..4)
+            .map(|_| test.function().borrow_mut().alloc_local(Type::Felt))
+            .collect::<Vec<_>>();
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut b = test.function_builder();
+            for (local, arg) in locals.iter().zip(&args[4..8]) {
+                b.store_local(*local, *arg, span).unwrap();
+            }
+            let ptr = b.local_address(locals[0], span).unwrap();
+            let bits = b.ptrtoint(ptr, Type::U32, span).unwrap();
+            let base = b.bitcast(bits, Type::Felt, span).unwrap();
+            let delta = b.felt(Felt::from(4u32), span);
+            let end = b.add_unchecked(base, delta, span).unwrap();
+            let start = if empty { end } else { base };
+            let payload = args[..4].iter().copied().chain([start, end]);
+            b.system_event(payload, MemToMap.event_id().as_felt(), span).unwrap();
+            let loaded = locals
+                .iter()
+                .map(|local| b.load_local(*local, span).unwrap())
+                .collect::<Vec<_>>();
+            b.ret(args.iter().copied().chain(loaded), span).unwrap();
+        }
+        let f = Parsed {
+            context: test.context_rc(),
+            function: test.function(),
+        };
+        let arguments = [11, 23, 37, 53, 71, 89, 107, 127]
+            .into_iter()
+            .chain((0..20).map(|i| 900 + i))
+            .collect::<Vec<_>>();
+        let input = system_event_input(&arguments, 20);
+        let expected = arguments
+            .iter()
+            .copied()
+            .chain(arguments[4..8].iter().copied())
+            .chain(input[28..].iter().copied())
+            .collect::<Vec<_>>();
+        for force in [false, true] {
+            let (_, frame, _) = fri_ready(&f, force);
+            assert_eq!(frame.source().extent, 4);
+            assert!(!frame.spills().is_empty());
+            let procedure = system_event_procedure(&f, force, |_| {});
+            let (processor, result) = system_event_vm_outputs(
+                &procedure,
+                &input,
+                &expected,
+                system_event_advice(),
+                None,
+                "",
+            );
+            result.unwrap();
+            let key = Word::new([11u32, 23, 37, 53].map(Felt::from));
+            let values = if empty {
+                vec![]
+            } else {
+                [71u32, 89, 107, 127].map(Felt::from).to_vec()
+            };
+            let (provider, _) = processor.into_parts();
+            assert_eq!(provider.get_mapped_values(&key), Some(values.as_slice()));
+            assert_eq!(provider.stack(), [Felt::from(97u32)]);
+        }
+    }
+}
+
+#[test]
+fn memory_system_event_mem_to_map_exact_order_holes_empty_terminal_budget_and_collision() {
+    use miden_core::{Felt, Word, crypto::merkle::MerkleStore, events::SystemEvent::MemToMap};
+    use miden_processor::{ExecutionError, advice::AdviceError};
+    let key = Word::new([11u32, 23, 37, 53].map(Felt::from));
+    let base = MerkleStore::default().num_internal_nodes() * 96 + 8;
+    for force in [false, true] {
+        let f = system_event_fixture(MemToMap, 6);
+        let (_, frame, _) = fri_ready(&f, force);
+        let terminal_fmp = 127 + frame.aligned_size();
+        let procedure = system_event_procedure(&f, force, |_| {});
+        // U32_MAX-1 is the VM frame-pointer cell. Its in-call value includes this
+        // verified procedure's actual frame allocation in either scheduling mode.
+        for (start, end, setup, want) in [
+            (401, 405, "push.71 mem_store.401 push.107 mem_store.403", vec![71u32, 0, 107, 0]),
+            (405, 405, "", vec![]),
+            (
+                0xfffffffe,
+                0xffffffff,
+                "push.127 mem_store.4294967294 push.999 mem_store.4294967295",
+                vec![terminal_fmp],
+            ),
+        ] {
+            let payload = [11, 23, 37, 53, start, end];
+            let values = want.into_iter().map(Felt::from).collect::<Vec<_>>();
+            for prior in [None, Some(values.clone()), Some(vec![Felt::from(999u32)])] {
+                let advice = prior.as_ref().map_or_else(system_event_advice, |old| {
+                    system_event_advice().with_map([(key, old.clone())])
+                });
+                let (processor, result) = system_event_vm(
+                    &procedure,
+                    &system_event_input(&payload, 20),
+                    advice,
+                    None,
+                    setup,
+                );
+                if prior.as_ref().is_some_and(|old| old != &values) {
+                    assert!(matches!(
+                        result.unwrap_err(),
+                        ExecutionError::AdviceError {
+                            err: AdviceError::MapKeyAlreadyPresent { .. },
+                            ..
+                        }
+                    ));
+                } else {
+                    result.unwrap();
+                }
+                if start == 401 {
+                    for (address, value) in
+                        [(400, 0), (401, 71), (402, 0), (403, 107), (404, 0), (405, 0)]
+                    {
+                        assert_eq!(
+                            processor
+                                .memory()
+                                .read_element(Default::default(), Felt::from(address as u32))
+                                .unwrap(),
+                            Felt::from(value as u32)
+                        );
+                    }
+                }
+                if end == 0xffffffff {
+                    assert_eq!(
+                        processor
+                            .memory()
+                            .read_element(Default::default(), Felt::new_unchecked(0xffffffff))
+                            .unwrap(),
+                        Felt::from(999u32)
+                    );
+                }
+                let (provider, _) = processor.into_parts();
+                assert_eq!(
+                    provider.get_mapped_values(&key),
+                    Some(prior.as_deref().unwrap_or(&values))
+                );
+                assert_eq!(provider.stack(), [Felt::from(97u32)]);
+            }
+        }
+        // At a full budget, an identical value is free; a differing value is checked before insert.
+        let values = [71u32, 89, 107, 127].map(Felt::from).to_vec();
+        for identical in [false, true] {
+            let setup = if identical {
+                "push.71 mem_store.400 push.89 mem_store.401 push.107 mem_store.402 push.127 \
+                 mem_store.403"
+            } else {
+                ""
+            };
+            let advice = system_event_advice().with_map([(key, values.clone())]);
+            let (processor, result) = system_event_vm(
+                &procedure,
+                &system_event_input(&[11, 23, 37, 53, 400, 404], 20),
+                advice,
+                Some(base + 64),
+                setup,
+            );
+            if identical {
+                result.unwrap();
+            } else {
+                assert!(matches!(
+                    result.unwrap_err(),
+                    ExecutionError::AdviceError {
+                        err: AdviceError::SizeBudgetExceeded { .. },
+                        ..
+                    }
+                ));
+            }
+            assert_eq!(processor.into_parts().0.get_mapped_values(&key), Some(values.as_slice()));
+        }
+    }
+}
+
+#[test]
+fn memory_system_event_deferred_chunks_precompile_order_idempotence_and_guard_errors() {
+    use miden_core::{
+        Felt,
+        deferred::{DeferredError, Node, PrecompileError, TRUE_DIGEST, Tag, precompile_id},
+        events::SystemEvent::DeferredRegisterData,
+    };
+    use miden_processor::{ExecutionError, MemoryError};
+    let values = [11u32, 23, 37, 53, 71, 89, 107, 127, 149, 173, 197, 223, 251, 281, 313, 347]
+        .map(Felt::from);
+    let chunks = vec![values[..8].try_into().unwrap(), values[8..].try_into().unwrap()];
+    let setup = eval_circuit_initialize(
+        400,
+        &values.iter().map(|v| v.as_canonical_u64() as usize).collect::<Vec<_>>(),
+    );
+    let initial = processor_with_advice(&[]).deferred_state().num_elements();
+    for force in [false, true] {
+        let procedure =
+            system_event_procedure(&system_event_fixture(DeferredRegisterData, 6), force, |_| {});
+        for (tag, count, expected) in [
+            (Tag::CHUNKS, 2, Node::chunks(chunks.clone()).unwrap()),
+            (
+                Tag::precompile(precompile_id("uint256"), [Felt::ZERO, Felt::ONE, Felt::ZERO])
+                    .unwrap(),
+                1,
+                Node::value(
+                    Tag::precompile(precompile_id("uint256"), [Felt::ZERO, Felt::ONE, Felt::ZERO])
+                        .unwrap(),
+                    chunks[0],
+                )
+                .unwrap(),
+            ),
+        ] {
+            let payload = tag
+                .as_word()
+                .iter()
+                .map(|v| v.as_canonical_u64() as usize)
+                .chain([400, count])
+                .collect::<Vec<_>>();
+            let (processor, result) = system_event_vm(
+                &procedure,
+                &system_event_input(&payload, 20),
+                system_event_advice(),
+                None,
+                &setup,
+            );
+            result.unwrap();
+            assert_eq!(processor.deferred_state().get_node(&expected.digest()), Some(&expected));
+            assert_eq!(
+                processor.deferred_state().get_canonical_digest(expected.digest()),
+                Some(expected.digest())
+            );
+            assert_eq!(processor.deferred_state().num_elements(), initial + 4 + 8 * count);
+            assert_eq!(processor.deferred_state().root(), TRUE_DIGEST);
+            assert_eq!(processor.into_parts().0.stack(), [Felt::from(97u32)]);
+        }
+        // Handler ordering is pinned source evidence; errors are observable conformance,
+        // not an untraced host-read counter. AND n1 reads then fails its constructor.
+        for (payload, kind) in [
+            ([2, 0, 0, 0, 5, 0], 0),
+            ([2, 0, 0, 0, 5, 0x1_0000_0000], 0),
+            ([0, 0, 0, 0, 5, 1], 0),
+            ([0, 7, 0, 0, 5, 1], 0),
+            ([1, 7, 0, 0, 5, 1], 0),
+            ([2, 0, 7, 0, 5, 1], 0),
+            ([1, 0, 0, 0, 5, 2], 0),
+            ([1, 0, 0, 0, 400, 1], 1),
+            ([999, 0, 0, 0, 400, 1], 0),
+            ([2, 0, 0, 0, 5, 131072], 2),
+            ([2, 0, 0, 0, 0x1_0000_0000, 1], 3),
+            ([2, 0, 0, 0, 5, 1], 4),
+            ([2, 0, 0, 0, 0xfffffff8, 1], 3),
+        ] {
+            let (processor, result) = system_event_vm(
+                &procedure,
+                &system_event_input(&payload, 20),
+                system_event_advice(),
+                None,
+                &setup,
+            );
+            let error = result.unwrap_err();
+            match kind {
+                0 => assert!(
+                    matches!(error,ExecutionError::DeferredError {err:ref e,..} if matches!(e.root(),PrecompileError::InvalidNode)),
+                    "{payload:?} {error}"
+                ),
+                1 => assert!(
+                    matches!(error,ExecutionError::DeferredError {err:ref e,..} if matches!(e.root(),PrecompileError::Other(DeferredError::InvalidTag))),
+                    "{payload:?} {error}"
+                ),
+                2 => assert!(
+                    matches!(error,ExecutionError::DeferredError {err:ref e,..} if matches!(e.root(),PrecompileError::Other(DeferredError::DeferredStateTooLarge {..}))),
+                    "{error}"
+                ),
+                3 => assert!(matches!(
+                    error,
+                    ExecutionError::MemoryError {
+                        err: MemoryError::AddressOutOfBounds { .. },
+                        ..
+                    }
+                )),
+                _ => assert!(matches!(
+                    error,
+                    ExecutionError::MemoryError {
+                        err: MemoryError::UnalignedWordAccess { .. },
+                        ..
+                    }
+                )),
+            }
+            assert_eq!(processor.deferred_state().num_elements(), initial);
+            assert_eq!(processor.deferred_state().root(), TRUE_DIGEST);
+        }
+        let (processor, result) = system_event_vm(
+            &procedure,
+            &system_event_input(&[2, 0, 0, 0, 0xfffffff4, 1], 20),
+            system_event_advice(),
+            None,
+            "push.71 mem_store.4294967291",
+        );
+        result.unwrap();
+        let mut zero = [Felt::ZERO; 8];
+        zero[7] = Felt::from(71u32);
+        let node = Node::chunks(vec![zero]).unwrap();
+        assert_eq!(processor.deferred_state().get_node(&node.digest()), Some(&node));
+    }
+}
+
+#[test]
+fn memory_system_event_mem_to_map_vm_numeric_guards_and_semantic_mutants() {
+    use miden_core::{
+        Felt, Word,
+        events::SystemEvent::{DeferredRegisterData, MemToMap},
+    };
+    use miden_processor::{ExecutionError, MemoryError};
+    let f = system_event_fixture(MemToMap, 6);
+    let procedure = system_event_procedure(&f, false, |_| {});
+    for (start, end, address) in [
+        (0x1_0000_0000, 0x1_0000_0001, Some(0x1_0000_0000)),
+        (0, 0x1_0000_0000, Some(0x1_0000_0000)),
+        (9, 2, None),
+    ] {
+        let (processor, result) = system_event_vm(
+            &procedure,
+            &system_event_input(&[11, 23, 37, 53, start, end], 20),
+            system_event_advice(),
+            None,
+            "",
+        );
+        match (result.unwrap_err(), address) {
+            (
+                ExecutionError::MemoryError {
+                    err: MemoryError::AddressOutOfBounds { addr },
+                    ..
+                },
+                Some(expected),
+            ) => assert_eq!(addr, expected),
+            (
+                ExecutionError::MemoryError {
+                    err:
+                        MemoryError::InvalidMemoryRange {
+                            start_addr,
+                            end_addr,
+                        },
+                    ..
+                },
+                None,
+            ) => assert_eq!((start_addr, end_addr), (9, 2)),
+            (error, _) => panic!("{error}"),
+        }
+        assert!(processor.into_parts().0.map().is_empty());
+    }
+    for mutation in 0..4 {
+        let procedure = system_event_procedure(&f, false, |body| {
+            let index = body
+                .ops()
+                .iter()
+                .position(|o| {
+                    matches!(
+                        o,
+                        AnnotatedOp::Instruction {
+                            instruction: crate::masm::Instruction::EmitImm(_),
+                            ..
+                        }
+                    )
+                })
+                .unwrap();
+            let unit = match body.ops()[index] {
+                AnnotatedOp::Instruction { unit, .. } => unit,
+                _ => unreachable!(),
+            };
+            match mutation {
+                0 => {
+                    if let AnnotatedOp::Instruction { instruction, .. } = &mut body.ops_mut()[index]
+                    {
+                        *instruction = crate::masm::Instruction::Nop;
+                    }
+                }
+                1 => {
+                    if let AnnotatedOp::Instruction { instruction, .. } = &mut body.ops_mut()[index]
+                    {
+                        *instruction = crate::masm::Instruction::EmitImm(
+                            crate::masm::Immediate::Value(crate::masm::Span::unknown(
+                                DeferredRegisterData.event_id().as_felt(),
+                            ))
+                            .into(),
+                        );
+                    }
+                }
+                _ => {
+                    let swap = if mutation == 2 {
+                        crate::masm::Instruction::Swap1
+                    } else {
+                        crate::masm::Instruction::Swap5
+                    };
+                    body.ops_mut().insert(
+                        index + 1,
+                        AnnotatedOp::Instruction {
+                            instruction: swap.clone(),
+                            unit,
+                        },
+                    );
+                    body.ops_mut().insert(
+                        index,
+                        AnnotatedOp::Instruction {
+                            instruction: swap,
+                            unit,
+                        },
+                    );
+                }
+            }
+        });
+        let (processor, result) = system_event_vm(
+            &procedure,
+            &system_event_input(&[11, 23, 37, 53, 400, 402], 20),
+            system_event_advice(),
+            None,
+            "push.71 mem_store.400 push.89 mem_store.401",
+        );
+        let key = Word::new([11u32, 23, 37, 53].map(Felt::from));
+        let (provider, _) = processor.into_parts();
+        assert!(
+            result.is_err()
+                || provider.get_mapped_values(&key)
+                    != Some([Felt::from(71u32), Felt::from(89u32)].as_slice()),
+            "mutant{mutation}"
+        );
+    }
+}
+
+#[test]
+fn memory_system_event_deferred_repeated_chunks_and_failed_evaluation_preserve_partial_state() {
+    use miden_core::{
+        Felt,
+        deferred::{Node, PrecompileError, TRUE_DIGEST, Tag, precompile_id},
+        events::SystemEvent::DeferredRegisterData,
+    };
+    let data = [11u32, 23, 37, 53, 71, 89, 107, 127].map(Felt::from);
+    let node = Node::chunks(vec![data]).unwrap();
+    let procedure =
+        system_event_procedure(&system_event_fixture(DeferredRegisterData, 6), false, |_| {});
+    let setup = format!(
+        "{} {}",
+        eval_circuit_initialize(400, &data.map(|v| v.as_canonical_u64() as usize)),
+        system_event_register_setup(&node)
+    );
+    let initial = processor_with_advice(&[]).deferred_state().num_elements();
+    let (processor, result) = system_event_vm(
+        &procedure,
+        &system_event_input(&[2, 0, 0, 0, 400, 1], 20),
+        system_event_advice(),
+        None,
+        &setup,
+    );
+    result.unwrap();
+    assert_eq!(processor.deferred_state().num_elements(), initial + 12);
+    assert_eq!(
+        processor.deferred_state().get_canonical_digest(node.digest()),
+        Some(node.digest())
+    );
+    let id = precompile_id("uint256");
+    let value_tag = Tag::precompile(id, [Felt::ZERO, Felt::ONE, Felt::ZERO]).unwrap();
+    let a = Node::value(value_tag, data).unwrap();
+    let b = Node::value(value_tag, [1u32, 2, 3, 4, 5, 6, 7, 8].map(Felt::from)).unwrap();
+    let eq = Tag::precompile(id, [Felt::from(4u32), Felt::ZERO, Felt::ZERO]).unwrap();
+    let predicate = Node::join(eq, a.digest(), b.digest()).unwrap();
+    let children = merkle_lanes(a.digest())
+        .into_iter()
+        .chain(merkle_lanes(b.digest()))
+        .collect::<Vec<_>>();
+    let setup = format!(
+        "{} {} {}",
+        system_event_register_setup(&a),
+        system_event_register_setup(&b),
+        eval_circuit_initialize(400, &children)
+    );
+    let payload = eq
+        .as_word()
+        .iter()
+        .map(|v| v.as_canonical_u64() as usize)
+        .chain([400, 1])
+        .collect::<Vec<_>>();
+    let (processor, result) = system_event_vm(
+        &procedure,
+        &system_event_input(&payload, 20),
+        system_event_advice(),
+        None,
+        &setup,
+    );
+    assert!(
+        matches!(result.unwrap_err(),miden_processor::ExecutionError::DeferredError {err:ref error,..} if matches!(error.root(),PrecompileError::AssertionFailed))
+    );
+    assert_eq!(processor.deferred_state().get_node(&a.digest()), Some(&a));
+    assert_eq!(processor.deferred_state().get_node(&b.digest()), Some(&b));
+    assert_eq!(processor.deferred_state().get_node(&predicate.digest()), Some(&predicate));
+    assert_eq!(processor.deferred_state().get_canonical_digest(predicate.digest()), None);
+    assert_eq!(processor.deferred_state().num_elements(), initial + 36);
+    assert_eq!(processor.deferred_state().root(), TRUE_DIGEST);
+}
+
+#[test]
+fn memory_system_event_deferred_semantic_omission_wrong_id_and_payload_mutants() {
+    use miden_core::{
+        Felt,
+        deferred::Node,
+        events::SystemEvent::{DeferredRegisterData, MemToMap},
+    };
+    let f = system_event_fixture(DeferredRegisterData, 6);
+    let values = [11u32, 23, 37, 53, 71, 89, 107, 127].map(Felt::from);
+    let expected = Node::chunks(vec![values]).unwrap();
+    for mutation in 0..4 {
+        let procedure = system_event_procedure(&f, false, |body| {
+            let index = body
+                .ops()
+                .iter()
+                .position(|o| {
+                    matches!(
+                        o,
+                        AnnotatedOp::Instruction {
+                            instruction: crate::masm::Instruction::EmitImm(_),
+                            ..
+                        }
+                    )
+                })
+                .unwrap();
+            let unit = match body.ops()[index] {
+                AnnotatedOp::Instruction { unit, .. } => unit,
+                _ => unreachable!(),
+            };
+            match mutation {
+                0 => {
+                    if let AnnotatedOp::Instruction { instruction, .. } = &mut body.ops_mut()[index]
+                    {
+                        *instruction = crate::masm::Instruction::Nop;
+                    }
+                }
+                1 => {
+                    if let AnnotatedOp::Instruction { instruction, .. } = &mut body.ops_mut()[index]
+                    {
+                        *instruction = crate::masm::Instruction::EmitImm(
+                            crate::masm::Immediate::Value(crate::masm::Span::unknown(
+                                MemToMap.event_id().as_felt(),
+                            ))
+                            .into(),
+                        );
+                    }
+                }
+                _ => {
+                    let swap = if mutation == 2 {
+                        crate::masm::Instruction::Swap1
+                    } else {
+                        crate::masm::Instruction::Swap5
+                    };
+                    body.ops_mut().insert(
+                        index + 1,
+                        AnnotatedOp::Instruction {
+                            instruction: swap.clone(),
+                            unit,
+                        },
+                    );
+                    body.ops_mut().insert(
+                        index,
+                        AnnotatedOp::Instruction {
+                            instruction: swap,
+                            unit,
+                        },
+                    );
+                }
+            }
+        });
+        let (processor, _) = system_event_vm(
+            &procedure,
+            &system_event_input(&[2, 0, 0, 0, 400, 1], 20),
+            system_event_advice(),
+            None,
+            &eval_circuit_initialize(400, &values.map(|v| v.as_canonical_u64() as usize)),
+        );
+        assert_eq!(
+            processor.deferred_state().get_node(&expected.digest()),
+            None,
+            "mutant{mutation}"
+        );
+    }
+}
+
+#[test]
+fn memory_system_event_deferred_maximum_payload_budget_keeps_registered_prefix() {
+    use miden_core::{
+        Felt,
+        deferred::{DeferredError, MAX_DEFERRED_ELEMENTS, Node, PrecompileError, TRUE_DIGEST},
+        events::SystemEvent::DeferredRegisterData,
+    };
+    let prefix = Node::chunks(vec![[Felt::ONE; 8]]).unwrap();
+    let initial = processor_with_advice(&[]).deferred_state().num_elements();
+    let setup = system_event_register_setup(&prefix);
+    let procedure =
+        system_event_procedure(&system_event_fixture(DeferredRegisterData, 6), false, |_| {});
+    let (processor, result) = system_event_vm(
+        &procedure,
+        &system_event_input(&[2, 0, 0, 0, 400, 131071], 20),
+        system_event_advice(),
+        None,
+        &setup,
+    );
+    assert!(
+        matches!(result.unwrap_err(),miden_processor::ExecutionError::DeferredError {err:ref error,..} if matches!(error.root(),PrecompileError::Other(DeferredError::DeferredStateTooLarge {num_elements:1048572,max}) if *max==MAX_DEFERRED_ELEMENTS-initial-12))
+    );
+    assert_eq!(processor.deferred_state().get_node(&prefix.digest()), Some(&prefix));
+    assert_eq!(
+        processor.deferred_state().get_canonical_digest(prefix.digest()),
+        Some(prefix.digest())
+    );
+    assert_eq!(processor.deferred_state().num_elements(), initial + 12);
+    assert_eq!(processor.deferred_state().root(), TRUE_DIGEST);
+}
+
+#[test]
+fn memory_system_event_selected_minimum_physical_floor_preserves_provider_and_memory() {
+    use miden_core::{
+        Felt, Word,
+        deferred::Node,
+        events::SystemEvent::{DeferredRegisterData, MemToMap},
+    };
+    let data = [11u32, 23, 37, 53, 71, 89, 107, 127].map(Felt::from);
+    let setup = eval_circuit_initialize(400, &data.map(|v| v.as_canonical_u64() as usize));
+    let node = Node::chunks(vec![data]).unwrap();
+    let key = Word::new([11u32, 23, 37, 53].map(Felt::from));
+    for (event, payload) in [
+        (MemToMap, [11, 23, 37, 53, 400, 408]),
+        (DeferredRegisterData, [2, 0, 0, 0, 400, 1]),
+    ] {
+        for force in [false, true] {
+            let procedure = system_event_procedure(&system_event_fixture(event, 6), force, |_| {});
+            let (processor, result) = system_event_vm(
+                &procedure,
+                &system_event_input(&payload, 10),
+                system_event_advice(),
+                None,
+                &setup,
+            );
+            result.unwrap();
+            for (i, value) in data.into_iter().enumerate() {
+                assert_eq!(
+                    processor
+                        .memory()
+                        .read_element(Default::default(), Felt::from(400 + i as u32))
+                        .unwrap(),
+                    value
+                );
+            }
+            if event == DeferredRegisterData {
+                assert_eq!(processor.deferred_state().get_node(&node.digest()), Some(&node));
+            }
+            let (provider, _) = processor.into_parts();
+            if event == MemToMap {
+                assert_eq!(provider.get_mapped_values(&key), Some(data.as_slice()));
+            }
+            assert_eq!(provider.stack(), [Felt::from(97u32)]);
+        }
+    }
 }

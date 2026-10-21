@@ -40,6 +40,12 @@ pub(super) struct Cursor {
     pub active: Option<ActiveUnit>,
 }
 
+/// Ephemeral evidence about this execution's actual paired bounds, never a token capability.
+struct ExactSourceInterval {
+    start: u32,
+    width: u32,
+}
+
 /// One verification run borrowing immutable claims and owning independent proof state.
 /// Its liveness and scratch demand are recomputed from sealed source semantics.
 pub(super) struct Verifier<'a> {
@@ -1216,16 +1222,24 @@ impl<'a> Verifier<'a> {
         cursor: &Cursor,
     ) -> Result<(), VerificationError> {
         let effect = TargetEffects::instruction(instruction)?;
-        let inputs = state.prefix(effect.consumed.into())?.to_vec();
         effect.validate()?;
-        for &index in &effect.observed_inputs {
-            if self.tokens.origins(inputs[usize::from(index)]).compiler() {
+        let inputs = state.prefix(effect.consumed.into())?.to_vec();
+        // Strict observations precede both paired proofs and every pre-read shortcut.
+        for observation in &effect.observed_inputs {
+            if let Observation::Value(index) = *observation
+                && self.tokens.origins(inputs[usize::from(index)]).compiler()
+            {
                 return Err(fail(
                     DiagnosticCategory::IllegalStackAccess,
                     "observed input exposes compiler storage provenance",
                 ));
             }
         }
+        let interval = if let Some(MemoryRead::SourceRange { start, end }) = effect.memory.read {
+            self.source_bounds(inputs[usize::from(start)], inputs[usize::from(end)])?
+        } else {
+            None
+        };
         // Validate the entire footprint before constructing outputs or performing writes.
         // Only output-demanded fixed lanes need identities; repeated references share a token.
         let mut loaded = BTreeMap::new();
@@ -1239,6 +1253,23 @@ impl<'a> Verifier<'a> {
                     read_count,
                     eval_count,
                 } => self.circuit_read(&inputs, address, read_count, eval_count, cursor)?,
+                MemoryRead::SourceRange { start, end } => {
+                    self.source_range_read(
+                        inputs[usize::from(start)],
+                        inputs[usize::from(end)],
+                        interval,
+                        cursor,
+                    )?;
+                    None
+                }
+                MemoryRead::DeferredRegisterData {
+                    tag,
+                    address,
+                    chunks,
+                } => {
+                    self.deferred_data_read(&inputs, tag, address, chunks, cursor)?;
+                    None
+                }
             };
             if let Some((offset, width)) = memory {
                 for cell in offset..offset + width {
@@ -1406,6 +1437,107 @@ impl<'a> Verifier<'a> {
             MemoryRegion::SourceUnknown { width } => (None, u32::from(width)),
         };
         self.memory_access(offset, Some(width), width == 4, cursor, write)
+    }
+
+    fn source_bounds(
+        &self,
+        start: Token,
+        end: Token,
+    ) -> Result<Option<ExactSourceInterval>, VerificationError> {
+        if !self.tokens.origins(start).compiler() && !self.tokens.origins(end).compiler() {
+            return Ok(None);
+        }
+        match (self.tokens.frame_address(start), self.tokens.frame_address(end)) {
+            (Some(start), Some(end)) if start <= end && end <= self.frame.source().extent => {
+                Ok(Some(ExactSourceInterval {
+                    start,
+                    width: end
+                        .checked_sub(start)
+                        .ok_or_else(|| error("source interval overflow"))?,
+                }))
+            }
+            _ => Err(fail(
+                DiagnosticCategory::IllegalStackAccess,
+                "observed bounds lack an exact current-frame source interval proof",
+            )),
+        }
+    }
+
+    fn source_range_read(
+        &self,
+        start: Token,
+        end: Token,
+        interval: Option<ExactSourceInterval>,
+        cursor: &Cursor,
+    ) -> Result<(), VerificationError> {
+        let start_literal = self.tokens.constant(start);
+        let end_literal = self.tokens.constant(end);
+        if start_literal.is_some_and(|n| n > u64::from(u32::MAX))
+            || end_literal.is_some_and(|n| n > u64::from(u32::MAX))
+            || matches!((start_literal, end_literal), (Some(s), Some(e)) if s > e)
+            || start == end
+        {
+            return Ok(());
+        }
+        let (offset, width) = if let Some(interval) = interval {
+            (Some(interval.start), Some(interval.width))
+        } else {
+            let offset = self.tokens.frame_address(start);
+            let width = match (offset, self.tokens.frame_address(end)) {
+                (Some(start), Some(end)) => end.checked_sub(start),
+                _ => match (start_literal, end_literal) {
+                    (Some(start), Some(end)) => {
+                        end.checked_sub(start).and_then(|n| n.try_into().ok())
+                    }
+                    _ => None,
+                },
+            };
+            (offset, width)
+        };
+        if width == Some(0) {
+            return Ok(());
+        }
+        self.source_only_read(offset, width, cursor)
+    }
+
+    /// The closed framework guards are universal pre-read failures, not a registry interpreter.
+    fn deferred_data_read(
+        &self,
+        inputs: &[Token],
+        tag: [u8; 4],
+        address: u8,
+        chunks: u8,
+        cursor: &Cursor,
+    ) -> Result<(), VerificationError> {
+        let n = self.tokens.constant(inputs[usize::from(chunks)]);
+        let tag = tag.map(|i| self.tokens.constant(inputs[usize::from(i)]));
+        let pointer = inputs[usize::from(address)];
+        let ptr = self.tokens.constant(pointer);
+        if n.is_some_and(|n| n == 0 || n > 131071)
+            || tag[0] == Some(0)
+            || matches!(tag[0], Some(1 | 2))
+                && tag[1..].iter().any(|arg| arg.is_some_and(|n| n != 0))
+            || tag[0] == Some(1) && n.is_some_and(|n| n != 1)
+            || ptr.is_some_and(|p| p > u64::from(u32::MAX) || !p.is_multiple_of(4))
+            || matches!((ptr, n), (Some(p), Some(n))
+                if p.checked_add(8 * n).is_none_or(|end| end > u64::from(u32::MAX)))
+        {
+            return Ok(());
+        }
+        // The preceding count guard bounds the largest possible width to 1048568.
+        let width = n.map(|n| (8 * n) as u32);
+        self.source_only_read(self.tokens.frame_address(pointer), width, cursor)
+    }
+
+    /// Footprint-only source reads never initialize, load tokens, or enter compiler storage.
+    fn source_only_read(
+        &self,
+        offset: Option<u32>,
+        width: Option<u32>,
+        cursor: &Cursor,
+    ) -> Result<(), VerificationError> {
+        self.memory_access(offset, width, false, cursor, false)?;
+        Ok(())
     }
 
     /// Circuit guards run before memory in the VM. Known invalid counts have no footprint.
