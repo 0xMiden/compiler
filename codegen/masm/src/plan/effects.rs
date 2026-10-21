@@ -30,14 +30,37 @@ pub(crate) enum MemoryRegion {
         width: u8,
     },
 }
-/// The exclusive fixed-width memory footprint permitted by a trusted instruction rule.
-/// `Read` supplies `LaneEffect::Memory` in increasing address order; `Write` takes the
-/// values named by `StackEffect::memory_inputs`. `None` permits no memory access.
+/// Raw accesses describe one normal transition: read, construct outputs, then write.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct MemoryEffects {
+    pub read: Option<MemoryRegion>,
+    pub write: Option<MemoryWrite>,
+}
+
+/// Exact normal-completion write footprint and the lane identities written into it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MemoryWrite {
+    pub region: MemoryRegion,
+    /// Values in increasing native memory-address order.
+    pub values: Vec<WriteValue>,
+}
+
+/// Origin of one written value in the pre-transition inputs or newly constructed outputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MemoryEffect {
-    None,
-    Read(MemoryRegion),
-    Write(MemoryRegion),
+pub(crate) enum WriteValue {
+    Input(u8),
+    Output(u8),
+}
+
+impl MemoryRegion {
+    /// Number of consecutive native memory cells touched.
+    pub fn width(self) -> u8 {
+        match self {
+            Self::Frame { width, .. }
+            | Self::Indirect { width, .. }
+            | Self::SourceUnknown { width } => width,
+        }
+    }
 }
 
 /// Identity of one output lane in a trusted target rule. All lane indices are zero-based
@@ -78,9 +101,7 @@ pub(crate) struct StackEffect {
     pub outputs: Vec<LaneEffect>,
     /// Actual temporary height changes, in execution order (prefix replacement is not a pop).
     pub floor: Vec<FloorStep>,
-    pub memory: MemoryEffect,
-    /// Input lanes written to consecutive cells, in increasing memory-address order.
-    pub memory_inputs: Vec<u8>,
+    pub memory: MemoryEffects,
 }
 
 impl StackEffect {
@@ -90,8 +111,7 @@ impl StackEffect {
             may_trap: false,
             outputs,
             floor,
-            memory: MemoryEffect::None,
-            memory_inputs: Vec::new(),
+            memory: MemoryEffects::default(),
         }
     }
 
@@ -104,14 +124,53 @@ impl StackEffect {
         Self::new(consumed, (0..produced).map(LaneEffect::Computed).collect(), floor(steps))
     }
 
-    fn memory(mut self, memory: MemoryEffect) -> Self {
-        self.memory = memory;
+    fn read(mut self, region: MemoryRegion) -> Self {
+        self.memory.read = Some(region);
         self
     }
 
-    fn writes(mut self, inputs: Vec<u8>) -> Self {
-        self.memory_inputs = inputs;
+    fn write(mut self, region: MemoryRegion, values: Vec<WriteValue>) -> Self {
+        self.memory.write = Some(MemoryWrite { region, values });
         self
+    }
+
+    /// Validate closed metadata before replay can index any raw token vector.
+    pub fn validate(&self) -> Result<(), PlanError> {
+        let input = |index: u8| index < self.consumed;
+        for region in
+            self.memory.read.into_iter().chain(self.memory.write.as_ref().map(|w| w.region))
+        {
+            if region.width() == 0
+                || matches!(region, MemoryRegion::Indirect { address, .. } if !input(address))
+            {
+                return Err(stack_error("invalid memory region width or address input"));
+            }
+        }
+        for lane in &self.outputs {
+            let valid = match *lane {
+                LaneEffect::Input(i) => input(i),
+                LaneEffect::Conditional {
+                    condition,
+                    if_true,
+                    if_false,
+                } => input(condition) && input(if_true) && input(if_false),
+                LaneEffect::Memory { lane } => self.memory.read.is_some_and(|r| lane < r.width()),
+                _ => true,
+            };
+            if !valid {
+                return Err(stack_error("invalid output lane dependency"));
+            }
+        }
+        if let Some(write) = &self.memory.write
+            && (write.values.len() != usize::from(write.region.width())
+                || write.values.iter().any(|value| match *value {
+                    WriteValue::Input(i) => !input(i),
+                    WriteValue::Output(i) => usize::from(i) >= self.outputs.len(),
+                }))
+        {
+            return Err(stack_error("invalid memory write value dependency"));
+        }
+        Ok(())
     }
 }
 
@@ -287,10 +346,10 @@ impl TargetEffects {
                 vec![],
             )
             .trapping()
-            .memory(MemoryEffect::Read(MemoryRegion::Indirect {
+            .read(MemoryRegion::Indirect {
                 address: 13,
                 width: 4,
-            })),
+            }),
             LogDeferred => StackEffect::computed(12, 12, &[]).trapping(),
             FriExt2Fold4 => StackEffect::new(
                 17,
@@ -314,10 +373,38 @@ impl TargetEffects {
                 vec![],
             )
             .trapping()
-            .memory(MemoryEffect::Read(MemoryRegion::Indirect {
+            .read(MemoryRegion::Indirect {
                 address: 12,
                 width: 8,
-            })),
+            }),
+            AdvPipe | CryptoStream => {
+                let crypto = matches!(instruction, CryptoStream);
+                let consumed = if crypto { 14 } else { 13 };
+                let mut effect = StackEffect::new(
+                    consumed,
+                    (0..8)
+                        .map(LaneEffect::Computed)
+                        .chain((8..12).map(Input))
+                        .chain((12..consumed).map(LaneEffect::Computed))
+                        .collect(),
+                    vec![],
+                )
+                .trapping()
+                .write(
+                    MemoryRegion::Indirect {
+                        address: consumed - 1,
+                        width: 8,
+                    },
+                    (0..8).map(WriteValue::Output).collect(),
+                );
+                if crypto {
+                    effect = effect.read(MemoryRegion::Indirect {
+                        address: 12,
+                        width: 8,
+                    });
+                }
+                effect
+            }
             MTreeGet => StackEffect::new(
                 6,
                 (0..4).map(LaneEffect::Computed).chain((2..6).map(Input)).collect(),
@@ -546,12 +633,13 @@ impl TargetEffects {
                 StackEffect::new(0, vec![], vec![])
             }
             MemStoreWLe => {
-                StackEffect::new(5, (1..5).map(Input).collect(), vec![FloorStep::Pop(1)])
-                    .memory(MemoryEffect::Write(MemoryRegion::Indirect {
+                StackEffect::new(5, (1..5).map(Input).collect(), vec![FloorStep::Pop(1)]).write(
+                    MemoryRegion::Indirect {
                         address: 0,
                         width: 4,
-                    }))
-                    .writes(vec![1, 2, 3, 4])
+                    },
+                    (0..4).map(WriteValue::Output).collect(),
+                )
             }
             Nop => StackEffect::new(0, vec![], vec![]),
             Drop => StackEffect::new(1, vec![], vec![FloorStep::Pop(1)]),
@@ -579,21 +667,23 @@ impl TargetEffects {
             ),
             LocLoad(offset) => {
                 StackEffect::new(0, vec![LaneEffect::Memory { lane: 0 }], vec![FloorStep::Push(1)])
-                    .memory(MemoryEffect::Read(MemoryRegion::Frame {
+                    .read(MemoryRegion::Frame {
                         offset: u32::from(literal(offset)?),
                         width: 1,
-                    }))
+                    })
             }
             LocStore(offset) => StackEffect::new(
                 1,
                 vec![],
                 vec![FloorStep::Push(1), FloorStep::Pop(1), FloorStep::Pop(1)],
             )
-            .memory(MemoryEffect::Write(MemoryRegion::Frame {
-                offset: u32::from(literal(offset)?),
-                width: 1,
-            }))
-            .writes(vec![0]),
+            .write(
+                MemoryRegion::Frame {
+                    offset: u32::from(literal(offset)?),
+                    width: 1,
+                },
+                vec![WriteValue::Input(0)],
+            ),
             LocLoadWLe(offset) | LocLoadWBe(offset) => {
                 let offset = word_offset(offset)?;
                 let lanes: Vec<_> = if matches!(instruction, LocLoadWLe(_)) {
@@ -606,14 +696,14 @@ impl TargetEffects {
                     lanes.into_iter().map(|lane| LaneEffect::Memory { lane }).collect(),
                     vec![FloorStep::Push(1), FloorStep::Pop(1)],
                 )
-                .memory(MemoryEffect::Read(MemoryRegion::Frame {
+                .read(MemoryRegion::Frame {
                     offset: u32::from(offset),
                     width: 4,
-                }))
+                })
             }
             LocStoreWLe(offset) | LocStoreWBe(offset) => {
                 let offset = word_offset(offset)?;
-                let inputs = if matches!(instruction, LocStoreWLe(_)) {
+                let inputs: Vec<u8> = if matches!(instruction, LocStoreWLe(_)) {
                     (0..4).collect()
                 } else {
                     (0..4).rev().collect()
@@ -623,26 +713,30 @@ impl TargetEffects {
                     (0..4).map(Input).collect(),
                     vec![FloorStep::Push(1), FloorStep::Pop(1)],
                 )
-                .memory(MemoryEffect::Write(MemoryRegion::Frame {
-                    offset: u32::from(offset),
-                    width: 4,
-                }))
-                .writes(inputs)
+                .write(
+                    MemoryRegion::Frame {
+                        offset: u32::from(offset),
+                        width: 4,
+                    },
+                    inputs.into_iter().map(WriteValue::Output).collect(),
+                )
             }
-            MemLoad => StackEffect::new(1, vec![LaneEffect::Memory { lane: 0 }], vec![]).memory(
-                MemoryEffect::Read(MemoryRegion::Indirect {
+            MemLoad => StackEffect::new(1, vec![LaneEffect::Memory { lane: 0 }], vec![]).read(
+                MemoryRegion::Indirect {
                     address: 0,
                     width: 1,
-                }),
+                },
             ),
-            MemStore => StackEffect::new(2, vec![], vec![FloorStep::Pop(2)])
-                .memory(MemoryEffect::Write(MemoryRegion::Indirect {
+            MemStore => StackEffect::new(2, vec![], vec![FloorStep::Pop(2)]).write(
+                MemoryRegion::Indirect {
                     address: 0,
                     width: 1,
-                }))
-                .writes(vec![1]),
+                },
+                vec![WriteValue::Input(1)],
+            ),
             _ => return Err(stack_error("instruction has no registered target-effect rule")),
         };
+        effect.validate()?;
         Ok(effect)
     }
 }

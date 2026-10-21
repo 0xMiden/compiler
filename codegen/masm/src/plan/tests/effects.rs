@@ -128,19 +128,19 @@ fn raw_slots_address_generation_and_word_boundaries_match_vm() -> Result<(), Rep
     assert_eq!(store.consumed, 1);
     assert!(store.outputs.is_empty());
     assert_eq!(
-        store.memory,
-        MemoryEffect::Write(MemoryRegion::Frame {
+        store.memory.write.as_ref().unwrap().region,
+        MemoryRegion::Frame {
             offset: 3,
             width: 1
-        })
+        }
     );
     let load = TargetEffects::instruction(&Instruction::LocLoad(3.into()))?;
     assert_eq!(load.outputs, [LaneEffect::Memory { lane: 0 }]);
     let address = TargetEffects::instruction(&Instruction::Locaddr(3.into()))?;
     assert_eq!(address.outputs, [LaneEffect::FrameAddress(3)]);
     assert_eq!(
-        TargetEffects::instruction(&Instruction::MemLoad)?.memory,
-        MemoryEffect::Read(MemoryRegion::Indirect {
+        TargetEffects::instruction(&Instruction::MemLoad)?.memory.read,
+        Some(MemoryRegion::Indirect {
             address: 0,
             width: 1
         })
@@ -154,8 +154,8 @@ fn raw_slots_address_generation_and_word_boundaries_match_vm() -> Result<(), Rep
         assert_eq!(run_program(&body, &[])?, [Felt::ZERO; 16]);
         let effect = TargetEffects::instruction(&Instruction::LocLoadWLe(offset.into()))?;
         assert_eq!(
-            effect.memory,
-            MemoryEffect::Read(MemoryRegion::Frame {
+            effect.memory.read,
+            Some(MemoryRegion::Frame {
                 offset: offset.into(),
                 width: 4
             })
@@ -248,11 +248,20 @@ fn word_effects_preserve_actual_cell_order() -> Result<(), Report> {
     ] {
         let write = TargetEffects::instruction(&store)?;
         let cell_checks = write
-            .memory_inputs
+            .memory
+            .write
+            .as_ref()
+            .unwrap()
+            .values
             .iter()
             .enumerate()
             .map(|(cell, input)| {
-                format!("loc_load.{cell} push.{} assert_eq", top[usize::from(*input)])
+                format!(
+                    "loc_load.{cell} push.{} assert_eq",
+                    top[usize::from(match *input {
+                        WriteValue::Input(i) | WriteValue::Output(i) => i,
+                    })]
+                )
             })
             .collect::<Vec<_>>()
             .join(" ");
@@ -295,7 +304,6 @@ fn word_effects_preserve_actual_cell_order() -> Result<(), Report> {
 #[test]
 fn unknown_rules_and_unresolved_immediates_fail_closed() {
     for instruction in [
-        Instruction::CryptoStream,
         Instruction::Emit,
         Instruction::EmitImm(crate::masm::Immediate::from(Felt::new_unchecked(999)).into()),
     ] {
@@ -356,20 +364,20 @@ fn indirect_memory_effects_expose_the_address_for_provenance_checking() -> Resul
     let load = TargetEffects::instruction(&Instruction::MemLoad)?;
     let store = TargetEffects::instruction(&Instruction::MemStore)?;
     assert_eq!(
-        load.memory,
-        MemoryEffect::Read(MemoryRegion::Indirect {
+        load.memory.read,
+        Some(MemoryRegion::Indirect {
             address: 0,
             width: 1
         })
     );
     assert_eq!(
-        store.memory,
-        MemoryEffect::Write(MemoryRegion::Indirect {
+        store.memory.write.as_ref().unwrap().region,
+        MemoryRegion::Indirect {
             address: 0,
             width: 1
-        })
+        }
     );
-    assert_eq!(store.memory_inputs, [1]);
+    assert_eq!(store.memory.write.unwrap().values, [WriteValue::Input(1)]);
     let high = 0xffff_ffff_0000_0000u64;
     let output = run(
         &format!(
@@ -456,13 +464,16 @@ fn root_word_store_and_frame_events_match_vm() -> Result<(), Report> {
     assert_eq!(effect.consumed, 5);
     assert_eq!(effect.outputs, (1..5).map(LaneEffect::Input).collect::<Vec<_>>());
     assert_eq!(
-        effect.memory,
-        MemoryEffect::Write(MemoryRegion::Indirect {
+        effect.memory.write.as_ref().unwrap().region,
+        MemoryRegion::Indirect {
             address: 0,
             width: 4
-        })
+        }
     );
-    assert_eq!(effect.memory_inputs, [1, 2, 3, 4]);
+    assert_eq!(
+        effect.memory.write.unwrap().values,
+        (0..4).map(WriteValue::Output).collect::<Vec<_>>()
+    );
     assert_eq!(effect.floor, [FloorStep::Pop(1)]);
     let roots = [0xffff_ffff_0000_0000u64, 13, 17, 19];
     let inputs = core::iter::once(128)
@@ -700,6 +711,8 @@ fn arithmetic_and_fixed_target_rules_match_pinned_assembler_microsteps() -> Resu
         Instruction::LogDeferred,
         Instruction::FriExt2Fold4,
         Instruction::MemStream,
+        Instruction::AdvPipe,
+        Instruction::CryptoStream,
         Instruction::MTreeGet,
         Instruction::MTreeSet,
         Instruction::MTreeMerge,
@@ -768,6 +781,8 @@ fn arithmetic_and_fixed_target_rules_match_pinned_assembler_microsteps() -> Resu
                 | O::HornerBase
                 | O::HornerExt
                 | O::LogDeferred
+                | O::Pipe
+                | O::CryptoStream
                 | O::MStream
                 | O::AdvPopW
                 | O::MpVerify(_)
@@ -977,8 +992,8 @@ fn advice_word_target_rule_is_trapping_replacement() {
     assert_eq!(effect.outputs.len(), 4);
     assert!(effect.may_trap);
     assert!(effect.floor.is_empty());
-    assert_eq!(effect.memory, MemoryEffect::None);
-    assert!(effect.memory_inputs.is_empty());
+    assert_eq!(effect.memory, MemoryEffects::default());
+    assert!(effect.memory.write.is_none());
     assert_eq!(effect.outputs, (0..4).map(LaneEffect::Computed).collect::<Vec<_>>());
 }
 
@@ -1098,8 +1113,8 @@ fn horner_closed_read_and_retained_rules() {
                 .collect::<Vec<_>>()
         );
         assert_eq!(
-            effect.memory,
-            MemoryEffect::Read(MemoryRegion::Indirect {
+            effect.memory.read,
+            Some(MemoryRegion::Indirect {
                 address: 13,
                 width: 4
             })
@@ -1114,7 +1129,7 @@ fn log_deferred_closed_state_rule() {
     let effect = TargetEffects::instruction(&Instruction::LogDeferred).unwrap();
     assert_eq!(effect.consumed, 12);
     assert_eq!(effect.outputs, (0..12).map(LaneEffect::Computed).collect::<Vec<_>>());
-    assert_eq!(effect.memory, MemoryEffect::None);
+    assert_eq!(effect.memory, MemoryEffects::default());
     assert!(effect.may_trap);
     assert!(effect.floor.is_empty());
 }
@@ -1280,8 +1295,8 @@ fn memstream_closed_read_and_lane_rule() {
             .collect::<Vec<_>>()
     );
     assert_eq!(
-        effect.memory,
-        MemoryEffect::Read(MemoryRegion::Indirect {
+        effect.memory.read,
+        Some(MemoryRegion::Indirect {
             address: 12,
             width: 8
         })
@@ -1396,7 +1411,7 @@ fn fri_closed_tuple_floor_and_retained_rule() {
     assert_eq!(effect.outputs[15], LaneEffect::Input(16));
     assert_eq!(effect.floor, vec![FloorStep::Pop(1)]);
     assert!(effect.may_trap);
-    assert_eq!(effect.memory, MemoryEffect::None);
+    assert_eq!(effect.memory, MemoryEffects::default());
 }
 
 /// Build samples from a polynomial, independently of the processor's folding helpers.
@@ -1514,4 +1529,82 @@ fn log_deferred_raw_actual_minimum_floor() {
         .chain(input[12..].iter().copied())
         .collect::<Vec<_>>();
     assert_eq!(run_program("begin log_deferred end", &input).unwrap(), expected);
+}
+
+#[test]
+fn stream_write_closed_rules_have_exact_windows() {
+    for (instruction, width) in [(Instruction::AdvPipe, 13), (Instruction::CryptoStream, 14)] {
+        let effect = TargetEffects::instruction(&instruction).unwrap();
+        assert_eq!(effect.consumed, width);
+        assert_eq!(effect.outputs.len(), usize::from(width));
+        assert!(effect.may_trap);
+        assert!(effect.floor.is_empty());
+        assert_eq!(&effect.outputs[8..12], &(8..12).map(LaneEffect::Input).collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn stream_write_metadata_rejects_invalid_dependencies_before_indexing() {
+    let base = TargetEffects::instruction(&Instruction::CryptoStream).unwrap();
+    for mutation in 0..12 {
+        let mut bad = base.clone();
+        match mutation {
+            0 => {
+                bad.memory.read = Some(MemoryRegion::Indirect {
+                    address: 14,
+                    width: 8,
+                })
+            }
+            1 => bad.memory.read = Some(MemoryRegion::SourceUnknown { width: 0 }),
+            2 => {
+                bad.memory.write.as_mut().unwrap().region = MemoryRegion::Indirect {
+                    address: 14,
+                    width: 8,
+                }
+            }
+            3 => bad.memory.write.as_mut().unwrap().values[0] = WriteValue::Input(14),
+            4 => bad.memory.write.as_mut().unwrap().values[0] = WriteValue::Output(14),
+            5 => {
+                bad.memory.write.as_mut().unwrap().values.pop();
+            }
+            6 => {
+                bad.memory.write.as_mut().unwrap().region = MemoryRegion::SourceUnknown { width: 0 }
+            }
+            7 => {
+                bad.memory.read = None;
+                bad.outputs[0] = LaneEffect::Memory { lane: 0 };
+            }
+            8 => bad.outputs[0] = LaneEffect::Memory { lane: 8 },
+            9 => bad.outputs[0] = LaneEffect::Input(14),
+            10 => {
+                bad.outputs[0] = LaneEffect::Conditional {
+                    condition: 14,
+                    if_true: 0,
+                    if_false: 1,
+                }
+            }
+            _ => {
+                bad.outputs[0] = LaneEffect::Conditional {
+                    condition: 0,
+                    if_true: 14,
+                    if_false: 1,
+                }
+            }
+        }
+        assert!(bad.validate().is_err(), "mutation {mutation}");
+    }
+    assert!(base.validate().is_ok());
+    let pipe = TargetEffects::instruction(&Instruction::AdvPipe).unwrap();
+    assert!(pipe.memory.read.is_none());
+    for effect in [base, pipe] {
+        let write = effect.memory.write.unwrap();
+        assert_eq!(
+            write.region,
+            MemoryRegion::Indirect {
+                address: effect.consumed - 1,
+                width: 8
+            }
+        );
+        assert_eq!(write.values, (0..8).map(WriteValue::Output).collect::<Vec<_>>());
+    }
 }

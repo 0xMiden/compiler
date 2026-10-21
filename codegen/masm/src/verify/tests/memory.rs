@@ -321,3 +321,164 @@ fn direct_source_local_accesses_use_compositional_unit_capabilities() {
         );
     }
 }
+
+#[test]
+fn stream_write_output_word_stores_preserve_exact_cells_and_untouched_neighbor() {
+    for big_endian in [false, true] {
+        let mut fixture = Fixture::new(5, 5).scratch(5);
+        fixture.proof.aliases =
+            LaneAliases::new((0..5).map(|i| (Fixture::output(i), Fixture::input(i))).collect());
+        for cell in 0..5 {
+            let output = if big_endian && cell < 4 {
+                3 - cell
+            } else {
+                cell
+            };
+            fixture.proof.scratch_outputs.push((
+                FrameRef::Scratch {
+                    object: ScratchId(0),
+                    offset: cell,
+                },
+                output,
+            ));
+        }
+        let (store, load) = if big_endian {
+            (Instruction::LocStoreWBe(0.into()), Instruction::LocLoadWBe(0.into()))
+        } else {
+            (Instruction::LocStoreWLe(0.into()), Instruction::LocLoadWLe(0.into()))
+        };
+        let code = vec![
+            inst(Instruction::MovUp4),
+            inst(Instruction::LocStore(4.into())),
+            inst(store),
+            inst(Instruction::DropW),
+            inst(Instruction::LocLoad(4.into())),
+            inst(Instruction::PadW),
+            inst(load),
+        ];
+        // Recovered lanes must be the original four distinct inputs, independently of the
+        // contents claimed by scratch_outputs; publication cannot bless a wrong store order.
+        fixture.run(code.clone()).unwrap();
+        let mut reversed_store = code.clone();
+        reversed_store[2] = inst(if big_endian {
+            Instruction::LocStoreWLe(0.into())
+        } else {
+            Instruction::LocStoreWBe(0.into())
+        });
+        assert!(fixture.run(reversed_store).is_err());
+        let mut clobbered_neighbor = code.clone();
+        clobbered_neighbor.insert(4, inst(Instruction::LocStore(4.into())));
+        clobbered_neighbor.insert(4, push(0));
+        assert!(fixture.run(clobbered_neighbor).is_err());
+        let first = fixture.proof.scratch_outputs[0].1;
+        fixture.proof.scratch_outputs[0].1 = fixture.proof.scratch_outputs[3].1;
+        fixture.proof.scratch_outputs[3].1 = first;
+        assert!(fixture.run(code).is_err());
+    }
+}
+
+#[test]
+fn stream_write_output_backed_indirect_store_rejects_compiler_address_escape() {
+    let mut fixture = Fixture::new(0, 4).scratch(1);
+    fixture.effects.memory = SourceMemoryEffects::WRITE;
+    let code = vec![
+        push(11),
+        push(22),
+        push(33),
+        inst(Instruction::Locaddr(0.into())),
+        push(400),
+        inst(Instruction::MemStoreWLe),
+    ];
+    assert_eq!(
+        fixture.run(code).unwrap_err().category,
+        DiagnosticCategory::InvalidSpillSlotRead
+    );
+}
+
+#[test]
+fn stream_write_native_requires_both_source_permissions_and_preserves_compiler_boundary() {
+    for permission in [
+        SourceMemoryEffects::default(),
+        SourceMemoryEffects::READ,
+        SourceMemoryEffects::WRITE,
+        SourceMemoryEffects::READ_WRITE,
+    ] {
+        let mut fixture = Fixture::new(14, 14);
+        fixture.effects.memory = permission;
+        fixture.effects.may_trap = true;
+        let result = fixture.run(vec![inst(Instruction::CryptoStream)]);
+        assert_eq!(
+            result.is_ok(),
+            permission == SourceMemoryEffects::READ_WRITE,
+            "{permission:?}: {result:?}"
+        );
+    }
+    for instruction in [Instruction::AdvPipe, Instruction::CryptoStream] {
+        let width = if instruction == Instruction::AdvPipe {
+            13
+        } else {
+            14
+        };
+        let mut fixture = Fixture::new(0, width).scratch(8);
+        fixture.effects.memory = SourceMemoryEffects::READ_WRITE;
+        fixture.effects.may_trap = true;
+        let mut code = vec![inst(Instruction::Locaddr(0.into()))];
+        code.extend((1..width).map(|_| push(1)));
+        code.push(inst(instruction));
+        // Native opaque computations cannot erase a compiler address or invent affine pointers.
+        assert_eq!(fixture.run(code).unwrap_err().category, DiagnosticCategory::IllegalStackAccess);
+    }
+}
+
+#[test]
+fn stream_write_crypto_checks_complete_prewrite_read_initialization() {
+    for initialized in [0, 7, 8] {
+        let mut fixture = Fixture::new(0, 14).scratch(8);
+        fixture.effects.memory = SourceMemoryEffects::READ_WRITE;
+        fixture.effects.may_trap = true;
+        let mut code = Vec::new();
+        for offset in 0..initialized {
+            code.extend([push(11), inst(Instruction::LocStore(offset.into()))]);
+        }
+        code.extend([push(400), inst(Instruction::Locaddr(0.into()))]);
+        code.extend((0..12).map(|_| push(1)));
+        code.push(inst(Instruction::CryptoStream));
+        // Missing the eighth read cell cannot be hidden by opaque output computation or writes.
+        assert_eq!(
+            fixture.run(code).unwrap_err().category,
+            if initialized < 8 {
+                DiagnosticCategory::InvalidSpillSlotRead
+            } else {
+                DiagnosticCategory::IllegalStackAccess
+            }
+        );
+    }
+}
+
+#[test]
+fn stream_write_native_cannot_cross_source_local_into_compiler_storage() {
+    for crypto in [false, true] {
+        let n = if crypto { 14 } else { 13 };
+        let mut fixture = Fixture::new(0, n).scratch(4);
+        fixture.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent: 4,
+        };
+        fixture.effects.memory = SourceMemoryEffects::READ_WRITE;
+        fixture.effects.may_trap = true;
+        let mut code = vec![inst(Instruction::Locaddr(0.into()))];
+        if crypto {
+            code.push(push(400));
+        }
+        code.extend((0..12).map(|_| push(1)));
+        code.push(inst(if crypto {
+            Instruction::CryptoStream
+        } else {
+            Instruction::AdvPipe
+        }));
+        assert_eq!(
+            fixture.run(code).unwrap_err().category,
+            DiagnosticCategory::InvalidSpillSlotRead
+        );
+    }
+}
