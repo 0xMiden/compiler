@@ -17,6 +17,8 @@ pub(crate) enum Kind {
     LogDeferred,
     FriExt2Fold4,
     MemStream,
+    AdvicePipe,
+    CryptoStream,
     MTreeGet,
     MTreeSet,
     MTreeMerge,
@@ -48,7 +50,8 @@ impl Intrinsic {
             HMerge => (vec![Type::Felt; 8], vec![Type::Felt; 4]),
             HPerm | LogDeferred => (vec![Type::Felt; 12], vec![Type::Felt; 12]),
             HornerBase | HornerExt => (vec![Type::Felt; 16], vec![Type::Felt; 16]),
-            MemStream => (vec![Type::Felt; 13], vec![Type::Felt; 13]),
+            AdvicePipe | MemStream => (vec![Type::Felt; 13], vec![Type::Felt; 13]),
+            CryptoStream => (vec![Type::Felt; 14], vec![Type::Felt; 14]),
             FriExt2Fold4 => (vec![Type::Felt; 17], vec![Type::Felt; 16]),
             MTreeGet => (vec![Type::Felt; 6], vec![Type::Felt; 8]),
             MTreeSet => (vec![Type::Felt; 10], vec![Type::Felt; 8]),
@@ -90,6 +93,8 @@ impl Intrinsic {
             LogDeferred => emitter.log_deferred(op.span()),
             FriExt2Fold4 => emitter.fri_ext2fold4(op.span()),
             MemStream => emitter.mem_stream(op.span()),
+            AdvicePipe => emitter.advice_pipe(op.span()),
+            CryptoStream => emitter.crypto_stream(op.span()),
             MTreeGet => emitter.mtree_get(op.span()),
             MTreeSet => emitter.mtree_set(op.span()),
             MTreeMerge => emitter.mtree_merge(op.span()),
@@ -116,7 +121,7 @@ impl Intrinsic {
                 MTreeGet => (4..8).map(|i| (i, i - 2)).collect(),
                 MTreeVerify => (0..10).map(|i| (i, i)).collect(),
                 HornerBase | HornerExt => (0..14).map(|i| (i, i)).collect(),
-                MemStream => (8..12).map(|i| (i, i)).collect(),
+                AdvicePipe | CryptoStream | MemStream => (8..12).map(|i| (i, i)).collect(),
                 FriExt2Fold4 => vec![(11, 8), (15, 16)],
                 _ => vec![],
             },
@@ -134,8 +139,14 @@ impl Intrinsic {
                         | LogDeferred
                         | FriExt2Fold4
                         | MemStream
+                        | AdvicePipe
+                        | CryptoStream
                 ),
-                memory: if matches!(kind, HornerBase | HornerExt | MemStream) {
+                memory: if matches!(kind, CryptoStream) {
+                    SourceMemoryEffects::READ_WRITE
+                } else if matches!(kind, AdvicePipe) {
+                    SourceMemoryEffects::WRITE
+                } else if matches!(kind, HornerBase | HornerExt | MemStream) {
                     SourceMemoryEffects::READ
                 } else {
                     SourceMemoryEffects::default()

@@ -2985,6 +2985,8 @@ intrinsic_selection! {
     hir::LogDeferred => LogDeferred,
     hir::FriExt2Fold4 => FriExt2Fold4,
     hir::MemStream => MemStream,
+    hir::AdvicePipe => AdvicePipe,
+    hir::CryptoStream => CryptoStream,
     hir::AdvicePop => AdvicePop,
     hir::AdviceLoadWord => AdviceLoadWord,
     hir::Caller => Caller,

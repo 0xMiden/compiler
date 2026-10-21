@@ -124,6 +124,8 @@ pub(super) fn fixtures() -> Vec<(Parsed, bool)> {
         ("log_deferred", 12, 12),
         ("fri_ext_2_fold_4", 17, 16),
         ("mem_stream", 13, 13),
+        ("advice_pipe", 13, 13),
+        ("crypto_stream", 14, 14),
         ("advice_pop", 0, 1),
         ("advice_load_word", 4, 4),
         ("clk", 0, 1),
@@ -1767,6 +1769,8 @@ fn horner_log_deferred_source_tuples_effects_aliases_and_physical_mutations_reje
         ("horner_ext", 16, 16),
         ("log_deferred", 12, 12),
         ("mem_stream", 13, 13),
+        ("advice_pipe", 13, 13),
+        ("crypto_stream", 14, 14),
         ("fri_ext_2_fold_4", 17, 16),
     ] {
         for ty in [
@@ -1821,11 +1825,17 @@ fn horner_log_deferred_source_tuples_effects_aliases_and_physical_mutations_reje
         let env = SelectEnv::default();
         let selected = select_function(&function, &env).unwrap();
         let source_unit = &selected.segments[0].units[0];
-        assert_eq!(source_unit.effects.memory.read, matches!(n, 13 | 16));
-        assert!(!source_unit.effects.memory.write);
+        assert_eq!(
+            source_unit.effects.memory.read,
+            matches!(name, "horner_base" | "horner_ext" | "mem_stream" | "crypto_stream")
+        );
+        assert_eq!(
+            source_unit.effects.memory.write,
+            matches!(name, "advice_pipe" | "crypto_stream")
+        );
         let aliases = match n {
             16 => (0..14).map(|i| (i, i)).collect::<Vec<_>>(),
-            13 => (8..12).map(|i| (i, i)).collect(),
+            13 | 14 => (8..12).map(|i| (i, i)).collect(),
             17 => vec![(11, 8), (15, 16)],
             _ => vec![],
         };
@@ -1851,7 +1861,7 @@ fn horner_log_deferred_source_tuples_effects_aliases_and_physical_mutations_reje
                 2 => unit.outputs.swap(0, 1),
                 3 => unit.effects.may_trap = false,
                 4 => unit.effects.memory.read = !unit.effects.memory.read,
-                5 => unit.effects.memory.write = true,
+                5 => unit.effects.memory.write = !unit.effects.memory.write,
                 _ => unit.stack_inputs.swap(0, 1),
             }
             assert!(
@@ -1887,6 +1897,8 @@ fn horner_log_deferred_source_tuples_effects_aliases_and_physical_mutations_reje
                                 | crate::masm::Instruction::HornerExt
                                 | crate::masm::Instruction::LogDeferred
                                 | crate::masm::Instruction::MemStream
+                                | crate::masm::Instruction::AdvPipe
+                                | crate::masm::Instruction::CryptoStream
                                 | crate::masm::Instruction::FriExt2Fold4,
                             ..
                         }
@@ -2542,6 +2554,8 @@ fn fri_and_compound_actual_source_operand_counts_reject() {
         ("horner_ext", 16, 16),
         ("log_deferred", 12, 12),
         ("mem_stream", 13, 13),
+        ("advice_pipe", 13, 13),
+        ("crypto_stream", 14, 14),
         ("fri_ext_2_fold_4", 17, 16),
     ] {
         for added in [false, true] {
@@ -2866,5 +2880,534 @@ fn memstream_and_horner_read_permission_does_not_authorize_native_writes() {
         }
         let error = verify::verify(&plan, &frame, body).unwrap_err().to_string();
         assert!(error.contains("unregistered source memory effect"), "{name}: {error}");
+    }
+}
+
+#[test]
+fn stream_write_exact_source_selection() {
+    for (name, width) in [("advice_pipe", 13), ("crypto_stream", 14)] {
+        let f = fixture(name, width, width);
+        let selected = checked(&f, &SelectEnv::default());
+        assert!(selected.segments[0].units[0].effects.memory.write);
+        assert_eq!(selected.segments[0].units[0].effects.memory.read, width == 14);
+        ready(&f, &SelectEnv::default());
+    }
+}
+
+/// Execute the public selected body with an actual sixteen-lane initial floor and overflow.
+fn stream_write_run(
+    procedure: &str,
+    input: &[usize],
+    expected: &[usize],
+    initialize: &str,
+    checks: &str,
+    advice: &[u64],
+) -> Result<(), midenc_hir::Report> {
+    use miden_core::Felt;
+    use miden_processor::{FastProcessor, StackInputs, advice::AdviceInputs};
+
+    use crate::plan::tests::lowering_units::{assert_top, push_top};
+    assert!(input.len() >= 16);
+    let code = format!(
+        "{procedure} begin {initialize} {} sdepth push.{} assert_eq exec.selected sdepth push.{} \
+         assert_eq {checks} {} end",
+        push_top(&input[..input.len() - 16]),
+        input.len(),
+        input.len(),
+        assert_top(expected)
+    );
+    let program = miden_assembly::Assembler::default()
+        .assemble_program("stream_write", code)?
+        .try_into_program()?;
+    let base = input[input.len() - 16..]
+        .iter()
+        .map(|n| Felt::new_unchecked(*n as u64))
+        .collect::<Vec<_>>();
+    FastProcessor::new(StackInputs::new(&base).unwrap())
+        .with_advice(
+            AdviceInputs::default()
+                .with_stack(advice.iter().copied().map(Felt::new_unchecked).collect()),
+        )
+        .unwrap()
+        .execute_sync(&program, &mut crate::plan::tests::lowering_units::host())
+        .map_err(|e| midenc_hir::Report::msg(e.to_string()))?;
+    Ok(())
+}
+
+#[test]
+fn stream_write_advice_selected_all_lanes_provider_memory_floor_and_mutants() {
+    let f = fixture("advice_pipe", 13, 13);
+    let (_, frame, _) = ready(&f, &SelectEnv::default());
+    assert_eq!(frame.aligned_size(), 0);
+    assert!(frame.spills().is_empty());
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    for suffix_len in [3, 20] {
+        for dst in [400usize, 0xffff_fff8] {
+            let advice = [0, 1, 0xffff_ffff_0000_0000, 37, 53, 79, 2147483648, 113, 97, 98];
+            let mut input = (0..12).map(|i| 101 + i * 37).chain([dst]).collect::<Vec<_>>();
+            input.extend((0..suffix_len).map(|i| 10001 + i));
+            let mut expected = advice[..8].iter().map(|v| *v as usize).collect::<Vec<_>>();
+            expected.extend(&input[8..12]);
+            expected.push(dst + 8);
+            expected.extend(&input[13..]);
+            let initialize = (0..8)
+                .map(|i| format!("push.71 mem_store.{}", dst + i))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let checks = advice[..8]
+                .iter()
+                .enumerate()
+                .map(|(i, v)| format!("mem_load.{} push.{v} assert_eq", dst + i))
+                .chain(["adv_push push.97 assert_eq".into()])
+                .collect::<Vec<_>>()
+                .join(" ");
+            stream_write_run(&procedure, &input, &expected, &initialize, &checks, &advice).unwrap();
+            for replacement in [
+                "nop",
+                "adv_pipe swap.1",
+                "adv_pipe movup.12 add.1 movdn.12",
+                "adv_pipe adv_push drop",
+            ] {
+                let error = stream_write_run(
+                    &procedure.replace("adv_pipe", replacement),
+                    &input,
+                    &expected,
+                    &initialize,
+                    &checks,
+                    &advice,
+                )
+                .unwrap_err()
+                .to_string();
+                assert!(error.contains("assertion failed"), "{replacement}: {error}");
+            }
+        }
+    }
+    // Two selected invocations consume exactly sixteen advice elements and advance twice.
+    let mut input =
+        (0..12).map(|i| 101 + i).chain([400]).chain([901, 902, 903]).collect::<Vec<_>>();
+    let advice = (1..=16).chain([97]).collect::<Vec<u64>>();
+    let mut expected = (9..=16).collect::<Vec<usize>>();
+    expected.extend(&input[8..12]);
+    expected.push(416);
+    expected.extend(&input[13..]);
+    let checks = (1..=16)
+        .enumerate()
+        .map(|(i, v)| format!("mem_load.{} push.{v} assert_eq", 400 + i))
+        .chain(["adv_push push.97 assert_eq".into()])
+        .collect::<Vec<_>>()
+        .join(" ");
+    let twice = procedure.replace("adv_pipe", "adv_pipe adv_pipe");
+    stream_write_run(&twice, &input, &expected, "", &checks, &advice).unwrap();
+    input.clear();
+}
+
+#[test]
+fn stream_write_crypto_selected_field_memory_floor_adjacency_and_mutants() {
+    use miden_core::Felt;
+    let f = fixture("crypto_stream", 14, 14);
+    let (_, frame, _) = ready(&f, &SelectEnv::default());
+    assert_eq!(frame.aligned_size(), 0);
+    assert!(frame.spills().is_empty());
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    for suffix_len in [2, 20] {
+        for (src, dst) in [
+            (400usize, 408usize),
+            (408, 400),
+            (400, 800),
+            (0xffff_fff8, 800),
+            (400, 0xffff_fff8),
+        ] {
+            for written in [false, true] {
+                let mut plain = (0..8)
+                    .map(|i| {
+                        if written {
+                            0xffff_ffff_0000_0000usize - i * 17
+                        } else {
+                            0
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                if src == 0xffff_fff8 {
+                    plain[6] = 2147483648;
+                }
+                let mut input = (0..12)
+                    .map(|i| 101 + i * 37)
+                    .chain([src, dst])
+                    .chain((0..suffix_len).map(|i| 10001 + i))
+                    .collect::<Vec<_>>();
+                // A terminal destination includes the reserved FMP initializer. Preserve it so
+                // the selected procedure's zero-sized frame is safe even at this endpoint.
+                if dst == 0xffff_fff8 {
+                    input[6] = (Felt::new_unchecked(2147483648)
+                        - Felt::new_unchecked(plain[6] as u64))
+                    .as_canonical_u64() as usize;
+                }
+                let cipher = (0..8)
+                    .map(|i| {
+                        (Felt::new_unchecked(plain[i] as u64)
+                            + Felt::new_unchecked(input[i] as u64))
+                        .as_canonical_u64() as usize
+                    })
+                    .collect::<Vec<_>>();
+                let mut expected = cipher.clone();
+                expected.extend(&input[8..12]);
+                expected.extend([src + 8, dst + 8]);
+                expected.extend(&input[14..]);
+                let initialize = plain
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| written && !(src == 0xffff_fff8 && *i == 6))
+                    .map(|(i, v)| format!("push.{v} mem_store.{}", src + i))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let checks = cipher
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| format!("mem_load.{} push.{v} assert_eq", dst + i))
+                    .chain(
+                        plain
+                            .iter()
+                            .enumerate()
+                            .map(|(i, v)| format!("mem_load.{} push.{v} assert_eq", src + i)),
+                    )
+                    .chain(["adv_push push.97 assert_eq".into()])
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                stream_write_run(&procedure, &input, &expected, &initialize, &checks, &[97])
+                    .unwrap();
+                for replacement in [
+                    "nop",
+                    "crypto_stream push.1 add",
+                    "crypto_stream movup.12 add.1 movdn.12",
+                    "crypto_stream movup.13 add.1 movdn.13",
+                ] {
+                    let error = stream_write_run(
+                        &procedure.replace("crypto_stream", replacement),
+                        &input,
+                        &expected,
+                        &initialize,
+                        &checks,
+                        &[97],
+                    )
+                    .unwrap_err()
+                    .to_string();
+                    assert!(error.contains("assertion failed"), "{replacement}: {error}");
+                }
+            }
+        }
+    }
+    let input = (0..12).map(|i| 101 + i).chain([400, 800]).chain([901, 902]).collect::<Vec<_>>();
+    let mut expected = (0..8).map(|i| 101 + i + 2 * (i + 1)).collect::<Vec<_>>();
+    expected.extend(&input[8..12]);
+    expected.extend([416, 816]);
+    expected.extend(&input[14..]);
+    let init = (0..16)
+        .map(|i| format!("push.{} mem_store.{}", i % 8 + 1, 400 + i))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let checks = (0..16)
+        .map(|i| {
+            format!(
+                "mem_load.{} push.{} assert_eq",
+                800 + i,
+                101 + i % 8 + (i / 8 + 1) * (i % 8 + 1)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    stream_write_run(
+        &procedure.replace("crypto_stream", "crypto_stream crypto_stream"),
+        &input,
+        &expected,
+        &init,
+        &checks,
+        &[],
+    )
+    .unwrap();
+}
+
+fn stream_write_failure(
+    procedure: &str,
+    input: &[usize],
+    initialize: &str,
+    advice: &[u64],
+    limit: Option<usize>,
+) -> (miden_processor::FastProcessor, miden_processor::ExecutionError) {
+    use miden_core::Felt;
+    use miden_processor::{ExecutionOptions, FastProcessor, StackInputs, advice::AdviceInputs};
+    let code = format!(
+        "{procedure} begin {initialize} {} exec.selected end",
+        crate::plan::tests::lowering_units::push_top(input)
+    );
+    let program = miden_assembly::Assembler::default()
+        .assemble_program("stream_write_failure", code)
+        .unwrap()
+        .try_into_program()
+        .unwrap();
+    let mut processor = FastProcessor::new(StackInputs::default())
+        .with_advice(
+            AdviceInputs::default()
+                .with_stack(advice.iter().copied().map(Felt::new_unchecked).collect()),
+        )
+        .unwrap();
+    if let Some(limit) = limit {
+        processor = processor
+            .with_options(ExecutionOptions::default().with_max_memory_elements(limit))
+            .unwrap();
+    }
+    let mut host = crate::plan::tests::lowering_units::host();
+    let mut context = processor.get_initial_resume_context(&program).unwrap();
+    loop {
+        match processor.step_sync(&mut host, context) {
+            Ok(Some(next)) => context = next,
+            Ok(None) => panic!("expected failure"),
+            Err(error) => return (processor, error),
+        }
+    }
+}
+
+#[test]
+fn stream_write_advice_failures_preserve_provider_order_and_partial_writes() {
+    use miden_core::Felt;
+    let f = fixture("advice_pipe", 13, 13);
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    for count in 0..8 {
+        // Exhaustion precedes destination validation and consumes no partial advice word.
+        let input = (0..12).map(|i| 101 + i).chain([401]).collect::<Vec<_>>();
+        let advice = (1..=count).collect::<Vec<u64>>();
+        let initialize = (401..409)
+            .map(|address| format!("push.{} mem_store.{address}", 9000 + address))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let (processor, error) =
+            stream_write_failure(&procedure, &input, &initialize, &advice, None);
+        assert!(matches!(error, miden_processor::ExecutionError::AdviceError { .. }), "{error}");
+        assert_eq!(
+            processor
+                .stack_top()
+                .iter()
+                .rev()
+                .take(13)
+                .map(|f| f.as_canonical_u64() as usize)
+                .collect::<Vec<_>>(),
+            input
+        );
+        for address in 401..409 {
+            assert_eq!(
+                processor
+                    .memory()
+                    .read_element(Default::default(), Felt::new_unchecked(address))
+                    .unwrap(),
+                Felt::new_unchecked(9000 + address)
+            );
+        }
+        let (provider, _) = processor.into_parts();
+        assert_eq!(
+            provider.stack().iter().map(|f| f.as_canonical_u64()).collect::<Vec<_>>(),
+            advice
+        );
+    }
+    for (dst, limit, first_written) in [
+        (401usize, None, false),
+        (1usize << 32, None, false),
+        (0xffff_fffc, None, true),
+        (400, Some(8), true),
+    ] {
+        let input = (0..12).map(|i| 101 + i).chain([dst]).collect::<Vec<_>>();
+        let advice = (1..=8).chain([97]).collect::<Vec<u64>>();
+        let (processor, error) = stream_write_failure(&procedure, &input, "", &advice, limit);
+        assert!(matches!(error, miden_processor::ExecutionError::MemoryError { .. }), "{error}");
+        assert_eq!(
+            processor
+                .stack_top()
+                .iter()
+                .rev()
+                .take(13)
+                .map(|f| f.as_canonical_u64() as usize)
+                .collect::<Vec<_>>(),
+            input
+        );
+        if dst <= u32::MAX as usize {
+            for i in 0..4 {
+                let value = processor
+                    .memory()
+                    .read_element(Default::default(), Felt::new_unchecked((dst + i) as u64))
+                    .unwrap();
+                // The final memory word includes the VM's reserved FMP initializer.
+                let before = if dst + i == 4294967294 { 2147483648 } else { 0 };
+                assert_eq!(
+                    value.as_canonical_u64(),
+                    if first_written { i as u64 + 1 } else { before }
+                );
+            }
+        }
+        if dst == 400 {
+            for i in 4..8 {
+                assert_eq!(
+                    processor
+                        .memory()
+                        .read_element(Default::default(), Felt::new_unchecked((dst + i) as u64))
+                        .unwrap(),
+                    Felt::ZERO
+                );
+            }
+        }
+        let (provider, _) = processor.into_parts();
+        assert_eq!(provider.stack(), vec![Felt::new_unchecked(97)]);
+    }
+    let input = (0..12).map(|i| 101 + i).chain([0xffff_fff8]).collect::<Vec<_>>();
+    let (processor, error) = stream_write_failure(
+        &procedure.replace("adv_pipe", "adv_pipe adv_pipe"),
+        &input,
+        "",
+        &(1..=16).chain([97]).collect::<Vec<_>>(),
+        None,
+    );
+    assert!(matches!(error, miden_processor::ExecutionError::MemoryError { .. }));
+    assert_eq!(processor.stack_top()[3].as_canonical_u64(), 1u64 << 32);
+    assert_eq!(processor.into_parts().0.stack(), vec![Felt::new_unchecked(97)]);
+}
+
+#[test]
+fn stream_write_crypto_failures_validate_ranges_and_overlap_before_writes() {
+    use miden_core::Felt;
+    let f = fixture("crypto_stream", 14, 14);
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    for (src, dst) in [
+        (400usize, 400usize),
+        (400, 404),
+        (404, 400),
+        (401, 401),
+        (400, 401),
+        (401, 800),
+        (400, 801),
+        (1usize << 32, 800),
+        (400, 1usize << 32),
+        (0xffff_fffc, 800),
+        (400, 0xffff_fffc),
+    ] {
+        let input = (0..12).map(|i| 101 + i).chain([src, dst]).collect::<Vec<_>>();
+        let (processor, error) = stream_write_failure(&procedure, &input, "", &[97], None);
+        assert!(
+            matches!(error, miden_processor::ExecutionError::MemoryError { .. }),
+            "{src}/{dst}: {error}"
+        );
+        if src == dst || src.abs_diff(dst) < 8 {
+            assert!(
+                matches!(
+                    error,
+                    miden_processor::ExecutionError::MemoryError {
+                        err: miden_processor::MemoryError::IllegalMemoryAccess { .. },
+                        ..
+                    }
+                ),
+                "range/overlap validation must precede unaligned access: {error}"
+            );
+        }
+        assert_eq!(
+            processor
+                .stack_top()
+                .iter()
+                .rev()
+                .take(14)
+                .map(|f| f.as_canonical_u64() as usize)
+                .collect::<Vec<_>>(),
+            input
+        );
+        if dst < (1usize << 32) {
+            assert_eq!(
+                processor
+                    .memory()
+                    .read_element(Default::default(), Felt::new_unchecked(dst as u64))
+                    .unwrap(),
+                Felt::ZERO
+            );
+        }
+        assert_eq!(processor.into_parts().0.stack(), vec![Felt::new_unchecked(97)]);
+    }
+    let input = (0..12).map(|i| 101 + i).chain([400, 800]).collect::<Vec<_>>();
+    // The program initializer owns one word; cap two allows only destination word0.
+    let (processor, error) = stream_write_failure(&procedure, &input, "", &[97], Some(8));
+    assert!(matches!(error, miden_processor::ExecutionError::MemoryError { .. }));
+    assert_eq!(
+        processor
+            .stack_top()
+            .iter()
+            .rev()
+            .take(14)
+            .map(|f| f.as_canonical_u64() as usize)
+            .collect::<Vec<_>>(),
+        input
+    );
+    for (i, lane) in input.iter().take(8).enumerate() {
+        assert_eq!(
+            processor
+                .memory()
+                .read_element(Default::default(), Felt::new_unchecked(800 + i as u64))
+                .unwrap()
+                .as_canonical_u64(),
+            if i < 4 { *lane as u64 } else { 0 }
+        );
+    }
+    assert_eq!(processor.into_parts().0.stack(), vec![Felt::new_unchecked(97)]);
+}
+
+#[test]
+fn stream_write_selected_spill_and_normalization_preserves_all_live_values() {
+    for (name, n) in [("advice_pipe", 13), ("crypto_stream", 14)] {
+        let args = (0..20)
+            .map(|i| format!("%s{i}: felt"))
+            .chain((0..n).map(|i| format!("%a{i}: felt")))
+            .collect::<Vec<_>>()
+            .join(",");
+        let operands = (0..n).map(|i| format!("%a{i}")).collect::<Vec<_>>().join(",");
+        let results = (0..n).map(|i| format!("%r{i}")).collect::<Vec<_>>().join(",");
+        let returned = (0..20)
+            .map(|i| format!("%s{i}"))
+            .chain((0..n).map(|i| format!("%r{i}")))
+            .collect::<Vec<_>>()
+            .join(",");
+        let types = vec!["felt"; 20 + n].join(",");
+        let f = parse(&format!(
+            "builtin.function public extern(\"C\") @stream_spill({args}) -> ({types}) {{ \
+             {results}=hir.{name} {operands}; builtin.ret {returned} : ({types}); }};"
+        ));
+        let (_, frame, _) = ready(&f, &SelectEnv::default());
+        assert!(!frame.spills().is_empty());
+        let procedure = selected_procedure(&f, &SelectEnv::default());
+        let mut input =
+            (0..20).map(|i| 10001 + i).chain((0..12).map(|i| 101 + i)).collect::<Vec<_>>();
+        if n == 14 {
+            input.extend([400, 800]);
+        } else {
+            input.push(800);
+        }
+        let mut expected = input[..20].to_vec();
+        expected.extend(if n == 14 {
+            (0..8).map(|i| 101 + i).collect::<Vec<_>>()
+        } else {
+            (1..=8).collect()
+        });
+        expected.extend(&input[28..32]);
+        if n == 14 {
+            expected.extend([408, 808]);
+        } else {
+            expected.push(808);
+        }
+        let checks = (0..8)
+            .map(|i| format!("mem_load.{} push.{} assert_eq", 800 + i, expected[20 + i]))
+            .chain(["adv_push push.97 assert_eq".into()])
+            .collect::<Vec<_>>()
+            .join(" ");
+        let advice = if n == 14 {
+            vec![97]
+        } else {
+            (1..=8).chain([97]).collect::<Vec<_>>()
+        };
+        // Keep a real suffix under all arguments: spill/normalization may reach the VM floor
+        // without it and introduce padding, so equal physical depth would be the wrong oracle.
+        input.extend((0..20).map(|i| 20001 + i));
+        expected.extend((0..20).map(|i| 20001 + i));
+        stream_write_run(&procedure, &input, &expected, "", &checks, &advice).unwrap();
     }
 }

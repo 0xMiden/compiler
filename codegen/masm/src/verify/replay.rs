@@ -1217,49 +1217,16 @@ impl<'a> Verifier<'a> {
     ) -> Result<(), VerificationError> {
         let effect = TargetEffects::instruction(instruction)?;
         let inputs = state.prefix(effect.consumed.into())?.to_vec();
-        let memory = match effect.memory {
-            MemoryEffect::Read(region) | MemoryEffect::Write(region) => Some(self.memory_region(
-                region,
-                &inputs,
-                state,
-                cursor,
-                matches!(effect.memory, MemoryEffect::Write(_)),
-            )?),
-            MemoryEffect::None => None,
-        };
+        effect.validate()?;
         let mut loaded = Vec::new();
-        if let MemoryEffect::Read(region) = effect.memory {
-            let width = match region {
-                MemoryRegion::Frame { width, .. }
-                | MemoryRegion::Indirect { width, .. }
-                | MemoryRegion::SourceUnknown { width } => width,
-            };
-            for lane in 0..width {
-                loaded.push(if let Some(Some(offset)) = memory {
+        if let Some(region) = effect.memory.read {
+            let memory = self.memory_region(region, &inputs, state, cursor, false)?;
+            for lane in 0..region.width() {
+                loaded.push(if let Some(offset) = memory {
                     memory::read(state, offset + u32::from(lane), self.frame)?
                 } else {
                     self.tokens.fresh()
                 });
-            }
-        }
-        if matches!(effect.memory, MemoryEffect::Write(_))
-            && memory == Some(None)
-            && effect
-                .memory_inputs
-                .iter()
-                .any(|input| self.tokens.origins(inputs[usize::from(*input)]).compiler())
-        {
-            return Err(fail(
-                DiagnosticCategory::InvalidSpillSlotRead,
-                "compiler address escapes into source memory",
-            ));
-        }
-        if matches!(effect.memory, MemoryEffect::Write(_))
-            && let Some(Some(offset)) = memory
-        {
-            for (lane, input) in effect.memory_inputs.iter().enumerate() {
-                state.cells.insert(offset + lane as u32, inputs[usize::from(*input)]);
-                state.written.insert(offset + lane as u32);
             }
         }
         let origins =
@@ -1317,7 +1284,7 @@ impl<'a> Verifier<'a> {
                 memory::check_range(*offset, 1, self.frame)?;
             }
         }
-        let outputs = effect
+        let outputs: Vec<_> = effect
             .outputs
             .iter()
             .map(|lane| match *lane {
@@ -1359,6 +1326,31 @@ impl<'a> Verifier<'a> {
                 }
             })
             .collect();
+        if let Some(write) = &effect.memory.write {
+            let destination = self.memory_region(write.region, &inputs, state, cursor, true)?;
+            let values = write
+                .values
+                .iter()
+                .map(|value| match *value {
+                    WriteValue::Input(i) => inputs[usize::from(i)],
+                    WriteValue::Output(i) => outputs[usize::from(i)],
+                })
+                .collect::<Vec<_>>();
+            if destination.is_none()
+                && values.iter().any(|token| self.tokens.origins(*token).compiler())
+            {
+                return Err(fail(
+                    DiagnosticCategory::InvalidSpillSlotRead,
+                    "compiler address escapes into source memory",
+                ));
+            }
+            if let Some(offset) = destination {
+                for (lane, token) in values.into_iter().enumerate() {
+                    state.cells.insert(offset + lane as u32, token);
+                    state.written.insert(offset + lane as u32);
+                }
+            }
+        }
         state.replace(effect.consumed.into(), outputs, &effect.floor)
     }
 
