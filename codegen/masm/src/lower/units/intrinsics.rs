@@ -62,9 +62,9 @@ impl Intrinsic {
             let midenc_hir::Immediate::Felt(id) = *source.get_event_id() else {
                 return Err(invalid("system event ID requires a Felt immediate").into());
             };
-            let descriptor = crate::events::FixedSystemEvent::from_id(id)
-                .ok_or_else(|| invalid("system event has no fixed-window contract"))?;
-            Some((id, usize::from(descriptor.payload_lanes)))
+            let descriptor = crate::events::SystemEventDescriptor::from_id(id)
+                .ok_or_else(|| invalid("system event has no finite contract"))?;
+            Some((id, usize::from(descriptor.payload_lanes), descriptor.read.is_some()))
         } else {
             None
         };
@@ -77,7 +77,7 @@ impl Intrinsic {
             AdvicePipe | MemStream => (vec![Type::Felt; 13], vec![Type::Felt; 13]),
             EvalCircuit => (vec![Type::Felt; 3], vec![Type::Felt; 3]),
             SystemEvent => {
-                let (_, n) = event.unwrap();
+                let (_, n, _) = event.unwrap();
                 (vec![Type::Felt; n], vec![Type::Felt; n])
             }
             CryptoStream => (vec![Type::Felt; 14], vec![Type::Felt; 14]),
@@ -126,7 +126,7 @@ impl Intrinsic {
             CryptoStream => emitter.crypto_stream(op.span()),
             EvalCircuit => emitter.eval_circuit(op.span()),
             SystemEvent => {
-                let (id, n) = event.unwrap();
+                let (id, n, _) = event.unwrap();
                 emitter.system_event(id, n, op.span());
             }
             MTreeGet => emitter.mtree_get(op.span()),
@@ -184,7 +184,9 @@ impl Intrinsic {
                     SourceMemoryEffects::READ_WRITE
                 } else if matches!(kind, AdvicePipe) {
                     SourceMemoryEffects::WRITE
-                } else if matches!(kind, HornerBase | HornerExt | MemStream | EvalCircuit) {
+                } else if matches!(kind, HornerBase | HornerExt | MemStream | EvalCircuit)
+                    || event.is_some_and(|(_, _, reads)| reads)
+                {
                     SourceMemoryEffects::READ
                 } else {
                     SourceMemoryEffects::default()

@@ -420,7 +420,7 @@ fn system_event_instruction(event: miden_core::events::SystemEvent) -> Instructi
 #[test]
 fn system_event_every_observed_lane_rejects_exact_mixed_and_unresolved_compiler_origins() {
     for (event, n) in miden_core::events::SystemEvent::all().into_iter().filter_map(|event| {
-        crate::events::FixedSystemEvent::from_id(event.event_id().as_felt())
+        crate::events::SystemEventDescriptor::from_id(event.event_id().as_felt())
             .map(|d| (event, usize::from(d.payload_lanes)))
     }) {
         for position in 0..n {
@@ -469,7 +469,7 @@ fn system_event_every_observed_lane_rejects_exact_mixed_and_unresolved_compiler_
 #[test]
 fn system_event_source_only_observation_and_unobserved_compiler_suffix_are_accepted() {
     for (event, n) in miden_core::events::SystemEvent::all().into_iter().filter_map(|event| {
-        crate::events::FixedSystemEvent::from_id(event.event_id().as_felt())
+        crate::events::SystemEventDescriptor::from_id(event.event_id().as_felt())
             .map(|d| (event, usize::from(d.payload_lanes)))
     }) {
         for position in 0..n {
@@ -479,12 +479,13 @@ fn system_event_source_only_observation_and_unobserved_compiler_suffix_are_accep
                 extent: 1,
             };
             fixture.effects.may_trap = true;
+            fixture.effects.memory = SourceMemoryEffects::READ;
             let mut code = vec![inst(Instruction::Locaddr(1.into()))];
             code.extend((0..n).rev().map(|i| {
                 if i == position {
                     inst(Instruction::Locaddr(0.into()))
                 } else {
-                    push(101 + i as u64)
+                    push(if i == 5 { 0 } else { 101 + i as u64 })
                 }
             }));
             code.push(inst(system_event_instruction(event)));
@@ -523,10 +524,12 @@ fn system_event_internal_loop_rechecks_late_compiler_taint_before_cleanup() {
     assert!(error.message.contains("observed"), "{error:?}");
 }
 
-struct SystemEventGraphLoop;
+struct SystemEventGraphLoop {
+    memory: bool,
+}
 impl GeneratedDefinition for SystemEventGraphLoop {
     fn id(&self) -> GeneratedDefinitionId {
-        GeneratedDefinitionId(19)
+        GeneratedDefinitionId(if self.memory { 20 } else { 19 })
     }
 
     fn instantiate(&self, parameters: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
@@ -542,6 +545,9 @@ impl GeneratedDefinition for SystemEventGraphLoop {
         }
         let unit = &mut evidence.program.segments[2].units[0];
         unit.effects.may_trap = true;
+        if self.memory {
+            unit.effects.memory = SourceMemoryEffects::READ;
+        }
         unit.scratch.push(ScratchRequirement {
             id: ScratchId(0),
             size: 1,
@@ -559,10 +565,20 @@ impl GeneratedDefinition for SystemEventGraphLoop {
 
 #[test]
 fn system_event_graph_backedge_rechecks_late_compiler_taint_before_cleanup() {
+    system_event_graph_backedge_case(false);
+}
+
+#[test]
+fn memory_system_event_graph_backedge_rechecks_late_compiler_bounds_before_cleanup() {
+    system_event_graph_backedge_case(true);
+}
+
+fn system_event_graph_backedge_case(memory: bool) {
+    let definition = SystemEventGraphLoop { memory };
     let (mut plan, _, body) = super::loops::loop_fixture(true);
     plan.selected = check_selection(
-        SystemEventGraphLoop.instantiate(&[]).unwrap().program,
-        &SourceContext::Generated(&SystemEventGraphLoop),
+        definition.instantiate(&[]).unwrap().program,
+        &SourceContext::Generated(&definition),
     )
     .unwrap();
     let slot = plan.spill_slots[0];
@@ -584,7 +600,7 @@ fn system_event_graph_backedge_rechecks_late_compiler_taint_before_cleanup() {
         4,
     )
     .unwrap();
-    fn replace(body: &AnnotatedMasmBody) -> AnnotatedMasmBody {
+    fn replace(body: &AnnotatedMasmBody, memory: bool) -> AnnotatedMasmBody {
         let mut result = vec![];
         let mut unit = None;
         for op in body.ops() {
@@ -593,14 +609,31 @@ fn system_event_graph_backedge_rechecks_late_compiler_taint_before_cleanup() {
                     unit = Some(*id);
                     result.push(op.clone());
                     if *id == SelectedStepId(0) {
-                        result.extend([
-                            inst(Instruction::Dup0),
-                            inst(system_event_instruction(miden_core::events::SystemEvent::U32Clz)),
-                            inst(Instruction::Drop),
-                            inst(Instruction::Drop),
-                            inst(Instruction::Locaddr(1.into())),
-                            push(0),
-                        ]);
+                        if memory {
+                            result.extend([
+                                inst(Instruction::Dup0),
+                                push(53),
+                                push(37),
+                                push(23),
+                                push(11),
+                                inst(system_event_instruction(
+                                    miden_core::events::SystemEvent::MemToMap,
+                                )),
+                            ]);
+                            result.extend((0..6).map(|_| inst(Instruction::Drop)));
+                            result.extend([inst(Instruction::Locaddr(1.into())), push(0)]);
+                        } else {
+                            result.extend([
+                                inst(Instruction::Dup0),
+                                inst(system_event_instruction(
+                                    miden_core::events::SystemEvent::U32Clz,
+                                )),
+                                inst(Instruction::Drop),
+                                inst(Instruction::Drop),
+                                inst(Instruction::Locaddr(1.into())),
+                                push(0),
+                            ]);
+                        }
                     } else {
                         result.extend([
                             AnnotatedOp::Instruction {
@@ -627,18 +660,326 @@ fn system_event_graph_backedge_rechecks_late_compiler_taint_before_cleanup() {
                     else_body,
                 } => result.push(AnnotatedOp::If {
                     id: *id,
-                    then_body: replace(then_body),
-                    else_body: replace(else_body),
+                    then_body: replace(then_body, memory),
+                    else_body: replace(else_body, memory),
                 }),
                 AnnotatedOp::While { id, body } => result.push(AnnotatedOp::While {
                     id: *id,
-                    body: replace(body),
+                    body: replace(body, memory),
                 }),
                 other => result.push(other.clone()),
             }
         }
         ops(result)
     }
-    let error = verify(&plan, &frame, replace(&body)).unwrap_err();
+    let error = verify(&plan, &frame, replace(&body, memory)).unwrap_err();
     assert!(error.message.contains("observed"), "{error:?}");
+}
+
+fn memory_system_event_range_code(start: u16, end: u16) -> Vec<AnnotatedOp> {
+    vec![
+        inst(Instruction::Locaddr(end.into())),
+        inst(Instruction::Locaddr(start.into())),
+        push(53),
+        push(37),
+        push(23),
+        push(11),
+        inst(system_event_instruction(miden_core::events::SystemEvent::MemToMap)),
+    ]
+}
+
+#[test]
+fn memory_system_event_exact_source_bounds_zero_extent_padding_and_strict_reuse() {
+    for (extent, start, end, pass) in [
+        (0, 0, 0, true),
+        (0, 0, 1, false),
+        (0, 1, 1, false),
+        (3, 0, 3, true),
+        (3, 3, 3, true),
+        (3, 4, 4, false),
+        (4, 0, 4, true),
+        (4, 1, 3, true),
+        (4, 4, 0, false),
+        (4, 0, 5, false),
+        (4, 5, 5, false),
+    ] {
+        let mut f = Fixture::new(0, 0).scratch(4);
+        f.locals = SourceLocalLayout {
+            offsets: if extent > 0 { vec![0] } else { vec![] },
+            extent,
+        };
+        f.effects.may_trap = true;
+        f.effects.memory = SourceMemoryEffects::READ_WRITE;
+        let mut code = memory_system_event_range_code(start, end);
+        code.extend((0..6).map(|_| inst(Instruction::Drop)));
+        let result = f.run(code);
+        assert_eq!(result.is_ok(), pass, "L{extent} [{start},{end}): {result:?}");
+    }
+    for lane in 0..4 {
+        let mut f = Fixture::new(0, 0).scratch(1);
+        f.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent: 4,
+        };
+        f.effects.may_trap = true;
+        let mut code = memory_system_event_range_code(4, 4);
+        code.splice(2 + lane..3 + lane, [inst(Instruction::Locaddr(4.into()))]);
+        code.extend((0..6).map(|_| inst(Instruction::Drop)));
+        assert!(f.run(code).unwrap_err().message.contains("observed"));
+    }
+    // The permitted endpoint remains compiler-origin after aliases are replayed.
+    for reuse in 0..3 {
+        let mut f = Fixture::new(0, u32::from(reuse == 0)).scratch(1);
+        f.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent: 4,
+        };
+        f.effects.may_trap = true;
+        f.effects.memory = SourceMemoryEffects::READ_WRITE;
+        let mut code = memory_system_event_range_code(4, 4);
+        code.extend((0..5).map(|_| inst(Instruction::Drop)));
+        match reuse {
+            0 => {}
+            1 => code.extend([inst(Instruction::Locaddr(0.into())), inst(Instruction::MemStore)]),
+            _ => code.extend([
+                inst(system_event_instruction(miden_core::events::SystemEvent::U32Clz)),
+                inst(Instruction::Drop),
+            ]),
+        }
+        assert!(f.run(code).is_err(), "reuse{reuse}");
+    }
+}
+
+#[test]
+fn memory_system_event_exact_mixed_token_fixture_keeps_origins_and_requires_spatial_proof() {
+    // Isolated token fixture: existing source joins normally abstract away exact addresses.
+    // Seed an exact token with an additional source origin; no token implementation is changed.
+    for (start, end, pass) in
+        [(0, 4, true), (4, 4, true), (0, 5, false), (5, 5, false), (4, 0, false)]
+    {
+        let mut f = Fixture::new(0, 0).scratch(2);
+        f.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent: 4,
+        };
+        f.effects.may_trap = true;
+        f.effects.memory = SourceMemoryEffects::READ;
+        let plan = f.plan();
+        let frame = f.frame();
+        let mut verifier = super::super::replay::Verifier::new(&plan, &frame).unwrap();
+        use super::super::tokens::Identity;
+        let source = verifier.tokens.intern(Identity::FrameAddress(0));
+        let boundary = verifier.tokens.intern(Identity::FrameAddress(end));
+        verifier.tokens.add_origins(boundary, verifier.tokens.origins(source));
+        let origins = verifier.tokens.origins(boundary);
+        assert_eq!(origins.compiler(), end >= 4);
+        let mut body = AnnotatedMasmBody::new();
+        body.push(AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))));
+        body.push(AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))));
+        for op in memory_system_event_range_code(start as u16, end as u16) {
+            body.push(op);
+        }
+        for _ in 0..6 {
+            body.push(inst(Instruction::Drop));
+        }
+        body.push(AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))));
+        body.push(AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))));
+        let result = verifier.execute(
+            &body,
+            super::super::stack::State::new(vec![], BTreeMap::new()),
+            &mut super::super::replay::Cursor::default(),
+        );
+        assert_eq!(result.is_ok(), pass);
+        assert_eq!(verifier.tokens.origins(boundary), origins);
+        if let Ok(Some(state)) = result {
+            assert!(state.cells.is_empty());
+        }
+    }
+}
+
+#[test]
+fn memory_system_event_equal_unresolved_compiler_bounds_and_literal_coincidences_reject() {
+    for mode in 0..3 {
+        let mut f = Fixture::new(u32::from(mode == 0), 0).scratch(2);
+        f.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent: 4,
+        };
+        f.effects.may_trap = true;
+        f.effects.memory = SourceMemoryEffects::READ;
+        let mut code = match mode {
+            0 => {
+                vec![pointer_branch(inst(Instruction::Locaddr(4.into()))), inst(Instruction::Dup0)]
+            }
+            1 => vec![inst(Instruction::Locaddr(4.into())), push(4)],
+            _ => vec![push(0x1_0000_0000), inst(Instruction::Locaddr(4.into()))],
+        };
+        code.extend([
+            push(53),
+            push(37),
+            push(23),
+            push(11),
+            inst(system_event_instruction(miden_core::events::SystemEvent::MemToMap)),
+        ]);
+        code.extend((0..6).map(|_| inst(Instruction::Drop)));
+        assert!(f.run(code).unwrap_err().message.contains("observed bounds"), "mode{mode}");
+    }
+}
+
+#[test]
+fn memory_system_event_observations_precede_deferred_no_read_shortcuts() {
+    use miden_core::events::SystemEvent::DeferredRegisterData;
+    for payload in [
+        [2, 0, 0, 0, 400, 0],
+        [0, 0, 0, 0, 400, 1],
+        [1, 7, 0, 0, 400, 1],
+        [1, 0, 0, 0, 400, 2],
+        [2, 0, 0, 0, 5, 1],
+        [2, 0, 0, 0, 0xfffffff8, 1],
+        [2, 0, 0, 0, 400, 131072],
+    ] {
+        for lane in 0..6 {
+            let mut f = Fixture::new(0, 0).scratch(1);
+            f.effects.may_trap = true;
+            let mut code = payload
+                .into_iter()
+                .enumerate()
+                .rev()
+                .map(|(i, n)| {
+                    if i == lane {
+                        inst(Instruction::Locaddr(0.into()))
+                    } else {
+                        push(n)
+                    }
+                })
+                .collect::<Vec<_>>();
+            code.push(inst(system_event_instruction(DeferredRegisterData)));
+            code.extend((0..6).map(|_| inst(Instruction::Drop)));
+            assert!(
+                f.run(code).unwrap_err().message.contains("observed"),
+                "{payload:?} lane{lane}"
+            );
+        }
+    }
+}
+
+#[test]
+fn memory_system_event_internal_loop_rechecks_late_bounds_and_strict_keys() {
+    for strict in [false, true] {
+        let mut f = Fixture::new(0, 0).scratch(1);
+        f.effects.may_trap = true;
+        f.effects.memory = SourceMemoryEffects::READ;
+        f.proof.loops.insert(
+            ControlId(0),
+            LoopSchema {
+                stack: vec![LoopPosition::Carry(0)],
+                cells: vec![],
+            },
+        );
+        let mut body = if strict {
+            vec![push(0), push(0), push(53), push(37), push(23), inst(Instruction::Dup5)]
+        } else {
+            vec![inst(Instruction::Dup0), push(53), push(37), push(23), push(11)]
+        };
+        body.push(inst(system_event_instruction(miden_core::events::SystemEvent::MemToMap)));
+        body.extend((0..if strict { 7 } else { 6 }).map(|_| inst(Instruction::Drop)));
+        body.push(inst(Instruction::Locaddr(0.into())));
+        let error = f
+            .run(vec![
+                push(77),
+                AnnotatedOp::Repeat {
+                    id: ControlId(0),
+                    count: 2,
+                    body: ops(body),
+                },
+                inst(Instruction::Drop),
+            ])
+            .unwrap_err();
+        assert!(error.message.contains("observed"), "strict{strict}: {error:?}");
+    }
+}
+
+#[test]
+fn memory_system_event_permitted_endpoint_cannot_escape_through_unauthorized_call() {
+    let mut f = Fixture::new(0, 0).scratch(1);
+    f.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 4,
+    };
+    f.effects.may_trap = true;
+    let call = Instruction::Exec(crate::masm::InvocationTarget::Symbol(
+        crate::masm::Ident::new("callee").unwrap(),
+    ));
+    f.proof.calls.push(CallSite {
+        path: vec![],
+        instruction: call.clone(),
+        abi: ProcedureAbi::new(CallingConvention::SameContext, 1, 0).unwrap(),
+        inputs: vec![CallArgument::Local],
+        truncate: false,
+        outputs: vec![],
+        publications: vec![],
+        selector: None,
+    });
+    let mut code = memory_system_event_range_code(4, 4);
+    code.extend((0..5).map(|_| inst(Instruction::Drop)));
+    code.push(inst(call));
+    assert_eq!(f.run(code).unwrap_err().category, DiagnosticCategory::AbiMismatch);
+}
+
+#[test]
+fn memory_system_event_exact_invariant_boundary_is_reproved_on_each_internal_iteration() {
+    let mut f = Fixture::new(0, 0).scratch(1);
+    f.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 4,
+    };
+    f.effects.may_trap = true;
+    f.proof.loops.insert(
+        ControlId(0),
+        LoopSchema {
+            stack: vec![LoopPosition::Invariant],
+            cells: vec![],
+        },
+    );
+    let mut body = vec![
+        inst(Instruction::Dup0),
+        inst(Instruction::Dup0),
+        push(53),
+        push(37),
+        push(23),
+        push(11),
+        inst(system_event_instruction(miden_core::events::SystemEvent::MemToMap)),
+    ];
+    body.extend((0..6).map(|_| inst(Instruction::Drop)));
+    f.run(vec![
+        inst(Instruction::Locaddr(4.into())),
+        AnnotatedOp::Repeat {
+            id: ControlId(0),
+            count: 2,
+            body: ops(body),
+        },
+        inst(Instruction::Drop),
+    ])
+    .unwrap();
+}
+
+#[test]
+fn memory_system_event_strict_keys_precede_every_source_range_shortcut() {
+    for (start, end) in [(0, 0), (0x1_0000_0000, 9), (0, 0x1_0000_0000), (9, 2)] {
+        for key in 0..4 {
+            let mut f = Fixture::new(0, 0).scratch(1);
+            f.effects.may_trap = true;
+            let mut code = vec![push(end), push(start)];
+            code.extend((0..4).rev().map(|i| {
+                if i == key {
+                    inst(Instruction::Locaddr(0.into()))
+                } else {
+                    push(11 + i)
+                }
+            }));
+            code.push(inst(system_event_instruction(miden_core::events::SystemEvent::MemToMap)));
+            code.extend((0..6).map(|_| inst(Instruction::Drop)));
+            assert!(f.run(code).unwrap_err().message.contains("observed input"));
+        }
+    }
 }

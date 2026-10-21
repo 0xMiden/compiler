@@ -40,6 +40,26 @@ pub(crate) enum MemoryRead {
         read_count: u8,
         eval_count: u8,
     },
+    /// Paired half-open source bounds observed together, including an empty interval.
+    SourceRange {
+        start: u8,
+        end: u8,
+    },
+    /// Deferred host read with a tag and runtime chunk count.
+    DeferredRegisterData {
+        tag: [u8; 4],
+        address: u8,
+        chunks: u8,
+    },
+}
+
+/// Input dependencies exposed outside ordinary stack computation, such as host event payloads.
+/// Replay checks these for compiler-address escape independently of memory reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Observation {
+    Value(u8),
+    /// One nonretaining pair, with indices owned by the SourceRange read contract.
+    SourceRangeBounds,
 }
 
 /// Raw accesses describe one normal transition: read, construct outputs, then write.
@@ -115,7 +135,7 @@ pub(crate) struct StackEffect {
     pub may_trap: bool,
     pub outputs: Vec<LaneEffect>,
     /// Pre-expansion input lanes exposed to advice/deferred/host state.
-    pub observed_inputs: Vec<u8>,
+    pub observed_inputs: Vec<Observation>,
     /// Actual temporary height changes, in execution order (prefix replacement is not a pop).
     pub floor: Vec<FloorStep>,
     pub memory: MemoryEffects,
@@ -155,8 +175,17 @@ impl StackEffect {
     /// Validate closed metadata before replay can index any raw token vector.
     pub fn validate(&self) -> Result<(), PlanError> {
         let input = |index: u8| index < self.consumed;
-        if !self.observed_inputs.iter().copied().all(input) {
-            return Err(stack_error("invalid observed input dependency"));
+        let mut observed = alloc::collections::BTreeSet::new();
+        let mut pairs = 0;
+        for observation in &self.observed_inputs {
+            match *observation {
+                Observation::Value(index) => {
+                    if !input(index) || !observed.insert(index) {
+                        return Err(stack_error("invalid or repeated observed input dependency"));
+                    }
+                }
+                Observation::SourceRangeBounds => pairs += 1,
+            }
         }
         let fixed_read = match self.memory.read {
             Some(MemoryRead::Fixed(region)) => Some(region),
@@ -170,8 +199,34 @@ impl StackEffect {
                 }
                 None
             }
+            Some(MemoryRead::SourceRange { start, end }) => {
+                if ![start, end].into_iter().all(input)
+                    || start == end
+                    || pairs != 1
+                    || !observed.insert(start)
+                    || !observed.insert(end)
+                    || observed.len() != usize::from(self.consumed)
+                    || self.memory.write.is_some()
+                {
+                    return Err(stack_error("invalid source range observation/read roles"));
+                }
+                None
+            }
+            Some(MemoryRead::DeferredRegisterData {
+                tag,
+                address,
+                chunks,
+            }) => {
+                if !tag.into_iter().chain([address, chunks]).all(input) {
+                    return Err(stack_error("invalid deferred data read input dependency"));
+                }
+                None
+            }
             None => None,
         };
+        if pairs != 0 && !matches!(self.memory.read, Some(MemoryRead::SourceRange { .. })) {
+            return Err(stack_error("source range bounds require a source range read"));
+        }
         for region in fixed_read.into_iter().chain(self.memory.write.as_ref().map(|w| w.region)) {
             if region.width() == 0
                 || matches!(region, MemoryRegion::Indirect { address, .. } if !input(address))
@@ -676,8 +731,8 @@ impl TargetEffects {
                 StackEffect::new(0, vec![], vec![])
             }
             EmitImm(crate::masm::EventImmediate::Immediate(id)) => {
-                let descriptor = crate::events::FixedSystemEvent::from_id(literal(id)?)
-                    .ok_or_else(|| stack_error("event has no fixed-window target contract"))?;
+                let descriptor = crate::events::SystemEventDescriptor::from_id(literal(id)?)
+                    .ok_or_else(|| stack_error("event has no finite target contract"))?;
                 let n = descriptor.payload_lanes;
                 let mut effect = StackEffect::new(
                     n,
@@ -685,7 +740,23 @@ impl TargetEffects {
                     vec![FloorStep::Push(1), FloorStep::Pop(1)],
                 )
                 .trapping();
-                effect.observed_inputs = (0..n).collect();
+                effect.observed_inputs = (0..n).map(Observation::Value).collect();
+                effect.memory.read = descriptor.read.map(|read| match read {
+                    crate::events::SystemEventRead::SourceRange => {
+                        effect.observed_inputs = (0..4)
+                            .map(Observation::Value)
+                            .chain([Observation::SourceRangeBounds])
+                            .collect();
+                        MemoryRead::SourceRange { start: 4, end: 5 }
+                    }
+                    crate::events::SystemEventRead::DeferredRegisterData => {
+                        MemoryRead::DeferredRegisterData {
+                            tag: [0, 1, 2, 3],
+                            address: 4,
+                            chunks: 5,
+                        }
+                    }
+                });
                 effect
             }
             MemStoreWLe => {

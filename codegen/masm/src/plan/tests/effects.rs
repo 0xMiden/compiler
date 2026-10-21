@@ -1694,7 +1694,7 @@ fn system_event_closed_rules_retain_complete_windows_and_actual_floor() {
 fn system_event_metadata_rejects_observation_outside_consumed_inputs() {
     let mut effect = TargetEffects::instruction(&Instruction::Nop).unwrap();
     assert!(effect.observed_inputs.is_empty());
-    effect.observed_inputs.push(0);
+    effect.observed_inputs.push(Observation::Value(0));
     assert!(effect.validate().is_err());
 }
 
@@ -1733,15 +1733,20 @@ fn system_event_observation_metadata_is_complete_bounded_and_closed() {
         );
         let effect = TargetEffects::instruction(&instruction).unwrap();
         assert_eq!(effect.consumed, n, "{event:?}");
-        assert_eq!(effect.observed_inputs, (0..n).collect::<Vec<_>>(), "{event:?}");
+        assert_eq!(
+            effect.observed_inputs,
+            (0..n).map(Observation::Value).collect::<Vec<_>>(),
+            "{event:?}"
+        );
         effect.validate().unwrap();
         for invalid in [n, u8::MAX] {
             let mut bad = effect.clone();
-            bad.observed_inputs.push(invalid);
+            bad.observed_inputs.push(Observation::Value(invalid));
             assert!(bad.validate().is_err(), "{event:?} index{invalid}");
         }
     }
-    for event in [MemToMap, DeferredRegisterData, TraceEvent] {
+    {
+        let event = TraceEvent;
         let instruction = Instruction::EmitImm(
             crate::masm::Immediate::Value(crate::masm::Span::unknown(event.event_id().as_felt()))
                 .into(),
@@ -1763,4 +1768,88 @@ fn system_event_observation_metadata_is_complete_bounded_and_closed() {
         ))
         .is_err()
     );
+}
+
+#[test]
+fn memory_system_event_roles_partition_exact_payload_and_reject_metadata_mutants() {
+    use miden_core::events::SystemEvent::{DeferredRegisterData, MemToMap};
+    let effect = |event: miden_core::events::SystemEvent| {
+        TargetEffects::instruction(&Instruction::EmitImm(
+            crate::masm::Immediate::Value(crate::masm::Span::unknown(event.event_id().as_felt()))
+                .into(),
+        ))
+        .unwrap()
+    };
+    let range = effect(MemToMap);
+    assert_eq!(
+        range.observed_inputs,
+        vec![
+            Observation::Value(0),
+            Observation::Value(1),
+            Observation::Value(2),
+            Observation::Value(3),
+            Observation::SourceRangeBounds
+        ]
+    );
+    assert_eq!(range.memory.read, Some(MemoryRead::SourceRange { start: 4, end: 5 }));
+    let deferred = effect(DeferredRegisterData);
+    assert_eq!(deferred.observed_inputs, (0..6).map(Observation::Value).collect::<Vec<_>>());
+    assert_eq!(
+        deferred.memory.read,
+        Some(MemoryRead::DeferredRegisterData {
+            tag: [0, 1, 2, 3],
+            address: 4,
+            chunks: 5
+        })
+    );
+    for base in [&range, &deferred] {
+        assert_eq!(base.consumed, 6);
+        assert_eq!(base.outputs, (0..6).map(LaneEffect::Input).collect::<Vec<_>>());
+        assert_eq!(base.floor, vec![FloorStep::Push(1), FloorStep::Pop(1)]);
+        assert!(base.may_trap);
+        base.validate().unwrap();
+    }
+    for mutation in 0..11 {
+        let mut bad = range.clone();
+        match mutation {
+            0 => bad.observed_inputs.push(Observation::Value(6)),
+            1 => bad.observed_inputs.push(Observation::Value(0)),
+            2 => bad.observed_inputs.push(Observation::Value(4)),
+            3 => {
+                bad.observed_inputs.pop();
+            }
+            4 => bad.observed_inputs.push(Observation::SourceRangeBounds),
+            5 => bad.memory.read = None,
+            6 => bad.memory.read = Some(MemoryRead::SourceRange { start: 4, end: 4 }),
+            7 => bad.memory.read = Some(MemoryRead::SourceRange { start: 4, end: 6 }),
+            8 => {
+                bad.memory.write = Some(MemoryWrite {
+                    region: MemoryRegion::SourceUnknown { width: 1 },
+                    values: vec![WriteValue::Input(0)],
+                })
+            }
+            9 => bad.outputs[0] = LaneEffect::Memory { lane: 0 },
+            _ => {
+                bad.observed_inputs.remove(0);
+            }
+        }
+        assert!(bad.validate().is_err(), "mutant{mutation}");
+    }
+    for field in 0..6 {
+        let mut bad = deferred.clone();
+        let mut indices = [0, 1, 2, 3, 4, 5];
+        indices[field] = 6;
+        bad.memory.read = Some(MemoryRead::DeferredRegisterData {
+            tag: indices[..4].try_into().unwrap(),
+            address: indices[4],
+            chunks: indices[5],
+        });
+        assert!(bad.validate().is_err());
+    }
+    // Structurally valid permutations are trusted-table conformance, not semantic inference.
+    let mut permuted = range.clone();
+    permuted.observed_inputs[0] = Observation::Value(4);
+    permuted.memory.read = Some(MemoryRead::SourceRange { start: 0, end: 5 });
+    permuted.validate().unwrap();
+    assert_ne!(permuted, range);
 }
