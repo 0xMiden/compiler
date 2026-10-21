@@ -1218,15 +1218,36 @@ impl<'a> Verifier<'a> {
         let effect = TargetEffects::instruction(instruction)?;
         let inputs = state.prefix(effect.consumed.into())?.to_vec();
         effect.validate()?;
-        let mut loaded = Vec::new();
-        if let Some(region) = effect.memory.read {
-            let memory = self.memory_region(region, &inputs, state, cursor, false)?;
-            for lane in 0..region.width() {
-                loaded.push(if let Some(offset) = memory {
-                    memory::read(state, offset + u32::from(lane), self.frame)?
-                } else {
-                    self.tokens.fresh()
-                });
+        // Validate the entire footprint before constructing outputs or performing writes.
+        // Only output-demanded fixed lanes need identities; repeated references share a token.
+        let mut loaded = BTreeMap::new();
+        if let Some(read) = effect.memory.read {
+            let memory = match read {
+                MemoryRead::Fixed(region) => self
+                    .memory_region(region, &inputs, cursor, false)?
+                    .map(|offset| (offset, u32::from(region.width()))),
+                MemoryRead::Circuit {
+                    address,
+                    read_count,
+                    eval_count,
+                } => self.circuit_read(&inputs, address, read_count, eval_count, cursor)?,
+            };
+            if let Some((offset, width)) = memory {
+                for cell in offset..offset + width {
+                    memory::read(state, cell, self.frame)?;
+                }
+            }
+            for lane in &effect.outputs {
+                if let LaneEffect::Memory { lane } = *lane {
+                    loaded.entry(lane).or_insert_with(|| {
+                        if let Some((offset, _)) = memory {
+                            // The full footprint has already been checked above.
+                            state.cells[&(offset + u32::from(lane))]
+                        } else {
+                            self.tokens.fresh()
+                        }
+                    });
+                }
             }
         }
         let origins =
@@ -1290,7 +1311,7 @@ impl<'a> Verifier<'a> {
             .map(|lane| match *lane {
                 LaneEffect::Input(index) => inputs[usize::from(index)],
                 LaneEffect::Literal(value) => self.tokens.literal(value),
-                LaneEffect::Memory { lane } => loaded[usize::from(lane)],
+                LaneEffect::Memory { lane } => loaded[&lane],
                 LaneEffect::FrameAddress(offset) => {
                     self.tokens.intern(Identity::FrameAddress(offset))
                 }
@@ -1327,7 +1348,7 @@ impl<'a> Verifier<'a> {
             })
             .collect();
         if let Some(write) = &effect.memory.write {
-            let destination = self.memory_region(write.region, &inputs, state, cursor, true)?;
+            let destination = self.memory_region(write.region, &inputs, cursor, true)?;
             let values = write
                 .values
                 .iter()
@@ -1358,12 +1379,11 @@ impl<'a> Verifier<'a> {
         &self,
         region: MemoryRegion,
         inputs: &[Token],
-        _state: &State,
         cursor: &Cursor,
         write: bool,
     ) -> Result<Option<u32>, VerificationError> {
         let (offset, width) = match region {
-            MemoryRegion::Frame { offset, width } => (Some(offset), width),
+            MemoryRegion::Frame { offset, width } => (Some(offset), u32::from(width)),
             MemoryRegion::Indirect { address, width } => {
                 let token = inputs[usize::from(address)];
                 let offset = self.tokens.frame_address(token);
@@ -1373,20 +1393,77 @@ impl<'a> Verifier<'a> {
                         "compiler memory address is not precisely resolved",
                     ));
                 }
-                (offset, width)
+                (offset, u32::from(width))
             }
-            MemoryRegion::SourceUnknown { width } => (None, width),
+            MemoryRegion::SourceUnknown { width } => (None, u32::from(width)),
         };
+        self.memory_access(offset, Some(width), width == 4, cursor, write)
+    }
+
+    /// Circuit guards run before memory in the VM. Known invalid counts have no footprint.
+    fn circuit_read(
+        &self,
+        inputs: &[Token],
+        address: u8,
+        read_count: u8,
+        eval_count: u8,
+        cursor: &Cursor,
+    ) -> Result<Option<(u32, u32)>, VerificationError> {
+        let width = match (
+            self.tokens.constant(inputs[usize::from(read_count)]),
+            self.tokens.constant(inputs[usize::from(eval_count)]),
+        ) {
+            (Some(read), Some(eval)) => {
+                if read.saturating_add(eval) > 32768
+                    || read == 0
+                    || !read.is_multiple_of(2)
+                    || eval == 0
+                    || !eval.is_multiple_of(4)
+                {
+                    return Ok(None);
+                }
+                // Guarded canonical counts bound the successful footprint to 65532 cells.
+                Some(
+                    read.checked_mul(2)
+                        .and_then(|n| n.checked_add(eval))
+                        .and_then(|n| u32::try_from(n).ok())
+                        .ok_or_else(|| error("circuit read extent overflow"))?,
+                )
+            }
+            _ => None,
+        };
+        let token = inputs[usize::from(address)];
+        let offset = self.tokens.frame_address(token);
+        if offset.is_none() && self.tokens.origins(token).compiler() {
+            return Err(fail(
+                DiagnosticCategory::InvalidSpillSlotRead,
+                "compiler memory address is not precisely resolved",
+            ));
+        }
+        self.memory_access(offset, width, true, cursor, false)
+            .map(|offset| offset.zip(width))
+    }
+
+    fn memory_access(
+        &self,
+        offset: Option<u32>,
+        width: Option<u32>,
+        word_aligned: bool,
+        cursor: &Cursor,
+        write: bool,
+    ) -> Result<Option<u32>, VerificationError> {
         if let Some(offset) = offset {
-            if width == 4 && offset % 4 != 0 {
+            if word_aligned && offset % 4 != 0 {
                 return Err(fail(
                     DiagnosticCategory::IllegalStackAccess,
                     "unaligned word memory access",
                 ));
             }
-            memory::check_range(offset, width, self.frame)?;
+            // An unresolved SourceLocal extent retains its exact base and origin. Checking
+            // that base still prevents a known crossing from being erased by unknown counts.
+            memory::check_range(offset, width.unwrap_or(1), self.frame)?;
             if offset < self.frame.source().extent {
-                if offset + u32::from(width) > self.frame.source().extent {
+                if width.is_some_and(|width| offset + width > self.frame.source().extent) {
                     return Err(fail(
                         DiagnosticCategory::InvalidSpillSlotRead,
                         "source access crosses into compiler storage",
@@ -1401,9 +1478,14 @@ impl<'a> Verifier<'a> {
                 }
                 return Ok(None);
             }
-
+            let width = width.ok_or_else(|| {
+                fail(
+                    DiagnosticCategory::InvalidSpillSlotRead,
+                    "compiler memory read extent is not precisely resolved",
+                )
+            })?;
             if let Some(active) = &cursor.active {
-                if (offset..offset + u32::from(width))
+                if (offset..offset + width)
                     .any(|offset| active.readonly.contains_key(&offset) && write)
                 {
                     return Err(fail(
@@ -1412,7 +1494,7 @@ impl<'a> Verifier<'a> {
                     ));
                 }
                 let unit = self.unit(active.id)?;
-                let allowed = (offset..offset + u32::from(width)).all(|cell| {
+                let allowed = (offset..offset + width).all(|cell| {
                     active.readonly.contains_key(&cell) && !write
                         || unit.scratch.iter().any(|requirement| {
                             let allocation = &self.frame.scratch()[&requirement.id];
@@ -1425,7 +1507,7 @@ impl<'a> Verifier<'a> {
                         "undeclared compiler-storage access inside lowering",
                     ));
                 }
-            } else if !(offset..offset + u32::from(width))
+            } else if !(offset..offset + width)
                 .all(|cell| self.frame.spills().values().any(|offset| *offset == cell))
             {
                 return Err(fail(

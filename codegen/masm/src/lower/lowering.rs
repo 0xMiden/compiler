@@ -2987,6 +2987,7 @@ intrinsic_selection! {
     hir::MemStream => MemStream,
     hir::AdvicePipe => AdvicePipe,
     hir::CryptoStream => CryptoStream,
+    hir::EvalCircuit => EvalCircuit,
     hir::AdvicePop => AdvicePop,
     hir::AdviceLoadWord => AdviceLoadWord,
     hir::Caller => Caller,

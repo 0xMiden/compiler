@@ -479,3 +479,300 @@ fn stream_write_native_cannot_cross_source_local_into_compiler_storage() {
         );
     }
 }
+
+/// Retain original inputs while storing them, so read-only checking has an independent identity
+/// anchor. Reloads cannot bless a mutation by being compared only with themselves.
+fn eval_circuit_compiler_fixture(
+    read: u64,
+    eval: u64,
+    size: u32,
+    initialized: u32,
+) -> (Fixture, Vec<AnnotatedOp>) {
+    let mut fixture = Fixture::new(8, 8).scratch(size);
+    fixture.effects.may_trap = true;
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    fixture.proof.aliases =
+        LaneAliases::new((0..8).map(|i| (Fixture::output(i), Fixture::input(i))).collect());
+    fixture.proof.scratch_outputs = (0..initialized)
+        .map(|offset| {
+            (
+                FrameRef::Scratch {
+                    object: ScratchId(0),
+                    offset,
+                },
+                offset % 8,
+            )
+        })
+        .collect();
+    let mut code = Vec::new();
+    for offset in 0..initialized {
+        code.extend([
+            inst(Primitive::Dup((offset % 8) as u8).instruction().unwrap()),
+            inst(Instruction::LocStore((offset as u16).into())),
+        ]);
+    }
+    code.extend([
+        push(eval),
+        push(read),
+        inst(Instruction::Locaddr(0.into())),
+        inst(Instruction::EvalCircuit),
+        inst(Instruction::Drop),
+        inst(Instruction::Drop),
+        inst(Instruction::Drop),
+    ]);
+    for offset in 0..initialized {
+        code.extend([
+            inst(Primitive::Dup((offset % 8) as u8).instruction().unwrap()),
+            inst(Instruction::LocLoad((offset as u16).into())),
+            inst(Instruction::AssertEq),
+        ]);
+    }
+    (fixture, code)
+}
+
+#[test]
+fn eval_circuit_checks_complete_wide_compiler_footprint_and_unchanged_identities() {
+    for (read, eval, width) in [(2, 4, 8), (128, 4, 260), (32764, 4, 65532)] {
+        for initialized in [width - 1, width] {
+            let (fixture, code) = eval_circuit_compiler_fixture(read, eval, width, initialized);
+            let result = fixture.run(code);
+            if initialized == width {
+                result.unwrap();
+            } else {
+                let error = result.unwrap_err();
+                assert_eq!(error.category, DiagnosticCategory::InvalidSpillSlotRead);
+                assert!(error.to_string().contains("not definitely initialized"), "{error}");
+            }
+        }
+    }
+    let (fixture, code) = eval_circuit_compiler_fixture(2, 4, 9, 9);
+    fixture.run(code.clone()).unwrap();
+    for offset in [0, 7, 8] {
+        let mut clobbered = code.clone();
+        let index = clobbered
+            .iter()
+            .position(|op| {
+                matches!(
+                    op,
+                    AnnotatedOp::Instruction {
+                        instruction: Instruction::EvalCircuit,
+                        ..
+                    }
+                )
+            })
+            .unwrap()
+            + 1;
+        clobbered.splice(index..index, [push(0), inst(Instruction::LocStore(offset.into()))]);
+        let error = fixture.run(clobbered).unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::InvalidSpillSlotRead);
+        assert!(error.to_string().contains("scratch/output"), "{error}");
+    }
+
+    let (fixture, code) = eval_circuit_compiler_fixture(128, 4, 256, 256);
+    assert_eq!(
+        fixture.run(code).unwrap_err().category,
+        DiagnosticCategory::FrameCapacityExceeded
+    );
+}
+
+#[test]
+fn eval_circuit_source_local_runtime_counts_preserve_exact_base_and_permissions() {
+    for permission in [SourceMemoryEffects::READ, SourceMemoryEffects::default()] {
+        let mut fixture = Fixture::new(2, 0).scratch(8);
+        fixture.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent: 8,
+        };
+        fixture.effects.may_trap = true;
+        fixture.effects.memory = permission;
+        let code = vec![
+            inst(Instruction::Locaddr(0.into())),
+            inst(Instruction::EvalCircuit),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+        ];
+        assert_eq!(fixture.run(code).is_ok(), permission == SourceMemoryEffects::READ);
+    }
+    let mut fixture = Fixture::new(0, 0).scratch(8);
+    fixture.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 4,
+    };
+    fixture.effects.may_trap = true;
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    let error = fixture
+        .run(vec![
+            push(4),
+            push(2),
+            inst(Instruction::Locaddr(0.into())),
+            inst(Instruction::EvalCircuit),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+        ])
+        .unwrap_err();
+    assert_eq!(error.category, DiagnosticCategory::InvalidSpillSlotRead);
+    assert!(error.to_string().contains("source access crosses"), "{error}");
+}
+
+#[test]
+fn eval_circuit_unresolved_compiler_extent_or_address_cannot_use_source_permission() {
+    let mut fixture = Fixture::new(2, 0).scratch(8);
+    fixture.effects.may_trap = true;
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    let error = fixture
+        .run(vec![
+            inst(Instruction::Locaddr(0.into())),
+            inst(Instruction::EvalCircuit),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+        ])
+        .unwrap_err();
+    assert!(error.to_string().contains("extent is not precisely resolved"), "{error}");
+    // A previously source-local pointer advanced exactly into compiler storage remains compiler.
+    fixture.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 4,
+    };
+    let error = fixture
+        .run(vec![
+            inst(Instruction::Locaddr(0.into())),
+            push(4),
+            inst(Instruction::Add),
+            inst(Instruction::EvalCircuit),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+        ])
+        .unwrap_err();
+    assert!(error.to_string().contains("extent is not precisely resolved"), "{error}");
+    // An unknown condition merges compiler and source origins without an exact address.
+    let mut fixture = Fixture::new(1, 0).scratch(8);
+    fixture.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 4,
+    };
+    fixture.effects.may_trap = true;
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    let error = fixture
+        .run(vec![
+            push(4),
+            push(2),
+            inst(Instruction::Locaddr(4.into())),
+            inst(Instruction::Locaddr(0.into())),
+            inst(Instruction::MovUp4),
+            inst(Instruction::CDrop),
+            inst(Instruction::EvalCircuit),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+        ])
+        .unwrap_err();
+    assert!(error.to_string().contains("address is not precisely resolved"), "{error}");
+}
+
+#[test]
+fn eval_circuit_invalid_canonical_counts_trap_before_memory_without_skipping_publication() {
+    for (read, eval) in [(0, 0), (1, 0), (2, 3), (32766, 4), (0xffff_ffff_0000_0000, 0x1_0000_0004)]
+    {
+        let mut fixture = Fixture::new(0, 0);
+        fixture.effects.may_trap = true;
+        fixture
+            .run(vec![
+                push(eval),
+                push(read),
+                push(1),
+                inst(Instruction::EvalCircuit),
+                inst(Instruction::Drop),
+                inst(Instruction::Drop),
+                inst(Instruction::Drop),
+            ])
+            .unwrap();
+        fixture.outputs = 1;
+        assert!(
+            fixture
+                .run(vec![
+                    push(eval),
+                    push(read),
+                    push(1),
+                    inst(Instruction::EvalCircuit),
+                    inst(Instruction::Drop),
+                    inst(Instruction::Drop),
+                    inst(Instruction::Drop)
+                ])
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn eval_circuit_declared_object_extent_and_opaque_source_origin_remain_checked() {
+    let (fixture, code) = eval_circuit_compiler_fixture(2, 4, 6, 6);
+    let error = fixture.run(code).unwrap_err();
+    assert_eq!(error.category, DiagnosticCategory::InvalidSpillSlotRead);
+    assert!(error.to_string().contains("undeclared compiler-storage"), "{error}");
+    let mut fixture = Fixture::new(3, 0);
+    fixture.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 8,
+    };
+    fixture.effects.may_trap = true;
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    fixture
+        .run(vec![
+            inst(Instruction::Locaddr(0.into())),
+            inst(Instruction::Add),
+            inst(Instruction::EvalCircuit),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+        ])
+        .unwrap();
+    let mut fixture = Fixture::new(0, 0);
+    fixture.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 8,
+    };
+    fixture.effects.may_trap = true;
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    fixture
+        .run(vec![
+            push(4),
+            push(2),
+            inst(Instruction::Locaddr(0.into())),
+            inst(Instruction::EvalCircuit),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+            inst(Instruction::Drop),
+        ])
+        .unwrap();
+}
+
+#[test]
+fn eval_circuit_generated_initialized_compiler_circuit_executes_without_escaping_pointer() {
+    use miden_core::prettier::PrettyPrint;
+    let (fixture, code) = eval_circuit_compiler_fixture(2, 4, 8, 8);
+    let procedure = fixture
+        .run(code)
+        .unwrap()
+        .into_masm(crate::masm::ProcedureName::new("selected").unwrap())
+        .unwrap()
+        .to_pretty_string();
+    let gate = |left: u64, right: u64, op: u64| (left + (right << 30) + (op << 60)) as usize;
+    let input = [3, 7, 11, 13, gate(5, 5, 0), gate(5, 4, 2), gate(2, 2, 1), gate(1, 1, 0)];
+    let source = format!(
+        "{procedure} begin {} exec.selected {} end",
+        crate::plan::tests::lowering_units::push_top(&input),
+        crate::plan::tests::lowering_units::assert_top(&input)
+    );
+    let program = miden_assembly::Assembler::default()
+        .assemble_program("compiler_circuit", source)
+        .unwrap()
+        .try_into_program()
+        .unwrap();
+    miden_processor::FastProcessor::new(miden_processor::StackInputs::default())
+        .execute_sync(&program, &mut crate::plan::tests::lowering_units::host())
+        .unwrap();
+}

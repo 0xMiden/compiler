@@ -126,6 +126,7 @@ pub(super) fn fixtures() -> Vec<(Parsed, bool)> {
         ("mem_stream", 13, 13),
         ("advice_pipe", 13, 13),
         ("crypto_stream", 14, 14),
+        ("eval_circuit", 3, 3),
         ("advice_pop", 0, 1),
         ("advice_load_word", 4, 4),
         ("clk", 0, 1),
@@ -1771,6 +1772,7 @@ fn horner_log_deferred_source_tuples_effects_aliases_and_physical_mutations_reje
         ("mem_stream", 13, 13),
         ("advice_pipe", 13, 13),
         ("crypto_stream", 14, 14),
+        ("eval_circuit", 3, 3),
         ("fri_ext_2_fold_4", 17, 16),
     ] {
         for ty in [
@@ -1827,13 +1829,17 @@ fn horner_log_deferred_source_tuples_effects_aliases_and_physical_mutations_reje
         let source_unit = &selected.segments[0].units[0];
         assert_eq!(
             source_unit.effects.memory.read,
-            matches!(name, "horner_base" | "horner_ext" | "mem_stream" | "crypto_stream")
+            matches!(
+                name,
+                "horner_base" | "horner_ext" | "mem_stream" | "crypto_stream" | "eval_circuit"
+            )
         );
         assert_eq!(
             source_unit.effects.memory.write,
             matches!(name, "advice_pipe" | "crypto_stream")
         );
         let aliases = match n {
+            3 => (0..3).map(|i| (i, i)).collect::<Vec<_>>(),
             16 => (0..14).map(|i| (i, i)).collect::<Vec<_>>(),
             13 | 14 => (8..12).map(|i| (i, i)).collect(),
             17 => vec![(11, 8), (15, 16)],
@@ -1899,6 +1905,7 @@ fn horner_log_deferred_source_tuples_effects_aliases_and_physical_mutations_reje
                                 | crate::masm::Instruction::MemStream
                                 | crate::masm::Instruction::AdvPipe
                                 | crate::masm::Instruction::CryptoStream
+                                | crate::masm::Instruction::EvalCircuit
                                 | crate::masm::Instruction::FriExt2Fold4,
                             ..
                         }
@@ -3409,5 +3416,277 @@ fn stream_write_selected_spill_and_normalization_preserves_all_live_values() {
         input.extend((0..20).map(|i| 20001 + i));
         expected.extend((0..20).map(|i| 20001 + i));
         stream_write_run(&procedure, &input, &expected, "", &checks, &advice).unwrap();
+    }
+}
+
+#[test]
+fn eval_circuit_exact_source_selection_and_aliases() {
+    let f = fixture("eval_circuit", 3, 3);
+    let selected = checked(&f, &SelectEnv::default());
+    let unit = &selected.segments[0].units[0];
+    assert!(unit.effects.memory.read);
+    assert!(!unit.effects.memory.write);
+    assert!(unit.effects.may_trap);
+    let evidence = crate::select::evidence(&f.borrow(), &SelectEnv::default()).unwrap();
+    assert_eq!(evidence.source.units[&unit.id].aliases.pairs().len(), 3);
+    for (output, input) in unit.outputs.iter().zip(&unit.stack_inputs) {
+        assert!(evidence.source.units[&unit.id].aliases.pairs().contains(&(*output, *input)));
+    }
+    ready(&f, &SelectEnv::default());
+}
+
+fn eval_circuit_gate(left: u64, right: u64, op: u64) -> usize {
+    (left + (right << 30) + (op << 60)) as usize
+}
+
+/// Independent circuit: wire3=x-x, wire2=x+y, wire1=wire2*wire2, wire0=wire1-wire1.
+/// Distinct nonzero extension inputs ensure replacing the final subtraction by addition fails.
+fn eval_circuit_cells() -> Vec<usize> {
+    vec![
+        3,
+        7,
+        11,
+        13,
+        eval_circuit_gate(5, 5, 0),
+        eval_circuit_gate(5, 4, 2),
+        eval_circuit_gate(2, 2, 1),
+        eval_circuit_gate(1, 1, 0),
+    ]
+}
+
+fn eval_circuit_initialize(base: usize, cells: &[usize]) -> String {
+    cells
+        .iter()
+        .enumerate()
+        .map(|(i, value)| format!("push.{value} mem_store.{}", base + i))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[test]
+fn eval_circuit_selected_vm_independent_oracle_retained_lanes_suffix_floor_and_mutants() {
+    let f = fixture("eval_circuit", 3, 3);
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    let cells = eval_circuit_cells();
+    let initialize = eval_circuit_initialize(400, &cells);
+    let checks = cells
+        .iter()
+        .enumerate()
+        .map(|(i, value)| format!("mem_load.{} push.{value} assert_eq", 400 + i))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for suffix in [13, 20] {
+        let input = [400, 2, 4]
+            .into_iter()
+            .chain((0..suffix).map(|i| 901 + i * 17))
+            .collect::<Vec<_>>();
+        stream_write_run(&procedure, &input, &input, &initialize, &checks, &[]).unwrap();
+    }
+    for (lane, gate, message) in [
+        (7, eval_circuit_gate(1, 1, 2), "does not evaluate to zero"),
+        (4, eval_circuit_gate(5, 5, 3), "decode"),
+        (4, eval_circuit_gate(0, 5, 0), "wiring bus"),
+    ] {
+        let mut bad = cells.clone();
+        bad[lane] = gate;
+        let init = eval_circuit_initialize(400, &bad);
+        let (processor, error) = stream_write_failure(&procedure, &[400, 2, 4], &init, &[], None);
+        let miden_processor::ExecutionError::AceChipError {
+            error: miden_processor::AceError(error),
+            ..
+        } = error
+        else {
+            panic!("expected circuit failure: {error}");
+        };
+        assert!(error.contains(message), "{error}");
+        assert_eq!(
+            processor
+                .stack_top()
+                .iter()
+                .rev()
+                .take(3)
+                .map(|v| v.as_canonical_u64())
+                .collect::<Vec<_>>(),
+            [400, 2, 4]
+        );
+        // Omitting the native assertion remains physically legal under USA044. The actual
+        // invalid-circuit execution is the oracle: the mutant incorrectly completes.
+        let (plan, frame, mut body) = ready(&f, &SelectEnv::default());
+        for op in body.ops_mut() {
+            if let AnnotatedOp::Instruction { instruction, .. } = op
+                && matches!(instruction, crate::masm::Instruction::EvalCircuit)
+            {
+                *instruction = crate::masm::Instruction::Nop;
+            }
+        }
+        let mutant = verify::verify(&plan, &frame, body)
+            .unwrap()
+            .into_masm(crate::masm::ProcedureName::new("selected").unwrap())
+            .unwrap()
+            .to_pretty_string();
+        let input = [400, 2, 4].into_iter().chain((0..13).map(|i| 900 + i)).collect::<Vec<_>>();
+        stream_write_run(&mutant, &input, &input, &init, "", &[]).unwrap();
+    }
+}
+
+#[test]
+fn eval_circuit_selected_vm_count_guard_order_and_address_failures() {
+    let f = fixture("eval_circuit", 3, 3);
+    let (_, frame, _) = ready(&f, &SelectEnv::default());
+    assert_eq!(frame.aligned_size(), 0);
+    // The terminal EVAL fixture writes the reserved FMP cell as operand data. This selected
+    // procedure owns no frame and never accesses FMP, so its value cannot redirect a local access.
+    let procedure = selected_procedure(&fixture("eval_circuit", 3, 3), &SelectEnv::default());
+    for (ptr, read, eval, message) in [
+        (1, 32766, 4, "num of wires cannot exceed 32768 but was 32770"),
+        (1usize << 32, 2, 32768, "num of wires cannot exceed 32768 but was 32770"),
+        (1, 0xffff_ffff_0000_0000, 0x1_0000_0004, "num of wires cannot exceed"),
+        (1, 0, 0, "num of variables"),
+        (1, 1, 3, "num of variables"),
+        (1, 2, 0, "num of evaluation gates"),
+        (1, 2, 3, "num of evaluation gates"),
+    ] {
+        let (_, error) = stream_write_failure(&procedure, &[ptr, read, eval], "", &[], None);
+        let miden_processor::ExecutionError::AceChipError {
+            error: miden_processor::AceError(error),
+            ..
+        } = error
+        else {
+            panic!("count guard must precede memory: {error}");
+        };
+        assert!(error.contains(message), "{error}");
+    }
+    for (ptr, read, eval, init) in [
+        (401, 2, 4, String::new()),
+        (1usize << 32, 2, 4, String::new()),
+        // A valid first READ followed by an out-of-u32 EVAL address.
+        (0xffff_fffc, 2, 4, String::new()),
+        // The first EVAL succeeds before the second scalar address exceeds u32.
+        (
+            0xffff_fff8,
+            2,
+            8,
+            format!(
+                "push.{} mem_store.4294967292 push.{} mem_store.4294967293 push.{} \
+                 mem_store.4294967294 push.{} mem_store.4294967295",
+                eval_circuit_gate(9, 9, 0),
+                eval_circuit_gate(9, 9, 0),
+                eval_circuit_gate(9, 9, 0),
+                eval_circuit_gate(9, 9, 0)
+            ),
+        ),
+        (0xffff_fffc, 4, 4, String::new()),
+    ] {
+        let (_, error) = stream_write_failure(&procedure, &[ptr, read, eval], &init, &[], None);
+        match error {
+            miden_processor::ExecutionError::MemoryError {
+                err: miden_processor::MemoryError::UnalignedWordAccess { addr, .. },
+                ..
+            } if ptr == 401 => assert_eq!(addr, 401),
+            miden_processor::ExecutionError::MemoryError {
+                err: miden_processor::MemoryError::AddressOutOfBounds { addr },
+                ..
+            } if ptr != 401 => assert_eq!(addr, 1u64 << 32),
+            error => panic!("unexpected terminal memory failure for {ptr}/{read}/{eval}: {error}"),
+        }
+    }
+}
+
+#[test]
+fn eval_circuit_selected_vm_wide_footprint_wire_limit_and_traced_invocation_limit() {
+    use miden_processor::{AceError, ExecutionError, FastProcessor, StackInputs};
+    let procedure = selected_procedure(&fixture("eval_circuit", 3, 3), &SelectEnv::default());
+    for read in [128, 32764] {
+        let wire = read + 3;
+        let cells = vec![eval_circuit_gate(wire, wire, 0); 4];
+        let init = eval_circuit_initialize(400 + 2 * read as usize, &cells);
+        let input = [400, read as usize, 4]
+            .into_iter()
+            .chain((0..13).map(|i| 901 + i))
+            .collect::<Vec<_>>();
+        stream_write_run(&procedure, &input, &input, &init, "", &[]).unwrap();
+    }
+    let init = eval_circuit_initialize(400, &eval_circuit_cells());
+    for count in [32, 33] {
+        let source = format!(
+            "{procedure} begin {init} repeat.{count} push.4.2.400 exec.selected drop drop drop \
+             end end"
+        );
+        let program = miden_assembly::Assembler::default()
+            .assemble_program("circuit_limit", source)
+            .unwrap()
+            .try_into_program()
+            .unwrap();
+        FastProcessor::new(StackInputs::default())
+            .execute_sync(&program, &mut crate::plan::tests::lowering_units::host())
+            .unwrap();
+        let traced = FastProcessor::new(StackInputs::default())
+            .execute_for_proving_sync(&program, &mut crate::plan::tests::lowering_units::host());
+        if count == 32 {
+            traced.unwrap();
+        } else {
+            let ExecutionError::AceChipError {
+                error: AceError(message),
+                ..
+            } = traced.unwrap_err()
+            else {
+                panic!("expected traced invocation limit");
+            };
+            assert_eq!(message, "number of recorded eval_circuit invocations cannot exceed 32");
+        }
+    }
+}
+
+#[test]
+fn eval_circuit_selected_source_local_dynamic_counts_execute_without_worst_case_reservation() {
+    use midenc_hir::Type;
+    let args = (0..8).map(|i| format!("%w{i}: felt")).collect::<Vec<_>>().join(", ");
+    let stores = (0..8)
+        .map(|i| {
+            format!(
+                "hir.store_local %w{i} <{{ local = #builtin.local_variable<{i},felt> }}> : (felt);"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let source = format!(
+        "builtin.function public extern(\"C\") @circuit_local(%r: felt, %e: felt, {args}) -> \
+         (felt, felt) {{ {stores} %ptr = hir.local_address <{{ local = \
+         #builtin.local_variable<0,felt> }}>; %bits = hir.ptr_to_int %ptr <{{ ty = \
+         #builtin.type<u32> }}>; %address = hir.bitcast %bits <{{ ty = #builtin.type<felt> }}>; \
+         %p, %rr, %ee = hir.eval_circuit %address, %r, %e; builtin.ret %rr, %ee : (felt, felt); \
+         }};"
+    );
+    let mut f = parse(&source);
+    for _ in 0..8 {
+        f.function.borrow_mut().alloc_local(Type::Felt);
+    }
+    let (_, frame, _) = ready(&f, &SelectEnv::default());
+    assert_eq!(frame.source().extent, 8);
+    let input = [2, 4].into_iter().chain(eval_circuit_cells()).collect::<Vec<_>>();
+    execute_linked(&f, &input, &[2, 4]);
+}
+
+#[test]
+fn eval_circuit_source_operand_arity_is_checked_without_inference_or_panics() {
+    for mutation in 0..4 {
+        let f = fixture("eval_circuit", 3, 3);
+        let mut op = f
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .front()
+            .get()
+            .unwrap()
+            .as_operation_ref();
+        if mutation < 3 {
+            op.borrow_mut().operands_mut().group_mut(0).erase(mutation);
+        } else {
+            let value = op.borrow().operands().all()[0].borrow().as_value_ref();
+            let operand = f.context.make_operand(value, op, 0);
+            op.borrow_mut().operands_mut().push(operand);
+        }
+        assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
     }
 }

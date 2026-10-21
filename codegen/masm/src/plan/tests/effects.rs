@@ -140,10 +140,10 @@ fn raw_slots_address_generation_and_word_boundaries_match_vm() -> Result<(), Rep
     assert_eq!(address.outputs, [LaneEffect::FrameAddress(3)]);
     assert_eq!(
         TargetEffects::instruction(&Instruction::MemLoad)?.memory.read,
-        Some(MemoryRegion::Indirect {
+        Some(MemoryRead::Fixed(MemoryRegion::Indirect {
             address: 0,
             width: 1
-        })
+        }))
     );
     for offset in [0, 4] {
         let body = format!(
@@ -155,10 +155,10 @@ fn raw_slots_address_generation_and_word_boundaries_match_vm() -> Result<(), Rep
         let effect = TargetEffects::instruction(&Instruction::LocLoadWLe(offset.into()))?;
         assert_eq!(
             effect.memory.read,
-            Some(MemoryRegion::Frame {
+            Some(MemoryRead::Fixed(MemoryRegion::Frame {
                 offset: offset.into(),
                 width: 4
-            })
+            }))
         );
     }
     for offset in [1, 2, 3, 5] {
@@ -365,10 +365,10 @@ fn indirect_memory_effects_expose_the_address_for_provenance_checking() -> Resul
     let store = TargetEffects::instruction(&Instruction::MemStore)?;
     assert_eq!(
         load.memory.read,
-        Some(MemoryRegion::Indirect {
+        Some(MemoryRead::Fixed(MemoryRegion::Indirect {
             address: 0,
             width: 1
-        })
+        }))
     );
     assert_eq!(
         store.memory.write.as_ref().unwrap().region,
@@ -1114,10 +1114,10 @@ fn horner_closed_read_and_retained_rules() {
         );
         assert_eq!(
             effect.memory.read,
-            Some(MemoryRegion::Indirect {
+            Some(MemoryRead::Fixed(MemoryRegion::Indirect {
                 address: 13,
                 width: 4
-            })
+            }))
         );
         assert!(effect.may_trap);
         assert!(effect.floor.is_empty());
@@ -1296,10 +1296,10 @@ fn memstream_closed_read_and_lane_rule() {
     );
     assert_eq!(
         effect.memory.read,
-        Some(MemoryRegion::Indirect {
+        Some(MemoryRead::Fixed(MemoryRegion::Indirect {
             address: 12,
             width: 8
-        })
+        }))
     );
     assert!(effect.may_trap);
     assert!(effect.floor.is_empty());
@@ -1550,12 +1550,14 @@ fn stream_write_metadata_rejects_invalid_dependencies_before_indexing() {
         let mut bad = base.clone();
         match mutation {
             0 => {
-                bad.memory.read = Some(MemoryRegion::Indirect {
+                bad.memory.read = Some(MemoryRead::Fixed(MemoryRegion::Indirect {
                     address: 14,
                     width: 8,
-                })
+                }))
             }
-            1 => bad.memory.read = Some(MemoryRegion::SourceUnknown { width: 0 }),
+            1 => {
+                bad.memory.read = Some(MemoryRead::Fixed(MemoryRegion::SourceUnknown { width: 0 }))
+            }
             2 => {
                 bad.memory.write.as_mut().unwrap().region = MemoryRegion::Indirect {
                     address: 14,
@@ -1607,4 +1609,60 @@ fn stream_write_metadata_rejects_invalid_dependencies_before_indexing() {
         );
         assert_eq!(write.values, (0..8).map(WriteValue::Output).collect::<Vec<_>>());
     }
+}
+
+#[test]
+fn eval_circuit_closed_rule_retains_exact_inputs_without_floor_changes() {
+    let effect = TargetEffects::instruction(&Instruction::EvalCircuit).unwrap();
+    assert_eq!(effect.consumed, 3);
+    assert_eq!(effect.outputs, (0..3).map(LaneEffect::Input).collect::<Vec<_>>());
+    assert!(effect.may_trap);
+    assert!(effect.floor.is_empty());
+    assert!(effect.memory.read.is_some());
+    assert!(effect.memory.write.is_none());
+    effect.validate().unwrap();
+}
+
+#[test]
+fn eval_circuit_metadata_rejects_invalid_raw_references_and_memory_outputs() {
+    let base = TargetEffects::instruction(&Instruction::EvalCircuit).unwrap();
+    assert_eq!(
+        base.memory.read,
+        Some(MemoryRead::Circuit {
+            address: 0,
+            read_count: 1,
+            eval_count: 2,
+        })
+    );
+    for (address, read_count, eval_count) in [(3, 1, 2), (0, 3, 2), (0, 1, 3)] {
+        let mut bad = base.clone();
+        bad.memory.read = Some(MemoryRead::Circuit {
+            address,
+            read_count,
+            eval_count,
+        });
+        assert!(bad.validate().is_err());
+    }
+    let mut bad = base;
+    bad.outputs[0] = LaneEffect::Memory { lane: 0 };
+    assert!(bad.validate().is_err());
+}
+
+#[test]
+fn eval_circuit_raw_actual_minimum_floor_retains_all_lanes() {
+    let gate = |left: u64, right: u64, op: u64| left + (right << 30) + (op << 60);
+    let gates = [gate(5u64, 5u64, 0u64), gate(5, 4, 2), gate(2, 2, 1), gate(1, 1, 0)];
+    let cells = [3, 7, 11, 13].into_iter().chain(gates).collect::<Vec<_>>();
+    let init = cells
+        .iter()
+        .enumerate()
+        .map(|(i, v)| format!("push.{v} mem_store.{}", 400 + i))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let input = [400, 2, 4]
+        .into_iter()
+        .chain(0..13)
+        .map(Felt::new_unchecked)
+        .collect::<Vec<_>>();
+    assert_eq!(run_program(&format!("begin {init} eval_circuit end"), &input).unwrap(), input);
 }
