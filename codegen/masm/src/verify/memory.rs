@@ -26,10 +26,10 @@ pub(super) fn read(
 /// Check an element-addressed interval against the final frame, including arithmetic overflow.
 pub(super) fn check_range(
     offset: u32,
-    width: u8,
+    width: u32,
     frame: &FinalFrameLayout,
 ) -> Result<(), VerificationError> {
-    if offset.checked_add(width.into()).is_none_or(|end| end > frame.aligned_size()) {
+    if offset.checked_add(width).is_none_or(|end| end > frame.aligned_size()) {
         return Err(fail(
             DiagnosticCategory::FrameCapacityExceeded,
             "physical access outside final frame",

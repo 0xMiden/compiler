@@ -19,6 +19,7 @@ pub(crate) enum Kind {
     MemStream,
     AdvicePipe,
     CryptoStream,
+    EvalCircuit,
     MTreeGet,
     MTreeSet,
     MTreeMerge,
@@ -52,6 +53,7 @@ impl Intrinsic {
             HPerm | LogDeferred => (vec![Type::Felt; 12], vec![Type::Felt; 12]),
             HornerBase | HornerExt => (vec![Type::Felt; 16], vec![Type::Felt; 16]),
             AdvicePipe | MemStream => (vec![Type::Felt; 13], vec![Type::Felt; 13]),
+            EvalCircuit => (vec![Type::Felt; 3], vec![Type::Felt; 3]),
             CryptoStream => (vec![Type::Felt; 14], vec![Type::Felt; 14]),
             FriExt2Fold4 => (vec![Type::Felt; 17], vec![Type::Felt; 16]),
             MTreeGet => (vec![Type::Felt; 6], vec![Type::Felt; 8]),
@@ -96,6 +98,7 @@ impl Intrinsic {
             MemStream => emitter.mem_stream(op.span()),
             AdvicePipe => emitter.advice_pipe(op.span()),
             CryptoStream => emitter.crypto_stream(op.span()),
+            EvalCircuit => emitter.eval_circuit(op.span()),
             MTreeGet => emitter.mtree_get(op.span()),
             MTreeSet => emitter.mtree_set(op.span()),
             MTreeMerge => emitter.mtree_merge(op.span()),
@@ -120,6 +123,7 @@ impl Intrinsic {
             body,
             retained: match kind {
                 MTreeGet => (4..8).map(|i| (i, i - 2)).collect(),
+                EvalCircuit => (0..3).map(|i| (i, i)).collect(),
                 MTreeVerify => (0..10).map(|i| (i, i)).collect(),
                 HornerBase | HornerExt => (0..14).map(|i| (i, i)).collect(),
                 AdvicePipe | CryptoStream | MemStream => (8..12).map(|i| (i, i)).collect(),
@@ -142,12 +146,13 @@ impl Intrinsic {
                         | MemStream
                         | AdvicePipe
                         | CryptoStream
+                        | EvalCircuit
                 ),
                 memory: if matches!(kind, CryptoStream) {
                     SourceMemoryEffects::READ_WRITE
                 } else if matches!(kind, AdvicePipe) {
                     SourceMemoryEffects::WRITE
-                } else if matches!(kind, HornerBase | HornerExt | MemStream) {
+                } else if matches!(kind, HornerBase | HornerExt | MemStream | EvalCircuit) {
                     SourceMemoryEffects::READ
                 } else {
                     SourceMemoryEffects::default()

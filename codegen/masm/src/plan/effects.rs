@@ -30,10 +30,22 @@ pub(crate) enum MemoryRegion {
         width: u8,
     },
 }
+/// A closed read footprint; circuit inputs name raw stack lanes, never SSA values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MemoryRead {
+    Fixed(MemoryRegion),
+    /// Circuit footprint derived from its address and runtime count inputs.
+    Circuit {
+        address: u8,
+        read_count: u8,
+        eval_count: u8,
+    },
+}
+
 /// Raw accesses describe one normal transition: read, construct outputs, then write.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct MemoryEffects {
-    pub read: Option<MemoryRegion>,
+    pub read: Option<MemoryRead>,
     pub write: Option<MemoryWrite>,
 }
 
@@ -125,7 +137,7 @@ impl StackEffect {
     }
 
     fn read(mut self, region: MemoryRegion) -> Self {
-        self.memory.read = Some(region);
+        self.memory.read = Some(MemoryRead::Fixed(region));
         self
     }
 
@@ -137,9 +149,21 @@ impl StackEffect {
     /// Validate closed metadata before replay can index any raw token vector.
     pub fn validate(&self) -> Result<(), PlanError> {
         let input = |index: u8| index < self.consumed;
-        for region in
-            self.memory.read.into_iter().chain(self.memory.write.as_ref().map(|w| w.region))
-        {
+        let fixed_read = match self.memory.read {
+            Some(MemoryRead::Fixed(region)) => Some(region),
+            Some(MemoryRead::Circuit {
+                address,
+                read_count,
+                eval_count,
+            }) => {
+                if ![address, read_count, eval_count].into_iter().all(input) {
+                    return Err(stack_error("invalid circuit read input dependency"));
+                }
+                None
+            }
+            None => None,
+        };
+        for region in fixed_read.into_iter().chain(self.memory.write.as_ref().map(|w| w.region)) {
             if region.width() == 0
                 || matches!(region, MemoryRegion::Indirect { address, .. } if !input(address))
             {
@@ -154,7 +178,7 @@ impl StackEffect {
                     if_true,
                     if_false,
                 } => input(condition) && input(if_true) && input(if_false),
-                LaneEffect::Memory { lane } => self.memory.read.is_some_and(|r| lane < r.width()),
+                LaneEffect::Memory { lane } => fixed_read.is_some_and(|r| lane < r.width()),
                 _ => true,
             };
             if !valid {
@@ -350,6 +374,16 @@ impl TargetEffects {
                 address: 13,
                 width: 4,
             }),
+            EvalCircuit => {
+                let mut effect =
+                    StackEffect::new(3, (0..3).map(Input).collect(), vec![]).trapping();
+                effect.memory.read = Some(MemoryRead::Circuit {
+                    address: 0,
+                    read_count: 1,
+                    eval_count: 2,
+                });
+                effect
+            }
             LogDeferred => StackEffect::computed(12, 12, &[]).trapping(),
             FriExt2Fold4 => StackEffect::new(
                 17,
