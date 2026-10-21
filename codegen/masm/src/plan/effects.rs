@@ -382,6 +382,16 @@ use indexed::*;
 pub(crate) struct TargetEffects;
 
 impl TargetEffects {
+    /// Closed generated-state observation, requiring sealed generic source authority.
+    /// This does not grant operand-memory permissions or strict typed observations.
+    pub fn generated_event(immediate: bool) -> StackEffect {
+        if immediate {
+            StackEffect::new(0, vec![], vec![FloorStep::Push(1), FloorStep::Pop(1)]).trapping()
+        } else {
+            StackEffect::new(1, vec![LaneEffect::Input(0)], vec![]).trapping()
+        }
+    }
+
     /// Look up concrete instruction semantics, rejecting unresolved immediates, invalid
     /// encodings, and instructions without a registered rule. Calls use separate ABI rules.
     pub fn instruction(instruction: &Instruction) -> Result<StackEffect, PlanError> {

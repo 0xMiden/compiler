@@ -853,3 +853,138 @@ fn nonboolean_conditional_predicate_has_no_normal_continuation() {
         "undeclared trapping instruction"
     );
 }
+
+#[test]
+fn generic_event_source_category_shape_binding_and_candidate_attacks() {
+    use crate::select::{SelectEnv, select_function, tests::intrinsics::generic_event_fixture};
+    for immediate in [false, true] {
+        let f = generic_event_fixture(immediate);
+        let function = f.borrow();
+        let env = SelectEnv::default();
+        let source = SourceContext::Hir {
+            function: &function,
+            env: &env,
+        };
+        let selected = select_function(&function, &env).unwrap();
+        for mutation in 0..7 {
+            let mut bad = selected.clone();
+            match mutation {
+                0 => bad.segments[0].units.clear(),
+                1 => {
+                    let unit = bad.segments[0].units[0].clone();
+                    bad.segments[0].units.push(unit);
+                }
+                2 => bad.segments[0].units[0].effects.may_trap = false,
+                3 => bad.segments[0].units[0].effects.memory = SourceMemoryEffects::READ_WRITE,
+                4 => bad.segments[0].units[0].outputs.clear(),
+                5 => bad.segments[0].units[0].source = SourceStepId(999),
+                _ => bad.source_map.clear(),
+            }
+            if immediate && mutation == 4 {
+                continue;
+            }
+            assert!(
+                check_selection(bad, &source).is_err(),
+                "immediate{immediate} mutation{mutation}"
+            );
+        }
+        // Authority is reconstructed from source; numerical IDs and annotations cannot supply it.
+        let (plan, frame, original) = crate::select::tests::ready(&f, &env);
+        let index = original
+            .ops()
+            .iter()
+            .position(|op| {
+                matches!(
+                    op,
+                    AnnotatedOp::Instruction {
+                        instruction: Instruction::Emit | Instruction::EmitImm(_),
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        for mutation in 0..4 {
+            let mut body = original.clone();
+            let unit = match body.ops()[index] {
+                AnnotatedOp::Instruction { unit, .. } => unit,
+                _ => unreachable!(),
+            };
+            match mutation {
+                0 => {
+                    body.ops_mut()[index] = AnnotatedOp::Instruction {
+                        instruction: Instruction::Emit,
+                        unit: SelectedStepId(999),
+                    };
+                }
+                1 if !immediate => {
+                    body.ops_mut().insert(
+                        index,
+                        AnnotatedOp::Instruction {
+                            instruction: Primitive::Push(Felt::ONE).instruction().unwrap(),
+                            unit,
+                        },
+                    );
+                    body.ops_mut().insert(
+                        index + 2,
+                        AnnotatedOp::Instruction {
+                            instruction: Instruction::Drop,
+                            unit,
+                        },
+                    );
+                }
+                1 => {
+                    body.ops_mut()[index] = AnnotatedOp::Instruction {
+                        instruction: Instruction::Emit,
+                        unit,
+                    };
+                }
+                2 => {
+                    body.ops_mut().insert(
+                        index,
+                        AnnotatedOp::Instruction {
+                            instruction: Instruction::MemStore,
+                            unit,
+                        },
+                    );
+                }
+                _ => {
+                    body.ops_mut().insert(index, AnnotatedOp::Boundary(Boundary::UnitEnd(unit)));
+                }
+            }
+            assert!(
+                verify(&plan, &frame, body).is_err(),
+                "immediate{immediate} physical{mutation}"
+            );
+        }
+    }
+    let ordinary = identity_plan();
+    // Even a may-trap ordinary source has no category and cannot emit a dynamic event.
+    assert!(verify(&ordinary, &frame(), body(vec![Instruction::Emit])).is_err());
+}
+
+#[test]
+fn generic_event_closed_metadata_rejects_forged_registered_shapes() {
+    for dynamic in [false, true] {
+        let mut f = Fixture::new(0, 0);
+        f.effects.may_trap = true;
+        f.proof.generated_event = Some(if dynamic {
+            GeneratedEvent::Dynamic(Fixture::input(0))
+        } else {
+            GeneratedEvent::Immediate
+        });
+        if dynamic {
+            assert!(
+                check_selection(f.instantiate(&[]).unwrap().program, &SourceContext::Generated(&f))
+                    .is_err()
+            );
+        } else {
+            check_selection(f.instantiate(&[]).unwrap().program, &SourceContext::Generated(&f))
+                .unwrap();
+            f.effects.memory = SourceMemoryEffects::READ;
+            assert!(
+                check_selection(f.instantiate(&[]).unwrap().program, &SourceContext::Generated(&f))
+                    .is_err()
+            );
+        }
+    }
+}

@@ -301,6 +301,8 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::CryptoStream, dyn HirSelection>();
     info.register_operation_trait::<hir::EvalCircuit, dyn HirSelection>();
     info.register_operation_trait::<hir::SystemEvent, dyn HirSelection>();
+    info.register_operation_trait::<hir::EmitEvent, dyn HirSelection>();
+    info.register_operation_trait::<hir::EmitEventImm, dyn HirSelection>();
     info.register_operation_trait::<hir::AdvicePop, dyn HirSelection>();
     info.register_operation_trait::<hir::AdviceLoadWord, dyn HirSelection>();
     info.register_operation_trait::<hir::Caller, dyn HirSelection>();
