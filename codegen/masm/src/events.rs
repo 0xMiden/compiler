@@ -54,3 +54,42 @@ impl From<Event> for miden_assembly_syntax::ast::EventImmediate {
         miden_assembly_syntax::ast::ImmFelt::from(event.as_event_id().as_felt()).into()
     }
 }
+
+/// The complete payload observed by a fixed-window VM system event.
+///
+/// Memory-backed and host-specific events require separate contracts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FixedSystemEvent {
+    /// Number of retained payload lanes, excluding the transient event ID pushed by `EmitImm`.
+    pub payload_lanes: u8,
+}
+impl FixedSystemEvent {
+    /// Look up a supported typed-system-event contract using its exact VM ID.
+    ///
+    /// Returns `None` for IDs without a closed typed contract, including trace events. This lookup
+    /// neither validates generic event IDs nor rewrites named events into numerical IDs.
+    pub fn from_id(id: miden_core::Felt) -> Option<Self> {
+        use miden_core::events::SystemEvent::*;
+        let payload_lanes =
+            match miden_core::events::SystemEvent::from_event_id(EventId::from_felt(id))? {
+                MapValueToStack
+                | MapValueCountToStack
+                | MapValueToStackN0
+                | MapValueToStackN4
+                | MapValueToStackN8
+                | HasMapKey
+                | DeferredEvaluate
+                | DeferredEvaluateTag
+                | DeferredEvaluatePayload => 4,
+                MerkleNodeToStack => 6,
+                HdwordToMap | MerkleNodeMerge => 8,
+                HdwordToMapWithDomain => 9,
+                HqwordToMap => 16,
+                HpermToMap | DeferredRegister => 12,
+                Ext2Inv => 2,
+                U32Clz | U32Ctz | U32Clo | U32Cto | ILog2 => 1,
+                MemToMap | DeferredRegisterData | TraceEvent => return None,
+            };
+        Some(Self { payload_lanes })
+    }
+}

@@ -42,6 +42,11 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
     fixtures.extend(super::arithmetic::fixtures());
     fixtures.extend(super::memory::fixtures());
     fixtures.extend(super::intrinsics::fixtures());
+    fixtures.extend(
+        super::intrinsics::system_event_cases()
+            .into_iter()
+            .map(|(event, n)| (super::intrinsics::system_event_fixture(event, n), false)),
+    );
     for (f, needs_link) in fixtures {
         let function = f.borrow();
         let info = needs_link.then(|| linked(&f));
@@ -110,7 +115,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
             );
         }
     }
-    assert_eq!(registered.len(), 117);
+    assert_eq!(registered.len(), 118);
     assert_eq!(covered, registered);
 }
 #[test]

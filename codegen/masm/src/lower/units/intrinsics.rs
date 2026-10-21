@@ -1,4 +1,8 @@
-//! Closed source-owned definitions for fixed-stack intrinsics.
+//! Closed source-owned definitions for fixed-stack intrinsics and events.
+//!
+//! Exact input/result tuples, retained lanes, immediates, and source-memory effects are fixed
+//! before the unit is allocated. Typed helpers construct a local raw body; that construction
+//! cannot supply its own authority to preserve an identity or access source memory.
 use alloc::{collections::BTreeSet, vec::Vec};
 
 use midenc_hir::{ArrayType, Operation, Report, Spanned, Type, Value};
@@ -20,6 +24,7 @@ pub(crate) enum Kind {
     AdvicePipe,
     CryptoStream,
     EvalCircuit,
+    SystemEvent,
     MTreeGet,
     MTreeSet,
     MTreeMerge,
@@ -36,15 +41,32 @@ pub(crate) enum Kind {
 pub(crate) struct Intrinsic {
     body: Vec<masm::Op>,
     retained: Vec<(usize, usize)>,
+    /// Source-memory and trap behavior allowed by the checked intrinsic or event descriptor.
     pub effects: LoweringEffects,
 }
 impl Intrinsic {
+    /// Validate the exact source tuple and immediate/descriptor parameters, then capture code.
+    /// `kind` must be the operation's registered selection rule. Unknown system events,
+    /// unsupported tuples, and helper constructions with inconsistent results are rejected.
     pub fn from_source(kind: Kind, op: &Operation) -> Result<Self, Report> {
         use Kind::*;
         let inputs =
             op.operands().all().iter().map(|v| v.borrow().ty().clone()).collect::<Vec<_>>();
         let outputs =
             op.results().all().iter().map(|v| v.borrow().ty().clone()).collect::<Vec<_>>();
+        let event = if kind == SystemEvent {
+            let source = op
+                .downcast_ref::<midenc_dialect_hir::SystemEvent>()
+                .ok_or_else(|| invalid("system event requires its source operation"))?;
+            let midenc_hir::Immediate::Felt(id) = *source.get_event_id() else {
+                return Err(invalid("system event ID requires a Felt immediate").into());
+            };
+            let descriptor = crate::events::FixedSystemEvent::from_id(id)
+                .ok_or_else(|| invalid("system event has no fixed-window contract"))?;
+            Some((id, usize::from(descriptor.payload_lanes)))
+        } else {
+            None
+        };
         let word = Type::from(ArrayType::new(Type::Felt, 4));
         let (expected_inputs, expected_outputs) = match kind {
             Hash => (vec![Type::Felt; 4], vec![Type::Felt; 4]),
@@ -53,6 +75,10 @@ impl Intrinsic {
             HornerBase | HornerExt => (vec![Type::Felt; 16], vec![Type::Felt; 16]),
             AdvicePipe | MemStream => (vec![Type::Felt; 13], vec![Type::Felt; 13]),
             EvalCircuit => (vec![Type::Felt; 3], vec![Type::Felt; 3]),
+            SystemEvent => {
+                let (_, n) = event.unwrap();
+                (vec![Type::Felt; n], vec![Type::Felt; n])
+            }
             CryptoStream => (vec![Type::Felt; 14], vec![Type::Felt; 14]),
             FriExt2Fold4 => (vec![Type::Felt; 17], vec![Type::Felt; 16]),
             MTreeGet => (vec![Type::Felt; 6], vec![Type::Felt; 8]),
@@ -98,6 +124,10 @@ impl Intrinsic {
             AdvicePipe => emitter.advice_pipe(op.span()),
             CryptoStream => emitter.crypto_stream(op.span()),
             EvalCircuit => emitter.eval_circuit(op.span()),
+            SystemEvent => {
+                let (id, n) = event.unwrap();
+                emitter.system_event(id, n, op.span());
+            }
             MTreeGet => emitter.mtree_get(op.span()),
             MTreeSet => emitter.mtree_set(op.span()),
             MTreeMerge => emitter.mtree_merge(op.span()),
@@ -123,6 +153,7 @@ impl Intrinsic {
             retained: match kind {
                 MTreeGet => (4..8).map(|i| (i, i - 2)).collect(),
                 EvalCircuit => (0..3).map(|i| (i, i)).collect(),
+                SystemEvent => (0..inputs.len()).map(|i| (i, i)).collect(),
                 MTreeVerify => (0..10).map(|i| (i, i)).collect(),
                 HornerBase | HornerExt => (0..14).map(|i| (i, i)).collect(),
                 AdvicePipe | CryptoStream | MemStream => (8..12).map(|i| (i, i)).collect(),
@@ -146,6 +177,7 @@ impl Intrinsic {
                         | AdvicePipe
                         | CryptoStream
                         | EvalCircuit
+                        | SystemEvent
                 ),
                 memory: if matches!(kind, CryptoStream) {
                     SourceMemoryEffects::READ_WRITE

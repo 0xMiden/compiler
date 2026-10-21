@@ -99,6 +99,9 @@ pub(crate) enum FloorStep {
     Push(u8),
     Pop(u8),
 }
+/// Trusted normal-completion rule for one target instruction. The consumed prefix includes
+/// all inspected lanes, even when outputs preserve them; the suffix is never inspected.
+/// Temporary floor steps and memory/observation effects are checked separately.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StackEffect {
     /// Replace this prefix with `outputs`; all remaining lanes are preserved.
@@ -106,6 +109,8 @@ pub(crate) struct StackEffect {
     /// Whether replay must require source authorization for a possible trap.
     pub may_trap: bool,
     pub outputs: Vec<LaneEffect>,
+    /// Pre-expansion input lanes exposed to advice/deferred/host state.
+    pub observed_inputs: Vec<u8>,
     /// Actual temporary height changes, in execution order (prefix replacement is not a pop).
     pub floor: Vec<FloorStep>,
     pub memory: MemoryEffects,
@@ -116,6 +121,7 @@ impl StackEffect {
             consumed,
             may_trap: false,
             outputs,
+            observed_inputs: vec![],
             floor,
             memory: MemoryEffects::default(),
         }
@@ -143,6 +149,9 @@ impl StackEffect {
     /// Validate closed metadata before replay can index any raw token vector.
     pub fn validate(&self) -> Result<(), PlanError> {
         let input = |index: u8| index < self.consumed;
+        if !self.observed_inputs.iter().copied().all(input) {
+            return Err(stack_error("invalid observed input dependency"));
+        }
         let fixed_read = match self.memory.read {
             Some(MemoryRead::Fixed(region)) => Some(region),
             Some(MemoryRead::Circuit {
@@ -650,6 +659,19 @@ impl TargetEffects {
                     || *event == crate::Event::FrameEnd.into() =>
             {
                 StackEffect::new(0, vec![], vec![])
+            }
+            EmitImm(crate::masm::EventImmediate::Immediate(id)) => {
+                let descriptor = crate::events::FixedSystemEvent::from_id(literal(id)?)
+                    .ok_or_else(|| stack_error("event has no fixed-window target contract"))?;
+                let n = descriptor.payload_lanes;
+                let mut effect = StackEffect::new(
+                    n,
+                    (0..n).map(Input).collect(),
+                    vec![FloorStep::Push(1), FloorStep::Pop(1)],
+                )
+                .trapping();
+                effect.observed_inputs = (0..n).collect();
+                effect
             }
             MemStoreWLe => {
                 StackEffect::new(5, (1..5).map(Input).collect(), vec![FloorStep::Pop(1)]).write(

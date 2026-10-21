@@ -1218,6 +1218,14 @@ impl<'a> Verifier<'a> {
         let effect = TargetEffects::instruction(instruction)?;
         let inputs = state.prefix(effect.consumed.into())?.to_vec();
         effect.validate()?;
+        for &index in &effect.observed_inputs {
+            if self.tokens.origins(inputs[usize::from(index)]).compiler() {
+                return Err(fail(
+                    DiagnosticCategory::IllegalStackAccess,
+                    "observed input exposes compiler storage provenance",
+                ));
+            }
+        }
         // Validate the entire footprint before constructing outputs or performing writes.
         // Only output-demanded fixed lanes need identities; repeated references share a token.
         let mut loaded = BTreeMap::new();
