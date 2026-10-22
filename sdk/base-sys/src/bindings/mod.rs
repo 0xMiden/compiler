@@ -11,6 +11,7 @@
 pub mod active_account;
 pub mod active_note;
 pub mod asset;
+mod attachment;
 pub mod faucet;
 pub mod input_note;
 pub mod native_account;
@@ -20,6 +21,7 @@ pub mod storage;
 pub mod tx;
 mod types;
 
+pub use attachment::{NoteAttachment, NoteAttachmentError, NoteAttachmentScheme};
 pub use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 pub use types::*;
 
