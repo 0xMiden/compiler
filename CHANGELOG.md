@@ -11,14 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Support Miden VM 0.36 debug-info v4 and package-internal MASM visibility.
   Verbose objtool debug dumps now show inline-call operation ranges for every source occurrence.
-
-- Remove unused HIR `Operation::reachability`/`reachability_cached` methods and their
-  `Reachability`/`ReachabilityCache` exports after removal of their spill-transform consumer.
-
-- Wasm explicit and implicit returns preserve every declared result, including mixed-width
-  tuples, instead of rejecting or dropping results after the first.
+- Keep distinct DWARF variable declarations separate when they share a Wasm local,
+  and identify formal parameters independently of their current storage slot.
 - Decode DWARF location lists relative to their compilation unit, rather than shifting
   variable lifetimes by the containing function's address.
+- Remove unused HIR `Operation::reachability`/`reachability_cached` methods and their
+  `Reachability`/`ReachabilityCache` exports after removal of their spill-transform consumer.
+- Wasm explicit and implicit returns preserve every declared result, including mixed-width
+  tuples, instead of rejecting or dropping results after the first.
 - Benchmark contract examples through deterministic MockChain transactions, comparing VM cycles
   against `next` and retaining replay snapshots and cycle-weighted flamegraphs.
 - The MASM frontend now reports advice taint findings from supported procedures even when it skips

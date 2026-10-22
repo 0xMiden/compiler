@@ -11,6 +11,7 @@ use midenc_hir::{
     dialects::debuginfo::attributes::{
         CompileUnit, Expression, ExpressionOp, FrameBase, Subprogram, Variable,
     },
+    hashbrown::hash_map::Entry,
     interner::Symbol,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic};
@@ -245,6 +246,15 @@ fn build_local_debug_info(
 
     let total = param_count + local_count;
     let mut locals = vec![None; total];
+    let mut local_types = wasm_signature
+        .params()
+        .iter()
+        .map(|ty| ir_type(*ty, diagnostics).ok())
+        .collect::<Vec<_>>();
+    for (count, ty) in &local_entries {
+        let ty = ir_type(convert_valtype(*ty), diagnostics).ok();
+        local_types.extend(core::iter::repeat_n(ty, *count as usize));
+    }
     let has_dwarf_locals = dwarf_locals.is_some_and(|locals| !locals.is_empty())
         || scheduled_vars.is_some_and(|locals| !locals.is_empty());
 
@@ -356,6 +366,12 @@ fn build_local_debug_info(
             }
             attr.column = var.decl_column;
             let expression = fixed_location_expression(&var.locations);
+            if let Some(expression) = &expression
+                && let [ExpressionOp::LocalSlot(index), ExpressionOp::StackValue] =
+                    expression.operations.as_slice()
+            {
+                attr.ty = local_types.get(*index as usize).cloned().flatten();
+            }
             locals.push(Some(LocalDebugInfo {
                 attr,
                 locations: var.locations.clone(),
@@ -681,7 +697,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
                 None
             };
             let mut scheduled_vars = Vec::new();
-            if let Some((local_index, mut data)) = decode_variable_entry(
+            if let Some((local_index, data)) = decode_variable_entry(
                 dwarf,
                 unit,
                 module,
@@ -693,13 +709,13 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
                 &mut scheduled_vars,
             )? {
                 let local_map = results.entry(func_index).or_default();
-                let entry = local_map.entry(local_index).or_insert_with(DwarfLocalData::default);
-                entry.name = entry.name.or(data.name);
-                entry.decl_file = entry.decl_file.or(data.decl_file);
-                entry.decl_line = entry.decl_line.or(data.decl_line);
-                entry.decl_column = entry.decl_column.or(data.decl_column);
-                if !data.locations.is_empty() {
-                    entry.locations.append(&mut data.locations);
+                match local_map.entry(local_index) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(data);
+                    }
+                    Entry::Occupied(_) => {
+                        scheduled_vars.push(data);
+                    }
                 }
             }
             if !scheduled_vars.is_empty() {
@@ -786,11 +802,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
             let storage =
                 decode_storage_from_expression(expr, unit.encoding(), module, frame_base)?;
             if let Some(storage) = storage {
-                // Determine the logical local slot for this variable. A direct local location uses
-                // its slot index; a frame-base location falls back to parameter order because
-                // formal parameters map to the leading function-local slots.
-                let local_index = local_index_from_expression(&storage).or(fallback_index);
-                if let Some(local_index) = local_index {
+                if let Some(local_index) = fallback_index {
                     locations.push(LocationDescriptor {
                         start: low_pc,
                         // A single-location description is valid for the variable's whole scope;
@@ -886,13 +898,6 @@ fn fixed_location_expression(locations: &[LocationDescriptor]) -> Option<Express
         [location] => Some(location.storage.clone()),
         _ => None,
     }
-}
-
-fn local_index_from_expression(storage: &Expression) -> Option<u32> {
-    storage.operations.iter().find_map(|op| match op {
-        ExpressionOp::LocalSlot(index) => Some(*index),
-        _ => None,
-    })
 }
 
 fn is_supported_location_expression(storage: &Expression) -> bool {
@@ -1276,6 +1281,102 @@ mod tests {
             })
             .unwrap();
         result
+    }
+
+    #[test]
+    fn distinct_declarations_can_share_a_wasm_local() {
+        let mut wasm = wat::parse_str(
+            "(module (func $entrypoint (export \"entrypoint\") (param i32) (result i32) (local \
+             i32) local.get 0))",
+        )
+        .unwrap();
+        let encoding = gimli::Encoding {
+            format: gimli::Format::Dwarf32,
+            version: 4,
+            address_size: 4,
+        };
+        let mut dwarf = dwarf_write::DwarfUnit::new(encoding);
+        let subprogram = dwarf.unit.add(dwarf.unit.root(), gimli::DW_TAG_subprogram);
+        dwarf
+            .unit
+            .get_mut(subprogram)
+            .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"entrypoint".to_vec()));
+        for name in ["earlier", "later", "later"] {
+            let variable = dwarf.unit.add(subprogram, gimli::DW_TAG_variable);
+            dwarf.unit.get_mut(variable).set(
+                gimli::DW_AT_name,
+                dwarf_write::AttributeValue::String(name.as_bytes().to_vec()),
+            );
+            dwarf.unit.get_mut(variable).set(
+                gimli::DW_AT_location,
+                dwarf_write::AttributeValue::Exprloc(dwarf_write::Expression::raw(vec![
+                    gimli::DW_OP_WASM_location.0,
+                    0,
+                    1,
+                    gimli::DW_OP_stack_value.0,
+                ])),
+            );
+        }
+        append_custom_sections(&mut wasm, dwarf_sections(&mut dwarf));
+        let parsed = parse_module(&wasm);
+        let collected =
+            collect_dwarf_local_data(&parsed, &parsed.module, &DiagnosticsHandler::default());
+        assert!(!collected.by_local.contains_key(&FuncIndex::new(0)));
+        let declarations = &collected.scheduled[&FuncIndex::new(0)];
+        assert_eq!(declarations.len(), 3);
+        assert_eq!(declarations[0].name, Some(Symbol::intern("earlier")));
+        assert_eq!(declarations[1].name, Some(Symbol::intern("later")));
+        assert_eq!(declarations[2].name, Some(Symbol::intern("later")));
+        for declaration in declarations {
+            assert_eq!(declaration.locations.len(), 1);
+            assert_eq!(
+                declaration.locations[0].storage.operations,
+                [ExpressionOp::LocalSlot(1), ExpressionOp::StackValue]
+            );
+        }
+    }
+
+    #[test]
+    fn formal_parameter_identity_does_not_follow_its_storage_slot() {
+        let mut dwarf = dwarf_write::DwarfUnit::new(gimli::Encoding {
+            format: gimli::Format::Dwarf32,
+            version: 4,
+            address_size: 4,
+        });
+        let subprogram = dwarf.unit.add(dwarf.unit.root(), gimli::DW_TAG_subprogram);
+        dwarf
+            .unit
+            .get_mut(subprogram)
+            .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"entrypoint".to_vec()));
+        for name in ["first", "second"] {
+            let parameter = dwarf.unit.add(subprogram, gimli::DW_TAG_formal_parameter);
+            dwarf.unit.get_mut(parameter).set(
+                gimli::DW_AT_name,
+                dwarf_write::AttributeValue::String(name.as_bytes().to_vec()),
+            );
+            dwarf.unit.get_mut(parameter).set(
+                gimli::DW_AT_location,
+                dwarf_write::AttributeValue::Exprloc(dwarf_write::Expression::raw(vec![
+                    gimli::DW_OP_WASM_location.0,
+                    0,
+                    0,
+                    gimli::DW_OP_stack_value.0,
+                ])),
+            );
+        }
+        let mut wasm = wat::parse_str(
+            "(module (func $entrypoint (export \"entrypoint\") (param i32 i32) (result i32) \
+             local.get 0))",
+        )
+        .unwrap();
+        append_custom_sections(&mut wasm, dwarf_sections(&mut dwarf));
+        let parsed = parse_module(&wasm);
+        let collected =
+            collect_dwarf_local_data(&parsed, &parsed.module, &DiagnosticsHandler::default());
+        let parameters = &collected.by_local[&FuncIndex::new(0)];
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[&0].name, Some(Symbol::intern("first")));
+        assert_eq!(parameters[&1].name, Some(Symbol::intern("second")));
     }
 
     #[test]
