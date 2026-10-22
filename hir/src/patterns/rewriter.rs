@@ -196,7 +196,8 @@ pub trait Rewriter: Builder + RewriterListener {
 
     /// Inline the operations of block `src` before the given insertion point in `dest`.
     ///
-    /// If the insertion point is `None`, the block will be inlined at the end of the target block.
+    /// `Some(ip)` inserts before `ip`, which must belong to `dest`, including when it is the last
+    /// operation. `None` appends to `dest`. Invalid anchors panic before either block changes.
     ///
     /// The source block will be deleted and must have no uses. The `args` values, if provided, are
     /// used to replace the block arguments of `src`, with `None` used to signal that an argument
@@ -225,8 +226,11 @@ pub trait Rewriter: Builder + RewriterListener {
         // Ensure insertion point belongs to destination block if present
         let insert_at_block_end = if let Some(ip) = ip {
             let ip_block = ip.parent().expect("expected 'ip' to belong to a block");
-            assert_eq!(ip_block, dest, "invalid insertion point: must be an op in 'dest'");
-            ip.next().is_none()
+            assert!(
+                BlockRef::ptr_eq(&ip_block, &dest),
+                "invalid insertion point: must be an op in 'dest'"
+            );
+            false
         } else {
             true
         };
@@ -289,8 +293,7 @@ pub trait Rewriter: Builder + RewriterListener {
             "merging {src} into {dest} replacing uses of its block arguments with {}",
             DisplayValues::new(args.iter().map(|v| DisplayOptional(v.as_ref())))
         );
-        let ip = dest.borrow().body().back().as_pointer();
-        self.inline_block_before(src, dest, ip, args);
+        self.inline_block_before(src, dest, None, args);
     }
 
     /// Split the operations starting at `ip` (inclusive) out of the given block into a new block,
@@ -1524,8 +1527,324 @@ mod tests {
             test::{TestDialect, TestOpBuilder},
         },
         testing::Test,
-        traits::AnyType,
+        traits::{AnyType, Terminator},
     };
+
+    struct BorrowingSpliceListener;
+
+    impl Listener for BorrowingSpliceListener {
+        fn kind(&self) -> ListenerType {
+            ListenerType::Rewriter
+        }
+
+        fn notify_operation_inserted(&self, op: OperationRef, _prev: ProgramPoint) {
+            let parent = op.parent().expect("inserted operation has a parent");
+            let block = parent.borrow();
+            assert!(
+                block
+                    .body()
+                    .iter()
+                    .any(|candidate| OperationRef::ptr_eq(&candidate.as_operation_ref(), &op))
+            );
+            if let Some(prev) = op.prev() {
+                assert!(BlockRef::ptr_eq(&prev.parent().unwrap(), &parent));
+            }
+            if let Some(next) = op.next() {
+                assert!(BlockRef::ptr_eq(&next.parent().unwrap(), &parent));
+            }
+        }
+    }
+    impl RewriterListener for BorrowingSpliceListener {}
+
+    fn splice_fixture() -> (
+        Test,
+        BlockRef,
+        BlockRef,
+        Vec<OperationRef>,
+        Vec<OperationRef>,
+        ValueRef,
+        ValueRef,
+    ) {
+        let mut test = Test::new("block_splicing", &[Type::U32], &[]);
+        let (dest, src, dest_ops, src_ops, arg, replacement) = {
+            let mut builder = test.function_builder();
+            let dest = builder.entry_block();
+            let replacement = dest.borrow().arguments()[0] as ValueRef;
+            let builder = builder.builder_mut();
+            builder.set_insertion_point_to_end(dest);
+            let mut dest_ops = Vec::new();
+            for value in [11, 22, 33] {
+                dest_ops.push(
+                    builder
+                        .u32(value, SourceSpan::UNKNOWN)
+                        .unwrap()
+                        .borrow()
+                        .get_defining_op()
+                        .unwrap(),
+                );
+            }
+            let src = builder.create_block(dest.parent().unwrap(), None, &[Type::U32]);
+            let arg = src.borrow().arguments()[0] as ValueRef;
+            let value = builder.add(arg, arg, SourceSpan::UNKNOWN).unwrap();
+            let first = value.borrow().get_defining_op().unwrap();
+            let second = builder
+                .add(value, arg, SourceSpan::UNKNOWN)
+                .unwrap()
+                .borrow()
+                .get_defining_op()
+                .unwrap();
+            (dest, src, dest_ops, alloc::vec![first, second], arg, replacement)
+        };
+        (test, dest, src, dest_ops, src_ops, arg, replacement)
+    }
+
+    fn assert_splice_order(block: BlockRef, expected: &[OperationRef]) {
+        let actual: Vec<_> = block.borrow().body().iter().map(|op| op.as_operation_ref()).collect();
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected) {
+            assert!(OperationRef::ptr_eq(actual, expected), "operation order differs");
+            assert!(BlockRef::ptr_eq(&actual.parent().unwrap(), &block));
+        }
+    }
+
+    #[test]
+    fn block_splice_last_anchor_listener_inserts_before() {
+        let (test, dest, src, mut expected, moved, _, replacement) = splice_fixture();
+        let anchor = expected[2];
+        expected.splice(2..2, moved);
+        let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc())
+            .with_listener(BorrowingSpliceListener);
+        rewriter.inline_block_before(src, dest, Some(anchor), &[Some(replacement)]);
+        assert_splice_order(dest, &expected);
+    }
+
+    #[test]
+    fn block_splice_primitives_preserve_order_and_parents() {
+        for after in [false, true] {
+            for index in 0..3 {
+                let (_test, mut dest, mut src, mut expected, moved, ..) = splice_fixture();
+                let anchor = expected[index];
+                expected.splice(index + usize::from(after)..index + usize::from(after), moved);
+                if after {
+                    dest.borrow_mut().splice_block_after(&mut src.borrow_mut(), anchor);
+                } else {
+                    dest.borrow_mut().splice_block_before(&mut src.borrow_mut(), anchor);
+                }
+                assert_splice_order(dest, &expected);
+                assert!(src.borrow().body().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn block_splice_inline_and_merge_preserve_values_and_order() {
+        for listener in [false, true] {
+            for position in 0..4 {
+                let (test, dest, src, mut expected, moved, arg, replacement) = splice_fixture();
+                let anchor = expected.get(position).copied();
+                let region = src.parent().unwrap();
+                expected.splice(position..position, moved.iter().copied());
+                let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc());
+                if listener {
+                    rewriter.with_listener(BorrowingSpliceListener).inline_block_before(
+                        src,
+                        dest,
+                        anchor,
+                        &[Some(replacement)],
+                    );
+                } else {
+                    rewriter.inline_block_before(src, dest, anchor, &[Some(replacement)]);
+                }
+                assert_splice_order(dest, &expected);
+                assert!(src.parent().is_none());
+                assert_eq!(region.borrow().body().iter().count(), 1);
+                assert!(!arg.borrow().is_used());
+                assert_eq!(moved[0].borrow().operands()[0].borrow().as_value_ref(), replacement);
+            }
+            for empty in [false, true] {
+                let (test, mut dest, src, mut expected, moved, arg, replacement) = splice_fixture();
+                if empty {
+                    dest.borrow_mut().body_mut().clear();
+                    expected.clear();
+                }
+                expected.extend(moved.iter().copied());
+                let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc());
+                if listener {
+                    rewriter.with_listener(BorrowingSpliceListener).merge_blocks(
+                        src,
+                        dest,
+                        &[Some(replacement)],
+                    );
+                } else {
+                    rewriter.merge_blocks(src, dest, &[Some(replacement)]);
+                }
+                assert_splice_order(dest, &expected);
+                assert!(src.parent().is_none());
+                assert_eq!(arg.borrow().iter_uses().count(), 0);
+                for (op, operand) in [(moved[0], 0), (moved[0], 1), (moved[1], 1)] {
+                    assert_eq!(
+                        op.borrow().operands()[operand].borrow().as_value_ref(),
+                        replacement
+                    );
+                }
+            }
+        }
+    }
+
+    #[operation(dialect = TestDialect, traits(Terminator))]
+    pub struct SpliceBranch {
+        #[successor]
+        target: crate::Successor,
+    }
+
+    #[test]
+    fn block_splice_invalid_anchors_leave_both_blocks_unchanged() {
+        for after in [false, true] {
+            for kind in 0..3 {
+                let (test, mut dest, mut src, expected, moved, ..) = splice_fixture();
+                let mut builder = test.context_rc().builder();
+                let other = test.context_rc().create_block();
+                builder.set_insertion_point_to_end(other);
+                let mut anchor = builder
+                    .u32(44, SourceSpan::UNKNOWN)
+                    .unwrap()
+                    .borrow()
+                    .get_defining_op()
+                    .unwrap();
+                if kind == 0 {
+                    anchor = moved[0];
+                }
+                if kind == 2 {
+                    anchor.borrow_mut().remove();
+                }
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if after {
+                        dest.borrow_mut().splice_block_after(&mut src.borrow_mut(), anchor);
+                    } else {
+                        dest.borrow_mut().splice_block_before(&mut src.borrow_mut(), anchor);
+                    }
+                }));
+                let panic = result.expect_err("invalid anchor must panic");
+                assert_eq!(
+                    panic.downcast_ref::<&str>().copied(),
+                    Some("splice anchor must belong to the destination block")
+                );
+                assert_splice_order(dest, &expected);
+                assert_splice_order(src, &moved);
+            }
+        }
+    }
+
+    #[test]
+    fn block_splice_inline_invalid_anchors_preserve_arguments_and_membership() {
+        for listener in [false, true] {
+            for kind in 0..3 {
+                let (test, dest, src, expected, moved, arg, replacement) = splice_fixture();
+                let mut builder = test.context_rc().builder();
+                let other = test.context_rc().create_block();
+                builder.set_insertion_point_to_end(other);
+                let mut anchor = builder
+                    .u32(44, SourceSpan::UNKNOWN)
+                    .unwrap()
+                    .borrow()
+                    .get_defining_op()
+                    .unwrap();
+                if kind == 0 {
+                    anchor = moved[0];
+                }
+                if kind == 2 {
+                    anchor.borrow_mut().remove();
+                }
+                let uses = arg.borrow().iter_uses().count();
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc());
+                    if listener {
+                        rewriter.with_listener(BorrowingSpliceListener).inline_block_before(
+                            src,
+                            dest,
+                            Some(anchor),
+                            &[Some(replacement)],
+                        );
+                    } else {
+                        rewriter.inline_block_before(src, dest, Some(anchor), &[Some(replacement)]);
+                    }
+                }));
+                assert!(result.is_err());
+                assert_splice_order(dest, &expected);
+                assert_splice_order(src, &moved);
+                assert!(src.parent().is_some());
+                assert_eq!(arg.borrow().iter_uses().count(), uses);
+                assert_eq!(moved[0].borrow().operands()[0].borrow().as_value_ref(), arg);
+            }
+        }
+    }
+
+    #[test]
+    fn block_splice_successor_safety_precedes_substitution_and_movement() {
+        use crate::BuilderExt;
+        for listener in [false, true] {
+            for append in [false, true] {
+                for permitted in [false, true] {
+                    let (test, dest, src, mut expected, mut moved, arg, replacement) =
+                        splice_fixture();
+                    let mut builder = test.context_rc().builder();
+                    let target = builder.create_block(dest.parent().unwrap(), None, &[]);
+                    let branch_block = if append == permitted { src } else { dest };
+                    builder.set_insertion_point_to_end(branch_block);
+                    let branch = builder
+                        .create::<SpliceBranch, (BlockRef, [ValueRef; 0])>(SourceSpan::UNKNOWN)(
+                        target,
+                        [],
+                    )
+                    .unwrap()
+                    .as_operation_ref();
+                    if BlockRef::ptr_eq(&branch_block, &src) {
+                        moved.push(branch);
+                    } else {
+                        expected.push(branch);
+                    }
+                    let anchor = if append {
+                        None
+                    } else {
+                        expected.last().copied()
+                    };
+                    let original_uses = arg.borrow().iter_uses().count();
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let mut rewriter =
+                            RewriterImpl::<NoopRewriterListener>::new(test.context_rc());
+                        if listener {
+                            rewriter.with_listener(BorrowingSpliceListener).inline_block_before(
+                                src,
+                                dest,
+                                anchor,
+                                &[Some(replacement)],
+                            );
+                        } else {
+                            rewriter.inline_block_before(src, dest, anchor, &[Some(replacement)]);
+                        }
+                    }));
+                    if permitted {
+                        result.unwrap();
+                        let at = if append {
+                            expected.len()
+                        } else {
+                            expected.len() - 1
+                        };
+                        expected.splice(at..at, moved);
+                        assert_splice_order(dest, &expected);
+                        assert!(src.parent().is_none());
+                    } else {
+                        assert!(result.is_err());
+                        assert_splice_order(dest, &expected);
+                        assert_splice_order(src, &moved);
+                        assert!(src.parent().is_some());
+                        assert_eq!(arg.borrow().iter_uses().count(), original_uses);
+                        assert_eq!(moved[0].borrow().operands()[0].borrow().as_value_ref(), arg);
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn inline_call_scopes_restore_metadata_and_preserve_explicit_chains() {

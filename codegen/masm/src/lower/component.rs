@@ -8,37 +8,311 @@ use alloc::{
 };
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
-use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
+use miden_assembly_syntax::ast::Attribute;
 use midenc_hir::{
-    FunctionIdent, Op, OpExt, OperationRef, SourceSpan, Span, Symbol, SymbolPath, SymbolRef,
-    SymbolResolutionError, TraceTarget, Type, ValueRef,
+    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, SymbolPath, SymbolRef,
+    SymbolResolutionError, TraceTarget, Type,
     diagnostics::IntoDiagnostic,
     dialects::{builtin, debuginfo::attributes::SubprogramAttr},
     pass::AnalysisManager,
-    reserved_names::{
-        COMPONENT_INIT_PROCEDURE, EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC, FUNCTION_TABLE_INIT_PROC,
-    },
+    reserved_names::{COMPONENT_INIT_PROCEDURE, FUNCTION_TABLE_INIT_PROC},
 };
-use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{Report, Spanned, WrapErr};
 use smallvec::SmallVec;
 
 use crate::{
-    Event, OperandStack,
     artifact::MasmComponent,
-    emitter::{BlockEmitter, FrameLayout, has_inline_call_chain},
-    linker::{FunctionTableLayout, LinkInfo, Linker},
-    lower::lowering::{
-        invocation_target_from_symbol, qualified_invocation_target, symbol_module_path,
-        world_root_module,
-    },
+    linker::{LinkInfo, Linker},
+    lower::lowering::{qualified_invocation_target, symbol_module_path, world_root_module},
     masm,
 };
 
+/// Namespace selection made before executable source is selected.
+#[derive(Clone, Copy)]
+pub enum EmissionNamespace<'a> {
+    /// Preserve the source identity for an explicitly target-independent consumer.
+    Source,
+    /// Apply the target's existing namespace eligibility policy before lowering.
+    Target(&'a midenc_session::miden_project::Target),
+}
+
+/// Closed, immutable correspondence between actual emitted source owners and final names.
+/// Construction derives every destination from source ownership and one namespace policy;
+/// callers cannot provide arbitrary same-signature replacement targets.
+pub(crate) struct EmissionOwners {
+    modules: midenc_hir::FxHashMap<midenc_hir::OperationRef, masm::PathBuf>,
+    targets: BTreeMap<masm::PathBuf, masm::PathBuf>,
+    root: midenc_hir::OperationRef,
+    source_root: masm::PathBuf,
+    destination: Option<masm::PathBuf>,
+    source_modules: Vec<midenc_hir::OperationRef>,
+    source_symbols: Vec<SymbolRef>,
+}
+impl EmissionOwners {
+    fn new(
+        root: midenc_hir::OperationRef,
+        supporting: &[builtin::ModuleRef],
+        source_root: &masm::Path,
+        namespace: EmissionNamespace<'_>,
+        authored: bool,
+        link: &LinkInfo,
+    ) -> Result<Self, Report> {
+        let destination = match namespace {
+            EmissionNamespace::Target(target)
+                if !target.is_executable()
+                    && (!authored
+                        || source_root
+                            .strip_prefix(target.namespace.inner())
+                            .is_some_and(|r| r.is_empty())) =>
+            {
+                Some(target.namespace.inner().as_ref())
+            }
+            _ => None,
+        };
+        let relocate = |path: &masm::Path| {
+            let Some((to, rest)) =
+                destination.and_then(|to| path.strip_prefix(source_root).map(|rest| (to, rest)))
+            else {
+                return path.to_path_buf();
+            };
+            let mut result = to.to_path_buf();
+            for part in rest.components() {
+                match part.expect("valid source path") {
+                    masm::LibraryPathComponent::Normal(spelling) => result.push_component(spelling),
+                    _ => unreachable!("absolute prefix leaves only normal components"),
+                }
+            }
+            result
+        };
+        let mut modules = midenc_hir::FxHashMap::default();
+        let mut original = Vec::new();
+        original.push((root, source_root.to_path_buf()));
+        let mut symbols = Vec::new();
+        let mut collect = |op: &midenc_hir::Operation| {
+            if let Some(module) = op.downcast_ref::<builtin::Module>() {
+                original.push((
+                    op.as_operation_ref(),
+                    module.path().to_library_path().to_absolute().unwrap().into_owned(),
+                ));
+            } else if let Some(interface) = op.downcast_ref::<builtin::Interface>() {
+                original.push((
+                    op.as_operation_ref(),
+                    interface.path().to_library_path().to_absolute().unwrap().into_owned(),
+                ));
+            }
+            if let Some(symbol) = op.as_symbol_ref()
+                && (op.is::<builtin::Function>() || op.is::<builtin::FunctionAlias>())
+            {
+                symbols.push(symbol);
+            }
+        };
+        root.borrow().prewalk_all(&mut collect);
+        for module in supporting {
+            module.borrow().as_operation().prewalk_all(&mut collect);
+        }
+        let mut destinations = BTreeMap::new();
+        for (owner, path) in &original {
+            let final_path = relocate(path);
+            if let Some((previous_path, previous_owner)) =
+                destinations.insert(final_path.clone(), (path.clone(), *owner))
+                && !(previous_owner == root && previous_path == *path)
+            {
+                return Err(Report::msg(format!("duplicate final module owner '{final_path}'")));
+            }
+            modules.insert(*owner, final_path);
+        }
+        let mut targets = BTreeMap::new();
+        let mut definitions = BTreeSet::new();
+        for symbol in &symbols {
+            let symbol = symbol.borrow();
+            let op = symbol.as_symbol_operation();
+            if symbol.is_declaration() {
+                continue;
+            }
+            let owner = op
+                .nearest_symbol_table()
+                .ok_or_else(|| Report::msg("emitted procedure has no owner"))?;
+            let module = modules
+                .get(&owner)
+                .ok_or_else(|| Report::msg("procedure owner is outside the closed emitted map"))?;
+            let name = symbol.name();
+            let source = symbol_module_path(&*symbol).join(name.as_str());
+            let target = module.join(name.as_str());
+            if !definitions.insert(target.clone()) {
+                return Err(Report::msg(format!("duplicate final procedure owner '{target}'")));
+            }
+            targets.insert(source, target);
+        }
+        if link.requires_init() {
+            let init = modules[&root].join(COMPONENT_INIT_PROCEDURE);
+            if !definitions.insert(init.clone()) {
+                return Err(Report::msg(format!("duplicate final procedure owner '{init}'")));
+            }
+        }
+        // Declaration-only siblings keep their external identities, including overlapping prefixes.
+        let mut world = root;
+        loop {
+            let parent = world.borrow().parent_op();
+            match parent {
+                Some(parent) => world = parent,
+                None => break,
+            }
+        }
+        let mut collision = None;
+        world.borrow().prewalk_all(|op| {
+            if let Some(module) = op.downcast_ref::<builtin::Module>()
+                && !modules.contains_key(&op.as_operation_ref())
+                && is_declaration_only(&op.as_operation_ref())
+            {
+                let external = module.path().to_library_path().to_absolute().unwrap().into_owned();
+                if destinations.contains_key(&external) {
+                    collision = Some(external);
+                }
+            }
+            if let Some(function) = op.downcast_ref::<builtin::Function>()
+                && function.is_declaration()
+            {
+                let external = symbol_module_path(function).join(function.name().as_str());
+                if definitions.contains(&external) {
+                    collision = Some(external);
+                }
+            }
+        });
+        if let Some(path) = collision {
+            return Err(Report::msg(format!(
+                "final procedure owner collides with external declaration '{path}'"
+            )));
+        }
+        let result = Self {
+            modules,
+            targets,
+            root,
+            source_root: source_root.to_path_buf(),
+            destination: destination.map(masm::Path::to_path_buf),
+            source_modules: original.iter().map(|(owner, _)| *owner).collect(),
+            source_symbols: symbols,
+        };
+        result.validate()?;
+        Ok(result)
+    }
+
+    /// Reconstruct destinations from the actual source owners before checking selected evidence.
+    /// An immutable map is a packaging decision, never authority to substitute another procedure.
+    pub(crate) fn validate(&self) -> Result<(), Report> {
+        let relocate = |path: &masm::Path| {
+            let Some((to, rest)) = self
+                .destination
+                .as_ref()
+                .and_then(|to| path.strip_prefix(&self.source_root).map(|rest| (to, rest)))
+            else {
+                return path.to_path_buf();
+            };
+            let mut mapped = to.clone();
+            for part in rest.components() {
+                match part.expect("valid source path") {
+                    masm::LibraryPathComponent::Normal(spelling) => mapped.push_component(spelling),
+                    _ => unreachable!(),
+                }
+            }
+            mapped
+        };
+        if self.modules.len() != self.source_modules.len() {
+            return Err(Report::msg("final owner map has missing or extra source modules"));
+        }
+        for owner in &self.source_modules {
+            let op = owner.borrow();
+            let source = if *owner == self.root {
+                if let Some(world) = op.downcast_ref::<builtin::World>() {
+                    world_root_module(world)
+                } else {
+                    op.downcast_ref::<builtin::Component>()
+                        .unwrap()
+                        .namespace_path()
+                        .to_library_path()
+                        .to_absolute()
+                        .unwrap()
+                        .into_owned()
+                }
+            } else if let Some(module) = op.downcast_ref::<builtin::Module>() {
+                module.path().to_library_path().to_absolute().unwrap().into_owned()
+            } else {
+                op.downcast_ref::<builtin::Interface>()
+                    .unwrap()
+                    .path()
+                    .to_library_path()
+                    .to_absolute()
+                    .unwrap()
+                    .into_owned()
+            };
+            if self.modules.get(owner) != Some(&relocate(&source)) {
+                return Err(Report::msg("final module map disagrees with source ownership"));
+            }
+        }
+        let mut count = 0;
+        for symbol in &self.source_symbols {
+            let symbol = symbol.borrow();
+            if symbol.is_declaration() {
+                continue;
+            }
+            count += 1;
+            let source = symbol_module_path(&*symbol).join(symbol.name().as_str());
+            if self.targets.get(&source) != Some(&relocate(&source)) {
+                return Err(Report::msg("final procedure map disagrees with source identity"));
+            }
+        }
+        if count != self.targets.len() {
+            return Err(Report::msg("final owner map has missing or extra source procedures"));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn target(
+        &self,
+        target: masm::InvocationTarget,
+    ) -> Result<masm::InvocationTarget, Report> {
+        if let masm::InvocationTarget::Path(path) = &target
+            && let Some(mapped) = self.targets.get(path.inner().as_ref())
+        {
+            let source: &masm::Path = path.inner().as_ref();
+            let mut expected = source.to_path_buf();
+            if let Some((to, rest)) = self
+                .destination
+                .as_ref()
+                .and_then(|to| source.strip_prefix(&self.source_root).map(|rest| (to, rest)))
+            {
+                expected = to.clone();
+                for part in rest.components() {
+                    match part.expect("valid source path") {
+                        masm::LibraryPathComponent::Normal(spelling) => {
+                            expected.push_component(spelling)
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            if *mapped != expected {
+                return Err(Report::msg("final invocation map disagrees with source identity"));
+            }
+            return Ok(masm::InvocationTarget::Path(Span::new(
+                path.span(),
+                mapped.clone().into_boxed_path().into(),
+            )));
+        }
+        Ok(target)
+    }
+
+    fn module(&self, owner: midenc_hir::OperationRef) -> &masm::Path {
+        &self.modules[&owner]
+    }
+}
+
 /// This trait represents a conversion pass from some HIR entity to a Miden Assembly component.
 pub trait ToMasmComponent {
-    fn to_masm_component(&self, analysis_manager: AnalysisManager)
-    -> Result<MasmComponent, Report>;
+    fn to_masm_component(
+        &self,
+        analysis_manager: AnalysisManager,
+        namespace: EmissionNamespace<'_>,
+    ) -> Result<MasmComponent, Report>;
 }
 
 /// Derivation of a MASM component from an HIR world
@@ -92,6 +366,7 @@ impl ToMasmComponent for builtin::World {
     fn to_masm_component(
         &self,
         analysis_manager: AnalysisManager,
+        namespace: EmissionNamespace<'_>,
     ) -> Result<MasmComponent, Report> {
         let mut components = Vec::new();
         let mut siblings = Vec::new();
@@ -103,7 +378,7 @@ impl ToMasmComponent for builtin::World {
         }
 
         match components.len() {
-            0 => world_body_to_masm_component(self, analysis_manager),
+            0 => world_body_to_masm_component(self, analysis_manager, namespace),
             1 => {
                 let (supporting, owns_memory) = classify_siblings(&siblings);
                 // The analysis manager is rooted at the world, and `AnalysisManager::nest`
@@ -114,6 +389,7 @@ impl ToMasmComponent for builtin::World {
                     &components[0].borrow(),
                     analysis_manager,
                     &supporting,
+                    namespace,
                 )?;
                 // Reported after lowering succeeded, so that a build which failed for an
                 // unrelated reason is not also told about a limitation it never reached.
@@ -403,6 +679,7 @@ fn function_without_a_body(function: &builtin::Function) -> Report {
 fn world_body_to_masm_component(
     world: &builtin::World,
     analysis_manager: AnalysisManager,
+    namespace: EmissionNamespace<'_>,
 ) -> Result<MasmComponent, Report> {
     // Get the current compiler context
     let context = world.as_operation().context_rc();
@@ -421,7 +698,11 @@ fn world_body_to_masm_component(
                 entry_id.function.as_str().into(),
             )));
 
-            let path = LibraryPath::new(entry_id.module.as_str()).into_diagnostic()?;
+            let path = LibraryPath::new(entry_id.module.as_str())
+                .into_diagnostic()?
+                .to_absolute()
+                .map_err(|error| Report::msg(error.to_string()))?
+                .into_owned();
             let qualified = masm::QualifiedProcedureName::new(path.as_path(), name);
             Some(masm::InvocationTarget::Path(Span::new(
                 entry_id.function.span,
@@ -430,23 +711,24 @@ fn world_body_to_masm_component(
         }
         None => None,
     };
-    let executable_entrypoint = classify_marked_canonical_abi_entrypoint(
+    let entrypoint_arity =
+        resolve_entrypoint_arity(world.as_operation_ref(), &[], entrypoint.as_ref())?;
+    let owners = EmissionOwners::new(
         world.as_operation_ref(),
         &[],
-        &link_info,
-        entrypoint.as_ref(),
-    )?;
-    let executable_entrypoint_without_init = lower_executable_entrypoint_without_init(
-        executable_entrypoint,
-        &analysis_manager,
+        &world_root_module(world),
+        namespace,
+        false,
         &link_info,
     )?;
+    let entrypoint = entrypoint.map(|target| owners.target(target)).transpose()?;
 
     // If we have global variables, data segments, function tables, or a core Wasm start, we will
     // require a component initializer function, as well as a module to hold component-level
     // functions such as init
     let requires_init = link_info.requires_init();
-    let root: Arc<masm::Path> = world_root_module(world).into_boxed_path().into();
+    let root: Arc<masm::Path> =
+        owners.module(world.as_operation_ref()).to_path_buf().into_boxed_path().into();
     let init = if requires_init {
         let name = masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap();
         let qualified = masm::QualifiedProcedureName::new(&root, name);
@@ -476,7 +758,13 @@ fn world_body_to_masm_component(
         root,
         init,
         entrypoint,
-        executable_entrypoint_without_init,
+        entrypoint_arity,
+        prepared_target: match namespace {
+            EmissionNamespace::Source => None,
+            EmissionNamespace::Target(target) => {
+                Some((target.namespace.inner().clone(), target.is_executable()))
+            }
+        },
         rodata,
         heap_base,
         stack_pointer,
@@ -485,11 +773,10 @@ fn world_body_to_masm_component(
     let builder = MasmComponentBuilder {
         analysis_manager,
         component: &mut masm_component,
+        owners: &owners,
         link_info: &link_info,
         source_manager: context.session().source_manager.clone(),
         init_body: Default::default(),
-        invoked_from_init: Default::default(),
-        init_owner: world.as_operation_ref(),
     };
 
     // A world declaring no component has no siblings *beside* one: every top-level module in it
@@ -504,8 +791,9 @@ impl ToMasmComponent for builtin::Component {
     fn to_masm_component(
         &self,
         analysis_manager: AnalysisManager,
+        namespace: EmissionNamespace<'_>,
     ) -> Result<MasmComponent, Report> {
-        component_to_masm_component(self, analysis_manager, &[])
+        component_to_masm_component(self, analysis_manager, &[], namespace)
     }
 }
 
@@ -524,6 +812,7 @@ fn component_to_masm_component(
     component: &builtin::Component,
     analysis_manager: AnalysisManager,
     supporting: &[builtin::ModuleRef],
+    namespace: EmissionNamespace<'_>,
 ) -> Result<MasmComponent, Report> {
     // Get the current compiler context
     let context = component.as_operation().context_rc();
@@ -572,7 +861,11 @@ fn component_to_masm_component(
             } else {
                 // We're compiling a Wasm component and the component's namespace path is
                 // included in the entrypoint.
-                LibraryPath::new(entry_id.module.as_str()).into_diagnostic()?
+                LibraryPath::new(entry_id.module.as_str())
+                    .into_diagnostic()?
+                    .to_absolute()
+                    .map_err(|error| Report::msg(error.to_string()))?
+                    .into_owned()
             };
             let qualified = masm::QualifiedProcedureName::new(path.as_path(), name);
             Some(masm::InvocationTarget::Path(Span::new(
@@ -582,17 +875,17 @@ fn component_to_masm_component(
         }
         None => None,
     };
-    let executable_entrypoint = classify_marked_canonical_abi_entrypoint(
+    let entrypoint_arity =
+        resolve_entrypoint_arity(component.as_operation_ref(), supporting, entrypoint.as_ref())?;
+    let owners = EmissionOwners::new(
         component.as_operation_ref(),
         supporting,
-        &link_info,
-        entrypoint.as_ref(),
-    )?;
-    let executable_entrypoint_without_init = lower_executable_entrypoint_without_init(
-        executable_entrypoint,
-        &analysis_manager,
+        &component_path,
+        namespace,
+        true,
         &link_info,
     )?;
+    let entrypoint = entrypoint.map(|target| owners.target(target)).transpose()?;
 
     // If we have global variables, data segments, function tables, or a core Wasm start, we will
     // require a component initializer function, as well as a module to hold component-level
@@ -600,7 +893,8 @@ fn component_to_masm_component(
     let requires_init = link_info.requires_init();
     let init = if requires_init {
         let name = masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap();
-        let qualified = masm::QualifiedProcedureName::new(&component_path, name);
+        let qualified =
+            masm::QualifiedProcedureName::new(owners.module(component.as_operation_ref()), name);
         Some(masm::InvocationTarget::Path(Span::new(
             SourceSpan::default(),
             qualified.into_inner(),
@@ -612,7 +906,11 @@ fn component_to_masm_component(
     // Define the initial component modules set
     //
     // The top-level component module is always defined, but may be empty
-    let root: Arc<miden_assembly_syntax::Path> = component_path.into_boxed_path().into();
+    let root: Arc<miden_assembly_syntax::Path> = owners
+        .module(component.as_operation_ref())
+        .to_path_buf()
+        .into_boxed_path()
+        .into();
     let root_module = Arc::new(masm::Module::new(masm::ModuleKind::Library, &root));
     let modules = vec![root_module];
 
@@ -626,7 +924,13 @@ fn component_to_masm_component(
         root,
         init,
         entrypoint,
-        executable_entrypoint_without_init,
+        entrypoint_arity,
+        prepared_target: match namespace {
+            EmissionNamespace::Source => None,
+            EmissionNamespace::Target(target) => {
+                Some((target.namespace.inner().clone(), target.is_executable()))
+            }
+        },
         rodata,
         heap_base,
         stack_pointer,
@@ -635,11 +939,10 @@ fn component_to_masm_component(
     let builder = MasmComponentBuilder {
         analysis_manager,
         component: &mut masm_component,
+        owners: &owners,
         link_info: &link_info,
         source_manager: context.session().source_manager.clone(),
         init_body: Default::default(),
-        invoked_from_init: Default::default(),
-        init_owner: component.as_operation_ref(),
     };
 
     builder.build(component.as_operation(), supporting)?;
@@ -681,116 +984,70 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
     })
 }
 
-/// Identify the selected canonical-ABI wrapper that needs a private no-init executable copy.
-///
-/// Generated executable `main` must remain the initialization owner so that component startup runs
-/// before test-harness memory initialization. The public canonical wrapper must also retain its
-/// prologue so that a direct `call` initializes its fresh MASM context. For the exact combination
-/// of a component start and a selected same-component canonical wrapper, codegen therefore emits a
-/// private no-init copy for `main` alone. Calling convention by itself is deliberately insufficient:
-/// every unmarked input retains the existing path, regardless of its Wasm target.
-fn classify_marked_canonical_abi_entrypoint(
-    component: midenc_hir::OperationRef,
+/// Resolve the selected executable entrypoint through canonical HIR identity before emission.
+fn resolve_entrypoint_arity(
+    root: midenc_hir::OperationRef,
     supporting: &[builtin::ModuleRef],
-    link_info: &LinkInfo,
-    entrypoint: Option<&masm::InvocationTarget>,
-) -> Result<Option<builtin::FunctionRef>, Report> {
-    let (Some(_), Some(entrypoint)) = (link_info.component_start(), entrypoint) else {
+    target: Option<&masm::InvocationTarget>,
+) -> Result<Option<(u32, u32)>, Report> {
+    let Some(target) = target else {
         return Ok(None);
     };
-    let entrypoint_path = entrypoint
-        .unwrap_path()
-        .to_absolute()
-        .map_err(|err| Report::msg(format!("invalid executable entrypoint path: {err}")))?;
-
-    let find_canonical_entrypoint = |root: midenc_hir::OperationRef| {
-        let mut canonical_entrypoint = None;
-        root.borrow().prewalk_all(|op| {
-            // Entrypoints may name an alias. Resolve to the canonical function so
-            // `--entrypoint=...::alias` works like the primary name.
-            if let Some(alias) = op.downcast_ref::<builtin::FunctionAlias>() {
-                let alias_path = qualified_invocation_target(alias, alias.span());
-                if alias_path.unwrap_path() == entrypoint_path.as_ref()
-                    && let Some(target) = alias
-                        .resolve_target()
-                        .and_then(builtin::FunctionAlias::canonicalize_function)
-                    && target.borrow().get_signature().cc.is_wasm_canonical_abi()
-                {
-                    canonical_entrypoint = Some(target);
-                }
+    let mut found = None;
+    let mut find = |op: &midenc_hir::Operation| {
+        let function = if let Some(alias) = op.downcast_ref::<builtin::FunctionAlias>() {
+            if qualified_invocation_target(alias, alias.span()) != *target {
                 return;
             }
-            let Some(function) = op.downcast_ref::<builtin::Function>() else {
-                return;
-            };
-            if !function.signature().cc.is_wasm_canonical_abi() {
-                return;
-            }
-
-            let function_target = qualified_invocation_target(function, function.span());
-            if function_target.unwrap_path() == entrypoint_path.as_ref() {
-                canonical_entrypoint = Some(function.as_function_ref());
-            }
-        });
-        canonical_entrypoint
-    };
-
-    if let Some(function) = find_canonical_entrypoint(component) {
-        if function.borrow().as_operation().parent_op() != Some(component) {
-            return Err(Report::msg(format!(
-                "unsupported executable entrypoint '{entrypoint_path}': a canonical-ABI \
-                 entrypoint for a component with a core Wasm start function must be defined \
-                 directly in the selected component"
-            )));
+            alias.resolve_target().and_then(builtin::FunctionAlias::canonicalize_function)
+        } else if let Some(function) = op.downcast_ref::<builtin::Function>() {
+            (qualified_invocation_target(function, function.span()) == *target)
+                .then(|| function.as_function_ref())
+        } else {
+            None
+        };
+        if let Some(function) = function {
+            found = Some(function);
         }
-        return Ok(Some(function));
-    }
-
-    let supporting_entrypoint = supporting
-        .iter()
-        .find_map(|module| find_canonical_entrypoint(module.borrow().as_operation_ref()));
-    if supporting_entrypoint.is_some() {
-        return Err(Report::msg(format!(
-            "unsupported executable entrypoint '{entrypoint_path}': a canonical-ABI entrypoint \
-             cannot be selected for a component with a core Wasm start function because it would \
-             execute component initialization twice in the same context"
-        )));
-    }
-
-    Ok(None)
-}
-
-/// Lower the executable-only copy selected by [`classify_marked_canonical_abi_entrypoint`].
-fn lower_executable_entrypoint_without_init(
-    function: Option<builtin::FunctionRef>,
-    analysis_manager: &AnalysisManager,
-    link_info: &LinkInfo,
-) -> Result<Option<masm::Procedure>, Report> {
-    let Some(function) = function else {
-        return Ok(None);
     };
+    root.borrow().prewalk_all(&mut find);
+    for module in supporting {
+        module.borrow().as_operation().prewalk_all(&mut find);
+    }
+    let function = found.ok_or_else(|| {
+        Report::msg(format!("unable to resolve executable entrypoint '{target}'"))
+    })?;
     let function = function.borrow();
-    let mut builder = MasmFunctionBuilder::new(&function)?;
-    builder.name = masm::ProcedureName::new(EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC).unwrap();
-    builder.visibility = masm::Visibility::Private;
-    builder
-        .build(
-            &function,
-            analysis_manager.nest(function.as_operation_ref()),
-            link_info,
-            FunctionLoweringMode::ExecutableEntrypointWithoutInit,
-        )
-        .map(Some)
+    let signature = function.signature();
+    if !matches!(
+        signature.cc,
+        midenc_hir::CallConv::C | midenc_hir::CallConv::Fast | midenc_hir::CallConv::Wasm
+    ) || crate::lower::units::calls::is_kernel(&*function)
+    {
+        return Err(Report::msg(
+            "executable entrypoint requires a same-context calling convention",
+        ));
+    }
+    let lanes =
+        |types: &[midenc_hir::dialects::builtin::attributes::AbiParam]| -> Result<u32, Report> {
+            types.iter().try_fold(0u32, |n, p| {
+                n.checked_add(
+                    u32::try_from(p.ty.size_in_felts())
+                        .map_err(|_| Report::msg("entrypoint layout exceeds target"))?,
+                )
+                .ok_or_else(|| Report::msg("entrypoint layout exceeds target"))
+            })
+        };
+    Ok(Some((lanes(signature.params())?, lanes(signature.results())?)))
 }
 
 struct MasmComponentBuilder<'a> {
+    owners: &'a EmissionOwners,
     component: &'a mut MasmComponent,
     analysis_manager: AnalysisManager,
     link_info: &'a LinkInfo,
     source_manager: Arc<dyn midenc_session::SourceManager>,
-    init_body: Vec<masm::Op>,
-    invoked_from_init: BTreeSet<masm::Invoke>,
-    init_owner: OperationRef,
+    init_body: Vec<crate::select::generated::Initialization>,
 }
 
 impl MasmComponentBuilder<'_> {
@@ -801,8 +1058,6 @@ impl MasmComponentBuilder<'_> {
         component: &midenc_hir::Operation,
         supporting: &[builtin::ModuleRef],
     ) -> Result<(), Report> {
-        use masm::{Instruction as Inst, InvocationTarget, Op};
-
         // Validate exactly the operations this builder will emit. In particular, a world may
         // contain declaration-only or memory-owning siblings which codegen deliberately omits;
         // invalid roots in those items must not mask the established omission diagnostic.
@@ -811,33 +1066,10 @@ impl MasmComponentBuilder<'_> {
             crate::legalization::validate_procedure_roots(module.borrow().as_operation())?;
         }
 
-        // If a component-level init is required, emit code to initialize the heap before any other
-        // initialization code.
         if self.component.init.is_some() {
-            let span = component.span();
-
-            // Heap metadata initialization
-            let heap_base = self.component.heap_base;
-            self.init_body.push(masm::Op::Inst(Span::new(
-                span,
-                Inst::Push(masm::Immediate::Value(Span::unknown(heap_base.into()))),
-            )));
-            let heap_init = {
-                let name = masm::ProcedureName::new("heap_init").unwrap();
-                let module = masm::LibraryPath::new("::intrinsics::mem").unwrap();
-                let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-                InvocationTarget::Path(Span::new(span, qualified.into_inner()))
-            };
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameStart.into()))));
-            self.init_body.push(Op::Inst(Span::new(span, Inst::Exec(heap_init))));
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameEnd.into()))));
-
-            // Data segment initialization
-            //
-            // Function table initialization is *not* emitted here: it is attached to the modules
-            // defining the callees, which do not exist yet. See below.
+            self.init_body.push(crate::select::generated::Initialization::Heap {
+                base: self.component.heap_base,
+            });
             self.emit_data_segment_initialization();
         }
 
@@ -915,33 +1147,16 @@ impl MasmComponentBuilder<'_> {
                 }
             }
 
-            let span = SourceSpan::default();
             let proc_name = masm::ProcedureName::new(FUNCTION_TABLE_INIT_PROC).unwrap();
-            for (
-                owner,
-                FunctionTableFragment {
-                    mut body,
-                    mut invoked,
-                    a_callee,
-                },
-            ) in fragments
-            {
+            let span = component.span();
+            for (owner, mut fragment) in fragments {
                 for child in child_calls.remove(&owner).unwrap_or_default() {
                     let qualified =
                         masm::QualifiedProcedureName::new(child.as_path(), proc_name.clone());
-                    let target =
-                        masm::InvocationTarget::Path(Span::new(span, qualified.into_inner()));
-                    invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, target.clone()));
-                    body.push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(target))));
+                    fragment
+                        .children
+                        .push(InvocationTarget::Path(Span::new(span, qualified.into_inner())));
                 }
-
-                // A module holding nothing but declarations is skipped by `classify_siblings` and
-                // never lowered, but a table entry may still name a function in it: the entry
-                // resolves and the function has a signature, so both the `hir.exec_indirect`
-                // verifier and legalization accept the IR. There is no module here to attach the
-                // slot-filling code to, and no MAST root to fill the slot with, so it is invalid
-                // input rather than a compiler bug — and reported like the rest of the invalid
-                // input this function rejects.
                 let Some(index) = self
                     .component
                     .modules
@@ -949,85 +1164,69 @@ impl MasmComponentBuilder<'_> {
                     .position(|module| module.path() == owner.as_path())
                 else {
                     return Err(Report::msg(format!(
-                        "invalid function table entry: callee '{a_callee}' is defined in module \
-                         '{owner}', which was not lowered because it holds only declarations — a \
-                         function table cannot name a callee that has no definition to take the \
-                         address of"
+                        "invalid function table entry: callee owner '{owner}' was not lowered \
+                         because it holds only declarations"
                     )));
                 };
-                let module = Arc::get_mut(&mut self.component.modules[index])
-                    .expect("expected unique reference");
-                let mut procedure = masm::Procedure::new(
-                    span,
-                    // Public so the parent module's fragment (or `init`) can reach it; this is
-                    // the only symbol table initialization contributes to a module's surface,
-                    // and it is the compiler's own, never the author's
-                    masm::Visibility::Public,
+                let env = crate::select::SelectEnv {
+                    link_info: Some(self.link_info),
+                    owners: Some(self.owners),
+                };
+                let source = crate::select::generated::GeneratedInitializer {
+                    stages: vec![crate::select::generated::Initialization::Table(fragment)],
+                    env: &env,
+                };
+                let mut procedure = finalize_evidence(
+                    source.evidence()?,
+                    crate::verify::SourceContext::Generated(&source),
                     proc_name.clone(),
-                    0,
-                    masm::Block::new(span, body),
-                )
-                .with_signature(masm::FunctionType::new(
+                    span,
+                    Some(self.link_info),
+                )?;
+                procedure.set_visibility(masm::Visibility::Public);
+                procedure.set_signature(masm::FunctionType::new(
                     midenc_hir::CallConv::Fast,
                     vec![],
                     vec![],
                 ));
-                procedure.extend_invoked(invoked);
-                module
+                Arc::get_mut(&mut self.component.modules[index])
+                    .expect("expected unique reference")
                     .define_procedure(procedure, self.source_manager.clone())
                     .into_diagnostic()
                     .wrap_err("failed to define a function table initializer")?;
             }
-
             for root in roots {
                 let qualified =
                     masm::QualifiedProcedureName::new(root.as_path(), proc_name.clone());
-                let target = masm::InvocationTarget::Path(Span::new(span, qualified.into_inner()));
-                self.invoked_from_init
-                    .insert(masm::Invoke::new(masm::InvokeKind::Exec, target.clone()));
-                self.init_body
-                    .push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(target))));
+                self.init_body.push(crate::select::generated::Initialization::Invoke(
+                    InvocationTarget::Path(Span::new(span, qualified.into_inner())),
+                ));
             }
-
-            // The core Wasm start function is the final phase of initialization. It must observe
-            // the initialized heap, data, globals, and function tables, and `exec` keeps it in the
-            // same MASM context that `init` is preparing.
             if let Some(start) = self.link_info.component_start() {
                 let start = start.borrow();
-                let target = qualified_invocation_target(&*start, start.span());
-                self.invoked_from_init
-                    .insert(masm::Invoke::new(masm::InvokeKind::Exec, target.clone()));
-                self.init_body
-                    .push(masm::Op::Inst(Span::new(start.span(), masm::Instruction::Exec(target))));
+                self.init_body.push(crate::select::generated::Initialization::Invoke(
+                    self.owners.target(qualified_invocation_target(&*start, start.span()))?,
+                ));
             }
-
-            let module =
-                Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
-
-            let init_name = masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap();
-            let init_body = core::mem::take(&mut self.init_body);
-            let mut init = masm::Procedure::new(
-                Default::default(),
-                masm::Visibility::Public,
-                init_name,
-                0,
-                masm::Block::new(component.span(), init_body),
-            )
-            .with_signature(masm::FunctionType::new(
-                midenc_hir::CallConv::Fast,
-                vec![],
-                vec![],
-            ));
-            // What `init` invokes is what the assembler's linker builds its call graph from, and
-            // until now nothing attached this set to anything — every invocation recorded while
-            // building `init`'s body, by the fragment roots just above and by global variable
-            // initializers before them, was written and then dropped. The linker resolves an
-            // `exec` from the instruction as well, which is why the omission never showed; an
-            // accurate call graph is still what the set is for, and `init` was the one procedure
-            // in the component reporting none of its callees.
-            init.extend_invoked(core::mem::take(&mut self.invoked_from_init));
-
-            module
+            let env = crate::select::SelectEnv {
+                link_info: Some(self.link_info),
+                owners: Some(self.owners),
+            };
+            let source = crate::select::generated::GeneratedInitializer {
+                stages: core::mem::take(&mut self.init_body),
+                env: &env,
+            };
+            let mut init = finalize_evidence(
+                source.evidence()?,
+                crate::verify::SourceContext::Generated(&source),
+                masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap(),
+                span,
+                Some(self.link_info),
+            )?;
+            init.set_visibility(masm::Visibility::Public);
+            init.set_signature(masm::FunctionType::new(midenc_hir::CallConv::Fast, vec![], vec![]));
+            Arc::get_mut(&mut self.component.modules[0])
+                .expect("expected unique reference")
                 .define_procedure(init, self.source_manager.clone())
                 .into_diagnostic()
                 .wrap_err("failed to define component `init` procedure")?;
@@ -1042,38 +1241,29 @@ impl MasmComponentBuilder<'_> {
     }
 
     fn define_interface(&mut self, interface: &builtin::Interface) -> Result<(), Report> {
-        let interface_path = if let Some(id) = self.component.id.as_ref() {
-            let mut path = id.to_library_path();
-            path.push(interface.name().as_str());
-            path
-        } else {
-            interface.path().to_library_path()
-        };
-        let interface_path = interface_path.to_absolute().unwrap();
+        let interface_path = self.owners.module(interface.as_operation_ref());
         // The assembler exposes interface functions and re-exports only through public
         // submodule declarations reachable from the package root.
         let module_index = if let Some(rest) = interface_path.strip_prefix(&self.component.root) {
             self.define_module_tree(rest, Some(0), masm::Visibility::Public)?
         } else {
-            self.define_module_tree(&interface_path, None, masm::Visibility::Public)?
+            self.define_module_tree(interface_path, None, masm::Visibility::Public)?
         };
         let masm_module = Arc::get_mut(&mut self.component.modules[module_index])
             .expect("expected unique reference");
         let builder = MasmModuleBuilder {
+            owners: self.owners,
             module: masm_module,
-            init_owner: self.init_owner,
             analysis_manager: self.analysis_manager.clone(),
             link_info: self.link_info,
             source_manager: self.source_manager.clone(),
             init_body: &mut self.init_body,
-            invoked_from_init: &mut self.invoked_from_init,
         };
         builder.build_from_interface(interface)
     }
 
     fn define_module(&mut self, module: &builtin::Module) -> Result<(), Report> {
-        let module_path = module.path().to_library_path();
-        let module_path = module_path.to_absolute().unwrap();
+        let module_path = self.owners.module(module.as_operation_ref());
         let trace_target = TraceTarget::category("codegen");
         log::debug!(target: &trace_target, "defining module '{module_path}'");
         // The submodule declaration's visibility decides whether the module's public procedures
@@ -1107,19 +1297,18 @@ impl MasmComponentBuilder<'_> {
         let module_index = if let Some(rest) = module_path.strip_prefix(&self.component.root) {
             self.define_module_tree(rest, Some(0), visibility)?
         } else {
-            self.define_module_tree(&module_path, None, visibility)?
+            self.define_module_tree(module_path, None, visibility)?
         };
 
         let masm_module = Arc::get_mut(&mut self.component.modules[module_index])
             .expect("expected unique reference");
         let builder = MasmModuleBuilder {
+            owners: self.owners,
             module: masm_module,
-            init_owner: self.init_owner,
             analysis_manager: self.analysis_manager.clone(),
             link_info: self.link_info,
             source_manager: self.source_manager.clone(),
             init_body: &mut self.init_body,
-            invoked_from_init: &mut self.invoked_from_init,
         };
         let nested = builder.build(module)?;
         for nested_module in nested {
@@ -1205,7 +1394,7 @@ impl MasmComponentBuilder<'_> {
             function,
             self.analysis_manager.nest(function.as_operation_ref()),
             self.link_info,
-            FunctionLoweringMode::Normal,
+            self.owners,
         )?;
 
         let module =
@@ -1226,7 +1415,7 @@ impl MasmComponentBuilder<'_> {
     }
 
     fn define_function_alias(&mut self, alias: &builtin::FunctionAlias) -> Result<(), Report> {
-        let import = lower_function_alias(alias)?;
+        let import = lower_function_alias(alias, self.owners)?;
         let module =
             Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
         module
@@ -1239,56 +1428,12 @@ impl MasmComponentBuilder<'_> {
     /// populate the global heap with the data segments of this component, verifying that the
     /// commitments match.
     fn emit_data_segment_initialization(&mut self) {
-        use masm::{Instruction as Inst, InvocationTarget, Op};
-
-        // Emit data segment initialization code
-        //
-        // NOTE: This depends on the program being executed with the data for all data segments
-        // having been placed in the advice map with the same commitment and encoding used here.
-        // The program will fail to execute if this is not set up correctly.
-        let span = SourceSpan::default();
-        let pipe_preimage_to_memory = {
-            let name = masm::ProcedureName::new("pipe_preimage_to_memory").unwrap();
-            let module = masm::LibraryPath::new("::miden::core::mem").unwrap();
-            let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-            InvocationTarget::Path(Span::new(span, qualified.into_inner()))
-        };
-        for rodata in self.component.rodata.iter() {
-            // Push the commitment hash (`COM`) for this data onto the operand stack
-
-            // WARNING: These two are equivalent, shouldn't this be a no-op?
-            let word = rodata.digest.as_elements();
-            let word_value = [word[0], word[1], word[2], word[3]];
-
-            self.init_body.push(Op::Inst(Span::new(
-                span,
-                Inst::Push(masm::Immediate::Value(Span::unknown(WordValue(word_value).into()))),
-            )));
-            // Move rodata from the advice map, using the commitment as key, to the advice stack
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::SysEvent(masm::SystemEventNode::PushMapVal))));
-            // write_ptr
-            assert!(rodata.start.is_word_aligned(), "rodata segments must be word-aligned");
-            self.init_body.push(Op::Inst(Span::new(
-                span,
-                Inst::Push(masm::Immediate::Value(Span::unknown(rodata.start.addr.into()))),
-            )));
-            // num_words
-            self.init_body.push(Op::Inst(Span::new(
-                span,
-                Inst::Push(masm::Immediate::Value(Span::unknown(
-                    (rodata.size_in_words() as u32).into(),
-                ))),
-            )));
-            // [num_words, write_ptr, COM, ..] -> [write_ptr']
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameStart.into()))));
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::Exec(pipe_preimage_to_memory.clone()))));
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameEnd.into()))));
-            // drop write_ptr'
-            self.init_body.push(Op::Inst(Span::new(span, Inst::Drop)));
+        for rodata in &self.component.rodata {
+            self.init_body.push(crate::select::generated::Initialization::Data {
+                commitment: rodata.digest.as_elements().try_into().expect("digest word"),
+                destination: rodata.start.addr,
+                words: u32::try_from(rodata.size_in_words()).expect("linked data size"),
+            });
         }
     }
 
@@ -1317,103 +1462,49 @@ impl MasmComponentBuilder<'_> {
     /// an edge rather than an unresolved symbol.
     fn build_function_table_fragments(
         &self,
-    ) -> Result<BTreeMap<masm::PathBuf, FunctionTableFragment>, Report> {
-        use masm::{Instruction as Inst, Op};
-
-        let span = SourceSpan::default();
-        let mut fragments: BTreeMap<masm::PathBuf, FunctionTableFragment> = BTreeMap::new();
+    ) -> Result<BTreeMap<masm::PathBuf, crate::select::generated::TableFragment>, Report> {
+        let mut fragments = BTreeMap::new();
         let layout = self.link_info.function_tables();
         for (table_ref, _) in layout.iter() {
-            let base_addr = layout
-                .element_addr_of(table_ref)
-                .expect("link error: missing function table in computed layout");
+            let base = layout.element_addr_of(table_ref).expect("linked function table");
             let table = table_ref.borrow();
-            // Dead entries are skipped, not merely overwritten; see this function's doc comment.
-            // A dead entry is therefore also unvalidated, which costs nothing for the bounds check
-            // below — an overwritten entry shares its slot index with the entry that overwrote it,
-            // so an out-of-bounds slot is still reported — and is if anything the right answer for
-            // the tag: a slot explicitly nulled and then reassigned is not an error.
-            let live_entries = table.live_entries().map_err(|op_name| {
-                Report::msg(format!(
-                    "invalid function table entry: '{op_name}' is not supported in a function \
-                     table body"
-                ))
-            })?;
-            for (slot, entry) in live_entries {
+            for (slot, entry) in table.live_entries().map_err(|op| {
+                Report::msg(format!("invalid function table entry: '{op}' is unsupported"))
+            })? {
                 let entry = entry.borrow();
-                if slot >= *table.get_num_slots() {
-                    return Err(Report::msg(format!(
-                        "invalid function table entry: slot {slot} is out of bounds for table \
-                         '{}' with {} slots",
-                        table.get_name().as_str(),
-                        *table.get_num_slots()
-                    )));
+                if slot >= *table.get_num_slots() || *entry.get_type_tag() == 0 {
+                    return Err(Report::msg("invalid function table slot or null signature tag"));
                 }
-                let type_tag = *entry.get_type_tag();
-                if type_tag == 0 {
-                    return Err(Report::msg(format!(
-                        "invalid function table entry: slot {slot} of table '{}' uses signature \
-                         tag 0, which is reserved for null slots",
-                        table.get_name().as_str(),
-                    )));
-                }
-                let Some(callee) = entry.resolve_callee() else {
-                    return Err(Report::msg(format!(
-                        "invalid function table entry: unable to resolve callee '{}'",
-                        entry.callee().path()
-                    )));
-                };
-                let callee_path = callee.borrow().path();
-                let target = invocation_target_from_symbol(
-                    callee,
-                    callee.borrow().as_symbol_operation().nearest_symbol_table(),
-                    span,
-                );
-
-                // The fragment belongs to the module defining the callee: `procref` there needs
-                // no visibility beyond what the callee already has
-                let owner = symbol_module_path(&*callee.borrow());
-                let fragment = fragments.entry(owner).or_insert_with(|| FunctionTableFragment {
-                    body: Default::default(),
-                    invoked: Default::default(),
-                    a_callee: callee_path.to_string(),
+                let callee = entry
+                    .resolve_callee()
+                    .ok_or_else(|| Report::msg("unresolved function table callee"))?;
+                let callee = callee.borrow();
+                let owner = callee
+                    .as_symbol_operation()
+                    .nearest_symbol_table()
+                    .ok_or_else(|| Report::msg("table callee has no owner"))?;
+                let emitted_owner = self.owners.modules.get(&owner).ok_or_else(|| {
+                    Report::msg(format!(
+                        "invalid function table entry: callee '{}' is defined in module '{}', \
+                         which was not lowered because it holds only declarations",
+                        callee.path(),
+                        symbol_module_path(&*callee)
+                    ))
+                })?;
+                let fragment = fragments.entry(emitted_owner.clone()).or_insert_with(|| {
+                    crate::select::generated::TableFragment {
+                        owner,
+                        tables: vec![],
+                        children: vec![],
+                    }
                 });
-                let FunctionTableFragment { body, invoked, .. } = fragment;
-                invoked.insert(masm::Invoke::new(masm::InvokeKind::ProcRef, target.clone()));
-
-                // `procref` pushes the callee's MAST root word (`root[0]` on top),
-                // `mem_storew_le` writes it to the slot's element address (leaving the word on
-                // the stack), and `dropw` cleans up; the slot's signature tag is then stored in
-                // the element right after the digest. The base is word-aligned and each slot is
-                // exactly two words, so every slot address stays word-aligned as `dynexec`
-                // requires.
-                let slot_addr = base_addr + slot * FunctionTableLayout::SLOT_SIZE_ELEMENTS;
-                let tag_addr = slot_addr + FunctionTableLayout::TYPE_TAG_OFFSET_ELEMENTS;
-                body.push(Op::Inst(Span::new(span, Inst::ProcRef(target))));
-                body.push(Op::Inst(Span::new(span, Inst::MemStoreWLeImm(slot_addr.into()))));
-                body.push(Op::Inst(Span::new(span, Inst::DropW)));
-                body.push(Op::Inst(Span::new(
-                    span,
-                    Inst::Push(masm::Immediate::Value(Span::new(span, type_tag.into()))),
-                )));
-                body.push(Op::Inst(Span::new(span, Inst::MemStoreImm(tag_addr.into()))));
+                if !fragment.tables.iter().any(|(table, _)| *table == table_ref) {
+                    fragment.tables.push((table_ref, base));
+                }
             }
         }
-
         Ok(fragments)
     }
-}
-
-/// The slot-initialization code one module contributes, for the callees *it* defines.
-struct FunctionTableFragment {
-    /// The stores that fill those slots.
-    body: Vec<masm::Op>,
-    /// The `procref`s those stores consume, for the assembler's linker.
-    invoked: BTreeSet<masm::Invoke>,
-    /// One of the callees that put this fragment here, for diagnostics. Any of them identifies
-    /// the module as well as another, and reporting one is more use than reporting the module
-    /// path alone.
-    a_callee: String,
 }
 
 /// Resolve an alias to the symbol its MASM import should reference.
@@ -1455,7 +1546,10 @@ fn resolve_alias_import_target(alias: &builtin::FunctionAlias) -> Result<SymbolR
     }
 }
 
-fn lower_function_alias(alias: &builtin::FunctionAlias) -> Result<masm::Import, Report> {
+fn lower_function_alias(
+    alias: &builtin::FunctionAlias,
+    owners: &EmissionOwners,
+) -> Result<masm::Import, Report> {
     let target = resolve_alias_import_target(alias)?;
     let target = target.borrow();
     let owner = alias.as_operation().nearest_symbol_table().unwrap();
@@ -1463,7 +1557,14 @@ fn lower_function_alias(alias: &builtin::FunctionAlias) -> Result<masm::Import, 
     let module_path = if crate::legalization::share_masm_module(owner, target_owner) {
         Arc::from(masm::Path::new("self"))
     } else {
-        Arc::from(symbol_module_path(&*target).into_boxed_path())
+        Arc::from(
+            owners
+                .modules
+                .get(&target_owner)
+                .cloned()
+                .unwrap_or_else(|| symbol_module_path(&*target))
+                .into_boxed_path(),
+        )
     };
     let visibility = match alias.visibility() {
         midenc_hir::Visibility::Private => masm::Visibility::Private,
@@ -1484,14 +1585,13 @@ fn lower_function_alias(alias: &builtin::FunctionAlias) -> Result<masm::Import, 
 }
 
 struct MasmModuleBuilder<'a> {
+    owners: &'a EmissionOwners,
     module: &'a mut masm::Module,
-    init_owner: OperationRef,
     /// Shared world/component analysis root, covering cross-module alias targets.
     analysis_manager: AnalysisManager,
     link_info: &'a LinkInfo,
     source_manager: Arc<dyn midenc_session::SourceManager>,
-    init_body: &'a mut Vec<masm::Op>,
-    invoked_from_init: &'a mut BTreeSet<masm::Invoke>,
+    init_body: &'a mut Vec<crate::select::generated::Initialization>,
 }
 
 impl MasmModuleBuilder<'_> {
@@ -1558,7 +1658,7 @@ impl MasmModuleBuilder<'_> {
             function,
             self.analysis_manager.nest(function.as_operation_ref()),
             self.link_info,
-            FunctionLoweringMode::Normal,
+            self.owners,
         )?;
 
         self.module
@@ -1570,7 +1670,7 @@ impl MasmModuleBuilder<'_> {
 
     fn define_function_alias(&mut self, alias: &builtin::FunctionAlias) -> Result<(), Report> {
         self.module
-            .define_import(lower_function_alias(alias)?)
+            .define_import(lower_function_alias(alias, self.owners)?)
             .into_diagnostic()
             .wrap_err("failed to define MASM import for alias")
     }
@@ -1584,48 +1684,8 @@ impl MasmModuleBuilder<'_> {
             return Ok(());
         }
 
-        // We compute liveness for global variables independently
-        let analysis_manager = self.analysis_manager.nest(gv.as_operation_ref());
-        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
-
-        // Emit the initializer block
-        let initializer_region = gv.region(0);
-        let initializer_block = initializer_region.entry();
-
-        let mut block_emitter = BlockEmitter {
-            module_owner: Some(self.init_owner),
-            frame: Default::default(),
-            liveness: &liveness,
-            emit_inline_calls: has_inline_call_chain(gv.as_operation()),
-            link_info: self.link_info,
-            invoked: self.invoked_from_init,
-            target: Default::default(),
-            stack: OperandStack::new(gv.as_operation().context_rc()),
-            trace_target: TraceTarget::category("codegen")
-                .with_relevant_symbol(gv.name().as_symbol()),
-        };
-        block_emitter.emit_inline(&initializer_block);
-
-        // Sanity checks
-        assert_eq!(block_emitter.stack.len(), 1, "expected only global variable value on stack");
-        let return_ty = block_emitter.stack.peek().unwrap().ty();
-        assert_eq!(
-            &return_ty,
-            &*gv.get_ty(),
-            "expected initializer to return value of same type as declaration"
-        );
-
-        // Write the initialized value to the computed storage offset for this global
-        let computed_addr = self
-            .link_info
-            .globals_layout()
-            .get_computed_addr(gv.as_global_var_ref())
-            .expect("undefined global variable");
-        block_emitter.emitter().store_imm(computed_addr, gv.span());
-
-        // Extend the generated init function with the code to initialize this global
-        let mut body = core::mem::take(&mut block_emitter.target);
-        self.init_body.append(&mut body);
+        self.init_body
+            .push(crate::select::generated::Initialization::Global(gv.as_global_var_ref()));
 
         Ok(())
     }
@@ -1636,16 +1696,6 @@ struct MasmFunctionBuilder {
     name: masm::ProcedureName,
     signature: masm::FunctionType,
     visibility: masm::Visibility,
-    num_locals: u16,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FunctionLoweringMode {
-    /// Emit a procedure with all prologues and public metadata implied by its HIR function.
-    Normal,
-    /// Emit the selected canonical entry body for generated executable `main`, which has already
-    /// initialized the component and must not repeat the public wrapper's `init` prologue.
-    ExecutableEntrypointWithoutInit,
 }
 
 impl MasmFunctionBuilder {
@@ -1673,21 +1723,6 @@ impl MasmFunctionBuilder {
             Visibility::Internal => masm::Visibility::Public,
             Visibility::Private => masm::Visibility::Private,
         };
-        let locals_required = function.locals().iter().map(|ty| ty.size_in_felts()).sum::<usize>();
-        let num_locals = u16::try_from(locals_required).map_err(|_| {
-            let context = function.as_operation().context();
-            context
-                .diagnostics()
-                .diagnostic(miden_assembly::diagnostics::Severity::Error)
-                .with_message("cannot emit masm for function")
-                .with_primary_label(
-                    function.span(),
-                    "local storage exceeds procedure limit: no more than u16::MAX elements are \
-                     supported",
-                )
-                .into_report()
-        })?;
-
         let signature =
             semantic_debug_signature(function).unwrap_or_else(|| lowered_signature(function));
 
@@ -1696,120 +1731,55 @@ impl MasmFunctionBuilder {
             name,
             signature,
             visibility,
-            num_locals,
         })
     }
 
     pub fn build(
         self,
         function: &builtin::Function,
-        analysis_manager: AnalysisManager,
+        _analysis_manager: AnalysisManager,
         link_info: &LinkInfo,
-        mode: FunctionLoweringMode,
+        owners: &EmissionOwners,
     ) -> Result<masm::Procedure, Report> {
-        use alloc::collections::BTreeSet;
-
-        use midenc_hir_analysis::analyses::LivenessAnalysis;
-
-        let demangled_symbol_name = midenc_hir::demangle::demangle(function.get_name().as_str());
-        let trace_target = TraceTarget::category("codegen")
-            .with_relevant_symbol(midenc_hir::SymbolName::intern(demangled_symbol_name));
-
-        log::trace!(target: &trace_target, "lowering {}", function.as_operation());
-
-        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
-
-        let mut invoked = BTreeSet::default();
-        let entry = function.entry_block();
-        let mut stack = crate::OperandStack::new(function.as_operation().context_rc());
-        {
-            let entry_block = entry.borrow();
-            for arg in entry_block.arguments().iter().rev().copied() {
-                stack.push(arg as ValueRef);
-            }
-        }
-        // The single layout of this procedure's frame: both the `locaddr` operands of the emitted
-        // code and the debug locations read this table.
-        let local_offsets = crate::emitter::local_offsets(function);
-        let mut emitter = BlockEmitter {
-            module_owner: match mode {
-                FunctionLoweringMode::Normal => function.as_operation().nearest_symbol_table(),
-                FunctionLoweringMode::ExecutableEntrypointWithoutInit => None,
-            },
-            frame: FrameLayout::new(&local_offsets, self.num_locals),
-            liveness: &liveness,
-            emit_inline_calls: has_inline_call_chain(function.as_operation()),
-            link_info,
-            invoked: &mut invoked,
-            target: Default::default(),
-            stack,
-            trace_target,
+        let env = crate::select::SelectEnv {
+            link_info: Some(link_info),
+            owners: Some(owners),
         };
-
-        // For component export functions, invoke the `init` procedure first if needed.
-        // It loads the data segments, global vars, and function tables into memory.
-        if mode == FunctionLoweringMode::Normal
-            && function.signature().cc.is_wasm_canonical_abi()
+        let mut procedure = if function.signature().cc.is_wasm_canonical_abi()
             && link_info.requires_init()
         {
-            // Resolve `init` symbolically within the containing module instead of through a
-            // fully-qualified component path, which depends on the (user-editable)
-            // `[lib].namespace` matching the component's library identity.
-            //
-            // INVARIANT: this relies on the canonical-ABI export wrappers being emitted into the
-            // root component module — the same module where `MasmComponentBuilder` defines
-            // `init` (`self.component.modules[0]`); the inner lifted functions in interface and
-            // core child modules carry no init prologue. If export wrappers ever move into child
-            // modules, this symbol stops resolving and the init target must be threaded in as a
-            // qualified path instead. A user-exported method named `init` collides with the
-            // generated procedure at definition time ("symbol conflict: found duplicate
-            // definitions"), so it cannot silently shadow this target.
-            let init = InvocationTarget::Symbol(COMPONENT_INIT_PROCEDURE.parse().unwrap());
-            // Add init call to the emitter's target before emitting the function body; `emit`
-            // also registers the invocation so the assembler can resolve the symbolic target.
-            emitter.emitter().emit(masm::Instruction::Exec(init), SourceSpan::default());
-        }
-
-        let mut body = emitter.emit(&entry.borrow());
-
-        if function.signature().cc.is_wasm_canonical_abi() {
-            // Truncate the stack to 16 elements on exit in the component export function
-            // since it is expected to be `call`ed so it has a requirement to have
-            // no more than 16 elements on the stack when it returns.
-            // See https://0xmiden.github.io/miden-vm/user_docs/assembly/execution_contexts.html
-            // Since the VM's `drop` instruction not letting stack size go beyond the 16 elements
-            // we most likely end up with stack size > 16 elements at the end.
-            // See https://github.com/0xPolygonMiden/miden-vm/blob/c4acf49510fda9ba80f20cee1a9fb1727f410f47/processor/src/stack/mod.rs?plain=1#L226-L253
-            let truncate_stack = {
-                let name = masm::ProcedureName::new("truncate_stack").unwrap();
-                let module = masm::LibraryPath::new("::miden::core::sys").unwrap();
-                let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-                InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
+            let source = crate::select::generated::GeneratedExport {
+                function: function.as_function_ref(),
+                initializer: InvocationTarget::Symbol(COMPONENT_INIT_PROCEDURE.parse().unwrap()),
+                env: &env,
             };
-            let span = SourceSpan::default();
-            invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, truncate_stack.clone()));
-            body.push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(truncate_stack))));
-        }
+            finalize_evidence(
+                source.evidence()?,
+                crate::verify::SourceContext::Generated(&source),
+                self.name.clone(),
+                self.span,
+                Some(link_info),
+            )?
+        } else {
+            finalize_evidence(
+                crate::select::evidence(function, &env)?,
+                crate::verify::SourceContext::Hir {
+                    function,
+                    env: &env,
+                },
+                self.name.clone(),
+                self.span,
+                Some(link_info),
+            )?
+        };
         let Self {
-            span,
-            name,
             signature,
             visibility,
-            num_locals,
+            ..
         } = self;
-
-        // If a function body after lowering produces a MASM procedure with an empty body aside
-        // from debug decorators, then we must emit a `nop` at the end of the block which will
-        // act as the anchor for those decorators. Such a procedure is basically useless, as it is
-        // just passing through arguments as results - but the assembler currently rejects empty
-        // procedures (not counting decorators), so we must handle this edge case.
-        if !block_has_real_instructions(&body) {
-            body.push(masm::Op::Inst(Span::unknown(masm::Instruction::Nop)));
-        }
-
-        let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
+        procedure.set_visibility(visibility);
         procedure.set_signature(signature);
-        if mode == FunctionLoweringMode::Normal {
+        {
             for attribute in [
                 midenc_dialect_hir::ACCOUNT_PROCEDURE_EXPORT_ATTR,
                 midenc_dialect_hir::AUTH_SCRIPT_EXPORT_ATTR,
@@ -1823,8 +1793,6 @@ impl MasmFunctionBuilder {
                 }
             }
         }
-        procedure.extend_invoked(invoked);
-
         Ok(procedure)
     }
 }
@@ -1856,25 +1824,193 @@ fn semantic_debug_signature(function: &builtin::Function) -> Option<masm::Functi
     Some(masm::FunctionType::new(ty.calling_convention(), args, results))
 }
 
-/// Returns true if the block contains at least one real (non-decorator) instruction.
-///
-/// DebugVar instructions are decorator-only and don't produce MAST nodes. If a procedure
-/// body contains only DebugVar ops, the assembler will reject it.
-fn block_has_real_instructions(block: &masm::Block) -> bool {
-    block.iter().any(|op| match op {
-        masm::Op::Inst(inst) => !matches!(
-            inst.inner(),
-            masm::Instruction::DebugVar(_)
-                | masm::Instruction::DebugInlineCall(_)
-                | masm::Instruction::DebugInlineCallClear
-        ),
-        masm::Op::If {
-            then_blk, else_blk, ..
-        } => block_has_real_instructions(then_blk) || block_has_real_instructions(else_blk),
-        masm::Op::While { body, .. } => block_has_real_instructions(body),
-        masm::Op::DoWhile {
-            body, condition, ..
-        } => block_has_real_instructions(body) || block_has_real_instructions(condition),
-        masm::Op::Repeat { body, .. } => block_has_real_instructions(body),
-    })
+/// Finish one source-checked procedure through the only physical emission pipeline.
+pub(crate) fn finalize_evidence(
+    evidence: crate::select::HirEvidence,
+    source: crate::verify::SourceContext<'_>,
+    name: masm::ProcedureName,
+    span: SourceSpan,
+    link_info: Option<&LinkInfo>,
+) -> Result<masm::Procedure, Report> {
+    let locals = evidence.source.source_locals.clone();
+    let checked = crate::verify::check_selection(evidence.source.program, &source)?;
+    let mut registry = crate::lower::units::LoweringRegistry::default();
+    for definition in &evidence.definitions {
+        registry.register(definition)?;
+    }
+    finish_checked(checked, &locals, &registry, name, span, link_info)
+}
+
+/// Lower a registered generated definition through the same checked physical pipeline.
+pub(crate) fn finalize_generated<D: crate::lower::units::LoweringDefinition>(
+    source: &dyn crate::verify::GeneratedDefinition,
+    definitions: &[D],
+    name: masm::ProcedureName,
+    span: SourceSpan,
+) -> Result<masm::Procedure, Report> {
+    let evidence = source.instantiate(&[])?;
+    let checked = crate::verify::check_selection(
+        evidence.program,
+        &crate::verify::SourceContext::Generated(source),
+    )?;
+    let mut registry = crate::lower::units::LoweringRegistry::default();
+    for definition in definitions {
+        registry.register(definition)?;
+    }
+    finish_checked(checked, &evidence.source_locals, &registry, name, span, None)
+}
+
+fn finish_checked(
+    checked: crate::verify::CheckedSelectedProgram,
+    locals: &crate::plan::SourceLocalLayout,
+    registry: &crate::lower::units::LoweringRegistry<'_>,
+    name: masm::ProcedureName,
+    span: SourceSpan,
+    _link_info: Option<&LinkInfo>,
+) -> Result<masm::Procedure, Report> {
+    use crate::{
+        allocate::{allocate, schedule::AllocationOptions, slots::assign_frame},
+        lower::expand::{ExpansionEnv, finalize, resolve_frame_bindings},
+    };
+    let trace_target = TraceTarget::category("codegen");
+    let started =
+        log::log_enabled!(target: &trace_target, log::Level::Trace).then(std::time::Instant::now);
+    let allocation = allocate(checked, &AllocationOptions::default());
+    if let Some(started) = started {
+        log::trace!(target: &trace_target, "physical-stage procedure={name} stage=allocation elapsed_ns={}", started.elapsed().as_nanos());
+    }
+    let mut plan = allocation.map_err(allocation_error)?;
+    let frame = assign_frame(&plan, locals).map_err(allocation_error)?;
+    resolve_frame_bindings(&mut plan, &frame)?;
+    let mut env = ExpansionEnv::default();
+    env.resolve_debug(&plan, &frame);
+    plan.trace(&frame);
+    Ok(finalize(&plan, &frame, registry, &env, &name)?.into_masm_with_span(name, span)?)
+}
+
+fn allocation_error(error: crate::allocate::state::AllocationError) -> Report {
+    match error {
+        crate::allocate::state::AllocationError::Invariant(error) => error.into(),
+        crate::allocate::state::AllocationError::IdentifierExhausted(kind) => {
+            Report::msg(format!("allocation identity space exhausted: {kind}"))
+        }
+    }
+}
+
+#[cfg(test)]
+mod owner_map_tests {
+    use alloc::rc::Rc;
+
+    use midenc_hir::{Context, diagnostics::Uri};
+
+    use super::*;
+
+    fn parse(context: &Rc<Context>, source: &str) -> midenc_hir::OperationRef {
+        midenc_hir::parse::parse_any(
+            midenc_hir::parse::ParserConfig {
+                context: context.clone(),
+                verify: true,
+            },
+            Uri::new("owners.hir"),
+            source,
+        )
+        .unwrap()
+    }
+    fn target() -> midenc_session::miden_project::Target {
+        midenc_session::miden_project::Target::library(
+            masm::PathBuf::new("::renamed").unwrap(),
+            Uri::new("owners.hir"),
+        )
+    }
+    #[test]
+    fn wrong_same_signature_owner_cannot_authorize_selected_calls() {
+        let context = Rc::new(Context::default());
+        let root = parse(
+            &context,
+            r#"builtin.world { builtin.module public @lib {
+            builtin.function public extern("C") @a() { builtin.ret; };
+            builtin.function public extern("C") @b() { builtin.ret; };
+            builtin.function public extern("C") @caller() {
+                hir.exec @a() : extern("C") () -> (); builtin.ret;
+            };
+        }; };"#,
+        );
+        let world = root.try_downcast_op::<builtin::World>().unwrap();
+        let link = Linker::default().link(None, &root.borrow()).unwrap();
+        let target = target();
+        let mut owners = EmissionOwners::new(
+            root,
+            &[],
+            &world_root_module(&world.borrow()),
+            EmissionNamespace::Target(&target),
+            false,
+            &link,
+        )
+        .unwrap();
+        let a = masm::PathBuf::new("::lib::a").unwrap();
+        owners.targets.insert(a, masm::PathBuf::new("::renamed::b").unwrap());
+        assert!(owners.validate().is_err());
+        let mut caller = None;
+        root.borrow().prewalk_all(|op| {
+            if let Some(function) = op.downcast_ref::<builtin::Function>()
+                && function.name().as_str() == "caller"
+            {
+                caller = Some(function.as_function_ref());
+            }
+        });
+        let env = crate::select::SelectEnv {
+            link_info: Some(&link),
+            owners: Some(&owners),
+        };
+        assert!(crate::select::evidence(&caller.unwrap().borrow(), &env).is_err());
+    }
+    #[test]
+    fn external_prefix_overlap_and_digest_targets_keep_their_identity() {
+        let context = Rc::new(Context::default());
+        let root = parse(
+            &context,
+            "builtin.world { builtin.module public @lib { builtin.function public extern(\"C\") \
+             @a() { builtin.ret; }; }; };",
+        );
+        let world = root.try_downcast_op::<builtin::World>().unwrap();
+        let link = Linker::default().link(None, &root.borrow()).unwrap();
+        let target = target();
+        let owners = EmissionOwners::new(
+            root,
+            &[],
+            &world_root_module(&world.borrow()),
+            EmissionNamespace::Target(&target),
+            false,
+            &link,
+        )
+        .unwrap();
+        let external = crate::lower::raw::target("::lib::external::body");
+        assert_eq!(owners.target(external.clone()).unwrap(), external);
+        let local = InvocationTarget::Symbol("local".parse().unwrap());
+        assert_eq!(owners.target(local.clone()).unwrap(), local);
+        let digest = InvocationTarget::MastRoot(Span::unknown(miden_core::Word::default()));
+        assert_eq!(owners.target(digest.clone()).unwrap(), digest);
+    }
+    #[test]
+    fn distinct_emitted_module_owners_cannot_share_a_destination() {
+        let context = Rc::new(Context::default());
+        let root = parse(&context, "builtin.world { builtin.module public @lib {}; };");
+        let duplicate = parse(&context, "builtin.module public @lib {};")
+            .try_downcast_op::<builtin::Module>()
+            .unwrap();
+        let world = root.try_downcast_op::<builtin::World>().unwrap();
+        let link = Linker::default().link(None, &root.borrow()).unwrap();
+        let target = target();
+        assert!(
+            EmissionOwners::new(
+                root,
+                &[duplicate],
+                &world_root_module(&world.borrow()),
+                EmissionNamespace::Target(&target),
+                false,
+                &link
+            )
+            .is_err()
+        );
+    }
 }

@@ -4,5 +4,6 @@ mod int128;
 mod int32;
 mod int64;
 mod memory;
+mod stack_allocator;
 mod support;
 mod wasm;

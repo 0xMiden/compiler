@@ -28,6 +28,7 @@ fn real_hir_table_lookup_address_remains_live_until_dispatch() {
     let info = linked(&f);
     let env = SelectEnv {
         link_info: Some(&info),
+        ..Default::default()
     };
     let selected = checked(&f, &env);
     let stage = &selected.segments[0].units[0];
@@ -44,6 +45,7 @@ fn table_code(index: usize, tag: u32) -> String {
     let info = linked(&f);
     let env = SelectEnv {
         link_info: Some(&info),
+        ..Default::default()
     };
     let source = crate::select::evidence(&f.borrow(), &env).unwrap();
     let base = source
@@ -96,6 +98,7 @@ fn checked_table_selector_rejects_wrong_consumed_address_token() {
     let info = linked(&f);
     let env = SelectEnv {
         link_info: Some(&info),
+        ..Default::default()
     };
     let (plan, frame, mut body) = ready(&f, &env);
     let mut changed = false;
@@ -120,6 +123,7 @@ fn real_hir_indirect_missing_phase_uses_are_rejected_by_source_check() {
     let info = linked(&f);
     let env = SelectEnv {
         link_info: Some(&info),
+        ..Default::default()
     };
     let function = f.borrow();
     let selected = select_function(&function, &env).unwrap();
@@ -182,6 +186,7 @@ fn real_hir_indirect_missing_phase_preservation_rejects_corrupted_allocator_live
     let info = linked(&f);
     let env = SelectEnv {
         link_info: Some(&info),
+        ..Default::default()
     };
     let (mut plan, frame, mut body) = ready(&f, &env);
     let dispatch = plan.selected.segments[1].units[0].id;
@@ -299,6 +304,7 @@ fn sixteen_argument_table_exec_preserves_its_address_and_live_after_argument() {
     let info = linked(&f);
     let env = SelectEnv {
         link_info: Some(&info),
+        ..Default::default()
     };
     let selected = checked(&f, &env);
     assert_eq!(selected.segments[1].units[0].stack_inputs.len(), 16);
@@ -365,6 +371,7 @@ fn indirect_results_must_match_declared_signature_types_and_arity() {
                 let info = table.then(|| linked(&f));
                 let env = SelectEnv {
                     link_info: info.as_ref(),
+                    ..Default::default()
                 };
                 assert_malformed_source_rejected(&f, &env);
                 assert_eq!(result.borrow().ty(), &ty);
@@ -374,6 +381,7 @@ fn indirect_results_must_match_declared_signature_types_and_arity() {
                 let info = table.then(|| linked(&f));
                 let env = SelectEnv {
                     link_info: info.as_ref(),
+                    ..Default::default()
                 };
                 assert_malformed_source_rejected(&f, &env);
                 assert_eq!(call.borrow().num_results(), 2);
@@ -401,6 +409,7 @@ fn live_table_entry_cannot_hide_depth_sensitive_helper() {
         &f.borrow(),
         &SelectEnv {
             link_info: Some(&info),
+            ..Default::default()
         },
     )
     .unwrap_err();
@@ -421,6 +430,7 @@ fn live_table_entry_cannot_hide_kernel_convention() {
         &f.borrow(),
         &SelectEnv {
             link_info: Some(&info),
+            ..Default::default()
         },
     )
     .unwrap_err();
@@ -478,6 +488,7 @@ fn indirect_same_type_extension_attributes_remain_noops_and_types_are_exact() {
         let info = table.then(|| linked(&f));
         let env = SelectEnv {
             link_info: info.as_ref(),
+            ..Default::default()
         };
         let (plan, frame, body) = ready(&f, &env);
         verify::verify(&plan, &frame, body).unwrap();

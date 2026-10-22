@@ -272,13 +272,15 @@ impl StackEffect {
     }
 }
 
-/// Raw height split into procedure-owned lanes, a protected caller suffix, and VM floor padding.
+/// Concrete floor-state oracle for target-semantic VM tests.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloorState {
     pub owned: usize,
     pub protected: usize,
     pub padding: usize,
 }
+#[cfg(test)]
 impl FloorState {
     /// Pop owned lanes or reject a crossing into the protected suffix; padding may grow.
     pub fn pop(self, count: usize) -> Result<Self, PlanError> {
@@ -312,8 +314,11 @@ pub(crate) enum Primitive {
     Swap(u8),
     MoveUp(u8),
     MoveDown(u8),
+    #[cfg(test)]
     DupWord(u8),
+    #[cfg(test)]
     SwapWord(u8),
+    #[cfg(test)]
     Drop,
     Push(Felt),
 }
@@ -327,10 +332,13 @@ impl Primitive {
             Self::MoveUp(1) | Self::MoveDown(1) => Some(&Swap1),
             Self::MoveUp(depth) => depth.checked_sub(2).and_then(|d| UP.get(usize::from(d))),
             Self::MoveDown(depth) => depth.checked_sub(2).and_then(|d| DOWN.get(usize::from(d))),
+            #[cfg(test)]
             Self::DupWord(depth) => DUP_WORD.get(usize::from(depth)),
+            #[cfg(test)]
             Self::SwapWord(depth) => {
                 depth.checked_sub(1).and_then(|d| SWAP_WORD.get(usize::from(d)))
             }
+            #[cfg(test)]
             Self::Drop => return Ok(Drop),
             Self::Push(value) => return Ok(Push(PushValue::from(value).into())),
         };

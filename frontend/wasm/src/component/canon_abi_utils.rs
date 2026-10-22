@@ -15,7 +15,7 @@ use crate::{WasmError, error::WasmResult, module::function_builder_ext::Function
 
 /// Recursively loads primitive values from memory based on the component-level type following the
 /// canonical ABI loading algorithm from
-/// https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#loading
+/// <https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#loading>
 pub fn load<B: ?Sized + Builder>(
     fb: &mut FunctionBuilderExt<B>,
     ptr: ValueRef,
@@ -107,7 +107,7 @@ pub fn load<B: ?Sized + Builder>(
 
 /// Recursively stores primitive values to memory based on the component-level type following the
 /// canonical ABI storing algorithm from
-/// https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#storing
+/// <https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#storing>
 pub fn store<B: ?Sized + Builder>(
     fb: &mut FunctionBuilderExt<B>,
     ptr: ValueRef,

@@ -127,7 +127,7 @@ pub(crate) trait LoweringDefinition {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        env: &ExpansionEnv<'_>,
+        env: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report>;
 }
 
@@ -207,12 +207,14 @@ fn selected(
 /// The small scalar primitives also serve structured generated definitions. Their executable
 /// operations are the actual target primitives, with explicit identity publication for aliases.
 #[derive(Debug, Clone, Copy)]
+#[cfg(test)]
 pub(crate) enum Scalar {
     Add,
     Neq,
     Identity,
     Zero,
 }
+#[cfg(test)]
 impl Scalar {
     /// Declare scalar lane arity and source-derived identity evidence.
     /// `Identity` publishes its unchanged input lane; all variants require exactly one result.
@@ -238,6 +240,7 @@ impl Scalar {
         Ok((selected(self.kind(), id, source, inputs, &[], outputs), evidence))
     }
 }
+#[cfg(test)]
 impl LoweringDefinition for Scalar {
     fn kind(&self) -> LoweringKind {
         LoweringKind(
@@ -255,7 +258,7 @@ impl LoweringDefinition for Scalar {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        _: &ExpansionEnv<'_>,
+        _: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         bindings.validate(unit, frame)?;
         let mut body = AnnotatedMasmBody::new();
@@ -295,6 +298,8 @@ pub(crate) enum HirBody {
     Indirect(calls::Indirect),
     /// A resolved direct invocation with its declared procedure ABI.
     Direct(calls::Direct),
+    /// Stored protocol prefix plus stack payload.
+    Fpi,
 }
 impl LoweringDefinition for HirUnit {
     fn kind(&self) -> LoweringKind {
@@ -306,7 +311,7 @@ impl LoweringDefinition for HirUnit {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        env: &ExpansionEnv<'_>,
+        env: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         bindings.validate(unit, frame)?;
         match &self.body {
@@ -322,6 +327,7 @@ impl LoweringDefinition for HirUnit {
             }
             HirBody::Direct(definition) => definition.expand(unit, bindings, frame, env),
             HirBody::Indirect(definition) => definition.expand(unit, bindings, frame, env),
+            HirBody::Fpi => fpi::Fpi.expand(unit, bindings, frame, env),
         }
     }
 }

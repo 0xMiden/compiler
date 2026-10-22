@@ -102,7 +102,7 @@ impl LoweringDefinition for Fpi {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        _: &ExpansionEnv<'_>,
+        _: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         bindings.validate(unit, frame)?;
         let mut offsets = [0; 6];

@@ -375,7 +375,6 @@ fn check_assembled_inline_functions(dwarf: Dwarf, expected_functions: usize) {
     }
 
     let component = op.try_downcast_op::<builtin::Component>().unwrap();
-    let lowered = component.borrow().to_masm_component(AnalysisManager::new(op, None)).unwrap();
     let target = midenc_session::miden_project::Target::library(
         Arc::<masm::Path>::from(
             masm::LibraryPath::new("inline_tests")
@@ -387,6 +386,13 @@ fn check_assembled_inline_functions(dwarf: Dwarf, expected_functions: usize) {
         ),
         Uri::new("inline.hir"),
     );
+    let lowered = component
+        .borrow()
+        .to_masm_component(
+            AnalysisManager::new(op, None),
+            midenc_codegen_masm::EmissionNamespace::Target(&target),
+        )
+        .unwrap();
     let sources = lowered.source_inputs(&target, context.session()).unwrap();
     let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
         .assemble_library("inline_tests", sources.root, sources.support)
@@ -534,4 +540,110 @@ fn unreadable_source_has_unknown_span() {
     assert!(resolve_source_span(
         &location, context.session(), &crate::WasmTranslationConfig::default(),
     ).is_unknown());
+}
+
+fn assert_returned_parameter_tuple(results: &str, body: &str, expected: &[usize]) {
+    use midenc_hir::{ValueRange, ValueRef, dialects::builtin};
+
+    let context = Rc::new(Context::default());
+    let wasm = wat::parse_str(format!(
+        "(module (func (export \"returns\") (param i32 i64 i32) {results} {body}))"
+    ))
+    .unwrap();
+    let output =
+        crate::translate(&wasm, &crate::WasmTranslationConfig::default(), context.clone()).unwrap();
+    let mut functions = Vec::new();
+    output.component.borrow().as_operation().prewalk_all(|op| {
+        if let Some(function) = op.downcast_ref::<builtin::Function>() {
+            functions.push(function.as_operation_ref());
+        }
+    });
+    assert_eq!(functions.len(), 1);
+    let function = functions[0].try_downcast_op::<builtin::Function>().unwrap();
+    let function = function.borrow();
+    let params: Vec<ValueRef> = function
+        .entry_block()
+        .borrow()
+        .arguments()
+        .iter()
+        .map(|arg| arg.borrow().as_value_ref())
+        .collect();
+    let mut forwarded = Vec::new();
+    let mut returns = Vec::new();
+    function.as_operation().prewalk_all(|op| {
+        if let Some(branch) = op.downcast_ref::<midenc_dialect_cf::Br>() {
+            let target = branch.target();
+            let successor = target.successor();
+            let destination = successor.borrow();
+            for (arg, source) in destination.arguments().iter().zip(target.arguments.iter()) {
+                forwarded.push((arg.borrow().as_value_ref(), source.borrow().as_value_ref()));
+            }
+        } else if let Some(load) = op.downcast_ref::<midenc_dialect_hir::LoadLocal>() {
+            // These fixtures read immutable parameter locals; no local assignments occur.
+            forwarded.push((load.result().as_value_ref(), params[load.get_local().as_usize()]));
+        } else if op.is::<builtin::Ret>() {
+            returns.push(ValueRange::<2>::from(op.operands().all()).iter().collect::<Vec<_>>());
+        }
+    });
+    assert_eq!(returns.len(), 1);
+    let actual = returns.pop().unwrap();
+    let expected: Vec<_> = expected.iter().map(|index| params[*index]).collect();
+    let actual: Vec<_> = actual
+        .into_iter()
+        .map(|mut value| {
+            // These fixtures have only acyclic unconditional branches to the function exit.
+            for _ in 0..=forwarded.len() {
+                match forwarded.iter().find(|(arg, _)| *arg == value) {
+                    Some((_, source)) => value = *source,
+                    None => return value,
+                }
+            }
+            panic!("cyclic forwarding in return fixture")
+        })
+        .collect();
+    assert_eq!(actual, expected, "return tuple must preserve source value identity and order");
+}
+
+#[test]
+fn wasm_function_return_tuples_preserve_order() {
+    for exit in ["", "return", "br 0"] {
+        assert_returned_parameter_tuple(
+            "(result i32 i64 i32)",
+            &format!("local.get 2 local.get 1 local.get 0 {exit}"),
+            &[2, 1, 0],
+        );
+    }
+}
+
+#[test]
+fn wasm_explicit_return_uses_only_declared_suffix() {
+    assert_returned_parameter_tuple(
+        "(result i64 i32)",
+        "local.get 2 local.get 0 local.get 1 local.get 2 return",
+        &[1, 2],
+    );
+}
+
+#[test]
+fn wasm_zero_and_single_result_returns_remain_valid() {
+    for exit in ["", "return", "br 0"] {
+        assert_returned_parameter_tuple("", exit, &[]);
+        assert_returned_parameter_tuple("(result i64)", &format!("local.get 1 {exit}"), &[1]);
+    }
+}
+
+#[test]
+fn wasm_unreachable_function_exit_has_no_synthetic_return() {
+    let context = Rc::new(Context::default());
+    let wasm = wat::parse_str("(module (func (export \"returns\") (result i32 i64) unreachable))")
+        .unwrap();
+    let output =
+        crate::translate(&wasm, &crate::WasmTranslationConfig::default(), context.clone()).unwrap();
+    let mut return_count = 0;
+    output.component.borrow().as_operation().prewalk_all(|op| {
+        if op.is::<midenc_hir::dialects::builtin::Ret>() {
+            return_count += 1;
+        }
+    });
+    assert_eq!(return_count, 0);
 }

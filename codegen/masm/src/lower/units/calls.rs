@@ -99,7 +99,7 @@ impl LoweringDefinition for ContextCall {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        _: &ExpansionEnv<'_>,
+        _: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         bindings.validate(unit, frame)?;
         let mut b = raw::Builder::new(Default::default());
@@ -150,7 +150,7 @@ impl Indirect {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        _: &ExpansionEnv<'_>,
+        _: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         let mut b = raw::Builder::new(Default::default());
         match self {
@@ -241,7 +241,7 @@ impl Direct {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        env: &ExpansionEnv<'_>,
+        env: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         if !matches!(self.instruction, masm::Instruction::Exec(_)) {
             return ContextCall {
@@ -263,13 +263,27 @@ impl Direct {
 /// Resolve canonical analysis identity while retaining the accessible emission name.
 pub(crate) fn resolve_direct(
     call: &dyn midenc_hir::CallOpInterface,
+    env: &crate::select::SelectEnv<'_>,
 ) -> Result<(midenc_hir::ResolvedSymbolCallee, masm::InvocationTarget), Report> {
     let resolved = super::super::lowering::resolve_invocation_callee(call)?;
     let target = super::super::lowering::invocation_target_from_symbol(
         resolved.named_symbol(),
-        call.as_operation().nearest_symbol_table(),
+        if call
+            .as_operation()
+            .nearest_parent_op::<midenc_hir::dialects::builtin::GlobalVariable>()
+            .is_some()
+        {
+            None
+        } else {
+            call.as_operation().nearest_symbol_table()
+        },
         call.as_operation().span(),
     );
+    let target = if let Some(owners) = env.owners {
+        owners.target(target)?
+    } else {
+        target
+    };
     Ok((resolved, target))
 }
 

@@ -44,7 +44,7 @@ impl Verifier<'_> {
                 CallingConvention::Context | CallingConvention::Kernel => ReturnBoundary::Context,
                 CallingConvention::SameContext => ReturnBoundary::SameContext,
             };
-            ReturnNormalization::TruncateToWindow.allowed_at(boundary)?;
+            boundary.validate_truncation()?;
             state.stack.truncate(16);
             state.padding = stack::Padding::new(state.stack.len());
             active.call += 1;

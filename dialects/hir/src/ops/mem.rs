@@ -7,7 +7,6 @@ use midenc_hir::{
     traits::*,
     *,
 };
-use midenc_hir_transform::SpillLike;
 
 use crate::HirDialect;
 
@@ -55,7 +54,7 @@ pub struct Store {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(MemoryEffectOpInterface, SpillLike, OpPrinter)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct StoreLocal {
     #[attr]
@@ -63,16 +62,6 @@ pub struct StoreLocal {
     local: LocalVariableAttr,
     #[operand]
     value: AnyType,
-}
-
-impl SpillLike for StoreLocal {
-    fn spilled(&self) -> OpOperand {
-        self.value().as_operand_ref()
-    }
-
-    fn spilled_value(&self) -> ValueRef {
-        self.value().as_value_ref()
-    }
 }
 
 /// Load `result` from the heap at `addr`

@@ -84,10 +84,9 @@ impl ForeignProcedureInvocation {
         foreign_proc_root: Word,
         inputs: ForeignProcedureInputs,
     ) -> Self {
-        // The compiler reloads these as 22 consecutive felts in this order (account id prefix,
-        // account id suffix, procedure root, 16 inputs) and swaps prefix and suffix into the
-        // executor's operand order itself; see `fpi_indirect_return_via_pointer` (reload) and
-        // `store_fpi_prefix_locals` (swap) in the Wasm frontend.
+        // The wrapper tuple stores account prefix, account suffix, procedure root and payload.
+        // The Wasm frontend builds semantic FPI operands in executor order: account suffix,
+        // account prefix, root0..root3, then the sixteen payload lanes.
         let zero = Felt::ZERO;
         Self {
             words: [

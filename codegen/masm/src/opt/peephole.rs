@@ -224,16 +224,21 @@ fn dup_depth(inst: &Instruction) -> Option<u8> {
 ///
 /// Run after expansion and before physical verification. Only adjacent instructions owned by the
 /// same lowering unit may be combined; allocation actions, control structure and debug locations
-/// remain explicit. Empty executable blocks receive a Nop anchor here so serialization does not
-/// have to add instructions after verification. The caller must verify the modified body.
+/// remain explicit. Each maximal variable-decorator group receives one Nop anchor, as does an
+/// otherwise empty executable body. Proof boundaries are transparent; inline decorators and real
+/// instructions end groups. Canonical anchors are reconstructed so they cannot split a group.
+/// Serialization adds no instructions. The caller must verify the modified body.
 pub(crate) fn simplify_annotated(body: &mut crate::lower::expand::AnnotatedMasmBody) {
     use crate::{
-        lower::expand::{Anchor, AnnotatedMasmBody, AnnotatedOp, Boundary},
+        lower::expand::{Anchor, AnnotatedMasmBody, AnnotatedOp, Boundary, DebugDecorator},
         plan::SelectedStepId,
     };
     fn walk(body: &mut AnnotatedMasmBody, mut active: Option<SelectedStepId>) {
         let ops = core::mem::take(body.ops_mut());
-        let mut input = ops.into_iter().peekable();
+        let mut input = ops
+            .into_iter()
+            .filter(|op| !matches!(op, AnnotatedOp::Anchor(Anchor::Nop)))
+            .peekable();
         while let Some(mut op) = input.next() {
             match &mut op {
                 AnnotatedOp::Boundary(Boundary::UnitStart(id)) => active = Some(*id),
@@ -274,6 +279,29 @@ pub(crate) fn simplify_annotated(body: &mut crate::lower::expand::AnnotatedMasmB
             }
             body.push(op);
         }
+        // Group the final simplified projection: a removed instruction run must not leave
+        // an artificial boundary between observations. Insert before trailing proof markers.
+        let ops = core::mem::take(body.ops_mut());
+        let mut input = ops.into_iter();
+        while let Some(op) = input.next() {
+            let end_of_variable_group = matches!(
+                &op,
+                AnnotatedOp::Anchor(Anchor::Debug {
+                    decorator: DebugDecorator::Variable(_),
+                    ..
+                })
+            ) && !matches!(
+                input.as_slice().iter().find(|next| !matches!(next, AnnotatedOp::Boundary(_))),
+                Some(AnnotatedOp::Anchor(Anchor::Debug {
+                    decorator: DebugDecorator::Variable(_),
+                    ..
+                }))
+            );
+            body.push(op);
+            if end_of_variable_group {
+                body.push(AnnotatedOp::Anchor(Anchor::Nop));
+            }
+        }
         if !body.ops().iter().any(|op| {
             matches!(
                 op,
@@ -299,6 +327,151 @@ mod tests {
     use midenc_session::diagnostics::{DefaultSourceManager, SourceLanguage, SourceManager};
 
     use super::*;
+
+    #[test]
+    fn variable_groups_receive_one_executable_anchor_before_each_barrier() {
+        use crate::{
+            lower::expand::{Anchor, AnnotatedMasmBody, AnnotatedOp, Boundary, DebugDecorator},
+            plan::{DebugLocationId, SegmentId, SelectedStepId},
+        };
+        let variable = |id| {
+            AnnotatedOp::Anchor(Anchor::Debug {
+                id: DebugLocationId(id),
+                decorator: DebugDecorator::Variable(masm::DebugVarInfo::new(
+                    "visible",
+                    masm::DebugVarLocation::Unavailable,
+                )),
+            })
+        };
+        let mut body = AnnotatedMasmBody::new();
+        body.push_instruction(Instruction::Nop, SelectedStepId(0));
+        body.push(variable(0));
+        body.push(AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))));
+        body.push(variable(1));
+        body.push(AnnotatedOp::Anchor(Anchor::Debug {
+            id: DebugLocationId(2),
+            decorator: DebugDecorator::InlineCallClear,
+        }));
+        body.push(variable(3));
+        body.push_instruction(Instruction::Nop, SelectedStepId(0));
+        body.push(variable(4));
+        simplify_annotated(&mut body);
+        let shape = |body: &AnnotatedMasmBody| {
+            body.ops()
+                .iter()
+                .map(|op| match op {
+                    AnnotatedOp::Anchor(Anchor::Nop) => "nop",
+                    AnnotatedOp::Anchor(Anchor::Debug {
+                        decorator: DebugDecorator::Variable(_),
+                        ..
+                    }) => "var",
+                    AnnotatedOp::Anchor(Anchor::Debug { .. }) => "inline",
+                    AnnotatedOp::Boundary(_) => "boundary",
+                    AnnotatedOp::Instruction { .. } => "instruction",
+                    _ => "control",
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            shape(&body),
+            [
+                "instruction",
+                "var",
+                "boundary",
+                "var",
+                "nop",
+                "inline",
+                "var",
+                "nop",
+                "instruction",
+                "var",
+                "nop"
+            ]
+        );
+        simplify_annotated(&mut body);
+        assert_eq!(
+            shape(&body),
+            [
+                "instruction",
+                "var",
+                "boundary",
+                "var",
+                "nop",
+                "inline",
+                "var",
+                "nop",
+                "instruction",
+                "var",
+                "nop"
+            ]
+        );
+    }
+
+    #[test]
+    fn removed_runs_merge_variable_groups_and_nested_bodies_anchor_independently() {
+        use crate::{
+            lower::expand::{Anchor, AnnotatedMasmBody, AnnotatedOp, Boundary, DebugDecorator},
+            plan::*,
+        };
+        let variable = |id| {
+            AnnotatedOp::Anchor(Anchor::Debug {
+                id: DebugLocationId(id),
+                decorator: DebugDecorator::Variable(masm::DebugVarInfo::new(
+                    "v",
+                    masm::DebugVarLocation::Unavailable,
+                )),
+            })
+        };
+        let mut leaf = AnnotatedMasmBody::new();
+        leaf.push(AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))));
+        leaf.push(variable(0));
+        leaf.push_instruction(Instruction::Push(PushValue::from(1u32).into()), SelectedStepId(0));
+        leaf.push_instruction(Instruction::Drop, SelectedStepId(0));
+        leaf.push(variable(1));
+        leaf.push(AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))));
+        let mut body = AnnotatedMasmBody::new();
+        body.push(AnnotatedOp::If {
+            id: ControlId(0),
+            then_body: leaf.clone(),
+            else_body: leaf.clone(),
+        });
+        body.push(AnnotatedOp::While {
+            id: ControlId(1),
+            body: leaf.clone(),
+        });
+        body.push(AnnotatedOp::Repeat {
+            id: ControlId(2),
+            count: 2,
+            body: leaf,
+        });
+        simplify_annotated(&mut body);
+        for op in body.ops() {
+            let leaves = match op {
+                AnnotatedOp::If {
+                    then_body,
+                    else_body,
+                    ..
+                } => vec![then_body, else_body],
+                AnnotatedOp::While { body, .. } | AnnotatedOp::Repeat { body, .. } => vec![body],
+                _ => panic!("unexpected root op"),
+            };
+            for leaf in leaves {
+                assert!(leaf.top_level_instructions().next().is_none());
+                assert_eq!(
+                    leaf.ops()
+                        .iter()
+                        .filter(|op| matches!(op, AnnotatedOp::Anchor(Anchor::Nop)))
+                        .count(),
+                    1
+                );
+                assert!(matches!(leaf.ops()[3], AnnotatedOp::Anchor(Anchor::Nop)));
+                assert!(matches!(leaf.ops()[4], AnnotatedOp::Boundary(Boundary::UnitEnd(_))));
+            }
+        }
+        let once = alloc::format!("{body:?}");
+        simplify_annotated(&mut body);
+        assert_eq!(alloc::format!("{body:?}"), once);
+    }
 
     /// The ops of a procedure whose body is `insts`, one per line.
     fn parse(insts: &[&str]) -> Vec<masm::Op> {

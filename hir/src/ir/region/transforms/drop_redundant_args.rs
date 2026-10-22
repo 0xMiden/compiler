@@ -53,7 +53,11 @@ impl Region {
             while let Some(block) = blocks.as_pointer() {
                 blocks.move_next();
 
-                any_changed |= Self::drop_redundant_block_arguments(block, rewriter).is_ok();
+                // Entry arguments also receive values from initial region activation.
+                // Still visit nested regions under entry operations below.
+                if !block.borrow().is_entry_block() {
+                    any_changed |= Self::drop_redundant_block_arguments(block, rewriter).is_ok();
+                }
 
                 for op in block.borrow().body() {
                     let mut regions = op.regions().front();
@@ -123,7 +127,8 @@ impl Region {
         }
 
         // Remove the arguments.
-        for arg_index in args_to_erase.iter().copied() {
+        // Erasing an argument reindexes every argument and forwarded operand after it.
+        for arg_index in args_to_erase.iter().rev().copied() {
             block_mut.erase_argument(arg_index);
 
             // Remove the argument from the branch ops.

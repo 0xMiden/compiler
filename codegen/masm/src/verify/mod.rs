@@ -77,12 +77,41 @@ pub(crate) fn verify(
 #[cfg(test)]
 pub(crate) mod tests;
 
+/// Independently check the serialized positions, without consulting optimizer decisions.
+/// A proof boundary emits nothing. Canonical nops terminate, but cannot divide, variable groups;
+/// real instructions (including attributed nops) and inline decorators are grouping barriers.
 fn check_anchors(body: &AnnotatedMasmBody) -> Result<(), VerificationError> {
-    let mut nops = 0;
+    use crate::lower::expand::DebugDecorator;
+    let mut pending_variables = false;
+    let mut after_group_anchor = false;
+    let mut has_variables = false;
     let mut executable = false;
+    let mut empty_nops = 0;
     for op in body.ops() {
         match op {
-            AnnotatedOp::Anchor(Anchor::Nop) => nops += 1,
+            AnnotatedOp::Boundary(_) => continue,
+            AnnotatedOp::Anchor(Anchor::Debug {
+                decorator: DebugDecorator::Variable(_),
+                ..
+            }) => {
+                if after_group_anchor {
+                    return Err(error("canonical nop anchor splits a variable-decorator group"));
+                }
+                pending_variables = true;
+                has_variables = true;
+                continue;
+            }
+            AnnotatedOp::Anchor(Anchor::Nop) if pending_variables => {
+                pending_variables = false;
+                after_group_anchor = true;
+                continue;
+            }
+            _ if pending_variables => {
+                return Err(error(
+                    "variable-decorator group requires a following canonical nop anchor",
+                ));
+            }
+            AnnotatedOp::Anchor(Anchor::Nop) => empty_nops += 1,
             AnnotatedOp::If {
                 then_body,
                 else_body,
@@ -99,9 +128,15 @@ fn check_anchors(body: &AnnotatedMasmBody) -> Result<(), VerificationError> {
             AnnotatedOp::Instruction { .. } => executable = true,
             _ => {}
         }
+        after_group_anchor = false;
     }
-    if nops > 1 || nops != 0 && executable {
-        return Err(error("canonical nop anchor requires an otherwise empty executable block"));
+    if pending_variables {
+        return Err(error("variable-decorator group requires a following canonical nop anchor"));
+    }
+    if empty_nops > 1 || empty_nops != 0 && (executable || has_variables) {
+        return Err(error(
+            "canonical nop anchor requires a variable group or otherwise empty executable block",
+        ));
     }
     Ok(())
 }
@@ -109,9 +144,19 @@ impl VerifiedProcedure {
     /// Consume the sealed body and serialize its verified instructions and anchors as MASM.
     /// Reject abstract empty blocks lacking an executable nop anchor; conversion itself inserts
     /// no executable operations or storage. The assigned frame determines the local count.
+    #[cfg(test)]
     pub fn into_masm(
         self,
         name: crate::masm::ProcedureName,
+    ) -> Result<crate::masm::Procedure, VerificationError> {
+        self.into_masm_with_span(name, crate::masm::SourceSpan::UNKNOWN)
+    }
+
+    /// Serialize a verified procedure with its original source declaration span.
+    pub fn into_masm_with_span(
+        self,
+        name: crate::masm::ProcedureName,
+        span: crate::masm::SourceSpan,
     ) -> Result<crate::masm::Procedure, VerificationError> {
         fn serializable(body: &AnnotatedMasmBody) -> Result<(), VerificationError> {
             let mut executable = false;
@@ -221,7 +266,7 @@ impl VerifiedProcedure {
         }
         calls(&body, &mut invoked);
         let mut procedure = masm::Procedure::new(
-            masm::SourceSpan::UNKNOWN,
+            span,
             masm::Visibility::Private,
             name,
             u16::try_from(self.frame.aligned_size()).expect("checked final frame"),

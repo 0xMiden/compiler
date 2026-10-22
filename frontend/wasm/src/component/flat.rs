@@ -12,7 +12,7 @@ use midenc_hir::{
     dialects::builtin::attributes::{AbiParam, Signature},
 };
 
-use super::types::{MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS, MAX_FLAT_RESULTS};
+use super::types::{MAX_FLAT_PARAMS, MAX_FLAT_RESULTS};
 
 /// Identifies which kind of component wrapper is being flattened for the canonical ABI.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -37,10 +37,8 @@ pub enum CanonicalTypeError {
 
 /// Identifies the pointer indirection used by our internal canonical ABI parameter/result passing.
 ///
-/// This is an implementation detail of the cross-context parameter/result passing ABI rather than a
-/// component-model transformation: it records whether inputs and/or outputs are passed by pointer
-/// indirection (because their flattened shape exceeds the direct cross-context call budget), and the
-/// dataflow direction of that indirection.
+/// This records whether the source canonical ABI passes inputs and/or outputs through memory,
+/// based on flattened value counts. Actual target call lane budgets are validated separately.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CanonicalAbiIndirection {
     /// No indirection: the component function is lowered or lifted directly.
@@ -204,11 +202,9 @@ pub fn flatten_types(
         .collect())
 }
 
-/// Returns true when flattened parameters exceed the direct cross-context call budget.
+/// Returns true when parameters exceed the canonical ABI's direct flat-value count.
 pub(crate) fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
     flat_params.len() > MAX_FLAT_PARAMS
-        || flat_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
-            > MAX_DIRECT_STACK_FELTS
 }
 
 /// Classifies the canonical ABI pointer indirection required by a component function type.
@@ -828,15 +824,11 @@ mod tests {
         assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
         assert!(sig.params()[0].is_sret_param());
 
-        // Nine i64 params fit the Canon ABI flat-value count but exceed the 16-felt call budget.
-        let params = vec![Type::I64; 9];
-        let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
-        func_ty.abi = CallConv::ComponentModel;
+        // Source classification counts values independently of the target lane budget.
+        let func_ty = FunctionType::new(CallConv::ComponentModel, vec![Type::I64; 9], vec![]);
         let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
-
-        assert_eq!(sig.params().len(), 1);
-        assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
-        assert!(sig.params()[0].is_sret_param());
+        assert_eq!(sig.params().len(), 9);
+        assert!(sig.params().iter().all(|param| param.ty == Type::I64));
     }
 
     #[test]
@@ -952,11 +944,64 @@ mod tests {
             CanonicalAbiIndirection::None
         );
 
-        // Input indirection needed - at most 16 flattened parameters can still exceed 16 felts.
+        // Source values remain direct even when their raw lanes exceed sixteen.
         let func_ty = component_func(vec![Type::I64; 9], vec![]);
         assert_eq!(
             classify_function_type(&context, &func_ty).unwrap(),
-            CanonicalAbiIndirection::In
+            CanonicalAbiIndirection::None
         );
+    }
+    #[test]
+    fn canonical_source_shape_counts_values_not_felts() {
+        let context = Rc::new(Context::default());
+        let ty = FunctionType::new(
+            CallConv::ComponentModel,
+            vec![Type::I64; 6].into_iter().chain(vec![Type::Felt; 7]).collect::<Vec<_>>(),
+            vec![],
+        );
+        assert_eq!(classify_function_type(&context, &ty).unwrap(), CanonicalAbiIndirection::None);
+        for mode in [CanonicalAbiMode::Import, CanonicalAbiMode::Export] {
+            let sig = flatten_function_type(&context, &ty, mode).unwrap();
+            assert_eq!(sig.params().len(), 13);
+            assert_eq!(sig.params().iter().map(|p| p.ty.size_in_felts()).sum::<usize>(), 19);
+        }
+    }
+
+    #[test]
+    fn canonical_source_shape_allows_seventeenth_result_pointer() {
+        let context = Rc::new(Context::default());
+        let ty = FunctionType::new(
+            CallConv::ComponentModel,
+            vec![Type::I32; 16],
+            vec![Type::from(StructType::new(vec![Type::I32; 2]))],
+        );
+        assert_eq!(classify_function_type(&context, &ty).unwrap(), CanonicalAbiIndirection::Out);
+        let lowered = flatten_function_type(&context, &ty, CanonicalAbiMode::Import).unwrap();
+        assert_eq!(lowered.params().len(), 17);
+        assert!(lowered.params()[16].ty.is_pointer());
+        assert!(lowered.results().is_empty());
+        let core = expected_core_signature(&lowered);
+        assert_eq!(core.params()[16].ty, Type::I32);
+        check_core_wasm_signature_equivalence(&core, &expected_core_signature(&lowered)).unwrap();
+        let lifted = flatten_function_type(&context, &ty, CanonicalAbiMode::Export).unwrap();
+        assert_eq!(lifted.params().len(), 16);
+        assert!(lifted.results()[0].ty.is_pointer());
+    }
+
+    #[test]
+    fn canonical_source_shape_tuples_seventeen_values() {
+        let context = Rc::new(Context::default());
+        for results in [vec![], vec![Type::from(StructType::new(vec![Type::I32; 2]))]] {
+            let indirect_result = !results.is_empty();
+            let ty = FunctionType::new(CallConv::ComponentModel, vec![Type::I32; 17], results);
+            for mode in [CanonicalAbiMode::Import, CanonicalAbiMode::Export] {
+                let sig = flatten_function_type(&context, &ty, mode).unwrap();
+                assert!(sig.params()[0].ty.is_pointer());
+                assert_eq!(
+                    sig.params().len(),
+                    1 + usize::from(indirect_result && matches!(mode, CanonicalAbiMode::Import))
+                );
+            }
+        }
     }
 }

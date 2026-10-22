@@ -31,6 +31,7 @@ pub(crate) fn repair_edge(
 
 /// Construct a transfer by draining and rebuilding, bypassing incremental optimization.
 /// Shares validation and publication rules with `repair_edge` for equivalence testing.
+#[cfg(test)]
 pub(super) fn normalize_edge(
     state: &AllocationState,
     edge: &TransferEdge,

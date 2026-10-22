@@ -63,7 +63,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `analysis` is owned by the [DataFlowSolver], as that is the
+    /// The caller must ensure that `analysis` is owned by the [crate::DataFlowSolver], as that is the
     /// only situation in which it is safe for us to take the address of the analysis for later use.
     fn subscribe_nonnull(guard: &Self, analysis: NonNull<dyn DataFlowAnalysis>) {
         let info = unsafe { guard.info.as_ref() };
@@ -225,7 +225,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `analysis` is owned by the [DataFlowSolver], as that is the
+    /// The caller must ensure that `analysis` is owned by the [crate::DataFlowSolver], as that is the
     /// only situation in which it is safe for us to take the address of the analysis for later use.
     fn subscribe_nonnull(guard: &Self, analysis: NonNull<dyn DataFlowAnalysis>) {
         let info = unsafe { guard.info.as_ref() };

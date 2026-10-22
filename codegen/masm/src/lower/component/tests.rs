@@ -355,7 +355,18 @@ fn parse(context: &Rc<Context>, text: &str) -> OperationRef {
 fn lower_world(world: builtin::WorldRef) -> Result<MasmComponent, Report> {
     let analysis_manager = AnalysisManager::new(world.as_operation_ref(), None);
     let world = world.borrow();
-    world.to_masm_component(analysis_manager)
+    world.to_masm_component(analysis_manager, super::EmissionNamespace::Source)
+}
+
+/// Lower with the final assembly policy already selected.
+fn lower_world_for_target(
+    world: builtin::WorldRef,
+    target: &midenc_session::miden_project::Target,
+) -> Result<MasmComponent, Report> {
+    let analysis_manager = AnalysisManager::new(world.as_operation_ref(), None);
+    world
+        .borrow()
+        .to_masm_component(analysis_manager, super::EmissionNamespace::Target(target))
 }
 
 /// Lower `text`, whose top-level operation must be a `builtin.component`, as
@@ -368,7 +379,9 @@ fn lower_component(context: &Rc<Context>, text: &str) -> Result<MasmComponent, R
         .try_downcast_op::<builtin::Component>()
         .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
     let analysis_manager = AnalysisManager::new(op, None);
-    component.borrow().to_masm_component(analysis_manager)
+    component
+        .borrow()
+        .to_masm_component(analysis_manager, super::EmissionNamespace::Source)
 }
 
 /// Lower a component through the MASM legalization boundary used by the compiler pipeline.
@@ -388,7 +401,9 @@ fn legalize_and_lower_component(
     pm.run(component.as_operation_ref())?;
 
     let analysis_manager = AnalysisManager::new(op, None);
-    component.borrow().to_masm_component(analysis_manager)
+    component
+        .borrow()
+        .to_masm_component(analysis_manager, super::EmissionNamespace::Source)
 }
 
 /// Lower a world through the MASM legalization boundary used by the compiler pipeline.
@@ -1089,8 +1104,9 @@ builtin.world {
 };
 "#,
     );
-    let lowered = lower_world(world).unwrap();
-    let sources = lowered.source_inputs(&library_target("renamed"), context.session()).unwrap();
+    let target = library_target("renamed");
+    let lowered = lower_world_for_target(world, &target).unwrap();
+    let sources = lowered.source_inputs(&target, context.session()).unwrap();
     let api = sources.support.iter().find(|module| module.name() == "api").unwrap();
     assert_eq!(
         alias_import(api, "alias").module_path().inner().as_str(),
@@ -1183,7 +1199,7 @@ fn a_world_holding_one_component_lowers_as_that_component() {
     let analysis_manager = AnalysisManager::new(op, None);
     let from_component = component
         .borrow()
-        .to_masm_component(analysis_manager)
+        .to_masm_component(analysis_manager, super::EmissionNamespace::Source)
         .expect("and so does the component on its own");
 
     assert_eq!(
@@ -1208,7 +1224,7 @@ fn a_component_lowers_rooted_at_its_own_id() {
     let analysis_manager = AnalysisManager::new(op, None);
     let lowered = component
         .borrow()
-        .to_masm_component(analysis_manager)
+        .to_masm_component(analysis_manager, super::EmissionNamespace::Source)
         .expect("the component lowers");
 
     let id = lowered.id.as_ref().expect("a component knows its own id");
@@ -1266,7 +1282,10 @@ fn check_inline_call_marker(call_line: u32) {
     ret.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, attr);
 
     let analysis_manager = AnalysisManager::new(op, None);
-    let lowered = component.borrow().to_masm_component(analysis_manager).unwrap();
+    let lowered = component
+        .borrow()
+        .to_masm_component(analysis_manager, super::EmissionNamespace::Source)
+        .unwrap();
     let body = lowered
         .modules
         .iter()
@@ -1297,7 +1316,7 @@ fn a_marked_start_is_the_final_component_initialization_step() {
     let analysis_manager = AnalysisManager::new(op, None);
     let lowered = component
         .borrow()
-        .to_masm_component(analysis_manager)
+        .to_masm_component(analysis_manager, super::EmissionNamespace::Source)
         .expect("a component whose only initialization is its start must lower");
 
     let init = component_init(&lowered);
@@ -1341,7 +1360,7 @@ fn a_marked_start_remains_resolvable_in_a_synthetic_wrapper() {
     let analysis_manager = AnalysisManager::new(op, None);
     let lowered = component
         .borrow()
-        .to_masm_component(analysis_manager)
+        .to_masm_component(analysis_manager, super::EmissionNamespace::Source)
         .expect("a marked synthetic wrapper must lower");
 
     let target = library_target("hir_ns::test");
@@ -1408,179 +1427,54 @@ builtin.component private @hir_ns::@test {
 };
 "#;
 
-/// Generated `main` retains component-init ownership and the public canonical wrapper retains its
-/// fresh-context prologue. Only the selected marked executable gets a private no-init body.
+/// An executable root uses exec, so a context-call entrypoint must be rejected before selection.
 #[test]
-fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
+fn marked_canonical_executable_entrypoint_requires_same_context_convention() {
     let context = context_with_entrypoint_and_test_harness("hir_ns::test::entry");
     let op = parse(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START);
     mark_start_function(&context, op, "component_start");
-    let component = op
-        .try_downcast_op::<builtin::Component>()
-        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
-
-    let analysis_manager = AnalysisManager::new(op, None);
-    let lowered = component
+    let component = op.try_downcast_op::<builtin::Component>().unwrap();
+    let result = component
         .borrow()
-        .to_masm_component(analysis_manager)
-        .expect("a marked canonical executable entrypoint must lower through its private copy");
-
-    let public_entry = lowered.modules[0]
-        .procedures()
-        .find(|procedure| procedure.name().as_str() == "entry")
-        .expect("the public canonical wrapper must remain defined");
-    assert_eq!(
-        exec_paths(public_entry.body()).first().map(String::as_str),
-        Some(COMPONENT_INIT_PROCEDURE),
-        "fresh-context calls through the public wrapper must still initialize"
-    );
-    let private_entry = lowered
-        .executable_entrypoint_without_init
-        .as_ref()
-        .expect("the marked executable must carry a private no-init entry body");
-    assert_eq!(private_entry.name().as_str(), EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC);
-    assert_eq!(private_entry.visibility(), masm::Visibility::Private);
-    assert!(
-        !exec_paths(private_entry.body())
-            .iter()
-            .any(|target| target == COMPONENT_INIT_PROCEDURE),
-        "the executable-only entry body must not repeat component initialization"
-    );
-
-    let target = midenc_session::miden_project::Target::executable(
-        "component-start",
-        Uri::new("component-start.hir"),
-    );
-    let sources = lowered
-        .source_inputs(&target, context.session())
-        .expect("the marked canonical executable should generate main and its private entry");
-    let private_entry = sources
-        .root
-        .procedures()
-        .find(|procedure| procedure.name().as_str() == EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC)
-        .expect("the no-init entry body must be private to the executable module");
-    assert_eq!(private_entry.visibility(), masm::Visibility::Private);
-    let main = sources
-        .root
-        .procedures()
-        .find(|procedure| procedure.name().is_main())
-        .expect("the executable root must define main");
-    let init = main
-        .body()
-        .iter()
-        .position(|op| {
-            matches!(
-                op,
-                masm::Op::Inst(inst)
-                    if matches!(
-                        inst.inner(),
-                        masm::Instruction::Exec(masm::InvocationTarget::Path(path))
-                            if path.inner().as_str() == "::hir_ns::test::init"
-                    )
-            )
-        })
-        .expect("generated main must retain component init");
-    let harness = main
-        .body()
-        .iter()
-        .position(|op| {
-            matches!(
-                op,
-                masm::Op::Inst(inst) if matches!(inst.inner(), masm::Instruction::AdvPush)
-            )
-        })
-        .expect("the fixture enables test-harness initialization");
-    let entry = main
-        .body()
-        .iter()
-        .position(|op| {
-            matches!(
-                op,
-                masm::Op::Inst(inst)
-                    if matches!(
-                        inst.inner(),
-                        masm::Instruction::Exec(masm::InvocationTarget::Symbol(name))
-                            if name.as_str() == EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC
-                    )
-            )
-        })
-        .expect("generated main must invoke the private no-init entry body");
-    assert!(
-        init < harness && harness < entry,
-        "generated main must preserve init -> harness -> entry ordering"
-    );
+        .to_masm_component(AnalysisManager::new(op, None), super::EmissionNamespace::Source);
+    let err = match result {
+        Ok(_) => panic!("context-call entrypoint accepted for exec-compatible root"),
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("requires a same-context calling convention"), "{err}");
 }
 
 #[test]
 fn canonical_alias_entrypoint_uses_target_calling_convention() {
     let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::alias");
-    let op = parse(
-        &context,
-        r#"
-builtin.component private @"hir_ns:test@1.0.0" {
-    builtin.function_alias public @alias -> @entry;
-    builtin.function public extern("component-model") @entry() {
-        builtin.ret;
-    };
-    builtin.module private @core {
-        builtin.global_variable private @g : i32 {
-            builtin.ret_imm 1 : i32;
-        };
-        builtin.function public extern("C") @component_start() {
-            builtin.ret;
-        };
-        builtin.function public extern("C") @core_entry() {
-            builtin.ret;
-        };
-    };
-};
-"#,
-    );
+    let source = COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START
+        .replace("@hir_ns::@test", "@\"hir_ns:test@1.0.0\"")
+        .replace(
+            "builtin.function public extern(\"component-model\") @entry()",
+            "builtin.function_alias public @alias -> @entry; builtin.function public \
+             extern(\"component-model\") @entry()",
+        );
+    let op = parse(&context, &source);
     mark_start_function(&context, op, "component_start");
-
     let component = op.try_downcast_op::<builtin::Component>().unwrap();
-    let lowered = component
+    let result = component
         .borrow()
-        .to_masm_component(AnalysisManager::new(op, None))
-        .expect("an alias to a canonical entrypoint must lower through its private copy");
-
-    let import = alias_import(&lowered.modules[0], "alias");
-    assert_eq!(import.source_name().as_str(), "entry");
-    assert_eq!(import.module_path().inner().as_str(), "self");
-    assert_eq!(import.visibility(), masm::Visibility::Public);
-    let public_entry = lowered.modules[0]
-        .procedures()
-        .find(|procedure| procedure.name().as_str() == "entry")
-        .unwrap();
-    assert_eq!(exec_paths(public_entry.body()).first().map(String::as_str), Some("init"));
-
-    // A copy is emitted only if the alias's target, not the alias, carries the canonical ABI.
-    let private_entry = lowered
-        .executable_entrypoint_without_init
-        .as_ref()
-        .expect("the alias's resolved calling convention must select a no-init entry body");
-
-    // `main` owns init, so the executable-only copy must not repeat it
-    assert!(!exec_paths(private_entry.body()).iter().any(|target| target == "init"));
+        .to_masm_component(AnalysisManager::new(op, None), super::EmissionNamespace::Source);
+    let err = match result {
+        Ok(_) => panic!("alias concealed its canonical target's context-call convention"),
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("requires a same-context calling convention"), "{err}");
 }
 
 #[test]
-fn unmarked_canonical_executable_keeps_the_existing_entrypoint_path() {
+fn unmarked_canonical_executable_entrypoint_requires_same_context_convention() {
     let context = context_with_entrypoint("hir_ns::test::entry");
-    let lowered = lower_component(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START)
-        .expect("the unmarked canonical executable must remain supported");
-    assert!(lowered.executable_entrypoint_without_init.is_none());
-
-    let target = midenc_session::miden_project::Target::executable(
-        "component-start",
-        Uri::new("component-start.hir"),
-    );
-    let sources = lowered.source_inputs(&target, context.session()).unwrap();
-    let main = sources.root.procedures().find(|procedure| procedure.name().is_main()).unwrap();
-    let execs = exec_paths(main.body());
-    assert!(execs.iter().any(|target| target.ends_with("::init")));
-    assert!(execs.iter().any(|target| target.ends_with("::entry")));
-    assert!(!execs.iter().any(|target| target == EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC));
+    let err = match lower_component(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START) {
+        Ok(_) => panic!("unmarked context-call entrypoint accepted for exec-compatible root"),
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("requires a same-context calling convention"), "{err}");
 }
 
 const COMPONENT_WITH_NESTED_CANONICAL_ENTRYPOINT_AND_START: &str = r#"
@@ -1608,11 +1502,14 @@ fn nested_canonical_entrypoint_cannot_bypass_marked_component_rejection() {
         .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
     let analysis_manager = AnalysisManager::new(op, None);
 
-    let err = match component.borrow().to_masm_component(analysis_manager) {
-        Ok(_) => panic!("a nested canonical entrypoint has ambiguous init ownership"),
+    let err = match component
+        .borrow()
+        .to_masm_component(analysis_manager, super::EmissionNamespace::Source)
+    {
+        Ok(_) => panic!("a nested context-call entrypoint cannot be invoked by root exec"),
         Err(err) => err,
     };
-    assert!(err.to_string().contains("must be defined directly"), "{err}");
+    assert!(err.to_string().contains("requires a same-context calling convention"), "{err}");
 }
 
 const WORLD_WITH_SUPPORTING_CANONICAL_ENTRYPOINT_AND_START: &str = r#"
@@ -1640,16 +1537,20 @@ fn supporting_canonical_entrypoint_cannot_bypass_marked_component_rejection() {
 
     let err = match lower_world(world) {
         Ok(_) => {
-            panic!("a supporting canonical entrypoint would still initialize the component twice")
+            panic!("a supporting context-call entrypoint cannot be invoked by root exec")
         }
         Err(err) => err,
     };
-    assert!(err.to_string().contains("initialization twice"), "{err}");
+    assert!(err.to_string().contains("requires a same-context calling convention"), "{err}");
 }
 
 #[test]
 fn generated_executable_main_owns_marked_core_entrypoint_initialization_once() {
-    let context = context_with_entrypoint("hir_ns::test::core::core_entry");
+    let context = context_with_entrypoint_and_test_harness("hir_ns::test::core::core_entry");
+    let target = midenc_session::miden_project::Target::executable(
+        "component-start",
+        Uri::new("component-start.hir"),
+    );
     let op = parse(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START);
     let component = op
         .try_downcast_op::<builtin::Component>()
@@ -1658,13 +1559,9 @@ fn generated_executable_main_owns_marked_core_entrypoint_initialization_once() {
     let analysis_manager = AnalysisManager::new(op, None);
     let lowered = component
         .borrow()
-        .to_masm_component(analysis_manager)
+        .to_masm_component(analysis_manager, super::EmissionNamespace::Target(&target))
         .expect("a marked core-C executable entrypoint remains supported");
 
-    let target = midenc_session::miden_project::Target::executable(
-        "component-start",
-        Uri::new("component-start.hir"),
-    );
     let sources = lowered
         .source_inputs(&target, context.session())
         .expect("the marked executable should generate its main module");
@@ -1681,13 +1578,17 @@ fn generated_executable_main_owns_marked_core_entrypoint_initialization_once() {
         .iter()
         .position(|target| target == init)
         .expect("generated main must invoke component init");
+    let harness = execs
+        .iter()
+        .position(|target| target == "__test_harness")
+        .expect("generated main must invoke the checked harness");
     let entry = execs
         .iter()
-        .position(|target| target == entry)
+        .position(|target| target.trim_start_matches("::") == entry)
         .unwrap_or_else(|| panic!("generated main must invoke the core entrypoint: {execs:?}"));
     assert!(
-        init < entry,
-        "generated main must initialize once before executing the core entrypoint: {execs:?}"
+        init < harness && harness < entry,
+        "generated main must preserve init -> harness -> entry ordering: {execs:?}"
     );
 }
 
@@ -2081,68 +1982,32 @@ fn a_world_of_modules_still_lowers_as_a_component_body() {
     );
 }
 
-/// A component-less world's Miden Assembly is rooted at the *target's* namespace.
-///
-/// Lowering has no target and so cannot answer this: with several top-level modules
-/// `world_body_to_masm_component` falls through to the placeholder `::init`, which is not a
-/// name any source declares and which therefore no synthesized namespace can equal. Since
-/// `load_target_sources` rejects a root module that does not sit exactly at its target's
-/// namespace, such a build could not assemble at all. The first assertion pins that lowering
-/// still produces the placeholder, which is what makes the second one about
-/// [`MasmComponent::source_inputs`] rather than about lowering.
-///
-/// # What this does *not* claim
-///
-/// The second assertion pins the limitation that comes with it, so the next person reads it
-/// here rather than rediscovering it. With several top-level modules the placeholder root is
-/// an **empty** module and the real ones are its *siblings*, not its children —
-/// `define_module` finds their absolute paths do not begin with the root and defines them
-/// top-level — so moving the root moves nothing else, and they stay outside the namespace.
-/// Such a build therefore still does not assemble; what it no longer does is fail on a
-/// namespace no source could have produced.
-///
-/// TODO(codegen): decide what a world of several top-level modules should *be*. Nesting them
-/// under the target's namespace would rename every procedure in them, which is not this
-/// change's to do; rejecting the shape outright may well be the better answer.
+/// Final module identities are selected before verification; packaging preserves them.
 #[test]
 fn a_world_of_several_modules_is_rooted_at_the_target_namespace() {
     let context = Rc::new(Context::default());
-    let lowered = lower_world(parse_world(&context, &two_module_world()))
-        .expect("a world of several modules lowers");
-    assert_eq!(
-        lowered.root.to_string(),
-        "::init",
-        "lowering has no target to root at, so it still picks its placeholder"
-    );
-
     let target = library_target("::example");
-    let sources = lowered
-        .source_inputs(&target, context.session())
-        .expect("and its source inputs are what the assembler is handed");
-
-    assert_eq!(
-        sources.root.path(),
-        target.namespace.inner().as_ref(),
-        "a world declaring no component has no identity of its own, so its root is the namespace \
-         its target names"
-    );
+    let lowered = lower_world_for_target(parse_world(&context, &two_module_world()), &target)
+        .expect("a world of several modules lowers with its final target");
+    assert_eq!(lowered.root.as_ref(), target.namespace.inner().as_ref());
+    let before = format!("{lowered}");
+    let sources = lowered.source_inputs(&target, context.session()).unwrap();
+    assert_eq!(sources.root.path(), target.namespace.inner().as_ref());
     assert_eq!(
         sources
             .support
             .iter()
             .map(|module| module.path().to_string())
             .collect::<Vec<_>>(),
-        vec!["::lib", "::second"],
-        "and the modules the world declares are siblings of the placeholder rather than children \
-         of it, so they do not move with it"
+        vec!["::lib", "::second"]
     );
+    assert_eq!(format!("{lowered}"), before, "packaging must not mutate verified modules");
 }
 
 /// A component-less world whose root already agrees with its target comes back unchanged.
 ///
 /// The single-module shape, end to end from `.hir`: lowering roots at `::{module}`, and
-/// preparation's `.hir` scan reads that same module's name, so the two normally agree and
-/// subsuming this case into the same rule costs the common case nothing.
+/// the final target selects that same name before lowering.
 ///
 /// What this pins is the *outcome* — that nothing observable moved — which is what a caller
 /// sees. It does not pin the equality guard in `MasmComponent::source_inputs`, and cannot:
@@ -2154,10 +2019,11 @@ fn a_world_of_several_modules_is_rooted_at_the_target_namespace() {
 fn a_world_of_one_module_already_at_its_targets_namespace_is_left_alone() {
     let context = Rc::new(Context::default());
     let module = parse(&context, MODULE);
-    let lowered = lower_world(anchoring_world(module)).expect("a world of one module lowers");
+    let target = library_target("::lib");
+    let lowered = lower_world_for_target(anchoring_world(module), &target)
+        .expect("a world of one module lowers");
     let emitted = format!("{}", lowered.modules[0]);
 
-    let target = library_target("::lib");
     assert_eq!(
         lowered.root.as_ref(),
         target.namespace.inner().as_ref(),
@@ -2183,10 +2049,9 @@ fn a_world_of_one_module_already_at_its_targets_namespace_is_left_alone() {
 #[test]
 fn a_world_holding_one_component_keeps_that_components_namespace() {
     let context = Rc::new(Context::default());
-    let lowered =
-        lower_world(parse_world(&context, WORLD)).expect("a single-component world lowers");
-
     let target = library_target("::example");
+    let lowered = lower_world_for_target(parse_world(&context, WORLD), &target)
+        .expect("a single-component world lowers under authored namespace eligibility");
     let sources = lowered
         .source_inputs(&target, context.session())
         .expect("its source inputs are what the assembler is handed");
@@ -2413,7 +2278,7 @@ fn synthetic_wrapper_procedure_roots_use_effective_module_visibility() {
     let analysis_manager = AnalysisManager::new(op, None);
     let lowered = component
         .borrow()
-        .to_masm_component(analysis_manager)
+        .to_masm_component(analysis_manager, super::EmissionNamespace::Source)
         .expect("a synthetic wrapper exposes its nested module path");
 
     let exports = assembled_library_exports(&context, &lowered, "hir_ns::test");
@@ -2719,15 +2584,13 @@ fn a_private_nested_module_is_not_part_of_the_package_surface() {
     );
 }
 
-/// A `hir.dyncall` at the full argument budget: its root word and twelve argument felts fill the
-/// 16-element operand stack window exactly, with the arguments in reverse order so every one has
-/// to move.
+/// A full sixteen-lane payload in reverse order, with four additional semantic root lanes.
 const WORLD_WITH_A_WIDE_PERMUTED_DYNCALL: &str = r#"
 builtin.world {
 builtin.component private @"root_ns:root@1.0.0" {
     builtin.module public @wasm {
-        builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt, %a0: felt, %a1: felt, %a2: felt, %a3: felt, %a4: felt, %a5: felt, %a6: felt, %a7: felt, %a8: felt, %a9: felt, %a10: felt, %a11: felt) -> felt {
-            %result = hir.dyncall [%r0, %r1, %r2, %r3](%a11, %a10, %a9, %a8, %a7, %a6, %a5, %a4, %a3, %a2, %a1, %a0) : extern("component-model") (felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt) -> (felt);
+        builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt, %a0: felt, %a1: felt, %a2: felt, %a3: felt, %a4: felt, %a5: felt, %a6: felt, %a7: felt, %a8: felt, %a9: felt, %a10: felt, %a11: felt, %a12: felt, %a13: felt, %a14: felt, %a15: felt) -> felt {
+            %result = hir.dyncall [%r0, %r1, %r2, %r3](%a15, %a14, %a13, %a12, %a11, %a10, %a9, %a8, %a7, %a6, %a5, %a4, %a3, %a2, %a1, %a0) : extern("component-model") (felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt) -> (felt);
             builtin.ret %result : (felt);
         };
     };
@@ -2735,52 +2598,17 @@ builtin.component private @"root_ns:root@1.0.0" {
 };
 "#;
 
-/// The root is spilled before the arguments are scheduled, so a call at the full 12-felt argument
-/// budget lowers even when the root and every argument must move.
-///
-/// `TransformSpills` runs first, as it does for every function in the backend pipeline: it is the
-/// pass that answers whether an operand set is reachable at all, and its first placement precedes
-/// MASM legalization, so it — not legalization — is what a wider call meets first. It reports one
-/// as a diagnostic (see `apply_rewrites_rejects_operands_that_cannot_fit_the_operand_stack` in
-/// `midenc-compile/tests/codegen_legalization.rs`), while legalization states the same bound as
-/// part of the IR contract codegen accepts (see `oversized_dyncall_arguments_fail_legalization`
-/// in `crate::legalization`). Lowering alone would not prove this budget is the one the pipeline
-/// can carry.
+/// All sixteen payload lanes remain legal beside a separately staged root word.
 #[test]
 fn a_dyncall_at_the_argument_budget_lowers_and_assembles() {
     let context = Rc::new(Context::default());
     let world = parse_world(&context, WORLD_WITH_A_WIDE_PERMUTED_DYNCALL);
-    transform_spills(&context, world);
-    let lowered = lower_world(world).expect("a dyncall at the argument budget lowers");
     let target = library_target("root_ns:root@1.0.0");
-
-    let sources = lowered
-        .source_inputs(&target, context.session())
-        .expect("its source inputs are what the assembler is handed");
+    let lowered = lower_world_for_target(world, &target).expect("sixteen actual arguments lower");
+    let sources = lowered.source_inputs(&target, context.session()).unwrap();
     miden_assembly::Assembler::new(context.session().source_manager.clone())
         .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
         .expect("the lowered dyncall assembles");
-}
-
-/// Run `TransformSpills` over every function of `world`, as `pipeline::backend::apply_rewrites`
-/// does before codegen.
-///
-/// The spill analysis behind it requires every operand of a non-branch operation to be reachable
-/// within the operand stack window at once, so it is where a too-wide call site is noticed on this
-/// pipeline — lowering itself never asks.
-fn transform_spills(context: &Rc<Context>, world: builtin::WorldRef) {
-    use midenc_hir::pass::{Nesting, PassManager};
-
-    let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit);
-    {
-        let mut component_pm = pm.nest::<builtin::Component>();
-        let mut module_pm = component_pm.nest::<builtin::Module>();
-        let mut func_pm = module_pm.nest::<builtin::Function>();
-        func_pm.add_pass(alloc::boxed::Box::new(midenc_dialect_hir::transforms::TransformSpills));
-    }
-    pm.enable_verifier(false);
-    pm.run(world.as_operation_ref())
-        .expect("the world's functions fit the operand stack window");
 }
 
 /// A `hir.dyncall` in the shape canonical-ABI flattening produces for a stored procedure taking a
@@ -3305,7 +3133,7 @@ fn every_module_defining_a_table_callee_is_initialized_exactly_once() {
 }
 
 #[test]
-fn relocated_executable_entrypoint_private_aliases_assemble() {
+fn executable_entrypoint_private_aliases_assemble() {
     for callee in ["helper", "forward", "alias"] {
         let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::entry");
         let source = format!(
@@ -3314,7 +3142,7 @@ builtin.component private @"hir_ns:test@1.0.0" {{
     builtin.function public extern("C") @helper() {{ builtin.ret; }};
     builtin.function_alias private @forward -> @helper;
     builtin.function_alias private @alias -> @forward;
-    builtin.function public extern("component-model") @entry() {{
+    builtin.function public extern("C") @entry() {{
         hir.exec @{callee}() : extern("C") () -> ();
         builtin.ret;
     }};
@@ -3324,15 +3152,20 @@ builtin.component private @"hir_ns:test@1.0.0" {{
 }};
 "#
         );
-        let op = parse(&context, &source);
-        mark_start_function(&context, op, "component_start");
-        let component = op.try_downcast_op::<builtin::Component>().unwrap();
-        let lowered = component.borrow().to_masm_component(AnalysisManager::new(op, None)).unwrap();
-        assert!(lowered.executable_entrypoint_without_init.is_some());
         let target = midenc_session::miden_project::Target::executable(
             "private-alias",
             Uri::new("private-alias.hir"),
         );
+        let op = parse(&context, &source);
+        mark_start_function(&context, op, "component_start");
+        let component = op.try_downcast_op::<builtin::Component>().unwrap();
+        let lowered = component
+            .borrow()
+            .to_masm_component(
+                AnalysisManager::new(op, None),
+                super::EmissionNamespace::Target(&target),
+            )
+            .unwrap();
         let sources = lowered.source_inputs(&target, context.session()).unwrap();
         let mut assembler =
             miden_assembly::Assembler::new(context.session().source_manager.clone());

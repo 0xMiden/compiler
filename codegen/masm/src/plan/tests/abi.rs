@@ -44,17 +44,9 @@ fn abi_families_fail_closed_and_syscall_keeps_kernel_root_memory() {
     assert!(context.invocation(Invocation::SysCall).is_err());
     assert!(ProcedureAbi::new(CallingConvention::Context, 17, 0).is_err());
     assert!(ProcedureAbi::new(CallingConvention::Kernel, 0, 17).is_err());
-    assert!(
-        ReturnNormalization::TruncateToWindow
-            .allowed_at(ReturnBoundary::SameContext)
-            .is_err()
-    );
-    assert!(ReturnNormalization::TruncateToWindow.allowed_at(ReturnBoundary::Root).is_ok());
-    assert!(
-        ReturnNormalization::TruncateToWindow
-            .allowed_at(ReturnBoundary::Context)
-            .is_ok()
-    );
+    assert!(ReturnBoundary::SameContext.validate_truncation().is_err());
+    assert!(ReturnBoundary::Root.validate_truncation().is_ok());
+    assert!(ReturnBoundary::Context.validate_truncation().is_ok());
 }
 
 #[test]

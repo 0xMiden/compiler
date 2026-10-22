@@ -1551,12 +1551,12 @@ mod tests {
     use midenc_hir::{Builder, Context, OpBuilder, Report, ValueRef, formatter::PrettyPrint};
 
     use super::*;
-    use crate::{OperandStack, emit::InstOpEmitter};
+    use crate::{OperandStack, emit::OpEmitter};
 
     fn assert_overflowing_result_order(
         build: impl Fn(&mut OpBuilder, ValueRef, ValueRef, SourceSpan) -> (ValueRef, ValueRef),
-        emit: impl Fn(&mut InstOpEmitter<'_>, SourceSpan),
-        emit_imm: impl Fn(&mut InstOpEmitter<'_>, Immediate, SourceSpan),
+        emit: impl Fn(&mut OpEmitter<'_>, SourceSpan),
+        emit_imm: impl Fn(&mut OpEmitter<'_>, Immediate, SourceSpan),
     ) {
         for (ty, imm) in [
             (Type::U32, Immediate::U32(2)),
@@ -1571,9 +1571,7 @@ mod tests {
                 let mut builder = OpBuilder::new(context.clone());
                 builder.set_insertion_point_to_end(block);
                 let span = SourceSpan::UNKNOWN;
-                let (flag, result) = build(&mut builder, lhs, rhs, span);
-                let operation = flag.borrow().get_defining_op().unwrap();
-                let operation = operation.borrow();
+                let _ = build(&mut builder, lhs, rhs, span);
 
                 let mut stack = OperandStack::new(context);
                 if !immediate {
@@ -1583,22 +1581,19 @@ mod tests {
                 let mut invoked = BTreeSet::new();
                 let mut instructions = Vec::new();
                 {
-                    let mut emitter =
-                        InstOpEmitter::new(&operation, &mut invoked, &mut instructions, &mut stack);
+                    let mut emitter = OpEmitter::new(&mut invoked, &mut instructions, &mut stack);
                     if immediate {
                         emit_imm(&mut emitter, imm, span);
                     } else {
                         emit(&mut emitter, span);
                     }
-                    // Binding can retype equal-sized operands, so check the unbound model too.
+                    // Raw instruction algorithms preserve the declared result lane order.
                     assert_eq!(emitter.stack()[0].ty(), Type::I1);
                     assert_eq!(emitter.stack()[1].ty(), ty);
                 }
 
                 assert_eq!(stack.len(), 2, "{ty}, immediate = {immediate}");
-                assert_eq!(stack[0].as_value(), Some(flag));
                 assert_eq!(stack[0].ty(), Type::I1);
-                assert_eq!(stack[1].as_value(), Some(result));
                 assert_eq!(stack[1].ty(), ty);
             }
         }

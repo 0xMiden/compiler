@@ -615,7 +615,6 @@ fn debug_decorators_keep_anchors_through_optimization_and_assembly() -> Result<(
     let frame = assign_frame(&plan, &SourceLocalLayout::default()).unwrap();
     let env = ExpansionEnv {
         debug: BTreeMap::from([(DebugLocationId(7), DebugDecorator::InlineCallClear)]),
-        ..Default::default()
     };
     let mut body = expand_procedure(&plan, &frame, &LoweringRegistry::default(), &env)?;
     peephole::simplify_annotated(&mut body);
@@ -711,8 +710,9 @@ fn real_memmove_observes_each_requested_preparation_tier() -> Result<(), Report>
         let definition = source.definition();
         let mut registry = LoweringRegistry::default();
         registry.register(definition.as_ref()).unwrap();
-        let verified = finalize(&plan, &frame, &registry, &ExpansionEnv::default())?;
-        let procedure = verified.into_masm(crate::masm::ProcedureName::new("fixture").unwrap())?;
+        let name = crate::masm::ProcedureName::new("fixture").unwrap();
+        let verified = finalize(&plan, &frame, &registry, &ExpansionEnv::default(), &name)?;
+        let procedure = verified.into_masm(name)?;
         let mut expected = (0..48).map(|i| (i * 37 + 11) as u8).collect::<Vec<_>>();
         expected.copy_within(1..20, 3);
         execute_memmove(&procedure, 1025, 1027, 19, Some(&expected), false)?;
@@ -729,4 +729,162 @@ fn physical_plan_trace_reports_actual_preparation_and_frame() {
     assert!(rendered.contains("operand-traffic"), "{rendered}");
     assert!(rendered.contains("edge-traffic"), "{rendered}");
     assert!(alloc::format!("{}", crate::plan::FrameTrace(&frame)).contains("frame"));
+}
+
+/// A reachable predecessor must publish every value its join or backedge will reload.
+#[test]
+fn structured_join_and_backedge_reject_missing_spill_stores() {
+    use super::lowering_units::rewrite;
+
+    let (plan, frame, mut body) = structured_ready(&AllocationOptions::default());
+    assert!(
+        !plan.spill_slots.is_empty(),
+        "the wide fixture must retain spill-slot obligations"
+    );
+    verify::verify(&plan, &frame, body.clone()).unwrap();
+    let mut omitted = 0;
+    rewrite(&mut body, &mut |op| {
+        if let AnnotatedOp::Instruction { instruction, .. } = op
+            && matches!(instruction, crate::masm::Instruction::LocStore(_))
+        {
+            // Match the stores' stack effect while leaving previous cell contents untouched.
+            *instruction = crate::masm::Instruction::Drop;
+            omitted += 1;
+        }
+    });
+    assert!(omitted > 0, "the wide structured fixture must exercise spill storage");
+    assert!(verify::verify(&plan, &frame, body).is_err(), "missing stores were accepted");
+}
+
+/// Semantic FPI operands must reach the executor in source order, including shared identities.
+#[test]
+fn semantic_fpi_source_preserves_full_payload_prefix_and_live_values() -> Result<(), Report> {
+    use crate::{
+        select::{SelectEnv, select_function},
+        verify::CallArgument,
+    };
+
+    let names = ["suffix", "account_prefix", "r0", "r1", "r2", "r3"]
+        .into_iter()
+        .map(alloc::string::String::from)
+        .chain((1..16).map(|index| alloc::format!("p{index}")))
+        .collect::<Vec<_>>();
+    let arguments = names
+        .iter()
+        .map(|name| alloc::format!("%{name}: felt"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let prefix = names[..6]
+        .iter()
+        .map(|name| alloc::format!("%{name}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let payload = core::iter::once("%r0".into())
+        .chain(names[6..].iter().map(|name| alloc::format!("%{name}")))
+        .collect::<Vec<alloc::string::String>>()
+        .join(", ");
+    let outputs = (0..16).map(|index| alloc::format!("%o{index}")).collect::<Vec<_>>().join(", ");
+    let result_types = vec!["felt"; 19].join(", ");
+    let source = crate::select::tests::parse(&alloc::format!(
+        r#"
+        builtin.function public extern("C") @semantic_fpi({arguments}) -> ({result_types}) {{
+            {outputs} = hir.exec_fpi [{prefix}]({payload});
+            builtin.ret {outputs}, %suffix, %r0, %p15 : ({result_types});
+        }};
+    "#
+    ));
+    let env = SelectEnv::default();
+    let function = source.borrow();
+    let evidence = crate::select::evidence(&function, &env).unwrap();
+    let unit = &evidence.source.program.segments[0].units[0];
+    assert_eq!(unit.stack_inputs.len(), 16);
+    assert_eq!(unit.stored_inputs.len(), 6);
+    let StoredValue::Atom(shared) = unit.stored_inputs[2].value else {
+        panic!("the root lane must retain its source identity");
+    };
+    assert_eq!(unit.stack_inputs[0], shared);
+    let call = &evidence.source.units[&unit.id].calls[0];
+    assert_eq!(call.inputs.len(), 22);
+    assert_eq!(call.inputs[2], CallArgument::Exact(StoredValue::Atom(shared)));
+    assert_eq!(call.inputs[6], CallArgument::Exact(StoredValue::Atom(shared)));
+    for stored in &unit.stored_inputs {
+        assert!(matches!(stored.value, StoredValue::Atom(_)));
+    }
+    drop(function);
+
+    for corrupt_prefix in [false, true] {
+        let mut candidate = select_function(&source.borrow(), &env).unwrap();
+        let unit = &mut candidate.segments[0].units[0];
+        if corrupt_prefix {
+            let suffix = unit.stored_inputs[0].value;
+            unit.stored_inputs[0].value = unit.stored_inputs[1].value;
+            unit.stored_inputs[1].value = suffix;
+        } else {
+            unit.stack_inputs.swap(0, 1);
+        }
+        assert!(
+            check_selection(
+                candidate,
+                &SourceContext::Hir {
+                    function: &source.borrow(),
+                    env: &env,
+                }
+            )
+            .is_err(),
+            "a permuted semantic operand group must fail source checking"
+        );
+    }
+
+    let (plan, frame, body) = crate::select::tests::ready(&source, &env);
+    let procedure = verify::verify(&plan, &frame, body)
+        .unwrap()
+        .into_masm(crate::masm::ProcedureName::new("fixture").unwrap())
+        .unwrap()
+        .to_pretty_string();
+    let prefix_values = [101, 103, 107, 109, 113, 127];
+    let payload_values = core::iter::once(107).chain(201..216).collect::<Vec<_>>();
+    let mut stub = alloc::string::String::from("@locals(6) pub proc execute_foreign_procedure ");
+    for (index, expected) in prefix_values.iter().enumerate() {
+        stub.push_str(&alloc::format!(
+            "loc_store.{index} loc_load.{index} push.{expected} assert_eq "
+        ));
+    }
+    for (index, expected) in payload_values.iter().enumerate() {
+        stub.push_str(&alloc::format!("dup.{index} push.{expected} assert_eq "));
+    }
+    stub.push_str("end");
+    let manager = alloc::sync::Arc::new(miden_assembly::DefaultSourceManager::default());
+    let module =
+        miden_assembly::ast::Module::parser(Some(miden_assembly::ast::ModuleKind::Library))
+            .parse_str(
+                Some(miden_assembly::Path::new("::miden::protocol::tx")),
+                stub,
+                manager.clone(),
+            )?;
+    let library: alloc::sync::Arc<miden_assembly::package::Package> =
+        miden_assembly::Assembler::new(manager.clone())
+            .assemble_library("semantic_fpi_stub", module, core::iter::empty::<&str>())?
+            .into();
+    let mut assembler = miden_assembly::Assembler::new(manager);
+    assembler.link_package(library.clone(), miden_assembly::Linkage::Dynamic)?;
+    let inputs = prefix_values.into_iter().chain(201..216).collect::<Vec<_>>();
+    let expected = payload_values
+        .into_iter()
+        .chain([101, 107, 215, 901, 903, 907])
+        .collect::<Vec<_>>();
+    let program = assembler
+        .assemble_program(
+            "semantic_fpi_source",
+            alloc::format!(
+                "{procedure} begin push.907.903.901 {} exec.fixture {} end",
+                push_top(&inputs),
+                assert_top(&expected),
+            ),
+        )?
+        .try_into_program()?;
+    let mut host = host().with_library(library).map_err(|error| Report::msg(error.to_string()))?;
+    miden_processor::FastProcessor::new(miden_processor::StackInputs::default())
+        .execute_sync(&program, &mut host)
+        .map_err(|error| Report::msg(error.to_string()))?;
+    Ok(())
 }

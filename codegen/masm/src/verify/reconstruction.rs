@@ -285,6 +285,7 @@ pub(super) fn matches(
 pub(super) fn seed(
     program: &SelectedProgram,
     segment: SegmentId,
+    dom: &Dominators,
     names: &mut BTreeMap<Atom, Token>,
     tokens: &mut Tokens,
 ) -> Result<(), VerificationError> {
@@ -323,10 +324,9 @@ pub(super) fn seed(
         names.insert(atom, token);
         Ok(token)
     }
-    let dom = dominators(program);
     let mut done = BTreeSet::new();
     for atom in names.keys().copied().collect::<alloc::vec::Vec<_>>() {
-        resolve(program, atom, segment, &dom, names, tokens, &mut done)?;
+        resolve(program, atom, segment, dom, names, tokens, &mut done)?;
     }
     Ok(())
 }

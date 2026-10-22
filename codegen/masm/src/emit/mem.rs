@@ -1,8 +1,5 @@
 use miden_core::Felt;
-use midenc_hir::{
-    AddressSpace, ArrayType, PointerType, SourceSpan, StructType, Type,
-    dialects::builtin::attributes::LocalVariable,
-};
+use midenc_hir::{AddressSpace, ArrayType, PointerType, SourceSpan, StructType, Type};
 
 use super::{OpEmitter, masm};
 use crate::{OperandStack, lower::NativePtr};
@@ -212,14 +209,6 @@ impl OpEmitter<'_> {
 
 /// Loads
 impl OpEmitter<'_> {
-    /// Push an element-address-space pointer to the given local.
-    ///
-    /// `offset` is the frame's `locaddr` operand for `local`, see
-    /// [FrameLayout::locaddr](crate::emitter::FrameLayout::locaddr).
-    pub fn local_address(&mut self, local: &LocalVariable, offset: u16, span: SourceSpan) {
-        self.local_address_typed(local.ty(), offset, span);
-    }
-
     /// Push an element-space pointer to a source local at its finalized element offset.
     ///
     /// Selection supplies the checked pointee type and frame binding, so this helper needs no HIR
@@ -228,20 +217,6 @@ impl OpEmitter<'_> {
     pub(crate) fn local_address_typed(&mut self, ty: Type, offset: u16, span: SourceSpan) {
         self.emit(masm::Instruction::Locaddr(offset.into()), span);
         self.push(Type::from(PointerType::new_with_address_space(ty, AddressSpace::Element)));
-    }
-
-    /// Load a value corresponding to the type of the given local, from the memory allocated for
-    /// that local.
-    ///
-    /// `offset` is the frame's `locaddr` operand for `local`, see
-    /// [FrameLayout::locaddr](crate::emitter::FrameLayout::locaddr).
-    ///
-    /// Internally, this pushes the address of the local on the stack, then delegates to
-    /// [OpEmitter::load]
-    pub fn load_local(&mut self, local: &LocalVariable, offset: u16, span: SourceSpan) {
-        let ty = local.ty();
-        self.local_address(local, offset, span);
-        self.load(ty, span)
     }
 
     /// Load a value corresponding to the pointee type of a pointer operand on the stack.
@@ -700,19 +675,6 @@ impl OpEmitter<'_> {
 
 /// Stores
 impl OpEmitter<'_> {
-    /// Store a value of the type given by the specified local ID, using the memory allocated
-    /// for that local.
-    ///
-    /// `offset` is the frame's `locaddr` operand for `local`, see
-    /// [FrameLayout::locaddr](crate::emitter::FrameLayout::locaddr).
-    ///
-    /// Internally, this pushes the address of the given local on the stack, and delegates to
-    /// [OpEmitter::store] to perform the actual store.
-    pub fn store_local(&mut self, local: &LocalVariable, offset: u16, span: SourceSpan) {
-        self.local_address(local, offset, span);
-        self.store(span)
-    }
-
     /// Store a value of type `value` to the address in the Miden address space
     /// which corresponds to a pointer in the IR's byte-addressable address space.
     ///

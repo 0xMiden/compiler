@@ -159,12 +159,21 @@ fn source_observations_use_real_spills_without_affecting_allocation() {
     for definition in &observed.definitions {
         registry.register(definition).unwrap();
     }
-    let body = expand_procedure(&plan, &frame, &registry, &expansion).unwrap();
+    let mut body = expand_procedure(&plan, &frame, &registry, &expansion).unwrap();
+    crate::opt::peephole::simplify_annotated(&mut body);
     let observed_procedure = crate::verify::verify(&plan, &frame, body)
         .unwrap()
         .into_masm(crate::masm::ProcedureName::new("observed").unwrap())
-        .unwrap()
-        .to_pretty_string();
+        .unwrap();
+    let debug = validated_variable_debug_package(observed_procedure.clone());
+    let rows = debug.nodes().iter().flat_map(|node| &node.debug_vars).collect::<Vec<_>>();
+    assert_eq!(rows.len(), 3);
+    assert!(
+        rows.iter()
+            .any(|row| matches!(row.value_location, masm::DebugVarLocation::Local(_)))
+    );
+    assert!(rows.iter().any(|row| row.value_location == masm::DebugVarLocation::Unavailable));
+    let observed_procedure = observed_procedure.to_pretty_string();
     let before = analyze(&plan.selected);
     let entry = f.borrow().entry_block();
     let debug_ops = entry
@@ -206,7 +215,8 @@ fn source_observations_use_real_spills_without_affecting_allocation() {
     let frame = assign_frame(&without, &observed.source.source_locals).unwrap();
     let mut without = without;
     resolve_frame_bindings(&mut without, &frame).unwrap();
-    let body = expand_procedure(&without, &frame, &registry, &ExpansionEnv::default()).unwrap();
+    let mut body = expand_procedure(&without, &frame, &registry, &ExpansionEnv::default()).unwrap();
+    crate::opt::peephole::simplify_annotated(&mut body);
     let plain_procedure = crate::verify::verify(&without, &frame, body)
         .unwrap()
         .into_masm(crate::masm::ProcedureName::new("plain").unwrap())
@@ -715,6 +725,43 @@ fn branch_and_loop_observations_keep_source_positions() {
     for definition in &source.definitions {
         registry.register(definition).unwrap();
     }
-    let body = expand_procedure(&plan, &frame, &registry, &expansion).unwrap();
-    crate::verify::verify(&plan, &frame, body).unwrap();
+    let mut body = expand_procedure(&plan, &frame, &registry, &expansion).unwrap();
+    crate::opt::peephole::simplify_annotated(&mut body);
+    let procedure = crate::verify::verify(&plan, &frame, body)
+        .unwrap()
+        .into_masm(crate::masm::ProcedureName::new("control_debug").unwrap())
+        .unwrap();
+    let debug = validated_variable_debug_package(procedure);
+    let rows = debug.nodes().iter().flat_map(|node| &node.debug_vars).collect::<Vec<_>>();
+    assert_eq!(rows.len(), 4);
+    assert!(
+        rows.iter()
+            .all(|row| matches!(row.value_location, masm::DebugVarLocation::Stack(_)))
+    );
+}
+
+/// Pass the verified AST directly: textual MASM printing omits variable decorators.
+fn validated_variable_debug_package(
+    mut procedure: masm::Procedure,
+) -> miden_mast_package::debug_info::PackageDebugInfo {
+    use alloc::sync::Arc;
+
+    use miden_assembly::{Assembler, DefaultSourceManager, Path};
+    let manager = Arc::new(DefaultSourceManager::default());
+    let mut module = masm::Module::parser(Some(masm::ModuleKind::Library))
+        .parse_str(Some(Path::new("::debug_rows")), "", manager.clone())
+        .unwrap();
+    procedure.set_visibility(masm::Visibility::Public);
+    module.define_procedure(procedure, manager.clone()).unwrap();
+    let mut assembler = Assembler::new(manager);
+    let core = midenc_session::LinkLibrary::core()
+        .load(&crate::plan::tests::lowering_units::session().options)
+        .unwrap();
+    assembler.link_package(core, miden_assembly::Linkage::Dynamic).unwrap();
+    assembler
+        .assemble_library("debug_rows", module, core::iter::empty::<&str>())
+        .unwrap()
+        .debug_info()
+        .unwrap()
+        .unwrap()
 }

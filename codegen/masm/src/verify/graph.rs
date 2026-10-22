@@ -136,6 +136,7 @@ impl Verifier<'_> {
             .first()
             .ok_or_else(|| error("procedure has no entry"))?
             .id;
+        let dominators = super::reconstruction::dominators(&self.plan.selected);
         let mut incoming = BTreeMap::<SegmentId, Padding>::new();
         let mut origins = BTreeMap::<SegmentId, OriginFacts>::new();
         let entry_state = self.abi_entry(entry)?;
@@ -148,7 +149,7 @@ impl Verifier<'_> {
                 let mut state = if segment.id == entry {
                     self.abi_entry(entry)?
                 } else {
-                    self.hypothesis(segment.id)?
+                    self.hypothesis(segment.id, &dominators)?
                 };
                 if let Some(padding) = incoming.get(&segment.id) {
                     state.padding = padding.clone();
@@ -279,7 +280,11 @@ impl Verifier<'_> {
         Ok(State::new(stack, names))
     }
 
-    fn hypothesis(&mut self, id: SegmentId) -> Result<State, VerificationError> {
+    fn hypothesis(
+        &mut self,
+        id: SegmentId,
+        dominators: &super::reconstruction::Dominators,
+    ) -> Result<State, VerificationError> {
         let contract = &self.plan.contracts[&id];
         let mut names = BTreeMap::new();
         let mut atoms = self.live.entry[&id].clone();
@@ -331,7 +336,13 @@ impl Verifier<'_> {
                 self.tokens.intern(Identity::FrameAddress(offset)),
             );
         }
-        super::reconstruction::seed(&self.plan.selected, id, &mut names, &mut self.tokens)?;
+        super::reconstruction::seed(
+            &self.plan.selected,
+            id,
+            dominators,
+            &mut names,
+            &mut self.tokens,
+        )?;
         let stack = contract
             .stack_top_first
             .iter()

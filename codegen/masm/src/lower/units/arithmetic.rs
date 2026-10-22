@@ -781,6 +781,7 @@ fn conversion_supported(kind: Kind, src: &Type, dst: &Type) -> bool {
                 | (I8 | I16, I32 | I64 | I128 | U32 | U64)
                 | (I16, U16 | U8 | I8 | I1)
                 | (I8, U8 | I1)
+                | (U8 | U16, Felt)
                 | (I1, _)
         ),
         _ => false,
@@ -1048,7 +1049,11 @@ fn alias_lanes(
         {
             n.min(m)
         }
-        Kind::Cast if *src == Type::U32 && *dst == Type::Felt => 1,
+        Kind::Cast
+            if matches!(src, Type::I1 | Type::U8 | Type::U16 | Type::U32) && *dst == Type::Felt =>
+        {
+            1
+        }
         _ => 0,
     };
     (0..retain).map(|i| (i, i)).collect()

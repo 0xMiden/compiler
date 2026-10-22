@@ -279,7 +279,7 @@ impl LoweringDefinition for RootStage {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        _: &ExpansionEnv<'_>,
+        _: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         bindings.validate(unit, frame)?;
         let mut b = raw::Builder::new(Default::default());
@@ -386,7 +386,10 @@ fn stage_call(
 }
 impl Initialization {
     /// Construct only the finite generated stage selected by these source parameters.
-    pub(super) fn construct(&self) -> Result<StageConstruction, Report> {
+    pub(super) fn construct(
+        &self,
+        env: &super::SelectEnv<'_>,
+    ) -> Result<StageConstruction, Report> {
         use midenc_hir::Spanned;
         let mut b = raw::Builder::new(Default::default());
         let mut proof = UnitEvidence::default();
@@ -476,6 +479,11 @@ impl Initialization {
                             Some(fragment.owner),
                             entry.span(),
                         );
+                        let target = if let Some(owners) = env.owners {
+                            owners.target(target)?
+                        } else {
+                            target
+                        };
                         let address = base
                             .checked_add(
                                 slot.checked_mul(
@@ -595,7 +603,7 @@ impl LoweringDefinition for GeneratedHarness {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        _: &ExpansionEnv<'_>,
+        _: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         bindings.validate(unit, frame)?;
         Ok(annotate_raw(&self.body(), unit.id))

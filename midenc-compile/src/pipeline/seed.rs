@@ -158,7 +158,7 @@ pub(crate) fn provider(
 ///
 /// Both comparisons are made against the *selected registration's* route, because that is the
 /// only place checkpoints are ordered at all — see
-/// [`CheckpointId`](super::CheckpointId)'s note on why its `Ord` is not route order.
+/// [`CheckpointId`]'s note on why its `Ord` is not route order.
 ///
 /// A goal at or before the seed is a caller error rather than a degenerate build: nothing
 /// downstream of the seed would run, so nothing would be captured, and the request would end in
