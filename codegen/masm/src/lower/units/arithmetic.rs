@@ -641,6 +641,52 @@ impl Arithmetic {
         })
     }
 
+    /// Capture a typed ABI argument extension without creating or mutating source HIR.
+    /// The caller validates its parameter attributes; this shares the ordinary conversion
+    /// tuple gate, instruction construction, and untouched-lane relations.
+    pub fn extension(
+        op: &Operation,
+        source: Type,
+        target: Type,
+        extension: midenc_hir::dialects::builtin::attributes::ArgumentExtension,
+    ) -> Result<Self, Report> {
+        use midenc_hir::dialects::builtin::attributes::ArgumentExtension;
+        let kind = match extension {
+            ArgumentExtension::Zext => Kind::Zext,
+            ArgumentExtension::Sext => Kind::Sext,
+            ArgumentExtension::None => return Err(invalid("argument extension is absent").into()),
+        };
+        if !conversion_supported(kind, &source, &target) {
+            return Err(invalid("unsupported argument extension tuple").into());
+        }
+        ValueLayout::new(source.clone())?;
+        ValueLayout::new(target.clone())?;
+        let mut stack = OperandStack::new(op.context_rc());
+        stack.push(source.clone());
+        let mut invoked = BTreeSet::new();
+        let mut body = vec![];
+        let mut emitter = OpEmitter::new(&mut invoked, &mut body, &mut stack);
+        match kind {
+            Kind::Zext => emitter.zext(&target, op.span()),
+            Kind::Sext => emitter.sext(&target, op.span()),
+            _ => unreachable!(),
+        }
+        let may_trap = raw_may_trap(&body)?;
+        Ok(Self {
+            aliases: alias_lanes(kind, &source, Some(&target), core::slice::from_ref(&target)),
+            body,
+            input_order: vec![0],
+            literal: None,
+            proof: UnitEvidence::default(),
+            call_inputs: vec![],
+            publications: vec![],
+            effects: LoweringEffects {
+                may_trap,
+                ..Default::default()
+            },
+        })
+    }
+
     /// Bind source atoms after the opcode/type rule has fixed all physical relationships.
     /// Inputs follow `input_order` and outputs use the source result lane order. Their lengths
     /// must match the previously validated source tuple; this step does not revalidate arity.
@@ -700,7 +746,9 @@ fn conversion_supported(kind: Kind, src: &Type, dst: &Type) -> bool {
                 && (src == dst
                     || matches!(
                         (src, dst),
-                        (U64, U128 | I128)
+                        (I1, U8 | U16)
+                            | (U8, U16)
+                            | (U64, U128 | I128)
                             | (Felt, U64 | U128 | I128)
                             | (U32, U64 | I64 | U128 | I128)
                             | (I1 | U8 | U16, U32 | I32 | U64 | I64 | U128 | I128)
@@ -713,7 +761,9 @@ fn conversion_supported(kind: Kind, src: &Type, dst: &Type) -> bool {
                 && (src == dst
                     || matches!(
                         (src, dst),
-                        (U64 | I64, I128)
+                        (I1, I8 | I16)
+                            | (I8 | U8, I16)
+                            | (U64 | I64, I128)
                             | (Felt, I64 | I128)
                             | (I32 | U32, I64 | I128)
                             | (I1 | I8 | U8 | I16 | U16, I32 | I64 | I128)

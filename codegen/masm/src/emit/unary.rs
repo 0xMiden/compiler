@@ -133,7 +133,9 @@ impl OpEmitter<'_> {
                 self.zext_smallint(src_bits, dst_bits, span)
             }
             // Zero-extending to u32/i32 from smaller integers is a no-op
-            (Type::I1 | Type::U8 | Type::U16, Type::U32 | Type::I32) => (),
+            (Type::I1, Type::U8 | Type::U16)
+            | (Type::U8, Type::U16)
+            | (Type::I1 | Type::U8 | Type::U16, Type::U32 | Type::I32) => (),
             // Zero-extending to felt, from types that fit in felt, is a no-op
             (Type::I1 | Type::U8 | Type::U16 | Type::U32, Type::Felt) => (),
             (src, dst) if dst.is_signed_integer() => panic!(
@@ -191,7 +193,9 @@ impl OpEmitter<'_> {
             (Type::U64 | Type::I64, Type::I128) => self.sext_int64(128, span),
             (Type::Felt, Type::I64 | Type::I128) => self.sext_felt(dst_bits, span),
             (Type::I32 | Type::U32, Type::I64 | Type::I128) => self.sext_int32(dst_bits, span),
-            (
+            (Type::I1, Type::I8 | Type::I16)
+            | (Type::I8 | Type::U8, Type::I16)
+            | (
                 Type::I1 | Type::I8 | Type::U8 | Type::I16 | Type::U16,
                 Type::I32 | Type::I64 | Type::I128,
             ) => self.sext_smallint(src_bits, dst_bits, span),

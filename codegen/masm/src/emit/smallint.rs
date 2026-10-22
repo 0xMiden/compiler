@@ -100,19 +100,22 @@ impl OpEmitter<'_> {
     /// Sign-extend the N-bit value on the stack to M-bits, where M is >= N and <= 256.
     ///
     /// This assumes the value on the stack is a valid N-bit integer in two's complement
-    /// representation, i.e. the most significant bit is the sign bit.
+    /// representation. I1 is always unsigned; other widths use their most significant bit.
     pub fn sext_smallint(&mut self, n: u32, m: u32, span: SourceSpan) {
-        assert_valid_integer_size!(n, n, 256);
+        assert_valid_integer_size!(n, 1, 32);
+        assert_valid_integer_size!(m, n, 256);
         // No-op
         if n == m {
             return;
         }
-        // The number of sign bits are the number of bits between N and 32
-        let num_sign_bits = 32 - n;
-        // By subtracting 1 from 2^(32 - N), we get a value that is all 1s,
-        // shifting it left by N, and bitwise-OR'ing it with the input value,
-        // we produce the sign-extended value
-        let sign_bits = ((1 << num_sign_bits) - 1) << n;
+        // Extend only through the destination pattern when it occupies a partial limb.
+        let num_sign_bits = m.min(32) - n;
+        // Fill the destination bits above N without exposing bits beyond a narrow result.
+        let sign_bits = if num_sign_bits == 0 {
+            0
+        } else {
+            ((1u32 << num_sign_bits) - 1) << n
+        };
         // We optimize larger extensions by re-using the is_signed flag
         let is_large = m > 32;
         // Get the value of the sign bit
@@ -147,7 +150,7 @@ impl OpEmitter<'_> {
             }
         } else {
             self.select_int32(sign_bits, 0, span);
-            // Sign-extend to i32
+            // Extend within the destination's single-lane pattern.
             self.emit(masm::Instruction::U32Or, span);
         }
     }

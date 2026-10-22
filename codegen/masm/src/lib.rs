@@ -261,6 +261,9 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::PtrToInt, dyn HirSelection>();
     info.register_operation_trait::<hir::IntToPtr, dyn HirSelection>();
     info.register_operation_trait::<hir::Bitcast, dyn HirSelection>();
+    info.register_operation_trait::<hir::Exec, dyn HirSelection>();
+    info.register_operation_trait::<hir::Call, dyn HirSelection>();
+    info.register_operation_trait::<hir::Syscall, dyn HirSelection>();
     info.register_operation_trait::<hir::Dyncall, dyn HirSelection>();
     info.register_operation_trait::<hir::ExecIndirect, dyn HirSelection>();
 

@@ -4,7 +4,7 @@
 //! declared roots, invokes the chosen instruction, and removes VM context padding.
 use alloc::vec;
 
-use midenc_hir::Report;
+use midenc_hir::{Report, Spanned};
 
 use super::*;
 use crate::{
@@ -86,22 +86,7 @@ impl ContextCall {
                 root: root.into_iter().map(StoredValue::Atom).collect(),
             }
         });
-        let proof = UnitEvidence {
-            calls: vec![CallSite {
-                instruction: self.instruction.clone(),
-                abi: self.abi,
-                inputs: arguments
-                    .iter()
-                    .map(|a| CallArgument::Exact(StoredValue::Atom(*a)))
-                    .collect(),
-                path: vec![],
-                truncate: false,
-                outputs: vec![],
-                publications: outputs.iter().zip(0u32..).map(|(a, i)| (*a, i)).collect(),
-                selector,
-            }],
-            ..Default::default()
-        };
+        let proof = call_evidence(&self.instruction, self.abi, arguments, outputs, selector);
         Ok((unit, proof))
     }
 }
@@ -213,5 +198,115 @@ impl Indirect {
             }
         }
         Ok(annotate_raw(&b.ops, unit.id))
+    }
+}
+
+/// A resolved direct invocation. Context calls share the window construction used by dynamic calls.
+pub(crate) struct Direct {
+    /// Canonical target signature and invocation convention.
+    pub abi: ProcedureAbi,
+    /// Accessible source name retained independently of the canonical target identity.
+    pub instruction: masm::Instruction,
+}
+
+impl Direct {
+    /// Declare exact argument and result lanes, rejecting incompatible invocation families.
+    pub fn select(
+        &self,
+        kind: LoweringKind,
+        id: SelectedStepId,
+        source: SourceStepId,
+        arguments: &[Atom],
+        outputs: &[Atom],
+    ) -> Result<(SelectedLowering, UnitEvidence), PlanError> {
+        if !matches!(self.instruction, masm::Instruction::Exec(_)) {
+            return ContextCall {
+                kind,
+                abi: self.abi,
+                instruction: self.instruction.clone(),
+                root: ScratchId(0),
+            }
+            .select(id, source, arguments, None, outputs);
+        }
+        self.abi.invocation(Invocation::Exec)?;
+        if arguments.len() != self.abi.arguments() as usize
+            || outputs.len() != self.abi.results() as usize
+        {
+            return Err(invalid("direct inputs disagree with signature"));
+        }
+        let unit = selected(kind, id, source, arguments, &[], outputs);
+        let proof = call_evidence(&self.instruction, self.abi, arguments, outputs, None);
+        Ok((unit, proof))
+    }
+
+    /// Expand using the already bound call contract; no signature inference occurs here.
+    pub fn expand(
+        &self,
+        unit: &SelectedLowering,
+        bindings: &LoweringBindings,
+        frame: &FinalFrameLayout,
+        env: &ExpansionEnv<'_>,
+    ) -> Result<AnnotatedMasmBody, Report> {
+        if !matches!(self.instruction, masm::Instruction::Exec(_)) {
+            return ContextCall {
+                kind: unit.kind,
+                abi: self.abi,
+                instruction: self.instruction.clone(),
+                root: ScratchId(0),
+            }
+            .expand(unit, bindings, frame, env);
+        }
+        let mut body = AnnotatedMasmBody::new();
+        body.push_instruction(masm::Instruction::EmitImm(crate::Event::FrameStart.into()), unit.id);
+        body.push_instruction(self.instruction.clone(), unit.id);
+        body.push_instruction(masm::Instruction::EmitImm(crate::Event::FrameEnd.into()), unit.id);
+        Ok(body)
+    }
+}
+
+/// Resolve canonical analysis identity while retaining the accessible emission name.
+pub(crate) fn resolve_direct(
+    call: &dyn midenc_hir::CallOpInterface,
+) -> Result<(midenc_hir::ResolvedSymbolCallee, masm::InvocationTarget), Report> {
+    let resolved = super::super::lowering::resolve_invocation_callee(call)?;
+    let target = super::super::lowering::invocation_target_from_symbol(
+        resolved.named_symbol(),
+        call.as_operation().nearest_symbol_table(),
+        call.as_operation().span(),
+    );
+    Ok((resolved, target))
+}
+
+/// Kernel procedures belong to the exact root kernel module, independently of source convention.
+pub(crate) fn is_kernel(symbol: &dyn midenc_hir::Symbol) -> bool {
+    super::super::lowering::symbol_module_path(symbol).is_kernel_path()
+}
+
+/// The sole depth-sensitive external helper in the supported core ABI.
+pub(crate) fn is_truncate(symbol: &dyn midenc_hir::Symbol) -> bool {
+    super::super::lowering::qualified_invocation_target(symbol, Default::default())
+        == raw::target("::miden::core::sys::truncate_stack")
+}
+
+/// Build the single exact contract shared by direct and staged context constructions.
+fn call_evidence(
+    instruction: &masm::Instruction,
+    abi: ProcedureAbi,
+    arguments: &[Atom],
+    outputs: &[Atom],
+    selector: Option<crate::verify::SelectorEvidence>,
+) -> UnitEvidence {
+    UnitEvidence {
+        calls: vec![CallSite {
+            instruction: instruction.clone(),
+            abi,
+            inputs: arguments.iter().map(|a| CallArgument::Exact(StoredValue::Atom(*a))).collect(),
+            path: vec![],
+            truncate: false,
+            outputs: vec![],
+            publications: outputs.iter().copied().zip(0u32..).collect(),
+            selector,
+        }],
+        ..Default::default()
     }
 }

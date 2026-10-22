@@ -40,6 +40,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
     .collect::<Vec<_>>();
     fixtures.push((parse_module_function(include_str!("fixtures/indirect-table.hir")), true));
     fixtures.push((debug_fixture(), false));
+    fixtures.extend(super::calls::fixtures());
     fixtures.extend(super::arithmetic::fixtures());
     fixtures.extend(super::memory::fixtures());
     fixtures.extend(super::intrinsics::fixtures());
@@ -120,7 +121,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
             );
         }
     }
-    assert_eq!(registered.len(), 121);
+    assert_eq!(registered.len(), 124);
     assert_eq!(covered, registered);
 }
 

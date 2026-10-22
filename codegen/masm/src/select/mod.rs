@@ -49,6 +49,8 @@ pub(crate) enum SelectionRule {
     Debug,
     /// Stage a procedure root in declared scratch before context-changing dispatch.
     Dyncall,
+    /// Resolve a direct callable and validate its concrete invocation family.
+    DirectCall,
     /// Check a linked function-table slot before same-context dispatch.
     ExecIndirect,
 }

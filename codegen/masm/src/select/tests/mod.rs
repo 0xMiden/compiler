@@ -71,6 +71,7 @@ fn real_hir_api_returns_checked_registered_source_evidence() {
 
 mod aliases;
 mod arithmetic;
+mod calls;
 mod control;
 mod coverage;
 mod indirect;
