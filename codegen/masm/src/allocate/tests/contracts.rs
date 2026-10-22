@@ -533,6 +533,19 @@ fn join_candidates_include_actual_edge_and_immediate_successor_costs() {
         ];
         let choice = choose(&program, &analysis, &context, SegmentId(3), &incoming, None).unwrap();
         assert!(choice.costs.len() >= 2);
+        assert!(choice.costs.iter().any(|cost| cost.origin == choice.origin));
+        let repeated =
+            choose(&program, &analysis, &context, SegmentId(3), &incoming, None).unwrap();
+        assert_eq!(choice.origin, repeated.origin);
+        assert_eq!(choice.contract, repeated.contract);
+        assert_eq!(
+            choice.costs.iter().map(|cost| (cost.origin, cost.actions)).collect::<Vec<_>>(),
+            repeated
+                .costs
+                .iter()
+                .map(|cost| (cost.origin, cost.actions))
+                .collect::<Vec<_>>()
+        );
         let base_program = checked(&base);
         let base_analysis = analyze(&base_program);
         let base_context = AllocationContext::new(&base_program, &base_analysis);

@@ -217,6 +217,72 @@ pub(crate) struct Memory {
 }
 
 impl Memory {
+    /// Construct a compiler-owned global write using the ordinary typed immediate store.
+    /// The linked byte address must satisfy the source type's alignment and complete range.
+    /// This accepts semantic type/context parameters rather than fabricating a HIR Store;
+    /// callers must bind its exact value lanes and register the generated terminal write.
+    pub fn store_immediate(
+        context: alloc::rc::Rc<midenc_hir::Context>,
+        ty: midenc_hir::Type,
+        address: u32,
+        span: midenc_hir::SourceSpan,
+    ) -> Result<Self, Report> {
+        use crate::{NativePtr, OperandStack, emit::OpEmitter};
+        let width = ValueLayout::new(ty.clone())?.lanes() as usize;
+        if !storable(&ty)
+            || !u64::from(address).is_multiple_of(ty.min_alignment() as u64)
+            || u64::from(address) + ty.size_in_bytes() as u64 > (1u64 << 32)
+        {
+            return Err(invalid("global store type, alignment or byte range is unsupported").into());
+        }
+        let pointer = NativePtr::from_ptr(address);
+        if ty == midenc_hir::Type::Felt && !pointer.is_element_aligned() {
+            return Err(invalid("global felt store must be element aligned").into());
+        }
+        let mut stack = OperandStack::new(context);
+        stack.push(ty.clone());
+        let mut body = vec![];
+        let mut invoked = alloc::collections::BTreeSet::new();
+        OpEmitter::new(&mut invoked, &mut body, &mut stack).store_imm(address, span);
+        let direct = (pointer.is_element_aligned() && ty.size_in_bits() >= 32)
+            || (ty.size_in_bits() < 32
+                && usize::from(pointer.offset) * 8 + ty.size_in_bits() <= 32
+                && !(ty.size_in_bits() == 16 && !pointer.is_element_aligned()));
+        let proof = if direct {
+            UnitEvidence::default()
+        } else {
+            memory_contract(Kind::Store, &ty, false)?
+        };
+        check_construction(&body, &proof).map_err(|mut error| {
+            error.message = alloc::format!("{}; immediate store body: {body:?}", error.message);
+            error
+        })?;
+        let mut argument_lanes = vec![];
+        if scalar(&ty) || ty.size_in_bits() == 32 {
+            for (site, call) in proof.calls.iter().enumerate() {
+                if call.inputs.len() == width + 2 {
+                    argument_lanes.extend((0..width).map(|lane| (site, 2 + lane, lane)));
+                }
+            }
+        }
+        Ok(Self {
+            body,
+            local: None,
+            proof,
+            effects: LoweringEffects {
+                memory: if ty.size_in_bits() < 32 || !pointer.is_element_aligned() {
+                    SourceMemoryEffects::READ_WRITE
+                } else {
+                    SourceMemoryEffects::WRITE
+                },
+                may_trap: true,
+                normal_return: true,
+            },
+            argument_lanes,
+            direct_results: None,
+        })
+    }
+
     /// Validate a registered operation's type tuple and local ownership, then capture its body.
     /// `kind` must match the operation's registered rule. Unsupported memory representations,
     /// malformed local attributes, and inconsistent helper constructions are errors.

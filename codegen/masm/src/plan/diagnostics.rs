@@ -158,3 +158,102 @@ impl fmt::Display for PlanError {
 impl core::error::Error for PlanError {}
 
 impl midenc_session::diagnostics::Diagnostic for PlanError {}
+
+/// Actual reason a selective preparation evicted an owned occurrence.
+/// The ordering reflects the scheduler's redundancy/backing-store policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VictimReason {
+    Redundant,
+    Backed,
+    NeedsStore,
+}
+
+/// Minimal observational record of a selected victim, captured where ranking occurs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VictimDecision {
+    pub atom: Atom,
+    pub reason: VictimReason,
+    pub next_use: crate::allocate::analysis::NextUseDistance,
+}
+
+/// Successful unit preparation metadata; it does not retain allocator state.
+#[derive(Debug, Clone)]
+pub(crate) struct PreparationDecision {
+    pub tier: crate::allocate::schedule::SchedulingTier,
+    pub victims: Vec<VictimDecision>,
+}
+
+/// One viable candidate's existing action-cost estimate, labeled at candidate construction.
+/// Costs include incoming edge repairs and the weighted first-unit preparation.
+#[derive(Debug, Clone)]
+pub(crate) struct ContractCost {
+    pub origin: &'static str,
+    pub actions: usize,
+}
+
+/// Chosen entry policy and labeled viable costs in deterministic attempt order.
+#[derive(Debug, Clone)]
+pub(crate) struct EntryDecision {
+    pub origin: &'static str,
+    pub costs: Vec<ContractCost>,
+}
+
+/// Compact observations of actual policy choices, independent of semantic planning inputs.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PlanDecisions {
+    /// Start of control preparation within each segment action stream, with its actual policy.
+    pub controls:
+        alloc::collections::BTreeMap<super::SegmentId, (usize, super::EdgeId, PreparationDecision)>,
+    pub preparations: alloc::collections::BTreeMap<SelectedStepId, PreparationDecision>,
+    pub entries: alloc::collections::BTreeMap<super::SegmentId, EntryDecision>,
+}
+
+/// Frame contributions accompanying the same physical-plan diagnostic vocabulary.
+/// This view borrows the assigned frame and never reconstructs resource accounting.
+pub(crate) struct FrameTrace<'a>(pub &'a super::FinalFrameLayout);
+
+impl fmt::Display for FrameTrace<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let resources = self.0.resources();
+        write!(
+            f,
+            "frame size={} source={} scalar={} spanning={} workspace={} padding={}",
+            self.0.aligned_size(),
+            resources.source_locals,
+            resources.scalar_colors,
+            resources.spanning_scratch,
+            resources.workspace,
+            resources.padding
+        )
+    }
+}
+
+/// One renderer for the physical plan and its finalized frame, usable by existing trace filters.
+/// This borrows metadata collected during actual planning; formatting cannot change policy.
+pub(crate) struct PhysicalPlanTrace<'a> {
+    pub plan: &'a super::actions::ProcedurePlan,
+    pub frame: &'a super::FinalFrameLayout,
+}
+
+impl fmt::Display for PhysicalPlanTrace<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}", self.plan)?;
+        writeln!(f, "{}", FrameTrace(self.frame))?;
+        for (slot, offset) in self.frame.spills() {
+            writeln!(f, "  cell {slot} offset={offset}")?;
+        }
+        for (object, allocation) in self.frame.scratch() {
+            writeln!(f, "  object {object:?} {allocation:?}")?;
+        }
+        Ok(())
+    }
+}
+
+impl super::actions::ProcedurePlan {
+    /// Expose stable observational diagnostics through the existing codegen trace category.
+    /// Call after assigning the final frame; no separate flag or trace vocabulary is required.
+    pub fn trace(&self, frame: &super::FinalFrameLayout) {
+        let target = midenc_hir::TraceTarget::category("codegen");
+        log::trace!(target: &target, "{}", PhysicalPlanTrace { plan: self, frame });
+    }
+}

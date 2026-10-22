@@ -343,6 +343,8 @@ fn simultaneous_slot_cycle_with_stack_readers_verifies_assembles_and_rejects_ove
     let proposal =
         repair_edge(&initial, &selected.edges[0], &target, &context(&selected.values)).unwrap();
     let plan = ProcedurePlan {
+        debug_locations: Default::default(),
+        decisions: Default::default(),
         spill_slots: proposal.slot_requests.iter().copied().collect(),
         contracts: BTreeMap::from([
             (SegmentId(0), contract(vec![atom(0), atom(1)], vec![])),
@@ -726,6 +728,8 @@ fn reconstructed_edge_survives_empty_contract(alias: bool) {
     let mut bindings = preparation.bindings;
     bindings.insert(SelectedStepId(0), LoweringBindings::default());
     let plan = ProcedurePlan {
+        debug_locations: Default::default(),
+        decisions: Default::default(),
         selected,
         contracts: BTreeMap::from([
             (SegmentId(0), contract(vec![], vec![])),

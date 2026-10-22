@@ -550,6 +550,8 @@ impl TargetEffects {
             }
             Caller => StackEffect::computed(4, 4, &[]),
             Clk => StackEffect::computed(0, 1, &[1]),
+            // The assembler pushes the resolved root in reverse order: root[0] ends on top.
+            ProcRef(_) => StackEffect::computed(0, 4, &[1, 1, 1, 1]),
             AdvPush => StackEffect::computed(0, 1, &[1]).trapping(),
             AdvLoadW => StackEffect::computed(4, 4, &[]).trapping(),
             Add | Sub | Mul | Eq | Neq => StackEffect::computed(2, 1, &[-1]),
@@ -886,6 +888,26 @@ impl TargetEffects {
                         width: 4,
                     },
                     inputs.into_iter().map(WriteValue::Output).collect(),
+                )
+            }
+            MemLoadImm(address) => {
+                literal(address)?;
+                StackEffect::new(0, vec![LaneEffect::Memory { lane: 0 }], vec![FloorStep::Push(1)])
+                    .read(MemoryRegion::SourceUnknown { width: 1 })
+            }
+            MemStoreImm(address) => {
+                literal(address)?;
+                StackEffect::new(1, vec![], floor(&[1, -1, -1]))
+                    .write(MemoryRegion::SourceUnknown { width: 1 }, vec![WriteValue::Input(0)])
+            }
+            MemStoreWLeImm(address) => {
+                let address = literal(address)?;
+                if !address.is_multiple_of(miden_core::WORD_SIZE as u32) {
+                    return Err(stack_error("unaligned source word access"));
+                }
+                StackEffect::new(4, (0..4).map(Input).collect(), floor(&[1, -1])).write(
+                    MemoryRegion::SourceUnknown { width: 4 },
+                    (0..4).map(WriteValue::Input).collect(),
                 )
             }
             MemLoad => StackEffect::new(1, vec![LaneEffect::Memory { lane: 0 }], vec![]).read(

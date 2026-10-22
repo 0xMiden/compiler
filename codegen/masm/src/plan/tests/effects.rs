@@ -722,6 +722,9 @@ fn arithmetic_and_fixed_target_rules_match_pinned_assembler_microsteps() -> Resu
             alloc::sync::Arc::<str>::from("bad path"),
         ))),
         Instruction::AdvPush,
+        Instruction::MemLoadImm(100u32.into()),
+        Instruction::MemStoreImm(100u32.into()),
+        Instruction::MemStoreWLeImm(100u32.into()),
         Instruction::Caller,
         Instruction::Clk,
     ]) {
@@ -762,7 +765,9 @@ fn arithmetic_and_fixed_target_rules_match_pinned_assembler_microsteps() -> Resu
                 | O::Dup11
                 | O::Dup13
                 | O::Dup15 => Some(FloorStep::Push(1)),
-                O::Drop
+                O::MStore
+                | O::MStoreW
+                | O::Drop
                 | O::Assert(_)
                 | O::Add
                 | O::Mul
@@ -776,7 +781,8 @@ fn arithmetic_and_fixed_target_rules_match_pinned_assembler_microsteps() -> Resu
                 | O::CSwap
                 | O::CSwapW
                 | O::FriE2F4 => Some(FloorStep::Pop(1)),
-                O::Noop
+                O::MLoad
+                | O::Noop
                 | O::HPerm
                 | O::HornerBase
                 | O::HornerExt
@@ -1948,4 +1954,65 @@ fn generic_event_closed_transitions_preserve_state_and_floor() {
         TargetEffects::instruction(&Instruction::EmitImm(crate::Event::PrintLn.into())).unwrap();
     assert_eq!(typed.consumed, 2);
     assert_eq!(typed.observed_inputs, vec![Observation::Value(0), Observation::Value(1)]);
+}
+
+#[test]
+fn procedure_reference_pushes_actual_digest_and_preserves_the_window() -> Result<(), Report> {
+    let effect =
+        TargetEffects::instruction(&Instruction::ProcRef(crate::lower::raw::target("callee")))?;
+    assert_eq!(effect.consumed, 0);
+    assert_eq!(effect.outputs, (0..4).map(LaneEffect::Computed).collect::<Vec<_>>());
+    assert_eq!(effect.floor, alloc::vec![FloorStep::Push(1); 4]);
+    let manager = alloc::sync::Arc::new(miden_assembly::DefaultSourceManager::default());
+    let module =
+        miden_assembly::ast::Module::parser(Some(miden_assembly::ast::ModuleKind::Library))
+            .parse_str(
+                Some(miden_assembly::Path::new("::reference")),
+                "pub proc callee push.7 end",
+                manager.clone(),
+            )?;
+    let reference = miden_assembly::Assembler::new(manager).assemble_library(
+        "reference",
+        module,
+        core::iter::empty::<&str>(),
+    )?;
+    use miden_core::mast::MastNodeExt;
+    let export = reference.manifest.exports().next().unwrap().as_procedure().unwrap();
+    let digest = reference.mast_forest()[export.node.unwrap()].digest();
+    let checks = digest
+        .as_elements()
+        .iter()
+        .map(|value| format!("push.{value} assert_eq "))
+        .collect::<alloc::string::String>();
+    let values = (101..117).map(Felt::new_unchecked).collect::<Vec<_>>();
+    let observed = run_program(
+        "proc callee push.7 end begin procref.callee repeat.4 movup.4 drop end end",
+        &values,
+    )?;
+    assert_eq!(&observed[..4], digest.as_elements(), "digest lane order");
+    let output = run_program(
+        &format!(
+            "proc callee push.7 end begin procref.callee sdepth push.20 assert_eq {checks} end"
+        ),
+        &values,
+    )?;
+    assert_eq!(output, values);
+    Ok(())
+}
+
+#[test]
+fn immediate_source_memory_effects_preserve_lanes_and_reject_unaligned_words() -> Result<(), Report>
+{
+    let source = "begin push.101.102.103.104 mem_storew_le.100 dropw mem_load.100 push.104 \
+                  assert_eq mem_load.101 push.103 assert_eq mem_load.102 push.102 assert_eq \
+                  mem_load.103 push.101 assert_eq push.901 mem_store.4294967295 \
+                  mem_load.4294967295 push.901 assert_eq end";
+    assert_eq!(run_program(source, &[])?, [Felt::ZERO; 16]);
+    for address in [0, 4, u32::MAX - 3] {
+        TargetEffects::instruction(&Instruction::MemStoreWLeImm(address.into()))?;
+    }
+    for address in [1, 2, 3, u32::MAX] {
+        assert!(TargetEffects::instruction(&Instruction::MemStoreWLeImm(address.into())).is_err());
+    }
+    Ok(())
 }

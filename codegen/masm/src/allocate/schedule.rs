@@ -85,14 +85,19 @@ pub(crate) fn prepare_unit(
                 continue;
             }
             let proposal = match tier {
-                SchedulingTier::Stack => stack_candidate(base.clone(), unit, &needs),
-                SchedulingTier::Loads => load_candidates(&base, unit, &needs),
+                SchedulingTier::Stack => {
+                    stack_candidate(base.clone(), unit, &needs).map(|p| p.map(|t| (t, Vec::new())))
+                }
+                SchedulingTier::Loads => {
+                    load_candidates(&base, unit, &needs).map(|p| p.map(|t| (t, Vec::new())))
+                }
                 SchedulingTier::Selective => selective(base.clone(), unit, &needs),
                 SchedulingTier::Normalization => unreachable!(),
             };
-            if let Ok(Some(trial)) = proposal {
+            if let Ok(Some((trial, victims))) = proposal {
                 let mut preparation = Preparation::finish(trial);
                 preparation.tier = tier;
+                preparation.victims = victims;
                 return Ok(preparation);
             }
         }
@@ -128,14 +133,19 @@ pub(super) fn prepare_control(
     let base = Trial::new(state, context, SlotOwner::Edge(edge));
     for tier in [SchedulingTier::Stack, SchedulingTier::Loads, SchedulingTier::Selective] {
         let candidate = match tier {
-            SchedulingTier::Stack => stack_candidate(base.clone(), &request, &needs),
-            SchedulingTier::Loads => load_candidates(&base, &request, &needs),
+            SchedulingTier::Stack => {
+                stack_candidate(base.clone(), &request, &needs).map(|p| p.map(|t| (t, Vec::new())))
+            }
+            SchedulingTier::Loads => {
+                load_candidates(&base, &request, &needs).map(|p| p.map(|t| (t, Vec::new())))
+            }
             SchedulingTier::Selective => selective(base.clone(), &request, &needs),
             SchedulingTier::Normalization => unreachable!(),
         };
-        if let Ok(Some(trial)) = candidate {
+        if let Ok(Some((trial, victims))) = candidate {
             let mut result = Preparation::finish(trial);
             result.tier = tier;
+            result.victims = victims;
             return Ok(result);
         }
     }
@@ -672,16 +682,19 @@ fn victim_class(
 /// Pin distinct resident inputs, rank retention victims by redundancy then farthest next
 /// use, and back up only copies that would otherwise be lost. Buried owned occurrences
 /// remain an exact suffix. Duplicate input requests receive distinct occurrence IDs.
+/// Successful selective trial with only its actual victim decisions retained.
+type SelectiveTrial<'a> = (Trial<'a>, Vec<crate::plan::VictimDecision>);
 fn selective<'a>(
     mut trial: Trial<'a>,
     unit: &SelectedLowering,
     needs: &UnitRequirements,
-) -> Result<Option<Trial<'a>>, AllocationError> {
+) -> Result<Option<SelectiveTrial<'a>>, AllocationError> {
     if unit.stack_inputs.len() > 16 {
         return Ok(None);
     }
     let active: Vec<_> = trial.state.stack.iter().take(16).copied().collect();
     let suffix: Vec<_> = trial.state.stack.iter().skip(active.len()).copied().collect();
+    let mut victims = Vec::new();
     let mut pins = BTreeSet::new();
     let mut assigned = Vec::new();
     for atom in &unit.stack_inputs {
@@ -744,9 +757,19 @@ fn selective<'a>(
                 index,
             ));
         }
-        let (class, _, _, _, victim) =
+        let (class, Reverse(distance), _, _, victim) =
             ranked.into_iter().min().expect("a capacity deficit has a retention victim");
         let candidate = retained.remove(victim);
+        use crate::plan::{VictimDecision, VictimReason};
+        victims.push(VictimDecision {
+            atom: candidate.atom,
+            next_use: distance,
+            reason: match class {
+                0 => VictimReason::Redundant,
+                1 => VictimReason::Backed,
+                _ => VictimReason::NeedsStore,
+            },
+        });
         if let Some(id) = candidate.occurrence {
             let depth =
                 trial.state.stack.iter().position(|o| o.id == id).expect("retained occurrence");
@@ -804,7 +827,7 @@ fn selective<'a>(
     {
         return Ok(None);
     }
-    Ok(Some(trial))
+    Ok(Some((trial, victims)))
 }
 
 /// Copy from the active prefix or backing storage, preserving the buried owned suffix.

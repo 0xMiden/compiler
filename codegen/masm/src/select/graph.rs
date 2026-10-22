@@ -141,13 +141,16 @@ struct UnitSelection {
 /// participates. Source-owned evidence is collected alongside, rather than read from, units.
 pub(crate) struct Selector<'a, 'e> {
     env: &'a SelectEnv<'e>,
-    signature: builtin::attributes::SignatureAttr,
+    results: Vec<Type>,
+    fragment_return: Option<Destination>,
     program: SelectedProgram,
     values: BTreeMap<ValueRef, ValueId>,
     sources: midenc_hir::FxHashMap<OperationRef, SourceStepId>,
     proofs: BTreeMap<SelectedStepId, UnitEvidence>,
     definitions: Vec<HirUnit>,
     controls: u32,
+    observations: Vec<crate::lower::debug::Observation>,
+    inline_calls: bool,
 }
 
 impl<'a, 'e> Selector<'a, 'e> {
@@ -178,24 +181,13 @@ impl<'a, 'e> Selector<'a, 'e> {
             lanes(signature.params().iter().map(|p| p.ty.clone()))?,
             lanes(signature.results().iter().map(|p| p.ty.clone()))?,
         )?;
-        let mut this = Self {
+        let mut this = Self::new(
+            ProcedureOrigin::Hir(function.as_operation_ref()),
+            abi,
+            signature.results().iter().map(|p| p.ty.clone()).collect(),
+            crate::emitter::has_inline_call_chain(function.as_operation()),
             env,
-            signature: signature.clone(),
-            program: SelectedProgram {
-                origin: ProcedureOrigin::Hir(function.as_operation_ref()),
-                abi,
-                values: BTreeMap::new(),
-                source_map: BTreeMap::new(),
-                segments: vec![],
-                edges: vec![],
-                structure: ControlTree::Sequence(vec![]),
-            },
-            values: BTreeMap::new(),
-            sources: midenc_hir::FxHashMap::default(),
-            proofs: BTreeMap::new(),
-            definitions: vec![],
-            controls: 0,
-        };
+        );
         this.cover(function.as_operation())?;
         let entry = this.segment(
             function
@@ -211,6 +203,54 @@ impl<'a, 'e> Selector<'a, 'e> {
             return Err(super::invalid("function does not end in a supported terminal"));
         }
         this.program.structure = ControlTree::Sequence(flow.tree);
+        let mut offsets = vec![];
+        let mut extent = 0u32;
+        for local in function.locals().iter() {
+            offsets.push(extent);
+            let width = u32::try_from(local.size_in_felts())
+                .map_err(|_| super::invalid("source local size exceeds address domain"))?;
+            extent = extent
+                .checked_add(width)
+                .ok_or_else(|| super::invalid("source local extent overflows"))?;
+        }
+        if extent > MAX_FRAME_ELEMENTS {
+            return Err(super::invalid("source local frame exceeds target limit"));
+        }
+        this.finish(SourceLocalLayout { offsets, extent })
+    }
+
+    fn new(
+        origin: ProcedureOrigin,
+        abi: ProcedureAbi,
+        results: Vec<Type>,
+        inline_calls: bool,
+        env: &'a SelectEnv<'e>,
+    ) -> Self {
+        Self {
+            env,
+            results,
+            fragment_return: None,
+            program: SelectedProgram {
+                origin,
+                abi,
+                values: BTreeMap::new(),
+                source_map: BTreeMap::new(),
+                segments: vec![],
+                edges: vec![],
+                structure: ControlTree::Sequence(vec![]),
+            },
+            values: BTreeMap::new(),
+            sources: midenc_hir::FxHashMap::default(),
+            proofs: BTreeMap::new(),
+            definitions: vec![],
+            controls: 0,
+            observations: vec![],
+            inline_calls,
+        }
+    }
+
+    /// Complete the shared source traversal without assigning any physical locations.
+    fn finish(mut self, source_locals: SourceLocalLayout) -> Result<HirEvidence, Report> {
         let mut selected_segments = BTreeSet::new();
         fn segments(tree: &ControlTree, selected: &mut BTreeSet<SegmentId>) {
             match tree {
@@ -237,8 +277,8 @@ impl<'a, 'e> Selector<'a, 'e> {
                 ControlTree::Edge(_) => {}
             }
         }
-        segments(&this.program.structure, &mut selected_segments);
-        if this
+        segments(&self.program.structure, &mut selected_segments);
+        if self
             .program
             .segments
             .iter()
@@ -247,28 +287,152 @@ impl<'a, 'e> Selector<'a, 'e> {
             return Err(super::invalid("executable selected segment omitted from structure"));
         }
         // An all-terminal branch needs no continuation. Source coverage remains complete.
-        this.program.segments.retain(|segment| selected_segments.contains(&segment.id));
-        let mut offsets = vec![];
-        let mut extent = 0u32;
-        for local in function.locals().iter() {
-            offsets.push(extent);
-            let width = u32::try_from(local.size_in_felts())
-                .map_err(|_| super::invalid("source local size exceeds address domain"))?;
-            extent = extent
-                .checked_add(width)
-                .ok_or_else(|| super::invalid("source local extent overflows"))?;
-        }
-        if extent > MAX_FRAME_ELEMENTS {
-            return Err(super::invalid("source local frame exceeds target limit"));
-        }
+        self.program.segments.retain(|segment| selected_segments.contains(&segment.id));
         Ok(HirEvidence {
             source: DefinitionEvidence {
-                source_locals: SourceLocalLayout { offsets, extent },
-                program: this.program,
-                units: this.proofs,
+                source_locals,
+                program: self.program,
+                units: self.proofs,
             },
-            definitions: this.definitions,
+            definitions: self.definitions,
+            observations: self.observations,
         })
+    }
+
+    /// Select all initializer fragments and generated stages into one value/source namespace.
+    /// Actual global returns transfer to typed store continuations; allocation runs only once.
+    pub fn generated(
+        definition: GeneratedDefinitionId,
+        stages: &[super::generated::Initialization],
+        env: &'a SelectEnv<'e>,
+    ) -> Result<HirEvidence, Report> {
+        let abi = ProcedureAbi::new(CallingConvention::SameContext, 0, 0)?;
+        let mut this = Self::new(
+            ProcedureOrigin::Generated {
+                definition,
+                parameters: vec![],
+            },
+            abi,
+            vec![],
+            false,
+            env,
+        );
+        let mut current = this.segment_ids(vec![])?;
+        let mut tree = vec![ControlTree::Segment(current)];
+        for (ordinal, stage) in stages.iter().enumerate() {
+            let stage_id = u32::try_from(ordinal)
+                .map_err(|_| super::invalid("generated stage identity overflow"))?;
+            if let super::generated::Initialization::Global(global) = stage {
+                let global = global.borrow();
+                global.as_operation().recursively_verify()?;
+                this.cover(global.as_operation())?;
+                if global.initializer().is_empty() {
+                    continue;
+                }
+                let ty = (*global.get_ty()).clone();
+                let layout = ValueLayout::new(ty.clone())?;
+                this.results = vec![ty.clone()];
+                this.inline_calls = crate::emitter::has_inline_call_chain(global.as_operation());
+                let continuation = this.segment_ids(vec![])?;
+                let value = ValueId(index(this.program.values.len())?);
+                this.program.values.insert(
+                    value,
+                    SelectedValue {
+                        id: value,
+                        origin: ValueOrigin::Parameter {
+                            segment: continuation,
+                            index: 0,
+                        },
+                        layout,
+                        reconstruction: None,
+                    },
+                );
+                this.program.segments[continuation.0 as usize].parameters.push(value);
+                this.fragment_return = Some(Destination {
+                    segment: continuation,
+                    parameters: vec![value],
+                    kind: EdgeKind::Forward,
+                });
+                let flow =
+                    this.block(global.initializer().entry().as_block_ref(), current, None)?;
+                if flow.current.is_some() {
+                    return Err(super::invalid("global initializer lacks a terminal result"));
+                }
+                tree.extend(flow.tree.into_iter().skip(1));
+                tree.push(ControlTree::Segment(continuation));
+                current = continuation;
+                this.fragment_return = None;
+                let address = env
+                    .link_info
+                    .and_then(|link| {
+                        link.globals_layout().get_computed_addr(global.as_global_var_ref())
+                    })
+                    .ok_or_else(|| {
+                        super::invalid("global initializer requires its linked storage address")
+                    })?;
+                let source = this.generated_source(definition, stage_id)?;
+                let inputs = this.atoms(&[value]);
+                let mut memory = crate::lower::units::memory::Memory::store_immediate(
+                    global.as_operation().context_rc(),
+                    ty,
+                    address,
+                    global.span(),
+                )?;
+                memory.bind(&inputs, &[]);
+                let proof = memory.proof.clone();
+                let effects = memory.effects.clone();
+                this.add_unit(
+                    current,
+                    source,
+                    UnitSelection {
+                        inputs,
+                        stored: vec![],
+                        outputs: vec![],
+                        body: HirBody::Memory(Box::new(memory)),
+                        proof,
+                        effects,
+                        scratch: vec![],
+                        scratch_effects: vec![],
+                    },
+                )?;
+            } else {
+                let source = this.generated_source(definition, stage_id)?;
+                let construction = stage.construct()?;
+                this.add_unit(
+                    current,
+                    source,
+                    UnitSelection {
+                        inputs: vec![],
+                        stored: vec![],
+                        outputs: vec![],
+                        body: HirBody::Plain(construction.instructions),
+                        proof: construction.proof,
+                        effects: construction.effects,
+                        scratch: vec![],
+                        scratch_effects: vec![],
+                    },
+                )?;
+            }
+        }
+        tree.push(ControlTree::Edge(this.edge(current, None, EdgeKind::Return, &[])?));
+        this.program.structure = ControlTree::Sequence(tree);
+        this.finish(SourceLocalLayout::default())
+    }
+
+    fn generated_source(
+        &mut self,
+        definition: GeneratedDefinitionId,
+        stage: u32,
+    ) -> Result<SourceStepId, Report> {
+        let source = SourceStepId(index(self.program.source_map.len())?);
+        self.program.source_map.insert(
+            source,
+            SourceRecord {
+                origin: SourceOrigin::Generated { definition, stage },
+                location: SourceLocation::default(),
+            },
+        );
+        Ok(source)
     }
 
     fn cover(&mut self, operation: &Operation) -> Result<(), Report> {
@@ -505,6 +669,86 @@ impl<'a, 'e> Selector<'a, 'e> {
         Ok(())
     }
 
+    /// Finish context returns in a separate segment so its incoming repair first removes
+    /// all dead owned occurrences. Truncation then affects only VM floor padding, preserves
+    /// the declared result prefix, and cannot invalidate an allocator-visible suffix.
+    fn returned(
+        &mut self,
+        current: SegmentId,
+        source: SourceStepId,
+        values: &[ValueId],
+        flow: &mut Flow,
+    ) -> Result<(), Report> {
+        if let Some(destination) = self.fragment_return.clone() {
+            flow.tree.push(ControlTree::Edge(self.edge(
+                current,
+                Some(&destination),
+                destination.kind,
+                values,
+            )?));
+            return Ok(());
+        }
+        let (segment, returned) = if matches!(
+            self.program.abi.convention(),
+            CallingConvention::Context | CallingConvention::Kernel
+        ) {
+            let segment = self.segment_ids(vec![])?;
+            let destination = Destination {
+                segment,
+                parameters: vec![],
+                kind: EdgeKind::Forward,
+            };
+            flow.tree.push(ControlTree::Edge(self.edge(
+                current,
+                Some(&destination),
+                destination.kind,
+                &[],
+            )?));
+            flow.tree.push(ControlTree::Segment(segment));
+            let mut outputs = vec![];
+            for value in values {
+                outputs
+                    .push(self.temporary(source, self.program.values[value].layout.ty().clone())?);
+            }
+            let inputs = self.atoms(values);
+            let output_atoms = self.atoms(&outputs);
+            let target = crate::lower::raw::target("::miden::core::sys::truncate_stack");
+            self.add_unit(
+                segment,
+                source,
+                UnitSelection {
+                    inputs: inputs.clone(),
+                    stored: vec![],
+                    outputs: output_atoms.clone(),
+                    body: HirBody::Plain(vec![I::Exec(target.clone())]),
+                    proof: UnitEvidence {
+                        aliases: LaneAliases::new(output_atoms.into_iter().zip(inputs).collect()),
+                        calls: vec![CallSite {
+                            instruction: I::Exec(target),
+                            abi: ProcedureAbi::new(CallingConvention::SameContext, 0, 0)?,
+                            inputs: vec![],
+                            path: vec![],
+                            truncate: true,
+                            outputs: vec![],
+                            publications: vec![],
+                            selector: None,
+                        }],
+                        ..Default::default()
+                    },
+                    effects: LoweringEffects::default(),
+                    scratch: vec![],
+                    scratch_effects: vec![],
+                },
+            )?;
+            (segment, outputs)
+        } else {
+            (current, values.to_vec())
+        };
+        flow.tree
+            .push(ControlTree::Edge(self.edge(segment, None, EdgeKind::Return, &returned)?));
+        Ok(())
+    }
+
     fn block(
         &mut self,
         block: BlockRef,
@@ -522,6 +766,13 @@ impl<'a, 'e> Selector<'a, 'e> {
             };
             let op = operation.borrow();
             let source = self.sources[&operation];
+            if self.inline_calls {
+                self.observations.extend(crate::lower::debug::Observation::inline_chain(
+                    &op,
+                    current,
+                    self.program.segments[current.0 as usize].units.len(),
+                ));
+            }
             let lowering = op.as_trait::<dyn HirSelection>().ok_or_else(|| {
                 super::invalid(alloc::format!("unsupported final HIR operation: {}", op.name()))
             })?;
@@ -529,33 +780,23 @@ impl<'a, 'e> Selector<'a, 'e> {
                 SelectionRule::Return => {
                     require_types(
                         operand_types(&op),
-                        self.signature.results().iter().map(|p| p.ty.clone()),
+                        self.results.iter().cloned(),
                         "return tuple disagrees with declared function signature",
                     )?;
                     let values =
                         self.ids(op.operands().all().iter().map(|v| v.borrow().as_value_ref()))?;
-                    flow.tree.push(ControlTree::Edge(self.edge(
-                        current,
-                        None,
-                        EdgeKind::Return,
-                        &values,
-                    )?));
+                    self.returned(current, source, &values, &mut flow)?;
                     flow.current = None;
                 }
                 SelectionRule::ReturnImmediate(immediate) => {
                     require_types(
                         [immediate.ty()],
-                        self.signature.results().iter().map(|p| p.ty.clone()),
+                        self.results.iter().cloned(),
                         "immediate return disagrees with declared function signature",
                     )?;
                     let output = self.temporary(source, immediate.ty())?;
                     self.constant(current, source, output, immediate)?;
-                    flow.tree.push(ControlTree::Edge(self.edge(
-                        current,
-                        None,
-                        EdgeKind::Return,
-                        &[output],
-                    )?));
+                    self.returned(current, source, &[output], &mut flow)?;
                     flow.current = None;
                 }
                 SelectionRule::Yield => {
@@ -612,7 +853,23 @@ impl<'a, 'e> Selector<'a, 'e> {
                     self.indirect(&op, current, &mut flow)?
                 }
                 SelectionRule::DirectCall => self.direct(&op, current)?,
-                SelectionRule::Debug => {}
+                SelectionRule::Debug => {
+                    let lanes = if let Some(debug) =
+                        op.downcast_ref::<midenc_hir::dialects::debuginfo::DebugValue>()
+                    {
+                        let value = self.value(debug.value().as_value_ref())?;
+                        self.atoms(&[value])
+                    } else {
+                        vec![]
+                    };
+                    self.observations.push(crate::lower::debug::Observation::from_source(
+                        &op,
+                        current,
+                        self.program.segments[current.0 as usize].units.len(),
+                        lanes,
+                        self.env,
+                    ));
+                }
                 rule => {
                     let inputs =
                         self.ids(op.operands().all().iter().map(|v| v.borrow().as_value_ref()))?;
@@ -923,13 +1180,25 @@ impl<'a, 'e> Selector<'a, 'e> {
         instructions: Vec<I>,
     ) -> Result<Atom, Report> {
         let result = self.temporary(source, Type::I1)?;
-        self.plain(
+        // Range dispatch uses checked U32 comparisons; equality-only dispatch does not trap.
+        // Keep their source permission consistent with the existing physical instruction rules.
+        let mut effects = LoweringEffects::default();
+        for instruction in &instructions {
+            effects.may_trap |= TargetEffects::instruction(instruction)?.may_trap;
+        }
+        self.add_unit(
             segment,
             source,
-            vec![Atom::new(selector, 0)],
-            vec![Atom::new(result, 0)],
-            instructions,
-            LaneAliases::default(),
+            UnitSelection {
+                inputs: vec![Atom::new(selector, 0)],
+                stored: vec![],
+                outputs: vec![Atom::new(result, 0)],
+                body: HirBody::Plain(instructions),
+                proof: UnitEvidence::default(),
+                effects,
+                scratch: vec![],
+                scratch_effects: vec![],
+            },
         )?;
         Ok(Atom::new(result, 0))
     }
@@ -1669,7 +1938,33 @@ fn record(op: &Operation) -> SourceRecord {
         origin: SourceOrigin::Hir(op.as_operation_ref()),
         location: SourceLocation {
             span: op.span(),
-            inline_chain: vec![],
+            inline_chain: {
+                use midenc_hir::dialects::debuginfo::attributes::{
+                    INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChainAttr,
+                };
+                op.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME)
+                    .and_then(|attr| attr.try_downcast_attr::<InlineCallChainAttr>().ok())
+                    .map(|attr| {
+                        use miden_assembly_syntax::debuginfo::{ColumnNumber, LineNumber, Uri};
+                        attr.borrow()
+                            .frames
+                            .iter()
+                            .map(|frame| {
+                                let manager = &op.context().session().source_manager;
+                                let span = LineNumber::new(frame.call_line).and_then(|line| {
+                                    let file =
+                                        manager.get_by_uri(&Uri::new(frame.call_file.as_str()))?;
+                                    file.line_column_to_span(
+                                        line,
+                                        ColumnNumber::new(frame.call_column).unwrap_or_default(),
+                                    )
+                                });
+                                span.unwrap_or(midenc_hir::SourceSpan::UNKNOWN)
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            },
         },
     }
 }

@@ -223,6 +223,8 @@ fn discard_plan(definition: &DiscardDefinition, live_after: &[BTreeSet<ValueId>]
         state.stack.clear(); // The source fixture's declared discard effect, checked independently.
     }
     ProcedurePlan {
+        debug_locations: Default::default(),
+        decisions: Default::default(),
         selected,
         contracts: BTreeMap::from([(SegmentId(0), entry)]),
         segment_actions: BTreeMap::from([(SegmentId(0), actions)]),
@@ -348,6 +350,8 @@ fn canonical_slot_collision_preserves_both_inputs_through_verified_assembly() {
     actions.extend(proposal.actions);
     actions.push(PlanAction::RunLowering { step: request.id });
     let plan = ProcedurePlan {
+        debug_locations: Default::default(),
+        decisions: Default::default(),
         selected,
         contracts: BTreeMap::from([(
             SegmentId(0),

@@ -90,7 +90,7 @@ pub(super) fn qualified_invocation_target(
 /// `module_owner` is the HIR symbol-table owner corresponding to the emitted caller's MASM module.
 /// Passing `None` disables unqualified-name emission. Private aliases outside that module are
 /// followed to a reachable symbol, since MASM cannot resolve private imports by qualified path.
-pub(super) fn invocation_target_from_symbol(
+pub(crate) fn invocation_target_from_symbol(
     mut symbol: midenc_hir::SymbolRef,
     module_owner: Option<midenc_hir::OperationRef>,
     span: midenc_hir::SourceSpan,
@@ -1694,17 +1694,34 @@ fn debug_var_location_from_expression(
 
 /// Lowers a HIR expression once, then selects a compact VM location when equivalent.
 /// Failure always emits an unavailable location, ending any previous location for the variable.
-fn resolve_debug_var_location(
+pub(super) fn resolve_debug_var_location(
     expression: &midenc_hir::dialects::debuginfo::attributes::Expression,
     stack_position: Option<u8>,
     frame_size: Option<u32>,
     resolve_local_offset: impl FnMut(u32) -> Option<usize>,
     resolve_global_address: impl FnMut(midenc_hir::interner::Symbol) -> Option<u32>,
 ) -> masm::DebugVarLocation {
-    use masm::{DebugLocationExpressionOp as Op, DebugVarLocation};
-    let Some(expression) = lower_debug_location_expression(
+    resolve_debug_var_location_with_operand(
         expression,
-        stack_position,
+        stack_position.map(masm::DebugLocationExpressionOp::ReadStack),
+        frame_size,
+        resolve_local_offset,
+        resolve_global_address,
+    )
+}
+
+/// Resolve an existing operand read directly, including an allocation-backed local cell.
+pub(super) fn resolve_debug_var_location_with_operand(
+    expression: &midenc_hir::dialects::debuginfo::attributes::Expression,
+    operand: Option<masm::DebugLocationExpressionOp>,
+    frame_size: Option<u32>,
+    resolve_local_offset: impl FnMut(u32) -> Option<usize>,
+    resolve_global_address: impl FnMut(midenc_hir::interner::Symbol) -> Option<u32>,
+) -> masm::DebugVarLocation {
+    use masm::{DebugLocationExpressionOp as Op, DebugVarLocation};
+    let Some(expression) = lower_debug_location_expression_with_operand(
+        expression,
+        operand,
         frame_size,
         resolve_local_offset,
         resolve_global_address,
@@ -1736,9 +1753,27 @@ fn resolve_debug_var_location(
 
 /// Translates slot values and byte-address locations to the VM expression protocol.
 /// A terminal VM dereference describes typed memory; a non-terminal one reads a pointer/value.
+#[cfg(test)]
 fn lower_debug_location_expression(
     expression: &midenc_hir::dialects::debuginfo::attributes::Expression,
     operand_stack_position: Option<u8>,
+    frame_size: Option<u32>,
+    resolve_local_offset: impl FnMut(u32) -> Option<usize>,
+    resolve_global_address: impl FnMut(midenc_hir::interner::Symbol) -> Option<u32>,
+) -> Option<masm::DebugLocationExpression> {
+    lower_debug_location_expression_with_operand(
+        expression,
+        operand_stack_position.map(masm::DebugLocationExpressionOp::ReadStack),
+        frame_size,
+        resolve_local_offset,
+        resolve_global_address,
+    )
+}
+
+/// Translate a typed existing read, rather than manufacturing an operand stack position.
+fn lower_debug_location_expression_with_operand(
+    expression: &midenc_hir::dialects::debuginfo::attributes::Expression,
+    operand: Option<masm::DebugLocationExpressionOp>,
     frame_size: Option<u32>,
     mut resolve_local_offset: impl FnMut(u32) -> Option<usize>,
     mut resolve_global_address: impl FnMut(midenc_hir::interner::Symbol) -> Option<u32>,
@@ -1786,7 +1821,7 @@ fn lower_debug_location_expression(
         return None;
     }
     if needs_operand {
-        operations.push(DebugLocationExpressionOp::ReadStack(operand_stack_position?));
+        operations.push(operand?);
         value_kinds.push(ValueKind::Value);
     }
 
@@ -1807,7 +1842,7 @@ fn lower_debug_location_expression(
                     operand_stack_slot = Some(*index);
                 }
                 value_kinds.push(ValueKind::Value);
-                Some(DebugLocationExpressionOp::ReadStack(operand_stack_position?))
+                Some(operand?)
             }
             ExpressionOp::ConstU64(value) => {
                 value_kinds.push(ValueKind::Value);
@@ -1968,6 +2003,15 @@ fn resolve_global_slot_element_address(
     operation: &midenc_hir::Operation,
     emitter: &BlockEmitter<'_>,
 ) -> Option<u32> {
+    resolve_global_slot_address(name, operation, emitter.link_info)
+}
+
+/// Resolve an aligned source-global debug cell from the immutable linked layout.
+pub(super) fn resolve_global_slot_address(
+    name: midenc_hir::interner::Symbol,
+    operation: &midenc_hir::Operation,
+    link_info: &crate::linker::LinkInfo,
+) -> Option<u32> {
     let current_module = operation.nearest_parent_op::<builtin::Module>()?;
     let symbol = current_module.borrow().get(name)?;
     let global = {
@@ -1977,8 +2021,7 @@ fn resolve_global_slot_element_address(
             .downcast_ref::<builtin::GlobalVariable>()?
             .as_global_var_ref()
     };
-    emitter
-        .link_info
+    link_info
         .globals_layout()
         .get_computed_addr(global)
         .and_then(debug_global_element_address)
@@ -2564,7 +2607,7 @@ mod tests {
     }
 }
 
-fn apply_debug_var_metadata(
+pub(super) fn apply_debug_var_metadata(
     debug_var: &mut masm::DebugVarInfo,
     var: &midenc_hir::dialects::debuginfo::attributes::Variable,
     session: &midenc_session::Session,

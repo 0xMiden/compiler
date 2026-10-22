@@ -508,6 +508,8 @@ impl<'a> AllocationContext<'a> {
 pub(crate) struct Preparation {
     /// Successful scheduling strategy, for inspection rather than execution.
     pub tier: SchedulingTier,
+    /// Actual selective ranking outcomes; empty for preparations without evictions.
+    pub victims: Vec<crate::plan::VictimDecision>,
     /// Preparation actions in execution order.
     pub actions: Vec<PlanAction>,
     /// Facts after these actions; unit preparations stop before lowering input consumption.
@@ -524,6 +526,7 @@ impl Preparation {
         let slot_requests = trial.state.slot_requests.clone();
         Self {
             tier: SchedulingTier::Normalization,
+            victims: Vec::new(),
             actions: trial.actions,
             state: trial.state,
             bindings: trial.bindings,

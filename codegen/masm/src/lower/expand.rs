@@ -66,6 +66,14 @@ pub(crate) struct ExpansionEnv<'a> {
     pub link_info: Option<&'a crate::linker::LinkInfo>,
 }
 
+impl ExpansionEnv<'_> {
+    /// Resolve observational records against the same completed frame as executable accesses.
+    /// This only populates inert decorators; it cannot allocate or modify executable actions.
+    pub fn resolve_debug(&mut self, plan: &actions::ProcedurePlan, frame: &FinalFrameLayout) {
+        self.debug.extend(super::debug::resolve_plan(plan, frame));
+    }
+}
+
 /// Non-executable markers tying the expanded body to selected and allocated program points.
 /// They guide verification but cannot assert that a result has a trusted semantic identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

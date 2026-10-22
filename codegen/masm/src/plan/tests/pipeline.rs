@@ -725,3 +725,14 @@ fn real_memmove_observes_each_requested_preparation_tier() -> Result<(), Report>
     }
     Ok(())
 }
+
+#[test]
+fn physical_plan_trace_reports_actual_preparation_and_frame() {
+    let (plan, frame, _) = ready_root(&root_source(5, 2));
+    let rendered = alloc::format!("{plan}");
+    assert!(rendered.contains("tier="), "{rendered}");
+    assert!(rendered.contains("contract=root"), "{rendered}");
+    assert!(rendered.contains("operand-traffic"), "{rendered}");
+    assert!(rendered.contains("edge-traffic"), "{rendered}");
+    assert!(alloc::format!("{}", crate::plan::FrameTrace(&frame)).contains("frame"));
+}

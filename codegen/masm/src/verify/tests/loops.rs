@@ -208,6 +208,8 @@ pub(in crate::verify) fn loop_fixture(
     }
     let store = vec![PlanAction::Dup { depth: 1 }, PlanAction::StoreLane(slot)];
     let plan = ProcedurePlan {
+        debug_locations: Default::default(),
+        decisions: Default::default(),
         selected,
         contracts,
         segment_actions: actions,

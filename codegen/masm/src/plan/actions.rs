@@ -49,6 +49,10 @@ impl fmt::Display for PlanAction {
 /// independent verification must discharge those choices before serialization.
 #[derive(Debug, Clone)]
 pub(crate) struct ProcedurePlan {
+    /// Actual preparation and contract choices, retained without allocator-state copies.
+    pub decisions: diagnostics::PlanDecisions,
+    /// Relevant physical observations recorded without retaining values or requesting cells.
+    pub debug_locations: BTreeMap<DebugLocationId, crate::lower::debug::AllocatedObservation>,
     pub selected: crate::verify::CheckedSelectedProgram,
     /// Entry hypotheses that every actual incoming edge must establish.
     pub contracts: BTreeMap<SegmentId, EntryContract>,
@@ -67,6 +71,16 @@ impl fmt::Display for ProcedurePlan {
         writeln!(f, "procedure {:?}", self.selected.abi)?;
         for segment in &self.selected.segments {
             writeln!(f, "segment b{}", segment.id.0)?;
+            if let Some(decision) = self.decisions.entries.get(&segment.id) {
+                write!(f, "  contract={} costs=[", decision.origin)?;
+                for (index, cost) in decision.costs.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}:{}", cost.origin, cost.actions)?;
+                }
+                writeln!(f, "]")?;
+            }
             if let Some(contract) = self.contracts.get(&segment.id) {
                 write!(f, "  entry [")?;
                 for (i, atom) in contract.stack_top_first.iter().enumerate() {
@@ -82,6 +96,9 @@ impl fmt::Display for ProcedurePlan {
             }
             for unit in &segment.units {
                 writeln!(f, "  unit s{} kind={} source={}", unit.id.0, unit.kind.0, unit.source.0)?;
+                if let Some(decision) = self.decisions.preparations.get(&unit.id) {
+                    writeln!(f, "    tier={:?} victims={:?}", decision.tier, decision.victims)?;
+                }
                 if let Some(source) = self.selected.source_map.get(&unit.source) {
                     writeln!(
                         f,
@@ -96,17 +113,38 @@ impl fmt::Display for ProcedurePlan {
                 )?;
             }
             if let Some(actions) = self.segment_actions.get(&segment.id) {
+                let control = self.decisions.controls.get(&segment.id);
+                let start = control.map_or(actions.len(), |(start, ..)| *start);
+                let (loads, stores) = traffic(&actions[..start]);
+                writeln!(f, "  operand-traffic loads={loads} stores={stores}")?;
+                if let Some((_, edge, decision)) = control {
+                    let (loads, stores) = traffic(&actions[start..]);
+                    writeln!(
+                        f,
+                        "  edge-preparation e{} tier={:?} victims={:?} loads={loads} \
+                         stores={stores}",
+                        edge.0, decision.tier, decision.victims
+                    )?;
+                }
                 for action in actions {
                     writeln!(f, "  {action}")?;
                 }
             }
         }
         for (edge, actions) in &self.edge_actions {
-            writeln!(f, "edge e{}", edge.0)?;
+            let (loads, stores) = traffic(actions);
+            writeln!(f, "edge e{} edge-traffic loads={loads} stores={stores}", edge.0)?;
             for action in actions {
                 writeln!(f, "  {action}")?;
             }
         }
         Ok(())
     }
+}
+
+fn traffic(actions: &[PlanAction]) -> (usize, usize) {
+    (
+        actions.iter().filter(|a| matches!(a, PlanAction::LoadLane(_))).count(),
+        actions.iter().filter(|a| matches!(a, PlanAction::StoreLane(_))).count(),
+    )
 }

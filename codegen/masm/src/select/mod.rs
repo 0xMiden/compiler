@@ -64,6 +64,8 @@ pub(crate) struct HirEvidence {
     pub source: DefinitionEvidence,
     /// Instruction constructions indexed by the selected units' lowering kinds.
     pub definitions: Vec<HirUnit>,
+    /// Source-ordered observations, separate from semantic uses and equality.
+    pub observations: Vec<crate::lower::debug::Observation>,
 }
 
 impl HirEvidence {
@@ -91,6 +93,16 @@ pub(crate) fn evidence(
     env: &SelectEnv<'_>,
 ) -> Result<HirEvidence, Report> {
     graph::Selector::select(function, env)
+}
+
+/// Select a registered generated definition using only its semantic source parameters.
+/// Executable constructions must come from that same definition and are registered separately;
+/// successful selection remains subject to independent source and physical verification.
+pub(crate) fn select_generated(
+    definition: &dyn crate::verify::GeneratedDefinition,
+    parameters: &[midenc_hir::Felt],
+) -> Result<SelectedProgram, Report> {
+    Ok(definition.instantiate(parameters)?.program)
 }
 
 pub(crate) fn invalid(message: impl Into<alloc::string::String>) -> Report {

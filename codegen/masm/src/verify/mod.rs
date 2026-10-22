@@ -201,6 +201,7 @@ impl VerifiedProcedure {
                 match op {
                     masm::Op::Inst(inst) => {
                         let (kind, target) = match inst.inner() {
+                            masm::Instruction::ProcRef(t) => (masm::InvokeKind::ProcRef, t),
                             masm::Instruction::Exec(t) => (masm::InvokeKind::Exec, t),
                             masm::Instruction::Call(t) => (masm::InvokeKind::Call, t),
                             masm::Instruction::SysCall(t) => (masm::InvokeKind::SysCall, t),
