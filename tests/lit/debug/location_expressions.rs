@@ -8,7 +8,7 @@
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
-    loop {}
+    core::arch::wasm32::unreachable()
 }
 
 // Test that the function exists with 4 parameters
