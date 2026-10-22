@@ -1244,7 +1244,12 @@ mod tests {
         result
     }
 
-    fn cfg_location_fixture(source: &str) -> Vec<u8> {
+    fn cfg_location_fixture(
+        source: &str,
+        version: u16,
+        explicit_base: bool,
+        reuse_slot: bool,
+    ) -> Vec<u8> {
         let mut wasm = wat::parse_str(source).unwrap();
         let parsed = parse_module(&wasm);
         let body = parsed.function_body_inputs.values().next().unwrap();
@@ -1252,6 +1257,7 @@ mod tests {
         let mut reader = body.body.get_operators_reader().unwrap();
         let mut start = None;
         let mut end = None;
+        let mut resumed = None;
         while !reader.eof() {
             let (operator, offset) = reader.read_with_offset().unwrap();
             match operator {
@@ -1261,15 +1267,24 @@ mod tests {
                 wasmparser::Operator::Nop if end.is_none() => {
                     end = Some(parsed.wasm_file.dwarf_offset(offset));
                 }
+                wasmparser::Operator::LocalGet { local_index: 0 }
+                    if end.is_some() && resumed.is_none() =>
+                {
+                    resumed = Some(parsed.wasm_file.dwarf_offset(offset));
+                }
                 _ => {}
             }
         }
         let function_end = parsed.wasm_file.dwarf_offset(reader.original_position() as u64);
         let mut dwarf = dwarf_write::DwarfUnit::new(gimli::Encoding {
             format: gimli::Format::Dwarf32,
-            version: 4,
+            version,
             address_size: 4,
         });
+        dwarf.unit.get_mut(dwarf.unit.root()).set(
+            gimli::DW_AT_low_pc,
+            dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(0)),
+        );
         let function = dwarf.unit.add(dwarf.unit.root(), gimli::DW_TAG_subprogram);
         dwarf
             .unit
@@ -1283,18 +1298,23 @@ mod tests {
             gimli::DW_AT_high_pc,
             dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(function_end)),
         );
-        let locations = dwarf.unit.locations.add(dwarf_write::LocationList(vec![
-            dwarf_write::Location::OffsetPair {
-                begin: start.unwrap(),
-                end: end.unwrap(),
-                data: dwarf_write::Expression::raw(vec![
-                    gimli::DW_OP_WASM_location.0,
-                    0,
-                    1,
-                    gimli::DW_OP_stack_value.0,
-                ]),
-            },
-        ]));
+        let mut entries = Vec::new();
+        if explicit_base {
+            entries.push(dwarf_write::Location::BaseAddress {
+                address: dwarf_write::Address::Constant(0),
+            });
+        }
+        entries.push(dwarf_write::Location::OffsetPair {
+            begin: start.unwrap(),
+            end: end.unwrap(),
+            data: dwarf_write::Expression::raw(vec![
+                gimli::DW_OP_WASM_location.0,
+                0,
+                1,
+                gimli::DW_OP_stack_value.0,
+            ]),
+        });
+        let locations = dwarf.unit.locations.add(dwarf_write::LocationList(entries));
         let variable = dwarf.unit.add(function, gimli::DW_TAG_variable);
         dwarf
             .unit
@@ -1304,6 +1324,33 @@ mod tests {
             .unit
             .get_mut(variable)
             .set(gimli::DW_AT_location, dwarf_write::AttributeValue::LocationListRef(locations));
+        if reuse_slot {
+            dwarf
+                .unit
+                .get_mut(variable)
+                .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"earlier".to_vec()));
+            let locations = dwarf.unit.locations.add(dwarf_write::LocationList(vec![
+                dwarf_write::Location::StartEnd {
+                    begin: dwarf_write::Address::Constant(resumed.unwrap()),
+                    end: dwarf_write::Address::Constant(function_end),
+                    data: dwarf_write::Expression::raw(vec![
+                        gimli::DW_OP_WASM_location.0,
+                        0,
+                        1,
+                        gimli::DW_OP_stack_value.0,
+                    ]),
+                },
+            ]));
+            let variable = dwarf.unit.add(function, gimli::DW_TAG_variable);
+            dwarf
+                .unit
+                .get_mut(variable)
+                .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"later".to_vec()));
+            dwarf.unit.get_mut(variable).set(
+                gimli::DW_AT_location,
+                dwarf_write::AttributeValue::LocationListRef(locations),
+            );
+        }
         append_custom_sections(&mut wasm, dwarf_sections(&mut dwarf));
         wasm
     }
@@ -1331,10 +1378,15 @@ mod tests {
              local.get 0 i32.const 42 i32.xor",
             "local.get 0 if (result i32) nop i32.const 42 else i32.const 43 end",
         ] {
-            let wasm = cfg_location_fixture(&format!(
-                "(module (func $entrypoint (export \"entrypoint\") (param i32) (result i32) \
-                 (local i32) i32.const 7 local.set 1 {body}))"
-            ));
+            let wasm = cfg_location_fixture(
+                &format!(
+                    "(module (func $entrypoint (export \"entrypoint\") (param i32) (result i32) \
+                     (local i32) i32.const 7 local.set 1 {body}))"
+                ),
+                4,
+                false,
+                false,
+            );
             let options = Box::new(Options::default())
                 .with_output_types(Default::default(), None)
                 .with_debug_info(DebugInfo::Full);
@@ -1396,6 +1448,65 @@ mod tests {
                 inspected.iter().all(|available| !available),
                 "expired location survived: {body}: {inspected:?}"
             );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    #[ignore = "regenerates the DWARF custom sections in the location lit fixtures"]
+    fn write_debug_location_lit_fixtures() {
+        let conditional = "local.get 0 if nop else nop end local.get 0 i32.const 42 i32.xor";
+        for (name, body, version, explicit_base, reuse_slot) in [
+            ("location-list-base-v4", conditional, 4, false, false),
+            ("location-list-base-v5", conditional, 5, false, false),
+            ("reused-local-slot", conditional, 4, true, true),
+            ("location-cfg-if", conditional, 4, true, false),
+            (
+                "location-cfg-br-if",
+                "block local.get 0 br_if 0 nop end local.get 0 i32.const 42 i32.xor",
+                4,
+                true,
+                false,
+            ),
+            (
+                "location-cfg-br-table",
+                "block block local.get 0 br_table 0 1 end nop end local.get 0 i32.const 42 i32.xor",
+                4,
+                true,
+                false,
+            ),
+            (
+                "location-cfg-loop",
+                "block loop local.get 0 if nop i32.const 0 local.set 0 br 1 else nop end br 1 end \
+                 end local.get 0 i32.const 42 i32.xor",
+                4,
+                true,
+                false,
+            ),
+            (
+                "location-cfg-return",
+                "local.get 0 if (result i32) nop i32.const 42 else i32.const 43 end",
+                4,
+                true,
+                false,
+            ),
+        ] {
+            let wasm = cfg_location_fixture(
+                &format!(
+                    "(module (func $entrypoint (export \"entrypoint\") (param i32) (result i32) \
+                     (local i32) i32.const 7 local.set 1 {body}))"
+                ),
+                version,
+                explicit_base,
+                reuse_slot,
+            );
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/lit/debug")
+                .join(format!("{name}.wat"));
+            let fixture = std::fs::read_to_string(&path).unwrap_or_default();
+            let header = fixture.split_once("(module").map_or("", |(header, _)| header);
+            let module = wasmprinter::print_bytes(&wasm).unwrap();
+            std::fs::write(path, format!("{header}{}\n", module.trim_end())).unwrap();
         }
     }
 
