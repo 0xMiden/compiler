@@ -207,7 +207,11 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         if let Some((file, _directory, line, column)) = fallback {
             fill_debug_attr_location(&mut local.attr, file, line, column);
         }
-        Some((local.attr.clone(), local.expression.clone(), !local.locations.is_empty()))
+        Some((
+            local.attr.clone(),
+            local.expression.clone(),
+            local.scope.is_some() || !local.locations.is_empty(),
+        ))
     }
 
     pub fn set_inline_calls(&mut self, inline_calls: Vec<InlineCallFrame>) {

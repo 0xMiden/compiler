@@ -25,6 +25,10 @@ use crate::module::types::ModuleTypesBuilder;
 
 mod declaration;
 pub(crate) use declaration::FunctionDeclaration;
+mod locations;
+use locations::build_location_schedule;
+mod scope;
+use scope::{ScopeRange, VariableScope};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocationDescriptor {
@@ -40,6 +44,7 @@ pub struct LocalDebugInfo {
     pub attr: Variable,
     pub locations: Vec<LocationDescriptor>,
     pub expression: Option<Expression>,
+    pub(crate) scope: Option<Rc<VariableScope>>,
 }
 
 #[derive(Clone)]
@@ -59,6 +64,7 @@ struct DwarfLocalData {
     locations: Vec<LocationDescriptor>,
     decl_line: Option<u32>,
     decl_column: Option<u32>,
+    scope: Option<Rc<VariableScope>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -163,7 +169,7 @@ fn build_function_debug_info(
     }
 
     let wasm_signature = module_types[module.functions[func_index].signature].clone();
-    let locals = build_local_debug_info(
+    let mut locals = build_local_debug_info(
         module,
         func_index,
         &wasm_signature,
@@ -173,7 +179,7 @@ fn build_function_debug_info(
         dwarf_locals,
         scheduled_vars,
     );
-    let location_schedule = build_location_schedule(&locals);
+    let location_schedule = build_location_schedule(&mut locals);
 
     Some(FunctionDebugInfo {
         compile_unit,
@@ -297,6 +303,7 @@ fn build_local_debug_info(
             attr,
             locations,
             expression,
+            scope: dwarf_info.and_then(|info| info.scope),
         });
     }
 
@@ -347,6 +354,7 @@ fn build_local_debug_info(
                 attr,
                 locations,
                 expression,
+                scope: dwarf_info.and_then(|info| info.scope),
             });
             next_local_index += 1;
         }
@@ -376,45 +384,12 @@ fn build_local_debug_info(
                 attr,
                 locations: var.locations.clone(),
                 expression,
+                scope: var.scope.clone(),
             }));
         }
     }
 
     locals
-}
-
-fn build_location_schedule(locals: &[Option<LocalDebugInfo>]) -> Vec<LocationScheduleEntry> {
-    let mut schedule = Vec::new();
-    for (var_index, info_opt) in locals.iter().enumerate() {
-        let Some(info) = info_opt else {
-            continue;
-        };
-        let supported: Vec<_> = info
-            .locations
-            .iter()
-            .filter(|descriptor| is_supported_location_expression(&descriptor.storage))
-            .collect();
-        for descriptor in &supported {
-            schedule.push(LocationScheduleEntry {
-                offset: descriptor.start,
-                var_index,
-                storage: Some(descriptor.storage.clone()),
-            });
-            if let Some(end) = descriptor.end {
-                // Keep the kill even when another range starts at the same offset. A supported
-                // DWARF expression is not necessarily representable by the backend (for example,
-                // an unresolved global slot), so the kill prevents an earlier
-                // location from remaining active across a range boundary.
-                schedule.push(LocationScheduleEntry {
-                    offset: end,
-                    var_index,
-                    storage: None,
-                });
-            }
-        }
-    }
-    schedule.sort_by_key(|entry| (entry.offset, entry.storage.is_some()));
-    schedule
 }
 
 /// Collected DWARF local data for all functions.
@@ -648,6 +623,13 @@ fn collect_subprogram_variables<R: gimli::Reader<Offset = usize>>(
     let root = tree.root()?;
     let mut children = root.children();
     let mut param_counter: u32 = 0;
+    let scope = VariableScope::new(
+        vec![ScopeRange {
+            start: low_pc,
+            end: high_pc,
+        }],
+        None,
+    );
     while let Some(child) = children.next()? {
         walk_variable_nodes(
             dwarf,
@@ -658,6 +640,7 @@ fn collect_subprogram_variables<R: gimli::Reader<Offset = usize>>(
             low_pc,
             high_pc,
             frame_base,
+            scope.clone(),
             results,
             scheduled_results,
             &mut param_counter,
@@ -676,6 +659,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
     low_pc: u64,
     high_pc: Option<u64>,
     frame_base: Option<FrameBase>,
+    scope: Rc<VariableScope>,
     results: &mut FxHashMap<FuncIndex, FxHashMap<u32, DwarfLocalData>>,
     scheduled_results: &mut FxHashMap<FuncIndex, Vec<DwarfLocalData>>,
     param_counter: &mut u32,
@@ -685,6 +669,19 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
     if tag == gimli::DW_TAG_inlined_subroutine {
         return Ok(());
     }
+    let scope = if tag == gimli::DW_TAG_lexical_block {
+        let mut ranges = Vec::new();
+        let mut entries = dwarf.die_ranges(unit, entry)?;
+        while let Some(range) = entries.next()? {
+            ranges.push(ScopeRange {
+                start: range.begin,
+                end: Some(range.end),
+            });
+        }
+        VariableScope::new(ranges, Some(scope))
+    } else {
+        scope
+    };
     match tag {
         gimli::DW_TAG_formal_parameter | gimli::DW_TAG_variable => {
             // For formal parameters, the WASM local index equals the parameter
@@ -697,7 +694,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
                 None
             };
             let mut scheduled_vars = Vec::new();
-            if let Some((local_index, data)) = decode_variable_entry(
+            if let Some((local_index, mut data)) = decode_variable_entry(
                 dwarf,
                 unit,
                 module,
@@ -708,6 +705,8 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
                 fallback_index,
                 &mut scheduled_vars,
             )? {
+                data.locations = scope.restrict_locations(data.locations);
+                data.scope = Some(scope.clone());
                 let local_map = results.entry(func_index).or_default();
                 match local_map.entry(local_index) {
                     Entry::Vacant(entry) => {
@@ -719,6 +718,10 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
                 }
             }
             if !scheduled_vars.is_empty() {
+                for data in &mut scheduled_vars {
+                    data.locations = scope.restrict_locations(core::mem::take(&mut data.locations));
+                    data.scope = Some(scope.clone());
+                }
                 scheduled_results.entry(func_index).or_default().extend(scheduled_vars);
             }
         }
@@ -736,6 +739,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
             low_pc,
             high_pc,
             frame_base,
+            scope.clone(),
             results,
             scheduled_results,
             param_counter,
@@ -791,106 +795,61 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
         }
     }
 
-    let Some(location_value) = location_attr else {
-        return Ok(None);
-    };
-
     let mut locations = Vec::new();
-
-    match location_value {
-        AttributeValue::Exprloc(ref expr) => {
-            let storage =
-                decode_storage_from_expression(expr, unit.encoding(), module, frame_base)?;
-            if let Some(storage) = storage {
-                if let Some(local_index) = fallback_index {
-                    locations.push(LocationDescriptor {
-                        start: low_pc,
-                        // A single-location description is valid for the variable's whole scope;
-                        // there is no lifetime end to schedule
-                        end: None,
-                        storage,
-                    });
-                    let data = DwarfLocalData {
-                        name: name_symbol,
-                        decl_file,
-                        locations,
-                        decl_line,
-                        decl_column,
-                    };
-                    return Ok(Some((local_index, data)));
-                } else if is_supported_location_expression(&storage) {
-                    // Variables with no fixed WASM local index are emitted from their explicit
-                    // location expression instead of being dropped.
-                    locations.push(LocationDescriptor {
-                        start: low_pc,
-                        end: None,
-                        storage,
-                    });
-                    let data = DwarfLocalData {
-                        name: name_symbol,
-                        decl_file,
-                        locations,
-                        decl_line,
-                        decl_column,
-                    };
-                    scheduled_vars.push(data);
-                    return Ok(None);
-                }
+    match location_attr {
+        Some(AttributeValue::Exprloc(expr)) => {
+            if let Some(storage) =
+                decode_storage_from_expression(&expr, unit.encoding(), module, frame_base)?
+            {
+                locations.push(LocationDescriptor {
+                    start: low_pc,
+                    end: None,
+                    storage,
+                });
             }
-            return Ok(None);
         }
-        AttributeValue::LocationListsRef(_) | AttributeValue::DebugLocListsIndex(_) => {
+        Some(
+            location_value @ (AttributeValue::LocationListsRef(_)
+            | AttributeValue::DebugLocListsIndex(_)),
+        ) => {
             let Some(mut iter) = dwarf.attr_locations(unit, location_value)? else {
                 return Ok(None);
             };
             while let Some(entry) = iter.next()? {
-                let storage_expr = entry.data;
-                if let Some(storage) = decode_storage_from_expression(
-                    &storage_expr,
+                let storage = decode_storage_from_expression(
+                    &entry.data,
                     unit.encoding(),
                     module,
                     frame_base,
-                )? && is_supported_location_expression(&storage)
-                {
-                    // A range covering through the end of the subprogram means the variable is
-                    // live at this location until scope end; suppress the end event so no
-                    // pointless (and harmfully placed) terminal kill is scheduled
-                    let end = match high_pc {
-                        Some(high_pc) if entry.range.end >= high_pc => None,
-                        _ => Some(entry.range.end),
-                    };
-                    locations.push(LocationDescriptor {
-                        start: entry.range.begin,
-                        end,
-                        storage,
-                    });
-                }
+                )?
+                .unwrap_or_default();
+                let end = match high_pc {
+                    Some(high_pc) if entry.range.end >= high_pc => None,
+                    _ => Some(entry.range.end),
+                };
+                locations.push(LocationDescriptor {
+                    start: entry.range.begin,
+                    end,
+                    storage,
+                });
             }
-            if locations.is_empty() {
-                return Ok(None);
-            }
-            let data = DwarfLocalData {
-                name: name_symbol,
-                decl_file,
-                locations,
-                decl_line,
-                decl_column,
-            };
-
-            if let Some(local_index) = fallback_index {
-                // Formal parameters still map one-to-one to the leading Wasm locals. Keep the
-                // full location list on that local so scheduled updates can use the actual storage
-                // expression without appending a duplicate source variable.
-                return Ok(Some((local_index, data)));
-            }
-
-            scheduled_vars.push(data);
-            return Ok(None);
         }
         _ => {}
     }
-
-    Ok(None)
+    let data = DwarfLocalData {
+        name: name_symbol,
+        decl_file,
+        locations,
+        decl_line,
+        decl_column,
+        scope: None,
+    };
+    if let Some(index) = fallback_index {
+        Ok(Some((index, data)))
+    } else {
+        scheduled_vars.push(data);
+        Ok(None)
+    }
 }
 
 fn fixed_location_expression(locations: &[LocationDescriptor]) -> Option<Expression> {
@@ -1209,13 +1168,14 @@ mod tests {
                 ))]),
             },
         ];
-        let locals = vec![Some(LocalDebugInfo {
+        let mut locals = vec![Some(LocalDebugInfo {
             attr: variable,
             locations,
             expression: None,
+            scope: None,
         })];
 
-        let schedule = build_location_schedule(&locals);
+        let schedule = build_location_schedule(&mut locals);
 
         assert_eq!(schedule.len(), 3);
         assert_eq!(schedule[0].offset, 4);
@@ -1332,6 +1292,101 @@ mod tests {
             assert_eq!(
                 declaration.locations[0].storage.operations,
                 [ExpressionOp::LocalSlot(1), ExpressionOp::StackValue]
+            );
+        }
+    }
+
+    #[test]
+    fn lexical_visibility_is_preserved_even_without_a_supported_location() {
+        for supported in [false, true] {
+            let mut wasm = wat::parse_str(
+                "(module (func $entrypoint (export \"entrypoint\") (result i32) i32.const 0))",
+            )
+            .unwrap();
+            let mut dwarf = dwarf_write::DwarfUnit::new(gimli::Encoding {
+                format: gimli::Format::Dwarf32,
+                version: 4,
+                address_size: 4,
+            });
+            let function = dwarf.unit.add(dwarf.unit.root(), gimli::DW_TAG_subprogram);
+            dwarf.unit.get_mut(function).set(
+                gimli::DW_AT_name,
+                dwarf_write::AttributeValue::String(b"entrypoint".to_vec()),
+            );
+            dwarf.unit.get_mut(function).set(
+                gimli::DW_AT_low_pc,
+                dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(0)),
+            );
+            dwarf.unit.get_mut(function).set(
+                gimli::DW_AT_high_pc,
+                dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(100)),
+            );
+            let inner = dwarf.unit.add(function, gimli::DW_TAG_lexical_block);
+            dwarf.unit.get_mut(inner).set(
+                gimli::DW_AT_low_pc,
+                dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(10)),
+            );
+            dwarf.unit.get_mut(inner).set(
+                gimli::DW_AT_high_pc,
+                dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(20)),
+            );
+            for (scope, value) in [(function, 15), (inner, 25)] {
+                let variable = dwarf.unit.add(scope, gimli::DW_TAG_variable);
+                dwarf
+                    .unit
+                    .get_mut(variable)
+                    .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"x".to_vec()));
+                if scope == function || supported {
+                    dwarf.unit.get_mut(variable).set(
+                        gimli::DW_AT_location,
+                        dwarf_write::AttributeValue::Exprloc(dwarf_write::Expression::raw(vec![
+                            gimli::DW_OP_constu.0,
+                            value,
+                            gimli::DW_OP_stack_value.0,
+                        ])),
+                    );
+                }
+            }
+            append_custom_sections(&mut wasm, dwarf_sections(&mut dwarf));
+            let parsed = parse_module(&wasm);
+            let collected =
+                collect_dwarf_local_data(&parsed, &parsed.module, &DiagnosticsHandler::default());
+            let mut variables = collected.scheduled[&FuncIndex::new(0)].iter().collect::<Vec<_>>();
+            variables.sort_by_key(|variable| variable.scope.as_ref().unwrap().depth);
+            assert_eq!(variables.len(), 2);
+            let inner = &variables[1];
+            assert!(inner.scope.as_ref().unwrap().contains(10));
+            assert!(!inner.scope.as_ref().unwrap().contains(20));
+            if supported {
+                assert_eq!((inner.locations[0].start, inner.locations[0].end), (10, Some(20)));
+            } else {
+                assert!(inner.locations.is_empty());
+            }
+            let mut locals = variables
+                .iter()
+                .map(|variable| {
+                    Some(LocalDebugInfo {
+                        attr: Variable::new(
+                            variable.name.unwrap(),
+                            Symbol::intern("scope.rs"),
+                            1,
+                            None,
+                        ),
+                        locations: variable.locations.clone(),
+                        expression: fixed_location_expression(&variable.locations),
+                        scope: variable.scope.clone(),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let schedule = build_location_schedule(&mut locals);
+            assert!(schedule.iter().any(|entry| entry.offset == 20
+                && entry.var_index == 0
+                && entry.storage.is_some()));
+            assert_eq!(
+                schedule.iter().any(|entry| entry.offset == 10
+                    && entry.var_index == 1
+                    && entry.storage.is_some()),
+                supported
             );
         }
     }
