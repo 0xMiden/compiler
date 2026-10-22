@@ -293,6 +293,8 @@ pub(crate) enum HirBody {
     Plain(alloc::vec::Vec<masm::Instruction>),
     /// One phase of a checked indirect call, with explicit storage between phases.
     Indirect(calls::Indirect),
+    /// A resolved direct invocation with its declared procedure ABI.
+    Direct(calls::Direct),
 }
 impl LoweringDefinition for HirUnit {
     fn kind(&self) -> LoweringKind {
@@ -318,6 +320,7 @@ impl LoweringDefinition for HirUnit {
                 }
                 Ok(body)
             }
+            HirBody::Direct(definition) => definition.expand(unit, bindings, frame, env),
             HirBody::Indirect(definition) => definition.expand(unit, bindings, frame, env),
         }
     }

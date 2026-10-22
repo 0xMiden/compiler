@@ -118,7 +118,7 @@ pub(super) fn invocation_target_from_symbol(
     }
 }
 
-fn resolve_invocation_callee(
+pub(super) fn resolve_invocation_callee(
     call: &dyn midenc_hir::CallOpInterface,
 ) -> Result<midenc_hir::ResolvedSymbolCallee, Report> {
     call.resolve_symbol_callee().map_err(|err| {
@@ -2845,6 +2845,7 @@ final_selection! {
     ub::Unreachable => Trap, cf::CondBr => TerminalBranch,
     hir::PtrToInt => Alias, hir::IntToPtr => Alias, hir::Bitcast => Alias,
     arith::Split => Split, arith::Join => Join,
+    hir::Exec => DirectCall, hir::Call => DirectCall, hir::Syscall => DirectCall,
     hir::Dyncall => Dyncall, hir::ExecIndirect => ExecIndirect,
     debuginfo::DebugValue => Debug, debuginfo::DebugDeclare => Debug, debuginfo::DebugKill => Debug,
 }

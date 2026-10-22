@@ -165,7 +165,11 @@ impl<'a, 'e> Selector<'a, 'e> {
             signature.params().iter().map(|p| p.ty.clone()),
             "function entry parameters disagree with declared signature",
         )?;
-        let convention = calling_convention(&signature.cc)?;
+        let convention = if crate::lower::units::calls::is_kernel(function) {
+            CallingConvention::Kernel
+        } else {
+            calling_convention(&signature.cc)?
+        };
         let abi = ProcedureAbi::new(
             convention,
             lanes(signature.params().iter().map(|p| p.ty.clone()))?,
@@ -604,6 +608,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                 SelectionRule::Dyncall | SelectionRule::ExecIndirect => {
                     self.indirect(&op, current, &mut flow)?
                 }
+                SelectionRule::DirectCall => self.direct(&op, current)?,
                 SelectionRule::Debug => {}
                 rule => {
                     let inputs =
@@ -1172,6 +1177,132 @@ impl<'a, 'e> Selector<'a, 'e> {
         Ok(())
     }
 
+    fn direct(&mut self, op: &Operation, segment: SegmentId) -> Result<(), Report> {
+        use crate::lower::units::calls;
+        let call = op.as_trait::<dyn midenc_hir::CallOpInterface>().unwrap();
+        let (resolved, target) = calls::resolve_direct(call)?;
+        let symbol = resolved.target().as_symbol_ref();
+        let symbol = symbol.borrow();
+        if calls::is_truncate(&*symbol) {
+            return Err(super::invalid("truncate_stack requires registered return cleanup"));
+        }
+        let signature = resolved.signature();
+        let convention = if calls::is_kernel(&*symbol) {
+            CallingConvention::Kernel
+        } else {
+            calling_convention(&signature.cc)?
+        };
+        let abi = ProcedureAbi::new(
+            convention,
+            lanes(signature.params().iter().map(|p| p.ty.clone()))?,
+            lanes(signature.results().iter().map(|p| p.ty.clone()))?,
+        )?;
+        let instruction = if op.is::<midenc_dialect_hir::Exec>() {
+            I::Exec(target)
+        } else if op.is::<midenc_dialect_hir::Call>() {
+            I::Call(target)
+        } else {
+            I::SysCall(target)
+        };
+        let definition = calls::Direct { abi, instruction };
+        require_types(
+            result_types(op),
+            signature.results().iter().map(|p| p.ty.clone()),
+            "direct results disagree with target signature",
+        )?;
+        let mut arguments =
+            self.ids(op.operands().all().iter().map(|v| v.borrow().as_value_ref()))?;
+        if arguments.len() != signature.params().len() {
+            return Err(super::invalid("direct argument count disagrees with target signature"));
+        }
+        let source = self.sources[&op.as_operation_ref()];
+        for (index, (argument, param)) in arguments.iter_mut().zip(signature.params()).enumerate() {
+            let ty = self.program.values[argument].layout.ty().clone();
+            if param.is_sret_param()
+                && (index != 0 || !signature.results().is_empty() || !ty.is_pointer())
+            {
+                return Err(super::invalid(
+                    "sret requires first pointer argument and no direct results",
+                ));
+            }
+            if ty == param.ty {
+                continue;
+            }
+            use builtin::attributes::ArgumentExtension;
+            let valid = match param.extension() {
+                ArgumentExtension::None => false,
+                ArgumentExtension::Zext => {
+                    ty.is_unsigned_integer()
+                        && param.ty.is_unsigned_integer()
+                        && ty.size_in_bits() <= param.ty.size_in_bits()
+                }
+                ArgumentExtension::Sext => {
+                    ty.is_integer()
+                        && param.ty.is_signed_integer()
+                        && if ty.is_unsigned_integer() {
+                            ty.size_in_bits() < param.ty.size_in_bits()
+                        } else {
+                            ty.size_in_bits() <= param.ty.size_in_bits()
+                        }
+                }
+            };
+            if !valid {
+                return Err(super::invalid("invalid direct argument extension"));
+            }
+            let mut conversion = crate::lower::units::arithmetic::Arithmetic::extension(
+                op,
+                ty,
+                param.ty.clone(),
+                param.extension(),
+            )?;
+            let converted = self.temporary(source, param.ty.clone())?;
+            let inputs = self.atoms(&[*argument]);
+            let outputs = self.atoms(&[converted]);
+            conversion.bind(&inputs, &outputs);
+            let proof = core::mem::take(&mut conversion.proof);
+            let effects = conversion.effects.clone();
+            self.add_unit(
+                segment,
+                source,
+                UnitSelection {
+                    inputs,
+                    stored: vec![],
+                    outputs,
+                    body: HirBody::Arithmetic(Box::new(conversion)),
+                    proof,
+                    effects,
+                    scratch: vec![],
+                    scratch_effects: vec![],
+                },
+            )?;
+            *argument = converted;
+        }
+        let outputs = self.results(op)?;
+        let id = SelectedStepId(index(self.definitions.len())?);
+        let (unit, proof) = definition.select(
+            LoweringKind(id.0),
+            id,
+            source,
+            &self.atoms(&arguments),
+            &self.atoms(&outputs),
+        )?;
+        self.add_unit(
+            segment,
+            source,
+            UnitSelection {
+                inputs: unit.stack_inputs,
+                stored: unit.stored_inputs,
+                outputs: unit.outputs,
+                body: HirBody::Direct(definition),
+                proof,
+                effects: unit.effects,
+                scratch: unit.scratch,
+                scratch_effects: unit.scratch_effects,
+            },
+        )?;
+        Ok(())
+    }
+
     fn indirect(
         &mut self,
         op: &Operation,
@@ -1310,6 +1441,30 @@ impl<'a, 'e> Selector<'a, 'e> {
                 .as_symbol_operation()
                 .downcast_ref::<builtin::FunctionTable>()
                 .ok_or_else(|| super::invalid("indirect symbol is not a function table"))?;
+            for entry in table
+                .live_entries()
+                .map_err(|_| super::invalid("invalid table body"))?
+                .into_values()
+            {
+                let entry = entry.borrow();
+                if *entry.get_type_tag() != *call.get_type_tag() {
+                    continue;
+                }
+                let callee = entry.resolve_callable().map_err(|e| super::invalid(e.to_string()))?;
+                let symbol = callee.target().as_symbol_ref();
+                let symbol = symbol.borrow();
+                if crate::lower::units::calls::is_truncate(&*symbol) {
+                    return Err(super::invalid(
+                        "truncate_stack requires registered return cleanup",
+                    ));
+                }
+                let convention = if crate::lower::units::calls::is_kernel(&*symbol) {
+                    CallingConvention::Kernel
+                } else {
+                    calling_convention(&callee.signature().cc)?
+                };
+                ProcedureAbi::new(convention, 0, 0)?.invocation(Invocation::DynExec)?;
+            }
             let slots = *table.get_num_slots();
             let base = self
                 .env

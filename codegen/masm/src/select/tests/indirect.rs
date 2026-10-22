@@ -261,7 +261,26 @@ fn sixteen_argument_dyncall_preserves_a_root_argument_used_after_the_call() {
     let analysis = crate::allocate::analysis::analyze(&selected);
     assert!(analysis.after[&dispatch.id].contains(stage.stack_inputs[0].value));
     let (plan, frame, body) = ready(&f, &SelectEnv::default());
-    verify::verify(&plan, &frame, body).unwrap();
+    let procedure = verify::verify(&plan, &frame, body)
+        .unwrap()
+        .into_masm(crate::masm::ProcedureName::new("selected").unwrap())
+        .unwrap()
+        .to_pretty_string();
+    let mut callee = String::from("proc callee ");
+    for i in 1..16 {
+        if i == 1 {
+            callee.push_str("swap.1 push.801 swap.1 drop swap.1 ");
+        } else {
+            callee.push_str(&alloc::format!("movup.{i} push.{} swap.1 drop movdn.{i} ", 800 + i));
+        }
+    }
+    callee.push_str("end");
+    execute_code(&alloc::format!(
+        "{callee} {procedure} begin push.902 push.901 {} procref.callee exec.selected dup.0 dup.2 \
+         assert_eq drop drop push.901 assert_eq push.902 assert_eq end",
+        crate::plan::tests::lowering_units::push_top(&(1..16).collect::<Vec<_>>()),
+    ))
+    .unwrap();
 }
 #[test]
 fn sixteen_argument_table_exec_preserves_its_address_and_live_after_argument() {
@@ -361,4 +380,154 @@ fn indirect_results_must_match_declared_signature_types_and_arity() {
             }
         }
     }
+}
+
+#[test]
+fn live_table_entry_cannot_hide_depth_sensitive_helper() {
+    let f = parse_module_function(
+        r#"builtin.module public @miden {
+        builtin.module public @core { builtin.module public @sys {
+            builtin.function public extern("C") @truncate_stack() { builtin.ret; };
+        }; };
+        builtin.function_alias public @arbitrary -> @core::@sys::@truncate_stack;
+        builtin.function_table private @table : 1 { builtin.function_table_entry 0 @arbitrary tag 7; };
+        builtin.function public extern("C") @dispatch(%i: u32) {
+            hir.exec_indirect @table[%i]() : extern("C") () -> () tag 7; builtin.ret;
+        };
+    };"#,
+    );
+    let info = linked(&f);
+    let error = select_function(
+        &f.borrow(),
+        &SelectEnv {
+            link_info: Some(&info),
+        },
+    )
+    .unwrap_err();
+    assert!(alloc::format!("{error:?}").contains("registered return cleanup"), "{error:?}");
+}
+
+#[test]
+fn live_table_entry_cannot_hide_kernel_convention() {
+    let f = parse_module_function(include_str!("fixtures/indirect-table.hir"));
+    let mut owner = f.borrow().as_operation().nearest_symbol_table().unwrap();
+    owner
+        .borrow_mut()
+        .downcast_mut::<builtin::Module>()
+        .unwrap()
+        .set_name(midenc_hir::Ident::from("$kernel"));
+    let info = linked(&f);
+    let error = select_function(
+        &f.borrow(),
+        &SelectEnv {
+            link_info: Some(&info),
+        },
+    )
+    .unwrap_err();
+    assert!(alloc::format!("{error:?}").contains("invocation family"), "{error:?}");
+}
+
+#[test]
+fn indirect_same_type_extension_attributes_remain_noops_and_types_are_exact() {
+    use builtin::attributes::AbiParam;
+    use midenc_hir::Type;
+    for table in [false, true] {
+        let f = if table {
+            parse_module_function(
+                &include_str!("fixtures/indirect-table.hir").replace("felt", "u8"),
+            )
+        } else {
+            parse(
+                r#"builtin.function public extern("C") @dispatch(%r0: felt,%r1: felt,%r2: felt,%r3: felt,%x: u8) -> u8 {
+                %r=hir.dyncall [%r0,%r1,%r2,%r3](%x) : extern("component-model") (u8) -> u8;
+                builtin.ret %r : (u8);
+            };"#,
+            )
+        };
+        let call = f
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .next()
+            .unwrap()
+            .as_operation_ref();
+        if table {
+            let mut typed = call.try_downcast_op::<crate::hir::ExecIndirect>().unwrap();
+            *typed.borrow_mut().get_signature_mut().param_mut(0).unwrap() =
+                AbiParam::zext(Type::U8, &f.context);
+            let module = f.borrow().as_operation().nearest_symbol_table().unwrap();
+            let mut target = module
+                .borrow()
+                .downcast_ref::<builtin::Module>()
+                .unwrap()
+                .body()
+                .entry()
+                .body()
+                .iter()
+                .find_map(|op| op.as_operation_ref().try_downcast_op::<builtin::Function>().ok())
+                .unwrap();
+            *target.borrow_mut().get_signature_mut().param_mut(0).unwrap() =
+                AbiParam::zext(Type::U8, &f.context);
+        } else {
+            let mut typed = call.try_downcast_op::<crate::hir::Dyncall>().unwrap();
+            *typed.borrow_mut().get_signature_mut().param_mut(0).unwrap() =
+                AbiParam::zext(Type::U8, &f.context);
+        }
+        let info = table.then(|| linked(&f));
+        let env = SelectEnv {
+            link_info: info.as_ref(),
+        };
+        let (plan, frame, body) = ready(&f, &env);
+        verify::verify(&plan, &frame, body).unwrap();
+        let operand = if table { 1 } else { 4 };
+        let mut argument = call.borrow().operands().all()[operand].borrow().as_value_ref();
+        argument.borrow_mut().set_type(Type::U16);
+        assert!(select_function(&f.borrow(), &env).is_err());
+    }
+}
+
+#[test]
+fn context_signature_bounds_exclude_only_actual_arguments_and_results() {
+    for results in [false, true] {
+        let types = vec!["felt"; 17].join(",");
+        let args = vec!["%r0"; 17].join(",");
+        let call = if results {
+            alloc::format!(
+                "%r:17=hir.dyncall [%r0,%r1,%r2,%r3]() : extern(\"component-model\") () -> \
+                 ({types});"
+            )
+        } else {
+            alloc::format!(
+                "hir.dyncall [%r0,%r1,%r2,%r3]({args}) : extern(\"component-model\") ({types}) -> \
+                 ();"
+            )
+        };
+        let f = parse(&alloc::format!(
+            "builtin.function public extern(\"C\") @dispatch(%r0: felt,%r1: felt,%r2: felt,%r3: \
+             felt) {{ {call} builtin.ret; }};"
+        ));
+        let error = select_function(&f.borrow(), &SelectEnv::default()).unwrap_err();
+        assert!(alloc::format!("{error:?}").contains("sixteen-lane window"), "{error:?}");
+    }
+}
+
+#[test]
+fn table_matching_tag_requires_complete_convention() {
+    let f = parse_module_function(include_str!("fixtures/indirect-table.hir"));
+    let module = f.borrow().as_operation().nearest_symbol_table().unwrap();
+    let mut target = module
+        .borrow()
+        .downcast_ref::<builtin::Module>()
+        .unwrap()
+        .body()
+        .entry()
+        .body()
+        .iter()
+        .find_map(|op| op.as_operation_ref().try_downcast_op::<builtin::Function>().ok())
+        .unwrap();
+    target.borrow_mut().get_signature_mut().cc = midenc_hir::CallConv::ComponentModel;
+    let error = select_function(&f.borrow(), &SelectEnv::default()).unwrap_err();
+    assert!(alloc::format!("{error:?}").contains("mismatched stack contract"), "{error:?}");
 }
