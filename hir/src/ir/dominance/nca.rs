@@ -411,7 +411,7 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
         }
     }
 
-    /// [PostDominatorTree] always has a virtual root that represents a virtual CFG node that serves
+    /// [super::PostDominanceTree] always has a virtual root that represents a virtual CFG node that serves
     /// as a single exit from the region.
     ///
     /// All the other exits (CFG nodes with terminators and nodes in infinite loops) are logically
@@ -1128,7 +1128,7 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
 
     /// Handle deletions that make destination node unreachable.
     ///
-    /// (Based on the lemma 2.7 from the [2].)
+    /// (Based on the lemma 2.7 from the \[2\].)
     fn delete_unreachable(
         tree: &mut DomTreeBase<IS_POST_DOM>,
         bui: Option<&BatchUpdateInfo<IS_POST_DOM>>,
