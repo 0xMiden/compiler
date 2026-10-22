@@ -26,6 +26,7 @@ use crate::module::types::ModuleTypesBuilder;
 mod declaration;
 pub(crate) use declaration::FunctionDeclaration;
 mod locations;
+pub(crate) use locations::LocationIndex;
 use locations::build_location_schedule;
 mod scope;
 use scope::{ScopeRange, VariableScope};
@@ -1241,6 +1242,161 @@ mod tests {
             })
             .unwrap();
         result
+    }
+
+    fn cfg_location_fixture(source: &str) -> Vec<u8> {
+        let mut wasm = wat::parse_str(source).unwrap();
+        let parsed = parse_module(&wasm);
+        let body = parsed.function_body_inputs.values().next().unwrap();
+        let function_start = parsed.wasm_file.dwarf_offset(body.body_offset);
+        let mut reader = body.body.get_operators_reader().unwrap();
+        let mut start = None;
+        let mut end = None;
+        while !reader.eof() {
+            let (operator, offset) = reader.read_with_offset().unwrap();
+            match operator {
+                wasmparser::Operator::LocalGet { local_index: 0 } if start.is_none() => {
+                    start = Some(parsed.wasm_file.dwarf_offset(offset));
+                }
+                wasmparser::Operator::Nop if end.is_none() => {
+                    end = Some(parsed.wasm_file.dwarf_offset(offset));
+                }
+                _ => {}
+            }
+        }
+        let function_end = parsed.wasm_file.dwarf_offset(reader.original_position() as u64);
+        let mut dwarf = dwarf_write::DwarfUnit::new(gimli::Encoding {
+            format: gimli::Format::Dwarf32,
+            version: 4,
+            address_size: 4,
+        });
+        let function = dwarf.unit.add(dwarf.unit.root(), gimli::DW_TAG_subprogram);
+        dwarf
+            .unit
+            .get_mut(function)
+            .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"entrypoint".to_vec()));
+        dwarf.unit.get_mut(function).set(
+            gimli::DW_AT_low_pc,
+            dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(function_start)),
+        );
+        dwarf.unit.get_mut(function).set(
+            gimli::DW_AT_high_pc,
+            dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(function_end)),
+        );
+        let locations = dwarf.unit.locations.add(dwarf_write::LocationList(vec![
+            dwarf_write::Location::OffsetPair {
+                begin: start.unwrap(),
+                end: end.unwrap(),
+                data: dwarf_write::Expression::raw(vec![
+                    gimli::DW_OP_WASM_location.0,
+                    0,
+                    1,
+                    gimli::DW_OP_stack_value.0,
+                ]),
+            },
+        ]));
+        let variable = dwarf.unit.add(function, gimli::DW_TAG_variable);
+        dwarf
+            .unit
+            .get_mut(variable)
+            .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"tracked".to_vec()));
+        dwarf
+            .unit
+            .get_mut(variable)
+            .set(gimli::DW_AT_location, dwarf_write::AttributeValue::LocationListRef(locations));
+        append_custom_sections(&mut wasm, dwarf_sections(&mut dwarf));
+        wasm
+    }
+
+    #[test]
+    fn every_cfg_path_invalidates_expired_locations() {
+        use alloc::{boxed::Box, sync::Arc};
+
+        use midenc_hir::{
+            Context, Op,
+            dialects::{
+                builtin,
+                debuginfo::{DebugDeclare, DebugKill},
+            },
+        };
+        use midenc_session::{
+            DebugInfo, InputFile, Options, Session, diagnostics::DefaultSourceManager,
+        };
+
+        for body in [
+            "local.get 0 if nop else nop end local.get 0 i32.const 42 i32.xor",
+            "block local.get 0 br_if 0 nop end local.get 0 i32.const 42 i32.xor",
+            "block block local.get 0 br_table 0 1 end nop end local.get 0 i32.const 42 i32.xor",
+            "block loop local.get 0 if nop i32.const 0 local.set 0 br 1 else nop end br 1 end end \
+             local.get 0 i32.const 42 i32.xor",
+            "local.get 0 if (result i32) nop i32.const 42 else i32.const 43 end",
+        ] {
+            let wasm = cfg_location_fixture(&format!(
+                "(module (func $entrypoint (export \"entrypoint\") (param i32) (result i32) \
+                 (local i32) i32.const 7 local.set 1 {body}))"
+            ));
+            let options = Box::new(Options::default())
+                .with_output_types(Default::default(), None)
+                .with_debug_info(DebugInfo::Full);
+            let session = Session::new(
+                InputFile::empty(),
+                options,
+                None,
+                Arc::new(DefaultSourceManager::default()),
+            )
+            .unwrap();
+            let context = Rc::new(Context::new(Rc::new(session)));
+            let output =
+                crate::translate(&wasm, &crate::WasmTranslationConfig::default(), context.clone())
+                    .unwrap();
+            let mut function = None;
+            output.component.borrow().as_operation().prewalk_all(
+                |operation: &midenc_hir::Operation| {
+                    if let Some(candidate) = operation.downcast_ref::<builtin::Function>()
+                        && candidate.name().as_str() == "entrypoint"
+                    {
+                        function = Some(candidate.as_function_ref());
+                    }
+                },
+            );
+            let function = function.unwrap();
+            let mut work = vec![(function.borrow().entry_block(), false)];
+            let mut visited = midenc_hir::FxHashSet::default();
+            let mut inspected = Vec::new();
+            let mut declared = false;
+            while let Some((block, mut available)) = work.pop() {
+                if !visited.insert((block, available)) {
+                    continue;
+                }
+                for operation in block.borrow().body() {
+                    if let Some(declaration) = operation.downcast_ref::<DebugDeclare>()
+                        && declaration.variable().name.as_str() == "tracked"
+                    {
+                        available = true;
+                        declared = true;
+                    }
+                    if let Some(kill) = operation.downcast_ref::<DebugKill>()
+                        && kill.variable().name.as_str() == "tracked"
+                    {
+                        available = false;
+                    }
+                    if operation.name().to_string() == "arith.bxor"
+                        || operation.name().to_string() == "builtin.ret"
+                    {
+                        inspected.push(available);
+                    }
+                    for successor in operation.successors().iter() {
+                        work.push((successor.block.borrow().successor(), available));
+                    }
+                }
+            }
+            assert!(declared, "no tracked declaration: {body}");
+            assert!(!inspected.is_empty(), "no inspection point: {body}");
+            assert!(
+                inspected.iter().all(|available| !available),
+                "expired location survived: {body}: {inspected:?}"
+            );
+        }
     }
 
     #[test]
