@@ -32,8 +32,9 @@ pub(super) struct Choice {
     pub contract: EntryContract,
     /// Repairs already scored for this contract, keyed by incoming edge identity.
     pub repairs: BTreeMap<EdgeId, Preparation>,
-    #[cfg(test)]
-    pub costs: Vec<usize>,
+    pub costs: Vec<ContractCost>,
+    /// Policy that supplied the winning concrete candidate layout.
+    pub origin: &'static str,
 }
 
 /// Substitute a destination parameter once, preserving the raw lane index.
@@ -441,6 +442,7 @@ pub(super) fn choose(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut candidates = vec![];
+    let mut origins = vec![];
     if loop_demand.is_none()
         && (incoming.len() == 1 || translated.iter().all(|stack| *stack == translated[0]))
     {
@@ -449,6 +451,7 @@ pub(super) fn choose(
         agreed.required_spill_slots = common.iter().map(|(slot, atom)| (*slot, *atom)).collect();
         if recoverable(&agreed, segment, &live_atoms, context)? {
             candidates.push(agreed);
+            origins.push("inherited-agreement");
         }
     }
     if candidates.is_empty() {
@@ -477,6 +480,11 @@ pub(super) fn choose(
         let mut next = base.clone();
         next.stack_top_first = rank_layout(program, &ranked);
         candidates.push(next);
+        origins.push(if loop_demand.is_some() {
+            "loop-demand"
+        } else {
+            "next-use"
+        });
         if loop_demand.is_none() {
             let mut resident = vec![];
             for value in &ranked {
@@ -501,6 +509,7 @@ pub(super) fn choose(
             let mut common_resident = base.clone();
             common_resident.stack_top_first = rank_layout(program, &resident_rank);
             candidates.push(common_resident);
+            origins.push("common-resident");
             let mut groups: BTreeMap<Vec<Atom>, (usize, EdgeId)> = BTreeMap::new();
             for (entry, stack) in incoming.iter().zip(&translated) {
                 let mut order = vec![];
@@ -533,6 +542,7 @@ pub(super) fn choose(
                 let mut inherited = base;
                 inherited.stack_top_first = layout;
                 candidates.push(inherited);
+                origins.push("inherited-majority");
             }
         }
         for candidate in &mut candidates {
@@ -548,16 +558,16 @@ pub(super) fn choose(
         }
     }
     let mut distinct = vec![];
-    for candidate in candidates {
-        if !distinct.contains(&candidate) {
-            distinct.push(candidate);
+    for (candidate, origin) in candidates.into_iter().zip(origins) {
+        if !distinct.iter().any(|(other, _)| *other == candidate) {
+            distinct.push((candidate, origin));
         }
     }
     let successor = program.segments.iter().find(|s| s.id == segment).unwrap();
-    let mut best: Option<(usize, EntryContract, BTreeMap<EdgeId, Preparation>)> = None;
-    #[cfg(test)]
+    type Winner = (usize, EntryContract, BTreeMap<EdgeId, Preparation>, &'static str);
+    let mut best: Option<Winner> = None;
     let mut costs = vec![];
-    for candidate in distinct {
+    for (candidate, origin) in distinct {
         let trial = (|| {
             let mut repairs = BTreeMap::new();
             let mut score = 0usize;
@@ -576,14 +586,16 @@ pub(super) fn choose(
             Ok::<_, AllocationError>((score, repairs))
         })();
         if let Ok((score, repairs)) = trial {
-            #[cfg(test)]
-            costs.push(score);
+            costs.push(ContractCost {
+                origin,
+                actions: score,
+            });
             if best.as_ref().is_none_or(|(cost, ..)| score < *cost) {
-                best = Some((score, candidate, repairs));
+                best = Some((score, candidate, repairs, origin));
             }
         }
     }
-    let (_, contract, repairs) = best.ok_or_else(|| {
+    let (_, contract, repairs, origin) = best.ok_or_else(|| {
         invariant(
             DiagnosticCategory::UnavailableValue,
             "no entry contract can recover all live atoms",
@@ -592,7 +604,7 @@ pub(super) fn choose(
     Ok(Choice {
         contract,
         repairs,
-        #[cfg(test)]
         costs,
+        origin,
     })
 }

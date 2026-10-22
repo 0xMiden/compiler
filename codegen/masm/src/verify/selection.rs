@@ -19,6 +19,13 @@ pub(crate) trait GeneratedDefinition {
     /// Reconstruct the complete semantic stages and proof relations, rejecting unsupported
     /// parameter sets rather than weakening the registered definition.
     fn instantiate(&self, parameters: &[Felt]) -> Result<DefinitionEvidence, VerificationError>;
+    /// Reconstruct observational markers from source; these never supply semantic liveness.
+    fn observations(
+        &self,
+        _parameters: &[Felt],
+    ) -> Result<Vec<crate::lower::debug::Observation>, VerificationError> {
+        Ok(Vec::new())
+    }
 }
 
 /// Trusted source from which selection evidence is reconstructed, supplied independently of
@@ -136,11 +143,36 @@ pub(crate) struct LoopSchema {
 /// Only source checking constructs this wrapper. Its contents cannot be mutated by allocation.
 #[derive(Debug, Clone)]
 pub(crate) struct CheckedSelectedProgram {
+    observations: Vec<crate::lower::debug::Observation>,
     source_locals: SourceLocalLayout,
     program: SelectedProgram,
     units: BTreeMap<SelectedStepId, UnitEvidence>,
 }
 impl CheckedSelectedProgram {
+    /// Source-sealed markers queried by allocation without becoming semantic uses.
+    pub(crate) fn observations(&self) -> &[crate::lower::debug::Observation] {
+        &self.observations
+    }
+
+    /// Identify an independently reconstructed context-return cleanup segment.
+    /// Its allocator contract must expose only result inputs before invoking truncation.
+    pub(crate) fn return_cleanup(&self, segment: SegmentId) -> bool {
+        matches!(
+            self.program.abi.convention(),
+            CallingConvention::Context | CallingConvention::Kernel
+        ) && self.program.segments.iter().find(|s| s.id == segment).is_some_and(|s| {
+            s.units.len() == 1
+                && self.units[&s.units[0].id].calls.len() == 1
+                && self.units[&s.units[0].id].calls[0].truncate
+                && self.program.edges.iter().filter(|edge| edge.source == segment).count() == 1
+                && self.program.edges.iter().any(|edge| {
+                    edge.source == segment
+                        && edge.destination.is_none()
+                        && edge.kind == EdgeKind::Return
+                })
+        })
+    }
+
     /// Sealed source-local layout used to check the assigned physical frame.
     pub(super) fn source_locals(&self) -> &SourceLocalLayout {
         &self.source_locals
@@ -169,20 +201,22 @@ pub(crate) fn check_selection(
     program: SelectedProgram,
     source: &SourceContext<'_>,
 ) -> Result<CheckedSelectedProgram, VerificationError> {
-    let expected = match (&program.origin, source) {
+    let (expected, observations) = match (&program.origin, source) {
         (
             ProcedureOrigin::Generated {
                 definition,
                 parameters,
             },
             SourceContext::Generated(source),
-        ) if *definition == source.id() => source.instantiate(parameters)?,
+        ) if *definition == source.id() => {
+            (source.instantiate(parameters)?, source.observations(parameters)?)
+        }
         (ProcedureOrigin::Hir(origin), SourceContext::Hir { function, env })
             if *origin == function.as_operation_ref() =>
         {
-            crate::select::evidence(function, env)
-                .map_err(|e| error_with_source(&e.to_string()))?
-                .source
+            let evidence = crate::select::evidence(function, env)
+                .map_err(|e| error_with_source(&e.to_string()))?;
+            (evidence.source, evidence.observations)
         }
         _ => return Err(error("unregistered or incompatible source definition")),
     };
@@ -213,6 +247,7 @@ pub(crate) fn check_selection(
     }
     validate_graph(&program, &expected.units)?;
     Ok(CheckedSelectedProgram {
+        observations,
         source_locals: expected.source_locals,
         program,
         units: expected.units,

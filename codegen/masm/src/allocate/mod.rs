@@ -142,6 +142,8 @@ fn allocate_inner(
     let mut edge_actions = BTreeMap::new();
     let mut slots = BTreeSet::new();
     let mut bindings = BTreeMap::new();
+    let mut debug_locations = BTreeMap::new();
+    let mut decisions = PlanDecisions::default();
     let mut outgoing = BTreeMap::<SegmentId, AllocationState>::new();
     let mut pending = analysis.reachable.clone();
     while !pending.is_empty() {
@@ -200,6 +202,16 @@ fn allocate_inner(
                     "root must model all sixteen lanes",
                 ));
             }
+            decisions.entries.insert(
+                id,
+                EntryDecision {
+                    origin: match program.abi.convention() {
+                        CallingConvention::Root => "root",
+                        _ => "procedure-entry",
+                    },
+                    costs: vec![],
+                },
+            );
             EntryContract {
                 stack_top_first: stack,
                 required_spill_slots: vec![],
@@ -211,6 +223,22 @@ fn allocate_inner(
                     CallingConvention::Root => TailPolicy::RootWindow,
                     _ => TailPolicy::ContextWindow,
                 },
+            }
+        } else if program.return_cleanup(id) {
+            decisions.entries.insert(
+                id,
+                EntryDecision {
+                    origin: "context-return",
+                    costs: vec![],
+                },
+            );
+            EntryContract {
+                stack_top_first: segment.units[0].stack_inputs.clone(),
+                required_spill_slots: vec![],
+                required_scratch: vec![],
+                address_facts: vec![],
+                aliases: LaneAliases::default(),
+                tail: TailPolicy::ContextWindow,
             }
         } else {
             let mut incoming: Vec<_> = program
@@ -235,6 +263,13 @@ fn allocate_inner(
                 &incoming,
                 headers.get(&id).map(|control| &analysis.loops[control]),
             )?;
+            decisions.entries.insert(
+                id,
+                EntryDecision {
+                    origin: choice.origin,
+                    costs: choice.costs,
+                },
+            );
             for (edge, repair) in choice.repairs {
                 slots.extend(repair.slot_requests);
                 edge_actions.insert(edge, repair.actions);
@@ -266,14 +301,18 @@ fn allocate_inner(
         #[cfg(test)]
         stats.events.push(PlanningEvent::Body(id));
         let mut normal = true;
-        for unit in &segment.units {
+        for (position, unit) in segment.units.iter().enumerate() {
+            observe(&program, id, position, &state, &context, &mut actions, &mut debug_locations)?;
             let live = analysis.after[&unit.id].iter().collect();
-            prepare_unit(&state, unit, &live, &context)?.commit(
-                &mut state,
-                &mut actions,
-                &mut bindings,
-                &mut slots,
+            let preparation = prepare_unit(&state, unit, &live, &context)?;
+            decisions.preparations.insert(
+                unit.id,
+                PreparationDecision {
+                    tier: preparation.tier,
+                    victims: preparation.victims.clone(),
+                },
             );
+            preparation.commit(&mut state, &mut actions, &mut bindings, &mut slots);
             actions.push(PlanAction::RunLowering { step: unit.id });
             if !unit.effects.normal_return {
                 normal = false;
@@ -282,6 +321,15 @@ fn allocate_inner(
             state.complete(unit)?;
         }
         if normal {
+            observe(
+                &program,
+                id,
+                segment.units.len(),
+                &state,
+                &context,
+                &mut actions,
+                &mut debug_locations,
+            )?;
             if let Some((predicate, edge)) = controls.get(&id) {
                 let live = program
                     .edges
@@ -289,12 +337,19 @@ fn allocate_inner(
                     .filter(|edge| edge.source == id)
                     .flat_map(|edge| analysis.edge_live[&edge.id].iter())
                     .collect();
-                prepare_control(&state, *predicate, *edge, &live, &context)?.commit(
-                    &mut state,
-                    &mut actions,
-                    &mut bindings,
-                    &mut slots,
+                let preparation = prepare_control(&state, *predicate, *edge, &live, &context)?;
+                decisions.controls.insert(
+                    id,
+                    (
+                        actions.len(),
+                        *edge,
+                        PreparationDecision {
+                            tier: preparation.tier,
+                            victims: preparation.victims.clone(),
+                        },
+                    ),
                 );
+                preparation.commit(&mut state, &mut actions, &mut bindings, &mut slots);
                 state.stack.pop_front().ok_or_else(|| {
                     invariant(DiagnosticCategory::UnavailableValue, "missing selected predicate")
                 })?;
@@ -355,6 +410,8 @@ fn allocate_inner(
         }
     }
     Ok(ProcedurePlan {
+        decisions,
+        debug_locations,
         selected: program,
         contracts,
         segment_actions,
@@ -362,4 +419,57 @@ fn allocate_inner(
         spill_slots: slots.into_iter().collect(),
         lowering_bindings: bindings,
     })
+}
+
+/// Snapshot only lanes mentioned by source markers at this exact completed program point.
+/// Existing aliases and valid cells may describe a value, but observations never request storage.
+fn observe(
+    program: &CheckedSelectedProgram,
+    segment: SegmentId,
+    position: usize,
+    state: &AllocationState,
+    context: &AllocationContext<'_>,
+    actions: &mut Vec<PlanAction>,
+    records: &mut BTreeMap<DebugLocationId, crate::lower::debug::AllocatedObservation>,
+) -> Result<(), AllocationError> {
+    use crate::lower::debug::{AllocatedObservation, Location};
+    for observation in program
+        .observations()
+        .iter()
+        .filter(|o| o.segment == segment && o.position == position)
+    {
+        let mut locations = vec![];
+        for atom in observation.lanes() {
+            let required = StoredValue::Atom(*atom);
+            let mut found = Location::Unavailable;
+            for (depth, occurrence) in state.stack.iter().take(16).enumerate() {
+                if context.same(state, required, StoredValue::Atom(occurrence.atom))? {
+                    found = Location::Stack(depth as u8);
+                    break;
+                }
+            }
+            if found == Location::Unavailable {
+                for (slot, value) in &state.slots {
+                    if context.same(state, required, *value)? {
+                        found = Location::Cell(*slot);
+                        break;
+                    }
+                }
+            }
+            locations.push(found);
+        }
+        let id = DebugLocationId(
+            u32::try_from(records.len())
+                .map_err(|_| AllocationError::IdentifierExhausted("debug location"))?,
+        );
+        records.insert(
+            id,
+            AllocatedObservation {
+                observation: observation.clone(),
+                locations,
+            },
+        );
+        actions.push(PlanAction::DebugLocation(id));
+    }
+    Ok(())
 }

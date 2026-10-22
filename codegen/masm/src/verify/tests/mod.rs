@@ -129,6 +129,8 @@ fn identity_plan() -> ProcedurePlan {
     let candidate = Identity.instantiate(&[]).unwrap().program;
     let selected = check_selection(candidate, &SourceContext::Generated(&Identity)).unwrap();
     ProcedurePlan {
+        debug_locations: Default::default(),
+        decisions: Default::default(),
         selected,
         contracts: BTreeMap::from([(
             SegmentId(0),
@@ -255,6 +257,8 @@ impl Fixture {
         )
         .unwrap();
         ProcedurePlan {
+            debug_locations: Default::default(),
+            decisions: Default::default(),
             selected,
             contracts: BTreeMap::from([(
                 SegmentId(0),

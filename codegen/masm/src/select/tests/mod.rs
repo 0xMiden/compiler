@@ -70,6 +70,7 @@ mod arithmetic;
 mod calls;
 mod control;
 mod coverage;
+mod generated;
 mod indirect;
 pub(crate) mod intrinsics;
 mod memory;
