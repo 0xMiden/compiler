@@ -176,7 +176,7 @@ fn constant_pointer_fixture() -> Parsed {
     let terminator = f.borrow().entry_block().borrow().terminator().unwrap();
     let mut builder = OpBuilder::new(f.context.clone());
     builder.set_insertion_point_before(terminator);
-    let pointer = crate::hir::Pointer::new(42, Type::U32);
+    let pointer = crate::hir::Pointer::new(42, midenc_hir::PointerType::new(Type::U32));
     builder.create::<crate::hir::ConstantPointer, _>(SourceSpan::UNKNOWN)(pointer).unwrap();
     f
 }
@@ -644,4 +644,113 @@ fn conversion_alias_lane_permutation_is_rejected() {
         },
     );
     assert!(verify::verify(&plan, &frame, body).is_err());
+}
+
+#[test]
+fn selected_pointer_constants_preserve_complete_types_addresses_and_suffix() {
+    use midenc_hir::{
+        AddressSpace, Builder, BuilderExt, OpBuilder, PointerType, SourceSpan, Type,
+        attributes::InferAttributeValueType,
+    };
+    for space in [AddressSpace::Byte, AddressSpace::Element] {
+        for pointee in [
+            Type::U32,
+            PointerType::new(Type::U8).into(),
+            PointerType::new_with_address_space(Type::U8, AddressSpace::Element).into(),
+        ] {
+            let pointer_type = PointerType::new_with_address_space(pointee, space);
+            let ty = Type::from(pointer_type.clone());
+            // Exercise the declared custom syntax as well as the builder API.
+            let space_text = match space {
+                AddressSpace::Byte => "byte",
+                AddressSpace::Element => "element",
+            };
+            let pointee_text = match pointer_type.pointee() {
+                Type::U32 => "u32",
+                Type::Ptr(inner) if inner.addrspace() == AddressSpace::Byte => "ptr<u8, byte>",
+                Type::Ptr(_) => "ptr<u8, element>",
+                _ => unreachable!(),
+            };
+            let text_type = format!("ptr<{pointee_text}, {space_text}>");
+            let f = parse(&format!(
+                "builtin.function public extern(\"C\") @f() -> {text_type} {{ %p = \
+                 hir.constant_pointer 4294967295 : {text_type}; builtin.ret %p : ({text_type}); \
+                 }};"
+            ));
+            execute(&f, &SelectEnv::default(), &[], &[u32::MAX as usize]);
+
+            for folded in [false, true] {
+                let f = parse(&format!(
+                    "builtin.function public extern(\"C\") @f() -> {text_type} {{ %p = \
+                     hir.constant_pointer 0 : {text_type}; builtin.ret %p : ({text_type}); }};"
+                ));
+                let mut old = f
+                    .borrow()
+                    .entry_block()
+                    .borrow()
+                    .body()
+                    .front()
+                    .get()
+                    .unwrap()
+                    .as_operation_ref();
+                let mut builder = OpBuilder::new(f.context.clone());
+                builder.set_insertion_point_before(old);
+                let new = if folded {
+                    use midenc_dialect_arith::ArithOpBuilder;
+                    use midenc_hir::{OpFoldResult, SmallVec, traits::Foldable};
+                    let integer = builder.u32(u32::MAX, SourceSpan::UNKNOWN);
+                    let mut cast = builder.create::<crate::hir::IntToPtr, _>(SourceSpan::UNKNOWN)(
+                        integer,
+                        ty.clone(),
+                    )
+                    .unwrap();
+                    let mut results = SmallVec::new();
+                    assert!(cast.borrow().fold(&mut results).is_ok());
+                    let OpFoldResult::Attribute(attr) = results[0] else {
+                        panic!("fold must produce an attribute")
+                    };
+                    let dialect = f.context.get_or_register_dialect::<crate::hir::HirDialect>();
+                    let new = dialect
+                        .materialize_constant(&mut builder, attr, &ty, SourceSpan::UNKNOWN)
+                        .unwrap();
+                    cast.borrow_mut().as_operation_mut().erase();
+                    new
+                } else {
+                    let pointer = crate::hir::Pointer::new(u32::MAX, pointer_type.clone());
+                    assert_eq!(pointer.infer_type_from_value(), ty);
+                    builder.create::<crate::hir::ConstantPointer, _>(SourceSpan::UNKNOWN)(pointer)
+                        .unwrap()
+                        .as_operation_ref()
+                };
+                let mut old_result = old.borrow().results().all()[0];
+                let new_result = new.borrow().results().all()[0];
+                old_result.borrow_mut().replace_all_uses_with(new_result);
+                old.borrow_mut().erase();
+                execute(&f, &SelectEnv::default(), &[], &[u32::MAX as usize]);
+            }
+        }
+    }
+}
+
+#[test]
+fn pointer_constant_outer_space_mismatch_is_rejected() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @f() { %p = hir.constant_pointer 42 : ptr<u32, \
+         element>; builtin.ret; };",
+    );
+    checked(&f, &SelectEnv::default());
+    let op = f
+        .borrow()
+        .entry_block()
+        .borrow()
+        .body()
+        .front()
+        .get()
+        .unwrap()
+        .as_operation_ref();
+    let mut result = op.borrow().results().all()[0];
+    result
+        .borrow_mut()
+        .set_type(midenc_hir::PointerType::new(midenc_hir::Type::U32).into());
+    assert_malformed_source_rejected(&f, &SelectEnv::default());
 }

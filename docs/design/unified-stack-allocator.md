@@ -102,6 +102,8 @@ The skeleton determines where the final MASM `if`, `while`, and switch-dispatch 
 
 Ordinary operation order and effects remain fixed. The allocator does not move loads, calls, traps, or other HIR operations across each other. Rematerialization is limited initially to exact literals and representation aliases. Existing HIR optimization retains responsibility for semantic motion.
 
+Pointer constants carry their complete pointer type, including the outer byte/element address space and the nested pointee type. Parsing, folding, materialization and result inference preserve that type; final selection reconstructs the same complete type when checking source authority. A pointer constant changes no address bits or memory behavior merely by retaining its declared type. Constructors take the complete pointer type so a full result type cannot accidentally become an extra pointee layer.
+
 ### Generated procedure definitions
 
 `ProcedureOrigin` is either a final HIR procedure or a registered generated-procedure definition with explicit parameters. Generated definitions cover executable main, initialization sequencing and fragments, entry/ABI adapters, and the optional test harness. They specify required stages, source bindings, control flow, effects, and entry/return conventions. `SourceStepId` identifies an HIR operation or a stage of such a definition; generated bodies do not invent HIR provenance.

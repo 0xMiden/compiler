@@ -162,7 +162,7 @@ impl Arithmetic {
             AssertU32 => assertion!(hir::AssertU32),
             ConstantPointer => {
                 let a = op.downcast_ref::<hir::ConstantPointer>().unwrap();
-                target = Some(Type::from(PointerType::new(a.get_value().pointee_type().clone())));
+                target = Some(Type::from(a.get_value().pointer_type().clone()));
                 literal = Some(Immediate::U32(a.get_value().addr()));
             }
             Poison => {

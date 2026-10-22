@@ -147,8 +147,7 @@ impl Foldable for IntToPtr {
         if let Some(value) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
             .matches(&self.operand().as_operand_ref())
         {
-            results.push(OpFoldResult::Attribute(value));
-            FoldResult::Ok(())
+            self.fold_with(&[Some(value)], results)
         } else {
             FoldResult::Failed
         }
@@ -168,8 +167,10 @@ impl Foldable for IntToPtr {
         if let Some(integer_like) = attr_borrowed.as_attr().as_trait::<dyn IntegerLikeAttr>()
             && let Some(addr) = integer_like.as_immediate().as_u32()
         {
-            let ty = self.get_ty().clone();
-            let ptr = crate::attributes::Pointer::new(addr, ty);
+            let Type::Ptr(ty) = &*self.get_ty() else {
+                return FoldResult::Failed;
+            };
+            let ptr = crate::attributes::Pointer::new(addr, ty.as_ref().clone());
             let attr = integer_like.context_rc().create_attribute::<PointerAttr, _>(ptr);
             results.push(OpFoldResult::Attribute(attr));
             FoldResult::Ok(())
@@ -366,5 +367,47 @@ mod tests {
         let err = verify_cast(CastOp::IntToPtr, Type::Felt, pointer(Type::U32)).unwrap_err();
         let message = format!("{err:?}").split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(message.contains("converted to `u32` with `hir.cast` first"), "{message}");
+    }
+
+    #[test]
+    fn pointer_constant_inttoptr_both_fold_paths_preserve_complete_type() {
+        use midenc_dialect_arith::ArithOpBuilder;
+        use midenc_hir::{
+            attributes::InferAttributeValueType, dialects::builtin::attributes::U32Attr,
+            traits::Foldable, *,
+        };
+
+        use crate::PointerAttr;
+        for space in [AddressSpace::Byte, AddressSpace::Element] {
+            for pointee in [Type::U32, PointerType::new(Type::U8).into(), pointer(Type::U8)] {
+                let ty = Type::from(PointerType::new_with_address_space(pointee, space));
+                let mut test = Test::new("fold_pointer", &[], &[]);
+                let context = test.context_rc();
+                let mut builder = test.function_builder();
+                let integer = builder.u32(u32::MAX, SourceSpan::UNKNOWN);
+                let value = builder.inttoptr(integer, ty.clone(), SourceSpan::UNKNOWN).unwrap();
+                let op = value.borrow().get_defining_op().unwrap();
+                let op = op.borrow();
+                let cast = op.downcast_ref::<super::IntToPtr>().unwrap();
+                let integer_attr = context.create_attribute::<U32Attr, _>(u32::MAX);
+                for explicit_operands in [false, true] {
+                    let mut results = SmallVec::new();
+                    let folded = if explicit_operands {
+                        cast.fold_with(&[Some(integer_attr.as_attribute_ref())], &mut results)
+                    } else {
+                        cast.fold(&mut results)
+                    };
+                    assert!(folded.is_ok());
+                    assert_eq!(results.len(), 1);
+                    let OpFoldResult::Attribute(attr) = results[0] else {
+                        panic!("expected attribute")
+                    };
+                    let attr =
+                        attr.try_downcast_attr::<PointerAttr>().expect("folded pointer attribute");
+                    assert_eq!(attr.borrow().addr(), u32::MAX);
+                    assert_eq!(attr.borrow().infer_type_from_value(), ty);
+                }
+            }
+        }
     }
 }
