@@ -1,6 +1,6 @@
 //! Output-note creation, assets, attachments, and sealing.
 //!
-//! Use [`super::NoteAttachment`] to validate a scheme and word contents before adding an
+//! Use [`super::NoteAttachment`] to validate a scheme and content length before adding an
 //! attachment. The functions here also expose the individual protocol operations, including
 //! [`add_attachment`] for content already available in the advice map under its commitment.
 
