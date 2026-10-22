@@ -1,18 +1,18 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    Backward, CallOpInterface, EntityMut, Forward, FxHashMap, FxHashSet, Op, OperationName,
-    OperationRef, ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec,
-    Spanned, Symbol, TraceTarget, ValueRef,
+    Backward, CallOpInterface, EntityMut, Forward, FxHashMap, FxHashSet, Op, Operation,
+    OperationName, OperationRef, ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter,
+    SmallVec, Spanned, Symbol, TraceTarget, ValueRef,
     dialects::{
         builtin::{Function, attributes::LocalVariable},
         debuginfo::{
-            DIBuilder, DebugDeclare, DebugValue,
-            attributes::{ExpressionOp, FrameBase},
+            DIBuilder, DebugDeclare, DebugKill, DebugValue,
+            attributes::{ExpressionOp, FrameBase, INLINE_CALL_CHAIN_ATTR_NAME, Variable},
         },
     },
     pass::{Pass, PassExecutionState, PostPassStatus},
-    patterns::{RewriterImpl, TracingRewriterListener},
+    patterns::{RewriterExt, RewriterImpl, TracingRewriterListener},
     traits::BranchOpInterface,
 };
 
@@ -29,35 +29,55 @@ fn stored_value(store: OperationRef) -> ValueRef {
         .as_value_ref()
 }
 
+fn debug_variable(operation: &Operation) -> Option<Variable> {
+    let variable = if let Some(declare) = operation.downcast_ref::<DebugDeclare>() {
+        declare.variable()
+    } else if let Some(value) = operation.downcast_ref::<DebugValue>() {
+        value.variable()
+    } else {
+        operation.downcast_ref::<DebugKill>()?.variable()
+    };
+    Some(variable.as_value().clone())
+}
+
+fn invalidate_debug_reference<R: Rewriter>(rewriter: &mut R, reference: OperationRef) {
+    let (variable, span) = {
+        let operation = reference.borrow();
+        (debug_variable(&operation).unwrap(), operation.span())
+    };
+    {
+        let mut scope = rewriter.with_inline_call_chain(reference);
+        let ip = *scope.insertion_point();
+        scope.set_insertion_point_before(reference);
+        let _ = scope.debug_kill(variable, span);
+        scope.restore_insertion_point(ip);
+    }
+    rewriter.erase_op(reference);
+}
+
 /// Rewrite debug references to `local` so they follow the promoted SSA values.
 ///
 /// When a local is promoted to an SSA value (or its dead stores are erased), the memory slot the
 /// debug operation points at is no longer written, so a debugger following it would read stale or
-/// uninitialized memory. Declarations become value records at each store, while existing value
-/// records retain their SSA operand and drop the obsolete local-location expression. This mirrors
-/// LLVM's mem2reg conversion of dbg.declare/dbg.value metadata.
-///
-/// Returns `false` when any debug reference to this local cannot be converted safely. In that case
-/// the caller must preserve the stores.
+/// uninitialized memory. Direct local references become value records at their original positions
+/// and follow stores only while that binding is active. References that cannot be recovered accurately
+/// become kills, rather than keeping obsolete locations or preventing promotion.
 fn convert_debug_references_for_local<R: Rewriter>(
     rewriter: &mut R,
     function_op: OperationRef,
     local: &LocalVariable,
     stores: &[OperationRef],
-) -> bool {
+) {
     let local_index = local.as_usize() as u32;
-    let mut declares = SmallVec::<[OperationRef; 2]>::new();
-    let mut values = SmallVec::<[OperationRef; 2]>::new();
+    let mut references = SmallVec::<[OperationRef; 2]>::new();
     function_op.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
         let operation = op.borrow();
         let expression = if let Some(declare) = operation.downcast_ref::<DebugDeclare>() {
-            Some((declare.expression(), &mut declares))
+            Some(declare.expression())
         } else {
-            operation
-                .downcast_ref::<DebugValue>()
-                .map(|value| (value.expression(), &mut values))
+            operation.downcast_ref::<DebugValue>().map(|value| value.expression())
         };
-        if let Some((expr, references)) = expression
+        if let Some(expr) = expression
             && expr.as_value().operations.iter().any(|op| match op {
                 ExpressionOp::LocalSlot(index) => *index == local_index,
                 ExpressionOp::FrameBase {
@@ -71,69 +91,90 @@ fn convert_debug_references_for_local<R: Rewriter>(
         }
     });
 
-    if declares.is_empty() && values.is_empty() {
-        return true;
+    if references.is_empty() {
+        return;
     }
 
-    let declares_are_safe = declares.iter().all(|declare_op| {
-        matches!(
-            declare_op
-                .borrow()
-                .downcast_ref::<DebugDeclare>()
-                .unwrap()
-                .expression()
-                .as_value()
-                .operations
-                .as_slice(),
-            [ExpressionOp::LocalSlot(index)] if *index == local_index
-        )
-    });
-    let values_are_safe = values.iter().all(|value_op| {
-        matches!(
-            value_op
-                .borrow()
-                .downcast_ref::<DebugValue>()
-                .unwrap()
-                .expression()
-                .as_value()
-                .operations
-                .as_slice(),
-            [ExpressionOp::LocalSlot(index)] if *index == local_index
-        )
-    });
-    if !declares_are_safe || !values_are_safe {
-        return false;
-    }
-
-    for declare_op in declares {
-        let variable = {
-            let op = declare_op.borrow();
-            op.downcast_ref::<DebugDeclare>().unwrap().variable().as_value().clone()
+    references.retain(|reference| {
+        let safe = {
+            let operation = reference.borrow();
+            let expression = if let Some(declare) = operation.downcast_ref::<DebugDeclare>() {
+                declare.expression()
+            } else {
+                operation.downcast_ref::<DebugValue>().unwrap().expression()
+            };
+            matches!(expression.as_value().operations.as_slice(),
+                [ExpressionOp::LocalSlot(index)]
+                    | [ExpressionOp::LocalSlot(index), ExpressionOp::StackValue]
+                    if *index == local_index)
         };
-        for store in stores {
-            let span = store.borrow().span();
-            rewriter.set_insertion_point_before(*store);
-            let _ = rewriter.debug_value(stored_value(*store), variable.clone(), span);
+        if !safe {
+            invalidate_debug_reference(rewriter, *reference);
         }
-        rewriter.erase_op(declare_op);
+        safe
+    });
+
+    if references.is_empty() {
+        return;
     }
 
-    for value_op in values {
-        let (value, variable, span) = {
-            let op = value_op.borrow();
-            let debug_value = op.downcast_ref::<DebugValue>().unwrap();
-            (
-                debug_value.value().as_value_ref(),
-                debug_value.variable().as_value().clone(),
-                op.span(),
-            )
-        };
-        rewriter.set_insertion_point_before(value_op);
-        let _ = rewriter.debug_value(value, variable, span);
-        rewriter.erase_op(value_op);
+    let entry = function_op.borrow().downcast_ref::<Function>().unwrap().entry_block();
+    if entry.borrow().predecessors().next().is_some()
+        || references
+            .iter()
+            .chain(stores.iter())
+            .any(|operation| operation.parent() != Some(entry))
+        || entry.borrow().body().iter().any(|operation| {
+            !operation.regions().is_empty() || operation.implements::<dyn CallOpInterface>()
+        })
+    {
+        for reference in references {
+            invalidate_debug_reference(rewriter, reference);
+        }
+        return;
     }
 
-    true
+    let mut replacements = SmallVec::<[(OperationRef, OperationRef, Option<ValueRef>); 4]>::new();
+    let mut active = SmallVec::<[OperationRef; 2]>::new();
+    let mut current_value = None;
+    for operation in entry.borrow().body() {
+        let operation_ref = operation.as_operation_ref();
+        if let Some(store) = operation.downcast_ref::<StoreLocal>()
+            && *store.get_local() == *local
+        {
+            current_value = Some(store.value().as_value_ref());
+            replacements
+                .extend(active.iter().map(|reference| (operation_ref, *reference, current_value)));
+            continue;
+        }
+        if let Some(variable) = debug_variable(&operation) {
+            let chain = operation.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME);
+            active.retain(|reference| {
+                let reference = reference.borrow();
+                debug_variable(&reference).unwrap().name != variable.name
+                    || reference.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME) != chain
+            });
+        }
+        if references.contains(&operation_ref) {
+            replacements.push((operation_ref, operation_ref, current_value));
+            active.push(operation_ref);
+        }
+    }
+
+    for (anchor, reference, value) in replacements {
+        let variable = debug_variable(&reference.borrow()).unwrap();
+        let span = anchor.borrow().span();
+        let mut scope = rewriter.with_inline_call_chain(reference);
+        scope.set_insertion_point_before(anchor);
+        if let Some(value) = value {
+            let _ = scope.debug_value(value, variable, span);
+        } else {
+            let _ = scope.debug_kill(variable, span);
+        }
+    }
+    for reference in references {
+        rewriter.erase_op(reference);
+    }
 }
 
 #[derive(Default)]
@@ -368,14 +409,7 @@ impl Pass for Local2Reg {
                 //
                 // Any debug declaration pointing at the promoted slot must follow the value into
                 // its SSA register, since the slot will no longer be written.
-                if !convert_debug_references_for_local(&mut rewriter, op, &local, &[store]) {
-                    log::trace!(
-                        target: &trace_target,
-                        sym = trace_target.relevant_symbol();
-                        "ignoring {local}: debug declarations cannot all be converted safely",
-                    );
-                    continue;
-                }
+                convert_debug_references_for_local(&mut rewriter, op, &local, &[store]);
                 // Read before erasing: erasing an operation clears its operands
                 let value = stored_value(store);
                 rewriter.erase_op(store);
@@ -388,14 +422,7 @@ impl Pass for Local2Reg {
                 //
                 // We rely on region simplification/canonicalization to remove any ops/values made
                 // dead by erasing these stores.
-                if !convert_debug_references_for_local(&mut rewriter, op, &local, stores) {
-                    log::trace!(
-                        target: &trace_target,
-                        sym = trace_target.relevant_symbol();
-                        "preserving dead stores for {local}: debug declarations cannot all be converted safely",
-                    );
-                    continue;
-                }
+                convert_debug_references_for_local(&mut rewriter, op, &local, stores);
                 for store in stores.iter() {
                     changed = PostPassStatus::Changed;
                     log::trace!(
@@ -696,7 +723,7 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
     }
 
     #[test]
-    fn preserves_stores_for_transformed_debug_values() {
+    fn kills_unrecoverable_debug_values_when_promoting() {
         use midenc_hir::{
             dialects::debuginfo::{
                 DIBuilder, DebugInfoDialect,
@@ -705,7 +732,7 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
             interner::Symbol,
         };
 
-        let mut test = Test::new("preserves_transformed_debug_value", &[Type::I32], &[Type::I32]);
+        let mut test = Test::new("kills_transformed_debug_value", &[Type::I32], &[Type::I32]);
         test.context().get_or_register_dialect::<DebugInfoDialect>();
 
         {
@@ -728,9 +755,9 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
         filecheck!(
             output,
             r#"
-// CHECK-LABEL: builtin.function public extern("C") @preserves_transformed_debug_value
-// CHECK-NEXT: hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
-// CHECK-NEXT: di.debug_value %0 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0), DW_OP_deref]> }> : (i32);
+// CHECK-LABEL: builtin.function public extern("C") @kills_transformed_debug_value
+// CHECK-NEXT: di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }> }>;
+// CHECK-NEXT: builtin.ret %0
             "#
         );
     }

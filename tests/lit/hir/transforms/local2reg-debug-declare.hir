@@ -2,8 +2,7 @@
 
 // When local2reg promotes a local to an SSA register, a di.debug_declare describing that local
 // as a variable's storage must follow the value: the slot is no longer written, so the
-// declaration is rewritten into a di.debug_value anchored to the stored value at the erased
-// store's position (mirroring LLVM's mem2reg dbg.declare -> dbg.value conversion).
+// declaration is rewritten into a di.debug_value at its original declaration point.
 builtin.module public @local2reg_debug_declare {
 builtin.function public extern("C") @l2r_test(%0: i32) -> i32 {
     hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
@@ -22,8 +21,7 @@ builtin.function public extern("C") @l2r_test(%0: i32) -> i32 {
 // CHECK-NOT: hir.store_local
 // CHECK-NOT: hir.load_local
 
-// A transformed expression cannot be converted to a plain debug value without preserving its
-// dereference. Keep the slot live instead of erasing its only store.
+// A transformed expression that cannot be recovered becomes a kill without inhibiting promotion.
 builtin.function public extern("C") @l2r_transformed_declare(%0: i32) -> i32 {
     hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
     di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10, ty = i32 }>, expression = #di.expression<[DI_OP_local_slot(0), DW_OP_deref]> }>;
@@ -31,11 +29,9 @@ builtin.function public extern("C") @l2r_transformed_declare(%0: i32) -> i32 {
     builtin.ret %1 : (i32);
 };
 
-// CHECK-LABEL: builtin.function public extern("C") @l2r_transformed_declare
-// CHECK-NEXT:     hir.store_local [[TRANSFORMED_ARG:%\d+]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
-// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10, ty = i32 }>, expression = #di.expression<[DI_OP_local_slot(0), DW_OP_deref]> }>;
-// CHECK-NEXT:     [[TRANSFORMED_LOAD:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
-// CHECK-NEXT:     builtin.ret [[TRANSFORMED_LOAD]] : (i32);
+// CHECK: builtin.function public extern("C") @l2r_transformed_declare(%[[TRANSFORMED:\d+]]: i32)
+// CHECK-NEXT:     di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10, ty = i32 }> }>;
+// CHECK-NEXT:     builtin.ret %[[TRANSFORMED]] : (i32);
 
 // Multiple source variables may reuse one slot. When every declaration is a direct local
 // reference, rewrite all of them before removing the slot.
@@ -54,15 +50,14 @@ builtin.function public extern("C") @l2r_multiple_declares(%0: i32) -> i32 {
 // CHECK-NOT: hir.store_local
 // CHECK-NOT: hir.load_local
 
-// The same safety rule applies to stores that appear dead to runtime liveness.
+// Dead stores are still removed when their debug locations cannot be recovered.
 builtin.function public extern("C") @l2r_dead_store_with_transformed_declare(%0: i32) -> i32 {
     hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
     di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 30, ty = i32 }>, expression = #di.expression<[DI_OP_local_slot(0), DW_OP_deref]> }>;
     builtin.ret %0 : (i32);
 };
 
-// CHECK-LABEL: builtin.function public extern("C") @l2r_dead_store_with_transformed_declare
-// CHECK-NEXT:     hir.store_local [[DEAD_ARG:%\d+]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
-// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "x"
-// CHECK-NEXT:     builtin.ret [[DEAD_ARG]] : (i32);
+// CHECK: builtin.function public extern("C") @l2r_dead_store_with_transformed_declare(%[[DEAD_STORE:\d+]]: i32)
+// CHECK-NEXT:     di.debug_kill {{.*}}name = "x"
+// CHECK-NEXT:     builtin.ret %[[DEAD_STORE]] : (i32);
 };

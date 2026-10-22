@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- Preserve debug-variable lifetime boundaries during sinking, local promotion, and
+  generic operation erasure, including inline ownership of replacement kills.
 - Reconcile debug-variable locations across CFG edges so skipped lifetime updates
   and loop backedges cannot retain stale values at block entries or returns.
 - Preserve DWARF lexical visibility, restore outer variables after shadowing, and
