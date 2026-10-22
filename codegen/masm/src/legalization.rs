@@ -21,7 +21,7 @@ use midenc_hir::{
 };
 use midenc_session::diagnostics::{Severity, Spanned};
 
-use crate::{HirLowering, opt::operands::MASM_STACK_WINDOW_FELTS};
+use crate::{HirSelection, opt::operands::MASM_STACK_WINDOW_FELTS};
 
 /// Legality of an indirect call's signature, shared by `hir.exec_indirect` and `hir.dyncall`.
 ///
@@ -30,25 +30,14 @@ use crate::{HirLowering, opt::operands::MASM_STACK_WINDOW_FELTS};
 /// same thing, but legalization must be self-sufficient — it also runs over IR the verifier never
 /// saw.
 ///
-/// Both lowerings consume the arguments as-is while the callee's memory address sits on the stack
-/// top, so they cannot emit the widening instructions a direct call would: those operate on that
-/// occupied top. A parameter's extension is only a demand for them when the argument is actually
-/// narrower than the parameter. Canonical-ABI flattening marks the parameters it widened —
-/// `bool`/`u8`/`u16` as `zext`, `i8`/`i16` as `sext`, both to `i32` — while handing over an
-/// argument that already has the flat type, which makes the extension a no-op, exactly as
-/// `process_call_signature` treats it for a direct call.
-///
-/// Beyond that, the arguments and the operands selecting the callee must fit the addressable
-/// operand stack window together: the spill analysis requires every operand of a non-branch
-/// operation to be reachable at once. `selector_felts` is how many of the window those callee
-/// operands take — one element for `hir.exec_indirect`'s table index, a whole word for
-/// `hir.dyncall`'s procedure root — and `what` names them in diagnostics.
+/// Arguments retain their exact declared types; equal-type extension attributes are no-ops.
+/// The selector is staged separately, so only actual argument lanes count toward the supported
+/// sixteen-lane indirect argument ABI. Context-call results also occupy at most sixteen lanes;
+/// same-context results retain their unrestricted tuple width.
 fn indirect_call_signature_legality(
     op: &Operation,
     signature: &midenc_hir::dialects::builtin::attributes::Signature,
     arg_types: &[midenc_hir::Type],
-    selector_felts: usize,
-    what: &str,
 ) -> DynamicLegalityResult {
     use midenc_hir::dialects::builtin::attributes::ArgumentExtension;
 
@@ -80,11 +69,19 @@ fn indirect_call_signature_legality(
         )));
     }
     let arg_felts: usize = signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
-    if selector_felts + arg_felts > MASM_STACK_WINDOW_FELTS {
+    if arg_felts > MASM_STACK_WINDOW_FELTS {
         return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
-            "operation '{}' schedules {arg_felts} argument field elements plus the \
-             {selector_felts}-element {what}, which exceeds the {MASM_STACK_WINDOW_FELTS}-element \
-             operand stack window",
+            "operation '{}' passes {arg_felts} argument field elements, exceeding the \
+             {MASM_STACK_WINDOW_FELTS}-element indirect argument ABI",
+            op.name()
+        )));
+    }
+    let result_felts: usize =
+        signature.results.iter().map(|result| result.ty.size_in_felts()).sum();
+    if signature.cc == CallConv::ComponentModel && result_felts > MASM_STACK_WINDOW_FELTS {
+        return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+            "operation '{}' returns {result_felts} result field elements, exceeding the \
+             {MASM_STACK_WINDOW_FELTS}-element context result ABI",
             op.name()
         )));
     }
@@ -362,17 +359,11 @@ midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Leg
 /// and a 64-bit load used only as its halves two 32-bit loads. What remains unsafe is 64-bit
 /// arithmetic proper on reinterpreted felts, which still traps on a felt outside the `u32` range.
 ///
-/// # It must run before spill placement
+/// # Run before instruction selection
 ///
-/// The rewrites change live ranges: a join keeps the halves live up to the `or` it replaces, a
-/// split keeps the limbs live from the first half it serves, and the store split keeps the halves
-/// live up to the store. Spill placement is what keeps the operand stack within the 16 elements
-/// an instruction can reach, and it can only do so for live ranges it has seen. So this pass runs
-/// before it, after the last rewrite that could reshape the code (in `midenc-compile`,
-/// `apply_rewrites`: after the last canonicalization, before operand sinking and spill
-/// placement), and codegen, which comes after spill placement, runs [`CheckMasmLegality`]
-/// instead, which rewrites nothing. Run after spill placement, this pass could leave an operand
-/// deeper than an instruction reaches.
+/// These rewrites change semantic values and live ranges. Run them before selection establishes
+/// immutable source evidence; allocation then sees every resulting use. Codegen runs the
+/// nonrewriting [`CheckMasmLegality`] at its entry boundary.
 ///
 /// This pass is intentionally owned by `midenc-codegen-masm`: it builds the MASM-specific
 /// legalization target, runs full dialect conversion, and fails before `ToMasmComponent` can
@@ -452,11 +443,9 @@ midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Che
 /// Checks that IR is in the set of operations MASM codegen can lower, and rewrites nothing:
 /// [`masm_legalization_target`] with no patterns.
 ///
-/// This is what codegen runs on entry. It comes after spill placement, where nothing may be
-/// rewritten (see [`LegalizeForMasm`]), so a shape that [`LegalizeForMasm`] would have rewritten is
-/// an error here, which says that the legalization must run before spill placement; an op MASM
-/// codegen cannot lower at all is the same error as from [`LegalizeForMasm`]. Unrealized
-/// conversion casts are not reconciled, which would be a rewrite: one that is left is illegal.
+/// Codegen runs this before selection. A shape requiring [`LegalizeForMasm`] is an error here;
+/// the transforming pass must run before immutable selection evidence is constructed.
+/// Unrealized conversion casts are also illegal because reconciling them would rewrite HIR.
 #[derive(Default)]
 pub struct CheckMasmLegality;
 
@@ -514,7 +503,7 @@ impl Pass for CheckMasmLegality {
 ///
 /// Structural builtin operations such as modules and functions are legal containers, but their
 /// nested operations are still checked. Leaf operations in explicitly supported dialects are legal
-/// only when they implement `HirLowering` or `TransparentCast`, which codegen lowers by renaming
+/// only when they implement `HirSelection` or `TransparentCast`, which codegen lowers by renaming
 /// the operand. `builtin.unrealized_conversion_cast` is always illegal
 /// as a final operation, and so are the shapes [`LegalizeForMasm`] rewrites: the `arith.bor` that
 /// assembles a 64-bit integer from two 32-bit halves, the `arith.shl` that makes one of a high
@@ -602,20 +591,19 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
             let exec = op
                 .downcast_ref::<hir::ExecIndirect>()
                 .expect("this legality rule is registered for hir.exec_indirect");
-            indirect_call_signature_legality(
-                op,
-                &exec.get_signature(),
-                &argument_types(op),
-                /*selector_felts=*/ 1,
-                "table index",
-            )
+            if !matches!(exec.get_signature().cc, CallConv::C | CallConv::Fast | CallConv::Wasm) {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' requires a same-context calling convention",
+                    op.name()
+                )));
+            }
+            indirect_call_signature_legality(op, &exec.get_signature(), &argument_types(op))
         })
         .add_dynamically_legal_op::<hir::Dyncall, _>(|op| {
             let call = op
                 .downcast_ref::<hir::Dyncall>()
                 .expect("this legality rule is registered for hir.dyncall");
-            // The lowering spills the whole root word to the cell the VM reads the callee digest
-            // from, so anything but a full word would spill operands it does not own
+            // The declared aligned scratch object holds exactly one complete root word.
             let num_root_felts = call.root().len();
             if num_root_felts != hir::Dyncall::ROOT_FELTS {
                 return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
@@ -625,9 +613,7 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
                     hir::Dyncall::ROOT_FELTS
                 )));
             }
-            // The lowering pops one field element per root operand, which the emitter asserts,
-            // and it has no conversion to apply on the way: the root is spilled verbatim to the
-            // cell the VM reads the callee digest from
+            // Root staging stores each element verbatim, without an implicit conversion.
             if let Some((index, ty)) = call
                 .root()
                 .iter()
@@ -651,13 +637,7 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
                     signature.cc
                 )));
             }
-            indirect_call_signature_legality(
-                op,
-                &signature,
-                &argument_types(op),
-                hir::Dyncall::ROOT_FELTS,
-                "procedure root",
-            )
+            indirect_call_signature_legality(op, &signature, &argument_types(op))
         })
         .add_dynamically_legal_op::<builtin::UnrealizedConversionCast, _>(|op| {
             DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
@@ -670,7 +650,7 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
             if Halves::stored_by(op).is_some() {
                 DynamicLegalityResult::illegal_with_reason(Report::msg(
                     "a 64-bit store of two 32-bit halves must have been split into two 32-bit \
-                     stores by `legalize-for-masm`, which must run before spill placement",
+                     stores by `legalize-for-masm`, which must run before instruction selection",
                 ))
             } else {
                 masm_lowerable_op(op)
@@ -680,7 +660,8 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
             if TakenHalves::loaded_by(op).is_some() {
                 DynamicLegalityResult::illegal_with_reason(Report::msg(
                     "a 64-bit load used only as 32-bit halves must have been split into two \
-                     32-bit loads by `legalize-for-masm`, which must run before spill placement",
+                     32-bit loads by `legalize-for-masm`, which must run before instruction \
+                     selection",
                 ))
             } else {
                 masm_lowerable_op(op)
@@ -702,7 +683,7 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
                 DynamicLegalityResult::illegal_with_reason(Report::msg(
                     "a 64-bit integer whose high half is a 32-bit value and whose low half is \
                      zero must have been made an 'arith.join' by `legalize-for-masm`, which must \
-                     run before spill placement",
+                     run before instruction selection",
                 ))
             } else {
                 masm_lowerable_op(op)
@@ -713,7 +694,7 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
                 DynamicLegalityResult::illegal_with_reason(Report::msg(
                     "a 32-bit half of a 64-bit integer, in a block that takes its high half, must \
                      have been made a limb of an 'arith.split' of it by `legalize-for-masm`, \
-                     which must run before spill placement",
+                     which must run before instruction selection",
                 ))
             } else {
                 masm_lowerable_op(op)
@@ -740,15 +721,15 @@ fn register_masm_legalization_dialects(context: &Rc<Context>) {
     context.get_or_register_dialect::<debuginfo::DebugInfoDialect>();
 }
 
-/// An op MASM codegen can lower: one with a `HirLowering`, or a transparent cast, which codegen
+/// An op MASM codegen can lower: one with a `HirSelection`, or a transparent cast, which codegen
 /// lowers by renaming its operand.
 fn masm_lowerable_op(op: &Operation) -> DynamicLegalityResult {
-    if op.implements::<dyn HirLowering>() || op.implements::<dyn TransparentCast>() {
+    if op.implements::<dyn HirSelection>() || op.implements::<dyn TransparentCast>() {
         DynamicLegalityResult::legal()
     } else {
         DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
-            "operation '{}' is in a MASM-supported dialect but implements neither HirLowering nor \
-             TransparentCast",
+            "operation '{}' is in a MASM-supported dialect but implements neither HirSelection \
+             nor TransparentCast",
             op.name()
         )))
     }
@@ -1618,7 +1599,7 @@ mod tests {
         let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
         let message = format!("{err}");
         assert!(message.contains("hir.bytes"));
-        assert!(message.contains("implements neither HirLowering nor TransparentCast"));
+        assert!(message.contains("implements neither HirSelection nor TransparentCast"));
     }
 
     #[test]
@@ -1744,72 +1725,70 @@ mod tests {
         builder.ret(None, SourceSpan::UNKNOWN).unwrap();
     }
 
-    /// Arguments plus the table index must fit the addressable operand stack window; the wasm
-    /// frontend diagnoses this at translation, but IR from any other producer reaches codegen
-    /// unchecked.
+    /// Transient selectors do not reduce the actual sixteen-lane argument ABI.
     #[test]
-    fn oversized_exec_indirect_arguments_fail_legalization() {
-        let mut test = Test::named("oversized_exec_indirect").in_module("m");
+    fn full_width_exec_indirect_arguments_pass_legalization() {
+        let mut test = Test::named("full_width_exec_indirect").in_module("m");
         let signature = Signature::new(&test.context_rc(), vec![Type::U32; 16], []);
         test_with_exec_indirect(&mut test, signature);
-
-        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
-        let message = format!("{err}");
-        assert!(message.contains("hir.exec_indirect"), "{message}");
-        assert!(message.contains("operand stack window"), "{message}");
-    }
-
-    /// The table index takes a single element of the window, so the widest legal call is the one
-    /// filling the remaining fifteen with argument field elements.
-    #[test]
-    fn exec_indirect_arguments_at_the_budget_pass_legalization() {
-        let mut test = Test::named("budgeted_exec_indirect").in_module("m");
-        let signature = Signature::new(&test.context_rc(), vec![Type::U32; 15], []);
-        test_with_exec_indirect(&mut test, signature);
-
         test.apply_pass::<LegalizeForMasm>(true).unwrap();
     }
 
-    /// A `hir.dyncall`'s callee root is a whole word, not one element, so it is bounded three
-    /// elements tighter than an `hir.exec_indirect`. Scheduling thirteen argument field elements
-    /// beside it would ask the spill analysis for seventeen reachable operands, which it cannot
-    /// deliver.
-    ///
-    /// That analysis runs *before* this pass in the backend pipeline, so it, not this rule, is
-    /// what such a call meets there — it reports one as a diagnostic of its own. This rule is what
-    /// makes the bound part of the IR contract codegen accepts, for the callers that legalize
-    /// without running the rewrites.
+    #[test]
+    fn oversized_exec_indirect_arguments_fail_legalization() {
+        let mut test = Test::named("oversized_exec_indirect").in_module("m");
+        let signature = Signature::new(&test.context_rc(), vec![Type::U32; 17], []);
+        test_with_exec_indirect(&mut test, signature);
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        assert!(format!("{err}").contains("17 argument field elements"));
+    }
+
+    #[test]
+    fn full_width_dyncall_arguments_pass_legalization() {
+        let mut test = Test::named("full_width_dyncall").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            vec![Type::U32; 16],
+            [],
+        );
+        test_with_dyncall(&mut test, signature);
+        test.apply_pass::<LegalizeForMasm>(true).unwrap();
+    }
+
     #[test]
     fn oversized_dyncall_arguments_fail_legalization() {
         let mut test = Test::named("oversized_dyncall").in_module("m");
         let signature = Signature::with_convention(
             &test.context_rc(),
             CallConv::ComponentModel,
-            vec![Type::U32; 13],
+            vec![Type::U32; 17],
             [],
         );
         test_with_dyncall(&mut test, signature);
-
         let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
-        let message = format!("{err}");
-        assert!(message.contains("hir.dyncall"), "{message}");
-        assert!(message.contains("operand stack window"), "{message}");
+        assert!(format!("{err}").contains("17 argument field elements"));
     }
 
-    /// The mirror of the above at the bound itself: twelve argument field elements share the
-    /// window with the root word exactly, which is the widest stored procedure the SDK frontend
-    /// can produce.
     #[test]
-    fn dyncall_arguments_at_the_budget_pass_legalization() {
-        let mut test = Test::named("budgeted_dyncall").in_module("m");
+    fn oversized_context_results_fail_legalization() {
+        let mut test = Test::named("oversized_context_results").in_module("m");
         let signature = Signature::with_convention(
             &test.context_rc(),
             CallConv::ComponentModel,
-            vec![Type::U32; 12],
             [],
+            vec![Type::U32; 17],
         );
         test_with_dyncall(&mut test, signature);
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        assert!(format!("{err}").contains("17 result field elements"));
+    }
 
+    #[test]
+    fn wide_same_context_results_pass_legalization() {
+        let mut test = Test::named("wide_same_context_results").in_module("m");
+        let signature = Signature::new(&test.context_rc(), [], vec![Type::U32; 17]);
+        test_with_exec_indirect(&mut test, signature);
         test.apply_pass::<LegalizeForMasm>(true).unwrap();
     }
 
@@ -3319,8 +3298,7 @@ mod tests {
     }
 
     /// A pair stored and also used elsewhere is joined for that use, and its store is split all
-    /// the same: the halves live on to the store beside the join, which spill placement, after
-    /// this pass, allows for.
+    /// the same: allocation sees both uses after legalization has established their live ranges.
     #[test]
     fn a_store_of_a_pair_also_used_elsewhere_is_split() {
         let mut test = Test::new(

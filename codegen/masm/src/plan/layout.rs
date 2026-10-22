@@ -39,6 +39,7 @@ impl ValueLayout {
     }
 
     /// Lane types in stack order, with the first lane nearest the top.
+    #[cfg(test)]
     pub fn raw_parts(&self) -> &[Type] {
         &self.raw
     }
@@ -49,9 +50,11 @@ impl ValueLayout {
     }
 }
 
-/// Ordered operand layouts; the combined tuple may exceed a single value's word limit.
+/// Ordered test operand layouts; their combined width may exceed one ordinary value.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TupleLayout(Vec<ValueLayout>);
+#[cfg(test)]
 impl TupleLayout {
     /// Preserve semantic tuple order without imposing an aggregate lane limit.
     pub fn new(values: Vec<ValueLayout>) -> Self {
@@ -61,11 +64,6 @@ impl TupleLayout {
     /// Total lane count after flattening the ordered values.
     pub fn lanes(&self) -> usize {
         self.0.iter().map(|v| usize::from(v.lanes())).sum()
-    }
-
-    /// Per-value boundaries retained alongside the flattened lane count.
-    pub fn values(&self) -> &[ValueLayout] {
-        &self.0
     }
 }
 

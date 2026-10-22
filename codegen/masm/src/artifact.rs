@@ -1,15 +1,15 @@
 use alloc::sync::Arc;
-use core::{fmt, ops::ControlFlow};
+use core::fmt;
 
 use miden_assembly::{Path, ProjectSourceInputs, ast::InvocationTarget};
 use miden_core::Word;
 use midenc_hir::{SymbolPath, constants::ConstantData, interner::Symbol};
 use midenc_session::{
     Emit, OutputMode, OutputType, Session, Writer,
-    diagnostics::{IntoDiagnostic, Report, SourceSpan, Span, WrapErr},
+    diagnostics::{IntoDiagnostic, Report, SourceSpan, WrapErr},
 };
 
-use crate::{Event, lower::NativePtr, masm};
+use crate::{lower::NativePtr, masm};
 
 pub struct MasmComponent {
     /// The namespace path of the component, see
@@ -33,14 +33,10 @@ pub struct MasmComponent {
     ///
     /// If unset, it indicates that the component is a library, even if it could be made executable.
     pub entrypoint: Option<masm::InvocationTarget>,
-    /// A private copy of the selected canonical-ABI entrypoint without its component `init`
-    /// prologue.
-    ///
-    /// This is present only when a component with a core Wasm start is compiled as an executable
-    /// through a canonical-ABI wrapper. Generated `main` invokes `init` itself, then any test
-    /// harness initialization, then this copy. The public wrapper retains its normal `init`
-    /// prologue for fresh-context calls.
-    pub executable_entrypoint_without_init: Option<masm::Procedure>,
+    /// Argument/result lane counts of the canonically resolved same-context entrypoint.
+    pub entrypoint_arity: Option<(u32, u32)>,
+    /// Target namespace and executable classification fixed before selection, if target-aware.
+    pub prepared_target: Option<(Arc<Path>, bool)>,
     /// The rodata segments of this component keyed by the offset of the segment
     pub rodata: Vec<Rodata>,
     /// The address of the start of the global heap
@@ -173,6 +169,20 @@ impl MasmComponent {
         target: &midenc_session::miden_project::Target,
         session: &Session,
     ) -> Result<ProjectSourceInputs, Report> {
+        if let Some((namespace, executable)) = &self.prepared_target {
+            if namespace.as_ref() != target.namespace.inner().as_ref()
+                || *executable != target.is_executable()
+            {
+                return Err(Report::msg(
+                    "assembly target differs from the namespace selected before verification",
+                ));
+            }
+        } else if !target.is_executable() && self.root.as_ref() != target.namespace.inner().as_ref()
+        {
+            return Err(Report::msg(
+                "source-identity component requires lowering again for another assembly namespace",
+            ));
+        }
         let is_executable_target = target.is_executable();
         let emit_test_harness = session.get_flag("test_harness");
         let mut support = Vec::with_capacity(self.modules.len());
@@ -194,92 +204,8 @@ impl MasmComponent {
             return Ok(ProjectSourceInputs { root, support });
         }
 
-        let mut root = root.expect("components must always have a root module");
-
-        // A library-like target's root module must sit exactly at the target's namespace, or
-        // the assembler rejects the whole target (`load_target_sources`). A component-less world
-        // can never satisfy that on its own: the root code generation gave it is not a name any
-        // source declares, so no namespace derived from the source can equal it. See
-        // [`Self::has_no_authored_identity`].
-        //
-        // Re-rooting is correct rather than merely expedient, for that same reason. The target's
-        // namespace is the name the author *did* choose, and is where they expect this library's
-        // procedures to be addressable from; the root being replaced is one the compiler picked
-        // on their behalf and never told them about. A component keeps its declared namespace:
-        // its path is part of the code's own identity (the frontend roots it at the target
-        // namespace in the first place), and moving it would silently rename the procedures every
-        // dependent addresses.
-        //
-        // Equivalent namespaces can still differ in quoting. Use the target's exact spelling in
-        // that case, including in support modules and calls: this preserves the namespace's
-        // identity while satisfying the assembler's string comparison. `strip_prefix` compares
-        // raw segments, so a quoted segment containing `::` stays distinct from a path separator.
-        //
-        // Nothing is done here for an executable, which is handled above: its root is discarded
-        // in favor of the generated `$exec` module, so its namespace already agrees.
-        //
-        // The equality check is what keeps a target that *already* agrees from being rewritten to
-        // itself. That is the ordinary case for a component-less world with one top-level module,
-        // whose root is that module's name and whose synthesized namespace is read from the very
-        // same declaration.
-        //
-        // Only the modules handed to the assembler move. `MasmComponent`'s own `root`, `init` and
-        // `entrypoint` still name the old root afterwards, which is why a library's `--emit=masm`
-        // document (written from the component, not from these inputs) shows it while the
-        // assembled package uses the target's namespace. Neither field has a consumer on this
-        // path — `init` is invoked symbolically from within the component, and `entrypoint` is
-        // only read by `generate_main` on the executable branch above — so they are left as they
-        // are rather than rewritten to no effect.
-        let namespace = target.namespace.inner();
-        if self.root.as_ref() != namespace.as_ref()
-            && (self.has_no_authored_identity()
-                || self.root.strip_prefix(namespace).is_some_and(|rest| rest.is_empty()))
-        {
-            let mut rebase = Rebase {
-                from: &self.root,
-                to: namespace,
-            };
-            rebase.apply(&mut root);
-            for module in support.iter_mut() {
-                rebase.apply(module);
-            }
-        }
-
+        let root = root.expect("components must always have a root module");
         Ok(ProjectSourceInputs { root, support })
-    }
-
-    /// Returns true if this component declares no identity of its own, and so belongs wherever
-    /// its target says rather than where code generation put it.
-    ///
-    /// Only **a world declaring no component** qualifies, which has no id at all. Its modules
-    /// "belong to one logical component, which has no identity beyond the namespace those
-    /// modules sit in" (`world_body_to_masm_component`), so lowering has to invent a root: the
-    /// placeholder constant `::init` for zero or several top-level modules, and that module's own
-    /// name for exactly one.
-    ///
-    /// Every component is the complement, and keeps its namespace identity: moving it to a
-    /// different namespace would rename the procedures every dependent addresses. Its path may
-    /// still be respelled to match an equivalent target namespace in [`Self::source_inputs`]. This
-    /// includes the synthetic wrapper the Wasm frontend builds around a *core* Wasm module, which
-    /// the frontend already roots at the target namespace.
-    ///
-    /// # Why one top-level module is not carved out
-    ///
-    /// `::{module}` *is* a name the file says, so it is the one root here that could arguably be
-    /// preserved. It is not, for three reasons.
-    ///
-    /// First, it costs the ordinary case nothing: preparation synthesizes that target's namespace
-    /// by reading the very same declaration (`hir_declared_namespace` in `midenc-compile`), so
-    /// the two agree and the equality guard in [`Self::source_inputs`] makes the rewrite a no-op.
-    /// Second, `MasmComponent` has no way to tell the two roots apart — nothing records how many
-    /// top-level modules the world had — so carving it out would mean either comparing `root`
-    /// against the literal `"::init"`, which is exactly the one-value-in-two-places duplication
-    /// preparation refused, or threading a flag down from lowering for a case that is a no-op.
-    /// Third, a world is not a component: a module's name says where its procedures sit *within*
-    /// a namespace, not what that namespace is, so a target that names a different one is not
-    /// contradicting the file the way a component's namespace path would be.
-    fn has_no_authored_identity(&self) -> bool {
-        self.id.is_none()
     }
 
     /// Generate an executable module which when run expects the raw data segment data to be
@@ -291,288 +217,44 @@ impl MasmComponent {
         emit_test_harness: bool,
         source_manager: Arc<dyn midenc_session::SourceManager>,
     ) -> Result<Box<masm::Module>, Report> {
-        use masm::{Instruction as Inst, Op};
-
+        use crate::{
+            plan::{CallingConvention, ProcedureAbi},
+            select::generated::{GeneratedHarness, GeneratedRoot},
+        };
         let mut exe = Box::new(masm::Module::new_executable());
-        let span = SourceSpan::default();
-        let mut invoked = Vec::new();
-        let entrypoint = if let Some(procedure) = self.executable_entrypoint_without_init.as_ref() {
-            let target = InvocationTarget::Symbol(procedure.name().as_ident());
-            exe.define_procedure(procedure.clone(), source_manager.clone())
-                .into_diagnostic()
-                .wrap_err("failed to define executable entrypoint without init")?;
-            target
+        let span = SourceSpan::UNKNOWN;
+        let harness = if emit_test_harness {
+            let name = masm::ProcedureName::new("__test_harness").unwrap();
+            let procedure = crate::lower::finalize_generated(
+                &GeneratedHarness,
+                &[GeneratedHarness],
+                name.clone(),
+                span,
+            )?;
+            exe.define_procedure(procedure, source_manager.clone()).into_diagnostic()?;
+            Some(InvocationTarget::Symbol(name.as_ident()))
         } else {
-            entrypoint.clone()
+            None
         };
-        let body = {
-            let mut block = masm::Block::new(span, Vec::with_capacity(64));
-            // Invoke component initializer, if present
-            if let Some(init) = self.init.as_ref() {
-                invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, init.clone()));
-                block.push(Op::Inst(Span::new(span, Inst::Exec(init.clone()))));
-            }
-
-            // Initialize test harness, if requested
-            if emit_test_harness {
-                self.emit_test_harness(&mut block);
-            }
-
-            // Invoke the program entrypoint
-            block.push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameStart.into()))));
-            invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, entrypoint.clone()));
-            block.push(Op::Inst(Span::new(span, Inst::Exec(entrypoint))));
-            block.push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameEnd.into()))));
-
-            // Truncate the stack to 16 elements on exit
-            let truncate_stack = {
-                let name = masm::ProcedureName::new("truncate_stack").unwrap();
-                let module = masm::LibraryPath::new("::miden::core::sys").unwrap();
-                let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-                InvocationTarget::Path(Span::new(span, qualified.into_inner()))
-            };
-            invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, truncate_stack.clone()));
-            block.push(Op::Inst(Span::new(span, Inst::Exec(truncate_stack))));
-            block
+        let (arguments, results) = self
+            .entrypoint_arity
+            .ok_or_else(|| Report::msg("executable entrypoint lacks a checked source ABI"))?;
+        let source = GeneratedRoot {
+            initializer: self.init.clone(),
+            harness,
+            entry: entrypoint.clone(),
+            entry_abi: ProcedureAbi::new(CallingConvention::SameContext, arguments, results)?,
         };
-        let mut start = masm::Procedure::new(
-            span,
-            masm::Visibility::Public,
+        let start = crate::lower::finalize_generated(
+            &source,
+            &source.definitions(),
             masm::ProcedureName::main(),
-            0,
-            body,
-        );
-        start.extend_invoked(invoked);
+            span,
+        )?;
         exe.define_procedure(start, source_manager)
             .into_diagnostic()
-            .wrap_err("failed to define executable `main` procedure")?;
+            .wrap_err("failed to define executable main")?;
         Ok(exe)
-    }
-
-    fn emit_test_harness(&self, block: &mut masm::Block) {
-        use masm::{Instruction as Inst, IntValue, Op, PushValue};
-        use miden_core::Felt;
-
-        let span = SourceSpan::default();
-
-        let pipe_words_to_memory = {
-            let name = masm::ProcedureName::new("pipe_words_to_memory").unwrap();
-            let module = masm::LibraryPath::new("::miden::core::mem").unwrap();
-            let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-            InvocationTarget::Path(Span::new(span, qualified.into_inner()))
-        };
-
-        // Step 1: Get the number of initializers to run
-        // => [inits] on operand stack
-        block.push(Op::Inst(Span::new(span, Inst::AdvPush)));
-
-        // Step 2: Evaluate the initial state of the loop condition `inits > 0`
-        // => [inits, inits]
-        block.push(Op::Inst(Span::new(span, Inst::Dup0)));
-        // => [inits > 0, inits]
-        block.push(Op::Inst(Span::new(span, Inst::Push(PushValue::Int(IntValue::U8(0)).into()))));
-        block.push(Op::Inst(Span::new(span, Inst::Gt)));
-
-        // Step 3: Loop until `inits == 0`
-        let mut loop_body = Vec::with_capacity(16);
-
-        // State of operand stack on entry to `loop_body`: [inits]
-        // State of advice stack on entry to `loop_body`: [dest_ptr, num_words, ...]
-        //
-        // Step 3a: Compute next value of `inits`, i.e. `inits'`
-        // => [inits - 1]
-        loop_body.push(Op::Inst(Span::new(span, Inst::SubImm(Felt::ONE.into()))));
-
-        // Step 3b: Copy initializer data to memory
-        // => [num_words, dest_ptr, inits']
-        loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
-        loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
-        // => [C, B, A, dest_ptr, inits'] on operand stack
-        loop_body.push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameStart.into()))));
-        loop_body.push(Op::Inst(Span::new(span, Inst::Exec(pipe_words_to_memory))));
-        loop_body.push(Op::Inst(Span::new(span, Inst::EmitImm(Event::FrameEnd.into()))));
-        // Drop C, B, A
-        loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
-        loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
-        loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
-        // => [inits']
-        loop_body.push(Op::Inst(Span::new(span, Inst::Drop)));
-
-        // Step 3c: Evaluate loop condition `inits' > 0`
-        // => [inits', inits']
-        loop_body.push(Op::Inst(Span::new(span, Inst::Dup0)));
-        // => [inits' > 0, inits']
-        loop_body
-            .push(Op::Inst(Span::new(span, Inst::Push(PushValue::Int(IntValue::U8(0)).into()))));
-        loop_body.push(Op::Inst(Span::new(span, Inst::Gt)));
-
-        // Step 4: Enter (or skip) loop
-        block.push(Op::While {
-            span,
-            body: masm::Block::new(span, loop_body),
-        });
-
-        // Step 5: Drop `inits` after loop is evaluated
-        block.push(Op::Inst(Span::new(span, Inst::Drop)));
-    }
-}
-
-/// Moves a component's modules from one root path to another, in place.
-///
-/// Only a component-less world's modules are moved, see
-/// [`MasmComponent::has_no_authored_identity`].
-///
-/// A component's modules are *nested under* its root — code generation defines them relative to
-/// it (`MasmComponentBuilder::define_module`) — and the calls between them are emitted as
-/// absolute paths carrying that same root. So moving the root is not a matter of renaming one
-/// module: every module path and every intra-component invocation target has to move with it, or
-/// the root ends up declaring submodules that do not exist and the procedures end up calling
-/// modules that are no longer there.
-///
-/// Paths that are not under `from` — the intrinsics and the core library, notably — are left
-/// alone, which is what confines this to the component's own modules.
-struct Rebase<'a> {
-    from: &'a Path,
-    to: &'a Path,
-}
-
-impl Rebase<'_> {
-    /// Move `module`, and everything it refers to within the component, under [`Self::to`].
-    fn apply(&mut self, module: &mut masm::Module) {
-        use masm::visit::VisitMut;
-
-        if let Some(path) = self.rebase(module.path()) {
-            module.set_path(&path);
-        }
-        for import in module.imports_mut() {
-            let _ = self.visit_mut_import(import);
-        }
-        // The rewrite below never breaks out of the walk, so there is no outcome to inspect.
-        let _ = self.visit_mut_module(module);
-    }
-
-    /// The path `path` becomes under [`Self::to`], or `None` if it is not under [`Self::from`].
-    fn rebase(&self, path: &Path) -> Option<masm::LibraryPath> {
-        path.strip_prefix(self.from).map(|rest| {
-            let mut rebased = self.to.to_path_buf();
-            for component in rest.components() {
-                match component.expect("invalid path suffix") {
-                    // Preserve the spelling: `as_str()` would unquote a literal `"::"`, which
-                    // `push_component` would then mistake for a root marker.
-                    masm::LibraryPathComponent::Normal(spelling) => {
-                        rebased.push_component(spelling)
-                    }
-                    masm::LibraryPathComponent::Root => {
-                        unreachable!("a stripped absolute prefix leaves a relative suffix")
-                    }
-                }
-            }
-            rebased
-        })
-    }
-
-    /// Move `target` under [`Self::to`] if it names something in the component, reporting whether
-    /// it did.
-    fn rebase_target(&self, target: &mut InvocationTarget) -> bool {
-        let InvocationTarget::Path(path) = target else {
-            return false;
-        };
-        let Some(rebased) = self.rebase(path.inner()) else {
-            return false;
-        };
-        *path = Span::new(path.span(), Arc::from(rebased.into_boxed_path()));
-        true
-    }
-
-    /// Replace `procedure` with an equivalent one whose recorded callees are `invoked`.
-    ///
-    /// A procedure carries a set of the callees code generation emitted for it, and the linker
-    /// resolves every entry in that set to build the call graph — so an entry naming a module
-    /// that has moved fails the link with "undefined item", even though the body it was derived
-    /// from now says otherwise. The set can be added to (`extend_invoked`) but not pruned from
-    /// outside the syntax crate, hence rebuilding rather than editing in place.
-    ///
-    /// WARNING: rebuilding means enumerating everything a `Procedure` carries, so **a field added
-    /// to `miden_assembly_syntax::ast::Procedure` upstream is silently dropped here** — for the
-    /// procedures whose callees moved, on the live path, with no compile error and nothing
-    /// mechanical to catch it (`Procedure`'s hand-written `PartialEq` already omits `span` and
-    /// `invoked`, so even a round-trip equality check would not reliably notice). The field list
-    /// below was audited against **miden-assembly-syntax 0.25.8** and is complete for that
-    /// version; re-audit it when that dependency is bumped. The real fix is a `clear_invoked` on
-    /// `Procedure` upstream, which would make this whole function unnecessary.
-    fn replace_invoked(procedure: &mut masm::Procedure, invoked: Vec<masm::Invoke>) {
-        use masm::Spanned;
-
-        let span = procedure.span();
-        let body = core::mem::replace(procedure.body_mut(), masm::Block::new(span, Vec::new()));
-        let mut rebuilt = masm::Procedure::new(
-            span,
-            procedure.visibility(),
-            procedure.name().clone(),
-            procedure.num_locals(),
-            body,
-        )
-        .with_docs(procedure.docs().map(|docs| docs.map(alloc::string::String::from)))
-        .with_attributes(procedure.attributes().iter().cloned());
-        rebuilt.set_syscall(procedure.is_syscall());
-        if let Some(signature) = procedure.signature() {
-            rebuilt.set_signature(signature.clone());
-        }
-        rebuilt.extend_invoked(invoked);
-        *procedure = rebuilt;
-    }
-}
-
-impl masm::visit::VisitMut for Rebase<'_> {
-    fn visit_mut_import(&mut self, import: &mut masm::Import) -> ControlFlow<()> {
-        use masm::Spanned;
-
-        let path = import.module_path();
-        if let Some(rebased) = self.rebase(path.inner()) {
-            let path = Span::new(path.span(), Arc::from(rebased.into_boxed_path()));
-            match import {
-                masm::Import::Module(import) => import.set_module_path(path),
-                masm::Import::Item(import) => {
-                    let mut rebased = masm::ItemImport::new(
-                        import.span(),
-                        import.visibility(),
-                        path,
-                        import.source_name().clone(),
-                        import.local_name().clone(),
-                    );
-                    rebased.uses = import.uses;
-                    *import = rebased;
-                }
-            }
-        }
-        ControlFlow::Continue(())
-    }
-
-    /// Every call-like instruction reaches this, as `exec`, `call`, `syscall` and `procref` all
-    /// funnel through it.
-    fn visit_mut_invoke_target(&mut self, target: &mut InvocationTarget) -> ControlFlow<()> {
-        self.rebase_target(target);
-        ControlFlow::Continue(())
-    }
-
-    /// The body is rewritten by the default walk; a procedure's *recorded* callees are not
-    /// reachable from it, so they are rebased here as well. See [`Rebase::replace_invoked`].
-    fn visit_mut_procedure(&mut self, procedure: &mut masm::Procedure) -> ControlFlow<()> {
-        masm::visit::visit_mut_procedure(self, procedure)?;
-
-        let mut moved = false;
-        let invoked = procedure
-            .invoked()
-            .cloned()
-            .map(|mut invoke| {
-                moved |= self.rebase_target(&mut invoke.target);
-                invoke
-            })
-            .collect::<Vec<_>>();
-        if moved {
-            Self::replace_invoked(procedure, invoked);
-        }
-        ControlFlow::Continue(())
     }
 }
 
@@ -640,448 +322,110 @@ mod tests {
         }
     }
 
-    // -------------------------------------------------------------------------------------------
-    // Where a component's Miden Assembly is rooted.
-    //
-    // `load_target_sources` rejects a root module whose path is not exactly the target's
-    // namespace, so this is what decides whether a target assembles at all.
-    // -------------------------------------------------------------------------------------------
-
     mod rooting {
         use alloc::rc::Rc;
 
-        use midenc_hir::Context;
-        use midenc_session::miden_project::{Target, Uri};
+        use midenc_hir::{
+            Context, Spanned, diagnostics::Uri, dialects::builtin, formatter::PrettyPrint,
+            pass::AnalysisManager,
+        };
+        use midenc_session::miden_project::Target;
 
         use super::*;
+        use crate::{EmissionNamespace, ToMasmComponent};
 
-        /// The identity a real Wasm *component* carries, which its author chose.
-        fn authored_id() -> SymbolPath {
-            SymbolPath::from_masm_module_id("miden::example::example")
-        }
-
-        /// The component `frontend/wasm` wraps around a core Wasm module built for an executable:
-        /// named after the wrapped module, plus the marker saying the compiler invented it.
-        fn wrapper_component() -> MasmComponent {
-            let id = SymbolPath::from_masm_module_id("lib");
-            let mut component = component(id);
-            component.synthetic_wrapper = true;
-            component
-        }
-
-        /// A component of `id` whose author wrote that id, rooted at the path it renders to.
-        fn component(id: SymbolPath) -> MasmComponent {
-            let root_path: Arc<Path> = Arc::from(
-                id.to_library_path()
-                    .to_absolute()
-                    .expect("absolute")
-                    .into_owned()
-                    .into_boxed_path(),
-            );
-            rooted_component(Some(id), root_path)
-        }
-
-        /// What a world declaring **no** component lowers to: no id at all, and a root
-        /// `world_body_to_masm_component` chose rather than one any source declares — either the
-        /// world's single top-level module (`::{module}`) or, for zero or several of them, the
-        /// placeholder constant `::init`.
-        fn component_less(root: &str) -> MasmComponent {
-            let root_path: Arc<Path> = Arc::from(
-                masm::LibraryPath::new(root)
-                    .unwrap()
-                    .to_absolute()
-                    .expect("absolute")
-                    .into_owned()
-                    .into_boxed_path(),
-            );
-            rooted_component(None, root_path)
-        }
-
-        /// A component rooted at `root_path` holding a root module and one submodule, in the
-        /// shape code generation produces: the submodule is nested under the component's path,
-        /// the root declares it, and the submodule's exported procedure calls one of its own by
-        /// absolute path as well as an intrinsic that lives outside the component.
-        fn rooted_component(id: Option<SymbolPath>, root_path: Arc<Path>) -> MasmComponent {
-            let child_path = root_path.join(masm::Path::new("child"));
-
-            let mut root = masm::Module::new(masm::ModuleKind::Library, &root_path);
-            root.declare_submodule(masm::Ident::new("child").unwrap(), masm::Visibility::Public)
-                .expect("should declare submodule");
-
-            let mut child = masm::Module::new(masm::ModuleKind::Library, &child_path);
-            child
-                .define_procedure(
-                    procedure("callee", []),
-                    Arc::new(midenc_session::diagnostics::DefaultSourceManager::default()),
-                )
-                .expect("should define callee");
-            child
-                .define_procedure(
-                    procedure("caller", [child_path.join(masm::Path::new("callee")), intrinsic()]),
-                    Arc::new(midenc_session::diagnostics::DefaultSourceManager::default()),
-                )
-                .expect("should define caller");
-
-            MasmComponent {
-                id,
-                synthetic_wrapper: false,
-                root: root_path,
-                init: None,
-                entrypoint: Some(exec_target(&child_path.join(masm::Path::new("caller")))),
-                executable_entrypoint_without_init: None,
-                rodata: Vec::new(),
-                heap_base: 0,
-                stack_pointer: None,
-                modules: vec![Arc::new(root), Arc::new(child)],
-            }
-        }
-
-        /// A procedure named `name` that `exec`s each of `callees`, recording them the way code
-        /// generation does — in the body *and* in the procedure's set of invoked callees.
-        ///
-        /// It carries a signature and a marker attribute because re-rooting rebuilds procedures
-        /// whose callees moved, and everything code generation attached has to survive that: the
-        /// signature is what the assembler type-checks exported procedures against, and the
-        /// markers are the ones `MasmFunctionBuilder::build` copies onto a procedure
-        /// (`lower/component.rs:903`) from the attributes the frontend sets on lifted exports
-        /// (`frontend/wasm`'s `lift_exports.rs:442`), which classify an account component's
-        /// procedures.
-        fn procedure<I>(name: &str, callees: I) -> masm::Procedure
-        where
-            I: IntoIterator<Item = masm::LibraryPath>,
-        {
-            let span = SourceSpan::default();
-            let mut ops = Vec::new();
-            let mut invoked = Vec::new();
-            for callee in callees {
-                let target = exec_target(&callee);
-                invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, target.clone()));
-                ops.push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(target))));
-            }
-            ops.push(masm::Op::Inst(Span::new(span, masm::Instruction::Nop)));
-            let mut procedure = masm::Procedure::new(
-                span,
-                masm::Visibility::Public,
-                masm::ProcedureName::new(name).unwrap(),
-                3,
-                masm::Block::new(span, ops),
-            )
-            .with_signature(masm::FunctionType::new(
-                midenc_hir::CallConv::Fast,
-                vec![masm::TypeExpr::from(midenc_hir::Type::U32)],
-                vec![],
-            ))
-            .with_attributes([masm::Attribute::Marker(
-                masm::Ident::new("account_procedure").unwrap(),
-            )]);
-            procedure.extend_invoked(invoked);
-            procedure
-        }
-
-        /// Everything code generation attached to `name` beyond its body, rendered for comparison.
-        fn decorations(module: &masm::Module, name: &str) -> alloc::string::String {
-            use alloc::string::ToString;
-
-            let procedure = module
-                .items()
-                .iter()
-                .find_map(|item| match item {
-                    masm::Item::Procedure(procedure) if procedure.name().as_str() == name => {
-                        Some(procedure)
-                    }
-                    _ => None,
-                })
-                .unwrap_or_else(|| panic!("no procedure named '{name}' in '{}'", module.path()));
-            format!(
-                "{:?} locals={} syscall={} signature={:?} attributes={:?}",
-                procedure.visibility(),
-                procedure.num_locals(),
-                procedure.is_syscall(),
-                procedure.signature().map(|signature| format!("{signature:?}")),
-                procedure.attributes().iter().map(|attr| attr.to_string()).collect::<Vec<_>>(),
-            )
-        }
-
-        /// A call target outside any component, which must survive re-rooting untouched.
-        fn intrinsic() -> masm::LibraryPath {
-            masm::LibraryPath::new("::intrinsics::mem::heap_init").unwrap()
-        }
-
-        fn exec_target(path: &masm::LibraryPath) -> InvocationTarget {
-            InvocationTarget::Path(Span::new(
-                SourceSpan::default(),
-                Arc::from(path.clone().into_boxed_path()),
-            ))
-        }
-
-        fn library_target(namespace: &str) -> Target {
+        fn target(path: &str) -> Target {
             Target::library(
-                Arc::<Path>::from(
-                    masm::LibraryPath::new(namespace)
-                        .unwrap()
-                        .to_absolute()
-                        .unwrap()
-                        .into_owned()
-                        .into_boxed_path(),
-                ),
-                Uri::new("lib.wasm"),
+                masm::PathBuf::new(path).unwrap().to_absolute().unwrap().into_owned(),
+                Uri::new("namespace.hir"),
             )
         }
 
-        /// A default compiler context, which is where `source_inputs` gets its session.
-        fn context() -> Rc<Context> {
-            Rc::new(Context::default())
-        }
-
-        /// Every path in `module`, i.e. its own and each call target in each of its procedures,
-        /// including the targets recorded on the procedure rather than written in its body.
-        fn paths(module: &masm::Module) -> Vec<alloc::string::String> {
-            use alloc::string::ToString;
-
-            let mut paths = vec![module.path().to_string()];
-            for item in module.items() {
-                let masm::Item::Procedure(procedure) = item else {
-                    continue;
-                };
-                for op in procedure.iter() {
-                    if let masm::Op::Inst(inst) = op
-                        && let masm::Instruction::Exec(InvocationTarget::Path(path)) = &**inst
-                    {
-                        paths.push(path.to_string());
-                    }
-                }
-                for invoke in procedure.invoked() {
-                    paths.push(invoke.target.to_string());
-                }
-            }
-            paths
-        }
-
-        /// The *allocation* behind each call target in `module`, cloned so that it can be
-        /// compared later by identity rather than by value.
-        ///
-        /// This is what tells a component that was never rewritten from one rewritten to the very
-        /// same paths, and nothing comparing values can: rebuilding a procedure is lossless by
-        /// design — that is the entire point of [`Rebase::replace_invoked`] — so every path, every
-        /// decoration and every recorded callee comes back *equal* either way.
-        ///
-        /// Identity survives the copy that [`MasmComponent::source_inputs`] makes, because an
-        /// `InvocationTarget::Path` holds an `Arc<Path>` and cloning a module shares it. A rewrite
-        /// cannot preserve it: `Rebase::rebase_target` builds its replacement with `Arc::from`,
-        /// which allocates unconditionally, whether or not the path it produces differs.
-        fn target_allocations(module: &masm::Module) -> Vec<Arc<Path>> {
-            let mut targets = Vec::new();
-            for item in module.items() {
-                let masm::Item::Procedure(procedure) = item else {
-                    continue;
-                };
-                for op in procedure.iter() {
-                    if let masm::Op::Inst(inst) = op
-                        && let masm::Instruction::Exec(InvocationTarget::Path(path)) = &**inst
-                    {
-                        targets.push(path.inner().clone());
-                    }
-                }
-            }
-            targets
-        }
-
-        /// Whether every call target in `module` is still the allocation it was in `before`.
-        ///
-        /// See [`target_allocations`]. A `false` here means the rewrite ran, regardless of what it
-        /// produced.
-        fn targets_are_untouched(before: &[Arc<Path>], module: &masm::Module) -> bool {
-            let after = target_allocations(module);
-            before.len() == after.len()
-                && before
-                    .iter()
-                    .zip(after.iter())
-                    .all(|(before, after)| Arc::ptr_eq(before, after))
-        }
-
-        /// A component whose namespace its author chose is left exactly where it is.
-        ///
-        /// Re-rooting is justified only by a component-less world having no identity at all.
-        /// An authored component namespace is part of the code's own identity, and moving it
-        /// would silently rename the procedures every dependent addresses.
-        #[test]
-        fn an_authored_components_library_keeps_its_own_path() {
-            let context = context();
-            let target = library_target("::example");
-            let component = component(authored_id());
-            let expected = paths(&component.modules[1]);
-
-            let sources = component.source_inputs(&target, context.session()).unwrap();
-
-            assert_eq!(
-                sources.root.path(),
-                component.root.as_ref(),
-                "an authored component's root is its own library path, whatever the target is \
-                 called"
-            );
-            assert_eq!(paths(&sources.support[0]), expected);
+        fn lower(text: &str, target: &Target) -> (MasmComponent, Rc<Context>) {
+            let context = Rc::new(Context::default());
+            let op = midenc_hir::parse::parse_any(
+                midenc_hir::parse::ParserConfig {
+                    context: context.clone(),
+                    verify: true,
+                },
+                Uri::new("namespace.hir"),
+                text,
+            )
+            .unwrap();
+            let manager = AnalysisManager::new(op, None);
+            let component = if let Ok(world) = op.try_downcast_op::<builtin::World>() {
+                world
+                    .borrow()
+                    .to_masm_component(manager, EmissionNamespace::Target(target))
+                    .unwrap()
+            } else {
+                op.try_downcast_op::<builtin::Component>()
+                    .unwrap()
+                    .borrow()
+                    .to_masm_component(manager, EmissionNamespace::Target(target))
+                    .unwrap()
+            };
+            (component, context)
         }
 
         #[test]
-        fn equivalent_namespace_spellings_use_the_targets_spelling() {
-            for synthetic_wrapper in [false, true] {
-                let context = context();
-                let target = Target::library(
-                    Arc::<Path>::from(Path::new("::\"acme\"::pkg::app")),
-                    Uri::new("lib.wasm"),
-                );
-                let mut component = component(SymbolPath::from_masm_module_id("acme::pkg::app"));
-                component.synthetic_wrapper = synthetic_wrapper;
-                let child = Arc::make_mut(&mut component.modules[1]);
-                let source_manager = context.session().source_manager.clone();
-                child.define_procedure(procedure("\"::\"", []), source_manager.clone()).unwrap();
-                child
-                    .define_procedure(
-                        procedure(
-                            "literal_caller",
-                            [Path::new("::acme::pkg::app::child::\"::\"").to_path_buf()],
-                        ),
-                        source_manager,
-                    )
-                    .unwrap();
-                let decorated = decorations(&component.modules[1], "caller");
-
+        fn component_less_roots_choose_the_target_before_lowering() {
+            for text in [
+                "builtin.world { ^entry: };",
+                "builtin.world { builtin.module public @lib { builtin.function public \
+                 extern(\"C\") @entry() { builtin.ret; }; }; };",
+                "builtin.world { builtin.module public @a { builtin.function public extern(\"C\") \
+                 @a() { builtin.ret; }; }; builtin.module public @b { builtin.function public \
+                 extern(\"C\") @b() { builtin.ret; }; }; };",
+            ] {
+                let target = target("::chosen");
+                let (component, context) = lower(text, &target);
+                assert_eq!(component.root.as_str(), "::chosen");
+                let before = component.to_string();
                 let sources = component.source_inputs(&target, context.session()).unwrap();
-
-                assert_eq!(sources.root.path(), target.namespace.inner().as_ref());
-                assert_eq!(
-                    paths(&sources.support[0]),
-                    vec![
-                        "::\"acme\"::pkg::app::child",
-                        "::\"acme\"::pkg::app::child::callee",
-                        "::intrinsics::mem::heap_init",
-                        "::\"acme\"::pkg::app::child::callee",
-                        "::intrinsics::mem::heap_init",
-                        "::\"acme\"::pkg::app::child::\"::\"",
-                        "::\"acme\"::pkg::app::child::\"::\"",
-                    ],
-                );
-                assert_eq!(decorations(&sources.support[0], "caller"), decorated);
-            }
-        }
-
-        #[test]
-        fn quoted_separators_do_not_make_distinct_namespaces_equivalent() {
-            for (root, namespace) in
-                [("acme::pkg::app", "::\"acme::pkg\"::app"), ("app", "::\"::\"::app")]
-            {
-                let context = context();
-                let target =
-                    Target::library(Arc::<Path>::from(Path::new(namespace)), Uri::new("lib.wasm"));
-                let component = component(SymbolPath::from_masm_module_id(root));
-                let expected = paths(&component.modules[1]);
-
-                let sources = component.source_inputs(&target, context.session()).unwrap();
-
                 assert_eq!(sources.root.path(), component.root.as_ref());
-                assert_eq!(paths(&sources.support[0]), expected);
+                assert_eq!(before, component.to_string());
             }
         }
-
-        /// A component-less world's library is rooted at the target's namespace too.
-        ///
-        /// A world declaring no component has no identity of its own, so lowering has to invent
-        /// a root. With several top-level modules — or none — that root is the constant `::init`,
-        /// which no source declares and which therefore no synthesized namespace can equal, so
-        /// such a target could never satisfy `load_target_sources` at all. Everything that named
-        /// the old root has to move too — module paths, call targets, and the callee set each
-        /// procedure carries — or the root declares submodules that are not there and the linker
-        /// fails to resolve the calls.
         #[test]
-        fn a_component_less_worlds_library_is_rooted_at_the_target_namespace() {
-            let context = context();
-            let target = library_target("::example");
-            let component = component_less("::init");
-            let decorated = decorations(&component.modules[1], "caller");
-
-            let sources = component.source_inputs(&target, context.session()).unwrap();
-
-            assert_eq!(sources.root.path(), target.namespace.inner().as_ref());
-            assert_eq!(sources.support.len(), 1, "the component's one submodule");
-            assert_eq!(
-                paths(&sources.support[0]),
-                vec![
-                    "::example::child",
-                    "::example::child::callee",
-                    "::intrinsics::mem::heap_init",
-                    "::example::child::callee",
-                    "::intrinsics::mem::heap_init",
-                ],
-                "nothing may be left addressing the placeholder root"
+        fn equivalent_spelling_is_selected_early_and_packaging_is_inert() {
+            let target = target("::\"lib\"");
+            let (component, context) = lower(
+                "builtin.component private @lib { builtin.function public extern(\"C\") @entry() \
+                 { builtin.ret; }; };",
+                &target,
             );
+            assert_eq!(component.root.as_str(), target.namespace.inner().as_str());
+            let sources = component.source_inputs(&target, context.session()).unwrap();
+            let original = component.modules[0].procedures().next().unwrap();
+            let packaged = sources.root.procedures().next().unwrap();
+            assert_eq!(original.span(), packaged.span());
+            assert_eq!(original.visibility(), packaged.visibility());
+            assert_eq!(original.num_locals(), packaged.num_locals());
+            assert_eq!(original.to_pretty_string(), packaged.to_pretty_string());
             assert_eq!(
-                decorations(&sources.support[0], "caller"),
-                decorated,
-                "a procedure whose callees moved is rebuilt, and must come back whole"
+                original.invoked().collect::<Vec<_>>(),
+                packaged.invoked().collect::<Vec<_>>()
             );
         }
-
-        /// A component-less world already sitting at its target's namespace comes back untouched.
-        ///
-        /// This is the *single*-module shape, and it is why subsuming it into the same rule costs
-        /// nothing: lowering roots it at `::{module}` and preparation's `.hir` scan reads that
-        /// same module's name, so the two agree and the equality guard makes the rewrite a no-op.
-        /// Treating one module and several by one rule is what keeps codegen from having two
-        /// answers preparation would have to mirror separately.
-        ///
-        /// "Costs nothing" is a claim about the guard, so the last assertion is about the guard:
-        /// see [`target_allocations`] for why comparing values cannot distinguish a rewrite that
-        /// never ran from one that reproduced its input exactly.
         #[test]
-        fn a_component_less_world_already_at_the_target_namespace_is_left_alone() {
-            let context = context();
-            let component = component_less("::lib");
-            let expected = paths(&component.modules[1]);
-            let decorated = decorations(&component.modules[1], "caller");
-            let allocations = target_allocations(&component.modules[1]);
-            let target = library_target("::lib");
-
+        fn authored_namespace_and_quoted_separators_retain_their_identity() {
+            let target = target("::left::right");
+            let (component, context) = lower(
+                "builtin.component private @\"left::right\" { builtin.function public \
+                 extern(\"C\") @entry() { builtin.ret; }; };",
+                &target,
+            );
+            assert_ne!(component.root.as_ref(), target.namespace.inner().as_ref());
             let sources = component.source_inputs(&target, context.session()).unwrap();
-
             assert_eq!(sources.root.path(), component.root.as_ref());
-            assert_eq!(paths(&sources.support[0]), expected);
-            assert_eq!(decorations(&sources.support[0], "caller"), decorated);
-            assert!(
-                targets_are_untouched(&allocations, &sources.support[0]),
-                "the rewrite must not have run at all, not merely have produced the same paths"
-            );
         }
-
-        /// An executable target is untouched: its root is the generated `$exec` module, and the
-        /// component's own modules keep the paths that module calls them by.
-        ///
-        /// Both the synthetic wrapper and a component-less world (the shape a bare-module `.hir`
-        /// or a disassembled `.masm` program takes, and the one re-rooting applies to) are
-        /// checked, because the early return for an executable is what keeps either from being
-        /// moved.
         #[test]
-        fn an_executable_target_still_gets_the_generated_main_module() {
-            for component in [wrapper_component(), component_less("::init")] {
-                let context = context();
-                let expected = paths(&component.modules[1]);
-                let target = Target::executable("main", Uri::new("main.wasm"));
-
-                let sources = component.source_inputs(&target, context.session()).unwrap();
-
-                assert_eq!(sources.root.path(), target.namespace.inner().as_ref());
-                assert!(sources.root.kind().is_executable());
-                let child = sources
-                    .support
-                    .iter()
-                    .find(|module| module.path().last() == Some("child"))
-                    .expect("the component's submodule is carried over as a support module");
-                assert_eq!(
-                    paths(child),
-                    expected,
-                    "the generated `$exec` module calls the component by its own path, so \
-                     re-rooting here would break the very case that already works"
-                );
-            }
+        fn a_later_incompatible_target_requires_lowering_again() {
+            let target = target("::chosen");
+            let (component, context) = lower("builtin.world { ^entry: };", &target);
+            let later = self::target("::different");
+            assert!(component.source_inputs(&later, context.session()).is_err());
         }
     }
 }

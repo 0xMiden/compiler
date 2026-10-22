@@ -151,7 +151,7 @@ impl LoweringDefinition for StoredInputLoads {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        _: &ExpansionEnv<'_>,
+        _: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, midenc_hir::Report> {
         bindings.validate(unit, frame)?;
         let mut body = AnnotatedMasmBody::new();
@@ -196,7 +196,7 @@ fn stable_ids_and_diagnostics_do_not_depend_on_trial_order() {
     assert_eq!(
         plan.to_string(),
         "procedure ProcedureAbi { convention: SameContext, arguments: 0, results: 0 }\nsegment \
-         b0\n  load v8.1\n  drop\n"
+         b0\n  operand-traffic loads=1 stores=0\n  load v8.1\n  drop\n"
     );
 }
 

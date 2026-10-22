@@ -505,7 +505,6 @@ fn canonical_and_debug_anchors_cannot_hide_actions_or_move_evidence() {
     let frame = crate::allocate::slots::assign_frame(&plan, &SourceLocalLayout::default()).unwrap();
     let env = ExpansionEnv {
         debug: BTreeMap::from([(DebugLocationId(1), DebugDecorator::InlineCallClear)]),
-        ..Default::default()
     };
     let mut body =
         expand_procedure(&plan, &frame, &crate::lower::units::LoweringRegistry::default(), &env)
@@ -749,4 +748,211 @@ fn memory_source_local_access_cannot_enter_compiler_frame_padding() {
     });
     assert_eq!(changed, 1);
     assert!(verify(&plan, &frame, code).is_err());
+}
+
+#[test]
+fn variable_groups_require_exactly_one_following_anchor() {
+    use crate::lower::expand::{Anchor, DebugDecorator};
+    let variable = || {
+        AnnotatedOp::Anchor(Anchor::Debug {
+            id: DebugLocationId(0),
+            decorator: DebugDecorator::Variable(crate::masm::DebugVarInfo::new(
+                "visible",
+                crate::masm::DebugVarLocation::Unavailable,
+            )),
+        })
+    };
+    let nop = || AnnotatedOp::Anchor(Anchor::Nop);
+    let instruction = || AnnotatedOp::Instruction {
+        instruction: Instruction::Nop,
+        unit: SelectedStepId(0),
+    };
+    let inline = || {
+        AnnotatedOp::Anchor(Anchor::Debug {
+            id: DebugLocationId(1),
+            decorator: DebugDecorator::InlineCallClear,
+        })
+    };
+    let boundary = || AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0)));
+    let inline_call = || {
+        let location = miden_assembly::debuginfo::FileLineCol::new(
+            miden_assembly::debuginfo::Uri::new("inline.hir"),
+            miden_assembly::debuginfo::LineNumber::new(1).unwrap(),
+            miden_assembly::debuginfo::ColumnNumber::new(1).unwrap(),
+        );
+        AnnotatedOp::Anchor(Anchor::Debug {
+            id: DebugLocationId(2),
+            decorator: DebugDecorator::InlineCall(crate::masm::DebugInlineCallInfo::new(
+                "inlined",
+                location.clone(),
+                location,
+            )),
+        })
+    };
+    for ops in [
+        vec![instruction(), variable(), nop()],
+        vec![variable(), nop(), instruction(), variable(), nop()],
+        vec![variable(), boundary(), variable(), boundary(), nop(), instruction()],
+        vec![variable(), nop(), inline(), variable(), nop()],
+        vec![variable(), nop(), inline_call(), variable(), nop()],
+    ] {
+        let mut body = AnnotatedMasmBody::new();
+        body.ops_mut().extend(ops);
+        super::super::check_anchors(&body).unwrap();
+    }
+    for ops in [
+        vec![instruction(), variable()],
+        vec![variable(), instruction()],
+        vec![nop(), variable()],
+        vec![variable(), nop(), nop()],
+        vec![variable(), inline(), nop()],
+        vec![variable(), inline_call(), nop()],
+        vec![variable(), nop(), variable(), nop()],
+        vec![instruction(), nop()],
+        vec![variable(), instruction(), nop()],
+    ] {
+        let mut body = AnnotatedMasmBody::new();
+        body.ops_mut().extend(ops);
+        assert_eq!(
+            super::super::check_anchors(&body).unwrap_err().category,
+            DiagnosticCategory::InvalidSelectedLowering
+        );
+    }
+}
+
+#[test]
+fn variable_anchor_positions_and_debug_identities_are_both_verified() {
+    use crate::lower::expand::{Anchor, DebugDecorator, ExpansionEnv, expand_procedure};
+    let mut plan =
+        crate::allocate::allocate(empty_program(), &AllocationOptions::default()).unwrap();
+    plan.segment_actions
+        .get_mut(&SegmentId(0))
+        .unwrap()
+        .push(PlanAction::DebugLocation(DebugLocationId(1)));
+    let frame = crate::allocate::slots::assign_frame(&plan, &SourceLocalLayout::default()).unwrap();
+    let env = ExpansionEnv {
+        debug: BTreeMap::from([(
+            DebugLocationId(1),
+            DebugDecorator::Variable(crate::masm::DebugVarInfo::new(
+                "v",
+                crate::masm::DebugVarLocation::Unavailable,
+            )),
+        )]),
+    };
+    let mut body =
+        expand_procedure(&plan, &frame, &crate::lower::units::LoweringRegistry::default(), &env)
+            .unwrap();
+    crate::opt::peephole::simplify_annotated(&mut body);
+    verify(&plan, &frame, body.clone()).unwrap();
+    let mut missing = body.clone();
+    missing.ops_mut().retain(|op| !matches!(op, AnnotatedOp::Anchor(Anchor::Nop)));
+    assert!(verify(&plan, &frame, missing).is_err());
+    let mut wrong = body.clone();
+    rewrite(&mut wrong, &mut |op| {
+        if let AnnotatedOp::Anchor(Anchor::Debug { id, .. }) = op {
+            *id = DebugLocationId(2);
+        }
+    });
+    assert!(verify(&plan, &frame, wrong).is_err());
+    let mut moved = body.clone();
+    let position = moved
+        .ops()
+        .iter()
+        .position(|op| matches!(op, AnnotatedOp::Anchor(Anchor::Debug { .. })))
+        .unwrap();
+    let debug = moved.ops_mut().remove(position);
+    let nop = moved.ops_mut().remove(position);
+    assert!(matches!(nop, AnnotatedOp::Anchor(Anchor::Nop)));
+    moved.push(debug);
+    moved.push(nop);
+    // The whole group stays canonical; only its position in the planned action stream changes.
+    super::super::check_anchors(&moved).unwrap();
+    assert_eq!(
+        verify(&plan, &frame, moved).unwrap_err().category,
+        DiagnosticCategory::InvalidSelectedLowering
+    );
+    let mut disguised = body;
+    let nop = disguised
+        .ops_mut()
+        .iter_mut()
+        .find(|op| matches!(op, AnnotatedOp::Anchor(Anchor::Nop)))
+        .unwrap();
+    *nop = AnnotatedOp::Instruction {
+        instruction: Instruction::Nop,
+        unit: SelectedStepId(u32::MAX),
+    };
+    assert!(verify(&plan, &frame, disguised).is_err());
+}
+
+#[test]
+fn repeat_variable_debug_anchor_has_valid_package_rows() {
+    use alloc::sync::Arc;
+
+    use miden_assembly::{Assembler, DefaultSourceManager, Path};
+
+    use crate::{
+        lower::expand::{Anchor, DebugDecorator},
+        masm,
+    };
+    let variable = masm::DebugVarInfo::new("repeat_visible", masm::DebugVarLocation::Stack(0));
+    let mut child = AnnotatedMasmBody::new();
+    child.push(AnnotatedOp::Anchor(Anchor::Debug {
+        id: DebugLocationId(0),
+        decorator: DebugDecorator::Variable(variable.clone()),
+    }));
+    let mut body = AnnotatedMasmBody::new();
+    body.push(AnnotatedOp::Repeat {
+        id: ControlId(0),
+        count: 2,
+        body: child,
+    });
+    crate::opt::peephole::simplify_annotated(&mut body);
+    super::super::check_anchors(&body).unwrap();
+    let AnnotatedOp::Repeat { body: child, .. } = &mut body.ops_mut()[0] else {
+        panic!("repeat");
+    };
+    assert_eq!(child.ops().len(), 2);
+    assert!(matches!(child.ops()[1], AnnotatedOp::Anchor(Anchor::Nop)));
+    child.ops_mut().pop();
+    assert!(super::super::check_anchors(&body).is_err());
+
+    // Assembler oracle for the target positional rule, independent of source plan reachability.
+    // Raw lowering repeats cannot carry planned observations inside an active lowering unit.
+    let span = masm::SourceSpan::UNKNOWN;
+    let procedure = masm::Procedure::new(
+        span,
+        masm::Visibility::Public,
+        masm::ProcedureName::new("repeat_debug").unwrap(),
+        0,
+        masm::Block::new(
+            span,
+            vec![masm::Op::Repeat {
+                span,
+                count: 2u32.into(),
+                body: masm::Block::new(
+                    span,
+                    vec![
+                        masm::Op::Inst(masm::Span::unknown(Instruction::DebugVar(variable))),
+                        masm::Op::Inst(masm::Span::unknown(Instruction::Nop)),
+                    ],
+                ),
+            }],
+        ),
+    );
+    let manager = Arc::new(DefaultSourceManager::default());
+    let mut module = masm::Module::parser(Some(masm::ModuleKind::Library))
+        .parse_str(Some(Path::new("::repeat_debug")), "", manager.clone())
+        .unwrap();
+    module.define_procedure(procedure, manager.clone()).unwrap();
+    let package = Assembler::new(manager)
+        .assemble_library("repeat_debug", module, core::iter::empty::<&str>())
+        .unwrap();
+    let debug = package.debug_info().unwrap().unwrap();
+    let rows = debug.nodes().iter().flat_map(|node| &node.debug_vars).collect::<Vec<_>>();
+    assert!(!rows.is_empty());
+    assert!(
+        rows.iter()
+            .all(|row| debug.get_string(row.name_idx).unwrap().as_ref() == "repeat_visible"
+                && row.value_location == masm::DebugVarLocation::Stack(0))
+    );
 }

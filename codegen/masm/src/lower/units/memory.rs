@@ -76,7 +76,7 @@ impl LoweringDefinition for ByteMemmove {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        _: &ExpansionEnv<'_>,
+        _: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         bindings.validate(unit, frame)?;
         Ok(annotate_raw(&raw::byte_memmove(Default::default()), unit.id))
@@ -86,12 +86,14 @@ impl LoweringDefinition for ByteMemmove {
 /// Explicit one-cell spanning storage phases. Content identities cross selected boundaries;
 /// expansion only consumes a final object binding and emits the scalar memory instruction.
 #[derive(Debug, Clone, Copy)]
+#[cfg(test)]
 pub(crate) enum SpanningCell {
     /// Consume one lane and establish the declared content identity in the scratch cell.
     Write,
     /// Read the declared content identity and publish it as the single result lane.
     Read,
 }
+#[cfg(test)]
 impl SpanningCell {
     /// Declare one phase of a one-element spanning object, including its content obligation.
     /// Reject unit-local lifetimes, non-scalar objects, and mismatched input/result counts.
@@ -141,6 +143,7 @@ impl SpanningCell {
         Ok((unit, proof))
     }
 }
+#[cfg(test)]
 impl LoweringDefinition for SpanningCell {
     fn kind(&self) -> LoweringKind {
         LoweringKind(if matches!(self, Self::Write) {
@@ -155,7 +158,7 @@ impl LoweringDefinition for SpanningCell {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        _: &ExpansionEnv<'_>,
+        _: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         bindings.validate(unit, frame)?;
         let mut body = AnnotatedMasmBody::new();

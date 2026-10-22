@@ -81,6 +81,9 @@ pub fn generate_export_lifting_function(
         return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
     }
 
+    // The public wrapper exposes loaded values, not an internal core result pointer.
+    validate_export_target_capacity(&context, &core_export_func_path, &export_func_ty.ir)?;
+
     let transformation = classify_function_type(&context, &export_func_ty.ir).map_err(|e| {
         let message = format!(
             "Component export lifting generation. Signature for exported function \
@@ -137,6 +140,26 @@ pub fn generate_export_lifting_function(
         retarget_note_script_root_ops(&core_module_builder, export_func_ref);
     }
 
+    Ok(())
+}
+
+/// Checks the actual externally callable argument/result lanes rather than core source pointers.
+fn validate_export_target_capacity(
+    context: &Rc<midenc_hir::Context>,
+    path: &SymbolPath,
+    ty: &FunctionType,
+) -> WasmResult<()> {
+    for (kind, types) in [("argument", ty.params.as_slice()), ("result", ty.results.as_slice())] {
+        let felts: usize =
+            flatten_types(context, types)?.iter().map(|p| p.ty.size_in_felts()).sum();
+        if felts > super::MAX_DIRECT_STACK_FELTS {
+            return Err(Report::msg(format!(
+                "unsupported component export signature for '{path}': {felts} {kind} field \
+                 elements exceed the {}-element context {kind} ABI",
+                super::MAX_DIRECT_STACK_FELTS,
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -216,13 +239,6 @@ fn generate_lifting_with_transformation(
         );
         diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
     })?;
-
-    assert!(
-        cross_ctx_export_sig_flat.params().len() <= 16,
-        "Too many parameters in the flattened signature of {export_func_ident} component export \
-         function. For cross-context calls only up to 16 felt flattened params supported (advice \
-         provider is not yet supported). Try passing less data as a temporary workaround.",
-    );
 
     // Create the signature with the flattened result types
     let new_func_sig = Signature {
@@ -817,6 +833,59 @@ mod tests {
                     err.to_string().contains("unsupported canonical ABI"),
                     "unexpected diagnostic: {err}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn ordinary_export_target_capacity_is_independent_of_canonical_shape() {
+        for (u64s, extra, results, expected) in [
+            (8, 0, vec![], None),
+            (8, 1, vec![], Some("17 argument field elements")),
+            (
+                0,
+                0,
+                vec![Type::from(midenc_hir::StructType::new(vec![Type::Felt; 17]))],
+                Some("17 result field elements"),
+            ),
+        ] {
+            let (context, mut component, mut module) = component_with_core_module();
+            let ir = FunctionType::new(
+                CallConv::ComponentModel,
+                vec![Type::U64; u64s]
+                    .into_iter()
+                    .chain(vec![Type::Felt; extra])
+                    .collect::<Vec<_>>(),
+                results,
+            );
+            let mut sig = flatten_function_type(&context, &ir, CanonicalAbiMode::Export).unwrap();
+            for result in &mut sig.results {
+                if result.ty.is_pointer() {
+                    *result = AbiParam::new(Type::I32);
+                }
+            }
+            let core = module
+                .define_function(Ident::from("capacity"), Visibility::Public, sig)
+                .unwrap();
+            let outcome = generate_export_lifting_function(
+                &mut component,
+                core,
+                "capacity",
+                ComponentFunctionType { ir },
+                &[],
+                None,
+                &DiagnosticsHandler::default(),
+            );
+            if let Some(expected) = expected {
+                let message = outcome.expect_err("actual external overflow must fail").to_string();
+                assert!(
+                    message.contains(expected)
+                        && message.contains("16-element")
+                        && message.contains("capacity"),
+                    "{message}"
+                );
+            } else {
+                outcome.expect("sixteen actual lanes are supported");
             }
         }
     }

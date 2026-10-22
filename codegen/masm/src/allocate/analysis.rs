@@ -38,6 +38,7 @@ impl LiveValues {
     }
 
     /// Whether this semantic value is demanded; IDs outside the procedure are absent.
+    #[cfg(test)]
     pub fn contains(&self, value: ValueId) -> bool {
         self.domain
             .index
@@ -90,6 +91,7 @@ pub(crate) enum NextUseDistance {
 
 impl NextUseDistance {
     /// Add selected-unit work, saturating finite distances without turning them infinite.
+    #[cfg(test)]
     pub fn advance(self, cost: u32) -> Self {
         match self {
             Self::Finite(distance) => Self::Finite(distance.saturating_add(cost)),
@@ -112,6 +114,7 @@ impl UseDistances {
     }
 
     /// Rank lanes by nearest semantic use, breaking ties by value ID and then lane.
+    #[cfg(test)]
     pub fn priority(&self, atom: Atom) -> (NextUseDistance, ValueId, u8) {
         (self.get(atom.value), atom.value, atom.lane)
     }

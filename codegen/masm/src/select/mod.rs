@@ -19,6 +19,8 @@ use crate::{lower::units::HirUnit, plan::*, verify::DefinitionEvidence};
 pub(crate) struct SelectEnv<'a> {
     /// Linked symbol and function-table layouts needed by source rules which address them.
     pub link_info: Option<&'a crate::linker::LinkInfo>,
+    /// Closed final emission identities, fixed before source reconstruction.
+    pub owners: Option<&'a crate::lower::EmissionOwners>,
 }
 
 /// The finite vocabulary returned by [`crate::HirSelection`] implementations.
@@ -53,6 +55,10 @@ pub(crate) enum SelectionRule {
     DirectCall,
     /// Check a linked function-table slot before same-context dispatch.
     ExecIndirect,
+    /// Protocol executor with semantic stored prefix and payload operands.
+    Fpi,
+    /// Source-owned reference to a validated callable digest.
+    ProcedureRoot,
 }
 
 /// Source reconstruction paired with the executable definitions it authorizes.
@@ -70,6 +76,7 @@ pub(crate) struct HirEvidence {
 
 impl HirEvidence {
     /// Extract the selected graph, discarding the definitions and source-checking evidence.
+    #[cfg(test)]
     pub fn program(self) -> SelectedProgram {
         self.source.program
     }
@@ -79,6 +86,7 @@ impl HirEvidence {
 ///
 /// Use [`evidence`] when constructing executable lowerings. Invalid or unsupported final HIR,
 /// declarations, inconsistent types, and unrepresentable target layouts are reported as errors.
+#[cfg(test)]
 pub(crate) fn select_function(
     function: &builtin::Function,
     env: &SelectEnv<'_>,
@@ -98,6 +106,7 @@ pub(crate) fn evidence(
 /// Select a registered generated definition using only its semantic source parameters.
 /// Executable constructions must come from that same definition and are registered separately;
 /// successful selection remains subject to independent source and physical verification.
+#[cfg(test)]
 pub(crate) fn select_generated(
     definition: &dyn crate::verify::GeneratedDefinition,
     parameters: &[midenc_hir::Felt],

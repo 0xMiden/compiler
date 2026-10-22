@@ -1,9 +1,9 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    Backward, CallOpInterface, EntityMut, Forward, FxHashMap, FxHashSet, Op, OperationName,
-    OperationRef, ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec,
-    Spanned, Symbol, TraceTarget, ValueRef,
+    Backward, CallOpInterface, EntityMut, Forward, FxHashMap, Op, OperationName, OperationRef,
+    ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec, Spanned, Symbol,
+    TraceTarget, ValueRef,
     dialects::{
         builtin::{Function, attributes::LocalVariable},
         debuginfo::{
@@ -16,7 +16,7 @@ use midenc_hir::{
     traits::BranchOpInterface,
 };
 
-use crate::{ExecFpi, LoadLocal, StoreLocal};
+use crate::{LoadLocal, StoreLocal};
 
 /// The value `store` writes, read from the operation: a promotion earlier in the same run may have
 /// replaced it, and the operation, not a copy taken during the scan, holds the current one.
@@ -203,14 +203,8 @@ impl Pass for Local2Reg {
 
         let mut loaded = FxHashMap::<LocalVariable, SmallVec<[OperationRef; 2]>>::default();
         let mut stored = FxHashMap::<LocalVariable, SmallVec<[OperationRef; 2]>>::default();
-        // Locals whose values are read through op attributes rather than `LoadLocal`; their
-        // stores are live even though no load op refers to them, and they cannot be promoted.
-        let mut pinned = FxHashSet::<LocalVariable>::default();
         op.raw_postwalk_all::<Backward, _>(|op: OperationRef| {
             let operation = op.borrow();
-            if let Some(exec_fpi) = operation.downcast_ref::<ExecFpi>() {
-                pinned.extend(exec_fpi.get_prefix_locals().iter().copied());
-            }
             if let Some(load) = operation.downcast_ref::<LoadLocal>() {
                 let local = *load.get_local();
                 log::trace!(
@@ -254,14 +248,6 @@ impl Pass for Local2Reg {
 
         let mut changed = PostPassStatus::Unchanged;
         'next_local: for local in locals {
-            if pinned.contains(&local) {
-                log::trace!(
-                    target: &trace_target,
-                    sym = trace_target.relevant_symbol();
-                    "ignoring {local}: read through an op attribute",
-                );
-                continue;
-            }
             if let Some(loads) = loaded.get(&local) {
                 if loads.len() > 1 {
                     // Ignore locals that are loaded multiple times for now
@@ -433,6 +419,47 @@ mod tests {
 
     use super::Local2Reg;
     use crate::HirOpBuilder;
+
+    #[test]
+    fn promotes_fpi_inputs_and_preserves_semantic_operand_order() {
+        let mut test =
+            Test::new("fpi_semantic_operands", &alloc::vec![Type::Felt; 7], &[Type::Felt]);
+        let expected;
+        let exec;
+        {
+            let mut builder = test.function_builder();
+            expected = builder
+                .entry_block()
+                .borrow()
+                .arguments()
+                .iter()
+                .map(|argument| *argument as ValueRef)
+                .collect::<alloc::vec::Vec<_>>();
+            let prefix = core::array::from_fn(|index| {
+                let local = builder.alloc_local(Type::Felt);
+                builder.store_local(local, expected[index], SourceSpan::UNKNOWN).unwrap();
+                builder.load_local(local, SourceSpan::UNKNOWN).unwrap()
+            });
+            exec = builder.exec_fpi(prefix, [prefix[2], expected[6]], SourceSpan::UNKNOWN).unwrap();
+            builder.ret([expected[6]], SourceSpan::UNKNOWN).unwrap();
+        }
+        test.apply_pass::<Local2Reg>(true).expect("FPI prefix locals promote normally");
+        let op = exec.borrow();
+        let values = |operands: midenc_hir::OpOperandRange<'_>| {
+            operands
+                .iter()
+                .map(|operand| operand.borrow().as_value_ref())
+                .collect::<alloc::vec::Vec<_>>()
+        };
+        assert_eq!(values(op.prefix()), expected[..6]);
+        assert_eq!(values(op.inputs()), [expected[2], expected[6]]);
+        test.function().borrow().as_operation().postwalk_all(|op| {
+            assert!(
+                op.downcast_ref::<crate::LoadLocal>().is_none()
+                    && op.downcast_ref::<crate::StoreLocal>().is_none()
+            );
+        });
+    }
 
     #[test]
     fn promotes_redundant_load_store_pairs() {

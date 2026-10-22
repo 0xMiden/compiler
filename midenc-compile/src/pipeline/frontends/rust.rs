@@ -1717,7 +1717,7 @@ impl RustStandaloneFrontend {
     /// `assembly().resolved_target_root` — which is also the safer choice for a file-backed
     /// input, because a provider serves every callback for its extension and a same-extension
     /// dependency would otherwise be compiled from the *root's* source. See
-    /// [`WasmFrontend`](super::wasm::WasmFrontend), which is built the same way and explains
+    /// [`WasmFrontend`], which is built the same way and explains
     /// why that combination is expected to be unreachable rather than relied upon.
     fn read(cx: &TargetContext<'_>) -> CompilerResult<InputFile> {
         match cx.input() {
@@ -2675,7 +2675,8 @@ mod tests {
                 root,
                 init: None,
                 entrypoint: None,
-                executable_entrypoint_without_init: None,
+                entrypoint_arity: None,
+                prepared_target: None,
                 rodata: Vec::new(),
                 heap_base: 0,
                 stack_pointer: None,

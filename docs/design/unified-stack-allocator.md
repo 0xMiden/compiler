@@ -1,6 +1,6 @@
 # Unified stack allocator design
 
-Status: proposal for review. This document specifies the resulting architecture and two intermediate integration states; it does not prescribe an implementation work plan.
+Status: approved design. This document specifies the resulting architecture and the approved integration states; implementation sequencing and completion gates are recorded in the implementation plan.
 
 The MASM backend will own one physical allocation plan for each emitted procedure. That plan determines the ordered operand stack, compiler-managed local storage, operand scheduling, control-flow transfers, and call preparation. An independent checker validates the plan and its instruction expansion before assembly. HIR remains semantic SSA: a physical reload does not create a new HIR definition, and a wide region interface does not need to be narrowed.
 
@@ -26,17 +26,19 @@ The source baseline is compiler commit `62d5241d6aa2a25eae7b766eda196bc364d8295a
 
 | Existing component | Current responsibility | Resulting responsibility |
 | --- | --- | --- |
-| [`SpillAnalysis`](../../../hir-analysis/src/analyses/spills.rs) | Bounds resident sets, selects spills and reloads, reconciles control-flow residency | Removed from physical allocation; backend graph liveness and the physical planner replace it |
-| [`transform_spills`](../../../hir-transform/src/spill.rs) and [HIR materialization](../../../dialects/hir/src/transforms/spill.rs) | Insert spill/reload operations, reconstruct SSA, convert them to locals | Removed; physical actions reference semantic values without rewriting HIR |
+| Legacy spill analysis | Bounds resident sets, selects spills and reloads, reconciles control-flow residency | Removed from physical allocation; backend graph liveness and the physical planner replace it |
+| Legacy spill materialization and SSA reconstruction | Insert spill/reload operations, reconstruct SSA, convert them to locals | Removed; physical actions reference semantic values without rewriting HIR |
 | PR 1461 `NarrowRegionOps` | Rebuild wide SCF operations with local-backed columns | Removed or omitted if not landed; edge location assignment handles wide interfaces |
-| [`BlockEmitter`](../../../codegen/masm/src/emitter.rs) | Schedules operands, drops values, handles casts, recursively manages stack state and debug locations | Split into physical planning, verified instruction expansion, and serialization |
-| [Operand movement solver](../../../codegen/masm/src/opt/operands) | Searches copy/permutation schedules; cannot introduce temporary storage | Optional bounded optimization within the planner; failure selects the deterministic transition |
-| [`HirLowering`](../../../codegen/masm/src/lower/lowering.rs) and [instruction emitters](../../../codegen/masm/src/emit) | Select and emit code, with some temporary effects hidden from the modeled stack | Select lowering units with explicit requirements, effects, and source provenance |
-| [Branch utilities](../../../codegen/masm/src/lower/utils.rs) | Adopt one branch's stack and realign another; assert loop agreement | Emit the structured skeleton and explicit edge transfers to fixed contracts |
-| [`MasmFunctionBuilder`](../../../codegen/masm/src/lower/component.rs) | Fix frame size from HIR locals before emission | Finalize the frame after backend spill slot and scratch allocation |
-| [Legalization](../../../codegen/masm/src/legalization.rs) | Representation/ABI checks, including combined operand-window limits | Retain representation and actual ABI checks; replace scheduler-imposed limits with lowering unit legality |
+| Legacy `BlockEmitter` | Schedules operands, drops values, handles casts, recursively manages stack state and debug locations | Split into physical planning, verified instruction expansion, and serialization |
+| [Operand movement solver](../../codegen/masm/src/opt/operands) | Searches copy/permutation schedules; cannot introduce temporary storage | Optional bounded optimization within the planner; failure selects the deterministic transition |
+| Legacy lowering callbacks and [instruction algorithms](../../codegen/masm/src/emit) | Select and emit code, with some temporary effects hidden from the modeled stack | Select lowering units with explicit requirements, effects, and source provenance |
+| Legacy branch utilities | Adopt one branch's stack and realign another; assert loop agreement | Emit the structured skeleton and explicit edge transfers to fixed contracts |
+| [`MasmFunctionBuilder`](../../codegen/masm/src/lower/component.rs) | Fix frame size from HIR locals before emission | Finalize the frame after backend spill slot and scratch allocation |
+| [Legalization](../../codegen/masm/src/legalization.rs) | Representation/ABI checks, including combined operand-window limits | Retain representation and actual ABI checks; replace scheduler-imposed limits with lowering unit legality |
 
-CFG-to-SCF has no algorithmic dependency on spill insertion. Removing the pre-lift spill pass changes its input shapes, but not its semantic contract. Conversion can leave residual conditional branches to distinct return-like exit blocks; the backend must continue to handle these edges. See [`cfg_to_scf`](../../../hir-transform/src/cfg_to_scf.rs).
+Before CFG-to-SCF processes a cycle containing the region entry, it makes initial activation explicit with a fresh predecessor-free entry block. The new block preserves the region argument types, order and spans and forwards those arguments to the original entry; existing backedges retain their original operands. A single-block self-loop still requires lifting. Dominance is invalidated after entry normalization.
+
+CFG-to-SCF has no algorithmic dependency on spill insertion. Removing the pre-lift spill pass changes its input shapes, but not its semantic contract. Conversion can leave residual conditional branches to distinct return-like exit blocks; the backend must continue to handle these edges. See [`cfg_to_scf`](../../hir-transform/src/cfg_to_scf.rs).
 
 ## Machine state and invariants
 
@@ -44,7 +46,7 @@ CFG-to-SCF has no algorithmic dependency on spill insertion. Removing the pre-li
 
 `ValueId` identifies a HIR SSA value or a selected temporary passed between lowering units. `Layout(value)` is its ordered raw representation, with lane zero nearest stack top. `Atom(value, lane)` identifies the bits of one lane in the current dynamic instance of that value. A stack entry is an occurrence of an atom, not merely membership in a resident set. Multiple occurrences may have the same atom. Raw temporaries internal to a lowering unit are tracked by verifier tokens; they do not require new values in the selected program.
 
-Layouts use the existing `to_raw_parts()` convention in [`Operand`](../../../codegen/masm/src/stack.rs). The initial supported domain remains the existing nonempty representations of at most four lanes per ordinary operand. Wider tuples of such values are supported. The allocator does not claim to complete the currently incomplete aggregate load/store lowering. Representation-neutral casts and split/join operations have explicit lane-alias maps; they cannot silently reverse limbs or change width.
+Layouts use the existing `to_raw_parts()` convention in [`Operand`](../../codegen/masm/src/stack.rs). The initial supported domain remains the existing nonempty representations of at most four lanes per ordinary operand. Wider tuples of such values are supported. The allocator does not claim to complete the currently incomplete aggregate load/store lowering. Representation-neutral casts and split/join operations have explicit lane-alias maps; they cannot silently reverse limbs or change width.
 
 A spill slot is a compiler-assigned location in the current procedure activation’s local frame that preserves a value lane independently of the operand stack. Spill slots store raw field elements. They never apply integer masks, sign extension, byte-pointer conversion, or aggregate memory-layout transformations. Source-level local accesses retain their existing typed semantics and remain separate from compiler spill slots.
 
@@ -75,6 +77,16 @@ The checker's finite padding domain is a set of `(tail_length_class, padding_cou
 
 At a context-return boundary, padding abstraction alone is insufficient. The emitted procedure must return with physical depth exactly sixteen, with results in the prescribed positions. The existing context-return cleanup is retained as an explicitly checked ABI operation. It must never be applied to an ordinary `exec` return whose overflow can contain caller-owned values.
 
+### Canonical source signatures and target call capacity
+
+Wasm canonical ABI classification counts flattened core values, independently of their Miden lane widths. A flattened `u64` counts as one source parameter and occupies two felts. Classify the complete source parameter list using the standard sixteen-value limit; append a canonical lowering's result pointer after parameter classification, so a core wrapper may have seventeen parameters. Do not invent a tuple signature merely because the direct source signature expands beyond sixteen felts.
+
+Same-context wrappers may receive wider argument stacks. They perform canonical argument loading and result storage in their own context, then construct the actual target invocation. Enforce the target ABI's sixteen-felt payload limit on that invocation, after separating wrapper-only operands. An output pointer used to store returned results is not a target argument. The allocator and physical verifier still check every indexed access and the complete same-context suffix contract.
+
+For FPI, the six metadata lanes remain separate from the actual payload. Thirteen canonical values comprising six metadata felts, six `u64` values and one payload felt occupy nineteen wrapper lanes but only thirteen payload lanes, and are supported. For dyncall, the four target-root values participate in source classification but not the target argument budget. A source signature containing four root values and sixteen payload values therefore uses a canonical tuple; the same-context wrapper loads the complete tuple, separates the root, and passes the sixteen payload felts to the target. Tuple loading preserves canonical layouts and typed scalar carriers before any invocation-specific representation conversion.
+
+This separation does not introduce a new cross-context transport ABI. Ordinary imports or exports whose actual target payload exceeds sixteen felts remain diagnosed, as do tuple transports unsupported by their target boundary. Source-to-VM tests must exercise validated component signatures, canonical tuple and result-pointer variants, distinct multi-lane values, and genuine target overflow; direct HIR wrapper tests alone do not establish source compatibility.
+
 ### Required invariants
 
 1. **Legal access.** Every primitive's reads, writes, permutations, and word accesses are legal at the point where it executes. The bound counts felt lanes, including temporary lanes.
@@ -104,13 +116,23 @@ Ordinary operation order and effects remain fixed. The allocator does not move l
 
 Pointer constants carry their complete pointer type, including the outer byte/element address space and the nested pointee type. Parsing, folding, materialization and result inference preserve that type; final selection reconstructs the same complete type when checking source authority. A pointer constant changes no address bits or memory behavior merely by retaining its declared type. Constructors take the complete pointer type so a full result type cannot accidentally become an extra pointee layer.
 
+Frontend return construction preserves the complete declared result tuple in source order. For Wasm, an explicit return takes exactly the declared number of operands from the stack suffix; unrelated lower operands are not results. A reachable implicit function exit returns its complete validated exit tuple. Unreachable exits do not synthesize a return from an invalid stack state. Selection independently checks the resulting HIR tuple against the function signature; allocation never repairs a truncated or mismatched source return.
+
+### Final emission identities
+
+The backend determines final emitted module and procedure owners before selection, using the target and existing namespace eligibility rules. An immutable, finite map contains only definitions the component actually emits; it includes generated owners and validates destination uniqueness and collisions. Declaration-only external siblings, raw external helpers and digest targets retain their identities, even when their spelling overlaps an emitted namespace. Authored component namespaces retain their existing eligibility rules. Already-namespaced source dependencies use their supplied namespace, not the enclosing compilation target.
+
+Canonical HIR identities remain authoritative for calling conventions, effects, kernel ownership and restricted helpers such as `truncate_stack`. Selection and independent source reconstruction use the same final emission-owner map to form targets and import destinations. Source and local alias names retain their spelling. Generated roots, initializers and tables use the same map, so final invocation identities enter verification together with the instructions that use them.
+
+Packaging assembles these final identities without rewriting verified instructions or reconstructing procedure bodies. `--emit=masm` therefore shows the final namespace. Supplying an incompatible later target is diagnosed; changing the target requires lowering again. There is no general post-verification relocation mechanism or implicit prefix-based retargeting.
+
 ### Generated procedure definitions
 
 `ProcedureOrigin` is either a final HIR procedure or a registered generated-procedure definition with explicit parameters. Generated definitions cover executable main, initialization sequencing and fragments, entry/ABI adapters, and the optional test harness. They specify required stages, source bindings, control flow, effects, and entry/return conventions. `SourceStepId` identifies an HIR operation or a stage of such a definition; generated bodies do not invent HIR provenance.
 
 A generated definition produces a `SelectedProgram` through the same allocation, frame-layout, expansion, and verification boundary as an HIR body. The coverage checker compares its selected stages and bindings with the registered definition and its parameters. A builder cannot declare its own output correct by attaching a coverage annotation. Initialization order, entrypoint target, invocation convention, test-harness control flow, and return normalization are explicit obligations.
 
-Artifact construction may package and link verified bodies but cannot append executable instructions afterward. In particular, the current raw-MASM construction of main and the test harness in [artifact generation](../../../codegen/masm/src/artifact.rs) moves behind this boundary. The executable root's entry/exit contract is explicit; any helper procedure it invokes must use an opcode compatible with that helper's convention.
+Artifact construction may package and link verified bodies but cannot append executable instructions afterward. In particular, the current raw-MASM construction of main and the test harness in [artifact generation](../../codegen/masm/src/artifact.rs) moves behind this boundary. The executable root's entry/exit contract is explicit; any helper procedure it invokes must use an opcode compatible with that helper's convention.
 
 ### Graph construction
 
@@ -623,6 +645,10 @@ Call effects are selected from explicit ABI descriptors carrying both the target
 
 Direct-call argument extensions are explicit selected conversions before dispatch. Validate the actual operand width against the resolved parameter width; equal types need no conversion. Zero-extension admits unsigned widening. Sign-extension preserves the source bit-pattern semantics of the existing lowering, including unsigned sources: an eight-bit pattern `255` sign-extended to sixteen bits becomes `0xffff` (signed −1), rather than numeric `255`. A signed source may be no wider than its signed destination; an unsigned source must be strictly narrower for a differing-type direct-call sign extension. Narrow results extend only through the destination width and retain canonical zeroes above that representation. Indirect calls retain their existing exact-type argument contract; extension attributes on equal types are no-ops.
 
+MASM lifting expresses lossless I1/U8/U16/U32-to-Felt adaptations as explicit numeric `hir.cast` operations before final selection. Each preserves one raw lane and its input identity, without emitting an instruction. The shared cast implementation and selected conversion domain agree on all four source types; Felt's nominal bit width must not introduce an extra limb. Other unresolved adaptations are not implicitly accepted by this rule. General `hir.cast` evaluation remains an existing evaluator limitation; compiler and VM coverage does not imply evaluator support.
+
+Canonical Wasm source signatures retain their existing tuple policy independently of the physical stack allocator. Parameter flattening chooses an argument-tuple pointer when either flattened-value count or expanded felt width exceeds sixteen. FPI planning uses that same predicate: a nineteen-felt wrapper can receive a tuple pointer, reload its values, and invoke the wider same-context executor. Ordinary import lowering also retains its final direct-signature limit after appending a result pointer. Thus a dyncall wrapper can carry sixteen payload felts without that pointer, or fifteen payload felts plus the pointer; sixteen plus the pointer remains rejected at this source boundary. The dynamic root is excluded from payload accounting. These source-signature limits do not reduce the backend's supported sixteen-lane callee payload or wider same-context layouts. Core signature validation precedes access to flattened argument slices.
+
 Dynamic selector evidence has two closed forms. `FrameRoot` requires the exact assigned frame address and four current stored root lanes, retaining the existing provenance and stale-content checks. `CheckedTableSlot` requires the exact scalar address temporary produced by a registered function-table lookup stage, together with its source/stage identity and resolved table, signature, and convention obligations. Source checking reconstructs this rule from the actual indirect-call operation and resolved table/link layout; a candidate cannot authorize an arbitrary source pointer by attaching the declaration. Known incompatible table targets are diagnosed. The lookup stage must dominate dispatch, and source coverage rejects missing/reordered phases or undeclared intervening effects.
 
 The independent physical verifier proves that dispatch consumes the checked lookup temporary's actual token, along with its argument, storage, and suffix obligations. Bounds checks, null/signature-tag checks, and index-to-slot arithmetic remain trusted lowering semantics, covered by VM execution tests; token verification does not prove arbitrary source-memory root contents or arithmetic correctness. The allocation-free lookup construction is shared with existing emission. An allocation boundary may separate lookup from dispatch: the address temporary and later arguments remain explicit semantic uses, and a stored address binding permits preparation of all sixteen argument lanes before the transient selector is loaded. Root staging across a boundary similarly declares spanning scratch content definitions and subsequent reads; no implicit liveness or storage dependency is permitted.
@@ -670,7 +696,7 @@ The generated prelude is transparent to the operand stack: the selected entrypoi
 
 The user's entrypoint follows the ordinary same-context contract, preserving the suffix below its declared arguments. Its return may leave floor-induced padding below the meaningful state. Root main then invokes `truncate_stack` to preserve the top sixteen lanes and remove overflow before returning from `begin`. Do not require the entrypoint to predict or undo VM floor padding, or replace this cleanup with a proof that the call must finish at depth sixteen. This root cleanup is justified by ownership of the root context; it is not a permission for an ordinary `exec` callee to truncate its caller's suffix.
 
-[Generated main](../../../codegen/masm/src/artifact.rs) retains its `exec` invocation and existing root-memory sequencing. The implementation must validate the selected program entrypoint's convention and preserve prelude transparency rather than infer program semantics from canonical export lowering. Context-call exports and their return cleanup remain separate. Any explicitly selected adapter has its own convention and uses compatible invocations internally; no adapter or annotation authorizes a cross-family invocation of its target.
+[Generated main](../../codegen/masm/src/artifact.rs) retains its `exec` invocation and existing root-memory sequencing. The implementation must validate the selected program entrypoint's convention and preserve prelude transparency rather than infer program semantics from canonical export lowering. Context-call exports and their return cleanup remain separate. Any explicitly selected adapter has its own convention and uses compatible invocations internally; no adapter or annotation authorizes a cross-family invocation of its target.
 
 FPI selection uses one lowering unit whose six prefix values are required stored inputs and whose payload is the required stack prefix. Allocation establishes the stored inputs first, then prepares the payload. Expansion pads it to sixteen, loads the prefix in reverse order, and invokes the executor without an intervening allocation boundary. The resulting twenty-two-lane layout is legal because the executor consumes the prefix before needing the buried payload lanes. In the final HIR form, the six prefix values are ordinary semantic operands; frontend-created prefix locals and `Local2Reg` pinning cease to be allocation requirements. Protocol lookup, account switching, and executor semantics remain unchanged.
 
@@ -680,7 +706,7 @@ The existing fixed `dyncall` root scratch must be represented as a declared scra
 
 External procedures and shared intrinsics require convention-specific ABI/effect summaries for their stack and control effects. Same-context summaries promise suffix preservation and cannot observe or depend on incidental bottom padding. Context-call summaries assume the entire exposed window is clobbered except declared results; caller overflow preservation comes from the VM, not trust in the callee. Helpers that inspect stack depth or intentionally truncate overflow have dedicated summaries and restricted invocation sites. Preservation of caller-local memory follows the existing ABI assumption described above; it does not require a new per-callee proof.
 
-In particular, recognize `miden::core::sys::truncate_stack` by its resolved identity even when called through the [raw SDK import](../../../sdk/stdlib-sys/src/raw/core.rs). It preserves the top sixteen and destroys all overflow. An ordinary call site with a protected tail cannot satisfy that effect contract and receives an ABI diagnostic. The helper is permitted at a context-call return or program-root return boundary after all protected-tail obligations have ended. A zero-argument source signature does not justify a suffix-preserving summary.
+In particular, recognize `miden::core::sys::truncate_stack` by its resolved identity even when called through the [raw SDK import](../../sdk/stdlib-sys/src/raw/core.rs). It preserves the top sixteen and destroys all overflow. An ordinary call site with a protected tail cannot satisfy that effect contract and receives an ABI diagnostic. The helper is permitted at a context-call return or program-root return boundary after all protected-tail obligations have ended. A zero-argument source signature does not justify a suffix-preserving summary.
 
 ## Lowering units and verification
 
@@ -821,7 +847,7 @@ Tests isolate the process-global logger in a child invocation of one exact unit-
 
 ### Example: byte `memmove`
 
-The existing [copy lowering](../../../codegen/masm/src/emit/mem.rs) handles range checks, an alignment-dependent intrinsic fast path, and a directional scalar loop. For a byte-pointer `memmove`, select one lowering unit:
+The existing [copy lowering](../../codegen/masm/src/emit/mem.rs) handles range checks, an alignment-dependent intrinsic fast path, and a directional scalar loop. For a byte-pointer `memmove`, select one lowering unit:
 
 ```text
 semantic inputs: src, dst, count
@@ -877,7 +903,7 @@ Packed subword stores write the declared bit footprint and preserve bits outside
 
 ### Example: full-width FPI
 
-The existing [FPI emitter](../../../codegen/masm/src/lower/fpi.rs) already pads the payload, loads six prefix locals in reverse order, and emits the executor call. The new lowering unit preserves that execution shape while replacing source-local references with backend-owned stored-input bindings:
+The [FPI lowering unit](../../codegen/masm/src/lower/units/fpi.rs) pads the payload, loads six stored prefix atoms in reverse order, and emits the executor call. Semantic operands supply the prefix and payload independently of storage:
 
 ```text
 semantic inputs:
@@ -915,7 +941,7 @@ exec execute_foreign_procedure
 
 Each bound-slot load expands to raw address generation and a load at the top. The lowering unit never needs to index the buried payload during prefix construction. The protocol executor stages the six prefix lanes into its own locals before accessing the deepest payload lane. This explains the legal twenty-two-lane handoff; the executor's implementation is still covered by its trusted call summary rather than independently proved by the compiler's allocation verifier.
 
-A full payload needs no padding. For fewer inputs, append zero lanes after the real payload and before loading the prefix, using the existing legal padding sequence. The [frontend prefix helper](../../../frontend/wasm/src/fpi.rs) currently changes wrapper order, account prefix then suffix, into executor order, account suffix then prefix. Removing its locals must retain that semantic ordering; the final HIR operands and registered selection rule make the executor mapping explicit.
+A full payload needs no padding. For fewer inputs, append zero lanes after the real payload and before loading the prefix, using the existing legal padding sequence. The [frontend wrapper conversion](../../frontend/wasm/src/component/lower_imports.rs) changes wrapper order, account prefix then suffix, into executor order, account suffix then prefix. Final HIR operands and the registered selection rule retain that semantic ordering without frontend-owned prefix locals.
 
 The verifier checks all stored-input contents and bindings at entry, payload order and multiplicity, actual padding zeros, reverse prefix load order, every raw temporary access, the exact call-input layout and resolved executor identity, and normal-return result publication. It checks preservation of live-through representations and `S` using the registered executor effect summary. It rejects stale slots, swapped prefix lanes, an illegal indexed payload access, or premature result binding. Prefix staging creates no intermediate payload result and performs no second allocation inside the lowering unit.
 
@@ -1086,6 +1112,9 @@ Checking that a required effectful unit occurs in the selected graph and reaches
 
 ### Shared definitions and independent implementation
 
+The final implementation keeps the same scratch-declaration domain in production and test builds, including opaque content identities, possible writes and synchronous nonretaining borrows. Current HIR source rules do not construct every supported declaration. Exactly three variant-level, production-only expected dead-code lints document that fact for `ContentRequirement::Content` and `ScratchEffect::{PossibleWrite, Borrow}`; their allocation and verifier handlers remain active. This does not authorize a module-wide allowance, a test-only verifier domain or a fabricated producer. Fixture-only constructors and concrete VM oracles are compiled only for tests.
+
+
 The implementation shares target specifications and general infrastructure, but independently computes the evidence used to accept the physical plan:
 
 | Shared definitions or infrastructure | Independent verifier responsibilities |
@@ -1125,7 +1154,11 @@ final HIR or registered generated-procedure definition
 
 Peepholes run before final verification and preserve source/lowering boundaries or provide a checked mapping for moved annotations. They cannot erase the evidence needed to establish lowering unit inputs/outputs. No unchecked stack-changing rewrite follows `VerifiedProcedure`. Serialization performs no scheduling, result rebinding, or hidden local allocation.
 
-Executable anchoring is explicit in annotated MASM and checked before `VerifiedProcedure`. A closed anchor form admits only canonical `nop` anchors and the existing inert debug decorators. Insert a canonical `nop` before verification only when an executable MASM block would otherwise be empty. Verification checks that condition and its zero effect without consuming or skipping an allocation action. A debug anchor names and consumes the exact pending `DebugLocation` action ID, preserves its position, and forms an optimization barrier. Anchors cannot carry arbitrary instructions or effects, publish results, or manufacture or relocate source, unit, control, or edge evidence. Serialization emits only the already verified anchors; it does not insert new ones.
+Executable anchoring is explicit in annotated MASM and checked before `VerifiedProcedure`. A closed anchor form admits only canonical `nop` anchors and the existing inert debug decorators. Before verification, canonicalization places exactly one `nop` after every maximal consecutive group of variable-location decorators. Canonical `nop` anchors do not split groups: derive groups while ignoring those anchors and nonserialized proof boundaries. Ordinary selected instructions, including an ordinary `nop`, remain group barriers; inline-call and inline-clear decorators end a group, so its `nop` precedes any inline-chain change. Each structured body is handled independently. A body with no executable instruction, control operation, or group anchor receives the existing single empty-body `nop`; a group anchor already satisfies that requirement.
+
+This uniform rule gives every variable row a concrete following operation, including at body endpoints, before calls and control flow, and beside instructions that assemble to no operations. It avoids duplicating assembler inlining or basic-block construction. A `nop` preserves stack and memory contents but adds a VM cycle and can change MAST batching and digests. This cost applies when variable-location metadata is emitted; debug-enabled and debug-disabled code are not required to have identical cycle counts or MAST.
+
+The independent verifier derives the group-to-anchor relation from the final annotated body without using the optimizer’s grouping or placement decisions. It rejects missing, misplaced, duplicate, or otherwise unjustified canonical anchors, while checking their zero stack and memory effect without consuming or skipping allocation actions. A debug anchor still names and consumes the exact pending `DebugLocation` action ID, preserves its position, and forms an optimization barrier. Anchors cannot carry arbitrary instructions or effects, publish results, or manufacture or relocate source, unit, control, or edge evidence. Serialization emits only the already verified anchors; it does not insert new ones.
 
 Initially, peepholes simplify adjacent instructions only within the same active lowering unit, including its internal structured bodies. They stop at every proof, control, and debug boundary. Allocation actions and selected synthetic-control instructions retain exact correspondence with the physical plan. No general annotation-remapping mechanism or optimization-driven plan rewriting is needed for this policy.
 
@@ -1156,19 +1189,23 @@ Global initializers become one selected generated procedure with a finalized fra
 
 Debug locations query the current allocation map. A live value can be described through accessible stack lanes or valid frame cells; multi-lane values retain lane order. If the existing debug-expression format cannot describe a split location, mark it unavailable rather than report a wrong location. The pinned MASM debug format and debugger encode local displacements as signed sixteen-bit integers. Compute each displacement from the final frame with checked arithmetic; if it cannot be represented, report the location as unavailable. This accepted debugger limitation does not reduce the legal executable frame size or introduce storage solely for debugging. Test the −32,768/−32,769 boundary and the maximum legal frame. Debug references do not force allocation or extend semantic liveness. Source local offsets, backend spill slot offsets, and executable addressing share the same finalized frame. Inline call-chain and source-span metadata follow the selected lowering unit and generated actions.
 
-## Two integration states
+## Approved integration states
 
-### First PR complete
+Production code uses the adoption state below: every supported HIR and generated procedure passes through the unified allocator and mandatory physical verification. The first two states describe the earlier review boundaries; they do not provide alternate production paths. Local verification and CI landing evidence are recorded separately in the implementation plan.
 
-The backend has selected lowering unit contracts, raw lane layouts, the physical-plan data structures, explicit frame references, the raw instruction checker, and diagnostic rendering. Existing lowering templates express their temporary effects and explicit result completion through this substrate. The production HIR spill pipeline still establishes its existing allocation preconditions; there is one production allocation policy.
+### Physical contracts and independent verifier
 
-This state provides a checked emission boundary and fixtures for the new allocator without introducing a public alternate backend or a permanent compatibility layer. Contracts cover every existing emitted operation and generated procedure, including FPI, executable main, the test harness, and context returns. Production output obeys strict invocation-family compatibility, caller-save context-call preparation and cleanup, and same-context suffix preservation; existing violations must be corrected rather than exempted from verification. The checker runs on production output for its stated physical obligations; it does not claim that legacy HIR spill reconstruction has been independently proved equivalent to pre-spill HIR.
+The backend has immutable selected/physical contracts, lane layouts, explicit frame references and independent raw verification, exercised through hand-built plans and registered generated fixtures. Production compilation retains its existing path. This state does not claim to correct production ABI or allocation behavior.
 
-### Second PR complete
+### Allocation and integrated lowering infrastructure
 
-The unified allocator owns every emitted procedure, with graph liveness, inherited entry states, delayed join selection, fixed loop headers, incremental edge repair, the four scheduling tiers including selective eviction, spill slot reuse, and full source/edge verification. Both HIR spill passes and region narrowing are gone. Frontend FPI prefix storage is replaced with semantic operands and backend staging. Scheduler-derived indirect-call width restrictions are replaced by actual lowering/ABI checks.
+The final allocator, frame assignment, expansion, annotated peepholes and verifier operate together on checked selected programs. Representative real lowerings and selected control-flow fixtures exercise this path directly. Production still retains its existing path; no adapter makes the legacy allocator produce temporary physical plans.
 
-Legacy allocation ownership and obsolete infrastructure are deleted in this state. There is no runtime selector, long-lived dual pipeline, or rollout framework. The first state's lowering/checker substrate becomes the only emission path.
+### Production adoption and removal of old allocation owners
+
+Every supported HIR and generated procedure uses the unified pipeline. All lowering families have explicit contracts; frontend FPI exposes semantic operands; indirect legality follows actual ABI limits. Final emitted identities are resolved before selection, and packaging is inert. HIR spill insertion/materialization, obsolete pseudo-operations, hidden result publication and legacy stack management are deleted together. Generic semantic transformations and the optional movement solver remain where they have valid callers. Region narrowing is omitted on the implementation base, where it does not exist.
+
+These three review boundaries have one production cutover. The first two states test the final infrastructure without a rollout switch, compatibility adapter or partially converted production backend. Mandatory production verification and ABI corrections arrive with the complete cutover.
 
 ## Required observable behavior
 
@@ -1331,3 +1368,18 @@ Performance assessment reports cycles, code size, frame cells, and allocation/ve
 The design's constructive guarantee is conditional on supported representations, valid lowering/call contracts, and sufficient procedure-frame capacity. VM address-space limits and dynamic resource exhaustion remain real limits. A malformed lowering unit or uncontracted external MASM body is not repaired by moving more values to memory.
 
 Expanding the current HIR narrowing/spill passes would continue distributing physical location decisions across SSA rewrites. Extending only the shuffle solver would leave storage, phased calls, frame allocation, and join agreement outside its authority. A globally optimal stack scheduler would add search complexity without improving the correctness argument. The selected design instead establishes one checked physical plan, with bounded heuristics improving a constructive legal transition.
+
+
+### Independent graph analysis and debugger acceptance
+
+Generic canonicalization preserves a region's entry interface. Entry arguments receive initial values from the enclosing operation as well as values from any explicit backedges; enumerating CFG predecessors does not describe all activations. Consequently, generic single-predecessor merging and argument substitution cannot erase the entry or replace its arguments based only on explicit edges. Return copying may still simplify a predecessor without erasing the entry. Skipping entry-argument elimination must not skip traversal into nested regions. CFG-to-SCF can then introduce a typed preheader for entry cycles without losing initial argument identities before lifting. Operation-specific interface rewrites remain responsible for updating the enclosing operation when they change region entry arguments.
+
+SCF canonicalization distinguishes yielding values to an enclosing operation from terminating execution. Select conversion and redundant-yield folding require actual `scf.yield` terminators before inspecting yielded operands. Removing unused If or IndexSwitch results prunes only yield operands and preserves return/trap arms unchanged. Constant-switch folding declines when the selected arm does not yield; its ordinary result substitution cannot erase a return or trap. Inlining a terminal arm would additionally require correct continuation removal and is outside this transformation. These rules preserve existing source validity and do not extend backend support for mixed return and normal continuation paths.
+
+Critical-edge splitting also preserves positional entry identity: a split block for an edge targeting the region entry is inserted after that entry, while other split blocks retain their existing placement before the target. It forwards the original edge operands without becoming a new initial activation path. This placement rule does not change which edges are classified as critical.
+
+Conditional passthrough collapse uses exact incoming-edge counts. It bypasses a nonentry forwarding block only when that block has one incoming edge owned by the branch being rewritten and its final target has one incoming edge from the forwarding block. After replacing the branch, the rewrite removes the now-unused nonentry forwarding block through the rewriter before returning success. This removes its obsolete outgoing edge before critical-edge splitting can react to it. Shared or parallel-edge shapes are conservatively retained. Unconditional bypass keeps its existing eligibility and uses the same cleanup only for forwarding blocks that are actually unused and nonentry. Entry activation, ordered argument remapping and listener notifications remain intact; no new reachability analysis or critical-edge classification is introduced.
+
+Within one graph verification, the checker computes its own dominance relation from the immutable checked selected graph once and reuses it when constructing entry hypotheses. This shares neither allocator facts nor dynamic token state. Padding, provenance, memory and token obligations are still replayed and discharged for every relevant transfer and fixed-point iteration.
+
+Physical debug-location acceptance may supply a known source type for an explicitly authored fixture when the frontend does not emit its DWARF type. The test must still obtain the variable identity, location and frame state from actual compiled metadata and execution and validate each expected live value. Such evidence establishes location/frame correctness, not automatic source-type reconstruction. Complete DWARF source-type ingestion remains outside this allocator change.

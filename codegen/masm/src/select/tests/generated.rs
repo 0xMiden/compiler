@@ -192,7 +192,8 @@ fn ready_initializer(
     }
     let mut env = ExpansionEnv::default();
     env.resolve_debug(&plan, &frame);
-    let body = expand_procedure(&plan, &frame, &registry, &env).unwrap();
+    let mut body = expand_procedure(&plan, &frame, &registry, &env).unwrap();
+    crate::opt::peephole::simplify_annotated(&mut body);
     (plan, frame, body)
 }
 
@@ -259,6 +260,7 @@ fn combined_real_global_initializers_spill_reuse_cells_and_execute_in_source_ord
     let link = linked(&f);
     let env = SelectEnv {
         link_info: Some(&link),
+        ..Default::default()
     };
     let source = GeneratedInitializer {
         stages: globals.iter().copied().map(Initialization::Global).collect(),
@@ -360,6 +362,7 @@ fn generated_harness_and_initializer_share_root_memory_and_preserve_original_win
     let link = linked(&f);
     let env = SelectEnv {
         link_info: Some(&link),
+        ..Default::default()
     };
     let init = GeneratedInitializer {
         stages: vec![Initialization::Global(global)],
@@ -662,6 +665,7 @@ fn typed_global_initializers_execute_packed_and_wide_stores_with_a_protected_suf
     let link = linked(&f);
     let env = SelectEnv {
         link_info: Some(&link),
+        ..Default::default()
     };
     let source = GeneratedInitializer {
         stages: globals.iter().copied().map(Initialization::Global).collect(),
@@ -767,7 +771,7 @@ fn immediate_source_writes_reject_compiler_address_values_during_replay() {
             unit: &SelectedLowering,
             bindings: &LoweringBindings,
             frame: &FinalFrameLayout,
-            _: &ExpansionEnv<'_>,
+            _: &ExpansionEnv,
         ) -> Result<AnnotatedMasmBody, midenc_hir::Report> {
             bindings.validate(unit, frame)?;
             let offset = frame.resolve(FrameRef::Scratch {
@@ -960,5 +964,197 @@ fn returns_inside_physical_loops_remain_rejected() {
         )
         .unwrap_err();
         assert!(alloc::format!("{error:?}").contains("logical return would fall through"));
+    }
+}
+
+/// Exercise the real source observation, finalization, serialization and package validation seams.
+/// Omitting the group anchor loses decorator-only blocks or leaves endpoint rows outside a block.
+#[test]
+fn variable_debug_groups_survive_package_boundaries() {
+    use alloc::sync::Arc;
+
+    use miden_assembly::{Assembler, DefaultSourceManager};
+    use midenc_hir::{
+        Builder, OpBuilder, Operation, SourceSpan,
+        dialects::debuginfo::{DIBuilder, attributes::Variable},
+    };
+
+    fn operations(operation: &Operation, result: &mut Vec<midenc_hir::OperationRef>) {
+        for region in operation.regions() {
+            for block in region.body() {
+                for op in block.body() {
+                    result.push(op.as_operation_ref());
+                    operations(&op, result);
+                }
+            }
+        }
+    }
+    let core = midenc_session::LinkLibrary::core()
+        .load(&crate::plan::tests::lowering_units::session().options)
+        .unwrap();
+    let cases = [
+        ("empty", "builtin.function public extern(\"C\") @subject() { builtin.ret; };"),
+        (
+            "terminal",
+            "builtin.function public extern(\"C\") @subject(%x: felt) -> felt { %v=arith.add \
+             %x,%x <{ overflow = #builtin.overflow<wrapping> }>; builtin.ret %v : (felt); };",
+        ),
+        (
+            "siblings_and_loop",
+            r#"builtin.function public extern("C") @subject(%p: i1,%x: felt) -> felt {
+            %v=scf.if %p then { scf.yield %x : (felt); } else { scf.yield %x : (felt); } : (i1) -> felt;
+            %r=scf.while %v before { ^before(%b: felt): scf.condition %p,%b : (i1,felt); } after { ^after(%c: felt): scf.yield %c : (felt); } : (felt) -> felt;
+            builtin.ret %r : (felt);
+        };"#,
+        ),
+        (
+            "exec",
+            r#"builtin.module public @calls {
+            builtin.function public extern("C") @callee(%x: felt) -> felt { builtin.ret %x : (felt); };
+            builtin.function public extern("C") @subject(%x: felt) -> felt { %v=hir.exec @callee(%x) : extern("C") (felt) -> felt; builtin.ret %v : (felt); };
+        };"#,
+        ),
+        ("call", ""),
+        (
+            "dyncall",
+            r#"builtin.function public extern("C") @subject(%r0: felt,%r1: felt,%r2: felt,%r3: felt) -> felt {
+            %v=hir.dyncall [%r0,%r1,%r2,%r3](%r0) : extern("component-model") (felt) -> felt; builtin.ret %v : (felt);
+        };"#,
+        ),
+        (
+            "dynexec",
+            r#"builtin.module public @calls {
+            builtin.function private extern("C") @callee(%x: felt) -> felt { builtin.ret %x : (felt); };
+            builtin.function_table private @table : 2 { builtin.function_table_entry 1 @callee tag 7; };
+            builtin.function public extern("C") @subject(%i: u32,%x: felt) -> felt {
+                %v=hir.exec_indirect @table[%i](%x) : extern("C") (felt) -> felt tag 7; builtin.ret %v : (felt);
+            };
+        };"#,
+        ),
+        ("syscall", ""),
+        (
+            "trapping",
+            r#"builtin.function public extern("C") @subject() { ub.unreachable; };"#,
+        ),
+    ];
+    for (case, text) in cases {
+        let f = if case == "syscall" {
+            let f = super::calls::direct("syscall", "C");
+            let mut owner = f.borrow().as_operation().nearest_symbol_table().unwrap();
+            owner
+                .borrow_mut()
+                .downcast_mut::<builtin::Module>()
+                .unwrap()
+                .set_name(midenc_hir::Ident::from("$kernel"));
+            f
+        } else if case == "call" {
+            super::calls::direct("call", "component-model")
+        } else if text.starts_with("builtin.module") {
+            parse_module_function(text)
+        } else {
+            parse(text)
+        };
+        let mut points = Vec::new();
+        operations(f.borrow().as_operation(), &mut points);
+        let mut builder = OpBuilder::new(f.context.clone());
+        for (index, point) in points.iter().enumerate() {
+            builder.set_insertion_point_before(*point);
+            for suffix in ["first", "second"] {
+                let variable = Variable {
+                    name: midenc_hir::interner::Symbol::intern(alloc::format!(
+                        "{case}_{index}_{suffix}"
+                    )),
+                    ..Default::default()
+                };
+                if suffix == "first" {
+                    builder.debug_kill(variable, SourceSpan::UNKNOWN).unwrap();
+                } else {
+                    builder
+                        .debug_declare(variable, Default::default(), SourceSpan::UNKNOWN)
+                        .unwrap();
+                }
+            }
+        }
+        let link = (case == "dynexec").then(|| linked(&f));
+        let env = SelectEnv {
+            link_info: link.as_ref(),
+            ..Default::default()
+        };
+        let evidence = crate::select::evidence(&f.borrow(), &env).unwrap();
+        let selected = check_selection(
+            evidence.source.program,
+            &SourceContext::Hir {
+                function: &f.borrow(),
+                env: &env,
+            },
+        )
+        .unwrap();
+        let mut plan = allocate(selected, &AllocationOptions::default()).unwrap();
+        let frame = assign_frame(&plan, &evidence.source.source_locals).unwrap();
+        resolve_frame_bindings(&mut plan, &frame).unwrap();
+        let mut registry = LoweringRegistry::default();
+        for definition in &evidence.definitions {
+            registry.register(definition).unwrap();
+        }
+        let mut expansion = ExpansionEnv::default();
+        expansion.resolve_debug(&plan, &frame);
+        assert_eq!(expansion.debug.len(), points.len() * 2, "{case}");
+        let name = crate::masm::ProcedureName::new("subject").unwrap();
+        let mut procedure =
+            crate::lower::expand::finalize(&plan, &frame, &registry, &expansion, &name)
+                .unwrap()
+                .into_masm(name)
+                .unwrap();
+        procedure.set_visibility(crate::masm::Visibility::Public);
+        for callee in ["proc callee nop end", "proc callee push.1 if.true nop else nop end end"] {
+            let manager = Arc::new(DefaultSourceManager::default());
+            let mut module = crate::masm::Module::parser(Some(crate::masm::ModuleKind::Library))
+                .parse_str(
+                    Some(miden_assembly::Path::new(if case == "call" {
+                        "::direct_test"
+                    } else {
+                        "::calls"
+                    })),
+                    callee,
+                    manager.clone(),
+                )
+                .unwrap();
+            module.define_procedure(procedure.clone(), manager.clone()).unwrap();
+            let mut assembler = if case == "syscall" {
+                let kernel = crate::masm::Module::parser(Some(crate::masm::ModuleKind::Kernel))
+                    .parse_str(
+                        Some(miden_assembly::Path::KERNEL),
+                        "pub proc callee nop end",
+                        manager.clone(),
+                    )
+                    .unwrap();
+                let kernel = Assembler::new(manager.clone())
+                    .assemble_kernel(
+                        "kernel",
+                        kernel,
+                        None::<alloc::boxed::Box<crate::masm::Module>>,
+                    )
+                    .unwrap();
+                Assembler::with_kernel(manager.clone(), Arc::from(kernel)).unwrap()
+            } else {
+                Assembler::new(manager)
+            };
+            assembler.link_package(core.clone(), miden_assembly::Linkage::Dynamic).unwrap();
+            let package =
+                assembler.assemble_library(case, module, core::iter::empty::<&str>()).unwrap();
+            let debug =
+                package.debug_info().unwrap_or_else(|error| panic!("{case}: {error}")).unwrap();
+            for index in 0..points.len() {
+                for suffix in ["first", "second"] {
+                    let name = alloc::format!("{case}_{index}_{suffix}");
+                    assert!(
+                        debug.nodes().iter().flat_map(|node| &node.debug_vars).any(|row| debug
+                            .get_string(row.name_idx)
+                            .is_some_and(|actual| actual.as_ref() == name)),
+                        "missing variable {name}: {procedure:?}"
+                    );
+                }
+            }
+        }
     }
 }

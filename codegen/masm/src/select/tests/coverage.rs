@@ -40,6 +40,27 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
     .collect::<Vec<_>>();
     fixtures.push((parse_module_function(include_str!("fixtures/indirect-table.hir")), true));
     fixtures.push((debug_fixture(), false));
+    fixtures.push((
+        parse_module_function(
+            r#"builtin.module public @references {
+        builtin.function public extern("C") @callee() { builtin.ret; };
+        builtin.function public extern("C") @dispatch() -> (felt, felt, felt, felt) {
+            %r0, %r1, %r2, %r3 = hir.procedure_root @callee;
+            builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+        };
+    };"#,
+        ),
+        false,
+    ));
+    let outputs = (0..16).map(|i| alloc::format!("%o{i}")).collect::<Vec<_>>().join(", ");
+    fixtures.push((
+        parse(&alloc::format!(
+            "builtin.function public extern(\"C\") @foreign(%s: felt, %p: felt, %r0: felt, %r1: \
+             felt, %r2: felt, %r3: felt) -> felt {{ {outputs} = hir.exec_fpi [%s, %p, %r0, %r1, \
+             %r2, %r3](%r0); builtin.ret %o0 : (felt); }};"
+        )),
+        false,
+    ));
     fixtures.extend(super::calls::fixtures());
     fixtures.extend(super::arithmetic::fixtures());
     fixtures.extend(super::memory::fixtures());
@@ -58,6 +79,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
         let info = needs_link.then(|| linked(&f));
         let env = SelectEnv {
             link_info: info.as_ref(),
+            ..Default::default()
         };
         let selected = select_function(&function, &env).unwrap();
         for record in selected.source_map.values() {
@@ -121,7 +143,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
             );
         }
     }
-    assert_eq!(registered.len(), 124);
+    assert_eq!(registered.len(), 126);
     assert_eq!(covered, registered);
 }
 

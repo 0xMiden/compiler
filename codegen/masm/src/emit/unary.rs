@@ -241,6 +241,8 @@ impl OpEmitter<'_> {
         let src_bits = src.size_in_bits() as u32;
         let dst_bits = dst.size_in_bits() as u32;
         match (&src, dst) {
+            // Every valid value of these unsigned types already occupies one field lane.
+            (Type::I1 | Type::U8 | Type::U16 | Type::U32, Type::Felt) => (),
             // u128
             (Type::U128, Type::I128) => self.assert_unsigned_int128(span),
             (Type::U128, Type::I64) => self.u128_to_i64(span),
@@ -307,7 +309,6 @@ impl OpEmitter<'_> {
                 self.felt_to_int(dst_bits, span);
             }
             // u32
-            (Type::U32, Type::Felt) => (),
             (Type::U32, Type::I64 | Type::U64 | Type::I128) => self.zext_int32(dst_bits, span),
             (Type::U32, Type::I32) => self.assert_i32(span),
             (Type::U32, Type::U16 | Type::U8 | Type::I1) => {
@@ -942,5 +943,23 @@ impl OpEmitter<'_> {
             ty => unimplemented!("neg for {ty} is not supported"),
         }
         self.push(ty);
+    }
+}
+
+#[cfg(test)]
+mod scalar_cast_tests {
+    use super::*;
+
+    #[test]
+    fn bool_cast_to_felt_emits_no_extra_limb() {
+        let context = alloc::rc::Rc::new(midenc_hir::Context::default());
+        let mut stack = OperandStack::new(context);
+        stack.push(Type::I1);
+        let mut invoked = BTreeSet::new();
+        let mut body = Vec::new();
+        OpEmitter::new(&mut invoked, &mut body, &mut stack).cast(&Type::Felt, SourceSpan::UNKNOWN);
+        assert!(body.is_empty(), "single-lane widening must emit no instructions: {body:?}");
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack[0], Type::Felt);
     }
 }

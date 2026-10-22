@@ -151,19 +151,14 @@ pub(crate) enum ReturnBoundary {
     Context,
     Root,
 }
-/// Permitted treatment of nonresult lanes at a procedure exit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReturnNormalization {
-    PreserveSuffix,
-    TruncateToWindow,
-}
-impl ReturnNormalization {
-    /// Reject truncation of a same-context caller suffix or preservation at a context exit.
-    pub fn allowed_at(self, boundary: ReturnBoundary) -> Result<(), PlanError> {
-        match (self, boundary) {
-            (Self::PreserveSuffix, ReturnBoundary::SameContext)
-            | (Self::TruncateToWindow, ReturnBoundary::Context | ReturnBoundary::Root) => Ok(()),
-            _ => Err(abi_error("return normalization violates the procedure boundary")),
+impl ReturnBoundary {
+    /// Permit truncation only after caller-suffix obligations have ended at a context or root exit.
+    pub fn validate_truncation(self) -> Result<(), PlanError> {
+        match self {
+            Self::Context | Self::Root => Ok(()),
+            Self::SameContext => {
+                Err(abi_error("return normalization violates the procedure boundary"))
+            }
         }
     }
 }

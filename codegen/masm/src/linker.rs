@@ -27,8 +27,8 @@ const DEFAULT_RESERVATION: u32 = 17;
 // cell each, in address order, ending with the `RESERVED_BAND_END` marker. To add a cell, define
 // it as the current `RESERVED_BAND_END` and move the marker one word up — laid out that way, two
 // cells cannot overlap, and the marker keeps the band inside its bounds. A cell's lifetime is its
-// owner's business: the heap metadata lives for the whole context, while a spill cell is written
-// immediately before the instruction that consumes it.
+// owner's business: heap metadata lives for the whole context. Procedure-local scratch is
+// allocated separately as part of each procedure's checked frame.
 
 /// Number of elements a reserved cell spans: one word.
 const RESERVED_WORD: u32 = miden_core::WORD_SIZE as u32;
@@ -45,11 +45,9 @@ pub const LOCALS_FRAME_START: u32 = 1 << 31;
 /// magic), owned by the `intrinsics::mem` MASM module and mirrored here from its `HEAP_INFO_ADDR`
 /// constant; the unit tests check the two agree.
 pub const HEAP_INFO_ADDR: u32 = GUEST_ADDRESS_LIMIT;
-/// Scratch word a `dyncall` lowering spills the callee's MAST root to, which the VM reads from
-/// memory.
-pub const DYNCALL_ROOT_ADDR: u32 = HEAP_INFO_ADDR + RESERVED_WORD;
-/// First element past the compiler's reserved band; a new cell starts here.
-const RESERVED_BAND_END: u32 = DYNCALL_ROOT_ADDR + RESERVED_WORD;
+
+/// First element past the compiler's reserved heap metadata word.
+const RESERVED_BAND_END: u32 = HEAP_INFO_ADDR + RESERVED_WORD;
 
 // The band bounds are checked when the crate compiles: a cell that a guest pointer or a locals
 // frame could reach would be silent memory corruption, never a diagnostic.
@@ -72,19 +70,6 @@ pub struct LinkInfo {
 }
 
 impl LinkInfo {
-    /// Creates empty link information for the op rooted at the namespace path `id`, if any.
-    #[cfg(test)]
-    pub fn new(id: Option<SymbolPath>) -> Self {
-        Self {
-            component: id,
-            globals_layout: Default::default(),
-            segment_layout: Default::default(),
-            function_tables: Default::default(),
-            component_start: None,
-            heap_base: 0,
-        }
-    }
-
     /// Returns the namespace path the linked op is rooted at, if it was linked with one.
     #[inline]
     pub fn component(&self) -> Option<&SymbolPath> {

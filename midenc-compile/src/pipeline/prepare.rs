@@ -839,7 +839,7 @@ fn reject_unselected_workspace_root(manifest_path: &Path) -> CompilerResult<()> 
 ///
 /// The two declare the *same* route — past the WebAssembly both entry points run the same shared
 /// tail — so what the substitution decides is which build runs, not what `--stop-after` and
-/// `--emit` may name. It was once both; see [`RUST_STANDALONE_FRONTEND`].
+/// `--emit` may name. It was once both; see the standalone registration linked above.
 ///
 /// Only the *selected* registration is substituted, never the registry's own entry, so this
 /// decides how the root target is compiled and nothing else. The driver installs a provider

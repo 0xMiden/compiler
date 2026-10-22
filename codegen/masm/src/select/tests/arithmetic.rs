@@ -187,6 +187,7 @@ fn arithmetic_fixtures_expand_through_final_verifier() {
         let info = needs_link.then(|| linked(&f));
         let env = SelectEnv {
             link_info: info.as_ref(),
+            ..Default::default()
         };
         let (plan, frame, body) = ready(&f, &env);
         verify::verify(&plan, &frame, body)
@@ -423,6 +424,33 @@ fn check_bool_cast(dst: &str) {
     for value in [0, 1] {
         execute_linked(&f, &[value], &[value]);
     }
+}
+
+#[test]
+fn unsigned_scalar_casts_to_felt_preserve_raw_lane_and_live_input() {
+    for (ty, maximum) in [("i1", 1), ("u8", 255), ("u16", 65535), ("u32", u32::MAX as usize)] {
+        let f = parse(&format!(
+            "builtin.function public extern(\"C\") @f(%a: {ty}) -> (felt, {ty}) {{ %r = hir.cast \
+             %a <{{ ty = #builtin.type<felt> }}>; builtin.ret %r, %a : (felt, {ty}); }};"
+        ));
+        let evidence = crate::select::evidence(&f.borrow(), &SelectEnv::default()).unwrap();
+        let cast = &evidence.source.program.segments[0].units[0];
+        assert_eq!(cast.stack_inputs.len(), 1);
+        assert_eq!(cast.outputs.len(), 1);
+        assert_eq!(
+            evidence.source.units[&cast.id].aliases.pairs(),
+            &[(cast.outputs[0], cast.stack_inputs[0])],
+            "{ty} widening must retain the exact input token"
+        );
+        for value in [0, maximum] {
+            execute_linked(&f, &[value], &[value, value]);
+        }
+    }
+}
+
+#[test]
+fn bool_cast_to_felt_preserves_single_lane() {
+    check_bool_cast("felt");
 }
 
 #[test]

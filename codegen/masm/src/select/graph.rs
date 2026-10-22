@@ -1,15 +1,16 @@
 //! Construct selected graphs and reconstruct them from final HIR.
 //!
 //! Graph identities connect source records, values, units, and transfers without assigning
-//! stack positions. [`GraphBuilder`] provides deterministic storage for supplied nodes;
-//! [`Selector`] derives nodes and lowering definitions from registered HIR rules. Independent
-//! source checking remains responsible for semantic coverage and control-flow correspondence.
+//! stack positions. [`Selector`] derives nodes and lowering definitions from registered HIR
+//! rules; test fixtures can construct graphs directly. Independent source checking remains
+//! responsible for semantic coverage and control-flow correspondence.
 use alloc::{collections::BTreeMap, vec::Vec};
 
 use crate::plan::*;
 
 /// Collect selected nodes by identity before attaching their executable control tree.
 /// Duplicate identities are rejected, but successful construction is not source verification.
+#[cfg(test)]
 pub(crate) struct GraphBuilder {
     origin: ProcedureOrigin,
     abi: ProcedureAbi,
@@ -18,6 +19,7 @@ pub(crate) struct GraphBuilder {
     segments: BTreeMap<SegmentId, SelectedSegment>,
     edges: BTreeMap<EdgeId, TransferEdge>,
 }
+#[cfg(test)]
 impl GraphBuilder {
     /// Start an empty graph with the source origin and externally visible procedure ABI.
     pub fn new(origin: ProcedureOrigin, abi: ProcedureAbi) -> Self {
@@ -80,6 +82,7 @@ impl GraphBuilder {
     }
 }
 
+#[cfg(test)]
 fn insert<K: Ord, V>(map: &mut BTreeMap<K, V>, key: K, value: V) -> Result<(), PlanError> {
     match map.entry(key) {
         alloc::collections::btree_map::Entry::Vacant(entry) => {
@@ -91,6 +94,7 @@ fn insert<K: Ord, V>(map: &mut BTreeMap<K, V>, key: K, value: V) -> Result<(), P
         }
     }
 }
+#[cfg(test)]
 fn invalid(message: &'static str) -> PlanError {
     PlanError::new(DiagnosticCategory::InvalidSelectedLowering, message)
 }
@@ -397,7 +401,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                 )?;
             } else {
                 let source = this.generated_source(definition, stage_id)?;
-                let construction = stage.construct()?;
+                let construction = stage.construct(env)?;
                 this.add_unit(
                     current,
                     source,
@@ -853,6 +857,41 @@ impl<'a, 'e> Selector<'a, 'e> {
                     self.indirect(&op, current, &mut flow)?
                 }
                 SelectionRule::DirectCall => self.direct(&op, current)?,
+                SelectionRule::Fpi => self.fpi(&op, current)?,
+                SelectionRule::ProcedureRoot => {
+                    let reference = op.downcast_ref::<midenc_dialect_hir::ProcedureRoot>().unwrap();
+                    let callee = crate::legalization::validate_procedure_root(reference)?;
+                    let module = if op.nearest_parent_op::<builtin::GlobalVariable>().is_some() {
+                        None
+                    } else {
+                        op.nearest_symbol_table()
+                    };
+                    let target =
+                        crate::lower::invocation_target_from_symbol(callee, module, op.span());
+                    let target = if let Some(owners) = self.env.owners {
+                        owners.target(target)?
+                    } else {
+                        target
+                    };
+                    let outputs = self.results(&op)?;
+                    if outputs.len() != 4
+                        || outputs
+                            .iter()
+                            .any(|value| self.program.values[value].layout.ty() != &Type::Felt)
+                    {
+                        return Err(super::invalid(
+                            "procedure root requires exactly four felt results",
+                        ));
+                    }
+                    self.plain(
+                        current,
+                        source,
+                        vec![],
+                        self.atoms(&outputs),
+                        vec![I::ProcRef(target)],
+                        LaneAliases::default(),
+                    )?;
+                }
                 SelectionRule::Debug => {
                     let lanes = if let Some(debug) =
                         op.downcast_ref::<midenc_hir::dialects::debuginfo::DebugValue>()
@@ -1449,10 +1488,60 @@ impl<'a, 'e> Selector<'a, 'e> {
         Ok(())
     }
 
+    fn fpi(&mut self, op: &Operation, segment: SegmentId) -> Result<(), Report> {
+        use crate::lower::units::fpi::{Fpi, Operands};
+        let call = op.downcast_ref::<midenc_dialect_hir::ExecFpi>().unwrap();
+        let prefix = self.ids(call.prefix().iter().map(|v| v.borrow().as_value_ref()))?;
+        let payload = self.ids(call.inputs().iter().map(|v| v.borrow().as_value_ref()))?;
+        let outputs = self.results(op)?;
+        if prefix.len() != 6
+            || prefix
+                .iter()
+                .chain(&payload)
+                .chain(&outputs)
+                .any(|v| self.program.values[v].layout.ty() != &Type::Felt)
+        {
+            return Err(super::invalid(
+                "FPI requires six felt prefix operands and felt payload/results",
+            ));
+        }
+        let prefix = self.atoms(&prefix);
+        let payload = self.atoms(&payload);
+        let outputs = self.atoms(&outputs);
+        let source = self.sources[&op.as_operation_ref()];
+        let id = SelectedStepId(index(self.definitions.len())?);
+        let (unit, proof) = Fpi.select_semantic(
+            id,
+            source,
+            Operands {
+                account_suffix: prefix[0],
+                account_prefix: prefix[1],
+                procedure_root: [prefix[2], prefix[3], prefix[4], prefix[5]],
+                payload: &payload,
+            },
+            &outputs,
+        )?;
+        self.add_unit(
+            segment,
+            source,
+            UnitSelection {
+                inputs: unit.stack_inputs,
+                stored: unit.stored_inputs,
+                outputs: unit.outputs,
+                body: HirBody::Fpi,
+                proof,
+                effects: unit.effects,
+                scratch: unit.scratch,
+                scratch_effects: unit.scratch_effects,
+            },
+        )?;
+        Ok(())
+    }
+
     fn direct(&mut self, op: &Operation, segment: SegmentId) -> Result<(), Report> {
         use crate::lower::units::calls;
         let call = op.as_trait::<dyn midenc_hir::CallOpInterface>().unwrap();
-        let (resolved, target) = calls::resolve_direct(call)?;
+        let (resolved, target) = calls::resolve_direct(call, self.env)?;
         let symbol = resolved.target().as_symbol_ref();
         let symbol = symbol.borrow();
         if calls::is_truncate(&*symbol) {

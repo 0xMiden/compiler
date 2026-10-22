@@ -155,8 +155,6 @@ pub(crate) enum EdgeKind {
     Forward,
     True,
     False,
-    Case(u32),
-    Default,
     Backedge,
     Return,
     Trap,

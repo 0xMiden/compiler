@@ -816,9 +816,14 @@ impl Block {
 
     /// Splice the body of `block` to `self` before `ip`, updating the parent of all spliced ops.
     ///
+    /// `ip` must belong to `self`; an invalid anchor panics before either block changes.
     /// It is up to the caller to ensure that this operation produces valid IR.
     pub fn splice_block_before(&mut self, block: &mut Self, ip: OperationRef) {
-        assert_eq!(ip.parent().unwrap(), block.as_block_ref());
+        assert!(
+            ip.parent()
+                .is_some_and(|parent| BlockRef::ptr_eq(&parent, &self.as_block_ref())),
+            "splice anchor must belong to the destination block"
+        );
 
         let ops = block.body_mut().take();
         let mut cursor = unsafe { self.body.cursor_mut_from_ptr(ip) };
@@ -827,9 +832,14 @@ impl Block {
 
     /// Splice the body of `block` to `self` after `ip`, updating the parent of all spliced ops.
     ///
+    /// `ip` must belong to `self`; an invalid anchor panics before either block changes.
     /// It is up to the caller to ensure that this operation produces valid IR.
     pub fn splice_block_after(&mut self, block: &mut Self, ip: OperationRef) {
-        assert_eq!(ip.parent().unwrap(), block.as_block_ref());
+        assert!(
+            ip.parent()
+                .is_some_and(|parent| BlockRef::ptr_eq(&parent, &self.as_block_ref())),
+            "splice anchor must belong to the destination block"
+        );
 
         let ops = block.body_mut().take();
         let mut cursor = unsafe { self.body.cursor_mut_from_ptr(ip) };
