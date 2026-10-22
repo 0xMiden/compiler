@@ -451,6 +451,9 @@ pub struct CodegenOptions {
     #[cfg_attr(feature = "std", arg(long, default_value_t = false))]
     pub no_link: bool,
     /// The Rust panic strategy: trap immediately or invoke the crate's panic handler
+    ///
+    /// Direct rustc builds ignore `immediate-abort` with a warning because their prebuilt
+    /// standard libraries are incompatible with that strategy.
     #[cfg_attr(
         feature = "std",
         arg(

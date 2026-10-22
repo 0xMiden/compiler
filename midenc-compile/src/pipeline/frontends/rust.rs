@@ -777,26 +777,7 @@ fn rustc(
         std::env::var_os("RUSTFLAGS").as_deref(),
         options.rustflags.as_deref(),
     );
-    let mut rustc_flags: Vec<String> = Vec::with_capacity(rustflags.len());
-    let mut rustflags = rustflags.into_iter();
-    let mut target = None;
-    while let Some(flag) = rustflags.next() {
-        if flag == "--target"
-            && let Some(value) = rustflags.next()
-        {
-            target = Some(value);
-            continue;
-        } else if flag == "-C"
-            && let Some(value) = rustflags.next()
-        {
-            if value == "panic=immediate-abort" {
-                continue;
-            }
-            rustc_flags.extend([flag, value]);
-        } else {
-            rustc_flags.push(flag);
-        }
-    }
+    let (rustc_flags, target) = direct_rustc_flags(rustflags);
 
     let mut command = command;
     command
@@ -855,6 +836,40 @@ fn rustc(
     }
 
     Ok(output_file)
+}
+
+fn direct_rustc_flags(flags: Vec<String>) -> (Vec<String>, Option<String>) {
+    let mut rustc_flags = Vec::with_capacity(flags.len());
+    let mut flags = flags.into_iter();
+    let mut target = None;
+    while let Some(flag) = flags.next() {
+        if flag == "--target"
+            && let Some(value) = flags.next()
+        {
+            target = Some(value);
+        } else if flag == "-C"
+            && let Some(value) = flags.next()
+        {
+            if value == "panic=immediate-abort" {
+                warn_unsupported_rustc_panic_strategy();
+            } else {
+                rustc_flags.extend([flag, value]);
+            }
+        } else if flag == "-Cpanic=immediate-abort" {
+            warn_unsupported_rustc_panic_strategy();
+        } else {
+            rustc_flags.push(flag);
+        }
+    }
+    (rustc_flags, target)
+}
+
+fn warn_unsupported_rustc_panic_strategy() {
+    log::warn!(
+        target: "rustc",
+        "ignoring panic=immediate-abort for direct rustc compilation: the toolchain's prebuilt \
+         core library is incompatible with this strategy; use a Cargo project to enable it"
+    );
 }
 
 /// Builds the shared argument vector for a nested `cargo build` invocation.
@@ -3875,6 +3890,29 @@ path = "lib.rs"
             panic_flags.map(String::as_str).collect::<Vec<_>>(),
             ["-Cpanic=abort", "-Cpanic=immediate-abort", "-Cpanic=abort"]
         );
+    }
+
+    #[test]
+    fn direct_rustc_filters_immediate_abort_in_both_spellings() {
+        for flags in [vec!["-C", "panic=immediate-abort"], vec!["-Cpanic=immediate-abort"]] {
+            let (flags, _) = direct_rustc_flags(flags.into_iter().map(str::to_string).collect());
+            assert!(flags.is_empty(), "{flags:?}");
+        }
+    }
+
+    #[test]
+    fn direct_rustc_preserves_abort_and_other_flags() {
+        let flags = ["-Cpanic=abort", "-C", "panic=abort", "-C", "opt-level=3"];
+        let (actual, _) = direct_rustc_flags(flags.map(str::to_string).to_vec());
+        assert_eq!(actual, flags);
+    }
+
+    #[test]
+    fn direct_rustc_extracts_the_target() {
+        let flags = ["--target", "wasm32-unknown-unknown", "--cfg", "miden"];
+        let (actual, target) = direct_rustc_flags(flags.map(str::to_string).to_vec());
+        assert_eq!(target.as_deref(), Some("wasm32-unknown-unknown"));
+        assert_eq!(actual, ["--cfg", "miden"]);
     }
 
     #[test]
