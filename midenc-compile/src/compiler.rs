@@ -11,7 +11,8 @@ use clap::{Parser, builder::ArgPredicate};
 use miden_mast_package::TargetType;
 use midenc_session::{
     ColorChoice, DebugInfo, IrFilter, LinkLibrary, OptLevel, Options, OutputFile, OutputTypeSpec,
-    OutputTypes, PathBuf, RemapPathPrefix, Verbosity, Warnings, add_target_link_libraries,
+    OutputTypes, PanicStrategy, PathBuf, RemapPathPrefix, Verbosity, Warnings,
+    add_target_link_libraries,
 };
 #[cfg(feature = "std")]
 use midenc_session::{InputFile, Session, diagnostics::Emitter};
@@ -449,6 +450,17 @@ pub struct CodegenOptions {
     /// Tell the compiler to generate Miden Assembly from the inputs without linking them
     #[cfg_attr(feature = "std", arg(long, default_value_t = false))]
     pub no_link: bool,
+    /// The Rust panic strategy: trap immediately or invoke the crate's panic handler
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long = "panic",
+            value_enum,
+            value_name = "STRATEGY",
+            default_value = "immediate-abort",
+        )
+    )]
+    pub panic_strategy: PanicStrategy,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -737,6 +749,7 @@ impl Compiler {
             analyze_only,
             link_only,
             no_link,
+            panic_strategy,
         } = CodegenOptions::parse_argv(codegen);
         let UnstableOptions {
             cargo_frontmatter,
@@ -803,6 +816,7 @@ impl Compiler {
         options.analyze_only = analyze_only;
         options.link_only = link_only;
         options.no_link = no_link;
+        options.panic_strategy = panic_strategy;
         options.lint = lint;
         options.cargo_frontmatter = cargo_frontmatter;
         options.print_cfg_after_all = print_cfg_after_all;
@@ -900,6 +914,29 @@ mod tests {
     fn options(args: &[&str]) -> Box<Options> {
         Compiler::try_parse_from(PathBuf::from("/tmp"), args)
             .unwrap_or_else(|err| panic!("`midenc {}` should parse: {err}", args.join(" ")))
+    }
+
+    #[test]
+    fn panic_strategy_defaults_to_immediate_abort() {
+        assert_eq!(options(&[]).panic_strategy, PanicStrategy::ImmediateAbort);
+        assert_eq!(Options::default().panic_strategy, PanicStrategy::ImmediateAbort);
+        assert_eq!(CodegenOptions::default().panic_strategy, PanicStrategy::ImmediateAbort);
+    }
+
+    #[test]
+    fn panic_strategy_reaches_the_options() {
+        assert_eq!(options(&["-C", "panic=abort"]).panic_strategy, PanicStrategy::Abort);
+        assert_eq!(
+            options(&["-Cpanic=immediate-abort"]).panic_strategy,
+            PanicStrategy::ImmediateAbort
+        );
+    }
+
+    #[test]
+    fn panic_strategy_rejects_unsupported_values() {
+        let err = CodegenOptions::try_parse_from(["-C", "--panic", "unwind"])
+            .expect_err("unwinding is not a supported panic strategy");
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
     }
 
     /// `--stop-after` reaches [`Options`], which is the only way the pipeline can see it.
