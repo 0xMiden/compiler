@@ -1121,7 +1121,7 @@ static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+    core::arch::wasm32::unreachable()
 }
 
 miden::generate!();
