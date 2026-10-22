@@ -1,0 +1,44 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=if-remove-unused-results}))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=if-remove-unused-results}))' | hir-opt --verify - | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(legalize-for-masm))' | filecheck %s --check-prefix=LEGALIZE
+
+builtin.module public @canonicalizer_preserves_debug_kills {
+    // CHECK: @entrypoint(%[[OLD:\d+]]: u32,
+    // CHECK-NEXT: di.debug_value %[[OLD]] {{.*}}name = "x"
+    // CHECK: {{%\d+}} = scf.if
+    // CHECK: } : (i1) -> (u32);
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "x"{{.*}}di.inline_call_chain{{.*}}name = "inner"
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @entrypoint(%0: u32, %1: u32, %2: i1) -> u32 {
+        di.debug_value %0 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "inner", linkage = "", file = "test.rs", line = 1, column = 1, call_file = "test.rs", call_line = 5, call_column = 1 }]> } : (u32);
+        %3, %4 = scf.if %2 then {
+            %5 = arith.incr %0;
+            scf.yield %5, %1 : (u32, u32);
+        } else {
+            scf.yield %1, %0 : (u32, u32);
+        } : (i1) -> (u32, u32);
+        di.debug_value %4 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "inner", linkage = "", file = "test.rs", line = 1, column = 1, call_file = "test.rs", call_line = 5, call_column = 1 }]> } : (u32);
+        builtin.ret %3 : (u32);
+    };
+
+    // LEGALIZE-LABEL: @wide_value(
+    // LEGALIZE-NEXT: di.debug_kill {{.*}}name = "pair"{{.*}}di.inline_call_chain{{.*}}name = "inner"
+    // LEGALIZE-NOT: di.debug_value
+    // LEGALIZE: hir.store
+    // LEGALIZE: hir.load
+    // LEGALIZE-NEXT: di.debug_kill {{.*}}name = "reloaded"
+    // LEGALIZE-NEXT: builtin.ret
+    builtin.function public extern("C") @wide_value(%0: ptr<u64, element>, %1: u32, %2: u32) -> u32 {
+        %3 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+        %4 = arith.zext %2 <{ ty = #builtin.type<u64> }>;
+        %5 = arith.constant 32 : u32;
+        %6 = arith.shl %4, %5;
+        %7 = arith.bor %3, %6;
+        di.debug_value %7 <{ variable = #di.variable<{ name = "pair", file = "test.rs", line = 10 }>, expression = #di.expression<[]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "inner", linkage = "", file = "test.rs", line = 10, column = 1, call_file = "test.rs", call_line = 15, call_column = 1 }]> } : (u64);
+        hir.store %0, %7 : (ptr<u64, element>, u64);
+        %8 = hir.load %0;
+        di.debug_value %8 <{ variable = #di.variable<{ name = "reloaded", file = "test.rs", line = 11 }>, expression = #di.expression<[]> }> : (u64);
+        %9 = arith.trunc %8 <{ ty = #builtin.type<u32> }>;
+        builtin.ret %9 : (u32);
+    };
+};

@@ -231,6 +231,8 @@ impl Pass for SinkOperandDefs {
         let operation = op.as_operation_ref();
         drop(op);
 
+        let dominfo = state.analysis_manager().get_analysis::<DominanceInfo>()?;
+
         log::debug!(target: Self::NAME, "sinking operand defs for regions of {}", operation.borrow());
 
         // For each operation, we enqueue it in this worklist, we then recurse on each of it's
@@ -440,8 +442,9 @@ impl Pass for SinkOperandDefs {
                         def_op.move_to(*builder.insertion_point());
                         sink_state.replacements.insert(operand_value, operand_value);
 
-                        // Move any transparent users of `defining_op` after it
-                        move_transparent_users_to(&def_op, &[operation]);
+                        drop(def_op);
+                        repair_transparent_users_after_move(defining_op, &[operation], &dominfo);
+                        changed = PostPassStatus::Changed;
                     }
                 } else if !is_sole_user || def.num_results() != 1 || !def.is_memory_effect_free() {
                     // Skip this operand if the defining op cannot be safely moved
@@ -468,9 +471,9 @@ impl Pass for SinkOperandDefs {
                     def_op.move_to(*builder.insertion_point());
                     sink_state.replacements.insert(operand_value, operand_value);
 
-                    // Move any transparent users of `defining_op` after it
-                    move_transparent_users_to(&def_op, &[operation]);
                     drop(def_op);
+                    repair_transparent_users_after_move(defining_op, &[operation], &dominfo);
+                    changed = PostPassStatus::Changed;
 
                     // Enqueue the defining op to be visited before continuing with this op's operands
                     log::trace!(target: Self::NAME, "    enqueing defining op for immediate processing");
@@ -487,22 +490,39 @@ impl Pass for SinkOperandDefs {
     }
 }
 
-fn move_transparent_users_to(op: &Operation, exclude: &[OperationRef]) {
+fn repair_transparent_users_after_move(
+    op: OperationRef,
+    exclude: &[OperationRef],
+    dominfo: &DominanceInfo,
+) {
     use midenc_hir::adt::SmallSet;
 
-    let ip = ProgramPoint::after(op.as_operation_ref());
+    let ip = ProgramPoint::after(op);
     let mut visited = SmallSet::<_, 4>::from_iter(exclude.iter().copied());
-    for result in op.results().iter() {
-        let result = result.borrow();
-        for user in result.iter_uses() {
-            if !visited.insert(user.owner) {
-                continue;
+    let mut users = SmallVec::<[OperationRef; 4]>::new();
+    {
+        let op = op.borrow();
+        for result in op.results().iter() {
+            for user in result.borrow().iter_uses() {
+                if visited.insert(user.owner) && user.owner.borrow().implements::<dyn Transparent>()
+                {
+                    users.push(user.owner);
+                }
             }
-            let mut user = user.owner;
-            let mut user = user.borrow_mut();
-            if user.implements::<dyn Transparent>() {
-                user.move_to(ip);
+        }
+    }
+    for mut user in users {
+        if user.borrow().is::<midenc_hir::dialects::debuginfo::DebugValue>() {
+            let dominated = {
+                let definition = op.borrow();
+                let debug_value = user.borrow();
+                dominfo.dominates(&*definition, &*debug_value)
+            };
+            if !dominated {
+                midenc_hir::dialects::debuginfo::transform::erase_debug_value(user);
             }
+        } else {
+            user.borrow_mut().move_to(ip);
         }
     }
 }
@@ -649,8 +669,7 @@ where
             if all_users_dominated_by && should_move_into_region {
                 (self.move_into_region)(op, region);
 
-                // Move all transparent users of `op` into the region after it
-                move_transparent_users_to(&op.borrow(), &[user.as_operation_ref()]);
+                repair_transparent_users_after_move(op, &[user.as_operation_ref()], self.dominfo);
 
                 self.num_sunk += 1;
 

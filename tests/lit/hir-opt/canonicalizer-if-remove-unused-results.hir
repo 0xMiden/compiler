@@ -31,7 +31,7 @@ builtin.module private @if_remove_unused_results {
     };
 
     // Result 1 is only described by a `di.debug_value`, which does not keep it alive. Erasing the
-    // replaced `scf.if` erases that `di.debug_value` with it; this used to panic with an
+    // replaced `scf.if` replaces that `di.debug_value` with a kill; this used to panic with an
     // `AliasingViolationError` because the result was still borrowed while its debug user was
     // erased.
     // CHECK: @debug_only_use(%[[A:\d+]]: u32, %[[B:\d+]]: u32)
@@ -42,6 +42,7 @@ builtin.module private @if_remove_unused_results {
     // CHECK-NEXT: } else {
     // CHECK-NEXT: scf.yield %[[B]] : (u32);
     // CHECK-NEXT: } : (i1) -> (u32);
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "u"
     // CHECK-NEXT: builtin.ret %[[R]] : (u32);
     builtin.function public extern("C") @debug_only_use(%0: u32, %1: u32) -> u32 {
         %2 = arith.lt %0, %1;

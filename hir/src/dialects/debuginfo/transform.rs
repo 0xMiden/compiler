@@ -41,7 +41,7 @@
 use alloc::vec::Vec;
 
 use midenc_hir::{
-    Builder, DialectRegistration, OpBuilder, Operation, OperationRef, ProgramPoint, SmallVec,
+    Builder, DialectRegistration, Op, OpBuilder, Operation, OperationRef, ProgramPoint, SmallVec,
     Spanned, ValueRef,
     dialects::debuginfo::attributes::ExpressionOp,
     patterns::{Rewriter, RewriterExt},
@@ -229,14 +229,27 @@ pub fn erase_debug_value_with<R: ?Sized + Rewriter>(debug_op: OperationRef, rewr
 /// This is used by region-level DCE, which visits the transparent debug operation before the dead
 /// producer whose value it references.
 pub fn erase_debug_value(mut debug_op: OperationRef) {
-    let (context, variable, span) = {
+    use super::attributes::INLINE_CALL_CHAIN_ATTR_NAME;
+
+    let (context, variable, span, inline_calls) = {
         let op = debug_op.borrow();
         let dv = op.downcast_ref::<DebugValue>().expect("expected di.debug_value");
-        (op.context_rc(), dv.variable().as_value().clone(), op.span())
+        (
+            op.context_rc(),
+            dv.variable().as_value().clone(),
+            op.span(),
+            op.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME),
+        )
     };
     let mut builder = OpBuilder::new(context);
     builder.set_insertion_point(ProgramPoint::before(debug_op));
-    let _ = builder.debug_kill(variable, span);
+    if let Ok(mut kill) = builder.debug_kill(variable, span)
+        && let Some(inline_calls) = inline_calls
+    {
+        kill.borrow_mut()
+            .as_operation_mut()
+            .set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, inline_calls);
+    }
     debug_op.borrow_mut().erase();
 }
 

@@ -349,7 +349,8 @@ impl ConversionPatternRewriter {
     /// Erase an operation with no remaining uses.
     ///
     /// Callers are responsible for ensuring the operation can be erased without leaving dangling
-    /// uses or invalid control-flow edges.
+    /// uses or invalid control-flow edges. Debug value users become `di.debug_kill` operations;
+    /// patterns that can erase such users must include that operation in their generated metadata.
     #[inline]
     pub fn erase_op(&mut self, op: OperationRef) -> Result<(), Report> {
         self.inner.erase_op(op);

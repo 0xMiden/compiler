@@ -75,7 +75,11 @@ pub trait Rewriter: Builder + RewriterListener {
             users
         };
         for user in transparent_users {
-            self.erase_op(user);
+            if user.borrow().is::<crate::dialects::debuginfo::DebugValue>() {
+                crate::dialects::debuginfo::transform::erase_debug_value_with(user, self);
+            } else {
+                self.erase_op(user);
+            }
         }
 
         // If no listener is attached, the op can be dropped all at once.
@@ -2044,6 +2048,10 @@ mod tests {
         let after = format!("{}", function.borrow().as_operation());
         assert!(!after.contains("di.debug_value"), "{after}");
         assert!(!after.contains("test.add"), "{after}");
+        assert_eq!(after.matches("di.debug_kill").count(), 2, "{after}");
+        for name in ["x", "y"] {
+            assert!(after.contains(&format!("name = \"{name}\"")), "{after}");
+        }
     }
 
     /// A transparent op holding two values. No real one does (`Transparent` verifies an arity
