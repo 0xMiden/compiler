@@ -827,14 +827,10 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
             }
             return Ok(None);
         }
-        AttributeValue::LocationListsRef(offset) => {
-            let mut iter = dwarf.locations.locations(
-                offset,
-                unit.encoding(),
-                low_pc,
-                &dwarf.debug_addr,
-                unit.addr_base,
-            )?;
+        AttributeValue::LocationListsRef(_) | AttributeValue::DebugLocListsIndex(_) => {
+            let Some(mut iter) = dwarf.attr_locations(unit, location_value)? else {
+                return Ok(None);
+            };
             while let Some(entry) = iter.next()? {
                 let storage_expr = entry.data;
                 if let Some(storage) = decode_storage_from_expression(
@@ -1264,6 +1260,87 @@ mod tests {
         ModuleEnvironment::new(&config, &mut validator, &mut types)
             .parse(wasmparser::Parser::new(0), wasm, &DiagnosticsHandler::default())
             .expect("wasm fixture should parse")
+    }
+
+    fn dwarf_sections(dwarf: &mut dwarf_write::DwarfUnit) -> Vec<(&'static str, Vec<u8>)> {
+        let mut sections =
+            dwarf_write::Sections::new(dwarf_write::EndianVec::new(gimli::LittleEndian));
+        dwarf.write(&mut sections).unwrap();
+        let mut result = Vec::new();
+        sections
+            .for_each(|section, data| {
+                if !data.slice().is_empty() {
+                    result.push((section.name(), data.slice().to_vec()));
+                }
+                Ok::<_, dwarf_write::Error>(())
+            })
+            .unwrap();
+        result
+    }
+
+    #[test]
+    fn dwarf_location_lists_use_the_compilation_unit_base() {
+        for version in [4, 5] {
+            for base in [0, 100] {
+                let mut wasm = wat::parse_str(
+                    "(module (func $entrypoint (export \"entrypoint\") (param i32) (result i32) \
+                     local.get 0))",
+                )
+                .unwrap();
+                let encoding = gimli::Encoding {
+                    format: gimli::Format::Dwarf32,
+                    version,
+                    address_size: 4,
+                };
+                let mut dwarf = dwarf_write::DwarfUnit::new(encoding);
+                let root = dwarf.unit.root();
+                dwarf.unit.get_mut(root).set(
+                    gimli::DW_AT_low_pc,
+                    dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(base)),
+                );
+                let subprogram = dwarf.unit.add(root, gimli::DW_TAG_subprogram);
+                dwarf.unit.get_mut(subprogram).set(
+                    gimli::DW_AT_name,
+                    dwarf_write::AttributeValue::String(b"entrypoint".to_vec()),
+                );
+                dwarf.unit.get_mut(subprogram).set(
+                    gimli::DW_AT_low_pc,
+                    dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(base + 2)),
+                );
+                let locations = dwarf.unit.locations.add(dwarf_write::LocationList(vec![
+                    dwarf_write::Location::OffsetPair {
+                        begin: 9,
+                        end: 13,
+                        data: dwarf_write::Expression::raw(vec![
+                            gimli::DW_OP_WASM_location.0,
+                            0,
+                            0,
+                            gimli::DW_OP_stack_value.0,
+                        ]),
+                    },
+                ]));
+                let variable = dwarf.unit.add(subprogram, gimli::DW_TAG_variable);
+                dwarf.unit.get_mut(variable).set(
+                    gimli::DW_AT_name,
+                    dwarf_write::AttributeValue::String(b"tracked".to_vec()),
+                );
+                dwarf.unit.get_mut(variable).set(
+                    gimli::DW_AT_location,
+                    dwarf_write::AttributeValue::LocationListRef(locations),
+                );
+                append_custom_sections(&mut wasm, dwarf_sections(&mut dwarf));
+                let parsed = parse_module(&wasm);
+                let collected = collect_dwarf_local_data(
+                    &parsed,
+                    &parsed.module,
+                    &DiagnosticsHandler::default(),
+                );
+                let variable = &collected.scheduled[&FuncIndex::new(0)][0];
+                assert_eq!(variable.locations.len(), 1);
+                assert_eq!(variable.locations[0].start, base + 9);
+                assert_eq!(variable.locations[0].end, Some(base + 13));
+            }
+        }
     }
 
     /// Serializes one DWARF compilation unit holding a subprogram per `(name, low_pc, param)`:

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- Decode DWARF location lists relative to their compilation unit, rather than shifting
+  variable lifetimes by the containing function's address.
 - Benchmark contract examples through deterministic MockChain transactions, comparing VM cycles
   against `next` and retaining replay snapshots and cycle-weighted flamegraphs.
 - The MASM frontend now reports advice taint findings from supported procedures even when it skips
