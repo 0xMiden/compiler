@@ -204,9 +204,9 @@ pub fn parse_file_generic(
     parse_source_generic(config, source_file)
 }
 
-/// This parses the given source file and appends parsed operations to a new [World].
+/// This parses the given source file and appends parsed operations to a new [World](crate::dialects::builtin::World).
 ///
-/// If parsing is successful, the populated [World] is returned. Otherwise, the error that caused
+/// If parsing is successful, the populated [World](crate::dialects::builtin::World) is returned. Otherwise, the error that caused
 /// parsing to fail is returned.
 ///
 /// **This wraps unconditionally, unlike [`parse_anchored_source`]**, which returns a parsed
@@ -307,8 +307,8 @@ pub fn parse_file_anchored(
 ///
 /// # The world the parser needs, and the one it must not leave behind
 ///
-/// Symbol resolution is rooted at a [World], so parsing needs one to anchor the operation it is
-/// reading — `OperationParser` takes a [World] and parses into its body. For a source whose
+/// Symbol resolution is rooted at a [World](crate::dialects::builtin::World), so parsing needs one to anchor the operation it is
+/// reading — `OperationParser` takes a [World](crate::dialects::builtin::World) and parses into its body. For a source whose
 /// top-level operation is a module, a component or anything else, that world is a genuine
 /// addition: the operation had none, and callers rely on getting one (see
 /// `midenc_compile`'s `extract_miden_component_or_bail`).
@@ -320,7 +320,7 @@ pub fn parse_file_anchored(
 /// world panics rather than returning a wrong answer. That is what made `midenc`'s own
 /// `--emit=hir` output impossible to feed back to `midenc`.
 ///
-/// So when the parsed operation is itself a [World], it is detached from the anchor and returned
+/// So when the parsed operation is itself a [World](crate::dialects::builtin::World), it is detached from the anchor and returned
 /// as the root. The now-empty anchor is left to the context's arena, which is how every other
 /// discarded entity is disposed of.
 ///

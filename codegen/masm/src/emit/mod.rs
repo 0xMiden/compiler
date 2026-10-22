@@ -22,8 +22,8 @@ macro_rules! assert_valid_integer_size {
         assert!(
             $n >= $min,
             "invalid integer size: expected size in bits greater than or equal to {}, got {}",
-            $n,
-            $min
+            $min,
+            $n
         );
     };
 
@@ -32,8 +32,8 @@ macro_rules! assert_valid_integer_size {
         assert!(
             $n >= $min,
             "invalid integer size: expected size in bits greater than or equal to {}, got {}",
-            $n,
-            $min
+            $min,
+            $n
         );
     };
 
@@ -42,8 +42,8 @@ macro_rules! assert_valid_integer_size {
         assert!(
             $n <= $max,
             "invalid integer size: expected size in bits less than or equal to {}, got {}",
-            $n,
-            $max
+            $max,
+            $n
         );
     };
 
@@ -52,8 +52,8 @@ macro_rules! assert_valid_integer_size {
         assert!(
             $n <= $max,
             "invalid integer size: expected size in bits less than or equal to {}, got {}",
-            $n,
-            $max
+            $max,
+            $n
         );
     };
 }
@@ -3508,6 +3508,86 @@ mod tests {
                 push.255
                 u32and
             "#]],
+        );
+    }
+}
+
+#[cfg(test)]
+mod integer_size_diagnostics {
+    fn assert_panic_message(f: impl FnOnce() + std::panic::UnwindSafe, expected: &str) {
+        let panic = std::panic::catch_unwind(f).expect_err("invalid width must panic");
+        let actual = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied());
+        assert_eq!(actual, Some(expected));
+    }
+
+    #[test]
+    fn literal_minimum() {
+        assert_panic_message(
+            || {
+                let n = 4u32;
+                assert_valid_integer_size!(n, 8);
+            },
+            "invalid integer size: expected size in bits greater than or equal to 8, got 4",
+        );
+    }
+
+    #[test]
+    fn identifier_minimum() {
+        assert_panic_message(
+            || {
+                let n = 4u32;
+                let min = 8;
+                assert_valid_integer_size!(n, min);
+            },
+            "invalid integer size: expected size in bits greater than or equal to 8, got 4",
+        );
+    }
+
+    #[test]
+    fn literal_maximum() {
+        assert_panic_message(
+            || {
+                let n = 64u32;
+                assert_valid_integer_size!(n, 8, 32);
+            },
+            "invalid integer size: expected size in bits less than or equal to 32, got 64",
+        );
+    }
+
+    #[test]
+    fn identifier_maximum() {
+        assert_panic_message(
+            || {
+                let n = 64u32;
+                let min = 8;
+                assert_valid_integer_size!(n, min, 32);
+            },
+            "invalid integer size: expected size in bits less than or equal to 32, got 64",
+        );
+    }
+
+    #[test]
+    fn zero() {
+        assert_panic_message(
+            || {
+                let n = 0u32;
+                assert_valid_integer_size!(n);
+            },
+            "invalid integer size: size in bits must be non-zero",
+        );
+    }
+
+    #[test]
+    fn non_power_of_two() {
+        assert_panic_message(
+            || {
+                let n = 3u32;
+                assert_valid_integer_size!(n);
+            },
+            "invalid integer size: size in bits must be a power of two, got 3",
         );
     }
 }

@@ -1878,7 +1878,7 @@ where
     }
 
     /// Return the number of declared SSA results.  This returns 4 for the foo.op example in the
-    /// comment for [Self:get_result_name].
+    /// comment for [Self::get_result_name].
     fn get_num_results(&self) -> usize {
         self.result_ids.iter().map(|entry| entry.count).sum()
     }

@@ -200,7 +200,7 @@ impl<T, Metadata> RawEntityRef<T, Metadata> {
     }
 }
 impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
-    /// Create a new [RawEntityRef] from a raw pointer to the underlying [EntityObj].
+    /// Create a new [RawEntityRef] from a raw pointer to the underlying entity.
     ///
     /// # SAFETY
     ///

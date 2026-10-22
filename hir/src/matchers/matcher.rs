@@ -435,7 +435,7 @@ impl Matcher<[OpOperand; 2]> for BinaryFoldResultBinder {
 
 /// Matches the operand of a unary op to determine if it is a candidate for folding.
 ///
-/// A successful match binds the constant value of the operand for use by the [Foldable] impl.
+/// A successful match binds the constant value of the operand for use by the [crate::traits::Foldable] impl.
 struct FoldableOperandBinder;
 impl Matcher<OpOperand> for FoldableOperandBinder {
     type Matched = AttributeRef;
@@ -486,10 +486,10 @@ where
 
 /// Matches the operands of a binary op to determine if it is a candidate for folding.
 ///
-/// A successful match binds the constant value of the operands for use by the [Foldable] impl.
+/// A successful match binds the constant value of the operands for use by the [crate::traits::Foldable] impl.
 ///
 /// NOTE: Both operands must be constant for this to match. Use [BinaryFoldResultBinder] if you
-/// wish to let the [Foldable] impl decide what to do in the presence of mixed constant and non-
+/// wish to let the [crate::traits::Foldable] impl decide what to do in the presence of mixed constant and non-
 /// constant operands.
 struct FoldableBinaryOpBinder;
 impl Matcher<[OpOperand; 2]> for FoldableBinaryOpBinder {

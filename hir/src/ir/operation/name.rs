@@ -63,7 +63,7 @@ type AttrValueGetMut = for<'a> unsafe fn(
 type TryFromAttr =
     unsafe fn(*mut (), &AttrInfo, AttributeRef) -> Result<(), crate::diagnostics::Report>;
 
-/// This trait provides for type-erased writes to an attribute property of an [Operation].
+/// This trait provides for type-erased writes to an attribute property of an [crate::Operation].
 ///
 /// Implementations must use the provided pointer, derive a pointer to the field holding the
 /// [UnsafeIntrusiveEntityRef] of the current attribute value via the provided [AttrInfo], and
@@ -74,7 +74,7 @@ type TryFromAttr =
 ///
 /// Implementors of this trait can assume the following, and _only_ the following:
 ///
-/// 1. `op` is a pointer to an [Op] implementation
+/// 1. `op` is a pointer to an [crate::Op] implementation
 /// 2. `info` contains trusted metadata about the field to write to. Namely, deriving a pointer to
 ///    the attribute field using the offset in that metadata is guaranteed to be correct.
 /// 3. `value` is a valid reference to some `Attribute` implementation, i.e. it is not dangling.
