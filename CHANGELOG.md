@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Support Miden VM 0.36 debug-info v4 and package-internal MASM visibility.
   Verbose objtool debug dumps now show inline-call operation ranges for every source occurrence.
+- Reconcile debug-variable locations across CFG edges so skipped lifetime updates
+  and loop backedges cannot retain stale values at block entries or returns.
 - Preserve DWARF lexical visibility, restore outer variables after shadowing, and
   keep unavailable inner declarations from exposing an outer variable's value.
 - Keep distinct DWARF variable declarations separate when they share a Wasm local,

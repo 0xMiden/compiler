@@ -68,7 +68,7 @@ fn location_at(info: &LocalDebugInfo, offset: u64) -> Option<&Expression> {
         .map(|location| &location.storage)
 }
 
-fn is_transient(expression: &Expression) -> bool {
+pub(crate) fn is_transient(expression: &Expression) -> bool {
     expression
         .operations
         .iter()
@@ -177,6 +177,86 @@ pub(super) fn build_location_schedule(
     }
     schedule.sort_by_key(|entry| (entry.offset, entry.storage.is_some()));
     schedule
+}
+
+pub(crate) struct LocationIndex {
+    names: BTreeMap<Symbol, Vec<usize>>,
+    transient: BTreeSet<Symbol>,
+}
+
+impl LocationIndex {
+    pub fn new(schedule: &[LocationScheduleEntry], locals: &[Option<LocalDebugInfo>]) -> Self {
+        let mut names: BTreeMap<Symbol, Vec<usize>> = BTreeMap::new();
+        let mut transient = BTreeSet::new();
+        for (index, entry) in schedule.iter().enumerate() {
+            let name = locals[entry.var_index].as_ref().unwrap().attr.name;
+            names.entry(name).or_default().push(index);
+            if entry.storage.as_ref().is_some_and(is_transient) {
+                transient.insert(name);
+            }
+        }
+        Self { names, transient }
+    }
+
+    fn state(
+        &self,
+        name: Symbol,
+        offset: u64,
+        schedule: &[LocationScheduleEntry],
+    ) -> LocationScheduleEntry {
+        let entries = &self.names[&name];
+        let index = entries.partition_point(|index| schedule[*index].offset <= offset);
+        if let Some(index) = index.checked_sub(1) {
+            let mut entry = schedule[entries[index]].clone();
+            entry.offset = offset;
+            entry
+        } else {
+            LocationScheduleEntry {
+                offset,
+                var_index: schedule[entries[0]].var_index,
+                storage: None,
+            }
+        }
+    }
+
+    pub fn repairs(
+        &self,
+        source: Option<u64>,
+        target: u64,
+        schedule: &[LocationScheduleEntry],
+        locals: &[Option<LocalDebugInfo>],
+    ) -> Vec<LocationScheduleEntry> {
+        let mut names = BTreeSet::new();
+        if let Some(source) = source {
+            let start = schedule.partition_point(|entry| entry.offset <= source.min(target));
+            let end = schedule.partition_point(|entry| entry.offset <= source.max(target));
+            for entry in &schedule[start..end] {
+                names.insert(locals[entry.var_index].as_ref().unwrap().attr.name);
+            }
+        } else {
+            names.extend(self.names.keys().copied());
+        }
+        names.extend(self.transient.iter().copied().filter(|name| {
+            self.state(*name, target, schedule).storage.as_ref().is_some_and(is_transient)
+        }));
+        let mut repairs = Vec::new();
+        for name in names {
+            let mut desired = self.state(name, target, schedule);
+            let transient = desired.storage.as_ref().is_some_and(is_transient);
+            let changed = source.is_none_or(|source| {
+                let current = self.state(name, source, schedule);
+                current.storage != desired.storage
+                    || (desired.storage.is_some() && current.var_index != desired.var_index)
+            });
+            if changed || transient {
+                if transient {
+                    desired.storage = None;
+                }
+                repairs.push(desired);
+            }
+        }
+        repairs
+    }
 }
 
 #[cfg(test)]
@@ -343,5 +423,51 @@ mod tests {
         let schedule = build_location_schedule(&mut locals);
         assert_eq!(schedule.len(), 4002);
         assert_eq!(values_at(&schedule, 2999), [(1000, false), (0, true)]);
+    }
+
+    #[test]
+    fn edge_repairs_invalidate_skipped_updates_and_loop_backedges() {
+        let outer = scope(0, 100, None);
+        let mut locals = vec![binding(outer, Some(7))];
+        locals[0].as_mut().unwrap().locations[0].end = Some(10);
+        let schedule = build_location_schedule(&mut locals);
+        let index = LocationIndex::new(&schedule, &locals);
+        for (source, target, available) in [(5, 15, false), (15, 5, true)] {
+            let repairs = index.repairs(Some(source), target, &schedule, &locals);
+            assert_eq!(repairs.len(), 1);
+            assert_eq!(repairs[0].storage.is_some(), available);
+        }
+        assert!(index.repairs(Some(15), 20, &schedule, &locals).is_empty());
+    }
+
+    #[test]
+    fn stable_locations_are_not_repeated_on_every_cfg_edge() {
+        let mut locals = vec![binding(scope(0, 100, None), Some(7))];
+        let schedule = build_location_schedule(&mut locals);
+        let index = LocationIndex::new(&schedule, &locals);
+        assert!(index.repairs(Some(1), 90, &schedule, &locals).is_empty());
+        assert!(index.repairs(Some(90), 1, &schedule, &locals).is_empty());
+    }
+
+    #[test]
+    fn joins_do_not_reuse_captured_operand_stack_values() {
+        let mut locals = vec![Some(LocalDebugInfo {
+            attr: Variable::new(Symbol::intern("x"), Symbol::intern("stack.rs"), 1, None),
+            locations: vec![LocationDescriptor {
+                start: 0,
+                end: Some(100),
+                storage: Expression::with_ops(vec![
+                    ExpressionOp::OperandStackSlot(0),
+                    ExpressionOp::StackValue,
+                ]),
+            }],
+            expression: None,
+            scope: None,
+        })];
+        let schedule = build_location_schedule(&mut locals);
+        let index = LocationIndex::new(&schedule, &locals);
+        let repairs = index.repairs(Some(5), 10, &schedule, &locals);
+        assert_eq!(repairs.len(), 1);
+        assert!(repairs[0].storage.is_none());
     }
 }
