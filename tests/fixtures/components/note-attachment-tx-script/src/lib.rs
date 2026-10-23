@@ -5,8 +5,10 @@
 //! attachments (1/2), 512/513 total words (3/4), adding an attachment to a sealed note (5), or
 //! reporting the outcome of converting element 1 to a scheme as a one-word attachment (6:
 //! `[0, value]` ok, `[1, value]` invalid scheme, `[2]` exceeds `u16`, `[3]` other (unreachable
-//! today)). Element 1 carries the attachment scheme as a felt. The whole word is also the P2ID
-//! serial number.
+//! today)), decoding element 1 through the felt-repr path and checking the index felt decoder (7:
+//! `[0, value]` ok, `[1, felt]` out of range, `[3]` other), or reading attachment index 3 of a note
+//! with one attachment (8). Element 1 carries the attachment scheme as a felt. The whole word is
+//! also the P2ID serial number.
 
 #![no_std]
 #![feature(alloc_error_handler)]
@@ -35,14 +37,9 @@ fn run(arg: Word, account: &mut Wallet) {
         // Report which result the compiled conversion produced, so the host can tell the
         // rejecting branches apart instead of matching a generic guest panic.
         let outcome = match scheme {
-            Ok(scheme) => Word::from([
-                felt!(0),
-                Felt::from_u32(u32::from(scheme.as_u16())),
-                felt!(0),
-                felt!(0),
-            ]),
+            Ok(scheme) => Word::from([felt!(0), Felt::from(scheme.as_u16()), felt!(0), felt!(0)]),
             Err(NoteAttachmentError::InvalidScheme(value)) => {
-                Word::from([felt!(1), Felt::from_u32(u32::from(value)), felt!(0), felt!(0)])
+                Word::from([felt!(1), Felt::from(value), felt!(0), felt!(0)])
             }
             Err(NoteAttachmentError::SchemeExceedsU16) => {
                 Word::from([felt!(2), felt!(0), felt!(0), felt!(0)])
@@ -51,6 +48,10 @@ fn run(arg: Word, account: &mut Wallet) {
             Err(_) => Word::from([felt!(3), felt!(0), felt!(0), felt!(0)]),
         };
         NoteAttachment::with_word(NoteAttachmentScheme::none(), outcome).add_to(note_idx);
+        return;
+    }
+    if scenario == 7 {
+        check_felt_decoders(note_idx, arg[1]);
         return;
     }
 
@@ -78,8 +79,38 @@ fn run(arg: Word, account: &mut Wallet) {
             output_note::seal(note_idx);
             NoteAttachment::with_word(scheme, first).add_to(note_idx);
         }
+        8 => {
+            NoteAttachment::with_word(scheme, first).add_to(note_idx);
+            // Index 3 passes the SDK's bound but not the kernel's: the note has one attachment.
+            let _ = output_note::write_attachment_to_memory(note_idx, AttachmentIdx::MAX);
+        }
         _ => panic!("unknown attachment scenario"),
     }
+}
+
+/// Reports the felt-repr decoding of `value` as a scheme as a one-word attachment and checks the
+/// index felt decoder: `[0, scheme]` ok, `[1, value]` out of range, `[3]` another error.
+fn check_felt_decoders(note_idx: NoteIdx, value: Felt) {
+    let outcome = match NoteAttachmentScheme::try_from(&[value][..]) {
+        Ok(scheme) => Word::from([felt!(0), Felt::from(scheme.as_u16()), felt!(0), felt!(0)]),
+        // The error carries the felt's canonical value; the felt itself reports it losslessly.
+        Err(felt_repr::FeltReprError::ValueOutOfRange { .. }) => {
+            Word::from([felt!(1), value, felt!(0), felt!(0)])
+        }
+        Err(_) => Word::from([felt!(3), felt!(0), felt!(0), felt!(0)]),
+    };
+    NoteAttachment::with_word(NoteAttachmentScheme::none(), outcome).add_to(note_idx);
+
+    let idx = AttachmentIdx::MAX;
+    let back = AttachmentIdx::try_from(&idx.to_felt_repr()[..]).unwrap();
+    assert_eq!(back, idx);
+    assert!(matches!(
+        AttachmentIdx::try_from(&[felt!(4)][..]),
+        Err(felt_repr::FeltReprError::ValueOutOfRange {
+            ty: "AttachmentIdx",
+            ..
+        })
+    ));
 }
 
 /// Checks content, append order, first-match lookup and commitments for all writer paths.
@@ -122,9 +153,10 @@ fn check_round_trip(note_idx: NoteIdx, scheme: NoteAttachmentScheme, first: Word
         assert_eq!(output_note::find_attachment(note_idx, lookup), expected);
         assert_eq!(note::find_attachment_idx(lookup, header), expected);
     }
-    // A found index reads its attachment back directly.
-    let s1_idx = output_note::find_attachment(note_idx, s1).unwrap();
-    assert_eq!(output_note::write_attachment_to_memory(note_idx, s1_idx).as_slice(), &single);
+    // A found index reads its attachment back directly; `s2`'s content differs from every other
+    // attachment, so the read-back tells the indexes apart.
+    let s2_idx = output_note::find_attachment(note_idx, s2).unwrap();
+    assert_eq!(output_note::write_attachment_to_memory(note_idx, s2_idx).as_slice(), &advice);
     assert_eq!(output_note::write_attachment_to_memory(note_idx, idx(0)).as_slice(), &single);
     assert_eq!(output_note::write_attachment_to_memory(note_idx, idx(2)).as_slice(), &multiple);
     assert_eq!(output_note::write_attachment_to_memory(note_idx, idx(3)).as_slice(), &advice);
