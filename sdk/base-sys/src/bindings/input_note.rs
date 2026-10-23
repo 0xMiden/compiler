@@ -4,8 +4,8 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
-    MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme, assert_attachment_count,
-    assert_attachment_word_count, attachment_index_u8,
+    AttachmentIdx, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme,
+    assert_attachment_count, assert_attachment_word_count,
     types::{AccountId, Asset, NoteId, NoteIdx, NoteMetadata, Recipient},
 };
 use crate::raw::protocol::{input_note as raw, types as raw_types};
@@ -130,12 +130,17 @@ pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> 
 /// Returns the attachment at `attachment_idx` of the input note at `note_index` as protocol words.
 ///
 /// The name mirrors the kernel procedure, which fills the buffer this function returns.
-pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> Vec<Word> {
+///
+/// # Panics
+///
+/// The transaction kernel rejects an `attachment_idx` that is not below the note's attachment
+/// count.
+pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: AttachmentIdx) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {
         raw::write_attachment_to_memory(
             ElementPtr::from_ptr(attachment.as_mut_ptr()),
-            attachment_index_u8(attachment_idx),
+            attachment_idx.as_u8(),
             u16::from(note_index),
         )
     };
@@ -150,15 +155,17 @@ pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> V
 /// Searches the input note metadata for `attachment_scheme` and returns the index of the first
 /// matching attachment.
 ///
+/// The returned index can be passed to [`write_attachment_to_memory`] for the same note.
+///
 /// # Panics
 ///
 /// Panics if `note_index` is out of bounds for the transaction's input notes.
 pub fn find_attachment(
     note_index: NoteIdx,
     attachment_scheme: NoteAttachmentScheme,
-) -> Option<u32> {
+) -> Option<AttachmentIdx> {
     let (found, index) = raw::find_attachment(attachment_scheme.as_u16(), u16::from(note_index));
-    found.then_some(index.into())
+    found.then_some(AttachmentIdx::from_kernel(index))
 }
 
 /// Returns the number of assets the input note at `note_index` was created with.

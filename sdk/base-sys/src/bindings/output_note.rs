@@ -11,8 +11,8 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{ElementPtr, Word};
 
 use super::{
-    MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme, assert_attachment_count,
-    assert_attachment_word_count, attachment_index_u8,
+    AttachmentIdx, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme,
+    assert_attachment_count, assert_attachment_word_count,
     types::{Asset, NoteId, NoteIdx, NoteMetadata, NoteType, Recipient, Tag},
 };
 use crate::raw::protocol::{output_note as raw, types as raw_types};
@@ -195,15 +195,17 @@ pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
 /// Searches the output note metadata for `attachment_scheme` and returns the index of the first
 /// matching attachment.
 ///
+/// The returned index can be passed to [`write_attachment_to_memory`] for the same note.
+///
 /// # Panics
 ///
 /// Panics if `note_index` is out of bounds for the transaction's output notes.
 pub fn find_attachment(
     note_index: NoteIdx,
     attachment_scheme: NoteAttachmentScheme,
-) -> Option<u32> {
+) -> Option<AttachmentIdx> {
     let (found, index) = raw::find_attachment(attachment_scheme.as_u16(), u16::from(note_index));
-    found.then_some(index.into())
+    found.then_some(AttachmentIdx::from_kernel(index))
 }
 
 /// Returns the attachment commitments of the output note at `note_index`.
@@ -229,12 +231,17 @@ pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> 
 /// words.
 ///
 /// The name mirrors the kernel procedure, which fills the buffer this function returns.
-pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> Vec<Word> {
+///
+/// # Panics
+///
+/// The transaction kernel rejects an `attachment_idx` that is not below the note's attachment
+/// count.
+pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: AttachmentIdx) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {
         raw::write_attachment_to_memory(
             ElementPtr::from_ptr(attachment.as_mut_ptr()),
-            attachment_index_u8(attachment_idx),
+            attachment_idx.as_u8(),
             u16::from(note_index),
         )
     };

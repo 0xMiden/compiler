@@ -101,6 +101,26 @@ word. `NoteAttachment::with_word(scheme, word)` builds a one-word attachment;
 returns a `NoteAttachmentError` otherwise. `add_to(note_idx)` appends an attachment to an output
 note.
 
+Attachment indexes are `AttachmentIdx`, a validated value in `0..=3`, instead of `u32`. The
+`find_attachment` lookups and `note::find_attachment_idx` return `Option<AttachmentIdx>`, and
+`write_attachment_to_memory` and `note::load_indexed_attachment` take an `AttachmentIdx`. A found
+index passes straight through. Build one by hand with `AttachmentIdx::new(n)` or
+`AttachmentIdx::try_from(n)`; `u32::from(idx)` gives the integer back. `NoteAttachmentScheme`
+and `AttachmentIdx` implement `FromFeltRepr` and `ToFeltRepr` (one felt each, validated on
+decode), so they can be note-storage fields and script arguments:
+
+```rust
+// Before
+let index = active_note::find_attachment(scheme).unwrap();
+let attachment = active_note::write_attachment_to_memory(index);
+let first = output_note::write_attachment_to_memory(note_idx, 0);
+
+// After
+let index = active_note::find_attachment(scheme).unwrap();
+let attachment = active_note::write_attachment_to_memory(index);
+let first = output_note::write_attachment_to_memory(note_idx, AttachmentIdx::new(0).unwrap());
+```
+
 The WIT `core-types` records `tag`, `note-idx` and `note-type` changed with the types
 (`inner: u32`/`u16`/`u8` instead of `felt`), and they cross component boundaries: the basic
 wallet's `create-note` and `move-asset-to-note` take and return them. Rebuild every account,

@@ -115,14 +115,19 @@ fn check_round_trip(note_idx: NoteIdx, scheme: NoteAttachmentScheme, first: Word
     assert_eq!(schemes(), [Some(scheme), Some(s1), Some(scheme), Some(s2)]);
     // A duplicate scheme resolves to its first attachment.
     let header = output_note::get_metadata(note_idx).header;
-    for (lookup, expected) in [(scheme, Some(0)), (s1, Some(1)), (s2, Some(3)), (absent, None)] {
+    let idx = |n| AttachmentIdx::new(n).unwrap();
+    for (lookup, expected) in
+        [(scheme, Some(idx(0))), (s1, Some(idx(1))), (s2, Some(idx(3))), (absent, None)]
+    {
         assert_eq!(output_note::find_attachment(note_idx, lookup), expected);
         assert_eq!(note::find_attachment_idx(lookup, header), expected);
     }
-    assert_eq!(output_note::write_attachment_to_memory(note_idx, 0).as_slice(), &single);
-    assert_eq!(output_note::write_attachment_to_memory(note_idx, 1).as_slice(), &single);
-    assert_eq!(output_note::write_attachment_to_memory(note_idx, 2).as_slice(), &multiple);
-    assert_eq!(output_note::write_attachment_to_memory(note_idx, 3).as_slice(), &advice);
+    // A found index reads its attachment back directly.
+    let s1_idx = output_note::find_attachment(note_idx, s1).unwrap();
+    assert_eq!(output_note::write_attachment_to_memory(note_idx, s1_idx).as_slice(), &single);
+    assert_eq!(output_note::write_attachment_to_memory(note_idx, idx(0)).as_slice(), &single);
+    assert_eq!(output_note::write_attachment_to_memory(note_idx, idx(2)).as_slice(), &multiple);
+    assert_eq!(output_note::write_attachment_to_memory(note_idx, idx(3)).as_slice(), &advice);
     let commitments = output_note::write_attachment_commitments_to_memory(note_idx);
     assert_eq!(
         commitments.as_slice(),
