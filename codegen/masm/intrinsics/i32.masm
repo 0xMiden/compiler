@@ -368,6 +368,19 @@ pub proc is_gte # [b, a]
     exec.icmp push.NEG1 neq
 end
 
+# Returns the signed minimum of two i32 bit patterns, preserving the deeper stack.
+# Both operands must be valid u32 lanes; the signed comparison checks both.
+pub proc min # [b, a]
+    dup.1 dup.1 exec.is_gt # [a > b, b, a]
+    cdrop                 # [min(a, b)]
+end
+
+# Returns the signed maximum with the same checked input and stack contract as min.
+pub proc max # [b, a]
+    dup.1 dup.1 exec.is_lt # [a < b, b, a]
+    cdrop                 # [max(a, b)]
+end
+
 # Compute 2^n, where `n` must be less than 31, or the result will overflow i32::MAX
 pub proc pow2 # [n]
     dup.0
