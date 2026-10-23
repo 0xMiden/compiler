@@ -157,6 +157,22 @@ pub proc load_felt # [addr, offset]
     swap.1 assertz mem_load
 end
 
+# Load the element at `addr` as the 32-bit integer held in its low 32 bits.
+#
+# A partial store rewrites some bytes of an element and must keep the others. An element the
+# program last wrote as a field element has no byte representation, and its canonical value may
+# exceed 2^32, which the `u32` bit operations of the rewrite reject. A program does reuse memory
+# this way (a stack slot that held a word is later used for a struct with a `u16` field), and it
+# never reads the kept bytes as the felt again, so the low 32 bits are as good a value for them as
+# any. Every read-modify-write in this module and in the code generator, and every load whose
+# window straddles two elements, reads through this procedure; a whole-element load keeps the raw
+# element, so a program that reads a felt as an integer still traps.
+#
+# Stack transition: [addr] -> [bits]
+pub proc load_elem_bits
+    mem_load u32split swap.1 drop
+end
+
 # Load a single 32-bit machine word from the given native pointer tuple.
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
@@ -175,14 +191,15 @@ pub proc load_sw # [addr, offset]
     else     # [addr, offset]
         # convert the byte offset to a bit offset
         swap.1 push.8 u32wrapping_mul swap.1   # [addr, bit_offset]
-        # the load crosses an element boundary
+        # the load crosses an element boundary; both elements share the value, so each is read
+        # as its low 32 bits (see `load_elem_bits`)
         #
         # 1. load the first element
-        dup.0 mem_load   # [e0, addr, bit_offset]
+        dup.0 exec.load_elem_bits   # [e0, addr, bit_offset]
         # 2. load the second element
         swap.1           # [addr, e0, bit_offset]
         push.1 u32overflowing_add  # [overflowed, addr + 1, e0, bit_offset]
-        assertz mem_load # [e1, e0, bit_offset]
+        assertz exec.load_elem_bits # [e1, e0, bit_offset]
         # Reconstruct the 32-bit window whose first byte begins at the original byte pointer.
         # `e0` contributes the low part after shifting right, and `e1` contributes the carried
         # high part after shifting left into the vacated bits.
@@ -487,9 +504,9 @@ pub proc store_sw # [addr, offset, value]
 
         # the store is across an element boundary
         #
-        # load the current value of the two elements involved
-        dup.0 push.1 u32overflowing_add assertz mem_load # [e1, addr, bit_offset, value]
-        dup.1 mem_load    # [e0, e1, addr, bit_offset, value]
+        # load the current bits of the two elements involved
+        dup.0 push.1 u32overflowing_add assertz exec.load_elem_bits # [e1, addr, bit_offset, value]
+        dup.1 exec.load_elem_bits  # [e0, e1, addr, bit_offset, value]
 
         # compute the bit shift
         push.32 dup.4 sub # [32 - bit_offset, e0, e1, addr, bit_offset, value]
@@ -534,17 +551,33 @@ end
 #
 # Stack transition: [addr, offset, value] -> []
 pub proc store_u16(addr: ptr<felt, addrspace(felt)>, offset: u8, value: u16)
-    # Load the current 32-bit window at the destination, keep its upper half, then overwrite the
-    # target two bytes before delegating the write-back to `store_sw`.
-    dup.1 dup.1 exec.load_sw     # [window, addr, offset, value]
-    push.4294901760              # 0xffff0000
-    u32and                       # [masked_window, addr, offset, value]
-    movup.3                      # [value, masked_window, addr, offset]
-    push.65535
-    u32and                       # [value16, masked_window, addr, offset]
-    u32or                        # [combined, addr, offset]
-    swap.2 swap.1                # [addr, offset, combined]
-    exec.store_sw
+    dup.1 push.3 u32lt           # [offset < 3, addr, offset, value]
+    if.true
+        # The two bytes lie within one element: rewrite only that element. The next element is
+        # not touched, so a felt stored there keeps its exact value.
+        swap.1 push.8 u32wrapping_mul   # [bit_offset, addr, value]
+        dup.1 exec.load_elem_bits       # [e0, bit_offset, addr, value]
+        push.65535 dup.2 u32shl u32not  # [mask, e0, bit_offset, addr, value]
+        u32and                          # [e0_masked, bit_offset, addr, value]
+        movup.3 push.65535 u32and       # [value16, e0_masked, bit_offset, addr]
+        movup.2 u32shl                  # [value16 << bit_offset, e0_masked, addr]
+        u32or                           # [e0', addr]
+        swap.1 mem_store                # []
+    else
+        # The two bytes straddle this element and the next, so both legitimately share the value:
+        # load the 32-bit window at the destination (`load_sw` keeps the low 32 bits of each
+        # element), keep its upper half, overwrite the target two bytes and let `store_sw` write
+        # both elements back.
+        dup.1 dup.1 exec.load_sw     # [window, addr, offset, value]
+        push.4294901760              # 0xffff0000
+        u32and                       # [masked_window, addr, offset, value]
+        movup.3                      # [value, masked_window, addr, offset]
+        push.65535
+        u32and                       # [value16, masked_window, addr, offset]
+        u32or                        # [combined, addr, offset]
+        swap.2 swap.1                # [addr, offset, combined]
+        exec.store_sw
+    end
 end
 
 # Store two 32-bit words to the given native pointer tuple.
@@ -585,12 +618,12 @@ pub proc store_dw # [addr, offset, value_lo, value_hi]
         # combine the bits of the hi and lo chunks with their corresponding elements, so that we
         # do not overwrite memory that is out of bounds of the actual value being stored.
         #
-        # 1. load e2 (hi)
-        dup.5 push.2 u32overflowing_add assertz mem_load
+        # 1. load the bits of e2 (hi)
+        dup.5 push.2 u32overflowing_add assertz exec.load_elem_bits
         # 2. mask e2 (hi)
         u32and                       # [e2_masked, mask_lo, hi, mid, lo, addr]
-        # 3. load e0 (lo)
-        dup.5 mem_load               # [e0, e2_masked, mask_lo, hi, mid, lo, addr]
+        # 3. load the bits of e0 (lo)
+        dup.5 exec.load_elem_bits    # [e0, e2_masked, mask_lo, hi, mid, lo, addr]
         # 4. mask e0 (lo)
         movup.2 u32and               # [e0_masked, e2_masked, hi, mid, lo, addr]
         # 5. combine e2 & hi

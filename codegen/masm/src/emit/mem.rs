@@ -1428,11 +1428,15 @@ impl OpEmitter<'_> {
     /// Stack transition: `[addr, offset, value] -> []`.
     fn store_small_within_element(&mut self, type_size: u32, span: SourceSpan) {
         // Stack: [addr, offset, value]
-        // Load the current aligned value
+        // Load the current element and keep its low 32 bits: the element may hold a felt the
+        // program wrote earlier (see `load_elem_bits` in the memory intrinsics).
         self.emit_all(
             [
-                masm::Instruction::Dup0,    // [addr, addr, offset, value]
-                masm::Instruction::MemLoad, // [prev, addr, offset, value]
+                masm::Instruction::Dup0,     // [addr, addr, offset, value]
+                masm::Instruction::MemLoad,  // [prev, addr, offset, value]
+                masm::Instruction::U32Split, // [prev_lo, prev_hi, addr, offset, value]
+                masm::Instruction::Swap1,    // [prev_hi, prev_lo, addr, offset, value]
+                masm::Instruction::Drop,     // [prev, addr, offset, value]
             ],
             span,
         );
@@ -1509,8 +1513,18 @@ impl OpEmitter<'_> {
         assert!(imm.alignment() as usize >= ty.min_alignment());
 
         // For immediate pointers, we always load from the element-aligned address
-        // The offset determines which byte(s) within that element we're modifying
-        self.emit(masm::Instruction::MemLoadImm(imm.addr.into()), span);
+        // The offset determines which byte(s) within that element we're modifying. Keep the low
+        // 32 bits of the element: it may hold a felt the program wrote earlier (see
+        // `load_elem_bits` in the memory intrinsics).
+        self.emit_all(
+            [
+                masm::Instruction::MemLoadImm(imm.addr.into()), // [prev, value]
+                masm::Instruction::U32Split,                    // [prev_lo, prev_hi, value]
+                masm::Instruction::Swap1,                       // [prev_hi, prev_lo, value]
+                masm::Instruction::Drop,                        // [prev, value]
+            ],
+            span,
+        );
 
         // Calculate bit offset from byte offset
         let bit_offset = imm.offset * 8;
