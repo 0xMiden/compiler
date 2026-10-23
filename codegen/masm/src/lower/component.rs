@@ -712,7 +712,7 @@ fn world_body_to_masm_component(
         None => None,
     };
     let entrypoint_arity =
-        resolve_entrypoint_arity(world.as_operation_ref(), &[], entrypoint.as_ref())?;
+        resolve_entrypoint_arity(world.as_operation_ref(), &[], entrypoint.as_ref(), namespace)?;
     let owners = EmissionOwners::new(
         world.as_operation_ref(),
         &[],
@@ -875,8 +875,12 @@ fn component_to_masm_component(
         }
         None => None,
     };
-    let entrypoint_arity =
-        resolve_entrypoint_arity(component.as_operation_ref(), supporting, entrypoint.as_ref())?;
+    let entrypoint_arity = resolve_entrypoint_arity(
+        component.as_operation_ref(),
+        supporting,
+        entrypoint.as_ref(),
+        namespace,
+    )?;
     let owners = EmissionOwners::new(
         component.as_operation_ref(),
         supporting,
@@ -984,12 +988,20 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
     })
 }
 
-/// Resolve the selected executable entrypoint through canonical HIR identity before emission.
+/// Resolve the ABI used by a generated program's root invocation.
+///
+/// Library targets may select an export as their entrypoint without generating a program main.
+/// Their exports retain their own calling conventions and need no root-invocation arity. A
+/// target-independent consumer may still package an executable, so Source mode retains validation.
 fn resolve_entrypoint_arity(
     root: midenc_hir::OperationRef,
     supporting: &[builtin::ModuleRef],
     target: Option<&masm::InvocationTarget>,
+    namespace: EmissionNamespace<'_>,
 ) -> Result<Option<(u32, u32)>, Report> {
+    if matches!(namespace, EmissionNamespace::Target(target) if !target.is_executable()) {
+        return Ok(None);
+    }
     let Some(target) = target else {
         return Ok(None);
     };
