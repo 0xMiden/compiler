@@ -4,7 +4,7 @@
 
 #[panic_handler]
 fn my_panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+    core::arch::wasm32::unreachable()
 }
 
 static mut G1: [u8; 9] = [1, 2, 3, 4, 5, 6, 7, 8, 9];

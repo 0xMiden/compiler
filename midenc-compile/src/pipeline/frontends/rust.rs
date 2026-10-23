@@ -37,7 +37,10 @@ use miden_mast_package::Package as MastPackage;
 use midenc_frontend_wasm_metadata::package_cache;
 use midenc_hir::{Context, formatter::DisplayMany};
 use midenc_package_interface::PackageInterface;
-use midenc_session::{FileType, InputFile, InputType, Options, Session, diagnostics::Report};
+use midenc_session::{
+    FileType, InputFile, InputType, Options, Session,
+    diagnostics::{DiagnosticsHandler, Report, Severity},
+};
 
 use super::wasm::{WasmFrontend, WasmSource};
 use crate::{
@@ -657,7 +660,7 @@ trim-paths = [\"diagnostics\", \"object\"]
     // The same mandatory set and inherited-flag precedence as the manifest route: a present
     // `CARGO_ENCODED_RUSTFLAGS` is authoritative over plain `RUSTFLAGS`.
     let extra_rust_flags = manifest::merge_rust_flags(
-        manifest::MANDATORY_RUST_FLAGS,
+        &manifest::mandatory_rust_flags(options.panic_strategy),
         std::env::var_os("CARGO_ENCODED_RUSTFLAGS").as_deref(),
         std::env::var_os("RUSTFLAGS").as_deref(),
         options.rustflags.as_deref(),
@@ -770,29 +773,18 @@ fn rustc(
     // Convert the inherited rustflags to `rustc` flags, with cargo's own precedence: a
     // present `CARGO_ENCODED_RUSTFLAGS` is authoritative over plain `RUSTFLAGS`.
     let rustflags = manifest::merge_rust_flags(
-        &[],
+        &[options.panic_strategy.as_rustc_arg()],
         std::env::var_os("CARGO_ENCODED_RUSTFLAGS").as_deref(),
         std::env::var_os("RUSTFLAGS").as_deref(),
         options.rustflags.as_deref(),
     );
-    let mut rustc_flags: Vec<String> = Vec::with_capacity(rustflags.len());
-    let mut rustflags = rustflags.into_iter();
-    let mut target = None;
-    while let Some(flag) = rustflags.next() {
-        if flag == "--target"
-            && let Some(value) = rustflags.next()
-        {
-            target = Some(value);
-            continue;
-        } else if flag == "-C"
-            && let Some(value) = rustflags.next()
-        {
-            if value == "panic=immediate-abort" {
-                continue;
-            }
-            rustc_flags.extend([flag, value]);
-        } else {
-            rustc_flags.push(flag);
+    let direct_rustc = direct_rustc_flags(rustflags);
+    if direct_rustc.dropped_immediate_abort {
+        warn_unsupported_rustc_panic_strategy(&session.diagnostics);
+        if session.diagnostics.has_errors() {
+            return Err(Report::msg(
+                "aborting due to a warning promoted to an error; see the diagnostics above",
+            ));
         }
     }
 
@@ -831,11 +823,11 @@ fn rustc(
         .arg("-g") // generate debug info
         .args(["-C", "opt-level=s"]) // optimize for size
         .args(["-C", "target-feature=+wide-arithmetic"])
-        // No 64-bit copies merged from two 32-bit ones, as for `MANDATORY_RUST_FLAGS`
+        // No 64-bit copies merged from two 32-bit ones, as for `mandatory_rust_flags`
         .args(["-C", "llvm-args=-combiner-store-merging=false"])
-        .args(rustc_flags)
+        .args(direct_rustc.flags)
         .arg("--target")
-        .arg(target.as_deref().unwrap_or("wasm32-wasip1"))
+        .arg(direct_rustc.target.as_deref().unwrap_or("wasm32-wasip1"))
         .arg("-o")
         .arg(&output_file)
         .arg(input);
@@ -853,6 +845,58 @@ fn rustc(
     }
 
     Ok(output_file)
+}
+
+/// The flags the direct `rustc` route passes through, and what it held back.
+struct DirectRustcFlags {
+    flags: Vec<String>,
+    target: Option<String>,
+    /// Held back because the toolchain's prebuilt core library is incompatible with
+    /// `immediate-abort`.
+    dropped_immediate_abort: bool,
+}
+
+fn direct_rustc_flags(flags: Vec<String>) -> DirectRustcFlags {
+    let mut rustc_flags = Vec::with_capacity(flags.len());
+    let mut flags = flags.into_iter();
+    let mut target = None;
+    let mut dropped_immediate_abort = false;
+    while let Some(flag) = flags.next() {
+        if flag == "--target"
+            && let Some(value) = flags.next()
+        {
+            target = Some(value);
+        } else if flag == "-C"
+            && let Some(value) = flags.next()
+        {
+            if value == "panic=immediate-abort" {
+                dropped_immediate_abort = true;
+            } else {
+                rustc_flags.extend([flag, value]);
+            }
+        } else if flag == "-Cpanic=immediate-abort" {
+            dropped_immediate_abort = true;
+        } else {
+            rustc_flags.push(flag);
+        }
+    }
+    DirectRustcFlags {
+        flags: rustc_flags,
+        target,
+        dropped_immediate_abort,
+    }
+}
+
+/// Emits the ignored-strategy warning through the session diagnostics handler.
+fn warn_unsupported_rustc_panic_strategy(diagnostics: &DiagnosticsHandler) {
+    diagnostics
+        .diagnostic(Severity::Warning)
+        .with_message(
+            "ignoring panic=immediate-abort for direct rustc compilation: the toolchain's \
+             prebuilt core library is incompatible with this strategy; use a Cargo project to \
+             enable it",
+        )
+        .emit();
 }
 
 /// Builds the shared argument vector for a nested `cargo build` invocation.
@@ -1841,39 +1885,38 @@ pub(crate) mod manifest {
         Report,
         diagnostics::{IntoDiagnostic, SourceManagerExt},
     };
-    use midenc_session::{InputFile, OptLevel, ProjectManifest, miden_project};
+    use midenc_session::{InputFile, OptLevel, PanicStrategy, ProjectManifest, miden_project};
 
     use crate::{CompilerResult, cargo::CargoOptions};
 
-    /// The rustc flags every Miden build needs, shared by the manifest-driven and the
-    /// standalone-file cargo routes so the two cannot drift apart.
-    pub(super) const MANDATORY_RUST_FLAGS: &[&str] = &[
-        // Enable memcopy and 128-bit arithmetic ops
-        "-C",
-        "target-feature=+bulk-memory,+wide-arithmetic",
-        // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it
-        // for cfg-based dependency selection.
-        "--cfg",
-        "miden",
-        // Enable errors on missing stub functions
-        "-C",
-        "link-args=--fatal-warnings",
-        // Remove the source file paths in the data segment for panics
-        // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
-        "-Zlocation-detail=none",
-        // Build with panic=immediate-abort
-        "-Zunstable-options",
-        "-Cpanic=immediate-abort",
-        // LLVM's DAG combiner merges adjacent 32-bit stores of constants or of loaded values
-        // into one 64-bit store on wasm32: a copy of two `f32`s becomes `i64.load`/`i64.store`,
-        // a pair of constants one `i64.const`. On Miden a 64-bit access is two element accesses
-        // through the `load_dw`/`store_dw` intrinsics, so the merge only costs size and cycles.
-        // This is not what protects felts: a pair of felts *assembled* into an `i64` with
-        // `extend`/`shl`/`or` comes from LLVM's IR-level passes, which this option does not
-        // reach; see `midenc-codegen-masm`'s legalization for what is done about that shape.
-        "-C",
-        "llvm-args=-combiner-store-merging=false",
-    ];
+    /// The rustc flags shared by manifest-driven and standalone-file Cargo builds.
+    pub(super) fn mandatory_rust_flags(panic_strategy: PanicStrategy) -> Vec<&'static str> {
+        vec![
+            // Enable memcopy and 128-bit arithmetic ops
+            "-C",
+            "target-feature=+bulk-memory,+wide-arithmetic",
+            // Cargo needs this on the entire crate graph for cfg-based dependency selection.
+            "--cfg",
+            "miden",
+            // Enable errors on missing stub functions
+            "-C",
+            "link-args=--fatal-warnings",
+            // Remove the source file paths in the data segment for panics
+            // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
+            "-Zlocation-detail=none",
+            "-Zunstable-options",
+            panic_strategy.as_rustc_arg(),
+            // LLVM's DAG combiner merges adjacent 32-bit stores of constants or of loaded values
+            // into one 64-bit store on wasm32: a copy of two `f32`s becomes `i64.load`/`i64.store`,
+            // a pair of constants one `i64.const`. On Miden a 64-bit access is two element accesses
+            // through the `load_dw`/`store_dw` intrinsics, so the merge only costs size and cycles.
+            // This is not what protects felts: a pair of felts *assembled* into an `i64` with
+            // `extend`/`shl`/`or` comes from LLVM's IR-level passes, which this option does not
+            // reach; see `midenc-codegen-masm`'s legalization for what is done about that shape.
+            "-C",
+            "llvm-args=-combiner-store-merging=false",
+        ]
+    }
 
     /// Executes a Cargo-based build with the provided compiler options and package registry
     pub(crate) fn cargo_build(
@@ -2019,7 +2062,7 @@ pub(crate) mod manifest {
         let inherited_encoded = std::env::var_os("CARGO_ENCODED_RUSTFLAGS");
         let inherited_plain = std::env::var_os("RUSTFLAGS");
         let extra_rust_flags = merge_rust_flags(
-            MANDATORY_RUST_FLAGS,
+            &mandatory_rust_flags(compiler_opts.panic_strategy),
             inherited_encoded.as_deref(),
             inherited_plain.as_deref(),
             compiler_opts.rustflags.as_deref(),
@@ -2299,6 +2342,7 @@ mod tests {
     use midenc_hir::Context;
     use midenc_session::{
         InputFile, Options, OutputFile, OutputType, OutputTypeSpec, OutputTypes,
+        diagnostics::{CaptureEmitter, DefaultSourceManager, DiagnosticsConfig},
         miden_project::TargetType,
     };
 
@@ -3830,13 +3874,95 @@ path = "lib.rs"
     /// the same flag, which `tests/lit/midenc/rust-store-merging-off.rs` checks.
     #[test]
     fn the_mandatory_rust_flags_turn_off_llvm_store_merging() {
+        let flags = manifest::mandatory_rust_flags(midenc_session::PanicStrategy::default());
         assert!(
-            manifest::MANDATORY_RUST_FLAGS
+            flags
                 .windows(2)
                 .any(|flag| flag == ["-C", "llvm-args=-combiner-store-merging=false"]),
-            "{:?}",
-            manifest::MANDATORY_RUST_FLAGS
+            "{flags:?}"
         );
+    }
+
+    #[test]
+    fn panic_strategy_selects_the_mandatory_rust_flag() {
+        use midenc_session::PanicStrategy;
+
+        for strategy in [PanicStrategy::Abort, PanicStrategy::ImmediateAbort] {
+            let flags = manifest::mandatory_rust_flags(strategy);
+            let panic_flags = flags.iter().filter(|flag| flag.starts_with("-Cpanic="));
+            assert_eq!(panic_flags.copied().collect::<Vec<_>>(), [strategy.as_rustc_arg()]);
+        }
+    }
+
+    #[test]
+    fn panic_strategy_preserves_rustflag_override_order() {
+        use std::ffi::OsStr;
+
+        let flags = manifest::merge_rust_flags(
+            &manifest::mandatory_rust_flags(midenc_session::PanicStrategy::Abort),
+            Some(OsStr::new("-Cpanic=immediate-abort")),
+            None,
+            Some("-Cpanic=abort"),
+        );
+        let panic_flags = flags.iter().filter(|flag| flag.starts_with("-Cpanic="));
+        // rustc uses the last occurrence, so explicit rustflags override inherited flags and the
+        // session option.
+        assert_eq!(
+            panic_flags.map(String::as_str).collect::<Vec<_>>(),
+            ["-Cpanic=abort", "-Cpanic=immediate-abort", "-Cpanic=abort"]
+        );
+    }
+
+    #[test]
+    fn direct_rustc_filters_immediate_abort_in_both_spellings() {
+        for flags in [vec!["-C", "panic=immediate-abort"], vec!["-Cpanic=immediate-abort"]] {
+            let parsed = direct_rustc_flags(flags.iter().map(|flag| (*flag).to_string()).collect());
+            assert!(parsed.flags.is_empty(), "{flags:?}");
+            assert!(parsed.dropped_immediate_abort, "{flags:?}");
+        }
+    }
+
+    #[test]
+    fn direct_rustc_preserves_abort_and_other_flags() {
+        let flags = ["-Cpanic=abort", "-C", "panic=abort", "-C", "opt-level=3"];
+        let parsed = direct_rustc_flags(flags.map(str::to_string).to_vec());
+        assert_eq!(parsed.flags, flags);
+        assert!(!parsed.dropped_immediate_abort);
+    }
+
+    #[test]
+    fn direct_rustc_extracts_the_target() {
+        let flags = ["--target", "wasm32-unknown-unknown", "--cfg", "miden"];
+        let parsed = direct_rustc_flags(flags.map(str::to_string).to_vec());
+        assert_eq!(parsed.target.as_deref(), Some("wasm32-unknown-unknown"));
+        assert_eq!(parsed.flags, ["--cfg", "miden"]);
+    }
+
+    #[test]
+    fn the_ignored_panic_strategy_reaches_the_diagnostics_handler() {
+        let emitter = Arc::new(CaptureEmitter::new());
+        let diagnostics = DiagnosticsHandler::new(
+            DiagnosticsConfig::default(),
+            Arc::new(DefaultSourceManager::default()),
+            emitter.clone(),
+        );
+        warn_unsupported_rustc_panic_strategy(&diagnostics);
+        let captured = emitter.captured();
+        assert!(captured.contains("ignoring panic=immediate-abort"), "{captured}");
+    }
+
+    #[test]
+    fn the_ignored_panic_strategy_counts_as_an_error_when_warnings_are_promoted() {
+        let diagnostics = DiagnosticsHandler::new(
+            DiagnosticsConfig {
+                warnings: midenc_session::Warnings::Error,
+                ..Default::default()
+            },
+            Arc::new(DefaultSourceManager::default()),
+            Arc::new(CaptureEmitter::new()),
+        );
+        warn_unsupported_rustc_panic_strategy(&diagnostics);
+        assert!(diagnostics.has_errors());
     }
 
     #[test]

@@ -1,4 +1,6 @@
-use log::Level;
+mod common;
+
+use common::info_messages_since;
 use miden_core::Felt;
 use miden_debug::logger::DebugLogger;
 use midenc_frontend_wasm::WasmTranslationConfig;
@@ -56,12 +58,7 @@ fn println_formatting() {
     })
     .unwrap();
 
-    let logs: Vec<_> = DebugLogger::get().clone_captured().into_iter().skip(before).collect();
-    let info_messages: Vec<_> = logs
-        .iter()
-        .filter(|entry| entry.level == Level::Info)
-        .map(|entry| entry.message.as_str())
-        .collect();
+    let info_messages = info_messages_since(before);
     assert_eq!(
         info_messages.as_slice(),
         [
@@ -82,7 +79,6 @@ fn println_formatting() {
             "0042",
             "(\n    100,\n    200,\n)",
         ],
-        "observed logs: {:?}",
-        logs.iter().map(|e| format!("{}: {}", e.level, e.message)).collect::<Vec<_>>(),
+        "observed info messages: {info_messages:?}",
     );
 }
