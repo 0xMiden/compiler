@@ -590,7 +590,7 @@ have exactly one (`authentication components require exactly one #[auth_script] 
 | `active_account::has_non_fungible_asset(asset)` | `active_account::has_asset(asset_id: AssetId) -> bool` |
 | `faucet::create_fungible_asset` / `create_non_fungible_asset` / `has_callbacks`, and the asset constructors of the `asset` module | build the `Asset` outside the transaction; only `faucet::mint(Asset)`, `faucet::burn(Asset)` and the asset-id readers `AssetId::faucet_id()` / `asset_class()` / `composition()` remain |
 | `AttachmentLocation` | `Option<u32>` from `find_attachment(NoteAttachmentScheme)` |
-| `output_note::set_attachment` | append with `NoteAttachment::with_word(scheme, word).add_to(note_idx)` (or `NoteAttachment::with_words(scheme, &words)?.add_to(note_idx)`), or with `output_note::add_word_attachment`, `output_note::add_attachment`, or `output_note::add_attachment_from_memory` |
+| `output_note::set_attachment` | append with `NoteAttachment::with_word(scheme, word).add_to(note_idx)` (or `NoteAttachment::with_words(scheme, &words).unwrap().add_to(note_idx)`), or with `output_note::add_word_attachment`, `output_note::add_attachment`, or `output_note::add_attachment_from_memory` |
 
 The output-note attachment APIs append attachment entries; they do not replace an existing attachment in place.
 

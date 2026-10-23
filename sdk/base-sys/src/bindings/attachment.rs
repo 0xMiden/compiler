@@ -9,6 +9,7 @@ use super::{MAX_ATTACHMENT_WORDS, NoteIdx, output_note, types::felt_to_u16};
 
 /// An error produced while constructing a note attachment or its scheme.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum NoteAttachmentError {
     /// The scheme is `0` or `65535`, outside the valid range `1..=65534`.
     InvalidScheme(u16),
@@ -24,7 +25,11 @@ impl core::fmt::Display for NoteAttachmentError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::InvalidScheme(scheme) => {
-                write!(f, "note attachment scheme {scheme} must be between 1 and 65534")
+                write!(
+                    f,
+                    "note attachment scheme {scheme} must be between 1 and {}",
+                    NoteAttachmentScheme::MAX.as_u16()
+                )
             }
             Self::SchemeExceedsU16 => f.write_str("note attachment scheme exceeds u16"),
             Self::EmptyContent => f.write_str("note attachment cannot be empty"),
@@ -76,11 +81,10 @@ impl NoteAttachmentScheme {
     ///
     /// Panics if `scheme` is `0` or `65535`; in a constant, this is a compile-time error.
     pub const fn new_const(scheme: u16) -> Self {
-        assert!(
-            scheme != 0 && scheme <= Self::MAX.as_u16(),
-            "note attachment scheme must be between 1 and 65534"
-        );
-        Self(scheme)
+        match Self::new(scheme) {
+            Ok(scheme) => scheme,
+            Err(_) => panic!("note attachment scheme must be between 1 and 65534"),
+        }
     }
 
     /// Returns scheme `1`, which denotes an unspecified attachment scheme.
@@ -105,8 +109,8 @@ impl NoteAttachmentScheme {
     ///
     /// # Panics
     ///
-    /// Panics if `value` is `65535`, which is not a valid scheme; the kernel never writes it into
-    /// metadata.
+    /// Panics if `value` is `65535`. Metadata produced by the kernel never holds it; a hand-built
+    /// metadata word can.
     pub(super) fn from_header_u16(value: u16) -> Option<Self> {
         if value == 0 {
             return None;
@@ -125,6 +129,7 @@ impl Default for NoteAttachmentScheme {
 impl TryFrom<u16> for NoteAttachmentScheme {
     type Error = NoteAttachmentError;
 
+    /// Same as [`NoteAttachmentScheme::new`].
     fn try_from(scheme: u16) -> Result<Self, Self::Error> {
         Self::new(scheme)
     }
@@ -146,6 +151,7 @@ impl TryFrom<Felt> for NoteAttachmentScheme {
 }
 
 impl From<NoteAttachmentScheme> for u16 {
+    /// Returns the scheme's protocol value, as [`NoteAttachmentScheme::as_u16`] does.
     fn from(scheme: NoteAttachmentScheme) -> Self {
         scheme.as_u16()
     }
@@ -173,14 +179,25 @@ impl From<NoteAttachmentScheme> for u16 {
 ///     note_idx
 /// }
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
+#[must_use = "the attachment is only added to a note by `add_to`"]
 pub struct NoteAttachment<'a> {
     attachment_scheme: NoteAttachmentScheme,
     content: NoteAttachmentContent<'a>,
 }
 
+impl PartialEq for NoteAttachment<'_> {
+    /// Two attachments are equal when their schemes and words are equal, however the words are
+    /// stored.
+    fn eq(&self, other: &Self) -> bool {
+        self.attachment_scheme == other.attachment_scheme && self.as_words() == other.as_words()
+    }
+}
+
+impl Eq for NoteAttachment<'_> {}
+
 /// The owned or borrowed words of a validated attachment.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 enum NoteAttachmentContent<'a> {
     /// A single word stored in the attachment itself.
     Word(Word),
@@ -190,7 +207,6 @@ enum NoteAttachmentContent<'a> {
 
 impl<'a> NoteAttachment<'a> {
     /// Creates an attachment holding a single word by value, without allocating or hashing.
-    #[must_use = "the attachment is only added to a note by `add_to`"]
     pub fn with_word(attachment_scheme: NoteAttachmentScheme, word: Word) -> Self {
         Self {
             attachment_scheme,
@@ -204,7 +220,6 @@ impl<'a> NoteAttachment<'a> {
     ///
     /// Returns [`NoteAttachmentError::EmptyContent`] for an empty slice or
     /// [`NoteAttachmentError::TooManyWords`] for more than 256 words.
-    #[must_use = "the attachment is only added to a note by `add_to`"]
     pub fn with_words(
         attachment_scheme: NoteAttachmentScheme,
         words: &'a [Word],
@@ -242,12 +257,9 @@ impl<'a> NoteAttachment<'a> {
 
     /// Appends this attachment to an output note, preserving existing attachment order.
     ///
-    /// Single-word content, including a one-word borrowed slice, uses
-    /// [`output_note::add_word_attachment`]. Longer content uses
-    /// [`output_note::add_attachment_from_memory`]. Duplicate schemes are allowed; lookup returns
-    /// the first matching attachment. For a commitment whose preimage is already available in the
-    /// advice map, call the advice-map writer [`output_note::add_attachment`] directly; it takes a
-    /// [`NoteAttachmentScheme`] as well.
+    /// Duplicate schemes are allowed; lookup returns the first matching attachment. For a
+    /// commitment whose preimage is already available in the advice map, call the advice-map writer
+    /// [`output_note::add_attachment`] directly; it takes a [`NoteAttachmentScheme`] as well.
     ///
     /// # Panics
     ///
@@ -255,6 +267,8 @@ impl<'a> NoteAttachment<'a> {
     /// or an append that exceeds four attachments or 512 total attachment words for the note.
     pub fn add_to(&self, note_idx: NoteIdx) {
         let words = self.as_words();
+        // Single-word content, including a one-word borrowed slice, uses the word writer; longer
+        // content uses the memory writer.
         if let [word] = words {
             output_note::add_word_attachment(note_idx, self.attachment_scheme, *word);
         } else {
@@ -309,6 +323,13 @@ mod tests {
         let _ = NoteAttachmentScheme::new_const(core::hint::black_box(0));
     }
 
+    /// Checks that `new_const` rejects scheme `65535`.
+    #[test]
+    #[should_panic(expected = "note attachment scheme must be between 1 and 65534")]
+    fn new_const_rejects_65535() {
+        let _ = NoteAttachmentScheme::new_const(core::hint::black_box(u16::MAX));
+    }
+
     /// Checks felt conversion of valid, invalid and out-of-range scheme values.
     #[test]
     fn schemes_convert_from_felts() {
@@ -317,8 +338,17 @@ mod tests {
             NoteAttachmentScheme::try_from(felt!(0)),
             Err(NoteAttachmentError::InvalidScheme(0))
         );
+        assert_eq!(NoteAttachmentScheme::try_from(felt!(65534)), NoteAttachmentScheme::new(65534));
+        assert_eq!(
+            NoteAttachmentScheme::try_from(felt!(65535)),
+            Err(NoteAttachmentError::InvalidScheme(65535))
+        );
         assert_eq!(
             NoteAttachmentScheme::try_from(Felt::from_u32(u32::from(u16::MAX) + 1)),
+            Err(NoteAttachmentError::SchemeExceedsU16)
+        );
+        assert_eq!(
+            NoteAttachmentScheme::try_from(Felt::new(Felt::ORDER - 1).unwrap()),
             Err(NoteAttachmentError::SchemeExceedsU16)
         );
     }
@@ -384,5 +414,18 @@ mod tests {
         assert_eq!(borrowed_one.num_words(), 1);
         assert_eq!(borrowed_many.num_words(), 2);
         assert_eq!(borrowed_many.as_words().as_ptr(), words.as_ptr());
+    }
+
+    /// Checks that equality compares schemes and words, not how the words are stored.
+    #[test]
+    fn equality_ignores_word_storage() {
+        let scheme = NoteAttachmentScheme::new(42).unwrap();
+        let word = Word::from([felt!(1), felt!(2), felt!(3), felt!(4)]);
+        let other_word = Word::from([felt!(5), felt!(6), felt!(7), felt!(8)]);
+        let owned = NoteAttachment::with_word(scheme, word);
+        let words = [word];
+        assert_eq!(owned, NoteAttachment::with_words(scheme, &words).unwrap());
+        assert_ne!(owned, NoteAttachment::with_word(NoteAttachmentScheme::none(), word));
+        assert_ne!(owned, NoteAttachment::with_word(scheme, other_word));
     }
 }
