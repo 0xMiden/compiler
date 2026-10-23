@@ -123,21 +123,37 @@ pub(super) fn dominators(program: &SelectedProgram) -> Dominators {
     Dominators(indices.into_iter().map(|(id, index)| (id, intervals[index])).collect())
 }
 
-fn definition(
-    program: &SelectedProgram,
-    atom: Atom,
-) -> Result<(SegmentId, usize), VerificationError> {
-    for segment in &program.segments {
-        if segment.parameters.contains(&atom.value) {
-            return Ok((segment.id, 0));
-        }
-        for (index, unit) in segment.units.iter().enumerate() {
-            if unit.outputs.contains(&atom) {
-                return Ok((segment.id, index + 1));
+/// Source definition positions indexed independently of allocator entry contracts.
+/// Parameters occupy position zero; unit outputs occupy their unit's one-based position.
+/// Build after selected definitions have been validated, then reuse for all hypotheses.
+pub(super) struct Definitions(BTreeMap<Atom, (SegmentId, usize)>);
+
+impl Definitions {
+    /// Record validated parameter lanes and published outputs in source execution order.
+    pub fn new(program: &SelectedProgram) -> Self {
+        let mut definitions = BTreeMap::new();
+        for segment in &program.segments {
+            for parameter in &segment.parameters {
+                for lane in 0..program.values[parameter].layout.lanes() {
+                    definitions.insert(Atom::new(*parameter, lane), (segment.id, 0));
+                }
+            }
+            for (index, unit) in segment.units.iter().enumerate() {
+                for atom in &unit.outputs {
+                    definitions.insert(*atom, (segment.id, index + 1));
+                }
             }
         }
+        Self(definitions)
     }
-    Err(error("reconstruction references a value without a selected definition"))
+
+    /// Resolve an exact lane; absent lanes never acquire a definition through an alias.
+    pub fn get(&self, atom: Atom) -> Result<(SegmentId, usize), VerificationError> {
+        self.0
+            .get(&atom)
+            .copied()
+            .ok_or_else(|| error("reconstruction references a value without a selected definition"))
+    }
 }
 
 /// Validate recipe widths, acyclic preceding aliases, and dominance of semantic uses.
@@ -149,6 +165,7 @@ pub(super) fn validate(program: &SelectedProgram) -> Result<(), VerificationErro
         visiting: &mut BTreeSet<ValueId>,
         done: &mut BTreeSet<ValueId>,
         dom: &Dominators,
+        definitions: &Definitions,
     ) -> Result<(), VerificationError> {
         if done.contains(&id) {
             return Ok(());
@@ -166,11 +183,11 @@ pub(super) fn validate(program: &SelectedProgram) -> Result<(), VerificationErro
                 return Err(error("reconstruction width disagrees with value layout"));
             }
             for lane in 0..value.layout.lanes() {
-                let (destination, position) = definition(program, Atom::new(id, lane))?;
+                let (destination, position) = definitions.get(Atom::new(id, lane))?;
                 if let Reconstruction::Alias(sources) = reconstruction {
                     let source = sources[usize::from(lane)];
                     validate_atom(program, source)?;
-                    let (origin, prior) = definition(program, source)?;
+                    let (origin, prior) = definitions.get(source)?;
                     if !dom.dominates(origin, destination)
                         || origin == destination
                             && (prior > position || prior == position && position != 0)
@@ -179,7 +196,7 @@ pub(super) fn validate(program: &SelectedProgram) -> Result<(), VerificationErro
                             "reconstruction alias source does not precede its definition",
                         ));
                     }
-                    visit(program, source.value, visiting, done, dom)?;
+                    visit(program, source.value, visiting, done, dom, definitions)?;
                 }
             }
         }
@@ -188,15 +205,16 @@ pub(super) fn validate(program: &SelectedProgram) -> Result<(), VerificationErro
         Ok(())
     }
     let dom = dominators(program);
+    let definitions = Definitions::new(program);
     let mut done = BTreeSet::new();
     for id in program.values.keys() {
-        visit(program, *id, &mut BTreeSet::new(), &mut done, &dom)?;
+        visit(program, *id, &mut BTreeSet::new(), &mut done, &dom, &definitions)?;
     }
     let use_at =
         |id: ValueId, segment: SegmentId, position: usize| -> Result<(), VerificationError> {
             if program.values[&id].reconstruction.is_some() {
                 for lane in 0..program.values[&id].layout.lanes() {
-                    let (owner, prior) = definition(program, Atom::new(id, lane))?;
+                    let (owner, prior) = definitions.get(Atom::new(id, lane))?;
                     if !dom.dominates(owner, segment) || owner == segment && prior >= position {
                         return Err(error("reconstruction use precedes its current definition"));
                     }
@@ -287,47 +305,56 @@ pub(super) fn seed(
     program: &SelectedProgram,
     segment: SegmentId,
     dom: &Dominators,
+    definitions: &Definitions,
     names: &mut BTreeMap<Atom, Token>,
     tokens: &mut Tokens,
 ) -> Result<(), VerificationError> {
-    fn resolve(
-        program: &SelectedProgram,
-        atom: Atom,
+    struct Entry<'a> {
+        program: &'a SelectedProgram,
         segment: SegmentId,
-        dom: &Dominators,
-        names: &mut BTreeMap<Atom, Token>,
-        tokens: &mut Tokens,
-        done: &mut BTreeSet<Atom>,
-    ) -> Result<Token, VerificationError> {
-        if !done.insert(atom) {
-            return Ok(names[&atom]);
-        }
-        let token = match &program.values[&atom.value].reconstruction {
-            Some(Reconstruction::Literal(lanes)) => tokens.literal(lanes[usize::from(atom.lane)]),
-            Some(Reconstruction::Alias(lanes)) => {
-                let (owner, position) = definition(program, atom)?;
-                if dom.dominates(owner, segment) && (owner != segment || position == 0) {
-                    resolve(
-                        program,
-                        lanes[usize::from(atom.lane)],
-                        segment,
-                        dom,
-                        names,
-                        tokens,
-                        done,
-                    )?
-                } else {
-                    names[&atom]
-                }
-            }
-            None => names[&atom],
-        };
-        names.insert(atom, token);
-        Ok(token)
+        dom: &'a Dominators,
+        definitions: &'a Definitions,
     }
+    impl Entry<'_> {
+        fn resolve(
+            &self,
+            atom: Atom,
+            names: &mut BTreeMap<Atom, Token>,
+            tokens: &mut Tokens,
+            done: &mut BTreeSet<Atom>,
+        ) -> Result<Token, VerificationError> {
+            if !done.insert(atom) {
+                return Ok(names[&atom]);
+            }
+            let token = match &self.program.values[&atom.value].reconstruction {
+                Some(Reconstruction::Literal(lanes)) => {
+                    tokens.literal(lanes[usize::from(atom.lane)])
+                }
+                Some(Reconstruction::Alias(lanes)) => {
+                    let (owner, position) = self.definitions.get(atom)?;
+                    if self.dom.dominates(owner, self.segment)
+                        && (owner != self.segment || position == 0)
+                    {
+                        self.resolve(lanes[usize::from(atom.lane)], names, tokens, done)?
+                    } else {
+                        names[&atom]
+                    }
+                }
+                None => names[&atom],
+            };
+            names.insert(atom, token);
+            Ok(token)
+        }
+    }
+    let entry = Entry {
+        program,
+        segment,
+        dom,
+        definitions,
+    };
     let mut done = BTreeSet::new();
     for atom in names.keys().copied().collect::<alloc::vec::Vec<_>>() {
-        resolve(program, atom, segment, dom, names, tokens, &mut done)?;
+        entry.resolve(atom, names, tokens, &mut done)?;
     }
     Ok(())
 }

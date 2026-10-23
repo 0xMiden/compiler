@@ -139,19 +139,23 @@ impl Verifier<'_> {
             .ok_or_else(|| error("procedure has no entry"))?
             .id;
         let dominators = super::reconstruction::dominators(&self.plan.selected);
+        let definitions = super::reconstruction::Definitions::new(&self.plan.selected);
         let mut incoming = BTreeMap::<SegmentId, Padding>::new();
         let mut origins = BTreeMap::<SegmentId, OriginFacts>::new();
-        let entry_state = self.abi_entry(entry)?;
-        incoming.insert(entry, entry_state.padding.clone());
-        // Token induction is local to each pass; only the finite padding possibilities flow.
+        incoming.insert(entry, self.abi_entry(entry)?.padding);
+        // Only token-free padding and origin facts cross independent segment replays.
         loop {
             let previous = incoming.clone();
             let previous_origins = origins.clone();
             for segment in &self.plan.selected.segments {
+                // Every hypothesis starts an independent identity proof. Keep this arena
+                // through the segment and all outgoing edges, then discard it: no State
+                // or Cursor survives the iteration, and transferred facts contain no tokens.
+                self.tokens = Tokens::new(self.frame.source().extent);
                 let mut state = if segment.id == entry {
                     self.abi_entry(entry)?
                 } else {
-                    self.hypothesis(segment.id, &dominators)?
+                    self.hypothesis(segment.id, &dominators, &definitions)?
                 };
                 if let Some(padding) = incoming.get(&segment.id) {
                     state.padding = padding.clone();
@@ -286,6 +290,7 @@ impl Verifier<'_> {
         &mut self,
         id: SegmentId,
         dominators: &super::reconstruction::Dominators,
+        definitions: &super::reconstruction::Definitions,
     ) -> Result<State, VerificationError> {
         let contract = &self.plan.contracts[&id];
         let mut names = BTreeMap::new();
@@ -342,6 +347,7 @@ impl Verifier<'_> {
             &self.plan.selected,
             id,
             dominators,
+            definitions,
             &mut names,
             &mut self.tokens,
         )?;
@@ -560,7 +566,9 @@ mod hypothesis_tests {
     fn hypothesis_omits_unrelated_segment_values() {
         let (plan, frame, _) = super::super::tests::loops::loop_fixture(true);
         let mut verifier = Verifier::new(&plan, &frame).unwrap();
-        let state = verifier.hypothesis(SegmentId(1)).unwrap();
+        let dominators = super::super::reconstruction::dominators(&plan.selected);
+        let definitions = super::super::reconstruction::Definitions::new(&plan.selected);
+        let state = verifier.hypothesis(SegmentId(1), &dominators, &definitions).unwrap();
         assert!(state.names.contains_key(&Atom::new(ValueId(10), 0)));
         assert!(state.names.contains_key(&Atom::new(ValueId(11), 0)));
         assert!(!state.names.contains_key(&Atom::new(ValueId(40), 0)));

@@ -581,3 +581,126 @@ fn dominance_handles_empty_graph_and_duplicate_self_edges() {
         }
     }
 }
+
+/// Repeated transfers keep an alias live without growing any segment's physical work.
+struct ReconstructionChain(u32);
+
+impl GeneratedDefinition for ReconstructionChain {
+    fn id(&self) -> GeneratedDefinitionId {
+        GeneratedDefinitionId(53)
+    }
+
+    fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+        let mut evidence = Reconstructible {
+            alias: true,
+            crossing: true,
+        }
+        .instantiate(&[])?;
+        evidence.program.origin = ProcedureOrigin::Generated {
+            definition: self.id(),
+            parameters: vec![],
+        };
+        let segment = evidence.program.segments[1].clone();
+        let forward = evidence.program.edges[0].clone();
+        let terminal = evidence.program.edges[1].clone();
+        evidence.program.segments.truncate(1);
+        evidence.program.edges.clear();
+        let mut structure = vec![];
+        for index in 0..self.0 {
+            if index != 0 {
+                let mut segment = segment.clone();
+                segment.id = SegmentId(index);
+                evidence.program.segments.push(segment);
+            }
+            let mut edge = if index + 1 == self.0 {
+                terminal.clone()
+            } else {
+                let mut edge = forward.clone();
+                edge.destination = Some(SegmentId(index + 1));
+                edge
+            };
+            edge.id = EdgeId(index);
+            edge.source = SegmentId(index);
+            evidence.program.edges.push(edge);
+            structure
+                .extend([ControlTree::Segment(SegmentId(index)), ControlTree::Edge(EdgeId(index))]);
+        }
+        evidence.program.structure = ControlTree::Sequence(structure);
+        Ok(evidence)
+    }
+}
+
+#[test]
+fn graph_replay_retains_tokens_for_one_segment_not_the_whole_graph() {
+    use crate::verify::replay::Verifier;
+
+    for segments in [2, 32] {
+        let definition = ReconstructionChain(segments);
+        let (mut plan, _) = fixture(true, true, false);
+        plan.selected = check_selection(
+            definition.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&definition),
+        )
+        .unwrap();
+        let contract = plan.contracts[&SegmentId(1)].clone();
+        let mut code = vec![
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+        ];
+        for index in 1..segments {
+            plan.contracts.insert(SegmentId(index), contract.clone());
+            plan.segment_actions.insert(SegmentId(index), vec![]);
+            code.extend([
+                AnnotatedOp::Boundary(Boundary::Segment(SegmentId(index))),
+                AnnotatedOp::Boundary(Boundary::Edge(EdgeId(index))),
+            ]);
+        }
+        let body = ops(code);
+        let frame = frame();
+        verify(&plan, &frame, body.clone()).unwrap();
+        let mut verifier = Verifier::new(&plan, &frame).unwrap();
+        for _ in 0..3 {
+            verifier.verify_graph(&body).unwrap();
+            // Each segment has just two semantic lanes. Leave room for local proof
+            // bookkeeping, but not for identities retained from earlier segments/passes.
+            let retained = verifier.tokens.fresh().0;
+            assert!(retained <= 8, "{segments} segments retained {retained} tokens");
+        }
+    }
+}
+
+#[test]
+fn definition_index_preserves_parameter_lanes_and_unit_order() {
+    use crate::verify::reconstruction::Definitions;
+
+    let mut program = Reconstructible {
+        alias: true,
+        crossing: true,
+    }
+    .instantiate(&[])
+    .unwrap()
+    .program;
+    // Indexing records declared definitions, not inferred aliases or absent lanes.
+    program.values.get_mut(&ValueId(0)).unwrap().layout = ValueLayout::new(Type::U64).unwrap();
+    let mut second = program.segments[0].units[0].clone();
+    second.outputs = vec![Atom::new(ValueId(101), 0)];
+    program.segments[0].units.push(second);
+    program.segments[1].parameters.push(ValueId(100));
+    program.segments[0].units[0].outputs = vec![Atom::new(ValueId(102), 0)];
+
+    let definitions = Definitions::new(&program);
+    for (atom, position) in [
+        (Atom::new(ValueId(0), 0), (SegmentId(0), 0)),
+        (Atom::new(ValueId(0), 1), (SegmentId(0), 0)),
+        (Atom::new(ValueId(102), 0), (SegmentId(0), 1)),
+        (Atom::new(ValueId(101), 0), (SegmentId(0), 2)),
+        (Atom::new(ValueId(100), 0), (SegmentId(1), 0)),
+    ] {
+        assert_eq!(definitions.get(atom).unwrap(), position);
+    }
+    assert!(definitions.get(Atom::new(ValueId(0), 2)).is_err());
+    assert!(definitions.get(Atom::new(ValueId(101), 1)).is_err());
+    assert!(definitions.get(Atom::new(ValueId(999), 0)).is_err());
+}
