@@ -83,6 +83,8 @@ impl NoteAttachmentScheme {
     pub const fn new_const(scheme: u16) -> Self {
         match Self::new(scheme) {
             Ok(scheme) => scheme,
+            // A const `panic!` cannot format the bound, so the literal is checked against `MAX`
+            // below.
             Err(_) => panic!("note attachment scheme must be between 1 and 65534"),
         }
     }
@@ -109,8 +111,8 @@ impl NoteAttachmentScheme {
     ///
     /// # Panics
     ///
-    /// Panics if `value` is `65535`. Metadata produced by the kernel never holds it; a hand-built
-    /// metadata word can.
+    /// Panics if `value` is `65535`. The metadata of notes the kernel created or the protocol
+    /// validated never holds it; a hand-built metadata word can.
     pub(super) fn from_header_u16(value: u16) -> Option<Self> {
         if value == 0 {
             return None;
@@ -118,6 +120,9 @@ impl NoteAttachmentScheme {
         Some(Self::new(value).expect("invalid attachment scheme in note metadata"))
     }
 }
+
+// Keeps the bound spelled out in the `new_const` panic message in sync with `MAX`.
+const _: () = assert!(NoteAttachmentScheme::MAX.as_u16() == 65534);
 
 impl Default for NoteAttachmentScheme {
     /// Returns [`NoteAttachmentScheme::none`].
@@ -427,5 +432,13 @@ mod tests {
         assert_eq!(owned, NoteAttachment::with_words(scheme, &words).unwrap());
         assert_ne!(owned, NoteAttachment::with_word(NoteAttachmentScheme::none(), word));
         assert_ne!(owned, NoteAttachment::with_word(scheme, other_word));
+
+        let pair = [word, other_word];
+        let pair_copy = [word, other_word];
+        let differing_second = [word, word];
+        let two_words = NoteAttachment::with_words(scheme, &pair).unwrap();
+        assert_eq!(two_words, NoteAttachment::with_words(scheme, &pair_copy).unwrap());
+        assert_ne!(two_words, NoteAttachment::with_words(scheme, &differing_second).unwrap());
+        assert_ne!(owned, two_words);
     }
 }
