@@ -672,14 +672,7 @@ impl TryFrom<Felt> for NoteIdx {
 
     #[inline]
     fn try_from(value: Felt) -> Result<Self, Self::Error> {
-        if felt_at_most(value, u16::MAX.into()) {
-            // The bound makes the truncation exact.
-            Ok(Self {
-                inner: felt_low_u32(value) as u16,
-            })
-        } else {
-            Err("note index exceeds u16")
-        }
+        felt_to_u16(value).map(|inner| Self { inner }).ok_or("note index exceeds u16")
     }
 }
 
