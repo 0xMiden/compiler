@@ -4,6 +4,113 @@ use midenc_hir::Value;
 
 use super::*;
 
+fn signed_minmax_cases(ty: &str, width: usize, op: &str) {
+    let (min, max) = if width == 1 {
+        (i32::MIN as i64, i32::MAX as i64)
+    } else {
+        (i64::MIN, i64::MAX)
+    };
+    let limbs = |value: i64| {
+        (0..width)
+            .map(|lane| (((value as u64) >> (lane * 32)) as u32) as usize)
+            .collect::<Vec<_>>()
+    };
+    let mut cases = vec![(min, max), (min, -1), (-7, -3), (-1, 0), (0, 0), (7, 7), (3, 5)];
+    if width == 2 {
+        cases.extend([
+            (0x12345678_abcdef01, 0x12345678_abcdef02),
+            (-0x12345678_abcdef01, -0x12345679_01234567),
+        ]);
+    }
+    for reverse in [false, true] {
+        let args = if reverse { "%b,%a" } else { "%a,%b" };
+        let f = parse(&format!(
+            "builtin.function public extern(\"C\") @f(%a:{ty},%b:{ty}) -> ({ty},{ty}) {{              %r=arith.{op} {args}; builtin.ret %r,%a : ({ty},{ty}); }};"
+        ));
+        for &(a, b) in &cases {
+            for (a, b) in [(a, b), (b, a)] {
+                let mut inputs = limbs(a);
+                inputs.extend(limbs(b));
+                let mut expected = limbs(if op == "min" { a.min(b) } else { a.max(b) });
+                expected.extend(limbs(a));
+                execute_linked(&f, &inputs, &expected);
+            }
+        }
+    }
+}
+
+#[test]
+fn signed_i32_min_preserves_values_and_suffix() {
+    signed_minmax_cases("i32", 1, "min");
+}
+
+#[test]
+fn signed_i32_max_preserves_values_and_suffix() {
+    signed_minmax_cases("i32", 1, "max");
+}
+
+#[test]
+fn signed_i64_min_preserves_values_and_suffix() {
+    signed_minmax_cases("i64", 2, "min");
+}
+
+#[test]
+fn signed_i64_max_preserves_values_and_suffix() {
+    signed_minmax_cases("i64", 2, "max");
+}
+
+#[test]
+fn signed_minmax_rejects_each_invalid_limb() {
+    for (ty, width) in [("i32", 1), ("i64", 2)] {
+        for op in ["min", "max"] {
+            let f = parse(&format!(
+                "builtin.function public extern(\"C\") @f(%a:{ty},%b:{ty}) -> {ty} {{                  %r=arith.{op} %a,%b; builtin.ret %r : ({ty}); }};"
+            ));
+            let procedure = selected_procedure(&f, &SelectEnv::default());
+            let core =
+                midenc_session::LinkLibrary::core().load(&f.context.session().options).unwrap();
+            let intrinsics = crate::intrinsics::load(f.context.session()).unwrap();
+            for lane in 0..2 * width {
+                let mut inputs = vec![0; 2 * width];
+                inputs[lane] = u32::MAX as usize + 1;
+                let code = format!(
+                    "{procedure} begin {} exec.selected exec.::miden::core::sys::truncate_stack \
+                     end",
+                    crate::plan::tests::lowering_units::push_top(&inputs)
+                );
+                let mut assembler = miden_assembly::Assembler::default();
+                assembler.link_package(core.clone(), miden_assembly::Linkage::Dynamic).unwrap();
+                assembler
+                    .link_package(intrinsics.clone(), miden_assembly::Linkage::Dynamic)
+                    .unwrap();
+                let program = assembler
+                    .assemble_program("invalid_signed_minmax", code)
+                    .unwrap()
+                    .try_into_program()
+                    .unwrap();
+                let mut host = crate::plan::tests::lowering_units::host();
+                host.load_library(miden_processor::HostLibrary::from(core.clone())).unwrap();
+                host.load_library(miden_processor::HostLibrary::from(intrinsics.clone()))
+                    .unwrap();
+                let error =
+                    miden_processor::FastProcessor::new(miden_processor::StackInputs::default())
+                        .execute_sync(&program, &mut host)
+                        .unwrap_err();
+                assert!(
+                    matches!(
+                        error,
+                        miden_processor::ExecutionError::OperationError {
+                            err: miden_processor::operation::OperationError::NotU32Values { .. },
+                            ..
+                        }
+                    ),
+                    "{ty}/{op}/lane {lane}: {error}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn registered_arithmetic_selects_real_source_and_preserves_suffix() {
     let f = parse(
