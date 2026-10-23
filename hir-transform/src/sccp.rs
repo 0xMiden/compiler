@@ -3,6 +3,7 @@ use alloc::rc::Rc;
 use midenc_hir::{
     BlockRef, Builder, Context, EntityMut, OpBuilder, Operation, OperationFolder, OperationName,
     OperationRef, RegionList, Report, SmallVec, ValueRef,
+    dialects::debuginfo::{DebugInfoMutation, DebugInfoUpdate},
     pass::{Pass, PassExecutionState},
     patterns::TracingRewriterListener,
 };
@@ -171,6 +172,7 @@ fn replace_with_constant(
         value.borrow().ty().clone(),
     );
     if let Some(constant) = constant {
+        let _debug_update = DebugInfoMutation::for_value(value, DebugInfoUpdate::Equivalent);
         value.borrow_mut().replace_all_uses_with(constant);
         true
     } else {

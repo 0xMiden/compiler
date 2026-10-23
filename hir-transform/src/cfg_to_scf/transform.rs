@@ -1,4 +1,4 @@
-use alloc::rc::Rc;
+use alloc::{rc::Rc, vec::Vec};
 
 use midenc_hir::{
     AsValueRange, Block, BlockRef, Builder, Context, EntityWithId, FxHashMap, OpBuilder,
@@ -6,6 +6,7 @@ use midenc_hir::{
     Usable, Value, ValueRange, ValueRef,
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
+    dialects::debuginfo::{DebugInfoMutation, DebugInfoUpdate},
     dominance::{DominanceInfo, PreOrderDomTreeIter},
     formatter::DisplayValues,
     smallvec,
@@ -325,6 +326,11 @@ impl<'a> TransformationContext<'a> {
             let mut exit_block_ref = loop_properties.exit_block;
             cycle_block_set.insert(latch_block_ref);
 
+            let mut debug_blocks = cycle_block_set.iter().copied().collect::<Vec<_>>();
+            debug_blocks.push(exit_block_ref);
+            let _debug_update =
+                DebugInfoMutation::for_blocks(&debug_blocks, DebugInfoUpdate::Relocate);
+
             // Finally, turn it into reduce form.
             let iteration_values = self.transform_to_reduce_loop(
                 loop_header,
@@ -439,6 +445,11 @@ impl<'a> TransformationContext<'a> {
 
         // Single successor we can just splice on to the entry block.
         if num_successors == 1 {
+            let successor = region_entry.borrow().get_successor(0);
+            let _debug_update = DebugInfoMutation::for_blocks(
+                &[region_entry, successor],
+                DebugInfoUpdate::Relocate,
+            );
             let region_entry_block = region_entry.borrow();
             let mut successor = region_entry_block.get_successor(0);
             let succ = successor.borrow();
@@ -685,6 +696,10 @@ impl<'a> TransformationContext<'a> {
         }
 
         let mut continuation = continuation.unwrap();
+        let mut debug_blocks =
+            successor_branch_regions.iter().flatten().copied().collect::<Vec<_>>();
+        debug_blocks.extend([region_entry, continuation]);
+        let _debug_update = DebugInfoMutation::for_blocks(&debug_blocks, DebugInfoUpdate::Relocate);
         let mut new_sub_regions = SmallVec::<[BlockRef; 4]>::default();
 
         // Empty blocks with the values they return to the parent op.

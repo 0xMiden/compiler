@@ -161,6 +161,14 @@ impl<T> EffectInstance<T> {
         }
     }
 
+    /// Get the attribute resource affected by this effect, if any.
+    pub fn attribute(&self) -> Option<AttributeRef> {
+        match self.value.as_ref()? {
+            EffectValue::Attribute(attribute) => Some(*attribute),
+            _ => None,
+        }
+    }
+
     /// Get the value the effect is being applied on, or `None` if there isn't a known value
     /// being affected.
     #[allow(unused)]

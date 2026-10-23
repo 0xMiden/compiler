@@ -1001,7 +1001,7 @@ impl ConversionPattern for JoinShiftedHalf {
         let lo = HalfValue::Constant(0).materialize(rewriter, span)?;
         let join = rewriter.create_op::<arith::Join, _>(span, ([hi, lo], ty))?;
         let join = join.borrow().result().as_value_ref();
-        rewriter.replace_op(op, &[join])?;
+        rewriter.replace_op_with_debug(op, &[join], debuginfo::DebugInfoUpdate::Equivalent)?;
         erase_dead_defs(rewriter, operands)?;
         Ok(true)
     }
@@ -1098,7 +1098,7 @@ impl ConversionPattern for JoinAssembledHalves {
         let lo = halves.lo.materialize(rewriter, span)?;
         let join = rewriter.create_op::<arith::Join, _>(span, ([hi, lo], ty))?;
         let join = join.borrow().result().as_value_ref();
-        rewriter.replace_op(op, &[join])?;
+        rewriter.replace_op_with_debug(op, &[join], debuginfo::DebugInfoUpdate::Equivalent)?;
         erase_dead_defs(rewriter, operands)?;
         Ok(true)
     }
@@ -1184,7 +1184,11 @@ impl ConversionPattern for SplitWideLoad {
                     cast.borrow().result().as_value_ref()
                 };
                 truncated.push(trunc.borrow().operands()[0].borrow().as_value_ref());
-                rewriter.replace_op(trunc, &[replacement])?;
+                rewriter.replace_op_with_debug(
+                    trunc,
+                    &[replacement],
+                    debuginfo::DebugInfoUpdate::Equivalent,
+                )?;
             }
         }
         // The `shr` and casts of the high half, and the 64-bit load itself, are dead now
@@ -1363,7 +1367,11 @@ impl ConversionPattern for SplitTakenHalves {
         let mut truncated = SmallVec::<[ValueRef; 4]>::new();
         for (trunc, replacement) in replacements {
             truncated.push(trunc.borrow().operands()[0].borrow().as_value_ref());
-            rewriter.replace_op(trunc, &[replacement])?;
+            rewriter.replace_op_with_debug(
+                trunc,
+                &[replacement],
+                debuginfo::DebugInfoUpdate::Equivalent,
+            )?;
         }
         // The `shr` and casts of the high half are dead now; the integer is the split's operand
         erase_dead_defs(rewriter, truncated)?;
@@ -1504,7 +1512,7 @@ fn erase_dead_defs(
                 .collect::<SmallVec<[ValueRef; 2]>>()
         };
         // `erase_op` erases the debug users with it
-        rewriter.erase_op(def)?;
+        rewriter.erase_op_with_debug(def, debuginfo::DebugInfoUpdate::Invalidate)?;
         worklist.extend(operands);
     }
     Ok(())

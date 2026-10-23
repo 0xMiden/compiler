@@ -7,7 +7,7 @@ use midenc_hir::{
     dialects::{
         builtin::{Function, attributes::LocalVariable},
         debuginfo::{
-            DIBuilder, DebugDeclare, DebugKill, DebugValue,
+            DIBuilder, DebugDeclare, DebugInfoMutation, DebugInfoUpdate, DebugKill, DebugValue,
             attributes::{ExpressionOp, FrameBase, INLINE_CALL_CHAIN_ATTR_NAME, Variable},
         },
     },
@@ -41,6 +41,7 @@ fn debug_variable(operation: &Operation) -> Option<Variable> {
 }
 
 fn invalidate_debug_reference<R: Rewriter>(rewriter: &mut R, reference: OperationRef) {
+    let _debug_update = DebugInfoMutation::new(reference, DebugInfoUpdate::Invalidate);
     let (variable, span) = {
         let operation = reference.borrow();
         (debug_variable(&operation).unwrap(), operation.span())
@@ -94,6 +95,8 @@ fn convert_debug_references_for_local<R: Rewriter>(
     if references.is_empty() {
         return;
     }
+
+    let _debug_update = DebugInfoMutation::for_operations(&references, DebugInfoUpdate::Salvage);
 
     references.retain(|reference| {
         let safe = {
@@ -413,6 +416,7 @@ impl Pass for Local2Reg {
                 // Read before erasing: erasing an operation clears its operands
                 let value = stored_value(store);
                 rewriter.erase_op(store);
+                let _debug_update = DebugInfoMutation::new(load, DebugInfoUpdate::Equivalent);
                 rewriter.replace_all_op_uses_with_values(load, &[Some(value)]);
                 rewriter.erase_op(load);
                 changed = PostPassStatus::Changed;

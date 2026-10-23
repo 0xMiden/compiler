@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- Require explicit debug-info mutation contracts and audit each pass for unhandled record,
+  SSA-producer, and local-storage changes, independently of ordinary IR verification.
 - Preserve debug-variable lifetime boundaries during sinking, local promotion, and
   generic operation erasure, including inline ownership of replacement kills.
 - Reconcile debug-variable locations across CFG edges so skipped lifetime updates
