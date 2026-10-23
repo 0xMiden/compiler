@@ -97,9 +97,11 @@ an attachment. It never panics for the metadata of notes the kernel created or t
 validated; for a hand-built word holding `65535`, an invalid scheme, the function panics;
 `miden::raw::protocol::note::metadata_into_attachment_schemes` returns the raw `u16`s for such a
 word. `NoteAttachment::with_word(scheme, word)` builds a one-word attachment;
-`NoteAttachment::with_words(scheme, &words)` checks the content length (`1..=256` words) and
-returns a `NoteAttachmentError` otherwise. `add_to(note_idx)` appends an attachment to an output
-note.
+`NoteAttachment::with_words(scheme, words: Vec<Word>)` checks the content length (`1..=256`
+words) and returns a `NoteAttachmentError` otherwise. `add_to(note_idx)` appends an attachment to
+an output note. `output_note::read_attachment(note_idx, scheme)`,
+`input_note::read_attachment(note_idx, scheme)` and `active_note::read_attachment(scheme)` (also
+on the `ActiveNote` trait) return the first attachment with that scheme as a `NoteAttachment`.
 
 Attachment indexes are `AttachmentIdx`, a validated value in `0..=3`, instead of `u32`. The
 `find_attachment` lookups and `note::find_attachment_idx` return `Option<AttachmentIdx>`, and

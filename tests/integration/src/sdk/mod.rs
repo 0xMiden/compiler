@@ -546,6 +546,7 @@ impl TraitNote {
         let attachment_idx =
             self.find_attachment(NoteAttachmentScheme::none()).map(u32::from).unwrap_or(0);
         assert!(attachment_idx < 1024);
+        let _: Option<NoteAttachment> = self.read_attachment(NoteAttachmentScheme::none());
 
         let assets = self.get_initial_assets();
         for asset in assets {
