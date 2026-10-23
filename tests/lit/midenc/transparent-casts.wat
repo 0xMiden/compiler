@@ -1,28 +1,33 @@
 ;; RUN: midenc %s --emit=hir=- -Canalyze-only 2>&1 | filecheck %s --check-prefix=HIR
 ;; RUN: midenc %s --emit=masm=- 2>&1 | filecheck %s --check-prefix=MASM
 ;;
-;; Verify that a cast at a stub boundary moves nothing, and that the stack peephole deletes an
-;; identity operand scheduling leaves.
+;; Verify transparent casts retain their HIR meaning and checked physical scheduling.
 ;;
-;; `intrinsics::felt::from_u32` is a `hir.bitcast` of its `i32` argument, which sits below the
-;; felt the `sub` takes as its right operand. Scheduled like any other op, the cast moved its
-;; operand to the top (`swap.1`) and the `sub` moved it back (`swap.1`); lowered as a rename of
-;; the operand's stack slot, it moves nothing, and the `sub` finds its operands in place.
+;; `intrinsics::felt::from_u32` becomes a `hir.bitcast`. Its lowering emits no instruction,
+;; but the allocator brings its operand to the top and restores operand order for `sub`.
+;; These two swaps belong to separate allocation boundaries, so a lowering-unit peephole
+;; cannot cancel them without invalidating the verified plan.
 ;;
-;; The alignment check of an `i32.load` leaves a `push.0 drop`, which the peephole deletes.
+;; The load's alignment check and memory access likewise retain their allocation actions.
+;; Pin these short sequences so changes to alias scheduling remain visible.
 
 ;; HIR-LABEL: builtin.function public extern("C") @sub_from_u32
 ;; HIR: hir.bitcast {{.*}} <{ ty = #builtin.type<felt> }>;
 ;; HIR: arith.sub
 
 ;; MASM-LABEL: pub proc sub_from_u32
-;; MASM-NOT: swap
-;; MASM: sub
+;; MASM-NEXT: swap.1
+;; MASM-NEXT: swap.1
+;; MASM-NEXT: sub
 ;; MASM-NEXT: end
 
 ;; MASM-LABEL: pub proc load
 ;; MASM: assertz.err="pointer address does not meet minimum alignment for the type"
+;; MASM-NEXT: push.0
+;; MASM-NEXT: swap.1
 ;; MASM-NEXT: mem_load
+;; MASM-NEXT: swap.1
+;; MASM-NEXT: drop
 ;; MASM-NEXT: end
 
 (module $transparent_casts.wasm
