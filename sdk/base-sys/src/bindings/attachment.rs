@@ -121,8 +121,11 @@ impl NoteAttachmentScheme {
     }
 }
 
-// Keeps the bound spelled out in the `new_const` panic message in sync with `MAX`.
-const _: () = assert!(NoteAttachmentScheme::MAX.as_u16() == 65534);
+// Keeps the `new_const` panic literal and the protocol's limit in sync with `MAX`.
+const _: () = assert!(
+    NoteAttachmentScheme::MAX.as_u16() == 65534
+        && NoteAttachmentScheme::MAX.as_u16() == crate::raw::protocol::note::MAX_ATTACHMENT_SCHEME
+);
 
 impl Default for NoteAttachmentScheme {
     /// Returns [`NoteAttachmentScheme::none`].
