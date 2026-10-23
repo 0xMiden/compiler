@@ -256,6 +256,7 @@ impl GeneratedDefinition for ContentLoop {
             content: ContentRequirement::Content(ContentId(id)),
         };
         let init = SelectedLowering {
+            publication: OutputPublication::Stack,
             address_results: vec![],
             id: SelectedStepId(2),
             kind: LoweringKind(0),

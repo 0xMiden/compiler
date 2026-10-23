@@ -68,6 +68,7 @@ pub(super) fn state(stack: Vec<Atom>, slots: Vec<(SpillSlotId, Atom)>) -> Alloca
 
 pub(super) fn unit(stack: Vec<Atom>, stored: Vec<StoredInput>) -> SelectedLowering {
     SelectedLowering {
+        publication: OutputPublication::Stack,
         address_results: vec![],
         id: SelectedStepId(0),
         kind: LoweringKind(0),

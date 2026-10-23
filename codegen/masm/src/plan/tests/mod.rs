@@ -12,6 +12,7 @@ use super::{actions::*, *};
 impl SelectedLowering {
     fn fixture(kind: LoweringKind, source: SourceStepId) -> Self {
         Self {
+            publication: OutputPublication::Stack,
             address_results: Vec::new(),
             id: SelectedStepId(source.0),
             kind,

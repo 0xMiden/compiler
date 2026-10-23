@@ -286,3 +286,82 @@ fn destination_contract_mismatch_reports_known_position_and_atoms_without_step()
     assert_eq!(error.step, None);
     assert_eq!(error.origin, SourceLocation::default());
 }
+
+#[test]
+fn semantic_alias_mismatch_reports_resolved_atom_without_a_stack_position() {
+    // A registered relation can disagree with an otherwise valid reconstruction.
+    // Reject that relation using the semantic output token, even when the output
+    // index lies beyond the physical stack or points at a different input there.
+    struct InconsistentAlias(u32);
+    impl GeneratedDefinition for InconsistentAlias {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(1)
+        }
+
+        fn instantiate(
+            &self,
+            parameters: &[Felt],
+        ) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = Located(Fixture::new(2, 3)).instantiate(parameters)?;
+            for output in 0..3 {
+                evidence
+                    .program
+                    .values
+                    .get_mut(&Fixture::output(output).value)
+                    .unwrap()
+                    .reconstruction = Some(Reconstruction::Alias(vec![Fixture::input(0)]));
+            }
+            let unit = &mut evidence.program.segments[0].units[0];
+            unit.publication = OutputPublication::Aliases;
+            unit.stack_inputs.clear();
+            unit.effects = LoweringEffects::default();
+            evidence.units.get_mut(&unit.id).unwrap().aliases = LaneAliases::new(
+                (0..3)
+                    .map(|output| {
+                        (Fixture::output(output), Fixture::input(u32::from(output == self.0)))
+                    })
+                    .collect(),
+            );
+            Ok(evidence)
+        }
+    }
+
+    for output in [0, 2] {
+        let fixture = Fixture::new(2, 3);
+        let definition = InconsistentAlias(output);
+        let mut plan = fixture.plan();
+        plan.selected = check_selection(
+            definition.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&definition),
+        )
+        .unwrap();
+        let frame = fixture.frame();
+        let mut verifier = replay::Verifier::new(&plan, &frame).unwrap();
+        let first = verifier.tokens.fresh();
+        let second = verifier.tokens.fresh();
+        let state = stack::State::new(
+            vec![second, first],
+            BTreeMap::from([(Fixture::input(0), first), (Fixture::input(1), second)]),
+        );
+        let mut cursor = replay::Cursor {
+            segment: Some(SegmentId(0)),
+            ..Default::default()
+        };
+        let error = verifier
+            .execute(
+                &ops(vec![
+                    AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+                    AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+                ]),
+                state,
+                &mut cursor,
+            )
+            .unwrap_err();
+        assert_eq!(error.message, "alias output does not equal registered input");
+        assert_eq!(error.origin, location());
+        assert_eq!(error.step, Some(SelectedStepId(0)));
+        assert_eq!(error.depth, None);
+        assert_eq!(error.expected, Some(Fixture::output(output)));
+        assert_eq!(error.actual, Some(Fixture::input(0)));
+    }
+}

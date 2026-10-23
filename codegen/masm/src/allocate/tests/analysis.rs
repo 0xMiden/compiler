@@ -73,6 +73,7 @@ fn source(step: u32) -> SourceRecord {
 
 fn unit(id: u32, uses: &[u32], outputs: &[u32]) -> SelectedLowering {
     SelectedLowering {
+        publication: OutputPublication::Stack,
         address_results: vec![],
         id: SelectedStepId(id),
         kind: LoweringKind(0),

@@ -299,6 +299,41 @@ pub(super) fn matches(
     })
 }
 
+/// Resolve semantic-only results from the incoming state, before any output names are rebound.
+/// Named tokens alone are insufficient: every source must still have a physical representation
+/// or a checked reconstruction. The caller separately proves that the unit changed no state.
+pub(super) fn alias_outputs(
+    program: &SelectedProgram,
+    outputs: &[Atom],
+    state: &State,
+    tokens: &Tokens,
+    frame: &FinalFrameLayout,
+) -> Result<Vec<Token>, VerificationError> {
+    outputs
+        .iter()
+        .map(|output| {
+            let Some(Reconstruction::Alias(sources)) =
+                &program.values[&output.value].reconstruction
+            else {
+                return Err(error("semantic publication lacks an alias reconstruction"));
+            };
+            let source = *sources
+                .get(usize::from(output.lane))
+                .ok_or_else(|| error("semantic publication lacks a complete lane mapping"))?;
+            let token = state.token(source)?;
+            if !state.available(token, frame.spills().values().copied())
+                && !recoverable(program, source, state, tokens)
+            {
+                return Err(fail(
+                    DiagnosticCategory::UnavailableValue,
+                    "alias publication source has no recoverable representation",
+                ));
+            }
+            Ok(token)
+        })
+        .collect()
+}
+
 /// Only relations whose defining dynamic instance dominates this entry are hypotheses.
 /// A body result from the preceding iteration cannot constrain the new loop header.
 pub(super) fn seed(

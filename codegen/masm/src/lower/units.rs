@@ -200,6 +200,7 @@ fn selected(
         stack_inputs: stack.to_vec(),
         stored_inputs: stored.to_vec(),
         outputs: outputs.to_vec(),
+        publication: OutputPublication::Stack,
         address_results: alloc::vec![],
         effects: Default::default(),
         scratch: alloc::vec![],

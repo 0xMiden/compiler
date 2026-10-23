@@ -1,14 +1,13 @@
 ;; RUN: midenc %s --emit=hir=- -Canalyze-only 2>&1 | filecheck %s --check-prefix=HIR
 ;; RUN: midenc %s --emit=masm=- 2>&1 | filecheck %s --check-prefix=MASM
 ;;
-;; Verify transparent casts retain their HIR meaning and checked physical scheduling.
+;; Verify transparent casts retain their HIR meaning without requesting a physical prefix.
 ;;
-;; `intrinsics::felt::from_u32` becomes a `hir.bitcast`. Its lowering emits no instruction,
-;; but the allocator brings its operand to the top and restores operand order for `sub`.
-;; These two swaps belong to separate allocation boundaries, so a lowering-unit peephole
-;; cannot cancel them without invalidating the verified plan.
+;; `intrinsics::felt::from_u32` becomes a `hir.bitcast`. Its checked alias publication names
+;; the existing operand in place, so the subtraction can use the original operand order.
+;; No cross-boundary peephole is needed to eliminate preparation for the alias.
 ;;
-;; The load's alignment check and memory access likewise retain their allocation actions.
+;; The load's alignment check and memory access retain their own allocation actions.
 ;; Pin these short sequences so changes to alias scheduling remain visible.
 
 ;; HIR-LABEL: builtin.function public extern("C") @sub_from_u32
@@ -16,8 +15,6 @@
 ;; HIR: arith.sub
 
 ;; MASM-LABEL: pub proc sub_from_u32
-;; MASM-NEXT: swap.1
-;; MASM-NEXT: swap.1
 ;; MASM-NEXT: sub
 ;; MASM-NEXT: end
 

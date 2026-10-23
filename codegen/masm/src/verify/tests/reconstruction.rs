@@ -704,3 +704,207 @@ fn definition_index_preserves_parameter_lanes_and_unit_order() {
     assert!(definitions.get(Atom::new(ValueId(101), 1)).is_err());
     assert!(definitions.get(Atom::new(ValueId(999), 0)).is_err());
 }
+
+/// Source-owned semantic alias fixture; malformed variants exercise source-schema checks,
+/// rather than only equality between a candidate and a valid reconstructed definition.
+pub(super) struct SemanticAlias(pub u8);
+
+impl GeneratedDefinition for SemanticAlias {
+    fn id(&self) -> GeneratedDefinitionId {
+        GeneratedDefinitionId(73)
+    }
+
+    fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+        let mut evidence = Fixture::new(1, 1).instantiate(&[])?;
+        evidence.program.origin = ProcedureOrigin::Generated {
+            definition: self.id(),
+            parameters: vec![],
+        };
+        evidence.program.values.get_mut(&ValueId(100)).unwrap().reconstruction =
+            Some(Reconstruction::Alias(vec![Fixture::input(0)]));
+        let unit = &mut evidence.program.segments[0].units[0];
+        unit.publication = OutputPublication::Aliases;
+        unit.stack_inputs.clear();
+        unit.effects = LoweringEffects::default();
+        evidence.units.get_mut(&unit.id).unwrap().aliases =
+            LaneAliases::new(vec![(Fixture::output(0), Fixture::input(0))]);
+        match self.0 {
+            0 => {}
+            1 => unit.semantic_inputs.clear(),
+            2 => unit.stack_inputs.push(Fixture::input(0)),
+            3 => unit.effects.may_trap = true,
+            4 => unit.effects.memory = SourceMemoryEffects::READ,
+            5 => unit.stored_inputs.push(StoredInput {
+                id: StoredInputId(0),
+                value: StoredValue::Atom(Fixture::input(0)),
+            }),
+            6 => evidence.program.values.get_mut(&ValueId(100)).unwrap().reconstruction = None,
+            7 => {
+                evidence.program.values.get_mut(&ValueId(100)).unwrap().reconstruction =
+                    Some(Reconstruction::Literal(vec![Felt::ONE]))
+            }
+            8 => {
+                evidence.program.values.get_mut(&ValueId(100)).unwrap().reconstruction =
+                    Some(Reconstruction::Alias(vec![]))
+            }
+            9 => {
+                evidence.program.values.get_mut(&ValueId(100)).unwrap().layout =
+                    ValueLayout::new(Type::U64).unwrap();
+            }
+            10 => unit.scratch = Fixture::new(1, 1).scratch(1).scratch,
+            _ => unreachable!(),
+        }
+        Ok(evidence)
+    }
+}
+
+pub(super) fn semantic_alias_plan() -> ProcedurePlan {
+    let mut plan = Fixture::new(1, 1).plan();
+    plan.selected = check_selection(
+        SemanticAlias(0).instantiate(&[]).unwrap().program,
+        &SourceContext::Generated(&SemanticAlias(0)),
+    )
+    .unwrap();
+    plan
+}
+
+#[test]
+fn semantic_alias_publication_accepts_spill_only_source_without_loading_it() {
+    let mut plan = semantic_alias_plan();
+    let slot = SpillSlotId::canonical(Fixture::input(0));
+    plan.spill_slots = vec![slot];
+    let frame = FinalFrameLayout::new(
+        SourceLocalLayout::default(),
+        BTreeMap::from([(slot, 0)]),
+        BTreeMap::new(),
+        4,
+    )
+    .unwrap();
+    plan.segment_actions.insert(
+        SegmentId(0),
+        vec![
+            PlanAction::StoreLane(slot),
+            PlanAction::RunLowering {
+                step: SelectedStepId(0),
+            },
+            PlanAction::LoadLane(slot),
+        ],
+    );
+    verify(
+        &plan,
+        &frame,
+        ops(vec![
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+            inst(Instruction::LocStore(0.into())),
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+            inst(Instruction::LocLoad(0.into())),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+        ]),
+    )
+    .unwrap();
+}
+
+#[test]
+fn semantic_alias_resolution_requires_recoverability_not_just_a_name() {
+    use crate::verify::{reconstruction::alias_outputs, stack::State, tokens::Tokens};
+    let plan = semantic_alias_plan();
+    let mut tokens = Tokens::default();
+    let token = tokens.fresh();
+    let mut state = State::new(vec![], BTreeMap::from([(Fixture::input(0), token)]));
+    assert!(
+        alias_outputs(&plan.selected, &[Fixture::output(0)], &state, &tokens, &frame()).is_err()
+    );
+    state.stack.push(token);
+    assert_eq!(
+        alias_outputs(&plan.selected, &[Fixture::output(0)], &state, &tokens, &frame()).unwrap(),
+        vec![token]
+    );
+}
+
+#[test]
+fn semantic_alias_publication_accepts_reconstructed_only_literal() {
+    let definition = Reconstructible {
+        alias: false,
+        crossing: false,
+    };
+    let mut evidence = definition.instantiate(&[]).unwrap();
+    let mut alias = evidence.program.segments[0].units[0].clone();
+    alias.id = SelectedStepId(1);
+    alias.source = SourceStepId(1);
+    alias.semantic_inputs = vec![ValueId(100)];
+    alias.outputs = vec![Atom::new(ValueId(101), 0)];
+    alias.publication = OutputPublication::Aliases;
+    alias.effects = LoweringEffects::default();
+    evidence.program.values.insert(
+        ValueId(101),
+        SelectedValue {
+            id: ValueId(101),
+            origin: ValueOrigin::Temporary {
+                step: alias.source,
+                index: 0,
+            },
+            layout: ValueLayout::new(Type::Felt).unwrap(),
+            reconstruction: Some(Reconstruction::Alias(vec![Fixture::output(0)])),
+        },
+    );
+    evidence.program.source_map.insert(
+        alias.source,
+        SourceRecord {
+            origin: SourceOrigin::Generated {
+                definition: definition.id(),
+                stage: 1,
+            },
+            location: SourceLocation::default(),
+        },
+    );
+    evidence.units.insert(alias.id, UnitEvidence::default());
+    evidence.program.segments[0].units.push(alias);
+    evidence.program.edges[0].bindings[0].source = ValueId(101);
+    evidence.program.edges[0].bindings[0].destination = ValueId(101);
+    struct LiteralAlias(DefinitionEvidence);
+    impl GeneratedDefinition for LiteralAlias {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(41)
+        }
+
+        fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+            Ok(self.0.clone())
+        }
+    }
+    let definition = LiteralAlias(evidence);
+    let mut plan = Fixture::new(0, 1).plan();
+    plan.selected =
+        check_selection(definition.0.program.clone(), &SourceContext::Generated(&definition))
+            .unwrap();
+    plan.lowering_bindings.insert(SelectedStepId(1), LoweringBindings::default());
+    plan.segment_actions.insert(
+        SegmentId(0),
+        vec![
+            PlanAction::RunLowering {
+                step: SelectedStepId(0),
+            },
+            PlanAction::Drop,
+            PlanAction::RunLowering {
+                step: SelectedStepId(1),
+            },
+            PlanAction::PushLiteral(Felt::new_unchecked(7)),
+        ],
+    );
+    verify(
+        &plan,
+        &frame(),
+        ops(vec![
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+            push(7),
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+            inst(Instruction::Drop),
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(1))),
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(1))),
+            push(7),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+        ]),
+    )
+    .unwrap();
+}

@@ -203,9 +203,12 @@ fn unpack_word_is_exact_lane_alias() {
     let f = word_fixture(false);
     let selected = checked(&f, &SelectEnv::default());
     let unit = &selected.segments[0].units[0];
-    assert_eq!(unit.stack_inputs.len(), 4);
+    assert_eq!(unit.publication, OutputPublication::Aliases);
+    assert!(unit.stack_inputs.is_empty());
+    assert_eq!(unit.semantic_inputs.len(), 1);
     assert_eq!(unit.outputs.len(), 4);
-    for (output, input) in unit.outputs.iter().zip(&unit.stack_inputs) {
+    let inputs = (0..4).map(|lane| Atom::new(unit.semantic_inputs[0], lane)).collect::<Vec<_>>();
+    for (output, input) in unit.outputs.iter().zip(&inputs) {
         assert_eq!(
             selected.values[&output.value].reconstruction,
             Some(Reconstruction::Alias(vec![*input]))
@@ -237,7 +240,7 @@ fn unpack_word_is_exact_lane_alias() {
     let mut bad = select_function(&function, &env).unwrap();
     let output = bad.segments[0].units[0].outputs[0];
     bad.values.get_mut(&output.value).unwrap().reconstruction =
-        Some(Reconstruction::Alias(vec![bad.segments[0].units[0].stack_inputs[1]]));
+        Some(Reconstruction::Alias(vec![inputs[1]]));
     assert!(
         check_selection(
             bad,

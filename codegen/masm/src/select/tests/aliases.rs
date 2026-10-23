@@ -36,6 +36,10 @@ fn transparent_casts_have_checked_alias_dependencies() {
     assert_eq!(selected.segments[0].units.len(), 3);
     for unit in &selected.segments[0].units {
         assert_eq!(unit.semantic_inputs.len(), 1);
+        assert!(
+            unit.stack_inputs.is_empty(),
+            "transparent aliases do not request a physical prefix"
+        );
     }
     execute(&f, &SelectEnv::default(), &[123], &[123]);
     let function = f.borrow();
@@ -185,5 +189,92 @@ fn aliases_require_exact_declared_types_groupings_and_properties() {
         result.borrow_mut().set_type(actual.clone());
         assert_malformed_source_rejected(&f, &SelectEnv::default());
         assert_eq!(result.borrow().ty(), &actual);
+    }
+}
+
+#[test]
+fn buried_transparent_alias_does_not_prepare_an_operand_prefix() {
+    use crate::plan::actions::PlanAction;
+
+    let f = parse(
+        "builtin.function public extern(\"C\") @buried(%keep: felt, %source: u32) -> felt { \
+         %alias = hir.bitcast %source <{ ty = #builtin.type<felt> }>; %result = arith.sub %keep, \
+         %alias <{ overflow = #builtin.overflow<wrapping> }>; builtin.ret %result : (felt); };",
+    );
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    assert!(matches!(
+        plan.segment_actions[&SegmentId(0)][0],
+        PlanAction::RunLowering {
+            step: SelectedStepId(0)
+        }
+    ));
+    verify::verify(&plan, &frame, body).unwrap();
+    execute(&f, &SelectEnv::default(), &[100, 7], &[93]);
+}
+
+#[test]
+fn aliases_below_the_addressable_window_preserve_source_and_suffix() {
+    use crate::plan::actions::PlanAction;
+
+    for width in [16, 17, 24] {
+        let params = (0..width).map(|i| format!("%p{i}: u32")).collect::<Vec<_>>().join(", ");
+        let text = format!(
+            "builtin.function public extern(\"C\") @deep({params}) -> felt {{
+            %alias = hir.bitcast %p{} <{{ ty = #builtin.type<felt> }}>;
+            builtin.ret %alias : (felt); }};",
+            width - 1
+        );
+        let f = parse(&text);
+        let (plan, frame, body) = ready(&f, &SelectEnv::default());
+        assert!(matches!(
+            plan.segment_actions[&SegmentId(0)].as_slice(),
+            [PlanAction::RunLowering {
+                step: SelectedStepId(0)
+            }]
+        ));
+        verify::verify(&plan, &frame, body).unwrap();
+        let inputs = (0..width).map(|i| 101 + i).collect::<Vec<_>>();
+        execute(&f, &SelectEnv::default(), &inputs, &[100 + width]);
+    }
+}
+
+#[test]
+fn alias_publications_keep_complete_lanes_across_joins_and_loop_backedges() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @join(%p: i1, %a: u64, %b: u64) -> (u64, u64) {
+        %selected = scf.if %p then {
+            %hi, %lo = arith.split %a : (u64) -> (u32, u32);
+            %joined = arith.join %hi, %lo <{ty=#builtin.type<u64>}>;
+            scf.yield %joined : (u64);
+        } else {
+            %hi, %lo = arith.split %b : (u64) -> (u32, u32);
+            %joined = arith.join %hi, %lo <{ty=#builtin.type<u64>}>;
+            scf.yield %joined : (u64);
+        } : (i1) -> (u64);
+        builtin.ret %selected, %a : (u64, u64); };",
+    );
+    execute(&f, &SelectEnv::default(), &[1, 11, 22, 33, 44], &[11, 22, 11, 22]);
+    execute(&f, &SelectEnv::default(), &[0, 11, 22, 33, 44], &[33, 44, 11, 22]);
+
+    let f = parse(
+        "builtin.function public extern(\"C\") @loop(%n: u32, %a: u64) -> u64 {
+        %done, %result = scf.while %n, %a before {
+            ^before(%count: u32, %value: u64):
+            %zero = arith.constant 0 : u32;
+            %more = arith.neq %count, %zero;
+            scf.condition %more, %count, %value : (i1, u32, u64);
+        } after {
+            ^after(%count: u32, %value: u64):
+            %hi, %lo = arith.split %value : (u64) -> (u32, u32);
+            %next = arith.join %lo, %hi <{ty=#builtin.type<u64>}>;
+            %one = arith.constant 1 : u32;
+            %remaining = arith.sub %count, %one <{overflow=#builtin.overflow<wrapping>}>;
+            scf.yield %remaining, %next : (u32, u64);
+        } : (u32, u64) -> (u32, u64);
+        builtin.ret %result : (u64); };",
+    );
+    for count in 0..4 {
+        let expected = if count % 2 == 0 { [11, 22] } else { [22, 11] };
+        execute(&f, &SelectEnv::default(), &[count, 11, 22], &expected);
     }
 }

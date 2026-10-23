@@ -356,6 +356,7 @@ fn validate_graph(
                         }
                     };
                     if !valid
+                        || unit.publication != OutputPublication::Stack
                         || !unit.effects.may_trap
                         || !unit.effects.normal_return
                         || unit.effects.memory != SourceMemoryEffects::default()
@@ -363,6 +364,37 @@ fn validate_graph(
                         || !unit.stored_inputs.is_empty()
                     {
                         return Err(error("invalid generated event source contract"));
+                    }
+                }
+                if unit.publication == OutputPublication::Aliases {
+                    let evidence = &units[&unit.id];
+                    if !unit.stack_inputs.is_empty()
+                        || !unit.stored_inputs.is_empty()
+                        || !unit.scratch.is_empty()
+                        || !unit.scratch_effects.is_empty()
+                        || !unit.address_results.is_empty()
+                        || unit.effects != LoweringEffects::default()
+                        || evidence.generated_event.is_some()
+                        || !evidence.calls.is_empty()
+                        || !evidence.loops.is_empty()
+                        || !evidence.scratch_outputs.is_empty()
+                    {
+                        return Err(error(
+                            "alias publication has a physical or effectful contract",
+                        ));
+                    }
+                    for output in &unit.outputs {
+                        let Some(Reconstruction::Alias(sources)) =
+                            &program.values[&output.value].reconstruction
+                        else {
+                            return Err(error("alias publication lacks a checked lane mapping"));
+                        };
+                        if sources
+                            .iter()
+                            .any(|source| !unit.semantic_inputs.contains(&source.value))
+                        {
+                            return Err(error("alias publication source is not a semantic input"));
+                        }
                     }
                 }
                 let mut output_lanes = BTreeMap::<ValueId, u8>::new();
@@ -452,11 +484,13 @@ fn validate_graph(
                 }
                 for (output, input) in units[&unit.id].aliases.pairs() {
                     if !unit.outputs.contains(output)
-                        || !unit.stack_inputs.contains(input)
-                            && !unit
+                        || !(unit.stack_inputs.contains(input)
+                            || unit
                                 .stored_inputs
                                 .iter()
                                 .any(|stored| stored.value == StoredValue::Atom(*input))
+                            || unit.publication == OutputPublication::Aliases
+                                && unit.semantic_inputs.contains(&input.value))
                     {
                         return Err(error(
                             "registered publication relation references undeclared input/output",

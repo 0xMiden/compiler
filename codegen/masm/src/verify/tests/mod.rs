@@ -75,6 +75,7 @@ impl GeneratedDefinition for Identity {
                     id: SegmentId(0),
                     parameters: vec![ValueId(0)],
                     units: vec![SelectedLowering {
+                        publication: OutputPublication::Stack,
                         address_results: vec![],
                         id: SelectedStepId(0),
                         kind: LoweringKind(0),
@@ -385,6 +386,7 @@ impl GeneratedDefinition for Fixture {
                     id: SegmentId(0),
                     parameters: (0..self.inputs).map(ValueId).collect(),
                     units: vec![SelectedLowering {
+                        publication: OutputPublication::Stack,
                         address_results: vec![],
                         id: SelectedStepId(0),
                         kind: LoweringKind(0),

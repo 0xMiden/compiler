@@ -956,3 +956,43 @@ fn repeat_variable_debug_anchor_has_valid_package_rows() {
                 && row.value_location == masm::DebugVarLocation::Stack(0))
     );
 }
+
+#[test]
+fn semantic_alias_publication_rejects_physical_mutation_and_lost_inputs() {
+    let plan = super::reconstruction::semantic_alias_plan();
+    for instructions in [
+        vec![],
+        vec![Instruction::Swap1],
+        vec![Instruction::Drop],
+        vec![Instruction::Push(crate::masm::PushValue::from(7u32).into())],
+        vec![Instruction::Drop, Instruction::Push(crate::masm::PushValue::from(7u32).into())],
+    ] {
+        let should_pass = instructions.is_empty();
+        let mut code = vec![
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+        ];
+        code.extend(instructions.into_iter().map(inst));
+        code.extend([
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+        ]);
+        assert_eq!(verify(&plan, &frame(), ops(code)).is_ok(), should_pass);
+    }
+    let mut plan = plan;
+    plan.segment_actions.get_mut(&SegmentId(0)).unwrap().insert(0, PlanAction::Drop);
+    assert!(
+        verify(
+            &plan,
+            &frame(),
+            ops(vec![
+                AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+                inst(Instruction::Drop),
+                AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+                AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+                AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+            ])
+        )
+        .is_err()
+    );
+}

@@ -69,6 +69,7 @@ impl GeneratedDefinition for Diamond {
                 vec![]
             };
             let unit = SelectedLowering {
+                publication: OutputPublication::Stack,
                 address_results: vec![],
                 id: SelectedStepId(index),
                 kind: LoweringKind(0),

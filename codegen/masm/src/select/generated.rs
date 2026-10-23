@@ -209,6 +209,7 @@ impl GeneratedDefinition for GeneratedRoot {
                 stack_inputs: inputs,
                 stored_inputs: vec![],
                 outputs,
+                publication: OutputPublication::Stack,
                 address_results: vec![],
                 effects: LoweringEffects {
                     memory: if definition.stage < 2 {
@@ -652,6 +653,7 @@ fn single_generated(
                     stack_inputs: vec![],
                     stored_inputs: vec![],
                     outputs: vec![],
+                    publication: OutputPublication::Stack,
                     address_results: vec![],
                     effects: LoweringEffects {
                         memory,
@@ -740,6 +742,7 @@ impl GeneratedExport<'_, '_> {
                 stack_inputs: vec![],
                 stored_inputs: vec![],
                 outputs: vec![],
+                publication: OutputPublication::Stack,
                 address_results: vec![],
                 effects: LoweringEffects {
                     memory: SourceMemoryEffects::READ_WRITE,

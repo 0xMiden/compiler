@@ -172,7 +172,7 @@ The selected graph is immutable during analysis and allocation. Reachability fol
 
 Backend liveness uses dense bitsets of semantic value identities. A live value initially means all its representation lanes are needed; lane-specific aliases are normalized through the layout table. Selected temporaries passed between lowering units and operands used in later phases are ordinary values in this analysis.
 
-Every value is published as a complete representation at an allocation boundary. A selected unit defining a value publishes all its layout lanes exactly once at that unit's normal completion; separate units cannot publish different lanes of the same value. Segment parameters likewise introduce complete values through checked simultaneous bindings. Cross-unit partial computations use explicit scalar or typed temporary values and an explicit alias/join completion unit when a complete result is needed. This keeps dense semantic-value demand meaningful at every boundary; it does not restrict raw partial stages inside one lowering unit.
+Every value is published as a complete representation at an allocation boundary. `OutputPublication::Stack` requires the complete top-first output prefix. `OutputPublication::Aliases` instead publishes complete semantic names through source-checked `Reconstruction::Alias` lane mappings; it does not require a physical result prefix. A selected unit defining a value publishes all its layout lanes exactly once at that unit's normal completion; separate units cannot publish different lanes of the same value. Segment parameters likewise introduce complete values through checked simultaneous bindings. Cross-unit partial computations use explicit scalar or typed temporary values and an explicit alias/join completion unit when a complete result is needed. This keeps dense semantic-value demand meaningful at every boundary; it does not restrict raw partial stages inside one lowering unit.
 
 Let `P(S)` be the parameters of successor segment `S`, and `bind_e(p)` the source supplied to parameter `p` on edge `e: B -> S`:
 
@@ -188,6 +188,18 @@ live_before(I) = semantic_uses(I) union (live_after(I) - definitions(I))
 Solve backward to the least fixed point using a predecessor worklist. Reverse scans then record liveness at lowering unit boundaries. Branch predicates are semantic uses. Edge operands contribute through live destination parameters, not through a blanket use of every forwarded operand. Debug-only descriptions do not create semantic uses. An alias-producing cast still has a semantic dependency on the bits it aliases.
 
 The existing HIR `LivenessAnalysis` remains available to HIR optimizations. It is not authoritative for physical allocation: it combines HIR region traversal, executability, and next-use penalties that do not describe selected call phases or synthetic control flow.
+
+### Representation-only publication
+
+Selection authorizes `Aliases` only for transparent representation aliases, split/join, and unpack stages. Their existing checked reconstruction maps are the sole lane-map authority. Every source lane belongs to a declared semantic input whose definition precedes the alias stage. Observable operations retain stack publication even when some results equal their inputs.
+
+An alias unit has no stack or stored inputs, scratch, scratch effects, address results, or source effects, and returns normally. It retains an empty lowering body and its source/proof boundaries. Preparation checks recoverability of all semantic inputs and live-through values without emitting movement, loads, stores, or fallback normalization, even for values buried below the addressable window. A source may exist solely in a spill slot or through an established literal/alias reconstruction.
+
+Completion enables all output reconstructions simultaneously, preserving physical occurrences, cells, and padding. Stale semantic facts about redefined values are invalidated as usual; forgetting a fact performs no memory write. Loop entries establish only the current dynamic scope, so a prior iteration's output name cannot supply its own new definition.
+
+Independent replay resolves all output tokens from incoming semantic names before rebinding any output. Each source must have an actual physical representation or an independently checked reconstruction; name presence alone is insufficient. Replay requires unchanged stack, memory cells, spill contents, padding, scratch-content identities and execution obligations. Complete-value, dominance and declared lane-mapping checks still apply. This allows source and alias to remain live together without a duplicate until a consumer actually requests two physical occurrences.
+
+Acceptance includes buried, spill-only, reconstructed-only and chained aliases; split/join/unpack lane order across joins/backedges; rejection of unavailable sources, incomplete or incorrect maps, unauthorized publication, effects/storage requirements and physical mutation; and transparent casts whose alias boundary emits no stack operations.
 
 ### Next use and cost
 
@@ -306,11 +318,17 @@ struct SelectedLowering {
     semantic_inputs: Vec<ValueId>,
     stack_inputs: Vec<Atom>,          // top first, with required multiplicity
     stored_inputs: Vec<StoredInput>,
-    outputs: Vec<Atom>,
+    outputs: Vec<Atom>,              // complete semantic definitions
+    publication: OutputPublication, // Stack prefix or semantic-only Aliases
     effects: LoweringEffects,
     scratch: Vec<ScratchRequirement>,
     scratch_effects: Vec<ScratchEffect>, // checked content dependencies, reads, and writes
     address_results: Vec<AddressFact>, // scalar outputs equal declared scratch addresses
+}
+
+enum OutputPublication {
+    Stack,
+    Aliases,
 }
 
 struct StoredInput {
@@ -1106,7 +1124,7 @@ These contracts bound verification without unrolling or accumulating expressions
 
 ### Result publication and trust
 
-Only the registered lowering definition can authorize semantic result publication, at its declared normal completion boundary. First verify the unit's actual input bindings, raw output shape, storage permissions and contents, suffix preservation, and any explicitly registered output relations. Then map each new semantic result atom to the actual verifier token in its declared result position. Publication does not replace or globally rename that token, so proved stack/storage equalities remain intact. Alias-producing lowerings must establish their specified input/result equality rather than introduce an unrelated result token.
+Only the registered lowering definition can authorize semantic result publication, at its declared normal completion boundary. For `Stack`, verify the actual input bindings, physical output prefix, storage permissions and contents, suffix preservation, and registered output relations; resolve output tokens from their declared physical result positions. For `Aliases`, resolve output tokens through the checked lane maps against incoming semantic names, independently prove source recoverability, and require unchanged physical state. Both forms bind every lane of each new semantic value simultaneously after these checks. Publication does not replace or globally rename tokens, so proved stack/storage equalities remain intact. Alias-producing lowerings must establish their specified input/result equality rather than introduce an unrelated result token.
 
 Semantic result positions refer to the entire result tuple, not the addressable stack window. Call publications, borrowed call outputs, output equalities, and scratch/output relations use `u32` positions, matching ABI result counts. Verification converts positions to host indices with checked conversion and bounds checks. Same-context results may exceed sixteen or 256 lanes; only indexed stack instructions are restricted to depths zero through fifteen. Generated definitions allocate disjoint value-ID ranges using checked arithmetic derived from their actual result counts, and diagnose ID-domain exhaustion before narrowing. Generated root cleanup retains the top sixteen lanes after a wider entrypoint return.
 
