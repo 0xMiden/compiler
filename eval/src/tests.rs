@@ -17,6 +17,7 @@ use midenc_hir::{
 
 use crate::*;
 
+mod debuginfo;
 mod memory;
 
 struct EvalTest {
