@@ -17,16 +17,13 @@ use miden_protocol::{
 use miden_testing::{Auth, MockChain, MockTransaction};
 
 use super::support::{
-    compile_rust_package, execute_tx, execute_tx_expect_failure,
-    transaction_script_from_package_with_deps,
+    GUEST_PANIC_CODE, assert_failure_contains, compile_rust_package, execute_tx,
+    execute_tx_expect_failure, transaction_script_from_package_with_deps,
 };
 
-/// Scheme shared by the guest's duplicate attachments.
+/// Scheme the host passes to the guest; the round-trip scenario also uses
+/// `SCHEME + 1 .. SCHEME + 3`, so it must stay at most 65531.
 const SCHEME: u16 = 42;
-
-/// The fixed VM assertion code every guest panic reports, so the invalid-scheme check cannot be
-/// satisfied by an unrelated kernel failure.
-const GUEST_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";
 
 /// Returns the guest's first content word.
 fn first_word() -> Word {
@@ -45,7 +42,8 @@ struct AttachmentPackages {
     tx_script: Arc<Package>,
 }
 
-/// Compiles the basic wallet, the P2ID note and the attachment transaction script once.
+/// Compiles the basic wallet, the P2ID note and the attachment transaction script once per test
+/// process.
 fn attachment_packages() -> &'static AttachmentPackages {
     static PACKAGES: OnceLock<AttachmentPackages> = OnceLock::new();
     PACKAGES.get_or_init(|| AttachmentPackages {
@@ -57,7 +55,7 @@ fn attachment_packages() -> &'static AttachmentPackages {
 
 /// Builds a transaction running the selected attachment scenario with `scheme` on a native wallet
 /// account.
-fn build_attachment_tx(scenario: u32, scheme: u16) -> (MockChain, MockTransaction) {
+fn build_attachment_tx(scenario: u32, scheme: u64) -> (MockChain, MockTransaction) {
     let AttachmentPackages {
         wallet: wallet_package,
         note: note_package,
@@ -92,7 +90,7 @@ fn build_attachment_tx(scenario: u32, scheme: u16) -> (MockChain, MockTransactio
         ))
         .tx_script_args(Word::from([
             Felt::from(scenario),
-            Felt::from(scheme),
+            Felt::new(scheme).unwrap(),
             Felt::ZERO,
             Felt::ZERO,
         ]))
@@ -106,7 +104,7 @@ fn build_attachment_tx(scenario: u32, scheme: u16) -> (MockChain, MockTransactio
 /// Typed word/slice paths and the advice-map writer preserve the protocol's commitments.
 #[test]
 fn typed_attachments_round_trip_after_note_constructor() {
-    let (mut chain, mock_tx) = build_attachment_tx(0, SCHEME);
+    let (mut chain, mock_tx) = build_attachment_tx(0, SCHEME.into());
     let executed_tx = execute_tx(&mut chain, mock_tx);
     assert_eq!(executed_tx.output_notes().num_notes(), 1);
 
@@ -133,7 +131,7 @@ fn typed_attachments_round_trip_after_note_constructor() {
 #[test]
 fn typed_attachments_accept_four_attachments_and_512_words() {
     for (scenario, count, words) in [(1, 4, 1), (3, 2, 256)] {
-        let (mut chain, mock_tx) = build_attachment_tx(scenario, SCHEME);
+        let (mut chain, mock_tx) = build_attachment_tx(scenario, SCHEME.into());
         let executed_tx = execute_tx(&mut chain, mock_tx);
         assert_eq!(executed_tx.output_notes().num_notes(), 1);
         let attachment = NoteAttachment::with_words(
@@ -154,7 +152,7 @@ fn typed_attachments_reject_excess_count_total_words_and_sealed_notes() {
         (4, ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED.message()),
         (5, ERR_OUTPUT_NOTE_IS_SEALED.message()),
     ] {
-        let (_chain, mock_tx) = build_attachment_tx(scenario, SCHEME);
+        let (_chain, mock_tx) = build_attachment_tx(scenario, SCHEME.into());
         let err = execute_tx_expect_failure(mock_tx);
         let needle = format!("assertion failed with error message: {expected_error}");
         assert!(err.contains(&needle), "scenario {scenario}: wanted `{needle}`, got `{err}`");
@@ -164,7 +162,11 @@ fn typed_attachments_reject_excess_count_total_words_and_sealed_notes() {
 /// A scheme felt that is not a valid scheme panics in the guest before any attachment is added.
 #[test]
 fn an_invalid_scheme_from_the_script_argument_panics_in_the_guest() {
-    let (_chain, mock_tx) = build_attachment_tx(6, 0);
-    let err = execute_tx_expect_failure(mock_tx);
-    assert!(err.contains(GUEST_PANIC_CODE), "wanted a guest panic, got `{err}`");
+    for scheme in [0, 65535, 65536 + u64::from(SCHEME)] {
+        let (_chain, mock_tx) = build_attachment_tx(6, scheme);
+        let err = execute_tx_expect_failure(mock_tx);
+        // The kernel path would report "attachment scheme must not exceed 65534" instead, which
+        // this assertion rejects.
+        assert_failure_contains(&err, GUEST_PANIC_CODE);
+    }
 }

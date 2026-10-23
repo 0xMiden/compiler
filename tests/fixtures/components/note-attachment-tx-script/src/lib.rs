@@ -62,6 +62,7 @@ fn run(arg: Word, account: &mut Wallet) {
 
 /// Checks content, append order, first-match lookup and commitments for all writer paths.
 fn check_round_trip(note_idx: NoteIdx, scheme: NoteAttachmentScheme, first: Word) {
+    // The host keeps the scheme at most 65531, so `+ 3` stays a valid scheme.
     let s1 = NoteAttachmentScheme::new(scheme.as_u16() + 1).unwrap();
     let s2 = NoteAttachmentScheme::new(scheme.as_u16() + 2).unwrap();
     let absent = NoteAttachmentScheme::new(scheme.as_u16() + 3).unwrap();
@@ -84,8 +85,8 @@ fn check_round_trip(note_idx: NoteIdx, scheme: NoteAttachmentScheme, first: Word
     assert_eq!(schemes(), [Some(scheme), Some(s1), None, None]);
     NoteAttachment::with_words(scheme, &multiple).unwrap().add_to(note_idx);
 
-    // The host supplies this preimage in the advice map, which the advice-map writer consumes.
     let multi_commitment = hash_words(&multiple).inner;
+    // The host supplies this preimage in the advice map, which the advice-map writer consumes.
     let advice_commitment = hash_words(&advice).inner;
     output_note::add_attachment(note_idx, s2, advice_commitment);
 
