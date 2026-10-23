@@ -1445,6 +1445,78 @@ fn marked_canonical_executable_entrypoint_requires_same_context_convention() {
 }
 
 #[test]
+fn component_entrypoint_validation_uses_the_assembly_target() {
+    for executable in [false, true] {
+        let context = context_with_entrypoint("hir_ns::test::entry");
+        let op = parse(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START);
+        let component = op.try_downcast_op::<builtin::Component>().unwrap();
+        let mut target = library_target("hir_ns::test");
+        target.ty = if executable {
+            midenc_session::miden_project::TargetType::Executable
+        } else {
+            midenc_session::miden_project::TargetType::TransactionScript
+        };
+        let result = component.borrow().to_masm_component(
+            AnalysisManager::new(op, None),
+            super::EmissionNamespace::Target(&target),
+        );
+        assert_canonical_entrypoint_target(&context, result, &target);
+    }
+}
+
+#[test]
+fn world_entrypoint_validation_uses_the_assembly_target() {
+    for executable in [false, true] {
+        let context = context_with_entrypoint("lib::entry");
+        let world = parse_world(
+            &context,
+            r#"builtin.world {
+                builtin.module public @lib {
+                    builtin.function public extern("component-model") @entry() {
+                        builtin.ret;
+                    };
+                };
+            };"#,
+        );
+        let mut target = library_target("lib");
+        target.ty = if executable {
+            midenc_session::miden_project::TargetType::Executable
+        } else {
+            midenc_session::miden_project::TargetType::TransactionScript
+        };
+        let result = lower_world_for_target(world, &target);
+        assert_canonical_entrypoint_target(&context, result, &target);
+    }
+}
+
+/// A script export is package metadata; only an executable synthesizes a root exec invocation.
+fn assert_canonical_entrypoint_target(
+    context: &Rc<Context>,
+    result: Result<MasmComponent, Report>,
+    target: &midenc_session::miden_project::Target,
+) {
+    if target.is_executable() {
+        let err = result.err().expect("an executable must reject a context-call entrypoint");
+        assert!(err.to_string().contains("requires a same-context calling convention"), "{err}");
+    } else {
+        let lowered = result.expect("a transaction-script export is not a program entrypoint");
+        assert!(lowered.entrypoint.is_some(), "retain the selected script export");
+        assert_eq!(lowered.entrypoint_arity, None);
+        let sources = lowered.source_inputs(target, context.session()).unwrap();
+        assert!(sources.root.procedures().any(|p| p.name().as_str() == "entry"));
+        assert!(!sources.root.procedures().any(|p| p.name().is_main()));
+        let executable = midenc_session::miden_project::Target::executable(
+            "script-as-program",
+            Uri::new("script.hir"),
+        );
+        assert!(
+            lowered.source_inputs(&executable, context.session()).is_err(),
+            "packaging cannot turn an already verified library into an executable"
+        );
+    }
+}
+
+#[test]
 fn canonical_alias_entrypoint_uses_target_calling_convention() {
     let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::alias");
     let source = COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START
