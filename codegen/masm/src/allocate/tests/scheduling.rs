@@ -877,3 +877,65 @@ fn selective_trace_records_actual_store_victims() {
     );
     assert_eq!(preparation.state.slots.len(), 16);
 }
+
+#[test]
+fn alias_publication_preserves_buried_spilled_and_reconstructed_sources() {
+    for representation in 0..4 {
+        let mut values = values(22);
+        let source = if representation == 3 {
+            atom(20)
+        } else {
+            atom(19)
+        };
+        values.get_mut(&ValueId(21)).unwrap().reconstruction =
+            Some(Reconstruction::Alias(vec![source]));
+        if representation == 2 {
+            values.get_mut(&ValueId(19)).unwrap().reconstruction =
+                Some(Reconstruction::Literal(vec![miden_core::Felt::new_unchecked(73)]));
+        }
+        if representation == 3 {
+            values.get_mut(&ValueId(20)).unwrap().reconstruction =
+                Some(Reconstruction::Alias(vec![atom(19)]));
+        }
+        let mut initial = match representation {
+            1 => state(vec![], vec![(SpillSlotId::canonical(atom(19)), atom(19))]),
+            2 => state(vec![], vec![]),
+            _ => state((0..20).map(atom).collect(), vec![]),
+        };
+        initial.available_values.extend([ValueId(19), ValueId(20)]);
+        let mut request = unit(vec![], vec![]);
+        request.semantic_inputs = vec![source.value];
+        request.outputs = vec![atom(21)];
+        request.publication = OutputPublication::Aliases;
+        let mut context = context(&values);
+        for force_tier in [None, Some(SchedulingTier::Normalization)] {
+            context.options.force_tier = force_tier;
+            let preparation = prepare_unit(
+                &initial,
+                &request,
+                &BTreeSet::from([source.value, ValueId(21)]),
+                &context,
+            )
+            .unwrap();
+            assert!(preparation.actions.is_empty());
+            assert_eq!(preparation.state, initial);
+            assert!(preparation.bindings[&request.id].stored_inputs.is_empty());
+            let mut completed = preparation.state;
+            completed.complete(&request).unwrap();
+            let mut expected = initial.clone();
+            expected.available_values.insert(ValueId(21));
+            assert_eq!(completed, expected);
+            assert!(
+                context
+                    .same(&completed, StoredValue::Atom(atom(21)), StoredValue::Atom(source))
+                    .unwrap()
+            );
+        }
+        if representation != 2 {
+            let mut missing = initial.clone();
+            missing.stack.clear();
+            missing.slots.clear();
+            assert!(prepare_unit(&missing, &request, &BTreeSet::new(), &context).is_err());
+        }
+    }
+}

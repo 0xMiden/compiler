@@ -70,7 +70,8 @@ impl AllocationState {
     /// Apply a unit's declared normal completion after its input prefix has been prepared.
     ///
     /// Consumes the top-first input lanes, publishes the output lanes, invalidates facts
-    /// about redefined values, and updates scratch/provenance facts. Unit-local scratch
+    /// about redefined values, and updates scratch/provenance facts. Alias-only publication
+    /// enables checked reconstructions without consuming or producing physical lanes. Unit-local scratch
     /// does not survive completion. A nonreturning unit has no completion state.
     ///
     /// This mutates in place; a failure invalidates this state. Speculative callers must
@@ -185,8 +186,17 @@ impl AllocationState {
         }
         self.stack.drain(..unit.stack_inputs.len());
         self.available_values.retain(|value| !definitions.contains(value));
-        for atom in unit.outputs.iter().rev() {
-            self.push(*atom)?;
+        match unit.publication {
+            OutputPublication::Stack => {
+                for atom in unit.outputs.iter().rev() {
+                    self.push(*atom)?;
+                }
+            }
+            OutputPublication::Aliases => {
+                // Forget stale semantic facts above, but preserve occurrences and storage.
+                // Checked reconstructions now make these complete output names available.
+                self.available_values.extend(definitions);
+            }
         }
         self.addresses.extend(unit.address_results.iter().copied());
         Ok(())

@@ -658,13 +658,41 @@ impl<'a> Verifier<'a> {
         if active.call != evidence.calls.iter().filter(|site| site.path.is_empty()).count() {
             return Err(error("required registered invocation omitted"));
         }
-        let suffix = &active.incoming.stack[unit.stack_inputs.len()..];
-        if state.stack.get(unit.outputs.len()..) != Some(suffix) {
-            return Err(fail(
-                DiagnosticCategory::UnavailableValue,
-                "lowering changed preserved suffix or failed output cleanup",
-            ));
-        }
+        let outputs = match unit.publication {
+            OutputPublication::Stack => {
+                let suffix = &active.incoming.stack[unit.stack_inputs.len()..];
+                if state.stack.get(unit.outputs.len()..) != Some(suffix) {
+                    return Err(fail(
+                        DiagnosticCategory::UnavailableValue,
+                        "lowering changed preserved suffix or failed output cleanup",
+                    ));
+                }
+                state.stack[..unit.outputs.len()].to_vec()
+            }
+            OutputPublication::Aliases => {
+                let incoming = &active.incoming;
+                if state.stack != incoming.stack
+                    || state.cells != incoming.cells
+                    || state.slots != incoming.slots
+                    || state.padding != incoming.padding
+                    || state.contents != incoming.contents
+                    || state.written != incoming.written
+                    || state.results != incoming.results
+                {
+                    return Err(fail(
+                        DiagnosticCategory::UnavailableValue,
+                        "alias publication changed physical state",
+                    ));
+                }
+                super::reconstruction::alias_outputs(
+                    &self.plan.selected,
+                    &unit.outputs,
+                    incoming,
+                    &self.tokens,
+                    self.frame,
+                )?
+            }
+        };
         for (offset, token) in &active.readonly {
             if state.cells.get(offset) != Some(token) {
                 return Err(fail(
@@ -673,23 +701,29 @@ impl<'a> Verifier<'a> {
                 ));
             }
         }
+        // Alias publication names semantic results without placing them on the stack.
+        // Report their resolved tokens and reserve raw depth for stack publications.
+        let output_error = |category, message, index: usize| {
+            let mut diagnostic = fail(category, message).expecting(unit.outputs[index]);
+            diagnostic.actual = Self::actual_atom(state, outputs[index]);
+            if unit.publication == OutputPublication::Stack {
+                diagnostic.depth = Some(index);
+            }
+            diagnostic
+        };
         for (index, atom) in unit.outputs.iter().enumerate() {
             if state.results.iter().any(|((output, _), required)| {
-                output == atom && !required.satisfied(state.stack[index], &self.tokens)
+                output == atom && !required.satisfied(outputs[index], &self.tokens)
             }) {
-                return Err(fail(
+                return Err(output_error(
                     DiagnosticCategory::AbiMismatch,
                     "cleanup destroyed signature result or published nonresult lane",
-                )
-                .mismatch(
                     index,
-                    *atom,
-                    Self::actual_atom(state, state.stack[index]),
                 ));
             }
         }
         for (index, atom) in unit.outputs.iter().enumerate() {
-            let token = state.stack[index];
+            let token = outputs[index];
             if !super::reconstruction::matches(
                 &self.plan.selected,
                 *atom,
@@ -697,34 +731,26 @@ impl<'a> Verifier<'a> {
                 &active.incoming,
                 &self.tokens,
             )? {
-                return Err(fail(
+                return Err(output_error(
                     DiagnosticCategory::UnavailableValue,
                     "output violates checked reconstruction identity",
-                )
-                .mismatch(
                     index,
-                    *atom,
-                    Self::actual_atom(state, state.stack[index]),
                 ));
             }
             if let Some(source) = evidence.aliases.source(*atom)
                 && active.incoming.token(source)? != token
             {
-                return Err(fail(
+                return Err(output_error(
                     DiagnosticCategory::UnavailableValue,
                     "alias output does not equal registered input",
-                )
-                .mismatch(
                     index,
-                    *atom,
-                    Self::actual_atom(state, state.stack[index]),
                 ));
             }
         }
         for (a, b) in &evidence.equal_outputs {
             let a = super::result_index(*a, unit.outputs.len())?;
             let b = super::result_index(*b, unit.outputs.len())?;
-            if state.stack[a] != state.stack[b] {
+            if outputs[a] != outputs[b] {
                 return Err(fail(
                     DiagnosticCategory::UnavailableValue,
                     "registered output equality was not established",
@@ -734,7 +760,7 @@ impl<'a> Verifier<'a> {
         for (reference, index) in &evidence.scratch_outputs {
             let offset = self.frame.resolve(*reference)?.into();
             let index = super::result_index(*index, unit.outputs.len())?;
-            if memory::read(state, offset, self.frame)? != state.stack[index] {
+            if memory::read(state, offset, self.frame)? != outputs[index] {
                 return Err(fail(
                     DiagnosticCategory::InvalidSpillSlotRead,
                     "scratch/output equality was not established",
@@ -752,7 +778,7 @@ impl<'a> Verifier<'a> {
                 offset: fact.offset,
             })?);
             let allocation = &self.frame.scratch()[&fact.object];
-            if self.tokens.frame_address(state.stack[index]) != Some(offset)
+            if self.tokens.frame_address(outputs[index]) != Some(offset)
                 || fact.offset.checked_add(fact.accessible).is_none_or(|end| end > allocation.size)
             {
                 return Err(fail(
@@ -762,7 +788,7 @@ impl<'a> Verifier<'a> {
             }
         }
         // Publication binds names to existing tokens and does not rename stack or memory.
-        for (atom, token) in unit.outputs.iter().zip(&state.stack) {
+        for (atom, token) in unit.outputs.iter().zip(&outputs) {
             state.names.insert(*atom, *token);
         }
         for effect in &unit.scratch_effects {

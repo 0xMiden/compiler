@@ -113,6 +113,21 @@ impl Default for LoweringEffects {
         }
     }
 }
+/// How a complete semantic result becomes available at a lowering boundary.
+///
+/// Most units produce a physical prefix. Representation-preserving operations can instead
+/// introduce names for existing values, avoiding moves solely to expose an otherwise unused
+/// result prefix. Selection, not the allocator, authorizes this distinction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OutputPublication {
+    /// Outputs occupy the top-first physical prefix after the unit consumes its inputs.
+    Stack,
+    /// Outputs use checked alias reconstructions from preceding semantic inputs. The unit has
+    /// no physical inputs, storage bindings, scratch, address results, or effects; replay must
+    /// establish every source's recoverability and preserve physical state unchanged.
+    Aliases,
+}
+
 /// One allocation boundary whose internal instruction sequence is owned by a lowering definition.
 /// Allocation arranges the declared stack prefix and stored inputs, then preserves all other
 /// live values across the unit. Source checking seals the semantic contract before allocation.
@@ -129,6 +144,8 @@ pub(crate) struct SelectedLowering {
     pub stored_inputs: Vec<StoredInput>,
     /// Normal completion publishes every lane of each defined value exactly once.
     pub outputs: Vec<Atom>,
+    /// Whether these complete definitions require a physical output prefix.
+    pub publication: OutputPublication,
     /// Normal output pointers equal declared spanning-scratch addresses; contents are separate.
     pub address_results: Vec<AddressFact>,
     pub effects: LoweringEffects,

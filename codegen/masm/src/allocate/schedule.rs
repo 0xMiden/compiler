@@ -75,6 +75,18 @@ pub(crate) fn prepare_unit(
 ) -> Result<Preparation, AllocationError> {
     let needs = normalize::requirements(unit, live_after, context)?;
     let mut base = Trial::new(state, context, SlotOwner::Unit(unit.id));
+    if unit.publication == OutputPublication::Aliases {
+        // Alias publication consumes nothing. Even forced fallback must not drain a buried
+        // source simply to introduce another semantic name for its existing representation.
+        if !valid(&base, unit, &needs)? {
+            return Err(invariant(
+                DiagnosticCategory::UnavailableValue,
+                "alias publication source is not recoverable",
+            ));
+        }
+        normalize::bind_inputs(&mut base, unit, &needs.needed)?;
+        return Ok(Preparation::finish(base));
+    }
     // A buried stored source can require a drain before it can be bound. A failed private
     // setup must not prevent that full construction from running on the original state.
     if normalize::bind_inputs(&mut base, unit, &needs.needed).is_ok() {
@@ -123,6 +135,7 @@ pub(super) fn prepare_control(
         stack_inputs: alloc::vec![predicate],
         stored_inputs: Vec::new(),
         outputs: Vec::new(),
+        publication: OutputPublication::Stack,
         address_results: Vec::new(),
         effects: LoweringEffects::default(),
         scratch: Vec::new(),
