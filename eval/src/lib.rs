@@ -169,4 +169,6 @@ fn eval_wasm_dialect(info: &mut ::midenc_hir::DialectInfo) {
 
 fn eval_debuginfo_dialect(info: &mut ::midenc_hir::DialectInfo) {
     info.register_operation_trait::<debuginfo::DebugValue, dyn Eval>();
+    info.register_operation_trait::<debuginfo::DebugDeclare, dyn Eval>();
+    info.register_operation_trait::<debuginfo::DebugKill, dyn Eval>();
 }
