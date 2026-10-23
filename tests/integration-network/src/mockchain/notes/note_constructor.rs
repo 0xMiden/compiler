@@ -209,7 +209,7 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
     // an op batch its stores no longer fill), the `p2id` constructor's four (14 cycles: 12, and 2
     // for padding `noop`s), and the wallet's three, once for each of `create_note` and
     // `move_asset_to_note` (10 cycles each).
-    expect!["9126"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["9124"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();

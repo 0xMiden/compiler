@@ -1,0 +1,75 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(transform-spills))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(transform-spills,transform-spills))' | filecheck %s
+
+builtin.module public @test {
+    // CHECK-LABEL: @tracked_reload
+    // CHECK: di.debug_value %[[ORIGINAL:\d+]] {{.*}}name = "before"
+    // CHECK: hir.store_local %[[ORIGINAL]] <{ local = #builtin.local_variable<[[SPILL:\d+]], u32> }>
+    // CHECK: hir.exec
+    // CHECK: %[[RELOADED:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[SPILL]], u32> }>;
+    // CHECK: %[[SUM:\d+]] = arith.add %[[RELOADED]], %{{\d+}}
+    // CHECK-NEXT: di.debug_value %[[SUM]] {{.*}}name = "computed"
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "after"
+    // CHECK-NEXT: builtin.ret %[[SUM]]
+    builtin.function public extern("C") @tracked_reload(%0: u32, %1: u128) -> u32 {
+        di.debug_value %0 <{ variable = #di.variable<{ name = "before", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+        %2 = hir.exec ::@test::@consume(%1, %1, %1, %1) : extern("C") (u128, u128, u128, u128) -> u32;
+        %3 = arith.add %0, %2 <{ overflow = #builtin.overflow<unchecked> }>;
+        di.debug_value %3 <{ variable = #di.variable<{ name = "computed", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+        di.debug_value %0 <{ variable = #di.variable<{ name = "after", file = "test.rs", line = 4 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %3 : (u32);
+    };
+
+    // CHECK-LABEL: @tracked_join
+    // CHECK: cf.cond_br
+    // CHECK: hir.store_local %[[LIVE:\d+]] <{ local = #builtin.local_variable<[[SLOT:\d+]], u32> }>
+    // CHECK: hir.exec
+    // CHECK: hir.store_local %[[LIVE]] <{ local = #builtin.local_variable<[[SLOT]], u32> }>
+    // CHECK: hir.exec
+    // CHECK: %[[JOIN_RELOAD:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[SLOT]], u32> }>;
+    // CHECK: %[[RESULT:\d+]] = arith.add %[[JOIN_RELOAD]], %{{\d+}}
+    // CHECK-NEXT: di.debug_value %[[RESULT]] {{.*}}name = "joined"
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "kept"
+    // CHECK-NEXT: builtin.ret %[[RESULT]]
+    builtin.function public extern("C") @tracked_join(%0: i1, %1: u128, %2: u32) -> u32 {
+        cf.cond_br %0 ^left, ^right : (i1);
+    ^left:
+        %3 = hir.exec ::@test::@consume(%1, %1, %1, %1) : extern("C") (u128, u128, u128, u128) -> u32;
+        cf.br ^join(%3 : u32);
+    ^right:
+        %4 = hir.exec ::@test::@consume(%1, %1, %1, %1) : extern("C") (u128, u128, u128, u128) -> u32;
+        cf.br ^join(%4 : u32);
+    ^join(%5: u32):
+        %6 = arith.add %2, %5 <{ overflow = #builtin.overflow<unchecked> }>;
+        di.debug_value %6 <{ variable = #di.variable<{ name = "joined", file = "test.rs", line = 5 }>, expression = #di.expression<[]> }> : (u32);
+        di.debug_value %2 <{ variable = #di.variable<{ name = "kept", file = "test.rs", line = 6 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %6 : (u32);
+    };
+
+    // CHECK-LABEL: @tracked_phi
+    // CHECK: hir.store_local %{{\d+}}
+    // CHECK: hir.exec
+    // CHECK: %[[PHI_RELOAD:\d+]] = hir.load_local
+    // CHECK: cf.br ^[[JOIN:block\d+]](%{{\d+}}, %[[PHI_RELOAD]] : u32, u32)
+    // CHECK: ^[[JOIN]](%{{\d+}}: u32, %[[PHI:\d+]]: u32):
+    // CHECK: %[[PHI_SUM:\d+]] = arith.add %[[PHI]], %{{\d+}}
+    // CHECK-NEXT: di.debug_value %[[PHI_SUM]] {{.*}}name = "phi_sum"
+    // CHECK-NEXT: builtin.ret %[[PHI_SUM]]
+    builtin.function public extern("C") @tracked_phi(%0: i1, %1: u128, %2: u32) -> u32 {
+        cf.cond_br %0 ^left, ^right : (i1);
+    ^left:
+        %3 = hir.exec ::@test::@consume(%1, %1, %1, %1) : extern("C") (u128, u128, u128, u128) -> u32;
+        cf.br ^join(%3 : u32);
+    ^right:
+        %4 = arith.constant 1 : u32;
+        cf.br ^join(%4 : u32);
+    ^join(%5: u32):
+        %6 = arith.add %2, %5 <{ overflow = #builtin.overflow<unchecked> }>;
+        di.debug_value %6 <{ variable = #di.variable<{ name = "phi_sum", file = "test.rs", line = 7 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %6 : (u32);
+    };
+
+    builtin.function public extern("C") @consume(%0: u128, %1: u128, %2: u128, %3: u128) -> u32 {
+        builtin.ret_imm 42 : u32;
+    };
+};
