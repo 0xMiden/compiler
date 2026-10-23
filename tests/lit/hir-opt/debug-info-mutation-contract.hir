@@ -26,7 +26,8 @@
 
 builtin.module public @debug_mutation_contract {
     // EQUIVALENT: @entrypoint(%[[FIRST:\d+]]: u32, %[[SECOND:\d+]]: u32)
-    // EQUIVALENT: di.debug_value %[[SECOND]] {{.*}}name = "x"
+    // EQUIVALENT-NEXT: %[[EQUIVALENT:\d+]] = arith.bxor %[[FIRST]], %[[SECOND]]
+    // EQUIVALENT-NEXT: di.debug_value %[[EQUIVALENT]] {{.*}}name = "x"
     // EQUIVALENT-NEXT: di.debug_kill {{.*}}name = "x"
     // EQUIVALENT-NEXT: builtin.ret %[[FIRST]]
     // CLONE: @entrypoint(%[[ORIGINAL:\d+]]: u32, %[[OTHER:\d+]]: u32)
