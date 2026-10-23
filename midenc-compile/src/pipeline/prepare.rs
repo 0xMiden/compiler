@@ -2462,25 +2462,9 @@ namespace = "miden::prepare_fixture::prepare_fixture"
         );
     }
 
-    /// A file declaring several top-level modules declares no namespace, and codegen agrees.
-    ///
-    /// The scan says nothing because there is no single declaration to read, so the artifact name
-    /// stands. That used to *disagree* with codegen, whose `_` arm in
-    /// `world_body_to_masm_component`'s `match toplevel_namespaces.len()` roots at the constant
-    /// `::init` — a name no file declares and no synthesized namespace can equal. Mirroring that
-    /// constant here was refused, because it would put one value in two places that must agree
-    /// and would let such a build assemble under a namespace no source claimed.
-    ///
-    /// Codegen closed it instead: `MasmComponent::source_inputs` re-roots a component-less world
-    /// at its target's namespace, exactly as it does the synthetic wrapper. The second assertion
-    /// is what makes this pair an oracle rather than two independent claims — it lowers the very
-    /// project preparation synthesized, and requires the path codegen hands the assembler to be
-    /// the namespace preparation chose, which is the equality `load_target_sources` enforces.
-    ///
-    /// It does not follow that such a file *builds*: the modules it declares are siblings of the
-    /// re-rooted placeholder rather than children of it, so they stay outside the namespace and
-    /// assembly still fails — on that, now, rather than on a namespace mismatch. See
-    /// `a_world_of_several_modules_is_rooted_at_the_target_namespace` in `codegen/masm`.
+    /// Several top-level modules declare no single namespace, so preparation uses the artifact
+    /// name. If that name collides with a sibling module, lowering rejects the distinct owners
+    /// before selection instead of deferring the conflict to assembly.
     #[test]
     fn a_hir_root_declaring_several_top_level_modules_declares_nothing() {
         let source =
@@ -2499,6 +2483,25 @@ namespace = "miden::prepare_fixture::prepare_fixture"
             "::lib",
             "two modules declare no single namespace, so the artifact name stands"
         );
+        let err = lower_prepared_hir(&prepared)
+            .err()
+            .expect("the synthetic root and authored module cannot both own ::lib");
+        assert!(err.to_string().contains("duplicate final module owner '::lib'"), "{err}");
+    }
+
+    #[test]
+    fn a_hir_root_with_several_modules_uses_a_noncolliding_target_namespace() {
+        let source =
+            format!("builtin.world {{{}{}}};\n", MODULE, MODULE.replace("@lib", "@second"));
+        let prepared = prepare_standalone_source(
+            "prepare_standalone_hir_two_modules_named",
+            "lib.hir",
+            &source,
+            &registry_with_hir(),
+            |options| options.name = Some("example".to_string()),
+        )
+        .expect("an explicitly named world of two modules should prepare");
+        assert_eq!(prepared.target.namespace.inner().as_str(), "::example");
         assert_eq!(
             lower_prepared_hir(&prepared)
                 .expect("the fixture should lower")
