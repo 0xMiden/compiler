@@ -195,8 +195,8 @@ pub fn metadata_into_sender(metadata: Word) -> AccountId {
 ///
 /// # Panics
 ///
-/// Panics if a slot holds `65535`, which is not a valid scheme. Metadata produced by the kernel
-/// never holds it; for a hand-built metadata word that may, use
+/// Panics if a slot holds `65535`, which is not a valid scheme. The metadata of notes the kernel
+/// created or the protocol validated never holds it; for a hand-built metadata word that may, use
 /// [`miden::raw::protocol::note::metadata_into_attachment_schemes`](raw::metadata_into_attachment_schemes),
 /// which returns the raw `u16`s.
 pub fn metadata_into_attachment_schemes(metadata: Word) -> [Option<NoteAttachmentScheme>; 4] {

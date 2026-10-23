@@ -93,11 +93,12 @@ The same holds for `output_note::{add_attachment, add_attachment_from_memory, fi
 `input_note::find_attachment`, `note::find_attachment_idx` and the `ActiveNote::find_attachment`
 trait method. `note::metadata_into_attachment_schemes` returns the four schemes as
 `[Option<NoteAttachmentScheme>; 4]` instead of a `Word` of felts, with `None` for a slot without
-an attachment. It panics only for metadata the kernel did not produce: a hand-built word with a
-slot holding `65535`, an invalid scheme. `NoteAttachment::with_word(scheme, word)` builds a
-one-word attachment; `NoteAttachment::with_words(scheme, &words)` checks the content length
-(`1..=256` words) and returns a `NoteAttachmentError` otherwise. `add_to(note_idx)` appends an
-attachment to an output note.
+an attachment. It never panics for the metadata of notes the kernel created or the protocol
+validated; a hand-built word can hold `65535`, an invalid scheme, and panics.
+`NoteAttachment::with_word(scheme, word)` builds a one-word attachment;
+`NoteAttachment::with_words(scheme, &words)` checks the content length (`1..=256` words) and
+returns a `NoteAttachmentError` otherwise. `add_to(note_idx)` appends an attachment to an output
+note.
 
 The WIT `core-types` records `tag`, `note-idx` and `note-type` changed with the types
 (`inner: u32`/`u16`/`u8` instead of `felt`), and they cross component boundaries: the basic
