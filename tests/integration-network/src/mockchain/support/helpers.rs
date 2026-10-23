@@ -257,8 +257,8 @@ pub(crate) fn execute_tx_expect_failure(mock_tx: MockTransaction) -> String {
     }
 }
 
-/// The VM assertion message every guest panic reports: the error code of the `unreachable`
-/// lowering's message, as `stored_procedure/rust_sibling.rs` derives its own codes.
+/// The VM assertion message every guest panic reports: the `unreachable` lowering's `assert.err`
+/// message, hashed as the assembler does.
 pub(crate) fn guest_panic_code() -> String {
     format!(
         "assertion failed with error code: {}",
@@ -487,8 +487,8 @@ mod tests {
 
     use super::{TxScriptArgs, guest_panic_code};
 
-    /// Pins the derived guest panic code to the value earlier guest builds reported, so a change
-    /// to the `unreachable` lowering's message shows up here.
+    /// Pins the code to the value the VM reported for earlier guest builds, so a change to
+    /// `error_code_from_msg` or to the message literal above shows up here.
     #[test]
     fn guest_panic_code_matches_the_reported_code() {
         assert_eq!(guest_panic_code(), "assertion failed with error code: 10154102372021603817");

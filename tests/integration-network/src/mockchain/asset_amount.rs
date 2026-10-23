@@ -28,9 +28,9 @@ use midenc_integration_test_support::{cargo_proj::Project, project};
 
 use super::support::{
     account_cargo_toml_for, account_miden_project_toml_with_interface,
-    assert_account_has_fungible_asset, build_send_notes_script, compile_rust_package, execute_tx,
-    execute_tx_expect_failure, guest_panic_code, note_cargo_toml_for_dependency,
-    note_miden_project_toml_for_dependency, note_script_root,
+    assert_account_has_fungible_asset, assert_failure_contains, build_send_notes_script,
+    compile_rust_package, execute_tx, execute_tx_expect_failure, guest_panic_code,
+    note_cargo_toml_for_dependency, note_miden_project_toml_for_dependency, note_script_root,
 };
 
 /// Project name of the generated wallet account component.
@@ -416,9 +416,6 @@ fn asset_shape_checks_match_the_kernel_on_chain() {
             .unwrap();
         let err = execute_tx_expect_failure(tx);
         eprintln!("{label} aborted the transaction: {err}");
-        assert!(
-            err.contains(&guest_panic_code()),
-            "{label} failed for an unexpected reason: {err}"
-        );
+        assert_failure_contains(&err, &guest_panic_code());
     }
 }
