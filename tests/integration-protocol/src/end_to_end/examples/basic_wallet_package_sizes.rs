@@ -23,7 +23,7 @@ fn basic_wallet_and_p2id() {
     // to their declared types (`push.255 u32and`, `push.65535 u32and`); and — new with the
     // integer newtypes — the component masks the `u8` note type and the `u16` note index as it
     // lifts them from its arguments, where it lifted felts before.
-    expect!["8844"].assert_eq(stripped_mast_size_str(&account_package).as_str());
+    expect!["9069"].assert_eq(stripped_mast_size_str(&account_package).as_str());
 
     let tx_script_package = compile_project(Path::new("../../examples/basic-wallet-tx-script"));
     assert!(tx_script_package.is_library(), "expected library");
@@ -69,7 +69,7 @@ fn basic_wallet_and_p2id() {
     // 48 bytes more (15238 before) with the spill fixes for structured branches (#1422): the
     // script's last `scf.if` evicts its own condition, which is used again after the if, so the
     // condition is stored before the if and reloaded at that use.
-    expect!["15314"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
+    expect!["16611"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
 
     let note_package = compile_project(Path::new("../../examples/p2id-note"));
     assert!(note_package.is_library(), "expected library");
@@ -94,7 +94,7 @@ fn basic_wallet_and_p2id() {
     // 46 bytes fewer (20436 before) with no `u32assert` on a constant-address 32-bit store: one
     // fewer per 32-bit global initializer. The note's `init` stores four such globals, 11 bytes
     // per assertion and 2 padding `noop`s its shorter block no longer needs.
-    expect!["20390"].assert_eq(stripped_mast_size_str(&note_package).as_str());
+    expect!["22287"].assert_eq(stripped_mast_size_str(&note_package).as_str());
     // The note package exports both the note script and the `build_recipient` constructor; the
     // constructor must not interfere with the `@note_script`-attributed export selection.
     assert!(
@@ -115,5 +115,5 @@ fn basic_wallet_and_p2id() {
     // that undo each other, such as `swap.1 swap.1` (51 bytes fewer). 16374 before the
     // `u32assert` on a constant-address 32-bit store went, one fewer per 32-bit global
     // initializer: 46 bytes fewer, as for the P2ID note above.
-    expect!["16328"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
+    expect!["19446"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
 }

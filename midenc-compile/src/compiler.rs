@@ -460,7 +460,7 @@ pub struct CodegenOptions {
             long = "panic",
             value_enum,
             value_name = "STRATEGY",
-            default_value = "immediate-abort",
+            default_value = "abort",
         )
     )]
     pub panic_strategy: PanicStrategy,
@@ -920,10 +920,10 @@ mod tests {
     }
 
     #[test]
-    fn panic_strategy_defaults_to_immediate_abort() {
-        assert_eq!(options(&[]).panic_strategy, PanicStrategy::ImmediateAbort);
-        assert_eq!(Options::default().panic_strategy, PanicStrategy::ImmediateAbort);
-        assert_eq!(CodegenOptions::default().panic_strategy, PanicStrategy::ImmediateAbort);
+    fn panic_strategy_defaults_to_abort() {
+        assert_eq!(options(&[]).panic_strategy, PanicStrategy::Abort);
+        assert_eq!(Options::default().panic_strategy, PanicStrategy::Abort);
+        assert_eq!(CodegenOptions::default().panic_strategy, PanicStrategy::Abort);
     }
 
     #[test]

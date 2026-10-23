@@ -122,7 +122,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
     // globals (14 cycles: 12 for the assertions, 2 for padding `noop`s), and the wallet's, run
     // once for `receive_asset`, three (10 cycles: 9, and 1 for an op batch its stores no longer
     // fill).
-    expect!["4930"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["5011"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -174,7 +174,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
     // 12 cycles more (6660 before) with the spill fixes for structured branches (#1422): the
     // script's last `scf.if` evicts its own condition, which is used again after the if, so the
     // condition is stored before the if and reloaded at that use.
-    expect!["6692"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["6791"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
@@ -187,7 +187,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
     // 5018 before casts that change only a type became renames and the stack peephole was added,
     // 4954 before the `u32assert` on a constant-address 32-bit store went (see Step 2).
-    expect!["4930"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["5011"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -336,7 +336,7 @@ pub fn basic_wallet_p2ide_allows_recipient_claim() {
     // The P2IDE note's `init` stores four such globals and the wallet's, run once for
     // `receive_asset`, three: 14 and 10 cycles, as for the P2ID note in
     // `basic_wallet_p2id_transfers_asset_with_custom_tx_script`.
-    expect!["5345"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["5390"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify balances
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -483,7 +483,7 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
     // that undo each other, such as `swap.1 swap.1` (57 fewer). 24 fewer (5925 before) with no
     // `u32assert` on a constant-address 32-bit store, as in
     // `basic_wallet_p2ide_allows_recipient_claim`.
-    expect!["5901"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["5958"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify Alice has her original amount back
     let alice_account = chain.committed_account(alice_id).unwrap();

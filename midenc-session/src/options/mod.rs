@@ -511,9 +511,9 @@ pub enum OptLevel {
 #[cfg_attr(feature = "std", derive(clap::ValueEnum))]
 pub enum PanicStrategy {
     /// Invoke the crate's panic handler, then abort.
+    #[default]
     Abort,
     /// Trap immediately without invoking the panic handler.
-    #[default]
     ImmediateAbort,
 }
 
