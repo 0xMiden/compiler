@@ -94,8 +94,9 @@ The same holds for `output_note::{add_attachment, add_attachment_from_memory, fi
 trait method. `note::metadata_into_attachment_schemes` returns the four schemes as
 `[Option<NoteAttachmentScheme>; 4]` instead of a `Word` of felts, with `None` for a slot without
 an attachment. It never panics for the metadata of notes the kernel created or the protocol
-validated; a hand-built word can hold `65535`, an invalid scheme, and panics.
-`NoteAttachment::with_word(scheme, word)` builds a one-word attachment;
+validated; for a hand-built word holding `65535`, an invalid scheme, the function panics;
+`miden::raw::protocol::note::metadata_into_attachment_schemes` returns the raw `u16`s for such a
+word. `NoteAttachment::with_word(scheme, word)` builds a one-word attachment;
 `NoteAttachment::with_words(scheme, &words)` checks the content length (`1..=256` words) and
 returns a `NoteAttachmentError` otherwise. `add_to(note_idx)` appends an attachment to an output
 note.
