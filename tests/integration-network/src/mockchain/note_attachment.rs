@@ -21,6 +21,11 @@ use super::support::{
     transaction_script_from_package_with_deps,
 };
 
+/// The kernel's message for an attachment index at or above the note's attachment count
+/// (`ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS` in the protocol's `note_internal.masm`), which the
+/// protocol crate does not export as a Rust constant.
+const ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS: &str = "attachment index out of bounds";
+
 /// Scheme the host passes to the guest; the round-trip scenario also uses
 /// `SCHEME + 1..=SCHEME + 3`, so it must stay at most 65531.
 const SCHEME: u16 = 42;
@@ -196,4 +201,45 @@ fn the_guest_reports_the_scheme_conversion_outcome() {
             "scheme felt {scheme}"
         );
     }
+}
+
+/// The compiled felt-repr scheme decoder's accept and reject branches are observed through the
+/// attachment the guest writes; the guest also checks the index decoder.
+#[test]
+fn the_guest_decodes_felt_encodings() {
+    let max = u64::from(NoteAttachmentScheme::MAX.as_u16());
+    for (scheme, expected) in [
+        (42, [0, 42]),
+        (max, [0, max]),
+        (0, [1, 0]),
+        (max + 1, [1, max + 1]),
+        (65536, [1, 65536]),
+        (Felt::ORDER - 1, [1, Felt::ORDER - 1]),
+    ] {
+        let (mut chain, mock_tx) = build_attachment_tx(7, scheme);
+        let executed_tx = execute_tx(&mut chain, mock_tx);
+        let [tag, value] = expected.map(|felt| Felt::new(felt).unwrap());
+        let outcome = Word::from([tag, value, Felt::ZERO, Felt::ZERO]);
+        let expected = NoteAttachments::new(vec![NoteAttachment::with_word(
+            NoteAttachmentScheme::none(),
+            outcome,
+        )])
+        .unwrap();
+        assert_eq!(
+            executed_tx.output_notes().get_note(0).attachments(),
+            &expected,
+            "scheme felt {scheme}"
+        );
+    }
+}
+
+/// The kernel rejects an index the SDK accepts but the note does not have.
+#[test]
+fn reading_a_missing_attachment_index_fails_in_the_kernel() {
+    let (_chain, mock_tx) = build_attachment_tx(8, SCHEME.into());
+    let err = execute_tx_expect_failure(mock_tx);
+    assert_failure_contains(
+        &err,
+        &format!("assertion failed with error message: {ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS}"),
+    );
 }
