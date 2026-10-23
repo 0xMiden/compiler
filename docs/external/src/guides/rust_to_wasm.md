@@ -50,16 +50,20 @@ crate-type = ["cdylib"]
 
 # When we build for Wasm, we'll use the release profile
 [profile.release]
-# Explicitly disable panic infrastructure on Wasm, as
-# there is no proper support for them anyway, and it
-# ensures that panics do not pull in a bunch of standard
-# library code unintentionally
+# Set the Rust panic mode for this Wasm artifact.
 panic = "abort"
 # Enable debug information so that we get useful debugging output
 debug = true
 # Optimize the output for size
 opt-level = "z"
 ```
+
+Cargo-based Miden builds default to `immediate-abort`, which traps without invoking the crate's panic
+handler. It is also possible to choose Rust's `abort` panic strategy, which invokes the handler but can
+introduce call graph cycles that Miden does not yet support. Projects that avoid these cycles can
+already use it to print static panic messages. See
+[Rust panic strategy](../usage/midenc.md#rust-panic-strategy) for details. These settings do not affect
+prebuilt Wasm input, including the artifact built in this guide.
 
 Most of these things are done to keep the generated code size as small as possible. Miden is a target
 where the conventional wisdom about performance should be treated very carefully: we're almost always
