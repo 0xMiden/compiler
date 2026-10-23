@@ -30,6 +30,9 @@ fn preparation_cost_matches_assembled_stack_operations() -> Result<(), midenc_hi
     use crate::allocate::schedule::action_cost;
 
     let mut cases = Vec::new();
+    for word in 1..=3 {
+        cases.push((PlanAction::SwapWord { word }, Primitive::SwapWord(word)));
+    }
     for depth in 0..16 {
         cases.push((PlanAction::Dup { depth }, Primitive::Dup(depth)));
         if depth != 0 {
@@ -78,6 +81,12 @@ fn execute(stack: &mut Vec<Atom>, slots: &mut BTreeMap<SpillSlotId, Atom>, actio
             PlanAction::Swap { depth } => {
                 assert!(depth < 16);
                 stack.swap(0, usize::from(depth));
+            }
+            PlanAction::SwapWord { word } => {
+                assert!((1..=3).contains(&word));
+                for lane in 0..4 {
+                    stack.swap(lane, usize::from(word) * 4 + lane);
+                }
             }
             PlanAction::MoveUp { depth } => {
                 assert!(depth < 16);
@@ -583,6 +592,181 @@ fn grouped_actions_preserve_unequal_widths_and_deeper_lanes() {
         let frame = fixture_frame(&plan);
         verify_assemble_execute(&plan, &frame, &fixture_body(&plan, &frame), lanes);
     }
+}
+
+#[test]
+fn aligned_word_preparation_uses_one_vm_operation() {
+    for word in 1..=3 {
+        let mut order = [0, 1, 2, 3];
+        order.swap(0, word);
+        let inputs = order
+            .into_iter()
+            .flat_map(|id| (0..4).map(move |lane| Atom::new(ValueId(id), lane)))
+            .collect();
+        let (plan, preparation, _) = checked_case(
+            vec![Type::U128; 4],
+            vec![],
+            unit(inputs, vec![]),
+            BTreeSet::new(),
+            forced(SchedulingTier::Stack),
+        );
+        assert_eq!(crate::allocate::schedule::action_cost(&preparation.actions), 1);
+        assert_eq!(preparation.actions, vec![PlanAction::SwapWord { word: word as u8 }]);
+        let frame = fixture_frame(&plan);
+        verify_assemble_execute(&plan, &frame, &fixture_body(&plan, &frame), 16);
+    }
+}
+
+#[test]
+fn raw_word_swaps_preserve_occurrences_and_reject_incomplete_ownership() {
+    use crate::allocate::{schedule::shuffle, storage::Trial};
+
+    let values = values(40);
+    let context = context(&values);
+    for word in 1..=3 {
+        for depth in [usize::from(word) * 4 + 4, 40] {
+            let initial = state((0..depth as u32).map(atom).collect(), vec![]);
+            let mut trial = Trial::new(&initial, &context, SlotOwner::Unit(SelectedStepId(0)));
+            let mut expected = initial.stack.clone();
+            for lane in 0..4 {
+                expected.swap(lane, usize::from(word) * 4 + lane);
+            }
+            shuffle(&mut trial, PlanAction::SwapWord { word }).unwrap();
+            assert_eq!(trial.state.stack, expected);
+            assert_eq!(trial.state.next_occurrence, initial.next_occurrence);
+            assert_eq!(trial.actions, vec![PlanAction::SwapWord { word }]);
+        }
+    }
+    for (word, depth) in [(0, 40), (4, 40), (255, 40), (1, 7), (2, 11), (3, 15)] {
+        let initial = state((0..depth).map(atom).collect(), vec![]);
+        let mut trial = Trial::new(&initial, &context, SlotOwner::Unit(SelectedStepId(0)));
+        let crate::allocate::state::AllocationError::Invariant(error) =
+            shuffle(&mut trial, PlanAction::SwapWord { word }).unwrap_err()
+        else {
+            panic!("expected an invalid owned-window diagnostic")
+        };
+        assert_eq!(error.category, DiagnosticCategory::IllegalStackAccess);
+        assert_eq!(trial.state.stack, initial.stack);
+        assert_eq!(trial.state.next_occurrence, initial.next_occurrence);
+        assert!(trial.actions.is_empty());
+    }
+}
+
+#[test]
+fn single_word_candidate_handles_partial_layouts_without_grouped_search() {
+    for refuse_solver in [false, true] {
+        let mut types = vec![Type::U128];
+        types.extend(core::iter::repeat_n(Type::Felt, 20));
+        let (plan, preparation, _) = checked_case(
+            types,
+            vec![PlanAction::Drop],
+            unit((2..6).map(atom).collect(), vec![]),
+            BTreeSet::from([ValueId(1), ValueId(20)]),
+            AllocationOptions {
+                refuse_solver,
+                ..Default::default()
+            },
+        );
+        assert_eq!(preparation.tier, SchedulingTier::Stack);
+        assert_eq!(preparation.actions, vec![PlanAction::SwapWord { word: 1 }]);
+        let frame = fixture_frame(&plan);
+        verify_assemble_execute(&plan, &frame, &fixture_body(&plan, &frame), 24);
+    }
+
+    // A second use of the same input needs a distinct occurrence; swapping cannot invent it.
+    let (_, preparation, _) = checked_case(
+        vec![Type::Felt; 8],
+        vec![],
+        unit(vec![atom(4), atom(4)], vec![]),
+        BTreeSet::from([ValueId(4)]),
+        AllocationOptions {
+            refuse_solver: true,
+            ..Default::default()
+        },
+    );
+    assert_ne!(preparation.actions, vec![PlanAction::SwapWord { word: 1 }]);
+}
+
+#[test]
+fn word_candidate_ties_keep_the_existing_scalar_permutation() {
+    let (_, preparation, _) = checked_case(
+        vec![Type::Felt; 8],
+        vec![
+            PlanAction::MoveUp { depth: 4 },
+            PlanAction::Drop,
+            PlanAction::Dup { depth: 1 },
+            PlanAction::MoveDown { depth: 4 },
+        ],
+        unit(vec![atom(1)], vec![]),
+        BTreeSet::new(),
+        forced(SchedulingTier::Stack),
+    );
+    assert_eq!(preparation.actions, vec![PlanAction::Swap { depth: 1 }]);
+    assert_eq!(
+        preparation.state.stack_atoms().collect::<Vec<_>>(),
+        [1, 0, 2, 3, 1, 5, 6, 7].into_iter().map(atom).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn adjacent_words_and_unaligned_groups_preserve_complete_values() {
+    for types in [
+        vec![Type::U128, Type::U128, Type::Felt],
+        vec![Type::U128, Type::Felt, Type::U128, Type::Felt],
+    ] {
+        let target = (types.len() - 2) as u32;
+        let mut requested: Vec<_> = (0..4).map(|lane| Atom::new(ValueId(target), lane)).collect();
+        if target == 2 {
+            requested.push(atom(1));
+        }
+        requested.extend((0..4).map(|lane| Atom::new(ValueId(0), lane)));
+        let mut expected = requested.clone();
+        expected.push(atom(target + 1));
+        let request = unit(requested, vec![]);
+        let lanes = types
+            .iter()
+            .map(|ty| usize::from(ValueLayout::new(ty.clone()).unwrap().lanes()))
+            .sum();
+        let (plan, preparation, _) = checked_case(
+            types,
+            vec![],
+            request,
+            BTreeSet::from([ValueId(target + 1)]),
+            forced(SchedulingTier::Stack),
+        );
+        assert_eq!(preparation.tier, SchedulingTier::Stack);
+        assert_eq!(preparation.state.stack_atoms().collect::<Vec<_>>(), expected);
+        if target == 1 {
+            assert_eq!(preparation.actions, vec![PlanAction::SwapWord { word: 1 }]);
+        } else {
+            assert!(
+                !preparation
+                    .actions
+                    .iter()
+                    .any(|action| matches!(action, PlanAction::SwapWord { .. }))
+            );
+        }
+        let frame = fixture_frame(&plan);
+        verify_assemble_execute(&plan, &frame, &fixture_body(&plan, &frame), lanes);
+    }
+}
+
+#[test]
+fn word_candidate_preserves_aliases_and_independent_live_occurrences() {
+    let values = values(13);
+    let mut context = context(&values);
+    context.options.refuse_solver = true;
+    let mut initial = state((0..8).map(atom).collect(), vec![]);
+    initial.aliases = LaneAliases::new(vec![(atom(12), atom(4))]);
+    let request = unit(vec![atom(12), atom(5), atom(6), atom(7)], vec![]);
+    let preparation =
+        prepare_unit(&initial, &request, &BTreeSet::from([ValueId(0)]), &context).unwrap();
+    assert_eq!(preparation.actions, vec![PlanAction::SwapWord { word: 1 }]);
+    assert_eq!(preparation.state.aliases, initial.aliases);
+    assert_eq!(preparation.state.stack[4], initial.stack[0]);
+    let consumed_live =
+        prepare_unit(&initial, &request, &BTreeSet::from([ValueId(4)]), &context).unwrap();
+    assert_ne!(consumed_live.actions, vec![PlanAction::SwapWord { word: 1 }]);
 }
 
 #[test]

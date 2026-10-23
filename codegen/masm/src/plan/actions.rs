@@ -16,15 +16,30 @@ use crate::lower::units::LoweringBindings;
 /// nonsemantic source-location anchor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PlanAction {
-    Dup { depth: u8 },
-    Swap { depth: u8 },
-    MoveUp { depth: u8 },
-    MoveDown { depth: u8 },
+    Dup {
+        depth: u8,
+    },
+    Swap {
+        depth: u8,
+    },
+    /// Exchange the top four lanes with word 1, 2 or 3, preserving limb order.
+    /// Both complete words must be owned and within the addressable sixteen-lane window.
+    SwapWord {
+        word: u8,
+    },
+    MoveUp {
+        depth: u8,
+    },
+    MoveDown {
+        depth: u8,
+    },
     Drop,
     PushLiteral(Felt),
     StoreLane(SpillSlotId),
     LoadLane(SpillSlotId),
-    RunLowering { step: SelectedStepId },
+    RunLowering {
+        step: SelectedStepId,
+    },
     DebugLocation(DebugLocationId),
 }
 
@@ -33,6 +48,7 @@ impl fmt::Display for PlanAction {
         match self {
             Self::Dup { depth } => write!(f, "dup {depth}"),
             Self::Swap { depth } => write!(f, "swap {depth}"),
+            Self::SwapWord { word } => write!(f, "swapw {word}"),
             Self::MoveUp { depth } => write!(f, "movup {depth}"),
             Self::MoveDown { depth } => write!(f, "movdn {depth}"),
             Self::Drop => f.write_str("drop"),

@@ -1,6 +1,70 @@
 use super::*;
 
 #[test]
+fn word_actions_require_exact_instructions_and_owned_words() {
+    fn candidate(depth: u32, word: u8) -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
+        let mut fixture = Fixture::new(depth, depth);
+        fixture.proof.aliases = LaneAliases::new(
+            (0..depth)
+                .map(|index| (Fixture::output(index), Fixture::input(index)))
+                .collect(),
+        );
+        let mut plan = fixture.plan();
+        plan.segment_actions.insert(
+            SegmentId(0),
+            vec![
+                PlanAction::SwapWord { word },
+                PlanAction::SwapWord { word },
+                PlanAction::RunLowering {
+                    step: SelectedStepId(0),
+                },
+            ],
+        );
+        let mut code = AnnotatedMasmBody::new();
+        code.push(AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))));
+        for _ in 0..2 {
+            code.push_instruction(
+                Primitive::SwapWord(word).instruction().unwrap(),
+                SelectedStepId(u32::MAX),
+            );
+        }
+        code.push(AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))));
+        code.push(AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))));
+        code.push(AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))));
+        (plan, fixture.frame(), code)
+    }
+    for word in 1..=3 {
+        let (plan, frame, code) = candidate(16, word);
+        verify(&plan, &frame, code.clone()).unwrap();
+        for wrong in [Instruction::Swap1, Primitive::SwapWord(word % 3 + 1).instruction().unwrap()]
+        {
+            let mut altered = code.clone();
+            let AnnotatedOp::Instruction { instruction, .. } = &mut altered.ops_mut()[1] else {
+                panic!()
+            };
+            *instruction = wrong;
+            assert_eq!(
+                verify(&plan, &frame, altered).unwrap_err().category,
+                DiagnosticCategory::InvalidSelectedLowering
+            );
+        }
+        for wrong in [PlanAction::SwapWord { word: word % 3 + 1 }, PlanAction::Swap { depth: 1 }] {
+            let mut altered_plan = plan.clone();
+            altered_plan.segment_actions.get_mut(&SegmentId(0)).unwrap()[0] = wrong;
+            assert_eq!(
+                verify(&altered_plan, &frame, code.clone()).unwrap_err().category,
+                DiagnosticCategory::InvalidSelectedLowering
+            );
+        }
+        let (plan, frame, code) = candidate(u32::from(word) * 4 + 3, word);
+        assert_eq!(
+            verify(&plan, &frame, code).unwrap_err().category,
+            DiagnosticCategory::IllegalStackAccess
+        );
+    }
+}
+
+#[test]
 fn allocator_equality_and_slot_validity_claims_cannot_establish_facts() {
     let mut fixture = Fixture::new(2, 1);
     fixture.proof.aliases = LaneAliases::new(vec![(Fixture::output(0), Fixture::input(0))]);
