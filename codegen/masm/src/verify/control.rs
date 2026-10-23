@@ -235,6 +235,17 @@ impl Verifier<'_> {
             }
             positions.push((Some(offset), 0, *kind, memory::read(&initial, offset, self.frame)?));
         }
+        // Spill copies belong to allocation, so lowering schemas need not name them.
+        // Preserve initialized copies by proving their identity on every backedge,
+        // including cached copies that a later allocation action may reload. Several
+        // logical slots can share a cell; explicit schema positions take precedence.
+        for offset in self.frame.spills().values() {
+            if let Some(token) = initial.cells.get(offset)
+                && cell_offsets.insert(*offset)
+            {
+                positions.push((Some(*offset), 0, LoopPosition::Invariant, *token));
+            }
+        }
         let mut forward = BTreeMap::new();
         for (_, _, kind, token) in &positions {
             if let LoopPosition::Carry(parameter) = kind
@@ -261,10 +272,7 @@ impl Verifier<'_> {
         for token in external {
             let established = positions
                 .iter()
-                .any(|(_, _, kind, value)| *kind == LoopPosition::Invariant && *value == token)
-                || self.frame.spills().values().any(|offset| {
-                    initial.cells.get(offset) == Some(&token) && !cell_offsets.contains(offset)
-                });
+                .any(|(_, _, kind, value)| *kind == LoopPosition::Invariant && *value == token);
             if !established {
                 return Err(fail(
                     DiagnosticCategory::InvalidEdgeTransfer,
