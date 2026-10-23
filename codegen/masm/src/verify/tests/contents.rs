@@ -124,6 +124,7 @@ fn fixture() -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
                 (
                     SelectedStepId(index),
                     LoweringBindings {
+                        input_order: crate::plan::InputOrder::Canonical,
                         stored_inputs: BTreeMap::new(),
                         scratch: BTreeMap::from([(ScratchId(0), allocation)]),
                     },
@@ -375,6 +376,7 @@ fn content_loop(
         plan.lowering_bindings.insert(
             SelectedStepId(step),
             LoweringBindings {
+                input_order: crate::plan::InputOrder::Canonical,
                 stored_inputs: BTreeMap::new(),
                 scratch: BTreeMap::from([(ScratchId(0), allocation)]),
             },

@@ -661,6 +661,7 @@ fn header_fixture() -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
     plan.lowering_bindings.insert(
         SelectedStepId(2),
         LoweringBindings {
+            input_order: crate::plan::InputOrder::Canonical,
             stored_inputs: BTreeMap::new(),
             scratch: BTreeMap::from([(ScratchId(0), allocation)]),
         },

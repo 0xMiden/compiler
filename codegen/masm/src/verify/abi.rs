@@ -106,15 +106,32 @@ impl Verifier<'_> {
                 }
             }
         }
+        let order = self.plan.lowering_bindings[&active.id].input_order;
+        let ordered_inputs = self
+            .plan
+            .selected
+            .input_symmetry(active.id)?
+            .ordered_inputs(&unit.stack_inputs, order)?;
         let actual = state.prefix(site.inputs.len())?.to_vec();
         for (input, token) in site.inputs.iter().zip(actual) {
-            if let CallArgument::Exact(value) = input
-                && memory::stored_token(state, *value, &mut self.tokens)? != token
-            {
-                return Err(fail(
-                    DiagnosticCategory::AbiMismatch,
-                    "actual call argument differs from registered identity",
-                ));
+            if let CallArgument::Exact(value) = input {
+                // Project exact source references through the same whole-value exchange as
+                // the entry prefix. Helper argument vectors may interleave the source limbs.
+                let value = match *value {
+                    StoredValue::Atom(atom) => unit
+                        .stack_inputs
+                        .iter()
+                        .position(|input| *input == atom)
+                        .map(|index| StoredValue::Atom(ordered_inputs[index]))
+                        .unwrap_or(*value),
+                    _ => *value,
+                };
+                if memory::stored_token(state, value, &mut self.tokens)? != token {
+                    return Err(fail(
+                        DiagnosticCategory::AbiMismatch,
+                        "actual call argument differs from registered identity",
+                    ));
+                }
             }
             if self.tokens.origins(token).compiler() {
                 let address = self.tokens.frame_address(token).ok_or_else(|| {

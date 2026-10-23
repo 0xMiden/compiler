@@ -57,6 +57,8 @@ pub(crate) struct DefinitionEvidence {
 /// physical choices. These become private evidence in the checked selected program.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UnitEvidence {
+    /// Permitted complete-operand exchange, reconstructed from the source operation/type/mode.
+    pub input_symmetry: InputSymmetry,
     pub aliases: LaneAliases,
     /// Reconstructed from the registered source, sealed before allocation.
     pub generated_event: Option<GeneratedEvent>,
@@ -156,6 +158,14 @@ pub(crate) struct CheckedSelectedProgram {
 }
 
 impl CheckedSelectedProgram {
+    /// Sealed permission used to price input orders and independently check physical bindings.
+    pub(crate) fn input_symmetry(
+        &self,
+        step: SelectedStepId,
+    ) -> Result<InputSymmetry, VerificationError> {
+        Ok(self.evidence(step)?.input_symmetry)
+    }
+
     /// Source-sealed markers queried by allocation without becoming semantic uses.
     pub(crate) fn observations(&self) -> &[crate::lower::debug::Observation] {
         &self.observations
@@ -342,6 +352,39 @@ fn validate_graph(
                     }),
                 ) {
                     validate_atom(program, *atom)?;
+                }
+                if let InputSymmetry::CommutativePair { lanes_per_operand } =
+                    units[&unit.id].input_symmetry
+                {
+                    let width = usize::from(lanes_per_operand);
+                    if width == 0
+                        || unit.stack_inputs.len() != 2 * width
+                        || unit.publication != OutputPublication::Stack
+                    {
+                        return Err(error(
+                            "commutative inputs must contain two complete operand groups",
+                        ));
+                    }
+                    let left = unit.stack_inputs[0].value;
+                    let right = unit.stack_inputs[width].value;
+                    let lhs = &program.values[&left].layout;
+                    let rhs = &program.values[&right].layout;
+                    if lhs != rhs
+                        || lhs.lanes() != lanes_per_operand
+                        || unit.stack_inputs.iter().enumerate().any(|(index, atom)| {
+                            *atom
+                                != Atom::new(
+                                    if index < width { left } else { right },
+                                    (index % width) as u8,
+                                )
+                        })
+                        || unit.semantic_inputs.iter().copied().collect::<BTreeSet<_>>()
+                            != BTreeSet::from([left, right])
+                    {
+                        return Err(error(
+                            "commutative inputs must preserve complete equally typed values",
+                        ));
+                    }
                 }
                 if let Some(event) = units[&unit.id].generated_event {
                     let valid = match event {

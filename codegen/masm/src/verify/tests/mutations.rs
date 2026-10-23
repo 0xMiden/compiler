@@ -1060,3 +1060,111 @@ fn semantic_alias_publication_rejects_physical_mutation_and_lost_inputs() {
         .is_err()
     );
 }
+
+#[test]
+fn commutative_permissions_require_complete_equal_operands() {
+    struct Source(u8);
+    impl GeneratedDefinition for Source {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(1)
+        }
+
+        fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = Fixture::new(2, 0).instantiate(&[])?;
+            evidence.units.get_mut(&SelectedStepId(0)).unwrap().input_symmetry =
+                InputSymmetry::CommutativePair {
+                    lanes_per_operand: match self.0 {
+                        1 => 0,
+                        2 | 7 | 8 => 2,
+                        _ => 1,
+                    },
+                };
+            match self.0 {
+                3 => {
+                    evidence.program.values.get_mut(&ValueId(1)).unwrap().layout =
+                        ValueLayout::new(Type::U32).unwrap()
+                }
+                4 => {
+                    evidence.program.segments[0].units[0].semantic_inputs.pop().map(|_| ()).unwrap()
+                }
+                5 => evidence.program.segments[0].units[0].publication = OutputPublication::Aliases,
+                6 => evidence.program.segments[0].units[0].stack_inputs[1] = Fixture::input(0),
+                7 | 8 => {
+                    for value in evidence.program.values.values_mut() {
+                        value.layout = ValueLayout::new(Type::U64).unwrap();
+                    }
+                    evidence.program.abi =
+                        ProcedureAbi::new(CallingConvention::SameContext, 4, 0).unwrap();
+                    evidence.program.segments[0].units[0].stack_inputs = vec![
+                        Atom::new(ValueId(0), 0),
+                        Atom::new(ValueId(0), 1),
+                        Atom::new(ValueId(1), 0),
+                        Atom::new(ValueId(1), 1),
+                    ];
+                    if self.0 == 8 {
+                        evidence.program.segments[0].units[0].stack_inputs.swap(0, 1);
+                    }
+                }
+                _ => {}
+            }
+            Ok(evidence)
+        }
+    }
+    for case in 0..=8 {
+        let source = Source(case);
+        let result = check_selection(
+            source.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&source),
+        );
+        if matches!(case, 0 | 7) {
+            result.unwrap();
+        } else {
+            assert_eq!(
+                result.unwrap_err().category,
+                DiagnosticCategory::InvalidSelectedLowering,
+                "case {case}"
+            );
+        }
+    }
+}
+
+#[test]
+fn commutative_order_requires_permission_and_the_actual_prefix() {
+    let mut fixture = Fixture::new(2, 1);
+    let code = body(vec![Instruction::Add]);
+    let mut ordered = fixture.plan();
+    verify(&ordered, &fixture.frame(), code.clone()).unwrap();
+    ordered.lowering_bindings.get_mut(&SelectedStepId(0)).unwrap().input_order =
+        InputOrder::Reversed;
+    assert_eq!(
+        verify(&ordered, &fixture.frame(), code.clone()).unwrap_err().category,
+        DiagnosticCategory::InvalidSelectedLowering
+    );
+    fixture.proof.input_symmetry = InputSymmetry::CommutativePair {
+        lanes_per_operand: 1,
+    };
+    let mut plan = fixture.plan();
+    plan.lowering_bindings.get_mut(&SelectedStepId(0)).unwrap().input_order = InputOrder::Reversed;
+    assert_eq!(
+        verify(&plan, &fixture.frame(), code.clone()).unwrap_err().category,
+        DiagnosticCategory::UnavailableValue
+    );
+    plan.segment_actions
+        .get_mut(&SegmentId(0))
+        .unwrap()
+        .insert(0, PlanAction::Swap { depth: 1 });
+    let mut reversed = code;
+    reversed.ops_mut().insert(
+        1,
+        AnnotatedOp::Instruction {
+            instruction: Instruction::Swap1,
+            unit: SelectedStepId(u32::MAX),
+        },
+    );
+    verify(&plan, &fixture.frame(), reversed.clone()).unwrap();
+    plan.lowering_bindings.get_mut(&SelectedStepId(0)).unwrap().input_order = InputOrder::Canonical;
+    assert_eq!(
+        verify(&plan, &fixture.frame(), reversed).unwrap_err().category,
+        DiagnosticCategory::UnavailableValue
+    );
+}

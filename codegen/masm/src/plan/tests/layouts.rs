@@ -104,6 +104,7 @@ fn stored_input_is_not_stack_input() {
     assert!(unit.stack_inputs.is_empty());
     let literal_slot = SpillSlotId::temporary(unit.id, 0);
     let bindings = LoweringBindings {
+        input_order: crate::plan::InputOrder::Canonical,
         stored_inputs: BTreeMap::from([
             (StoredInputId(0), slot),
             (StoredInputId(1), slot),
@@ -322,6 +323,7 @@ fn resolving_scratch_preserves_stored_bindings_and_validates_the_final_assignmen
         value: StoredValue::Literal(miden_core::Felt::ONE),
     }];
     let binding = LoweringBindings {
+        input_order: crate::plan::InputOrder::Reversed,
         stored_inputs: BTreeMap::from([(StoredInputId(9), slot)]),
         scratch: BTreeMap::new(),
     };
@@ -340,6 +342,7 @@ fn resolving_scratch_preserves_stored_bindings_and_validates_the_final_assignmen
     .unwrap();
     let resolved = binding.resolve_scratch(&unit, &frame).unwrap();
     assert_eq!(resolved.stored_inputs, binding.stored_inputs);
+    assert_eq!(resolved.input_order, crate::plan::InputOrder::Reversed);
     assert!(binding.scratch.is_empty());
     assert_eq!(resolved.scratch, BTreeMap::from([(ScratchId(3), assigned)]));
     assert!(binding.validate(&unit, &frame).is_err());

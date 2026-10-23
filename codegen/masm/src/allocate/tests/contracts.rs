@@ -2022,3 +2022,81 @@ fn simultaneous_distinct_pointer_swap_is_not_identity_carry() {
         execute(&plan, &[2, 1, 2], &[0]);
     }
 }
+
+#[test]
+fn join_scoring_prices_the_authorized_first_unit_order() {
+    use super::edges::state;
+    use crate::allocate::{
+        analysis::analyze,
+        contracts::{Incoming, choose},
+        state::AllocationContext,
+    };
+    struct SymmetricSource(Source, bool);
+    impl GeneratedDefinition for SymmetricSource {
+        fn id(&self) -> GeneratedDefinitionId {
+            self.0.id()
+        }
+
+        fn instantiate(
+            &self,
+            parameters: &[miden_core::Felt],
+        ) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = self.0.instantiate(parameters)?;
+            if self.1 {
+                evidence.units.get_mut(&SelectedStepId(2)).unwrap().input_symmetry =
+                    InputSymmetry::CommutativePair {
+                        lanes_per_operand: 1,
+                    };
+            }
+            Ok(evidence)
+        }
+    }
+    let mut source = diamond_source();
+    source.0.segments[3].units = vec![request(2, &[2, 1], &[])];
+    source.0.edges[4].bindings = vec![ParameterBinding {
+        destination: ValueId(3),
+        source: ValueId(3),
+    }];
+    source.0.abi = ProcedureAbi::new(CallingConvention::SameContext, 4, 1).unwrap();
+    source.0.source_map.insert(
+        SourceStepId(2),
+        SourceRecord {
+            origin: SourceOrigin::Generated {
+                definition: source.id(),
+                stage: 2,
+            },
+            location: SourceLocation::default(),
+        },
+    );
+    let mut choices = vec![];
+    for permitted in [false, true] {
+        let source = SymmetricSource(source.clone(), permitted);
+        let program =
+            check_selection(source.0.0.clone(), &SourceContext::Generated(&source)).unwrap();
+        let analysis = analyze(&program);
+        let context = AllocationContext::new(&program, &analysis);
+        let resident = state(vec![a(1), a(2), a(3)], vec![]);
+        let incoming = [
+            Incoming {
+                edge: &program.edges[2],
+                state: &resident,
+            },
+            Incoming {
+                edge: &program.edges[3],
+                state: &resident,
+            },
+        ];
+        choices.push(choose(&program, &analysis, &context, SegmentId(3), &incoming, None).unwrap());
+    }
+    assert_eq!(choices[0].contract, choices[1].contract);
+    let score = |index: usize| {
+        choices[index]
+            .costs
+            .iter()
+            .find(|cost| cost.origin == choices[index].origin)
+            .unwrap()
+            .actions
+    };
+    assert_eq!(score(0), 2);
+    assert_eq!(score(1), 0);
+}

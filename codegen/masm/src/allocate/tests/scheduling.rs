@@ -770,6 +770,60 @@ fn word_candidate_preserves_aliases_and_independent_live_occurrences() {
 }
 
 #[test]
+fn commutative_preparation_records_order_and_preserves_canonical_ties() {
+    for width in [1, 2, 4] {
+        let ty = match width {
+            1 => Type::U32,
+            2 => Type::U64,
+            _ => Type::U128,
+        };
+        let mut values = values(2);
+        for value in values.values_mut() {
+            value.layout = ValueLayout::new(ty.clone()).unwrap();
+        }
+        let mut context = context(&values);
+        context.input_symmetries.insert(
+            SelectedStepId(0),
+            InputSymmetry::CommutativePair {
+                lanes_per_operand: width,
+            },
+        );
+        let canonical = (0..2)
+            .flat_map(|id| (0..width).map(move |lane| Atom::new(ValueId(id), lane)))
+            .collect::<Vec<_>>();
+        let request = unit(canonical.clone(), vec![]);
+        for order in [InputOrder::Canonical, InputOrder::Reversed] {
+            let prefix = context.input_symmetries[&request.id]
+                .ordered_inputs(&canonical, order)
+                .unwrap()
+                .into_owned();
+            let initial = state(prefix, vec![]);
+            let preparation = prepare_unit(&initial, &request, &BTreeSet::new(), &context).unwrap();
+            assert!(preparation.actions.is_empty());
+            assert_eq!(preparation.bindings[&request.id].input_order, order);
+            assert_eq!(preparation.state, initial);
+            context.options.force_tier = Some(SchedulingTier::Normalization);
+            let normalized = prepare_unit(&initial, &request, &BTreeSet::new(), &context).unwrap();
+            let chosen = normalized.bindings[&request.id].input_order;
+            assert_eq!(
+                normalized.state.stack_atoms().take(canonical.len()).collect::<Vec<_>>(),
+                context.input_symmetries[&request.id]
+                    .ordered_inputs(&canonical, chosen)
+                    .unwrap()
+                    .as_ref()
+            );
+            context.options.force_tier = None;
+        }
+        let repeated = (0..width).map(|lane| Atom::new(ValueId(0), lane)).collect::<Vec<_>>();
+        let request = unit(repeated.iter().chain(&repeated).copied().collect(), vec![]);
+        let initial = state(request.stack_inputs.clone(), vec![]);
+        let preparation = prepare_unit(&initial, &request, &BTreeSet::new(), &context).unwrap();
+        assert!(preparation.actions.is_empty());
+        assert_eq!(preparation.bindings[&request.id].input_order, InputOrder::Canonical);
+    }
+}
+
+#[test]
 fn solver_limits_do_not_limit_raw_depth_or_wide_tuples() {
     let (_, ready, _) = checked_case(
         vec![Type::Felt; 18],

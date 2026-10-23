@@ -305,6 +305,8 @@ impl AllocationState {
 /// The context controls which reconstructions may be used; physical availability remains
 /// in each trial's state. Options bound optimization effort without changing feasibility.
 pub(crate) struct AllocationContext<'a> {
+    /// Only source-authorized alternatives; synthetic requests retain their canonical order.
+    pub(super) input_symmetries: BTreeMap<SelectedStepId, InputSymmetry>,
     /// Layout and checked literal/alias reconstruction for each selected value.
     pub values: &'a BTreeMap<ValueId, SelectedValue>,
     /// Procedure-wide distances measured in selected unit steps.
@@ -371,6 +373,16 @@ impl<'a> AllocationContext<'a> {
             values: &program.values,
             next_use: &analysis.next_use,
             options: AllocationOptions::default(),
+            input_symmetries: program
+                .segments
+                .iter()
+                .flat_map(|segment| &segment.units)
+                .filter_map(|unit| {
+                    let symmetry =
+                        program.input_symmetry(unit.id).expect("checked source covers every unit");
+                    (symmetry != InputSymmetry::Ordered).then_some((unit.id, symmetry))
+                })
+                .collect(),
             entry_reconstructions,
         }
     }

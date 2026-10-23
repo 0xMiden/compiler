@@ -572,6 +572,29 @@ impl Arithmetic {
             .into());
         }
         let mut proof = UnitEvidence::default();
+        // The source tuple gate above determines which typed operations exist. Symmetry is
+        // semantic even when the implementation contains helpers or checked overflow paths.
+        if matches!(
+            kind,
+            Add | AddOverflowing
+                | Mul
+                | MulOverflowing
+                | Eq
+                | Neq
+                | Min
+                | Max
+                | And
+                | Or
+                | Xor
+                | Band
+                | Bor
+                | Bxor
+        ) {
+            proof.input_symmetry = InputSymmetry::CommutativePair {
+                lanes_per_operand: ValueLayout::new(ty.clone())?.lanes(),
+            };
+        }
+
         if kind == Bnot && matches!(ty, Type::U64 | Type::I64) {
             proof.loops.insert(
                 ControlId(0),

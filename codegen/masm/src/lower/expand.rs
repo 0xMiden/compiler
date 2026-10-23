@@ -284,6 +284,9 @@ pub(crate) fn expand_procedure(
                             "missing lowering bindings",
                         )
                     })?;
+                    plan.selected
+                        .input_symmetry(*step)?
+                        .ordered_inputs(&unit.stack_inputs, bindings.input_order)?;
                     out.push(AnnotatedOp::Boundary(Boundary::UnitStart(*step)));
                     let body = registry.get(unit.kind)?.expand(unit, bindings, frame, env)?;
                     out.ops.extend(body.ops);
