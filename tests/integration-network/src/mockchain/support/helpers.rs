@@ -257,6 +257,20 @@ pub(crate) fn execute_tx_expect_failure(mock_tx: MockTransaction) -> String {
     }
 }
 
+/// The fixed VM assertion code every guest panic reports:
+/// `error_code_from_msg("entered unreachable code")`.
+///
+/// The code is a stable product of the deterministic guest build. When an intentional SDK or
+/// codegen change shifts it, re-calibrate it from the failing assertion's output, like an expect
+/// test.
+pub(crate) const GUEST_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";
+
+/// Asserts that a transaction failure message contains `needle`, so an unrelated failure cannot
+/// satisfy the test.
+pub(crate) fn assert_failure_contains(err: &str, needle: &str) {
+    assert!(err.contains(needle), "unexpected failure message (wanted `{needle}`): {err}");
+}
+
 /// Executes a mock transaction against the chain and commits it in the next block.
 ///
 /// Returns the executed transaction for inspection.
