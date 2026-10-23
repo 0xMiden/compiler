@@ -23,6 +23,49 @@ use crate::{
     verify::*,
 };
 
+#[test]
+fn preparation_cost_matches_assembled_stack_operations() -> Result<(), midenc_hir::Report> {
+    use miden_core::Felt;
+
+    use crate::allocate::schedule::action_cost;
+
+    let mut cases = Vec::new();
+    for depth in 0..16 {
+        cases.push((PlanAction::Dup { depth }, Primitive::Dup(depth)));
+        if depth != 0 {
+            cases.extend([
+                (PlanAction::Swap { depth }, Primitive::Swap(depth)),
+                (PlanAction::MoveUp { depth }, Primitive::MoveUp(depth)),
+                (PlanAction::MoveDown { depth }, Primitive::MoveDown(depth)),
+            ]);
+        }
+    }
+    for value in [
+        Felt::ZERO,
+        Felt::ONE,
+        Felt::new_unchecked(2),
+        Felt::new_unchecked(0xffff_ffff_0000_0000),
+    ] {
+        cases.push((PlanAction::PushLiteral(value), Primitive::Push(value)));
+    }
+    for (action, primitive) in cases {
+        let instruction = primitive.instruction()?;
+        let actual = crate::opt::cost::tests::assembled_cost(&format!("{instruction}"))?;
+        assert_eq!(action_cost(&[action]), actual, "{instruction}");
+    }
+    Ok(())
+}
+
+#[test]
+fn preparation_cost_prefers_cheaper_expansion_over_shorter_masm() {
+    use crate::allocate::schedule::action_cost;
+
+    assert!(
+        action_cost(&[PlanAction::Swap { depth: 15 }])
+            > action_cost(&[PlanAction::MoveUp { depth: 3 }, PlanAction::MoveDown { depth: 4 },])
+    );
+}
+
 /// A small semantic fixture oracle: it executes raw actions on distinct parameter lanes,
 /// with no allocator equality, recoverability, transition or solver helper calls.
 fn execute(stack: &mut Vec<Atom>, slots: &mut BTreeMap<SpillSlotId, Atom>, actions: &[PlanAction]) {
