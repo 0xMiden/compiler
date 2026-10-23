@@ -190,9 +190,12 @@ pub fn metadata_into_sender(metadata: Word) -> AccountId {
 /// Extracts the four attachment schemes encoded in a note metadata header word, in attachment
 /// order. A slot without an attachment is `None`.
 ///
+/// `Option::is_none` means the slot is empty; [`NoteAttachmentScheme::is_none`] on a present
+/// scheme means scheme `1`.
+///
 /// # Panics
 ///
-/// Panics if a slot holds a value that is not a valid [`NoteAttachmentScheme`].
+/// Panics if a slot holds `65535`, which is not a valid scheme; an absent slot (`0`) is `None`.
 pub fn metadata_into_attachment_schemes(metadata: Word) -> [Option<NoteAttachmentScheme>; 4] {
     let (first, second, third, fourth) = raw::metadata_into_attachment_schemes(metadata);
     [first, second, third, fourth].map(NoteAttachmentScheme::from_header_u16)

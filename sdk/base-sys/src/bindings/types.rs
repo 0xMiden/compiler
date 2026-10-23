@@ -29,6 +29,17 @@ fn felt_low_u32(value: Felt) -> u32 {
     value.as_canonical_u64() as u32
 }
 
+/// The canonical value of `value` as a `u16`, or `None` if it exceeds `u16::MAX`.
+#[inline]
+pub(super) fn felt_to_u16(value: Felt) -> Option<u16> {
+    if felt_at_most(value, u16::MAX.into()) {
+        // The bound makes the truncation exact.
+        Some(felt_low_u32(value) as u16)
+    } else {
+        None
+    }
+}
+
 /// Extracts a scalar felt from a protocol word with zero-padded trailing limbs.
 pub fn felt_from_padded_word(value: Word) -> Result<Felt, &'static str> {
     if value[1] != felt!(0) || value[2] != felt!(0) || value[3] != felt!(0) {

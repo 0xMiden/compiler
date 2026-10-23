@@ -75,7 +75,9 @@ SDK with a valid tag, index or note type is unaffected.
 The attachment procedures take the scheme as a `NoteAttachmentScheme`, a validated value in
 `1..=65534`. `NoteAttachmentScheme::none()` is scheme `1`, the unspecified scheme; build any
 other scheme with `NoteAttachmentScheme::new(n)` or `NoteAttachmentScheme::try_from(n)`, which
-reject `0` and `65535` (`.unwrap()` where an invalid scheme is a bug):
+reject `0` and `65535` (`.unwrap()` where an invalid scheme is a bug).
+`NoteAttachmentScheme::try_from(felt)` converts a felt. `NoteAttachmentScheme::new_const(n)`
+defines a constant:
 
 ```rust
 // Before
@@ -91,8 +93,9 @@ The same holds for `output_note::{add_attachment, add_attachment_from_memory, fi
 `input_note::find_attachment`, `note::find_attachment_idx` and the `ActiveNote::find_attachment`
 trait method. `note::metadata_into_attachment_schemes` returns the four schemes as
 `[Option<NoteAttachmentScheme>; 4]` instead of a `Word` of felts, with `None` for a slot without
-an attachment. `NoteAttachment::with_word` and `NoteAttachment::with_words` build an attachment
-with a checked content length, and `add_to(note_idx)` appends it to an output note.
+an attachment. It panics on a slot holding `65535`, an invalid scheme no kernel writes.
+`NoteAttachment::with_word` and `NoteAttachment::with_words` build an attachment with a checked
+content length, and `add_to(note_idx)` appends it to an output note.
 
 The WIT `core-types` records `tag`, `note-idx` and `note-type` changed with the types
 (`inner: u32`/`u16`/`u8` instead of `felt`), and they cross component boundaries: the basic
