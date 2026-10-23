@@ -234,8 +234,8 @@ pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> 
 ///
 /// # Panics
 ///
-/// Panics if `note_index` is out of bounds for the transaction's output notes. The transaction
-/// kernel rejects an `attachment_idx` that is not below the note's attachment count.
+/// Panics if `note_index` is out of bounds for the transaction's output notes. The protocol
+/// library rejects an `attachment_idx` that is not below the note's attachment count.
 pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: AttachmentIdx) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {

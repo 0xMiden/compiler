@@ -733,14 +733,7 @@ impl TryFrom<Felt> for NoteType {
 
     #[inline]
     fn try_from(value: Felt) -> Result<Self, Self::Error> {
-        if felt_at_most(value, u8::MAX.into()) {
-            // The bound makes the truncation exact.
-            Ok(Self {
-                inner: felt_low_u32(value) as u8,
-            })
-        } else {
-            Err("note type exceeds u8")
-        }
+        felt_to_u8(value).map(|inner| Self { inner }).ok_or("note type exceeds u8")
     }
 }
 

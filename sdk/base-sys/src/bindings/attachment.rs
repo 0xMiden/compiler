@@ -308,6 +308,7 @@ impl TryFrom<Felt> for AttachmentIdx {
     ///
     /// Returns [`NoteAttachmentError::IndexExceedsU8`] for a felt above `u8::MAX` and
     /// [`NoteAttachmentError::InvalidIndex`] for a felt in `4..=255`.
+    #[inline]
     fn try_from(value: Felt) -> Result<Self, Self::Error> {
         let index = felt_to_u8(value).ok_or(NoteAttachmentError::IndexExceedsU8)?;
         Self::new(index)
@@ -657,7 +658,8 @@ mod tests {
         assert_ne!(owned, two_words);
     }
 
-    /// Checks the accepted index range and the integer conversions of indexes.
+    /// Checks the index bounds, the integer and felt conversions, the const constructor and the
+    /// protocol's attachment count.
     #[test]
     fn indexes_are_bounded_by_attachment_count() {
         for value in 0..=3u8 {
@@ -672,10 +674,15 @@ mod tests {
         assert_eq!(AttachmentIdx::new(4), Err(NoteAttachmentError::InvalidIndex(4)));
         assert_eq!(AttachmentIdx::new(255), Err(NoteAttachmentError::InvalidIndex(255)));
         assert_eq!(AttachmentIdx::try_from(4u32), Err(NoteAttachmentError::InvalidIndex(4)));
+        assert_eq!(AttachmentIdx::try_from(255u32), Err(NoteAttachmentError::InvalidIndex(255)));
         assert_eq!(AttachmentIdx::try_from(256u32), Err(NoteAttachmentError::IndexExceedsU8));
         assert_eq!(AttachmentIdx::try_from(u32::MAX), Err(NoteAttachmentError::IndexExceedsU8));
         assert_eq!(AttachmentIdx::try_from(felt!(3)), Ok(AttachmentIdx::MAX));
         assert_eq!(AttachmentIdx::try_from(felt!(4)), Err(NoteAttachmentError::InvalidIndex(4)));
+        assert_eq!(
+            AttachmentIdx::try_from(felt!(255)),
+            Err(NoteAttachmentError::InvalidIndex(255))
+        );
         assert_eq!(AttachmentIdx::try_from(felt!(256)), Err(NoteAttachmentError::IndexExceedsU8));
         assert_eq!(
             AttachmentIdx::try_from(Felt::new(Felt::ORDER - 1).unwrap()),
@@ -683,7 +690,6 @@ mod tests {
         );
         const IDX: AttachmentIdx = AttachmentIdx::new_const(2);
         assert_eq!(IDX, AttachmentIdx::new(2).unwrap());
-        assert_eq!(AttachmentIdx::MAX.as_u8(), 3);
         assert_eq!(
             usize::from(AttachmentIdx::MAX) + 1,
             miden_protocol::note::NoteAttachments::MAX_COUNT
@@ -714,6 +720,11 @@ mod tests {
             assert_eq!(felts, [Felt::from(index.as_u8())]);
             assert_eq!(AttachmentIdx::try_from(&felts[..]), Ok(index));
         }
+        assert_eq!(
+            NoteAttachmentScheme::try_from(&[felt!(1)][..]),
+            Ok(NoteAttachmentScheme::none())
+        );
+        assert_eq!(AttachmentIdx::try_from(&[felt!(0)][..]), Ok(AttachmentIdx::new(0).unwrap()));
     }
 
     /// Checks that decoding rejects invalid values, trailing felts and missing felts.
@@ -748,6 +759,7 @@ mod tests {
             Err(scheme_out_of_range(Felt::ORDER - 1))
         );
         assert_eq!(AttachmentIdx::try_from(&[felt!(4)][..]), Err(index_out_of_range(4)));
+        assert_eq!(AttachmentIdx::try_from(&[felt!(255)][..]), Err(index_out_of_range(255)));
         assert_eq!(AttachmentIdx::try_from(&[felt!(256)][..]), Err(index_out_of_range(256)));
         assert_eq!(AttachmentIdx::try_from(&[top][..]), Err(index_out_of_range(Felt::ORDER - 1)));
         assert_eq!(

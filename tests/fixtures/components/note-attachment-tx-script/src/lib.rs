@@ -81,7 +81,8 @@ fn run(arg: Word, account: &mut Wallet) {
         }
         8 => {
             NoteAttachment::with_word(scheme, first).add_to(note_idx);
-            // Index 3 passes the SDK's bound but not the kernel's: the note has one attachment.
+            // Index 3 passes the SDK's bound but not the protocol library's: the note has one
+            // attachment.
             let _ = output_note::write_attachment_to_memory(note_idx, AttachmentIdx::MAX);
         }
         _ => panic!("unknown attachment scenario"),

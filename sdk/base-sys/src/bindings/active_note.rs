@@ -134,7 +134,7 @@ pub fn write_attachment_commitments_to_memory() -> Vec<Word> {
 ///
 /// # Panics
 ///
-/// The transaction kernel rejects an `attachment_idx` that is not below the note's attachment
+/// The protocol library rejects an `attachment_idx` that is not below the note's attachment
 /// count.
 pub fn write_attachment_to_memory(attachment_idx: AttachmentIdx) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
@@ -301,7 +301,7 @@ pub trait ActiveNote {
     ///
     /// # Panics
     ///
-    /// The transaction kernel rejects an `attachment_idx` that is not below the note's attachment
+    /// The protocol library rejects an `attachment_idx` that is not below the note's attachment
     /// count.
     #[inline]
     fn write_attachment_to_memory(&self, attachment_idx: AttachmentIdx) -> Vec<Word> {
