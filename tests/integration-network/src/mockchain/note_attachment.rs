@@ -1,7 +1,10 @@
 //! Typed SDK attachment tests against the transaction kernel and protocol attachment model.
 
+use std::sync::{Arc, OnceLock};
+
 use miden_client::account::{AccountComponent, component::InitStorageData};
 use miden_core::{Felt, crypto::hash::Poseidon2};
+use miden_mast_package::Package;
 use miden_protocol::{
     Word,
     account::auth::AuthScheme,
@@ -21,17 +24,45 @@ use super::support::{
 /// Scheme shared by the guest's duplicate attachments.
 const SCHEME: u16 = 42;
 
+/// The fixed VM assertion code every guest panic reports, so the invalid-scheme check cannot be
+/// satisfied by an unrelated kernel failure.
+const GUEST_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";
+
 /// Returns the guest's first content word.
 fn first_word() -> Word {
     Word::from([Felt::ONE, Felt::from(2u32), Felt::from(3u32), Felt::from(4u32)])
 }
 
-/// Builds a transaction running the selected attachment scenario on a native wallet account.
-fn build_attachment_tx(scenario: u32) -> (MockChain, MockTransaction) {
-    let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
-    let note_package = compile_rust_package("../../examples/p2id-note", true);
-    let tx_script_package =
-        compile_rust_package("../fixtures/components/note-attachment-tx-script", true);
+/// Returns the felts the host provides in the advice map for the guest's advice-map attachment.
+fn advice_content() -> Vec<Felt> {
+    (9u32..=16).map(Felt::from).collect()
+}
+
+/// Compiled packages used by the attachment tests.
+struct AttachmentPackages {
+    wallet: Arc<Package>,
+    note: Arc<Package>,
+    tx_script: Arc<Package>,
+}
+
+/// Compiles the basic wallet, the P2ID note and the attachment transaction script once.
+fn attachment_packages() -> &'static AttachmentPackages {
+    static PACKAGES: OnceLock<AttachmentPackages> = OnceLock::new();
+    PACKAGES.get_or_init(|| AttachmentPackages {
+        wallet: compile_rust_package("../../examples/basic-wallet", true),
+        note: compile_rust_package("../../examples/p2id-note", true),
+        tx_script: compile_rust_package("../fixtures/components/note-attachment-tx-script", true),
+    })
+}
+
+/// Builds a transaction running the selected attachment scenario with `scheme` on a native wallet
+/// account.
+fn build_attachment_tx(scenario: u32, scheme: u16) -> (MockChain, MockTransaction) {
+    let AttachmentPackages {
+        wallet: wallet_package,
+        note: note_package,
+        tx_script: tx_script_package,
+    } = attachment_packages();
     let wallet_component = AccountComponent::from_package(
         wallet_package.as_ref().clone(),
         &InitStorageData::default(),
@@ -51,17 +82,17 @@ fn build_attachment_tx(scenario: u32) -> (MockChain, MockTransaction) {
     let mut chain = builder.build().unwrap();
     chain.prove_next_block().unwrap();
 
-    let advice_content: Vec<_> = (9u32..=16).map(Felt::from).collect();
+    let advice_content = advice_content();
     let advice_commitment = Poseidon2::hash_elements(&advice_content);
     let mock_tx = chain
         .build_transaction(account_id)
         .tx_script(transaction_script_from_package_with_deps(
-            &tx_script_package,
+            tx_script_package,
             &[note_package.as_ref()],
         ))
         .tx_script_args(Word::from([
             Felt::from(scenario),
-            Felt::from(SCHEME),
+            Felt::from(scheme),
             Felt::ZERO,
             Felt::ZERO,
         ]))
@@ -72,42 +103,37 @@ fn build_attachment_tx(scenario: u32) -> (MockChain, MockTransaction) {
     (chain, mock_tx)
 }
 
-/// Typed word/slice paths and the legacy advice writer preserve the protocol's commitments.
+/// Typed word/slice paths and the advice-map writer preserve the protocol's commitments.
 #[test]
 fn typed_attachments_round_trip_after_note_constructor() {
-    let (mut chain, mock_tx) = build_attachment_tx(0);
+    let (mut chain, mock_tx) = build_attachment_tx(0, SCHEME);
     let executed_tx = execute_tx(&mut chain, mock_tx);
     assert_eq!(executed_tx.output_notes().num_notes(), 1);
 
     let scheme = NoteAttachmentScheme::new(SCHEME).unwrap();
-    let single = NoteAttachment::with_word(scheme, first_word());
+    let s1 = NoteAttachmentScheme::new(SCHEME + 1).unwrap();
+    let s2 = NoteAttachmentScheme::new(SCHEME + 2).unwrap();
     let second =
         Word::from([Felt::from(5u32), Felt::from(6u32), Felt::from(7u32), Felt::from(8u32)]);
-    let multiple = NoteAttachment::with_words(scheme, vec![first_word(), second]).unwrap();
-    let legacy = NoteAttachment::with_words(
-        scheme,
-        vec![
-            Word::from([Felt::from(9u32), Felt::from(10u32), Felt::from(11u32), Felt::from(12u32)]),
-            Word::from([
-                Felt::from(13u32),
-                Felt::from(14u32),
-                Felt::from(15u32),
-                Felt::from(16u32),
-            ]),
-        ],
-    )
+    let advice_words = advice_content()
+        .chunks(4)
+        .map(|chunk| Word::from(<[Felt; 4]>::try_from(chunk).unwrap()))
+        .collect();
+    let expected = NoteAttachments::new(vec![
+        NoteAttachment::with_word(scheme, first_word()),
+        NoteAttachment::with_word(s1, first_word()),
+        NoteAttachment::with_words(scheme, vec![first_word(), second]).unwrap(),
+        NoteAttachment::with_words(s2, advice_words).unwrap(),
+    ])
     .unwrap();
-    let expected = NoteAttachments::new(vec![single.clone(), single, multiple, legacy]).unwrap();
-    let actual = executed_tx.output_notes().get_note(0).attachments();
-    assert_eq!(actual, &expected);
-    assert_eq!(actual.to_commitment(), expected.to_commitment());
+    assert_eq!(executed_tx.output_notes().get_note(0).attachments(), &expected);
 }
 
 /// Per-note count and aggregate-content limits accept their exact protocol boundaries.
 #[test]
 fn typed_attachments_accept_four_attachments_and_512_words() {
     for (scenario, count, words) in [(1, 4, 1), (3, 2, 256)] {
-        let (mut chain, mock_tx) = build_attachment_tx(scenario);
+        let (mut chain, mock_tx) = build_attachment_tx(scenario, SCHEME);
         let executed_tx = execute_tx(&mut chain, mock_tx);
         assert_eq!(executed_tx.output_notes().num_notes(), 1);
         let attachment = NoteAttachment::with_words(
@@ -128,9 +154,17 @@ fn typed_attachments_reject_excess_count_total_words_and_sealed_notes() {
         (4, ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED.message()),
         (5, ERR_OUTPUT_NOTE_IS_SEALED.message()),
     ] {
-        let (_chain, mock_tx) = build_attachment_tx(scenario);
+        let (_chain, mock_tx) = build_attachment_tx(scenario, SCHEME);
         let err = execute_tx_expect_failure(mock_tx);
         let needle = format!("assertion failed with error message: {expected_error}");
         assert!(err.contains(&needle), "scenario {scenario}: wanted `{needle}`, got `{err}`");
     }
+}
+
+/// A scheme felt that is not a valid scheme panics in the guest before any attachment is added.
+#[test]
+fn an_invalid_scheme_from_the_script_argument_panics_in_the_guest() {
+    let (_chain, mock_tx) = build_attachment_tx(6, 0);
+    let err = execute_tx_expect_failure(mock_tx);
+    assert!(err.contains(GUEST_PANIC_CODE), "wanted a guest panic, got `{err}`");
 }
