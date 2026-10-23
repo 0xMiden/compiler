@@ -587,22 +587,35 @@ pub(super) fn load_candidate<'a>(
 }
 
 /// Estimate before frame assignment: address generation takes two primitives, reads
-/// one, and writes two (including the discarded result). Raw shuffles are already expanded.
+/// one, and writes two (including the discarded result). Price indexed instructions by their
+/// assembler expansion rather than treating each MASM mnemonic as one VM operation.
 pub(super) fn cost(trial: &Trial<'_>) -> usize {
     action_cost(&trial.actions)
 }
 
 /// Estimate emitted primitive count for raw preparation actions before frame assignment.
-/// Slot loads cost three, stores four, and other actions one; this is a ranking heuristic.
+/// Slot loads cost three and stores four. Stack instructions use the pinned assembler's costs;
+/// packing noops and control-flow overhead remain outside this local ranking heuristic.
 pub(super) fn action_cost(actions: &[PlanAction]) -> usize {
     actions
         .iter()
         .map(|action| match action {
             PlanAction::LoadLane(_) => 3,
             PlanAction::StoreLane(_) => 4,
-            _ => 1,
+            PlanAction::Dup { depth } => stack_cost(Primitive::Dup(*depth)),
+            PlanAction::Swap { depth } => stack_cost(Primitive::Swap(*depth)),
+            PlanAction::MoveUp { depth } => stack_cost(Primitive::MoveUp(*depth)),
+            PlanAction::MoveDown { depth } => stack_cost(Primitive::MoveDown(*depth)),
+            PlanAction::PushLiteral(value) => stack_cost(Primitive::Push(*value)),
+            PlanAction::Drop | PlanAction::RunLowering { .. } | PlanAction::DebugLocation(_) => 1,
         })
         .sum()
+}
+
+fn stack_cost(primitive: Primitive) -> usize {
+    let instruction = primitive.instruction().expect("prepared stack action has a legal depth");
+    crate::opt::cost::stack_instruction_cost(&instruction)
+        .expect("prepared stack instruction has a known expansion cost")
 }
 
 /// Compare direct loads with gather-then-loads, preferring direct loads on an equal cost.
