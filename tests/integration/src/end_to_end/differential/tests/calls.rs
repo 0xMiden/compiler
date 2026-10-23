@@ -1,8 +1,6 @@
 //! Function-call boundaries: sret aggregates, at-limit signatures, call placement.
 
-use super::super::harness::{
-    run_case, run_case_rejected, run_case_with_flags, run_case_with_inputs,
-};
+use super::super::harness::{run_case, run_case_with_flags, run_case_with_inputs};
 
 /// Non-inlined helper calls (multi-arg, u64, bool) plus reused selects —
 /// exercises call translation/lowering and select emitter variants.
@@ -20,10 +18,9 @@ fn sret_shapes() {
     run_case("sret_shapes", include_str!("../cases/case_sret_shapes.rs"));
 }
 
-/// 16-u32 and 8-u64 helper signatures — exactly 16 stack felts each, the
-/// call-site scheduling limit (wider signatures are rejected at compile
-/// time, see `sig17`; 20 felts was a spills panic until #1421) — with u64
-/// values live across both call sites.
+/// Sixteen-u32 and eight-u64 helper signatures fill the addressable window,
+/// with u64 values live across both call sites. Wider same-context signatures
+/// are covered by `sig17`.
 #[test]
 fn wide_calls() {
     run_case("wide_calls", include_str!("../cases/case_wide_calls.rs"));
@@ -491,24 +488,9 @@ fn indirect_u128() {
     run_case("indirect_u128", include_str!("../cases/case_indirect_u128.rs"));
 }
 
-/// A helper taking one u32 and eight u64s BY VALUE — seventeen felts, one
-/// over the 16-felt call-signature limit — called from a loop. The limit is
-/// by design, so the build must fail with the operand stack diagnostic: the
-/// spill analysis excludes the call's own operands from its spill candidates,
-/// and until #1421 it panicked (`unable to spill sufficient capacity to hold
-/// all operands on stack at one time at hir.exec ...`) when it ran out of
-/// candidates on an over-wide argument list. Surfaced by the campaign-22
-/// workaround map (`prog_*_wa`): moving a hot loop into an `#[inline(never)]`
-/// helper rescues the F6 programs only when the wide state is passed by
-/// reference. Bounded by the same helper with the state behind a `&[u64; 8]`
-/// (the `prog_tlv_wa` shape) and by the sixteen-felt signatures of
-/// `call_sigs16`. Compile-time — no inputs involved.
+/// Seventeen argument lanes cross the addressable window in a same-context
+/// call. Compare complete results with native execution across loop iterations.
 #[test]
 fn sig17() {
-    run_case_rejected(
-        "sig17",
-        include_str!("../cases/case_sig17.rs"),
-        "operation 'hir.exec' needs 17 operand stack elements at once for its operands, but only \
-         16 are addressable",
-    );
+    run_case("sig17", include_str!("../cases/case_sig17.rs"));
 }
