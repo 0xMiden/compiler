@@ -380,7 +380,11 @@ impl Pass for SinkOperandDefs {
                 if let Some(replacement) = sink_state.replacements.get(&operand_value).copied() {
                     if replacement != operand_value {
                         log::trace!(target: Self::NAME, "    rewriting operand {operand_value} as {replacement}");
-                        operand.borrow_mut().set(replacement);
+                        {
+                            let _debug_update =
+                                DebugInfoMutation::new(operation, DebugInfoUpdate::Equivalent);
+                            operand.borrow_mut().set(replacement);
+                        }
 
                         changed = PostPassStatus::Changed;
                         // If no real uses of this value remain, then remove the original
@@ -430,7 +434,11 @@ impl Pass for SinkOperandDefs {
                         let replacement = new_def.borrow().results()[0] as ValueRef;
                         log::trace!(target: Self::NAME, "    rewriting operand {operand_value} as {replacement}");
                         sink_state.replacements.insert(operand_value, replacement);
-                        operand.borrow_mut().set(replacement);
+                        {
+                            let _debug_update =
+                                DebugInfoMutation::new(operation, DebugInfoUpdate::Equivalent);
+                            operand.borrow_mut().set(replacement);
+                        }
                         changed = PostPassStatus::Changed;
                     } else {
                         log::trace!(target: Self::NAME, "    defining op is a constant with no other uses, moving into place");

@@ -1,0 +1,38 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(sink-operand-defs))' | filecheck %s
+
+builtin.module public @sink_equivalent_operands {
+    // CHECK-LABEL: @shared_storage_constant(
+    // CHECK: %[[FIRST:\d+]] = arith.constant 7 : u32;
+    // CHECK-NEXT: hir.store_local %[[FIRST]] <{ local = #builtin.local_variable<0, u32> }>
+    // CHECK-NEXT: di.debug_declare {{.*}}name = "first"
+    // CHECK-NEXT: %[[SECOND:\d+]] = arith.constant 7 : u32;
+    // CHECK-NEXT: hir.store_local %[[SECOND]] <{ local = #builtin.local_variable<1, u32> }>
+    // CHECK-NEXT: di.debug_declare {{.*}}name = "second"
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @shared_storage_constant(%0: u32) -> u32 {
+        %1 = arith.constant 7 : u32;
+        hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "first", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        hir.store_local %1 <{ local = #builtin.local_variable<1, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "second", file = "test.rs", line = 2 }>, expression = #di.expression<[DI_OP_local_slot(1)]> }>;
+        builtin.ret %0 : (u32);
+    };
+
+    // CHECK-LABEL: @reused_constant_operand(
+    // CHECK: hir.store_local
+    // CHECK-NEXT: di.debug_declare {{.*}}name = "local"
+    // CHECK-NEXT: %[[COPY:\d+]] = arith.constant 7 : u32;
+    // CHECK-NEXT: %[[RESULT:\d+]] = arith.bxor %[[COPY]], %[[COPY]]
+    // CHECK-NEXT: hir.store {{%\d+}}, %[[RESULT]]
+    // CHECK-NEXT: di.debug_value %[[RESULT]] {{.*}}name = "result"
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @reused_constant_operand(%0: u32, %1: ptr<u32, byte>) -> u32 {
+        %2 = arith.constant 7 : u32;
+        hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "local", file = "test.rs", line = 10 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        %3 = arith.bxor %2, %2;
+        hir.store %1, %3 : (ptr<u32, byte>, u32);
+        di.debug_value %3 <{ variable = #di.variable<{ name = "result", file = "test.rs", line = 11 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %0 : (u32);
+    };
+};

@@ -98,6 +98,11 @@ impl RewritePattern for ConvertTrivialIfToSelect {
             return Ok(false);
         }
 
+        let _debug_update = midenc_hir::dialects::debuginfo::DebugInfoMutation::new(
+            operation,
+            midenc_hir::dialects::debuginfo::DebugInfoUpdate::Relocate,
+        );
+
         // Create a new `scf.if` for the non-hoistable results (erased below if it ends up doing
         // nothing), and use it as the anchor for inserting the hoisted `cf.select`s.
         let anchor = {
