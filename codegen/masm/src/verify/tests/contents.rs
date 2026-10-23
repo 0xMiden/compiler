@@ -119,6 +119,7 @@ fn fixture() -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
         segment_actions,
         edge_actions: BTreeMap::new(),
         spill_slots: vec![],
+        semantic_storage_reads: Default::default(),
         lowering_bindings: (0..3)
             .map(|index| {
                 (

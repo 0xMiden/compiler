@@ -219,6 +219,7 @@ pub(in crate::verify) fn loop_fixture(
             (EdgeId(2), if repair { store } else { vec![] }),
         ]),
         spill_slots: vec![slot],
+        semantic_storage_reads: Default::default(),
         lowering_bindings: BTreeMap::from([
             (SelectedStepId(0), LoweringBindings::default()),
             (SelectedStepId(1), LoweringBindings::default()),

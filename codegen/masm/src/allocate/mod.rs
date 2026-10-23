@@ -143,6 +143,7 @@ fn allocate_inner(
     let mut edge_actions = BTreeMap::new();
     let mut slots = BTreeSet::new();
     let mut bindings = BTreeMap::new();
+    let mut semantic_storage_reads = BTreeMap::new();
     let mut debug_locations = BTreeMap::new();
     let mut decisions = PlanDecisions::default();
     let mut outgoing = BTreeMap::<SegmentId, AllocationState>::new();
@@ -314,6 +315,10 @@ fn allocate_inner(
                 },
             );
             preparation.commit(&mut state, &mut actions, &mut bindings, &mut slots);
+            let reads = context.semantic_storage_reads(&state, unit)?;
+            if !reads.is_empty() {
+                semantic_storage_reads.insert(unit.id, reads);
+            }
             actions.push(PlanAction::RunLowering { step: unit.id });
             if !unit.effects.normal_return {
                 normal = false;
@@ -419,6 +424,7 @@ fn allocate_inner(
         edge_actions,
         spill_slots: slots.into_iter().collect(),
         lowering_bindings: bindings,
+        semantic_storage_reads,
     })
 }
 

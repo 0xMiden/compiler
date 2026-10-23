@@ -368,6 +368,7 @@ fn simultaneous_slot_cycle_with_stack_readers_verifies_assembles_and_rejects_ove
             ),
         ]),
         edge_actions: BTreeMap::from([(EdgeId(0), proposal.actions)]),
+        semantic_storage_reads: Default::default(),
         lowering_bindings: BTreeMap::from([(
             SelectedStepId(0),
             LoweringBindings {
@@ -755,6 +756,7 @@ fn reconstructed_edge_survives_empty_contract(alias: bool) {
         ]),
         edge_actions: BTreeMap::from([(EdgeId(0), transfer.actions)]),
         spill_slots: vec![],
+        semantic_storage_reads: Default::default(),
         lowering_bindings: bindings,
     };
     let frame = fixture_frame(&plan);

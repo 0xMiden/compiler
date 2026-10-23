@@ -38,6 +38,7 @@ impl ProcedurePlan {
             segment_actions: BTreeMap::from([(SegmentId(0), actions)]),
             edge_actions: BTreeMap::new(),
             spill_slots: Vec::new(),
+            semantic_storage_reads: Default::default(),
             lowering_bindings: BTreeMap::new(),
         }
     }
