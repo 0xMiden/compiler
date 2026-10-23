@@ -29,6 +29,28 @@ fn felt_low_u32(value: Felt) -> u32 {
     value.as_canonical_u64() as u32
 }
 
+/// The canonical value of `value` as a `u16`, or `None` if it exceeds `u16::MAX`.
+#[inline]
+pub(super) fn felt_to_u16(value: Felt) -> Option<u16> {
+    if felt_at_most(value, u16::MAX.into()) {
+        // The bound makes the truncation exact.
+        Some(felt_low_u32(value) as u16)
+    } else {
+        None
+    }
+}
+
+/// The canonical value of `value` as a `u8`, or `None` if it exceeds `u8::MAX`.
+#[inline]
+pub(super) fn felt_to_u8(value: Felt) -> Option<u8> {
+    if felt_at_most(value, u8::MAX.into()) {
+        // The bound makes the truncation exact.
+        Some(felt_low_u32(value) as u8)
+    } else {
+        None
+    }
+}
+
 /// Extracts a scalar felt from a protocol word with zero-padded trailing limbs.
 pub fn felt_from_padded_word(value: Word) -> Result<Felt, &'static str> {
     if value[1] != felt!(0) || value[2] != felt!(0) || value[3] != felt!(0) {
@@ -661,14 +683,7 @@ impl TryFrom<Felt> for NoteIdx {
 
     #[inline]
     fn try_from(value: Felt) -> Result<Self, Self::Error> {
-        if felt_at_most(value, u16::MAX.into()) {
-            // The bound makes the truncation exact.
-            Ok(Self {
-                inner: felt_low_u32(value) as u16,
-            })
-        } else {
-            Err("note index exceeds u16")
-        }
+        felt_to_u16(value).map(|inner| Self { inner }).ok_or("note index exceeds u16")
     }
 }
 
@@ -718,14 +733,7 @@ impl TryFrom<Felt> for NoteType {
 
     #[inline]
     fn try_from(value: Felt) -> Result<Self, Self::Error> {
-        if felt_at_most(value, u8::MAX.into()) {
-            // The bound makes the truncation exact.
-            Ok(Self {
-                inner: felt_low_u32(value) as u8,
-            })
-        } else {
-            Err("note type exceeds u8")
-        }
+        felt_to_u8(value).map(|inner| Self { inner }).ok_or("note type exceeds u8")
     }
 }
 

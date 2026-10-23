@@ -305,7 +305,9 @@ fn swapp_note_package_size() {
     // adjacent stack operations that undo each other, such as `swap.1 swap.1` (176 bytes fewer);
     // 43532 with no `u32assert` on a constant-address 32-bit store, one fewer per 32-bit global
     // initializer: the note's `init` stores four such globals, 11 bytes per assertion and 2
-    // padding `noop`s its shorter block no longer needs (46 bytes fewer).
+    // padding `noop`s its shorter block no longer needs (46 bytes fewer); 43557 since a partial
+    // store keeps the low 32 bits of an element that may hold a felt (`u32split swap.1 drop`
+    // after each read-modify-write load, 25 bytes more).
     //
     // The 1260 bytes over 42589 at 43849:
     // - new with the integer newtypes: the note builds the `Tag` and the `NoteType` it passes
@@ -315,7 +317,7 @@ fn swapp_note_package_size() {
     //   returns as it lifts it;
     // - since the generated bindings: the frontend masks the `u16`s the note passes the kernel
     //   to their declared type.
-    expect!["43532"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
+    expect!["43557"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
 }
 
 /// Tests a full fill of a SWAPP note.
@@ -384,11 +386,13 @@ fn swapp_note_full_fill_transfers_assets() {
     // the `init` that every call into a component runs (44 fewer): the note's `init` stores four
     // such globals (14 cycles: 12 for the assertions, 2 for padding `noop`s), and the wallet's,
     // run for each of `receive_asset`, `create_note` and `move_asset_to_note`, three (10 cycles
-    // each: 9, and 1 for an op batch its stores no longer fill). The 294 cycles over 12904 at
-    // 13198: the note's `TryFrom<Felt>` checks of the `Tag` and `NoteType` from its storage and
-    // the lift masks (both new with the integer newtypes), the wallet's check that the
-    // `NoteType` is private or public, and the frontend's masks (see `swapp_note_package_size`).
-    expect!["13009"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    // each: 9, and 1 for an op batch its stores no longer fill); 13021 since a partial store keeps
+    // the low 32 bits of the element it rewrites, three ops per sub-word store (12 more). The 294
+    // cycles over 12904 at 13198: the note's `TryFrom<Felt>` checks of the `Tag` and `NoteType`
+    // from its storage and the lift masks (both new with the integer newtypes), the wallet's
+    // check that the `NoteType` is private or public, and the frontend's masks (see
+    // `swapp_note_package_size`).
+    expect!["13021"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 50);
@@ -483,9 +487,10 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
     // since casts that change only a type are renames (61 cycles fewer) and the stack peephole
     // deletes operations that undo each other (193 fewer); 18104 with no `u32assert` on a
     // constant-address 32-bit store (54 fewer: as at the full fill, and the wallet's `init` once
-    // more, for the remainder note's `create_note`). The 421 cycles over 17991 at 18412 are those
+    // more, for the remainder note's `create_note`); 18119 since a partial store keeps the low 32
+    // bits of the element it rewrites (15 more). The 421 cycles over 17991 at 18412 are those
     // listed at the full fill, with two notes created.
-    expect!["18104"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["18119"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 3);
@@ -573,8 +578,9 @@ fn swapp_note_creator_reclaims_offered_asset() {
     // peephole deleted operations that undo each other (75 fewer; see
     // `swapp_note_package_size`). 5472 before the `u32assert` on a constant-address 32-bit store
     // went, one fewer per 32-bit global initializer: the note's `init` (14 cycles) and the
-    // wallet's, run once for `receive_asset` (10 cycles; see the full fill).
-    expect!["5448"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    // wallet's, run once for `receive_asset` (10 cycles; see the full fill). 5448 before a
+    // partial store kept the low 32 bits of the element it rewrites (6 more).
+    expect!["5454"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let alice_account = chain.committed_account(alice.id()).unwrap();
     assert_account_has_fungible_asset(alice_account, usdc_faucet.id(), 50);

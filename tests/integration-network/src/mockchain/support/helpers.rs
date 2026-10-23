@@ -14,7 +14,7 @@ use miden_client::{
     note::{Note, NoteType},
     transaction::RawOutputNote,
 };
-use miden_core::Felt;
+use miden_core::{Felt, mast::error_code_from_msg};
 use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 use miden_mast_package::{Package, TargetType};
 use miden_note_schema::NoteStorageSchema;
@@ -262,6 +262,21 @@ pub(crate) fn execute_tx_expect_failure(mock_tx: MockTransaction) -> String {
     }
 }
 
+/// The VM assertion message every guest panic reports: the `unreachable` lowering's `assert.err`
+/// message, hashed as the assembler does.
+pub(crate) fn guest_panic_code() -> String {
+    format!(
+        "assertion failed with error code: {}",
+        error_code_from_msg("entered unreachable code")
+    )
+}
+
+/// Asserts that a transaction failure message contains `needle`, so an unrelated failure cannot
+/// satisfy the test.
+pub(crate) fn assert_failure_contains(err: &str, needle: &str) {
+    assert!(err.contains(needle), "unexpected failure message (wanted `{needle}`): {err}");
+}
+
 /// Executes a mock transaction against the chain and commits it in the next block.
 ///
 /// Returns the executed transaction for inspection.
@@ -475,7 +490,14 @@ pub(crate) fn build_counter_account_with_rust_rpo_auth(
 mod tests {
     use miden_tx_script_args::ScriptArgs;
 
-    use super::TxScriptArgs;
+    use super::{TxScriptArgs, guest_panic_code};
+
+    /// Pins the code to the value the VM reported for earlier guest builds, so a change to
+    /// `error_code_from_msg` or to the message literal above shows up here.
+    #[test]
+    fn guest_panic_code_matches_the_reported_code() {
+        assert_eq!(guest_panic_code(), "assertion failed with error code: 10154102372021603817");
+    }
 
     /// Pins the mirror's encoded size so layout drift vs the guest struct in
     /// `examples/basic-wallet-tx-script` fails loudly (tag + note type + recipient word +

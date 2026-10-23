@@ -6,6 +6,11 @@
 //! properties one by one: word-mode padding canonicality, the in-VM hash verification itself
 //! (a valid preimage under a wrong args word must fail *because of* the hash check), tamper
 //! detection for values the script never reads, and commitment-preimage canonicality.
+//!
+//! All decode failures share one code, [`guest_panic_code`]: the `#[tx_script]` wrapper panics on
+//! a `ScriptArgs::decode` error. The in-VM hash verification fails with the message-less assert
+//! code `0`, distinct from the guest panic code, so the hash-isolation cases rule out a decode
+//! panic.
 
 use std::sync::Arc;
 
@@ -19,9 +24,9 @@ use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs};
 use midenc_integration_test_support::project;
 
 use super::support::{
-    apply_script_args, compile_rust_package, execute_tx, execute_tx_expect_failure,
-    from_field_felts, from_field_word, transaction_script_from_package, tx_script_cargo_toml,
-    tx_script_miden_project_toml,
+    apply_script_args, assert_failure_contains, compile_rust_package, execute_tx,
+    execute_tx_expect_failure, from_field_felts, from_field_word, guest_panic_code,
+    transaction_script_from_package, tx_script_cargo_toml, tx_script_miden_project_toml,
 };
 
 /// Transaction script whose two-felt arguments travel in the args word directly.
@@ -127,21 +132,6 @@ fn build_chain_with_wallet_account() -> (MockChain, AccountId) {
     (chain, account_id)
 }
 
-/// Error code of the `#[tx_script]` wrapper's decode panic; every in-VM decode failure funnels
-/// through it (see `assert_failure_contains` for re-calibration).
-const DECODE_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";
-
-/// Asserts a failed execution's error message so an unrelated failure cannot satisfy the test.
-///
-/// The expected error codes are stable products of the deterministic guest build. All decode
-/// failures share one code — the `#[tx_script]` wrapper's panic on a `ScriptArgs::decode` error —
-/// while the in-VM hash verification fails with its own distinct stdlib code, so the
-/// hash-isolation case still proves that specific mechanism. When an intentional SDK or codegen
-/// change shifts a code, re-calibrate it from this assert's failure output, like an expect test.
-fn assert_failure_contains(err: &str, needle: &str) {
-    assert!(err.contains(needle), "unexpected failure message (wanted `{needle}`): {err}");
-}
-
 /// Word-mode arguments pass in the args word directly (no advice map) and non-zero felts in the
 /// unused padding fail the transaction.
 #[test]
@@ -181,7 +171,7 @@ pub fn word_mode_args() {
         .build()
         .unwrap();
     let err = execute_tx_expect_failure(mock_tx);
-    assert_failure_contains(&err, DECODE_PANIC_CODE);
+    assert_failure_contains(&err, &guest_panic_code());
 }
 
 /// Commitment-mode arguments pass through the advice provider hash-verified against the args
@@ -268,7 +258,7 @@ pub fn commitment_mode_args() {
         .build()
         .unwrap();
     let err = execute_tx_expect_failure(mock_tx);
-    assert_failure_contains(&err, DECODE_PANIC_CODE);
+    assert_failure_contains(&err, &guest_panic_code());
 
     // Canonicality: a self-consistent preimage with a whole extra all-zero word must be rejected
     // as trailing data.
@@ -283,7 +273,7 @@ pub fn commitment_mode_args() {
         .build()
         .unwrap();
     let err = execute_tx_expect_failure(mock_tx);
-    assert_failure_contains(&err, DECODE_PANIC_CODE);
+    assert_failure_contains(&err, &guest_panic_code());
 
     // Canonicality: an advice value that is not a whole number of words fails before the decode.
     let mut non_word_multiple = preimage.clone();
@@ -297,5 +287,5 @@ pub fn commitment_mode_args() {
         .build()
         .unwrap();
     let err = execute_tx_expect_failure(mock_tx);
-    assert_failure_contains(&err, DECODE_PANIC_CODE);
+    assert_failure_contains(&err, &guest_panic_code());
 }

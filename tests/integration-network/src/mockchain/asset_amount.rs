@@ -28,9 +28,9 @@ use midenc_integration_test_support::{cargo_proj::Project, project};
 
 use super::support::{
     account_cargo_toml_for, account_miden_project_toml_with_interface,
-    assert_account_has_fungible_asset, build_send_notes_script, compile_rust_package, execute_tx,
-    execute_tx_expect_failure, note_cargo_toml_for_dependency,
-    note_miden_project_toml_for_dependency, note_script_root,
+    assert_account_has_fungible_asset, assert_failure_contains, build_send_notes_script,
+    compile_rust_package, execute_tx, execute_tx_expect_failure, guest_panic_code,
+    note_cargo_toml_for_dependency, note_miden_project_toml_for_dependency, note_script_root,
 };
 
 /// Project name of the generated wallet account component.
@@ -295,10 +295,6 @@ fn asset_amount_api_matches_kernel_balances() {
     assert_account_has_fungible_asset(alice_account, faucet_id, first_amount + second_amount);
 }
 
-/// The fixed VM assertion code every guest panic reports, so the failing shape checks cannot be
-/// satisfied by an unrelated kernel failure.
-const GUEST_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";
-
 /// Builds the nine-felt shape-note storage `[mode, id word, value word]`.
 fn shape_note_storage(mode: u64, id: Word, value: Word) -> Vec<Felt> {
     let mut storage = vec![Felt::new(mode).unwrap()];
@@ -420,6 +416,6 @@ fn asset_shape_checks_match_the_kernel_on_chain() {
             .unwrap();
         let err = execute_tx_expect_failure(tx);
         eprintln!("{label} aborted the transaction: {err}");
-        assert!(err.contains(GUEST_PANIC_CODE), "{label} failed for an unexpected reason: {err}");
+        assert_failure_contains(&err, &guest_panic_code());
     }
 }
