@@ -211,7 +211,7 @@ fn input_note_find_attachment_binding() {
         "pub fn binding(&self) -> u32 {
         input_note::find_attachment(
             NoteIdx::from(0u16),
-            1,
+            NoteAttachmentScheme::none(),
         )
         .unwrap_or(0)
     }",

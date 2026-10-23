@@ -1,8 +1,9 @@
 //! Output-note creation, assets, attachments, and sealing.
 //!
-//! Use [`super::NoteAttachment`] to validate a scheme and content length before adding an
-//! attachment. The functions here also expose the individual protocol operations, including
-//! [`add_attachment`] for content already available in the advice map under its commitment.
+//! Attachment schemes are validated [`NoteAttachmentScheme`] values. Use [`super::NoteAttachment`]
+//! to also validate the content length before adding an attachment. The functions here expose the
+//! individual protocol operations, including [`add_attachment`] for content already available in
+//! the advice map under its commitment.
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -10,7 +11,7 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{ElementPtr, Word};
 
 use super::{
-    MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, assert_attachment_count,
+    MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme, assert_attachment_count,
     assert_attachment_word_count, attachment_index_u8,
     types::{Asset, NoteId, NoteIdx, NoteMetadata, NoteType, Recipient, Tag},
 };
@@ -56,30 +57,45 @@ pub fn create(tag: Tag, note_type: NoteType, recipient: Recipient) -> NoteIdx {
     raw::create(u32::from(tag), note_type, recipient.inner).into()
 }
 
-/// Adds a single-word attachment to the output note specified by `note_idx`.
-pub fn add_word_attachment(note_idx: NoteIdx, attachment_scheme: u16, attachment: Word) {
-    raw::add_word_attachment(attachment_scheme, attachment, u16::from(note_idx));
+/// Adds a single-word attachment with `attachment_scheme` to the output note specified by
+/// `note_idx`.
+pub fn add_word_attachment(
+    note_idx: NoteIdx,
+    attachment_scheme: NoteAttachmentScheme,
+    attachment: Word,
+) {
+    raw::add_word_attachment(attachment_scheme.as_u16(), attachment, u16::from(note_idx));
 }
 
-/// Adds an attachment commitment to the output note specified by `note_idx`.
+/// Adds an attachment commitment with `attachment_scheme` to the output note specified by
+/// `note_idx`.
 ///
 /// The advice map must contain an entry for the attachment elements committed to by `attachment`.
-pub fn add_attachment(note_idx: NoteIdx, attachment_scheme: u16, attachment: Word) {
-    raw::add_attachment(attachment_scheme, attachment, u16::from(note_idx));
+pub fn add_attachment(
+    note_idx: NoteIdx,
+    attachment_scheme: NoteAttachmentScheme,
+    attachment: Word,
+) {
+    raw::add_attachment(attachment_scheme.as_u16(), attachment, u16::from(note_idx));
 }
 
-/// Adds a multi-word attachment from linear memory to the output note specified by `note_idx`.
+/// Adds a multi-word attachment with `attachment_scheme` from linear memory to the output note
+/// specified by `note_idx`.
 ///
 /// Panics if `attachment` is empty or contains more than `MAX_ATTACHMENT_WORDS` (256) words;
 /// the kernel rejects both.
-pub fn add_attachment_from_memory(note_idx: NoteIdx, attachment_scheme: u16, attachment: &[Word]) {
+pub fn add_attachment_from_memory(
+    note_idx: NoteIdx,
+    attachment_scheme: NoteAttachmentScheme,
+    attachment: &[Word],
+) {
     assert!(!attachment.is_empty(), "note attachment cannot be empty");
     assert_attachment_word_count(attachment.len());
     // The bound above makes the length fit in the protocol's `u16`.
     let num_words = attachment.len() as u16;
     unsafe {
         raw::add_attachment_from_memory(
-            attachment_scheme,
+            attachment_scheme.as_u16(),
             num_words,
             ElementPtr::from_ptr(attachment.as_ptr().cast_mut()),
             u16::from(note_idx),
@@ -176,13 +192,17 @@ pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
     NoteMetadata::new(raw::get_metadata(u16::from(note_index)))
 }
 
-/// Searches the output note metadata for `attachment_scheme`.
+/// Searches the output note metadata for `attachment_scheme` and returns the index of the first
+/// matching attachment.
 ///
 /// # Panics
 ///
 /// Panics if `note_index` is out of bounds for the transaction's output notes.
-pub fn find_attachment(note_index: NoteIdx, attachment_scheme: u16) -> Option<u32> {
-    let (found, index) = raw::find_attachment(attachment_scheme, u16::from(note_index));
+pub fn find_attachment(
+    note_index: NoteIdx,
+    attachment_scheme: NoteAttachmentScheme,
+) -> Option<u32> {
+    let (found, index) = raw::find_attachment(attachment_scheme.as_u16(), u16::from(note_index));
     found.then_some(index.into())
 }
 

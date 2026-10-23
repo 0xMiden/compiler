@@ -543,7 +543,7 @@ impl TraitNote {
         let commitments = self.write_attachment_commitments_to_memory();
         let attachment = self.write_attachment_to_memory(0);
         assert!(commitments.len() + attachment.len() < 1024);
-        let attachment_idx = self.find_attachment(1).unwrap_or(0);
+        let attachment_idx = self.find_attachment(NoteAttachmentScheme::none()).unwrap_or(0);
         assert!(attachment_idx < 1024);
 
         let assets = self.get_initial_assets();

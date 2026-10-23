@@ -90,7 +90,7 @@ fn run_attachment_length_boundary_test(attachment_len: usize, should_succeed: bo
     let main_fn = format!(
         r#"() -> Felt {{
         let idx = NoteIdx::from(0u16);
-        let attachment_scheme = 1;
+        let attachment_scheme = NoteAttachmentScheme::none();
         let attachment = [Word::from([Felt::new(0).unwrap(); 4]); {attachment_len}];
         output_note::add_attachment_from_memory(idx, attachment_scheme, &attachment);
         Felt::new(1).unwrap()
@@ -271,7 +271,7 @@ fn rust_sdk_output_note_add_word_attachment_binding() {
         "rust_sdk_output_note_add_word_attachment_binding",
         "pub fn binding(&self) -> Felt {
         let idx = NoteIdx::from(0u16);
-        let attachment_scheme = 1;
+        let attachment_scheme = NoteAttachmentScheme::none();
         let attachment = Word::from([Felt::new(0).unwrap(); 4]);
         output_note::add_word_attachment(idx, attachment_scheme, attachment);
         Felt::new(0).unwrap()
@@ -285,7 +285,7 @@ fn rust_sdk_output_note_add_attachment_binding() {
         "rust_sdk_output_note_add_attachment_binding",
         "pub fn binding(&self) -> Felt {
         let idx = NoteIdx::from(0u16);
-        let attachment_scheme = 1;
+        let attachment_scheme = NoteAttachmentScheme::none();
         let attachment = Word::from([Felt::new(0).unwrap(); 4]);
         output_note::add_attachment(idx, attachment_scheme, attachment);
         Felt::new(0).unwrap()
@@ -299,7 +299,7 @@ fn rust_sdk_output_note_add_attachment_from_memory_binding() {
         "rust_sdk_output_note_add_attachment_from_memory_binding",
         "pub fn binding(&self) -> Felt {
         let idx = NoteIdx::from(0u16);
-        let attachment_scheme = 1;
+        let attachment_scheme = NoteAttachmentScheme::none();
         let attachment = [Word::from([Felt::new(0).unwrap(); 4])];
         output_note::add_attachment_from_memory(idx, attachment_scheme, &attachment);
         Felt::new(0).unwrap()
@@ -334,7 +334,7 @@ fn rust_sdk_output_note_find_attachment_binding() {
         "pub fn binding(&self) -> u32 {
         output_note::find_attachment(
             NoteIdx::from(0u16),
-            1,
+            NoteAttachmentScheme::none(),
         )
         .unwrap_or(0)
     }",

@@ -4,8 +4,9 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
-    AccountId, Asset, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteId, NoteMetadata,
-    Recipient, assert_attachment_count, assert_attachment_word_count, attachment_index_u8,
+    AccountId, Asset, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme, NoteId,
+    NoteMetadata, Recipient, assert_attachment_count, assert_attachment_word_count,
+    attachment_index_u8,
 };
 use crate::raw::protocol::{active_note as raw, types as raw_types};
 
@@ -146,9 +147,10 @@ pub fn write_attachment_to_memory(attachment_idx: u32) -> Vec<Word> {
     attachment
 }
 
-/// Searches the active note metadata for `attachment_scheme`.
-pub fn find_attachment(attachment_scheme: u16) -> Option<u32> {
-    let (found, index) = raw::find_attachment(attachment_scheme);
+/// Searches the active note metadata for `attachment_scheme` and returns the index of the first
+/// matching attachment.
+pub fn find_attachment(attachment_scheme: NoteAttachmentScheme) -> Option<u32> {
+    let (found, index) = raw::find_attachment(attachment_scheme.as_u16());
     found.then_some(index.into())
 }
 
@@ -294,9 +296,10 @@ pub trait ActiveNote {
         write_attachment_to_memory(attachment_idx)
     }
 
-    /// Searches the active note metadata for `attachment_scheme`.
+    /// Searches the active note metadata for `attachment_scheme` and returns the index of the
+    /// first matching attachment.
     #[inline]
-    fn find_attachment(&self, attachment_scheme: u16) -> Option<u32> {
+    fn find_attachment(&self, attachment_scheme: NoteAttachmentScheme) -> Option<u32> {
         find_attachment(attachment_scheme)
     }
 

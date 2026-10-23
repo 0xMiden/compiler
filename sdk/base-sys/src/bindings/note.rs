@@ -5,8 +5,8 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
-    AccountId, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteType, Recipient, Tag,
-    assert_attachment_count,
+    AccountId, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme, NoteType,
+    Recipient, Tag, assert_attachment_count,
 };
 use crate::raw::protocol::note as raw;
 
@@ -188,10 +188,14 @@ pub fn metadata_into_sender(metadata: Word) -> AccountId {
 }
 
 /// Extracts the four attachment schemes encoded in a note metadata header word, in attachment
-/// order. Each is the `u16` the attachment lookups and `add_*attachment` procedures take.
-pub fn metadata_into_attachment_schemes(metadata: Word) -> [u16; 4] {
+/// order. A slot without an attachment is `None`.
+///
+/// # Panics
+///
+/// Panics if a slot holds a value that is not a valid [`NoteAttachmentScheme`].
+pub fn metadata_into_attachment_schemes(metadata: Word) -> [Option<NoteAttachmentScheme>; 4] {
     let (first, second, third, fourth) = raw::metadata_into_attachment_schemes(metadata);
-    [first, second, third, fourth]
+    [first, second, third, fourth].map(NoteAttachmentScheme::from_header_u16)
 }
 
 /// Extracts the note type encoded in a note metadata header word.
@@ -204,8 +208,9 @@ pub fn metadata_into_tag(metadata: Word) -> Tag {
     raw::metadata_into_tag(metadata).into()
 }
 
-/// Searches a metadata header word for `attachment_scheme`.
-pub fn find_attachment_idx(attachment_scheme: u16, metadata: Word) -> Option<u32> {
-    let (found, index) = raw::find_attachment_idx(attachment_scheme, metadata);
+/// Searches a metadata header word for `attachment_scheme` and returns the index of the first
+/// matching attachment.
+pub fn find_attachment_idx(attachment_scheme: NoteAttachmentScheme, metadata: Word) -> Option<u32> {
+    let (found, index) = raw::find_attachment_idx(attachment_scheme.as_u16(), metadata);
     found.then_some(index.into())
 }

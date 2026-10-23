@@ -74,9 +74,9 @@ fn check_round_trip(note_idx: NoteIdx, scheme: NoteAttachmentScheme, first: Word
     // The host supplies this preimage in the advice map; the legacy writer still consumes it.
     let multi_commitment = hash_words(&multiple).inner;
     let legacy_commitment = hash_words(&legacy).inner;
-    output_note::add_attachment(note_idx, scheme.as_u16(), legacy_commitment);
+    output_note::add_attachment(note_idx, scheme, legacy_commitment);
 
-    assert_eq!(output_note::find_attachment(note_idx, scheme.as_u16()), Some(0));
+    assert_eq!(output_note::find_attachment(note_idx, scheme), Some(0));
     assert_eq!(output_note::write_attachment_to_memory(note_idx, 0).as_slice(), &single);
     assert_eq!(output_note::write_attachment_to_memory(note_idx, 1).as_slice(), &single);
     assert_eq!(output_note::write_attachment_to_memory(note_idx, 2).as_slice(), &multiple);
