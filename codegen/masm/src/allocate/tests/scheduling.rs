@@ -60,6 +60,29 @@ fn preparation_cost_matches_assembled_stack_operations() -> Result<(), midenc_hi
 }
 
 #[test]
+fn preparation_cost_matches_assembled_spill_accesses() -> Result<(), midenc_hir::Report> {
+    use crate::{allocate::schedule::action_cost, opt::cost::tests::assembled_cost_with_locals};
+
+    let slot = SpillSlotId {
+        owner: SlotOwner::Value(ValueId(0)),
+        index: 0,
+    };
+    for locals in [4, 65532] {
+        let overhead = assembled_cost_with_locals("nop", locals)?;
+        for offset in [0, locals - 1] {
+            for (action, instruction) in [
+                (PlanAction::LoadLane(slot), format!("loc_load.{offset}")),
+                (PlanAction::StoreLane(slot), format!("loc_store.{offset}")),
+            ] {
+                let actual = assembled_cost_with_locals(&instruction, locals)? - overhead;
+                assert_eq!(action_cost(&[action]), actual, "{instruction}, locals={locals}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn preparation_cost_prefers_cheaper_expansion_over_shorter_masm() {
     use crate::allocate::schedule::action_cost;
 
