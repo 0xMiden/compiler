@@ -41,8 +41,9 @@ impl core::error::Error for NoteAttachmentError {}
 /// A validated note attachment scheme in the range `1..=65534`.
 ///
 /// Schemes identify attachment content without validating it. [`Self::none`] denotes unspecified
-/// content. Convert a scheme with [`Self::as_u16`] when using existing attachment writer and lookup
-/// functions, such as [`output_note::find_attachment`].
+/// content and is the default. The attachment writers and lookups, such as
+/// [`output_note::add_word_attachment`] and [`output_note::find_attachment`], take this type
+/// directly. [`Self::as_u16`] returns the protocol value for raw bindings and other encodings.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct NoteAttachmentScheme(u16);
 
@@ -55,7 +56,7 @@ impl NoteAttachmentScheme {
     /// # Errors
     ///
     /// Returns [`NoteAttachmentError::InvalidScheme`] for `0` or `65535`.
-    pub fn new(scheme: u16) -> Result<Self, NoteAttachmentError> {
+    pub const fn new(scheme: u16) -> Result<Self, NoteAttachmentError> {
         if scheme == 0 || scheme > Self::MAX.as_u16() {
             return Err(NoteAttachmentError::InvalidScheme(scheme));
         }
@@ -67,9 +68,36 @@ impl NoteAttachmentScheme {
         Self(1)
     }
 
+    /// Returns `true` if this is scheme `1`, the unspecified attachment scheme.
+    pub const fn is_none(&self) -> bool {
+        self.0 == Self::none().0
+    }
+
     /// Returns the scheme's protocol value.
     pub const fn as_u16(&self) -> u16 {
         self.0
+    }
+
+    /// Decodes a scheme from a note metadata header slot.
+    ///
+    /// The kernel encodes an absent attachment slot as `0`, which maps to `None`, mirroring the
+    /// protocol's `NoteAttachmentHeader::scheme()`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is `65535`, which the kernel never writes into metadata.
+    pub(super) fn from_header_u16(value: u16) -> Option<Self> {
+        if value == 0 {
+            return None;
+        }
+        Some(Self::new(value).expect("invalid attachment scheme in note metadata"))
+    }
+}
+
+impl Default for NoteAttachmentScheme {
+    /// Returns [`NoteAttachmentScheme::none`].
+    fn default() -> Self {
+        Self::none()
     }
 }
 
@@ -178,8 +206,9 @@ impl<'a> NoteAttachment<'a> {
     /// Single-word content, including a one-word borrowed slice, uses
     /// [`output_note::add_word_attachment`]. Longer content uses
     /// [`output_note::add_attachment_from_memory`]. Duplicate schemes are allowed; lookup returns
-    /// the first matching attachment. Use [`output_note::add_attachment`] separately for a commitment
-    /// whose preimage is already available in the advice map.
+    /// the first matching attachment. For a commitment whose preimage is already available in the
+    /// advice map, call [`output_note::add_attachment`] directly; it takes a
+    /// [`NoteAttachmentScheme`] as well.
     ///
     /// # Panics
     ///
@@ -187,11 +216,10 @@ impl<'a> NoteAttachment<'a> {
     /// or an append that exceeds four attachments or 512 total attachment words for the note.
     pub fn add_to(&self, note_idx: NoteIdx) {
         let words = self.as_words();
-        let scheme = self.attachment_scheme.as_u16();
         if let [word] = words {
-            output_note::add_word_attachment(note_idx, scheme, *word);
+            output_note::add_word_attachment(note_idx, self.attachment_scheme, *word);
         } else {
-            output_note::add_attachment_from_memory(note_idx, scheme, words);
+            output_note::add_attachment_from_memory(note_idx, self.attachment_scheme, words);
         }
     }
 }
@@ -218,12 +246,25 @@ mod tests {
                 Ok(scheme) => {
                     assert_eq!(scheme.as_u16(), value);
                     assert_eq!(u16::from(scheme), value);
+                    assert_eq!(scheme.is_none(), theirs.unwrap().is_none(), "scheme {value}");
                 }
                 Err(error) => assert_eq!(error, NoteAttachmentError::InvalidScheme(value)),
             }
         }
         assert_eq!(NoteAttachmentScheme::none().as_u16(), ProtocolScheme::none().as_u16());
         assert_eq!(NoteAttachmentScheme::MAX.as_u16(), ProtocolScheme::MAX.as_u16());
+        assert_eq!(NoteAttachmentScheme::default().as_u16(), ProtocolScheme::default().as_u16());
+    }
+
+    /// Checks that an absent metadata slot decodes to `None` and other values keep their scheme.
+    #[test]
+    fn header_slots_decode_to_optional_schemes() {
+        assert_eq!(NoteAttachmentScheme::from_header_u16(0), None);
+        assert_eq!(NoteAttachmentScheme::from_header_u16(1), Some(NoteAttachmentScheme::none()));
+        assert_eq!(
+            NoteAttachmentScheme::from_header_u16(42),
+            Some(NoteAttachmentScheme::new(42).unwrap())
+        );
     }
 
     /// Checks content length boundaries against the protocol's owned attachment type.

@@ -105,10 +105,8 @@ fn active_note_tag() -> Tag {
 }
 
 /// Returns the untyped ("none") attachment scheme used for the aux word attachments.
-///
-/// Scheme 0 is reserved by the protocol to signal an absent attachment.
-fn aux_attachment_scheme() -> u16 {
-    1
+fn aux_attachment_scheme() -> NoteAttachmentScheme {
+    NoteAttachmentScheme::none()
 }
 
 /// SWAPP note storage.

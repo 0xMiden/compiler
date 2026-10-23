@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
-    MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, assert_attachment_count,
+    MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme, assert_attachment_count,
     assert_attachment_word_count, attachment_index_u8,
     types::{AccountId, Asset, NoteId, NoteIdx, NoteMetadata, Recipient},
 };
@@ -147,13 +147,17 @@ pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> V
     attachment
 }
 
-/// Searches the input note metadata for `attachment_scheme`.
+/// Searches the input note metadata for `attachment_scheme` and returns the index of the first
+/// matching attachment.
 ///
 /// # Panics
 ///
 /// Panics if `note_index` is out of bounds for the transaction's input notes.
-pub fn find_attachment(note_index: NoteIdx, attachment_scheme: u16) -> Option<u32> {
-    let (found, index) = raw::find_attachment(attachment_scheme, u16::from(note_index));
+pub fn find_attachment(
+    note_index: NoteIdx,
+    attachment_scheme: NoteAttachmentScheme,
+) -> Option<u32> {
+    let (found, index) = raw::find_attachment(attachment_scheme.as_u16(), u16::from(note_index));
     found.then_some(index.into())
 }
 
