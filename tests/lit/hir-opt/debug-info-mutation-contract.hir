@@ -1,0 +1,48 @@
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=erase-record}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=move-record}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=preserve-all}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=replace-value}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=erase-producer}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=rewrite-producer}))' 2>&1 | filecheck %s --check-prefix=DEPENDENCY
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=late-edit}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=false-preserve}))' 2>&1 | filecheck %s --check-prefix=CONTRACT
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-without-kill}))' 2>&1 | filecheck %s --check-prefix=CONTRACT
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=raw-insert}))' 2>&1 | filecheck %s --check-prefix=INSERT
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=equivalent-value}))' | filecheck %s --check-prefix=EQUIVALENT
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-producer}))' | filecheck %s --check-prefix=INVALIDATE
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=move-record-checked}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-wrong-point}))' 2>&1 | filecheck %s --check-prefix=CONTRACT
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-record}))' 2>&1 | filecheck %s --check-prefix=CONTRACT
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=retroactive-equivalent}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=erase-producer-equivalent}))' 2>&1 | filecheck %s --check-prefix=CONTRACT
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=raw-replace-checked}))' | filecheck %s --check-prefix=CLONE
+
+// UNHANDLED: pass 'test-debug-info-mutation': unhandled debug-info
+// DEPENDENCY: unhandled debug-info dependency mutation
+// CONTRACT: debug-info {{.*}} contract
+// CONTRACT: variable 'x'
+// INSERT: unhandled debug-info insertion
+// INSERT: variable 'x'
+
+builtin.module public @debug_mutation_contract {
+    // EQUIVALENT: @entrypoint(%[[FIRST:\d+]]: u32, %[[SECOND:\d+]]: u32)
+    // EQUIVALENT-NEXT: %[[EQUIVALENT:\d+]] = arith.bxor %[[FIRST]], %[[SECOND]]
+    // EQUIVALENT-NEXT: di.debug_value %[[EQUIVALENT]] {{.*}}name = "x"
+    // EQUIVALENT-NEXT: di.debug_kill {{.*}}name = "x"
+    // EQUIVALENT-NEXT: builtin.ret %[[FIRST]]
+    // CLONE: @entrypoint(%[[ORIGINAL:\d+]]: u32, %[[OTHER:\d+]]: u32)
+    // CLONE-NEXT: %[[VALUE:\d+]] = arith.bxor %[[ORIGINAL]], %[[OTHER]]
+    // CLONE-NEXT: di.debug_value %[[VALUE]] {{.*}}name = "x"
+    // CLONE-NEXT: di.debug_kill {{.*}}name = "x"
+    // CLONE-NEXT: builtin.ret %[[ORIGINAL]]
+    // INVALIDATE-LABEL: @entrypoint(
+    // INVALIDATE-NEXT: di.debug_kill {{.*}}name = "x"
+    // INVALIDATE-NEXT: di.debug_kill {{.*}}name = "x"
+    // INVALIDATE-NEXT: builtin.ret
+    builtin.function public extern("C") @entrypoint(%0: u32, %1: u32) -> u32 {
+        %2 = arith.bxor %0, %1;
+        di.debug_value %2 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }> }>;
+        builtin.ret %0 : (u32);
+    };
+};

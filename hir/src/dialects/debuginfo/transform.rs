@@ -6,10 +6,10 @@
 //!
 //! # Design Philosophy
 //!
-//! The `di` dialect uses SSA use-def chains for debug values, which means transforms *cannot*
-//! silently drop debug info. When a transform replaces or deletes a value, any `di.debug_value`
-//! operations using that value must be updated. The standard `replace_all_uses_with` already
-//! handles this correctly for simple value replacements.
+//! SSA use-def chains keep debug operands connected, but do not protect capture points or prove
+//! that replacements preserve source values. Checked rewriter APIs require a [`DebugInfoUpdate`]
+//! contract, and the pass manager audits records and their dependencies independently of normal
+//! IR verification. Recovery expressions remain the transform author's responsibility.
 //!
 //! For more complex transforms (e.g., promoting a value to memory, splitting a value into pieces),
 //! the transform author uses `salvage_debug_info` to describe how the debug expression should be
@@ -17,14 +17,14 @@
 //!
 //! # Examples
 //!
-//! ## Simple value replacement (handled automatically)
+//! ## Equivalent value replacement
 //!
 //! When CSE replaces `%1 = add %a, %b` with an existing `%0 = add %a, %b`:
 //!
 //! ```text,ignore
 //! // Before: di.debug_value %1 #[variable = x]
-//! rewriter.replace_all_uses_with(%1, %0)
-//! // After:  di.debug_value %0 #[variable = x]  -- automatic!
+//! rewriter.replace_value_with_debug(%1, %0, DebugInfoUpdate::Equivalent)
+//! // After:  di.debug_value %0 #[variable = x]
 //! ```
 //!
 //! ## Value promoted to memory (using `salvage_debug_info`)
@@ -41,13 +41,13 @@
 use alloc::vec::Vec;
 
 use midenc_hir::{
-    Builder, DialectRegistration, OpBuilder, Operation, OperationRef, ProgramPoint, SmallVec,
+    Builder, DialectRegistration, Op, OpBuilder, Operation, OperationRef, ProgramPoint, SmallVec,
     Spanned, ValueRef,
     dialects::debuginfo::attributes::ExpressionOp,
     patterns::{Rewriter, RewriterExt},
 };
 
-use super::{DIBuilder, ops::DebugValue};
+use super::{DIBuilder, DebugInfoMutation, DebugInfoUpdate, ops::DebugValue};
 
 /// Reconcile inline-call locations when structurally equivalent operations are merged.
 ///
@@ -175,6 +175,7 @@ pub fn salvage_debug_info<B: ?Sized + Builder>(
     // move that point. The caller's insertion point is restored afterwards.
     let ip = *builder.insertion_point();
     for mut debug_op in debug_value_users(old_value) {
+        let _debug_update = DebugInfoMutation::new(debug_op, DebugInfoUpdate::Salvage);
         apply_salvage_action(&mut debug_op, action, builder);
     }
     builder.restore_insertion_point(ip);
@@ -207,6 +208,7 @@ pub fn erase_debug_info_with<R: ?Sized + Rewriter>(old_value: &ValueRef, rewrite
 /// Like [`erase_debug_value`], for use by a rewrite pattern: the `di.debug_kill` is created, and
 /// the `di.debug_value` erased, through `rewriter`.
 pub fn erase_debug_value_with<R: ?Sized + Rewriter>(debug_op: OperationRef, rewriter: &mut R) {
+    let _debug_update = DebugInfoMutation::new(debug_op, DebugInfoUpdate::Invalidate);
     let (variable, span) = {
         let op = debug_op.borrow();
         let dv = op.downcast_ref::<DebugValue>().expect("expected di.debug_value");
@@ -229,14 +231,28 @@ pub fn erase_debug_value_with<R: ?Sized + Rewriter>(debug_op: OperationRef, rewr
 /// This is used by region-level DCE, which visits the transparent debug operation before the dead
 /// producer whose value it references.
 pub fn erase_debug_value(mut debug_op: OperationRef) {
-    let (context, variable, span) = {
+    let _debug_update = DebugInfoMutation::new(debug_op, DebugInfoUpdate::Invalidate);
+    use super::attributes::INLINE_CALL_CHAIN_ATTR_NAME;
+
+    let (context, variable, span, inline_calls) = {
         let op = debug_op.borrow();
         let dv = op.downcast_ref::<DebugValue>().expect("expected di.debug_value");
-        (op.context_rc(), dv.variable().as_value().clone(), op.span())
+        (
+            op.context_rc(),
+            dv.variable().as_value().clone(),
+            op.span(),
+            op.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME),
+        )
     };
     let mut builder = OpBuilder::new(context);
     builder.set_insertion_point(ProgramPoint::before(debug_op));
-    let _ = builder.debug_kill(variable, span);
+    if let Ok(mut kill) = builder.debug_kill(variable, span)
+        && let Some(inline_calls) = inline_calls
+    {
+        kill.borrow_mut()
+            .as_operation_mut()
+            .set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, inline_calls);
+    }
     debug_op.borrow_mut().erase();
 }
 
@@ -256,7 +272,7 @@ fn apply_salvage_action<B: ?Sized + Builder>(
     let span = debug_op.borrow().span();
     builder.set_insertion_point_before(*debug_op);
 
-    match action {
+    let replacement = match action {
         SalvageAction::Deref { new_value } => {
             // Get existing expression and prepend deref
             let (variable, mut expr) = {
@@ -267,8 +283,9 @@ fn apply_salvage_action<B: ?Sized + Builder>(
             expr.operations.insert(0, ExpressionOp::Deref);
 
             // Create the replacement with updated value and expression, then erase the old op
-            let _ = builder.debug_value_with_expr(*new_value, variable, Some(expr), span);
-            debug_op.borrow_mut().erase();
+            builder
+                .debug_value_with_expr(*new_value, variable, Some(expr), span)
+                .map(|replacement| replacement.as_operation_ref())
         }
 
         SalvageAction::OffsetBy { new_value, offset } => {
@@ -282,8 +299,9 @@ fn apply_salvage_action<B: ?Sized + Builder>(
             expr.operations
                 .splice(0..0, [ExpressionOp::ConstU64(*offset), ExpressionOp::Minus]);
 
-            let _ = builder.debug_value_with_expr(*new_value, variable, Some(expr), span);
-            debug_op.borrow_mut().erase();
+            builder
+                .debug_value_with_expr(*new_value, variable, Some(expr), span)
+                .map(|replacement| replacement.as_operation_ref())
         }
 
         SalvageAction::WithExpression { new_value, ops } => {
@@ -294,8 +312,9 @@ fn apply_salvage_action<B: ?Sized + Builder>(
             };
             expr.operations.splice(0..0, ops.iter().cloned());
 
-            let _ = builder.debug_value_with_expr(*new_value, variable, Some(expr), span);
-            debug_op.borrow_mut().erase();
+            builder
+                .debug_value_with_expr(*new_value, variable, Some(expr), span)
+                .map(|replacement| replacement.as_operation_ref())
         }
 
         SalvageAction::Constant { value } => {
@@ -307,11 +326,12 @@ fn apply_salvage_action<B: ?Sized + Builder>(
 
             // Emit a kill since we can't create a di.debug_value without a live SSA operand for constants
             // — the constant value is encoded in the expression
-            let _ = builder.debug_kill(variable, span);
-            debug_op.borrow_mut().erase();
             // TODO: in the future, could emit a di.debug_value with a materialized constant and a
             // ConstU64/StackValue expression pair
             let _ = value;
+            builder
+                .debug_kill(variable, span)
+                .map(|replacement| replacement.as_operation_ref())
         }
 
         SalvageAction::Undef => {
@@ -321,9 +341,24 @@ fn apply_salvage_action<B: ?Sized + Builder>(
                 dv.variable().as_value().clone()
             };
 
-            let _ = builder.debug_kill(variable, span);
-            debug_op.borrow_mut().erase();
+            builder
+                .debug_kill(variable, span)
+                .map(|replacement| replacement.as_operation_ref())
         }
+    };
+    if let Ok(mut replacement) = replacement {
+        use super::attributes::INLINE_CALL_CHAIN_ATTR_NAME;
+
+        let inline_calls = debug_op.borrow().get_attribute(INLINE_CALL_CHAIN_ATTR_NAME);
+        if let Some(inline_calls) = inline_calls {
+            replacement
+                .borrow_mut()
+                .set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, inline_calls);
+        } else {
+            replacement.borrow_mut().remove_attribute(INLINE_CALL_CHAIN_ATTR_NAME);
+        }
+        super::mutation::register_debug_record(replacement);
+        debug_op.borrow_mut().erase();
     }
 }
 

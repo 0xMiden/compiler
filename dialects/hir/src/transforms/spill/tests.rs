@@ -54,6 +54,66 @@ fn op_in_region(op: OperationRef, region_index: usize, op_index: usize) -> Opera
     op_at(entry, op_index)
 }
 
+#[test]
+fn preserves_tracked_values_and_local_stores_through_reloads() -> TestResult<()> {
+    use midenc_hir::{
+        dialects::debuginfo::{
+            DIBuilder, DebugInfoDialect,
+            attributes::{Expression, ExpressionOp, Variable},
+        },
+        interner::Symbol,
+    };
+
+    let mut test = Test::named("tracked_spills").in_module("test");
+    test.with_function(test.name(), &[Type::U32, Type::U128], &[Type::U32]);
+    test.context().get_or_register_dialect::<DebugInfoDialect>();
+    let callee = test.define_function(
+        "consume",
+        &[Type::U128, Type::U128, Type::U128, Type::U128],
+        &[Type::U32],
+    );
+    let span = SourceSpan::UNKNOWN;
+    {
+        let mut builder = test.function_builder();
+        let local = builder.alloc_local(Type::U32);
+        let entry = builder.entry_block();
+        let value = entry.borrow().arguments()[0] as ValueRef;
+        let wide = entry.borrow().arguments()[1] as ValueRef;
+        let signature = callee.borrow().get_signature().clone();
+        let call = builder.exec(callee, signature, [wide; 4], span)?;
+        let result = call.borrow().results()[0] as ValueRef;
+        let sum = builder.add_unchecked(value, result, span)?;
+        builder.store_local(local, value, span)?;
+        let variable = Variable::new(Symbol::intern("slot"), Symbol::intern("test.rs"), 1, None);
+        BuiltinOpBuilder::builder_mut(&mut builder).debug_declare(
+            variable,
+            Expression::with_ops(alloc::vec![ExpressionOp::LocalSlot(0)]),
+            span,
+        )?;
+        let variable = Variable::new(Symbol::intern("sum"), Symbol::intern("test.rs"), 2, None);
+        BuiltinOpBuilder::builder_mut(&mut builder).debug_value(sum, variable, span)?;
+        builder.ret([sum], span)?;
+    }
+
+    test.apply_pass::<TransformSpills>(true)?;
+    let output = test.function().borrow().as_operation().to_string();
+    filecheck!(
+        output,
+        r#"
+// CHECK: hir.store_local %0 <{ local = #builtin.local_variable<1, u32> }>
+// CHECK: hir.exec
+// CHECK: %[[RELOADED:\d+]] = hir.load_local <{ local = #builtin.local_variable<1, u32> }>;
+// CHECK: %[[SUM:\d+]] = arith.add %[[RELOADED]], %{{\d+}}
+// CHECK: hir.store_local %[[RELOADED]] <{ local = #builtin.local_variable<0, u32> }>
+// CHECK-NEXT: di.debug_declare {{.*}}name = "slot"{{.*}}DI_OP_local_slot(0)
+// CHECK-NEXT: di.debug_value %[[SUM]] {{.*}}name = "sum"
+// CHECK-NEXT: builtin.ret %[[SUM]]
+// CHECK-NOT: di.debug_kill
+        "#
+    );
+    Ok(())
+}
+
 /// Build a simple single-block function which triggers spills and reloads,
 /// then run the `TransformSpills` pass and check that spills/reloads are
 /// materialized as `hir.store_local`/`hir.load_local`.

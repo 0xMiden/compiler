@@ -6,6 +6,7 @@ builtin.component private @test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392
             builtin.ret;
         } attributes { di.compile_unit = #di.compile_unit<{ language = "wasm", file = "unknown", producer = "midenc-frontend-wasm", optimized = false }>, di.subprogram = #di.subprogram<{ name = "__wasm_call_ctors", file = "unknown", line = 0, definition = true, local = false }> };
         builtin.function public extern("C") @_initialize() {
+            di.debug_kill <{ variable = #di.variable<{ name = "initialized", file = "wasisdk://v34.0/build/sysroot/wasi-libc-wasm32-wasip1-lto-build-prefix/src/wasi-libc-wasm32-wasip1-lto-build-build/wasisdk://v34.0/src/wasi-libc/libc-bottom-half/crt/crt1-reactor.c", line = 16 }> }>;
             %0 = builtin.global_symbol ::@test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0::@test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0::@__memory_base : ptr<u8, byte>;
             %1 = hir.bitcast %0 <{ ty = #builtin.type<ptr<i32, byte>> }>;
             %2 = hir.load %1;
@@ -25,6 +26,7 @@ builtin.component private @test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392
             %17 = arith.neq %15, %16;
             cf.cond_br %17 ^block9, ^block10 : (i1);
         ^block8:
+            di.debug_kill <{ variable = #di.variable<{ name = "initialized", file = "wasisdk://v34.0/build/sysroot/wasi-libc-wasm32-wasip1-lto-build-prefix/src/wasi-libc-wasm32-wasip1-lto-build-build/wasisdk://v34.0/src/wasi-libc/libc-bottom-half/crt/crt1-reactor.c", line = 16 }> }>;
             builtin.ret;
         ^block9:
             %18 = builtin.global_symbol ::@test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0::@test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0::@__memory_base : ptr<u8, byte>;
@@ -47,7 +49,6 @@ builtin.component private @test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392
         builtin.function public extern("C") @entrypoint(%30: i32) -> i32 {
             hir.store_local %30 <{ local = #builtin.local_variable<0, i32> }> : (i32);
             di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 19, arg = 0, ty = i32 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 1+12)]> }>;
-            di.debug_declare <{ variable = #di.variable<{ name = "result", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 20 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 1+8)]> }>;
             %32 = builtin.global_symbol ::@test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0::@test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0::@__stack_pointer : ptr<u8, byte>;
             %33 = hir.bitcast %32 <{ ty = #builtin.type<ptr<i32, byte>> }>;
             %34 = hir.load %33;
@@ -79,6 +80,8 @@ builtin.component private @test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392
         ^block12(%31: i32):
 
         ^block13:
+            di.debug_declare <{ variable = #di.variable<{ name = "result", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 20 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 1+8)]> }>;
+            di.debug_declare <{ variable = #di.variable<{ name = "result", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 20 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 1+8)]> }>;
             %85 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
             %86 = hir.bitcast %85 <{ ty = #builtin.type<u32> }>;
             %87 = arith.constant 8 : u32;
@@ -88,6 +91,7 @@ builtin.component private @test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392
             %92 = hir.assertz %90 <{ code = #builtin.u32<250>, message = #builtin.string<""> }>;
             %93 = hir.int_to_ptr %91 <{ ty = #builtin.type<ptr<i32, element>> }>;
             %94 = hir.load %93;
+            di.debug_kill <{ variable = #di.variable<{ name = "result", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 20 }> }>;
             builtin.ret %94 : (i32);
         ^block14:
             %70 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;

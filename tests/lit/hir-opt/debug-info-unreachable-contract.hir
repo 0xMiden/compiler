@@ -1,0 +1,16 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer))' | filecheck %s
+
+builtin.module public @debug_unreachable_contract {
+    // CHECK: @entrypoint(%[[INPUT:\d+]]: u32)
+    // CHECK-NEXT: builtin.ret %[[INPUT]]
+    // CHECK-NEXT: };
+    // CHECK-NOT: di.debug_
+    builtin.function public extern("C") @entrypoint(%0: u32) -> u32 {
+        builtin.ret %0 : (u32);
+    ^dead:
+        %1 = arith.constant 7 : u32;
+        di.debug_value %1 <{ variable = #di.variable<{ name = "dead", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+        di.debug_kill <{ variable = #di.variable<{ name = "dead", file = "test.rs", line = 1 }> }>;
+        builtin.ret %1 : (u32);
+    };
+};

@@ -1,0 +1,30 @@
+builtin.module public @debug_info {
+    builtin.function public extern("C") @declare(%input: u32) -> u32 {
+        di.debug_declare <{ variable = #di.variable<{ name = "value", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        builtin.ret %input : (u32);
+    };
+
+    builtin.function public extern("C") @kill(%input: u32) -> u32 {
+        di.debug_kill <{ variable = #di.variable<{ name = "value", file = "test.rs", line = 2 }> }>;
+        builtin.ret %input : (u32);
+    };
+
+    builtin.function public extern("C") @value(%input: u32) -> u32 {
+        %poison = ub.poison <{ value = #ub.poison<u32> }>;
+        di.debug_value %poison <{ variable = #di.variable<{ name = "value", file = "test.rs", line = 3 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %input : (u32);
+    };
+
+    builtin.function public extern("C") @branch(%condition: i1, %input: u32) -> u32 {
+        di.debug_declare <{ variable = #di.variable<{ name = "value", file = "test.rs", line = 4 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        %selected = scf.if %condition then {
+            di.debug_value %input <{ variable = #di.variable<{ name = "value", file = "test.rs", line = 4 }>, expression = #di.expression<[]> }> : (u32);
+            scf.yield %input : (u32);
+        } else {
+            di.debug_kill <{ variable = #di.variable<{ name = "value", file = "test.rs", line = 4 }> }>;
+            %other = arith.constant 43 : u32;
+            scf.yield %other : (u32);
+        } : (i1) -> (u32);
+        builtin.ret %selected : (u32);
+    };
+};

@@ -1,4 +1,4 @@
-use alloc::{rc::Rc, vec::Vec};
+use alloc::{collections::BTreeMap, rc::Rc, vec::Vec};
 use core::cell::RefCell;
 use std::path::Path;
 
@@ -11,7 +11,7 @@ use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
     BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType, Op,
-    OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Spanned, Type,
+    OpBuilder, OperationRef, ProgramPoint, RegionRef, Report, SmallVec, SourceSpan, Spanned, Type,
     ValueRef,
     diagnostics::{SourceContent, Uri},
     dialects::{
@@ -33,7 +33,7 @@ use midenc_hir::{
 };
 
 use crate::{
-    module::debug_info::{FunctionDebugInfo, LocationScheduleEntry},
+    module::debug_info::{FunctionDebugInfo, LocationIndex, LocationScheduleEntry},
     ssa::{SSABuilder, SideEffects, Variable},
 };
 
@@ -43,6 +43,15 @@ pub struct FunctionBuilderContext {
     status: FxHashMap<BlockRef, BlockStatus>,
     types: SecondaryMap<Variable, Type>,
     locals: FxHashMap<Variable, LocalVariable>,
+    debug_offset: Option<u64>,
+    debug_blocks: FxHashMap<BlockRef, DebugBlockOffsets>,
+}
+
+#[derive(Clone, Copy)]
+struct DebugBlockOffsets {
+    entry: u64,
+    exit: u64,
+    span: SourceSpan,
 }
 
 impl FunctionBuilderContext {
@@ -52,6 +61,8 @@ impl FunctionBuilderContext {
             status: Default::default(),
             types: SecondaryMap::with_default(Type::Unknown),
             locals: Default::default(),
+            debug_offset: None,
+            debug_blocks: Default::default(),
         }
     }
 
@@ -64,6 +75,8 @@ impl FunctionBuilderContext {
         self.status.clear();
         self.types.clear();
         self.locals.clear();
+        self.debug_offset = None;
+        self.debug_blocks.clear();
     }
 
     /// Returns `true` if and only if no instructions have been added and the block is empty.
@@ -121,6 +134,17 @@ impl Listener for SSABuilderListener {
         let mut builder = self.builder.borrow_mut();
 
         let block = op.parent().expect("inserted operation has no parent block");
+        if let Some(offset) = builder.debug_offset {
+            builder
+                .debug_blocks
+                .entry(block)
+                .and_modify(|block| block.exit = offset)
+                .or_insert(DebugBlockOffsets {
+                    entry: offset,
+                    exit: offset,
+                    span: op.span(),
+                });
+        }
         if builder.is_pristine(&block) {
             builder.status.insert(block, BlockStatus::Partial);
         } else {
@@ -206,7 +230,11 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         if let Some((file, _directory, line, column)) = fallback {
             fill_debug_attr_location(&mut local.attr, file, line, column);
         }
-        Some((local.attr.clone(), local.expression.clone(), !local.locations.is_empty()))
+        Some((
+            local.attr.clone(),
+            local.expression.clone(),
+            local.scope.is_some() || !local.locations.is_empty(),
+        ))
     }
 
     pub fn set_inline_calls(&mut self, inline_calls: Vec<InlineCallFrame>) {
@@ -296,6 +324,8 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             return;
         };
 
+        self.func_ctx.borrow_mut().debug_offset = Some(offset);
+
         let updates = {
             let mut info = info_rc.borrow_mut();
             let mut pending = Vec::new();
@@ -358,6 +388,70 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         if let Err(err) = DIBuilder::builder_mut(self).debug_declare(attr, expression, span) {
             warn!("failed to emit scheduled dbg.declare for local {idx}: {err:?}");
         }
+    }
+
+    pub fn reconcile_debug_locations(&mut self) -> Result<(), Report> {
+        let Some(info) = &self.debug_info else {
+            return Ok(());
+        };
+        let plans = {
+            let info = info.borrow();
+            let context = self.func_ctx.borrow();
+            let index = LocationIndex::new(&info.location_schedule, &info.locals);
+            let region = self.inner.body_region();
+            let region = region.borrow();
+            let mut plans = Vec::new();
+            for block in region.body() {
+                let block_ref = block.as_block_ref();
+                let Some(offsets) = context.debug_blocks.get(&block_ref) else {
+                    continue;
+                };
+                let mut repairs = BTreeMap::new();
+                for predecessor in block.predecessors() {
+                    let source = context
+                        .debug_blocks
+                        .get(&predecessor.predecessor())
+                        .map(|block| block.exit);
+                    for repair in
+                        index.repairs(source, offsets.entry, &info.location_schedule, &info.locals)
+                    {
+                        let name = info.locals[repair.var_index].as_ref().unwrap().attr.name;
+                        repairs.insert(name, repair);
+                    }
+                }
+                if !repairs.is_empty() {
+                    plans.push((
+                        block_ref,
+                        offsets.span,
+                        repairs.into_values().collect::<Vec<_>>(),
+                    ));
+                }
+            }
+            plans
+        };
+        for (block, span, repairs) in plans {
+            let inline_calls = block
+                .borrow()
+                .body()
+                .front()
+                .get()
+                .and_then(|operation| operation.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME));
+            let mut builder = OpBuilder::new(self.inner.builder().context_rc());
+            builder.set_insertion_point_to_start(block);
+            for repair in repairs {
+                let Some((attr, ..)) = self.local_debug_metadata(repair.var_index, span) else {
+                    continue;
+                };
+                let mut operation = match repair.storage {
+                    Some(storage) => builder.debug_declare(attr, storage, span)?.as_operation_ref(),
+                    None => builder.debug_kill(attr, span)?.as_operation_ref(),
+                };
+                if let Some(inline_calls) = inline_calls {
+                    operation.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, inline_calls);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn name(&self) -> Ident {

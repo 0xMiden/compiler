@@ -495,7 +495,10 @@ impl GreedyPatternRewriteDriver {
         // generic pre-pattern cleanup.
         if !op.implements::<dyn Transparent>() && op.is_trivially_dead() {
             drop(op);
-            rewriter.erase_op(op_ref);
+            rewriter.erase_op_with_debug(
+                op_ref,
+                crate::dialects::debuginfo::DebugInfoUpdate::Invalidate,
+            );
             log::trace!(target: "pattern-rewrite-driver", "processing complete: operation is trivially dead");
             return true;
         }
@@ -623,7 +626,11 @@ impl GreedyPatternRewriteDriver {
                         "materialization of fold results was successful, performing replacement.."
                     );
                     drop(op);
-                    rewriter.replace_op_with_values(op_ref, &replacements);
+                    rewriter.replace_op_with_values_and_debug(
+                        op_ref,
+                        &replacements,
+                        crate::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+                    );
                     log::trace!(
                         target: "pattern-rewrite-driver",
                         "fold succeeded: operation was replaced with materialized constants"

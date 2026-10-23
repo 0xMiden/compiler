@@ -2,7 +2,7 @@
 //! compiler transformations.
 //!
 //! Inspired by [Mojo's DebugInfo dialect], this dialect makes debug variable tracking a first-class
-//! citizen of the IR, using SSA use-def chains to enforce correctness.
+//! citizen of the IR, using SSA use-def chains and checked mutation contracts.
 //!
 //! ## Motivation
 //!
@@ -19,7 +19,7 @@
 //! This dialect defines debug operations as real IR operations with SSA operands:
 //!
 //! - **`di.debug_value`** — Records the current value of a source variable. Uses an SSA value operand,
-//!   so deleting the value without updating debug uses is a hard error.
+//!   so deleting the value without handling its debug uses is diagnosed.
 //!
 //! - **`di.debug_declare`** — Records the storage location of a source variable using a debug
 //!   expression.
@@ -32,10 +32,15 @@
 //! The [`transform`] module provides utilities that make it easy for transform authors to maintain
 //! debug info:
 //!
-//! - **Simple replacements** are handled automatically via `replace_all_uses_with`
+//! - **Equivalent replacements** use checked rewriter APIs with [`DebugInfoUpdate::Equivalent`]
 //! - **Complex transforms** use [`salvage_debug_info`](transform::salvage_debug_info) where the
 //!   transform author only describes the *inverse* of their transformation
-//! - **Value deletion** without a replacement emits `di.debug_kill` automatically
+//! - **Value deletion** without recovery explicitly invalidates the location with `di.debug_kill`
+//!
+//! Every pass is audited for unacknowledged record, SSA-producer, and local-storage mutations,
+//! even when normal IR verification is disabled. Each rewrite declares a preservation, relocation,
+//! equivalence, salvage, invalidation, or unreachable-code discard contract. These checks enforce
+//! intentional handling, not the semantic correctness of a transform's equivalence claim.
 //!
 //! ## Design Pillars (as inherited from Mojo)
 //!
@@ -48,10 +53,15 @@
 //! they discuss its debug info dialect. [You can find that here](https://llvm.org/devmtg/2024-04/slides/TechnicalTalks/MojoDebugging.pdf).
 pub mod attributes;
 mod builders;
+pub mod mutation;
 mod ops;
 pub mod transform;
 
-pub use self::{builders::DIBuilder, ops::*};
+pub use self::{
+    builders::DIBuilder,
+    mutation::{DebugInfoMutation, DebugInfoUpdate},
+    ops::*,
+};
 use crate::{
     DialectInfo,
     derive::{Dialect, DialectRegistration},
@@ -60,9 +70,7 @@ use crate::{
 /// The DebugInfo dialect — first-class debug variable tracking.
 ///
 /// This dialect provides operations for tracking source-level variables through
-/// compiler transformations using SSA semantics. Unlike metadata-based approaches,
-/// debug info here participates in standard use-def chains, making it impossible
-/// for transforms to silently drop debug information.
+/// compiler transformations using SSA semantics and pass-level mutation auditing.
 #[derive(Debug, Dialect, DialectRegistration)]
 #[dialect(name = "di")]
 pub struct DebugInfoDialect {

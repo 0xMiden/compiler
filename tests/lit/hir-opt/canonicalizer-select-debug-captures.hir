@@ -1,0 +1,32 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=convert-trivial-if-to-select}))' | filecheck %s
+
+builtin.module public @canonicalizer_select_debug_captures {
+    // CHECK: @entrypoint(%[[A:\d+]]: u32, %[[B:\d+]]: u32, %[[COND:\d+]]: i1, %[[ADDR:\d+]]: ptr<u32, byte>)
+    // CHECK-NEXT: %[[SELECTED:\d+]] = cf.select %[[COND]], %[[A]], %[[B]];
+    // CHECK-NEXT: scf.if %[[COND]] then {
+    // CHECK-NEXT: hir.store %[[ADDR]], %[[A]]
+    // CHECK-NEXT: di.debug_value %[[A]] {{.*}}name = "branch_value"{{.*}}di.inline_call_chain{{.*}}name = "helper"
+    // CHECK-NEXT: scf.yield : ();
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT: hir.store %[[ADDR]], %[[B]]
+    // CHECK-NEXT: di.debug_value %[[B]] {{.*}}name = "branch_value"
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "ended"
+    // CHECK-NEXT: scf.yield : ();
+    // CHECK-NEXT: } : (i1) -> ();
+    // CHECK-NEXT: di.debug_value %[[SELECTED]] {{.*}}name = "selected"
+    // CHECK-NEXT: builtin.ret %[[SELECTED]]
+    builtin.function public extern("C") @entrypoint(%0: u32, %1: u32, %2: i1, %3: ptr<u32, byte>) -> u32 {
+        %4 = scf.if %2 then {
+            hir.store %3, %0 : (ptr<u32, byte>, u32);
+            di.debug_value %0 <{ variable = #di.variable<{ name = "branch_value", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "helper", linkage = "", file = "test.rs", line = 1, column = 1, call_file = "test.rs", call_line = 5, call_column = 1 }]> } : (u32);
+            scf.yield %0 : (u32);
+        } else {
+            hir.store %3, %1 : (ptr<u32, byte>, u32);
+            di.debug_value %1 <{ variable = #di.variable<{ name = "branch_value", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+            di.debug_kill <{ variable = #di.variable<{ name = "ended", file = "test.rs", line = 3 }> }>;
+            scf.yield %1 : (u32);
+        } : (i1) -> (u32);
+        di.debug_value %4 <{ variable = #di.variable<{ name = "selected", file = "test.rs", line = 4 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %4 : (u32);
+    };
+};

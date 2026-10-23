@@ -1,0 +1,159 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(cse))' | filecheck %s --check-prefix=CSE
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(local2reg))' | filecheck %s --check-prefix=PROMOTE
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(sink-operand-defs))' | filecheck %s --check-prefix=SINK
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=convert-trivial-if-to-select}))' | filecheck %s --check-prefix=CANON
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(dce))' | filecheck %s --check-prefix=DCE
+
+builtin.module public @debug_semantics {
+    // CSE-LABEL: @cse_values
+    // CSE: %[[VALUE:\d+]] = arith.bxor
+    // CSE-NEXT: di.debug_value %[[VALUE]] {{.*}}name = "value"
+    // CSE-NEXT: di.debug_value %[[VALUE]] {{.*}}name = "value"{{.*}}di.inline_call_chain
+    // CSE: test.debug_checkpoint = #builtin.u32<1>
+    // CSE: arith.add %[[VALUE]], %[[VALUE]]
+    builtin.function public extern("C") @cse_values(%0: u32, %1: u32) -> u32 {
+        %2 = arith.bxor %0, %1;
+        di.debug_value %2 <{ variable = #di.variable<{ name = "value", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+        %3 = arith.bxor %0, %1;
+        di.debug_value %3 <{ variable = #di.variable<{ name = "value", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "helper", linkage = "", file = "test.rs", line = 1, column = 1, call_file = "test.rs", call_line = 5, call_column = 1 }]> } : (u32);
+        %4 = arith.constant 0 : u32;
+        %5 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+        hir.store %5, %0 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+        %6 = arith.add %2, %3 <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %6 : (u32);
+    };
+
+    // CANON-LABEL: @select_values
+    // CANON: %[[SELECTED:\d+]] = cf.select
+    // CANON-NEXT: scf.if
+    // CANON: di.debug_value {{.*}}name = "branch_value"{{.*}}di.inline_call_chain
+    // CANON: test.debug_checkpoint = #builtin.u32<1>
+    // CANON: } else {
+    // CANON: di.debug_value {{.*}}name = "branch_value"
+    // CANON: di.debug_kill {{.*}}name = "ended"
+    // CANON: test.debug_checkpoint = #builtin.u32<1>
+    // CANON: di.debug_value %[[SELECTED]] {{.*}}name = "selected"
+    // CANON: builtin.ret %[[SELECTED]]
+    builtin.function public extern("C") @select_values(%0: u32, %1: u32, %2: i1, %3: u32) -> u32 {
+        %4 = hir.int_to_ptr %3 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+        %5 = scf.if %2 then {
+            di.debug_value %0 <{ variable = #di.variable<{ name = "branch_value", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "helper", linkage = "", file = "test.rs", line = 1, column = 1, call_file = "test.rs", call_line = 5, call_column = 1 }]> } : (u32);
+            hir.store %4, %0 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+            scf.yield %0 : (u32);
+        } else {
+            di.debug_value %1 <{ variable = #di.variable<{ name = "branch_value", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+            di.debug_kill <{ variable = #di.variable<{ name = "ended", file = "test.rs", line = 3 }> }>;
+            hir.store %4, %1 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+            scf.yield %1 : (u32);
+        } : (i1) -> (u32);
+        di.debug_value %5 <{ variable = #di.variable<{ name = "selected", file = "test.rs", line = 4 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %5 : (u32);
+    };
+
+    // PROMOTE-LABEL: @promoted_locals
+    // PROMOTE: di.debug_value %[[OLD:\d+]] {{.*}}name = "local"
+    // PROMOTE: test.debug_checkpoint = #builtin.u32<1>
+    // PROMOTE: %[[NEW:\d+]] = arith.add %[[OLD]]
+    // PROMOTE: di.debug_value %[[NEW]] {{.*}}name = "local"
+    // PROMOTE: test.debug_checkpoint = #builtin.u32<2>
+    builtin.function public extern("C") @promoted_locals(%0: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "local", file = "test.rs", line = 3 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        %1 = arith.constant 0 : u32;
+        %2 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+        hir.store %2, %0 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+        %3 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        %4 = arith.constant 1 : u32;
+        %5 = arith.add %3, %4 <{ overflow = #builtin.overflow<wrapping> }>;
+        hir.store_local %5 <{ local = #builtin.local_variable<1, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "local", file = "test.rs", line = 3 }>, expression = #di.expression<[DI_OP_local_slot(1)]> }>;
+        hir.store %2, %5 attributes { test.debug_checkpoint = #builtin.u32<2> } : (ptr<u32, byte>, u32);
+        %6 = hir.load_local <{ local = #builtin.local_variable<1, u32> }>;
+        builtin.ret %6 : (u32);
+    };
+
+    builtin.function public extern("C") @local_updates(%0: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "local", file = "test.rs", line = 3 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        %1 = arith.constant 0 : u32;
+        %2 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+        hir.store %2, %0 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+        %3 = arith.constant 1 : u32;
+        %4 = arith.add %0, %3 <{ overflow = #builtin.overflow<wrapping> }>;
+        hir.store_local %4 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        hir.store %2, %4 attributes { test.debug_checkpoint = #builtin.u32<2> } : (ptr<u32, byte>, u32);
+        %5 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        builtin.ret %5 : (u32);
+    };
+
+    // SINK-LABEL: @sunk_value
+    // SINK: di.debug_kill {{.*}}name = "constant"
+    // SINK: test.debug_checkpoint = #builtin.u32<1>
+    // SINK: arith.constant 7 : u32
+    // SINK-NEXT: arith.add
+    builtin.function public extern("C") @sunk_value(%0: u32) -> u32 {
+        %1 = arith.constant 7 : u32;
+        di.debug_value %1 <{ variable = #di.variable<{ name = "constant", file = "test.rs", line = 4 }>, expression = #di.expression<[]> }> : (u32);
+        %2 = arith.constant 0 : u32;
+        %3 = hir.int_to_ptr %2 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+        hir.store %3, %0 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+        %4 = arith.add %0, %1 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %4 : (u32);
+    };
+
+    // DCE-LABEL: @dead_value
+    // DCE-NOT: arith.bxor
+    // DCE: di.debug_kill {{.*}}name = "dead"
+    // DCE: test.debug_checkpoint = #builtin.u32<1>
+    // DCE: builtin.ret
+    builtin.function public extern("C") @dead_value(%0: u32) -> u32 {
+        %1 = arith.constant 7 : u32;
+        %2 = arith.bxor %0, %1;
+        di.debug_value %2 <{ variable = #di.variable<{ name = "dead", file = "test.rs", line = 8 }>, expression = #di.expression<[]> }> : (u32);
+        %3 = arith.constant 0 : u32;
+        %4 = hir.int_to_ptr %3 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+        hir.store %4, %0 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+        builtin.ret %0 : (u32);
+    };
+
+    builtin.function public extern("C") @wide_local(%0: u128) -> u128 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u128> }> : (u128);
+        di.debug_declare <{ variable = #di.variable<{ name = "wide", file = "test.rs", line = 7 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        %1 = hir.load_local <{ local = #builtin.local_variable<0, u128> }>;
+        builtin.ret %1 : (u128);
+    };
+
+    builtin.function public extern("C") @loop_values(%0: u32) -> u32 {
+        %1 = arith.constant 0 : u32;
+        %2 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+        cf.br ^loop(%1 : u32);
+    ^loop(%3: u32):
+        di.debug_value %3 <{ variable = #di.variable<{ name = "counter", file = "test.rs", line = 5 }>, expression = #di.expression<[]> }> : (u32);
+        hir.store %2, %3 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+        %4 = arith.constant 1 : u32;
+        %5 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+        %6 = arith.lt %5, %0;
+        cf.cond_br %6 ^loop(%5 : u32), ^exit(%5 : u32) : (i1);
+    ^exit(%7: u32):
+        builtin.ret %7 : (u32);
+    };
+
+    builtin.function public extern("C") @nested_values(%0: u32) -> u32 {
+        di.debug_value %0 <{ variable = #di.variable<{ name = "shared", file = "test.rs", line = 6 }>, expression = #di.expression<[]> }> : (u32);
+        %1 = arith.constant 1 : i1;
+        %2 = hir.exec ::@debug_semantics::@child(%0, %1) : extern("C") (u32, i1) -> u32;
+        %3 = arith.constant 0 : i1;
+        %4 = arith.constant 9 : u32;
+        %5 = hir.exec ::@debug_semantics::@child(%4, %3) : extern("C") (u32, i1) -> u32;
+        builtin.ret %2 : (u32);
+    };
+
+    builtin.function public extern("C") @child(%0: u32, %1: i1) -> u32 {
+        cf.cond_br %1 ^capture, ^exit : (i1);
+    ^capture:
+        di.debug_value %0 <{ variable = #di.variable<{ name = "shared", file = "test.rs", line = 6 }>, expression = #di.expression<[]> }> : (u32);
+        cf.br ^exit;
+    ^exit:
+        builtin.ret %0 : (u32);
+    };
+};

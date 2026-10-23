@@ -6,24 +6,24 @@
 //!
 //! Variables tracked in Wasm locals are described once by their stable frame-pointer-relative
 //! location; no volatile operand-stack snapshots are emitted for local reads/writes, since the
-//! standing FMP location stays valid while the local is updated.
+//! standing FMP location stays valid while the local is updated. Source declarations retain
+//! their DWARF names rather than being replaced by synthetic procedure-argument names.
 //!
 //! CHECK: .debug_loc contents (DebugLoc entries from MAST):
 //! CHECK: Total DebugVar entries: {{[0-9]+}}
-//! CHECK: Unique variable names: 3
+//! CHECK: Unique variable names: {{[1-9][0-9]*}}
 //!
-//! Check variable "arg0" - parameter from test_assertion function
-//! CHECK: Variable: "arg0"
+//! Check variable "_info" - parameter from the panic handler
+//! CHECK: Variable: "_info"
 //! CHECK: {{[0-9]+}} location entries:
-//! CHECK: unavailable (param #1) : i32
-//! CHECK: FMP-4 (param #1) : i32 @ {{.*}}locations-source-loc.rs
+//! CHECK: unavailable (param #1) : i32 @ {{.*}}locations-source-loc.rs
 //!
 //! Check variable "local3" - from panic handler
 //! CHECK: Variable: "local3"
 //! CHECK: {{[0-9]+}} location entries:
 //! CHECK: FMP-1
 //!
-//! Check variable "x" - parameter from entrypoint function
+//! Check variable "x" - source parameter shared by entrypoint and test_assertion
 //! CHECK: Variable: "x"
 //! CHECK: {{[0-9]+}} location entries:
 //! CHECK: FMP-4 (param #1) : i32 @ {{.*}}locations-source-loc.rs

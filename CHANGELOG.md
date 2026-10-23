@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- Require explicit debug-info mutation contracts and audit each pass for unhandled record,
+  SSA-producer, and local-storage changes, independently of ordinary IR verification.
+- Preserve debug-variable lifetime boundaries during sinking, local promotion, and
+  generic operation erasure, including inline ownership of replacement kills.
+- Reconcile debug-variable locations across CFG edges so skipped lifetime updates
+  and loop backedges cannot retain stale values at block entries or returns.
+- Preserve DWARF lexical visibility, restore outer variables after shadowing, and
+  keep unavailable inner declarations from exposing an outer variable's value.
+- Keep distinct DWARF variable declarations separate when they share a Wasm local,
+  and identify formal parameters independently of their current storage slot.
+- Decode DWARF location lists relative to their compilation unit, rather than shifting
+  variable lifetimes by the containing function's address.
 - Benchmark contract examples through deterministic MockChain transactions, comparing VM cycles
   against `next` and retaining replay snapshots and cycle-weighted flamegraphs.
 - The MASM frontend now reports advice taint findings from supported procedures even when it skips

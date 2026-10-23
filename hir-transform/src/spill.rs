@@ -8,7 +8,7 @@ use midenc_hir::{
     ValueRef,
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
-    dialects::debuginfo::transform::erase_debug_info_with,
+    dialects::debuginfo::{DebugInfoMutation, DebugInfoUpdate, transform::erase_debug_info_with},
     dominance::{DomTreeNode, DominanceFrontier, DominanceInfo, DominanceTree},
     pass::PostPassStatus,
     patterns::{RewriterImpl, TracingRewriterListener},
@@ -968,6 +968,8 @@ fn find_inst_uses_in_op(
             debug_assert!(!to_rewrite.is_empty(), "expected empty use sets to be removed");
 
             for mut user in to_rewrite {
+                let _debug_update =
+                    DebugInfoMutation::new(user.borrow().owner, DebugInfoUpdate::Equivalent);
                 user.borrow_mut().set(reloaded);
             }
         } else {
@@ -1011,6 +1013,8 @@ fn rewrite_inserted_phi_uses(
                 debug_assert!(!to_rewrite.is_empty(), "expected empty use sets to be removed");
 
                 for mut user in to_rewrite {
+                    let _debug_update =
+                        DebugInfoMutation::new(user.borrow().owner, DebugInfoUpdate::Equivalent);
                     user.borrow_mut().set(*phi);
                 }
             } else {
@@ -1175,6 +1179,7 @@ fn rewrite_spill_pseudo_instructions(
             continue;
         };
         builder.set_insertion_point_after(operation);
+        let _debug_update = DebugInfoMutation::new(operation, DebugInfoUpdate::Equivalent);
         interface.convert_spill_to_store(&mut builder, operation, spill.value)?;
     }
 
@@ -1199,6 +1204,7 @@ fn rewrite_spill_pseudo_instructions(
                 reload.place
             );
             builder.set_insertion_point_after(operation);
+            let _debug_update = DebugInfoMutation::new(operation, DebugInfoUpdate::Equivalent);
             interface.convert_reload_to_load(&mut builder, operation, reload.value)?;
         } else {
             log::trace!(
