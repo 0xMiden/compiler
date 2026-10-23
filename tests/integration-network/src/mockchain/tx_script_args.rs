@@ -9,8 +9,8 @@
 //!
 //! All decode failures share one code, [`guest_panic_code`]: the `#[tx_script]` wrapper panics on
 //! a `ScriptArgs::decode` error. The in-VM hash verification fails with the message-less assert
-//! code `0`, distinct from the guest panic code, so the hash-isolation case still proves that
-//! specific mechanism.
+//! code `0`, distinct from the guest panic code, so the hash-isolation cases rule out a decode
+//! panic.
 
 use std::sync::Arc;
 

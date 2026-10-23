@@ -1,13 +1,13 @@
 use miden_processor::{ExecutionOptions, FastProcessor, StackInputs, advice::AdviceInputs};
 
 use super::*;
-use crate::end_to_end::support::default_host_with_core_package;
+use crate::{end_to_end::support::default_host_with_core_package, trap_helpers::trap_matches};
 
-/// The fixed code that every guest panic reports through the VM assertion error (the same code
-/// the integration-network tests derive as `guest_panic_code()`). The panic message is not
-/// observable at the VM level, so the empty-attachment and too-many-words asserts share this
-/// code; it still separates a wrapper panic from kernel asserts and from the extern sentinel.
-const WRAPPER_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";
+/// The assertion message every guest panic reports through the `unreachable` lowering. The Rust
+/// panic message is not observable at the VM level, so the empty-attachment and too-many-words
+/// asserts share it; it still separates a wrapper panic from kernel asserts and from the extern
+/// sentinel.
+const WRAPPER_PANIC_MESSAGE: &str = "entered unreachable code";
 
 #[allow(clippy::uninlined_format_args)]
 /// Compiles a minimal `miden` account component which calls the specified `output_note` method, and
@@ -143,8 +143,8 @@ end
         let error = result.expect_err("invalid attachment length should panic in the guest");
         let error = error.to_string();
         assert!(
-            error.contains(WRAPPER_PANIC_CODE),
-            "unexpected failure message (wanted `{WRAPPER_PANIC_CODE}`): {error}"
+            trap_matches(&error, WRAPPER_PANIC_MESSAGE),
+            "unexpected failure message (wanted `{WRAPPER_PANIC_MESSAGE}`): {error}"
         );
     }
 }

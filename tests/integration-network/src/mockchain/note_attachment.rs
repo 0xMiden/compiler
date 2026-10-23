@@ -162,6 +162,7 @@ fn typed_attachments_reject_excess_count_total_words_and_sealed_notes() {
         let (_chain, mock_tx) = build_attachment_tx(scenario, SCHEME.into());
         let err = execute_tx_expect_failure(mock_tx);
         let needle = format!("assertion failed with error message: {expected_error}");
+        // Each scenario has its own kernel error, which identifies it on failure.
         assert_failure_contains(&err, &needle);
     }
 }
@@ -170,11 +171,13 @@ fn typed_attachments_reject_excess_count_total_words_and_sealed_notes() {
 /// the guest writes, including felts with a non-zero high limb.
 #[test]
 fn the_guest_reports_the_scheme_conversion_outcome() {
+    let max = NoteAttachmentScheme::MAX.as_u16();
     for (scheme, expected) in [
-        (u64::from(SCHEME), [0, 0, 0, 0]),
-        (65534, [0, 0, 0, 0]),
+        (u64::from(SCHEME), [0, u32::from(SCHEME), 0, 0]),
+        (u64::from(max), [0, u32::from(max), 0, 0]),
         (0, [1, 0, 0, 0]),
-        (65535, [1, 65535, 0, 0]),
+        (u64::from(max) + 1, [1, u32::from(max) + 1, 0, 0]),
+        (65536, [2, 0, 0, 0]),
         (65536 + u64::from(SCHEME), [2, 0, 0, 0]),
         ((1u64 << 32) + u64::from(SCHEME), [2, 0, 0, 0]),
         (Felt::ORDER - 1, [2, 0, 0, 0]),
