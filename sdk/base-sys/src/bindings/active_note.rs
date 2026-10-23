@@ -158,7 +158,7 @@ pub fn write_attachment_to_memory(attachment_idx: AttachmentIdx) -> Vec<Word> {
 /// The returned index can be passed to [`write_attachment_to_memory`].
 pub fn find_attachment(attachment_scheme: NoteAttachmentScheme) -> Option<AttachmentIdx> {
     let (found, index) = raw::find_attachment(attachment_scheme.as_u16());
-    found.then_some(AttachmentIdx::from_kernel(index))
+    found.then(|| AttachmentIdx::from_kernel(index))
 }
 
 /// Returns the initial assets commitment and asset count of the active note.

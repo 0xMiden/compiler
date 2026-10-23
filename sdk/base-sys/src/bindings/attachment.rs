@@ -9,10 +9,11 @@ use miden_field_repr::{
 use miden_stdlib_sys::{Felt, Word};
 
 use super::{
-    MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteIdx, output_note, types::felt_to_u16,
+    MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteIdx, output_note,
+    types::{felt_to_u8, felt_to_u16},
 };
 
-/// An error produced while constructing a note attachment or its scheme.
+/// An error produced while constructing a note attachment, its scheme or an attachment index.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum NoteAttachmentError {
@@ -24,8 +25,10 @@ pub enum NoteAttachmentError {
     EmptyContent,
     /// The attachment contains more than 256 words.
     TooManyWords(usize),
-    /// The attachment index exceeds `3`, the last index a note can have.
-    InvalidIndex(u32),
+    /// The attachment index is in `4..=255`, above `3`, the last index a note can have.
+    InvalidIndex(u8),
+    /// The attachment index value exceeds `u8::MAX`.
+    IndexExceedsU8,
 }
 
 impl core::fmt::Display for NoteAttachmentError {
@@ -54,6 +57,7 @@ impl core::fmt::Display for NoteAttachmentError {
                     AttachmentIdx::MAX.as_u8()
                 )
             }
+            Self::IndexExceedsU8 => f.write_str("note attachment index exceeds u8"),
         }
     }
 }
@@ -179,32 +183,33 @@ impl From<NoteAttachmentScheme> for u16 {
     }
 }
 
-/// Decodes a scheme from one felt holding its protocol value, rejecting invalid schemes.
+/// Decodes a scheme from one felt holding its protocol value, rejecting invalid schemes, for
+/// script arguments and derived felt layouts.
 impl FromFeltRepr for NoteAttachmentScheme {
     const FIXED_LEN: Option<usize> = Some(1);
 
+    #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         let pos = reader.pos();
         let len = reader.len();
-        let value = reader.read_u32()?;
-        match u16::try_from(value).ok().and_then(|scheme| Self::new(scheme).ok()) {
-            Some(scheme) => Ok(scheme),
-            // `0` is below the range; the error type has no distinct variant for it.
-            None => Err(FeltReprError::ValueOutOfRange {
-                pos,
-                len,
-                ty: "NoteAttachmentScheme",
-                value: u64::from(value),
-                max: u64::from(Self::MAX.as_u16()),
-            }),
-        }
+        let felt = reader.read()?;
+        // `0` is below the range; the error type has no distinct variant for it.
+        Self::try_from(felt).map_err(|_| FeltReprError::ValueOutOfRange {
+            pos,
+            len,
+            ty: "NoteAttachmentScheme",
+            value: felt.as_canonical_u64(),
+            max: u64::from(Self::MAX.as_u16()),
+        })
     }
 }
 
-/// Encodes a scheme as one felt holding its protocol value.
+/// Encodes a scheme as one felt holding its protocol value, for script arguments and derived felt
+/// layouts.
 impl ToFeltRepr for NoteAttachmentScheme {
+    #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::from_u32(u32::from(self.as_u16())));
+        writer.write(Felt::from(self.as_u16()));
     }
 }
 
@@ -212,6 +217,7 @@ impl ToFeltRepr for NoteAttachmentScheme {
 impl TryFrom<&[Felt]> for NoteAttachmentScheme {
     type Error = FeltReprError;
 
+    #[inline(always)]
     fn try_from(felts: &[Felt]) -> Result<Self, Self::Error> {
         let mut reader = FeltReader::new(felts);
         let scheme = Self::from_felt_repr(&mut reader)?;
@@ -238,15 +244,33 @@ impl AttachmentIdx {
     /// Returns [`NoteAttachmentError::InvalidIndex`] for an index above [`Self::MAX`].
     pub const fn new(index: u8) -> Result<Self, NoteAttachmentError> {
         if index > Self::MAX.0 {
-            return Err(NoteAttachmentError::InvalidIndex(index as u32));
+            return Err(NoteAttachmentError::InvalidIndex(index));
         }
         Ok(Self(index))
     }
 
-    /// Wraps an index the kernel returned for an attachment lookup.
+    /// Creates an attachment index, for defining index constants:
     ///
-    /// The kernel returns indexes below the note's attachment count; only the `find_attachment`
-    /// bindings call this.
+    /// ```rust,ignore
+    /// const IDX: AttachmentIdx = AttachmentIdx::new_const(2);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is above `3`; in a constant, this is a compile-time error.
+    pub const fn new_const(index: u8) -> Self {
+        match Self::new(index) {
+            Ok(index) => index,
+            // A const `panic!` cannot format the bound, so the literal is checked against `MAX`
+            // below.
+            Err(_) => panic!("note attachment index must be at most 3"),
+        }
+    }
+
+    /// Wraps an index a lookup procedure reported as found.
+    ///
+    /// The procedures scan the four header slots, so a found index is below 4; only the
+    /// `find_attachment` bindings and `note::find_attachment_idx` call this.
     pub(super) const fn from_kernel(index: u8) -> Self {
         Self(index)
     }
@@ -257,22 +281,35 @@ impl AttachmentIdx {
     }
 }
 
-impl TryFrom<u8> for AttachmentIdx {
-    type Error = NoteAttachmentError;
-
-    /// Same as [`AttachmentIdx::new`].
-    fn try_from(index: u8) -> Result<Self, Self::Error> {
-        Self::new(index)
-    }
-}
+// Keeps the `new_const` panic literal in sync with `MAX`.
+const _: () = assert!(AttachmentIdx::MAX.as_u8() == 3);
 
 impl TryFrom<u32> for AttachmentIdx {
     type Error = NoteAttachmentError;
 
-    /// Converts an index, returning [`NoteAttachmentError::InvalidIndex`] for a value above
-    /// [`AttachmentIdx::MAX`].
+    /// Converts an index.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NoteAttachmentError::IndexExceedsU8`] for a value above `u8::MAX` and
+    /// [`NoteAttachmentError::InvalidIndex`] for a value in `4..=255`.
     fn try_from(index: u32) -> Result<Self, Self::Error> {
-        let index = u8::try_from(index).map_err(|_| NoteAttachmentError::InvalidIndex(index))?;
+        let index = u8::try_from(index).map_err(|_| NoteAttachmentError::IndexExceedsU8)?;
+        Self::new(index)
+    }
+}
+
+impl TryFrom<Felt> for AttachmentIdx {
+    type Error = NoteAttachmentError;
+
+    /// Converts a felt holding an index.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NoteAttachmentError::IndexExceedsU8`] for a felt above `u8::MAX` and
+    /// [`NoteAttachmentError::InvalidIndex`] for a felt in `4..=255`.
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        let index = felt_to_u8(value).ok_or(NoteAttachmentError::IndexExceedsU8)?;
         Self::new(index)
     }
 }
@@ -298,28 +335,31 @@ impl From<AttachmentIdx> for usize {
     }
 }
 
-/// Decodes an index from one felt holding its value, rejecting indexes above `3`.
+/// Decodes an index from one felt holding its value, rejecting indexes above `3`, for script
+/// arguments and derived felt layouts.
 impl FromFeltRepr for AttachmentIdx {
     const FIXED_LEN: Option<usize> = Some(1);
 
+    #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         let pos = reader.pos();
         let len = reader.len();
-        let value = reader.read_u8()?;
-        Self::new(value).map_err(|_| FeltReprError::ValueOutOfRange {
+        let felt = reader.read()?;
+        Self::try_from(felt).map_err(|_| FeltReprError::ValueOutOfRange {
             pos,
             len,
             ty: "AttachmentIdx",
-            value: u64::from(value),
+            value: felt.as_canonical_u64(),
             max: u64::from(Self::MAX.as_u8()),
         })
     }
 }
 
-/// Encodes an index as one felt holding its value.
+/// Encodes an index as one felt holding its value, for script arguments and derived felt layouts.
 impl ToFeltRepr for AttachmentIdx {
+    #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::from_u32(u32::from(self.as_u8())));
+        writer.write(Felt::from(self.as_u8()));
     }
 }
 
@@ -327,6 +367,7 @@ impl ToFeltRepr for AttachmentIdx {
 impl TryFrom<&[Felt]> for AttachmentIdx {
     type Error = FeltReprError;
 
+    #[inline(always)]
     fn try_from(felts: &[Felt]) -> Result<Self, Self::Error> {
         let mut reader = FeltReader::new(felts);
         let index = Self::from_felt_repr(&mut reader)?;
@@ -622,19 +663,40 @@ mod tests {
         for value in 0..=3u8 {
             let index = AttachmentIdx::new(value).unwrap();
             assert_eq!(index.as_u8(), value);
-            assert_eq!(AttachmentIdx::try_from(value), Ok(index));
             assert_eq!(AttachmentIdx::try_from(u32::from(value)), Ok(index));
+            assert_eq!(AttachmentIdx::try_from(Felt::from(value)), Ok(index));
             assert_eq!(u8::from(index), value);
             assert_eq!(u32::from(index), u32::from(value));
             assert_eq!(usize::from(index), usize::from(value));
         }
         assert_eq!(AttachmentIdx::new(4), Err(NoteAttachmentError::InvalidIndex(4)));
-        assert_eq!(AttachmentIdx::try_from(4u8), Err(NoteAttachmentError::InvalidIndex(4)));
+        assert_eq!(AttachmentIdx::new(255), Err(NoteAttachmentError::InvalidIndex(255)));
         assert_eq!(AttachmentIdx::try_from(4u32), Err(NoteAttachmentError::InvalidIndex(4)));
-        assert_eq!(AttachmentIdx::try_from(300u32), Err(NoteAttachmentError::InvalidIndex(300)));
+        assert_eq!(AttachmentIdx::try_from(256u32), Err(NoteAttachmentError::IndexExceedsU8));
+        assert_eq!(AttachmentIdx::try_from(u32::MAX), Err(NoteAttachmentError::IndexExceedsU8));
+        assert_eq!(AttachmentIdx::try_from(felt!(3)), Ok(AttachmentIdx::MAX));
+        assert_eq!(AttachmentIdx::try_from(felt!(4)), Err(NoteAttachmentError::InvalidIndex(4)));
+        assert_eq!(AttachmentIdx::try_from(felt!(256)), Err(NoteAttachmentError::IndexExceedsU8));
+        assert_eq!(
+            AttachmentIdx::try_from(Felt::new(Felt::ORDER - 1).unwrap()),
+            Err(NoteAttachmentError::IndexExceedsU8)
+        );
+        const IDX: AttachmentIdx = AttachmentIdx::new_const(2);
+        assert_eq!(IDX, AttachmentIdx::new(2).unwrap());
         assert_eq!(AttachmentIdx::MAX.as_u8(), 3);
+        assert_eq!(
+            usize::from(AttachmentIdx::MAX) + 1,
+            miden_protocol::note::NoteAttachments::MAX_COUNT
+        );
         assert!(AttachmentIdx::new(1).unwrap() < AttachmentIdx::new(2).unwrap());
         assert_eq!(AttachmentIdx::from_kernel(2), AttachmentIdx::new(2).unwrap());
+    }
+
+    /// Checks that `new_const` rejects index `4`.
+    #[test]
+    #[should_panic(expected = "note attachment index must be at most 3")]
+    fn new_const_rejects_index_4() {
+        let _ = AttachmentIdx::new_const(core::hint::black_box(4));
     }
 
     /// Checks that schemes and indexes encode as one felt and decode back.
@@ -644,12 +706,12 @@ mod tests {
         assert_eq!(<AttachmentIdx as FromFeltRepr>::FIXED_LEN, Some(1));
         for scheme in [NoteAttachmentScheme::new(42).unwrap(), NoteAttachmentScheme::MAX] {
             let felts = scheme.to_felt_repr();
-            assert_eq!(felts, [Felt::from_u32(u32::from(scheme.as_u16()))]);
+            assert_eq!(felts, [Felt::from(scheme.as_u16())]);
             assert_eq!(NoteAttachmentScheme::try_from(&felts[..]), Ok(scheme));
         }
         for index in [AttachmentIdx::new(0).unwrap(), AttachmentIdx::MAX] {
             let felts = index.to_felt_repr();
-            assert_eq!(felts, [Felt::from_u32(u32::from(index))]);
+            assert_eq!(felts, [Felt::from(index.as_u8())]);
             assert_eq!(AttachmentIdx::try_from(&felts[..]), Ok(index));
         }
     }
@@ -664,21 +726,30 @@ mod tests {
             value,
             max: 65534,
         };
+        let index_out_of_range = |value| FeltReprError::ValueOutOfRange {
+            pos: 0,
+            len: 1,
+            ty: "AttachmentIdx",
+            value,
+            max: 3,
+        };
+        let top = Felt::new(Felt::ORDER - 1).unwrap();
         assert_eq!(NoteAttachmentScheme::try_from(&[felt!(0)][..]), Err(scheme_out_of_range(0)));
         assert_eq!(
             NoteAttachmentScheme::try_from(&[felt!(65535)][..]),
             Err(scheme_out_of_range(65535))
         );
         assert_eq!(
-            AttachmentIdx::try_from(&[felt!(4)][..]),
-            Err(FeltReprError::ValueOutOfRange {
-                pos: 0,
-                len: 1,
-                ty: "AttachmentIdx",
-                value: 4,
-                max: 3,
-            })
+            NoteAttachmentScheme::try_from(&[felt!(65536)][..]),
+            Err(scheme_out_of_range(65536))
         );
+        assert_eq!(
+            NoteAttachmentScheme::try_from(&[top][..]),
+            Err(scheme_out_of_range(Felt::ORDER - 1))
+        );
+        assert_eq!(AttachmentIdx::try_from(&[felt!(4)][..]), Err(index_out_of_range(4)));
+        assert_eq!(AttachmentIdx::try_from(&[felt!(256)][..]), Err(index_out_of_range(256)));
+        assert_eq!(AttachmentIdx::try_from(&[top][..]), Err(index_out_of_range(Felt::ORDER - 1)));
         assert_eq!(
             NoteAttachmentScheme::try_from(&[felt!(42), felt!(1)][..]),
             Err(FeltReprError::TrailingData { pos: 1, len: 2 })
@@ -700,7 +771,7 @@ mod tests {
     /// Checks that derived encodings compose with the scheme and index encodings.
     #[test]
     fn felt_repr_composes_with_derives() {
-        /// A note-storage layout holding an attachment reference.
+        /// A derived felt layout holding an attachment reference.
         #[derive(Debug, PartialEq, FromFeltRepr, ToFeltRepr)]
         struct AttachmentRef {
             scheme: NoteAttachmentScheme,
