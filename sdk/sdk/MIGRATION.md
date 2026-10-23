@@ -38,7 +38,7 @@ Byte addresses convert with `miden::support::ElementPtr::from_ptr(ptr)` (the poi
 for the pointee); both panic otherwise. Manifest constants are `FeltConstant`/`WordConstant`
 carriers: call `.get()` for the `Felt`/`Word`.
 
-### `Tag`, `NoteIdx` and `NoteType` wrap integers; attachment schemes are `NoteAttachmentScheme`
+### `Tag`, `NoteIdx` and `NoteType` wrap integers; attachment schemes and indexes are typed
 
 The three newtypes now hold the integer the protocol declares instead of a `Felt`:
 `Tag { inner: u32 }`, `NoteIdx { inner: u16 }`, `NoteType { inner: u8 }`. A value built from an
@@ -104,10 +104,12 @@ note.
 Attachment indexes are `AttachmentIdx`, a validated value in `0..=3`, instead of `u32`. The
 `find_attachment` lookups and `note::find_attachment_idx` return `Option<AttachmentIdx>`, and
 `write_attachment_to_memory` and `note::load_indexed_attachment` take an `AttachmentIdx`. A found
-index passes straight through. Build one by hand with `AttachmentIdx::new(n)` or
-`AttachmentIdx::try_from(n)`; `u32::from(idx)` gives the integer back. `NoteAttachmentScheme`
-and `AttachmentIdx` implement `FromFeltRepr` and `ToFeltRepr` (one felt each, validated on
-decode), so they can be note-storage fields and script arguments:
+index passes straight through. Build one by hand with `AttachmentIdx::new(n)` (or
+`new_const(n)` for a constant); `AttachmentIdx::try_from(felt)` and `try_from(n_u32)` convert
+checked values; `u32::from(idx)` gives the integer back. `NoteAttachmentScheme` and
+`AttachmentIdx` implement `FromFeltRepr` and `ToFeltRepr` (one felt each, validated on decode),
+so they can be typed script arguments and fields of `#[derive(FromFeltRepr, ToFeltRepr)]`
+layouts (`#[note]` storage schemas still accept only WIT core types):
 
 ```rust
 // Before

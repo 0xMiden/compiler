@@ -225,5 +225,5 @@ pub fn find_attachment_idx(
     metadata: Word,
 ) -> Option<AttachmentIdx> {
     let (found, index) = raw::find_attachment_idx(attachment_scheme.as_u16(), metadata);
-    found.then_some(AttachmentIdx::from_kernel(index))
+    found.then(|| AttachmentIdx::from_kernel(index))
 }

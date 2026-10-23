@@ -205,7 +205,7 @@ pub fn find_attachment(
     attachment_scheme: NoteAttachmentScheme,
 ) -> Option<AttachmentIdx> {
     let (found, index) = raw::find_attachment(attachment_scheme.as_u16(), u16::from(note_index));
-    found.then_some(AttachmentIdx::from_kernel(index))
+    found.then(|| AttachmentIdx::from_kernel(index))
 }
 
 /// Returns the attachment commitments of the output note at `note_index`.
@@ -234,8 +234,8 @@ pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> 
 ///
 /// # Panics
 ///
-/// The transaction kernel rejects an `attachment_idx` that is not below the note's attachment
-/// count.
+/// Panics if `note_index` is out of bounds for the transaction's output notes. The transaction
+/// kernel rejects an `attachment_idx` that is not below the note's attachment count.
 pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: AttachmentIdx) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {

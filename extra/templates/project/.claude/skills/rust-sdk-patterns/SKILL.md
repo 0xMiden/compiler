@@ -339,7 +339,7 @@ let n: u64 = f.as_canonical_u64();
 
 ### Kernel scalars are typed, not felts
 
-Counts are `u32` (`tx::get_num_input_notes`, `tx::get_num_output_notes`, `active_account::get_num_procedures`, and the `num_assets` / `num_storage_items` fields of the note-info structs), so count-driven loops index directly. Block heights are `BlockNumber` (comparable as integers; `BlockNumber::try_from(felt)` validates a height read out of note storage). Block timestamps are `u32` seconds and expiration deltas are `u16`. Account nonces are `Nonce` — use `as_felt()` / `as_u64()` or `Felt::from(nonce)` where a raw value is needed, e.g. when packing a nonce into a `Word`. Attachment lookups return `Option<u32>`.
+Counts are `u32` (`tx::get_num_input_notes`, `tx::get_num_output_notes`, `active_account::get_num_procedures`, and the `num_assets` / `num_storage_items` fields of the note-info structs), so count-driven loops index directly. Block heights are `BlockNumber` (comparable as integers; `BlockNumber::try_from(felt)` validates a height read out of note storage). Block timestamps are `u32` seconds and expiration deltas are `u16`. Account nonces are `Nonce` — use `as_felt()` / `as_u64()` or `Felt::from(nonce)` where a raw value is needed, e.g. when packing a nonce into a `Word`. Attachment lookups return `Option<AttachmentIdx>`.
 
 ## Debug Printing
 
