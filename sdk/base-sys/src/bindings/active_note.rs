@@ -4,9 +4,9 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
-    AccountId, Asset, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme, NoteId,
-    NoteMetadata, Recipient, assert_attachment_count, assert_attachment_word_count,
-    attachment_index_u8,
+    AccountId, Asset, AttachmentIdx, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE,
+    NoteAttachmentScheme, NoteId, NoteMetadata, Recipient, assert_attachment_count,
+    assert_attachment_word_count,
 };
 use crate::raw::protocol::{active_note as raw, types as raw_types};
 
@@ -131,12 +131,17 @@ pub fn write_attachment_commitments_to_memory() -> Vec<Word> {
 /// Returns the attachment at `attachment_idx` of the active note as protocol words.
 ///
 /// The name mirrors the kernel procedure, which fills the buffer this function returns.
-pub fn write_attachment_to_memory(attachment_idx: u32) -> Vec<Word> {
+///
+/// # Panics
+///
+/// The transaction kernel rejects an `attachment_idx` that is not below the note's attachment
+/// count.
+pub fn write_attachment_to_memory(attachment_idx: AttachmentIdx) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {
         raw::write_attachment_to_memory(
             ElementPtr::from_ptr(attachment.as_mut_ptr()),
-            attachment_index_u8(attachment_idx),
+            attachment_idx.as_u8(),
         )
     };
     let num_words = num_words.into();
@@ -149,9 +154,11 @@ pub fn write_attachment_to_memory(attachment_idx: u32) -> Vec<Word> {
 
 /// Searches the active note metadata for `attachment_scheme` and returns the index of the first
 /// matching attachment.
-pub fn find_attachment(attachment_scheme: NoteAttachmentScheme) -> Option<u32> {
+///
+/// The returned index can be passed to [`write_attachment_to_memory`].
+pub fn find_attachment(attachment_scheme: NoteAttachmentScheme) -> Option<AttachmentIdx> {
     let (found, index) = raw::find_attachment(attachment_scheme.as_u16());
-    found.then_some(index.into())
+    found.then_some(AttachmentIdx::from_kernel(index))
 }
 
 /// Returns the initial assets commitment and asset count of the active note.
@@ -291,15 +298,20 @@ pub trait ActiveNote {
     }
 
     /// Returns the attachment at `attachment_idx` of the active note as protocol words.
+    ///
+    /// # Panics
+    ///
+    /// The transaction kernel rejects an `attachment_idx` that is not below the note's attachment
+    /// count.
     #[inline]
-    fn write_attachment_to_memory(&self, attachment_idx: u32) -> Vec<Word> {
+    fn write_attachment_to_memory(&self, attachment_idx: AttachmentIdx) -> Vec<Word> {
         write_attachment_to_memory(attachment_idx)
     }
 
     /// Searches the active note metadata for `attachment_scheme` and returns the index of the
     /// first matching attachment.
     #[inline]
-    fn find_attachment(&self, attachment_scheme: NoteAttachmentScheme) -> Option<u32> {
+    fn find_attachment(&self, attachment_scheme: NoteAttachmentScheme) -> Option<AttachmentIdx> {
         find_attachment(attachment_scheme)
     }
 

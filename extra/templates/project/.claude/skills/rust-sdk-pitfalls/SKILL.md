@@ -589,7 +589,7 @@ have exactly one (`authentication components require exactly one #[auth_script] 
 | `active_account::get_balance` / `get_initial_balance` | `active_account::get_asset(asset_id: AssetId) -> Word` (or `native_account::get_initial_asset(asset_id: AssetId) -> Word`), then read the amount out of the value word |
 | `active_account::has_non_fungible_asset(asset)` | `active_account::has_asset(asset_id: AssetId) -> bool` |
 | `faucet::create_fungible_asset` / `create_non_fungible_asset` / `has_callbacks`, and the asset constructors of the `asset` module | build the `Asset` outside the transaction; only `faucet::mint(Asset)`, `faucet::burn(Asset)` and the asset-id readers `AssetId::faucet_id()` / `asset_class()` / `composition()` remain |
-| `AttachmentLocation` | `Option<u32>` from `find_attachment(NoteAttachmentScheme)` |
+| `AttachmentLocation` | `Option<AttachmentIdx>` from `find_attachment(NoteAttachmentScheme)` |
 | `output_note::set_attachment` | append with `NoteAttachment::with_word(scheme, word).add_to(note_idx)` (or `NoteAttachment::with_words(scheme, &words).unwrap().add_to(note_idx)`), or with `output_note::add_word_attachment`, `output_note::add_attachment`, or `output_note::add_attachment_from_memory` |
 
 The output-note attachment APIs append attachment entries; they do not replace an existing attachment in place.
@@ -618,11 +618,11 @@ foreign account), `compute_delta_commitment()`, `has_state_changed() -> bool` an
 | `tx::get_expiration_block_delta()` | `u16` (and `update_expiration_block_delta(delta: u16)`) |
 | `active_account::get_num_procedures()` | `u32` (and `get_procedure_root(index: u32)`) |
 | `active_account::get_nonce()`, `native_account::incr_nonce()` | `Nonce` |
-| `active_note::find_attachment(NoteAttachmentScheme)`, `output_note::find_attachment(NoteIdx, NoteAttachmentScheme)` | `Option<u32>` |
+| `active_note::find_attachment(NoteAttachmentScheme)`, `output_note::find_attachment(NoteIdx, NoteAttachmentScheme)` | `Option<AttachmentIdx>` |
 
 `NoteAttachmentScheme` is built with `NoteAttachmentScheme::none()` (scheme 1),
 `NoteAttachmentScheme::new(n)` / `try_from(n)` (checked, `1..=65534`) or `new_const(n)` for
-constants.
+constants. `AttachmentIdx` comes from `find_attachment` or `AttachmentIdx::new(n)` (`0..=3`).
 
 `BlockNumber` offers `try_from(Felt)`, `as_u32()`, `as_felt()`, `From<u32>` and integer comparison;
 `as_u32()` **panics** rather than truncating if the value exceeds the u32 block-height range.

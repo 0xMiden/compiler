@@ -197,7 +197,7 @@ fn input_note_write_attachment_to_memory_binding() {
         "pub fn binding(&self) -> Felt {
         let attachment = input_note::write_attachment_to_memory(
             NoteIdx::from(0u16),
-            0,
+            AttachmentIdx::new(0).unwrap(),
         );
         Felt::new(attachment.len() as u64).unwrap()
     }",
@@ -213,6 +213,7 @@ fn input_note_find_attachment_binding() {
             NoteIdx::from(0u16),
             NoteAttachmentScheme::none(),
         )
+        .map(u32::from)
         .unwrap_or(0)
     }",
     );

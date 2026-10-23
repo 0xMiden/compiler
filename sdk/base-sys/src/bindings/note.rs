@@ -5,8 +5,8 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
-    AccountId, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme, NoteType,
-    Recipient, Tag, assert_attachment_count,
+    AccountId, AttachmentIdx, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme,
+    NoteType, Recipient, Tag, assert_attachment_count,
 };
 use crate::raw::protocol::note as raw;
 
@@ -152,10 +152,14 @@ pub fn load_attachment(attachment_commitment: Word) -> Vec<Word> {
 /// # Panics
 ///
 /// Panics if `attachment_commitments` holds more entries than a note can have attachments, if
-/// `attachment_idx` is out of bounds for it, or under the conditions of [`load_attachment`].
-pub fn load_indexed_attachment(attachment_commitments: &[Word], attachment_idx: u32) -> Vec<Word> {
+/// `attachment_idx` is not below `attachment_commitments.len()`, or under the conditions of
+/// [`load_attachment`].
+pub fn load_indexed_attachment(
+    attachment_commitments: &[Word],
+    attachment_idx: AttachmentIdx,
+) -> Vec<Word> {
     assert_attachment_count(attachment_commitments.len());
-    load_attachment(attachment_commitments[attachment_idx as usize])
+    load_attachment(attachment_commitments[usize::from(attachment_idx)])
 }
 
 /// Loads and authenticates a bounded word preimage using the public core library primitives.
@@ -216,7 +220,10 @@ pub fn metadata_into_tag(metadata: Word) -> Tag {
 
 /// Searches a metadata header word for `attachment_scheme` and returns the index of the first
 /// matching attachment.
-pub fn find_attachment_idx(attachment_scheme: NoteAttachmentScheme, metadata: Word) -> Option<u32> {
+pub fn find_attachment_idx(
+    attachment_scheme: NoteAttachmentScheme,
+    metadata: Word,
+) -> Option<AttachmentIdx> {
     let (found, index) = raw::find_attachment_idx(attachment_scheme.as_u16(), metadata);
-    found.then_some(index.into())
+    found.then_some(AttachmentIdx::from_kernel(index))
 }
