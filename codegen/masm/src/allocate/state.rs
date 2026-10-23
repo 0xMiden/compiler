@@ -502,6 +502,47 @@ impl<'a> AllocationContext<'a> {
         })
     }
 
+    /// Freeze backing cells required by complete semantic inputs at a prepared boundary.
+    /// Literals and equal resident occurrences require no storage read. Ordered slots
+    /// select one existing representation deterministically, without pinning spare copies.
+    pub(super) fn semantic_storage_reads(
+        &self,
+        state: &AllocationState,
+        unit: &SelectedLowering,
+    ) -> Result<Vec<SpillSlotId>, AllocationError> {
+        let mut reads = BTreeSet::new();
+        for atom in super::normalize::input_demand(unit, self)? {
+            let source = self.source(state, atom)?;
+            if matches!(source, StoredValue::Literal(_)) {
+                continue;
+            }
+            let mut resident = false;
+            for occurrence in &state.stack {
+                if self.same(state, source, StoredValue::Atom(occurrence.atom))? {
+                    resident = true;
+                    break;
+                }
+            }
+            if resident {
+                continue;
+            }
+            let mut backing = None;
+            for (slot, contents) in &state.slots {
+                if self.same(state, source, *contents)? {
+                    backing = Some(*slot);
+                    break;
+                }
+            }
+            reads.insert(backing.ok_or_else(|| {
+                invariant(
+                    DiagnosticCategory::UnavailableValue,
+                    "semantic input has no representation",
+                )
+            })?);
+        }
+        Ok(reads.into_iter().collect())
+    }
+
     /// Compare current semantic identities, including scoped reconstruction and aliases.
     /// This proves equality, not the existence of a stack or stored copy.
     pub(super) fn same(

@@ -77,6 +77,10 @@ pub(crate) struct ProcedurePlan {
     pub edge_actions: BTreeMap<EdgeId, Vec<PlanAction>>,
     /// Complete symbolic slot domain to be assigned by the final frame layout.
     pub spill_slots: Vec<SpillSlotId>,
+    /// Sorted unique backing cells needed by semantic inputs at each prepared unit boundary.
+    /// These allocation facts extend storage lifetimes without emitting loads or granting
+    /// verification authority. Equal resident lanes and literals need no backing read.
+    pub semantic_storage_reads: BTreeMap<SelectedStepId, Vec<SpillSlotId>>,
     /// Physical input order and storage choices supplied to expansion for each selected unit.
     pub lowering_bindings: BTreeMap<SelectedStepId, LoweringBindings>,
 }
@@ -110,6 +114,9 @@ impl fmt::Display for ProcedurePlan {
             }
             for unit in &segment.units {
                 writeln!(f, "  unit s{} kind={} source={}", unit.id.0, unit.kind.0, unit.source.0)?;
+                if let Some(reads) = self.semantic_storage_reads.get(&unit.id) {
+                    writeln!(f, "    semantic-storage-reads={reads:?}")?;
+                }
                 if let Some(decision) = self.decisions.preparations.get(&unit.id) {
                     writeln!(f, "    tier={:?} victims={:?}", decision.tier, decision.victims)?;
                 }

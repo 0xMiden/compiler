@@ -152,6 +152,7 @@ fn identity_plan() -> ProcedurePlan {
         )]),
         edge_actions: BTreeMap::new(),
         spill_slots: vec![],
+        semantic_storage_reads: Default::default(),
         lowering_bindings: BTreeMap::from([(SelectedStepId(0), LoweringBindings::default())]),
     }
 }
@@ -280,6 +281,7 @@ impl Fixture {
             )]),
             edge_actions: BTreeMap::new(),
             spill_slots: vec![],
+            semantic_storage_reads: Default::default(),
             lowering_bindings: BTreeMap::from([(
                 SelectedStepId(0),
                 LoweringBindings {

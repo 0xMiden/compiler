@@ -229,6 +229,7 @@ fn discard_plan(definition: &DiscardDefinition, live_after: &[BTreeSet<ValueId>]
         segment_actions: BTreeMap::from([(SegmentId(0), actions)]),
         edge_actions: BTreeMap::new(),
         spill_slots: slots.into_iter().collect(),
+        semantic_storage_reads: Default::default(),
         lowering_bindings: bindings,
     }
 }
@@ -359,6 +360,7 @@ fn canonical_slot_collision_preserves_both_inputs_through_verified_assembly() {
         segment_actions: BTreeMap::from([(SegmentId(0), actions)]),
         edge_actions: BTreeMap::new(),
         spill_slots: proposal.slot_requests.into_iter().collect(),
+        semantic_storage_reads: Default::default(),
         lowering_bindings: proposal.bindings,
     };
     let frame = fixture_frame(&plan);

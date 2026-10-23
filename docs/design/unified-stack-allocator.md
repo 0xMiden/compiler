@@ -346,6 +346,7 @@ struct ProcedurePlan {
     edge_actions: Vec<Vec<PlanAction>>,
     spill_slots: SpillSlotTable,
     lowering_bindings: Map<SelectedStepId, LoweringBindings>,
+    semantic_storage_reads: Map<SelectedStepId, Vec<SpillSlotId>>,
     source_map: SourceMap,
 }
 
@@ -1338,10 +1339,15 @@ Generic-event acceptance requires:
 | Events surround branches, loops, advice and memory operations | Preserve source effect order and actual VM/host error behavior |
 | Generic and typed events use the same numerical ID | Keep their source contracts distinct; let the VM dispatch without a second handler implementation in generic lowering |
 
+After preparation commits and before each `RunLowering`, allocation freezes sorted unique `semantic_storage_reads` from complete semantic input demand, including whole-value alias recipe dependencies. Scoped checked reconstructions and established equalities resolve each lane. Literals and equal resident occurrences need no backing cell; otherwise the least existing equal symbolic slot is recorded. Missing representations remain allocation errors. Live-through survivors alone do not reserve cached cells.
+
+Frame assignment treats these boundary dependencies as pseudo-reads alongside opaque stored inputs. Stores kill old contents and existing simultaneous-use interference prevents destructive reuse. The metadata emits no instruction, adds no stored-input contract, and supplies no verification authority: independent raw replay still proves source recoverability from actual representations. Traces display the recorded cells at each unit.
+
 Storage lifetime and frame-layout acceptance requires:
 
 | Case | Required behavior |
 | --- | --- |
+| A spill-only scalar or wide alias source has no later physical reload | Keep every source lane until complete alias publication, including unused output lanes |
 | A value remains live on the stack after its final required spill-slot read | Permit another noninterfering slot to reuse the cell; do not extend storage lifetime solely because the SSA value remains live |
 | A join retains a cached spill copy of a resident value | Treat the retained fact as a pseudo-read and preserve it through every later use; a redundant store may be omitted only while the copy is actually valid |
 | Slots are stored and read exclusively in different branch arms | Permit one physical cell when no other requirement makes them coexist; retain distinct cells when both contents must coexist before the branch |

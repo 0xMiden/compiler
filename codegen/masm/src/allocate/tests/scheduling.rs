@@ -216,6 +216,7 @@ fn checked_case(
         segment_actions: BTreeMap::from([(SegmentId(0), actions)]),
         edge_actions: BTreeMap::new(),
         spill_slots: preparation.slot_requests.union(&second.slot_requests).copied().collect(),
+        semantic_storage_reads: Default::default(),
         lowering_bindings: bindings,
     };
     let frame = fixture_frame(&plan);

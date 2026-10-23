@@ -262,6 +262,7 @@ fn spanning_content_definitions_merge_with_physical_cells_at_selected_join() {
         segment_actions: actions,
         edge_actions: BTreeMap::new(),
         spill_slots: vec![],
+        semantic_storage_reads: Default::default(),
         lowering_bindings: (0..3)
             .map(|index| {
                 (
