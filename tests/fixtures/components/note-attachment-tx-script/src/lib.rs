@@ -2,9 +2,10 @@
 //! recipient and `account.create_note` creates the note.
 //!
 //! Element 0 of the script argument selects the scenario: round-trip checks (0), four/five
-//! attachments (1/2), 512/513 total words (3/4), adding an attachment to a sealed note (5), or an
-//! invalid scheme (6). Element 1 carries the attachment scheme as a felt. The whole word is also
-//! the P2ID serial number.
+//! attachments (1/2), 512/513 total words (3/4), adding an attachment to a sealed note (5), or
+//! reporting the outcome of converting element 1 to a scheme as a one-word attachment (6: `[0]` ok,
+//! `[1, value]` invalid scheme, `[2]` exceeds `u16`). Element 1 carries the attachment scheme as a
+//! felt. The whole word is also the P2ID serial number.
 
 #![no_std]
 #![feature(alloc_error_handler)]
@@ -27,20 +28,21 @@ fn run(arg: Word, account: &mut Wallet) {
     let note_idx = account.create_note(Tag::from(0u32), NoteType::from(0u8), recipient);
     let scenario = arg[0].as_canonical_u64();
     // The scheme comes from the script argument so the check is not folded away at compile time;
-    // an invalid scheme makes the script panic.
-    let scheme = NoteAttachmentScheme::try_from(arg[1]).unwrap();
+    // scenario 6 reports the result, the others require a valid scheme.
+    let scheme = NoteAttachmentScheme::try_from(arg[1]);
     let first = Word::from([felt!(1), felt!(2), felt!(3), felt!(4)]);
 
     match scenario {
-        0 => check_round_trip(note_idx, scheme, first),
+        0 => check_round_trip(note_idx, scheme.unwrap(), first),
         1 | 2 => {
-            let attachment = NoteAttachment::with_word(scheme, first);
+            let attachment = NoteAttachment::with_word(scheme.unwrap(), first);
             let count = if scenario == 1 { 4 } else { 5 };
             for _ in 0..count {
                 attachment.add_to(note_idx);
             }
         }
         3 | 4 => {
+            let scheme = scheme.unwrap();
             let words = alloc::vec![first; 256];
             let attachment = NoteAttachment::with_words(scheme, &words).unwrap();
             attachment.add_to(note_idx);
@@ -51,11 +53,23 @@ fn run(arg: Word, account: &mut Wallet) {
         }
         5 => {
             output_note::seal(note_idx);
-            NoteAttachment::with_word(scheme, first).add_to(note_idx);
+            NoteAttachment::with_word(scheme.unwrap(), first).add_to(note_idx);
         }
-        // The host passes an invalid scheme: the script must already have panicked at the
-        // conversion above.
-        6 => {}
+        6 => {
+            // Report which result the compiled conversion produced, so the host can tell the
+            // rejecting branches apart instead of matching a generic guest panic.
+            let outcome = match scheme {
+                Ok(_) => Word::from([felt!(0), felt!(0), felt!(0), felt!(0)]),
+                Err(NoteAttachmentError::InvalidScheme(value)) => {
+                    Word::from([felt!(1), Felt::from_u32(u32::from(value)), felt!(0), felt!(0)])
+                }
+                Err(NoteAttachmentError::SchemeExceedsU16) => {
+                    Word::from([felt!(2), felt!(0), felt!(0), felt!(0)])
+                }
+                Err(_) => Word::from([felt!(3), felt!(0), felt!(0), felt!(0)]),
+            };
+            NoteAttachment::with_word(NoteAttachmentScheme::none(), outcome).add_to(note_idx);
+        }
         _ => panic!("unknown attachment scenario"),
     }
 }

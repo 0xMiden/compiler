@@ -17,12 +17,12 @@ use miden_protocol::{
 use miden_testing::{Auth, MockChain, MockTransaction};
 
 use super::support::{
-    GUEST_PANIC_CODE, assert_failure_contains, compile_rust_package, execute_tx,
-    execute_tx_expect_failure, transaction_script_from_package_with_deps,
+    assert_failure_contains, compile_rust_package, execute_tx, execute_tx_expect_failure,
+    transaction_script_from_package_with_deps,
 };
 
 /// Scheme the host passes to the guest; the round-trip scenario also uses
-/// `SCHEME + 1 .. SCHEME + 3`, so it must stay at most 65531.
+/// `SCHEME + 1..=SCHEME + 3`, so it must stay at most 65531.
 const SCHEME: u16 = 42;
 
 /// Returns the guest's first content word.
@@ -130,17 +130,24 @@ fn typed_attachments_round_trip_after_note_constructor() {
 /// Per-note count and aggregate-content limits accept their exact protocol boundaries.
 #[test]
 fn typed_attachments_accept_four_attachments_and_512_words() {
-    for (scenario, count, words) in [(1, 4, 1), (3, 2, 256)] {
-        let (mut chain, mock_tx) = build_attachment_tx(scenario, SCHEME.into());
-        let executed_tx = execute_tx(&mut chain, mock_tx);
-        assert_eq!(executed_tx.output_notes().num_notes(), 1);
-        let attachment = NoteAttachment::with_words(
-            NoteAttachmentScheme::new(SCHEME).unwrap(),
-            vec![first_word(); words],
-        )
-        .unwrap();
-        let expected = NoteAttachments::new(vec![attachment; count]).unwrap();
-        assert_eq!(executed_tx.output_notes().get_note(0).attachments(), &expected);
+    // Neither scenario does arithmetic on the scheme, so the upper bound passes through unchanged.
+    for scheme in [SCHEME, NoteAttachmentScheme::MAX.as_u16()] {
+        for (scenario, count, words) in [(1, 4, 1), (3, 2, 256)] {
+            let (mut chain, mock_tx) = build_attachment_tx(scenario, scheme.into());
+            let executed_tx = execute_tx(&mut chain, mock_tx);
+            assert_eq!(executed_tx.output_notes().num_notes(), 1);
+            let attachment = NoteAttachment::with_words(
+                NoteAttachmentScheme::new(scheme).unwrap(),
+                vec![first_word(); words],
+            )
+            .unwrap();
+            let expected = NoteAttachments::new(vec![attachment; count]).unwrap();
+            assert_eq!(
+                executed_tx.output_notes().get_note(0).attachments(),
+                &expected,
+                "scheme {scheme}, scenario {scenario}"
+            );
+        }
     }
 }
 
@@ -155,18 +162,35 @@ fn typed_attachments_reject_excess_count_total_words_and_sealed_notes() {
         let (_chain, mock_tx) = build_attachment_tx(scenario, SCHEME.into());
         let err = execute_tx_expect_failure(mock_tx);
         let needle = format!("assertion failed with error message: {expected_error}");
-        assert!(err.contains(&needle), "scenario {scenario}: wanted `{needle}`, got `{err}`");
+        assert_failure_contains(&err, &needle);
     }
 }
 
-/// A scheme felt that is not a valid scheme panics in the guest before any attachment is added.
+/// The compiled scheme conversion's accept and reject branches are observed through the attachment
+/// the guest writes, including felts with a non-zero high limb.
 #[test]
-fn an_invalid_scheme_from_the_script_argument_panics_in_the_guest() {
-    for scheme in [0, 65535, 65536 + u64::from(SCHEME)] {
-        let (_chain, mock_tx) = build_attachment_tx(6, scheme);
-        let err = execute_tx_expect_failure(mock_tx);
-        // The kernel path would report "attachment scheme must not exceed 65534" instead, which
-        // this assertion rejects.
-        assert_failure_contains(&err, GUEST_PANIC_CODE);
+fn the_guest_reports_the_scheme_conversion_outcome() {
+    for (scheme, expected) in [
+        (u64::from(SCHEME), [0, 0, 0, 0]),
+        (65534, [0, 0, 0, 0]),
+        (0, [1, 0, 0, 0]),
+        (65535, [1, 65535, 0, 0]),
+        (65536 + u64::from(SCHEME), [2, 0, 0, 0]),
+        ((1u64 << 32) + u64::from(SCHEME), [2, 0, 0, 0]),
+        (Felt::ORDER - 1, [2, 0, 0, 0]),
+    ] {
+        let (mut chain, mock_tx) = build_attachment_tx(6, scheme);
+        let executed_tx = execute_tx(&mut chain, mock_tx);
+        let outcome = Word::from(expected.map(Felt::from_u32));
+        let expected = NoteAttachments::new(vec![NoteAttachment::with_word(
+            NoteAttachmentScheme::none(),
+            outcome,
+        )])
+        .unwrap();
+        assert_eq!(
+            executed_tx.output_notes().get_note(0).attachments(),
+            &expected,
+            "scheme felt {scheme}"
+        );
     }
 }
