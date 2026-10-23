@@ -1,4 +1,4 @@
-//! Local identities over emitted Miden Assembly, including redundant scalar and word movement.
+//! Local identities over emitted Miden Assembly, including redundant movement and immediate fusion.
 //!
 //! These rules preserve raw stack behavior, including VM floor padding. They inspect native
 //! instructions rather than inferring algebraic properties of HIR operations. Production callers
@@ -7,6 +7,7 @@
 
 use alloc::vec::Vec;
 
+use miden_core::Felt;
 use smallvec::SmallVec;
 
 use crate::masm::{self, Immediate, Instruction, PushValue, Span, Spanned};
@@ -30,9 +31,27 @@ struct Pattern {
 /// * `movdn.n movup.n`: a move undone
 /// * `push.x drop`: an element pushed and dropped, when `x` is one element
 /// * `dup.n drop`: an element copied and dropped
+/// * `push.0 eq` and `push.1 add`: native zero-test and increment forms
 /// * `swap.1` before field add/mul or equality: operand order is irrelevant
 /// * `swapw.n swapw.n`: a complete word swap undone
 const PATTERNS: &[Pattern] = &[
+    Pattern {
+        name: "native immediate fusion",
+        len: 2,
+        matches: |window| {
+            let Instruction::Push(Immediate::Value(value)) = window[0] else {
+                return None;
+            };
+            let PushValue::Int(value) = value.inner() else {
+                return None;
+            };
+            match (value.as_int(), window[1]) {
+                (0, Instruction::Eq) => Some(vec![Instruction::EqImm(Felt::ZERO.into())]),
+                (1, Instruction::Add) => Some(vec![Instruction::AddImm(Felt::ONE.into())]),
+                _ => None,
+            }
+        },
+    },
     Pattern {
         name: "swap before symmetric field operation",
         len: 2,
@@ -350,7 +369,6 @@ mod tests {
     use alloc::{boxed::Box, string::String, sync::Arc};
 
     use miden_assembly::{ModuleParser, ast::ModuleKind};
-    use miden_core::Felt;
     use midenc_hir::formatter::PrettyPrint;
     use midenc_session::diagnostics::{DefaultSourceManager, SourceLanguage, SourceManager};
 
@@ -532,6 +550,8 @@ mod tests {
         use crate::opt::cost::tests::assembled_cost;
 
         for (before, after) in [
+            (vec!["push.0", "eq"], vec!["eq.0"]),
+            (vec!["push.1", "add"], vec!["add.1"]),
             (vec!["swap.1", "add"], vec!["add"]),
             (vec!["swap.1", "mul"], vec!["mul"]),
             (vec!["swap.1", "eq"], vec!["eq"]),
@@ -570,6 +590,8 @@ mod tests {
         use midenc_hir::Report;
 
         let cases = [
+            ["push.0", "eq"],
+            ["push.1", "add"],
             ["swap.1", "add"],
             ["swap.1", "mul"],
             ["swap.1", "eq"],
@@ -589,13 +611,15 @@ mod tests {
                     let a = expected[0];
                     let b = expected[1];
                     expected[0] = match case {
-                        0 => a + b,
-                        1 => a * b,
-                        2 => Felt::new_unchecked(u64::from(a == b)),
-                        3 => Felt::new_unchecked(u64::from(a != b)),
+                        0 => Felt::new_unchecked(u64::from(a == Felt::ZERO)),
+                        1 => a + Felt::ONE,
+                        2 => a + b,
+                        3 => a * b,
+                        4 => Felt::new_unchecked(u64::from(a == b)),
+                        5 => Felt::new_unchecked(u64::from(a != b)),
                         _ => a,
                     };
-                    if case < 4 {
+                    if (2..=5).contains(&case) {
                         expected.remove(1);
                     }
                     let checks = expected
@@ -641,6 +665,8 @@ mod tests {
         let id = SelectedStepId(0);
         for barrier in 0..4 {
             for pair in [
+                [Instruction::Push(PushValue::from(0u32).into()), Instruction::Eq],
+                [Instruction::Push(PushValue::from(1u32).into()), Instruction::Add],
                 [Instruction::Swap1, Instruction::Mul],
                 [Instruction::SwapW2, Instruction::SwapW2],
             ] {

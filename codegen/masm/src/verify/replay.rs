@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     lower::expand::{Anchor, AnnotatedMasmBody, AnnotatedOp, Boundary},
-    masm::Instruction,
+    masm::{Immediate, Instruction},
     plan::actions::{PlanAction, ProcedurePlan},
 };
 
@@ -1375,6 +1375,11 @@ impl<'a> Verifier<'a> {
                 origins.union(self.tokens.origins(*token));
                 origins
             });
+        // Equality produces a boolean, never an address, in either native or immediate form.
+        let is_equality = matches!(
+            instruction,
+            Instruction::Eq | Instruction::Neq | Instruction::EqImm(_) | Instruction::NeqImm(_)
+        );
         let address = if effect.outputs.iter().any(|lane| matches!(lane, LaneEffect::Computed(_)))
             && origins.has_frame()
         {
@@ -1398,7 +1403,14 @@ impl<'a> Verifier<'a> {
                         .and_then(|delta| u32::try_from(delta).ok())
                         .and_then(|delta| offset.checked_sub(delta))
                 }),
-                Instruction::Eq | Instruction::Neq => None,
+                Instruction::AddImm(Immediate::Value(delta)) => {
+                    self.tokens.frame_address(inputs[0]).and_then(|offset| {
+                        u32::try_from(delta.as_canonical_u64())
+                            .ok()
+                            .and_then(|delta| offset.checked_add(delta))
+                    })
+                }
+                _ if is_equality => None,
                 _ if !origins.compiler() => None,
                 _ => {
                     return Err(fail(
@@ -1407,10 +1419,7 @@ impl<'a> Verifier<'a> {
                     ));
                 }
             };
-            if origins.compiler()
-                && !matches!(instruction, Instruction::Eq | Instruction::Neq)
-                && value.is_none()
-            {
+            if origins.compiler() && !is_equality && value.is_none() {
                 return Err(fail(
                     DiagnosticCategory::IllegalStackAccess,
                     "compiler address arithmetic is not exact",
@@ -1439,7 +1448,7 @@ impl<'a> Verifier<'a> {
                     let token = self.tokens.fresh();
                     // Opaque source arithmetic retains may-origin, without inventing equality
                     // or an exact frame offset. Compiler/mixed arithmetic is rejected above.
-                    if !matches!(instruction, Instruction::Eq | Instruction::Neq) {
+                    if !is_equality {
                         self.tokens.add_origins(token, origins);
                     }
                     token

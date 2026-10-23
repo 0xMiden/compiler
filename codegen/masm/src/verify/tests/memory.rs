@@ -215,6 +215,116 @@ fn exact_frame_address_arithmetic_preserves_physical_identity() {
 }
 
 #[test]
+fn immediate_frame_arithmetic_preserves_native_cell_identity() {
+    let mut fixture = Fixture::new(0, 1).scratch(2);
+    fixture.proof.scratch_outputs.push((
+        FrameRef::Scratch {
+            object: ScratchId(0),
+            offset: 1,
+        },
+        0,
+    ));
+    let prefix = [
+        Primitive::Push(Felt::new_unchecked(17)).instruction().unwrap(),
+        Instruction::LocStore(1.into()),
+        Instruction::Locaddr(0.into()),
+    ];
+    for arithmetic in [
+        vec![Primitive::Push(Felt::ONE).instruction().unwrap(), Instruction::Add],
+        vec![Instruction::AddImm(Felt::ONE.into())],
+    ] {
+        let mut code = prefix.to_vec();
+        code.extend(arithmetic);
+        code.push(Instruction::MemLoad);
+        let mut expanded = body(code);
+        verify(&fixture.plan(), &fixture.frame(), expanded.clone()).unwrap();
+        crate::opt::peephole::simplify_annotated(&mut expanded);
+        assert!(
+            expanded
+                .top_level_instructions()
+                .any(|instruction| { matches!(instruction, Instruction::AddImm(_)) })
+        );
+        verify(&fixture.plan(), &fixture.frame(), expanded).unwrap();
+    }
+}
+
+#[test]
+fn immediate_comparisons_clear_frame_provenance_like_native_comparisons() {
+    for source_local in [false, true] {
+        let mut fixture = Fixture::new(0, 1);
+        if source_local {
+            fixture.locals = SourceLocalLayout {
+                offsets: vec![0],
+                extent: 1,
+            };
+        } else {
+            fixture = fixture.scratch(1);
+        }
+        for (native, immediate) in [
+            (Instruction::Eq, Instruction::EqImm(Felt::ZERO.into())),
+            (Instruction::Neq, Instruction::NeqImm(Felt::ZERO.into())),
+        ] {
+            for comparison in [
+                vec![Primitive::Push(Felt::ZERO).instruction().unwrap(), native],
+                vec![immediate],
+            ] {
+                let mut code = vec![Instruction::Locaddr(0.into())];
+                code.extend(comparison);
+                let mut expanded = body(code);
+                verify(&fixture.plan(), &fixture.frame(), expanded.clone()).unwrap();
+                crate::opt::peephole::simplify_annotated(&mut expanded);
+                verify(&fixture.plan(), &fixture.frame(), expanded).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn immediate_arithmetic_retains_compiler_storage_restrictions() {
+    let fixture = Fixture::new(0, 1).scratch(2);
+    for immediate in [u64::from(u32::MAX), u64::from(u32::MAX) + 1] {
+        let error = fixture
+            .run(vec![
+                inst(Instruction::Locaddr(1.into())),
+                inst(Instruction::AddImm(Felt::new_unchecked(immediate).into())),
+            ])
+            .unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::IllegalStackAccess);
+    }
+    assert_eq!(
+        fixture
+            .run(vec![
+                inst(Instruction::Locaddr(0.into())),
+                inst(Instruction::AddImm(Felt::ONE.into())),
+            ])
+            .unwrap_err()
+            .category,
+        DiagnosticCategory::AbiMismatch
+    );
+    assert_eq!(
+        fixture
+            .run(vec![
+                inst(Instruction::Locaddr(0.into())),
+                inst(Instruction::AddImm(Felt::ONE.into())),
+                inst(Instruction::MemLoad),
+            ])
+            .unwrap_err()
+            .category,
+        DiagnosticCategory::InvalidSpillSlotRead
+    );
+    assert_eq!(
+        fixture
+            .run(vec![
+                inst(Instruction::Locaddr(0.into())),
+                inst(Instruction::MulImm(Felt::new_unchecked(2).into())),
+            ])
+            .unwrap_err()
+            .category,
+        DiagnosticCategory::IllegalStackAccess
+    );
+}
+
+#[test]
 fn final_source_local_layout_must_match_registered_source() {
     let changed = FinalFrameLayout::new(
         SourceLocalLayout {
