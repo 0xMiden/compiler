@@ -3,15 +3,17 @@
 //! Attachment content is public, including attachments of private notes. A scheme only identifies
 //! the content's intended meaning; callers must validate any scheme-specific content themselves.
 
-use miden_stdlib_sys::Word;
+use miden_stdlib_sys::{Felt, Word};
 
-use super::{MAX_ATTACHMENT_WORDS, NoteIdx, output_note};
+use super::{MAX_ATTACHMENT_WORDS, NoteIdx, output_note, types::felt_to_u16};
 
 /// An error produced while constructing a note attachment or its scheme.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum NoteAttachmentError {
     /// The scheme is `0` or `65535`, outside the valid range `1..=65534`.
     InvalidScheme(u16),
+    /// The scheme felt exceeds `u16::MAX`.
+    SchemeExceedsU16,
     /// The attachment does not contain any words.
     EmptyContent,
     /// The attachment contains more than 256 words.
@@ -24,6 +26,7 @@ impl core::fmt::Display for NoteAttachmentError {
             Self::InvalidScheme(scheme) => {
                 write!(f, "note attachment scheme {scheme} must be between 1 and 65534")
             }
+            Self::SchemeExceedsU16 => f.write_str("note attachment scheme exceeds u16"),
             Self::EmptyContent => f.write_str("note attachment cannot be empty"),
             Self::TooManyWords(num_words) => {
                 write!(
@@ -63,6 +66,23 @@ impl NoteAttachmentScheme {
         Ok(Self(scheme))
     }
 
+    /// Creates a scheme from its protocol value, for defining scheme constants:
+    ///
+    /// ```rust,ignore
+    /// const SCHEME: NoteAttachmentScheme = NoteAttachmentScheme::new_const(42);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `scheme` is `0` or `65535`; in a constant, this is a compile-time error.
+    pub const fn new_const(scheme: u16) -> Self {
+        assert!(
+            scheme != 0 && scheme <= Self::MAX.as_u16(),
+            "note attachment scheme must be between 1 and 65534"
+        );
+        Self(scheme)
+    }
+
     /// Returns scheme `1`, which denotes an unspecified attachment scheme.
     pub const fn none() -> Self {
         Self(1)
@@ -85,7 +105,8 @@ impl NoteAttachmentScheme {
     ///
     /// # Panics
     ///
-    /// Panics if `value` is `65535`, which the kernel never writes into metadata.
+    /// Panics if `value` is `65535`, which is not a valid scheme; the kernel never writes it into
+    /// metadata.
     pub(super) fn from_header_u16(value: u16) -> Option<Self> {
         if value == 0 {
             return None;
@@ -105,6 +126,21 @@ impl TryFrom<u16> for NoteAttachmentScheme {
     type Error = NoteAttachmentError;
 
     fn try_from(scheme: u16) -> Result<Self, Self::Error> {
+        Self::new(scheme)
+    }
+}
+
+impl TryFrom<Felt> for NoteAttachmentScheme {
+    type Error = NoteAttachmentError;
+
+    /// Converts a felt holding a scheme's protocol value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NoteAttachmentError::SchemeExceedsU16`] for a felt above `u16::MAX` and
+    /// [`NoteAttachmentError::InvalidScheme`] for `0` or `65535`.
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        let scheme = felt_to_u16(value).ok_or(NoteAttachmentError::SchemeExceedsU16)?;
         Self::new(scheme)
     }
 }
@@ -137,14 +173,14 @@ impl From<NoteAttachmentScheme> for u16 {
 ///     note_idx
 /// }
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NoteAttachment<'a> {
     attachment_scheme: NoteAttachmentScheme,
     content: NoteAttachmentContent<'a>,
 }
 
 /// The owned or borrowed words of a validated attachment.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum NoteAttachmentContent<'a> {
     /// A single word stored in the attachment itself.
     Word(Word),
@@ -154,6 +190,7 @@ enum NoteAttachmentContent<'a> {
 
 impl<'a> NoteAttachment<'a> {
     /// Creates an attachment holding a single word by value, without allocating or hashing.
+    #[must_use = "the attachment is only added to a note by `add_to`"]
     pub fn with_word(attachment_scheme: NoteAttachmentScheme, word: Word) -> Self {
         Self {
             attachment_scheme,
@@ -167,6 +204,7 @@ impl<'a> NoteAttachment<'a> {
     ///
     /// Returns [`NoteAttachmentError::EmptyContent`] for an empty slice or
     /// [`NoteAttachmentError::TooManyWords`] for more than 256 words.
+    #[must_use = "the attachment is only added to a note by `add_to`"]
     pub fn with_words(
         attachment_scheme: NoteAttachmentScheme,
         words: &'a [Word],
@@ -198,6 +236,7 @@ impl<'a> NoteAttachment<'a> {
 
     /// Returns the attachment's word count, between 1 and 256.
     pub fn num_words(&self) -> u16 {
+        // The constructors bound the length by 256, so the cast is exact.
         self.as_words().len() as u16
     }
 
@@ -207,7 +246,7 @@ impl<'a> NoteAttachment<'a> {
     /// [`output_note::add_word_attachment`]. Longer content uses
     /// [`output_note::add_attachment_from_memory`]. Duplicate schemes are allowed; lookup returns
     /// the first matching attachment. For a commitment whose preimage is already available in the
-    /// advice map, call [`output_note::add_attachment`] directly; it takes a
+    /// advice map, call the advice-map writer [`output_note::add_attachment`] directly; it takes a
     /// [`NoteAttachmentScheme`] as well.
     ///
     /// # Panics
@@ -230,7 +269,7 @@ mod tests {
     use miden_protocol::note::{
         NoteAttachment as ProtocolAttachment, NoteAttachmentScheme as ProtocolScheme,
     };
-    use miden_stdlib_sys::{Word, felt};
+    use miden_stdlib_sys::{Felt, Word, felt};
 
     use super::{NoteAttachment, NoteAttachmentError, NoteAttachmentScheme};
 
@@ -254,6 +293,41 @@ mod tests {
         assert_eq!(NoteAttachmentScheme::none().as_u16(), ProtocolScheme::none().as_u16());
         assert_eq!(NoteAttachmentScheme::MAX.as_u16(), ProtocolScheme::MAX.as_u16());
         assert_eq!(NoteAttachmentScheme::default().as_u16(), ProtocolScheme::default().as_u16());
+    }
+
+    /// Checks that `new_const` keeps a valid scheme value.
+    #[test]
+    fn new_const_keeps_a_valid_scheme() {
+        const SCHEME: NoteAttachmentScheme = NoteAttachmentScheme::new_const(42);
+        assert_eq!(SCHEME.as_u16(), 42);
+    }
+
+    /// Checks that `new_const` rejects scheme `0`.
+    #[test]
+    #[should_panic(expected = "note attachment scheme must be between 1 and 65534")]
+    fn new_const_rejects_zero() {
+        let _ = NoteAttachmentScheme::new_const(core::hint::black_box(0));
+    }
+
+    /// Checks felt conversion of valid, invalid and out-of-range scheme values.
+    #[test]
+    fn schemes_convert_from_felts() {
+        assert_eq!(NoteAttachmentScheme::try_from(felt!(42)), NoteAttachmentScheme::new(42));
+        assert_eq!(
+            NoteAttachmentScheme::try_from(felt!(0)),
+            Err(NoteAttachmentError::InvalidScheme(0))
+        );
+        assert_eq!(
+            NoteAttachmentScheme::try_from(Felt::from_u32(u32::from(u16::MAX) + 1)),
+            Err(NoteAttachmentError::SchemeExceedsU16)
+        );
+    }
+
+    /// Checks that a metadata slot holding the invalid scheme `65535` panics.
+    #[test]
+    #[should_panic(expected = "invalid attachment scheme in note metadata")]
+    fn header_slot_rejects_invalid_scheme() {
+        let _ = NoteAttachmentScheme::from_header_u16(u16::MAX);
     }
 
     /// Checks that an absent metadata slot decodes to `None` and other values keep their scheme.

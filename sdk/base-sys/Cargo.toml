@@ -30,7 +30,8 @@ miden-stdlib-sys.workspace = true
 miden-sdk-bindgen.workspace = true
 midenc-integration-test-support.workspace = true
 midenc-package-interface.workspace = true
-# The differential test of `AssetAmount` in `src/bindings/types.rs`.
+# The differential test of `AssetAmount` in `src/bindings/types.rs` and the attachment tests in
+# `src/bindings/attachment.rs`.
 miden-protocol.workspace = true
 
 [build-dependencies]
