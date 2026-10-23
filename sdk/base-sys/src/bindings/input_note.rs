@@ -4,8 +4,8 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
-    AttachmentIdx, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme,
-    assert_attachment_count, assert_attachment_word_count,
+    AttachmentIdx, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachment,
+    NoteAttachmentScheme, assert_attachment_count, assert_attachment_word_count,
     types::{AccountId, Asset, NoteId, NoteIdx, NoteMetadata, Recipient},
 };
 use crate::raw::protocol::{input_note as raw, types as raw_types};
@@ -166,6 +166,23 @@ pub fn find_attachment(
 ) -> Option<AttachmentIdx> {
     let (found, index) = raw::find_attachment(attachment_scheme.as_u16(), u16::from(note_index));
     found.then(|| AttachmentIdx::from_kernel(index))
+}
+
+/// Returns the first attachment of the input note at `note_index` with `attachment_scheme`, or
+/// `None` if the note has no attachment with that scheme.
+///
+/// # Panics
+///
+/// Panics if `note_index` is out of bounds for the transaction's input notes.
+pub fn read_attachment(
+    note_index: NoteIdx,
+    attachment_scheme: NoteAttachmentScheme,
+) -> Option<NoteAttachment> {
+    let index = find_attachment(note_index, attachment_scheme)?;
+    Some(NoteAttachment::from_kernel_words(
+        attachment_scheme,
+        write_attachment_to_memory(note_index, index),
+    ))
 }
 
 /// Returns the number of assets the input note at `note_index` was created with.

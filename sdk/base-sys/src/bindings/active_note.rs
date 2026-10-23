@@ -5,7 +5,7 @@ use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
     AccountId, Asset, AttachmentIdx, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE,
-    NoteAttachmentScheme, NoteId, NoteMetadata, Recipient, assert_attachment_count,
+    NoteAttachment, NoteAttachmentScheme, NoteId, NoteMetadata, Recipient, assert_attachment_count,
     assert_attachment_word_count,
 };
 use crate::raw::protocol::{active_note as raw, types as raw_types};
@@ -161,6 +161,16 @@ pub fn find_attachment(attachment_scheme: NoteAttachmentScheme) -> Option<Attach
     found.then(|| AttachmentIdx::from_kernel(index))
 }
 
+/// Returns the first attachment of the active note with `attachment_scheme`, or `None` if the note
+/// has no attachment with that scheme.
+pub fn read_attachment(attachment_scheme: NoteAttachmentScheme) -> Option<NoteAttachment> {
+    let index = find_attachment(attachment_scheme)?;
+    Some(NoteAttachment::from_kernel_words(
+        attachment_scheme,
+        write_attachment_to_memory(index),
+    ))
+}
+
 /// Returns the initial assets commitment and asset count of the active note.
 ///
 /// These describe the note's assets at creation time, unaffected by in-transaction removal.
@@ -313,6 +323,13 @@ pub trait ActiveNote {
     #[inline]
     fn find_attachment(&self, attachment_scheme: NoteAttachmentScheme) -> Option<AttachmentIdx> {
         find_attachment(attachment_scheme)
+    }
+
+    /// Returns the first attachment of the active note with `attachment_scheme`, or `None` if the
+    /// note has no attachment with that scheme.
+    #[inline]
+    fn read_attachment(&self, attachment_scheme: NoteAttachmentScheme) -> Option<NoteAttachment> {
+        read_attachment(attachment_scheme)
     }
 
     /// Returns the initial assets commitment and asset count of the note that is currently

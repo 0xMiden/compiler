@@ -1,7 +1,10 @@
-//! Allocation-free note attachments with validated schemes, indexes and content lengths.
+//! Note attachments with validated schemes, indexes and content lengths.
 //!
 //! Attachment content is public, including attachments of private notes. A scheme only identifies
 //! the content's intended meaning; callers must validate any scheme-specific content themselves.
+
+extern crate alloc;
+use alloc::vec::Vec;
 
 use miden_field_repr::{
     FeltReader, FeltReprError, FeltReprResult, FeltWriter, FromFeltRepr, ToFeltRepr,
@@ -377,72 +380,57 @@ impl TryFrom<&[Felt]> for AttachmentIdx {
     }
 }
 
-/// A note attachment containing one owned word or between 1 and 256 borrowed words.
+/// A note attachment: a scheme and between 1 and 256 words of public content.
 ///
-/// Construction neither allocates nor hashes the content. Content is public even when the note is
-/// private. The scheme and content length are validated; scheme-specific content requirements and
-/// per-note limits remain the caller's responsibility and are checked by the kernel where applicable.
+/// Content is public even when the note is private. The scheme and content length are validated;
+/// scheme-specific content requirements and per-note limits remain the caller's responsibility and
+/// are checked by the kernel where applicable. This is the value the `read_attachment` functions,
+/// such as [`output_note::read_attachment`], return and [`Self::add_to`] writes. Construction
+/// allocates one `Vec` for the words, [`Self::with_word`] included, and does not hash the content.
 ///
 /// # Examples
 ///
 /// Create an output note and attach application data from an account procedure, with the native
-/// account active:
+/// account active, then read the attachment back:
 ///
 /// ```rust,ignore
 /// use miden::{NoteAttachment, NoteAttachmentScheme, NoteIdx, NoteType, Recipient, Tag, Word,
 ///             output_note};
 ///
 /// fn create_note(tag: Tag, recipient: Recipient, data: Word) -> NoteIdx {
-///     let attachment = NoteAttachment::with_word(NoteAttachmentScheme::none(), data);
+///     let scheme = NoteAttachmentScheme::none();
+///     let attachment = NoteAttachment::with_word(scheme, data);
 ///     let note_idx = output_note::create(tag, NoteType::from(1u8), recipient);
 ///     attachment.add_to(note_idx);
+///     assert_eq!(output_note::read_attachment(note_idx, scheme), Some(attachment));
 ///     note_idx
 /// }
 /// ```
-#[derive(Clone, Debug)]
-#[must_use = "the attachment is only added to a note by `add_to`"]
-pub struct NoteAttachment<'a> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[must_use]
+pub struct NoteAttachment {
     attachment_scheme: NoteAttachmentScheme,
-    content: NoteAttachmentContent<'a>,
+    words: Vec<Word>,
 }
 
-impl PartialEq for NoteAttachment<'_> {
-    /// Two attachments are equal when their schemes and words are equal, however the words are
-    /// stored.
-    fn eq(&self, other: &Self) -> bool {
-        self.attachment_scheme == other.attachment_scheme && self.as_words() == other.as_words()
-    }
-}
-
-impl Eq for NoteAttachment<'_> {}
-
-/// The owned or borrowed words of a validated attachment.
-#[derive(Clone, Debug)]
-enum NoteAttachmentContent<'a> {
-    /// A single word stored in the attachment itself.
-    Word(Word),
-    /// A nonempty slice containing at most 256 words.
-    Words(&'a [Word]),
-}
-
-impl<'a> NoteAttachment<'a> {
-    /// Creates an attachment holding a single word by value, without allocating or hashing.
+impl NoteAttachment {
+    /// Creates an attachment holding a single word.
     pub fn with_word(attachment_scheme: NoteAttachmentScheme, word: Word) -> Self {
         Self {
             attachment_scheme,
-            content: NoteAttachmentContent::Word(word),
+            words: alloc::vec![word],
         }
     }
 
-    /// Creates an attachment borrowing its words, without allocating or hashing.
+    /// Creates an attachment holding `words`.
     ///
     /// # Errors
     ///
-    /// Returns [`NoteAttachmentError::EmptyContent`] for an empty slice or
+    /// Returns [`NoteAttachmentError::EmptyContent`] for no words or
     /// [`NoteAttachmentError::TooManyWords`] for more than 256 words.
     pub fn with_words(
         attachment_scheme: NoteAttachmentScheme,
-        words: &'a [Word],
+        words: Vec<Word>,
     ) -> Result<Self, NoteAttachmentError> {
         if words.is_empty() {
             return Err(NoteAttachmentError::EmptyContent);
@@ -452,8 +440,20 @@ impl<'a> NoteAttachment<'a> {
         }
         Ok(Self {
             attachment_scheme,
-            content: NoteAttachmentContent::Words(words),
+            words,
         })
+    }
+
+    /// Wraps words the attachment readers already bounded with `assert_attachment_word_count`,
+    /// without checking their length again.
+    pub(super) fn from_kernel_words(
+        attachment_scheme: NoteAttachmentScheme,
+        words: Vec<Word>,
+    ) -> Self {
+        Self {
+            attachment_scheme,
+            words,
+        }
     }
 
     /// Returns the attachment's scheme.
@@ -463,16 +463,18 @@ impl<'a> NoteAttachment<'a> {
 
     /// Returns the attachment's content as words.
     pub fn as_words(&self) -> &[Word] {
-        match &self.content {
-            NoteAttachmentContent::Word(word) => core::slice::from_ref(word),
-            NoteAttachmentContent::Words(words) => words,
-        }
+        &self.words
     }
 
     /// Returns the attachment's word count, between 1 and 256.
     pub fn num_words(&self) -> u16 {
         // The constructors bound the length by 256, so the cast is exact.
-        self.as_words().len() as u16
+        self.words.len() as u16
+    }
+
+    /// Returns the attachment's content as words, consuming the attachment.
+    pub fn into_words(self) -> Vec<Word> {
+        self.words
     }
 
     /// Appends this attachment to an output note, preserving existing attachment order.
@@ -487,8 +489,7 @@ impl<'a> NoteAttachment<'a> {
     /// or an append that exceeds four attachments or 512 total attachment words for the note.
     pub fn add_to(&self, note_idx: NoteIdx) {
         let words = self.as_words();
-        // Single-word content, including a one-word borrowed slice, uses the word writer; longer
-        // content uses the memory writer.
+        // Single-word content uses the word writer; longer content uses the memory writer.
         if let [word] = words {
             output_note::add_word_attachment(note_idx, self.attachment_scheme, *word);
         } else {
@@ -500,6 +501,8 @@ impl<'a> NoteAttachment<'a> {
 #[cfg(test)]
 /// Native checks of SDK attachment invariants against the pinned protocol.
 mod tests {
+    extern crate alloc;
+
     use miden_field_repr::{FeltReprError, FromFeltRepr, ToFeltRepr};
     use miden_protocol::note::{
         NoteAttachment as ProtocolAttachment, NoteAttachmentScheme as ProtocolScheme,
@@ -595,11 +598,10 @@ mod tests {
     /// Checks content length boundaries against the protocol's owned attachment type.
     #[test]
     fn content_lengths_match_protocol() {
-        extern crate alloc;
-
         let words = [Word::from([felt!(0); 4]); 257];
         for length in [0, 1, 256, 257] {
-            let ours = NoteAttachment::with_words(NoteAttachmentScheme::none(), &words[..length]);
+            let ours =
+                NoteAttachment::with_words(NoteAttachmentScheme::none(), words[..length].to_vec());
             let theirs = ProtocolAttachment::with_words(
                 ProtocolScheme::none(),
                 alloc::vec![miden_protocol::Word::default(); length],
@@ -616,7 +618,7 @@ mod tests {
         }
     }
 
-    /// Checks scheme and content access for owned words and borrowed slices.
+    /// Checks scheme and content access for single-word and multi-word attachments.
     #[test]
     fn accessors_preserve_content() {
         let scheme = NoteAttachmentScheme::new(42).unwrap();
@@ -624,38 +626,39 @@ mod tests {
             Word::from([felt!(1), felt!(2), felt!(3), felt!(4)]),
             Word::from([felt!(5), felt!(6), felt!(7), felt!(8)]),
         ];
-        let owned = NoteAttachment::with_word(scheme, words[0]);
-        let borrowed_one = NoteAttachment::with_words(scheme, &words[..1]).unwrap();
-        let borrowed_many = NoteAttachment::with_words(scheme, &words).unwrap();
-        for attachment in [&owned, &borrowed_one, &borrowed_many] {
+        let single = NoteAttachment::with_word(scheme, words[0]);
+        let one_word = NoteAttachment::with_words(scheme, words[..1].to_vec()).unwrap();
+        let many = NoteAttachment::with_words(scheme, words.to_vec()).unwrap();
+        for attachment in [&single, &one_word, &many] {
             assert_eq!(attachment.attachment_scheme(), scheme);
             assert_eq!(attachment.as_words(), &words[..usize::from(attachment.num_words())]);
         }
-        assert_eq!(owned.num_words(), 1);
-        assert_eq!(borrowed_one.num_words(), 1);
-        assert_eq!(borrowed_many.num_words(), 2);
-        assert_eq!(borrowed_many.as_words().as_ptr(), words.as_ptr());
+        assert_eq!(single.num_words(), 1);
+        assert_eq!(one_word.num_words(), 1);
+        assert_eq!(many.num_words(), 2);
+        assert_eq!(single.into_words(), words[..1]);
+        assert_eq!(many.into_words(), words);
     }
 
-    /// Checks that equality compares schemes and words, not how the words are stored.
+    /// Checks that equality compares schemes and words.
     #[test]
-    fn equality_ignores_word_storage() {
+    fn equality_is_by_scheme_and_words() {
         let scheme = NoteAttachmentScheme::new(42).unwrap();
         let word = Word::from([felt!(1), felt!(2), felt!(3), felt!(4)]);
         let other_word = Word::from([felt!(5), felt!(6), felt!(7), felt!(8)]);
-        let owned = NoteAttachment::with_word(scheme, word);
-        let words = [word];
-        assert_eq!(owned, NoteAttachment::with_words(scheme, &words).unwrap());
-        assert_ne!(owned, NoteAttachment::with_word(NoteAttachmentScheme::none(), word));
-        assert_ne!(owned, NoteAttachment::with_word(scheme, other_word));
+        let single = NoteAttachment::with_word(scheme, word);
+        assert_eq!(single, NoteAttachment::with_words(scheme, alloc::vec![word]).unwrap());
+        assert_eq!(single, NoteAttachment::from_kernel_words(scheme, alloc::vec![word]));
+        assert_ne!(single, NoteAttachment::with_word(NoteAttachmentScheme::none(), word));
+        assert_ne!(single, NoteAttachment::with_word(scheme, other_word));
 
-        let pair = [word, other_word];
-        let pair_copy = [word, other_word];
-        let differing_second = [word, word];
-        let two_words = NoteAttachment::with_words(scheme, &pair).unwrap();
-        assert_eq!(two_words, NoteAttachment::with_words(scheme, &pair_copy).unwrap());
-        assert_ne!(two_words, NoteAttachment::with_words(scheme, &differing_second).unwrap());
-        assert_ne!(owned, two_words);
+        let two_words = NoteAttachment::with_words(scheme, alloc::vec![word, other_word]).unwrap();
+        assert_eq!(
+            two_words,
+            NoteAttachment::with_words(scheme, alloc::vec![word, other_word]).unwrap()
+        );
+        assert_ne!(two_words, NoteAttachment::with_words(scheme, alloc::vec![word, word]).unwrap());
+        assert_ne!(single, two_words);
     }
 
     /// Checks the index bounds, the integer and felt conversions, the const constructor and the

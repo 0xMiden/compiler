@@ -56,9 +56,9 @@ fn attachment_packages() -> &'static AttachmentPackages {
     })
 }
 
-/// Builds a transaction running the selected attachment scenario with `scheme` on a native wallet
-/// account.
-fn build_attachment_tx(scenario: u32, scheme: u64) -> (MockChain, MockTransaction) {
+/// Builds a transaction running the selected attachment scenario with `scheme` and the attachment
+/// `index` on a native wallet account.
+fn build_attachment_tx(scenario: u32, scheme: u64, index: u64) -> (MockChain, MockTransaction) {
     let AttachmentPackages {
         wallet: wallet_package,
         note: note_package,
@@ -94,7 +94,7 @@ fn build_attachment_tx(scenario: u32, scheme: u64) -> (MockChain, MockTransactio
         .tx_script_args(Word::from([
             Felt::from(scenario),
             Felt::new(scheme).unwrap(),
-            Felt::ZERO,
+            Felt::new(index).unwrap(),
             Felt::ZERO,
         ]))
         .add_advice_map_entry(advice_commitment, advice_content)
@@ -104,10 +104,10 @@ fn build_attachment_tx(scenario: u32, scheme: u64) -> (MockChain, MockTransactio
     (chain, mock_tx)
 }
 
-/// Typed word/slice paths and the advice-map writer preserve the protocol's commitments.
+/// Typed word and memory paths and the advice-map writer preserve the protocol's commitments.
 #[test]
 fn typed_attachments_round_trip_after_note_constructor() {
-    let (mut chain, mock_tx) = build_attachment_tx(0, SCHEME.into());
+    let (mut chain, mock_tx) = build_attachment_tx(0, SCHEME.into(), 0);
     let executed_tx = execute_tx(&mut chain, mock_tx);
     assert_eq!(executed_tx.output_notes().num_notes(), 1);
 
@@ -122,7 +122,7 @@ fn typed_attachments_round_trip_after_note_constructor() {
         .collect();
     let expected = NoteAttachments::new(vec![
         NoteAttachment::with_word(scheme, first_word()),
-        NoteAttachment::with_word(s1, first_word()),
+        NoteAttachment::with_word(s1, second),
         NoteAttachment::with_words(scheme, vec![first_word(), second]).unwrap(),
         NoteAttachment::with_words(s2, advice_words).unwrap(),
     ])
@@ -136,7 +136,7 @@ fn typed_attachments_accept_four_attachments_and_512_words() {
     // Neither scenario does arithmetic on the scheme, so the upper bound passes through unchanged.
     for scheme in [SCHEME, NoteAttachmentScheme::MAX.as_u16()] {
         for (scenario, count, words) in [(1, 4, 1), (3, 2, 256)] {
-            let (mut chain, mock_tx) = build_attachment_tx(scenario, scheme.into());
+            let (mut chain, mock_tx) = build_attachment_tx(scenario, scheme.into(), 0);
             let executed_tx = execute_tx(&mut chain, mock_tx);
             assert_eq!(executed_tx.output_notes().num_notes(), 1);
             let attachment = NoteAttachment::with_words(
@@ -165,7 +165,7 @@ fn typed_attachments_reject_excess_count_total_words_and_sealed_notes() {
         (5, ERR_OUTPUT_NOTE_IS_SEALED.message()),
         (8, ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS.message()),
     ] {
-        let (_chain, mock_tx) = build_attachment_tx(scenario, SCHEME.into());
+        let (_chain, mock_tx) = build_attachment_tx(scenario, SCHEME.into(), 0);
         let err = execute_tx_expect_failure(mock_tx);
         let needle = format!("assertion failed with error message: {expected_error}");
         // Each scenario has its own kernel error, which identifies it on failure.
@@ -188,7 +188,7 @@ fn the_guest_reports_the_scheme_conversion_outcome() {
         ((1u64 << 32) + u64::from(SCHEME), [2, 0, 0, 0]),
         (Felt::ORDER - 1, [2, 0, 0, 0]),
     ] {
-        let (mut chain, mock_tx) = build_attachment_tx(6, scheme);
+        let (mut chain, mock_tx) = build_attachment_tx(6, scheme, 0);
         let executed_tx = execute_tx(&mut chain, mock_tx);
         let outcome = Word::from(expected.map(Felt::from_u32));
         let expected = NoteAttachments::new(vec![NoteAttachment::with_word(
@@ -204,32 +204,37 @@ fn the_guest_reports_the_scheme_conversion_outcome() {
     }
 }
 
-/// The compiled felt-repr scheme decoder's accept and reject branches are observed through the
-/// attachment the guest writes; the guest also checks the index decoder.
+/// The compiled felt-repr scheme and index decoders' accept and reject branches, including the
+/// error's value, bound and type name, are observed through the two attachments the guest writes.
 #[test]
 fn the_guest_decodes_felt_encodings() {
-    let max = u64::from(NoteAttachmentScheme::MAX.as_u16());
-    for (scheme, expected) in [
-        (42, [0, 42]),
-        (max, [0, max]),
-        (0, [1, 0]),
-        (max + 1, [1, max + 1]),
-        (65536, [1, 65536]),
-        (Felt::ORDER - 1, [1, Felt::ORDER - 1]),
+    let scheme_max = u64::from(NoteAttachmentScheme::MAX.as_u16());
+    let index_max = 3;
+    let top = Felt::ORDER - 1;
+    // Guest outcome words: `[0, value, 0, 0]` decoded, `[1, value, max, ty]` out of range, where
+    // `ty` is 0 for `NoteAttachmentScheme` and 1 for `AttachmentIdx`.
+    for (scheme, index, expected_scheme, expected_index) in [
+        (42, 0, [0, 42, 0, 0], [0, 0, 0, 0]),
+        (scheme_max, 3, [0, scheme_max, 0, 0], [0, 3, 0, 0]),
+        (0, 4, [1, 0, scheme_max, 0], [1, 4, index_max, 1]),
+        (scheme_max + 1, 255, [1, scheme_max + 1, scheme_max, 0], [1, 255, index_max, 1]),
+        (65536, 256, [1, 65536, scheme_max, 0], [1, 256, index_max, 1]),
+        (top, top, [1, top, scheme_max, 0], [1, top, index_max, 1]),
     ] {
-        let (mut chain, mock_tx) = build_attachment_tx(7, scheme);
+        let (mut chain, mock_tx) = build_attachment_tx(7, scheme, index);
         let executed_tx = execute_tx(&mut chain, mock_tx);
-        let [tag, value] = expected.map(|felt| Felt::new(felt).unwrap());
-        let outcome = Word::from([tag, value, Felt::ZERO, Felt::ZERO]);
-        let expected = NoteAttachments::new(vec![NoteAttachment::with_word(
-            NoteAttachmentScheme::none(),
-            outcome,
-        )])
-        .unwrap();
+        let outcome = |felts: [u64; 4]| {
+            NoteAttachment::with_word(
+                NoteAttachmentScheme::none(),
+                Word::from(felts.map(|felt| Felt::new(felt).unwrap())),
+            )
+        };
+        let expected =
+            NoteAttachments::new(vec![outcome(expected_scheme), outcome(expected_index)]).unwrap();
         assert_eq!(
             executed_tx.output_notes().get_note(0).attachments(),
             &expected,
-            "scheme felt {scheme}"
+            "scheme felt {scheme}, index felt {index}"
         );
     }
 }
