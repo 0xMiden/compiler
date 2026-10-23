@@ -37,7 +37,10 @@ use miden_mast_package::Package as MastPackage;
 use midenc_frontend_wasm_metadata::package_cache;
 use midenc_hir::{Context, formatter::DisplayMany};
 use midenc_package_interface::PackageInterface;
-use midenc_session::{FileType, InputFile, InputType, Options, Session, diagnostics::Report};
+use midenc_session::{
+    FileType, InputFile, InputType, Options, Session,
+    diagnostics::{DiagnosticsHandler, Report, Severity},
+};
 
 use super::wasm::{WasmFrontend, WasmSource};
 use crate::{
@@ -775,7 +778,15 @@ fn rustc(
         std::env::var_os("RUSTFLAGS").as_deref(),
         options.rustflags.as_deref(),
     );
-    let (rustc_flags, target) = direct_rustc_flags(rustflags);
+    let direct_rustc = direct_rustc_flags(rustflags);
+    if direct_rustc.dropped_immediate_abort {
+        warn_unsupported_rustc_panic_strategy(&session.diagnostics);
+        if session.diagnostics.has_errors() {
+            return Err(Report::msg(
+                "aborting due to a warning promoted to an error; see the diagnostics above",
+            ));
+        }
+    }
 
     let mut command = command;
     command
@@ -814,9 +825,9 @@ fn rustc(
         .args(["-C", "target-feature=+wide-arithmetic"])
         // No 64-bit copies merged from two 32-bit ones, as for `mandatory_rust_flags`
         .args(["-C", "llvm-args=-combiner-store-merging=false"])
-        .args(rustc_flags)
+        .args(direct_rustc.flags)
         .arg("--target")
-        .arg(target.as_deref().unwrap_or("wasm32-wasip1"))
+        .arg(direct_rustc.target.as_deref().unwrap_or("wasm32-wasip1"))
         .arg("-o")
         .arg(&output_file)
         .arg(input);
@@ -836,10 +847,20 @@ fn rustc(
     Ok(output_file)
 }
 
-fn direct_rustc_flags(flags: Vec<String>) -> (Vec<String>, Option<String>) {
+/// The flags the direct `rustc` route passes through, and what it held back.
+struct DirectRustcFlags {
+    flags: Vec<String>,
+    target: Option<String>,
+    /// Held back because the toolchain's prebuilt core library is incompatible with
+    /// `immediate-abort`.
+    dropped_immediate_abort: bool,
+}
+
+fn direct_rustc_flags(flags: Vec<String>) -> DirectRustcFlags {
     let mut rustc_flags = Vec::with_capacity(flags.len());
     let mut flags = flags.into_iter();
     let mut target = None;
+    let mut dropped_immediate_abort = false;
     while let Some(flag) = flags.next() {
         if flag == "--target"
             && let Some(value) = flags.next()
@@ -849,25 +870,33 @@ fn direct_rustc_flags(flags: Vec<String>) -> (Vec<String>, Option<String>) {
             && let Some(value) = flags.next()
         {
             if value == "panic=immediate-abort" {
-                warn_unsupported_rustc_panic_strategy();
+                dropped_immediate_abort = true;
             } else {
                 rustc_flags.extend([flag, value]);
             }
         } else if flag == "-Cpanic=immediate-abort" {
-            warn_unsupported_rustc_panic_strategy();
+            dropped_immediate_abort = true;
         } else {
             rustc_flags.push(flag);
         }
     }
-    (rustc_flags, target)
+    DirectRustcFlags {
+        flags: rustc_flags,
+        target,
+        dropped_immediate_abort,
+    }
 }
 
-fn warn_unsupported_rustc_panic_strategy() {
-    log::warn!(
-        target: "rustc",
-        "ignoring panic=immediate-abort for direct rustc compilation: the toolchain's prebuilt \
-         core library is incompatible with this strategy; use a Cargo project to enable it"
-    );
+/// Emits the ignored-strategy warning through the session diagnostics handler.
+fn warn_unsupported_rustc_panic_strategy(diagnostics: &DiagnosticsHandler) {
+    diagnostics
+        .diagnostic(Severity::Warning)
+        .with_message(
+            "ignoring panic=immediate-abort for direct rustc compilation: the toolchain's \
+             prebuilt core library is incompatible with this strategy; use a Cargo project to \
+             enable it",
+        )
+        .emit();
 }
 
 /// Builds the shared argument vector for a nested `cargo build` invocation.
@@ -2313,6 +2342,7 @@ mod tests {
     use midenc_hir::Context;
     use midenc_session::{
         InputFile, Options, OutputFile, OutputType, OutputTypeSpec, OutputTypes,
+        diagnostics::{CaptureEmitter, DefaultSourceManager, DiagnosticsConfig},
         miden_project::TargetType,
     };
 
@@ -3886,24 +3916,53 @@ path = "lib.rs"
     #[test]
     fn direct_rustc_filters_immediate_abort_in_both_spellings() {
         for flags in [vec!["-C", "panic=immediate-abort"], vec!["-Cpanic=immediate-abort"]] {
-            let (flags, _) = direct_rustc_flags(flags.into_iter().map(str::to_string).collect());
-            assert!(flags.is_empty(), "{flags:?}");
+            let parsed = direct_rustc_flags(flags.iter().map(|flag| (*flag).to_string()).collect());
+            assert!(parsed.flags.is_empty(), "{flags:?}");
+            assert!(parsed.dropped_immediate_abort, "{flags:?}");
         }
     }
 
     #[test]
     fn direct_rustc_preserves_abort_and_other_flags() {
         let flags = ["-Cpanic=abort", "-C", "panic=abort", "-C", "opt-level=3"];
-        let (actual, _) = direct_rustc_flags(flags.map(str::to_string).to_vec());
-        assert_eq!(actual, flags);
+        let parsed = direct_rustc_flags(flags.map(str::to_string).to_vec());
+        assert_eq!(parsed.flags, flags);
+        assert!(!parsed.dropped_immediate_abort);
     }
 
     #[test]
     fn direct_rustc_extracts_the_target() {
         let flags = ["--target", "wasm32-unknown-unknown", "--cfg", "miden"];
-        let (actual, target) = direct_rustc_flags(flags.map(str::to_string).to_vec());
-        assert_eq!(target.as_deref(), Some("wasm32-unknown-unknown"));
-        assert_eq!(actual, ["--cfg", "miden"]);
+        let parsed = direct_rustc_flags(flags.map(str::to_string).to_vec());
+        assert_eq!(parsed.target.as_deref(), Some("wasm32-unknown-unknown"));
+        assert_eq!(parsed.flags, ["--cfg", "miden"]);
+    }
+
+    #[test]
+    fn the_ignored_panic_strategy_reaches_the_diagnostics_handler() {
+        let emitter = Arc::new(CaptureEmitter::new());
+        let diagnostics = DiagnosticsHandler::new(
+            DiagnosticsConfig::default(),
+            Arc::new(DefaultSourceManager::default()),
+            emitter.clone(),
+        );
+        warn_unsupported_rustc_panic_strategy(&diagnostics);
+        let captured = emitter.captured();
+        assert!(captured.contains("ignoring panic=immediate-abort"), "{captured}");
+    }
+
+    #[test]
+    fn the_ignored_panic_strategy_counts_as_an_error_when_warnings_are_promoted() {
+        let diagnostics = DiagnosticsHandler::new(
+            DiagnosticsConfig {
+                warnings: midenc_session::Warnings::Error,
+                ..Default::default()
+            },
+            Arc::new(DefaultSourceManager::default()),
+            Arc::new(CaptureEmitter::new()),
+        );
+        warn_unsupported_rustc_panic_strategy(&diagnostics);
+        assert!(diagnostics.has_errors());
     }
 
     #[test]
