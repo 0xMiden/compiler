@@ -209,6 +209,7 @@ fn reconstructible_stored_literal_still_needs_the_actual_physical_store() {
         plan.lowering_bindings.insert(
             SelectedStepId(1),
             LoweringBindings {
+                input_order: crate::plan::InputOrder::Canonical,
                 stored_inputs: BTreeMap::from([(StoredInputId(0), slot)]),
                 scratch: BTreeMap::new(),
             },

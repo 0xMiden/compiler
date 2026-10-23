@@ -39,6 +39,7 @@ pub(super) fn context(values: &BTreeMap<ValueId, SelectedValue>) -> AllocationCo
     };
     // Direct physical-state fixtures do not claim any graph-derived reconstruction eligibility.
     AllocationContext {
+        input_symmetries: BTreeMap::new(),
         values,
         next_use: &NO_NEXT_USES,
         options: Default::default(),
@@ -364,6 +365,7 @@ fn simultaneous_slot_cycle_with_stack_readers_verifies_assembles_and_rejects_ove
         lowering_bindings: BTreeMap::from([(
             SelectedStepId(0),
             LoweringBindings {
+                input_order: crate::plan::InputOrder::Canonical,
                 stored_inputs: BTreeMap::from([(StoredInputId(0), a), (StoredInputId(1), b)]),
                 scratch: BTreeMap::new(),
             },

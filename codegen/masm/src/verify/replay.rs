@@ -575,12 +575,17 @@ impl<'a> Verifier<'a> {
             return Err(error("duplicate or reordered executable phase"));
         }
         let unit = self.unit(id)?.clone();
-        let expected = unit
-            .stack_inputs
+        let bindings = &self.plan.lowering_bindings[&id];
+        let ordered = self
+            .plan
+            .selected
+            .input_symmetry(id)?
+            .ordered_inputs(&unit.stack_inputs, bindings.input_order)?;
+        let expected = ordered
             .iter()
             .map(|atom| state.token(*atom).map_err(|error| error.expecting(*atom)))
             .collect::<Result<Vec<_>, _>>()?;
-        for (depth, (atom, expected)) in unit.stack_inputs.iter().zip(&expected).enumerate() {
+        for (depth, (atom, expected)) in ordered.iter().zip(&expected).enumerate() {
             let actual = state.stack.get(depth).copied();
             if actual != Some(*expected) {
                 return Err(fail(
@@ -594,7 +599,6 @@ impl<'a> Verifier<'a> {
                 ));
             }
         }
-        let bindings = &self.plan.lowering_bindings[&id];
         let mut readonly = BTreeMap::new();
         for input in &unit.stored_inputs {
             let offset =

@@ -334,6 +334,7 @@ struct StoredInput {
 }
 
 struct LoweringBindings {
+    input_order: InputOrder, // Canonical or a source-authorized whole-operand reversal
     stored_inputs: Map<StoredInputId, SpillSlotId>,
     scratch: Map<ScratchId, ScratchAllocation>,
 }
@@ -441,6 +442,20 @@ Word swaps are explicit physical actions. `SwapWord { word }` exchanges the top 
 Grouped swaps use this action for complete aligned four-lane endpoints; an adjacent move of two four-lane groups is the same permutation. Stack scheduling also tries each of the three single-word swaps from the unchanged incoming trial, allowing mixed/partial layouts that grouped search cannot model. Every candidate must satisfy the existing ordered-prefix and survivor checks. Compare expanded VM-operation costs, retaining the grouped candidate on ties. This is a bounded addition to the existing tier, not a broader search or a post-expansion rewrite. Word duplication is not needed: its four VM operations do not improve upon four aligned scalar copies.
 
 The current solver models grouped operands. Use it only when the candidate can be represented faithfully in that model, including aliases and copies. A split raw layout can bypass it: tiers one and two may decline, while tier three has a deterministic raw-lane permutation. The allocator's raw representation must not inherit a whole-value grouping restriction merely to satisfy the optional solver.
+
+### Source-authorized operand order
+
+`UnitEvidence.input_symmetry` is reconstructed from the source operation, operand types and overflow mode, then sealed by selection. Its default is `InputSymmetry::Ordered`. `CommutativePair { lanes_per_operand }` permits exchanging exactly two complete, equally typed operands while preserving each operand's limb order. Selection checks positive width, complete canonical lane groups, exactly their semantic inputs, and ordinary stack result publication. Repeated operands are legal. This permission changes physical consumption order; it does not rename source values, change liveness, or authorize arbitrary lane permutations.
+
+The arithmetic selector grants this permission to the supported Add/Mul forms, including checked and overflowing integer variants, bitwise and boolean operations, equality/inequality, and supported Min/Max forms. The backend can lower pointer equality, but current HIR Eq/Neq require integral operands; this optimization preserves that source restriction and makes no pointer-source success claim. Subtraction, ordered comparisons, shifts and other noncommutative operations remain ordered. Unsupported type/operation combinations remain unsupported. AssertEq and extension-field groups retain their existing ordered contracts. The arithmetic semantics and commutativity of this explicit source whitelist remain trusted lowering knowledge, validated through VM tests; physical replay does not prove algebraic equivalence.
+
+For a permitted pair, prepare canonical and reversed input views independently from the same incoming state and allocation counters. Each view follows the existing scheduling tiers and validates its own complete prefix and preservation obligations. Compare the expanded costs of the complete successful preparations; canonical wins ties. A failed trial contributes no actions, storage requests or identities to the other. If only one order succeeds, use it; if neither succeeds, report the canonical failure. This same preparation routine supplies the first-unit cost during entry-contract selection.
+
+`LoweringBindings.input_order` records the winning order, even when preparation emits no instructions, and survives final frame resolution. The canonical selected input tuple stays immutable. Expansion checks that the sealed source permits the recorded order. Independent replay derives the required prefix from the sealed permission and checks actual incoming tokens before executing the lowering. Neither an allocator-supplied tuple nor a successful allocator simulation establishes those identities.
+
+Exact helper-call obligations referring to canonical source inputs are projected through the same complete-operand exchange. Apply the map to referenced atoms, not to the helper argument vector: wide bitwise lowerings can call helpers with interleaved source lanes. Literal and unrelated atom obligations, helper targets, paths and occurrences, ABI rules, and result publications retain their original checks. Shared code defines only the mathematical permutation; source authorization, allocation simulation and verifier token replay remain separate responsibilities.
+
+Acceptance includes both physical orders, zero-action reversal, repeated operands, complete wide limbs and flags, checked traps, live original names used by subsequent noncommutative operations, normalization, canonical ties, first-unit join costs and exact multi-helper projections. Malformed group permissions, unauthorized reversal, wrong physical prefixes and forged helper arguments must reject independently of numerical VM tests.
 
 ### Scheduling tiers
 

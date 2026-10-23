@@ -267,6 +267,7 @@ fn spanning_content_definitions_merge_with_physical_cells_at_selected_join() {
                 (
                     SelectedStepId(index),
                     LoweringBindings {
+                        input_order: crate::plan::InputOrder::Canonical,
                         stored_inputs: BTreeMap::new(),
                         scratch: BTreeMap::from([(ScratchId(0), allocation)]),
                     },

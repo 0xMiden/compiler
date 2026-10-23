@@ -77,7 +77,7 @@ pub(crate) struct ProcedurePlan {
     pub edge_actions: BTreeMap<EdgeId, Vec<PlanAction>>,
     /// Complete symbolic slot domain to be assigned by the final frame layout.
     pub spill_slots: Vec<SpillSlotId>,
-    /// Storage choices supplied to expansion for each selected unit.
+    /// Physical input order and storage choices supplied to expansion for each selected unit.
     pub lowering_bindings: BTreeMap<SelectedStepId, LoweringBindings>,
 }
 impl fmt::Display for ProcedurePlan {

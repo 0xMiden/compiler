@@ -64,10 +64,47 @@ impl Default for AllocationOptions {
 /// Establish the unit's top-first input prefix and protected stored-input bindings.
 ///
 /// Each strategy owns its trial, including fresh identities and storage requests. The
-/// first valid optimized result wins; refusal or failure falls through to normalization
+/// first valid optimized result for each permitted order wins; orders compete by expanded cost,
+/// with canonical order winning ties. Refusal or failure falls through to normalization
 /// from the original state. No actions are committed and the lowering itself is not run.
 /// `live_after` is semantic demand after normal completion, including all lanes of values.
 pub(crate) fn prepare_unit(
+    state: &AllocationState,
+    unit: &SelectedLowering,
+    live_after: &BTreeSet<ValueId>,
+    context: &AllocationContext<'_>,
+) -> Result<Preparation, AllocationError> {
+    let canonical = prepare_order(state, unit, live_after, context);
+    let Some(symmetry) = context.input_symmetries.get(&unit.id) else {
+        return canonical;
+    };
+    let mut reversed_unit = unit.clone();
+    reversed_unit.stack_inputs =
+        symmetry.ordered_inputs(&unit.stack_inputs, InputOrder::Reversed)?.into_owned();
+    let reversed =
+        prepare_order(state, &reversed_unit, live_after, context).map(|mut preparation| {
+            preparation
+                .bindings
+                .get_mut(&unit.id)
+                .expect("prepared unit has bindings")
+                .input_order = InputOrder::Reversed;
+            preparation
+        });
+    match (canonical, reversed) {
+        (Ok(canonical), Ok(reversed)) => {
+            Ok(if action_cost(&reversed.actions) < action_cost(&canonical.actions) {
+                reversed
+            } else {
+                canonical
+            })
+        }
+        (Ok(prepared), Err(_)) | (Err(_), Ok(prepared)) => Ok(prepared),
+        (Err(error), Err(_)) => Err(error),
+    }
+}
+
+/// Prepare one permitted input view from the original state, with independent trial counters.
+fn prepare_order(
     state: &AllocationState,
     unit: &SelectedLowering,
     live_after: &BTreeSet<ValueId>,

@@ -283,6 +283,7 @@ impl Fixture {
             lowering_bindings: BTreeMap::from([(
                 SelectedStepId(0),
                 LoweringBindings {
+                    input_order: crate::plan::InputOrder::Canonical,
                     stored_inputs: BTreeMap::new(),
                     scratch: self.allocations(),
                 },
