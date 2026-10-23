@@ -5,6 +5,7 @@ use midenc_hir::{
     OperationRef, ProgramPoint, RawWalk, Region, RegionBranchOpInterface, RegionRef, Report,
     SmallVec, Usable, Value, ValueRef,
     adt::SmallDenseMap,
+    dialects::debuginfo::{DebugInfoMutation, DebugInfoUpdate},
     dominance::DominanceInfo,
     matchers::{self, Matcher},
     pass::{Pass, PassExecutionState, PostPassStatus},
@@ -438,6 +439,8 @@ impl Pass for SinkOperandDefs {
                         // The original op can be moved
                         drop(def);
                         drop(value);
+                        let _debug_update =
+                            DebugInfoMutation::new(defining_op, DebugInfoUpdate::Salvage);
                         let mut def_op = defining_op.borrow_mut();
                         def_op.move_to(*builder.insertion_point());
                         sink_state.replacements.insert(operand_value, operand_value);
@@ -467,6 +470,8 @@ impl Pass for SinkOperandDefs {
                     drop(def);
                     drop(value);
                     log::trace!(target: Self::NAME, "    defining op can be moved and has no other uses, moving into place");
+                    let _debug_update =
+                        DebugInfoMutation::new(defining_op, DebugInfoUpdate::Salvage);
                     let mut def_op = defining_op.borrow_mut();
                     def_op.move_to(*builder.insertion_point());
                     sink_state.replacements.insert(operand_value, operand_value);
@@ -667,6 +672,7 @@ where
                 (all_users_dominated_by, should_move_into_region)
             };
             if all_users_dominated_by && should_move_into_region {
+                let _debug_update = DebugInfoMutation::new(op, DebugInfoUpdate::Salvage);
                 (self.move_into_region)(op, region);
 
                 repair_transparent_users_after_move(op, &[user.as_operation_ref()], self.dominfo);

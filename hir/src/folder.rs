@@ -6,6 +6,7 @@ use crate::{
     AttributeRef, BlockRef, Builder, Context, Dialect, FoldResult, FxHashMap, OpFoldResult,
     OperationRef, ProgramPoint, RegionRef, Rewriter, SourceSpan, Type, Value, ValueRef,
     adt::SmallDenseMap,
+    dialects::debuginfo::{DebugInfoMutation, DebugInfoUpdate},
     matchers::Matcher,
     patterns::{RewriterImpl, RewriterListener},
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
@@ -84,6 +85,7 @@ impl OperationFolder {
     /// If successful, replaces uses of `op`'s results with the folded results, and returns
     /// a [FoldResult].
     pub fn try_fold(&mut self, mut op: OperationRef) -> FoldResult {
+        let _debug_update = DebugInfoMutation::new(op, DebugInfoUpdate::Equivalent);
         // If this is a uniqued constant, return failure as we know that it has already been
         // folded.
         if self.is_folder_owned_constant(&op) {
@@ -250,6 +252,7 @@ impl OperationFolder {
         mut op: OperationRef,
         value: Option<AttributeRef>,
     ) -> bool {
+        let _debug_update = DebugInfoMutation::new(op, DebugInfoUpdate::Equivalent);
         let block = op.parent().unwrap();
 
         // If this is a constant we uniqued, we don't need to insert, but we can check to see if
@@ -284,6 +287,8 @@ impl OperationFolder {
 
         // If there is an existing constant, replace `op`
         if !is_new {
+            let _retained_debug_update =
+                DebugInfoMutation::new(folder_const_op, DebugInfoUpdate::Equivalent);
             self.notify_removal(op);
             self.rewriter.replace_op(op, folder_const_op);
             erase_constant_location(&mut folder_const_op.borrow_mut(), self.erased_folded_location);
@@ -360,6 +365,7 @@ impl OperationFolder {
             ty,
         };
         if let Some(mut const_op) = uniqued_constants.get(&uniqued_constant).cloned() {
+            let _debug_update = DebugInfoMutation::new(const_op, DebugInfoUpdate::Equivalent);
             erase_constant_location(&mut const_op.borrow_mut(), span);
             return Some(const_op);
         }
@@ -390,6 +396,7 @@ impl OperationFolder {
         let maybe_existing_op = uniqued_constants.get(&new_uniqued_constant).cloned();
         uniqued_constants.insert(uniqued_constant, maybe_existing_op.unwrap_or(const_op));
         if let Some(mut existing_op) = maybe_existing_op {
+            let _debug_update = DebugInfoMutation::new(existing_op, DebugInfoUpdate::Equivalent);
             self.notify_removal(const_op);
             self.rewriter.erase_op(const_op);
             self.referenced_dialects

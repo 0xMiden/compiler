@@ -5,6 +5,7 @@ use midenc_hir::{
     OperationRef, RegionRef, Report, Rewriter, RewriterExt, SmallVec, ValueRef,
     adt::SmallDenseMap,
     cfg::Graph,
+    dialects::debuginfo::{DebugInfoMutation, DebugInfoUpdate},
     dominance::{DomTreeNode, DominanceInfo, PostDominanceInfo},
     effects::MemoryEffect,
     pass::{Pass, PassExecutionState, PostPassStatus},
@@ -361,6 +362,8 @@ impl CSEDriver<'_> {
         mut existing: OperationRef,
         has_ssa_dominance: bool,
     ) -> PostPassStatus {
+        let _debug_update =
+            DebugInfoMutation::for_operations(&[op, existing], DebugInfoUpdate::Equivalent);
         // If we find one then replace all uses of the current operation with the existing one and
         // mark it for deletion. We can only replace an operand in an operation if it has not been
         // visited yet.

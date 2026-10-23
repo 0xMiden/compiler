@@ -1,0 +1,12 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=salvage-unavailable}))' | filecheck %s
+
+builtin.module public @debug_salvage_owner {
+    // CHECK-LABEL: @entrypoint(
+    // CHECK: di.debug_kill {{.*}}name = "x"{{.*}}di.inline_call_chain{{.*}}name = "inner"
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @entrypoint(%0: u32, %1: u32) -> u32 {
+        %2 = arith.bxor %0, %1;
+        di.debug_value %2 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "inner", linkage = "", file = "test.rs", line = 1, column = 1, call_file = "test.rs", call_line = 5, call_column = 1 }]> } : (u32);
+        builtin.ret %0 : (u32);
+    };
+};

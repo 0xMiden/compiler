@@ -191,6 +191,7 @@ impl EntityWithParent for Operation {
 }
 impl EntityListItem for Operation {
     fn on_inserted(this: OperationRef, _cursor: &mut EntityListCursorMut<'_, Self>) {
+        this.context_ref().debug_info_mutations.borrow_mut().inserted(this);
         // NOTE: We use OperationName, instead of the Operation itself, to avoid borrowing.
         if this.name().implements::<dyn Symbol>() {
             let parent = this.nearest_symbol_table();
@@ -225,13 +226,15 @@ impl EntityListItem for Operation {
         }
     }
 
-    fn on_transfer(_this: OperationRef, _from: &mut EntityList<Self>, to: &mut EntityList<Self>) {
+    fn on_transfer(this: OperationRef, _from: &mut EntityList<Self>, to: &mut EntityList<Self>) {
+        this.context_ref().debug_info_mutations.borrow_mut().removed(this);
         // Invalidate the ordering of the new parent block
         let mut to = to.parent();
         to.borrow_mut().invalidate_op_order();
     }
 
     fn on_removed(this: OperationRef, _list: &mut EntityListCursorMut<'_, Self>) {
+        this.context_ref().debug_info_mutations.borrow_mut().removed(this);
         // NOTE: We use OperationName, instead of the Operation itself, to avoid borrowing.
         if this.name().implements::<dyn Symbol>() {
             let parent = this.nearest_symbol_table();
@@ -333,6 +336,10 @@ impl OperationRef {
 
 /// Read-only Metadata
 impl OperationRef {
+    pub(crate) fn context_ref(&self) -> &Context {
+        unsafe { (*core::ptr::addr_of!((*OperationRef::as_ptr(self)).context)).as_ref() }
+    }
+
     pub fn name(&self) -> OperationName {
         let ptr = OperationRef::as_ptr(self);
         // SAFETY: The `name` field of Operation is read-only after an op is allocated, and the

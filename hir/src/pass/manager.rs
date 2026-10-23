@@ -983,12 +983,25 @@ impl OpToOpPassAdaptor {
             instrumentor.run_before_pass(pass, &op);
         }
 
+        let debug_audit = (!pass.as_any().is::<OpToOpPassAdaptor>())
+            .then(|| crate::dialects::debuginfo::mutation::DebugInfoAudit::begin(op));
+
         let mut result =
             if let Some(adaptor) = pass.as_any_mut().downcast_mut::<OpToOpPassAdaptor>() {
                 adaptor.run_on_operation(op, &mut execution_state, verify)
             } else {
                 pass.run_on_operation(op, &mut execution_state)
             };
+
+        if let Some(audit) = debug_audit {
+            if result.is_ok() {
+                if let Err(error) = audit.finish() {
+                    result = Err(Report::msg(format!("pass '{}': {error}", pass.name())));
+                }
+            } else {
+                drop(audit);
+            }
+        }
 
         // Invalidate any non-preserved analyses
         analysis_manager.invalidate(execution_state.preserved_analyses_mut());

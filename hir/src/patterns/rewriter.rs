@@ -17,6 +17,49 @@ use crate::{
 /// rewriting the IR after it is initially constructed. It is the basis on which the pattern
 /// rewriter infrastructure is built.
 pub trait Rewriter: Builder + RewriterListener {
+    /// Replace an operation with an explicit debug-info recovery contract.
+    fn replace_op_with_debug(
+        &mut self,
+        op: OperationRef,
+        replacement: OperationRef,
+        update: crate::dialects::debuginfo::DebugInfoUpdate,
+    ) {
+        let _debug_update = crate::dialects::debuginfo::DebugInfoMutation::new(op, update);
+        self.replace_op(op, replacement);
+    }
+
+    /// Replace operation results, explicitly handling any dropped debug-only results.
+    fn replace_op_with_values_and_debug(
+        &mut self,
+        op: OperationRef,
+        replacements: &[Option<ValueRef>],
+        update: crate::dialects::debuginfo::DebugInfoUpdate,
+    ) {
+        let _debug_update = crate::dialects::debuginfo::DebugInfoMutation::new(op, update);
+        self.replace_op_with_values(op, replacements);
+    }
+
+    /// Erase an operation while explicitly resolving its affected debug records.
+    fn erase_op_with_debug(
+        &mut self,
+        op: OperationRef,
+        update: crate::dialects::debuginfo::DebugInfoUpdate,
+    ) {
+        let _debug_update = crate::dialects::debuginfo::DebugInfoMutation::new(op, update);
+        self.erase_op(op);
+    }
+
+    /// Replace a value while explicitly declaring the debug-value recovery contract.
+    fn replace_value_with_debug(
+        &mut self,
+        from: ValueRef,
+        to: ValueRef,
+        update: crate::dialects::debuginfo::DebugInfoUpdate,
+    ) {
+        let _debug_update = crate::dialects::debuginfo::DebugInfoMutation::for_value(from, update);
+        self.replace_all_uses_of_value_with(from, to);
+    }
+
     /// Replace the inline-call chain inherited by newly built operations, returning the old one.
     fn replace_inline_call_chain(&mut self, chain: Option<AttributeRef>) -> Option<AttributeRef>;
 
@@ -55,6 +98,7 @@ pub trait Rewriter: Builder + RewriterListener {
 
     /// This method erases an operation that is known to have no uses.
     fn erase_op(&mut self, mut op: OperationRef) {
+        op.context_ref().debug_info_mutations.borrow_mut().implicit_erase(op);
         // Assert `op` has no real uses, and collect its transparent users, as they are now dead.
         // They are erased only once `op` is no longer borrowed: erasing a user unlinks it from the
         // use list being walked. A user is collected once, however many uses it holds.
@@ -218,6 +262,18 @@ pub trait Rewriter: Builder + RewriterListener {
         ip: Option<OperationRef>,
         args: &[Option<ValueRef>],
     ) {
+        let operations = src
+            .borrow()
+            .body()
+            .iter()
+            .map(|op| op.as_operation_ref())
+            .collect::<SmallVec<[OperationRef; 4]>>();
+        let _debug_update = (!operations.is_empty()).then(|| {
+            crate::dialects::debuginfo::DebugInfoMutation::for_operations(
+                &operations,
+                crate::dialects::debuginfo::DebugInfoUpdate::Relocate,
+            )
+        });
         assert!(
             args.len() == src.borrow().num_arguments(),
             "incorrect # of argument replacement values"
