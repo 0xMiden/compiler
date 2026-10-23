@@ -7,9 +7,10 @@
 //! (a valid preimage under a wrong args word must fail *because of* the hash check), tamper
 //! detection for values the script never reads, and commitment-preimage canonicality.
 //!
-//! All decode failures share one code, [`GUEST_PANIC_CODE`]: the `#[tx_script]` wrapper panics on
-//! a `ScriptArgs::decode` error. The in-VM hash verification fails with its own distinct stdlib
-//! code, so the hash-isolation case still proves that specific mechanism.
+//! All decode failures share one code, [`guest_panic_code`]: the `#[tx_script]` wrapper panics on
+//! a `ScriptArgs::decode` error. The in-VM hash verification fails with the message-less assert
+//! code `0`, distinct from the guest panic code, so the hash-isolation case still proves that
+//! specific mechanism.
 
 use std::sync::Arc;
 
@@ -23,9 +24,9 @@ use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs};
 use midenc_integration_test_support::project;
 
 use super::support::{
-    GUEST_PANIC_CODE, apply_script_args, assert_failure_contains, compile_rust_package, execute_tx,
-    execute_tx_expect_failure, from_field_felts, from_field_word, transaction_script_from_package,
-    tx_script_cargo_toml, tx_script_miden_project_toml,
+    apply_script_args, assert_failure_contains, compile_rust_package, execute_tx,
+    execute_tx_expect_failure, from_field_felts, from_field_word, guest_panic_code,
+    transaction_script_from_package, tx_script_cargo_toml, tx_script_miden_project_toml,
 };
 
 /// Transaction script whose two-felt arguments travel in the args word directly.
@@ -170,7 +171,7 @@ pub fn word_mode_args() {
         .build()
         .unwrap();
     let err = execute_tx_expect_failure(mock_tx);
-    assert_failure_contains(&err, GUEST_PANIC_CODE);
+    assert_failure_contains(&err, &guest_panic_code());
 }
 
 /// Commitment-mode arguments pass through the advice provider hash-verified against the args
@@ -257,7 +258,7 @@ pub fn commitment_mode_args() {
         .build()
         .unwrap();
     let err = execute_tx_expect_failure(mock_tx);
-    assert_failure_contains(&err, GUEST_PANIC_CODE);
+    assert_failure_contains(&err, &guest_panic_code());
 
     // Canonicality: a self-consistent preimage with a whole extra all-zero word must be rejected
     // as trailing data.
@@ -272,7 +273,7 @@ pub fn commitment_mode_args() {
         .build()
         .unwrap();
     let err = execute_tx_expect_failure(mock_tx);
-    assert_failure_contains(&err, GUEST_PANIC_CODE);
+    assert_failure_contains(&err, &guest_panic_code());
 
     // Canonicality: an advice value that is not a whole number of words fails before the decode.
     let mut non_word_multiple = preimage.clone();
@@ -286,5 +287,5 @@ pub fn commitment_mode_args() {
         .build()
         .unwrap();
     let err = execute_tx_expect_failure(mock_tx);
-    assert_failure_contains(&err, GUEST_PANIC_CODE);
+    assert_failure_contains(&err, &guest_panic_code());
 }

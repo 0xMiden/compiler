@@ -4,7 +4,7 @@ use super::*;
 use crate::end_to_end::support::default_host_with_core_package;
 
 /// The fixed code that every guest panic reports through the VM assertion error (the same code
-/// `DECODE_PANIC_CODE` pins in the integration-network tests). The panic message is not
+/// the integration-network tests derive as `guest_panic_code()`). The panic message is not
 /// observable at the VM level, so the empty-attachment and too-many-words asserts share this
 /// code; it still separates a wrapper panic from kernel asserts and from the extern sentinel.
 const WRAPPER_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";

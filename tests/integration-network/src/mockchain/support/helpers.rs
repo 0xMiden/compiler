@@ -14,7 +14,7 @@ use miden_client::{
     note::{Note, NoteType},
     transaction::RawOutputNote,
 };
-use miden_core::Felt;
+use miden_core::{Felt, mast::error_code_from_msg};
 use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 use miden_mast_package::{Package, TargetType};
 use miden_note_schema::NoteStorageSchema;
@@ -262,13 +262,14 @@ pub(crate) fn execute_tx_expect_failure(mock_tx: MockTransaction) -> String {
     }
 }
 
-/// The fixed VM assertion code every guest panic reports:
-/// `error_code_from_msg("entered unreachable code")`.
-///
-/// The code is a stable product of the deterministic guest build. When an intentional SDK or
-/// codegen change shifts it, re-calibrate it from the failing assertion's output, like an expect
-/// test.
-pub(crate) const GUEST_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";
+/// The VM assertion message every guest panic reports: the error code of the `unreachable`
+/// lowering's message, as `stored_procedure/rust_sibling.rs` derives its own codes.
+pub(crate) fn guest_panic_code() -> String {
+    format!(
+        "assertion failed with error code: {}",
+        error_code_from_msg("entered unreachable code")
+    )
+}
 
 /// Asserts that a transaction failure message contains `needle`, so an unrelated failure cannot
 /// satisfy the test.
@@ -489,7 +490,14 @@ pub(crate) fn build_counter_account_with_rust_rpo_auth(
 mod tests {
     use miden_tx_script_args::ScriptArgs;
 
-    use super::TxScriptArgs;
+    use super::{TxScriptArgs, guest_panic_code};
+
+    /// Pins the derived guest panic code to the value earlier guest builds reported, so a change
+    /// to the `unreachable` lowering's message shows up here.
+    #[test]
+    fn guest_panic_code_matches_the_reported_code() {
+        assert_eq!(guest_panic_code(), "assertion failed with error code: 10154102372021603817");
+    }
 
     /// Pins the mirror's encoded size so layout drift vs the guest struct in
     /// `examples/basic-wallet-tx-script` fails loudly (tag + note type + recipient word +
