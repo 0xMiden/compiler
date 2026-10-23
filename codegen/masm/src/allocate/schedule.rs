@@ -681,22 +681,22 @@ pub(super) fn load_candidate<'a>(
     stack_candidate(trial, unit, needs)
 }
 
-/// Estimate before frame assignment: address generation takes two primitives, reads
-/// one, and writes two (including the discarded result). Price indexed instructions by their
-/// assembler expansion rather than treating each MASM mnemonic as one VM operation.
+/// Rank a preparation by the assembler-expanded cost of its raw actions.
 pub(super) fn cost(trial: &Trial<'_>) -> usize {
     action_cost(&trial.actions)
 }
 
 /// Estimate emitted primitive count for raw preparation actions before frame assignment.
-/// Slot loads cost three and stores four. Stack instructions use the pinned assembler's costs;
-/// packing noops and control-flow overhead remain outside this local ranking heuristic.
+/// Slot loads cost five and stores six: address generation pushes the displacement and
+/// frame-pointer address, loads the frame pointer, and adds the displacement.
+/// Stack instructions use the pinned assembler's costs. Packing noops and control-flow
+/// overhead remain outside this local ranking heuristic.
 pub(super) fn action_cost(actions: &[PlanAction]) -> usize {
     actions
         .iter()
         .map(|action| match action {
-            PlanAction::LoadLane(_) => 3,
-            PlanAction::StoreLane(_) => 4,
+            PlanAction::LoadLane(_) => 5,
+            PlanAction::StoreLane(_) => 6,
             PlanAction::Dup { depth } => stack_cost(Primitive::Dup(*depth)),
             PlanAction::Swap { depth } => stack_cost(Primitive::Swap(*depth)),
             PlanAction::SwapWord { word } => stack_cost(Primitive::SwapWord(*word)),

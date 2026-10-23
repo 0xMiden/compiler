@@ -43,10 +43,16 @@ pub(crate) mod tests {
     /// Inspect a library root so program setup and inferred prologue costs cannot mask an
     /// instruction expansion. Ignore packing noops; none of the priced instructions emits one.
     pub(crate) fn assembled_cost(body: &str) -> Result<usize, Report> {
+        assembled_cost_with_locals(body, 0)
+    }
+
+    /// Count the same expansions with a declared frame, including its fixed setup/teardown.
+    /// Compare with an empty body at the same frame size to isolate a local access.
+    pub(crate) fn assembled_cost_with_locals(body: &str, locals: u16) -> Result<usize, Report> {
         let manager = alloc::sync::Arc::new(DefaultSourceManager::default());
         let module = Module::parser(Some(ModuleKind::Library)).parse_str(
             Some(Path::new("::stack_cost")),
-            alloc::format!("pub proc test {body} end"),
+            alloc::format!("@locals({locals}) pub proc test {body} end"),
             manager.clone(),
         )?;
         let package = Assembler::new(manager).assemble_library(
