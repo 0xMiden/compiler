@@ -9,4 +9,5 @@ This document provides an index of the various design documents for the compiler
 - [Rewrites](rewrites.md)
 - [Dialect Conversion](dialect_conversion.md)
 - [Code Generation](codegen.md)
+- [Debugging Code Generation](codegen-debugging.md)
 - [Packaging](packaging.md)

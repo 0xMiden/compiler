@@ -26,10 +26,14 @@ rather than restarting it to obtain each representation.
 
 ## MASM lowering
 
-[Lowering](https://github.com/0xMiden/compiler/blob/main/codegen/masm/src/lower/lowering.rs) translates supported HIR
-operations using the [instruction emitter](https://github.com/0xMiden/compiler/tree/main/codegen/masm/src/emit).
-The emitter tracks the operand stack and arranges values for each operation's
-stack contract. Multi-element values, signed arithmetic, and byte-addressed
+[Selection](../../../codegen/masm/src/select/mod.rs) translates supported HIR operations into
+source-checked lowering contracts. The [allocator](../../../codegen/masm/src/allocate/mod.rs)
+arranges operands and reconciles control-flow edges in a physical plan. Expansion uses the
+plan's fixed bindings and shared instruction emitters; independent physical verification
+checks the optimized body before it can be serialized to MASM. See
+[Debugging Code Generation](codegen-debugging.md) for traces and stage-isolation tools.
+
+Multi-element values, signed arithmetic, and byte-addressed
 memory need explicit lowering because a VM field element is not a Wasm integer
 or byte pointer. Shared assembly procedures live in
 [the intrinsics directory](https://github.com/0xMiden/compiler/tree/main/codegen/masm/intrinsics).
