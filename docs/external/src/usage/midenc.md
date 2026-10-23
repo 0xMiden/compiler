@@ -103,6 +103,33 @@ midenc --stop-after=transform --emit=hir=- foo.wasm
 
 `CHECKPOINT` is either an alias — `parse`, `analyze`, `transform`, `lower`, `assemble` — or a fully-qualified checkpoint id such as `hir.initial`. Which names are valid depends on the input: each frontend declares its own route, and a name that route does not reach is reported along with the names it does accept. A Miden Assembly input, for example, has no `transform` phase.
 
+### Rust panic strategy
+
+For Rust builds, `-C panic=STRATEGY` selects how panics terminate execution:
+
+- `abort` (the default) invokes the crate's panic handler. The handler can report the panic before
+  trapping. It should terminate with `core::arch::wasm32::unreachable()`.
+- `immediate-abort` traps without invoking the crate's panic handler. It can reduce code size and
+  execution cycles because the handler and its panic-formatting code can be omitted.
+
+For example:
+
+```bash
+cargo miden build --release -C panic=immediate-abort
+```
+
+The selected strategy is passed through Rust flags, which take precedence over Cargo profile
+panic settings. Inherited `CARGO_ENCODED_RUSTFLAGS` (or `RUSTFLAGS` when the encoded variable
+is absent) and explicit `--rustflags` can override it.
+
+Standalone Rust files built through a temporary Cargo project support both strategies.
+Files compiled directly with `rustc` use prebuilt standard libraries that are incompatible
+with `immediate-abort`. That route ignores a request for this strategy with a warning. Use a
+Cargo project to enable `immediate-abort` for those files.
+
+This option does not affect prebuilt WebAssembly input. Its panic behavior was determined
+when the module was compiled.
+
 ## Debugging
 
 See [Debugging Programs](../guides/debugger.md) for details on how to debug Miden programs using `miden-debug`.

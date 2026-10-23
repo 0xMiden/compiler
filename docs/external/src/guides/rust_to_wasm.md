@@ -50,16 +50,18 @@ crate-type = ["cdylib"]
 
 # When we build for Wasm, we'll use the release profile
 [profile.release]
-# Explicitly disable panic infrastructure on Wasm, as
-# there is no proper support for them anyway, and it
-# ensures that panics do not pull in a bunch of standard
-# library code unintentionally
+# Set the Rust panic mode for this Wasm artifact.
 panic = "abort"
 # Enable debug information so that we get useful debugging output
 debug = true
 # Optimize the output for size
 opt-level = "z"
 ```
+
+When compiling Rust source with Miden, `abort` is the default and invokes the crate's panic handler,
+which can report panic messages before trapping. Keeping the handler and formatting code increases
+code size and execution cycles. As an alternative, `immediate-abort` reduces code size and cycle
+count but does not execute the panic handler.
 
 Most of these things are done to keep the generated code size as small as possible. Miden is a target
 where the conventional wisdom about performance should be treated very carefully: we're almost always
