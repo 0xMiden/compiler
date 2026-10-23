@@ -263,14 +263,7 @@ pub(crate) fn byte_memmove(span: masm::SourceSpan) -> Vec<masm::Op> {
 pub(crate) fn pad_inputs(inputs: usize, span: masm::SourceSpan) -> Vec<masm::Op> {
     assert!(inputs <= 16);
     let mut b = Builder::new(span);
-    for _ in inputs..16 {
-        b.emit_push(0u32);
-        if inputs == 1 {
-            b.emit(I::Swap1);
-        } else if inputs > 1 {
-            b.emit(crate::plan::Primitive::MoveDown(inputs as u8).instruction().unwrap());
-        }
-    }
+    b.emit_all(crate::plan::context_input_padding(inputs as u8).expect("checked argument width"));
     b.ops
 }
 

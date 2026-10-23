@@ -167,19 +167,106 @@ impl ReturnBoundary {
 /// Reject result prefixes wider than the context window; returned instructions use only
 /// legal indexed stack accesses and do not perform the invocation itself.
 pub(crate) fn context_result_cleanup(results: u8) -> Result<Vec<Instruction>, PlanError> {
-    if results > STACK_WINDOW {
-        return Err(abi_error("result prefix exceeds context window"));
+    adjust_context_window(results, WindowChange::Discard)
+}
+
+/// Insert explicit zero lanes below the ordered arguments, protecting the entire caller suffix.
+/// This constructs a sixteen-lane window even when the VM already supplies floor padding: those
+/// physical lanes are not evidence that unrelated caller values may be exposed to the callee.
+pub(crate) fn context_input_padding(arguments: u8) -> Result<Vec<Instruction>, PlanError> {
+    adjust_context_window(arguments, WindowChange::Pad)
+}
+
+/// Opposite transitions around a retained prefix: insert zero lanes or remove clobbered lanes.
+#[derive(Clone, Copy)]
+enum WindowChange {
+    Pad,
+    Discard,
+}
+
+/// Compare bounded, equivalent constructions within the top sixteen lanes. Every alternative
+/// preserves retained lane order and the complete suffix; only construction cost differs.
+/// Prefer the original scalar construction on ties. Cost excludes basic-block packing noops.
+fn adjust_context_window(
+    retained: u8,
+    change: WindowChange,
+) -> Result<Vec<Instruction>, PlanError> {
+    if retained > STACK_WINDOW {
+        return Err(abi_error("retained prefix exceeds context window"));
     }
-    let mut instructions = Vec::new();
-    for _ in results..STACK_WINDOW {
-        if results == 1 {
-            instructions.push(Primitive::Swap(1).instruction()?);
-        } else if results > 1 {
-            instructions.push(Primitive::MoveUp(results).instruction()?);
+    if retained == STACK_WINDOW {
+        return Ok(Vec::new());
+    }
+    let push_zero = || Primitive::Push(miden_core::Felt::ZERO).instruction().unwrap();
+    let mut scalar = Vec::new();
+    for _ in retained..STACK_WINDOW {
+        match change {
+            WindowChange::Pad => {
+                scalar.push(push_zero());
+                if retained != 0 {
+                    scalar.push(Primitive::MoveDown(retained).instruction()?);
+                }
+            }
+            WindowChange::Discard => {
+                if retained != 0 {
+                    scalar.push(Primitive::MoveUp(retained).instruction()?);
+                }
+                scalar.push(Instruction::Drop);
+            }
         }
-        instructions.push(Instruction::Drop);
     }
-    Ok(instructions)
+
+    let mut batched = Vec::new();
+    match change {
+        WindowChange::Pad => {
+            batched.extend((retained..STACK_WINDOW).map(|_| push_zero()));
+            batched.extend(core::iter::repeat_n(Instruction::MovUp15, retained as usize));
+        }
+        WindowChange::Discard => {
+            batched.extend(core::iter::repeat_n(Instruction::MovDn15, retained as usize));
+            batched.extend(core::iter::repeat_n(
+                Instruction::Drop,
+                (STACK_WINDOW - retained) as usize,
+            ));
+        }
+    }
+    let mut best = scalar;
+    prefer_cheaper(&mut best, batched);
+
+    if retained.is_multiple_of(4) {
+        let swaps = [Instruction::SwapW1, Instruction::SwapW2, Instruction::SwapW3];
+        let mut words = Vec::new();
+        for _ in 0..(STACK_WINDOW - retained) / 4 {
+            let rotation = swaps.iter().take(retained as usize / 4).cloned();
+            match change {
+                WindowChange::Pad => {
+                    words.push(Instruction::PadW);
+                    words.extend(rotation.rev());
+                }
+                WindowChange::Discard => {
+                    words.extend(rotation);
+                    words.push(Instruction::DropW);
+                }
+            }
+        }
+        prefer_cheaper(&mut best, words);
+    }
+    Ok(best)
+}
+
+fn prefer_cheaper(best: &mut Vec<Instruction>, candidate: Vec<Instruction>) {
+    let cost = |instructions: &[Instruction]| -> usize {
+        instructions
+            .iter()
+            .map(|instruction| {
+                crate::opt::cost::stack_instruction_cost(instruction)
+                    .expect("context window uses only priced stack instructions")
+            })
+            .sum()
+    };
+    if cost(&candidate) < cost(best) {
+        *best = candidate;
+    }
 }
 
 fn abi_error(message: &'static str) -> PlanError {

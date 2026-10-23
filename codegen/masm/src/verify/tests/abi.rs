@@ -349,11 +349,20 @@ fn context_entry_owns_arbitrary_nonargument_lanes_and_returns_at_exact_depth() {
         });
         plan.segment_actions.insert(SegmentId(0), actions);
         let mut code = vec![AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0)))];
-        code.extend(context_result_cleanup(args as u8).unwrap().into_iter().map(|instruction| {
-            AnnotatedOp::Instruction {
+        // Entry cleanup is an explicit scalar allocation plan. Result cleanup is a separate
+        // lowering algorithm and may choose cheaper word operations for the same ABI effect.
+        code.extend(plan.segment_actions[&SegmentId(0)].iter().filter_map(|action| {
+            let instruction = match *action {
+                PlanAction::Swap { depth } => Primitive::Swap(depth).instruction().unwrap(),
+                PlanAction::MoveUp { depth } => Primitive::MoveUp(depth).instruction().unwrap(),
+                PlanAction::Drop => Instruction::Drop,
+                PlanAction::RunLowering { .. } => return None,
+                _ => unreachable!("fixture uses only scalar entry cleanup"),
+            };
+            Some(AnnotatedOp::Instruction {
                 instruction,
                 unit: SelectedStepId(u32::MAX),
-            }
+            })
         }));
         code.extend([
             AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
