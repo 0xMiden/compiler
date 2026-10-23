@@ -8,9 +8,12 @@ use miden_mast_package::Package;
 use miden_protocol::{
     Word,
     account::auth::AuthScheme,
-    errors::tx_kernel::{
-        ERR_OUTPUT_NOTE_IS_SEALED, ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
-        ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED,
+    errors::{
+        protocol::ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS,
+        tx_kernel::{
+            ERR_OUTPUT_NOTE_IS_SEALED, ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS,
+            ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED,
+        },
     },
     note::{NoteAttachment, NoteAttachmentScheme, NoteAttachments},
 };
@@ -20,11 +23,6 @@ use super::support::{
     assert_failure_contains, compile_rust_package, execute_tx, execute_tx_expect_failure,
     transaction_script_from_package_with_deps,
 };
-
-/// The kernel's message for an attachment index at or above the note's attachment count
-/// (`ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS` in the protocol's `note_internal.masm`), which the
-/// protocol crate does not export as a Rust constant.
-const ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS: &str = "attachment index out of bounds";
 
 /// Scheme the host passes to the guest; the round-trip scenario also uses
 /// `SCHEME + 1..=SCHEME + 3`, so it must stay at most 65531.
@@ -156,13 +154,16 @@ fn typed_attachments_accept_four_attachments_and_512_words() {
     }
 }
 
-/// Kernel failures identify aggregate limits and sealing rather than a guest-side panic.
+/// Kernel failures identify aggregate limits and sealing rather than a guest-side panic; the fourth
+/// row is the protocol library's attachment-index bound, which rejects an index the SDK accepts but
+/// the note does not have.
 #[test]
 fn typed_attachments_reject_excess_count_total_words_and_sealed_notes() {
     for (scenario, expected_error) in [
         (2, ERR_OUTPUT_NOTE_TOO_MANY_ATTACHMENTS.message()),
         (4, ERR_OUTPUT_NOTE_TOTAL_ATTACHMENT_WORDS_EXCEEDED.message()),
         (5, ERR_OUTPUT_NOTE_IS_SEALED.message()),
+        (8, ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS.message()),
     ] {
         let (_chain, mock_tx) = build_attachment_tx(scenario, SCHEME.into());
         let err = execute_tx_expect_failure(mock_tx);
@@ -231,15 +232,4 @@ fn the_guest_decodes_felt_encodings() {
             "scheme felt {scheme}"
         );
     }
-}
-
-/// The kernel rejects an index the SDK accepts but the note does not have.
-#[test]
-fn reading_a_missing_attachment_index_fails_in_the_kernel() {
-    let (_chain, mock_tx) = build_attachment_tx(8, SCHEME.into());
-    let err = execute_tx_expect_failure(mock_tx);
-    assert_failure_contains(
-        &err,
-        &format!("assertion failed with error message: {ERR_NOTE_ATTACHMENT_IDX_OUT_OF_BOUNDS}"),
-    );
 }
