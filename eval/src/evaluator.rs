@@ -1,4 +1,6 @@
 mod context;
+#[cfg(test)]
+mod debug_semantics;
 mod frame;
 mod memory;
 
@@ -46,6 +48,8 @@ pub struct HirEvaluator {
     ip: Option<OperationRef>,
     /// Lines printed via the [`midenc_dialect_hir::PrintLn`] op
     printed_lines: Vec<String>,
+    #[cfg(test)]
+    debug_trace: Option<debug_semantics::DebugTrace>,
 }
 
 impl HirEvaluator {
@@ -59,6 +63,8 @@ impl HirEvaluator {
             condition: 0,
             condition_set_by: None,
             ip: None,
+            #[cfg(test)]
+            debug_trace: None,
         }
     }
 
@@ -71,6 +77,10 @@ impl HirEvaluator {
         self.condition = 0;
         self.condition_set_by = None;
         self.ip = None;
+        #[cfg(test)]
+        if let Some(trace) = self.debug_trace.as_mut() {
+            trace.reset();
+        }
     }
 
     /// Returns the lines printed during the current evaluation.
@@ -936,6 +946,12 @@ impl HirEvaluator {
     /// same time.
     fn eval_op(&mut self, op: &Operation) -> Result<ControlFlowEffect, Report> {
         self.ip = Some(op.as_operation_ref());
+        #[cfg(test)]
+        if let Some(mut trace) = self.debug_trace.take() {
+            let result = trace.observe(self, op);
+            self.debug_trace = Some(trace);
+            result?;
+        }
 
         // Ensure the op is evaluatable
         let Some(evaluatable) = op.as_trait::<dyn Eval>() else {

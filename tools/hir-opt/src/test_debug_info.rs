@@ -1,3 +1,4 @@
+use midenc_dialect_arith::ArithOpBuilder;
 use midenc_hir::{
     Builder, BuilderExt, EntityMut, Forward, Op, OperationName, OperationRef, ProgramPoint,
     RawWalk, Report, Rewriter, Spanned, ValueRef,
@@ -82,7 +83,28 @@ impl Pass for TestDebugInfoMutation {
                     .then(|| DebugInfoMutation::new(record, DebugInfoUpdate::Preserve));
                 record.borrow_mut().move_to(ProgramPoint::after(last_kill.unwrap()));
             }
-            "replace-value" | "equivalent-value" | "late-edit" | "retroactive-equivalent" => {
+            "equivalent-value" => {
+                let value =
+                    record.borrow().downcast_ref::<DebugValue>().unwrap().value().as_value_ref();
+                let definition = value.borrow().get_defining_op().unwrap();
+                if !definition.borrow().is::<midenc_dialect_arith::Bxor>() {
+                    return Err(Report::msg("equivalent-value test requires a bxor producer"));
+                }
+                let operands = definition
+                    .borrow()
+                    .operands()
+                    .iter()
+                    .map(|operand| operand.borrow().as_value_ref())
+                    .collect::<Vec<_>>();
+                rewriter.set_insertion_point_before(definition);
+                let equivalent = rewriter.bxor(operands[0], operands[1], definition.span())?;
+                rewriter.replace_op_with_values_and_debug(
+                    definition,
+                    &[Some(equivalent)],
+                    DebugInfoUpdate::Equivalent,
+                );
+            }
+            "replace-value" | "late-edit" | "retroactive-equivalent" => {
                 let mut value =
                     record.borrow().downcast_ref::<DebugValue>().unwrap().value().as_value_ref();
                 if matches!(self.action.as_str(), "replace-value" | "retroactive-equivalent") {
