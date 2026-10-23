@@ -474,6 +474,12 @@ fn colored_cells_never_report_overwritten_cached_values() {
         match *action {
             PlanAction::Dup { depth } => stack.insert(0, stack[usize::from(depth)]),
             PlanAction::Swap { depth } => stack.swap(0, usize::from(depth)),
+            PlanAction::SwapWord { word } => {
+                assert!((1..=3).contains(&word));
+                for lane in 0..4 {
+                    stack.swap(lane, usize::from(word) * 4 + lane);
+                }
+            }
             PlanAction::MoveUp { depth } => {
                 let atom = stack.remove(usize::from(depth));
                 stack.insert(0, atom);

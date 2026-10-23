@@ -151,6 +151,12 @@ fn incremental_and_normalization_transfers_observe_the_same_old_sources_and_tail
                     assert!(depth < 16);
                     stack.swap(0, usize::from(depth));
                 }
+                PlanAction::SwapWord { word } => {
+                    assert!((1..=3).contains(&word));
+                    for lane in 0..4 {
+                        stack.swap(lane, usize::from(word) * 4 + lane);
+                    }
+                }
                 PlanAction::MoveUp { depth } => {
                     assert!(depth < 16);
                     let atom = stack.remove(usize::from(depth));

@@ -36,6 +36,7 @@ pub(crate) fn expand_allocation_action(
     Ok(Some(match *action {
         PlanAction::Dup { depth } => Primitive::Dup(depth).instruction()?,
         PlanAction::Swap { depth } => Primitive::Swap(depth).instruction()?,
+        PlanAction::SwapWord { word } => Primitive::SwapWord(word).instruction()?,
         PlanAction::MoveUp { depth } => Primitive::MoveUp(depth).instruction()?,
         PlanAction::MoveDown { depth } => Primitive::MoveDown(depth).instruction()?,
         PlanAction::Drop => masm::Instruction::Drop,

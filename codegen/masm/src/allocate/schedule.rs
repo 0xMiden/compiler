@@ -226,10 +226,25 @@ fn valid(
 
 /// Apply an indexed raw shuffle to owned occurrences and append its action.
 ///
-/// Depth is zero-based from the top and must name an owned lane within the top sixteen.
+/// Scalar depth is zero-based; word indices name complete four-lane groups. Every accessed
+/// lane must be owned and within the top sixteen.
 /// Moves preserve occurrence identities; duplication creates a fresh identity. Nonshuffle
 /// actions are a caller error. A rejected indexed access leaves the trial unchanged.
 pub(super) fn shuffle(trial: &mut Trial<'_>, action: PlanAction) -> Result<(), AllocationError> {
+    if let PlanAction::SwapWord { word } = action {
+        let start = usize::from(word) * 4;
+        if !(1..=3).contains(&word) || start + 4 > trial.state.stack.len() {
+            return Err(invariant(
+                DiagnosticCategory::IllegalStackAccess,
+                "word shuffle requires complete owned addressable words",
+            ));
+        }
+        for lane in 0..4 {
+            trial.state.stack.swap(lane, start + lane);
+        }
+        trial.actions.push(action);
+        return Ok(());
+    }
     let depth = match action {
         PlanAction::Dup { depth }
         | PlanAction::Swap { depth }
@@ -326,6 +341,10 @@ fn replay(
                 }
                 widths.insert(0, width);
             }
+            Action::MoveUp(1) | Action::MoveDown(1) if width == 4 && widths[0] == 4 => {
+                shuffle(trial, PlanAction::SwapWord { word: 1 })?;
+                widths.swap(0, 1);
+            }
             Action::MoveUp(_) => {
                 for _ in 0..width {
                     move_up(trial, end - 1)?;
@@ -344,6 +363,17 @@ fn replay(
                 }
                 let top = widths.remove(0);
                 widths.insert(index, top);
+            }
+            Action::Swap(_)
+                if index > 0 && width == 4 && widths[0] == 4 && (end - width).is_multiple_of(4) =>
+            {
+                shuffle(
+                    trial,
+                    PlanAction::SwapWord {
+                        word: ((end - width) / 4) as u8,
+                    },
+                )?;
+                widths.swap(0, index);
             }
             Action::Swap(_) if index > 0 && (width != 1 || widths[0] != 1) => {
                 let top = widths[0];
@@ -531,20 +561,35 @@ pub(super) fn permute(
     Ok(())
 }
 
-/// Accept an already valid state or try grouped movement without loading or evicting lanes.
+/// Try grouped movement and each single word swap without loading or evicting lanes.
+/// A bounded raw word candidate also works when split layouts exclude grouped search.
+/// The grouped result wins equal-cost ties; every candidate proves the same full contract.
 fn stack_candidate<'a>(
-    mut trial: Trial<'a>,
+    trial: Trial<'a>,
     unit: &SelectedLowering,
     needs: &UnitRequirements,
 ) -> Result<Option<Trial<'a>>, AllocationError> {
     if valid(&trial, unit, needs)? {
         return Ok(Some(trial));
     }
-    if solver(&mut trial, &unit.stack_inputs, needs, None)? && valid(&trial, unit, needs)? {
-        Ok(Some(trial))
+    let mut grouped = trial.clone();
+    let mut best = if solver(&mut grouped, &unit.stack_inputs, needs, None).unwrap_or(false)
+        && valid(&grouped, unit, needs)?
+    {
+        Some(grouped)
     } else {
-        Ok(None)
+        None
+    };
+    for word in 1..=3 {
+        let mut candidate = trial.clone();
+        if shuffle(&mut candidate, PlanAction::SwapWord { word }).is_ok()
+            && valid(&candidate, unit, needs)?
+            && best.as_ref().is_none_or(|old| cost(&candidate) < cost(old))
+        {
+            best = Some(candidate);
+        }
     }
+    Ok(best)
 }
 
 /// Keep the first occurrence of each exact input name, preserving request order.
@@ -616,6 +661,7 @@ pub(super) fn action_cost(actions: &[PlanAction]) -> usize {
             PlanAction::StoreLane(_) => 4,
             PlanAction::Dup { depth } => stack_cost(Primitive::Dup(*depth)),
             PlanAction::Swap { depth } => stack_cost(Primitive::Swap(*depth)),
+            PlanAction::SwapWord { word } => stack_cost(Primitive::SwapWord(*word)),
             PlanAction::MoveUp { depth } => stack_cost(Primitive::MoveUp(*depth)),
             PlanAction::MoveDown { depth } => stack_cost(Primitive::MoveDown(*depth)),
             PlanAction::PushLiteral(value) => stack_cost(Primitive::Push(*value)),

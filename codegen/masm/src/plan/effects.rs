@@ -316,7 +316,6 @@ pub(crate) enum Primitive {
     MoveDown(u8),
     #[cfg(test)]
     DupWord(u8),
-    #[cfg(test)]
     SwapWord(u8),
     #[cfg(test)]
     Drop,
@@ -334,7 +333,6 @@ impl Primitive {
             Self::MoveDown(depth) => depth.checked_sub(2).and_then(|d| DOWN.get(usize::from(d))),
             #[cfg(test)]
             Self::DupWord(depth) => DUP_WORD.get(usize::from(depth)),
-            #[cfg(test)]
             Self::SwapWord(depth) => {
                 depth.checked_sub(1).and_then(|d| SWAP_WORD.get(usize::from(d)))
             }

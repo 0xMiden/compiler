@@ -18,6 +18,7 @@ fn scheduled_body(
         }
         let instruction = match action {
             PlanAction::Dup { depth } => Primitive::Dup(*depth).instruction().unwrap(),
+            PlanAction::SwapWord { word } => Primitive::SwapWord(*word).instruction().unwrap(),
             PlanAction::PushLiteral(value) => Primitive::Push(*value).instruction().unwrap(),
             PlanAction::StoreLane(slot) => {
                 Instruction::LocStore(frame.resolve(FrameRef::Spill(*slot)).unwrap().into())

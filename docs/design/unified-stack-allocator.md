@@ -298,6 +298,7 @@ struct AllocatorState {
 enum PlanAction {
     Dup { depth: u8 },
     Swap { depth: u8 },
+    SwapWord { word: u8 },          // complete owned words, indices 1..=3
     MoveUp { depth: u8 },
     MoveDown { depth: u8 },
     Drop,
@@ -434,6 +435,10 @@ The old `Move`/`Copy` distinction becomes a scheduling choice derived from recov
 Allocation chooses operand sources, preservation, loads, and evictions. The existing bounded shuffle solver remains an optimization for resident copies and permutations, with widths and duplicate handling checked against raw lanes. It does not choose spill slots or perform eviction. Its `NoSolution` selects another construction, not a diagnostic or an immediate full drain. It cannot rename different atoms as equivalent to manufacture a solution.
 
 Individual shuffle tactics must declare their feasibility limits before entering preparation loops. In particular, `LinearStackWindow` applies only when the required raw operand width fits sixteen lanes: its copy preparation reserves addressable space for the complete tuple. Wider tuples may still use other valid proposals or full normalization. A solver budget charged between tactic invocations cannot bound a nonterminating loop inside a tactic.
+
+Word swaps are explicit physical actions. `SwapWord { word }` exchanges the top four lanes with lanes `4*word..4*word+4` for word indices 1–3, preserving limb order, occurrence identity and all intervening/deeper lanes. Both words must be owned and addressable; caller suffixes and floor padding cannot participate. Expansion emits exactly the planned word instruction, and replay independently checks correspondence and ownership.
+
+Grouped swaps use this action for complete aligned four-lane endpoints; an adjacent move of two four-lane groups is the same permutation. Stack scheduling also tries each of the three single-word swaps from the unchanged incoming trial, allowing mixed/partial layouts that grouped search cannot model. Every candidate must satisfy the existing ordered-prefix and survivor checks. Compare expanded VM-operation costs, retaining the grouped candidate on ties. This is a bounded addition to the existing tier, not a broader search or a post-expansion rewrite. Word duplication is not needed: its four VM operations do not improve upon four aligned scalar copies.
 
 The current solver models grouped operands. Use it only when the candidate can be represented faithfully in that model, including aliases and copies. A split raw layout can bypass it: tiers one and two may decline, while tier three has a deterministic raw-lane permutation. The allocator's raw representation must not inherit a whole-value grouping restriction merely to satisfy the optional solver.
 

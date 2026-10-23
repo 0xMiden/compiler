@@ -638,6 +638,14 @@ fn raw_storage_expansion_resolves_symbolic_cells_and_rejects_buried_accesses() {
         4,
     )
     .unwrap();
+    for word in [0, 4, 255] {
+        assert_eq!(
+            expand_allocation_action(&PlanAction::SwapWord { word }, &frame)
+                .unwrap_err()
+                .category,
+            DiagnosticCategory::IllegalStackAccess
+        );
+    }
     assert_eq!(
         expand_allocation_action(&PlanAction::StoreLane(slot), &frame).unwrap(),
         Some(Instruction::LocStore(3.into()))
