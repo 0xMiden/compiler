@@ -45,62 +45,64 @@ impl StorageDemand {
     /// Solve required contents over the checked graph, accounting for definite writes/borrows.
     pub fn derive(program: &SelectedProgram) -> Self {
         let mut result = Self {
-            entry: BTreeMap::new(),
+            entry: program.segments.iter().map(|segment| (segment.id, Demand::new())).collect(),
             before: BTreeMap::new(),
             after: BTreeMap::new(),
             exit: BTreeMap::new(),
         };
-        loop {
-            let previous = result.entry.clone();
-            for segment in program.segments.iter().rev() {
-                let mut demand = Demand::new();
-                for edge in program.edges.iter().filter(|edge| edge.source == segment.id) {
-                    if let Some(destination) = edge.destination {
-                        demand.extend(
-                            previous
-                                .get(&destination)
-                                .into_iter()
-                                .flatten()
-                                .map(|fact| source_fact(*fact, edge)),
-                        );
-                    }
+        let mut work = super::dataflow::BackwardWorklist::new(program);
+        while let Some(index) = work.next() {
+            let segment = &program.segments[index];
+            let mut demand = Demand::new();
+            for &edge_index in work.outgoing(index) {
+                let edge = &program.edges[edge_index];
+                if let Some(destination) = edge.destination {
+                    demand.extend(
+                        result
+                            .entry
+                            .get(&destination)
+                            .into_iter()
+                            .flatten()
+                            .map(|fact| source_fact(*fact, edge)),
+                    );
                 }
-                result.exit.insert(segment.id, demand.clone());
-                for unit in segment.units.iter().rev() {
-                    result.after.insert(unit.id, demand.clone());
-                    // A definite cell definition ends its incoming dependency, regardless
-                    // of the outgoing name. Replay must still prove every after-demand.
-                    demand.retain(|fact| {
-                        !unit.scratch_effects.iter().any(|effect| match effect {
-                            ScratchEffect::Write(written) => {
-                                fact.object == written.object && fact.offset == written.offset
-                            }
-                            ScratchEffect::Borrow {
-                                object,
-                                offset,
-                                size,
-                                write: true,
-                                definite_write: true,
-                                ..
-                            } => {
-                                fact.object == *object
-                                    && (*offset..offset + size).contains(&fact.offset)
-                            }
-                            _ => false,
-                        })
-                    });
-                    demand.extend(unit.scratch_effects.iter().filter_map(|effect| match effect {
-                        ScratchEffect::Read(fact) => Some(*fact),
-                        _ => None,
-                    }));
-                    result.before.insert(unit.id, demand.clone());
-                }
-                result.entry.insert(segment.id, demand);
             }
-            if result.entry == previous {
-                return result;
+            result.exit.insert(segment.id, demand.clone());
+            for unit in segment.units.iter().rev() {
+                result.after.insert(unit.id, demand.clone());
+                // A definite cell definition ends its incoming dependency, regardless
+                // of the outgoing name. Replay must still prove every after-demand.
+                demand.retain(|fact| {
+                    !unit.scratch_effects.iter().any(|effect| match effect {
+                        ScratchEffect::Write(written) => {
+                            fact.object == written.object && fact.offset == written.offset
+                        }
+                        ScratchEffect::Borrow {
+                            object,
+                            offset,
+                            size,
+                            write: true,
+                            definite_write: true,
+                            ..
+                        } => {
+                            fact.object == *object
+                                && (*offset..offset + size).contains(&fact.offset)
+                        }
+                        _ => false,
+                    })
+                });
+                demand.extend(unit.scratch_effects.iter().filter_map(|effect| match effect {
+                    ScratchEffect::Read(fact) => Some(*fact),
+                    _ => None,
+                }));
+                result.before.insert(unit.id, demand.clone());
+            }
+            if result.entry[&segment.id] != demand {
+                result.entry.insert(segment.id, demand);
+                work.changed(index);
             }
         }
+        result
     }
 }
 

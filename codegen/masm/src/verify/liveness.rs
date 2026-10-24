@@ -23,14 +23,14 @@ impl Liveness {
     /// Solve lane demand across all selected edges; requires a structurally checked program.
     pub fn derive(program: &SelectedProgram) -> Self {
         let mut result = Self {
-            entry: BTreeMap::new(),
+            entry: program.segments.iter().map(|segment| (segment.id, Live::new())).collect(),
             before: BTreeMap::new(),
             after: BTreeMap::new(),
             exit: BTreeMap::new(),
         };
         fn conditions(
             tree: &ControlTree,
-            program: &SelectedProgram,
+            edges: &BTreeMap<EdgeId, &TransferEdge>,
             out: &mut BTreeMap<SegmentId, Live>,
         ) {
             match tree {
@@ -41,15 +41,15 @@ impl Liveness {
                     else_body,
                     ..
                 } => {
-                    if let Some(edge) = program.edges.iter().find(|edge| edge.id == *on_true) {
+                    if let Some(edge) = edges.get(on_true) {
                         out.entry(edge.source).or_default().insert(*predicate);
                     }
-                    conditions(then_body, program, out);
-                    conditions(else_body, program, out);
+                    conditions(then_body, edges, out);
+                    conditions(else_body, edges, out);
                 }
                 ControlTree::Sequence(children) => {
                     for child in children {
-                        conditions(child, program, out);
+                        conditions(child, edges, out);
                     }
                 }
                 ControlTree::Loop {
@@ -59,54 +59,55 @@ impl Liveness {
                     ..
                 } => {
                     out.entry(*header).or_default().insert(*predicate);
-                    conditions(body, program, out);
+                    conditions(body, edges, out);
                 }
                 _ => {}
             }
         }
         let mut predicates = BTreeMap::new();
-        conditions(&program.structure, program, &mut predicates);
-        loop {
-            let previous = result.entry.clone();
-            for segment in program.segments.iter().rev() {
-                let mut live = predicates.get(&segment.id).cloned().unwrap_or_default();
-                for edge in program.edges.iter().filter(|edge| edge.source == segment.id) {
-                    if let Some(destination) = edge.destination {
-                        for atom in previous.get(&destination).into_iter().flatten() {
-                            let source = edge
-                                .bindings
-                                .iter()
-                                .find(|binding| binding.destination == atom.value)
-                                .map_or(atom.value, |binding| binding.source);
-                            live.insert(Atom::new(source, atom.lane));
-                        }
-                    } else if edge.kind == EdgeKind::Return {
-                        for binding in &edge.bindings {
-                            add_value(&mut live, program, binding.source);
-                        }
+        let edges = program.edges.iter().map(|edge| (edge.id, edge)).collect();
+        conditions(&program.structure, &edges, &mut predicates);
+        let mut work = super::dataflow::BackwardWorklist::new(program);
+        while let Some(index) = work.next() {
+            let segment = &program.segments[index];
+            let mut live = predicates.get(&segment.id).cloned().unwrap_or_default();
+            for &edge_index in work.outgoing(index) {
+                let edge = &program.edges[edge_index];
+                if let Some(destination) = edge.destination {
+                    for atom in result.entry.get(&destination).into_iter().flatten() {
+                        let source = edge
+                            .bindings
+                            .iter()
+                            .find(|binding| binding.destination == atom.value)
+                            .map_or(atom.value, |binding| binding.source);
+                        live.insert(Atom::new(source, atom.lane));
+                    }
+                } else if edge.kind == EdgeKind::Return {
+                    for binding in &edge.bindings {
+                        add_value(&mut live, program, binding.source);
                     }
                 }
-                result.exit.insert(segment.id, live.clone());
-                for unit in segment.units.iter().rev() {
-                    result.after.insert(unit.id, live.clone());
-                    for atom in &unit.outputs {
-                        live.remove(atom);
-                    }
-                    live.extend(unit.stack_inputs.iter().copied());
-                    for value in &unit.semantic_inputs {
-                        add_value(&mut live, program, *value);
-                    }
-                    for input in &unit.stored_inputs {
-                        if let StoredValue::Atom(atom) = input.value {
-                            live.insert(atom);
-                        }
-                    }
-                    result.before.insert(unit.id, live.clone());
-                }
-                result.entry.insert(segment.id, live);
             }
-            if result.entry == previous {
-                break;
+            result.exit.insert(segment.id, live.clone());
+            for unit in segment.units.iter().rev() {
+                result.after.insert(unit.id, live.clone());
+                for atom in &unit.outputs {
+                    live.remove(atom);
+                }
+                live.extend(unit.stack_inputs.iter().copied());
+                for value in &unit.semantic_inputs {
+                    add_value(&mut live, program, *value);
+                }
+                for input in &unit.stored_inputs {
+                    if let StoredValue::Atom(atom) = input.value {
+                        live.insert(atom);
+                    }
+                }
+                result.before.insert(unit.id, live.clone());
+            }
+            if result.entry[&segment.id] != live {
+                result.entry.insert(segment.id, live);
+                work.changed(index);
             }
         }
         result

@@ -6,6 +6,7 @@
 //! can be converted to MASM without further executable edits.
 mod abi;
 mod control;
+mod dataflow;
 mod graph;
 mod liveness;
 mod memory;
