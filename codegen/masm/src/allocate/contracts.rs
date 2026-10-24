@@ -422,6 +422,23 @@ pub(super) fn choose(
         .filter(|atom| invariant_values.contains(&atom.value))
         .collect();
     let common = common_slots(incoming, &cached_atoms, context)?;
+
+    // Forward facts provide the base case. Checked SSA definitions cannot overwrite
+    // a parameter, so identity bindings on every cyclic entry prove its address
+    // invariant. Remove changed destinations simultaneously; do not chase aliases.
+    let mut address_values = live.clone();
+    if let Some(demand) = loop_demand {
+        for edge in program.edges.iter().filter(|edge| {
+            edge.destination == Some(segment) && demand.members.contains(&edge.source)
+        }) {
+            for binding in &edge.bindings {
+                if binding.source != binding.destination {
+                    address_values.remove(&binding.destination);
+                }
+            }
+        }
+    }
+
     let aliases = aliases(incoming, &live_atoms, context, loop_demand.is_some())?;
     let tail = incoming[0].state.tail;
     if incoming.iter().any(|entry| entry.state.tail != tail) {
@@ -434,9 +451,7 @@ pub(super) fn choose(
         stack_top_first: vec![],
         required_spill_slots: vec![],
         required_scratch: scratch(incoming, &analysis.scratch.entry[&segment], context)?,
-        // Forward-entry provenance cannot establish an exact address for a loop
-        // parameter: its backedge source may name another offset or object.
-        address_facts: common_addresses(incoming, &invariant_values, context)?,
+        address_facts: common_addresses(incoming, &address_values, context)?,
         aliases,
         tail,
     };

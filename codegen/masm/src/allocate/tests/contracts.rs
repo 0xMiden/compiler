@@ -104,6 +104,7 @@ pub(super) fn body(plan: &ProcedurePlan, frame: &FinalFrameLayout) -> AnnotatedM
                     }
                     9 => {} // conservative possible-write summary, no write on this path
                     10 => out.push_instruction(Instruction::Exec(target("truncate_stack")), *step),
+                    11 => out.push_instruction(Instruction::MemLoad, *step),
                     _ => panic!("fixture kind"),
                 }
                 out.push(AnnotatedOp::Boundary(Boundary::UnitEnd(*step)));
@@ -1740,7 +1741,7 @@ fn loop_pointer_source(offset: u32, carried: u32, alias: bool) -> Source {
 }
 
 #[test]
-fn loop_address_contracts_preserve_captures_without_fixing_carried_addresses() {
+fn loop_address_contracts_preserve_captures_and_identity_carried_addresses() {
     // Identity-carried and captured-source backedges are invariant positive controls;
     // different-result backedges exercise equal and unequal offsets, plus alias transport.
     for (offset, carried, alias, expected) in [
@@ -1765,8 +1766,8 @@ fn loop_address_contracts_preserve_captures_without_fixing_carried_addresses() {
             let plan = allocate(checked(&fixture), &options).unwrap();
             let facts = &plan.contracts[&SegmentId(1)].address_facts;
             assert!(facts.iter().any(|fact| fact.pointer == ValueId(100)));
-            // Even the invariant-carried controls need no unproved parameter facts.
-            assert!(facts.iter().all(|fact| fact.pointer != ValueId(10)));
+            // Only direct identity bindings establish this parameter invariant.
+            assert_eq!(facts.iter().any(|fact| fact.pointer == ValueId(10)), carried == 10);
             execute(&plan, &[0, 1, 2], &[expected]);
             execute(&plan, &[2, 1, 2], &[0]);
         }
@@ -1793,4 +1794,212 @@ fn loop_address_contract_allows_a_different_backedge_scratch_object() {
     assert!(facts.iter().all(|fact| fact.pointer != ValueId(10)));
     execute(&plan, &[0, 1, 2], &[1]);
     execute(&plan, &[2, 1, 2], &[0]);
+}
+
+fn pointer_allocation_options() -> [AllocationOptions; 3] {
+    [
+        AllocationOptions::default(),
+        AllocationOptions {
+            force_tier: Some(crate::allocate::schedule::SchedulingTier::Normalization),
+            ..Default::default()
+        },
+        AllocationOptions {
+            refuse_solver: true,
+            ..Default::default()
+        },
+    ]
+}
+
+#[test]
+fn identity_carried_pointer_keeps_provenance_after_capture_dies() {
+    let mut fixture = loop_pointer_source(1, 10, false);
+    let mut object = fixture.0.segments[0].units[0].scratch[0].clone();
+    object.uses = vec![SelectedStepId(0), SelectedStepId(2), SelectedStepId(6), SelectedStepId(7)];
+    for segment in &mut fixture.0.segments {
+        for unit in &mut segment.units {
+            for requirement in &mut unit.scratch {
+                *requirement = object.clone();
+            }
+        }
+    }
+    let mut initialize = request(6, &[3], &[]);
+    initialize.kind = LoweringKind(7);
+    initialize.scratch = vec![object.clone()];
+    initialize.scratch_effects = vec![ScratchEffect::Write(ScratchCellFact {
+        object: ScratchId(0),
+        offset: 0,
+        content: ContentRequirement::Initialized,
+    })];
+    fixture.0.segments[0].parameters.push(ValueId(3));
+    fixture.0.segments[0].units.insert(0, initialize);
+    // Read after the loop so both zero-trip and repeated entry exercise actual memory.
+    let mut reader = request(7, &[40], &[103]);
+    reader.kind = LoweringKind(11);
+    reader.scratch = vec![object];
+    reader.scratch_effects = vec![ScratchEffect::Read(ScratchCellFact {
+        object: ScratchId(0),
+        offset: 0,
+        content: ContentRequirement::Initialized,
+    })];
+    fixture.0.segments[3].units = vec![reader];
+    fixture.0.edges[4].bindings = vec![ParameterBinding {
+        destination: ValueId(103),
+        source: ValueId(103),
+    }];
+    fixture = source(fixture.0.segments, fixture.0.edges, fixture.0.structure, 1);
+    for options in pointer_allocation_options() {
+        let plan = allocate(checked(&fixture), &options).unwrap();
+        let facts = &plan.contracts[&SegmentId(1)].address_facts;
+        assert!(facts.iter().any(|fact| fact.pointer == ValueId(10)));
+        assert!(facts.iter().all(|fact| fact.pointer != ValueId(100)));
+        execute(&plan, &[0, 1, 2, 77], &[77]);
+        execute(&plan, &[2, 1, 2, 77], &[77]);
+    }
+}
+
+#[test]
+fn pointer_invariance_checks_every_backedge() {
+    for second_source in [10, 101] {
+        let mut fixture = loop_pointer_source(1, 10, false);
+        let mut branch = request(6, &[11, 1], &[60]);
+        branch.kind = LoweringKind(4);
+        fixture.0.segments[2].units.push(branch);
+        fixture.0.segments.extend([segment(4, &[], vec![]), segment(5, &[], vec![])]);
+        fixture.0.edges[3].source = SegmentId(4);
+        fixture.0.edges.extend([
+            edge(5, 2, Some(4), EdgeKind::True, &[]),
+            edge(6, 2, Some(5), EdgeKind::False, &[]),
+            edge(7, 5, Some(1), EdgeKind::Backedge, &[(10, second_source), (11, 30)]),
+        ]);
+        let ControlTree::Sequence(children) = &mut fixture.0.structure else {
+            unreachable!()
+        };
+        let ControlTree::Loop {
+            body, backedges, ..
+        } = &mut children[2]
+        else {
+            unreachable!()
+        };
+        **body = seq(vec![
+            s(2),
+            ControlTree::If {
+                id: ControlId(2),
+                predicate: a(60),
+                on_true: EdgeId(5),
+                on_false: EdgeId(6),
+                then_body: Box::new(seq(vec![s(4), e(3)])),
+                else_body: Box::new(seq(vec![s(5), e(7)])),
+            },
+        ]);
+        *backedges = vec![EdgeId(3), EdgeId(7)];
+        fixture = source(fixture.0.segments, fixture.0.edges, fixture.0.structure, 1);
+        for options in pointer_allocation_options() {
+            let plan = allocate(checked(&fixture), &options).unwrap();
+            assert_eq!(
+                plan.contracts[&SegmentId(1)]
+                    .address_facts
+                    .iter()
+                    .any(|fact| fact.pointer == ValueId(10)),
+                second_source == 10
+            );
+            execute(&plan, &[0, 1, 2], &[u64::from(second_source != 10)]);
+            execute(&plan, &[2, 1, 2], &[0]);
+        }
+    }
+}
+
+#[test]
+fn nested_loop_does_not_rebind_identity_carried_outer_pointer() {
+    let mut fixture = loop_pointer_source(1, 10, false);
+    let mut condition = request(6, &[13, 2], &[60]);
+    condition.kind = LoweringKind(4);
+    let mut inner_advance = request(7, &[13, 1], &[61]);
+    inner_advance.kind = LoweringKind(3);
+    fixture.0.segments.extend([
+        segment(4, &[13], vec![condition]),
+        segment(5, &[], vec![inner_advance]),
+        segment(6, &[], vec![]),
+    ]);
+    fixture.0.edges[3].source = SegmentId(6);
+    fixture.0.edges.extend([
+        edge(5, 2, Some(4), EdgeKind::Forward, &[(13, 11)]),
+        edge(6, 4, Some(5), EdgeKind::True, &[]),
+        edge(7, 4, Some(6), EdgeKind::False, &[]),
+        edge(8, 5, Some(4), EdgeKind::Backedge, &[(13, 61)]),
+    ]);
+    let ControlTree::Sequence(children) = &mut fixture.0.structure else {
+        unreachable!()
+    };
+    let ControlTree::Loop { body, .. } = &mut children[2] else {
+        unreachable!()
+    };
+    **body = seq(vec![
+        s(2),
+        e(5),
+        ControlTree::Loop {
+            id: ControlId(2),
+            condition: ControlId(3),
+            header: SegmentId(4),
+            predicate: a(60),
+            on_true: EdgeId(6),
+            on_false: EdgeId(7),
+            body: Box::new(seq(vec![s(5), e(8)])),
+            backedges: vec![EdgeId(8)],
+        },
+        s(6),
+        e(3),
+    ]);
+    fixture = source(fixture.0.segments, fixture.0.edges, fixture.0.structure, 1);
+    for options in pointer_allocation_options() {
+        let plan = allocate(checked(&fixture), &options).unwrap();
+        assert!(
+            plan.contracts[&SegmentId(1)]
+                .address_facts
+                .iter()
+                .any(|fact| fact.pointer == ValueId(10))
+        );
+        execute(&plan, &[0, 1, 2], &[0]);
+        execute(&plan, &[2, 1, 2], &[0]);
+    }
+}
+
+#[test]
+fn simultaneous_distinct_pointer_swap_is_not_identity_carry() {
+    let mut fixture = loop_pointer_source(1, 12, false);
+    // Establish a second pointer before entry, then swap both old parameter values.
+    let mut other = fixture.0.segments[2].units[0].clone();
+    other.id = SelectedStepId(6);
+    other.source = SourceStepId(6);
+    other.outputs = vec![a(104)];
+    other.address_results[0].pointer = ValueId(104);
+    fixture.0.segments[0].units.push(other);
+    for segment in &mut fixture.0.segments {
+        for unit in &mut segment.units {
+            for object in &mut unit.scratch {
+                object.uses = vec![SelectedStepId(0), SelectedStepId(2), SelectedStepId(6)];
+            }
+        }
+    }
+    fixture.0.segments[1].parameters.push(ValueId(12));
+    fixture.0.edges[0].bindings.push(ParameterBinding {
+        destination: ValueId(12),
+        source: ValueId(104),
+    });
+    fixture.0.edges[3].bindings.push(ParameterBinding {
+        destination: ValueId(12),
+        source: ValueId(10),
+    });
+    fixture = source(fixture.0.segments, fixture.0.edges, fixture.0.structure, 1);
+    for options in pointer_allocation_options() {
+        let plan = allocate(checked(&fixture), &options).unwrap();
+        assert!(
+            plan.contracts[&SegmentId(1)]
+                .address_facts
+                .iter()
+                .all(|fact| fact.pointer != ValueId(10) && fact.pointer != ValueId(12))
+        );
+        execute(&plan, &[0, 1, 2], &[0]); // two swaps restore the initial pointer
+        execute(&plan, &[1, 1, 2], &[1]); // one swap changes its address
+        execute(&plan, &[2, 1, 2], &[0]);
+    }
 }
