@@ -364,7 +364,7 @@ impl OpEmitter<'_> {
     /// 2. Shift right by (byte_offset * 8) bits to move the target byte(s) to the low end
     /// 3. Mask to extract only the bits we need based on the type size
     ///
-    /// After execution, the stack will contain: [loaded_value]
+    /// After execution, the stack will contain: `[loaded_value]`
     fn load_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {
         // If we have an immediate pointer, handle it based on alignment
         if let Some(imm) = ptr {
@@ -692,7 +692,7 @@ impl OpEmitter<'_> {
 
 /// Stores
 impl OpEmitter<'_> {
-    /// Store a value of the type given by the specified [hir::LocalId], using the memory allocated
+    /// Store a value of the type given by the specified local ID, using the memory allocated
     /// for that local.
     ///
     /// `offset` is the frame's `locaddr` operand for `local`, see
@@ -1495,7 +1495,7 @@ impl OpEmitter<'_> {
     /// 4. Combining with OR and storing back
     ///
     /// # Stack Effects
-    /// - Before: [value] (where value is already truncated to the correct size)
+    /// - Before: `[value]` (where value is already truncated to the correct size)
     /// - After: []
     fn store_small_imm(&mut self, ty: &Type, imm: NativePtr, span: SourceSpan) {
         if ty.size_in_bits() == 16 && !imm.is_element_aligned() {

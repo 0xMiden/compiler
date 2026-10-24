@@ -176,8 +176,8 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, create_tx);
-    // 8977 before the SDK's bindings were generated, 8984 after `miden-stdlib-sys` was (Tasks 6
-    // and 6b of the generator plan; this suite was not re-run then). 189 cycles more, as in
+    // 8977 before generated SDK bindings, 8984 after generating `miden-stdlib-sys` bindings
+    // (the suite was not re-run at that intermediate revision). 189 cycles more, as in
     // `basic_wallet_p2id_transfers_asset_with_custom_tx_script`, once `miden-base-sys` was
     // generated: the wallet's `create_note` and `move_asset_to_note` then checked the `Tag`,
     // `NoteType` and `NoteIdx` felts against the protocol's integer types. 2 cycles more (9173

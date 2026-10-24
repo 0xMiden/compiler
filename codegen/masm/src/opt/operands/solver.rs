@@ -182,7 +182,8 @@ impl OperandMovementConstraintSolver {
         Self::new_with_options(expected, constraints, stack, Default::default())
     }
 
-    /// Same as [Self::new], but takes [SolverOptions] to customize the behavior of the solver.
+    /// Construct a solver for the expected operands and stack, using [SolverOptions] to
+    /// customize the search policy.
     pub fn new_with_options(
         expected: &[hir::ValueRef],
         constraints: &[Constraint],
