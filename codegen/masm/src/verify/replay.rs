@@ -119,31 +119,35 @@ impl<'a> Verifier<'a> {
                                 | Instruction::DynCall
                         ) =>
                     {
-                        let id = active
-                            .filter(|id| id == unit)
-                            .ok_or_else(|| error("call outside its registered unit"))?;
-                        let index = counts.entry((id, path.clone())).or_default();
-                        let site = verifier
-                            .plan
-                            .selected
-                            .evidence(id)?
-                            .calls
-                            .iter()
-                            .filter(|site| site.path == *path)
-                            .nth(*index)
-                            .ok_or_else(|| {
-                                fail(
+                        (|| {
+                            let id = active
+                                .filter(|id| id == unit)
+                                .ok_or_else(|| error("call outside its registered unit"))?;
+                            let index = counts.entry((id, path.clone())).or_default();
+                            let site = verifier
+                                .plan
+                                .selected
+                                .evidence(id)?
+                                .calls
+                                .iter()
+                                .filter(|site| site.path == *path)
+                                .nth(*index)
+                                .ok_or_else(|| {
+                                    fail(
+                                        DiagnosticCategory::AbiMismatch,
+                                        "unregistered call occurrence/control path",
+                                    )
+                                })?;
+                            if site.instruction != *instruction {
+                                return Err(fail(
                                     DiagnosticCategory::AbiMismatch,
-                                    "unregistered call occurrence/control path",
-                                )
-                            })?;
-                        if site.instruction != *instruction {
-                            return Err(fail(
-                                DiagnosticCategory::AbiMismatch,
-                                "actual call site differs from registered target/family",
-                            ));
-                        }
-                        *index += 1;
+                                    "actual call site differs from registered target/family",
+                                ));
+                            }
+                            *index += 1;
+                            Ok(())
+                        })()
+                        .map_err(|error| verifier.context(error, active))?;
                     }
                     AnnotatedOp::If {
                         id,
@@ -182,9 +186,12 @@ impl<'a> Verifier<'a> {
                 }
                 for (path, count) in expected {
                     if counts.get(&(unit.id, path)).copied().unwrap_or(0) != count {
-                        return Err(fail(
-                            DiagnosticCategory::AbiMismatch,
-                            "actual body omits required registered call site",
+                        return Err(self.context(
+                            fail(
+                                DiagnosticCategory::AbiMismatch,
+                                "actual body omits required registered call site",
+                            ),
+                            Some(unit.id),
                         ));
                     }
                 }
@@ -333,92 +340,124 @@ impl<'a> Verifier<'a> {
         cursor: &mut Cursor,
     ) -> Result<Option<State>, VerificationError> {
         for op in body.ops() {
-            match op {
-                AnnotatedOp::Boundary(boundary) => self.boundary(*boundary, &mut state, cursor)?,
-                AnnotatedOp::Instruction { instruction, unit } => {
-                    if let Some(active) = &cursor.active {
-                        if *unit != active.id {
-                            return Err(error("instruction belongs to wrong lowering unit"));
+            // UnitEnd consumes the active unit, so retain the boundary identity first.
+            let step = cursor.active.as_ref().map(|active| active.id).or(match op {
+                AnnotatedOp::Boundary(Boundary::UnitStart(id) | Boundary::UnitEnd(id)) => Some(*id),
+                _ => None,
+            });
+            state = match (|| -> Result<Option<State>, VerificationError> {
+                match op {
+                    AnnotatedOp::Boundary(boundary) => {
+                        self.boundary(*boundary, &mut state, cursor)?
+                    }
+                    AnnotatedOp::Instruction { instruction, unit } => {
+                        if let Some(active) = &cursor.active {
+                            if *unit != active.id {
+                                return Err(error("instruction belongs to wrong lowering unit"));
+                            }
+                            if !self.instruction(instruction, &mut state, cursor)? {
+                                return Ok(None);
+                            }
+                        } else {
+                            self.action(instruction, &mut state, cursor)?;
                         }
-                        if !self.instruction(instruction, &mut state, cursor)? {
-                            return Ok(None);
+                    }
+                    AnnotatedOp::If {
+                        id,
+                        then_body,
+                        else_body,
+                    } => {
+                        let predicate = state.pop()?;
+                        if cursor.active.is_none() {
+                            return Err(error(
+                                "selected control must be checked through graph contracts",
+                            ));
                         }
-                    } else {
-                        self.action(instruction, &mut state, cursor)?;
+                        let known = self.tokens.constant(predicate);
+                        if known.is_some_and(|value| value > 1) {
+                            return Err(fail(
+                                DiagnosticCategory::IllegalStackAccess,
+                                "nonboolean branch predicate",
+                            ));
+                        }
+                        let mut then_cursor = cursor.clone();
+                        let mut else_cursor = cursor.clone();
+                        let then_state = if known != Some(0) {
+                            self.execute_path(
+                                then_body,
+                                state.clone(),
+                                &mut then_cursor,
+                                CallPath::Then(*id),
+                            )?
+                        } else {
+                            None
+                        };
+                        let else_state = if known != Some(1) {
+                            self.execute_path(
+                                else_body,
+                                state.clone(),
+                                &mut else_cursor,
+                                CallPath::Else(*id),
+                            )?
+                        } else {
+                            None
+                        };
+                        match (then_state, else_state) {
+                            (Some(a), Some(b)) => {
+                                self.match_cursors(&then_cursor, &else_cursor)?;
+                                state = a.merge(&b, *id, &mut self.tokens)?;
+                                *cursor = then_cursor;
+                            }
+                            (Some(a), None) => {
+                                state = a;
+                                *cursor = then_cursor;
+                            }
+                            (None, Some(b)) => {
+                                state = b;
+                                *cursor = else_cursor;
+                            }
+                            (None, None) => return Ok(None),
+                        }
+                    }
+                    AnnotatedOp::While { id, body } => {
+                        let predicate = state.pop()?;
+                        if self.tokens.constant(predicate) != Some(0) {
+                            state = self.loop_body(*id, body, state, cursor, true)?;
+                        }
+                    }
+                    AnnotatedOp::Repeat { id, count, body } => {
+                        if *count != 0 {
+                            state = self.loop_body(*id, body, state, cursor, false)?;
+                        }
                     }
                 }
-                AnnotatedOp::If {
-                    id,
-                    then_body,
-                    else_body,
-                } => {
-                    let predicate = state.pop()?;
-                    if cursor.active.is_none() {
-                        return Err(error(
-                            "selected control must be checked through graph contracts",
-                        ));
-                    }
-                    let known = self.tokens.constant(predicate);
-                    if known.is_some_and(|value| value > 1) {
-                        return Err(fail(
-                            DiagnosticCategory::IllegalStackAccess,
-                            "nonboolean branch predicate",
-                        ));
-                    }
-                    let mut then_cursor = cursor.clone();
-                    let mut else_cursor = cursor.clone();
-                    let then_state = if known != Some(0) {
-                        self.execute_path(
-                            then_body,
-                            state.clone(),
-                            &mut then_cursor,
-                            CallPath::Then(*id),
-                        )?
-                    } else {
-                        None
-                    };
-                    let else_state = if known != Some(1) {
-                        self.execute_path(
-                            else_body,
-                            state.clone(),
-                            &mut else_cursor,
-                            CallPath::Else(*id),
-                        )?
-                    } else {
-                        None
-                    };
-                    match (then_state, else_state) {
-                        (Some(a), Some(b)) => {
-                            self.match_cursors(&then_cursor, &else_cursor)?;
-                            state = a.merge(&b, *id, &mut self.tokens)?;
-                            *cursor = then_cursor;
-                        }
-                        (Some(a), None) => {
-                            state = a;
-                            *cursor = then_cursor;
-                        }
-                        (None, Some(b)) => {
-                            state = b;
-                            *cursor = else_cursor;
-                        }
-                        (None, None) => return Ok(None),
-                    }
-                }
-                AnnotatedOp::While { id, body } => {
-                    let predicate = state.pop()?;
-                    if self.tokens.constant(predicate) == Some(0) {
-                        continue;
-                    }
-                    state = self.loop_body(*id, body, state, cursor, true)?;
-                }
-                AnnotatedOp::Repeat { id, count, body } => {
-                    if *count != 0 {
-                        state = self.loop_body(*id, body, state, cursor, false)?;
-                    }
-                }
-            }
+                Ok(Some(state))
+            })()
+            .map_err(|error| self.context(error, step))?
+            {
+                Some(state) => state,
+                None => return Ok(None),
+            };
         }
         Ok(Some(state))
+    }
+
+    /// Preserve inner diagnostic context while attaching the enclosing selected boundary.
+    fn context(&self, error: VerificationError, step: Option<SelectedStepId>) -> VerificationError {
+        let Some(step) = step else {
+            return error;
+        };
+        let location = self
+            .unit(step)
+            .ok()
+            .and_then(|unit| self.plan.selected.source_map.get(&unit.source))
+            .map(|record| &record.location);
+        error.at_step(step, location)
+    }
+
+    /// Tokens can have several names; choose the first established atom deterministically.
+    fn actual_atom(state: &State, token: Token) -> Option<Atom> {
+        state.names.iter().find_map(|(atom, known)| (*known == token).then_some(*atom))
     }
 
     fn match_cursors(&self, a: &Cursor, b: &Cursor) -> Result<(), VerificationError> {
@@ -519,13 +558,21 @@ impl<'a> Verifier<'a> {
         let expected = unit
             .stack_inputs
             .iter()
-            .map(|atom| state.token(*atom))
+            .map(|atom| state.token(*atom).map_err(|error| error.expecting(*atom)))
             .collect::<Result<Vec<_>, _>>()?;
-        if state.prefix(expected.len())? != expected {
-            return Err(fail(
-                DiagnosticCategory::UnavailableValue,
-                "actual lowering inputs differ from selected atoms",
-            ));
+        for (depth, (atom, expected)) in unit.stack_inputs.iter().zip(&expected).enumerate() {
+            let actual = state.stack.get(depth).copied();
+            if actual != Some(*expected) {
+                return Err(fail(
+                    DiagnosticCategory::UnavailableValue,
+                    "actual lowering inputs differ from selected atoms",
+                )
+                .mismatch(
+                    depth,
+                    *atom,
+                    actual.and_then(|token| Self::actual_atom(state, token)),
+                ));
+            }
         }
         let bindings = &self.plan.lowering_bindings[&id];
         let mut readonly = BTreeMap::new();
@@ -613,6 +660,11 @@ impl<'a> Verifier<'a> {
                 return Err(fail(
                     DiagnosticCategory::AbiMismatch,
                     "cleanup destroyed signature result or published nonresult lane",
+                )
+                .mismatch(
+                    index,
+                    *atom,
+                    Self::actual_atom(state, state.stack[index]),
                 ));
             }
         }
@@ -628,6 +680,11 @@ impl<'a> Verifier<'a> {
                 return Err(fail(
                     DiagnosticCategory::UnavailableValue,
                     "output violates checked reconstruction identity",
+                )
+                .mismatch(
+                    index,
+                    *atom,
+                    Self::actual_atom(state, state.stack[index]),
                 ));
             }
             if let Some(source) = evidence.aliases.source(*atom)
@@ -636,6 +693,11 @@ impl<'a> Verifier<'a> {
                 return Err(fail(
                     DiagnosticCategory::UnavailableValue,
                     "alias output does not equal registered input",
+                )
+                .mismatch(
+                    index,
+                    *atom,
+                    Self::actual_atom(state, state.stack[index]),
                 ));
             }
         }
@@ -832,7 +894,7 @@ impl<'a> Verifier<'a> {
     /// Require a physical representation or proven reconstruction for every live semantic lane.
     pub fn available(&self, state: &State, live: &Live) -> Result<(), VerificationError> {
         for atom in live {
-            let token = state.token(*atom)?;
+            let token = state.token(*atom).map_err(|error| error.expecting(*atom))?;
             if !state.available(token, self.frame.spills().values().copied())
                 && !super::reconstruction::recoverable(
                     &self.plan.selected,
@@ -844,7 +906,8 @@ impl<'a> Verifier<'a> {
                 return Err(fail(
                     DiagnosticCategory::UnavailableValue,
                     "destructive action lost last representation of live atom",
-                ));
+                )
+                .expecting(*atom));
             }
         }
         Ok(())
@@ -880,7 +943,7 @@ impl<'a> Verifier<'a> {
         let expected = contract
             .stack_top_first
             .iter()
-            .map(|atom| state.token(*atom))
+            .map(|atom| state.token(*atom).map_err(|error| error.expecting(*atom)))
             .collect::<Result<Vec<_>, _>>()?;
         let entry_context =
             self.plan.selected.segments.first().is_some_and(|segment| segment.id == id)
@@ -896,18 +959,32 @@ impl<'a> Verifier<'a> {
             state.stack == expected
         };
         if !matches {
-            return Err(fail(
+            let mut failure = fail(
                 DiagnosticCategory::InvalidEdgeTransfer,
                 "incoming stack fails destination contract",
-            ));
+            );
+            if let Some(depth) = (0..expected.len().max(state.stack.len()))
+                .find(|depth| expected.get(*depth) != state.stack.get(*depth))
+            {
+                failure.depth = Some(depth);
+                failure.expected = contract.stack_top_first.get(depth).copied();
+                failure.actual =
+                    state.stack.get(depth).and_then(|token| Self::actual_atom(state, *token));
+            }
+            return Err(failure);
         }
         for (slot, atom) in &contract.required_spill_slots {
             let offset = self.frame.resolve(FrameRef::Spill(*slot))?.into();
-            if memory::read(state, offset, self.frame)? != state.token(*atom)? {
-                return Err(fail(
+            let actual =
+                memory::read(state, offset, self.frame).map_err(|error| error.expecting(*atom))?;
+            if actual != state.token(*atom).map_err(|error| error.expecting(*atom))? {
+                let mut failure = fail(
                     DiagnosticCategory::InvalidEdgeTransfer,
                     "incoming spill fails destination identity",
-                ));
+                )
+                .expecting(*atom);
+                failure.actual = Self::actual_atom(state, actual);
+                return Err(failure);
             }
         }
         for fact in &contract.required_scratch {

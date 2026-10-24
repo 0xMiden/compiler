@@ -153,9 +153,29 @@ pub(crate) fn check_selection(
     };
     let expected = definition.instantiate(parameters)?;
     if program != expected.program {
-        return Err(error(
-            "selected phases, uses, effects, coverage or control disagree with source",
-        ));
+        let mut failure =
+            error("selected phases, uses, effects, coverage or control disagree with source");
+        // A matching selected ID identifies the differing unit; trusted source evidence
+        // supplies its location rather than the candidate's potentially altered source map.
+        if let Some(unit) = expected
+            .program
+            .segments
+            .iter()
+            .flat_map(|segment| &segment.units)
+            .find(|expected| {
+                program
+                    .segments
+                    .iter()
+                    .flat_map(|segment| &segment.units)
+                    .any(|actual| actual.id == expected.id && actual != *expected)
+            })
+        {
+            failure = failure.at_step(
+                unit.id,
+                expected.program.source_map.get(&unit.source).map(|record| &record.location),
+            );
+        }
+        return Err(failure);
     }
     validate_graph(&program, &expected.units)?;
     Ok(CheckedSelectedProgram {
@@ -187,77 +207,87 @@ fn validate_graph(
             }
         }
         for unit in &segment.units {
-            if !steps.insert(unit.id)
-                || !units.contains_key(&unit.id)
-                || !program.source_map.contains_key(&unit.source)
-            {
-                return Err(error("duplicate phase or missing source/definition coverage"));
-            }
-            for input in &unit.semantic_inputs {
-                if !program.values.contains_key(input) {
-                    return Err(error("undefined semantic input"));
-                }
-            }
-            for atom in unit.stack_inputs.iter().chain(unit.outputs.iter()).chain(
-                unit.stored_inputs.iter().filter_map(|input| match &input.value {
-                    StoredValue::Atom(atom) => Some(atom),
-                    _ => None,
-                }),
-            ) {
-                validate_atom(program, *atom)?;
-            }
-            for requirement in &unit.scratch {
-                requirement.validate()?;
-                let wrong_owner = match requirement.lifetime {
-                    ScratchLifetime::Unit(owner) => {
-                        owner != unit.id || requirement.uses != [unit.id]
-                    }
-                    ScratchLifetime::Spanning => false,
-                };
-                if !requirement.uses.contains(&unit.id) || wrong_owner {
-                    return Err(error("scratch ownership does not match consuming unit"));
-                }
-            }
-            for effect in &unit.scratch_effects {
-                let (object, offset, width) = match effect {
-                    ScratchEffect::Read(fact) | ScratchEffect::Write(fact) => {
-                        (fact.object, fact.offset, 1)
-                    }
-                    ScratchEffect::Borrow {
-                        object,
-                        offset,
-                        size,
-                        ..
-                    }
-                    | ScratchEffect::PossibleWrite {
-                        object,
-                        offset,
-                        size,
-                    } => (*object, *offset, *size),
-                };
-                let requirement = unit
-                    .scratch
-                    .iter()
-                    .find(|requirement| requirement.id == object)
-                    .ok_or_else(|| error("scratch effect references undeclared object"))?;
-                if width == 0 || offset.checked_add(width).is_none_or(|end| end > requirement.size)
+            (|| {
+                if !steps.insert(unit.id)
+                    || !units.contains_key(&unit.id)
+                    || !program.source_map.contains_key(&unit.source)
                 {
-                    return Err(error("scratch effect exceeds declared object"));
+                    return Err(error("duplicate phase or missing source/definition coverage"));
                 }
-            }
-            for (output, input) in units[&unit.id].aliases.pairs() {
-                if !unit.outputs.contains(output)
-                    || !unit.stack_inputs.contains(input)
-                        && !unit
-                            .stored_inputs
-                            .iter()
-                            .any(|stored| stored.value == StoredValue::Atom(*input))
-                {
-                    return Err(error(
-                        "registered publication relation references undeclared input/output",
-                    ));
+                for input in &unit.semantic_inputs {
+                    if !program.values.contains_key(input) {
+                        return Err(error("undefined semantic input"));
+                    }
                 }
-            }
+                for atom in unit.stack_inputs.iter().chain(unit.outputs.iter()).chain(
+                    unit.stored_inputs.iter().filter_map(|input| match &input.value {
+                        StoredValue::Atom(atom) => Some(atom),
+                        _ => None,
+                    }),
+                ) {
+                    validate_atom(program, *atom)?;
+                }
+                for requirement in &unit.scratch {
+                    requirement.validate()?;
+                    let wrong_owner = match requirement.lifetime {
+                        ScratchLifetime::Unit(owner) => {
+                            owner != unit.id || requirement.uses != [unit.id]
+                        }
+                        ScratchLifetime::Spanning => false,
+                    };
+                    if !requirement.uses.contains(&unit.id) || wrong_owner {
+                        return Err(error("scratch ownership does not match consuming unit"));
+                    }
+                }
+                for effect in &unit.scratch_effects {
+                    let (object, offset, width) = match effect {
+                        ScratchEffect::Read(fact) | ScratchEffect::Write(fact) => {
+                            (fact.object, fact.offset, 1)
+                        }
+                        ScratchEffect::Borrow {
+                            object,
+                            offset,
+                            size,
+                            ..
+                        }
+                        | ScratchEffect::PossibleWrite {
+                            object,
+                            offset,
+                            size,
+                        } => (*object, *offset, *size),
+                    };
+                    let requirement = unit
+                        .scratch
+                        .iter()
+                        .find(|requirement| requirement.id == object)
+                        .ok_or_else(|| error("scratch effect references undeclared object"))?;
+                    if width == 0
+                        || offset.checked_add(width).is_none_or(|end| end > requirement.size)
+                    {
+                        return Err(error("scratch effect exceeds declared object"));
+                    }
+                }
+                for (output, input) in units[&unit.id].aliases.pairs() {
+                    if !unit.outputs.contains(output)
+                        || !unit.stack_inputs.contains(input)
+                            && !unit
+                                .stored_inputs
+                                .iter()
+                                .any(|stored| stored.value == StoredValue::Atom(*input))
+                    {
+                        return Err(error(
+                            "registered publication relation references undeclared input/output",
+                        ));
+                    }
+                }
+                Ok(())
+            })()
+            .map_err(|error: VerificationError| {
+                error.at_step(
+                    unit.id,
+                    program.source_map.get(&unit.source).map(|record| &record.location),
+                )
+            })?;
         }
     }
     if steps.len() != units.len() {
@@ -378,7 +408,7 @@ pub(super) fn validate_atom(
         .get(&atom.value)
         .is_none_or(|value| atom.lane >= value.layout.lanes())
     {
-        return Err(error("undefined raw atom"));
+        return Err(error("undefined raw atom").expecting(atom));
     }
     Ok(())
 }
