@@ -16,7 +16,7 @@
 
 use midenc_dialect_hir as hir;
 use midenc_hir::{
-    CallConv, Felt, Immediate, Op, Type,
+    CallConv, Op, Type,
     dialects::builtin::attributes::{LocalVariable, Signature},
 };
 use midenc_session::diagnostics::{Report, Spanned};
@@ -53,22 +53,10 @@ impl HirLowering for hir::ExecFpi {
 
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
 
-        // Pad the scheduled procedure inputs with zeroes up to the fixed executor input width.
-        // Each zero is a trailing input slot, so it is moved below the real inputs.
-        for _ in 0..padding {
-            inst_emitter.literal(Immediate::Felt(Felt::ZERO), span);
-            match num_inputs {
-                0 => {}
-                1 => inst_emitter.swap(1, span),
-                n => inst_emitter.movdn(n as u8, span),
-            }
-        }
-
-        // Load the executor prefix from the locals on top of the padded inputs. The locals hold
-        // the prefix in executor operand order, so they are pushed in reverse to leave the first
-        // operand on top of the stack.
-        for (local, offset) in prefix_locals.iter().rev() {
-            inst_emitter.load_local(local, *offset, span);
+        let offsets = core::array::from_fn(|index| prefix_locals[index].1);
+        inst_emitter.emit_raw_body(super::raw::fpi_prefix(num_inputs, offsets, span));
+        for _ in 0..padding + hir::ExecFpi::PREFIX_FELTS {
+            inst_emitter.push(Type::Felt);
         }
 
         let signature = Signature::with_convention(

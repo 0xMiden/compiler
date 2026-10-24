@@ -341,3 +341,125 @@ fn indirect_memory_effects_expose_the_address_for_provenance_checking() -> Resul
     assert_eq!(run_program(&source, &[])?, [Felt::ZERO; 16]);
     Ok(())
 }
+
+#[test]
+fn real_lowering_effects_match_vm() -> Result<(), Report> {
+    use LaneEffect::Computed;
+    let cases = [
+        (Instruction::U32DivModImm(4.into()), vec![9], vec![1, 2]),
+        (Instruction::U32OverflowingAdd, vec![u32::MAX as u64, 1], vec![1, 0]),
+        (Instruction::U32WrappingAdd, vec![u32::MAX as u64, 2], vec![1]),
+        (Instruction::U32WrappingSubImm(1.into()), vec![0], vec![u32::MAX as u64]),
+        (Instruction::U32WrappingMul, vec![8, 3], vec![24]),
+        (Instruction::U32Gt, vec![2, 9], vec![1]),
+        (Instruction::EqImm(Felt::ZERO.into()), vec![0], vec![1]),
+        (Instruction::And, vec![1, 0], vec![0]),
+        (Instruction::U32Shr, vec![8, 0x1234], vec![0x12]),
+        (Instruction::U32Shl, vec![8, 0x12], vec![0x1200]),
+        (Instruction::U32And, vec![0xff, 0x1234], vec![0x34]),
+        (Instruction::U32Or, vec![0xff, 0x1200], vec![0x12ff]),
+        (Instruction::U32Not, vec![0], vec![u32::MAX as u64]),
+    ];
+    for (instruction, inputs, outputs) in cases {
+        let effect = TargetEffects::instruction(&instruction)?;
+        assert_eq!(effect.consumed as usize, inputs.len(), "{instruction}");
+        assert_eq!(
+            effect.outputs,
+            (0..outputs.len()).map(|i| Computed(i as u8)).collect::<Vec<_>>(),
+            "{instruction}"
+        );
+        let top = inputs
+            .iter()
+            .copied()
+            .chain([101, 103, 107])
+            .map(Felt::new_unchecked)
+            .collect::<Vec<_>>();
+        let assertions = outputs
+            .into_iter()
+            .chain([101, 103, 107])
+            .map(|value| format!("push.{value} assert_eq "))
+            .collect::<String>();
+        assert_eq!(
+            run(&format!("{instruction} {assertions}"), &top)?,
+            [Felt::ZERO; 16],
+            "{instruction}"
+        );
+        let state = effect.floor.iter().try_fold(
+            FloorState {
+                owned: top.len(),
+                protected: 0,
+                padding: 16 - top.len(),
+            },
+            |s, step| match step {
+                FloorStep::Push(n) => s.push(*n as usize),
+                FloorStep::Pop(n) => s.pop(*n as usize),
+            },
+        )?;
+        assert_eq!(state.owned, top.len() - inputs.len() + effect.outputs.len());
+    }
+    Ok(())
+}
+
+#[test]
+fn root_word_store_and_frame_events_match_vm() -> Result<(), Report> {
+    let effect = TargetEffects::instruction(&Instruction::MemStoreWLe)?;
+    assert_eq!(effect.consumed, 5);
+    assert_eq!(effect.outputs, (1..5).map(LaneEffect::Input).collect::<Vec<_>>());
+    assert_eq!(
+        effect.memory,
+        MemoryEffect::Write(MemoryRegion::Indirect {
+            address: 0,
+            width: 4
+        })
+    );
+    assert_eq!(effect.memory_inputs, [1, 2, 3, 4]);
+    assert_eq!(effect.floor, [FloorStep::Pop(1)]);
+    let roots = [0xffff_ffff_0000_0000u64, 13, 17, 19];
+    let inputs = core::iter::once(128)
+        .chain(roots)
+        .chain([101, 103, 107])
+        .map(Felt::new_unchecked)
+        .collect::<Vec<_>>();
+    let memory = roots
+        .iter()
+        .enumerate()
+        .map(|(i, v)| format!("mem_load.{} push.{v} assert_eq ", 128 + i))
+        .collect::<String>();
+    let values = roots
+        .into_iter()
+        .chain([101, 103, 107])
+        .map(|v| format!("push.{v} assert_eq "))
+        .collect::<String>();
+    let events = [
+        Instruction::EmitImm(crate::Event::FrameStart.into()),
+        Instruction::EmitImm(crate::Event::FrameEnd.into()),
+    ];
+    for instruction in &events {
+        let effect = TargetEffects::instruction(instruction)?;
+        assert_eq!(effect.consumed, 0);
+        assert!(effect.outputs.is_empty());
+    }
+    let program = miden_assembly::Assembler::default()
+        .assemble_program(
+            "root_word_effect",
+            format!(
+                "begin mem_storew_le sdepth push.16 assert_eq {memory} {} {} {values} end",
+                events[0], events[1]
+            ),
+        )?
+        .try_into_program()?;
+    let output = FastProcessor::new(StackInputs::new(&inputs).unwrap())
+        .execute_sync(&program, &mut super::lowering_units::host())
+        .map_err(|e| Report::msg(e.to_string()))?;
+    assert_eq!(
+        (0..16).map(|i| output.stack.get_element(i).unwrap()).collect::<Vec<_>>(),
+        [Felt::ZERO; 16]
+    );
+    assert!(
+        TargetEffects::instruction(&Instruction::EmitImm(crate::masm::EventImmediate::Immediate(
+            Felt::ONE.into()
+        )))
+        .is_err()
+    );
+    Ok(())
+}

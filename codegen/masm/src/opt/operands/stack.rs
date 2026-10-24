@@ -1,8 +1,12 @@
 use super::*;
 
-/// This implements a stack data structure for [ValueOrAlias]
+/// The shuffle solver's stack of grouped value occurrences.
+///
+/// Index zero is the top, while the backing vector and `iter()` run bottom to top. Constructing
+/// from an iterator takes top-first values and reverses them. Widths stay on each value so tactics
+/// can translate grouped operand indices into actual raw-lane depths; this is not a VM stack.
 #[derive(Default, Debug, Clone)]
-pub struct Stack {
+pub(crate) struct Stack {
     stack: Vec<ValueOrAlias>,
 }
 impl FromIterator<ValueOrAlias> for Stack {
@@ -14,15 +18,6 @@ impl FromIterator<ValueOrAlias> for Stack {
         stack.reverse();
 
         Self { stack }
-    }
-}
-impl From<&crate::OperandStack> for Stack {
-    fn from(stack: &crate::OperandStack) -> Self {
-        Self::from_iter(stack.iter().rev().map(|o| {
-            o.as_value()
-                .unwrap_or_else(|| panic!("expected value operand, got {o:#?}"))
-                .into()
-        }))
     }
 }
 impl Stack {

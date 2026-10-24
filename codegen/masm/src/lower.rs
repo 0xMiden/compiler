@@ -5,6 +5,7 @@ pub(crate) mod expand;
 mod fpi;
 mod lowering;
 mod native_ptr;
+pub(crate) mod raw;
 #[allow(dead_code)]
 pub(crate) mod units;
 mod utils;
