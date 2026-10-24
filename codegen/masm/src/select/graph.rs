@@ -647,6 +647,7 @@ impl<'a, 'e> Selector<'a, 'e> {
             stack_inputs: inputs,
             stored_inputs: stored,
             outputs,
+            publication: OutputPublication::Stack,
             address_results: vec![],
             effects,
             scratch,
@@ -1064,7 +1065,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                                 self.program.values.get_mut(&output).unwrap().reconstruction =
                                     Some(Reconstruction::Alias(map));
                             }
-                            self.plain(
+                            let id = self.plain(
                                 current,
                                 source,
                                 input_atoms,
@@ -1072,6 +1073,15 @@ impl<'a, 'e> Selector<'a, 'e> {
                                 vec![],
                                 aliases,
                             )?;
+                            // Keep semantic dependencies and the empty source-owned unit, but
+                            // do not force representation aliases into a physical result prefix.
+                            let unit = self.program.segments[current.0 as usize]
+                                .units
+                                .last_mut()
+                                .expect("plain appended the alias unit");
+                            debug_assert_eq!(unit.id, id);
+                            unit.publication = OutputPublication::Aliases;
+                            unit.stack_inputs.clear();
                         }
                         _ => return Err(super::invalid("invalid registered source shape")),
                     }

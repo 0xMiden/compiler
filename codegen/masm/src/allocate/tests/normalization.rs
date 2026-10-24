@@ -229,6 +229,7 @@ fn discard_plan(definition: &DiscardDefinition, live_after: &[BTreeSet<ValueId>]
         segment_actions: BTreeMap::from([(SegmentId(0), actions)]),
         edge_actions: BTreeMap::new(),
         spill_slots: slots.into_iter().collect(),
+        semantic_storage_reads: Default::default(),
         lowering_bindings: bindings,
     }
 }
@@ -359,6 +360,7 @@ fn canonical_slot_collision_preserves_both_inputs_through_verified_assembly() {
         segment_actions: BTreeMap::from([(SegmentId(0), actions)]),
         edge_actions: BTreeMap::new(),
         spill_slots: proposal.slot_requests.into_iter().collect(),
+        semantic_storage_reads: Default::default(),
         lowering_bindings: proposal.bindings,
     };
     let frame = fixture_frame(&plan);
@@ -638,6 +640,14 @@ fn raw_storage_expansion_resolves_symbolic_cells_and_rejects_buried_accesses() {
         4,
     )
     .unwrap();
+    for word in [0, 4, 255] {
+        assert_eq!(
+            expand_allocation_action(&PlanAction::SwapWord { word }, &frame)
+                .unwrap_err()
+                .category,
+            DiagnosticCategory::IllegalStackAccess
+        );
+    }
     assert_eq!(
         expand_allocation_action(&PlanAction::StoreLane(slot), &frame).unwrap(),
         Some(Instruction::LocStore(3.into()))

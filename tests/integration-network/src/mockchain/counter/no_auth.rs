@@ -105,8 +105,8 @@ pub fn counter_note_no_auth_increments_storage_without_signature() {
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
     // Pin authentication and note costs separately, including their generated initialization
     // and call setup.
-    expect!["2164"].assert_eq(auth_procedure_cycles(&tx_measurements));
-    expect!["9604"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["2132"].assert_eq(auth_procedure_cycles(&tx_measurements));
+    expect!["9368"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed
     assert_counter_storage(

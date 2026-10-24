@@ -39,6 +39,7 @@ pub(super) fn context(values: &BTreeMap<ValueId, SelectedValue>) -> AllocationCo
     };
     // Direct physical-state fixtures do not claim any graph-derived reconstruction eligibility.
     AllocationContext {
+        input_symmetries: BTreeMap::new(),
         values,
         next_use: &NO_NEXT_USES,
         options: Default::default(),
@@ -63,6 +64,7 @@ pub(super) fn state(stack: Vec<Atom>, slots: Vec<(SpillSlotId, Atom)>) -> Alloca
 }
 pub(super) fn unit(stack: Vec<Atom>, stored: Vec<StoredInput>) -> SelectedLowering {
     SelectedLowering {
+        publication: OutputPublication::Stack,
         address_results: vec![],
         id: SelectedStepId(0),
         kind: LoweringKind(0),
@@ -149,6 +151,12 @@ fn incremental_and_normalization_transfers_observe_the_same_old_sources_and_tail
                 PlanAction::Swap { depth } => {
                     assert!(depth < 16);
                     stack.swap(0, usize::from(depth));
+                }
+                PlanAction::SwapWord { word } => {
+                    assert!((1..=3).contains(&word));
+                    for lane in 0..4 {
+                        stack.swap(lane, usize::from(word) * 4 + lane);
+                    }
                 }
                 PlanAction::MoveUp { depth } => {
                     assert!(depth < 16);
@@ -354,9 +362,11 @@ fn simultaneous_slot_cycle_with_stack_readers_verifies_assembles_and_rejects_ove
             ),
         ]),
         edge_actions: BTreeMap::from([(EdgeId(0), proposal.actions)]),
+        semantic_storage_reads: Default::default(),
         lowering_bindings: BTreeMap::from([(
             SelectedStepId(0),
             LoweringBindings {
+                input_order: crate::plan::InputOrder::Canonical,
                 stored_inputs: BTreeMap::from([(StoredInputId(0), a), (StoredInputId(1), b)]),
                 scratch: BTreeMap::new(),
             },
@@ -739,6 +749,7 @@ fn reconstructed_edge_survives_empty_contract(alias: bool) {
         ]),
         edge_actions: BTreeMap::from([(EdgeId(0), transfer.actions)]),
         spill_slots: vec![],
+        semantic_storage_reads: Default::default(),
         lowering_bindings: bindings,
     };
     let frame = fixture_frame(&plan);

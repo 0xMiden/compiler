@@ -378,6 +378,27 @@ pub proc gte # [b_lo, b_hi, a_lo, a_hi]
     end
 end
 
+# Returns the signed minimum in little-endian limb order, preserving the deeper stack.
+# The comparison checks all four input lanes before either operand is discarded.
+pub proc min # [b_lo, b_hi, a_lo, a_hi]
+    dupw exec.lt # [a < b, b_lo, b_hi, a_lo, a_hi]
+    if.true
+        drop drop # [a_lo, a_hi]
+    else
+        movup.2 drop movup.2 drop # [b_lo, b_hi]
+    end
+end
+
+# Returns the signed maximum with the same checked input and stack contract as min.
+pub proc max # [b_lo, b_hi, a_lo, a_hi]
+    dupw exec.gt # [a > b, b_lo, b_hi, a_lo, a_hi]
+    if.true
+        drop drop # [a_lo, a_hi]
+    else
+        movup.2 drop movup.2 drop # [b_lo, b_hi]
+    end
+end
+
 # Compute 2^n, where `n` must be a non-negative i64 less than 63.
 pub proc pow2 # [n_lo, n_hi]
     u32assert2

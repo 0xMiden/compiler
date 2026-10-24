@@ -341,11 +341,20 @@ fn context_entry_owns_arbitrary_nonargument_lanes_and_returns_at_exact_depth() {
         });
         plan.segment_actions.insert(SegmentId(0), actions);
         let mut code = vec![AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0)))];
-        code.extend(context_result_cleanup(args as u8).unwrap().into_iter().map(|instruction| {
-            AnnotatedOp::Instruction {
+        // Entry cleanup is an explicit scalar allocation plan. Result cleanup is a separate
+        // lowering algorithm and may choose cheaper word operations for the same ABI effect.
+        code.extend(plan.segment_actions[&SegmentId(0)].iter().filter_map(|action| {
+            let instruction = match *action {
+                PlanAction::Swap { depth } => Primitive::Swap(depth).instruction().unwrap(),
+                PlanAction::MoveUp { depth } => Primitive::MoveUp(depth).instruction().unwrap(),
+                PlanAction::Drop => Instruction::Drop,
+                PlanAction::RunLowering { .. } => return None,
+                _ => unreachable!("fixture uses only scalar entry cleanup"),
+            };
+            Some(AnnotatedOp::Instruction {
                 instruction,
                 unit: SelectedStepId(u32::MAX),
-            }
+            })
         }));
         code.extend([
             AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
@@ -946,4 +955,75 @@ fn truncate_site_keeps_registered_boundary_restrictions() {
         }
     }
     context_truncation_is_forbidden_on_exec_return();
+}
+
+#[test]
+fn commutative_helper_projection_preserves_literal_obligations() {
+    let mut fixture = Fixture::new(2, 1);
+    fixture.proof.input_symmetry = InputSymmetry::CommutativePair {
+        lanes_per_operand: 1,
+    };
+    fixture.proof.calls.push(CallSite {
+        path: vec![],
+        instruction: invocation(Invocation::Exec),
+        abi: ProcedureAbi::new(CallingConvention::SameContext, 3, 1).unwrap(),
+        inputs: vec![
+            CallArgument::Exact(StoredValue::Atom(Fixture::input(0))),
+            CallArgument::Exact(StoredValue::Atom(Fixture::input(1))),
+            CallArgument::Exact(StoredValue::Literal(Felt::new_unchecked(7))),
+        ],
+        truncate: false,
+        outputs: vec![],
+        publications: vec![(Fixture::output(0), 0)],
+        selector: None,
+    });
+    let mut plan = fixture.plan();
+    plan.segment_actions
+        .get_mut(&SegmentId(0))
+        .unwrap()
+        .insert(0, PlanAction::Swap { depth: 1 });
+    plan.lowering_bindings.get_mut(&SelectedStepId(0)).unwrap().input_order = InputOrder::Reversed;
+    let make = |literal, exchange| {
+        let mut code = body(vec![
+            Primitive::Push(Felt::new_unchecked(literal)).instruction().unwrap(),
+            Instruction::MovDn2,
+            if exchange {
+                Instruction::Swap1
+            } else {
+                Instruction::Nop
+            },
+            invocation(Invocation::Exec),
+        ]);
+        code.ops_mut().insert(
+            1,
+            AnnotatedOp::Instruction {
+                instruction: Instruction::Swap1,
+                unit: SelectedStepId(u32::MAX),
+            },
+        );
+        code
+    };
+    verify(&plan, &fixture.frame(), make(7, false)).unwrap();
+    let mut wrong_target = make(7, false);
+    for op in wrong_target.ops_mut() {
+        if let AnnotatedOp::Instruction {
+            instruction: Instruction::Exec(_),
+            unit,
+        } = op
+        {
+            *op = AnnotatedOp::Instruction {
+                instruction: invocation(Invocation::Call),
+                unit: *unit,
+            };
+        }
+    }
+    let mut wrong_publication = make(7, false);
+    let end = wrong_publication.ops().len() - 2;
+    wrong_publication.ops_mut().splice(end..end, [inst(Instruction::Drop), push(7)]);
+    for wrong in [make(8, false), make(7, true), wrong_target, wrong_publication] {
+        assert_eq!(
+            verify(&plan, &fixture.frame(), wrong).unwrap_err().category,
+            DiagnosticCategory::AbiMismatch
+        );
+    }
 }

@@ -11,10 +11,12 @@ use midenc_hir::Report;
 use super::expand::{AnnotatedMasmBody, ExpansionEnv};
 use crate::{masm, plan::*};
 
-/// Physical locations assigned to one unit's non-stack inputs and declared scratch objects.
+/// Physical input order and locations assigned to one unit.
 /// The keys must match the selected declaration exactly; stored contents are checked separately.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct LoweringBindings {
+    /// Selected whole-operand order, checked against source permission before expansion/replay.
+    pub input_order: InputOrder,
     /// Spill slots holding inputs which the lowering loads rather than receives on the stack.
     pub stored_inputs: BTreeMap<StoredInputId, SpillSlotId>,
     /// Final allocations of declared scratch objects, including layout and lifetime.
@@ -45,6 +47,7 @@ impl LoweringBindings {
             })
             .collect::<Result<_, _>>()?;
         let resolved = Self {
+            input_order: self.input_order,
             stored_inputs: self.stored_inputs.clone(),
             scratch,
         };
@@ -197,6 +200,7 @@ fn selected(
         stack_inputs: stack.to_vec(),
         stored_inputs: stored.to_vec(),
         outputs: outputs.to_vec(),
+        publication: OutputPublication::Stack,
         address_results: alloc::vec![],
         effects: Default::default(),
         scratch: alloc::vec![],

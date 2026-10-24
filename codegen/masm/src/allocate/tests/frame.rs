@@ -521,3 +521,182 @@ fn descending_degree_precedes_stable_slot_order() {
     assert_eq!(frame.spills()[&slot(1)], 1);
     assert_eq!(frame.spills()[&slot(3)], 0);
 }
+
+/// A source is entirely in storage while a dead store precedes complete alias publication.
+/// The two-lane case later reloads only lane one, so lane zero has no physical read.
+fn spill_only_alias_plan(width: u8) -> ProcedurePlan {
+    let outputs: Vec<_> = (100..100 + u32::from(width)).collect();
+    let mut alias = request(0, &[], &outputs);
+    alias.kind = LoweringKind(1);
+    alias.semantic_inputs = vec![ValueId(0)];
+    alias.publication = OutputPublication::Aliases;
+    let mut units = vec![alias.clone()];
+    if width == 2 {
+        units.push(request(1, &[101], &[]));
+    }
+    let mut definition = source(
+        vec![segment(0, &[0], units)],
+        vec![edge(0, 0, None, EdgeKind::Return, &[])],
+        seq(vec![s(0), e(0)]),
+        0,
+    );
+    if width == 2 {
+        definition.0.values.get_mut(&ValueId(0)).unwrap().layout =
+            ValueLayout::new(midenc_hir::Type::U64).unwrap();
+        definition.0.abi = ProcedureAbi::new(CallingConvention::SameContext, 2, 0).unwrap();
+    }
+    for (lane, output) in outputs.iter().enumerate() {
+        definition.0.values.get_mut(&ValueId(*output)).unwrap().reconstruction =
+            Some(Reconstruction::Alias(vec![Atom::new(ValueId(0), lane as u8)]));
+    }
+    let mut plan = allocate(checked(&definition), &AllocationOptions::default()).unwrap();
+    let state = super::edges::state(
+        vec![],
+        (0..width)
+            .map(|lane| (slot(u32::from(lane)), Atom::new(ValueId(0), lane)))
+            .collect(),
+    );
+    let context = super::edges::context(&definition.0.values);
+    let reads = context.semantic_storage_reads(&state, &alias).unwrap();
+    assert_eq!(reads, (0..u32::from(width)).map(slot).collect::<Vec<_>>());
+    plan.semantic_storage_reads.insert(alias.id, reads);
+    plan.spill_slots = (0..=u32::from(width)).map(slot).collect();
+    plan.edge_actions.insert(EdgeId(0), vec![]);
+    let mut actions: Vec<_> =
+        (0..u32::from(width)).map(|id| PlanAction::StoreLane(slot(id))).collect();
+    actions.extend([
+        PlanAction::PushLiteral(miden_core::Felt::ZERO),
+        PlanAction::StoreLane(slot(u32::from(width))),
+        PlanAction::RunLowering { step: alias.id },
+    ]);
+    if width == 2 {
+        actions.extend([
+            PlanAction::LoadLane(slot(1)),
+            PlanAction::RunLowering {
+                step: SelectedStepId(1),
+            },
+        ]);
+    }
+    plan.segment_actions.insert(SegmentId(0), actions);
+    plan
+}
+
+#[test]
+fn alias_publication_preserves_spill_only_source() {
+    for width in [1, 2] {
+        let mut plan = spill_only_alias_plan(width);
+        let distinct = FinalFrameLayout::new(
+            SourceLocalLayout::default(),
+            plan.spill_slots
+                .iter()
+                .enumerate()
+                .map(|(offset, slot)| (*slot, offset as u32))
+                .collect(),
+            BTreeMap::new(),
+            4,
+        )
+        .unwrap();
+        verify(&plan, &distinct, body(&plan, &distinct)).unwrap();
+        let frame = assign(&plan);
+        for id in 0..u32::from(width) {
+            assert_ne!(frame.spills()[&slot(id)], frame.spills()[&slot(u32::from(width))]);
+        }
+        verify(&plan, &frame, body(&plan, &frame)).unwrap();
+        // Allocation metadata cannot authorize overwritten raw representations.
+        let collision = FinalFrameLayout::new(
+            SourceLocalLayout::default(),
+            plan.spill_slots
+                .iter()
+                .enumerate()
+                .map(|(offset, slot)| {
+                    (
+                        *slot,
+                        if offset == usize::from(width) {
+                            0
+                        } else {
+                            offset as u32
+                        },
+                    )
+                })
+                .collect(),
+            BTreeMap::new(),
+            4,
+        )
+        .unwrap();
+        assert_eq!(
+            verify(&plan, &collision, body(&plan, &collision)).unwrap_err().category,
+            DiagnosticCategory::UnavailableValue,
+        );
+        plan.semantic_storage_reads.clear();
+        assert_eq!(
+            verify(&plan, &collision, body(&plan, &collision)).unwrap_err().category,
+            DiagnosticCategory::UnavailableValue,
+        );
+        plan.semantic_storage_reads
+            .insert(SelectedStepId(0), vec![slot(u32::from(width))]);
+        assert_eq!(
+            verify(&plan, &collision, body(&plan, &collision)).unwrap_err().category,
+            DiagnosticCategory::UnavailableValue,
+        );
+    }
+}
+
+#[test]
+fn allocation_freezes_semantic_reads_after_preparation() {
+    use crate::allocate::schedule::SchedulingTier;
+    let mut alias = request(1, &[], &[100]);
+    alias.kind = LoweringKind(1);
+    alias.semantic_inputs = vec![ValueId(0)];
+    alias.publication = OutputPublication::Aliases;
+    let mut definition = source(
+        vec![segment(0, &[0, 1], vec![request(0, &[1], &[]), alias])],
+        vec![edge(0, 0, None, EdgeKind::Return, &[(100, 100)])],
+        seq(vec![s(0), e(0)]),
+        1,
+    );
+    definition.0.values.get_mut(&ValueId(100)).unwrap().reconstruction =
+        Some(Reconstruction::Alias(vec![a(0)]));
+    let options = AllocationOptions {
+        force_tier: Some(SchedulingTier::Normalization),
+        ..Default::default()
+    };
+    let mut plan = allocate(checked(&definition), &options).unwrap();
+    assert_eq!(
+        plan.semantic_storage_reads[&SelectedStepId(1)],
+        vec![SpillSlotId::canonical(a(0))]
+    );
+    assert!(!plan.semantic_storage_reads.contains_key(&SelectedStepId(0)));
+    let frame = assign(&plan);
+    resolve_frame_bindings(&mut plan, &frame).unwrap();
+    verify(&plan, &frame, body(&plan, &frame)).unwrap();
+}
+
+#[test]
+fn semantic_reads_reuse_resident_literals_and_checked_equal_backing() {
+    use super::edges::{context, state, values};
+    let mut values = values(4);
+    values.get_mut(&ValueId(2)).unwrap().reconstruction = Some(Reconstruction::Alias(vec![a(1)]));
+    values.get_mut(&ValueId(3)).unwrap().reconstruction =
+        Some(Reconstruction::Literal(vec![miden_core::Felt::ONE]));
+    let context = context(&values);
+    let mut state = state(vec![a(0)], vec![(slot(0), a(1)), (slot(1), a(1)), (slot(2), a(0))]);
+    state.available_values.extend([ValueId(2), ValueId(3)]);
+    state.aliases = LaneAliases::new(vec![(a(0), a(1))]);
+    let unit = request(0, &[2, 3], &[]);
+    assert!(context.semantic_storage_reads(&state, &unit).unwrap().is_empty());
+    state.stack.clear();
+    assert_eq!(context.semantic_storage_reads(&state, &unit).unwrap(), vec![slot(0)]);
+    state.slots.clear();
+    assert!(context.semantic_storage_reads(&state, &unit).is_err());
+}
+
+#[test]
+fn semantic_reads_reject_undeclared_backing_slots() {
+    let mut plan = spill_only_alias_plan(1);
+    plan.semantic_storage_reads.insert(SelectedStepId(0), vec![slot(99)]);
+    let error = assign_frame(&plan, &SourceLocalLayout::default()).unwrap_err();
+    let crate::allocate::state::AllocationError::Invariant(error) = error else {
+        panic!("frame diagnostic")
+    };
+    assert!(error.message.contains("undeclared scalar slot"));
+}

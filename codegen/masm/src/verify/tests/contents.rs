@@ -117,11 +117,13 @@ fn fixture() -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
         segment_actions,
         edge_actions: BTreeMap::new(),
         spill_slots: vec![],
+        semantic_storage_reads: Default::default(),
         lowering_bindings: (0..3)
             .map(|index| {
                 (
                     SelectedStepId(index),
                     LoweringBindings {
+                        input_order: crate::plan::InputOrder::Canonical,
                         stored_inputs: BTreeMap::new(),
                         scratch: BTreeMap::from([(ScratchId(0), allocation)]),
                     },
@@ -252,6 +254,7 @@ impl GeneratedDefinition for ContentLoop {
             content: ContentRequirement::Content(ContentId(id)),
         };
         let init = SelectedLowering {
+            publication: OutputPublication::Stack,
             address_results: vec![],
             id: SelectedStepId(2),
             kind: LoweringKind(0),
@@ -369,6 +372,7 @@ fn content_loop(
         plan.lowering_bindings.insert(
             SelectedStepId(step),
             LoweringBindings {
+                input_order: crate::plan::InputOrder::Canonical,
                 stored_inputs: BTreeMap::new(),
                 scratch: BTreeMap::from([(ScratchId(0), allocation)]),
             },

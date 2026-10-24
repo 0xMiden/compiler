@@ -11,6 +11,7 @@ use super::{actions::*, *};
 impl SelectedLowering {
     fn fixture(kind: LoweringKind, source: SourceStepId) -> Self {
         Self {
+            publication: OutputPublication::Stack,
             address_results: Vec::new(),
             id: SelectedStepId(source.0),
             kind,
@@ -35,6 +36,7 @@ impl ProcedurePlan {
             segment_actions: BTreeMap::from([(SegmentId(0), actions)]),
             edge_actions: BTreeMap::new(),
             spill_slots: Vec::new(),
+            semantic_storage_reads: Default::default(),
             lowering_bindings: BTreeMap::new(),
         }
     }

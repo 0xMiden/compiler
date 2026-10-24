@@ -39,6 +39,7 @@ impl GeneratedDefinition for LoopDefinition {
             );
         }
         let unit = |step, input, outputs: Vec<u32>| SelectedLowering {
+            publication: OutputPublication::Stack,
             address_results: vec![],
             id: SelectedStepId(step),
             kind: LoweringKind(0),
@@ -217,6 +218,7 @@ pub(in crate::verify) fn loop_fixture(
             (EdgeId(2), if repair { store } else { vec![] }),
         ]),
         spill_slots: vec![slot],
+        semantic_storage_reads: Default::default(),
         lowering_bindings: BTreeMap::from([
             (SelectedStepId(0), LoweringBindings::default()),
             (SelectedStepId(1), LoweringBindings::default()),
@@ -576,6 +578,7 @@ impl GeneratedDefinition for HeaderDefinition {
             );
         }
         evidence.program.segments[1].units.push(SelectedLowering {
+            publication: OutputPublication::Stack,
             address_results: vec![],
             id: SelectedStepId(2),
             kind: LoweringKind(0),
@@ -652,6 +655,7 @@ fn header_fixture() -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
     plan.lowering_bindings.insert(
         SelectedStepId(2),
         LoweringBindings {
+            input_order: crate::plan::InputOrder::Canonical,
             stored_inputs: BTreeMap::new(),
             scratch: BTreeMap::from([(ScratchId(0), allocation)]),
         },

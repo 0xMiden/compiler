@@ -860,3 +860,29 @@ fn physically_valid_arithmetic_mutation_needs_execution() -> Result<(), Report> 
     assert!(error.to_string().contains("assertion"), "{error}");
     Ok(())
 }
+
+#[test]
+fn expansion_rejects_unapproved_operand_reversal() {
+    let source = Source {
+        case: Case::Memmove,
+        live: vec![],
+    };
+    let (mut plan, frame, body) = ready(&source, &AllocationOptions::default());
+    verify::verify(&plan, &frame, body.clone()).unwrap();
+    plan.lowering_bindings.get_mut(&SelectedStepId(0)).unwrap().input_order = InputOrder::Reversed;
+    let definition = source.definition();
+    let mut registry = LoweringRegistry::default();
+    registry.register(definition.as_ref()).unwrap();
+    assert_eq!(
+        expand_procedure(&plan, &frame, &registry, &ExpansionEnv::default())
+            .unwrap_err()
+            .downcast_ref::<PlanError>()
+            .unwrap()
+            .category,
+        DiagnosticCategory::InvalidSelectedLowering
+    );
+    assert_eq!(
+        verify::verify(&plan, &frame, body).unwrap_err().category,
+        DiagnosticCategory::InvalidSelectedLowering
+    );
+}

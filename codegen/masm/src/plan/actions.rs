@@ -16,15 +16,30 @@ use crate::lower::units::LoweringBindings;
 /// nonsemantic source-location anchor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PlanAction {
-    Dup { depth: u8 },
-    Swap { depth: u8 },
-    MoveUp { depth: u8 },
-    MoveDown { depth: u8 },
+    Dup {
+        depth: u8,
+    },
+    Swap {
+        depth: u8,
+    },
+    /// Exchange the top four lanes with word 1, 2 or 3, preserving limb order.
+    /// Both complete words must be owned and within the addressable sixteen-lane window.
+    SwapWord {
+        word: u8,
+    },
+    MoveUp {
+        depth: u8,
+    },
+    MoveDown {
+        depth: u8,
+    },
     Drop,
     PushLiteral(Felt),
     StoreLane(SpillSlotId),
     LoadLane(SpillSlotId),
-    RunLowering { step: SelectedStepId },
+    RunLowering {
+        step: SelectedStepId,
+    },
     DebugLocation(DebugLocationId),
 }
 impl fmt::Display for PlanAction {
@@ -32,6 +47,7 @@ impl fmt::Display for PlanAction {
         match self {
             Self::Dup { depth } => write!(f, "dup {depth}"),
             Self::Swap { depth } => write!(f, "swap {depth}"),
+            Self::SwapWord { word } => write!(f, "swapw {word}"),
             Self::MoveUp { depth } => write!(f, "movup {depth}"),
             Self::MoveDown { depth } => write!(f, "movdn {depth}"),
             Self::Drop => f.write_str("drop"),
@@ -61,7 +77,11 @@ pub(crate) struct ProcedurePlan {
     pub edge_actions: BTreeMap<EdgeId, Vec<PlanAction>>,
     /// Complete symbolic slot domain to be assigned by the final frame layout.
     pub spill_slots: Vec<SpillSlotId>,
-    /// Storage choices supplied to expansion for each selected unit.
+    /// Sorted unique backing cells needed by semantic inputs at each prepared unit boundary.
+    /// These allocation facts extend storage lifetimes without emitting loads or granting
+    /// verification authority. Equal resident lanes and literals need no backing read.
+    pub semantic_storage_reads: BTreeMap<SelectedStepId, Vec<SpillSlotId>>,
+    /// Physical input order and storage choices supplied to expansion for each selected unit.
     pub lowering_bindings: BTreeMap<SelectedStepId, LoweringBindings>,
 }
 impl fmt::Display for ProcedurePlan {
@@ -94,6 +114,9 @@ impl fmt::Display for ProcedurePlan {
             }
             for unit in &segment.units {
                 writeln!(f, "  unit s{} kind={} source={}", unit.id.0, unit.kind.0, unit.source.0)?;
+                if let Some(reads) = self.semantic_storage_reads.get(&unit.id) {
+                    writeln!(f, "    semantic-storage-reads={reads:?}")?;
+                }
                 if let Some(decision) = self.decisions.preparations.get(&unit.id) {
                     writeln!(f, "    tier={:?} victims={:?}", decision.tier, decision.victims)?;
                 }

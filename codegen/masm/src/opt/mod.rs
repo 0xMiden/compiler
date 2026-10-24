@@ -1,3 +1,4 @@
+pub(crate) mod cost;
 pub mod operands;
 pub mod peephole;
 

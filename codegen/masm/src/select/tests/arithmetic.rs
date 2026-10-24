@@ -4,6 +4,120 @@ use midenc_hir::Value;
 
 use super::*;
 
+fn signed_minmax_cases(ty: &str, width: usize, op: &str) {
+    let (min, max) = if width == 1 {
+        (i32::MIN as i64, i32::MAX as i64)
+    } else {
+        (i64::MIN, i64::MAX)
+    };
+    let limbs = |value: i64| {
+        (0..width)
+            .map(|lane| (((value as u64) >> (lane * 32)) as u32) as usize)
+            .collect::<Vec<_>>()
+    };
+    let mut cases = vec![(min, max), (min, -1), (-7, -3), (-1, 0), (0, 0), (7, 7), (3, 5)];
+    if width == 2 {
+        cases.extend([
+            (0x12345678_abcdef01, 0x12345678_abcdef02),
+            (-0x12345678_abcdef01, -0x12345679_01234567),
+        ]);
+    }
+    for reverse in [false, true] {
+        let args = if reverse { "%b,%a" } else { "%a,%b" };
+        let f = parse(&format!(
+            "builtin.function public extern(\"C\") @f(%a:{ty},%b:{ty}) -> ({ty},{ty}) {{              %r=arith.{op} {args}; builtin.ret %r,%a : ({ty},{ty}); }};"
+        ));
+        for &(a, b) in &cases {
+            for (a, b) in [(a, b), (b, a)] {
+                let mut inputs = limbs(a);
+                inputs.extend(limbs(b));
+                let mut expected = limbs(if op == "min" { a.min(b) } else { a.max(b) });
+                expected.extend(limbs(a));
+                execute_linked(&f, &inputs, &expected);
+            }
+        }
+    }
+}
+
+#[test]
+fn signed_i32_min_preserves_values_and_suffix() {
+    signed_minmax_cases("i32", 1, "min");
+}
+
+#[test]
+fn signed_i32_max_preserves_values_and_suffix() {
+    signed_minmax_cases("i32", 1, "max");
+}
+
+#[test]
+fn signed_i64_min_preserves_values_and_suffix() {
+    signed_minmax_cases("i64", 2, "min");
+}
+
+#[test]
+fn signed_i64_max_preserves_values_and_suffix() {
+    signed_minmax_cases("i64", 2, "max");
+}
+
+/// Execute only the generated arithmetic and stack cleanup, so expected source traps cannot
+/// be confused with assertions made by the result oracle.
+fn arithmetic_runtime_result(
+    f: &Parsed,
+    inputs: &[usize],
+) -> Result<(), miden_processor::ExecutionError> {
+    let procedure = selected_procedure(f, &SelectEnv::default());
+    let core = midenc_session::LinkLibrary::core().load(&f.context.session().options).unwrap();
+    let intrinsics = crate::intrinsics::load(f.context.session()).unwrap();
+    let suffix = (900..920).collect::<Vec<_>>();
+    let code = format!(
+        "{procedure} begin {} {} exec.selected exec.::miden::core::sys::truncate_stack end",
+        crate::plan::tests::lowering_units::push_top(&suffix),
+        crate::plan::tests::lowering_units::push_top(inputs)
+    );
+    let mut assembler = miden_assembly::Assembler::default();
+    assembler.link_package(core.clone(), miden_assembly::Linkage::Dynamic).unwrap();
+    assembler
+        .link_package(intrinsics.clone(), miden_assembly::Linkage::Dynamic)
+        .unwrap();
+    let program = assembler
+        .assemble_program("arithmetic_trap_probe", code)
+        .unwrap()
+        .try_into_program()
+        .unwrap();
+    let mut host = crate::plan::tests::lowering_units::host();
+    host.load_library(miden_processor::HostLibrary::from(core)).unwrap();
+    host.load_library(miden_processor::HostLibrary::from(intrinsics)).unwrap();
+    miden_processor::FastProcessor::new(miden_processor::StackInputs::default())
+        .execute_sync(&program, &mut host)
+        .map(|_| ())
+}
+
+#[test]
+fn signed_minmax_rejects_each_invalid_limb() {
+    for (ty, width) in [("i32", 1), ("i64", 2)] {
+        for op in ["min", "max"] {
+            let f = parse(&format!(
+                "builtin.function public extern(\"C\") @f(%a:{ty},%b:{ty}) -> {ty} {{                  %r=arith.{op} %a,%b; builtin.ret %r : ({ty}); }};"
+            ));
+            for lane in 0..2 * width {
+                let mut inputs = vec![0; 2 * width];
+                inputs[lane] = u32::MAX as usize + 1;
+                let error = arithmetic_runtime_result(&f, &inputs).unwrap_err();
+                assert!(
+                    matches!(
+                        error,
+                        miden_processor::ExecutionError::OperationError {
+                            err: miden_processor::operation::OperationError::NotU32Values { .. },
+                            ..
+                        }
+                    ),
+                    "{ty}/{op}/lane {lane}: {error}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn registered_arithmetic_selects_real_source_and_preserves_suffix() {
     let f = parse(
@@ -11,6 +125,258 @@ fn registered_arithmetic_selects_real_source_and_preserves_suffix() {
          %a, %b <{ overflow = #builtin.overflow<wrapping> }>;\nbuiltin.ret %r : (u32); };",
     );
     execute(&f, &SelectEnv::default(), &[17, 29], &[46]);
+}
+
+#[test]
+fn commutative_whole_values_use_resident_operand_order() {
+    for ty in ["felt", "u32", "u64", "u128"] {
+        let f = parse(&format!(
+            "builtin.function public extern(\"C\") @f(%a: {ty}, %b: {ty}) -> {ty} {{ %r = \
+             arith.add %a, %b <{{ overflow = #builtin.overflow<wrapping> }}>; builtin.ret %r : \
+             ({ty}); }};"
+        ));
+        let (plan, frame, body) = ready(&f, &SelectEnv::default());
+        let actions = plan.segment_actions.values().next().unwrap();
+        assert_eq!(plan.lowering_bindings[&SelectedStepId(0)].input_order, InputOrder::Reversed);
+        assert!(
+            matches!(actions.first(), Some(crate::plan::actions::PlanAction::RunLowering { .. })),
+            "{ty}: resident complete operands need no preparation: {actions:?}"
+        );
+        verify::verify(&plan, &frame, body).unwrap();
+    }
+}
+
+#[test]
+fn commutative_unsigned_arithmetic_preserves_all_modes_and_live_sources() {
+    fn limbs(value: u128, width: usize) -> Vec<usize> {
+        (0..width).map(|lane| ((value >> (32 * lane)) as u32) as usize).collect()
+    }
+    for (ty, width) in [("u32", 1), ("u64", 2), ("u128", 4)] {
+        let mask = if width == 4 {
+            u128::MAX
+        } else {
+            (1u128 << (width * 32)) - 1
+        };
+        let distinct = 0x12345678_9abcdef0_10203040_50607080u128 & mask;
+        for op in ["add", "mul"] {
+            for mode in ["unchecked", "wrapping", "checked", "overflowing"] {
+                for reverse in [false, true] {
+                    let args = if reverse { "%b,%a" } else { "%a,%b" };
+                    let (operation, property, result, tuple) = if mode == "overflowing" {
+                        (format!("{op}_overflowing"), String::new(), "%flag,%r", format!("i1,{ty}"))
+                    } else {
+                        (
+                            op.into(),
+                            format!(" <{{ overflow=#builtin.overflow<{mode}> }}>"),
+                            "%r",
+                            ty.into(),
+                        )
+                    };
+                    let f = parse(&format!(
+                        "builtin.function public extern(\"C\") @f(%a:{ty},%b:{ty}) -> \
+                         ({tuple},{ty}) {{ {result}=arith.{operation} {args}{property}; \
+                         builtin.ret {result},%a : ({tuple},{ty}); }};"
+                    ));
+                    for (a, b) in [(3, distinct), (mask, 1), (mask, mask), (u32::MAX as u128, 2)] {
+                        let (raw, carry) = if op == "add" {
+                            a.overflowing_add(b)
+                        } else {
+                            a.overflowing_mul(b)
+                        };
+                        let overflow = carry || raw > mask;
+                        // Unchecked arithmetic requires the caller to keep the result in range.
+                        if mode == "unchecked" && overflow {
+                            continue;
+                        }
+                        let mut inputs = limbs(a, width);
+                        inputs.extend(limbs(b, width));
+                        let mut expected = Vec::new();
+                        if mode == "overflowing" {
+                            expected.push(usize::from(overflow));
+                        }
+                        expected.extend(limbs(raw & mask, width));
+                        expected.extend(limbs(a, width));
+                        if mode == "checked" && overflow {
+                            let error = arithmetic_runtime_result(&f, &inputs).unwrap_err();
+                            let expected_trap = match &error {
+                                miden_processor::ExecutionError::OperationError { err, .. } => match err {
+                                    miden_processor::operation::OperationError::NotU32Values { values } if width == 1 => {
+                                        values.as_slice() == [miden_core::Felt::new_unchecked(raw as u64)]
+                                    }
+                                    miden_processor::operation::OperationError::FailedAssertion { .. } => width > 1,
+                                    _ => false,
+                                },
+                                _ => false,
+                            };
+                            assert!(expected_trap, "{ty}/{op}/{mode}/{reverse}: {error}");
+                        } else {
+                            execute_linked_memory(&f, &inputs, &expected, "", "").unwrap_or_else(
+                                |error| panic!("{ty}/{op}/{mode}/{reverse}: {error}"),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn commutative_comparisons_and_bitwise_helpers_preserve_each_limb() {
+    for (ty, width) in [("u32", 1), ("u64", 2), ("u128", 4)] {
+        let mask = if width == 4 {
+            u128::MAX
+        } else {
+            (1u128 << (width * 32)) - 1
+        };
+        let a = 0x01234567_89abcdef_fedcba98_76543210u128 & mask;
+        let b = 0x89abcdef_10203040_abcdef01_20304050u128 & mask;
+        for op in ["band", "bor", "bxor", "eq", "neq", "min", "max"] {
+            if width == 4 && matches!(op, "min" | "max") {
+                continue;
+            }
+            let comparison = matches!(op, "eq" | "neq");
+            let result_ty = if comparison { "i1" } else { ty };
+            for reverse in [false, true] {
+                let args = if reverse { "%b,%a" } else { "%a,%b" };
+                let f = parse(&format!(
+                    "builtin.function public extern(\"C\") @f(%a:{ty},%b:{ty}) -> {result_ty} {{ \
+                     %r=arith.{op} {args}; builtin.ret %r : ({result_ty}); }};"
+                ));
+                for b in [a, b] {
+                    let expected = match op {
+                        "band" => a & b,
+                        "bor" => a | b,
+                        "bxor" => a ^ b,
+                        "eq" => u128::from(a == b),
+                        "neq" => u128::from(a != b),
+                        "min" => a.min(b),
+                        "max" => a.max(b),
+                        _ => unreachable!(),
+                    };
+                    let inputs = [a, b]
+                        .into_iter()
+                        .flat_map(|value| {
+                            (0..width).map(move |lane| ((value >> (32 * lane)) as u32) as usize)
+                        })
+                        .collect::<Vec<_>>();
+                    let output = (0..if comparison { 1 } else { width })
+                        .map(|lane| ((expected >> (32 * lane)) as u32) as usize)
+                        .collect::<Vec<_>>();
+                    execute_linked(&f, &inputs, &output);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn commutative_narrow_signed_and_boolean_sources_are_explicit() {
+    for (ty, operations, a, b) in [
+        ("i1", &["and", "or", "xor", "eq", "neq"][..], 0, 1),
+        ("i8", &["band", "bor", "bxor", "eq", "neq"][..], 3, 5),
+        ("u8", &["band", "bor", "bxor", "min", "max"][..], 3, 5),
+        ("i16", &["band", "bor", "bxor", "eq", "neq"][..], 3, 5),
+        ("u16", &["band", "bor", "bxor", "min", "max"][..], 3, 5),
+        ("i32", &["band", "bor", "bxor", "min", "max"][..], 3, 5),
+    ] {
+        for op in operations {
+            let result_ty = if matches!(*op, "eq" | "neq") {
+                "i1"
+            } else {
+                ty
+            };
+            let f = parse(&format!(
+                "builtin.function public extern(\"C\") @f(%a:{ty},%b:{ty}) -> {result_ty} {{ \
+                 %r=arith.{op} %a,%b; builtin.ret %r : ({result_ty}); }};"
+            ));
+            assert_eq!(
+                checked(&f, &SelectEnv::default()).input_symmetry(SelectedStepId(0)).unwrap(),
+                InputSymmetry::CommutativePair {
+                    lanes_per_operand: 1
+                }
+            );
+            let expected = match *op {
+                "and" | "band" => a & b,
+                "or" | "bor" => a | b,
+                "xor" | "bxor" => a ^ b,
+                "eq" => usize::from(a == b),
+                "neq" => usize::from(a != b),
+                "min" => a.min(b),
+                "max" => a.max(b),
+                _ => unreachable!(),
+            };
+            execute_linked(&f, &[a, b], &[expected]);
+        }
+    }
+    for (ty, width) in [("i32", 1), ("i64", 2), ("i128", 4)] {
+        let negative = (0..width)
+            .map(|lane| {
+                if lane == 0 {
+                    u32::MAX as usize - 2
+                } else {
+                    u32::MAX as usize
+                }
+            })
+            .collect::<Vec<_>>();
+        for (op, expected_low) in [("add", 4), ("mul", u32::MAX as usize - 20)] {
+            let f = parse(&format!(
+                "builtin.function public extern(\"C\") @f(%a:{ty},%b:{ty}) -> {ty} {{ \
+                 %r=arith.{op} %a,%b <{{ overflow=#builtin.overflow<checked> }}>; builtin.ret %r \
+                 : ({ty}); }};"
+            ));
+            let mut inputs = negative.clone();
+            inputs.push(7);
+            inputs.extend(core::iter::repeat_n(0, width - 1));
+            let mut expected = vec![expected_low];
+            expected.extend(core::iter::repeat_n(
+                if op == "add" { 0 } else { u32::MAX as usize },
+                width - 1,
+            ));
+            execute_linked(&f, &inputs, &expected);
+        }
+    }
+}
+
+#[test]
+fn commutative_helper_projection_rejects_each_corrupted_u128_call() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @f(%a:u128,%b:u128) -> u128 { %r=arith.bxor %a,%b; \
+         builtin.ret %r : (u128); };",
+    );
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    verify::verify(&plan, &frame, body.clone()).unwrap();
+    let calls = body
+        .ops()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, op)| match op {
+            AnnotatedOp::Instruction {
+                instruction: crate::masm::Instruction::Exec(_),
+                unit,
+            } => Some((index, *unit)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(calls.len(), 2);
+    for (site, unit) in calls {
+        let mut wrong = body.clone();
+        wrong.ops_mut().insert(
+            site,
+            AnnotatedOp::Instruction {
+                instruction: crate::masm::Instruction::Swap1,
+                unit,
+            },
+        );
+        assert_eq!(
+            verify::verify(&plan, &frame, wrong).unwrap_err().category,
+            DiagnosticCategory::AbiMismatch
+        );
+    }
+    let mut wrong = plan.clone();
+    wrong.lowering_bindings.get_mut(&SelectedStepId(0)).unwrap().input_order =
+        InputOrder::Canonical;
+    assert!(verify::verify(&wrong, &frame, body).is_err());
 }
 
 #[test]
@@ -409,6 +775,8 @@ fn arithmetic_widths_and_overflow_modes_have_complete_selected_contracts() {
                      {results}={operation} %a,%b{property}; builtin.ret; }};"
                 ));
                 let (plan, frame, body) = ready(&f, &SelectEnv::default());
+                let symmetry = plan.selected.input_symmetry(SelectedStepId(0)).unwrap();
+                assert_eq!(symmetry == InputSymmetry::Ordered, op == "sub", "{ty}/{op}/{mode}");
                 verify::verify(&plan, &frame, body)
                     .unwrap_or_else(|e| panic!("{ty}/{op}/{mode}: {e}"));
             }
@@ -777,4 +1145,52 @@ fn pointer_constant_outer_space_mismatch_is_rejected() {
         .borrow_mut()
         .set_type(midenc_hir::PointerType::new(midenc_hir::Type::U32).into());
     assert_malformed_source_rejected(&f, &SelectEnv::default());
+}
+
+#[test]
+fn commutative_repeated_operands_and_downstream_names_execute() {
+    for (ty, width) in [("u32", 1), ("u64", 2), ("u128", 4)] {
+        for repeated in [false, true] {
+            let rhs = if repeated { "%a" } else { "%b" };
+            let f = parse(&format!(
+                        "builtin.function public extern(\"C\") @f(%a:{ty},%b:{ty}) -> ({ty},{ty}) \
+                         {{                  %sum=arith.add %a,{rhs} <{{ \
+                         overflow=#builtin.overflow<wrapping> }}>;                  \
+                         %difference=arith.sub %sum,%a <{{ overflow=#builtin.overflow<wrapping> \
+                         }}>;                  builtin.ret %difference,%a : ({ty},{ty}); }};"
+                    ));
+            let a = [0x12345678, 0xabcdef01, 0x10203040, 0x55667788];
+            let b = [0x98765432, 0x13579bdf, 0x90807060, 0x11223344];
+            let mut inputs = a[..width].to_vec();
+            inputs.extend(&b[..width]);
+            let mut expected = if repeated {
+                a[..width].to_vec()
+            } else {
+                b[..width].to_vec()
+            };
+            expected.extend(&a[..width]);
+            execute_linked(&f, &inputs, &expected);
+        }
+    }
+}
+
+#[test]
+fn pointer_equality_remains_outside_the_hir_operand_domain() {
+    for ty in ["ptr<u8, byte>", "ptr<u8, element>"] {
+        for op in ["eq", "neq"] {
+            let text = format!(
+                "builtin.function public extern(\"C\") @f(%a:{ty},%b:{ty}) -> i1 {{                  %r=arith.{op} %a,%b; builtin.ret %r : (i1); }};"
+            );
+            let result = midenc_hir::parse::parse_any(
+                midenc_hir::parse::ParserConfig {
+                    context: Rc::new(Context::default()),
+                    verify: true,
+                },
+                Uri::new("pointer_equality.hir"),
+                &text,
+            );
+            let error = result.unwrap_err();
+            assert!(error.to_string().contains("expected an integral type"), "{error}");
+        }
+    }
 }

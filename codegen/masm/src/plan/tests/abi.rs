@@ -6,6 +6,88 @@ use midenc_hir::Report;
 use super::effects::run_program;
 use crate::plan::*;
 
+fn padding_text(width: u8) -> String {
+    crate::lower::raw::pad_inputs(width as usize, Default::default())
+        .iter()
+        .map(|op| match op {
+            crate::masm::Op::Inst(instruction) => format!("{}", instruction.inner()),
+            _ => panic!("padding must be straight-line stack instructions"),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn cleanup_text(width: u8) -> String {
+    context_result_cleanup(width)
+        .unwrap()
+        .iter()
+        .map(|i| format!("{i}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[test]
+fn context_window_construction_uses_fewer_vm_operations() -> Result<(), Report> {
+    use crate::opt::cost::tests::assembled_cost;
+
+    for width in 0..=16 {
+        // The old construction inserts/removes one lane at a time. Deep moves expand to four
+        // operations, so a shorter textual alternative is not necessarily an improvement.
+        let baseline = (16 - width) as usize
+            * match width {
+                0 => 1,
+                1..=8 => 2,
+                _ => 5,
+            };
+        for body in [padding_text(width), cleanup_text(width)] {
+            let cost = assembled_cost(if body.is_empty() { "nop" } else { &body })?;
+            assert!(cost <= baseline, "width={width}: {cost} > {baseline}");
+            if let Some(expected) = match width {
+                1 => Some(19),
+                4 => Some(15),
+                8 => Some(12),
+                _ => None,
+            } {
+                assert_eq!(cost, expected, "width={width}: {body}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn context_window_construction_preserves_floor_and_deep_suffix() -> Result<(), Report> {
+    let initial = (101..117).map(Felt::new_unchecked).collect::<Vec<_>>();
+    for width in 0..=16 {
+        let mut expected = initial[..width as usize].to_vec();
+        expected.resize(16, Felt::ZERO);
+        assert_eq!(
+            run_program(&format!("begin {} nop end", cleanup_text(width)), &initial)?,
+            expected
+        );
+
+        for suffix in [0, 7, 40] {
+            let lanes = (0..width as usize + suffix).map(|i| 1001 + i).collect::<Vec<_>>();
+            let pushes =
+                lanes.iter().rev().map(|v| format!("push.{v}")).collect::<Vec<_>>().join(" ");
+            let checks = lanes[..width as usize]
+                .iter()
+                .copied()
+                .chain(core::iter::repeat_n(0, 16 - width as usize))
+                .chain(lanes[width as usize..].iter().copied())
+                .map(|v| format!("push.{v} assert_eq"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert_eq!(
+                run_program(&format!("begin {pushes} {} {checks} end", padding_text(width)), &[])?,
+                [Felt::ZERO; 16],
+                "width={width} suffix={suffix}"
+            );
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn abi_families_fail_closed_and_syscall_keeps_kernel_root_memory() {
     for invocation in [Invocation::Call, Invocation::DynCall, Invocation::SysCall] {

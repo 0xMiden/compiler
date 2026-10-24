@@ -64,7 +64,8 @@ impl Default for AllocationOptions {
 /// Establish the unit's top-first input prefix and protected stored-input bindings.
 ///
 /// Each strategy owns its trial, including fresh identities and storage requests. The
-/// first valid optimized result wins; refusal or failure falls through to normalization
+/// first valid optimized result for each permitted order wins; orders compete by expanded cost,
+/// with canonical order winning ties. Refusal or failure falls through to normalization
 /// from the original state. No actions are committed and the lowering itself is not run.
 /// `live_after` is semantic demand after normal completion, including all lanes of values.
 pub(crate) fn prepare_unit(
@@ -73,8 +74,56 @@ pub(crate) fn prepare_unit(
     live_after: &BTreeSet<ValueId>,
     context: &AllocationContext<'_>,
 ) -> Result<Preparation, AllocationError> {
+    let canonical = prepare_order(state, unit, live_after, context);
+    let Some(symmetry) = context.input_symmetries.get(&unit.id) else {
+        return canonical;
+    };
+    let mut reversed_unit = unit.clone();
+    reversed_unit.stack_inputs =
+        symmetry.ordered_inputs(&unit.stack_inputs, InputOrder::Reversed)?.into_owned();
+    let reversed =
+        prepare_order(state, &reversed_unit, live_after, context).map(|mut preparation| {
+            preparation
+                .bindings
+                .get_mut(&unit.id)
+                .expect("prepared unit has bindings")
+                .input_order = InputOrder::Reversed;
+            preparation
+        });
+    match (canonical, reversed) {
+        (Ok(canonical), Ok(reversed)) => {
+            Ok(if action_cost(&reversed.actions) < action_cost(&canonical.actions) {
+                reversed
+            } else {
+                canonical
+            })
+        }
+        (Ok(prepared), Err(_)) | (Err(_), Ok(prepared)) => Ok(prepared),
+        (Err(error), Err(_)) => Err(error),
+    }
+}
+
+/// Prepare one permitted input view from the original state, with independent trial counters.
+fn prepare_order(
+    state: &AllocationState,
+    unit: &SelectedLowering,
+    live_after: &BTreeSet<ValueId>,
+    context: &AllocationContext<'_>,
+) -> Result<Preparation, AllocationError> {
     let needs = normalize::requirements(unit, live_after, context)?;
     let mut base = Trial::new(state, context, SlotOwner::Unit(unit.id));
+    if unit.publication == OutputPublication::Aliases {
+        // Alias publication consumes nothing. Even forced fallback must not drain a buried
+        // source simply to introduce another semantic name for its existing representation.
+        if !valid(&base, unit, &needs)? {
+            return Err(invariant(
+                DiagnosticCategory::UnavailableValue,
+                "alias publication source is not recoverable",
+            ));
+        }
+        normalize::bind_inputs(&mut base, unit, &needs.needed)?;
+        return Ok(Preparation::finish(base));
+    }
     // A buried stored source can require a drain before it can be bound. A failed private
     // setup must not prevent that full construction from running on the original state.
     if normalize::bind_inputs(&mut base, unit, &needs.needed).is_ok() {
@@ -123,6 +172,7 @@ pub(super) fn prepare_control(
         stack_inputs: alloc::vec![predicate],
         stored_inputs: Vec::new(),
         outputs: Vec::new(),
+        publication: OutputPublication::Stack,
         address_results: Vec::new(),
         effects: LoweringEffects::default(),
         scratch: Vec::new(),
@@ -213,10 +263,25 @@ fn valid(
 
 /// Apply an indexed raw shuffle to owned occurrences and append its action.
 ///
-/// Depth is zero-based from the top and must name an owned lane within the top sixteen.
+/// Scalar depth is zero-based; word indices name complete four-lane groups. Every accessed
+/// lane must be owned and within the top sixteen.
 /// Moves preserve occurrence identities; duplication creates a fresh identity. Nonshuffle
 /// actions are a caller error. A rejected indexed access leaves the trial unchanged.
 pub(super) fn shuffle(trial: &mut Trial<'_>, action: PlanAction) -> Result<(), AllocationError> {
+    if let PlanAction::SwapWord { word } = action {
+        let start = usize::from(word) * 4;
+        if !(1..=3).contains(&word) || start + 4 > trial.state.stack.len() {
+            return Err(invariant(
+                DiagnosticCategory::IllegalStackAccess,
+                "word shuffle requires complete owned addressable words",
+            ));
+        }
+        for lane in 0..4 {
+            trial.state.stack.swap(lane, start + lane);
+        }
+        trial.actions.push(action);
+        return Ok(());
+    }
     let depth = match action {
         PlanAction::Dup { depth }
         | PlanAction::Swap { depth }
@@ -313,6 +378,10 @@ fn replay(
                 }
                 widths.insert(0, width);
             }
+            Action::MoveUp(1) | Action::MoveDown(1) if width == 4 && widths[0] == 4 => {
+                shuffle(trial, PlanAction::SwapWord { word: 1 })?;
+                widths.swap(0, 1);
+            }
             Action::MoveUp(_) => {
                 for _ in 0..width {
                     move_up(trial, end - 1)?;
@@ -331,6 +400,17 @@ fn replay(
                 }
                 let top = widths.remove(0);
                 widths.insert(index, top);
+            }
+            Action::Swap(_)
+                if index > 0 && width == 4 && widths[0] == 4 && (end - width).is_multiple_of(4) =>
+            {
+                shuffle(
+                    trial,
+                    PlanAction::SwapWord {
+                        word: ((end - width) / 4) as u8,
+                    },
+                )?;
+                widths.swap(0, index);
             }
             Action::Swap(_) if index > 0 && (width != 1 || widths[0] != 1) => {
                 let top = widths[0];
@@ -518,20 +598,35 @@ pub(super) fn permute(
     Ok(())
 }
 
-/// Accept an already valid state or try grouped movement without loading or evicting lanes.
+/// Try grouped movement and each single word swap without loading or evicting lanes.
+/// A bounded raw word candidate also works when split layouts exclude grouped search.
+/// The grouped result wins equal-cost ties; every candidate proves the same full contract.
 fn stack_candidate<'a>(
-    mut trial: Trial<'a>,
+    trial: Trial<'a>,
     unit: &SelectedLowering,
     needs: &UnitRequirements,
 ) -> Result<Option<Trial<'a>>, AllocationError> {
     if valid(&trial, unit, needs)? {
         return Ok(Some(trial));
     }
-    if solver(&mut trial, &unit.stack_inputs, needs, None)? && valid(&trial, unit, needs)? {
-        Ok(Some(trial))
+    let mut grouped = trial.clone();
+    let mut best = if solver(&mut grouped, &unit.stack_inputs, needs, None).unwrap_or(false)
+        && valid(&grouped, unit, needs)?
+    {
+        Some(grouped)
     } else {
-        Ok(None)
+        None
+    };
+    for word in 1..=3 {
+        let mut candidate = trial.clone();
+        if shuffle(&mut candidate, PlanAction::SwapWord { word }).is_ok()
+            && valid(&candidate, unit, needs)?
+            && best.as_ref().is_none_or(|old| cost(&candidate) < cost(old))
+        {
+            best = Some(candidate);
+        }
     }
+    Ok(best)
 }
 
 /// Keep the first occurrence of each exact input name, preserving request order.
@@ -585,23 +680,37 @@ pub(super) fn load_candidate<'a>(
     stack_candidate(trial, unit, needs)
 }
 
-/// Estimate before frame assignment: address generation takes two primitives, reads
-/// one, and writes two (including the discarded result). Raw shuffles are already expanded.
+/// Rank a preparation by the assembler-expanded cost of its raw actions.
 pub(super) fn cost(trial: &Trial<'_>) -> usize {
     action_cost(&trial.actions)
 }
 
 /// Estimate emitted primitive count for raw preparation actions before frame assignment.
-/// Slot loads cost three, stores four, and other actions one; this is a ranking heuristic.
+/// Slot loads cost five and stores six: address generation pushes the displacement and
+/// frame-pointer address, loads the frame pointer, and adds the displacement.
+/// Stack instructions use the pinned assembler's costs. Packing noops and control-flow
+/// overhead remain outside this local ranking heuristic.
 pub(super) fn action_cost(actions: &[PlanAction]) -> usize {
     actions
         .iter()
         .map(|action| match action {
-            PlanAction::LoadLane(_) => 3,
-            PlanAction::StoreLane(_) => 4,
-            _ => 1,
+            PlanAction::LoadLane(_) => 5,
+            PlanAction::StoreLane(_) => 6,
+            PlanAction::Dup { depth } => stack_cost(Primitive::Dup(*depth)),
+            PlanAction::Swap { depth } => stack_cost(Primitive::Swap(*depth)),
+            PlanAction::SwapWord { word } => stack_cost(Primitive::SwapWord(*word)),
+            PlanAction::MoveUp { depth } => stack_cost(Primitive::MoveUp(*depth)),
+            PlanAction::MoveDown { depth } => stack_cost(Primitive::MoveDown(*depth)),
+            PlanAction::PushLiteral(value) => stack_cost(Primitive::Push(*value)),
+            PlanAction::Drop | PlanAction::RunLowering { .. } | PlanAction::DebugLocation(_) => 1,
         })
         .sum()
+}
+
+fn stack_cost(primitive: Primitive) -> usize {
+    let instruction = primitive.instruction().expect("prepared stack action has a legal depth");
+    crate::opt::cost::stack_instruction_cost(&instruction)
+        .expect("prepared stack instruction has a known expansion cost")
 }
 
 /// Compare direct loads with gather-then-loads, preferring direct loads on an equal cost.

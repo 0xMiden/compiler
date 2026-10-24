@@ -70,7 +70,8 @@ impl AllocationState {
     /// Apply a unit's declared normal completion after its input prefix has been prepared.
     ///
     /// Consumes the top-first input lanes, publishes the output lanes, invalidates facts
-    /// about redefined values, and updates scratch/provenance facts. Unit-local scratch
+    /// about redefined values, and updates scratch/provenance facts. Alias-only publication
+    /// enables checked reconstructions without consuming or producing physical lanes. Unit-local scratch
     /// does not survive completion. A nonreturning unit has no completion state.
     ///
     /// This mutates in place; a failure invalidates this state. Speculative callers must
@@ -185,8 +186,17 @@ impl AllocationState {
         }
         self.stack.drain(..unit.stack_inputs.len());
         self.available_values.retain(|value| !definitions.contains(value));
-        for atom in unit.outputs.iter().rev() {
-            self.push(*atom)?;
+        match unit.publication {
+            OutputPublication::Stack => {
+                for atom in unit.outputs.iter().rev() {
+                    self.push(*atom)?;
+                }
+            }
+            OutputPublication::Aliases => {
+                // Forget stale semantic facts above, but preserve occurrences and storage.
+                // Checked reconstructions now make these complete output names available.
+                self.available_values.extend(definitions);
+            }
         }
         self.addresses.extend(unit.address_results.iter().copied());
         Ok(())
@@ -292,6 +302,8 @@ impl AllocationState {
 /// The context controls which reconstructions may be used; physical availability remains
 /// in each trial's state. Options bound optimization effort without changing feasibility.
 pub(crate) struct AllocationContext<'a> {
+    /// Only source-authorized alternatives; synthetic requests retain their canonical order.
+    pub(super) input_symmetries: BTreeMap<SelectedStepId, InputSymmetry>,
     /// Layout and checked literal/alias reconstruction for each selected value.
     pub values: &'a BTreeMap<ValueId, SelectedValue>,
     /// Procedure-wide distances measured in selected unit steps.
@@ -357,6 +369,16 @@ impl<'a> AllocationContext<'a> {
             values: &program.values,
             next_use: &analysis.next_use,
             options: AllocationOptions::default(),
+            input_symmetries: program
+                .segments
+                .iter()
+                .flat_map(|segment| &segment.units)
+                .filter_map(|unit| {
+                    let symmetry =
+                        program.input_symmetry(unit.id).expect("checked source covers every unit");
+                    (symmetry != InputSymmetry::Ordered).then_some((unit.id, symmetry))
+                })
+                .collect(),
             entry_reconstructions,
         }
     }
@@ -478,6 +500,47 @@ impl<'a> AllocationContext<'a> {
             Some(literal) => StoredValue::Literal(literal),
             None => StoredValue::Atom(canonical.expect("a component has at least one source")),
         })
+    }
+
+    /// Freeze backing cells required by complete semantic inputs at a prepared boundary.
+    /// Literals and equal resident occurrences require no storage read. Ordered slots
+    /// select one existing representation deterministically, without pinning spare copies.
+    pub(super) fn semantic_storage_reads(
+        &self,
+        state: &AllocationState,
+        unit: &SelectedLowering,
+    ) -> Result<Vec<SpillSlotId>, AllocationError> {
+        let mut reads = BTreeSet::new();
+        for atom in super::normalize::input_demand(unit, self)? {
+            let source = self.source(state, atom)?;
+            if matches!(source, StoredValue::Literal(_)) {
+                continue;
+            }
+            let mut resident = false;
+            for occurrence in &state.stack {
+                if self.same(state, source, StoredValue::Atom(occurrence.atom))? {
+                    resident = true;
+                    break;
+                }
+            }
+            if resident {
+                continue;
+            }
+            let mut backing = None;
+            for (slot, contents) in &state.slots {
+                if self.same(state, source, *contents)? {
+                    backing = Some(*slot);
+                    break;
+                }
+            }
+            reads.insert(backing.ok_or_else(|| {
+                invariant(
+                    DiagnosticCategory::UnavailableValue,
+                    "semantic input has no representation",
+                )
+            })?);
+        }
+        Ok(reads.into_iter().collect())
     }
 
     /// Compare current semantic identities, including scoped reconstruction and aliases.

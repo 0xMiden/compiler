@@ -6,6 +6,57 @@ use midenc_hir::{OperationRef, ValueRef};
 
 use super::*;
 
+/// Source-authorized alternatives to a lowering's canonical physical input order.
+/// This describes whole semantic operands, not arbitrary lane permutations. Selection proves
+/// that exchanging the pair preserves the complete result tuple and trap behavior.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum InputSymmetry {
+    #[default]
+    Ordered,
+    /// Exchange two complete, equally typed operands without reversing their limbs.
+    CommutativePair { lanes_per_operand: u8 },
+}
+
+/// The allocator's selected physical order. Canonical wins equal-cost comparisons.
+/// This records a choice, not permission: expansion and replay consult sealed source evidence.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum InputOrder {
+    #[default]
+    Canonical,
+    Reversed,
+}
+
+impl InputSymmetry {
+    /// Apply this permutation definition to a canonical input tuple. Callers must obtain the
+    /// permission from checked source evidence; this helper shares only the mathematical map.
+    pub fn ordered_inputs<'a>(
+        self,
+        canonical: &'a [Atom],
+        order: InputOrder,
+    ) -> Result<alloc::borrow::Cow<'a, [Atom]>, PlanError> {
+        use alloc::borrow::Cow;
+        if order == InputOrder::Canonical {
+            return Ok(Cow::Borrowed(canonical));
+        }
+        let Self::CommutativePair { lanes_per_operand } = self else {
+            return Err(PlanError::new(
+                DiagnosticCategory::InvalidSelectedLowering,
+                "lowering has no source-authorized operand exchange",
+            ));
+        };
+        let width = usize::from(lanes_per_operand);
+        if width == 0 || canonical.len() != 2 * width {
+            return Err(PlanError::new(
+                DiagnosticCategory::InvalidSelectedLowering,
+                "operand exchange does not describe two complete groups",
+            ));
+        }
+        Ok(Cow::Owned(
+            canonical[width..].iter().chain(&canonical[..width]).copied().collect(),
+        ))
+    }
+}
+
 /// Source identity used to reconstruct the entire selected procedure independently of allocation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProcedureOrigin {
@@ -113,6 +164,21 @@ impl Default for LoweringEffects {
         }
     }
 }
+/// How a complete semantic result becomes available at a lowering boundary.
+///
+/// Most units produce a physical prefix. Representation-preserving operations can instead
+/// introduce names for existing values, avoiding moves solely to expose an otherwise unused
+/// result prefix. Selection, not the allocator, authorizes this distinction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OutputPublication {
+    /// Outputs occupy the top-first physical prefix after the unit consumes its inputs.
+    Stack,
+    /// Outputs use checked alias reconstructions from preceding semantic inputs. The unit has
+    /// no physical inputs, storage bindings, scratch, address results, or effects; replay must
+    /// establish every source's recoverability and preserve physical state unchanged.
+    Aliases,
+}
+
 /// One allocation boundary whose internal instruction sequence is owned by a lowering definition.
 /// Allocation arranges the declared stack prefix and stored inputs, then preserves all other
 /// live values across the unit. Source checking seals the semantic contract before allocation.
@@ -129,6 +195,8 @@ pub(crate) struct SelectedLowering {
     pub stored_inputs: Vec<StoredInput>,
     /// Normal completion publishes every lane of each defined value exactly once.
     pub outputs: Vec<Atom>,
+    /// Whether these complete definitions require a physical output prefix.
+    pub publication: OutputPublication,
     /// Normal output pointers equal declared spanning-scratch addresses; contents are separate.
     pub address_results: Vec<AddressFact>,
     pub effects: LoweringEffects,

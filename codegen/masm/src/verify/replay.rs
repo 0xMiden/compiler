@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     lower::expand::{Anchor, AnnotatedMasmBody, AnnotatedOp, Boundary},
-    masm::Instruction,
+    masm::{Immediate, Instruction},
     plan::actions::{PlanAction, ProcedurePlan},
 };
 
@@ -575,12 +575,17 @@ impl<'a> Verifier<'a> {
             return Err(error("duplicate or reordered executable phase"));
         }
         let unit = self.unit(id)?.clone();
-        let expected = unit
-            .stack_inputs
+        let bindings = &self.plan.lowering_bindings[&id];
+        let ordered = self
+            .plan
+            .selected
+            .input_symmetry(id)?
+            .ordered_inputs(&unit.stack_inputs, bindings.input_order)?;
+        let expected = ordered
             .iter()
             .map(|atom| state.token(*atom).map_err(|error| error.expecting(*atom)))
             .collect::<Result<Vec<_>, _>>()?;
-        for (depth, (atom, expected)) in unit.stack_inputs.iter().zip(&expected).enumerate() {
+        for (depth, (atom, expected)) in ordered.iter().zip(&expected).enumerate() {
             let actual = state.stack.get(depth).copied();
             if actual != Some(*expected) {
                 return Err(fail(
@@ -594,7 +599,6 @@ impl<'a> Verifier<'a> {
                 ));
             }
         }
-        let bindings = &self.plan.lowering_bindings[&id];
         let mut readonly = BTreeMap::new();
         for input in &unit.stored_inputs {
             let offset =
@@ -658,13 +662,41 @@ impl<'a> Verifier<'a> {
         if active.call != evidence.calls.iter().filter(|site| site.path.is_empty()).count() {
             return Err(error("required registered invocation omitted"));
         }
-        let suffix = &active.incoming.stack[unit.stack_inputs.len()..];
-        if state.stack.get(unit.outputs.len()..) != Some(suffix) {
-            return Err(fail(
-                DiagnosticCategory::UnavailableValue,
-                "lowering changed preserved suffix or failed output cleanup",
-            ));
-        }
+        let outputs = match unit.publication {
+            OutputPublication::Stack => {
+                let suffix = &active.incoming.stack[unit.stack_inputs.len()..];
+                if state.stack.get(unit.outputs.len()..) != Some(suffix) {
+                    return Err(fail(
+                        DiagnosticCategory::UnavailableValue,
+                        "lowering changed preserved suffix or failed output cleanup",
+                    ));
+                }
+                state.stack[..unit.outputs.len()].to_vec()
+            }
+            OutputPublication::Aliases => {
+                let incoming = &active.incoming;
+                if state.stack != incoming.stack
+                    || state.cells != incoming.cells
+                    || state.slots != incoming.slots
+                    || state.padding != incoming.padding
+                    || state.contents != incoming.contents
+                    || state.written != incoming.written
+                    || state.results != incoming.results
+                {
+                    return Err(fail(
+                        DiagnosticCategory::UnavailableValue,
+                        "alias publication changed physical state",
+                    ));
+                }
+                super::reconstruction::alias_outputs(
+                    &self.plan.selected,
+                    &unit.outputs,
+                    incoming,
+                    &self.tokens,
+                    self.frame,
+                )?
+            }
+        };
         for (offset, token) in &active.readonly {
             if state.cells.get(offset) != Some(token) {
                 return Err(fail(
@@ -673,23 +705,29 @@ impl<'a> Verifier<'a> {
                 ));
             }
         }
+        // Alias publication names semantic results without placing them on the stack.
+        // Report their resolved tokens and reserve raw depth for stack publications.
+        let output_error = |category, message, index: usize| {
+            let mut diagnostic = fail(category, message).expecting(unit.outputs[index]);
+            diagnostic.actual = Self::actual_atom(state, outputs[index]);
+            if unit.publication == OutputPublication::Stack {
+                diagnostic.depth = Some(index);
+            }
+            diagnostic
+        };
         for (index, atom) in unit.outputs.iter().enumerate() {
             if state.results.iter().any(|((output, _), required)| {
-                output == atom && !required.satisfied(state.stack[index], &self.tokens)
+                output == atom && !required.satisfied(outputs[index], &self.tokens)
             }) {
-                return Err(fail(
+                return Err(output_error(
                     DiagnosticCategory::AbiMismatch,
                     "cleanup destroyed signature result or published nonresult lane",
-                )
-                .mismatch(
                     index,
-                    *atom,
-                    Self::actual_atom(state, state.stack[index]),
                 ));
             }
         }
         for (index, atom) in unit.outputs.iter().enumerate() {
-            let token = state.stack[index];
+            let token = outputs[index];
             if !super::reconstruction::matches(
                 &self.plan.selected,
                 *atom,
@@ -697,34 +735,26 @@ impl<'a> Verifier<'a> {
                 &active.incoming,
                 &self.tokens,
             )? {
-                return Err(fail(
+                return Err(output_error(
                     DiagnosticCategory::UnavailableValue,
                     "output violates checked reconstruction identity",
-                )
-                .mismatch(
                     index,
-                    *atom,
-                    Self::actual_atom(state, state.stack[index]),
                 ));
             }
             if let Some(source) = evidence.aliases.source(*atom)
                 && active.incoming.token(source)? != token
             {
-                return Err(fail(
+                return Err(output_error(
                     DiagnosticCategory::UnavailableValue,
                     "alias output does not equal registered input",
-                )
-                .mismatch(
                     index,
-                    *atom,
-                    Self::actual_atom(state, state.stack[index]),
                 ));
             }
         }
         for (a, b) in &evidence.equal_outputs {
             let a = super::result_index(*a, unit.outputs.len())?;
             let b = super::result_index(*b, unit.outputs.len())?;
-            if state.stack[a] != state.stack[b] {
+            if outputs[a] != outputs[b] {
                 return Err(fail(
                     DiagnosticCategory::UnavailableValue,
                     "registered output equality was not established",
@@ -734,7 +764,7 @@ impl<'a> Verifier<'a> {
         for (reference, index) in &evidence.scratch_outputs {
             let offset = self.frame.resolve(*reference)?.into();
             let index = super::result_index(*index, unit.outputs.len())?;
-            if memory::read(state, offset, self.frame)? != state.stack[index] {
+            if memory::read(state, offset, self.frame)? != outputs[index] {
                 return Err(fail(
                     DiagnosticCategory::InvalidSpillSlotRead,
                     "scratch/output equality was not established",
@@ -752,7 +782,7 @@ impl<'a> Verifier<'a> {
                 offset: fact.offset,
             })?);
             let allocation = &self.frame.scratch()[&fact.object];
-            if self.tokens.frame_address(state.stack[index]) != Some(offset)
+            if self.tokens.frame_address(outputs[index]) != Some(offset)
                 || fact.offset.checked_add(fact.accessible).is_none_or(|end| end > allocation.size)
             {
                 return Err(fail(
@@ -762,7 +792,7 @@ impl<'a> Verifier<'a> {
             }
         }
         // Publication binds names to existing tokens and does not rename stack or memory.
-        for (atom, token) in unit.outputs.iter().zip(&state.stack) {
+        for (atom, token) in unit.outputs.iter().zip(&outputs) {
             state.names.insert(*atom, *token);
         }
         for effect in &unit.scratch_effects {
@@ -811,6 +841,7 @@ impl<'a> Verifier<'a> {
         let expected = match action {
             PlanAction::Dup { depth } => Primitive::Dup(depth).instruction()?,
             PlanAction::Swap { depth } => Primitive::Swap(depth).instruction()?,
+            PlanAction::SwapWord { word } => Primitive::SwapWord(word).instruction()?,
             PlanAction::MoveUp { depth } => Primitive::MoveUp(depth).instruction()?,
             PlanAction::MoveDown { depth } => Primitive::MoveDown(depth).instruction()?,
             PlanAction::Drop => Instruction::Drop,
@@ -1329,6 +1360,11 @@ impl<'a> Verifier<'a> {
                 origins.union(self.tokens.origins(*token));
                 origins
             });
+        // Equality produces a boolean, never an address, in either native or immediate form.
+        let is_equality = matches!(
+            instruction,
+            Instruction::Eq | Instruction::Neq | Instruction::EqImm(_) | Instruction::NeqImm(_)
+        );
         let address = if effect.outputs.iter().any(|lane| matches!(lane, LaneEffect::Computed(_)))
             && origins.has_frame()
         {
@@ -1352,7 +1388,14 @@ impl<'a> Verifier<'a> {
                         .and_then(|delta| u32::try_from(delta).ok())
                         .and_then(|delta| offset.checked_sub(delta))
                 }),
-                Instruction::Eq | Instruction::Neq => None,
+                Instruction::AddImm(Immediate::Value(delta)) => {
+                    self.tokens.frame_address(inputs[0]).and_then(|offset| {
+                        u32::try_from(delta.as_canonical_u64())
+                            .ok()
+                            .and_then(|delta| offset.checked_add(delta))
+                    })
+                }
+                _ if is_equality => None,
                 _ if !origins.compiler() => None,
                 _ => {
                     return Err(fail(
@@ -1361,10 +1404,7 @@ impl<'a> Verifier<'a> {
                     ));
                 }
             };
-            if origins.compiler()
-                && !matches!(instruction, Instruction::Eq | Instruction::Neq)
-                && value.is_none()
-            {
+            if origins.compiler() && !is_equality && value.is_none() {
                 return Err(fail(
                     DiagnosticCategory::IllegalStackAccess,
                     "compiler address arithmetic is not exact",
@@ -1393,7 +1433,7 @@ impl<'a> Verifier<'a> {
                     let token = self.tokens.fresh();
                     // Opaque source arithmetic retains may-origin, without inventing equality
                     // or an exact frame offset. Compiler/mixed arithmetic is rejected above.
-                    if !matches!(instruction, Instruction::Eq | Instruction::Neq) {
+                    if !is_equality {
                         self.tokens.add_origins(token, origins);
                     }
                     token

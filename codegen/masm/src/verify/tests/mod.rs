@@ -74,6 +74,7 @@ impl GeneratedDefinition for Identity {
                     id: SegmentId(0),
                     parameters: vec![ValueId(0)],
                     units: vec![SelectedLowering {
+                        publication: OutputPublication::Stack,
                         address_results: vec![],
                         id: SelectedStepId(0),
                         kind: LoweringKind(0),
@@ -151,6 +152,7 @@ fn identity_plan() -> ProcedurePlan {
         )]),
         edge_actions: BTreeMap::new(),
         spill_slots: vec![],
+        semantic_storage_reads: Default::default(),
         lowering_bindings: BTreeMap::from([(SelectedStepId(0), LoweringBindings::default())]),
     }
 }
@@ -279,9 +281,11 @@ impl Fixture {
             )]),
             edge_actions: BTreeMap::new(),
             spill_slots: vec![],
+            semantic_storage_reads: Default::default(),
             lowering_bindings: BTreeMap::from([(
                 SelectedStepId(0),
                 LoweringBindings {
+                    input_order: crate::plan::InputOrder::Canonical,
                     stored_inputs: BTreeMap::new(),
                     scratch: self.allocations(),
                 },
@@ -380,6 +384,7 @@ impl GeneratedDefinition for Fixture {
                     id: SegmentId(0),
                     parameters: (0..self.inputs).map(ValueId).collect(),
                     units: vec![SelectedLowering {
+                        publication: OutputPublication::Stack,
                         address_results: vec![],
                         id: SelectedStepId(0),
                         kind: LoweringKind(0),

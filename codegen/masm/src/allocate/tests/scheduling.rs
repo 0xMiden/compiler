@@ -23,6 +23,75 @@ use crate::{
     verify::*,
 };
 
+#[test]
+fn preparation_cost_matches_assembled_stack_operations() -> Result<(), midenc_hir::Report> {
+    use miden_core::Felt;
+
+    use crate::allocate::schedule::action_cost;
+
+    let mut cases = Vec::new();
+    for word in 1..=3 {
+        cases.push((PlanAction::SwapWord { word }, Primitive::SwapWord(word)));
+    }
+    for depth in 0..16 {
+        cases.push((PlanAction::Dup { depth }, Primitive::Dup(depth)));
+        if depth != 0 {
+            cases.extend([
+                (PlanAction::Swap { depth }, Primitive::Swap(depth)),
+                (PlanAction::MoveUp { depth }, Primitive::MoveUp(depth)),
+                (PlanAction::MoveDown { depth }, Primitive::MoveDown(depth)),
+            ]);
+        }
+    }
+    for value in [
+        Felt::ZERO,
+        Felt::ONE,
+        Felt::new_unchecked(2),
+        Felt::new_unchecked(0xffff_ffff_0000_0000),
+    ] {
+        cases.push((PlanAction::PushLiteral(value), Primitive::Push(value)));
+    }
+    for (action, primitive) in cases {
+        let instruction = primitive.instruction()?;
+        let actual = crate::opt::cost::tests::assembled_cost(&format!("{instruction}"))?;
+        assert_eq!(action_cost(&[action]), actual, "{instruction}");
+    }
+    Ok(())
+}
+
+#[test]
+fn preparation_cost_matches_assembled_spill_accesses() -> Result<(), midenc_hir::Report> {
+    use crate::{allocate::schedule::action_cost, opt::cost::tests::assembled_cost_with_locals};
+
+    let slot = SpillSlotId {
+        owner: SlotOwner::Value(ValueId(0)),
+        index: 0,
+    };
+    for locals in [4, 65532] {
+        let overhead = assembled_cost_with_locals("nop", locals)?;
+        for offset in [0, locals - 1] {
+            for (action, instruction) in [
+                (PlanAction::LoadLane(slot), format!("loc_load.{offset}")),
+                (PlanAction::StoreLane(slot), format!("loc_store.{offset}")),
+            ] {
+                let actual = assembled_cost_with_locals(&instruction, locals)? - overhead;
+                assert_eq!(action_cost(&[action]), actual, "{instruction}, locals={locals}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn preparation_cost_prefers_cheaper_expansion_over_shorter_masm() {
+    use crate::allocate::schedule::action_cost;
+
+    assert!(
+        action_cost(&[PlanAction::Swap { depth: 15 }])
+            > action_cost(&[PlanAction::MoveUp { depth: 3 }, PlanAction::MoveDown { depth: 4 },])
+    );
+}
+
 /// A small semantic fixture oracle: it executes raw actions on distinct parameter lanes,
 /// with no allocator equality, recoverability, transition or solver helper calls.
 fn execute(stack: &mut Vec<Atom>, slots: &mut BTreeMap<SpillSlotId, Atom>, actions: &[PlanAction]) {
@@ -35,6 +104,12 @@ fn execute(stack: &mut Vec<Atom>, slots: &mut BTreeMap<SpillSlotId, Atom>, actio
             PlanAction::Swap { depth } => {
                 assert!(depth < 16);
                 stack.swap(0, usize::from(depth));
+            }
+            PlanAction::SwapWord { word } => {
+                assert!((1..=3).contains(&word));
+                for lane in 0..4 {
+                    stack.swap(lane, usize::from(word) * 4 + lane);
+                }
             }
             PlanAction::MoveUp { depth } => {
                 assert!(depth < 16);
@@ -141,6 +216,7 @@ fn checked_case(
         segment_actions: BTreeMap::from([(SegmentId(0), actions)]),
         edge_actions: BTreeMap::new(),
         spill_slots: preparation.slot_requests.union(&second.slot_requests).copied().collect(),
+        semantic_storage_reads: Default::default(),
         lowering_bindings: bindings,
     };
     let frame = fixture_frame(&plan);
@@ -543,6 +619,235 @@ fn grouped_actions_preserve_unequal_widths_and_deeper_lanes() {
 }
 
 #[test]
+fn aligned_word_preparation_uses_one_vm_operation() {
+    for word in 1..=3 {
+        let mut order = [0, 1, 2, 3];
+        order.swap(0, word);
+        let inputs = order
+            .into_iter()
+            .flat_map(|id| (0..4).map(move |lane| Atom::new(ValueId(id), lane)))
+            .collect();
+        let (plan, preparation, _) = checked_case(
+            vec![Type::U128; 4],
+            vec![],
+            unit(inputs, vec![]),
+            BTreeSet::new(),
+            forced(SchedulingTier::Stack),
+        );
+        assert_eq!(crate::allocate::schedule::action_cost(&preparation.actions), 1);
+        assert_eq!(preparation.actions, vec![PlanAction::SwapWord { word: word as u8 }]);
+        let frame = fixture_frame(&plan);
+        verify_assemble_execute(&plan, &frame, &fixture_body(&plan, &frame), 16);
+    }
+}
+
+#[test]
+fn raw_word_swaps_preserve_occurrences_and_reject_incomplete_ownership() {
+    use crate::allocate::{schedule::shuffle, storage::Trial};
+
+    let values = values(40);
+    let context = context(&values);
+    for word in 1..=3 {
+        for depth in [usize::from(word) * 4 + 4, 40] {
+            let initial = state((0..depth as u32).map(atom).collect(), vec![]);
+            let mut trial = Trial::new(&initial, &context, SlotOwner::Unit(SelectedStepId(0)));
+            let mut expected = initial.stack.clone();
+            for lane in 0..4 {
+                expected.swap(lane, usize::from(word) * 4 + lane);
+            }
+            shuffle(&mut trial, PlanAction::SwapWord { word }).unwrap();
+            assert_eq!(trial.state.stack, expected);
+            assert_eq!(trial.state.next_occurrence, initial.next_occurrence);
+            assert_eq!(trial.actions, vec![PlanAction::SwapWord { word }]);
+        }
+    }
+    for (word, depth) in [(0, 40), (4, 40), (255, 40), (1, 7), (2, 11), (3, 15)] {
+        let initial = state((0..depth).map(atom).collect(), vec![]);
+        let mut trial = Trial::new(&initial, &context, SlotOwner::Unit(SelectedStepId(0)));
+        let crate::allocate::state::AllocationError::Invariant(error) =
+            shuffle(&mut trial, PlanAction::SwapWord { word }).unwrap_err()
+        else {
+            panic!("expected an invalid owned-window diagnostic")
+        };
+        assert_eq!(error.category, DiagnosticCategory::IllegalStackAccess);
+        assert_eq!(trial.state.stack, initial.stack);
+        assert_eq!(trial.state.next_occurrence, initial.next_occurrence);
+        assert!(trial.actions.is_empty());
+    }
+}
+
+#[test]
+fn single_word_candidate_handles_partial_layouts_without_grouped_search() {
+    for refuse_solver in [false, true] {
+        let mut types = vec![Type::U128];
+        types.extend(core::iter::repeat_n(Type::Felt, 20));
+        let (plan, preparation, _) = checked_case(
+            types,
+            vec![PlanAction::Drop],
+            unit((2..6).map(atom).collect(), vec![]),
+            BTreeSet::from([ValueId(1), ValueId(20)]),
+            AllocationOptions {
+                refuse_solver,
+                ..Default::default()
+            },
+        );
+        assert_eq!(preparation.tier, SchedulingTier::Stack);
+        assert_eq!(preparation.actions, vec![PlanAction::SwapWord { word: 1 }]);
+        let frame = fixture_frame(&plan);
+        verify_assemble_execute(&plan, &frame, &fixture_body(&plan, &frame), 24);
+    }
+
+    // A second use of the same input needs a distinct occurrence; swapping cannot invent it.
+    let (_, preparation, _) = checked_case(
+        vec![Type::Felt; 8],
+        vec![],
+        unit(vec![atom(4), atom(4)], vec![]),
+        BTreeSet::from([ValueId(4)]),
+        AllocationOptions {
+            refuse_solver: true,
+            ..Default::default()
+        },
+    );
+    assert_ne!(preparation.actions, vec![PlanAction::SwapWord { word: 1 }]);
+}
+
+#[test]
+fn word_candidate_ties_keep_the_existing_scalar_permutation() {
+    let (_, preparation, _) = checked_case(
+        vec![Type::Felt; 8],
+        vec![
+            PlanAction::MoveUp { depth: 4 },
+            PlanAction::Drop,
+            PlanAction::Dup { depth: 1 },
+            PlanAction::MoveDown { depth: 4 },
+        ],
+        unit(vec![atom(1)], vec![]),
+        BTreeSet::new(),
+        forced(SchedulingTier::Stack),
+    );
+    assert_eq!(preparation.actions, vec![PlanAction::Swap { depth: 1 }]);
+    assert_eq!(
+        preparation.state.stack_atoms().collect::<Vec<_>>(),
+        [1, 0, 2, 3, 1, 5, 6, 7].into_iter().map(atom).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn adjacent_words_and_unaligned_groups_preserve_complete_values() {
+    for types in [
+        vec![Type::U128, Type::U128, Type::Felt],
+        vec![Type::U128, Type::Felt, Type::U128, Type::Felt],
+    ] {
+        let target = (types.len() - 2) as u32;
+        let mut requested: Vec<_> = (0..4).map(|lane| Atom::new(ValueId(target), lane)).collect();
+        if target == 2 {
+            requested.push(atom(1));
+        }
+        requested.extend((0..4).map(|lane| Atom::new(ValueId(0), lane)));
+        let mut expected = requested.clone();
+        expected.push(atom(target + 1));
+        let request = unit(requested, vec![]);
+        let lanes = types
+            .iter()
+            .map(|ty| usize::from(ValueLayout::new(ty.clone()).unwrap().lanes()))
+            .sum();
+        let (plan, preparation, _) = checked_case(
+            types,
+            vec![],
+            request,
+            BTreeSet::from([ValueId(target + 1)]),
+            forced(SchedulingTier::Stack),
+        );
+        assert_eq!(preparation.tier, SchedulingTier::Stack);
+        assert_eq!(preparation.state.stack_atoms().collect::<Vec<_>>(), expected);
+        if target == 1 {
+            assert_eq!(preparation.actions, vec![PlanAction::SwapWord { word: 1 }]);
+        } else {
+            assert!(
+                !preparation
+                    .actions
+                    .iter()
+                    .any(|action| matches!(action, PlanAction::SwapWord { .. }))
+            );
+        }
+        let frame = fixture_frame(&plan);
+        verify_assemble_execute(&plan, &frame, &fixture_body(&plan, &frame), lanes);
+    }
+}
+
+#[test]
+fn word_candidate_preserves_aliases_and_independent_live_occurrences() {
+    let values = values(13);
+    let mut context = context(&values);
+    context.options.refuse_solver = true;
+    let mut initial = state((0..8).map(atom).collect(), vec![]);
+    initial.aliases = LaneAliases::new(vec![(atom(12), atom(4))]);
+    let request = unit(vec![atom(12), atom(5), atom(6), atom(7)], vec![]);
+    let preparation =
+        prepare_unit(&initial, &request, &BTreeSet::from([ValueId(0)]), &context).unwrap();
+    assert_eq!(preparation.actions, vec![PlanAction::SwapWord { word: 1 }]);
+    assert_eq!(preparation.state.aliases, initial.aliases);
+    assert_eq!(preparation.state.stack[4], initial.stack[0]);
+    let consumed_live =
+        prepare_unit(&initial, &request, &BTreeSet::from([ValueId(4)]), &context).unwrap();
+    assert_ne!(consumed_live.actions, vec![PlanAction::SwapWord { word: 1 }]);
+}
+
+#[test]
+fn commutative_preparation_records_order_and_preserves_canonical_ties() {
+    for width in [1, 2, 4] {
+        let ty = match width {
+            1 => Type::U32,
+            2 => Type::U64,
+            _ => Type::U128,
+        };
+        let mut values = values(2);
+        for value in values.values_mut() {
+            value.layout = ValueLayout::new(ty.clone()).unwrap();
+        }
+        let mut context = context(&values);
+        context.input_symmetries.insert(
+            SelectedStepId(0),
+            InputSymmetry::CommutativePair {
+                lanes_per_operand: width,
+            },
+        );
+        let canonical = (0..2)
+            .flat_map(|id| (0..width).map(move |lane| Atom::new(ValueId(id), lane)))
+            .collect::<Vec<_>>();
+        let request = unit(canonical.clone(), vec![]);
+        for order in [InputOrder::Canonical, InputOrder::Reversed] {
+            let prefix = context.input_symmetries[&request.id]
+                .ordered_inputs(&canonical, order)
+                .unwrap()
+                .into_owned();
+            let initial = state(prefix, vec![]);
+            let preparation = prepare_unit(&initial, &request, &BTreeSet::new(), &context).unwrap();
+            assert!(preparation.actions.is_empty());
+            assert_eq!(preparation.bindings[&request.id].input_order, order);
+            assert_eq!(preparation.state, initial);
+            context.options.force_tier = Some(SchedulingTier::Normalization);
+            let normalized = prepare_unit(&initial, &request, &BTreeSet::new(), &context).unwrap();
+            let chosen = normalized.bindings[&request.id].input_order;
+            assert_eq!(
+                normalized.state.stack_atoms().take(canonical.len()).collect::<Vec<_>>(),
+                context.input_symmetries[&request.id]
+                    .ordered_inputs(&canonical, chosen)
+                    .unwrap()
+                    .as_ref()
+            );
+            context.options.force_tier = None;
+        }
+        let repeated = (0..width).map(|lane| Atom::new(ValueId(0), lane)).collect::<Vec<_>>();
+        let request = unit(repeated.iter().chain(&repeated).copied().collect(), vec![]);
+        let initial = state(request.stack_inputs.clone(), vec![]);
+        let preparation = prepare_unit(&initial, &request, &BTreeSet::new(), &context).unwrap();
+        assert!(preparation.actions.is_empty());
+        assert_eq!(preparation.bindings[&request.id].input_order, InputOrder::Canonical);
+    }
+}
+
+#[test]
 fn solver_limits_do_not_limit_raw_depth_or_wide_tuples() {
     let (_, ready, _) = checked_case(
         vec![Type::Felt; 18],
@@ -833,4 +1138,66 @@ fn selective_trace_records_actual_store_victims() {
             .all(|decision| decision.reason == VictimReason::NeedsStore)
     );
     assert_eq!(preparation.state.slots.len(), 16);
+}
+
+#[test]
+fn alias_publication_preserves_buried_spilled_and_reconstructed_sources() {
+    for representation in 0..4 {
+        let mut values = values(22);
+        let source = if representation == 3 {
+            atom(20)
+        } else {
+            atom(19)
+        };
+        values.get_mut(&ValueId(21)).unwrap().reconstruction =
+            Some(Reconstruction::Alias(vec![source]));
+        if representation == 2 {
+            values.get_mut(&ValueId(19)).unwrap().reconstruction =
+                Some(Reconstruction::Literal(vec![miden_core::Felt::new_unchecked(73)]));
+        }
+        if representation == 3 {
+            values.get_mut(&ValueId(20)).unwrap().reconstruction =
+                Some(Reconstruction::Alias(vec![atom(19)]));
+        }
+        let mut initial = match representation {
+            1 => state(vec![], vec![(SpillSlotId::canonical(atom(19)), atom(19))]),
+            2 => state(vec![], vec![]),
+            _ => state((0..20).map(atom).collect(), vec![]),
+        };
+        initial.available_values.extend([ValueId(19), ValueId(20)]);
+        let mut request = unit(vec![], vec![]);
+        request.semantic_inputs = vec![source.value];
+        request.outputs = vec![atom(21)];
+        request.publication = OutputPublication::Aliases;
+        let mut context = context(&values);
+        for force_tier in [None, Some(SchedulingTier::Normalization)] {
+            context.options.force_tier = force_tier;
+            let preparation = prepare_unit(
+                &initial,
+                &request,
+                &BTreeSet::from([source.value, ValueId(21)]),
+                &context,
+            )
+            .unwrap();
+            assert!(preparation.actions.is_empty());
+            assert_eq!(preparation.state, initial);
+            assert!(preparation.bindings[&request.id].stored_inputs.is_empty());
+            let mut completed = preparation.state;
+            completed.complete(&request).unwrap();
+            let mut expected = initial.clone();
+            expected.available_values.insert(ValueId(21));
+            assert_eq!(completed, expected);
+            assert!(
+                context
+                    .same(&completed, StoredValue::Atom(atom(21)), StoredValue::Atom(source))
+                    .unwrap()
+            );
+        }
+        if representation != 2 {
+            let mut missing = initial.clone();
+            missing.stack.clear();
+            missing.slots.clear();
+            assert!(prepare_unit(&missing, &request, &BTreeSet::new(), &context).is_err());
+        }
+    }
 }

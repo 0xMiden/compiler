@@ -53,6 +53,8 @@ pub(crate) struct DefinitionEvidence {
 /// physical choices. These become private evidence in the checked selected program.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UnitEvidence {
+    /// Permitted complete-operand exchange, reconstructed from the source operation/type/mode.
+    pub input_symmetry: InputSymmetry,
     pub aliases: LaneAliases,
     /// Reconstructed from the registered source, sealed before allocation.
     pub generated_event: Option<GeneratedEvent>,
@@ -149,6 +151,14 @@ pub(crate) struct CheckedSelectedProgram {
     units: BTreeMap<SelectedStepId, UnitEvidence>,
 }
 impl CheckedSelectedProgram {
+    /// Sealed permission used to price input orders and independently check physical bindings.
+    pub(crate) fn input_symmetry(
+        &self,
+        step: SelectedStepId,
+    ) -> Result<InputSymmetry, VerificationError> {
+        Ok(self.evidence(step)?.input_symmetry)
+    }
+
     /// Source-sealed markers queried by allocation without becoming semantic uses.
     pub(crate) fn observations(&self) -> &[crate::lower::debug::Observation] {
         &self.observations
@@ -335,6 +345,39 @@ fn validate_graph(
                 ) {
                     validate_atom(program, *atom)?;
                 }
+                if let InputSymmetry::CommutativePair { lanes_per_operand } =
+                    units[&unit.id].input_symmetry
+                {
+                    let width = usize::from(lanes_per_operand);
+                    if width == 0
+                        || unit.stack_inputs.len() != 2 * width
+                        || unit.publication != OutputPublication::Stack
+                    {
+                        return Err(error(
+                            "commutative inputs must contain two complete operand groups",
+                        ));
+                    }
+                    let left = unit.stack_inputs[0].value;
+                    let right = unit.stack_inputs[width].value;
+                    let lhs = &program.values[&left].layout;
+                    let rhs = &program.values[&right].layout;
+                    if lhs != rhs
+                        || lhs.lanes() != lanes_per_operand
+                        || unit.stack_inputs.iter().enumerate().any(|(index, atom)| {
+                            *atom
+                                != Atom::new(
+                                    if index < width { left } else { right },
+                                    (index % width) as u8,
+                                )
+                        })
+                        || unit.semantic_inputs.iter().copied().collect::<BTreeSet<_>>()
+                            != BTreeSet::from([left, right])
+                    {
+                        return Err(error(
+                            "commutative inputs must preserve complete equally typed values",
+                        ));
+                    }
+                }
                 if let Some(event) = units[&unit.id].generated_event {
                     let valid = match event {
                         GeneratedEvent::Dynamic(id) => {
@@ -348,6 +391,7 @@ fn validate_graph(
                         }
                     };
                     if !valid
+                        || unit.publication != OutputPublication::Stack
                         || !unit.effects.may_trap
                         || !unit.effects.normal_return
                         || unit.effects.memory != SourceMemoryEffects::default()
@@ -355,6 +399,37 @@ fn validate_graph(
                         || !unit.stored_inputs.is_empty()
                     {
                         return Err(error("invalid generated event source contract"));
+                    }
+                }
+                if unit.publication == OutputPublication::Aliases {
+                    let evidence = &units[&unit.id];
+                    if !unit.stack_inputs.is_empty()
+                        || !unit.stored_inputs.is_empty()
+                        || !unit.scratch.is_empty()
+                        || !unit.scratch_effects.is_empty()
+                        || !unit.address_results.is_empty()
+                        || unit.effects != LoweringEffects::default()
+                        || evidence.generated_event.is_some()
+                        || !evidence.calls.is_empty()
+                        || !evidence.loops.is_empty()
+                        || !evidence.scratch_outputs.is_empty()
+                    {
+                        return Err(error(
+                            "alias publication has a physical or effectful contract",
+                        ));
+                    }
+                    for output in &unit.outputs {
+                        let Some(Reconstruction::Alias(sources)) =
+                            &program.values[&output.value].reconstruction
+                        else {
+                            return Err(error("alias publication lacks a checked lane mapping"));
+                        };
+                        if sources
+                            .iter()
+                            .any(|source| !unit.semantic_inputs.contains(&source.value))
+                        {
+                            return Err(error("alias publication source is not a semantic input"));
+                        }
                     }
                 }
                 let mut output_lanes = BTreeMap::<ValueId, u8>::new();
@@ -444,11 +519,13 @@ fn validate_graph(
                 }
                 for (output, input) in units[&unit.id].aliases.pairs() {
                     if !unit.outputs.contains(output)
-                        || !unit.stack_inputs.contains(input)
-                            && !unit
+                        || !(unit.stack_inputs.contains(input)
+                            || unit
                                 .stored_inputs
                                 .iter()
                                 .any(|stored| stored.value == StoredValue::Atom(*input))
+                            || unit.publication == OutputPublication::Aliases
+                                && unit.semantic_inputs.contains(&input.value))
                     {
                         return Err(error(
                             "registered publication relation references undeclared input/output",

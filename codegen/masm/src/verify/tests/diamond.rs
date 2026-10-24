@@ -68,6 +68,7 @@ impl GeneratedDefinition for Diamond {
                 vec![]
             };
             let unit = SelectedLowering {
+                publication: OutputPublication::Stack,
                 address_results: vec![],
                 id: SelectedStepId(index),
                 kind: LoweringKind(0),
@@ -261,11 +262,13 @@ fn spanning_content_definitions_merge_with_physical_cells_at_selected_join() {
         segment_actions: actions,
         edge_actions: BTreeMap::new(),
         spill_slots: vec![],
+        semantic_storage_reads: Default::default(),
         lowering_bindings: (0..3)
             .map(|index| {
                 (
                     SelectedStepId(index),
                     LoweringBindings {
+                        input_order: crate::plan::InputOrder::Canonical,
                         stored_inputs: BTreeMap::new(),
                         scratch: BTreeMap::from([(ScratchId(0), allocation)]),
                     },

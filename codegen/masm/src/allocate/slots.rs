@@ -145,7 +145,7 @@ impl<'a> StorageGraph<'a> {
     }
 
     /// Propagate stored-copy demand backward through one action.
-    /// Loads and opaque stored inputs require old contents; stores replace them.
+    /// Loads, semantic boundary reads and opaque inputs require old contents; stores replace them.
     fn transfer(&self, action: &PlanAction, live: &mut Slots) -> Result<(), PlanError> {
         let index = |slot| {
             self.index
@@ -162,6 +162,9 @@ impl<'a> StorageGraph<'a> {
                     .lowering_bindings
                     .get(&step)
                     .ok_or_else(|| storage_error("missing stored-input bindings"))?;
+                for slot in self.plan.semantic_storage_reads.get(&step).into_iter().flatten() {
+                    live.insert(index(*slot)?);
+                }
                 for slot in bindings.stored_inputs.values() {
                     live.insert(index(*slot)?);
                 }

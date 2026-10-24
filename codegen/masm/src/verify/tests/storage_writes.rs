@@ -181,6 +181,7 @@ fn run(
         plan.lowering_bindings.insert(
             SelectedStepId(step),
             LoweringBindings {
+                input_order: crate::plan::InputOrder::Canonical,
                 stored_inputs: BTreeMap::new(),
                 scratch: BTreeMap::from([(ScratchId(0), allocation)]),
             },

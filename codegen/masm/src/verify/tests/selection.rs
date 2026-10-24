@@ -974,3 +974,23 @@ fn generic_event_closed_metadata_rejects_forged_registered_shapes() {
         }
     }
 }
+
+#[test]
+fn semantic_alias_contract_rejects_physical_effects_and_incomplete_mappings() {
+    use super::reconstruction::SemanticAlias;
+    for invalid in 1..=10 {
+        let definition = SemanticAlias(invalid);
+        assert!(
+            check_selection(
+                definition.instantiate(&[]).unwrap().program,
+                &SourceContext::Generated(&definition)
+            )
+            .is_err(),
+            "variant={invalid}"
+        );
+    }
+    // A candidate cannot grant itself semantic-only publication for an ordinary source unit.
+    let mut candidate = Identity.instantiate(&[]).unwrap().program;
+    candidate.segments[0].units[0].publication = OutputPublication::Aliases;
+    assert!(check_selection(candidate, &SourceContext::Generated(&Identity)).is_err());
+}

@@ -36,6 +36,7 @@ pub(crate) fn expand_allocation_action(
     Ok(Some(match *action {
         PlanAction::Dup { depth } => Primitive::Dup(depth).instruction()?,
         PlanAction::Swap { depth } => Primitive::Swap(depth).instruction()?,
+        PlanAction::SwapWord { word } => Primitive::SwapWord(word).instruction()?,
         PlanAction::MoveUp { depth } => Primitive::MoveUp(depth).instruction()?,
         PlanAction::MoveDown { depth } => Primitive::MoveDown(depth).instruction()?,
         PlanAction::Drop => masm::Instruction::Drop,
@@ -279,6 +280,9 @@ pub(crate) fn expand_procedure(
                             "missing lowering bindings",
                         )
                     })?;
+                    plan.selected
+                        .input_symmetry(*step)?
+                        .ordered_inputs(&unit.stack_inputs, bindings.input_order)?;
                     out.push(AnnotatedOp::Boundary(Boundary::UnitStart(*step)));
                     let body = registry.get(unit.kind)?.expand(unit, bindings, frame, env)?;
                     out.ops.extend(body.ops);

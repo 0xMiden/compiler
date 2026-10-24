@@ -1,6 +1,70 @@
 use super::*;
 
 #[test]
+fn word_actions_require_exact_instructions_and_owned_words() {
+    fn candidate(depth: u32, word: u8) -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
+        let mut fixture = Fixture::new(depth, depth);
+        fixture.proof.aliases = LaneAliases::new(
+            (0..depth)
+                .map(|index| (Fixture::output(index), Fixture::input(index)))
+                .collect(),
+        );
+        let mut plan = fixture.plan();
+        plan.segment_actions.insert(
+            SegmentId(0),
+            vec![
+                PlanAction::SwapWord { word },
+                PlanAction::SwapWord { word },
+                PlanAction::RunLowering {
+                    step: SelectedStepId(0),
+                },
+            ],
+        );
+        let mut code = AnnotatedMasmBody::new();
+        code.push(AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))));
+        for _ in 0..2 {
+            code.push_instruction(
+                Primitive::SwapWord(word).instruction().unwrap(),
+                SelectedStepId(u32::MAX),
+            );
+        }
+        code.push(AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))));
+        code.push(AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))));
+        code.push(AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))));
+        (plan, fixture.frame(), code)
+    }
+    for word in 1..=3 {
+        let (plan, frame, code) = candidate(16, word);
+        verify(&plan, &frame, code.clone()).unwrap();
+        for wrong in [Instruction::Swap1, Primitive::SwapWord(word % 3 + 1).instruction().unwrap()]
+        {
+            let mut altered = code.clone();
+            let AnnotatedOp::Instruction { instruction, .. } = &mut altered.ops_mut()[1] else {
+                panic!()
+            };
+            *instruction = wrong;
+            assert_eq!(
+                verify(&plan, &frame, altered).unwrap_err().category,
+                DiagnosticCategory::InvalidSelectedLowering
+            );
+        }
+        for wrong in [PlanAction::SwapWord { word: word % 3 + 1 }, PlanAction::Swap { depth: 1 }] {
+            let mut altered_plan = plan.clone();
+            altered_plan.segment_actions.get_mut(&SegmentId(0)).unwrap()[0] = wrong;
+            assert_eq!(
+                verify(&altered_plan, &frame, code.clone()).unwrap_err().category,
+                DiagnosticCategory::InvalidSelectedLowering
+            );
+        }
+        let (plan, frame, code) = candidate(u32::from(word) * 4 + 3, word);
+        assert_eq!(
+            verify(&plan, &frame, code).unwrap_err().category,
+            DiagnosticCategory::IllegalStackAccess
+        );
+    }
+}
+
+#[test]
 fn allocator_equality_and_slot_validity_claims_cannot_establish_facts() {
     let mut fixture = Fixture::new(2, 1);
     fixture.proof.aliases = LaneAliases::new(vec![(Fixture::output(0), Fixture::input(0))]);
@@ -946,5 +1010,153 @@ fn repeat_variable_debug_anchor_has_valid_package_rows() {
         rows.iter()
             .all(|row| debug.get_string(row.name_idx).unwrap().as_ref() == "repeat_visible"
                 && row.value_location == masm::DebugVarLocation::Stack(0))
+    );
+}
+
+#[test]
+fn semantic_alias_publication_rejects_physical_mutation_and_lost_inputs() {
+    let plan = super::reconstruction::semantic_alias_plan();
+    for instructions in [
+        vec![],
+        vec![Instruction::Swap1],
+        vec![Instruction::Drop],
+        vec![Instruction::Push(crate::masm::PushValue::from(7u32).into())],
+        vec![Instruction::Drop, Instruction::Push(crate::masm::PushValue::from(7u32).into())],
+    ] {
+        let should_pass = instructions.is_empty();
+        let mut code = vec![
+            AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+            AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+        ];
+        code.extend(instructions.into_iter().map(inst));
+        code.extend([
+            AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+            AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+        ]);
+        assert_eq!(verify(&plan, &frame(), ops(code)).is_ok(), should_pass);
+    }
+    let mut plan = plan;
+    plan.segment_actions.get_mut(&SegmentId(0)).unwrap().insert(0, PlanAction::Drop);
+    assert!(
+        verify(
+            &plan,
+            &frame(),
+            ops(vec![
+                AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+                inst(Instruction::Drop),
+                AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+                AnnotatedOp::Boundary(Boundary::UnitEnd(SelectedStepId(0))),
+                AnnotatedOp::Boundary(Boundary::Edge(EdgeId(0))),
+            ])
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn commutative_permissions_require_complete_equal_operands() {
+    struct Source(u8);
+    impl GeneratedDefinition for Source {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(1)
+        }
+
+        fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = Fixture::new(2, 0).instantiate(&[])?;
+            evidence.units.get_mut(&SelectedStepId(0)).unwrap().input_symmetry =
+                InputSymmetry::CommutativePair {
+                    lanes_per_operand: match self.0 {
+                        1 => 0,
+                        2 | 7 | 8 => 2,
+                        _ => 1,
+                    },
+                };
+            match self.0 {
+                3 => {
+                    evidence.program.values.get_mut(&ValueId(1)).unwrap().layout =
+                        ValueLayout::new(Type::U32).unwrap()
+                }
+                4 => {
+                    evidence.program.segments[0].units[0].semantic_inputs.pop().map(|_| ()).unwrap()
+                }
+                5 => evidence.program.segments[0].units[0].publication = OutputPublication::Aliases,
+                6 => evidence.program.segments[0].units[0].stack_inputs[1] = Fixture::input(0),
+                7 | 8 => {
+                    for value in evidence.program.values.values_mut() {
+                        value.layout = ValueLayout::new(Type::U64).unwrap();
+                    }
+                    evidence.program.abi =
+                        ProcedureAbi::new(CallingConvention::SameContext, 4, 0).unwrap();
+                    evidence.program.segments[0].units[0].stack_inputs = vec![
+                        Atom::new(ValueId(0), 0),
+                        Atom::new(ValueId(0), 1),
+                        Atom::new(ValueId(1), 0),
+                        Atom::new(ValueId(1), 1),
+                    ];
+                    if self.0 == 8 {
+                        evidence.program.segments[0].units[0].stack_inputs.swap(0, 1);
+                    }
+                }
+                _ => {}
+            }
+            Ok(evidence)
+        }
+    }
+    for case in 0..=8 {
+        let source = Source(case);
+        let result = check_selection(
+            source.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&source),
+        );
+        if matches!(case, 0 | 7) {
+            result.unwrap();
+        } else {
+            assert_eq!(
+                result.unwrap_err().category,
+                DiagnosticCategory::InvalidSelectedLowering,
+                "case {case}"
+            );
+        }
+    }
+}
+
+#[test]
+fn commutative_order_requires_permission_and_the_actual_prefix() {
+    let mut fixture = Fixture::new(2, 1);
+    let code = body(vec![Instruction::Add]);
+    let mut ordered = fixture.plan();
+    verify(&ordered, &fixture.frame(), code.clone()).unwrap();
+    ordered.lowering_bindings.get_mut(&SelectedStepId(0)).unwrap().input_order =
+        InputOrder::Reversed;
+    assert_eq!(
+        verify(&ordered, &fixture.frame(), code.clone()).unwrap_err().category,
+        DiagnosticCategory::InvalidSelectedLowering
+    );
+    fixture.proof.input_symmetry = InputSymmetry::CommutativePair {
+        lanes_per_operand: 1,
+    };
+    let mut plan = fixture.plan();
+    plan.lowering_bindings.get_mut(&SelectedStepId(0)).unwrap().input_order = InputOrder::Reversed;
+    assert_eq!(
+        verify(&plan, &fixture.frame(), code.clone()).unwrap_err().category,
+        DiagnosticCategory::UnavailableValue
+    );
+    plan.segment_actions
+        .get_mut(&SegmentId(0))
+        .unwrap()
+        .insert(0, PlanAction::Swap { depth: 1 });
+    let mut reversed = code;
+    reversed.ops_mut().insert(
+        1,
+        AnnotatedOp::Instruction {
+            instruction: Instruction::Swap1,
+            unit: SelectedStepId(u32::MAX),
+        },
+    );
+    verify(&plan, &fixture.frame(), reversed.clone()).unwrap();
+    plan.lowering_bindings.get_mut(&SelectedStepId(0)).unwrap().input_order = InputOrder::Canonical;
+    assert_eq!(
+        verify(&plan, &fixture.frame(), reversed).unwrap_err().category,
+        DiagnosticCategory::UnavailableValue
     );
 }

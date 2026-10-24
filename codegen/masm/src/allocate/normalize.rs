@@ -48,14 +48,12 @@ pub(super) struct UnitRequirements {
     pub survivors: BTreeSet<Atom>,
 }
 
-/// Expand semantic uses and live-after demand through immutable selected layouts.
-/// Alias outputs demand their source identities even when no physical input names them.
-/// Missing layouts are reported as unavailable semantic values.
-pub(super) fn requirements(
+/// Expand complete semantic input demand, including alias recipes, into raw lanes.
+/// Live-through survivors are deliberately excluded: their cached cells need not be read.
+pub(super) fn input_demand(
     unit: &SelectedLowering,
-    live_after: &BTreeSet<ValueId>,
     context: &AllocationContext<'_>,
-) -> Result<UnitRequirements, AllocationError> {
+) -> Result<BTreeSet<Atom>, AllocationError> {
     let mut needed: BTreeSet<_> = unit.stack_inputs.iter().copied().collect();
     let mut semantic_uses: BTreeSet<_> = unit.semantic_inputs.iter().copied().collect();
     for output in &unit.outputs {
@@ -82,6 +80,16 @@ pub(super) fn requirements(
             needed.insert(atom);
         }
     }
+    Ok(needed)
+}
+
+/// Add live-through demand to the complete semantic inputs needed for preparation.
+pub(super) fn requirements(
+    unit: &SelectedLowering,
+    live_after: &BTreeSet<ValueId>,
+    context: &AllocationContext<'_>,
+) -> Result<UnitRequirements, AllocationError> {
+    let mut needed = input_demand(unit, context)?;
     let definitions: BTreeSet<_> = unit.outputs.iter().map(|atom| atom.value).collect();
     let mut survivors = BTreeSet::new();
     for value in live_after.difference(&definitions) {
