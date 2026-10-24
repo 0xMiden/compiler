@@ -1438,6 +1438,8 @@ impl<'a, 'e> Selector<'a, 'e> {
     ) -> Result<(), Report> {
         let branch = op.downcast_ref::<midenc_dialect_cf::CondBr>().unwrap();
         let condition = self.value(branch.condition().as_value_ref())?;
+        let shared = branch.then_dest().successor() == branch.else_dest().successor();
+        let mut shared_destination = None;
         let mut arms = vec![];
         for operand in [branch.then_dest(), branch.else_dest()] {
             let block = operand.successor();
@@ -1446,8 +1448,14 @@ impl<'a, 'e> Selector<'a, 'e> {
                     "residual cf.cond_br only supports terminal exit blocks",
                 ));
             }
-            let segment =
-                self.segment(block.borrow().arguments().iter().map(|a| *a as ValueRef).collect())?;
+            let segment = match shared_destination {
+                Some(segment) => segment,
+                None => self
+                    .segment(block.borrow().arguments().iter().map(|a| *a as ValueRef).collect())?,
+            };
+            if shared {
+                shared_destination = Some(segment);
+            }
             let parameters = self.program.segments[segment.0 as usize].parameters.clone();
             let values = self.ids(operand.arguments.iter().map(|v| v.borrow().as_value_ref()))?;
             let kind = if arms.is_empty() {
@@ -1465,14 +1473,26 @@ impl<'a, 'e> Selector<'a, 'e> {
                 kind,
                 &values,
             )?;
-            let terminal = self.block(block, segment, None)?;
-            if terminal.current.is_some() {
-                return Err(super::invalid("residual branch destination is not terminal"));
-            }
-            arms.push((edge, terminal.tree));
+            let tree = if shared && !arms.is_empty() {
+                vec![]
+            } else {
+                let terminal = self.block(block, segment, None)?;
+                if terminal.current.is_some() {
+                    return Err(super::invalid("residual branch destination is not terminal"));
+                }
+                terminal.tree
+            };
+            arms.push((edge, tree));
         }
         let (on_true, a) = arms.remove(0);
         let (on_false, b) = arms.remove(0);
+        // A shared successor is a continuation: each arm binds its incoming tuple,
+        // then its parameters and body are defined exactly once after the dispatch.
+        let (a, b, continuation) = if shared {
+            (vec![], vec![], a)
+        } else {
+            (a, b, vec![])
+        };
         flow.tree.push(ControlTree::If {
             id: self.control()?,
             predicate: Atom::new(condition, 0),
@@ -1481,6 +1501,7 @@ impl<'a, 'e> Selector<'a, 'e> {
             on_false,
             else_body: Box::new(ControlTree::Sequence(b)),
         });
+        flow.tree.extend(continuation);
         flow.current = None;
         Ok(())
     }

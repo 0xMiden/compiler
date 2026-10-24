@@ -262,3 +262,133 @@ fn switch_region_parameters_are_rejected_for_every_dispatch_policy() {
         assert_malformed_source_rejected(&f, &SelectEnv::default());
     }
 }
+
+#[test]
+fn real_hir_shared_terminal_successor_binds_each_incoming_tuple_once() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @shared(%flag: i1, %a: felt, %b: felt) -> felt { \
+         cf.cond_br %flag ^exit(%a : felt), ^exit(%b : felt) : (i1); ^exit(%value: felt): \
+         builtin.ret %value : (felt); };",
+    );
+    let env = SelectEnv::default();
+    let original = f.borrow().as_operation().to_pretty_string();
+    let selected = checked(&f, &env);
+    let on_true = selected.edges.iter().find(|edge| edge.kind == EdgeKind::True).unwrap();
+    let on_false = selected.edges.iter().find(|edge| edge.kind == EdgeKind::False).unwrap();
+    assert_eq!(on_true.destination, on_false.destination);
+    assert_eq!(on_true.bindings.len(), 1);
+    assert_eq!(on_false.bindings.len(), 1);
+    assert_eq!(on_true.bindings[0].destination, on_false.bindings[0].destination);
+    assert_ne!(on_true.bindings[0].source, on_false.bindings[0].source);
+    assert_eq!(
+        selected.segments.iter().map(|segment| segment.parameters.len()).sum::<usize>(),
+        4
+    );
+    assert_eq!(selected.edges.iter().filter(|edge| edge.kind == EdgeKind::Return).count(), 1);
+    for (flag, expected) in [(0, 22), (1, 11)] {
+        execute(&f, &env, &[flag, 11, 22], &[expected]);
+    }
+    assert_eq!(original, f.borrow().as_operation().to_pretty_string());
+}
+
+#[test]
+fn real_hir_shared_terminal_successor_defines_nontrivial_body_once() {
+    for (parameters, arguments, body, inputs, expected) in [
+        (
+            "%value: u32",
+            "^exit(%a : u32), ^exit(%b : u32)",
+            "%result = arith.add %value, %a <{ overflow = #builtin.overflow<wrapping> }>; \
+             builtin.ret %result : (u32);",
+            vec![11, 22],
+            [33, 22],
+        ),
+        (
+            "",
+            "^exit, ^exit",
+            "%result = arith.add %a, %b <{ overflow = #builtin.overflow<wrapping> }>; builtin.ret \
+             %result : (u32);",
+            vec![11, 22],
+            [33, 33],
+        ),
+    ] {
+        let label = if parameters.is_empty() {
+            "^exit:".into()
+        } else {
+            alloc::format!("^exit({parameters}):")
+        };
+        let f = parse(&alloc::format!(
+            "builtin.function public extern(\"C\") @shared(%flag: i1, %a: u32, %b: u32) -> u32 {{ \
+             cf.cond_br %flag {arguments} : (i1); {label} {body} }};"
+        ));
+        let env = SelectEnv::default();
+        let original = f.borrow().as_operation().to_pretty_string();
+        let selected = checked(&f, &env);
+        assert_eq!(selected.segments.iter().map(|segment| segment.units.len()).sum::<usize>(), 1);
+        assert_eq!(selected.edges.iter().filter(|edge| edge.kind == EdgeKind::Return).count(), 1);
+        for flag in [0, 1] {
+            let mut arguments = vec![flag];
+            arguments.extend_from_slice(&inputs);
+            execute(&f, &env, &arguments, &[expected[flag]]);
+        }
+        assert_eq!(original, f.borrow().as_operation().to_pretty_string());
+    }
+}
+
+#[test]
+fn real_hir_sequential_if_preparation_and_verification_scaling() {
+    // Keep the workload bounded and timing descriptive: semantic execution and graph
+    // size are the acceptance oracles, independent of machine load or build profile.
+    for count in [25, 50, 100] {
+        let mut source = alloc::string::String::from(
+            "builtin.function public extern(\"C\") @sequential(%p: i1, %a: felt, %b: felt) -> \
+             felt {\n",
+        );
+        let mut previous = alloc::string::String::from("%a");
+        for index in 0..count {
+            let next = alloc::format!("%x{index}");
+            source.push_str(&alloc::format!(
+                "{next} = scf.if %p then {{ %t{index} = arith.add {previous}, %b <{{ overflow = \
+                 #builtin.overflow<wrapping> }}>; scf.yield %t{index} : (felt); }} else {{ \
+                 %e{index} = arith.sub {previous}, %b <{{ overflow = #builtin.overflow<wrapping> \
+                 }}>; scf.yield %e{index} : (felt); }} : (i1) -> felt;\n"
+            ));
+            previous = next;
+        }
+        source.push_str(&alloc::format!("builtin.ret {previous} : (felt); }};"));
+        let parsed = parse(&source);
+        let env = SelectEnv::default();
+        let start = std::time::Instant::now();
+        let (plan, frame, body) = ready(&parsed, &env);
+        let preparation = start.elapsed();
+        assert_eq!(plan.selected.segments.len(), 3 * count + 1);
+        assert_eq!(plan.selected.values.len(), 3 * count + 3);
+        let start = std::time::Instant::now();
+        let verified = verify::verify(&plan, &frame, body).unwrap();
+        std::eprintln!(
+            "sequential HIR ifs={count}: preparation={preparation:?}, verification={:?}, \
+             segments={}, values={}",
+            start.elapsed(),
+            plan.selected.segments.len(),
+            plan.selected.values.len(),
+        );
+        // Execute the body just verified; do not repeat selection and allocation for
+        // each input, or include assembly and VM execution in the verifier timing.
+        let procedure = verified
+            .into_masm(crate::masm::ProcedureName::new("selected").unwrap())
+            .unwrap()
+            .to_pretty_string();
+        for flag in [0, 1] {
+            let expected = if flag == 1 {
+                1000 + 3 * count
+            } else {
+                1000 - 3 * count
+            };
+            let code = alloc::format!(
+                "{procedure} begin push.902 push.901 {} exec.selected {} end",
+                crate::plan::tests::lowering_units::push_top(&[flag, 1000, 3]),
+                crate::plan::tests::lowering_units::assert_top(&[expected, 901, 902]),
+            );
+            execute_code(&code).unwrap();
+        }
+    }
+}

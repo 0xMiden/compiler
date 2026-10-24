@@ -1,0 +1,30 @@
+// RUN: midenc %s --emit=masm=- | filecheck %s
+// CHECK-DAG: proc sibling
+// CHECK-DAG: proc shared_return
+// CHECK-DAG: proc shared_body
+// CHECK-DAG: proc shared_without_parameters
+
+builtin.world {
+    builtin.module public @shared_terminal {
+        builtin.function public extern("C") @sibling(%value: felt) -> felt {
+            builtin.ret %value : (felt);
+        };
+        builtin.function public extern("C") @shared_return(%flag: i1, %a: felt, %b: felt) -> felt {
+            cf.cond_br %flag ^exit(%a : felt), ^exit(%b : felt) : (i1);
+        ^exit(%value: felt):
+            builtin.ret %value : (felt);
+        };
+        builtin.function public extern("C") @shared_body(%flag: i1, %a: u32, %b: u32) -> u32 {
+            cf.cond_br %flag ^exit(%a : u32), ^exit(%b : u32) : (i1);
+        ^exit(%value: u32):
+            %result = arith.add %value, %a <{ overflow = #builtin.overflow<wrapping> }>;
+            builtin.ret %result : (u32);
+        };
+        builtin.function public extern("C") @shared_without_parameters(%flag: i1, %a: u32, %b: u32) -> u32 {
+            cf.cond_br %flag ^exit, ^exit : (i1);
+        ^exit:
+            %result = arith.add %a, %b <{ overflow = #builtin.overflow<wrapping> }>;
+            builtin.ret %result : (u32);
+        };
+    };
+};
